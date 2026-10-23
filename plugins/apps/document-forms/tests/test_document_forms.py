@@ -149,12 +149,18 @@ def project_case(client, stage_id="negotiation"):
 
 def test_response_review_uses_scoped_agent_and_archives_immutable_inputs(
     client,
+    monkeypatch,
 ):
     import time
     from qwenpaw.pawapp import get_scoped_ctx
 
     project, _ = project_case(client)
     base = f"/api/document-forms/projects/{project['id']}"
+    monkeypatch.setattr(
+        main.response_review,
+        "inherit_model",
+        lambda _source: None,
+    )
     calls = []
     content = io.BytesIO()
     Document().save(content)
@@ -222,14 +228,24 @@ def test_response_review_uses_scoped_agent_and_archives_immutable_inputs(
         client.app.dependency_overrides.clear()
 
 
-def test_response_review_rejects_invalid_inputs_and_runtime_failure(client):
+def test_response_review_rejects_invalid_inputs_and_runtime_failure(
+    client,
+    monkeypatch,
+):
     import time
     from qwenpaw.pawapp import get_scoped_ctx
 
     project, _ = project_case(client)
     base = f"/api/document-forms/projects/{project['id']}/response-reviews"
+    monkeypatch.setattr(
+        main.response_review,
+        "inherit_model",
+        lambda _source: None,
+    )
 
     class Context:
+        agent_id = "default"
+
         async def chat_stream(self, *_args, **_kwargs):
             yield {
                 "object": "response",
@@ -279,6 +295,41 @@ def test_response_review_rejects_invalid_inputs_and_runtime_failure(client):
         assert client.get(base).json()["records"][0]["status"] == "interrupted"
     finally:
         client.app.dependency_overrides.clear()
+
+
+def test_response_review_model_inheritance_preserves_custom_settings(
+    monkeypatch,
+):
+    from qwenpaw.config.config import ModelSlotConfig
+
+    review = main.response_review
+    selected = types.SimpleNamespace(
+        active_model=ModelSlotConfig(provider_id="fixture", model="model-a"),
+    )
+    profile = types.SimpleNamespace(
+        template_id="pawapp:document-forms",
+        active_model=None,
+        channels="unchanged",
+    )
+    monkeypatch.setattr(review, "load_agent_config", lambda _agent: selected)
+    monkeypatch.setattr(
+        review,
+        "mutate_agent_config",
+        lambda agent, edit: edit(profile),
+    )
+    review.inherit_model("selected-agent")
+    assert profile.active_model == selected.active_model
+    assert profile.active_model is not selected.active_model
+    assert profile.channels == "unchanged"
+    profile.active_model = ModelSlotConfig(
+        provider_id="custom",
+        model="model-b",
+    )
+    review.inherit_model("selected-agent")
+    assert profile.active_model.model == "model-b"
+    profile.template_id = "another-app"
+    with pytest.raises(RuntimeError, match="not owned"):
+        review.inherit_model("selected-agent")
 
 
 def test_project_migration_groups_legacy_forms_without_rewriting_files(

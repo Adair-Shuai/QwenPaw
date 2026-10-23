@@ -13,10 +13,12 @@ import uuid
 from pathlib import Path
 from urllib.parse import quote
 
-from fastapi import Depends, File, Form, HTTPException, UploadFile
+from fastapi import Depends, File, Form, HTTPException, UploadFile, Request
 from fastapi.responses import FileResponse
 from qwenpaw.pawapp import get_scoped_ctx
 from qwenpaw.pawapp.context import ChatReply
+from qwenpaw.config.config import load_agent_config, mutate_agent_config
+from qwenpaw.exceptions import ConfigurationException
 
 from .projects import (
     identifier,
@@ -97,8 +99,32 @@ def references(store, root, project):
     return result
 
 
-async def run_review(path, record, ctx, store, root, lock):
+def inherit_model(source_agent):
+    """Initialize an unset model slot; retain custom settings."""
+
+    def initialize(profile):
+        if profile.template_id != "pawapp:document-forms":
+            raise RuntimeError("Review agent is not owned by this application")
+        if profile.active_model is not None:
+            return
+        try:
+            source = load_agent_config(source_agent)
+        except (ValueError, ConfigurationException):
+            source = load_agent_config("default")
+        slot = source.active_model
+        if slot is None and source_agent != "default":
+            slot = load_agent_config("default").active_model
+        if slot is None:
+            raise RuntimeError("Configure a model before response review")
+        # ModelSlotConfig contains provider/model identifiers, not credentials.
+        profile.active_model = slot.model_copy(deep=True)
+
+    mutate_agent_config(AGENT_ID, initialize)
+
+
+async def run_review(path, record, ctx, store, root, lock, source_agent):
     try:
+        await asyncio.to_thread(inherit_model, source_agent)
         task_ctx = copy.copy(ctx)
         task_ctx.app_id = "document-forms"
         task_ctx.agent_id = AGENT_ID
@@ -218,6 +244,7 @@ def register_routes(router, scope, lock, store):
     @router.post("/projects/{project_id}/response-reviews")
     async def review_start(
         project_id: str,
+        request: Request,
         reference_id: str = Form(""),
         focus: str = Form("", max_length=3000),
         reference: UploadFile | None = File(None),
@@ -334,7 +361,15 @@ def register_routes(router, scope, lock, store):
                     raise HTTPException(409, "核查任务较多，请稍后再试")
                 write_record(path, record)
                 TASKS[str(path)] = asyncio.create_task(
-                    run_review(path, record, ctx, store, root, lock),
+                    run_review(
+                        path,
+                        record,
+                        ctx,
+                        store,
+                        root,
+                        lock,
+                        request.headers.get("X-Agent-Id") or ctx.agent_id,
+                    ),
                 )
             return public(record)
         except BaseException:
