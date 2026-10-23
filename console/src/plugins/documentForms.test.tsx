@@ -331,6 +331,157 @@ it("organizes projects into six stages and keeps material versions and submissio
   );
 }, 30000);
 
+it("opens the response review agent only in negotiation and starts with explicitly selected project files", async () => {
+  const user = userEvent.setup();
+  let Page: React.ComponentType = () => null;
+  let record: any = null;
+  let attempts = 0;
+  const submissions: FormData[] = [];
+  const downloads: string[] = [];
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    downloads.push(this.download);
+  });
+  vi.stubGlobal(
+    "URL",
+    Object.assign(class extends URL {}, {
+      createObjectURL: () => "blob:review",
+      revokeObjectURL: vi.fn(),
+    }),
+  );
+  const api = formProjectApi(() => ({
+    id: "case-review",
+    name: "测试项目",
+    fields: [],
+    generations: [],
+    updated_at: "2026-10-22T10:00:00Z",
+  }));
+  const hostFetch = vi.fn(async (url: string, init?: RequestInit) => {
+    const result = api(url, init);
+    if (result) return result;
+    if (url.endsWith("/response-reviews") && init?.method === "POST") {
+      submissions.push(init.body as FormData);
+      attempts++;
+      if (attempts === 1)
+        return new Response(
+          JSON.stringify({ detail: "暂时无法启动，请重试" }),
+          { status: 503 },
+        );
+      record = {
+        id: "review-1",
+        project_revision: 1,
+        created_at: "2026-10-22T10:00:00Z",
+        status: "completed",
+        report: "甲单位：请核对报价含税口径，见响应文件第 2 节。",
+        focus: "报价与资质",
+        files: [
+          { name: "正式谈判文件.docx", role: "谈判文件" },
+          { name: "甲单位响应.pdf", role: "响应材料" },
+        ],
+      };
+      return reply(record);
+    }
+    if (url.endsWith("/response-reviews"))
+      return reply({
+        references: [
+          { id: "case-1:gen-1:0", label: "正式谈判文件.docx · 2026-10-22" },
+        ],
+        records: record ? [record] : [],
+      });
+    if (url.endsWith("/report")) return new Response("核查记录");
+    throw new Error("Unexpected review request: " + url);
+  });
+  Object.defineProperty(window, "QwenPaw", {
+    configurable: true,
+    value: {
+      host: {
+        React,
+        fetch: hostFetch,
+        useTheme: () => "light",
+        getSelectedAgentId: () => "default",
+      },
+      registerRoutes: (_id: string, routes: any[]) => {
+        Page = routes[0].component;
+      },
+    },
+  });
+  await act(async () => {
+    new Function(
+      "window",
+      "URL",
+      fs.readFileSync(
+        path.resolve(
+          process.cwd(),
+          "../plugins/apps/document-forms/ui/index.js",
+        ),
+        "utf8",
+      ),
+    )(window, URL);
+  });
+  renderWithProviders(<Page />);
+  const nav = await screen.findByRole("navigation", { name: "项目阶段" });
+  await user.click(within(nav).getByRole("button", { name: /上报计划/ }));
+  expect(
+    screen.queryByRole("button", { name: /打开核查智能体/ }),
+  ).not.toBeInTheDocument();
+  await user.click(within(nav).getByRole("button", { name: /商务谈判/ }));
+  await user.click(screen.getByRole("button", { name: /打开核查智能体/ }));
+  let dialog = await screen.findByRole("dialog", { name: "响应文件核查" });
+  await within(dialog).findByLabelText("核查依据");
+  expect(submissions).toHaveLength(0);
+  expect(
+    within(dialog).getByRole("button", { name: "开始核查" }),
+  ).toBeDisabled();
+  await user.selectOptions(
+    within(dialog).getByLabelText("核查依据"),
+    "case-1:gen-1:0",
+  );
+  expect(
+    within(dialog).queryByLabelText("上传核查依据"),
+  ).not.toBeInTheDocument();
+  await user.upload(
+    within(dialog).getByLabelText("上传响应材料"),
+    new File(["response"], "甲单位响应.pdf", { type: "application/pdf" }),
+  );
+  await user.type(
+    within(dialog).getByLabelText("补充核查关注点"),
+    "报价与资质",
+  );
+  // JSDOM does not update native required-file validity after user.upload.
+  // Submit the actual mounted form after checking its enabled entry button.
+  expect(
+    within(dialog).getByRole("button", { name: "开始核查" }),
+  ).toBeEnabled();
+  fireEvent.submit(
+    within(dialog).getByRole("button", { name: "开始核查" }).closest("form")!,
+  );
+  await within(dialog).findByText("暂时无法启动，请重试");
+  fireEvent.submit(
+    within(dialog).getByRole("button", { name: "开始核查" }).closest("form")!,
+  );
+  await within(dialog).findByText(/甲单位：请核对报价含税口径/);
+  expect(submissions).toHaveLength(2);
+  expect(submissions[1].get("reference_id")).toBe("case-1:gen-1:0");
+  expect((submissions[1].getAll("responses")[0] as File).name).toBe(
+    "甲单位响应.pdf",
+  );
+  expect(submissions[1].get("focus")).toBe("报价与资质");
+  await user.click(
+    within(dialog).getByRole("button", { name: "下载核查记录" }),
+  );
+  expect(downloads).toContain("测试项目_响应文件核查记录_review-1.md");
+  await user.click(
+    within(dialog).getByRole("button", { name: "关闭响应文件核查" }),
+  );
+  await user.click(
+    await screen.findByRole("button", { name: /打开核查智能体/ }),
+  );
+  dialog = await screen.findByRole("dialog", { name: "响应文件核查" });
+  await within(dialog).findByText(/甲单位：请核对报价含税口径/);
+  expect(submissions).toHaveLength(2);
+}, 30000);
+
 it("reviews shared project differences before selectively updating a stage form and protects unsaved edits", async () => {
   const user = userEvent.setup();
   let Page: React.ComponentType = () => null;

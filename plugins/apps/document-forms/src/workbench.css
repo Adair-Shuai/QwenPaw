@@ -1540,3 +1540,79 @@
     padding: 18px;
   }
 }
+.df-review-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+}
+.df-review-entry h2 {
+  margin: 0;
+}
+.df-review-entry p {
+  margin-bottom: 0;
+}
+.df-review-entry button {
+  flex-shrink: 0;
+}
+.df-dialog:has(.df-response-review) {
+  width: min(1000px, calc(100vw - 48px));
+}
+.df-response-review fieldset {
+  border: 0;
+  padding: 0;
+  margin: 0;
+  min-width: 0;
+}
+.df-response-review .df-field {
+  margin: 18px 0;
+}
+.df-response-review .df-field input[type="file"] {
+  width: 100%;
+}
+.df-review-history {
+  border-top: 1px solid var(--df-line);
+  margin-top: 28px;
+  padding-top: 20px;
+}
+.df-review-records {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 20px;
+}
+.df-review-records button[aria-pressed="true"] {
+  border-color: var(--df-accent);
+}
+.df-review-report {
+  overflow-x: auto;
+  line-height: 1.85;
+  margin-top: 20px;
+  overflow-wrap: anywhere;
+}
+.df-review-report table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+.df-review-report th,
+.df-review-report td {
+  border: 1px solid var(--df-line);
+  padding: 8px;
+  vertical-align: top;
+  text-align: left;
+}
+.df-review-report pre {
+  white-space: pre-wrap;
+}
+.df-review-files {
+  line-height: 1.8;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 800px) {
+  .df-review-entry {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 16px;
+  }
+}

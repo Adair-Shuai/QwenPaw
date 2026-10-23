@@ -1,5 +1,6 @@
 import CSS from "./workbench.css";
 import OfficeServicePreview from "./office-preview.jsx";
+import ResponseReview from "./response-review.jsx";
 
 const Q = window.QwenPaw;
 const React = Q.host.React;
@@ -843,6 +844,21 @@ export default function ProjectWorkspace({ Editor, services }) {
                         </p>
                       )}
                     </section>
+                    {stage.id === "negotiation" && (
+                      <section className="df-paper df-review-entry">
+                        <div>
+                          <h2>响应文件核查</h2>
+                          <p className="df-muted">
+                            对照正式谈判文件，检查各单位响应材料，汇总问题、依据和待确认事项。
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => openDialog("response-review", {})}
+                        >
+                          打开核查智能体 →
+                        </button>
+                      </section>
+                    )}
                     <section className="df-paper df-material-panel">
                       <div className="df-section-head">
                         <div>
@@ -998,6 +1014,21 @@ export default function ProjectWorkspace({ Editor, services }) {
           </>
         )}
       </section>
+      {dialog === "response-review" && (
+        <Dialog
+          title="响应文件核查"
+          onClose={() => {
+            setDialog(null);
+            reload().catch((e) => setError(e.message));
+          }}
+        >
+          <ResponseReview
+            project={project}
+            services={services}
+            onChanged={() => reload().catch((e) => setError(e.message))}
+          />
+        </Dialog>
+      )}
       {dialog === "create" && (
         <Dialog
           title="新建项目"

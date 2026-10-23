@@ -42,6 +42,7 @@ def verify_bundled_assets(archive):
             "backend/engine.py",
             "backend/builtin.py",
             "backend/projects.py",
+            "backend/review.py",
             "ui/index.js",
             "README.md",
             "requirements.txt",

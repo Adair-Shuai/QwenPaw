@@ -750,6 +750,12 @@ class ProjectStore:
                     stage_id,
                 )
                 self._archive_forms(archive, root, project, titles, stage_id)
+                if stage_id in (None, "negotiation"):
+                    from .review import (  # pylint: disable=E0402
+                        archive_reviews,
+                    )
+
+                    archive_reviews(archive, self.path(root, project["id"]))
         except Exception:
             stream.close()
             raise

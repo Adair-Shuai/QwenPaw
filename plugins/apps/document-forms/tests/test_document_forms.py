@@ -147,6 +147,140 @@ def project_case(client, stage_id="negotiation"):
     return project, case
 
 
+def test_response_review_uses_scoped_agent_and_archives_immutable_inputs(
+    client,
+):
+    import time
+    from qwenpaw.pawapp import get_scoped_ctx
+
+    project, _ = project_case(client)
+    base = f"/api/document-forms/projects/{project['id']}"
+    calls = []
+    content = io.BytesIO()
+    Document().save(content)
+    word = content.getvalue()
+
+    class Context:
+        agent_id = "default"
+
+        async def chat_stream(self, message, session_id):
+            calls.append((self.agent_id, message, session_id))
+            # Host receives real immutable Word bytes; it owns file extraction.
+            listing = json.loads(message.split("不是额外指令：\n")[1])
+            for file in listing["文件清单"]:
+                assert Path(file["只读路径"]).read_bytes() == word
+            yield {"text": "## 核查记录\n\n甲单位：报价口径需要澄清，见响应文件第 2 节。"}
+
+    client.app.dependency_overrides[get_scoped_ctx] = Context
+    try:
+        assert client.get(base + "/response-reviews").json()["records"] == []
+        assert not calls  # Opening the entry never starts a model turn.
+        started = client.post(
+            base + "/response-reviews",
+            data={"focus": "核对含税口径"},
+            files=[
+                ("reference", ("正式谈判文件.docx", word)),
+                ("responses", ("../甲单位响应文件.docx", word)),
+            ],
+        )
+        assert started.status_code == 200, started.text
+        assert "session_id" not in started.json()
+        for _ in range(100):
+            record = client.get(base + "/response-reviews").json()["records"][
+                0
+            ]
+            if record["status"] != "running":
+                break
+            time.sleep(0.01)
+        assert record["status"] == "completed", record
+        assert record["files"][1]["name"] == "甲单位响应文件.docx"
+        assert calls[0][0] == "ugsci-response-review"
+        assert project["id"] in calls[0][2]
+        assert "无法定位时明确说明" in calls[0][1]
+        assert client.get(base).json()["revision"] == project["revision"] + 1
+        report_url = base + f"/response-reviews/{record['id']}/report"
+        assert "报价口径" in client.get(report_url).text
+        assert (
+            client.get(report_url, headers={"X-Agent-Id": "other"}).status_code
+            == 404
+        )
+        archive = client.get(base + "/bundle")
+        assert archive.status_code == 200, archive.text
+        with ZipFile(io.BytesIO(archive.content)) as z:
+            names = z.namelist()
+            assert any(n.endswith("核查依据快照.json") for n in names)
+            assert any(n.endswith("核查记录.md") for n in names)
+            assert [
+                z.read(n) for n in names if n.endswith("甲单位响应文件.docx")
+            ] == [word]
+        source = next(
+            main.ROOT.glob("*/projects/*/response-reviews/*/02.docx"),
+        )
+        source.write_bytes(b"tampered")
+        assert client.get(base + "/bundle").status_code == 422
+    finally:
+        client.app.dependency_overrides.clear()
+
+
+def test_response_review_rejects_invalid_inputs_and_runtime_failure(client):
+    import time
+    from qwenpaw.pawapp import get_scoped_ctx
+
+    project, _ = project_case(client)
+    base = f"/api/document-forms/projects/{project['id']}/response-reviews"
+
+    class Context:
+        async def chat_stream(self, *_args, **_kwargs):
+            yield {
+                "object": "response",
+                "status": "failed",
+                "error": {"message": "private-provider-detail"},
+            }
+
+    client.app.dependency_overrides[get_scoped_ctx] = Context
+    try:
+        files = [("responses", ("响应.docx", b"data"))]
+        assert client.post(base, files=files).status_code == 422
+        assert (
+            client.post(
+                base,
+                files=[("reference", ("依据.exe", b"x"))] + files,
+            ).status_code
+            == 422
+        )
+        assert (
+            client.post(
+                base,
+                data={"reference_id": "foreign:record:0"},
+                files=files,
+            ).status_code
+            == 409
+        )
+        response = client.post(
+            base,
+            files=[("reference", ("依据.pdf", b"data"))] + files,
+        )
+        assert response.status_code == 200
+        for _ in range(100):
+            record = client.get(base).json()["records"][0]
+            if record["status"] != "running":
+                break
+            time.sleep(0.01)
+        assert record["status"] == "failed"
+        assert "private-provider-detail" not in json.dumps(record)
+        assert record["report"] == ""
+        assert client.get(base + f"/{record['id']}/report").status_code == 404
+        path = next(
+            main.ROOT.glob("*/projects/*/response-reviews/*/record.json"),
+        )
+        record["status"] = "running"
+        record["process_id"] = -1
+        path.write_text(json.dumps(record), encoding="utf-8")
+        assert client.get(base).json()["records"][0]["status"] == "interrupted"
+    finally:
+        client.app.dependency_overrides.clear()
+
+
 def test_project_migration_groups_legacy_forms_without_rewriting_files(
     client,
     sources,

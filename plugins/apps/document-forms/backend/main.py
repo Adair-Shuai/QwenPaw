@@ -36,6 +36,9 @@ from qwenpaw.pawapp import PawApp
 
 from .backend import builtin  # pylint: disable=relative-beyond-top-level
 from .backend import projects  # pylint: disable=relative-beyond-top-level
+from .backend import (  # pylint: disable=relative-beyond-top-level
+    review as response_review,
+)
 
 # PluginLoader treats this entry module as the plugin root package.
 from .backend.engine import (  # pylint: disable=relative-beyond-top-level
@@ -52,6 +55,14 @@ from .backend.engine import (  # pylint: disable=relative-beyond-top-level
 )
 
 app = PawApp(name="文书填报", app_id="document-forms")
+app.agent_profile(
+    response_review.AGENT_ID,
+    name="响应文件核查",
+    description="对照商务谈判文件核查响应材料，列出问题、依据与待人工确认事项。",
+    language="zh",
+    plan_enabled=False,
+    pinned=False,
+)
 router = APIRouter()
 ROOT = Path(WORKING_DIR) / "apps" / "document-forms"
 _lock = threading.RLock()
@@ -813,5 +824,6 @@ project_store = projects.register_routes(
     _lock,
     sys.modules[__name__],
 )
+response_review.register_routes(router, scope, _lock, project_store)
 app.include_router(router)
 plugin = app

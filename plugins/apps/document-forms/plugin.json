@@ -1,7 +1,7 @@
 {
   "id": "document-forms",
   "name": "文书填报",
-  "version": "1.1.1",
+  "version": "1.2.0",
   "type": "app",
   "channel": "ugsci",
   "description": "按项目管理上报计划、选商论证、商务谈判、开题论证、结题验收与归档付款，共用资料、阶段材料、Word 填报和文件预览一处整理。",
@@ -11,7 +11,7 @@
   "pack_exclude": ["src", "tests", "build.mjs"],
   "meta": {
     "pawapp": { "icon": "▤", "category": "productivity", "entry_page": "/apps/document-forms", "launch_scope": "page" },
-    "permissions": { "chat": false, "storage": true },
+    "permissions": { "chat": true, "storage": true },
     "settings": []
   }
 }
