@@ -754,7 +754,7 @@ function CronJobsPage() {
                   key={job.id}
                   className={styles.mobileJobCard}
                   size="small"
-                  bodyStyle={{ padding: 16 }}
+                  styles={{ body: { padding: 16 } }}
                 >
                   <div className={styles.mobileJobHeader}>
                     <button
@@ -993,7 +993,7 @@ function CronJobsPage() {
                         onOpenChange={(open) =>
                           setActivePopoverDate(open ? dateKey : null)
                         }
-                        rootClassName={styles.dayJobPopoverOverlay}
+                        classNames={{ root: styles.dayJobPopoverOverlay }}
                         content={popoverContent}
                       >
                         <button className={styles.calendarMoreBtn}>

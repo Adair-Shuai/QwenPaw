@@ -2,20 +2,21 @@ name: Frontend Tests
 
 on:
   push:
-    branches: [main, master, dev, develop, lobehub-style]
+    branches: [main, master, dev, develop, lobehub-style, "release/**"]
     paths:
       - 'console/**'
       - 'plugins/bundle/ugsci/ui/**'
       - 'scripts/check_console_bundle_budget.mjs'
       - 'src/qwenpaw/plugins/frontend/**'
       - 'scripts/check_plugin_sdk_frontend.py'
+      - '.nvmrc'
       - '.github/workflows/frontend-tests.yml'
   pull_request:
     # Default types plus ready_for_review: converting a draft PR to
     # ready must re-trigger this workflow so vitest really runs right
     # after the author leaves draft state.
     types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main, master, dev, develop, lobehub-style]
+    branches: [main, master, dev, develop, lobehub-style, "release/**"]
 
 jobs:
   spam-gate:
@@ -48,6 +49,7 @@ jobs:
               - 'scripts/check_console_bundle_budget.mjs'
               - 'src/qwenpaw/plugins/frontend/**'
               - 'scripts/check_plugin_sdk_frontend.py'
+              - '.nvmrc'
               - '.github/workflows/frontend-tests.yml'
 
   vitest:
@@ -81,7 +83,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version-file: .nvmrc
           cache: 'pnpm'
           cache-dependency-path: console/pnpm-lock.yaml
 

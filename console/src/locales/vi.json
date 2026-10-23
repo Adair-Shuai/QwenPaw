@@ -22,6 +22,7 @@
     "view": "Xem",
     "content": "Nội dung",
     "loading": "Đang tải...",
+    "loadMore": "Tải thêm",
     "saving": "Đang lưu...",
     "copy": "Sao chép",
     "copied": "Đã sao chép",
@@ -883,6 +884,9 @@
         "memberDefaultsHint": "Cuộc trò chuyện mới bắt đầu với mô hình này. Thành viên có thể chuyển sang mô hình khác được cấp quyền.",
         "settingsSaved": "Đã lưu cài đặt mô hình",
         "defaultModel": "Mô hình mặc định",
+        "gatewayTimeout": "Thời gian chờ cổng (giây)",
+        "gatewayTimeoutHelp": "Mặc định là 600 giây; tối thiểu 60. Áp dụng cho yêu cầu mới sau khi lưu, bao gồm phản hồi truyền trực tuyến. Thời gian chờ kết nối vẫn là 10 giây.",
+        "gatewayTimeoutInvalid": "Nhập số giây là số nguyên từ 60 trở lên.",
         "chooseDefault": "Chọn mô hình có sẵn cho mọi thành viên",
         "saveSettings": "Lưu cài đặt mô hình",
         "providers": "Nhà cung cấp",
@@ -1272,7 +1276,12 @@
     },
     "regenerate": "Tạo lại",
     "regenerateUnavailable": "Lượt cũ này không có mã yêu cầu. Hãy gửi tin nhắn mới để tiếp tục.",
-    "turnCanceled": "Đã dừng"
+    "turnCanceled": "Đã dừng",
+    "composer": {
+      "attach": "Đính kèm tệp",
+      "send": "Gửi tin nhắn",
+      "stop": "Dừng tạo"
+    }
   },
   "debug": {
     "title": "Gỡ lỗi",
@@ -1334,6 +1343,7 @@
     "createSuccess": "Tạo thu hoạch thành công",
     "emptyApprovals": "Không có phê duyệt nào đang chờ",
     "emptyPush": "Không có tin nhắn đẩy",
+    "loadFailed": "Không thể tải tin nhắn đẩy. Vui lòng thử lại.",
     "wobbleEnable": "Bật thông báo rung phê duyệt",
     "wobbleDisable": "Tắt thông báo rung phê duyệt",
     "emptyHarvests": "Chưa có thu hoạch nào",
@@ -1414,6 +1424,7 @@
   "acp": {
     "title": "Kết nối ACP",
     "loading": "Đang tải cấu hình ACP...",
+    "loadError": "Không thể tải cấu hình ACP.",
     "builtin": "Cấu hình sẵn",
     "custom": "Tùy chỉnh",
     "create": "Thêm kết nối ACP",
@@ -1472,6 +1483,7 @@
   "voiceTranscription": {
     "title": "Phiên âm giọng nói",
     "description": "Cấu hình cách xử lý tin nhắn âm thanh đến.",
+    "loadFailed": "Không thể tải cài đặt phiên âm giọng nói",
     "saveSuccess": "Đã lưu chế độ âm thanh",
     "saveFailed": "Lưu chế độ âm thanh thất bại",
     "audioModeLabel": "Chế độ âm thanh",
@@ -2242,6 +2254,12 @@
     "byModel": "Theo mô hình"
   },
   "approval": {
+    "queue": {
+      "title": "Phê duyệt đang chờ",
+      "position": "{{current}} / {{total}}",
+      "previous": "Phê duyệt trước",
+      "next": "Phê duyệt tiếp theo"
+    },
     "title": "Yêu cầu phê duyệt bảo mật",
     "description": "Agent đang yêu cầu phê duyệt để thực thi hành động sau:",
     "approve": "Phê duyệt",
@@ -2991,6 +3009,7 @@
     "memoryAutoRecordTitle": "Bật bộ nhớ hội thoại"
   },
   "models": {
+    "disableBtn": "Vô hiệu hóa",
     "llmConfiguration": "Cấu hình LLM",
     "providersTitle": "Nhà cung cấp",
     "providersDescription": "Cấu hình API key và endpoint cho từng nhà cung cấp.",
@@ -3198,6 +3217,7 @@
     "title": "Kênh",
     "description": "Quản lý và cấu hình các kênh nhắn tin",
     "loading": "Đang tải kênh...",
+    "loadFailed": "Không thể tải kênh. Vui lòng thử lại.",
     "configSaved": "Đã lưu cấu hình",
     "configFailed": "Lưu cấu hình thất bại",
     "botConflictTitle": "Bot đang được sử dụng",
@@ -4019,6 +4039,8 @@
     "title": "Phiên làm việc",
     "description": "Xem và quản lý các phiên chat đang hoạt động",
     "loading": "Đang tải phiên...",
+    "selectSession": "Chọn {{name}}",
+    "loadFailed": "Không thể tải phiên. Vui lòng thử lại.",
     "confirmDelete": "Xác nhận xóa",
     "deleteConfirm": "Bạn có chắc muốn xóa phiên này không?",
     "batchDeleteConfirm": "Bạn có chắc muốn xóa {{count}} phiên đã chọn không?",
@@ -4177,5 +4199,8 @@
       "11": "Nouméa",
       "12": "Suva"
     }
+  },
+  "accessibility": {
+    "skipToContent": "Chuyển đến nội dung chính"
   }
 }

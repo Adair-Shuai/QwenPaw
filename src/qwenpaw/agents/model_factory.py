@@ -623,6 +623,9 @@ def _normalize_messages_for_formatter(
     strip_audio = bool(
         getattr(formatter_instance, "_qwenpaw_force_strip_audio", False),
     )
+    strip_video = bool(
+        getattr(formatter_instance, "_qwenpaw_force_strip_video", False),
+    )
 
     if is_anthropic_formatter:
         target_family = "anthropic"
@@ -636,6 +639,7 @@ def _normalize_messages_for_formatter(
         supports_multimodal=supports_multimodal,
         target_family=target_family,
         strip_audio=strip_audio,
+        strip_video=strip_video,
     )
 
     return (
@@ -715,6 +719,21 @@ def _count_wire_audio_blocks(value: Any) -> int:
     if isinstance(media_type, str) and media_type.startswith("audio/"):
         return 1
     return sum(_count_wire_audio_blocks(item) for item in value.values())
+
+
+def _count_wire_video_blocks(value: Any) -> int:
+    """Count video parts actually emitted by any supported formatter."""
+    if isinstance(value, list):
+        return sum(_count_wire_video_blocks(item) for item in value)
+    if not isinstance(value, dict):
+        return 0
+
+    if value.get("type") in ("video", "video_url", "input_video"):
+        return 1
+    media_type = value.get("mime_type") or value.get("media_type")
+    if isinstance(media_type, str) and media_type.startswith("video/"):
+        return 1
+    return sum(_count_wire_video_blocks(item) for item in value.values())
 
 
 def _video_oversize_placeholder(
@@ -1677,6 +1696,7 @@ def _create_file_block_support_formatter(
             # previous request behind for the capability fallback layer.
             self._qwenpaw_last_wire_media_count = 0
             self._qwenpaw_last_wire_audio_count = 0
+            self._qwenpaw_last_wire_video_count = 0
 
             def _battr(block, key, default=None):
                 """Get attribute from dict or Pydantic block."""
@@ -1908,6 +1928,9 @@ def _create_file_block_support_formatter(
                 wire_messages,
             )
             self._qwenpaw_last_wire_audio_count = _count_wire_audio_blocks(
+                wire_messages,
+            )
+            self._qwenpaw_last_wire_video_count = _count_wire_video_blocks(
                 wire_messages,
             )
             return wire_messages

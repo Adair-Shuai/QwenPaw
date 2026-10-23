@@ -1,4 +1,4 @@
-import { FileWarning, Files, GitBranch } from "lucide-react";
+import { ArrowLeft, FileWarning, Files, GitBranch } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { buildAuthHeaders } from "../../api/authHeaders";
@@ -128,6 +128,9 @@ export default function FilesWorkspace({
   const [memoryGraphRoot, setMemoryGraphRoot] =
     useState<MemoryGraphRoot | null>(null);
   const [activity, setActivity] = useState<"files" | "git">("files");
+  const [mobilePane, setMobilePane] = useState<
+    "navigator" | "source" | "document"
+  >(tabs.length > 0 ? "document" : "navigator");
   const [directoryRevision, setDirectoryRevision] = useState(0);
   const [editorNavigation, setEditorNavigation] = useState<{
     path: string;
@@ -427,6 +430,7 @@ export default function FilesWorkspace({
       revalidatedScope.current = scopeKey;
       setLoadError("");
       setActiveTab(scopeKey, tabPath);
+      setMobilePane("document");
       void revalidateTab(tabPath);
     },
     [revalidateTab, scopeKey, setActiveTab],
@@ -481,6 +485,7 @@ export default function FilesWorkspace({
         });
         revalidatedScope.current = scopeKey;
         setActiveTab(scopeKey, tabPath);
+        setMobilePane("document");
       } catch {
         setLoadError(t("files.loadFailed"));
       }
@@ -540,9 +545,18 @@ export default function FilesWorkspace({
     if (activeTab?.content) void revalidateTab(activeTabPath);
   }, [activeTabPath, revalidateTab, scopeKey]);
 
+  useEffect(() => {
+    if (tabs.length === 0 && !memoryGraphRoot) {
+      setMobilePane(activity === "git" && codingMode ? "source" : "navigator");
+    }
+  }, [activity, codingMode, memoryGraphRoot, tabs.length]);
+
   const handleClose = (path: string) => {
     const index = tabs.findIndex((tab) => tab.path === path);
     closeTab(scopeKey, path);
+    if (tabs.length === 1 && !memoryGraphRoot) {
+      setMobilePane(activity === "git" && codingMode ? "source" : "navigator");
+    }
     if (activeTabPath === path) {
       const nextPath = tabs[index + 1]?.path ?? tabs[index - 1]?.path ?? "";
       if (nextPath) activateTab(nextPath);
@@ -557,19 +571,20 @@ export default function FilesWorkspace({
     activateTab(path);
   };
 
+  const hasDocument = tabs.length > 0 || memoryGraphRoot !== null;
+
   return (
-    <div
-      className={`${styles.workspace} ${
-        tabs.length === 0 && !memoryGraphRoot ? styles.workspaceEmpty : ""
-      }`}
-    >
+    <div className={styles.workspace} data-mobile-pane={mobilePane}>
       {codingMode && !hideNavigator && (
         <nav className={styles.activityRail} aria-label={t("files.workspace")}>
           <button
             type="button"
             className={activity === "files" ? styles.activityActive : ""}
             aria-label={t("files.navigator")}
-            onClick={() => setActivity("files")}
+            onClick={() => {
+              setActivity("files");
+              setMobilePane("navigator");
+            }}
           >
             <Files size={18} />
           </button>
@@ -578,15 +593,29 @@ export default function FilesWorkspace({
               type="button"
               className={activity === "git" ? styles.activityActive : ""}
               aria-label={t("files.sourceControl")}
-              onClick={() => setActivity("git")}
+              onClick={() => {
+                setActivity("git");
+                setMobilePane("source");
+              }}
             >
               <GitBranch size={18} />
             </button>
           ) : null}
         </nav>
       )}
-      {!hideNavigator &&
-        (activity === "files" || !codingMode ? (
+      {!hideNavigator && (activity === "files" || !codingMode ? (
+        <div className={styles.navigatorPane}>
+          {hasDocument && (
+            <button
+              type="button"
+              className={styles.mobilePaneSwitch}
+              aria-label={t("files.openFilesLabel")}
+              onClick={() => setMobilePane("document")}
+            >
+              <Files size={16} />
+              <span>{t("files.openFilesLabel")}</span>
+            </button>
+          )}
           <FilesNavigator
             key={`${scopeKey}:${projectDirOverride ?? ""}:${directoryRevision}`}
             scope={effectiveScope}
@@ -599,19 +628,51 @@ export default function FilesWorkspace({
               void openTarget(target);
             }}
             activeMemoryGraphRoot={memoryGraphRoot}
-            onShowMemoryGraph={(root) => setMemoryGraphRoot(root)}
-            onShowFiles={() => setMemoryGraphRoot(null)}
+            onShowMemoryGraph={(root) => {
+              setMemoryGraphRoot(root);
+              setMobilePane("document");
+            }}
+            onShowFiles={() => {
+              setMemoryGraphRoot(null);
+            }}
           />
-        ) : (
-          <aside className={styles.sourcePanel}>
-            <header>
-              <GitBranch size={15} />
-              <span>{t("files.sourceControl")}</span>
-            </header>
-            <GitPanel chatId={chatId} />
-          </aside>
-        ))}
+        </div>
+      ) : (
+        <aside className={styles.sourcePanel}>
+          {hasDocument && (
+            <button
+              type="button"
+              className={styles.mobilePaneSwitch}
+              aria-label={t("files.openFilesLabel")}
+              onClick={() => setMobilePane("document")}
+            >
+              <ArrowLeft size={16} />
+              <span>{t("files.openFilesLabel")}</span>
+            </button>
+          )}
+          <header>
+            <GitBranch size={15} />
+            <span>{t("files.sourceControl")}</span>
+          </header>
+          <GitPanel chatId={chatId} />
+        </aside>
+      ))}
       <main className={styles.documentSurface}>
+        <button
+          type="button"
+          className={styles.mobilePaneSwitch}
+          aria-label={t(
+            activity === "git" ? "files.sourceControl" : "files.navigator",
+          )}
+          onClick={() =>
+            setMobilePane(activity === "git" ? "source" : "navigator")
+          }
+        >
+          {activity === "git" ? <GitBranch size={16} /> : <Files size={16} />}
+          <span>
+            {t(activity === "git" ? "files.sourceControl" : "files.navigator")}
+          </span>
+        </button>
         {loadError && (
           <div className={styles.loadError} role="alert">
             <FileWarning size={24} />

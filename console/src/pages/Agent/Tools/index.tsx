@@ -3,7 +3,7 @@ import { useAutoSave } from "@/hooks/useAutoSave";
 import { SharedModal as Modal } from "@/components/interaction/SharedModal";
 import { CircleHelp, TriangleAlert, Search, Wrench, X } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Spin, Popover, Segmented } from "antd";
+import { Alert, Spin, Popover, Segmented } from "antd";
 import {
   Switch,
   Button,
@@ -247,6 +247,8 @@ export default function ToolsPage({ embedded = false }: ToolsPageProps = {}) {
   const {
     tools,
     loading,
+    error,
+    ready,
     batchLoading,
     toggleEnabled,
     toggleAsyncExecution,
@@ -343,6 +345,38 @@ export default function ToolsPage({ embedded = false }: ToolsPageProps = {}) {
     tools: visibleTools.filter((tool) => toolGroup(tool) === key),
   }));
 
+  if (error) {
+    return (
+      <div className={styles.toolsPage}>
+        <PageHeader items={[{ title: t("tools.title") }]} />
+        <div className={styles.loadError}>
+          <Alert
+            type="error"
+            showIcon
+            message={t("tools.loadError")}
+            action={
+              <Button type="primary" onClick={() => void loadTools()}>
+                {t("common.retry")}
+              </Button>
+            }
+          />
+        </div>
+      </div>
+    );
+  }
+
+  if (loading || !ready) {
+    return (
+      <div className={styles.toolsPage}>
+        <PageHeader items={[{ title: t("tools.title") }]} />
+        <div className={styles.empty} role="status">
+          <Spin />
+          <span>{t("common.loading")}</span>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div
       className={`${styles.toolsPage} ${embedded ? styles.embeddedPage : ""}`}
@@ -388,6 +422,13 @@ export default function ToolsPage({ embedded = false }: ToolsPageProps = {}) {
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
+        {ready && <div className={styles.summary}>
+          <span>{t("tools.enabledCount", { enabled: enabledTools.length, total: tools.length })}</span>
+          <div className={styles.batchActions}>
+            <Button data-press disabled={batchLoading || loading || disabledTools.length === 0} onClick={enableAll}>{t("tools.enableAll")}</Button>
+            <Button data-press disabled={batchLoading || loading || enabledTools.length === 0} onClick={disableAll}>{t("tools.disableAll")}</Button>
+          </div>
+        </div>}
         {loading ? (
           <div className={styles.loading} role="status">
             <Spin />

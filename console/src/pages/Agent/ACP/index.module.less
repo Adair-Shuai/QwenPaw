@@ -67,6 +67,18 @@
   font-weight: 500;
 }
 
+.loadError {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  padding: 32px;
+  color: var(--app-error-text);
+  text-align: center;
+}
+
 @media (max-width: 768px) {
   .filterControls {
     width: 100%;
@@ -76,6 +88,11 @@
     display: flex;
     align-items: flex-start;
     flex-direction: column;
+}
+
+  .headerActions :global(.ant-btn),
+  .headerActions :global(.qwenpaw-btn) {
+    min-height: var(--app-hit-touch);
   }
 
   .pageHeader {

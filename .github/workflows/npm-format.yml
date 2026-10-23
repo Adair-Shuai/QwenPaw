@@ -59,7 +59,7 @@ jobs:
         if: steps.draft.outputs.value != 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: "22"
+          node-version-file: .nvmrc
           cache: "pnpm"
           cache-dependency-path: website/pnpm-lock.yaml
 
@@ -118,7 +118,7 @@ jobs:
         if: steps.draft.outputs.value != 'true'
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version-file: .nvmrc
           cache: "pnpm"
           cache-dependency-path: console/pnpm-lock.yaml
 
