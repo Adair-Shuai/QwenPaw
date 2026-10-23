@@ -1931,6 +1931,7 @@
 }
 .df-right-workspace > .df-pane-toggle {
   margin: 8px 12px 0;
+  align-self: flex-start;
 }
 .df-project-app .df-pane-collapsed {
   width: 44px;
@@ -1952,6 +1953,9 @@
   writing-mode: vertical-rl;
   letter-spacing: 3px;
   margin-top: 6px;
+}
+.df-right-workspace.df-pane-collapsed {
+  padding-top: 64px;
 }
 @media (max-width: 850px) {
   .df-three-column .df-right-workspace.df-pane-collapsed {
