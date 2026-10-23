@@ -175,6 +175,8 @@ function ProjectChat({ project, stageId, selection, services }) {
 }
 
 export default function RightWorkspace({
+  collapsed = false,
+  onToggle,
   project,
   stageId,
   services,
@@ -220,7 +222,20 @@ export default function RightWorkspace({
     ),
   );
   return (
-    <aside className="df-right-workspace" aria-label="项目智能体与文件预览">
+    <aside
+      className={"df-right-workspace" + (collapsed ? " df-pane-collapsed" : "")}
+      aria-label="项目智能体与文件预览"
+    >
+      <button
+        className="df-pane-toggle"
+        aria-label={collapsed ? "展开问答与预览栏" : "收起问答与预览栏"}
+        aria-expanded={!collapsed}
+        title={collapsed ? "展开问答与预览栏" : "收起问答与预览栏"}
+        onClick={onToggle}
+      >
+        <span aria-hidden="true">{collapsed ? "‹" : "›"}</span>
+        <span>{collapsed ? "问答与预览" : "收起"}</span>
+      </button>
       <header>
         <div>
           <span className="df-eyebrow">项目工作区</span>

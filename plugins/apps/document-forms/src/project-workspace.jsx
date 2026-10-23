@@ -209,6 +209,8 @@ export default function ProjectWorkspace({ Editor, services }) {
   const [dialog, setDialog] = useState(null),
     [form, setForm] = useState({});
   const [preview, setPreview] = useState(null);
+  const [leftCollapsed, setLeftCollapsed] = useState(false),
+    [rightCollapsed, setRightCollapsed] = useState(false);
   const [selection, setSelection] = useState(null),
     [dockMode, setDockMode] = useState("assistant");
   const alive = useRef(true),
@@ -430,7 +432,9 @@ export default function ProjectWorkspace({ Editor, services }) {
     <main
       className={
         "df-app df-project-app" +
-        (project?.single_form ? " df-three-column" : "")
+        (project?.single_form ? " df-three-column" : "") +
+        (leftCollapsed ? " df-left-collapsed" : "") +
+        (rightCollapsed ? " df-right-collapsed" : "")
       }
       data-theme={theme}
     >
@@ -459,7 +463,23 @@ export default function ProjectWorkspace({ Editor, services }) {
           uploadAttachment(file);
         }}
       />
-      <aside className="df-sidebar df-project-sidebar">
+      <aside
+        className={
+          "df-sidebar df-project-sidebar" +
+          (leftCollapsed ? " df-pane-collapsed" : "")
+        }
+        aria-label="项目选择"
+      >
+        <button
+          className="df-pane-toggle"
+          aria-label={leftCollapsed ? "展开项目栏" : "收起项目栏"}
+          aria-expanded={!leftCollapsed}
+          title={leftCollapsed ? "展开项目栏" : "收起项目栏"}
+          onClick={() => setLeftCollapsed((value) => !value)}
+        >
+          <span aria-hidden="true">{leftCollapsed ? "›" : "‹"}</span>
+          <span>{leftCollapsed ? "项目" : "收起"}</span>
+        </button>
         <div className="df-brand">
           UGSci <span>项目材料</span>
         </div>
@@ -1126,6 +1146,8 @@ export default function ProjectWorkspace({ Editor, services }) {
       {project?.single_form && (
         <RightWorkspace
           key={project.id}
+          collapsed={rightCollapsed}
+          onToggle={() => setRightCollapsed((value) => !value)}
           project={project}
           stageId={tab}
           services={services}

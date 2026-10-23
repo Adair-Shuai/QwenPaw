@@ -677,6 +677,25 @@ it("keeps a single project form in the middle while questions and Office preview
     within(right).getByLabelText("向项目智能体提问"),
     "有哪些材料？",
   );
+  await user.click(screen.getByRole("button", { name: "收起项目栏" }));
+  expect(screen.getByRole("button", { name: "展开项目栏" })).toHaveAttribute(
+    "aria-expanded",
+    "false",
+  );
+  expect(
+    screen.queryByRole("navigation", { name: "项目列表" }),
+  ).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "收起问答与预览栏" }));
+  expect(right.closest(".df-right-collapsed")).toBeTruthy();
+  expect(screen.queryByLabelText("向项目智能体提问")).not.toBeVisible();
+  expect(field).toHaveValue("正在填写的内容");
+  await user.click(screen.getByRole("button", { name: "展开项目栏" }));
+  await user.click(screen.getByRole("button", { name: "展开问答与预览栏" }));
+  expect(screen.getByRole("navigation", { name: "项目列表" })).toBeVisible();
+  expect(within(right).getByLabelText("向项目智能体提问")).toHaveValue(
+    "有哪些材料？",
+  );
+
   await user.click(within(right).getByRole("button", { name: "发送问题" }));
   await within(right).findByText("请核对本阶段材料清单。");
   expect(field).toHaveValue("正在填写的内容");
@@ -692,6 +711,12 @@ it("keeps a single project form in the middle while questions and Office preview
   await within(right).findByRole("button", { name: "文字预览" });
   await user.click(within(right).getByRole("button", { name: "文字预览" }));
   await within(right).findByTestId("right-office-preview");
+  const officePreview = within(right).getByTestId("right-office-preview");
+  await user.click(screen.getByRole("button", { name: "收起问答与预览栏" }));
+  expect(officePreview).not.toBeVisible();
+  await user.click(screen.getByRole("button", { name: "展开问答与预览栏" }));
+  expect(officePreview).toBeVisible();
+
   expect(field).toHaveValue("正在填写的内容");
   await user.click(within(right).getByRole("button", { name: /就此文件提问/ }));
   expect(within(right).getByText("参考文件：" + filename)).toBeVisible();

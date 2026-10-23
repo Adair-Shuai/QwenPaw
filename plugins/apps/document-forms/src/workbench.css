@@ -1618,7 +1618,10 @@
 }
 .df-app.df-three-column {
   display: grid;
-  grid-template-columns: 190px minmax(440px, 1fr) minmax(360px, 0.82fr);
+  grid-template-columns: var(--df-left-width, 190px) minmax(440px, 1fr) var(
+      --df-right-width,
+      minmax(360px, 0.82fr)
+    );
   min-height: 640px;
   overflow: hidden;
 }
@@ -1857,7 +1860,10 @@
 }
 @media (max-width: 1050px) {
   .df-app.df-three-column {
-    grid-template-columns: 150px minmax(380px, 1fr) 330px;
+    grid-template-columns: var(--df-left-width, 150px) minmax(380px, 1fr) var(
+        --df-right-width,
+        330px
+      );
   }
   .df-three-column .df-project-main {
     padding: 18px;
@@ -1869,7 +1875,7 @@
 }
 @media (max-width: 850px) {
   .df-app.df-three-column {
-    grid-template-columns: 130px minmax(360px, 1fr);
+    grid-template-columns: var(--df-left-width, 130px) minmax(0, 1fr);
     height: auto;
     max-height: 100%;
     overflow: auto;
@@ -1896,4 +1902,72 @@
   border: 0;
   padding: 5px;
   background: transparent;
+}
+
+.df-project-app.df-left-collapsed {
+  --df-left-width: 44px;
+}
+.df-project-app.df-right-collapsed {
+  --df-right-width: 44px;
+}
+.df-app .df-pane-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  align-self: flex-end;
+  flex-shrink: 0;
+  padding: 3px 7px;
+  font-size: 11px;
+  color: var(--df-muted);
+  background: transparent;
+}
+.df-pane-toggle > span:first-child {
+  font-size: 20px;
+  line-height: 1;
+}
+.df-project-sidebar > .df-pane-toggle {
+  margin: -12px -4px 12px 0;
+}
+.df-right-workspace > .df-pane-toggle {
+  margin: 8px 12px 0;
+}
+.df-project-app .df-pane-collapsed {
+  width: 44px;
+  padding: 12px 4px;
+  display: flex;
+  overflow: hidden;
+}
+.df-project-app .df-pane-collapsed > :not(.df-pane-toggle) {
+  display: none;
+}
+.df-project-app .df-pane-collapsed > .df-pane-toggle {
+  margin: 0;
+  width: 35px;
+  padding: 8px 4px;
+  flex-direction: column;
+  align-self: center;
+}
+.df-pane-collapsed > .df-pane-toggle > span:last-child {
+  writing-mode: vertical-rl;
+  letter-spacing: 3px;
+  margin-top: 6px;
+}
+@media (max-width: 850px) {
+  .df-three-column .df-right-workspace.df-pane-collapsed {
+    width: auto;
+    min-height: 0;
+    padding: 6px 12px;
+    border-top: 1px solid var(--df-line);
+  }
+  .df-three-column .df-right-workspace.df-pane-collapsed > .df-pane-toggle {
+    width: auto;
+    flex-direction: row;
+    align-self: flex-start;
+  }
+  .df-right-workspace.df-pane-collapsed > .df-pane-toggle > span:last-child {
+    writing-mode: horizontal-tb;
+    letter-spacing: 0;
+    margin: 0;
+  }
 }
