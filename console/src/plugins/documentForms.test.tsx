@@ -688,6 +688,39 @@ it("keeps a single project form in the middle while questions and Office preview
   await user.click(screen.getByRole("button", { name: "收起问答与预览栏" }));
   expect(right.closest(".df-right-collapsed")).toBeTruthy();
   expect(screen.queryByLabelText("向项目智能体提问")).not.toBeVisible();
+  await user.click(screen.getByRole("button", { name: "展开问答与预览栏" }));
+  const resizer = within(right).getByRole("separator", {
+    name: "调整问答与预览栏宽度",
+  });
+  const initialWidth = Number(resizer.getAttribute("aria-valuenow"));
+  fireEvent(
+    resizer,
+    new MouseEvent("pointerdown", { bubbles: true, button: 0, clientX: 600 }),
+  );
+  fireEvent(
+    resizer,
+    new MouseEvent("pointermove", { bubbles: true, clientX: 520 }),
+  );
+  fireEvent(resizer, new MouseEvent("pointerup", { bubbles: true }));
+  expect(resizer).toHaveAttribute("aria-valuenow", String(initialWidth + 80));
+  fireEvent.keyDown(resizer, { key: "ArrowRight" });
+  expect(resizer).toHaveAttribute("aria-valuenow", String(initialWidth + 56));
+  fireEvent.keyDown(resizer, { key: "Home" });
+  expect(resizer).toHaveAttribute("aria-valuenow", "300");
+  fireEvent.keyDown(resizer, { key: "End" });
+  expect(resizer).toHaveAttribute(
+    "aria-valuenow",
+    resizer.getAttribute("aria-valuemax"),
+  );
+  fireEvent.doubleClick(resizer);
+  expect(resizer).toHaveAttribute("aria-valuenow", "500");
+  expect(window.localStorage.getItem("ugsci.document-forms.right-width")).toBe(
+    "500",
+  );
+  expect(within(right).getByLabelText("向项目智能体提问")).toHaveValue(
+    "有哪些材料？",
+  );
+  await user.click(screen.getByRole("button", { name: "收起问答与预览栏" }));
   expect(field).toHaveValue("正在填写的内容");
   await user.click(screen.getByRole("button", { name: "展开项目栏" }));
   await user.click(screen.getByRole("button", { name: "展开问答与预览栏" }));

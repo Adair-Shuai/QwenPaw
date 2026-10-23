@@ -1620,7 +1620,11 @@
   display: grid;
   grid-template-columns: var(--df-left-width, 190px) minmax(440px, 1fr) var(
       --df-right-width,
-      minmax(360px, 0.82fr)
+      clamp(
+        300px,
+        var(--df-dock-size, 500px),
+        calc(100% - var(--df-left-width, 190px) - 440px)
+      )
     );
   min-height: 640px;
   overflow: hidden;
@@ -1862,7 +1866,11 @@
   .df-app.df-three-column {
     grid-template-columns: var(--df-left-width, 150px) minmax(380px, 1fr) var(
         --df-right-width,
-        330px
+        clamp(
+          300px,
+          var(--df-dock-size, 500px),
+          calc(100% - var(--df-left-width, 150px) - 380px)
+        )
       );
   }
   .df-three-column .df-project-main {
@@ -1973,5 +1981,41 @@
     writing-mode: horizontal-tb;
     letter-spacing: 0;
     margin: 0;
+  }
+}
+
+.df-right-workspace {
+  position: relative;
+}
+.df-dock-resizer {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 10px;
+  z-index: 4;
+  cursor: col-resize;
+  touch-action: none;
+  outline-offset: -2px;
+}
+.df-dock-resizer::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 3px;
+  background: transparent;
+}
+.df-dock-resizer:hover::after,
+.df-dock-resizer:focus-visible::after,
+.df-resizing > .df-dock-resizer::after {
+  background: var(--df-accent);
+}
+.df-three-column:has(.df-resizing) {
+  cursor: col-resize;
+  user-select: none;
+}
+@media (max-width: 850px) {
+  .df-dock-resizer {
+    display: none;
   }
 }

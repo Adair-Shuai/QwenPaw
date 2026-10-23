@@ -176,6 +176,9 @@ function ProjectChat({ project, stageId, selection, services }) {
 
 export default function RightWorkspace({
   collapsed = false,
+  width,
+  maxWidth,
+  onResize,
   onToggle,
   project,
   stageId,
@@ -189,6 +192,12 @@ export default function RightWorkspace({
   onChanged,
   dirty = false,
 }) {
+  const drag = useRef(null);
+  const [resizing, setResizing] = useState(false);
+  const finishResize = () => {
+    drag.current = null;
+    setResizing(false);
+  };
   const [Preview, setPreview] = useState(null);
   const [error, setError] = useState("");
   async function safeDownload(path, name) {
@@ -223,9 +232,51 @@ export default function RightWorkspace({
   );
   return (
     <aside
-      className={"df-right-workspace" + (collapsed ? " df-pane-collapsed" : "")}
+      className={
+        "df-right-workspace" +
+        (collapsed ? " df-pane-collapsed" : "") +
+        (resizing ? " df-resizing" : "")
+      }
       aria-label="项目智能体与文件预览"
     >
+      <div
+        className="df-dock-resizer"
+        role="separator"
+        aria-label="调整问答与预览栏宽度"
+        aria-orientation="vertical"
+        aria-valuemin={300}
+        aria-valuemax={maxWidth}
+        aria-valuenow={width}
+        aria-valuetext={width + " 像素"}
+        tabIndex={0}
+        title="左右拖动调整宽度；双击恢复默认宽度"
+        onPointerDown={(event) => {
+          if (event.button !== 0) return;
+          event.preventDefault();
+          drag.current = { x: event.clientX, width, pointer: event.pointerId };
+          event.currentTarget.setPointerCapture?.(event.pointerId);
+          setResizing(true);
+        }}
+        onPointerMove={(event) => {
+          if (drag.current && drag.current.pointer === event.pointerId)
+            onResize(drag.current.width + drag.current.x - event.clientX);
+        }}
+        onPointerUp={finishResize}
+        onPointerCancel={finishResize}
+        onLostPointerCapture={finishResize}
+        onDoubleClick={() => onResize(500)}
+        onKeyDown={(event) => {
+          const next = {
+            ArrowLeft: width + 24,
+            ArrowRight: width - 24,
+            Home: 300,
+            End: maxWidth,
+          }[event.key];
+          if (next === undefined) return;
+          event.preventDefault();
+          onResize(next);
+        }}
+      />
       <button
         className="df-pane-toggle"
         aria-label={collapsed ? "展开问答与预览栏" : "收起问答与预览栏"}

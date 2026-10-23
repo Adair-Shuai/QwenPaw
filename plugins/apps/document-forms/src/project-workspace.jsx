@@ -211,6 +211,58 @@ export default function ProjectWorkspace({ Editor, services }) {
   const [preview, setPreview] = useState(null);
   const [leftCollapsed, setLeftCollapsed] = useState(false),
     [rightCollapsed, setRightCollapsed] = useState(false);
+  const [rightWidth, setRightWidth] = useState(() => {
+    try {
+      const saved = Number(
+        window.localStorage.getItem("ugsci.document-forms.right-width"),
+      );
+      return Number.isFinite(saved) && saved >= 300 && saved <= 3000
+        ? saved
+        : 500;
+    } catch {
+      return 500;
+    }
+  });
+  const [rightMax, setRightMax] = useState(1200);
+  const layout = useRef(null);
+  useEffect(() => {
+    const element = layout.current;
+    if (!element || !project?.single_form) return;
+    const measure = () => {
+      const width = element.getBoundingClientRect().width;
+      if (width <= 850) return;
+      const left = element
+        .querySelector(".df-project-sidebar")
+        .getBoundingClientRect().width;
+      const maximum = Math.max(
+        300,
+        Math.floor(width - left - (window.innerWidth <= 1050 ? 380 : 440)),
+      );
+      setRightMax(maximum);
+      setRightWidth((value) => Math.min(maximum, Math.max(300, value)));
+    };
+    measure();
+    const observer =
+      typeof ResizeObserver === "function" ? new ResizeObserver(measure) : null;
+    observer?.observe(element);
+    window.addEventListener("resize", measure);
+    return () => {
+      observer?.disconnect();
+      window.removeEventListener("resize", measure);
+    };
+  }, [leftCollapsed, project?.single_form]);
+  useEffect(() => {
+    try {
+      window.localStorage.setItem(
+        "ugsci.document-forms.right-width",
+        String(rightWidth),
+      );
+    } catch {
+      /* Storage can be unavailable in private windows. */
+    }
+  }, [rightWidth]);
+  const resizeRight = (width) =>
+    setRightWidth(Math.min(rightMax, Math.max(300, Math.round(width))));
   const [selection, setSelection] = useState(null),
     [dockMode, setDockMode] = useState("assistant");
   const alive = useRef(true),
@@ -430,6 +482,8 @@ export default function ProjectWorkspace({ Editor, services }) {
     );
   return (
     <main
+      ref={layout}
+      style={{ "--df-dock-size": rightWidth + "px" }}
       className={
         "df-app df-project-app" +
         (project?.single_form ? " df-three-column" : "") +
@@ -1147,6 +1201,9 @@ export default function ProjectWorkspace({ Editor, services }) {
         <RightWorkspace
           key={project.id}
           collapsed={rightCollapsed}
+          width={rightWidth}
+          maxWidth={rightMax}
+          onResize={resizeRight}
           onToggle={() => setRightCollapsed((value) => !value)}
           project={project}
           stageId={tab}
