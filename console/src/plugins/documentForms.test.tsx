@@ -1042,6 +1042,9 @@ it("fills plan-specific information, keeps common fields in the basic profile an
   expect(
     await within(dock).findByTestId("plan-office-preview"),
   ).toHaveTextContent("xlsx:");
+  expect(
+    within(dock).getByTestId("plan-office-preview").closest(".df-dock-office"),
+  ).toBeInTheDocument();
   expect(previews[previews.length - 1]).toMatchObject({
     extension: "xlsx",
     mimeType:

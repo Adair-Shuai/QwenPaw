@@ -453,7 +453,9 @@ export default function RightWorkspace({
           <section className="df-dock-preview" aria-label="文件预览">
             <h3>{selection.artifact.title}</h3>
             {Preview && selection.artifact.extension === "xlsx" ? (
-              <Preview artifact={selection.artifact} readOnly hostControls />
+              <div className="df-dock-office">
+                <Preview artifact={selection.artifact} readOnly hostControls />
+              </div>
             ) : Preview ? (
               <OfficePrintPreview
                 key={selection.artifact.id}

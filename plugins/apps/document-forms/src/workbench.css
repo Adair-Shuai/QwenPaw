@@ -1849,6 +1849,11 @@
   font-size: 10px;
   padding: 5px;
 }
+.df-dock-office {
+  height: max(360px, calc(100vh - 330px));
+  overflow: hidden;
+  border: 1px solid var(--df-line);
+}
 .df-dock-preview .df-attachment-preview {
   height: calc(100vh - 330px);
 }

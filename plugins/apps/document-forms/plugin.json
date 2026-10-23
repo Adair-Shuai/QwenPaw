@@ -1,7 +1,7 @@
 {
   "id": "document-forms",
   "name": "文书填报",
-  "version": "1.4.0",
+  "version": "1.4.1",
   "type": "app",
   "channel": "ugsci",
   "description": "按项目管理上报计划、选商论证、商务谈判、开题论证、结题验收与归档付款，共用资料、阶段材料、Word/Excel 填报和文件预览一处整理。",
