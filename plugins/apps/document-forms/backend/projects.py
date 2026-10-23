@@ -205,6 +205,19 @@ def values(fields):
     return {field["key"]: field["value"] for field in fields}
 
 
+def content_digest(case):
+    return hashlib.sha256(
+        json.dumps(
+            {
+                k: case.get(k, [])
+                for k in ("fields", "recipients", "rules", "templates")
+            },
+            sort_keys=True,
+            ensure_ascii=False,
+        ).encode(),
+    ).hexdigest()
+
+
 def default_stages():
     return [
         {
@@ -328,6 +341,30 @@ class ProjectStore:
     def form_fingerprint(self, root, project, stage_id):
         states = []
         for link in project["forms"]:
+            if link["case_id"] == project.get("form_id"):
+                case = self.host.load(root, link["case_id"])
+                context = case.get("stage_contexts", {}).get(stage_id)
+                if case.get("stage_id") == stage_id or context:
+                    states.append(
+                        (
+                            case["id"],
+                            content_digest(
+                                case
+                                if case.get("stage_id") == stage_id
+                                else context,
+                            ),
+                            [
+                                g["id"]
+                                for g in case["generations"]
+                                if g.get(
+                                    "stage_id",
+                                    case.get("original_stage_id"),
+                                )
+                                == stage_id
+                            ],
+                        ),
+                    )
+                continue
             if link["stage_id"] == stage_id:
                 case = self.host.load(root, link["case_id"])
                 states.append(
@@ -488,7 +525,13 @@ class ProjectStore:
         ]
         return {
             "case_id": case["id"],
-            "stage_id": link["stage_id"],
+            "original_stage_id": case.get(
+                "original_stage_id",
+                link["stage_id"],
+            ),
+            "stage_id": case.get("stage_id", link["stage_id"])
+            if case.get("project_form")
+            else link["stage_id"],
             "name": case["name"],
             "revision": case["revision"],
             "updated_at": case["updated_at"],
@@ -502,6 +545,7 @@ class ProjectStore:
 
     def public(self, root, project):
         result = copy.deepcopy(project)
+        result["single_form"] = True
         result["forms"] = [
             self.form_summary(root, project, f) for f in project["forms"]
         ]
@@ -606,6 +650,139 @@ class ProjectStore:
             raise HTTPException(404, "该表单不属于此项目")
         return link
 
+    def open_form(self, root, project, stage_id, workbook=None):
+        """One workbook per project; stages are pages, never new runs."""
+        # pylint: disable=too-many-branches,too-many-statements
+        self.stage(project, stage_id)
+        imported = None
+        if workbook:
+            try:
+                imported = self.host.read_excel(
+                    self.host.upload(workbook, ".xlsx"),
+                )
+            except Exception as exc:
+                if isinstance(exc, HTTPException):
+                    raise
+                raise HTTPException(422, f"Excel 无法读取：{exc}") from exc
+        keys = (
+            "fields",
+            "recipients",
+            "rules",
+            "templates",
+            "project_snapshot",
+            "template_notice",
+        )
+        case_id = project.get("form_id")
+        if not case_id:
+            candidates = [
+                self.host.load(root, f["case_id"]) for f in project["forms"]
+            ]
+            candidates.sort(
+                key=lambda c: (
+                    c.get("stage_id") == "negotiation",
+                    c["updated_at"],
+                ),
+                reverse=True,
+            )
+            created = (
+                candidates[0]
+                if candidates
+                else self.add_case(root, project, stage_id)
+            )
+            case = self.host.load(root, created["id"])
+            # Preserve the original bytes and old confirmations.
+            backup = self.path(root, project["id"]) / "form-history"
+            backup.mkdir(exist_ok=True)
+            (backup / (case["id"] + "_original.json")).write_bytes(
+                (
+                    self.host.folder(root, case["id"]) / "draft.json"
+                ).read_bytes(),
+            )
+            project["form_id"] = case["id"]
+            project["revision"] += 1
+            self.save(root, project)
+        else:
+            case = self.host.load(root, case_id)
+        case.setdefault(
+            "original_stage_id",
+            case.get("stage_id", "negotiation"),
+        )
+        contexts = case.setdefault("stage_contexts", {})
+        new_page = stage_id not in contexts
+        current = case.get("stage_id", "negotiation")
+        if (
+            current == stage_id
+            and workbook is None
+            and case.get("project_form")
+        ):
+            return self.host.public(case)
+        common = values(shared_fields(case["fields"]))
+        contexts[current] = {
+            k: copy.deepcopy(case[k]) for k in keys if k in case
+        }
+        contexts[current]["revision"] = case["revision"]
+        if workbook:
+            history = self.path(root, project["id"]) / "form-history"
+            history.mkdir(exist_ok=True)
+            (history / f"{case['id']}_r{case['revision']}.json").write_text(
+                json.dumps(case, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            data = imported
+            data["templates"] = contexts.get(stage_id, {}).get("templates", [])
+        elif stage_id in contexts:
+            data = copy.deepcopy(contexts[stage_id])
+        else:
+            data = {
+                "fields": self.host.builtin.blank_fields()
+                if stage_id == "negotiation"
+                else copy.deepcopy(project["fields"]),
+                "recipients": [
+                    {"name": "", "start": "", "end": ""} for _ in range(3)
+                ]
+                if stage_id == "negotiation"
+                else [],
+                "rules": [],
+                "templates": [],
+            }
+        for key in keys:
+            case.pop(key, None)
+        case.update({k: copy.deepcopy(data[k]) for k in keys if k in data})
+        for field in case["fields"]:
+            if not workbook and field["key"] in common:
+                field["value"] = common[field["key"]]
+            elif not field["value"]:
+                field["value"] = common.get(
+                    field["key"],
+                    values(project["fields"]).get(field["key"], ""),
+                )
+        case.update(
+            stage_id=stage_id,
+            name="项目表单",
+            project_form=True,
+            review_token=None,
+            revision=case["revision"] + 1,
+        )
+        case.setdefault(
+            "project_snapshot",
+            {
+                f["key"]: values(project["fields"]).get(f["key"], "")
+                for f in case["fields"]
+            },
+        )
+        if not case["templates"]:
+            try:
+                self.host.attach_default_templates(root, case)
+            except (ValueError, KeyError, OSError):
+                case["template_notice"] = "默认模板未能载入，请重新选择 Word 文件"
+        self.host.save(root, case)
+        if workbook or (
+            new_page and self.stage(project, stage_id)["status"] == "pending"
+        ):
+            self.touch(project, self.stage(project, stage_id), root)
+        self.save(root, project)
+        return self.host.public(case)
+
     def sync(self, root, project, case_id, body):
         link = self.linked(project, case_id)
         case = self.host.load(root, case_id)
@@ -626,7 +803,16 @@ class ProjectStore:
         case["revision"] += 1
         case["review_token"] = None
         self.host.save(root, case)
-        self.touch(project, self.stage(project, link["stage_id"]), root)
+        self.touch(
+            project,
+            self.stage(
+                project,
+                case.get("stage_id", link["stage_id"])
+                if case.get("project_form")
+                else link["stage_id"],
+            ),
+            root,
+        )
         self.save(root, project)
         return self.host.public(case)
 
@@ -674,17 +860,73 @@ class ProjectStore:
                     )
 
     def _archive_forms(self, archive, root, project, titles, stage_id):
+        # pylint: disable=too-many-branches
         for number, link in enumerate(project["forms"], 1):
-            if stage_id and link["stage_id"] != stage_id:
+            canonical = link["case_id"] == project.get("form_id")
+            if stage_id and link["stage_id"] != stage_id and not canonical:
                 continue
             case = self.host.load(root, link["case_id"])
+            if canonical:
+                contexts = copy.deepcopy(case.get("stage_contexts", {}))
+                contexts[case["stage_id"]] = case
+                for page_id, context in contexts.items():
+                    if stage_id and page_id != stage_id:
+                        continue
+                    page = dict(
+                        case,
+                        **{
+                            k: context[k]
+                            for k in (
+                                "fields",
+                                "recipients",
+                                "rules",
+                                "templates",
+                            )
+                        },
+                    )
+                    prefix = titles[page_id] + "/项目表单/"
+                    archive.writestr(
+                        prefix + "填写数据.xlsx",
+                        self.host.export_excel(page),
+                    )
+                    for t in page["templates"]:
+                        source = (
+                            self.host.folder(root, case["id"])
+                            / "templates"
+                            / (t["id"] + ".docx")
+                        )
+                        if (
+                            not source.is_file()
+                            or hashlib.sha256(source.read_bytes()).hexdigest()
+                            != t["sha256"]
+                        ):
+                            raise HTTPException(422, "项目表单模板缺失或校验失败")
+                        archive.write(
+                            source,
+                            prefix
+                            + "Word模板/"
+                            + self.host.name_only(t["name"]),
+                        )
+                if not stage_id:
+                    for history in (
+                        self.path(root, project["id"]) / "form-history"
+                    ).glob("*.json"):
+                        archive.write(history, "项目表单/历史底稿/" + history.name)
+                    for source in (
+                        self.host.folder(root, case["id"]) / "templates"
+                    ).glob("*.docx"):
+                        archive.write(source, "项目表单/模板原件/" + source.name)
             title = f"{number:02d}_" + self.host.name_only(case["name"])[:45]
             form_path = titles[link["stage_id"]] + "/表单底稿/" + title
-            archive.writestr(
-                form_path + "/填写数据.xlsx",
-                self.host.export_excel(case),
-            )
-            for index, template in enumerate(case["templates"], 1):
+            if not canonical:
+                archive.writestr(
+                    form_path + "/填写数据.xlsx",
+                    self.host.export_excel(case),
+                )
+            for index, template in enumerate(
+                [] if canonical else case["templates"],
+                1,
+            ):
                 source = (
                     self.host.folder(root, case["id"])
                     / "templates"
@@ -702,6 +944,12 @@ class ProjectStore:
                     target + self.host.name_only(template["name"]),
                 )
             for index, generation in enumerate(case["generations"], 1):
+                output_stage = generation.get(
+                    "stage_id",
+                    case.get("original_stage_id", link["stage_id"]),
+                )
+                if canonical and stage_id and output_stage != stage_id:
+                    continue
                 source = (
                     self.host.folder(root, case["id"])
                     / "outputs"
@@ -721,7 +969,7 @@ class ProjectStore:
                             raise ValueError("Invalid generated archive")
                 except (OSError, BadZipFile, ValueError) as exc:
                     raise HTTPException(422, "生成批次缺失或损坏，请检查后再打包") from exc
-                target = titles[link["stage_id"]] + "/生成文书/" + title
+                target = titles[output_stage] + "/生成文书/" + title
                 archive.write(source, target + f"_批次{index:02d}.zip")
 
     def archive(self, root, project, stage_id=None):
@@ -750,11 +998,17 @@ class ProjectStore:
                     stage_id,
                 )
                 self._archive_forms(archive, root, project, titles, stage_id)
-                if stage_id in (None, "negotiation"):
-                    from .review import (  # pylint: disable=E0402
-                        archive_reviews,
-                    )
+                from .review import (  # pylint: disable=E0402
+                    archive_reviews,
+                    archive_assistant,
+                )
 
+                archive_assistant(
+                    archive,
+                    self.path(root, project["id"]),
+                    stage_id,
+                )
+                if stage_id in (None, "negotiation"):
                     archive_reviews(archive, self.path(root, project["id"]))
         except Exception:
             stream.close()
@@ -1039,11 +1293,37 @@ def register_file_routes(router, scope, lock, store):
 
 
 def register_form_routes(router, scope, lock, store):
+    @router.post("/projects/{project_id}/form")
+    def open_project_form(
+        project_id: str,
+        body: CaseBody,
+        root=Depends(scope),
+    ):
+        with lock:
+            project = store.load(root, project_id)
+            store.check(project, body.revision)
+            return store.open_form(root, project, body.stage_id)
+
+    @router.post("/projects/{project_id}/form/import")
+    def import_project_form(
+        project_id: str,
+        revision: int = Form(...),
+        stage_id: str = Form(...),
+        workbook: UploadFile = File(...),
+        root=Depends(scope),
+    ):
+        with lock:
+            project = store.load(root, project_id)
+            store.check(project, revision)
+            return store.open_form(root, project, stage_id, workbook)
+
     @router.post("/projects/{project_id}/cases")
     def create_form(project_id: str, body: CaseBody, root=Depends(scope)):
         with lock:
             project = store.load(root, project_id)
             store.check(project, body.revision)
+            if project.get("form_id"):
+                return store.open_form(root, project, body.stage_id)
             return store.add_case(root, project, body.stage_id)
 
     @router.post("/projects/{project_id}/cases/import")
@@ -1057,6 +1337,8 @@ def register_form_routes(router, scope, lock, store):
         with lock:
             project = store.load(root, project_id)
             store.check(project, revision)
+            if project.get("form_id"):
+                return store.open_form(root, project, stage_id, workbook)
             return store.add_case(root, project, stage_id, workbook)
 
     @router.post("/projects/{project_id}/cases/{case_id}/sync")

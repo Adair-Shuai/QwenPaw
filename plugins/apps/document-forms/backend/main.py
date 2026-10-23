@@ -136,6 +136,7 @@ def save(root, case):
 
 def public(case):
     result = {k: v for k, v in case.items() if k != "review_token"}
+    result["content_digest"] = projects.content_digest(case)
     result["document_values"] = {
         f["key"]: document_field_value(f) for f in case["fields"]
     }
@@ -688,6 +689,8 @@ def generate(case_id: str, body: GenerateBody, root=Depends(scope)):
         )
         generation = {
             "id": generation_id,
+            "stage_id": case.get("stage_id", "negotiation"),
+            "content_digest": projects.content_digest(case),
             "revision": case["revision"],
             "created_at": datetime.now(timezone.utc).isoformat(),
             "files": files,
@@ -825,5 +828,6 @@ project_store = projects.register_routes(
     sys.modules[__name__],
 )
 response_review.register_routes(router, scope, _lock, project_store)
+response_review.register_assistant_routes(router, scope, _lock, project_store)
 app.include_router(router)
 plugin = app

@@ -1,6 +1,7 @@
 import CSS from "./workbench.css";
 import OfficeServicePreview from "./office-preview.jsx";
 import ResponseReview from "./response-review.jsx";
+import RightWorkspace from "./right-workspace.jsx";
 
 const Q = window.QwenPaw;
 const React = Q.host.React;
@@ -98,7 +99,13 @@ function Dialog({ title, children, onClose, error, busy = false }) {
   );
 }
 
-function AttachmentPreview({ file, projectId, download, onClose }) {
+function AttachmentPreview({
+  file,
+  projectId,
+  download,
+  onClose,
+  embedded = false,
+}) {
   const [Preview, setPreview] = useState(null);
   const [blob, setBlob] = useState("");
   const [error, setError] = useState("");
@@ -149,8 +156,14 @@ function AttachmentPreview({ file, projectId, download, onClose }) {
     agentId: Q.host.getSelectedAgentId?.(),
     createdAt: Date.parse(file.uploaded_at),
   };
+  const Wrapper = embedded ? "section" : Dialog;
   return (
-    <Dialog title={file.name} onClose={onClose}>
+    <Wrapper
+      {...(embedded
+        ? { className: "df-dock-preview", "aria-label": "文件预览" }
+        : { title: file.name, onClose })}
+    >
+      {embedded && <h3>{file.name}</h3>}
       <div className="df-attachment-preview">
         {error ? (
           <p role="alert">{error}</p>
@@ -176,7 +189,7 @@ function AttachmentPreview({ file, projectId, download, onClose }) {
         </button>
         <button onClick={onClose}>关闭预览</button>
       </div>
-    </Dialog>
+    </Wrapper>
   );
 }
 
@@ -196,12 +209,16 @@ export default function ProjectWorkspace({ Editor, services }) {
   const [dialog, setDialog] = useState(null),
     [form, setForm] = useState({});
   const [preview, setPreview] = useState(null);
+  const [selection, setSelection] = useState(null),
+    [dockMode, setDockMode] = useState("assistant");
   const alive = useRef(true),
     serial = useRef(0),
     excel = useRef(null),
     attachment = useRef(null),
     uploadTarget = useRef("");
   const mainScroll = useRef(null);
+  const activeProject = useRef(null);
+  activeProject.current = project?.id;
   useEffect(() => {
     mainScroll.current?.scrollTo?.({ top: 0 });
   }, [project?.id, tab, editor?.id]);
@@ -216,9 +233,25 @@ export default function ProjectWorkspace({ Editor, services }) {
     if (alive.current) setProjects(result);
     return result;
   }
-  async function reload(id = project?.id) {
+  async function reload(id = project?.id, navigation = false) {
     const result = id ? await request("/projects/" + id) : null;
-    if (alive.current && result) setProject(result);
+    if (
+      alive.current &&
+      result &&
+      (navigation || !activeProject.current || activeProject.current === id)
+    ) {
+      if (activeProject.current !== result.id) {
+        setPreview(null);
+        setSelection(null);
+        setDockMode("assistant");
+      }
+      activeProject.current = result.id;
+      setProject((current) =>
+        current?.id === result.id && current.revision > result.revision
+          ? current
+          : result,
+      );
+    }
     await list();
     return result;
   }
@@ -266,14 +299,21 @@ export default function ProjectWorkspace({ Editor, services }) {
   async function selectProject(id) {
     if (!canLeave()) return;
     await run("打开项目", async () => {
-      await reload(id);
       setEditor(null);
       setEditorDirty(false);
       setProfileDirty(false);
       setTab("overview");
+      await reload(id, true);
+      setEditor(null);
+      setEditorDirty(false);
+      setProfileDirty(false);
+      setPreview(null);
+      setSelection(null);
+      setDockMode("assistant");
+      setTab("overview");
     });
   }
-  function changeTab(id) {
+  async function changeTab(id) {
     if (!canLeave()) return;
     setTab(id);
     setEditor(null);
@@ -281,6 +321,21 @@ export default function ProjectWorkspace({ Editor, services }) {
     setProfileDirty(false);
     setNotice("");
     setError("");
+    if (project.single_form && project.stages.some((s) => s.id === id)) {
+      await run("打开项目表单", async () => {
+        const result = await request(
+          `/projects/${project.id}/form`,
+          json({ revision: project.revision, stage_id: id }),
+        );
+        await reload();
+        setEditor({
+          id: result.id,
+          view: "edit",
+          revision: result.revision,
+          initialDraft: result,
+        });
+      });
+    }
   }
   function openDialog(kind, initial) {
     setForm(initial);
@@ -307,17 +362,27 @@ export default function ProjectWorkspace({ Editor, services }) {
         data.append("revision", project.revision);
         data.append("stage_id", tab);
         data.append("workbook", file);
-        result = await request(`/projects/${project.id}/cases/import`, {
-          method: "POST",
-          body: data,
-        });
+        result = await request(
+          `/projects/${project.id}/${
+            project.single_form ? "form" : "cases"
+          }/import`,
+          {
+            method: "POST",
+            body: data,
+          },
+        );
       } else
         result = await request(
-          `/projects/${project.id}/cases`,
+          `/projects/${project.id}/${project.single_form ? "form" : "cases"}`,
           json({ revision: project.revision, stage_id: tab }),
         );
       await reload();
-      setEditor({ id: result.id, view: "edit" });
+      setEditor({
+        id: result.id,
+        view: "edit",
+        revision: result.revision,
+        initialDraft: project.single_form ? result : undefined,
+      });
       setEditorDirty(false);
       if (file)
         setNotice(
@@ -362,7 +427,13 @@ export default function ProjectWorkspace({ Editor, services }) {
       ),
     );
   return (
-    <main className="df-app df-project-app" data-theme={theme}>
+    <main
+      className={
+        "df-app df-project-app" +
+        (project?.single_form ? " df-three-column" : "")
+      }
+      data-theme={theme}
+    >
       <style>{CSS}</style>
       <input
         ref={excel}
@@ -557,11 +628,20 @@ export default function ProjectWorkspace({ Editor, services }) {
             </nav>
             {editor ? (
               <Editor
-                key={project.id + ":" + editor.id}
+                key={
+                  project.id +
+                  ":" +
+                  editor.id +
+                  ":" +
+                  tab +
+                  ":" +
+                  (editor.revision || "")
+                }
                 project={project}
                 workflowStage={stage}
                 initialCaseId={editor.id}
                 initialView={editor.view}
+                initialDraft={editor.initialDraft}
                 onDirtyChange={setEditorDirty}
                 onBusyChange={setEditorBusy}
                 onViewChange={() => mainScroll.current?.scrollTo?.({ top: 0 })}
@@ -571,6 +651,15 @@ export default function ProjectWorkspace({ Editor, services }) {
                   reload().catch((e) => setError(e.message));
                 }}
                 onChanged={() => reload()}
+                docked={project.single_form}
+                onStageStatus={() =>
+                  openDialog("stage", { ...stage, confirmed: false })
+                }
+                onPreview={(item) => {
+                  setSelection(item);
+                  setPreview(null);
+                  setDockMode("preview");
+                }}
               />
             ) : (
               <fieldset
@@ -782,18 +871,23 @@ export default function ProjectWorkspace({ Editor, services }) {
                     <section className="df-paper df-stage-forms">
                       <div className="df-section-head">
                         <div>
-                          <h2>填写与生成</h2>
+                          <h2>
+                            {project.single_form ? "项目表单" : "填写与生成"}
+                          </h2>
                           <p className="df-muted">
                             表单沿用项目底稿，核对后生成。已有批次保留生成时的内容。
                           </p>
                         </div>
                         <div className="df-actions">
-                          {stage.id === "negotiation" && (
+                          {(stage.id === "negotiation" ||
+                            project.single_form) && (
                             <button
                               className="df-primary"
                               onClick={() => createForm()}
                             >
-                              填写谈判材料
+                              {project.single_form
+                                ? "打开项目表单"
+                                : "填写谈判材料"}
                             </button>
                           )}
                           <button onClick={() => excel.current.click()}>
@@ -801,7 +895,11 @@ export default function ProjectWorkspace({ Editor, services }) {
                           </button>
                         </div>
                       </div>
-                      {forms.length ? (
+                      {project.single_form ? (
+                        <p className="df-muted">
+                          每个项目共用一份表单，六个阶段各办理一次。已有文书与历史底稿可在右侧查看。
+                        </p>
+                      ) : forms.length ? (
                         <div className="df-project-forms">
                           {forms.map((f) => (
                             <div key={f.case_id}>
@@ -853,7 +951,11 @@ export default function ProjectWorkspace({ Editor, services }) {
                           </p>
                         </div>
                         <button
-                          onClick={() => openDialog("response-review", {})}
+                          onClick={() =>
+                            project.single_form
+                              ? setDockMode("review")
+                              : openDialog("response-review", {})
+                          }
                         >
                           打开核查智能体 →
                         </button>
@@ -942,7 +1044,14 @@ export default function ProjectWorkspace({ Editor, services }) {
                                             </small>
                                           </div>
                                           <button
-                                            onClick={() => setPreview(file)}
+                                            onClick={() => {
+                                              setPreview(file);
+                                              setSelection({
+                                                artifact: { title: file.name },
+                                                reference: { file_id: file.id },
+                                              });
+                                              setDockMode("preview");
+                                            }}
                                           >
                                             预览
                                           </button>
@@ -1014,6 +1123,26 @@ export default function ProjectWorkspace({ Editor, services }) {
           </>
         )}
       </section>
+      {project?.single_form && (
+        <RightWorkspace
+          key={project.id}
+          project={project}
+          stageId={tab}
+          services={services}
+          mode={dockMode}
+          onMode={setDockMode}
+          selection={selection}
+          attachment={preview}
+          AttachmentPreview={AttachmentPreview}
+          dirty={editorDirty}
+          onSelect={(item) => {
+            setSelection(item);
+            setPreview(null);
+            setDockMode("preview");
+          }}
+          onChanged={() => reload().catch((e) => setError(e.message))}
+        />
+      )}
       {dialog === "response-review" && (
         <Dialog
           title="响应文件核查"
@@ -1041,6 +1170,9 @@ export default function ProjectWorkspace({ Editor, services }) {
               e.preventDefault();
               run("建立项目", async () => {
                 const p = await request("/projects", json(form));
+                setPreview(null);
+                setSelection(null);
+                setDockMode("assistant");
                 setProject(p);
                 setTab("overview");
                 setEditor(null);
@@ -1304,7 +1436,7 @@ export default function ProjectWorkspace({ Editor, services }) {
           </form>
         </Dialog>
       )}
-      {preview && (
+      {preview && !project.single_form && (
         <AttachmentPreview
           key={preview.id}
           file={preview}

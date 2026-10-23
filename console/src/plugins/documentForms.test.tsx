@@ -482,6 +482,246 @@ it("opens the response review agent only in negotiation and starts with explicit
   expect(submissions).toHaveLength(2);
 }, 30000);
 
+it("keeps a single project form in the middle while questions and Office preview stay in the right column", async () => {
+  const user = userEvent.setup();
+  let Page: React.ComponentType = () => null;
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+  const filename = "01_商务谈判文件_三栏测试.docx";
+  const generation = {
+    id: "g1",
+    date_style: "zh-CN",
+    naming_style: "formal",
+    created_at: "2026-10-23T01:00:00Z",
+    revision: 1,
+    stage_id: "negotiation",
+    files: [
+      {
+        name: filename,
+        size: 1024,
+        print_copies: 7,
+        recipient: "共用文件",
+        preview_url: "/api/files/preview/fixture.docx",
+      },
+    ],
+  };
+  const state: any = {
+    id: "project-form",
+    name: "项目表单",
+    stage_id: "negotiation",
+    original_stage_id: "negotiation",
+    revision: 1,
+    updated_at: "2026-10-23T01:00:00Z",
+    fields: [
+      {
+        key: "project.name",
+        label: "项目名称",
+        group: "项目资料",
+        kind: "text",
+        required: true,
+        value: "三栏测试项目",
+      },
+      {
+        key: "research.contents",
+        label: "主要研究内容（整段）",
+        group: "研究内容",
+        kind: "textarea",
+        required: false,
+        value: "已保存内容",
+      },
+    ],
+    recipients: [],
+    rules: [],
+    templates: [],
+    generations: [generation],
+  };
+  let stageId = "negotiation",
+    projectRevision = 1;
+  const messages: any[] = [],
+    opens: string[] = [],
+    questions: any[] = [];
+  const downloaded: string[] = [];
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    downloaded.push(this.download);
+  });
+  const project = (id = "p1") => ({
+    id,
+    name: id === "p1" ? "三栏测试项目" : "另一个项目",
+    code: "P001",
+    owner: "经办人",
+    revision: projectRevision,
+    single_form: true,
+    form_id: state.id,
+    fields: structuredClone(state.fields),
+    forms:
+      id === "p1"
+        ? [
+            {
+              case_id: state.id,
+              stage_id: stageId,
+              original_stage_id: "negotiation",
+              name: state.name,
+              revision: state.revision,
+              updated_at: state.updated_at,
+              outputs: 1,
+              generations: [generation],
+              shared_changes: [],
+            },
+          ]
+        : [],
+    stages: stageIds.map((id, i) => ({
+      id,
+      title: stageNames[i],
+      purpose: "阶段材料",
+      status: "pending",
+      materials: [],
+      upstream_changed: [],
+      missing_required: [],
+      notes: "",
+      due_date: "",
+      system_url: "",
+      system_name: "",
+      submission_ref: "",
+    })),
+  });
+  const hostFetch = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === "/document-forms/projects")
+      return reply([project(), project("p2")]);
+    if (url === "/document-forms/projects/p1") return reply(project());
+    if (url === "/document-forms/projects/p2") return reply(project("p2"));
+    if (url === "/document-forms/projects/p1/form") {
+      const body = JSON.parse(String(init?.body));
+      stageId = body.stage_id;
+      state.stage_id = stageId;
+      opens.push(state.id);
+      projectRevision++;
+      return reply(state);
+    }
+    if (url === "/document-forms/cases/project-form") return reply(state);
+    if (url.endsWith("/assistant") && init?.method === "POST") {
+      const body = JSON.parse(String(init.body));
+      questions.push(body);
+      const result = {
+        id: "q" + questions.length,
+        message: body.message,
+        created_at: "2026-10-23T01:00:00Z",
+        status: "completed",
+        reply: "请核对本阶段材料清单。",
+        error: "",
+      };
+      messages.push(result);
+      return reply(result);
+    }
+    if (url.endsWith("/assistant"))
+      return reply({ messages: url.includes("/p1/") ? messages : [] });
+    if (url.includes("/print/"))
+      return url.endsWith("?pages=1")
+        ? reply({ pages: 1 })
+        : new Response(new Blob(["png"], { type: "image/png" }));
+    if (url.includes("/outputs/")) return new Response("fixture-download");
+    throw new Error("Unexpected three-column request: " + url);
+  });
+  vi.stubGlobal(
+    "URL",
+    Object.assign(class extends URL {}, {
+      createObjectURL: () => "blob:three-column",
+      revokeObjectURL: vi.fn(),
+    }),
+  );
+  Object.defineProperty(window, "QwenPaw", {
+    configurable: true,
+    value: {
+      host: {
+        React,
+        fetch: hostFetch,
+        useTheme: () => "light",
+        getSelectedAgentId: () => "default",
+      },
+      workspace: {
+        loadPreview:
+          async () =>
+          ({ artifact }: any) => (
+            <div data-testid="right-office-preview">{artifact.title}</div>
+          ),
+      },
+      registerRoutes: (_id: string, routes: any[]) => {
+        Page = routes[0].component;
+      },
+    },
+  });
+  await act(async () => {
+    new Function(
+      "window",
+      "URL",
+      fs.readFileSync(
+        path.resolve(
+          process.cwd(),
+          "../plugins/apps/document-forms/ui/index.js",
+        ),
+        "utf8",
+      ),
+    )(window, URL);
+  });
+  renderWithProviders(<Page />);
+  const nav = await screen.findByRole("navigation", { name: "项目阶段" });
+  const right = await screen.findByRole("complementary", {
+    name: "项目智能体与文件预览",
+  });
+  expect(right.closest(".df-three-column")).toBeTruthy();
+  await user.click(within(nav).getByRole("button", { name: /商务谈判/ }));
+  const field = await screen.findByLabelText("主要研究内容（整段）");
+  await user.clear(field);
+  await user.type(field, "正在填写的内容");
+  await user.type(
+    within(right).getByLabelText("向项目智能体提问"),
+    "有哪些材料？",
+  );
+  await user.click(within(right).getByRole("button", { name: "发送问题" }));
+  await within(right).findByText("请核对本阶段材料清单。");
+  expect(field).toHaveValue("正在填写的内容");
+  await user.click(within(right).getByRole("tab", { name: "预览" }));
+  expect(within(right).getByText(/建议打印 7 份/)).toBeVisible();
+  await user.click(
+    within(right).getByRole("button", { name: "下载" + filename }),
+  );
+  await waitFor(() => expect(downloaded).toContain(filename));
+  await user.click(within(right).getByRole("button", { name: "打包下载" }));
+  await waitFor(() => expect(downloaded).toContain("三栏测试项目_文书.zip"));
+  await user.click(within(right).getByRole("button", { name: filename }));
+  await within(right).findByRole("button", { name: "文字预览" });
+  await user.click(within(right).getByRole("button", { name: "文字预览" }));
+  await within(right).findByTestId("right-office-preview");
+  expect(field).toHaveValue("正在填写的内容");
+  await user.click(within(right).getByRole("button", { name: /就此文件提问/ }));
+  expect(within(right).getByText("参考文件：" + filename)).toBeVisible();
+  await user.type(
+    within(right).getByLabelText("向项目智能体提问"),
+    "核对该文件",
+  );
+  await user.click(within(right).getByRole("button", { name: "发送问题" }));
+  await waitFor(() => expect(questions).toHaveLength(2));
+  expect(questions[1].file).toEqual({
+    case_id: state.id,
+    generation_id: "g1",
+    name: filename,
+  });
+  await user.click(within(nav).getByRole("button", { name: /上报计划/ }));
+  await screen.findByLabelText("主要研究内容（整段）");
+  expect(confirm).toHaveBeenCalled();
+  await user.click(within(nav).getByRole("button", { name: /商务谈判/ }));
+  await screen.findByLabelText("主要研究内容（整段）");
+  expect(new Set(opens)).toEqual(new Set(["project-form"]));
+  expect(
+    hostFetch.mock.calls.some(
+      ([url]) => url.endsWith("/cases") || url.endsWith("/cases/import"),
+    ),
+  ).toBe(false);
+  await user.click(screen.getByRole("button", { name: /另一个项目.*P001/ }));
+  await screen.findByRole("heading", { name: "另一个项目" });
+  expect(screen.queryByText("请核对本阶段材料清单。")).not.toBeInTheDocument();
+}, 30000);
+
 it("reviews shared project differences before selectively updating a stage form and protects unsaved edits", async () => {
   const user = userEvent.setup();
   let Page: React.ComponentType = () => null;

@@ -1,4 +1,3 @@
-import CSS from "./workbench.css";
 import OfficeServicePreview, { OfficePrintPreview } from "./office-preview.jsx";
 import ProjectWorkspace from "./project-workspace.jsx";
 const Q = window.QwenPaw,
@@ -129,11 +128,15 @@ function Workbench({
   workflowStage,
   initialCaseId,
   initialView,
+  initialDraft,
   onBack,
   onChanged,
   onDirtyChange,
   onBusyChange,
   onViewChange,
+  docked = false,
+  onPreview,
+  onStageStatus,
 }) {
   const [draft, setDraft] = useState(null);
   const [comparison, setComparison] = useState(null);
@@ -155,7 +158,10 @@ function Workbench({
   const refresh = () => onChanged?.() || Promise.resolve();
   useEffect(() => {
     alive.current = true;
-    request("/cases/" + initialCaseId)
+    (initialDraft
+      ? Promise.resolve(initialDraft)
+      : request("/cases/" + initialCaseId)
+    )
       .then((data) => {
         if (!alive.current) return;
         receive(data);
@@ -272,7 +278,16 @@ function Workbench({
     (n, t) => n + (t.per_recipient ? draft.recipients.length : 1),
     0,
   );
-  const generation = draft?.generations[0];
+  const generation = draft?.generations.find(
+    (g) =>
+      !docked ||
+      (g.stage_id || draft.original_stage_id || workflowStage.id) ===
+        workflowStage.id,
+  );
+  useEffect(() => {
+    if (docked && stage === "files" && generation && !preview)
+      setPreview({ file: generation.files[0], generation });
+  }, [stage, generation?.id]);
   const issues = review?.checks.filter((r) => r.status !== "ok") || [];
   async function importExcel(file) {
     if (!file || !canLeave()) return;
@@ -281,10 +296,15 @@ function Workbench({
       form.append("workbook", file);
       form.append("revision", project.revision);
       form.append("stage_id", workflowStage.id);
-      const data = await request(`/projects/${project.id}/cases/import`, {
-        method: "POST",
-        body: form,
-      });
+      const data = await request(
+        `/projects/${project.id}/${
+          project.single_form ? "form" : "cases"
+        }/import`,
+        {
+          method: "POST",
+          body: form,
+        },
+      );
       receive(data);
       setPreview(null);
       setStage("edit");
@@ -385,9 +405,19 @@ function Workbench({
         createdAt: Date.parse(preview.generation.created_at),
       }
     : null;
+  useEffect(() => {
+    if (docked && stage === "files" && artifact)
+      onPreview?.({
+        artifact,
+        reference: {
+          case_id: draft.id,
+          generation_id: preview.generation.id,
+          name: preview.file.name,
+        },
+      });
+  }, [stage, preview?.generation.id, preview?.file.name]);
   return (
     <div className="df-app df-embedded-editor" data-theme={theme}>
-      <style>{CSS}</style>
       <input
         ref={excelInput}
         type="file"
@@ -424,6 +454,15 @@ function Workbench({
           <span>
             {project.name} / {workflowStage.title}
           </span>
+          {docked && (
+            <button
+              disabled={!!busy || dirty}
+              title={dirty ? "请先保存表单" : "更新当前节点的办理信息"}
+              onClick={onStageStatus}
+            >
+              办理信息与状态
+            </button>
+          )}
           {draft && (
             <div className="df-actions">
               <button
@@ -452,7 +491,13 @@ function Workbench({
             <span className="df-eyebrow">
               {workflowStage.title} / 填写与生成
             </span>
-            <h1>{draft ? draft.name : "把重复填写的资料，整理成一张表。"}</h1>
+            <h1>
+              {draft
+                ? docked
+                  ? workflowStage.title + " · 项目表单"
+                  : draft.name
+                : "把重复填写的资料，整理成一张表。"}
+            </h1>
             <p>
               {draft
                 ? dirty
@@ -566,7 +611,7 @@ function Workbench({
               </section>
             </div>
           )}
-          {draft && stage === "edit" && (
+          {draft && (stage === "edit" || (docked && stage === "files")) && (
             <div className="df-edit-layout">
               <section className="df-paper">
                 <div className="df-section-head">
@@ -984,7 +1029,7 @@ function Workbench({
               </section>
             </div>
           )}
-          {draft && stage === "files" && generation && (
+          {draft && stage === "files" && generation && !docked && (
             <div className="df-results">
               <section className="df-paper df-output-list">
                 <span className="df-eyebrow">生成记录</span>
@@ -993,7 +1038,10 @@ function Workbench({
                   {time(generation.created_at)} · 修订 {generation.revision}
                 </p>
                 <p className="df-muted">压缩包包含 Word、填写数据和核对记录</p>
-                {(dirty || generation.revision !== draft.revision) && (
+                {(dirty ||
+                  (generation.content_digest
+                    ? generation.content_digest !== draft.content_digest
+                    : generation.revision !== draft.revision)) && (
                   <div className="df-alert">
                     填写内容已有修改，下列文件保留生成时的内容。请重新核对并生成新版。
                   </div>

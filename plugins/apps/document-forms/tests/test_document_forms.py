@@ -147,6 +147,198 @@ def project_case(client, stage_id="negotiation"):
     return project, case
 
 
+def test_project_single_form_reuses_stage_pages_and_preserves_old_materials(
+    client,
+    sources,
+):
+    project, old = project_case(client)
+    base = f"/api/document-forms/projects/{project['id']}"
+    root = next(main.ROOT.iterdir())
+    old_bytes = (main.folder(root, old["id"]) / "draft.json").read_bytes()
+    another = client.post(
+        base + "/cases",
+        json={"revision": project["revision"], "stage_id": "negotiation"},
+    ).json()
+    project = client.get(base).json()
+    assert (
+        client.post(
+            base + "/form/import",
+            data={"revision": project["revision"], "stage_id": "plan"},
+            files={"workbook": ("bad.xlsx", b"invalid")},
+        ).status_code
+        == 422
+    )
+    assert client.get(base).json()["revision"] == project["revision"]
+    opened = client.post(
+        base + "/form",
+        json={"revision": project["revision"], "stage_id": "negotiation"},
+    ).json()
+    assert opened["id"] == another["id"]
+    assert len(opened["templates"]) == 5
+    project = client.get(base).json()
+    same = client.post(
+        base + "/form",
+        json={"revision": project["revision"], "stage_id": "negotiation"},
+    ).json()
+    assert (
+        same["id"] == opened["id"] and same["revision"] == opened["revision"]
+    )
+    plan = client.post(
+        base + "/form",
+        json={"revision": project["revision"], "stage_id": "plan"},
+    ).json()
+    assert plan["id"] == opened["id"] and plan["templates"] == []
+    saved = client.put(
+        f"/api/document-forms/cases/{plan['id']}",
+        json={
+            "revision": plan["revision"],
+            "name": plan["name"],
+            "values": dict(
+                values_for(plan),
+                **{"project.background": "全项目共用背景"},
+            ),
+            "recipients": [],
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    project = client.get(base).json()
+    returned = client.post(
+        base + "/form",
+        json={"revision": project["revision"], "stage_id": "negotiation"},
+    ).json()
+    assert returned["id"] == opened["id"]
+    assert values_for(returned)["project.background"] == "全项目共用背景"
+    assert len(returned["templates"]) == 5 and len(returned["recipients"]) == 3
+    project = client.get(base).json()
+    completed = client.put(
+        base + "/stages/negotiation",
+        json={
+            "revision": project["revision"],
+            "status": "completed",
+            "confirmed": True,
+            "notes": "本节点材料已人工核实。",
+        },
+    )
+    assert completed.status_code == 200, completed.text
+    project = completed.json()
+    client.post(
+        base + "/form",
+        json={"revision": project["revision"], "stage_id": "plan"},
+    )
+    project = client.get(base).json()
+    client.post(
+        base + "/form",
+        json={"revision": project["revision"], "stage_id": "negotiation"},
+    )
+    project = client.get(base).json()
+    node = next(s for s in project["stages"] if s["id"] == "negotiation")
+    assert node["status"] == "completed" and not node["documents_changed"]
+    imported = client.post(
+        base + "/form/import",
+        data={"revision": project["revision"], "stage_id": "kickoff"},
+        files={"workbook": ("开题.xlsx", sources["变量管理表.xlsx"])},
+    ).json()
+    assert imported["id"] == opened["id"] and imported["templates"] == []
+    current = client.get(base).json()
+    assert len(current["forms"]) == 2 and current["form_id"] == opened["id"]
+    assert (
+        main.folder(root, old["id"]) / "draft.json"
+    ).read_bytes() == old_bytes
+    archive = client.get(base + "/bundle")
+    assert archive.status_code == 200, archive.text
+    with ZipFile(io.BytesIO(archive.content)) as z:
+        assert z.testzip() is None
+        assert any("03_商务谈判/项目表单/Word模板" in n for n in z.namelist())
+        assert any("历史底稿" in n for n in z.namelist())
+    # Compatibility endpoints also reuse the adopted project workbook.
+    last = client.post(
+        base + "/cases",
+        json={"revision": current["revision"], "stage_id": "acceptance"},
+    ).json()
+    assert last["id"] == opened["id"]
+    assert len(client.get(base).json()["forms"]) == 2
+
+
+def test_project_assistant_keeps_project_conversation_and_file_scope(
+    client,
+    monkeypatch,
+):
+    import time
+    from qwenpaw.pawapp import get_scoped_ctx
+
+    project, _ = project_case(client)
+    base = f"/api/document-forms/projects/{project['id']}"
+    monkeypatch.setattr(
+        main.response_review,
+        "inherit_model",
+        lambda _source: None,
+    )
+    calls = []
+
+    class Context:
+        agent_id = "default"
+
+        async def chat_stream(self, message, session_id):
+            calls.append((self.agent_id, message, session_id))
+            yield {"text": "本阶段请核对材料清单；当前附件信息已读取。"}
+
+    client.app.dependency_overrides[get_scoped_ctx] = Context
+    try:
+        assert client.get(base + "/assistant").json() == {"messages": []}
+        assert not calls
+        assert (
+            client.post(base + "/assistant", json={"message": " "}).status_code
+            == 422
+        )
+        started = client.post(
+            base + "/assistant",
+            json={"message": "本阶段有哪些材料？", "stage_id": "negotiation"},
+        )
+        assert started.status_code == 200
+        for _ in range(100):
+            history = client.get(base + "/assistant").json()["messages"]
+            if history[0]["status"] != "running":
+                break
+            time.sleep(0.01)
+        assert history[0]["status"] == "completed"
+        assert "核对材料" in history[0]["reply"]
+        assert (
+            calls[0][0] == "ugsci-response-review"
+            and project["id"] in calls[0][2]
+        )
+        assert (
+            client.get(
+                base + "/assistant",
+                headers={"X-Agent-Id": "foreign"},
+            ).status_code
+            == 404
+        )
+        current = client.get(base).json()
+        assert current["revision"] == project["revision"]
+        foreign = client.post(
+            base + "/assistant",
+            json={
+                "message": "核对文件",
+                "file": {
+                    "case_id": "0" * 32,
+                    "generation_id": "1" * 32,
+                    "name": "secret.docx",
+                },
+            },
+        )
+        assert foreign.status_code == 200
+        for _ in range(100):
+            last = client.get(base + "/assistant").json()["messages"][-1]
+            if last["status"] != "running":
+                break
+            time.sleep(0.01)
+        assert last["status"] == "failed" and len(calls) == 1
+        with ZipFile(io.BytesIO(client.get(base + "/bundle").content)) as z:
+            assert "项目问答/问答记录.json" in z.namelist()
+    finally:
+        client.app.dependency_overrides.clear()
+
+
 def test_response_review_uses_scoped_agent_and_archives_immutable_inputs(
     client,
     monkeypatch,
@@ -311,11 +503,21 @@ def test_response_review_model_inheritance_preserves_custom_settings(
         active_model=None,
         channels="unchanged",
     )
-    monkeypatch.setattr(review, "load_agent_config", lambda _agent: selected)
+    monkeypatch.setattr(
+        review,
+        "load_agent_config",
+        lambda agent: profile if agent == review.AGENT_ID else selected,
+    )
+    mutations = []
+
+    def mutate(agent, edit):
+        mutations.append(agent)
+        edit(profile)
+
     monkeypatch.setattr(
         review,
         "mutate_agent_config",
-        lambda agent, edit: edit(profile),
+        mutate,
     )
     review.inherit_model("selected-agent")
     assert profile.active_model == selected.active_model
@@ -327,6 +529,7 @@ def test_response_review_model_inheritance_preserves_custom_settings(
     )
     review.inherit_model("selected-agent")
     assert profile.active_model.model == "model-b"
+    assert mutations == [review.AGENT_ID]
     profile.template_id = "another-app"
     with pytest.raises(RuntimeError, match="not owned"):
         review.inherit_model("selected-agent")
