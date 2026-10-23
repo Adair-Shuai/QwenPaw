@@ -1020,6 +1020,10 @@ it("fills plan-specific information, keeps common fields in the basic profile an
   expect(await screen.findByLabelText("本次申报外协经费（万元）")).toHaveValue(
     48.5,
   );
+  expect(
+    screen.getByText("按本次填写内容生成 Word 说明与 Excel 计划表。"),
+  ).toBeInTheDocument();
+  expect(screen.queryByText(/0 类按单位文书/)).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
   await user.click(await screen.findByRole("checkbox", { name: /我已核对/ }));
   await user.click(screen.getByRole("button", { name: "确认并生成 2 份文书" }));

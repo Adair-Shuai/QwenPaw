@@ -937,17 +937,27 @@ function Workbench({
                     本次计划生成 <b>{outputCount}</b> 份文书
                   </p>
                   <small>
-                    {templates.filter((t) => !t.per_recipient).length}{" "}
-                    份共用文件 ·{" "}
-                    {templates.filter((t) => t.per_recipient).length}{" "}
-                    类按单位文书 × {draft.recipients.length} 家单位
+                    {isPlan ? (
+                      "按本次填写内容生成 Word 说明与 Excel 计划表。"
+                    ) : (
+                      <>
+                        {templates.filter((t) => !t.per_recipient).length}{" "}
+                        份共用文件 ·{" "}
+                        {templates.filter((t) => t.per_recipient).length}{" "}
+                        类按单位文书 × {draft.recipients.length} 家单位
+                      </>
+                    )}
                   </small>
                 </div>
                 <div className="df-next-action">
                   <button className="df-primary" onClick={reviewDraft}>
                     核对填写内容 →
                   </button>
-                  <small>先核对缺项与日期，再确认生成</small>
+                  <small>
+                    {isPlan
+                      ? "先核对基础信息与申报经费，再确认生成"
+                      : "先核对缺项与日期，再确认生成"}
+                  </small>
                 </div>
               </section>
             </div>
