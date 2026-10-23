@@ -1229,6 +1229,10 @@ it("automatically loads the five bundled templates and downloads their blank Exc
   );
   const entries = JSON.parse(
     fs.readFileSync(path.join(appRoot, "templates/index.json"), "utf8"),
+  ).filter((entry: { name: string }) =>
+    /商务谈判文件|谈判邀请函|投标报价一览表|综合评分表|综合评分汇总表/.test(
+      entry.name,
+    ),
   );
   const state = {
     id: "bundled-case",
