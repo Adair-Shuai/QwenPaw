@@ -41,6 +41,7 @@ def release_fixture(tmp_path, monkeypatch):
             "backend/builtin.py",
             "backend/projects.py",
             "backend/review.py",
+            "backend/spreadsheets.py",
             "ui/index.js",
             "README.md",
             "requirements.txt",
@@ -151,6 +152,7 @@ def test_bad_package_digest_cannot_upload(release):
         "filled_schema",
         "bad_digest",
         "private_properties",
+        "xlsx_private_values",
     ],
 )
 def test_bundled_template_gate_blocks_incomplete_or_private_assets(
@@ -164,7 +166,20 @@ def test_bundled_template_gate_blocks_incomplete_or_private_assets(
     prefix = "document-forms/templates/"
     entries = json.loads(parts[prefix + "index.json"])
     name = prefix + entries[0]["name"]
-    if kind == "missing_template":
+    if kind == "xlsx_private_values":
+        from openpyxl import load_workbook
+
+        name = prefix + "02_科研计划填报_模板.xlsx"
+        book = load_workbook(io.BytesIO(parts[name]))
+        book.worksheets[0]["B3"] = "private project values"
+        stream = io.BytesIO()
+        book.save(stream)
+        parts[name] = stream.getvalue()
+        for entry in entries:
+            if entry["name"] == "02_科研计划填报_模板.xlsx":
+                entry["sha256"] = hashlib.sha256(parts[name]).hexdigest()
+        parts[prefix + "index.json"] = json.dumps(entries).encode()
+    elif kind == "missing_template":
         del parts[name]
     elif kind == "private_file":
         parts[prefix + "private-project.docx"] = parts[name]

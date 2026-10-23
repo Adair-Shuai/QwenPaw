@@ -2019,3 +2019,30 @@
     display: none;
   }
 }
+
+.df-plan-reference {
+  margin: 22px 0;
+  padding: 16px 0;
+  border-top: 1px solid var(--df-line);
+  border-bottom: 1px solid var(--df-line);
+}
+.df-plan-reference details > summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--df-muted);
+}
+.df-plan-reference dt {
+  font-weight: 600;
+  margin-top: 12px;
+}
+.df-plan-reference dd {
+  margin: 4px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.df-field-help {
+  font-family: inherit !important;
+  font-size: 11px !important;
+  line-height: 1.6;
+  color: var(--df-muted);
+}

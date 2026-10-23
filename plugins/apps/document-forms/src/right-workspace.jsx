@@ -10,9 +10,10 @@ export function generatedSelection(form, generation, file) {
       id: generation.id + file.name,
       title: file.name,
       source: "generated",
-      extension: "docx",
-      mimeType:
-        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      extension: file.name.endsWith(".xlsx") ? "xlsx" : "docx",
+      mimeType: file.name.endsWith(".xlsx")
+        ? "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        : "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
       binaryUrl: file.preview_url,
       printUrl: `/document-forms/cases/${form.case_id}/print/${
         generation.id
@@ -451,7 +452,9 @@ export default function RightWorkspace({
         ) : selection ? (
           <section className="df-dock-preview" aria-label="文件预览">
             <h3>{selection.artifact.title}</h3>
-            {Preview ? (
+            {Preview && selection.artifact.extension === "xlsx" ? (
+              <Preview artifact={selection.artifact} readOnly hostControls />
+            ) : Preview ? (
               <OfficePrintPreview
                 key={selection.artifact.id}
                 artifact={selection.artifact}

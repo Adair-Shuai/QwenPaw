@@ -780,6 +780,277 @@ it("keeps a single project form in the middle while questions and Office preview
   expect(screen.queryByText("请核对本阶段材料清单。")).not.toBeInTheDocument();
 }, 30000);
 
+it("fills plan-specific information, keeps common fields in the basic profile and previews generated Excel through Office", async () => {
+  const user = userEvent.setup();
+  let Page: React.ComponentType = () => null;
+  const common = [
+    {
+      key: "project.name",
+      label: "项目名称",
+      group: "基本信息",
+      kind: "text",
+      required: true,
+      value: "上报测试项目",
+      scope: "shared",
+    },
+    {
+      key: "research.contents",
+      label: "研究内容",
+      group: "研究内容",
+      kind: "textarea",
+      required: true,
+      value: "基础信息中的研究内容",
+      scope: "shared",
+    },
+  ];
+  const state: any = {
+    id: "plan-single",
+    name: "项目表单",
+    revision: 1,
+    stage_id: "plan",
+    plan_schema: 1,
+    updated_at: "2026-10-23T01:00:00Z",
+    fields: [
+      ...structuredClone(common),
+      {
+        key: "plan.name",
+        label: "本次申报计划名称",
+        group: "申报信息",
+        kind: "text",
+        required: true,
+        value: "上报名称",
+      },
+      {
+        key: "plan.budget_wan",
+        label: "本次申报外协经费（万元）",
+        group: "申报信息",
+        kind: "number",
+        required: true,
+        value: "47",
+      },
+      {
+        key: "plan.necessity",
+        label: "外协必要性说明",
+        group: "外协必要性",
+        kind: "textarea",
+        required: true,
+        value: "需外部团队支持。",
+      },
+    ],
+    recipients: [],
+    rules: [],
+    generations: [],
+    templates: [
+      {
+        id: "w1",
+        title: "外协必要性说明",
+        name: "01_外协必要性说明_模板.docx",
+        keys: [],
+        per_recipient: false,
+      },
+      {
+        id: "x1",
+        title: "科研计划填报",
+        name: "02_科研计划填报_模板.xlsx",
+        keys: [],
+        per_recipient: false,
+      },
+    ],
+  };
+  const project = () => ({
+    id: "p-plan",
+    name: "上报测试项目",
+    code: "P-01",
+    owner: "经办人",
+    revision: 1,
+    shared_revision: 1,
+    single_form: true,
+    form_id: state.id,
+    fields: structuredClone(common),
+    forms: [
+      {
+        case_id: state.id,
+        name: state.name,
+        stage_id: "plan",
+        revision: state.revision,
+        updated_at: state.updated_at,
+        outputs: state.generations.length * 2,
+        generations: state.generations,
+        shared_changes: [],
+      },
+    ],
+    stages: stageIds.map((id, i) => ({
+      id,
+      title: stageNames[i],
+      purpose: "阶段材料",
+      status: "pending",
+      materials: [],
+      upstream_changed: [],
+      missing_required: [],
+      notes: "",
+      due_date: "",
+      system_url: "",
+      system_name: "",
+      submission_ref: "",
+    })),
+  });
+  const saved: any[] = [],
+    previews: any[] = [];
+  const fetch = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === "/document-forms/projects") return reply([project()]);
+    if (url === "/document-forms/projects/p-plan") return reply(project());
+    if (url.endsWith("/assistant")) return reply({ messages: [] });
+    if (url === "/document-forms/projects/p-plan/form") return reply(state);
+    if (url === "/document-forms/cases/plan-single") {
+      if (init?.method === "PUT") {
+        const body = JSON.parse(String(init.body));
+        saved.push(body);
+        state.fields = state.fields.map((f: any) => ({
+          ...f,
+          value: body.values[f.key],
+        }));
+        state.revision++;
+      }
+      return reply(state);
+    }
+    if (url.endsWith("/review"))
+      return reply({
+        checks: [{ label: "填写信息", status: "ok", detail: "已填写" }],
+        can_generate: true,
+        review_token: "plan-token",
+        revision: state.revision,
+      });
+    if (url.endsWith("/generate")) {
+      expect(JSON.parse(String(init?.body))).toMatchObject({
+        confirmed: true,
+        review_token: "plan-token",
+      });
+      state.generations = [
+        {
+          id: "plan-g1",
+          stage_id: "plan",
+          revision: state.revision,
+          date_style: "zh-CN",
+          naming_style: "formal",
+          created_at: state.updated_at,
+          files: [
+            {
+              name: "01_外协必要性说明_上报测试项目.docx",
+              size: 1024,
+              recipient: "共用文件",
+              preview_url: "/api/files/preview/plan.docx",
+            },
+            {
+              name: "02_科研计划填报_上报测试项目.xlsx",
+              size: 2048,
+              recipient: "共用文件",
+              preview_url: "/api/files/preview/plan.xlsx",
+            },
+          ],
+        },
+      ];
+      return reply(state);
+    }
+    if (url.includes("/print/") && url.includes(".docx"))
+      return url.includes("pages=true")
+        ? reply({ pages: 1 })
+        : new Response(new Blob(["png"], { type: "image/png" }));
+    throw new Error("Unexpected plan request: " + url);
+  });
+  vi.stubGlobal(
+    "URL",
+    Object.assign(class extends URL {}, {
+      createObjectURL: () => "blob:plan-test",
+      revokeObjectURL: vi.fn(),
+    }),
+  );
+  Object.defineProperty(window, "QwenPaw", {
+    configurable: true,
+    value: {
+      host: {
+        React,
+        fetch,
+        useTheme: () => "light",
+        getSelectedAgentId: () => "default",
+      },
+      workspace: {
+        loadPreview:
+          async () =>
+          ({ artifact }: any) => {
+            previews.push(artifact);
+            return (
+              <div data-testid="plan-office-preview">
+                {artifact.extension}: {artifact.title}
+              </div>
+            );
+          },
+      },
+      registerRoutes: (_id: string, routes: any[]) => {
+        Page = routes[0].component;
+      },
+    },
+  });
+  await act(async () => {
+    new Function(
+      "window",
+      "URL",
+      fs.readFileSync(
+        path.resolve(
+          process.cwd(),
+          "../plugins/apps/document-forms/ui/index.js",
+        ),
+        "utf8",
+      ),
+    )(window, URL);
+  });
+  renderWithProviders(<Page />);
+  await user.click(await screen.findByRole("button", { name: /01 上报计划/ }));
+  const amount = await screen.findByLabelText("本次申报外协经费（万元）");
+  expect(screen.queryByLabelText("研究内容")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("heading", { name: /^受邀单位/ }),
+  ).not.toBeInTheDocument();
+  await user.clear(amount);
+  await user.type(amount, "48.5");
+  await user.click(screen.getByRole("button", { name: "编辑基础信息" }));
+  await screen.findByRole("heading", { name: "基础信息填报" });
+  expect(saved[0].values["plan.budget_wan"]).toBe("48.5");
+  expect(screen.getByLabelText("研究内容")).toHaveValue("基础信息中的研究内容");
+  await user.click(screen.getByRole("button", { name: /01 上报计划/ }));
+  expect(await screen.findByLabelText("本次申报外协经费（万元）")).toHaveValue(
+    48.5,
+  );
+  await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
+  await user.click(await screen.findByRole("checkbox", { name: /我已核对/ }));
+  await user.click(screen.getByRole("button", { name: "确认并生成 2 份文书" }));
+  const dock = screen.getByRole("complementary", {
+    name: "项目智能体与文件预览",
+  });
+  await within(dock).findByRole("heading", {
+    name: "01_外协必要性说明_上报测试项目.docx",
+  });
+  await user.click(within(dock).getByText(/本阶段文件/));
+  await user.click(
+    within(dock).getByRole("button", {
+      name: "02_科研计划填报_上报测试项目.xlsx",
+      exact: true,
+    }),
+  );
+  expect(
+    await within(dock).findByTestId("plan-office-preview"),
+  ).toHaveTextContent("xlsx:");
+  expect(previews.at(-1)).toMatchObject({
+    extension: "xlsx",
+    mimeType:
+      "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  expect(
+    fetch.mock.calls.some(
+      ([url]) => url.includes("/print/") && url.includes(".xlsx"),
+    ),
+  ).toBe(false);
+}, 30000);
+
 it("reviews shared project differences before selectively updating a stage form and protects unsaved edits", async () => {
   const user = userEvent.setup();
   let Page: React.ComponentType = () => null;

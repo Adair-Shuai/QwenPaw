@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import io
+from decimal import Decimal, InvalidOperation
 import re
 from datetime import date, datetime
 from zipfile import ZipFile, BadZipFile
@@ -29,12 +30,15 @@ PARTICIPANT_KEYS = {"participants", "participant_groups"}
 def template_metadata(name, index=1):
     """Separate formal document names from source-file working notes."""
     titles = (
+        ("外协必要性说明", ("外协必要性说明",)),
+        ("科研计划填报", ("科研计划填报",)),
         ("商务谈判文件", ("商务谈判文件", "谈判文件")),
         ("谈判邀请函", ("谈判邀请函", "邀请函")),
         ("投标报价一览表", ("投标报价一览", "谈判报价一览")),
         ("综合评分表", ("综合评分打分表", "综合评分表")),
         ("综合评分汇总表", ("综合评分总表", "综合评分汇总表")),
     )
+    extension = ".xlsx" if name.lower().endswith(".xlsx") else ".docx"
     title = next(
         (
             title
@@ -44,12 +48,13 @@ def template_metadata(name, index=1):
         None,
     )
     if title is None:
-        title = re.sub(r"\.docx$", "", name, flags=re.I)
+        title = re.sub(r"\.(?:docx|xlsx)$", "", name, flags=re.I)
         title = re.sub(r"^\d+[\s_.、-]+", "", title)
         title = re.sub(r"[ _-]*(?:示例)?模板$", "", title).strip() or "文书"
     return {
         "title": title,
-        "name": f"{index:02d}_{title}_模板.docx",
+        "name": f"{index:02d}_{title}_模板{extension}",
+        "extension": extension,
         "print_copies": 7 if title == "综合评分表" else 1,
         "print_note": "每位专家一份，得分及签字现场填写" if title == "综合评分表" else "",
     }
@@ -404,6 +409,17 @@ def _visit_template(node, undeclared, paths):
 
 
 def template_info(content: bytes, name: str, global_keys=()):
+    if name.lower().endswith(".xlsx"):
+        # Plugins load as dynamic packages; static lint cannot resolve them.
+        # pylint: disable=import-outside-toplevel,relative-beyond-top-level
+        from .spreadsheets import template_keys
+
+        inspect_zip(content, "xl/workbook.xml")
+        return {
+            **template_metadata(name),
+            "keys": sorted(template_keys(content, safe_key)),
+            "per_recipient": False,
+        }
     inspect_zip(content, "word/document.xml")
     template = DocxTemplate(io.BytesIO(content))
     template.init_docx()
@@ -627,8 +643,8 @@ def date_roles(fields):
 
 
 def checks(case):
-    # Required fields, templates, shared dates and recipients each add rules.
-    # pylint: disable=too-many-branches
+    # Required fields, templates, shared dates and budgets each add rules.
+    # pylint: disable=too-many-branches,too-many-statements
     fields, recipients = case["fields"], case["recipients"]
     values = {f["key"]: f["value"] for f in fields}
     field_labels = {f["key"]: f["label"] for f in fields}
@@ -645,6 +661,18 @@ def checks(case):
         )
 
     for f in fields:
+        if f["key"] == "plan.budget_wan" and f["value"]:
+            try:
+                amount = Decimal(f["value"])
+                valid = (
+                    amount.is_finite()
+                    and amount >= 0
+                    and len(f["value"]) <= 50
+                )
+            except InvalidOperation:
+                valid = False
+            if not valid:
+                add(f["label"], "error", "请按万元填写非负数值", f["key"])
         if f["required"] and not str(f["value"]).strip():
             add(f["label"], "missing", "尚未填写", f["key"])
         elif (
@@ -659,9 +687,9 @@ def checks(case):
             and key not in values
             and not any(k.startswith(key + ".") for k in values)
         ):
-            add(key, "missing", "Word 模板使用了此变量，Excel 中没有配置", key)
+            add(key, "missing", "文书模板使用了此变量，Excel 中没有配置", key)
     if not case["templates"]:
-        add("Word 模板", "missing", "请至少导入一个 Word 模板")
+        add("文书模板", "missing", "请至少导入一个 Word 或 Excel 模板")
     count = sum(
         len(recipients) if t["per_recipient"] else 1 for t in case["templates"]
     )
@@ -843,7 +871,20 @@ def check_recipients(case, roles, add, compare, overall_interval):
             )
 
 
-def render_template(content, fields, recipient=None, participants=()):
+def render_template(
+    content,
+    fields,
+    recipient=None,
+    participants=(),
+    extension=".docx",
+):
+    if extension == ".xlsx":
+        # Plugins load as dynamic packages; static lint cannot resolve them.
+        # pylint: disable=import-outside-toplevel,relative-beyond-top-level
+        from .spreadsheets import fill
+
+        inspect_zip(content, "xl/workbook.xml")
+        return fill(content, fields)
     context = {}
     for f in fields:
         cursor = context

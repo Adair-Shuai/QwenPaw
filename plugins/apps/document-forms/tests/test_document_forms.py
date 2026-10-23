@@ -105,6 +105,8 @@ def bundled_workbook(client, filled=False):
     with ZipFile(io.BytesIO(response.content)) as archive:
         assert set(archive.namelist()) == set(main.builtin.NAMES) | {
             "变量管理表.xlsx",
+            "上报计划/上报计划_变量管理表.xlsx",
+            *["上报计划/" + name for name in main.builtin.PLAN_NAMES],
         }
         data = archive.read("变量管理表.xlsx")
     if not filled:
@@ -130,6 +132,207 @@ def bundled_workbook(client, filled=False):
     output = io.BytesIO()
     book.save(output)
     return output.getvalue()
+
+
+def test_plan_templates_split_shared_information_and_generate_word_and_excel(
+    client,
+):
+    # Exercise real profile, form, review, generation and archive routes.
+    # pylint: disable=too-many-statements
+    project = client.post(
+        "/api/document-forms/projects",
+        json={"name": "统一项目 A & B", "code": "P-001", "owner": "测试经办人"},
+    ).json()
+    base = "/api/document-forms/projects/" + project["id"]
+    common = values_for(project)
+    common.update(
+        {
+            "project.background": "公共背景与研究依据。",
+            "research.contents": "（1）建模；\n（2）评价。",
+            "project.executing_unit": "测试执行部门",
+            "funding.project_name": "依托项目 A & B <测试>",
+            "funding.budget_note": "180/0",
+            "funding.wbs": "0000123",
+            "funding.channel": "股份",
+            "funding.source": "横向",
+            "budget.ceiling_number": "490000",
+        },
+    )
+    project = client.put(
+        base,
+        json={
+            "revision": project["revision"],
+            "name": project["name"],
+            "code": project["code"],
+            "owner": project["owner"],
+            "values": common,
+        },
+    ).json()
+    case = client.post(
+        base + "/form",
+        json={"revision": project["revision"], "stage_id": "plan"},
+    ).json()
+    assert [t["name"] for t in case["templates"]] == list(
+        main.builtin.PLAN_NAMES,
+    )
+    assert case["recipients"] == [] and "dates.issue" not in values_for(case)
+    assert {
+        f["key"] for f in case["fields"] if f.get("scope") == "shared"
+    } <= set(
+        common,
+    )
+    values = values_for(case)
+    values.update(
+        {
+            "plan.period": "2026年第二季度",
+            "plan.code": "测试所-1",
+            "plan.name": "本次申报名称 A & B <模型>",
+            "plan.budget_wan": "53",
+            "plan.classification": "C.实物工作量类",
+            "plan.necessity": "需要外部技术团队支持。",
+            "plan.partners": "1.计划甲单位\n2.计划乙单位\n3.计划丙单位",
+            "plan.category": "技术服务（科技）",
+            "plan.notes": '=HYPERLINK("file:///private","literal")',
+        },
+    )
+    route = "/api/document-forms/cases/" + case["id"]
+    case = client.put(
+        route,
+        json={
+            "revision": case["revision"],
+            "name": case["name"],
+            "values": values,
+            "recipients": [],
+        },
+    ).json()
+    check = client.post(
+        route + "/review",
+        json={"revision": case["revision"]},
+    ).json()
+    assert check["can_generate"], check
+    generated = client.post(
+        route + "/generate",
+        json={
+            "revision": case["revision"],
+            "confirmed": True,
+            "review_token": check["review_token"],
+        },
+    )
+    assert generated.status_code == 200, generated.text
+    batch = generated.json()["generations"][0]
+    assert [f["extension"] for f in batch["files"]] == ["docx", "xlsx"]
+    artifacts = {
+        f["extension"]: client.get(
+            route + "/outputs/" + batch["id"] + "/" + f["name"],
+        ).content
+        for f in batch["files"]
+    }
+    word = Document(io.BytesIO(artifacts["docx"]))
+    assert "本次申报名称 A & B <模型>" in word.paragraphs[1].text
+    assert word.paragraphs[2].text == "公共背景与研究依据。需要外部技术团队支持。"
+    book = load_workbook(io.BytesIO(artifacts["xlsx"]))
+    sheet = book.worksheets[0]
+    assert sheet["B3"].value == values["plan.name"]
+    assert sheet["C3"].value == 53 and sheet["C3"].data_type == "n"
+    assert sheet["D3"].value == values["research.contents"]
+    assert sheet["F3"].value == values["plan.partners"]
+    assert sheet["K3"].value == "180/0" and sheet["L3"].value == "0000123"
+    assert (
+        sheet["N3"].value == values["plan.notes"]
+        and sheet["N3"].data_type == "s"
+    )
+    template = main.builtin.load_templates("plan")[main.builtin.PLAN_NAMES[1]]
+    original = load_workbook(io.BytesIO(template))
+    assert book.sheetnames == original.sheetnames and len(book.sheetnames) == 6
+    for actual, expected in zip(book, original):
+        assert str(actual.merged_cells) == str(expected.merged_cells)
+        assert actual.print_area == expected.print_area
+        assert len(actual.data_validations.dataValidation) == len(
+            expected.data_validations.dataValidation,
+        )
+    with ZipFile(io.BytesIO(template)) as source, ZipFile(
+        io.BytesIO(artifacts["xlsx"]),
+    ) as target:
+        assert source.read("xl/styles.xml") == target.read("xl/styles.xml")
+        assert all(
+            b"{{" not in target.read(name)
+            for name in target.namelist()
+            if name.startswith("xl/worksheets/")
+        )
+    bundle = client.get(base + "/bundle?stage_id=plan")
+    assert bundle.status_code == 200, bundle.text[:100]
+    with ZipFile(io.BytesIO(bundle.content)) as archive:
+        assert archive.testzip() is None
+        assert any(
+            n.endswith(main.builtin.PLAN_NAMES[1]) for n in archive.namelist()
+        )
+    client.post(
+        route + "/defaults",
+        json={"revision": generated.json()["revision"]},
+    ).raise_for_status()
+    second = client.post(
+        "/api/document-forms/projects",
+        json={"name": "第二个项目"},
+    ).json()
+    other = client.post(
+        "/api/document-forms/projects/" + second["id"] + "/form",
+        json={"revision": second["revision"], "stage_id": "plan"},
+    ).json()
+    assert [t["sha256"] for t in other["templates"]] == [
+        t["sha256"] for t in case["templates"]
+    ]
+    assert all(not t["from_builtin"] for t in other["templates"])
+    assert not values_for(other)["plan.budget_wan"]
+    project = client.get(base).json()
+    negotiation = client.post(
+        base + "/form",
+        json={"revision": project["revision"], "stage_id": "negotiation"},
+    ).json()
+    assert (
+        negotiation["id"] == case["id"] and len(negotiation["templates"]) == 5
+    )
+    assert values_for(negotiation)["budget.ceiling_number"] == "490000"
+    assert "plan.budget_wan" not in values_for(negotiation)
+    project = client.get(base).json()
+    restored = client.post(
+        base + "/form",
+        json={"revision": project["revision"], "stage_id": "plan"},
+    ).json()
+    assert values_for(restored)["plan.budget_wan"] == "53"
+    values["plan.budget_wan"] = "NaN"
+    bad = client.put(
+        route,
+        json={
+            "revision": restored["revision"],
+            "name": restored["name"],
+            "values": values,
+            "recipients": [],
+        },
+    ).json()
+    assert not client.post(
+        route + "/review",
+        json={"revision": bad["revision"]},
+    ).json()["can_generate"]
+
+
+def test_excel_template_slots_reject_executable_and_formula_placeholders():
+    source = main.builtin.load_templates("plan")[main.builtin.PLAN_NAMES[1]]
+    for value in (
+        "{{ plan['name'] }}",
+        "{% for x in plan %}",
+        "{{ plan.__class__ }}",
+    ):
+        book = load_workbook(io.BytesIO(source))
+        book.worksheets[0]["B3"] = value
+        stream = io.BytesIO()
+        book.save(stream)
+        with pytest.raises(ValueError):
+            engine.template_info(stream.getvalue(), "计划.xlsx")
+    book.worksheets[0]["B3"] = "={{ plan.name }}"
+    stream = io.BytesIO()
+    book.save(stream)
+    with pytest.raises(ValueError, match="占位符"):
+        engine.template_info(stream.getvalue(), "计划.xlsx")
 
 
 def project_case(client, stage_id="negotiation"):
@@ -187,7 +390,9 @@ def test_project_single_form_reuses_stage_pages_and_preserves_old_materials(
         base + "/form",
         json={"revision": project["revision"], "stage_id": "plan"},
     ).json()
-    assert plan["id"] == opened["id"] and plan["templates"] == []
+    assert plan["id"] == opened["id"] and [
+        t["name"] for t in plan["templates"]
+    ] == list(main.builtin.PLAN_NAMES)
     saved = client.put(
         f"/api/document-forms/cases/{plan['id']}",
         json={
@@ -564,7 +769,9 @@ def test_project_migration_groups_legacy_forms_without_rewriting_files(
     assert len(project["stages"]) == 6 and project["migrated"]
     assert {
         s["status"] for s in project["stages"] if s["id"] != "negotiation"
-    } == {"pending"}
+    } == {
+        "pending",
+    }
     other = client.get(
         "/api/document-forms/projects",
         headers={"X-Agent-Id": "another-agent"},

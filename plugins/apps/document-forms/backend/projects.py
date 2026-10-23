@@ -27,8 +27,8 @@ STAGES = (
         "上报计划",
         "明确项目需求、预算与计划批复",
         (
-            "项目计划申报材料",
-            "立项依据及预算说明",
+            "科研计划填报表",
+            "外协必要性说明",
             "计划批复或系统回执",
         ),
     ),
@@ -109,6 +109,7 @@ SHARED_PREFIXES = (
     "workload.",
     "milestones.",
     "budget.",
+    "funding.",
 )
 EXTENSIONS = {
     ".doc",
@@ -303,7 +304,14 @@ class ProjectStore:
         path = self.path(root, project_id) / "project.json"
         if not path.is_file():
             raise HTTPException(404, "项目不存在")
-        return json.loads(path.read_text(encoding="utf-8"))
+        project = json.loads(path.read_text(encoding="utf-8"))
+        existing = {f["key"] for f in project["fields"]}
+        project["fields"].extend(
+            f
+            for f in self.host.builtin.additional_shared_fields()
+            if f["key"] not in existing
+        )
+        return project
 
     def save(self, root, project, update_time=True):
         path = self.path(root, project["id"])
@@ -405,6 +413,12 @@ class ProjectStore:
 
     def create(self, root, body, fields=None, persist=True):
         fields = shared_fields(fields or self.host.builtin.blank_fields())
+        existing = {f["key"] for f in fields}
+        fields.extend(
+            f
+            for f in self.host.builtin.additional_shared_fields()
+            if f["key"] not in existing
+        )
         if not any(f["key"] == "project.code" for f in fields):
             fields.append(
                 {
@@ -603,6 +617,8 @@ class ProjectStore:
             data = {
                 "fields": self.host.builtin.blank_fields()
                 if stage_id == "negotiation"
+                else self.host.builtin.plan_fields(project["fields"])
+                if stage_id == "plan"
                 else copy.deepcopy(project["fields"]),
                 "recipients": [
                     {"name": "", "start": "", "end": ""} for _ in range(3)
@@ -710,6 +726,8 @@ class ProjectStore:
         contexts = case.setdefault("stage_contexts", {})
         new_page = stage_id not in contexts
         current = case.get("stage_id", "negotiation")
+        if current == "plan":
+            self.prepare_plan(root, project, case)
         if (
             current == stage_id
             and workbook is None
@@ -736,6 +754,8 @@ class ProjectStore:
             data = {
                 "fields": self.host.builtin.blank_fields()
                 if stage_id == "negotiation"
+                else self.host.builtin.plan_fields(project["fields"])
+                if stage_id == "plan"
                 else copy.deepcopy(project["fields"]),
                 "recipients": [
                     {"name": "", "start": "", "end": ""} for _ in range(3)
@@ -770,6 +790,8 @@ class ProjectStore:
                 for f in case["fields"]
             },
         )
+        if stage_id == "plan":
+            self.prepare_plan(root, project, case)
         if not case["templates"]:
             try:
                 self.host.attach_default_templates(root, case)
@@ -782,6 +804,51 @@ class ProjectStore:
             self.touch(project, self.stage(project, stage_id), root)
         self.save(root, project)
         return self.host.public(case)
+
+    def prepare_plan(self, root, project, case):
+        if (
+            case["templates"]
+            and not any(t.get("from_builtin") for t in case["templates"])
+            and not {"plan.name", "plan.budget_wan", "plan.necessity"}
+            <= set(values(case["fields"]))
+        ):
+            case.pop("plan_schema", None)
+            return
+        references = {
+            f["key"]: f
+            for f in self.host.builtin.plan_fields(project["fields"])
+            if f.get("scope") == "shared"
+        }
+        for field in case["fields"]:
+            if field["key"] in references:
+                field["scope"] = "shared"
+        if case.get("plan_schema") == 1:
+            return
+        history = self.path(root, project["id"]) / "form-history"
+        history.mkdir(exist_ok=True)
+        source = self.host.folder(root, case["id"]) / "draft.json"
+        if source.is_file():
+            backup = (
+                history / f"{case['id']}_before_plan_r{case['revision']}.json"
+            )
+            if not backup.exists():
+                backup.write_bytes(source.read_bytes())
+        old = values(case["fields"])
+        fixed = self.host.builtin.plan_fields(project["fields"])
+        if not case["templates"]:
+            for field in fixed:
+                if old.get(field["key"]):
+                    field["value"] = old[field["key"]]
+            case["fields"] = fixed
+        else:
+            existing = {f["key"] for f in case["fields"]}
+            case["fields"].extend(f for f in fixed if f["key"] not in existing)
+        case["plan_schema"] = 1
+        case["review_token"] = None
+        case["revision"] += 1
+        if not case["templates"]:
+            self.host.attach_default_templates(root, case)
+        self.host.save(root, case)
 
     def sync(self, root, project, case_id, body):
         link = self.linked(project, case_id)
@@ -893,7 +960,7 @@ class ProjectStore:
                         source = (
                             self.host.folder(root, case["id"])
                             / "templates"
-                            / (t["id"] + ".docx")
+                            / (t["id"] + self.host.template_extension(t))
                         )
                         if (
                             not source.is_file()
@@ -904,7 +971,7 @@ class ProjectStore:
                         archive.write(
                             source,
                             prefix
-                            + "Word模板/"
+                            + ("文书模板/" if page_id == "plan" else "Word模板/")
                             + self.host.name_only(t["name"]),
                         )
                 if not stage_id:
@@ -914,7 +981,7 @@ class ProjectStore:
                         archive.write(history, "项目表单/历史底稿/" + history.name)
                     for source in (
                         self.host.folder(root, case["id"]) / "templates"
-                    ).glob("*.docx"):
+                    ).glob("*"):
                         archive.write(source, "项目表单/模板原件/" + source.name)
             title = f"{number:02d}_" + self.host.name_only(case["name"])[:45]
             form_path = titles[link["stage_id"]] + "/表单底稿/" + title
@@ -930,7 +997,7 @@ class ProjectStore:
                 source = (
                     self.host.folder(root, case["id"])
                     / "templates"
-                    / (template["id"] + ".docx")
+                    / (template["id"] + self.host.template_extension(template))
                 )
                 if (
                     not source.is_file()

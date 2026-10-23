@@ -24,15 +24,13 @@ def verify_bundled_assets(archive):
         Path(__file__).resolve().parents[2]
         / "plugins/apps/document-forms/backend/builtin.py"
     )
-    spec = importlib.util.spec_from_file_location(
-        "public_document_templates", source
-    )
+    spec = importlib.util.spec_from_file_location("public_document_templates", source)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     prefix = "document-forms/templates/"
     entries = json.loads(archive.read(prefix + "index.json"))
     assert [entry["name"] for entry in entries] == list(
-        module.NAMES
+        module.ALL_NAMES
     ), "Incomplete bundled templates"
     expected = {
         "document-forms/" + name
@@ -43,13 +41,14 @@ def verify_bundled_assets(archive):
             "backend/builtin.py",
             "backend/projects.py",
             "backend/review.py",
+            "backend/spreadsheets.py",
             "ui/index.js",
             "README.md",
             "requirements.txt",
             "templates/index.json",
             "templates/variables.json",
         )
-    } | {prefix + name for name in module.NAMES}
+    } | {prefix + name for name in module.ALL_NAMES}
     assert set(archive.namelist()) == expected, "Unexpected application files"
     for entry in entries:
         content = archive.read(prefix + entry["name"])
@@ -156,9 +155,7 @@ def main() -> None:
     for existing_id, existing in old["files"].items():
         if existing_id != file_id:
             assert merged["files"][existing_id] == existing
-    merged_bytes = json.dumps(merged, ensure_ascii=False, indent=2).encode(
-        "utf-8"
-    )
+    merged_bytes = json.dumps(merged, ensure_ascii=False, indent=2).encode("utf-8")
     (root / "catalog-after.json").write_bytes(merged_bytes)
     assert (
         bucket.get_object(catalog_key).read() == old_bytes

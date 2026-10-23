@@ -3,6 +3,13 @@ const { useEffect, useState } = React;
 
 /** Print pages use the host's OfficeCLI binary; text view keeps its renderer. */
 export function OfficePrintPreview({ artifact, children }) {
+  return artifact.extension === "xlsx" ? (
+    children
+  ) : (
+    <WordPrintPreview artifact={artifact}>{children}</WordPrintPreview>
+  );
+}
+function WordPrintPreview({ artifact, children }) {
   const [mode, setMode] = useState("print");
   const [images, setImages] = useState([]);
   const [pages, setPages] = useState(0);
@@ -41,7 +48,9 @@ export function OfficePrintPreview({ artifact, children }) {
           const sheet = await window.QwenPaw.host.fetch(
             artifact.printUrl + "?page=" + page,
             {
-              headers: artifact.agentId ? { "X-Agent-Id": artifact.agentId } : {},
+              headers: artifact.agentId
+                ? { "X-Agent-Id": artifact.agentId }
+                : {},
               signal: controller.signal,
             },
           );
@@ -110,10 +119,15 @@ export function OfficePrintPreview({ artifact, children }) {
             {images.map((image, index) => (
               <figure key={index}>
                 <figcaption>第 {index + 1} 页</figcaption>
-                <img src={image} alt={artifact.title + ` · 打印版式 · 第 ${index + 1} 页`} />
+                <img
+                  src={image}
+                  alt={artifact.title + ` · 打印版式 · 第 ${index + 1} 页`}
+                />
               </figure>
             ))}
-            {images.length < pages && <p role="status">正在排版第 {images.length + 1} 页…</p>}
+            {images.length < pages && (
+              <p role="status">正在排版第 {images.length + 1} 页…</p>
+            )}
           </div>
         </div>
       ) : (

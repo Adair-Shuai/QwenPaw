@@ -583,7 +583,7 @@ export default function ProjectWorkspace({ Editor, services }) {
         <div className="df-sidebar-foot">
           <b>配套模板</b>
           <p>
-            商务谈判阶段已配好五份 Word 模板，其余阶段可接入各自的统一模板。
+            上报计划和商务谈判已配好默认模板，其余阶段可接入各自的统一模板。
           </p>
           <button
             disabled={!!busy || !!editorBusy}
@@ -595,7 +595,7 @@ export default function ProjectWorkspace({ Editor, services }) {
           >
             下载配套模板 ↗
           </button>
-          <small>空白 Excel 与 5 份标准 Word</small>
+          <small>空白 Excel 与 7 份标准文书</small>
         </div>
       </aside>
       <section className="df-main df-project-main" ref={mainScroll}>
@@ -726,6 +726,12 @@ export default function ProjectWorkspace({ Editor, services }) {
                 }}
                 onChanged={() => reload()}
                 docked={project.single_form}
+                onEditBasics={() => {
+                  setEditor(null);
+                  setEditorDirty(false);
+                  setEditorBusy("");
+                  setTab("profile");
+                }}
                 onStageStatus={() =>
                   openDialog("stage", { ...stage, confirmed: false })
                 }
@@ -861,7 +867,9 @@ export default function ProjectWorkspace({ Editor, services }) {
                         <h2>{stage.title}</h2>
                         <p>{stage.purpose}</p>
                         <p className="df-muted">
-                          {stage.id === "negotiation"
+                          {project.single_form && stage.id === "plan"
+                            ? "已接入科研计划填报表与外协必要性说明，可直接填写并生成。"
+                            : stage.id === "negotiation"
                             ? "五份标准模板已接入，可直接填写，也可导入现有 Excel。"
                             : "统一模板待补充；现阶段可整理材料、上传文件，或导入已有 Excel 与 Word 模板。"}
                         </p>

@@ -97,6 +97,14 @@ def load(root, case_id):
     return case
 
 
+def template_extension(template):
+    return (
+        ".xlsx"
+        if template.get("name", "").lower().endswith(".xlsx")
+        else ".docx"
+    )
+
+
 def normalize_templates(case):
     for index, template in enumerate(case["templates"], 1):
         template.update(template_metadata(template["name"], index))
@@ -121,7 +129,7 @@ def output_name(case, template, index, recipient, recipient_index):
     )
     if recipient:
         name += f"_{recipient_index:02d}_{name_only(recipient['name'])[:40]}"
-    return name + ".docx"
+    return name + template_extension(template)
 
 
 def save(root, case):
@@ -276,19 +284,20 @@ def attach_default_templates(root, case):
     built_in = not index.is_file()
     bundled = {}
     if built_in:
-        if case.get("stage_id", "negotiation") != "negotiation":
-            case["template_notice"] = "本阶段尚未设置默认 Word 模板，可添加统一模板后设为本阶段默认。"
+        if case.get("stage_id", "negotiation") not in {"negotiation", "plan"}:
+            case["template_notice"] = "本阶段尚未设置默认 文书模板，可添加统一模板后设为本阶段默认。"
             return 0
         field_keys = {field["key"] for field in case["fields"]}
         if (
-            not {field["key"] for field in builtin.blank_fields()}
+            case.get("stage_id", "negotiation") != "plan"
+            and not {field["key"] for field in builtin.blank_fields()}
             <= field_keys
         ):
             case[
                 "template_notice"
-            ] = "这份 Excel 字段不同，请添加对应的 Word 模板，或使用应用配套 Excel。"
+            ] = "这份 Excel 字段不同，请添加对应的 文书模板，或使用应用配套 Excel。"
             return 0
-        bundled = builtin.load_templates()
+        bundled = builtin.load_templates(case.get("stage_id", "negotiation"))
         entries = [
             {"name": name, "sha256": hashlib.sha256(content).hexdigest()}
             for name, content in bundled.items()
@@ -305,7 +314,7 @@ def attach_default_templates(root, case):
         content = (
             bundled[entry["name"]]
             if built_in
-            else (library / (digest + ".docx")).read_bytes()
+            else (library / (digest + template_extension(entry))).read_bytes()
         )
         if hashlib.sha256(content).hexdigest() != digest:
             raise ValueError("默认模板内容已改变，请重新选择原文件")
@@ -329,7 +338,7 @@ def attach_default_templates(root, case):
     target = folder(root, case["id"]) / "templates"
     target.mkdir(parents=True, exist_ok=True)
     for info, content in prepared:
-        (target / (info["id"] + ".docx")).write_bytes(content)
+        (target / (info["id"] + template_extension(info))).write_bytes(content)
     case["templates"] = [info for info, _ in prepared]
     normalize_templates(case)
     return len(prepared)
@@ -337,12 +346,14 @@ def attach_default_templates(root, case):
 
 def store_default_templates(root, case):
     if not case["templates"]:
-        raise HTTPException(422, "请先添加需要作为默认的 Word 模板")
+        raise HTTPException(422, "请先添加需要作为默认的 文书模板")
     library = default_library(root, case)
     prepared = []
     for template in case["templates"]:
         content = (
-            folder(root, case["id"]) / "templates" / (template["id"] + ".docx")
+            folder(root, case["id"])
+            / "templates"
+            / (template["id"] + template_extension(template))
         ).read_bytes()
         digest = hashlib.sha256(content).hexdigest()
         if digest != template["sha256"]:
@@ -354,7 +365,7 @@ def store_default_templates(root, case):
     for entry, content in prepared:
         temp = library / (entry["sha256"] + ".tmp")
         temp.write_bytes(content)
-        temp.replace(library / (entry["sha256"] + ".docx"))
+        temp.replace(library / (entry["sha256"] + template_extension(entry)))
     temp = library / "index.tmp"
     temp.write_text(
         json.dumps([entry for entry, _ in prepared], ensure_ascii=False),
@@ -463,7 +474,7 @@ def use_default_templates(case_id: str, body: ReviewBody, root=Depends(scope)):
         if case["templates"]:
             raise HTTPException(
                 409,
-                "当前已有 Word 模板，请先移除后再载入默认模板",
+                "当前已有 文书模板，请先移除后再载入默认模板",
             )
         try:
             count = attach_default_templates(root, case)
@@ -514,7 +525,7 @@ def add_templates(
     root=Depends(scope),
 ):
     if not 1 <= len(files) <= 20:
-        raise HTTPException(422, "一次最多导入 20 个 Word 模板")
+        raise HTTPException(422, "一次最多导入 20 个 文书模板")
     with _lock:
         case = load(root, case_id)
         version(case, revision)
@@ -522,7 +533,10 @@ def add_templates(
     prepared = []
     try:
         for file in files:
-            content = upload(file, ".docx")
+            extension = Path(file.filename or "").suffix.lower()
+            if extension not in {".docx", ".xlsx"}:
+                raise HTTPException(422, "文书模板支持 .docx 与 .xlsx 文件")
+            content = upload(file, extension)
             info = template_info(
                 content,
                 name_only(file.filename),
@@ -541,16 +555,18 @@ def add_templates(
     except Exception as exc:
         if isinstance(exc, HTTPException):
             raise
-        raise HTTPException(422, f"Word 模板无法读取：{exc}") from exc
+        raise HTTPException(422, f"文书模板无法读取：{exc}") from exc
     with _lock:
         case = load(root, case_id)
         version(case, revision)
         if len(case["templates"]) + len(prepared) > 20:
-            raise HTTPException(422, "每条记录最多保留 20 个 Word 模板")
+            raise HTTPException(422, "每条记录最多保留 20 个 文书模板")
         for info, content in prepared:
             target = folder(root, case_id) / "templates"
             target.mkdir(exist_ok=True)
-            (target / (info["id"] + ".docx")).write_bytes(content)
+            (target / (info["id"] + template_extension(info))).write_bytes(
+                content,
+            )
             case["templates"].append(info)
         case["revision"] += 1
         case["review_token"] = None
@@ -616,7 +632,7 @@ def generate(case_id: str, body: GenerateBody, root=Depends(scope)):
         try:
             for n, t in enumerate(case["templates"], 1):
                 source = (
-                    base / "templates" / (t["id"] + ".docx")
+                    base / "templates" / (t["id"] + template_extension(t))
                 ).read_bytes()
                 if hashlib.sha256(source).hexdigest() != t["sha256"]:
                     raise ValueError("模板内容已变化，请重新导入")
@@ -630,12 +646,14 @@ def generate(case_id: str, body: GenerateBody, root=Depends(scope)):
                         case["fields"],
                         recipient,
                         case["recipients"],
+                        template_extension(t),
                     )
                     (staging / filename).write_bytes(data)
                     files.append(
                         {
                             "name": filename,
                             "size": len(data),
+                            "extension": template_extension(t).lstrip("."),
                             "print_copies": t["print_copies"],
                             "print_note": t["print_note"],
                             "recipient": (
@@ -668,7 +686,7 @@ def generate(case_id: str, body: GenerateBody, root=Depends(scope)):
                         archive.write(
                             path,
                             project_name(case) + "_" + path.name
-                            if path.suffix in {".xlsx", ".json"}
+                            if path.name in {"填写数据.xlsx", "核对记录.json"}
                             else path.name,
                         )
             target = base / "outputs" / generation_id
