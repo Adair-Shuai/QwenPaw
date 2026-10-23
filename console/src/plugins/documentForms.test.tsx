@@ -1032,14 +1032,13 @@ it("fills plan-specific information, keeps common fields in the basic profile an
   await user.click(within(dock).getByText(/本阶段文件/));
   await user.click(
     within(dock).getByRole("button", {
-      name: "02_科研计划填报_上报测试项目.xlsx",
-      exact: true,
+      name: /^02_科研计划填报_上报测试项目\.xlsx$/,
     }),
   );
   expect(
     await within(dock).findByTestId("plan-office-preview"),
   ).toHaveTextContent("xlsx:");
-  expect(previews.at(-1)).toMatchObject({
+  expect(previews[previews.length - 1]).toMatchObject({
     extension: "xlsx",
     mimeType:
       "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",

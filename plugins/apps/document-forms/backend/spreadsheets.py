@@ -149,7 +149,8 @@ def cell_height(sheet, cell, rendered):
         )
         for line in rendered.split("\n")
     )
-    return min(409, lines * 12 + 8)
+    # Allow font leading as well as glyph height for wrapped CJK text.
+    return min(409, lines * 15 + 8)
 
 
 def fill(content, fields):
