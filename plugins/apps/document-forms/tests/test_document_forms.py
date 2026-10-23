@@ -232,6 +232,8 @@ def test_plan_templates_split_shared_information_and_generate_word_and_excel(
     assert word.paragraphs[2].text == "公共背景与研究依据。需要外部技术团队支持。"
     book = load_workbook(io.BytesIO(artifacts["xlsx"]))
     sheet = book.worksheets[0]
+    # Blank styles beyond the actual table must not expand Office previews.
+    assert sheet.max_column == 14
     assert sheet["B3"].value == values["plan.name"]
     assert sheet["C3"].value == 53 and sheet["C3"].data_type == "n"
     assert sheet["D3"].value == values["research.contents"]
