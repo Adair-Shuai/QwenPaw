@@ -620,7 +620,7 @@ export default function ProjectWorkspace({ Editor, services }) {
                 disabled={!!busy || !!editorBusy || !!editor}
                 onClick={() => changeTab("profile")}
               >
-                项目资料
+                基础信息填报
               </button>
               <button
                 disabled={!!busy || !!editorBusy}
@@ -829,10 +829,10 @@ export default function ProjectWorkspace({ Editor, services }) {
                     <section className="df-paper df-project-hint">
                       <h2>一份项目底稿，贯穿各阶段</h2>
                       <p>
-                        项目名称、研究内容、成果指标和预算等可在“项目资料”统一维护。阶段表单从底稿取值，后续变更会提醒核对；已有生成文件保留原样。
+                        项目名称、研究内容、成果指标和预算等可在“基础信息填报”统一维护。阶段表单从底稿取值，后续变更会提醒核对；已有生成文件保留原样。
                       </p>
                       <button onClick={() => changeTab("profile")}>
-                        整理项目资料
+                        填写基础信息
                       </button>
                     </section>
                   </>
@@ -844,10 +844,10 @@ export default function ProjectWorkspace({ Editor, services }) {
                     project={project}
                     Field={Field}
                     onSave={(data) =>
-                      run("保存项目资料", async () => {
+                      run("保存基础信息", async () => {
                         await apply(base, data, "PUT");
                         setNotice(
-                          "项目资料已更新。已有表单可逐项核对后同步，原生成文件不变。",
+                          "基础信息已更新。已有表单可逐项核对后同步，原生成文件不变。",
                         );
                       })
                     }
@@ -983,7 +983,7 @@ export default function ProjectWorkspace({ Editor, services }) {
                                   {stamp(f.updated_at)} ·{" "}
                                   {f.outputs ? f.outputs + " 份文件" : "填写中"}
                                   {f.shared_changes.length > 0 &&
-                                    " · 项目资料有更新"}
+                                    " · 基础信息有更新"}
                                 </small>
                               </div>
                               <div className="df-actions">
@@ -1558,13 +1558,13 @@ function ProjectProfile({ project, Field, onSave, onDirtyChange }) {
     >
       <div className="df-section-head">
         <div>
-          <h2>项目资料底稿</h2>
+          <h2>基础信息填报</h2>
           <p className="df-muted">
             各阶段表单复用这里的资料；阶段日期、评审分数和付款结果分别记录。
           </p>
         </div>
         <button className="df-primary" type="submit">
-          保存项目资料
+          保存基础信息
         </button>
       </div>
       <div className="df-fields">
@@ -1631,7 +1631,7 @@ function ProjectProfile({ project, Field, onSave, onDirtyChange }) {
       ))}
       <div className="df-actions">
         <button className="df-primary" type="submit">
-          保存项目资料
+          保存基础信息
         </button>
       </div>
     </form>
