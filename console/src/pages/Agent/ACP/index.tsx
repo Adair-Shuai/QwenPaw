@@ -595,14 +595,14 @@ function ACPPage({ embedded = false }: ACPPageProps = {}) {
 
   const waitingForCurrentAgent = pageAgent !== selectedAgent || loading || (!loadError && (!loadedConfig || loadedConfigOwner !== selectedAgent));
 
-  const headerActions = (
+  const headerActions = !waitingForCurrentAgent && !loadError ? (
     <div className={stylesACP.headerActions}>
       <Button disabled={waitingForCurrentAgent || !!loadError} onClick={handleNodeSettingsClick}>{t("acp.nodeSettings")}</Button>
       <Button disabled={waitingForCurrentAgent || !!loadError} type="primary" onClick={handleCreateClick}>
         {t("acp.create")}
       </Button>
     </div>
-  );
+  ) : undefined;
 
   return (
     <div
@@ -635,7 +635,7 @@ function ACPPage({ embedded = false }: ACPPageProps = {}) {
         }`}
       >
         {waitingForCurrentAgent ? (
-          <div className={styles.loading}>
+          <div className={styles.loading} role="status">
             <span className={styles.loadingText}>{t("acp.loading")}</span>
           </div>
         ) : loadError ? (

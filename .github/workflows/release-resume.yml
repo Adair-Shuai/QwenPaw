@@ -496,7 +496,7 @@ jobs:
       - name: Set up Node (for console build)
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version-file: .nvmrc
           cache: "pnpm"
           cache-dependency-path: console/pnpm-lock.yaml
 
@@ -582,7 +582,7 @@ jobs:
       - name: Set up Node for memory plugin frontends
         uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          node-version-file: .nvmrc
 
       - name: Build memory plugin frontends
         shell: bash

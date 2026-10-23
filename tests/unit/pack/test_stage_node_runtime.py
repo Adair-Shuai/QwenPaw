@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import importlib.util
 import io
 import sys
@@ -136,6 +137,7 @@ def test_upgrade_replaces_old_runtime_and_reuses_new_cache(
     system: str,
     machine: str,
 ) -> None:
+    monkeypatch.syspath_prepend(str(SCRIPT_FILE.parent))
     spec = importlib.util.spec_from_file_location(
         f"stage_node_runtime_under_test",
         SCRIPT_FILE,
@@ -183,7 +185,11 @@ def test_upgrade_replaces_old_runtime_and_reuses_new_cache(
 
     download = Mock(return_value=buffer.getvalue())
     monkeypatch.setattr(runtime, f"_http_get", download)
-    monkeypatch.setattr(sys, f"argv", [str(SCRIPT_FILE), f"--dest", str(dest)])
+    digest = hashlib.sha256(buffer.getvalue()).hexdigest()
+    monkeypatch.setattr(
+        sys, f"argv",
+        [str(SCRIPT_FILE), f"--dest", str(dest), "--sha256", digest],
+    )
     runtime.main()
 
     download.assert_called_once_with(
@@ -192,7 +198,7 @@ def test_upgrade_replaces_old_runtime_and_reuses_new_cache(
     assert node.read_bytes() == b"new node"
     assert npx.read_bytes() == b"new npx"
     assert not stale.exists()
-    assert marker.read_text(encoding=f"utf-8") == f"{version}-{target}"
+    assert marker.read_text(encoding=f"utf-8") == f"{version}-{target}-{digest}"
 
     runtime.main()
 
