@@ -19,13 +19,13 @@ describe("distribution", () => {
   });
 
   it("classifies UGSci catalog rows by channel or author", () => {
-    expect(isUGSciCatalogPlugin({ channel: "ugsci", author: "QwenPaw Team" })).toBe(
-      true,
-    );
+    expect(
+      isUGSciCatalogPlugin({ channel: "ugsci", author: "QwenPaw Team" }),
+    ).toBe(true);
     expect(isUGSciCatalogPlugin({ author: "UGSci Team" })).toBe(true);
-    expect(isUGSciCatalogPlugin({ plugin_id: "ulit", author: "Someone Else" })).toBe(
-      false,
-    );
+    expect(
+      isUGSciCatalogPlugin({ plugin_id: "ulit", author: "Someone Else" }),
+    ).toBe(false);
     expect(
       isUGSciCatalogPlugin({
         plugin_id: "community-app",

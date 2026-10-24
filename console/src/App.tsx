@@ -113,9 +113,7 @@ export function getAppThemeToken(
             ? DEFAULT_THEME_PRESET.theme.dark?.accent
             : DEFAULT_THEME_PRESET.theme.accent),
     colorBgLayout: isDark ? "#000000" : "#f8f8f8",
-    colorBgContainer: isDark
-      ? userTheme.dark?.surface ?? "#1c1b1e"
-      : "#ffffff",
+    colorBgContainer: isDark ? userTheme.dark?.surface ?? "#1c1b1e" : "#ffffff",
     colorBgElevated: isDark ? "#252528" : "#ffffff",
     colorBorder: isDark ? "#323236" : "#e3e3e3",
     fontFamily:

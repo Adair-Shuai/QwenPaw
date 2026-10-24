@@ -6,7 +6,12 @@ import {
   requiresCronImportReview,
   type CronJobSpecOutput,
 } from "../../../../api/types";
-import { Ellipsis as MoreOutlined, Play, History, Copy as CopyOutlined } from "lucide-react";
+import {
+  Ellipsis as MoreOutlined,
+  Play,
+  History,
+  Copy as CopyOutlined,
+} from "lucide-react";
 import dayjs from "dayjs";
 import { TFunction } from "i18next";
 import { parseCron } from "./parseCron";

@@ -89,7 +89,10 @@ describe("parseGenUiResult", () => {
         kind: "genui",
         ui_id: "ui_nested",
         revision: 1,
-        tree: { schemaVersion: "1", root: { nodeId: "n1", kind: "Stack", props: {}, children: [] } },
+        tree: {
+          schemaVersion: "1",
+          root: { nodeId: "n1", kind: "Stack", props: {}, children: [] },
+        },
       },
     };
     const result = parseGenUiResult(JSON.stringify(nested));
@@ -99,17 +102,25 @@ describe("parseGenUiResult", () => {
   it("reads a FlowForge NodeOutput.ui.genui envelope", () => {
     const nested = {
       ui: {
-        gen_ui: { schemaVersion: "1", root: { nodeId: "n1", kind: "Image", props: {}, children: [] } },
+        gen_ui: {
+          schemaVersion: "1",
+          root: { nodeId: "n1", kind: "Image", props: {}, children: [] },
+        },
         genui: {
           ok: true,
           kind: "genui",
           ui_id: "ui_ff_preview",
           revision: 1,
-          tree: { schemaVersion: "1", root: { nodeId: "n1", kind: "Image", props: {}, children: [] } },
+          tree: {
+            schemaVersion: "1",
+            root: { nodeId: "n1", kind: "Image", props: {}, children: [] },
+          },
         },
       },
     };
-    expect(parseGenUiResult(JSON.stringify(nested))?.ui_id).toBe("ui_ff_preview");
+    expect(parseGenUiResult(JSON.stringify(nested))?.ui_id).toBe(
+      "ui_ff_preview",
+    );
   });
 
   it("returns null for non-object JSON", () => {

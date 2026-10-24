@@ -198,7 +198,11 @@ vi.mock("./sessionApi", () => ({
     discardLastUserMessage: vi.fn(),
     setVisibleSession: vi.fn(),
     getSession: vi.fn(async (id: string) => ({ id, messages: [] })),
-    getSessionIdentity: vi.fn((id) => ({ sdkSessionId: id, chatId: id, sessionId: id })),
+    getSessionIdentity: vi.fn((id) => ({
+      sdkSessionId: id,
+      chatId: id,
+      sessionId: id,
+    })),
     getRouteResolutionVersion: vi.fn(() => 0),
     isUnresolvedLocalSession: vi.fn(() => false),
     lastActiveChatId: null,

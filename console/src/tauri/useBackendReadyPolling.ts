@@ -29,7 +29,10 @@ export interface StartupProgress {
 
 async function isBackendHttpReady(apiBaseUrl: string): Promise<boolean> {
   const controller = new AbortController();
-  const timeoutId = setTimeout(() => controller.abort(), BACKEND_REQUEST_TIMEOUT_MS);
+  const timeoutId = setTimeout(
+    () => controller.abort(),
+    BACKEND_REQUEST_TIMEOUT_MS,
+  );
   try {
     const response = await fetch(`${apiBaseUrl}/api/version`, {
       signal: controller.signal,

@@ -124,9 +124,10 @@ export function subscribeToolCallStream(
         buffer += decoder.decode(value, { stream: true });
         let separator = buffer.search(/\r?\n\r?\n|\r\r/);
         while (separator >= 0) {
-          const separatorLength = buffer[separator] === "\r" && buffer[separator + 1] === "\r"
-            ? 2
-            : buffer.slice(separator).startsWith("\r\n")
+          const separatorLength =
+            buffer[separator] === "\r" && buffer[separator + 1] === "\r"
+              ? 2
+              : buffer.slice(separator).startsWith("\r\n")
               ? 4
               : 2;
           const event = buffer.slice(0, separator);

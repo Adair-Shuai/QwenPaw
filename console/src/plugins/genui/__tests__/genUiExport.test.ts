@@ -9,7 +9,9 @@ describe("genUiExport", () => {
   });
 
   it("rasterizes PNG through html-to-image", async () => {
-    const click = vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(() => {});
+    const click = vi
+      .spyOn(HTMLAnchorElement.prototype, "click")
+      .mockImplementation(() => {});
     const toPng = vi
       .spyOn(htmlToImage, "toPng")
       .mockResolvedValue("data:image/png;base64,AAAA");
@@ -21,7 +23,12 @@ describe("genUiExport", () => {
   it("prints PDF from the HTML export document with blob images inlined", async () => {
     const write = vi.fn();
     const popup = {
-      document: { open: vi.fn(), write, close: vi.fn(), readyState: "complete" },
+      document: {
+        open: vi.fn(),
+        write,
+        close: vi.fn(),
+        readyState: "complete",
+      },
       addEventListener: vi.fn(),
       focus: vi.fn(),
       print: vi.fn(),

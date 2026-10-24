@@ -933,9 +933,19 @@ describe("GenUiTreeView — Edge Cases", () => {
       kind: "Stack",
       props: {},
       children: [
-        { nodeId: "ok1", kind: "Text", props: { value: "sibling-ok" }, children: [] },
+        {
+          nodeId: "ok1",
+          kind: "Text",
+          props: { value: "sibling-ok" },
+          children: [],
+        },
         { nodeId: "boom", kind: "Divider", props: {}, children: [] },
-        { nodeId: "ok2", kind: "Text", props: { value: "also-ok" }, children: [] },
+        {
+          nodeId: "ok2",
+          kind: "Text",
+          props: { value: "also-ok" },
+          children: [],
+        },
       ],
     };
     const { container } = render(React.createElement(GenUiTreeView, { node }));
@@ -960,7 +970,12 @@ describe("GenUiTreeView — Edge Cases", () => {
           kind: "Form",
           props: { title: "f" },
           children: [
-            { nodeId: "ok", kind: "Text", props: { value: "form-ok" }, children: [] },
+            {
+              nodeId: "ok",
+              kind: "Text",
+              props: { value: "form-ok" },
+              children: [],
+            },
             { nodeId: "boom", kind: "Divider", props: {}, children: [] },
           ],
         },
@@ -985,7 +1000,9 @@ describe("GenUiTreeView — Edge Cases", () => {
       props: {},
       children: [{ nodeId: "boom", kind: "Divider", props: {}, children: [] }],
     };
-    const { container, rerender } = render(React.createElement(GenUiTreeView, { node: boom }));
+    const { container, rerender } = render(
+      React.createElement(GenUiTreeView, { node: boom }),
+    );
     expect(container.textContent).toContain("Component error: Stack");
     (window as any).QwenPaw.host.antd.Divider = ({ children }: any) =>
       React.createElement("hr", null, children);
@@ -993,7 +1010,14 @@ describe("GenUiTreeView — Edge Cases", () => {
       nodeId: "root",
       kind: "Stack",
       props: {},
-      children: [{ nodeId: "ok", kind: "Text", props: { value: "recovered" }, children: [] }],
+      children: [
+        {
+          nodeId: "ok",
+          kind: "Text",
+          props: { value: "recovered" },
+          children: [],
+        },
+      ],
     };
     rerender(React.createElement(GenUiTreeView, { node: ok }));
     expect(container.textContent).toContain("recovered");
@@ -1004,14 +1028,24 @@ describe("GenUiTreeView — Edge Cases", () => {
   it("renders an allowlisted Icon as SVG and hides Lucide-style names", () => {
     const { container, rerender } = render(
       React.createElement(GenUiTreeView, {
-        node: { nodeId: "i1", kind: "Icon", props: { name: "check-circle" }, children: [] },
+        node: {
+          nodeId: "i1",
+          kind: "Icon",
+          props: { name: "check-circle" },
+          children: [],
+        },
       }),
     );
     expect(container.querySelector("svg")).toBeTruthy();
     expect(container.textContent).not.toContain("check-circle");
     rerender(
       React.createElement(GenUiTreeView, {
-        node: { nodeId: "i2", kind: "Icon", props: { name: "sparkles" }, children: [] },
+        node: {
+          nodeId: "i2",
+          kind: "Icon",
+          props: { name: "sparkles" },
+          children: [],
+        },
       }),
     );
     expect(container.textContent).not.toContain("sparkles");

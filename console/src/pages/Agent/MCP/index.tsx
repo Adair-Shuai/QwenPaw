@@ -339,7 +339,10 @@ function MCPPage({ embedded = false, embeddedLabels }: MCPPageProps = {}) {
           {ready && createButton}
         </div>
       ) : (
-        <PageHeader current={t("mcp.title")} extra={ready ? createButton : undefined} />
+        <PageHeader
+          current={t("mcp.title")}
+          extra={ready ? createButton : undefined}
+        />
       )}
 
       {ready && (
@@ -402,12 +405,30 @@ function MCPPage({ embedded = false, embeddedLabels }: MCPPageProps = {}) {
             </div>
           ) : (
             <div className={styles.mcpSections}>
-              <section className={`${styles.mcpSection} ${embedded ? styles.embeddedManagedSection : ""}`}>
+              <section
+                className={`${styles.mcpSection} ${
+                  embedded ? styles.embeddedManagedSection : ""
+                }`}
+              >
                 <div className={styles.sectionHeader}>
-                  {!embedded && <div className={styles.sectionIcon}><Server size={17} /></div>}
+                  {!embedded && (
+                    <div className={styles.sectionIcon}>
+                      <Server size={17} />
+                    </div>
+                  )}
                   <div>
-                    <h2>{embeddedLabels?.managedTitle || t("mcp.qwenpawManaged")}{embedded && <span className={styles.serviceCount}>{clients.length}</span>}</h2>
-                    <InlineHelp>{embeddedLabels?.managedDescription || t("mcp.qwenpawManagedHint")}</InlineHelp>
+                    <h2>
+                      {embeddedLabels?.managedTitle || t("mcp.qwenpawManaged")}
+                      {embedded && (
+                        <span className={styles.serviceCount}>
+                          {clients.length}
+                        </span>
+                      )}
+                    </h2>
+                    <InlineHelp>
+                      {embeddedLabels?.managedDescription ||
+                        t("mcp.qwenpawManagedHint")}
+                    </InlineHelp>
                   </div>
                 </div>
                 {visibleClients.length === 0 ? (

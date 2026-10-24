@@ -640,10 +640,7 @@ interface RichFileReferenceInputProps extends TextAreaProps {
   onSelectionChange?: (start: number, end: number) => void;
 }
 
-const RichFileReferenceInput = forwardRef<
-  unknown,
-  RichFileReferenceInputProps
->(
+const RichFileReferenceInput = forwardRef<unknown, RichFileReferenceInputProps>(
   function RichFileReferenceInput(
     {
       value,

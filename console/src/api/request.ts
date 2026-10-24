@@ -8,7 +8,11 @@ export class ApiError extends Error {
 
   constructor(message: string, status: number, reason?: string);
   constructor(status: number, message: string);
-  constructor(first: string | number, second: string | number, reason?: string) {
+  constructor(
+    first: string | number,
+    second: string | number,
+    reason?: string,
+  ) {
     const message = typeof first === "string" ? first : String(second);
     const status = typeof first === "number" ? first : Number(second);
     super(message);
@@ -18,7 +22,10 @@ export class ApiError extends Error {
   }
 }
 
-function parseErrorPayload(text: string, contentType: string): {
+function parseErrorPayload(
+  text: string,
+  contentType: string,
+): {
   message: string | null;
   reason?: string;
 } {
@@ -54,8 +61,7 @@ function parseErrorPayload(text: string, contentType: string): {
           typeof detail.message === "string" && detail.message
             ? detail.message
             : text,
-        reason:
-          typeof detail.reason === "string" ? detail.reason : undefined,
+        reason: typeof detail.reason === "string" ? detail.reason : undefined,
       };
     }
     if (typeof payload.message === "string" && payload.message) {

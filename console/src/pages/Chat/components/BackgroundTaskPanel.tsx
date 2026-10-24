@@ -495,11 +495,14 @@ export default function BackgroundTaskPanel({
                       padding: "6px 8px",
                       borderRadius: 6,
                       border: `2px solid ${
-                        isSelected || isExpanded ? "var(--app-accent-border)" : "transparent"
+                        isSelected || isExpanded
+                          ? "var(--app-accent-border)"
+                          : "transparent"
                       }`,
-                      background: isSelected || isExpanded
-                        ? "var(--app-accent-soft)"
-                        : "var(--app-fill-faint)",
+                      background:
+                        isSelected || isExpanded
+                          ? "var(--app-accent-soft)"
+                          : "var(--app-fill-faint)",
                       cursor: "pointer",
                       fontSize: 12,
                     }}

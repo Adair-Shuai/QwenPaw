@@ -52,10 +52,7 @@ describe("FilePreview Markdown workspace resources", () => {
         {},
         { timeout: LAZY_RENDER_TIMEOUT },
       ),
-    ).toHaveAttribute(
-      "src",
-      "blob:workspace-image",
-    );
+    ).toHaveAttribute("src", "blob:workspace-image");
     expect(useAuthenticatedWorkspaceBlob).toHaveBeenCalledWith(
       "reports/images/result.png",
       "default",

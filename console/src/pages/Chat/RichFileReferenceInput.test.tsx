@@ -136,7 +136,9 @@ describe("RichFileReferenceInput", () => {
   });
 
   it("consumes the sender selection callback without leaking it to the DOM", () => {
-    const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => {});
     const onSelectionChange = vi.fn();
     try {
       const { container } = render(

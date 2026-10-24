@@ -411,13 +411,13 @@
           "description": "Проверяет файлы без изменений."
         },
         "workspace": {
-    "officePreviewMode": "Режим просмотра Office",
-    "officeReading": "Чтение документа",
-    "officePrint": "Макет печати",
-    "officePrintFallback": "Макет печати недоступен. Показан режим чтения.",
-    "officeZoomOut": "Уменьшить",
-    "officeZoomReset": "Сбросить масштаб",
-    "officeZoomIn": "Увеличить",
+          "officePreviewMode": "Режим просмотра Office",
+          "officeReading": "Чтение документа",
+          "officePrint": "Макет печати",
+          "officePrintFallback": "Макет печати недоступен. Показан режим чтения.",
+          "officeZoomOut": "Уменьшить",
+          "officeZoomReset": "Сбросить масштаб",
+          "officeZoomIn": "Увеличить",
           "name": "Доступ к рабочей области",
           "description": "Разрешает изменения рабочей области без подтверждения."
         },

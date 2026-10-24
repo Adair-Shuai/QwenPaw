@@ -38,28 +38,28 @@ export type RuntimeLoadingBridgeApi = {
 /** Extract copyable text from assistant response. */
 export function extractCopyableText(response: CopyableResponse): string {
   const chunks = (response.output || []).flatMap((item: CopyableMessage) => {
-      if (item.role !== "assistant" || item.type !== "message") return [];
+    if (item.role !== "assistant" || item.type !== "message") return [];
 
-      if (typeof item.content === "string") {
-        return [item.content];
+    if (typeof item.content === "string") {
+      return [item.content];
+    }
+
+    if (!Array.isArray(item.content)) {
+      return [];
+    }
+
+    return item.content.flatMap((content: CopyableContent) => {
+      if (content.type === "text" && typeof content.text === "string") {
+        return [content.text];
       }
 
-      if (!Array.isArray(item.content)) {
-        return [];
+      if (content.type === "refusal" && typeof content.refusal === "string") {
+        return [content.refusal];
       }
 
-      return item.content.flatMap((content: CopyableContent) => {
-        if (content.type === "text" && typeof content.text === "string") {
-          return [content.text];
-        }
-
-        if (content.type === "refusal" && typeof content.refusal === "string") {
-          return [content.refusal];
-        }
-
-        return [];
-      });
+      return [];
     });
+  });
 
   return chunks.filter(Boolean).join("\n\n").trim();
 }
@@ -211,7 +211,10 @@ const REPLY_FILENAME_INVALID_CHARS = /[<>:"/\\|?*\u0000-\u001f]/g;
 function truncateFilenameStem(text: string, maxChars: number): string {
   const chars = Array.from(text);
   if (chars.length <= maxChars) return text;
-  return chars.slice(0, maxChars).join("").replace(/[. ]+$/g, "");
+  return chars
+    .slice(0, maxChars)
+    .join("")
+    .replace(/[. ]+$/g, "");
 }
 
 /** First meaningful line of a reply, safe as a default `*.md` stem. */

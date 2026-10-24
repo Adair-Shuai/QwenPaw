@@ -593,16 +593,29 @@ function ACPPage({ embedded = false }: ACPPageProps = {}) {
     </div>
   );
 
-  const waitingForCurrentAgent = pageAgent !== selectedAgent || loading || (!loadError && (!loadedConfig || loadedConfigOwner !== selectedAgent));
+  const waitingForCurrentAgent =
+    pageAgent !== selectedAgent ||
+    loading ||
+    (!loadError && (!loadedConfig || loadedConfigOwner !== selectedAgent));
 
-  const headerActions = !waitingForCurrentAgent && !loadError ? (
-    <div className={stylesACP.headerActions}>
-      <Button disabled={waitingForCurrentAgent || !!loadError} onClick={handleNodeSettingsClick}>{t("acp.nodeSettings")}</Button>
-      <Button disabled={waitingForCurrentAgent || !!loadError} type="primary" onClick={handleCreateClick}>
-        {t("acp.create")}
-      </Button>
-    </div>
-  ) : undefined;
+  const headerActions =
+    !waitingForCurrentAgent && !loadError ? (
+      <div className={stylesACP.headerActions}>
+        <Button
+          disabled={waitingForCurrentAgent || !!loadError}
+          onClick={handleNodeSettingsClick}
+        >
+          {t("acp.nodeSettings")}
+        </Button>
+        <Button
+          disabled={waitingForCurrentAgent || !!loadError}
+          type="primary"
+          onClick={handleCreateClick}
+        >
+          {t("acp.create")}
+        </Button>
+      </div>
+    ) : undefined;
 
   return (
     <div
@@ -641,7 +654,9 @@ function ACPPage({ embedded = false }: ACPPageProps = {}) {
         ) : loadError ? (
           <div className={stylesACP.loadError} role="alert">
             <span>{t("acp.loadError")}</span>
-            <Button type="primary" onClick={() => void fetchACP(selectedAgent)}>{t("common.retry")}</Button>
+            <Button type="primary" onClick={() => void fetchACP(selectedAgent)}>
+              {t("common.retry")}
+            </Button>
           </div>
         ) : (
           <div

@@ -22,14 +22,12 @@ vi.mock("@/hooks/useAppMessage", () => ({
 }));
 vi.mock("@/api", () => ({
   default: {
-    getMCPPolicy: vi
-      .fn()
-      .mockResolvedValue({
-        default_effect: "deny",
-        client_overrides: [],
-        tool_defaults: [],
-        tool_overrides: [],
-      }),
+    getMCPPolicy: vi.fn().mockResolvedValue({
+      default_effect: "deny",
+      client_overrides: [],
+      tool_defaults: [],
+      tool_overrides: [],
+    }),
     listChannelTypes: vi.fn().mockResolvedValue([]),
     listMCPAccessPrincipals: vi.fn().mockResolvedValue([]),
     listMCPTools: vi.fn().mockResolvedValue(

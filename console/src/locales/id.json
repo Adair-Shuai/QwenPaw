@@ -1405,13 +1405,13 @@
           "description": "Periksa file tanpa mengubahnya."
         },
         "workspace": {
-    "officePreviewMode": "Mode pratinjau Office",
-    "officeReading": "Baca dokumen",
-    "officePrint": "Tata letak cetak",
-    "officePrintFallback": "Tata letak cetak tidak tersedia. Menampilkan pratinjau baca.",
-    "officeZoomOut": "Perkecil",
-    "officeZoomReset": "Atur ulang zoom",
-    "officeZoomIn": "Perbesar",
+          "officePreviewMode": "Mode pratinjau Office",
+          "officeReading": "Baca dokumen",
+          "officePrint": "Tata letak cetak",
+          "officePrintFallback": "Tata letak cetak tidak tersedia. Menampilkan pratinjau baca.",
+          "officeZoomOut": "Perkecil",
+          "officeZoomReset": "Atur ulang zoom",
+          "officeZoomIn": "Perbesar",
           "name": "Akses ruang kerja",
           "description": "Izinkan perubahan ruang kerja tanpa konfirmasi."
         },

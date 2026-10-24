@@ -155,7 +155,9 @@ describe("request", () => {
       },
     });
 
-    await expect(request("/components/ugsci/install", { method: "POST" })).rejects.toMatchObject({
+    await expect(
+      request("/components/ugsci/install", { method: "POST" }),
+    ).rejects.toMatchObject({
       status: 409,
       reason: "not_managed",
       message: expect.stringContaining("component ugsci is not managed"),

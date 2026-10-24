@@ -199,9 +199,13 @@ describe("SidebarSettingsPanel", () => {
     );
 
     await userEvent.click(screen.getByRole("button", { name: "Manual" }));
-    expect(mocks.openExternalLink).toHaveBeenLastCalledWith("https://www.ugsci.cn/");
+    expect(mocks.openExternalLink).toHaveBeenLastCalledWith(
+      "https://www.ugsci.cn/",
+    );
     await userEvent.click(screen.getByRole("button", { name: /About UGSci/ }));
-    expect(mocks.openExternalLink).toHaveBeenLastCalledWith("https://www.ugsci.cn/");
+    expect(mocks.openExternalLink).toHaveBeenLastCalledWith(
+      "https://www.ugsci.cn/",
+    );
     expect(mocks.openExternalLink).toHaveBeenCalledTimes(2);
     expect(onClose).toHaveBeenCalledTimes(2);
     expect(

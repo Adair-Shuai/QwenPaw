@@ -422,13 +422,32 @@ export default function ToolsPage({ embedded = false }: ToolsPageProps = {}) {
             onChange={(event) => setQuery(event.target.value)}
           />
         </div>
-        {ready && <div className={styles.summary}>
-          <span>{t("tools.enabledCount", { enabled: enabledTools.length, total: tools.length })}</span>
-          <div className={styles.batchActions}>
-            <Button data-press disabled={batchLoading || loading || disabledTools.length === 0} onClick={enableAll}>{t("tools.enableAll")}</Button>
-            <Button data-press disabled={batchLoading || loading || enabledTools.length === 0} onClick={disableAll}>{t("tools.disableAll")}</Button>
+        {ready && (
+          <div className={styles.summary}>
+            <span>
+              {t("tools.enabledCount", {
+                enabled: enabledTools.length,
+                total: tools.length,
+              })}
+            </span>
+            <div className={styles.batchActions}>
+              <Button
+                data-press
+                disabled={batchLoading || loading || disabledTools.length === 0}
+                onClick={enableAll}
+              >
+                {t("tools.enableAll")}
+              </Button>
+              <Button
+                data-press
+                disabled={batchLoading || loading || enabledTools.length === 0}
+                onClick={disableAll}
+              >
+                {t("tools.disableAll")}
+              </Button>
+            </div>
           </div>
-        </div>}
+        )}
         {loading ? (
           <div className={styles.loading} role="status">
             <Spin />

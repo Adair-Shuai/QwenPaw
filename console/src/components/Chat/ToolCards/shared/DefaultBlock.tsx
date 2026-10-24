@@ -318,7 +318,9 @@ const DefaultBlock: React.FC<DefaultBlockProps> = ({
             className={styles.defaultBlockCopy}
             onClick={handleCopy}
             title={copyTitle}
-            aria-label={copied ? t("common.copied") : copyTitle || t("common.copy")}
+            aria-label={
+              copied ? t("common.copied") : copyTitle || t("common.copy")
+            }
           >
             {copied ? <CheckOutlined /> : <CopyOutlined />}
           </button>

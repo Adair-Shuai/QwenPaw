@@ -56,7 +56,6 @@ describe("SessionItem status indicator", () => {
 
     expect(screen.getByRole("img", { name: label })).toBeInTheDocument();
   });
-
 });
 
 describe("SessionItem keyboard selection", () => {

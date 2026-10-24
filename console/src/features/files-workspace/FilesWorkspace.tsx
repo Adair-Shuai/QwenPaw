@@ -624,60 +624,63 @@ export default function FilesWorkspace({
           ) : null}
         </nav>
       )}
-      {!hideNavigator && (activity === "files" || !codingMode ? (
-        <div className={styles.navigatorPane}>
-          {hasDocument && (
-            <button
-              type="button"
-              className={styles.mobilePaneSwitch}
-              aria-label={t("files.openFilesLabel")}
-              onClick={() => setMobilePane("document")}
-            >
-              <Files size={16} />
-              <span>{t("files.openFilesLabel")}</span>
-            </button>
-          )}
-          <FilesNavigator
-            key={`${scopeKey}:${projectDirOverride ?? ""}:${directoryRevision}`}
-            scope={effectiveScope}
-            selectedPath={
-              tabs.find((tab) => tab.path === activeTabPath)?.displayPath ??
-              activeTabPath
-            }
-            onSelect={(target) => {
-              setMemoryGraphRoot(null);
-              void openTarget(target);
-            }}
-            activeMemoryGraphRoot={memoryGraphRoot}
-            onShowMemoryGraph={(root) => {
-              setMemoryGraphRoot(root);
-              setMobilePane("document");
-            }}
-            onShowFiles={() => {
-              setMemoryGraphRoot(null);
-            }}
-          />
-        </div>
-      ) : (
-        <aside className={styles.sourcePanel}>
-          {hasDocument && (
-            <button
-              type="button"
-              className={styles.mobilePaneSwitch}
-              aria-label={t("files.openFilesLabel")}
-              onClick={() => setMobilePane("document")}
-            >
-              <ArrowLeft size={16} />
-              <span>{t("files.openFilesLabel")}</span>
-            </button>
-          )}
-          <header>
-            <GitBranch size={15} />
-            <span>{t("files.sourceControl")}</span>
-          </header>
-          <GitPanel chatId={chatId} />
-        </aside>
-      ))}
+      {!hideNavigator &&
+        (activity === "files" || !codingMode ? (
+          <div className={styles.navigatorPane}>
+            {hasDocument && (
+              <button
+                type="button"
+                className={styles.mobilePaneSwitch}
+                aria-label={t("files.openFilesLabel")}
+                onClick={() => setMobilePane("document")}
+              >
+                <Files size={16} />
+                <span>{t("files.openFilesLabel")}</span>
+              </button>
+            )}
+            <FilesNavigator
+              key={`${scopeKey}:${
+                projectDirOverride ?? ""
+              }:${directoryRevision}`}
+              scope={effectiveScope}
+              selectedPath={
+                tabs.find((tab) => tab.path === activeTabPath)?.displayPath ??
+                activeTabPath
+              }
+              onSelect={(target) => {
+                setMemoryGraphRoot(null);
+                void openTarget(target);
+              }}
+              activeMemoryGraphRoot={memoryGraphRoot}
+              onShowMemoryGraph={(root) => {
+                setMemoryGraphRoot(root);
+                setMobilePane("document");
+              }}
+              onShowFiles={() => {
+                setMemoryGraphRoot(null);
+              }}
+            />
+          </div>
+        ) : (
+          <aside className={styles.sourcePanel}>
+            {hasDocument && (
+              <button
+                type="button"
+                className={styles.mobilePaneSwitch}
+                aria-label={t("files.openFilesLabel")}
+                onClick={() => setMobilePane("document")}
+              >
+                <ArrowLeft size={16} />
+                <span>{t("files.openFilesLabel")}</span>
+              </button>
+            )}
+            <header>
+              <GitBranch size={15} />
+              <span>{t("files.sourceControl")}</span>
+            </header>
+            <GitPanel chatId={chatId} />
+          </aside>
+        ))}
       <main className={styles.documentSurface}>
         <button
           type="button"

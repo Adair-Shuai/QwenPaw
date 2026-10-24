@@ -52,7 +52,9 @@ const polyTree: GenUiNode = {
 describe("genUiHtmlRender", () => {
   it("escapes titles and JSON so markup cannot break out of the document", () => {
     expect(escapeHtml('<img src=x onerror="alert(1)">')).toContain("&lt;img");
-    expect(scriptJson({ note: "</script><script>alert(1)" })).toContain("\\u003c/script>");
+    expect(scriptJson({ note: "</script><script>alert(1)" })).toContain(
+      "\\u003c/script>",
+    );
     const html = buildGenUiHtmlDocument(
       polyTree,
       { a: 1 },
@@ -65,12 +67,16 @@ describe("genUiHtmlRender", () => {
 
   it("walks the shared tree into fields, charts, and safe link buttons", () => {
     const root = renderExportTree(polyTree, { a: 1, b: 0, c: 0, d: 0, e: 0 });
-    const slider = root.querySelector("[data-genui-field='a']") as HTMLInputElement;
+    const slider = root.querySelector(
+      "[data-genui-field='a']",
+    ) as HTMLInputElement;
     expect(slider).toBeTruthy();
     expect(slider.type).toBe("range");
     expect(root.querySelector("[data-genui-chart]")).toBeTruthy();
     expect(root.querySelector("svg")).toBeTruthy();
-    expect(root.querySelector("[data-genui-href='https://example.com/x']")).toBeTruthy();
+    expect(
+      root.querySelector("[data-genui-href='https://example.com/x']"),
+    ).toBeTruthy();
     expect(root.querySelector("[data-genui-href^='javascript']")).toBeNull();
   });
 
@@ -85,9 +91,14 @@ describe("genUiHtmlRender", () => {
     expect(html).toContain("var paintChartElement");
     expect(html).toContain("data-genui-field");
     expect(html).toContain("<svg");
-    expect(html).toMatch(/data-genui-field="a"[^>]*value="1"|value="1"[^>]*data-genui-field="a"/);
+    expect(html).toMatch(
+      /data-genui-field="a"[^>]*value="1"|value="1"[^>]*data-genui-field="a"/,
+    );
     const snapshot = new DOMParser().parseFromString(html, "text/html");
-    expect((snapshot.querySelector("[data-genui-field='a']") as HTMLInputElement).value).toBe("1");
+    expect(
+      (snapshot.querySelector("[data-genui-field='a']") as HTMLInputElement)
+        .value,
+    ).toBe("1");
 
     const parsed = new DOMParser().parseFromString(html, "text/html");
     document.body.replaceChildren();
@@ -96,13 +107,16 @@ describe("genUiHtmlRender", () => {
       document.body.appendChild(document.importNode(child, true));
     }
     const valuesNode = parsed.getElementById("genui-values-data");
-    if (valuesNode) document.body.appendChild(document.importNode(valuesNode, true));
+    if (valuesNode)
+      document.body.appendChild(document.importNode(valuesNode, true));
     const scripts = Array.from(parsed.querySelectorAll("script"));
     const runtime = scripts[scripts.length - 1]?.textContent || "";
     expect(runtime).toContain("refreshCharts");
     (0, eval)(runtime);
 
-    const slider = document.querySelector("[data-genui-field='a']") as HTMLInputElement;
+    const slider = document.querySelector(
+      "[data-genui-field='a']",
+    ) as HTMLInputElement;
     const before = document.querySelector("polyline")?.getAttribute("points");
     slider.value = "-1";
     slider.dispatchEvent(new Event("input", { bubbles: true }));
@@ -118,8 +132,18 @@ describe("genUiHtmlRender", () => {
       kind: "Stack",
       props: {},
       children: [
-        { nodeId: "ok", kind: "Icon", props: { name: "warning" }, children: [] },
-        { nodeId: "bad", kind: "Icon", props: { name: "sparkles" }, children: [] },
+        {
+          nodeId: "ok",
+          kind: "Icon",
+          props: { name: "warning" },
+          children: [],
+        },
+        {
+          nodeId: "bad",
+          kind: "Icon",
+          props: { name: "sparkles" },
+          children: [],
+        },
       ],
     });
     expect(root.querySelector("svg")).toBeTruthy();

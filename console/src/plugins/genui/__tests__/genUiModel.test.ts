@@ -26,7 +26,9 @@ describe("genUiModel", () => {
       { a: 0, b: 0, c: 0, d: 1, e: 0 },
     );
     expect(generated.empty).toBe(false);
-    expect(generated.series[0].values).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]);
+    expect(generated.series[0].values).toEqual([
+      0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10,
+    ]);
 
     const staticChart = resolveChartModel(
       {
@@ -59,8 +61,12 @@ describe("genUiModel", () => {
     expect(aspectRatioCss("bad")).toBe("16 / 9");
     expect(isHttpUrl("javascript:alert(1)")).toBe(false);
     expect(isHttpUrl("https://example.com")).toBe(true);
-    expect(layoutBoxStyle("AspectBox", { ratio: "16:9" }).aspectRatio).toBe("16 / 9");
-    expect(layoutBoxStyle("Grid", { columns: 3 }).gridTemplateColumns).toContain("3");
+    expect(layoutBoxStyle("AspectBox", { ratio: "16:9" }).aspectRatio).toBe(
+      "16 / 9",
+    );
+    expect(
+      layoutBoxStyle("Grid", { columns: 3 }).gridTemplateColumns,
+    ).toContain("3");
   });
 
   it("maps Icon names to SVG paths and hides Lucide identifiers", () => {

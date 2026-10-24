@@ -186,11 +186,14 @@ vi.mock("@/stores/agentStore", () => {
     getLastChatId: vi.fn(),
     removeLastChatId: vi.fn(),
   });
-  const useAgentStore = Object.assign(vi.fn(() => state()), {
-    getState: state,
-    setState: vi.fn(),
-    subscribe: vi.fn(() => vi.fn()),
-  });
+  const useAgentStore = Object.assign(
+    vi.fn(() => state()),
+    {
+      getState: state,
+      setState: vi.fn(),
+      subscribe: vi.fn(() => vi.fn()),
+    },
+  );
   return { useAgentStore };
 });
 
@@ -347,9 +350,7 @@ describe("ChatPage", () => {
       signal: undefined,
     });
     expect(response.status).toBe(400);
-    expect(
-      await screen.findByText(/LLM Model Required/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/LLM Model Required/)).toBeInTheDocument();
   });
 
   it("shows model config modal when provider API throws", async () => {
@@ -362,9 +363,7 @@ describe("ChatPage", () => {
       signal: undefined,
     });
     expect(response.status).toBe(400);
-    expect(
-      await screen.findByText(/LLM Model Required/),
-    ).toBeInTheDocument();
+    expect(await screen.findByText(/LLM Model Required/)).toBeInTheDocument();
   });
 
   // ── modal interaction ─────────────────────────────────────────────────────
@@ -375,16 +374,16 @@ describe("ChatPage", () => {
     renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
     await screen.findByTestId("chat-ui");
 
-    await capturedOptions.api.fetch({ input: [{ role: "user", content: "hello" }], signal: undefined });
+    await capturedOptions.api.fetch({
+      input: [{ role: "user", content: "hello" }],
+      signal: undefined,
+    });
     await screen.findByText(/LLM Model Required/);
 
     await user.click(screen.getByText("Skip"));
     // antd Modal has animations; wait for DOM removal
     await waitFor(
-      () =>
-        expect(
-          screen.queryByText("Skip"),
-        ).not.toBeInTheDocument(),
+      () => expect(screen.queryByText("Skip")).not.toBeInTheDocument(),
       { timeout: 3000 },
     );
   });
@@ -440,18 +439,22 @@ describe("ChatPage", () => {
       signal: undefined,
     });
 
-    const chatCall = vi.mocked(fetch).mock.calls.find(
-      ([url, init]) =>
-        String(url) === "/api/console/chat" && init?.method === "POST",
-    );
+    const chatCall = vi
+      .mocked(fetch)
+      .mock.calls.find(
+        ([url, init]) =>
+          String(url) === "/api/console/chat" && init?.method === "POST",
+      );
     expect(chatCall).toBeDefined();
     const init = chatCall![1] as RequestInit;
     const body = JSON.parse(String(init.body)) as Record<string, unknown>;
-    expect(body.request_context).toEqual(expect.objectContaining({
-      session_id: "test-session",
-      agent_id: "default",
-      datasource_id: "ds-123",
-    }));
+    expect(body.request_context).toEqual(
+      expect.objectContaining({
+        session_id: "test-session",
+        agent_id: "default",
+        datasource_id: "ds-123",
+      }),
+    );
   });
 
   it("renders fallback metadata as an in-chat system message", async () => {
@@ -657,7 +660,11 @@ describe("ChatPage", () => {
   it("shows copy and timestamp actions for responses", async () => {
     renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
     await screen.findByTestId("chat-ui");
-    expect(capturedOptions.actions.list[0].onClick).toEqual(expect.any(Function));
-    expect(capturedOptions.actions.list[1].render).toEqual(expect.any(Function));
+    expect(capturedOptions.actions.list[0].onClick).toEqual(
+      expect.any(Function),
+    );
+    expect(capturedOptions.actions.list[1].render).toEqual(
+      expect.any(Function),
+    );
   });
 });

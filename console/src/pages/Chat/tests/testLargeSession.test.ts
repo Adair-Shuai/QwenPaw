@@ -591,9 +591,9 @@ describe("buildUserCard / buildResponseCard helpers", () => {
   });
 
   it("normalizes upstream single-object and primitive content", () => {
-    expect(normalizeOutputMessageContent({ type: "text", text: "hello" })).toEqual([
-      { type: "text", text: "hello" },
-    ]);
+    expect(
+      normalizeOutputMessageContent({ type: "text", text: "hello" }),
+    ).toEqual([{ type: "text", text: "hello" }]);
     expect(normalizeOutputMessageContent({ unexpected: true })).toEqual([
       { type: "text", text: '{"unexpected":true}' },
     ]);

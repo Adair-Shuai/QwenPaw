@@ -66,10 +66,7 @@ export interface QwenPawSlotNamespace {
 }
 
 export interface QwenPawMarketplaceNamespace {
-  add(
-    pluginId: string,
-    extension: MarketplaceExtension,
-  ): Disposable;
+  add(pluginId: string, extension: MarketplaceExtension): Disposable;
   snapshot(): MarketplaceExtension[];
 }
 

@@ -37,7 +37,8 @@ export default function BackendLoadingPage({
   const hasFailed = status === "timeout" || status === "error";
   const statusText =
     statusTextOverride ||
-    (startup?.message || (status === "error"
+    startup?.message ||
+    (status === "error"
       ? t("startup.error", "Backend failed to start.")
       : status === "checking"
       ? elapsed === 0
@@ -46,7 +47,7 @@ export default function BackendLoadingPage({
       : t("startup.timeout", {
           seconds: elapsed,
           defaultValue: "Backend failed to start within {{seconds}} seconds.",
-        })));
+        }));
 
   const percent = hasFailed
     ? Math.min(Math.round((elapsed / totalSec) * 100), 100)

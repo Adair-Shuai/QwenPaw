@@ -430,7 +430,9 @@ describe("summarizeReplyFilename", () => {
       "",
       "实际回复从这里开始。第二句。",
     ].join("\n");
-    expect(summarizeReplyFilename(markdown)).toBe("实际回复从这里开始。第二句。");
+    expect(summarizeReplyFilename(markdown)).toBe(
+      "实际回复从这里开始。第二句。",
+    );
   });
 
   it("strips illegal filename characters and truncates", () => {
@@ -442,7 +444,9 @@ describe("summarizeReplyFilename", () => {
 
   it("falls back when nothing usable remains", () => {
     expect(summarizeReplyFilename("```\ncode\n```", "AI 回复")).toBe("AI 回复");
-    expect(summarizeReplyFilename("> only thinking", "AI 回复")).toBe("AI 回复");
+    expect(summarizeReplyFilename("> only thinking", "AI 回复")).toBe(
+      "AI 回复",
+    );
   });
 });
 

@@ -130,9 +130,7 @@ describe("Workspace SDK", () => {
     it("updates the file preview instead of the unused workspace store", () => {
       const updates: UpdateFilePreviewDetail[] = [];
       const handleUpdate = (event: Event) => {
-        updates.push(
-          (event as CustomEvent<UpdateFilePreviewDetail>).detail,
-        );
+        updates.push((event as CustomEvent<UpdateFilePreviewDetail>).detail);
       };
       window.addEventListener(UPDATE_FILE_PREVIEW_EVENT, handleUpdate);
       try {
@@ -140,7 +138,9 @@ describe("Workspace SDK", () => {
         expect(updates).toEqual([
           { id: "sdk-3", patch: { textContent: "updated" } },
         ]);
-        expect(useWorkspaceStore.getState().getArtifact("sdk-3")).toBeUndefined();
+        expect(
+          useWorkspaceStore.getState().getArtifact("sdk-3"),
+        ).toBeUndefined();
       } finally {
         window.removeEventListener(UPDATE_FILE_PREVIEW_EVENT, handleUpdate);
       }

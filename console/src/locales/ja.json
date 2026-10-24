@@ -411,13 +411,13 @@
           "description": "ファイルを変更せずに確認します。"
         },
         "workspace": {
-    "officePreviewMode": "Office プレビューモード",
-    "officeReading": "文書を読む",
-    "officePrint": "印刷レイアウト",
-    "officePrintFallback": "印刷レイアウトを利用できないため、閲覧プレビューを表示しています。",
-    "officeZoomOut": "縮小",
-    "officeZoomReset": "倍率をリセット",
-    "officeZoomIn": "拡大",
+          "officePreviewMode": "Office プレビューモード",
+          "officeReading": "文書を読む",
+          "officePrint": "印刷レイアウト",
+          "officePrintFallback": "印刷レイアウトを利用できないため、閲覧プレビューを表示しています。",
+          "officeZoomOut": "縮小",
+          "officeZoomReset": "倍率をリセット",
+          "officeZoomIn": "拡大",
           "name": "ワークスペースアクセス",
           "description": "確認なしでワークスペースの変更を許可します。"
         },

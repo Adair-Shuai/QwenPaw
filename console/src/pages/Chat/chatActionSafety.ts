@@ -23,7 +23,9 @@ export function normalizeChatActions(value: unknown): SafeChatAction[] {
 }
 
 /** React rejects plain objects as children; tolerate malformed plugin output. */
-export function isRenderableActionNode(value: unknown): value is React.ReactNode {
+export function isRenderableActionNode(
+  value: unknown,
+): value is React.ReactNode {
   if (value == null || typeof value === "string" || typeof value === "number") {
     return true;
   }
