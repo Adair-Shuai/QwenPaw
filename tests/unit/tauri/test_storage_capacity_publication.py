@@ -24,6 +24,22 @@ publisher = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(publisher)
 
 
+def test_manifest_rejects_hosts_without_scoped_app_sdk(monkeypatch):
+    from qwenpaw._version_compat import check_plugin_version_compat
+    from qwenpaw.plugins.architecture import PluginManifest
+
+    version = importlib.import_module("qwenpaw.__version__")
+    manifest = PluginManifest.from_dict(
+        json.loads(
+            (ROOT / "plugins/apps/storage-capacity/plugin.json").read_bytes(),
+        ),
+    )
+    monkeypatch.setattr(version, "__version__", "2.1.0")
+    assert check_plugin_version_compat(manifest)[0] is False
+    monkeypatch.setattr(version, "__version__", "2.2.2b9")
+    assert check_plugin_version_compat(manifest) == (True, "")
+
+
 class Bucket:
     def __init__(self):
         self.objects = {}

@@ -49,6 +49,7 @@ REQUIRED_CASES = {
         "test_updates_preserve_user_imports_without_shipping_visualization_data",
     },
     "tests/unit/tauri/test_storage_capacity_publication.py": {
+        "test_manifest_rejects_hosts_without_scoped_app_sdk",
         "test_actual_app_archive_rejects_private_extra_files_and_modified_bytes",
         "test_promotion_restores_prior_objects_on_partial_write_failure",
         "test_signed_application_release_preserves_other_components_and_host_policy",

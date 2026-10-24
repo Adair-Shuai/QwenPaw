@@ -16,7 +16,7 @@
     "frontend": "ui/index.js"
   },
   "qwenpaw_version": {
-    "min": "2.1.0",
+    "min": "2.2.2b9",
     "max": "2.4.0"
   },
   "meta": {
