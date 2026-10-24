@@ -324,15 +324,16 @@ export default function ToolsPage({ embedded = false }: ToolsPageProps = {}) {
     }
   };
 
-  const batchSwitch = (
-    <Switch
-      checked={enabledTools.length > 0 && disabledTools.length === 0}
-      onChange={() => (disabledTools.length > 0 ? enableAll() : disableAll())}
-      disabled={batchLoading || loading}
-      checkedChildren={t("tools.enableAll")}
-      unCheckedChildren={t("tools.disableAll")}
-    />
-  );
+  const batchSwitch =
+    tools.length > 0 ? (
+      <Switch
+        checked={enabledTools.length > 0 && disabledTools.length === 0}
+        onChange={() => (disabledTools.length > 0 ? enableAll() : disableAll())}
+        disabled={batchLoading || loading}
+        checkedChildren={t("tools.enableAll")}
+        unCheckedChildren={t("tools.disableAll")}
+      />
+    ) : null;
 
   const visibleTools = tools.filter(
     (tool) =>
