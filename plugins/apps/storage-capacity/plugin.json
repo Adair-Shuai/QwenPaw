@@ -10,6 +10,7 @@
   },
   "author": "UGSci Team",
   "dependencies": ["openpyxl>=3.1", "pypdf>=4", "python-docx>=1"],
+  "pack_exclude": ["src", "build.mjs"],
   "entry": {
     "backend": "backend/main.py",
     "frontend": "ui/index.js"

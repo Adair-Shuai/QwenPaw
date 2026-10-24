@@ -26,6 +26,7 @@ SUITES = (
     "tests/unit/verify/test_release_workflow_safety.py",
     "tests/unit/tauri/test_stage_officecli.py",
     "tests/unit/tauri/test_ugsci_release_data.py",
+    "tests/unit/tauri/test_storage_capacity_publication.py",
 )
 REQUIRED_CASES = {
     "tests/unit/tauri/test_stage_officecli.py": {
@@ -40,12 +41,17 @@ REQUIRED_CASES = {
         "test_update_release_gates_cannot_be_bypassed_by_publication",
     },
     SUITES[2]: {"test_builds_ten_direct_deltas_and_binds_signed_history"},
-    SUITES[-1]: {
+    "tests/unit/tauri/test_ugsci_release_data.py": {
         "test_release_staging_and_market_zip_exclude_local_visualization_data",
         "test_python_wheel_and_sdist_exclude_visualization_test_data",
         "test_signed_component_gate_rejects_visualization_test_payload",
         "test_packaged_visualization_imports_user_data_without_shipped_examples",
         "test_updates_preserve_user_imports_without_shipping_visualization_data",
+    },
+    "tests/unit/tauri/test_storage_capacity_publication.py": {
+        "test_actual_app_archive_rejects_private_extra_files_and_modified_bytes",
+        "test_promotion_restores_prior_objects_on_partial_write_failure",
+        "test_signed_application_release_preserves_other_components_and_host_policy",
     },
 }
 

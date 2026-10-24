@@ -1,0 +1,66 @@
+name: Storage Capacity App Release
+
+on:
+  push:
+    branches: [lobehub-style, codex/storage-capacity-release]
+    paths:
+      - "plugins/apps/storage-capacity/plugin.json"
+      - ".github/workflows/storage-capacity-release.yml"
+      - "scripts/pack/publish_storage_capacity.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oss-production-metadata
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      PYTHONPATH: src
+      QWENPAW_WORKING_DIR: ${{ github.workspace }}/.release-test-data
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install real host SDK and release test dependencies
+        run: python -m pip install -r plugins/apps/document-forms/tests/requirements-ci.txt
+      - name: Install frontend dependencies
+        run: npm --prefix console ci --ignore-scripts
+      - name: Rebuild and verify portable application bundle
+        run: |
+          node plugins/apps/storage-capacity/build.mjs
+          node --check plugins/apps/storage-capacity/ui/index.js
+          git diff --exit-code -- plugins/apps/storage-capacity/ui/index.js
+      - name: Verify calculations, evidence, reports and publication rollback
+        run: python -m pytest tests/unit/plugins/test_storage_capacity_app.py tests/unit/plugins/test_storage_capacity_workbench.py tests/unit/tauri/test_storage_capacity_publication.py -q
+      - name: Verify packaged application behavior
+        working-directory: console
+        run: npx vitest run src/plugins/storageCapacity.test.tsx --maxWorkers=1
+      - name: Verify update compatibility and signed package contents
+        run: python scripts/verify_update_regressions.py
+      - name: Package only the storage capacity application
+        run: python scripts/pack/generate_plugin_metadata.py --plugins-root plugins --dist dist/storage-capacity --cdn-prefix /files/plugins --only storage-capacity
+      - name: Publish immutable app and signed Windows and macOS updates
+        env:
+          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+          COMPONENT_SIGNING_PRIVATE_KEY: ${{ secrets.COMPONENT_SIGNING_PRIVATE_KEY }}
+        run: python scripts/pack/publish_storage_capacity.py
+      - name: Preserve publication evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: storage-capacity-release
+          path: dist/storage-capacity/
+          retention-days: 30
