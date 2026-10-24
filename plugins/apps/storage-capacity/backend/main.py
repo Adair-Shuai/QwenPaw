@@ -154,4 +154,7 @@ async def api_evaluate(body: EvaluateBody, ctx=Depends(get_ctx)) -> Dict[str, An
 
 
 # PluginLoader contract.
+from .backend.service import register as register_workbench
+
+register_workbench(router)
 plugin = app

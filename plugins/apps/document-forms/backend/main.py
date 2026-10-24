@@ -54,7 +54,7 @@ from .backend.engine import (  # pylint: disable=relative-beyond-top-level
     template_metadata,
 )
 
-app = PawApp(name="文书填报", app_id="document-forms")
+app = PawApp(name="外协助手", app_id="document-forms")
 app.agent_profile(
     response_review.AGENT_ID,
     name="响应文件核查",
@@ -536,7 +536,7 @@ def update_case(case_id: str, body: DraftBody, root=Depends(scope)):
             for field in case["fields"]
         ):
             raise HTTPException(
-                422, "论证预算引用基础信息，请在基础信息填报中修改项目金额"
+                422, "引用资料不能在本阶段修改，请返回基础信息填报或对应的前序阶段修改"
             )
         case["name"] = body.name
         for field in case["fields"]:

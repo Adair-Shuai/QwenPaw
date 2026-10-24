@@ -46,7 +46,9 @@
       "tests/unit/plugins/ugsci/test_trust_reproducibility.py",
       "tests/unit/plugins/ugsci/test_visualization_core.py",
       "tests/unit/plugins/ugsci/test_visualization_run_center_bridge.py",
-      "tests/unit/plugins/ugsci/test_visualization_well_placement.py"
+      "tests/unit/plugins/ugsci/test_visualization_well_placement.py",
+      "tests/unit/plugins/test_storage_capacity_app.py",
+      "tests/unit/plugins/test_storage_capacity_workbench.py"
     ],
     "flowforge": [
       "tests/unit/plugins/flowforge/test_bidirectional_calls.py",
@@ -132,7 +134,9 @@
       "test_replace_installed_plugin_full_isolated_lifecycle"
     ],
     "tests/unit/app/routers/test_plugins_router_lifecycle.py": [
-      "test_failed_plugin_removal_preserves_tool_config"
+      "test_failed_plugin_removal_preserves_tool_config",
+      "test_oss_proxy_http_route_is_not_plugin_lookup",
+      "test_literal_plugin_get_routes_precede_catch_all"
     ],
     "plugins/apps/document-forms/tests/test_document_forms.py": [
       "test_project_migration_groups_legacy_forms_without_rewriting_files",
@@ -152,6 +156,17 @@
       "test_excel_template_slots_reject_executable_and_formula_placeholders",
       "test_selection_templates_generate_opinion_signature_sheet_and_upload_form",
       "test_selection_controls_bind_budget_to_profile_and_reject_invalid_choices"
+    ],
+    "tests/unit/plugins/test_storage_capacity_app.py": [
+      "test_release_upgrade_replaces_stale_capacity_compatibility",
+      "test_capacity_dependency_gate_does_not_install_plugin_id_as_pypi_package"
+    ],
+    "tests/unit/plugins/test_storage_capacity_workbench.py": [
+      "test_multimethod_engine_keeps_inventory_capacity_and_deliverability_distinct",
+      "test_inapplicable_methods_and_partial_units_never_form_full_inventory",
+      "test_external_simulation_is_referenced_not_falsely_executed",
+      "test_http_persistence_scope_revision_report_and_original_evidence",
+      "test_evidence_xlsx_csv_pptx_mapping_preserves_location_and_rejects_bad_numbers"
     ]
   }
 }

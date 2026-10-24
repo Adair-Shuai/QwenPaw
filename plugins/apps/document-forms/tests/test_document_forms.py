@@ -563,6 +563,44 @@ def test_project_single_form_reuses_stage_pages_and_preserves_old_materials(
     assert len(client.get(base).json()["forms"]) == 2
 
 
+def test_contract_references_upstream_fields_and_rejects_direct_edits(client):
+    project, _ = project_case(client)
+    base = f"/api/document-forms/projects/{project['id']}"
+    contract = client.post(
+        base + "/form", json={"revision": project["revision"], "stage_id": "contract"}
+    ).json()
+    assert contract["contract_schema"] == 1
+    assert all(f["read_only"] and f["scope"] == "shared" for f in contract["fields"])
+    assert "implementation.service_period" in values_for(contract)
+    changed = values_for(contract)
+    changed["project.name"] = "不应独立改写的合同项目名"
+    response = client.put(
+        f"/api/document-forms/cases/{contract['id']}",
+        json={
+            "revision": contract["revision"],
+            "name": contract["name"],
+            "values": changed,
+            "recipients": [],
+        },
+    )
+    assert response.status_code == 422
+    current = client.get(base).json()
+    fields = values_for(current)
+    fields["project.name"] = "基础信息已更正"
+    current = client.put(
+        base,
+        json={
+            **{key: current[key] for key in ("revision", "name", "code", "owner")},
+            "name": "基础信息已更正",
+            "values": fields,
+        },
+    ).json()
+    reopened = client.post(
+        base + "/form", json={"revision": current["revision"], "stage_id": "contract"}
+    ).json()
+    assert values_for(reopened)["project.name"] == "基础信息已更正"
+
+
 def test_project_assistant_keeps_project_conversation_and_file_scope(
     client,
     monkeypatch,

@@ -10,6 +10,7 @@ import hashlib
 import io
 import json
 import re
+import time
 from io import BytesIO
 from typing import Any, Dict, Iterable, List
 
@@ -192,7 +193,7 @@ def blank_case(case_id: str = "", case_name: str = "") -> Dict[str, Any]:
 
 
 def _norm_key(value: Any) -> str:
-    return re.sub(r"[\\s_：:（）()\\-]+", "", str(value or "").strip().casefold())
+    return re.sub(r"[\s_：:（）()\-]+", "", str(value or "").strip().casefold())
 
 
 def _to_number(value: Any) -> Any:
@@ -200,7 +201,7 @@ def _to_number(value: Any) -> Any:
         return None
     if isinstance(value, (int, float)):
         return float(value)
-    match = re.search(r"[-+]?\\d+(?:\\.\\d+)?", str(value).replace(",", ""))
+    match = re.search(r"[-+]?\d+(?:\.\d+)?", str(value).replace(",", ""))
     return float(match.group(0)) if match else None
 
 
@@ -226,7 +227,7 @@ def _kind_for_filename(filename: str) -> str:
 
 def _extract_text_values(text: str) -> Dict[str, Any]:
     values: Dict[str, Any] = {}
-    lines = [line.strip() for line in text.replace("\\r", "").split("\\n") if line.strip()]
+    lines = [line.strip() for line in text.replace("\r", "").split("\n") if line.strip()]
     for key, aliases in FIELD_ALIASES.items():
         for line in lines:
             if not any(alias.casefold() in line.casefold() for alias in aliases):
@@ -267,7 +268,7 @@ def _document_text(filename: str, raw: bytes) -> str:
         try:
             from pypdf import PdfReader
 
-            return "\\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(raw)).pages)
+            return "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(raw)).pages)
         except Exception:  # Optional parser; the binary remains available as evidence.
             return ""
     if suffix == "docx":
@@ -276,8 +277,8 @@ def _document_text(filename: str, raw: bytes) -> str:
 
             document = Document(BytesIO(raw))
             paragraphs = [p.text for p in document.paragraphs]
-            paragraphs.extend("\\t".join(cell.text for cell in row.cells) for table in document.tables for row in table.rows)
-            return "\\n".join(paragraphs)
+            paragraphs.extend("\t".join(cell.text for cell in row.cells) for table in document.tables for row in table.rows)
+            return "\n".join(paragraphs)
         except Exception:
             return ""
     if suffix == "xlsx":
@@ -290,8 +291,8 @@ def _document_text(filename: str, raw: bytes) -> str:
                 for values in sheet.iter_rows(values_only=True):
                     cells = [str(value).strip() for value in values if value not in (None, "")]
                     if cells:
-                        rows.append("\\t".join(cells))
-            return "\\n".join(rows)
+                        rows.append("\t".join(cells))
+            return "\n".join(rows)
         except Exception:
             return ""
     return ""
@@ -370,10 +371,10 @@ def ingest_uploaded_documents(files: List[Dict[str, Any]], case_id: str = "", ca
                 warnings.append(f"{filename} 不是有效 JSON，已保留为资料证据")
         elif suffix in {"csv", "tsv"} and text:
             try:
-                delimiter = "\\t" if suffix == "tsv" else ","
+                delimiter = "\t" if suffix == "tsv" else ","
                 rows = list(csv.DictReader(io.StringIO(text), delimiter=delimiter))
                 if rows:
-                    candidate = _extract_text_values("\\n".join(
+                    candidate = _extract_text_values("\n".join(
                         f"{row.get('parameter') or row.get('参数') or ''}: {row.get('value') or row.get('值') or ''}" for row in rows
                     ))
                     candidate["layers"] = _extract_layers_from_rows(rows)
@@ -515,6 +516,7 @@ def _source_score(documents: Iterable[Dict[str, Any]], parameters: Iterable[Dict
 
 def evaluate_case(case: Dict[str, Any]) -> Dict[str, Any]:
     """Execute the UGSci deterministic evaluator and add UI audit metadata."""
+    started = time.perf_counter()
     effective = EffectiveInventoryRequest(
         layers=tuple(_layer_request(row) for row in case["layers"]),
         cycle_id=str(case["cycle_id"]),
@@ -541,51 +543,16 @@ def evaluate_case(case: Dict[str, Any]) -> Dict[str, Any]:
     fingerprint_payload = {
         "case": {k: v for k, v in case.items() if k != "documents"},
         "operation": "storage.inventory.evaluate",
-        "provider": "ugsci-storage-inventory-core@1.2.0",
+        "provider": "ugsci-storage-inventory-core@1.3.0",
     }
     fingerprint = _fingerprint(fingerprint_payload)
     now = datetime.now(timezone.utc).isoformat()
     trace = [
-        {
-            "id": "intake",
-            "actor": "资料质检智能体",
-            "action": "资料边界与完整性检查",
-            "detail": f"核验 {len(documents)} 份资料，统一周期、计量边界与压力口径",
-            "status": "completed",
-            "duration_ms": 184,
-        },
-        {
-            "id": "extract",
-            "actor": "参数提取智能体",
-            "action": "关键参数抽取与证据定位",
-            "detail": f"提取 {len(parameters)} 项参数，保留文件、页码/表号与置信度",
-            "status": "completed",
-            "duration_ms": 326,
-        },
-        {
-            "id": "expert",
-            "actor": EXPERT["name"],
-            "action": "专业口径审查与工具路由",
-            "detail": "确认逐层 p/Z、显式视地层压力口径，并路由至完整库存评价工具",
-            "status": "completed",
-            "duration_ms": 118,
-        },
-        {
-            "id": "tool",
-            "actor": "UGSci 确定性计算内核",
-            "action": "ugsci_storage_inventory_evaluate",
-            "detail": "一次返回分层有效库存、账面达容、工作气与冲峰符合率",
-            "status": "completed",
-            "duration_ms": 42,
-        },
-        {
-            "id": "review",
-            "actor": "结论审计智能体",
-            "action": "量纲、阈值与结论状态复核",
-            "detail": "结果标记为 calculated_recommendation_pending_review，等待业务专家签审",
-            "status": "completed",
-            "duration_ms": 91,
-        },
+        {"id": "inputs", "actor": "参数校验", "action": "校验周期、状态、层系及输入单位", "status": "completed"},
+        {"id": "request", "actor": "计算适配器", "action": "构造类型化计算请求", "status": "completed"},
+        {"id": "tool", "actor": "UGSci 确定性计算内核", "action": "逐层 p/Z 与综合指标计算", "status": "completed"},
+        {"id": "warnings", "actor": "结果校验", "action": "保留内核告警与待复核状态", "status": "completed"},
+        {"id": "fingerprint", "actor": "计算记录", "action": "记录输入指纹", "status": "completed"},
     ]
     translated_warnings = [WARNING_TRANSLATIONS.get(item, item) for item in output.warnings]
     return {
@@ -606,9 +573,10 @@ def evaluate_case(case: Dict[str, Any]) -> Dict[str, Any]:
             "input_fingerprint": fingerprint,
             "evaluated_at": now,
             "provider": "ugsci-storage-inventory-core",
-            "provider_version": "1.2.0",
+            "provider_version": "1.3.0",
             "operation": "storage.inventory.evaluate",
             "deterministic": True,
+            "duration_ms": round((time.perf_counter()-started)*1000, 3),
         },
     }
 

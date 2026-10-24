@@ -294,6 +294,21 @@ it("organizes projects into seven stages and keeps material versions and submiss
   await user.click(screen.getByRole("button", { name: "建立项目" }));
   await screen.findByRole("heading", { name: "储气库项目" });
   expect(
+    screen.getByText("外协助手", { selector: ".df-brand" }),
+  ).toBeInTheDocument();
+  const projectSearch = screen.getByRole("textbox", { name: "搜索项目" });
+  await user.type(projectSearch, "不存在的项目");
+  expect(screen.getByText("未找到项目")).toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "清除搜索" }));
+  expect(projectSearch).toHaveValue("");
+  expect(
+    within(screen.getByRole("navigation", { name: "项目列表" })).getByRole(
+      "button",
+      { name: /储气库项目/ },
+    ),
+  ).toBeInTheDocument();
+
+  expect(
     screen.queryByRole("navigation", { name: "填报记录" }),
   ).not.toBeInTheDocument();
   const nav = screen.getByRole("navigation", { name: "项目阶段" });
@@ -608,6 +623,20 @@ it("keeps a single project form in the middle while questions and Office preview
   ) {
     downloaded.push(this.download);
   });
+  const today = new Date();
+  const localDate = (offset: number) => {
+    const date = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate() + offset,
+    );
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(
+      2,
+      "0",
+    )}-${String(date.getDate()).padStart(2, "0")}`;
+  };
+
+  const materialFiles: any[] = [];
   const project = (id = "p1") => ({
     id,
     name: id === "p1" ? "三栏测试项目" : "另一个项目",
@@ -637,12 +666,31 @@ it("keeps a single project form in the middle while questions and Office preview
       id,
       title: stageNames[i],
       purpose: "阶段材料",
-      status: "pending",
-      materials: [],
+      status: id === "payment" ? "completed" : "pending",
+      materials:
+        id === "negotiation"
+          ? [
+              {
+                id: "approval",
+                name: "审批回执",
+                status: "pending",
+                required: true,
+                note: "",
+                files: materialFiles,
+              },
+            ]
+          : [],
       upstream_changed: [],
       missing_required: [],
       notes: "",
-      due_date: "",
+      due_date:
+        id === "negotiation"
+          ? localDate(0)
+          : id === "plan" || id === "payment"
+          ? localDate(-2)
+          : id === "selection"
+          ? localDate(2)
+          : "",
       system_url: "",
       system_name: "",
       submission_ref: "",
@@ -660,6 +708,23 @@ it("keeps a single project form in the middle while questions and Office preview
       opens.push(state.id);
       projectRevision++;
       return reply(state);
+    }
+    if (
+      url ===
+      "/document-forms/projects/p1/stages/negotiation/materials/approval/files"
+    ) {
+      const body = init?.body as FormData;
+      expect(body.get("revision")).toBe(String(projectRevision));
+      const file = body.get("file") as File;
+      materialFiles.push({
+        id: "approval-file",
+        name: file.name,
+        size: file.size,
+        uploaded_at: new Date().toISOString(),
+        mime: "application/pdf",
+      });
+      projectRevision++;
+      return reply(project());
     }
     if (url === "/document-forms/cases/project-form") return reply(state);
     if (url.endsWith("/assistant") && init?.method === "POST") {
@@ -734,8 +799,29 @@ it("keeps a single project form in the middle while questions and Office preview
   expect(right.closest(".df-three-column")).toBeTruthy();
   await user.click(within(nav).getByRole("button", { name: /商务谈判/ }));
   const field = await screen.findByLabelText("主要研究内容（整段）");
+  expect(screen.queryByLabelText("填写流程")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "打开项目表单" }),
+  ).not.toBeInTheDocument();
+  expect(screen.getByLabelText("节点办理概况")).toHaveTextContent("今天到期");
+  expect(
+    screen.getByRole("heading", { name: /^审批资料与附件/ }),
+  ).toBeVisible();
+
   await user.clear(field);
   await user.type(field, "正在填写的内容");
+  await user.click(screen.getByRole("button", { name: "上传审批回执" }));
+  await user.upload(
+    screen.getByLabelText("上传阶段材料"),
+    new File(["approval"], "批复.pdf", { type: "application/pdf" }),
+  );
+  await screen.findByText(/材料已保存，原有版本继续保留/);
+  expect(field).toHaveValue("正在填写的内容");
+  expect(state.fields[1].value).toBe("已保存内容");
+  expect(screen.getByLabelText("节点办理概况")).toHaveTextContent(
+    "审批资料 1/1",
+  );
+
   await user.type(
     within(right).getByLabelText("向项目智能体提问"),
     "有哪些材料？",
@@ -827,11 +913,28 @@ it("keeps a single project form in the middle while questions and Office preview
     generation_id: "g1",
     name: filename,
   });
+  confirm.mockReturnValueOnce(false);
+  await user.click(screen.getByRole("button", { name: "基础信息填报" }));
+  expect(confirm).toHaveBeenCalled();
+  expect(field).toHaveValue("正在填写的内容");
   await user.click(within(nav).getByRole("button", { name: /上报计划/ }));
   await screen.findByLabelText("主要研究内容（整段）");
   expect(confirm).toHaveBeenCalled();
   await user.click(within(nav).getByRole("button", { name: /商务谈判/ }));
   await screen.findByLabelText("主要研究内容（整段）");
+  expect(screen.getByLabelText("节点办理概况")).toHaveTextContent("今天到期");
+  await user.click(within(nav).getByRole("button", { name: /上报计划/ }));
+  await screen.findByLabelText("主要研究内容（整段）");
+  expect(screen.getByLabelText("节点办理概况")).toHaveTextContent(
+    "已逾期 2 天",
+  );
+  await user.click(within(nav).getByRole("button", { name: /选商论证/ }));
+  await screen.findByLabelText("主要研究内容（整段）");
+  expect(screen.getByLabelText("节点办理概况")).toHaveTextContent("2 天后到期");
+  await user.click(within(nav).getByRole("button", { name: /归档付款/ }));
+  await screen.findByLabelText("主要研究内容（整段）");
+  expect(screen.getByLabelText("节点办理概况")).toHaveTextContent("已办结");
+  expect(screen.getByLabelText("节点办理概况")).not.toHaveTextContent("逾期");
   expect(new Set(opens)).toEqual(new Set(["project-form"]));
   expect(
     hostFetch.mock.calls.some(
@@ -2230,7 +2333,7 @@ it("fills selection opinion and upload fields with shared project references and
     "非招标方案填报",
   );
   expect(previews[previews.length - 1]).toMatchObject({ extension: "xlsx" });
-  await user.click(screen.getByRole("button", { name: /02填写资料/ }));
+  await user.click(screen.getByRole("button", { name: "填写内容" }));
   expect(screen.getByLabelText("项目概况")).toHaveValue("核对后的项目概况");
   expect(screen.getByLabelText("成员1单位")).toHaveValue("自填单位");
   expect(screen.getByRole("combobox", { name: "依托计划类型" })).toHaveValue(
@@ -2240,10 +2343,12 @@ it("fills selection opinion and upload fields with shared project references and
     screen.getByRole("combobox", { name: "本次方案经费来源" }),
   ).toHaveValue("集团");
 
-  await user.click(screen.getByRole("button", { name: "← 返回选商论证" }));
   expect(
-    screen.getByText(
-      "已接入论证意见及签字表与非招标方案填报表，可先准备论证材料，论证结束后核对系统填报信息。",
-    ),
-  ).toBeInTheDocument();
+    screen.queryByRole("button", { name: "← 返回选商论证" }),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByLabelText("填写流程")).not.toBeInTheDocument();
+  expect(
+    screen.getByRole("heading", { name: /^审批资料与附件/ }),
+  ).toBeVisible();
+  expect(screen.getByLabelText("项目概况")).toHaveValue("核对后的项目概况");
 }, 30000);

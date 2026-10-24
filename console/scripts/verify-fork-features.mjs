@@ -81,6 +81,7 @@ const suites = {
     "src/pages/Agent/MCP/components/MCPAccessModal.largeCatalog.test.tsx",
     "src/pages/Agent/MCP/components/MCPClientCard.test.tsx",
     "src/plugins/documentForms.test.tsx",
+    "src/plugins/storageCapacity.test.tsx",
     "src/plugins/hostSdk/ugsciWorkflow.test.tsx",
   ],
 };
@@ -99,6 +100,11 @@ for (const file of files) {
   requireCases(file, []);
 }
 for (const [file, titles] of [
+  ["src/plugins/storageCapacity.test.tsx", [
+    "runs the mounted page from editable parameters to report and invalidates stale exports",
+    "maps uploaded evidence into real unit inputs without overwriting existing units",
+    "keeps deterministic results available when optional agent review fails",
+  ]],
   [
     "src/plugins/expertSummon.test.tsx",
     [

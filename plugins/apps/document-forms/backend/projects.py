@@ -942,6 +942,10 @@ class ProjectStore:
         contexts = case.setdefault("stage_contexts", {})
         new_page = stage_id not in contexts
         current = case.get("stage_id", "negotiation")
+        if stage_id == "contract" and workbook:
+            raise HTTPException(422, "合同审查直接引用前序资料，请在原阶段修改")
+        if current == "contract":
+            self.prepare_contract(root, project, case)
         if current == "plan":
             self.prepare_plan(root, project, case)
         if current == "selection":
@@ -1026,6 +1030,8 @@ class ProjectStore:
             self.prepare_acceptance(root, project, case)
         if stage_id == "negotiation":
             self.prepare_implementation(root, project, case)
+        if stage_id == "contract":
+            self.prepare_contract(root, project, case)
         if not case["templates"]:
             try:
                 self.host.attach_default_templates(root, case)
@@ -1038,6 +1044,36 @@ class ProjectStore:
             self.touch(project, self.stage(project, stage_id), root)
         self.save(root, project)
         return self.host.public(case)
+
+    def prepare_contract(self, root, project, case):
+        """Contract review references upstream values rather than another copy."""
+        references = {f["key"]: copy.deepcopy(f) for f in project["fields"]}
+        contexts = case.get("stage_contexts", {})
+        for stage_id in ("negotiation", "selection", "plan"):
+            for field in contexts.get(stage_id, {}).get("fields", []):
+                if field["key"] not in references:
+                    references[field["key"]] = copy.deepcopy(field)
+        for field in references.values():
+            field.update(scope="shared", read_only=True, required=False)
+        fields = list(references.values())
+        if fields == case["fields"] and case.get("contract_schema") == 1:
+            return
+        history = self.path(root, project["id"]) / "form-history"
+        history.mkdir(exist_ok=True)
+        source = self.host.folder(root, case["id"]) / "draft.json"
+        if source.is_file():
+            backup = (
+                history
+                / f"{case['id']}_before_contract_references_r{case['revision']}.json"
+            )
+            if not backup.exists():
+                backup.write_bytes(source.read_bytes())
+        case["fields"] = fields
+        case["recipients"] = []
+        case["contract_schema"] = 1
+        case["review_token"] = None
+        case["revision"] += 1
+        self.host.save(root, case)
 
     def prepare_implementation(self, root, project, case):
         """Extend bundled negotiation pages while retaining custom templates."""

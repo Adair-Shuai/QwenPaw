@@ -1454,3 +1454,31 @@ class TestResidualBranches:
         )
         assert Path(response.path) == asset
         assert response.headers["Cache-Control"] == "no-cache"
+
+
+@pytest.mark.parametrize("resource", ["skills", "mcp", "agents"])
+def test_oss_proxy_http_route_is_not_plugin_lookup(resource):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    app = FastAPI()
+    app.include_router(plugins_module.router, prefix="/api")
+    fetch = AsyncMock(return_value=(b'{"items": []}', "application/json", "hit"))
+    with patch("qwenpaw.plugins.oss_cache.fetch_oss_resource", fetch):
+        response = TestClient(app).get(
+            "/api/plugins/oss-proxy", params={"path": f"{resource}/manifest.json"}
+        )
+    assert response.status_code == 200
+    assert response.json() == {"items": []}
+    fetch.assert_awaited_once_with(f"{resource}/manifest.json", force=False)
+
+
+def test_literal_plugin_get_routes_precede_catch_all():
+    from starlette.routing import Match
+
+    for route in plugins_module.router.routes:
+        if "GET" not in getattr(route, "methods", ()) or "{" in route.path:
+            continue
+        scope = {"type": "http", "method": "GET", "path": route.path}
+        winner = next(r for r in plugins_module.router.routes if r.matches(scope)[0] == Match.FULL)
+        assert winner is route, f"{route.path} shadowed by {winner.path}"

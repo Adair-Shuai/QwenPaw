@@ -88,14 +88,9 @@ function ProjectChat({ project, stageId, selection, services }) {
   }
   return (
     <section className="df-project-chat" aria-label="项目智能体问答">
-      <p className="df-muted">
-        结合已保存的项目资料和当前预览回答，问答随项目保留。
-      </p>
       <div className="df-chat-messages" aria-live="polite">
         {!messages.length && (
           <div className="df-chat-welcome">
-            <h3>围绕当前项目提问</h3>
-            <p>可以梳理本阶段还需准备的材料，或对照预览文件核实内容。</p>
             {[
               "本阶段还需要准备哪些材料？",
               "帮我核对当前文件中的日期和金额。",
@@ -290,13 +285,12 @@ export default function RightWorkspace({
       </button>
       <header>
         <div>
-          <span className="df-eyebrow">项目工作区</span>
           <h2>
             {mode === "preview"
               ? "文件预览"
               : mode === "review"
               ? "响应文件核查"
-              : "智能体问答"}
+              : "项目问答"}
           </h2>
         </div>
         <div className="df-dock-tabs" role="tablist" aria-label="右侧工作区">

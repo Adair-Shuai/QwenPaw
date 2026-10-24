@@ -1580,16 +1580,6 @@ async def get_plugin_status(plugin_id: str, request: Request):
     )
 
 
-@router.get(
-    "/{plugin_id}",
-    summary="Get a plugin",
-    description="Return one plugin's runtime status, or 404 if missing.",
-)
-async def get_plugin(plugin_id: str, request: Request):
-    """Return one plugin. Missing ids are 404, never 405."""
-    return await get_plugin_status(plugin_id, request)
-
-
 class UpdatePluginConfigRequest(BaseModel):
     """Replace the plugin-facing config without reimporting the module."""
 
@@ -2022,3 +2012,14 @@ async def _async_download(url: str, dest: Path) -> None:
                     fh.write(chunk)
 
     await asyncio.to_thread(_download)
+
+
+# Keep the catch-all lookup after every literal GET route (market, oss-proxy).
+@router.get(
+    "/{plugin_id}",
+    summary="Get a plugin",
+    description="Return one plugin's runtime status, or 404 if missing.",
+)
+async def get_plugin(plugin_id: str, request: Request):
+    """Return one plugin. Missing ids are 404, never 405."""
+    return await get_plugin_status(plugin_id, request)

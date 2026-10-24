@@ -112,7 +112,6 @@ function PlanPartnersField({ field, onChange }) {
           />
         </label>
       ))}
-      <small>三家单位分别填写，与商务谈判阶段的受邀单位分开保存。</small>
     </div>
   );
 }
@@ -182,8 +181,12 @@ function Field({ field, displayValue, onChange }) {
           onChange={(e) => onChange(e.target.value)}
         />
       )}
-      {field.help && <small className="df-field-help">{field.help}</small>}
-      <small>{field.key}</small>
+      {field.help && (
+        <details className="df-field-help">
+          <summary>填写说明</summary>
+          <p>{field.help}</p>
+        </details>
+      )}
     </label>
   );
 }
@@ -290,6 +293,7 @@ function Workbench({
   workflowStage,
   initialCaseId,
   initialView,
+  editRequest = 0,
   initialDraft,
   onBack,
   onChanged,
@@ -353,6 +357,12 @@ function Workbench({
       seq.current++;
     };
   }, []);
+  useEffect(() => {
+    if (editRequest) {
+      setStage("edit");
+      setConfirmed(false);
+    }
+  }, [editRequest]);
   useEffect(() => {
     onDirtyChange?.(dirty);
   }, [dirty]);
@@ -439,7 +449,8 @@ function Workbench({
   const isPlan = draft?.stage_id === "plan" && draft?.plan_schema === 1;
   const isSelection =
     draft?.stage_id === "selection" && draft?.selection_schema === 1;
-  const hasSharedReferences = isPlan || isSelection;
+  const isContract = draft?.stage_id === "contract";
+  const hasSharedReferences = isPlan || isSelection || isContract;
   const templateLabel = hasSharedReferences ? "文书模板" : "Word 模板";
   const editableFields = hasSharedReferences
     ? draft.fields.filter((f) => f.scope !== "shared")
@@ -621,61 +632,61 @@ function Workbench({
         }}
       />
       <section className="df-main">
-        <div className="df-editor-context">
-          <button
-            disabled={!!busy}
-            onClick={() => {
-              if (canLeave()) onBack();
-            }}
-          >
-            ← 返回{workflowStage.title}
-          </button>
-          <span>
-            {project.name} / {workflowStage.title}
-          </span>
-          {docked && (
+        {!docked && (
+          <div className="df-editor-context">
             <button
-              disabled={!!busy || dirty}
-              title={dirty ? "请先保存表单" : "更新当前节点的办理信息"}
-              onClick={onStageStatus}
+              disabled={!!busy}
+              onClick={() => {
+                if (canLeave()) onBack();
+              }}
             >
-              办理信息与状态
+              ← 返回{workflowStage.title}
             </button>
-          )}
-          {draft && (
-            <div className="df-actions">
+            <span>
+              {project.name} / {workflowStage.title}
+            </span>
+            {docked && (
               <button
-                disabled={!!busy}
-                onClick={() => {
-                  setComparison("adopt");
-                  setSelectedKeys([]);
-                }}
+                disabled={!!busy || dirty}
+                title={dirty ? "请先保存表单" : "更新当前节点的办理信息"}
+                onClick={onStageStatus}
               >
-                核对项目资料差异
+                办理信息与状态
               </button>
-              <button
-                disabled={!!busy}
-                onClick={() => {
-                  setComparison("publish");
-                  setSelectedKeys([]);
-                }}
-              >
-                存入项目底稿
-              </button>
-            </div>
-          )}
-        </div>
+            )}
+            {draft && (
+              <div className="df-actions">
+                <button
+                  disabled={!!busy}
+                  onClick={() => {
+                    setComparison("adopt");
+                    setSelectedKeys([]);
+                  }}
+                >
+                  核对项目资料差异
+                </button>
+                <button
+                  disabled={!!busy}
+                  onClick={() => {
+                    setComparison("publish");
+                    setSelectedKeys([]);
+                  }}
+                >
+                  存入项目底稿
+                </button>
+              </div>
+            )}
+          </div>
+        )}
         <header className="df-header">
           <div>
-            <span className="df-eyebrow">
-              {workflowStage.title} / 填写与生成
-            </span>
+            {!docked && (
+              <span className="df-eyebrow">
+                {workflowStage.title} / 填写与生成
+              </span>
+            )}
             <h1>
-              {draft
-                ? docked
-                  ? workflowStage.title + " · 项目表单"
-                  : draft.name
-                : "把重复填写的资料，整理成一张表。"}
+              {draft ? (docked ? "填写内容" : draft.name) : "填写项目资料"}
             </h1>
             <p>
               {draft
@@ -700,28 +711,79 @@ function Workbench({
             </button>
           )}
         </header>
-        <div className="df-steps" aria-label="填写流程">
-          {[
-            ["import", "01", "导入模板"],
-            ["edit", "02", "填写资料"],
-            ["review", "03", "核对生成"],
-            ["files", "04", "文件预览"],
-          ].map(([id, n, label]) => (
+        {docked ? (
+          <div className="df-node-tools" aria-label="表单操作">
+            {stage !== "edit" && (
+              <button
+                disabled={!!busy}
+                onClick={() => {
+                  setStage("edit");
+                  setConfirmed(false);
+                }}
+              >
+                返回填写
+              </button>
+            )}
             <button
-              key={id}
-              className={stage === id ? "active" : ""}
-              disabled={
-                !!busy ||
-                (!draft && id !== "import") ||
-                (id === "files" && !generation)
-              }
-              onClick={() => (id === "review" ? reviewDraft() : setStage(id))}
+              disabled={!!busy}
+              onClick={() => excelInput.current.click()}
             >
-              <span>{n}</span>
-              {label}
+              导入 Excel
             </button>
-          ))}
-        </div>
+            {generation && stage !== "files" && (
+              <button disabled={!!busy} onClick={() => setStage("files")}>
+                查看生成文件
+              </button>
+            )}
+            <details>
+              <summary>更多操作</summary>
+              <div className="df-actions">
+                <button
+                  disabled={!!busy}
+                  onClick={() => {
+                    setComparison("adopt");
+                    setSelectedKeys([]);
+                  }}
+                >
+                  核对项目资料差异
+                </button>
+                <button
+                  disabled={!!busy}
+                  onClick={() => {
+                    setComparison("publish");
+                    setSelectedKeys([]);
+                  }}
+                >
+                  存入项目底稿
+                </button>
+              </div>
+            </details>
+          </div>
+        ) : (
+          <div className="df-steps" aria-label="填写流程">
+            {[
+              ["import", "01", "导入模板"],
+              ["edit", "02", "填写资料"],
+              ["review", "03", "核对生成"],
+              ["files", "04", "文件预览"],
+            ].map(([id, n, label]) => (
+              <button
+                key={id}
+                aria-current={stage === id ? "step" : undefined}
+                className={stage === id ? "active" : ""}
+                disabled={
+                  !!busy ||
+                  (!draft && id !== "import") ||
+                  (id === "files" && !generation)
+                }
+                onClick={() => (id === "review" ? reviewDraft() : setStage(id))}
+              >
+                <span>{n}</span>
+                {label}
+              </button>
+            ))}
+          </div>
+        )}
         {error && (
           <div className="df-alert error" role="alert">
             {error}
@@ -794,7 +856,7 @@ function Workbench({
             <div className="df-edit-layout">
               <section className="df-paper">
                 <div className="df-section-head">
-                  <h2>填写信息</h2>
+                  {!docked && <h2>填写信息</h2>}
                   <button
                     onClick={() =>
                       run("导出 Excel", async () => {
@@ -830,9 +892,13 @@ function Workbench({
                   >
                     <div className="df-section-head">
                       <div>
-                        <h3>引用的基础信息</h3>
+                        <h3>
+                          {isContract ? "合同审查引用资料" : "引用的基础信息"}
+                        </h3>
                         <p className="df-muted">
-                          这些资料由基础信息填报维护，核对后用于本次生成。
+                          {isContract
+                            ? "自动引用基础信息及计划、论证、谈判阶段资料。请在原阶段更正，返回本阶段后会同步引用；这里只核对合同，不重复填写。"
+                            : "这些资料由基础信息填报维护，核对后用于本次生成。"}
                         </p>
                       </div>
                       {onEditBasics && (
@@ -1096,7 +1162,6 @@ function Workbench({
                         建议打印 {t.print_copies} 份 · {t.print_note}
                       </small>
                     )}
-                    <small>{t.keys.length} 个引用变量</small>
                     <button
                       aria-label={"移除模板" + t.name}
                       onClick={() =>
@@ -1404,8 +1469,7 @@ function Workbench({
           )}
         </fieldset>
         <footer className="df-footer">
-          <span>UGSci · 文书填报</span>
-          <span>数据与文书保存在当前服务端 · 无需模型服务</span>
+          <span>UGSci · 外协助手</span>
         </footer>
       </section>
       {comparison && draft && (
@@ -1551,7 +1615,7 @@ Q.registerRoutes("document-forms", [
   {
     path: "/apps/document-forms",
     component: App,
-    label: "文书填报",
+    label: "外协助手",
     icon: "▤",
   },
 ]);
