@@ -20,17 +20,14 @@ from concurrent.futures import Future
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from .execution_repository import ExecutionRepository
+from .lifecycle import RunLifecycleMixin
 from .engine import (
-    NodeRegistry,
-    ProgressEvent,
     ProgressRegistry,
-    WorkflowDocument,
     WorkflowExecutor,
     WorkflowResult,
-    WorkflowState,
     WorkflowStatus,
     build_workflow_state_store,
     canonicalize,
@@ -71,13 +68,14 @@ class RunHandle:
     # so callers that observe ``is_done`` can safely restart and read the
     # durable state immediately.
     finalized: bool = False
+    metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
     def status(self) -> WorkflowStatus:
-        if self.result is not None:
-            return self.result.status
         if self.cancel_requested:
             return WorkflowStatus.CANCELLED
+        if self.result is not None:
+            return self.result.status
         if self.error is not None:
             return WorkflowStatus.FAILED
         return WorkflowStatus.RUNNING
@@ -89,6 +87,7 @@ class RunHandle:
     def to_dict(self) -> dict[str, Any]:
         history = self.progress.history()
         return {
+            **self.metadata,
             "run_id": self.run_id,
             "flow_id": self.flow_id,
             "state_id": str(self.state_id),
@@ -107,7 +106,7 @@ class RunHandle:
         }
 
 
-class WorkflowService:
+class WorkflowService(RunLifecycleMixin):
     """Top-level service: flow CRUD + run lifecycle + progress routing.
 
     Runs workflows on a dedicated background event-loop thread so that
@@ -134,6 +133,9 @@ class WorkflowService:
             state_store=build_workflow_state_store(self._flows_dir),
         )
         self._runs: dict[str, RunHandle] = {}
+        self._lifecycle_lock = threading.RLock()
+        self._executor.workflow_service = self
+        self.node_catalog = None
         # Background event loop so runs outlive any single HTTP request.
         self._loop = asyncio.new_event_loop()
         self._loop_thread = threading.Thread(
@@ -216,14 +218,22 @@ class WorkflowService:
         path.unlink()
         return True
 
-    def validate_flow(self, payload: dict[str, Any]) -> dict[str, Any]:
+    def validate_flow(self, payload: dict[str, Any], *, node_registry=None) -> dict[str, Any]:
         doc = load(_materialize_edge_dependencies(payload))
-        result = validate(doc, registry=self._executor.node_registry)
+        result = validate(doc, registry=node_registry or self._executor.node_registry)
         return {
             "ok": result.ok,
             "errors": result.errors,
             "output_nodes": result.output_nodes,
         }
+
+    async def validate_flow_for_agent(self, payload: dict[str, Any], agent_id: str | None = None) -> dict[str, Any]:
+        if self.node_catalog is None:
+            return self.validate_flow(payload)
+        from qwenpaw.app.agent_context import get_current_agent_id
+
+        scoped = await self.node_catalog.prepare(self._executor, agent_id or get_current_agent_id(), {})
+        return self.validate_flow(payload, node_registry=scoped.node_registry)
 
     def generate_flow(
         self,
@@ -302,251 +312,16 @@ class WorkflowService:
     # ------------------------------------------------------------------
     # Run lifecycle
     # ------------------------------------------------------------------
-    def start_run(
-        self,
-        flow_id: str,
-        inputs: dict[str, Any] | None = None,
-        *,
-        on_event: "callable[[ProgressEvent], None] | None" = None,  # type: ignore[name-defined]
-    ) -> RunHandle:
-        """Start an async run. Returns the run handle immediately.
-
-        ``on_event`` is an optional sync callback invoked for every
-        progress event (used by SSE / WebSocket endpoints).
-        """
-        flow_payload = self.get_flow(flow_id)
-        if flow_payload is None:
-            raise FileNotFoundError(f"flow '{flow_id}' not found")
-        # Support flows saved by older editors where canvas edges existed only
-        # in the sibling ``edges`` array and had not yet been materialised.
-        doc = load(_materialize_edge_dependencies(flow_payload))
-        run_id = str(uuid4())
-        prompt_id = run_id  # 1:1 mapping for FlowForge
-        progress = ProgressRegistry(prompt_id=prompt_id)
-        self._execution_repository.create(
-            run_id,
-            flow_id,
-            status="queued",
-            started_at=time.time(),
-            owner_pid=os.getpid(),
-        )
-        progress.add_handler(
-            lambda event: self._execution_repository.append_event(
-                run_id, event.to_dict(),
-            ),
-        )
-        if on_event is not None:
-            progress.add_handler(on_event)
-        # Attach a fresh progress handler to the executor for this run.
-        executor = self._executor
-
-        async def _run() -> WorkflowResult:
-            try:
-                self._execution_repository.update(run_id, status="running")
-                result = await executor.execute_async(
-                    doc,
-                    inputs or {},
-                    prompt_id=prompt_id,
-                    progress_registry=progress,
-                )
-                return result
-            except Exception as exc:
-                logger.exception("run %s failed", run_id)
-                raise exc
-
-        # Schedule the coroutine on the background loop; the returned
-        # concurrent.futures.Future lets us query / cancel it from any thread.
-        future = asyncio.run_coroutine_threadsafe(_run(), self._loop)
-        handle = RunHandle(
-            run_id=run_id,
-            flow_id=flow_id,
-            state_id=UUID("00000000-0000-0000-0000-000000000000"),
-            progress=progress,
-            future=future,
-        )
-        self._runs[run_id] = handle
-
-        def _on_done(fut: Future) -> None:
-            handle.finished_at = time.time()
-            try:
-                handle.result = fut.result()
-                handle.state_id = handle.result.state_id
-                self._execution_repository.update(
-                    run_id,
-                    state_id=str(handle.result.state_id),
-                    status=handle.result.status.value,
-                    finished_at=handle.finished_at,
-                    outputs=handle.result.outputs,
-                    errors=handle.result.errors,
-                    duration_ms=handle.result.duration_ms,
-                    execution_history=[
-                        entry.model_dump(mode="json")
-                        for entry in handle.result.execution_history
-                    ],
-                    node_statuses=handle.progress.node_statuses(),
-                )
-            except Exception as exc:
-                handle.error = str(exc)
-                handle.progress.emit(
-                    ProgressEvent(
-                        type="execution_failed",
-                        prompt_id=run_id,
-                        data={"errors": [str(exc)], "outputs": {}},
-                    ),
-                )
-                self._execution_repository.update(
-                    run_id, status="failed", error=str(exc),
-                    finished_at=handle.finished_at,
-                    node_statuses=handle.progress.node_statuses(),
-                )
-            finally:
-                handle.finalized = True
-
-        future.add_done_callback(_on_done)
-        return handle
-
-    def resume_run(
-        self,
-        run_id: str,
-        inputs: dict[str, Any] | None = None,
-    ) -> RunHandle:
-        """Resume a paused/blocked run with new inputs.
-
-        Re-uses the existing executor's ``resume`` method to continue
-        from the persisted state snapshot.
-        """
-        handle = self._runs.get(run_id)
-        record = self._execution_repository.get(run_id)
-        if handle is None and record is None:
-            raise FileNotFoundError(f"run '{run_id}' not found")
-        flow_id = handle.flow_id if handle is not None else str(record["flow_id"])
-        state_id = (
-            handle.state_id
-            if handle is not None
-            else UUID(str(record.get("state_id")))
-        )
-        flow_payload = self.get_flow(flow_id)
-        if flow_payload is None:
-            raise FileNotFoundError(f"flow '{flow_id}' not found")
-        doc = load(_materialize_edge_dependencies(flow_payload))
-        new_run_id = str(uuid4())
-        prompt_id = new_run_id
-        progress = ProgressRegistry(prompt_id=prompt_id)
-        self._execution_repository.create(
-            new_run_id,
-            flow_id,
-            status="queued",
-            started_at=time.time(),
-            parent_run_id=run_id,
-            state_id=str(state_id),
-            owner_pid=os.getpid(),
-        )
-        progress.add_handler(
-            lambda event: self._execution_repository.append_event(
-                new_run_id, event.to_dict(),
-            ),
-        )
-        executor = self._executor
-
-        async def _resume() -> WorkflowResult:
-            try:
-                self._execution_repository.update(new_run_id, status="running")
-                from uuid import UUID
-                result = await executor.resume(
-                    doc,
-                    state_id,
-                    inputs or {},
-                    prompt_id=prompt_id,
-                    progress_registry=progress,
-                )
-                return result
-            except Exception as exc:
-                logger.exception("resume %s failed", new_run_id)
-                raise exc
-
-        future = asyncio.run_coroutine_threadsafe(_resume(), self._loop)
-        new_handle = RunHandle(
-            run_id=new_run_id,
-            flow_id=flow_id,
-            state_id=state_id,
-            progress=progress,
-            future=future,
-        )
-        self._runs[new_run_id] = new_handle
-
-        def _on_done(fut: Future) -> None:
-            new_handle.finished_at = time.time()
-            try:
-                new_handle.result = fut.result()
-                new_handle.state_id = new_handle.result.state_id
-                self._execution_repository.update(
-                    new_run_id,
-                    state_id=str(new_handle.result.state_id),
-                    status=new_handle.result.status.value,
-                    finished_at=new_handle.finished_at,
-                    outputs=new_handle.result.outputs,
-                    errors=new_handle.result.errors,
-                    duration_ms=new_handle.result.duration_ms,
-                    execution_history=[
-                        entry.model_dump(mode="json")
-                        for entry in new_handle.result.execution_history
-                    ],
-                    node_statuses=new_handle.progress.node_statuses(),
-                )
-            except Exception as exc:
-                new_handle.error = str(exc)
-                new_handle.progress.emit(
-                    ProgressEvent(
-                        type="execution_failed",
-                        prompt_id=new_run_id,
-                        data={"errors": [str(exc)], "outputs": {}},
-                    ),
-                )
-                self._execution_repository.update(
-                    new_run_id, status="failed", error=str(exc),
-                    finished_at=new_handle.finished_at,
-                    node_statuses=new_handle.progress.node_statuses(),
-                )
-            finally:
-                new_handle.finalized = True
-
-        future.add_done_callback(_on_done)
-        return new_handle
-
-    def get_run(self, run_id: str) -> RunHandle | None:
-        return self._runs.get(run_id)
-
-    def get_run_record(self, run_id: str) -> dict[str, Any] | None:
-        handle = self._runs.get(run_id)
-        return handle.to_dict() if handle is not None else self._execution_repository.get(run_id)
-
-    def list_runs(self) -> list[dict[str, Any]]:
-        records = {
-            record["run_id"]: record
-            for record in self._execution_repository.list()
-        }
-        records.update({run_id: handle.to_dict() for run_id, handle in self._runs.items()})
-        return sorted(
-            records.values(),
-            key=lambda item: item.get("started_at") or 0,
-            reverse=True,
-        )
-
-    def cancel_run(self, run_id: str) -> bool:
-        handle = self._runs.get(run_id)
-        if handle is None:
-            return False
-        if handle.future is not None and not handle.future.done():
-            handle.cancel_requested = True
-            self._execution_repository.update(run_id, status="cancelled")
-            self._loop.call_soon_threadsafe(
-                self._executor.cancel_by_prompt_id,
-                run_id,
-            )
-        return True
-
     def node_types(self) -> list[dict[str, Any]]:
         return self._executor.node_registry.all_types()
+
+    async def refresh_node_types(self, agent_id: str | None = None) -> list[dict[str, Any]]:
+        if self.node_catalog is None:
+            return self.node_types()
+        from qwenpaw.app.agent_context import get_current_agent_id
+
+        scoped = await self.node_catalog.prepare(self._executor, agent_id or get_current_agent_id(), {})
+        return scoped.node_registry.all_types()
 
     # ------------------------------------------------------------------
     # Internal helpers

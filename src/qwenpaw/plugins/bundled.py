@@ -627,7 +627,9 @@ def _stage_and_replace_bundle(
         _copy_bundle(source, staged)
         if target.is_dir():
             for dirname in preserve_dirs:
-                _copy_missing_tree(target / dirname, staged / dirname)
+                data_source = target / dirname
+                data_source.resolve().relative_to(target.resolve())
+                _copy_missing_tree(data_source, staged / dirname)
         if bundle_hash is not None:
             _write_bundle_hash(staged, bundle_hash)
         if bundle_revision is not None:
@@ -979,7 +981,12 @@ def _install_or_update_plugin(
             item,
             target_dir,
             bundled_hash,
-            _PRESERVE_ON_UPDATE_DIRS,
+            _PRESERVE_ON_UPDATE_DIRS
+            | (
+                frozenset({"visualization/data"})
+                if plugin_id == "ugsci"
+                else frozenset()
+            ),
             bundle_revision=None if hash_enabled else bundled_revision,
             defer_activation_cleanup=defer_activation_cleanup,
             plugin_id=plugin_id,

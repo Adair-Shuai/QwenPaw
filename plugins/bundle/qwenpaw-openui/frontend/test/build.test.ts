@@ -1,5 +1,6 @@
 import {
-  cpSync,
+  copyFileSync,
+  readdirSync,
   existsSync,
   mkdtempSync,
   mkdirSync,
@@ -12,16 +13,27 @@ import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { expect, it } from "vitest";
 
+// Node 24's recursive cp can silently omit Unicode destinations on Windows.
+// Explicit copies still exercise the actual build in that Unicode directory.
+function copyTree(source: string, target: string) {
+  mkdirSync(target, { recursive: true });
+  for (const entry of readdirSync(source, { withFileTypes: true })) {
+    const from = join(source, entry.name);
+    const to = join(target, entry.name);
+    if (entry.isDirectory()) copyTree(from, to);
+    else copyFileSync(from, to);
+  }
+}
+
 it("builds the release entry at a filesystem path containing spaces and Unicode", () => {
   const temp = mkdtempSync(join(tmpdir(), "qwenpaw 空格 "));
   try {
     const frontend = join(temp, "plugin/frontend");
     mkdirSync(frontend, { recursive: true });
-    for (const path of ["scripts", "src", "package.json"])
-      cpSync(resolve(path), join(frontend, path), { recursive: true });
-    cpSync(resolve("../examples"), join(temp, "plugin/examples"), {
-      recursive: true,
-    });
+    for (const path of ["scripts", "src"])
+      copyTree(resolve(path), join(frontend, path));
+    copyFileSync(resolve("package.json"), join(frontend, "package.json"));
+    copyTree(resolve("../examples"), join(temp, "plugin/examples"));
     symlinkSync(
       resolve("node_modules"),
       join(frontend, "node_modules"),

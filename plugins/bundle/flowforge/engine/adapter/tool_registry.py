@@ -34,6 +34,7 @@ class ToolResult:
     success: bool = True
     data: Any = None
     error: str | None = None
+    retryable: bool = True
 
 
 @dataclass

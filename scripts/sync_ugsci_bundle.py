@@ -29,6 +29,9 @@ def _repo_root() -> Path:
 def _is_included(relative_path: Path) -> bool:
     return (
         (not relative_path.parts or relative_path.parts[0] != "docs")
+        # Visualization samples, converted fixtures and test caches are local
+        # development data. Never mirror them into distributable package data.
+        and relative_path.parts[:2] != ("visualization", "data")
         and not EXCLUDED_PARTS.intersection(relative_path.parts)
         and relative_path.name not in EXCLUDED_NAMES
         and relative_path.suffix not in EXCLUDED_SUFFIXES

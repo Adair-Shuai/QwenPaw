@@ -537,6 +537,11 @@ async def office_add_element(
     ``{"font": {"eastAsia": "宋体"}}`` becomes
     ``--prop font.eastAsia=宋体``.
 
+    With OfficeCLI 1.0.157, text uses newline for a paragraph boundary and
+    vertical tab for a soft line break. Existing Word content controls accept
+    checked, items, dropDown.lastValue and date.fullDate through this tool.
+    Editing .docm/.xlsm/.pptm preserves existing macros; it never runs them.
+
     Args:
         file_path (`str`):
             Document path.
@@ -791,7 +796,8 @@ async def office_view_document(
             Document path (.docx/.xlsx/.pptx).
         mode (`str`):
             View mode: "outline" (document structure), "html" (rendered
-            HTML), or "issues" (formatting/accessibility issues).
+            HTML), "issues" (formatting/accessibility issues), or "forms"
+            (Word content controls and their current values).
             Default: "outline".
 
     Returns:
@@ -799,7 +805,7 @@ async def office_view_document(
             JSON or text with the document view.
     """
     resolved = _resolve_workspace_path(file_path)
-    valid_modes = {"outline", "html", "issues"}
+    valid_modes = {"outline", "html", "issues", "forms"}
     if mode not in valid_modes:
         return _json_toolchunk(
             {
@@ -1049,11 +1055,13 @@ async def office_merge_template(
 
     # Write data to a temp JSON file for officecli --data
     workspace_dir = get_current_workspace_dir() or WORKING_DIR
-    data_file = str(workspace_dir / f"merge_data_{os.getpid()}.json")
-    with open(data_file, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False)
-
+    temp_fd, data_file = tempfile.mkstemp(
+        prefix="office-merge_data-", suffix=".json", dir=workspace_dir,
+    )
+    os.close(temp_fd)
     try:
+        with open(data_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
         result = await _run_officecli_mutation(
             resolved_output,
             "merge",
@@ -1100,6 +1108,10 @@ async def office_batch_operations(
     to dotted keys (e.g. ``{"font": {"eastAsia": "宋体"}}`` →
     ``{"font.eastAsia": "宋体"}``).
 
+    Preserve a dump's meta/dumpVersion entry when replaying historical dumps.
+    Newline means a paragraph; vertical tab means a soft line break in Word
+    and PowerPoint. Excel retains newline within a cell.
+
     Args:
         file_path (`str`):
             Document path.
@@ -1140,11 +1152,13 @@ async def office_batch_operations(
 
     # Write commands to a temp JSON file
     workspace_dir = get_current_workspace_dir() or WORKING_DIR
-    cmd_file = str(workspace_dir / f"batch_cmds_{os.getpid()}.json")
-    with open(cmd_file, "w", encoding="utf-8") as f:
-        json.dump(normalised, f, ensure_ascii=False)
-
+    temp_fd, cmd_file = tempfile.mkstemp(
+        prefix="office-batch_cmds-", suffix=".json", dir=workspace_dir,
+    )
+    os.close(temp_fd)
     try:
+        with open(cmd_file, "w", encoding="utf-8") as f:
+            json.dump(normalised, f, ensure_ascii=False)
         result = await _run_officecli_mutation(
             resolved,
             "batch",
@@ -1382,6 +1396,8 @@ async def office_import_data(
     data_format: str = "csv",
     has_header: bool = False,
     start_cell: str = "A1",
+    delimiter: str | None = None,
+    decimal: str | None = None,
 ) -> ToolChunk:
     """Import CSV/TSV data into an Excel sheet.
 
@@ -1399,6 +1415,10 @@ async def office_import_data(
             and freeze pane.
         start_cell (`str`):
             Starting cell for the data. Default: "A1".
+        delimiter (`str | None`):
+            Explicit CSV separator, such as ';', '|', or 'tab'.
+        decimal (`str | None`):
+            Source decimal mark, '.' or ','. Never guess the source locale.
 
     Returns:
         `ToolChunk`:
@@ -1406,6 +1426,13 @@ async def office_import_data(
     """
     resolved = _resolve_workspace_path(file_path)
     resolved_source = _resolve_workspace_path(source_file)
+    if delimiter is not None and not (
+        delimiter in {"tab", "\\t", "\t"}
+        or (len(delimiter) == 1 and delimiter not in {'"', "\r", "\n"})
+    ):
+        return _json_toolchunk({"ok": False, "error": "Invalid CSV delimiter"})
+    if decimal is not None and decimal not in {".", ","}:
+        return _json_toolchunk({"ok": False, "error": "Invalid decimal mark"})
     args: list[str] = [
         "import",
         resolved,
@@ -1418,7 +1445,11 @@ async def office_import_data(
     ]
     if has_header:
         args.append("--header")
-    result = await _run_officecli(*args)
+    if delimiter is not None:
+        args.extend(["--delimiter", delimiter])
+    if decimal is not None:
+        args.extend(["--decimal", decimal])
+    result = await _run_officecli_mutation(resolved, *args)
     return _json_toolchunk(result)
 
 

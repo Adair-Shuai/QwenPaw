@@ -1,6 +1,9 @@
 # -*- coding: utf-8 -*-
 """Registration-chain test for the bundled UGSci plugin."""
 
+# Registration tests intentionally exercise the plugin's registration helpers.
+# pylint: disable=protected-access
+
 from __future__ import annotations
 
 import inspect
@@ -233,18 +236,16 @@ def test_plugin_registers_team_mode_router_and_simulation_tools(
     }
 
 
-def test_storage_inventory_run_executors_return_result_and_emit_audit_events() -> (
-    None
-):
-    from types import SimpleNamespace
-
+def test_inventory_run_executors_return_results_and_audit_events() -> None:
     class Repository:
         def __init__(self) -> None:
             self.provenance: list[tuple[str, dict[str, Any]]] = []
             self.events: list[tuple[str, dict[str, Any]]] = []
 
         def upsert_provenance(
-            self, run_id: str, payload: dict[str, Any]
+            self,
+            run_id: str,
+            payload: dict[str, Any],
         ) -> None:
             self.provenance.append((run_id, payload))
 
@@ -253,7 +254,7 @@ def test_storage_inventory_run_executors_return_result_and_emit_audit_events() -
         run_id="inventory-run",
         repository=repository,
         emit=lambda event_type, data: repository.events.append(
-            (event_type, data)
+            (event_type, data),
         ),
         check_cancelled=lambda: None,
     )
@@ -306,7 +307,6 @@ def test_run_center_executor_registration_is_optional() -> None:
 
 def test_storage_inventory_executor_runs_through_native_run_center(
     tmp_path,
-    monkeypatch,
 ) -> None:
     import time
 
@@ -546,8 +546,9 @@ def test_manifest_declares_supported_qwenpaw_range() -> None:
     )
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["qwenpaw_version"] == {
-        "min": "2.1.0",
-        "max": "2.3.0",
+        # Earlier cores cannot preserve historical visualization/data imports.
+        "min": "2.2.2b9",
+        "max": "2.4.0",
     }
 
 
@@ -642,7 +643,9 @@ def test_manifest_tool_sync_preserves_explicitly_disabled_simulation_tool(
         ),
     )
     monkeypatch.setattr(
-        config_module, "load_agent_config", lambda _: agent_config
+        config_module,
+        "load_agent_config",
+        lambda _: agent_config,
     )
     monkeypatch.setattr(
         config_module,

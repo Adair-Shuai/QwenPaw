@@ -272,7 +272,7 @@ plugin = Plugin()
     shutil.copytree(
         Path(qwenpaw.__file__).resolve().parent,
         host_source / "qwenpaw",
-        ignore=shutil.ignore_patterns("__pycache__"),
+        ignore=shutil.ignore_patterns("__pycache__", "node_modules", "console"),
     )
     code = r"""
 import asyncio, importlib.metadata, json, subprocess, sys

@@ -98,9 +98,14 @@ def test_registry_and_runtime_readiness_are_distinct() -> None:
         if (
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
-            and isinstance(node.func.value, ast.Name)
-            and node.func.value.id == "hook"
-            and node.func.attr == "callback"
+            and (
+                node.func.attr == "activate_all_loaded"
+                or (
+                    isinstance(node.func.value, ast.Name)
+                    and node.func.value.id == "hook"
+                    and node.func.attr == "callback"
+                )
+            )
         ):
             hook_invoke_lines.append(node.lineno)
 
@@ -164,9 +169,7 @@ def test_bundled_candidates_are_health_checked_before_agent_startup() -> None:
         name = (
             func.attr
             if isinstance(func, ast.Attribute)
-            else func.id
-            if isinstance(func, ast.Name)
-            else None
+            else func.id if isinstance(func, ast.Name) else None
         )
         if name in calls:
             calls[name].append(node.lineno)

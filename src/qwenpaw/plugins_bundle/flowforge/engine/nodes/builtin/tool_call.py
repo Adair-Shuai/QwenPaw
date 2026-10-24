@@ -61,7 +61,7 @@ class ToolCallNode(WorkflowNode):
         if state is not None:
             params = state.resolve_template(params)
 
-        retry_count = int(inputs.get("retry_count") or 0)
+        retry_count = max(0, min(10, int(inputs.get("retry_count") or 0)))
         retry_delay_sec = float(inputs.get("retry_delay_sec") or 1.0)
 
         tool_context = ctx.get_tool_context(state) if hasattr(ctx, "get_tool_context") else None
@@ -83,6 +83,8 @@ class ToolCallNode(WorkflowNode):
                         },
                     )
                 last_error = tool_result.error or "Tool execution failed"
+                if not getattr(tool_result, "retryable", True):
+                    break
                 logger.warning("tool_call_failed", tool=tool, attempt=attempt + 1, error=last_error)
             except Exception as exc:  # noqa: BLE001
                 last_error = str(exc)
@@ -97,5 +99,5 @@ class ToolCallNode(WorkflowNode):
         duration_ms = int((time.monotonic() - start) * 1000)
         return NodeOutput(
             error=last_error,
-            metadata={"tool": tool, "attempts": retry_count + 1, "duration_ms": duration_ms},
+            metadata={"tool": tool, "attempts": attempt + 1, "duration_ms": duration_ms},
         )

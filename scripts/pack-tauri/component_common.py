@@ -108,7 +108,10 @@ def iter_files(
         relative = safe_relative_path(path.relative_to(root).as_posix())
         if (
             relative in _PRESERVED_NAMES
-            or PurePosixPath(relative).parts[0] in preserve_paths
+            or any(
+                relative == prefix or relative.startswith(f"{prefix}/")
+                for prefix in preserve_paths
+            )
             or relative
             in {
                 ".uninstalled",

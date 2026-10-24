@@ -251,7 +251,7 @@ async def test_repaired_service_clears_startup_diagnostic(monkeypatch):
         command=("missing",),
         mode_env="SERVICE_FIXTURE_MODE",
         external_url_env="SERVICE_FIXTURE_URL",
-        startup_timeout=0.01,
+        startup_timeout=0.2,
     )
     with pytest.raises(RuntimeError, match="not ready"):
         _ = service.base_url

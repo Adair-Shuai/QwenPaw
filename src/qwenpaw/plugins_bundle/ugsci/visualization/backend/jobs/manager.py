@@ -433,9 +433,14 @@ class JobManager:
                     job.stages[5].finished_at = time.time()
                     job.stages[5].status = "completed"
                     job.progress = 1.0
-                    job.status = "completed"
                     job.finished_at = time.time()
                     job.result = {**primary, "related_datasets": related}
+                    # Publish durable completion before exposing a terminal
+                    # in-memory status to cancellation and polling callers.
+                    snapshot = job._store_payload_locked()
+                    snapshot["status"] = "completed"
+                    _persist_import_job(job.job_id, snapshot)
+                    job.status = "completed"
                 job.add_event("completed", {
                     "dataset_id": primary["id"],
                     "related_ids": [item.get("id") for item in related],

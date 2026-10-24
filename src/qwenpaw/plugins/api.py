@@ -328,7 +328,6 @@ def _unbridge_from_runtime(
 
 def _agent_ids_for_tool_write() -> list[str]:
     """Agent profiles that should receive a registered tool."""
-    from ..app.agent_context import get_current_agent_id
     from ..config.utils import load_config
 
     agent_ids: list[str] = []
@@ -343,9 +342,8 @@ def _agent_ids_for_tool_write() -> list[str]:
             "Failed to list agent profiles for tool write",
             exc_info=True,
         )
-    current = get_current_agent_id()
-    if current and current not in agent_ids:
-        agent_ids.append(current)
+    # A stale current/active agent is not authority to create a profile.
+    # Configured profiles are the durable scope for plugin tool settings.
     return agent_ids
 
 
@@ -1922,7 +1920,8 @@ class PluginApi:  # pylint: disable=too-many-public-methods
                 existing = getattr(current_tools, tool_name, None)
                 with _TOOL_PLUGIN_OWNERS_LOCK:
                     current_owner = _TOOL_PLUGIN_OWNERS.get(tool_name)
-                if existing is not None and current_owner != self.plugin_id:
+                existing_owner = getattr(getattr(existing, "_tool_descriptor", None), "owner_plugin_id", "")
+                if existing is not None and current_owner is None and not existing_owner:
                     logger.info(
                         "Skipping plugin tool '%s': upstream/native "
                         "callable already exists",
@@ -1987,9 +1986,18 @@ class PluginApi:  # pylint: disable=too-many-public-methods
                         self._registry,
                         self.plugin_id,
                         {
-                            **({"allowed_channels": tuple(allowed_channels)} if allowed_channels else {}),
-                            **({"availability_check": availability_check} if availability_check is not None else {}),
-                        } or None,
+                            **(
+                                {"allowed_channels": tuple(allowed_channels)}
+                                if allowed_channels
+                                else {}
+                            ),
+                            **(
+                                {"availability_check": availability_check}
+                                if availability_check is not None
+                                else {}
+                            ),
+                        }
+                        or None,
                     )
                 finally:
                     # A failed bridge may have published to some workspaces.

@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 from pathlib import Path
 
 import pytest
@@ -100,7 +101,7 @@ def test_sync_plugin_tools_ignores_malformed_manifest_tools(
         ),
     )
     monkeypatch.setattr(
-        config_module, "load_agent_config", lambda _: agent_config
+        config_module, "load_agent_config", lambda _: agent_config,
     )
     monkeypatch.setattr(
         config_module,

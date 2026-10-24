@@ -13,7 +13,7 @@
  *
  * 支持的格式：DOCX、XLSX、PPTX（以及旧版 DOC/XLS/PPT，旧版只能走后端）
  */
-import React, { useEffect, useState, useCallback } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { Button, Space, Tooltip, Spin, Alert, Tag } from "antd";
 import {
   DownloadOutlined,
@@ -80,6 +80,7 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
   const [htmlContent, setHtmlContent] = useState<string>("");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const conversionRef = useRef(0);
   const [fallbackStage, setFallbackStage] = useState<FallbackStage>("none");
   const [rendererEngine, setRendererEngine] = useState<"officecli" | "legacy">(
     "legacy",
@@ -101,6 +102,9 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
 
   const convertDocument = useCallback(
     async (force = false) => {
+      const requestId = ++conversionRef.current;
+      setError(null);
+      setFallbackStage("none");
       if (!fileUrl) {
         setError(t("workspace.noFileUrl"));
         setLoading(false);
@@ -148,6 +152,7 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
             mime_type: artifact.mimeType,
           }),
         });
+        if (requestId !== conversionRef.current) return;
         if (!res.ok) {
           // A detached OOXML upload may use the compatibility parser. Files
           // owned by /files never silently switch away from the backend.
@@ -164,6 +169,7 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
           throw new Error(body?.detail ?? `HTTP ${res.status}`);
         }
         const data = await res.json();
+        if (requestId !== conversionRef.current) return;
         const rawHtml = data.html ?? "";
         const isOfficecli = data.engine === "officecli";
         setRendererEngine(isOfficecli ? "officecli" : "legacy");
@@ -220,15 +226,11 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
           }
         </style></head><body>${rawHtml}</body></html>`;
           setHtmlContent(styledHtml);
-          if (!artifact.workspaceRoot) {
-            _convertCache.set(cacheKey, {
-              html: styledHtml,
-              engine: "legacy",
-              ts: Date.now(),
-            });
-          }
+          // Retry the backend when reopening a simplified preview so an
+          // installed or recovered OfficeCLI can take over immediately.
         }
       } catch (err) {
+        if (requestId !== conversionRef.current) return;
         // Detached uploads retain the browser fallback. Workspace-backed files
         // surface the backend error instead of silently changing render engines.
         if (canClientSideParse) {
@@ -239,7 +241,7 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
           );
         }
       } finally {
-        setLoading(false);
+        if (requestId === conversionRef.current) setLoading(false);
       }
     },
     [
@@ -258,6 +260,9 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
 
   useEffect(() => {
     convertDocument();
+    return () => {
+      conversionRef.current++;
+    };
   }, [convertDocument]);
 
   if (loading) {

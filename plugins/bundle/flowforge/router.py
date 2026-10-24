@@ -27,13 +27,21 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Body
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Body, Request
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
 from .service import RunHandle, WorkflowService
 
 logger = logging.getLogger(__name__)
+
+
+def _request_agent_id(request: Request) -> str | None:
+    from qwenpaw.app.agent_context import _normalize_agent_id
+
+    return _normalize_agent_id(
+        getattr(request.state, "agent_id", None) or request.headers.get("X-Agent-Id")
+    )
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -82,8 +90,15 @@ def build_router(service: WorkflowService) -> APIRouter:
         return {"status": "ok", "flows_dir": str(service.flows_dir)}
 
     @router.get("/node-types")
-    async def node_types() -> list[dict[str, Any]]:
-        return service.node_types()
+    async def node_types(request: Request) -> list[dict[str, Any]]:
+        try:
+            return await service.refresh_node_types(_request_agent_id(request))
+        except ValueError as exc:
+            raise HTTPException(404, str(exc))
+
+    @router.post("/node-types/refresh")
+    async def refresh_node_types(request: Request) -> list[dict[str, Any]]:
+        return await node_types(request)
 
     # ---------------------------------------------------------------- #
     # Flow CRUD
@@ -119,15 +134,15 @@ def build_router(service: WorkflowService) -> APIRouter:
         return {"deleted": True}
 
     @router.post("/flows/{flow_id}/validate")
-    async def validate_flow(flow_id: str) -> dict[str, Any]:
+    async def validate_flow(flow_id: str, request: Request) -> dict[str, Any]:
         flow = service.get_flow(flow_id)
         if flow is None:
             raise HTTPException(404, f"flow '{flow_id}' not found")
-        return service.validate_flow(flow)
+        return await service.validate_flow_for_agent(flow, _request_agent_id(request))
 
     @router.post("/flows/validate")
-    async def validate_payload(payload: FlowPayload = Body(...)) -> dict[str, Any]:
-        return service.validate_flow(payload.model_dump())
+    async def validate_payload(request: Request, payload: FlowPayload = Body(...)) -> dict[str, Any]:
+        return await service.validate_flow_for_agent(payload.model_dump(), _request_agent_id(request))
 
     @router.post("/generate")
     async def generate_flow(payload: GenerateRequest = Body(...)) -> dict[str, Any]:
@@ -144,11 +159,12 @@ def build_router(service: WorkflowService) -> APIRouter:
     @router.post("/flows/{flow_id}/run")
     async def start_run(
         flow_id: str,
+        request: Request,
         body: RunRequest | None = Body(None),
     ) -> dict[str, Any]:
         inputs = (body.inputs if body else {}) or {}
         try:
-            handle = service.start_run(flow_id, inputs)
+            handle = service.start_run(flow_id, inputs, agent_id=_request_agent_id(request))
         except FileNotFoundError as exc:
             raise HTTPException(404, str(exc))
         return {
@@ -170,8 +186,8 @@ def build_router(service: WorkflowService) -> APIRouter:
 
     @router.post("/runs/{run_id}/cancel")
     async def cancel_run(run_id: str) -> dict[str, Any]:
-        handle = service.get_run(run_id)
-        if handle is None:
+        record = service.get_run_record(run_id)
+        if record is None:
             raise HTTPException(404, f"run '{run_id}' not found")
         cancelled = service.cancel_run(run_id)
         return {"run_id": run_id, "cancelled": cancelled}
@@ -186,6 +202,8 @@ def build_router(service: WorkflowService) -> APIRouter:
             handle = service.resume_run(run_id, inputs)
         except FileNotFoundError as exc:
             raise HTTPException(404, str(exc))
+        except ValueError as exc:
+            raise HTTPException(409, str(exc))
         return {
             "run_id": handle.run_id,
             "flow_id": handle.flow_id,

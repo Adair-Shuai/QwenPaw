@@ -5,6 +5,7 @@ import ensurepip
 import os
 from pathlib import Path
 import site
+import sys
 import shutil
 import subprocess
 import venv
@@ -18,7 +19,13 @@ def expose(source, destination):
     try:
         destination.symlink_to(source, target_is_directory=source.is_dir())
     except OSError:
-        if source.is_dir():
+        if source.is_dir() and os.name == "nt":
+            # Junctions preserve per-package isolation without administrator
+            # privileges or copying the entire host scientific environment.
+            import _winapi
+
+            _winapi.CreateJunction(str(source), str(destination))
+        elif source.is_dir():
             shutil.copytree(source, destination)
         else:
             shutil.copy2(source, destination)
@@ -34,7 +41,7 @@ def dependency_python(root, *, installer="pip"):
                 str(python),
                 "-I",
                 "-c",
-                "import site; print(site.getsitepackages()[0])",
+                "import sysconfig; print(sysconfig.get_path('purelib'))",
             ],
             text=True,
         ).strip(),
@@ -42,8 +49,12 @@ def dependency_python(root, *, installer="pip"):
     # Project dependencies rather than adding the host site directory: its pip
     # and editable .pth files would defeat this interpreter's isolation.
     for directory in site.getsitepackages():
+        if Path(directory).resolve() == Path(sys.prefix).resolve():
+            continue
         for entry in Path(directory).iterdir():
-            if entry.suffix == ".pth" or entry.name == "__pycache__":
+            if (
+                entry.suffix == ".pth" and entry.name != "pywin32.pth"
+            ) or entry.name == "__pycache__":
                 continue
             if installer == "uv" and (
                 entry.name == "pip" or entry.name.startswith("pip-")

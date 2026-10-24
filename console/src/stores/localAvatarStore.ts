@@ -1,7 +1,17 @@
 import { create } from "zustand";
 import { avatarApi, type AvatarProfile } from "../api/modules/avatars";
 
-export const DEFAULT_AVATAR = `${import.meta.env.BASE_URL}qwenpaw-avatar.gif`;
+export const DEFAULT_AVATAR = `${import.meta.env.BASE_URL}ugsci-avatar.webp`;
+export const BUILTIN_AVATARS = [
+  { id: null, src: DEFAULT_AVATAR, label: "sidebar.defaultAvatar" },
+  {
+    id: "builtin:ugsci-cute",
+    src: `${import.meta.env.BASE_URL}ugsci-avatar-cute.webp`,
+    label: "sidebar.cuteAvatar",
+  },
+] as const;
+export const builtinAvatarSource = (id: string | null) =>
+  BUILTIN_AVATARS.find((avatar) => avatar.id === id)?.src;
 let generation = 0;
 let revision = 0;
 interface AvatarState extends AvatarProfile {
@@ -16,6 +26,7 @@ interface AvatarState extends AvatarProfile {
 /** Server-owned identity; object URLs are an account-scoped display cache only. */
 export const useLocalAvatar = create<AvatarState>((set, get) => {
   const image = async (id: string, epoch: number) => {
+    if (builtinAvatarSource(id)) return;
     if (get().images[id]) return;
     const blob = await avatarApi.image(id);
     if (epoch !== generation) return;

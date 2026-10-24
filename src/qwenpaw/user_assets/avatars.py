@@ -12,6 +12,7 @@ from PIL import Image, UnidentifiedImageError
 
 MAX_BYTES = 2 * 1024 * 1024
 HISTORY_LIMIT = 12
+BUILTIN_AVATAR_IDS = frozenset({"builtin:ugsci-cute"})
 FORMATS = {
     "PNG": "image/png",
     "JPEG": "image/jpeg",
@@ -96,6 +97,7 @@ class AvatarStore:
             with conn:
                 if (
                     identifier
+                    and identifier not in BUILTIN_AVATAR_IDS
                     and not conn.execute(
                         "SELECT 1 FROM avatar_images "
                         "WHERE owner = ? AND id = ?",

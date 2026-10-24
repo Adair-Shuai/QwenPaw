@@ -10,6 +10,8 @@ import type {
   EngineProbeResponse,
   NeqSimInstallTask,
   NeqSimRuntimeStatus,
+  EngineRuntimePlan,
+  RuntimeInstallTask,
 } from "./types";
 
 export async function fetchDomainEngines(
@@ -56,7 +58,9 @@ export async function probeDomainEngine(
   });
 }
 
-export function fetchNeqSimRuntime(force = false): Promise<NeqSimRuntimeStatus> {
+export function fetchNeqSimRuntime(
+  force = false,
+): Promise<NeqSimRuntimeStatus> {
   return apiFetch<NeqSimRuntimeStatus>(
     "/ugsci/domain-engines/neqsim/runtime",
     force ? { bypassCache: true } : undefined,
@@ -69,9 +73,38 @@ export function installNeqSimRuntime(): Promise<NeqSimInstallTask> {
   });
 }
 
-export function fetchNeqSimInstallTask(taskId: string): Promise<NeqSimInstallTask> {
+export function fetchNeqSimInstallTask(
+  taskId: string,
+): Promise<NeqSimInstallTask> {
   return apiFetch<NeqSimInstallTask>(
     `/ugsci/domain-engines/neqsim/install/${encodeURIComponent(taskId)}`,
+    { bypassCache: true },
+  );
+}
+
+export function fetchEngineRuntimePlan(
+  engineId: string,
+): Promise<EngineRuntimePlan> {
+  return apiFetch<EngineRuntimePlan>(
+    `/ugsci/domain-engines/${encodeURIComponent(engineId)}/runtime`,
+    { bypassCache: true },
+  );
+}
+
+export function installEngineRuntime(
+  engineId: string,
+): Promise<RuntimeInstallTask> {
+  return apiFetch<RuntimeInstallTask>(
+    `/ugsci/domain-engines/${encodeURIComponent(engineId)}/install`,
+    { method: "POST" },
+  );
+}
+
+export function fetchEngineInstallTask(
+  taskId: string,
+): Promise<RuntimeInstallTask> {
+  return apiFetch<RuntimeInstallTask>(
+    `/ugsci/domain-engines/install-tasks/${encodeURIComponent(taskId)}`,
     { bypassCache: true },
   );
 }
@@ -107,10 +140,11 @@ export async function fetchBuiltinToolStatuses(
   agentId: string,
   force = false,
 ): Promise<Map<string, BuiltinToolStatus>> {
-  const tools = (await apiFetch<BuiltinToolStatus[]>("/tools", {
-    headers: { "X-Agent-Id": agentId },
-    ...(force ? { bypassCache: true } : {}),
-  })) || [];
+  const tools =
+    (await apiFetch<BuiltinToolStatus[]>("/tools", {
+      headers: { "X-Agent-Id": agentId },
+      ...(force ? { bypassCache: true } : {}),
+    })) || [];
   return new Map(tools.map((tool) => [tool.name, tool]));
 }
 
@@ -123,9 +157,7 @@ export async function fetchBuiltinToolStatuses(
 export async function fetchMcpProviderStatuses(
   agentId: string,
   force = false,
-): Promise<
-  Map<string, McpProviderStatus>
-> {
+): Promise<Map<string, McpProviderStatus>> {
   const result = new Map<string, McpProviderStatus>();
   const requestOptions = {
     headers: { "X-Agent-Id": agentId },
@@ -135,10 +167,8 @@ export async function fetchMcpProviderStatuses(
   // Step 1: List all MCP clients
   let clients: MCPClientInfoMin[];
   try {
-    clients = (await apiFetch<MCPClientInfoMin[]>(
-      "/mcp",
-      requestOptions,
-    )) || [];
+    clients =
+      (await apiFetch<MCPClientInfoMin[]>("/mcp", requestOptions)) || [];
   } catch {
     // MCP API unavailable — return empty map (all MCP engines show "unavailable")
     return result;
@@ -152,12 +182,11 @@ export async function fetchMcpProviderStatuses(
       continue;
     }
     try {
-      const tools = (await apiFetch<
-        { name: string; enabled: boolean }[]
-      >(
-        `/mcp/tools/${encodeURIComponent(key)}`,
-        requestOptions,
-      )) || [];
+      const tools =
+        (await apiFetch<{ name: string; enabled: boolean }[]>(
+          `/mcp/tools/${encodeURIComponent(key)}`,
+          requestOptions,
+        )) || [];
       result.set(key, {
         key,
         enabled: true,

@@ -16,7 +16,7 @@
   "dependencies": [],
   "qwenpaw_version": {
     "min": "1.1.7",
-    "max": "2.3.0"
+    "max": "2.4.0"
   },
   "meta": {
     "category": "workflow-engine",

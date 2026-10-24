@@ -20,6 +20,7 @@ import {
 } from "../tauri/desktopUpdate";
 import { isDesktopApp } from "../tauri/backendRuntime";
 import api from "../api";
+import type { ComponentUpdateItem } from "../api/modules/components";
 
 export type UpdatePhase =
   | "idle"
@@ -37,6 +38,7 @@ export interface RefreshUpdatesResult {
   /** False when a desktop-core update is present and components were skipped. */
   componentsChecked: boolean;
   componentCount: number;
+  components: ComponentUpdateItem[];
   version: string;
   body: string;
 }
@@ -92,7 +94,9 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
   const [checkWarning, setCheckWarning] = useState<string | null>(null);
 
   const samplesRef = useRef<{ t: number; downloaded: number }[]>([]);
-  const hasCachedUpdateRef = useRef(false);
+  const cachedVersionRef = useRef<string | null>(null);
+  const cacheProbeIdRef = useRef(0);
+  const componentUpdatesRef = useRef<ComponentUpdateItem[]>([]);
   const compatibleDesktopVersionRef = useRef<string | null>(null);
 
   const refreshComponentUpdates = useCallback(async (): Promise<number> => {
@@ -100,12 +104,14 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       const result = await api.checkComponentUpdates();
       compatibleDesktopVersionRef.current =
         result.compatible_desktop_version ?? null;
+      componentUpdatesRef.current = result.updates;
       setComponentUpdateCount(result.updates.length);
       return result.updates.length;
     } catch (err) {
       // Never leave a stale badge/action behind after the source could not be
       // checked. The caller still receives the error and can block install.
       setComponentUpdateCount(0);
+      componentUpdatesRef.current = [];
       compatibleDesktopVersionRef.current = null;
       throw err;
     }
@@ -119,30 +125,56 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
     if (!isDesktopApp()) {
       return { available: false, version: "", body: "" };
     }
+    // A cache validated at startup may since have been installed or removed.
+    // Let the native updater validate it again against the running desktop.
+    ++cacheProbeIdRef.current;
+    let cachedVersion: string | null = null;
+    try {
+      cachedVersion = await checkCachedUpdate();
+    } catch (err) {
+      console.warn("[updates] cached update check failed", err);
+    }
+    cachedVersionRef.current = cachedVersion;
+    setPhase((previous) =>
+      cachedVersion
+        ? "downloaded"
+        : previous === "downloaded" || previous === "failed"
+        ? "idle"
+        : previous,
+    );
+    setIsBackground(Boolean(cachedVersion));
+    setError(null);
+
+    const applyInfo = (
+      info: {
+        version: string;
+        body?: string | null;
+        supportsLaterInstall?: boolean;
+      } | null,
+    ) => {
+      const nextVersion = cachedVersion || info?.version || "";
+      // Cached installers and release notes must refer to the same release.
+      const nextBody =
+        info?.version === nextVersion ? info.body?.trim() ?? "" : "";
+      setVersion(nextVersion);
+      setBody(nextBody);
+      setHasUpdate(Boolean(nextVersion));
+      setSupportsLaterInstall(
+        Boolean(cachedVersion || info?.supportsLaterInstall),
+      );
+      return {
+        available: Boolean(nextVersion),
+        version: nextVersion,
+        body: nextBody,
+      };
+    };
     try {
       const info = await checkDesktopUpdate();
-      if (!info) {
-        if (hasCachedUpdateRef.current) {
-          setHasUpdate(true);
-          return { available: true, version: "", body: "" };
-        }
-        setHasUpdate(false);
-        setBody("");
-        setSupportsLaterInstall(false);
-        return { available: false, version: "", body: "" };
-      }
-      const nextVersion = info.version;
-      const nextBody = info.body?.trim() ?? "";
-      setVersion((prev) => prev || nextVersion);
-      setBody(nextBody);
-      setHasUpdate(true);
-      setSupportsLaterInstall(Boolean(info.supportsLaterInstall));
-      return { available: true, version: nextVersion, body: nextBody };
+      return applyInfo(info);
     } catch (err) {
       console.warn("[updates] desktop update check failed", err);
-      if (hasCachedUpdateRef.current) {
-        return { available: true, version: "", body: "" };
-      }
+      const cached = applyInfo(null);
+      if (cached.available) return cached;
       throw err;
     }
   }, []);
@@ -161,6 +193,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
           hasCoreUpdate: false,
           componentsChecked: true,
           componentCount,
+          components: componentUpdatesRef.current,
           version: "",
           body: "",
         };
@@ -180,19 +213,22 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
         // Only a verified manifest for this exact desktop release can replace
         // the full updater. Legacy/incompatible/unavailable manifests retain
         // the bridge installer path; an explicitly cached installer stays usable.
-        if (!hasCachedUpdateRef.current && core.version) {
+        if (!cachedVersionRef.current && core.version) {
           try {
             const componentCount = await refreshComponentUpdates();
             if (compatibleDesktopVersionRef.current === core.version) {
               setHasUpdate(false);
-              setVersion(core.version);
+              setVersion("");
+              setBody("");
+              setSupportsLaterInstall(false);
               return {
                 available: componentCount > 0,
                 hasCoreUpdate: false,
                 componentsChecked: true,
                 componentCount,
-                version: core.version,
-                body: core.body,
+                components: componentUpdatesRef.current,
+                version: "",
+                body: "",
               };
             }
           } catch (err) {
@@ -203,11 +239,13 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
           }
         }
         setComponentUpdateCount(0);
+        componentUpdatesRef.current = [];
         return {
           available: true,
           hasCoreUpdate: true,
           componentsChecked: false,
           componentCount: 0,
+          components: [],
           version: core.version,
           body: core.body,
         };
@@ -238,6 +276,7 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
         hasCoreUpdate: false,
         componentsChecked: true,
         componentCount,
+        components: componentUpdatesRef.current,
         version: "",
         body: "",
       };
@@ -251,12 +290,18 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!isDesktopApp()) return;
     let cancelled = false;
+    const cacheProbeId = ++cacheProbeIdRef.current;
 
     // Check if there's a cached (already downloaded) update on disk.
     checkCachedUpdate()
       .then((cachedVersion) => {
-        if (cancelled || !cachedVersion) return;
-        hasCachedUpdateRef.current = true;
+        if (
+          cancelled ||
+          cacheProbeId !== cacheProbeIdRef.current ||
+          !cachedVersion
+        )
+          return;
+        cachedVersionRef.current = cachedVersion;
         setVersion(cachedVersion);
         setHasUpdate(true);
         setSupportsLaterInstall(true);
@@ -317,10 +362,12 @@ export function DesktopUpdateProvider({ children }: { children: ReactNode }) {
       onDownloadProgress: handleProgress,
       onInstallStart: () => setPhase("installing"),
       onDownloadDone: (payload) => {
-        hasCachedUpdateRef.current = true;
+        ++cacheProbeIdRef.current;
+        cachedVersionRef.current = payload.version;
         setHasUpdate(true);
         setPhase("downloaded");
         setVersion(payload.version);
+        setBody("");
       },
       onError: (err) => {
         setPhase("failed");

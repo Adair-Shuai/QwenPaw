@@ -98,16 +98,18 @@ describe("headerWorkspaceToggleEvent", () => {
     });
   });
 
-  it("closes Preview from the header instead of expanding a file tree", () => {
+  it("expands Preview from the header while preserving the selected file", () => {
     const preview = {
       kind: "preview" as const,
       target,
       trigger: null,
     };
-    expect(headerWorkspaceToggleEvent(preview)).toEqual({ type: "CLOSE" });
+    expect(headerWorkspaceToggleEvent(preview)).toEqual({
+      type: "EXPAND_WORKSPACE",
+    });
     expect(
       filesDrawerReducer(preview, headerWorkspaceToggleEvent(preview)),
-    ).toEqual(CLOSED_FILES_DRAWER);
+    ).toEqual({ ...preview, kind: "workspace" });
   });
 
   it("closes the expanded workspace", () => {
@@ -119,4 +121,16 @@ describe("headerWorkspaceToggleEvent", () => {
       }),
     ).toEqual({ type: "CLOSE" });
   });
+});
+
+it("collapses a header-opened workspace to the file selected in its navigator", () => {
+  expect(
+    filesDrawerReducer(
+      { kind: "workspace", trigger: null },
+      {
+        type: "COLLAPSE_TO_PREVIEW",
+        target,
+      },
+    ),
+  ).toEqual({ kind: "preview", target, trigger: null });
 });

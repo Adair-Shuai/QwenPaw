@@ -198,6 +198,15 @@ def is_requirement_satisfied(req: Requirement) -> bool:
         installed = _dist_version(req.name)
     except PackageNotFoundError:
         installed = None
+        if _is_frozen():
+            from importlib.metadata import Distribution
+            from .loader import _plugin_site_dir
+
+            for dist in Distribution.discover(
+                name=req.name, path=[str(_plugin_site_dir())]
+            ):
+                installed = dist.version
+                break
     if installed is not None:
         if not req.specifier:
             return True

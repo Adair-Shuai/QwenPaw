@@ -78,6 +78,8 @@ from ..utils.media_paths import (
 def _supports_multimodal_for_current_model() -> bool:
     """Compatibility hook for request normalizers and downstream plugins."""
     return True
+
+
 # Only SDK single-request consumers opt into construction-time ownership.
 # Normal agent construction retains its existing provider lifecycle.
 _model_creation_observer = ContextVar("model_creation_observer", default=None)

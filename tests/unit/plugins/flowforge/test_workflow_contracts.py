@@ -461,7 +461,7 @@ class _WorkflowRegistry:
         return self.definitions.get(flow_id)
 
 
-def test_subworkflow_returns_child_outputs() -> None:
+def test_subworkflow_returns_child_outputs(tmp_path: Path) -> None:
     child = {
         "id": "child",
         "nodes": {
@@ -491,12 +491,17 @@ def test_subworkflow_returns_child_outputs() -> None:
             "outputs": ["child"],
         },
     )
-    executor = WorkflowExecutor(
-        workflow_registry=_WorkflowRegistry({"child": child}),
-    )
+    # Nested runs must use the lifecycle service, not an untracked executor.
+    service = WorkflowService(flows_dir=tmp_path)
+    service.save_flow("child", child)
+    service.save_flow("parent", parent.model_dump(mode="json"))
+    handle = service.start_run("parent")
+    deadline = time.monotonic() + 3
+    while not handle.is_done and time.monotonic() < deadline:
+        time.sleep(0.01)
+    result = handle.result
 
-    result = asyncio.run(executor.execute(parent, {}))
-
+    assert result is not None
     assert result.status == WorkflowStatus.COMPLETED
     assert result.outputs["child"] == {"output": "nested"}
 

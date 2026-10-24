@@ -214,7 +214,10 @@ class BaseTool:
 
         # Build JSON Schema from the function signature
         func = getattr(descriptor, "func", None)
-        if func is not None:
+        native_schema = getattr(descriptor, "input_schema", None)
+        if isinstance(native_schema, dict):
+            self.parameters = native_schema
+        elif func is not None:
             self.parameters: dict[str, Any] = _build_json_schema(func)
         else:
             self.parameters = {"type": "object", "properties": {}}

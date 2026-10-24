@@ -58,6 +58,13 @@ def verify(root: Path) -> None:
                 f"invalid or duplicate plugin id: {manifest_path}",
             )
         seen.add(plugin_id)
+        if plugin_id == "ugsci" and any(
+            path.is_file()
+            for path in (plugin_root / "visualization" / "data").rglob("*")
+        ):
+            raise ValueError(
+                "UGSci visualization test data must not be published"
+            )
         entry = manifest.get("entry")
         if not isinstance(entry, dict):
             raise ValueError(f"plugin {plugin_id} has no entry object")
@@ -207,6 +214,13 @@ def _verify_archive_files(
                 f"invalid or duplicate plugin id in archive: {manifest_name}",
             )
         seen.add(plugin_id)
+        if plugin_id == "ugsci" and any(
+            name.startswith(plugin_root + "/visualization/data/")
+            for name in payload_files
+        ):
+            raise ValueError(
+                "UGSci visualization test data must not be published"
+            )
         entry = manifest.get("entry")
         if not isinstance(entry, dict):
             raise ValueError(f"plugin {plugin_id} has no entry object")

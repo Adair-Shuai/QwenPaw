@@ -110,6 +110,7 @@ logs/
 
 # vibe coding
 AGENTS.md
+!/AGENTS.md
 .claude
 openspec
 CLAUDE.md
@@ -133,6 +134,9 @@ src/.hypothesis/
 
 # Codex IDE
 .codex/
+# Local diagnostics, screenshots and temporary catalog clones may contain
+# private test context and must never be included in source uploads.
+/.codex-tmp/
 
 # Worktrees
 .worktrees/

@@ -125,6 +125,191 @@ describe("useAgentProcessTracking", () => {
     expect(useBackgroundTasksStore.getState().tasks).toEqual([]);
   });
 
+  it.each([
+    ["finished", "done"],
+    ["running", "running"],
+    ["cancelled", "cancelled"],
+    ["failed", "error"],
+  ])(
+    "uses explicit %s status rather than words in the task report",
+    (reported, expected) => {
+      renderHook(() =>
+        useAgentProcessTracking("session-1", {
+          ...baseContent,
+          name: "check_agent_task",
+          params: { task_id: "task-42" },
+          status: "done",
+          result: `[STATUS: ${reported}]\nPrevious error was resolved.`,
+        }),
+      );
+      expect(useBackgroundTasksStore.getState().tasks[0].status).toBe(expected);
+    },
+  );
+
+  it("merges streamed spawn and check identities without leaving provisional running rows", () => {
+    const spawn: ToolCallContent = {
+      ...baseContent,
+      name: "spawn_subagent",
+      params: { task: "Synthetic analysis" },
+    };
+    const { rerender } = renderHook(
+      ({ content }) => useAgentProcessTracking("session-1", content),
+      { initialProps: { content: spawn } },
+    );
+    const start = useBackgroundTasksStore.getState().tasks[0].startTime;
+    rerender({
+      content: {
+        ...spawn,
+        status: "done",
+        result: "[TASK_ID: task-42]\nTask submitted successfully.",
+      },
+    });
+    expect(useBackgroundTasksStore.getState().tasks).toMatchObject([
+      { toolCallId: "agent-task:task-42", status: "running", startTime: start },
+    ]);
+    expect(useBackgroundTasksStore.getState().tasks).toHaveLength(1);
+    rerender({
+      content: {
+        ...spawn,
+        id: "check-stream",
+        name: "check_agent_task",
+        params: {},
+        status: "calling",
+      },
+    });
+    expect(useBackgroundTasksStore.getState().tasks).toHaveLength(1);
+    rerender({
+      content: {
+        ...spawn,
+        id: "check-stream",
+        name: "check_agent_task",
+        params: { task_id: "task-42" },
+        status: "done",
+        result: "[STATUS: finished]\nTask completed.",
+      },
+    });
+    expect(useBackgroundTasksStore.getState().tasks).toHaveLength(1);
+    expect(useBackgroundTasksStore.getState().tasks[0]).toMatchObject({
+      toolCallId: "agent-task:task-42",
+      status: "done",
+      startTime: start,
+    });
+  });
+
+  it.each(["done", "error", "cancelled"] as const)(
+    "does not reopen a %s task when old checks or submissions remount",
+    (status) => {
+      const store = useBackgroundTasksStore.getState();
+      store.addTask(
+        {
+          sessionId: "session-1",
+          toolCallId: "agent-task:task-42",
+          toolName: "Agent",
+          startTime: 100,
+        },
+        { kind: "agent" },
+      );
+      store.updateTaskForSession("session-1", "agent-task:task-42", {
+        status,
+        result: "Final result",
+        endTime: 200,
+      });
+      for (const name of [
+        "check_agent_task",
+        "spawn_subagent",
+        "submit_to_agent",
+      ]) {
+        const view = renderHook(() =>
+          useAgentProcessTracking("session-1", {
+            ...baseContent,
+            id: `${name}-old`,
+            name,
+            params: { task_id: "task-42" },
+            status: "done",
+            result: "[TASK_ID: task-42]\n[STATUS: running]",
+          }),
+        );
+        view.unmount();
+      }
+      expect(useBackgroundTasksStore.getState().tasks).toHaveLength(1);
+      expect(useBackgroundTasksStore.getState().tasks[0]).toMatchObject({
+        status,
+        result: "Final result",
+        endTime: 200,
+      });
+    },
+  );
+
+  it("cleans previously tracked check aliases only in their own session", () => {
+    const store = useBackgroundTasksStore.getState();
+    for (const sessionId of ["session-1", "session-2"]) {
+      store.addTask(
+        {
+          sessionId,
+          toolCallId: "check-alias",
+          toolName: "Agent",
+          startTime: 10,
+        },
+        { kind: "agent" },
+      );
+    }
+    renderHook(() =>
+      useAgentProcessTracking("session-1", {
+        ...baseContent,
+        id: "check-alias",
+        name: "check_agent_task",
+        params: { task_id: "task-42" },
+        status: "done",
+        result: "[STATUS: finished]",
+      }),
+    );
+    expect(useBackgroundTasksStore.getState().tasks).toMatchObject([
+      { sessionId: "session-2", toolCallId: "check-alias", status: "running" },
+      {
+        sessionId: "session-1",
+        toolCallId: "agent-task:task-42",
+        status: "done",
+      },
+    ]);
+  });
+
+  it("does not reopen completed batch members or finish their still-running siblings", () => {
+    const store = useBackgroundTasksStore.getState();
+    store.addTask(
+      {
+        sessionId: "session-1",
+        toolCallId: "agent-task:task-a",
+        toolName: "Agent",
+        startTime: 100,
+      },
+      { kind: "agent" },
+    );
+    store.updateTaskForSession("session-1", "agent-task:task-a", {
+      status: "done",
+      result: "Complete",
+      endTime: 200,
+    });
+    renderHook(() =>
+      useAgentProcessTracking("session-1", {
+        ...baseContent,
+        id: "old-batch",
+        name: "spawn_subagent",
+        params: { batch: [{ task: "A" }, { task: "B" }] },
+        status: "done",
+        result: "[TASK_ID: task-a]\n[TASK_ID: task-b]",
+      }),
+    );
+    expect(useBackgroundTasksStore.getState().tasks).toMatchObject([
+      {
+        toolCallId: "agent-task:task-a",
+        status: "done",
+        result: "Complete",
+        endTime: 200,
+      },
+      { toolCallId: "agent-task:task-b", status: "running" },
+    ]);
+  });
+
   it("groups spawn_subagent batch results as explicit parallel work", async () => {
     renderHook(() =>
       useAgentProcessTracking("session-1", {

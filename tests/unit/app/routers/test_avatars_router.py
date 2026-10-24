@@ -9,6 +9,7 @@ from fastapi.testclient import TestClient
 
 from qwenpaw.app import auth
 from qwenpaw.app.routers import avatars
+from qwenpaw.user_assets.avatars import AvatarStore
 
 
 @pytest.fixture(name="avatar_client")
@@ -83,3 +84,16 @@ def test_avatar_auth_exemptions(avatar_client, monkeypatch, mode):
         json={"image_id": None},
     )
     assert response.status_code == 200
+
+
+def test_builtin_selection_persists_without_upload_or_history(tmp_path):
+    database = tmp_path / "avatars.sqlite3"
+    store = AvatarStore(database)
+    assert store.select("alice", "builtin:ugsci-cute") == {
+        "selected": "builtin:ugsci-cute", "history": [],
+    }
+    assert AvatarStore(database).profile("alice")["selected"] == "builtin:ugsci-cute"
+    assert store.profile("bob")["selected"] is None
+    with pytest.raises(KeyError):
+        store.select("alice", "builtin:unknown")
+    assert store.select("alice", None) == {"selected": None, "history": []}

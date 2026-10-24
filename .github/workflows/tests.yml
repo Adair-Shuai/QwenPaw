@@ -2,13 +2,19 @@ name: Tests
 
 on:
   push:
-    branches: [main, master, dev, develop, "release/**"]
+    branches: [main, master, dev, develop, lobehub-style, "release/**"]
     paths:
       - 'src/**'
       - 'tests/**'
       - 'scripts/check-channels.sh'
       - 'scripts/check_channel_contracts.py'
       - 'scripts/check_plugin_sdk_artifacts.py'
+      - 'scripts/pack-tauri/**'
+      - 'scripts/verify_update_regressions.py'
+      - 'scripts/verify_fork_regressions.py'
+      - 'scripts/fork_backend_suites.json'
+      - 'plugins/bundle/**'
+      - 'plugins/apps/document-forms/**'
       - '.gitattributes'
       - 'pyproject.toml'
       - 'setup.py'
@@ -20,7 +26,7 @@ on:
     # ready must re-trigger this workflow so the real tiers run on the
     # current head right after the author leaves draft state.
     types: [opened, synchronize, reopened, ready_for_review]
-    branches: [main, master, dev, develop, "release/**"]
+    branches: [main, master, dev, develop, lobehub-style, "release/**"]
   workflow_dispatch:
     inputs:
       integration_marker:
@@ -67,6 +73,12 @@ jobs:
               - 'scripts/check-channels.sh'
               - 'scripts/check_channel_contracts.py'
               - 'scripts/check_plugin_sdk_artifacts.py'
+              - 'scripts/pack-tauri/**'
+              - 'scripts/verify_update_regressions.py'
+              - 'scripts/verify_fork_regressions.py'
+              - 'scripts/fork_backend_suites.json'
+              - 'plugins/bundle/**'
+              - 'plugins/apps/document-forms/**'
               - '.gitattributes'
               - 'pyproject.toml'
               - 'setup.py'
@@ -151,12 +163,26 @@ jobs:
       - name: Run unit tests
         shell: bash
         run: |
+          python scripts/verify_update_regressions.py --check
+          python scripts/verify_fork_regressions.py --check
           # Phase-1 simplification (plan v1.6, item 1-4): coverage tracking
           # removed from the PR gate. Coverage is collected and threshold-
           # gated in the nightly full run (full-tests-nightly.yml), per the
           # 9-09 decision; the implicit fail_under (pyproject.toml) applies
           # there, so no threshold is lowered by this removal.
           pytest tests/unit -v
+
+      - name: Verify document forms application contracts
+        if: matrix.python-version == '3.11'
+        shell: bash
+        run: pytest plugins/apps/document-forms/tests -v
+
+      - name: Verify real OfficeCLI engine contracts
+        if: matrix.python-version == '3.11'
+        shell: bash
+        run: |
+          python scripts/pack-tauri/stage_officecli.py --dest console/src-tauri/binaries/officecli
+          pytest tests/system/test_officecli_engine.py -v
 
       - name: Run Hub Local runtime E2E
         if: matrix.python-version == '3.11'

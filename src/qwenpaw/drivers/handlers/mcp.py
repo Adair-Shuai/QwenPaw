@@ -29,6 +29,7 @@ from ..constants import (
     SUBJECT_UNKNOWN_USER,
 )
 from ..contracts import DriverCard, PolicyTarget
+from ..adapters.mcp_url import merge_query_credentials
 from ..credentials.bindings import (
     implicit_auth_headers,
     resolve_binding,
@@ -107,7 +108,10 @@ class MCPDriverHandler(DriverHandler):
             self._client = client_cls(
                 name=self._card.name,
                 transport=transport,
-                url=str(endpoint.get("url") or ""),
+                url=merge_query_credentials(
+                    str(endpoint.get("url") or ""),
+                    resolve_binding(endpoint.get("query") or {}, credentials),
+                ),
                 headers=headers or None,
                 **extra,
             )

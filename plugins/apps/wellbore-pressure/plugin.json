@@ -1,0 +1,34 @@
+{
+  "id": "wellbore-pressure",
+  "name": "井筒压力计算",
+  "version": "1.3.0",
+  "type": "app",
+  "description": "导入Excel/CSV井斜数据，最小曲率重建三维井轨迹，结合分段井身结构计算井筒压力，支持轨迹着色、剖面及数据导出。",
+  "author": "UGSci Team",
+  "entry": {
+    "backend": "backend/main.py",
+    "frontend": "ui/index.js"
+  },
+  "qwenpaw_version": {
+    "min": "2.1.0",
+    "max": "2.4.0"
+  },
+  "pack_exclude": [
+    "src",
+    "tests",
+    "build.mjs"
+  ],
+  "meta": {
+    "pawapp": {
+      "icon": "⛽",
+      "category": "research",
+      "entry_page": "/apps/wellbore-pressure",
+      "launch_scope": "page"
+    },
+    "permissions": {
+      "chat": false,
+      "storage": false
+    },
+    "settings": []
+  }
+}

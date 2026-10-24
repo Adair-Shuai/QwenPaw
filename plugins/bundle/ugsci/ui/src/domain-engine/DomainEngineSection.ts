@@ -14,20 +14,22 @@ import {
   fetchNeqSimInstallTask,
   fetchNeqSimRuntime,
   installNeqSimRuntime,
+  fetchEngineRuntimePlan,
   type McpProviderStatus,
 } from "./domainEngineApi";
-import { buildEngineView, groupByDomain } from "./runtimeStatus";
-import type { DomainEngineView, NeqSimInstallTask } from "./types";
+import { buildEngineView } from "./runtimeStatus";
+import type {
+  DomainEngineView,
+  NeqSimInstallTask,
+  EngineRuntimePlan,
+  RuntimeInstallTask,
+} from "./types";
 import { DomainEngineCard } from "./DomainEngineCard";
 import { DomainEngineDetail } from "./DomainEngineDetail";
-
-const DOMAIN_GROUP_LABELS: Record<string, string> = {
-  geology_well_logging: "测井地质",
-  production_engineering: "采油工程",
-  fluid_thermodynamics: "流体热力学",
-  scientific_computing: "科学计算",
-  data_modeling: "数据建模",
-};
+import { BUSINESS_GROUPS, businessGroupFor } from "./presentationGroups";
+import { getOperationPresentation } from "./OperationList";
+import { ENGINE_PRESENTATIONS } from "./operationPresentation";
+import { RuntimeInstallDialog } from "./RuntimeInstallDialog";
 
 function isMissingInstallTaskError(error: unknown): boolean {
   if (!(error instanceof Error)) return false;
@@ -53,11 +55,8 @@ export function DomainEngineSection({
     Row,
     Col,
     Input,
-    Drawer,
-    Typography,
   } = getHost().antd;
   const { ReloadOutlined, SearchOutlined } = getHost().antdIcons || {};
-  const { Text } = Typography;
 
   // Track the current agent so we re-fetch when it changes.
   const selected = getHost().useSelectedAgent?.();
@@ -68,7 +67,21 @@ export function DomainEngineSection({
   const [searchText, setSearchText] = useState("");
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeView, setActiveView] = useState<DomainEngineView | null>(null);
-  const [neqsimInstallState, setNeqsimInstallState] = useState<NeqSimInstallTask | null>(null);
+  const [collapsedGroups, setCollapsedGroups] = useState<
+    Record<string, boolean>
+  >({ general: true });
+  const [neqsimInstallState, setNeqsimInstallState] =
+    useState<NeqSimInstallTask | null>(null);
+  const [runtimeDialogView, setRuntimeDialogView] =
+    useState<DomainEngineView | null>(null);
+  const [runtimePlan, setRuntimePlan] = useState<EngineRuntimePlan | null>(
+    null,
+  );
+  const [runtimeTask, setRuntimeTask] = useState<RuntimeInstallTask | null>(
+    null,
+  );
+  const [runtimeError, setRuntimeError] = useState("");
+  const [runtimeDialogOpen, setRuntimeDialogOpen] = useState(false);
 
   // Ref to track the latest agent ID — allows stale fetch responses
   // to be discarded without recreating the loadEngines callback.
@@ -77,96 +90,99 @@ export function DomainEngineSection({
   const activeViewRef = useRef<DomainEngineView | null>(activeView);
   activeViewRef.current = activeView;
   const installPollGenerationRef = useRef(0);
+  const runtimePlanGenerationRef = useRef(0);
 
   // Let the backend installation continue, but stop this component's polling
   // and state updates after the user navigates away.
-  useEffect(() => () => {
-    installPollGenerationRef.current += 1;
-  }, []);
-
-  const loadEngines = useCallback(
-    async (force = false, background = false) => {
-      if (!background) setLoading(true);
-      const scrollSnapshot = background && typeof window !== "undefined"
-        ? {
-            x: window.scrollX,
-            y: window.scrollY,
-            drawerBody: typeof document !== "undefined"
-              ? document.querySelector<HTMLElement>(
-                  ".ugsci-domain-engine-detail-drawer .ant-drawer-body",
-                )
-              : null,
-            drawerTop: typeof document !== "undefined"
-              ? document.querySelector<HTMLElement>(
-                  ".ugsci-domain-engine-detail-drawer .ant-drawer-body",
-                )?.scrollTop || 0
-              : 0,
-          }
-        : null;
-      const restoreScroll = () => {
-        if (!scrollSnapshot || typeof window === "undefined") return;
-        const restore = () => {
-          window.scrollTo(scrollSnapshot.x, scrollSnapshot.y);
-          if (scrollSnapshot.drawerBody?.isConnected) {
-            scrollSnapshot.drawerBody.scrollTop = scrollSnapshot.drawerTop;
-          }
-        };
-        if (typeof window.requestAnimationFrame === "function") {
-          window.requestAnimationFrame(restore);
-        } else {
-          restore();
-        }
-      };
-      // Capture the agent at call time so stale responses from a
-      // previous agent can be detected and discarded.
-      const callerAgent = agentIdRef.current;
-      try {
-        // Fetch domain engines and MCP provider statuses in parallel.
-        // When force=true, bypass the HTTP cache so the refresh button
-        // always returns fresh data.
-        const [responses, mcpStatuses, builtinTools] = await Promise.all([
-          fetchDomainEngines(force),
-          fetchMcpProviderStatuses(callerAgent, force),
-          fetchBuiltinToolStatuses(callerAgent, force),
-        ]);
-        // If the agent changed while we were fetching, discard results.
-        if (callerAgent !== agentIdRef.current) return;
-        const built: DomainEngineView[] = [];
-        for (const resp of responses) {
-          try {
-            // Look up MCP provider info for MCP-sourced engines
-            let mcpInfo: McpProviderStatus | null = null;
-            if (resp.engine.provider.kind === "driver") {
-              const providerKey = resp.engine.provider.id;
-              mcpInfo = mcpStatuses.get(providerKey) || null;
-            }
-            built.push(buildEngineView(resp, mcpInfo, builtinTools));
-          } catch {
-            // Skip individual failures
-          }
-        }
-        setViews(built);
-        const activeId = activeViewRef.current?.definition.id;
-        if (activeId) {
-          const refreshed = built.find(
-            (view) => view.definition.id === activeId,
-          );
-          if (refreshed) {
-            activeViewRef.current = refreshed;
-            setActiveView(refreshed);
-          }
-        }
-        restoreScroll();
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : "加载领域引擎失败";
-        antdMsg.error(msg);
-        if (!background) setViews([]);
-      } finally {
-        if (!background) setLoading(false);
-      }
+  useEffect(
+    () => () => {
+      installPollGenerationRef.current += 1;
+      runtimePlanGenerationRef.current += 1;
     },
     [],
   );
+
+  const loadEngines = useCallback(async (force = false, background = false) => {
+    if (!background) setLoading(true);
+    const scrollSnapshot =
+      background && typeof window !== "undefined"
+        ? {
+            x: window.scrollX,
+            y: window.scrollY,
+            drawerBody:
+              typeof document !== "undefined"
+                ? document.querySelector<HTMLElement>(
+                    ".ugsci-domain-engine-detail-drawer .ant-drawer-body",
+                  )
+                : null,
+            drawerTop:
+              typeof document !== "undefined"
+                ? document.querySelector<HTMLElement>(
+                    ".ugsci-domain-engine-detail-drawer .ant-drawer-body",
+                  )?.scrollTop || 0
+                : 0,
+          }
+        : null;
+    const restoreScroll = () => {
+      if (!scrollSnapshot || typeof window === "undefined") return;
+      const restore = () => {
+        window.scrollTo(scrollSnapshot.x, scrollSnapshot.y);
+        if (scrollSnapshot.drawerBody?.isConnected) {
+          scrollSnapshot.drawerBody.scrollTop = scrollSnapshot.drawerTop;
+        }
+      };
+      if (typeof window.requestAnimationFrame === "function") {
+        window.requestAnimationFrame(restore);
+      } else {
+        restore();
+      }
+    };
+    // Capture the agent at call time so stale responses from a
+    // previous agent can be detected and discarded.
+    const callerAgent = agentIdRef.current;
+    try {
+      // Fetch domain engines and MCP provider statuses in parallel.
+      // When force=true, bypass the HTTP cache so the refresh button
+      // always returns fresh data.
+      const [responses, mcpStatuses, builtinTools] = await Promise.all([
+        fetchDomainEngines(force),
+        fetchMcpProviderStatuses(callerAgent, force),
+        fetchBuiltinToolStatuses(callerAgent, force),
+      ]);
+      // If the agent changed while we were fetching, discard results.
+      if (callerAgent !== agentIdRef.current) return;
+      const built: DomainEngineView[] = [];
+      for (const resp of responses) {
+        try {
+          // Look up MCP provider info for MCP-sourced engines
+          let mcpInfo: McpProviderStatus | null = null;
+          if (resp.engine.provider.kind === "driver") {
+            const providerKey = resp.engine.provider.id;
+            mcpInfo = mcpStatuses.get(providerKey) || null;
+          }
+          built.push(buildEngineView(resp, mcpInfo, builtinTools));
+        } catch {
+          // Skip individual failures
+        }
+      }
+      setViews(built);
+      const activeId = activeViewRef.current?.definition.id;
+      if (activeId) {
+        const refreshed = built.find((view) => view.definition.id === activeId);
+        if (refreshed) {
+          activeViewRef.current = refreshed;
+          setActiveView(refreshed);
+        }
+      }
+      restoreScroll();
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : "加载领域引擎失败";
+      antdMsg.error(msg);
+      if (!background) setViews([]);
+    } finally {
+      if (!background) setLoading(false);
+    }
+  }, []);
 
   // Re-fetch when the component mounts or when the selected agent changes.
   useEffect(() => {
@@ -175,18 +191,47 @@ export function DomainEngineSection({
 
   const filteredViews = useMemo(() => {
     if (!searchText.trim()) return views;
-    const q = searchText.toLowerCase();
+    const q = searchText.trim().toLowerCase();
     return views.filter(
       (v: DomainEngineView) =>
+        businessGroupFor(v.definition.domain, v.definition.id)
+          .title.toLowerCase()
+          .includes(q) ||
         v.definition.name.toLowerCase().includes(q) ||
         v.definition.domain.toLowerCase().includes(q) ||
         v.definition.description.toLowerCase().includes(q) ||
-        v.definition.tags.some((t: string) => t.toLowerCase().includes(q)),
+        [
+          ENGINE_PRESENTATIONS[v.definition.id]?.description || "",
+          ENGINE_PRESENTATIONS[v.definition.id]?.inputs || "",
+          ENGINE_PRESENTATIONS[v.definition.id]?.outputs || "",
+        ].some((value) => value.toLowerCase().includes(q)) ||
+        v.definition.tags.some((t: string) => t.toLowerCase().includes(q)) ||
+        v.definition.operations.some((op) => {
+          const presentation = getOperationPresentation(op);
+          return [
+            op.name,
+            op.id,
+            op.description,
+            ...op.tool_names,
+            presentation.description,
+            presentation.inputs,
+            presentation.outputs,
+            presentation.limitations || "",
+          ].some((value) => value.toLowerCase().includes(q));
+        }),
     );
   }, [views, searchText]);
 
   const groups = useMemo(
-    () => groupByDomain(filteredViews),
+    () =>
+      BUSINESS_GROUPS.map((group) => ({
+        ...group,
+        views: filteredViews.filter(
+          (view) =>
+            businessGroupFor(view.definition.domain, view.definition.id).key ===
+            group.key,
+        ),
+      })).filter((group) => group.views.length > 0),
     [filteredViews],
   );
 
@@ -219,10 +264,14 @@ export function DomainEngineSection({
   }, [onNavigateToSkills]);
 
   const handleInstallNeqsim = useCallback(async () => {
+    if (
+      neqsimInstallState?.status === "queued" ||
+      neqsimInstallState?.status === "running"
+    )
+      return;
     const pollGeneration = ++installPollGenerationRef.current;
-    const isCurrentPoll = () => (
-      pollGeneration === installPollGenerationRef.current
-    );
+    const isCurrentPoll = () =>
+      pollGeneration === installPollGenerationRef.current;
     try {
       let task = await installNeqSimRuntime();
       if (!isCurrentPoll()) return;
@@ -275,7 +324,92 @@ export function DomainEngineSection({
       if (!isCurrentPoll()) return;
       antdMsg.error(err instanceof Error ? err.message : "NeqSim 安装失败");
     }
+  }, [loadEngines, neqsimInstallState]);
+
+  const handleRuntimeInstall = useCallback(
+    async (view: DomainEngineView) => {
+      if (view.definition.id === "neqsim") {
+        if (
+          neqsimInstallState?.status === "queued" ||
+          neqsimInstallState?.status === "running"
+        ) {
+          activeViewRef.current = view;
+          setActiveView(view);
+          setDrawerOpen(true);
+        } else {
+          void handleInstallNeqsim();
+        }
+        return;
+      }
+      setRuntimeDialogView(view);
+      setRuntimePlan(null);
+      setRuntimeTask(null);
+      setRuntimeError("");
+      setRuntimeDialogOpen(true);
+      const generation = ++runtimePlanGenerationRef.current;
+      try {
+        const plan = await fetchEngineRuntimePlan(view.definition.id);
+        if (generation !== runtimePlanGenerationRef.current) return;
+        setRuntimePlan(plan);
+        setRuntimeTask(plan.active_task);
+      } catch (err: unknown) {
+        if (generation !== runtimePlanGenerationRef.current) return;
+        setRuntimeError(
+          err instanceof Error ? err.message : "读取运行环境失败",
+        );
+      }
+    },
+    [handleInstallNeqsim, neqsimInstallState],
+  );
+
+  const refreshRuntimePlan = useCallback(
+    async (message?: string) => {
+      if (message) {
+        setRuntimeError(message);
+        return;
+      }
+      if (!runtimeDialogView) return;
+      setRuntimeError("");
+      const generation = ++runtimePlanGenerationRef.current;
+      try {
+        const plan = await fetchEngineRuntimePlan(
+          runtimeDialogView.definition.id,
+        );
+        if (generation !== runtimePlanGenerationRef.current) return;
+        setRuntimePlan(plan);
+        setRuntimeTask(plan.active_task);
+      } catch (err: unknown) {
+        if (generation !== runtimePlanGenerationRef.current) return;
+        setRuntimeError(
+          err instanceof Error ? err.message : "读取运行环境失败",
+        );
+      }
+    },
+    [runtimeDialogView],
+  );
+
+  const handleRuntimeCompleted = useCallback(() => {
+    void loadEngines(true, true);
   }, [loadEngines]);
+
+  const configureEngine = useCallback(
+    (view: DomainEngineView) => {
+      if (
+        view.definition.provider.kind === "driver" ||
+        view.definition.source === "mcp"
+      ) {
+        handleNavigateToMcp();
+      } else if (
+        view.definition.source === "library" ||
+        view.definition.provider.kind === "skill"
+      ) {
+        handleNavigateToSkills();
+      } else {
+        handleNavigateToTools("builtin");
+      }
+    },
+    [handleNavigateToMcp, handleNavigateToSkills, handleNavigateToTools],
+  );
 
   return React.createElement(
     "div",
@@ -298,8 +432,11 @@ export function DomainEngineSection({
           ? React.createElement(SearchOutlined)
           : undefined,
         value: searchText,
-        onChange: (e: { target: { value: string } }) =>
-          setSearchText(e.target.value),
+        onChange: (e: { target: { value: string } }) => {
+          const value = e.target.value;
+          setSearchText(value);
+          setCollapsedGroups(value.trim() ? {} : { general: true });
+        },
         allowClear: true,
         style: { maxWidth: 280 },
       }),
@@ -326,55 +463,84 @@ export function DomainEngineSection({
           }),
         )
       : filteredViews.length === 0
-        ? React.createElement(Empty, {
-            description: searchText
-              ? "无匹配引擎"
-              : "暂无领域引擎",
-          })
-        : React.createElement(
-            "div",
-            null,
-            ...(Array.from(groups.entries()) as [string, DomainEngineView[]][]).map(
-              ([domain, domainViews]) =>
-                React.createElement(
-                  "div",
-                  { key: domain, style: { marginBottom: 20 } },
-                  React.createElement(
-                    Text,
-                    {
-                      strong: true,
-                      style: {
-                        fontSize: 14,
-                        display: "block",
-                        marginBottom: 8,
-                      },
-                    },
-                    DOMAIN_GROUP_LABELS[domain] || domain,
-                  ),
-                  React.createElement(
+      ? React.createElement(Empty, {
+          description: searchText ? "无匹配引擎" : "暂无领域引擎",
+        })
+      : React.createElement(
+          "div",
+          null,
+          ...groups.map((group) => {
+            const collapsed = !!collapsedGroups[group.key];
+            return React.createElement(
+              "div",
+              { key: group.key, style: { marginBottom: 20 } },
+              React.createElement(
+                Button,
+                {
+                  type: "text",
+                  onClick: () =>
+                    setCollapsedGroups((previous) => ({
+                      ...previous,
+                      [group.key]: !previous[group.key],
+                    })),
+                  "aria-expanded": !collapsed,
+                  style: {
+                    fontWeight: 600,
+                    fontSize: 14,
+                    marginBottom: 8,
+                    paddingInline: 0,
+                  },
+                },
+                `${collapsed ? "▸" : "▾"} ${group.title} (${
+                  group.views.length
+                })`,
+              ),
+              collapsed
+                ? null
+                : React.createElement(
                     Row,
-                    { gutter: [12, 12], align: "stretch" },
-                    ...domainViews.map((view: DomainEngineView) =>
+                    { gutter: [12, 12], align: "top" },
+                    ...group.views.map((view: DomainEngineView) =>
                       React.createElement(
                         Col,
                         {
                           key: view.definition.id,
                           xs: 24,
                           sm: 12,
-                          md: 8,
-                          lg: 6,
-                          style: { display: "flex" },
+                          md: 12,
+                          lg: 12,
+                          style: { display: "flex", minWidth: 0 },
                         },
                         React.createElement(DomainEngineCard, {
                           view,
-                          onClick: () => handleCardClick(view),
+                          onDetails: () => handleCardClick(view),
+                          onInstall: () => void handleRuntimeInstall(view),
+                          onConfigure: () => configureEngine(view),
+                          onRefresh: () => void loadEngines(true),
+                          installTask:
+                            view.definition.id === "neqsim"
+                              ? neqsimInstallState
+                                ? {
+                                    id: neqsimInstallState.id,
+                                    engine_id: "neqsim",
+                                    status: neqsimInstallState.status,
+                                    progress: neqsimInstallState.progress,
+                                    message: neqsimInstallState.message,
+                                    error: neqsimInstallState.error,
+                                    warning: neqsimInstallState.warning,
+                                  }
+                                : null
+                              : runtimeDialogView?.definition.id ===
+                                view.definition.id
+                              ? runtimeTask
+                              : null,
                         }),
                       ),
                     ),
                   ),
-                ),
-            ),
-          ),
+            );
+          }),
+        ),
     // Detail drawer
     React.createElement(DomainEngineDetail, {
       view: activeView,
@@ -385,6 +551,25 @@ export function DomainEngineSection({
       onNavigateToSkills: handleNavigateToSkills,
       onInstallNeqsim: handleInstallNeqsim,
       neqsimInstallState,
+    }),
+    React.createElement(RuntimeInstallDialog, {
+      open: runtimeDialogOpen,
+      engineName: runtimeDialogView?.definition.name || "领域引擎",
+      plan: runtimePlan,
+      task: runtimeTask,
+      error: runtimeError,
+      onClose: () => {
+        runtimePlanGenerationRef.current += 1;
+        setRuntimeDialogOpen(false);
+      },
+      onTaskChange: setRuntimeTask,
+      onRetry: refreshRuntimePlan,
+      onCompleted: handleRuntimeCompleted,
+      onManage: () => {
+        runtimePlanGenerationRef.current += 1;
+        setRuntimeDialogOpen(false);
+        if (runtimeDialogView) configureEngine(runtimeDialogView);
+      },
     }),
   );
 }

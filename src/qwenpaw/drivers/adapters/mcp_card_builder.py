@@ -18,6 +18,11 @@ from .mcp_binding import (
     source_binding_from_split,
     split_mcp_binding,
 )
+from .mcp_url import (
+    split_query_credentials,
+    query_secret_key,
+    merge_query_credentials,
+)
 from .env_ref import env_ref
 from ..constants import (
     CAPABILITY_KIND_TOOL,
@@ -99,6 +104,19 @@ def build_mcp_credential_record(
         old_value = existing_secrets.get(secret_key, "")
         secrets[secret_key] = restore_masked_value(str(value), old_value)
 
+    _, query_secrets = split_query_credentials(
+        str(_read_field(client, "url", "") or "")
+    )
+    for key, value in query_secrets.items():
+        secret_key = query_secret_key(key)
+        secrets[secret_key] = restore_masked_value(
+            value, existing_secrets.get(secret_key, "")
+        )
+
+    if not query_secrets:
+        for key, value in existing_secrets.items():
+            if key.startswith("url_query_"):
+                secrets[key] = value
     now = time.time()
     meta = dict(existing.meta) if existing else {"created_at": now}
     meta["updated_at"] = now
@@ -167,6 +185,21 @@ def build_mcp_driver_card(
             "url": str(data.get("url") or ""),
             "headers": header_binding,
         }
+        clean_url, query_values = split_query_credentials(str(data.get("url") or ""))
+        endpoint["url"] = clean_url
+        if query_values:
+            endpoint["query"] = source_binding_from_split(
+                {},
+                {key: query_secret_key(key) for key in query_values},
+                STATIC_CREDENTIAL_ALIAS,
+            )
+        elif (
+            existing
+            and clean_url == existing.endpoint.get("url")
+            and existing.endpoint.get("query")
+        ):
+            # A metadata-only update must retain the saved URL credential binding.
+            endpoint["query"] = existing.endpoint["query"]
         http_timeout = data.get("http_timeout")
         if http_timeout is not None:
             endpoint["http_timeout"] = float(http_timeout)
@@ -249,13 +282,18 @@ def build_mcp_client_info_payload(
         credential_alias=STATIC_CREDENTIAL_ALIAS,
         env_aliases=env_aliases,
     )
+    query = binding_to_response(
+        endpoint.get("query") or {},
+        credential,
+        credential_alias=STATIC_CREDENTIAL_ALIAS,
+    )
     return {
         "key": card.name,
         "name": str(card.config.get("display_name") or card.name),
         "description": str(card.config.get("description") or ""),
         "enabled": card.enabled,
         "transport": transport,
-        "url": str(endpoint.get("url") or ""),
+        "url": merge_query_credentials(str(endpoint.get("url") or ""), query),
         "headers": headers,
         "command": str(endpoint.get("command") or ""),
         "args": list(endpoint.get("args") or []),

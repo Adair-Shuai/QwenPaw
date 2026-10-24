@@ -18,6 +18,12 @@ from qwenpaw.plugins.download_catalog import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _stable_host_version(monkeypatch):
+    """Keep range examples independent of the release under development."""
+    monkeypatch.setattr("qwenpaw.__version__.__version__", "2.2.2")
+
+
 @pytest.mark.parametrize(
     "failure",
     [

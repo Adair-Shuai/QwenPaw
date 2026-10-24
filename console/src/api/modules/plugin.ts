@@ -361,7 +361,9 @@ export async function replaceInstalledPlugin(options: {
       body.detail ?? `Plugin upgrade failed (${response.status})`,
     );
   }
-  return response.json();
+  const result = await response.json();
+  notifyPluginChange();
+  return result;
 }
 
 /** Minimal catalog fields needed to upgrade an installed UGSci plugin. */

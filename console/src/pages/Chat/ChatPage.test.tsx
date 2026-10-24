@@ -218,6 +218,7 @@ vi.mock("./sessionApi", () => ({
       userId: "test-user",
       channel: "console",
     })),
+    getRouteResolutionVersion: vi.fn(() => 0),
     isUnresolvedLocalSession: vi.fn(() => false),
     setLastUserMessage: vi.fn(),
     discardLastUserMessage: vi.fn(),

@@ -1,0 +1,64 @@
+name: Document Forms App Release
+
+on:
+  push:
+    branches: [codex/document-forms-release]
+    paths:
+      - 'plugins/apps/document-forms/**'
+      - 'console/src/plugins/documentForms.test.tsx'
+      - '.github/workflows/document-forms-release.yml'
+      - 'scripts/pack/publish_document_forms.py'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oss-production-metadata
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      PYTHONPATH: src
+      QWENPAW_WORKING_DIR: ${{ github.workspace }}/.release-test-data
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install app and real host SDK test dependencies
+        run: python -m pip install -r plugins/apps/document-forms/tests/requirements-ci.txt
+      - name: Verify actual Excel, Word, review and generation routes
+        run: python -m pytest plugins/apps/document-forms/tests/test_document_forms.py plugins/apps/document-forms/tests/test_publication.py -q
+      - name: Install frontend build dependencies
+        run: npm --prefix console ci --ignore-scripts
+      - name: Rebuild application and check reproducibility
+        run: |
+          node plugins/apps/document-forms/build.mjs
+          node --check plugins/apps/document-forms/ui/index.js
+          git diff --exit-code -- plugins/apps/document-forms/ui/index.js
+      - name: Verify real packaged form and Office preview on current and released hosts
+        working-directory: console
+        run: npx vitest run src/plugins/documentForms.test.tsx --maxWorkers=1
+      - name: Package only document forms
+        run: python scripts/pack/generate_plugin_metadata.py --plugins-root plugins --dist dist/document-forms --cdn-prefix /files/plugins --only document-forms
+      - name: Publish immutable application and preserve existing catalog entries
+        env:
+          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+        run: python scripts/pack/publish_document_forms.py
+      - name: Preserve publication evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: document-forms-release
+          path: dist/document-forms/
+          retention-days: 30

@@ -17,6 +17,7 @@ from ..constant import WORKING_DIR
 
 OSS_BASE_URL = "https://ugsci-awesome-tools.oss-cn-beijing.aliyuncs.com"
 OSS_FRESH_SECONDS = 6 * 60 * 60
+OSS_MANIFEST_FRESH_SECONDS = 60
 OSS_TIMEOUT_SECONDS = 10
 _CACHE_ROOT = Path(WORKING_DIR) / "cache" / "oss-market"
 _LOCKS: dict[str, asyncio.Lock] = {}
@@ -95,7 +96,12 @@ async def fetch_oss_resource(
         cached = await asyncio.to_thread(_read_cached, clean_path)
         if cached and not force:
             age = time.time() - float(cached[1].get("fetched_at", 0))
-            if age < OSS_FRESH_SECONDS:
+            freshness = (
+                OSS_MANIFEST_FRESH_SECONDS
+                if clean_path.endswith("manifest.json")
+                else OSS_FRESH_SECONDS
+            )
+            if age < freshness:
                 content_type = cached[1].get("content_type") or (
                     mimetypes.guess_type(clean_path)[0]
                     or "application/octet-stream"

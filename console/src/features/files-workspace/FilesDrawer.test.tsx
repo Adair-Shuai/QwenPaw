@@ -1,5 +1,5 @@
 import { renderWithProviders } from "@/test/common_setup";
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import FilesDrawer from "./FilesDrawer";
@@ -7,6 +7,8 @@ import { workspaceApi } from "../../api/modules/workspace";
 import type { FileTarget } from "./types";
 import { useBackgroundTasksStore } from "../../stores/backgroundTasksStore";
 import { useCodingTabsStore } from "../../stores/codingTabsStore";
+import type { FilesDrawerState } from "./types";
+import { createRef } from "react";
 
 vi.mock("../../monacoSetup", () => ({}));
 vi.mock("@monaco-editor/react", () => ({
@@ -99,6 +101,297 @@ vi.mock("../../utils/downloadFileFromUrl", () => ({
 }));
 
 describe("FilesDrawer", () => {
+  const interactionScope = {
+    kind: "session" as const,
+    agentId: "default",
+    sessionId: "interactions",
+  };
+
+  it("exposes its DOM element to the open and close animation container", () => {
+    const ref = createRef<HTMLElement>();
+    renderWithProviders(
+      <FilesDrawer
+        ref={ref}
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    expect(ref.current).toBe(
+      screen.getByRole("region", { name: /files|文件/i }),
+    );
+  });
+
+  it("collapses a header-opened workspace using the actual active file", async () => {
+    const target: FileTarget = {
+      source: "workspace",
+      path: "selected.txt",
+      root: "project",
+    };
+    useCodingTabsStore.getState().openTab("session:default:interactions", {
+      ...target,
+      workspaceRoot: target.root,
+      content: "kept",
+      dirty: true,
+    });
+    useCodingTabsStore
+      .getState()
+      .setActiveTab("session:default:interactions", target.path);
+    const dispatch = vi.fn();
+    renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={dispatch}
+        scope={interactionScope}
+      />,
+    );
+    await screen.findByRole(
+      "tab",
+      { name: /selected.txt/ },
+      { timeout: 10000 },
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /backToPreview|返回预览|Back to Preview/i,
+      }),
+    );
+    expect(dispatch).toHaveBeenCalledWith({
+      type: "COLLAPSE_TO_PREVIEW",
+      target: expect.objectContaining(target),
+    });
+  });
+
+  it("does not close for Escape in chat, inputs, composition or a child overlay", async () => {
+    const dispatch = vi.fn();
+    renderWithProviders(
+      <>
+        <textarea aria-label="Chat input" />
+        <FilesDrawer
+          state={{ kind: "workspace", trigger: null }}
+          dispatch={dispatch}
+          scope={interactionScope}
+        />
+      </>,
+    );
+    const drawer = screen.getByRole("region", { name: /files|文件/i });
+    fireEvent.keyDown(screen.getByRole("textbox", { name: "Chat input" }), {
+      key: "Escape",
+    });
+    fireEvent.keyDown(drawer, { key: "Escape", isComposing: true });
+    const consumed = new KeyboardEvent("keydown", {
+      key: "Escape",
+      bubbles: true,
+      cancelable: true,
+    });
+    consumed.preventDefault();
+    fireEvent(drawer, consumed);
+    fireEvent.click(screen.getByRole("button", { name: "浏览器" }));
+    fireEvent.keyDown(
+      screen.getByRole("textbox", { name: /浏览器地址|Browser address/ }),
+      { key: "Escape" },
+    );
+    expect(dispatch).not.toHaveBeenCalled();
+    fireEvent.keyDown(drawer, { key: "Escape" });
+    expect(dispatch).toHaveBeenCalledWith({ type: "CLOSE" });
+  });
+
+  it("does not move focus when a second file is requested", async () => {
+    const dispatch = vi.fn();
+    const { rerender } = renderWithProviders(
+      <>
+        <textarea aria-label="Chat input" />
+        <FilesDrawer
+          state={{
+            kind: "preview",
+            target: { source: "workspace", path: "one.txt" },
+            trigger: null,
+          }}
+          dispatch={dispatch}
+          scope={interactionScope}
+        />
+      </>,
+    );
+    await screen.findByRole("tab", { name: /one.txt/ });
+    screen.getByRole("textbox", { name: "Chat input" }).focus();
+    rerender(
+      <>
+        <textarea aria-label="Chat input" />
+        <FilesDrawer
+          state={{
+            kind: "preview",
+            target: { source: "workspace", path: "two.txt" },
+            trigger: null,
+          }}
+          dispatch={dispatch}
+          scope={interactionScope}
+        />
+      </>,
+    );
+    await screen.findByRole("tab", { name: /two.txt/ });
+    expect(screen.getByRole("textbox", { name: "Chat input" })).toHaveFocus();
+  });
+
+  it("keeps an explicit compute request visible while file tabs hydrate", async () => {
+    useCodingTabsStore.getState().openTab("session:default:interactions", {
+      path: "restored.txt",
+      source: "workspace",
+      content: "",
+      dirty: false,
+    });
+    useCodingTabsStore
+      .getState()
+      .setActiveTab("session:default:interactions", "restored.txt");
+    renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", mode: "compute", trigger: null }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    await waitFor(() => expect(workspaceApi.loadFileText).toHaveBeenCalled());
+    expect(screen.getByRole("button", { name: "计算轨道" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  });
+
+  it("replaces the current tool immediately when a file is opened", async () => {
+    const scope = interactionScope;
+    const dispatch = vi.fn();
+    const { rerender } = renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={dispatch}
+        scope={scope}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "浏览器" }));
+    vi.mocked(workspaceApi.loadFileText).mockImplementationOnce(
+      () => new Promise(() => {}),
+    );
+    rerender(
+      <FilesDrawer
+        state={{
+          kind: "workspace",
+          target: { source: "workspace", path: "slow.txt" },
+          trigger: null,
+        }}
+        dispatch={dispatch}
+        scope={scope}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "文件与预览" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    await waitFor(() =>
+      expect(workspaceApi.loadFileText).toHaveBeenCalledWith(
+        "slow.txt",
+        undefined,
+        undefined,
+        undefined,
+      ),
+    );
+  });
+
+  it("does not carry a previous session's active file into an empty workspace", async () => {
+    const dispatch = vi.fn();
+    const state: Exclude<FilesDrawerState, { kind: "closed" }> = {
+      kind: "workspace",
+      target: { source: "workspace", path: "only-a.txt" },
+      trigger: null,
+    };
+    const { rerender } = renderWithProviders(
+      <FilesDrawer
+        state={state}
+        dispatch={dispatch}
+        scope={interactionScope}
+      />,
+    );
+    await screen.findByRole("tab", { name: /only-a.txt/ });
+    rerender(
+      <FilesDrawer
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={dispatch}
+        scope={{ ...interactionScope, sessionId: "another-session" }}
+      />,
+    );
+    expect(
+      screen.queryByRole("tab", { name: /only-a.txt/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByText("only-a.txt")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: /backToPreview|返回预览|Back to Preview/i,
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("retains unsaved edits across closing and reopening the workspace", async () => {
+    const props = {
+      state: {
+        kind: "preview" as const,
+        target: { source: "workspace" as const, path: "draft.py" },
+        trigger: null,
+      },
+      scope: interactionScope,
+      dispatch: vi.fn(),
+    };
+    const { rerender } = renderWithProviders(<FilesDrawer {...props} />);
+    await screen.findByTestId("monaco-editor");
+    fireEvent.click(
+      screen.getByRole("button", { name: /^(Edit|编辑|files\.edit)$/i }),
+    );
+    fireEvent.change(screen.getByTestId("monaco-editor"), {
+      target: { value: "unsaved draft" },
+    });
+    rerender(<></>);
+    rerender(<FilesDrawer {...props} />);
+    expect(await screen.findByTestId("monaco-editor")).toHaveValue(
+      "unsaved draft",
+    );
+  });
+
+  it("restores focus to its connected opener when closed", async () => {
+    const trigger = document.createElement("button");
+    document.body.append(trigger);
+    try {
+      const dispatch = vi.fn();
+      renderWithProviders(
+        <FilesDrawer
+          state={{ kind: "workspace", trigger }}
+          dispatch={dispatch}
+          scope={interactionScope}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: /^(Close|关闭|common.close)$/i }),
+      );
+      await waitFor(() => expect(trigger).toHaveFocus());
+      expect(dispatch).toHaveBeenCalledWith({ type: "CLOSE" });
+    } finally {
+      trigger.remove();
+    }
+  });
+
+  it("removes global pointer listeners when closed during resizing", async () => {
+    const remove = vi.spyOn(window, "removeEventListener");
+    const { unmount } = renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    fireEvent.pointerDown(screen.getByRole("separator"), { clientX: 500 });
+    unmount();
+    expect(remove).toHaveBeenCalledWith("pointermove", expect.any(Function));
+    expect(remove).toHaveBeenCalledWith("pointerup", expect.any(Function));
+    act(() => {
+      fireEvent.pointerMove(window, { clientX: 200 });
+    });
+    expect(localStorage.getItem("qwenpaw-files-workspace-width")).toBeNull();
+  });
   // Keep this at the drawer boundary: replacing FilesWorkspace with a single
   // preview must fail even if TabbedEditor's own unit tests still pass.
   it.each([

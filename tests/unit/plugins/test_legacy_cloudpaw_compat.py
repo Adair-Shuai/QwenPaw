@@ -495,6 +495,7 @@ async def test_legacy_stop_timeout_reuses_pending_task(
     assert not update.ok and update.errors
     with pytest.raises(RuntimeError, match="being uninstalled"):
         await manager.get_agent("cloud-orchestrator")
+    monkeypatch.setattr("qwenpaw.plugins.custody.CONNECTION_STOP_SECONDS", 0.5)
     report = await loader.lifecycle.unload(
         "cloudpaw",
         UnloadMode.UNINSTALL,

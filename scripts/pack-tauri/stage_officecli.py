@@ -18,6 +18,7 @@ The resulting directory is listed in ``tauri.conf.json`` under
 Usage:
     python scripts/pack-tauri/stage_officecli.py --dest binaries/officecli
 """
+
 from __future__ import annotations
 
 import argparse
@@ -25,20 +26,18 @@ import hashlib
 import json
 import os
 import platform
+import re
 import shutil
 import stat
+import subprocess
 import sys
 import tempfile
 import urllib.request
 from pathlib import Path
 
-DEFAULT_OFFICECLI_VERSION = "v1.0.141"
-GITHUB_API_URL = (
-    "https://api.github.com/repos/iOfficeAI/OfficeCLI/releases/latest"
-)
-GITHUB_DOWNLOAD_BASE = (
-    "https://github.com/iOfficeAI/OfficeCLI/releases/download"
-)
+LOCK_PATH = Path(__file__).with_name("officecli-release.json")
+DEFAULT_OFFICECLI_VERSION = "v1.0.157"
+GITHUB_DOWNLOAD_BASE = "https://github.com/iOfficeAI/OfficeCLI/releases/download"
 
 
 def _target() -> tuple[str, str]:
@@ -76,34 +75,35 @@ def _release_asset_name(platform_name: str, arch: str) -> str:
 
 
 def _resolve_version(explicit: str | None) -> str:
-    """Resolve the OfficeCLI version to download.
+    """Use a reviewed pin on every platform; never silently fall back."""
+    locked = json.loads(LOCK_PATH.read_text(encoding="utf-8"))["version"]
+    requested = explicit or os.environ.get("QWENPAW_OFFICECLI_VERSION") or locked
+    requested = "v" + requested.removeprefix("v")
+    if requested != locked or locked != DEFAULT_OFFICECLI_VERSION:
+        raise SystemExit("OfficeCLI version must match the reviewed release lock")
+    return locked
 
-    Priority:
-    1. Explicit --version flag
-    2. QWENPAW_OFFICECLI_VERSION env var
-    3. Latest release tag from GitHub API
-    4. DEFAULT_OFFICECLI_VERSION fallback
-    """
-    if explicit:
-        return explicit
-    env_ver = os.environ.get("QWENPAW_OFFICECLI_VERSION")
-    if env_ver:
-        return env_ver
-    try:
-        request = urllib.request.Request(GITHUB_API_URL)
-        request.add_header("User-Agent", "qwenpaw-build")
-        request.add_header("Accept", "application/vnd.github+json")
-        with urllib.request.urlopen(request, timeout=30) as response:
-            data = json.loads(response.read())
-        tag = data.get("tag_name", "")
-        if tag:
-            return tag
-    except Exception as exc:
-        print(
-            f"  [WARN] failed to query latest OfficeCLI release: {exc}",
-            file=sys.stderr,
-        )
-    return DEFAULT_OFFICECLI_VERSION
+
+def _verify_binary(path: Path, asset: str, version: str) -> None:
+    """Check pinned upstream bytes and the version actually executed."""
+    lock = json.loads(LOCK_PATH.read_text(encoding="utf-8"))
+    expected = lock["sha256"].get(asset)
+    if not expected or _sha256_file(path) != expected:
+        raise SystemExit(f"OfficeCLI checksum mismatch: {asset}")
+    result = subprocess.run(
+        [str(path), "--version"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        timeout=30,
+        check=False,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+    output = (result.stdout or "") + (result.stderr or "")
+    reported = re.search(r"\b(\d+\.\d+\.\d+)\b", output)
+    if result.returncode or not reported or reported[1] != version.removeprefix("v"):
+        raise SystemExit(f"OfficeCLI version verification failed: {output[:200]}")
 
 
 def _sha256_file(path: Path) -> str:
@@ -140,11 +140,7 @@ def _stage_doc_plugin(source: str | None, dest: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     digest = _sha256_file(source_path)
     marker = target.parent / "plugin.sha256"
-    if (
-        target.is_file()
-        and marker.is_file()
-        and marker.read_text().strip() == digest
-    ):
+    if target.is_file() and marker.is_file() and marker.read_text().strip() == digest:
         print(
             f"OfficeCLI .doc plugin already staged ({digest[:12]}...); skipping",
         )
@@ -193,8 +189,7 @@ def main() -> None:
     parser.add_argument(
         "--version",
         default=None,
-        help="OfficeCLI version tag (e.g. v1.0.141). "
-        "Defaults to env QWENPAW_OFFICECLI_VERSION or latest release.",
+        help="Reviewed OfficeCLI version; must match officecli-release.json.",
     )
     parser.add_argument(
         "--doc-plugin",
@@ -220,6 +215,7 @@ def main() -> None:
         and marker.is_file()
         and marker.read_text(encoding="utf-8").strip() == expected_marker
     ):
+        _verify_binary(binary_path, asset_name, version)
         print(f"officecli already staged ({expected_marker}); skipping")
         _stage_doc_plugin(args.doc_plugin, dest)
         return
@@ -244,41 +240,26 @@ def main() -> None:
                 f"bytes). Possible error page:\n{content}",
             )
 
-        # Copy to final destination with correct name
-        shutil.copy2(downloaded, binary_path)
-
         # Ensure executable on Unix
         if platform_name != "win":
-            st = binary_path.stat()
-            binary_path.chmod(
+            st = downloaded.stat()
+            downloaded.chmod(
                 st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH,
             )
-
-    # Quick sanity check — verify the binary runs
-    try:
-        import subprocess
-
-        result = subprocess.run(
-            [str(binary_path), "--version"],
-            capture_output=True,
-            text=True,
-            timeout=10,
-            check=False,
+        expected = json.loads(LOCK_PATH.read_text(encoding="utf-8"))["sha256"].get(
+            asset_name
         )
-        if result.returncode == 0:
-            ver_output = (result.stdout or result.stderr).strip()
-            print(f"  Verified: {ver_output}")
-        else:
-            print(
-                f"  [WARN] officecli --version returned exit code "
-                f"{result.returncode}",
-                file=sys.stderr,
-            )
-    except Exception as exc:
-        print(
-            f"  [WARN] could not verify officecli binary: {exc}",
-            file=sys.stderr,
+        if not expected or _sha256_file(downloaded) != expected:
+            raise SystemExit(f"OfficeCLI checksum mismatch: {asset_name}")
+        staged = dest / (
+            "officecli.staging.exe" if platform_name == "win" else ".officecli.staging"
         )
+        try:
+            shutil.copy2(downloaded, staged)
+            _verify_binary(staged, asset_name, version)
+            os.replace(staged, binary_path)
+        finally:
+            staged.unlink(missing_ok=True)
 
     marker.write_text(expected_marker, encoding="utf-8")
     print(f"Staged officecli at {dest / binary_name}")

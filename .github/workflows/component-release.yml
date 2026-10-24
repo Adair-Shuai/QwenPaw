@@ -309,6 +309,11 @@ jobs:
 
       - name: Verify generated artifacts
         run: |
+          manifest=$(find component-release/metadata/components/stable -maxdepth 1 \
+            -name '${{ matrix.target }}-*.json' ! -name '*.history.json' -type f -print -quit)
+          python scripts/pack-tauri/verify_component_release.py \
+            --release-root component-release --manifest "$manifest" \
+            --target '${{ matrix.target }}' --base-url "$COMPONENT_BASE_URL"
           find component-release/metadata/components/stable -maxdepth 1 \
             -name '${{ matrix.target }}-*.json' \
             ! -name '*.history.json' -type f -size +0 | grep -q .

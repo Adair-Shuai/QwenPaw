@@ -142,7 +142,7 @@ class TestWriteToolConfig:
                 icon="icon.png",
                 plugin_id="test-plugin",
             )
-        assert "No configured agent profile" in caplog.text
+        assert "No agent profiles" in caplog.text
         mutate.assert_not_called()
 
     def test_writes_to_agent_config(self, tmp_path, monkeypatch):

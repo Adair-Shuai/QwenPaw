@@ -449,9 +449,9 @@ class TestLoadAllPluginsIsolation:
             manifest,
             plugin_dir,
             config=None,
-            deps_ensured=False,
+            activate=False,
         ):
-            del plugin_dir, config, deps_ensured
+            del plugin_dir, config, activate
             order.append(manifest.id)
             return None
 

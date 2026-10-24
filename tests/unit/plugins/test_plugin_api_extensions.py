@@ -776,7 +776,7 @@ class TestRegisterOperation:
     """Operation descriptors are a host-level extension point for Run Center."""
 
     def test_register_operation_is_visible_and_json_safe(
-        self, plugin_api, fresh_registry
+        self, plugin_api, fresh_registry,
     ):
         descriptor = {
             "title": "库存评价",
@@ -844,13 +844,13 @@ class TestRegisterOperation:
         fresh_registry,
     ):
         plugin_api.register_operation(
-            "simulation.run", {"title": "本地"}, provider_id="local"
+            "simulation.run", {"title": "本地"}, provider_id="local",
         )
         plugin_api.register_operation(
-            "simulation.run", {"title": "集群"}, provider_id="cluster"
+            "simulation.run", {"title": "集群"}, provider_id="cluster",
         )
         registrations = fresh_registry.get_operations(
-            operation="simulation.run"
+            operation="simulation.run",
         )
         assert [item.provider_id for item in registrations] == [
             "cluster",
@@ -864,16 +864,16 @@ class TestRegisterOperation:
         from qwenpaw.plugins.api import PluginApi
 
         other = PluginApi(
-            "other-plugin", config={}, manifest={"id": "other-plugin"}
+            "other-plugin", config={}, manifest={"id": "other-plugin"},
         )
         other.set_registry(fresh_registry)
         with pytest.raises(ValueError, match="already registered"):
             other.register_operation(
-                "simulation.run", {"title": "冲突"}, provider_id="local"
+                "simulation.run", {"title": "冲突"}, provider_id="local",
             )
 
     def test_unregister_plugin_removes_only_owned_operations(
-        self, plugin_api, fresh_registry
+        self, plugin_api, fresh_registry,
     ):
         plugin_api.register_operation(
             "storage.inventory.evaluate",
@@ -883,23 +883,23 @@ class TestRegisterOperation:
         from qwenpaw.plugins.api import PluginApi
 
         other = PluginApi(
-            "other-plugin", config={}, manifest={"id": "other-plugin"}
+            "other-plugin", config={}, manifest={"id": "other-plugin"},
         )
         other.set_registry(fresh_registry)
         other.register_operation(
-            "storage.inventory.evaluate", {"title": "远程"}, provider_id="remote"
+            "storage.inventory.evaluate", {"title": "远程"}, provider_id="remote",
         )
 
         fresh_registry.unregister_plugin("test-plugin")
         assert (
             fresh_registry.get_operation(
-                "storage.inventory.evaluate", provider_id="ugsci"
+                "storage.inventory.evaluate", provider_id="ugsci",
             )
             is None
         )
         assert (
             fresh_registry.get_operation(
-                "storage.inventory.evaluate", provider_id="remote"
+                "storage.inventory.evaluate", provider_id="remote",
             )
             is not None
         )
@@ -923,7 +923,7 @@ class TestRegisterRunExecutor:
         )
 
         registrations = plugin_api.get_run_executors(
-            operation="simulation.run"
+            operation="simulation.run",
         )
         assert len(registrations) == 1
         assert registrations[0].plugin_id == "test-plugin"
@@ -937,21 +937,21 @@ class TestRegisterRunExecutor:
         fresh_registry,
     ):
         plugin_api.register_run_executor(
-            "simulation.run", lambda *_: None, provider_id="local"
+            "simulation.run", lambda *_: None, provider_id="local",
         )
         plugin_api.register_run_executor(
-            "simulation.run", lambda *_: None, provider_id="remote"
+            "simulation.run", lambda *_: None, provider_id="remote",
         )
 
         from qwenpaw.plugins.api import PluginApi
 
         other = PluginApi(
-            "other-plugin", config={}, manifest={"id": "other-plugin"}
+            "other-plugin", config={}, manifest={"id": "other-plugin"},
         )
         other.set_registry(fresh_registry)
         with pytest.raises(ValueError, match="already registered"):
             other.register_run_executor(
-                "simulation.run", lambda *_: None, provider_id="local"
+                "simulation.run", lambda *_: None, provider_id="local",
             )
 
     def test_unregister_plugin_removes_only_owned_run_executors(
@@ -960,17 +960,17 @@ class TestRegisterRunExecutor:
         fresh_registry,
     ):
         plugin_api.register_run_executor(
-            "simulation.run", lambda *_: None, provider_id="local"
+            "simulation.run", lambda *_: None, provider_id="local",
         )
 
         from qwenpaw.plugins.api import PluginApi
 
         other = PluginApi(
-            "other-plugin", config={}, manifest={"id": "other-plugin"}
+            "other-plugin", config={}, manifest={"id": "other-plugin"},
         )
         other.set_registry(fresh_registry)
         other.register_run_executor(
-            "simulation.run", lambda *_: None, provider_id="remote"
+            "simulation.run", lambda *_: None, provider_id="remote",
         )
 
         fresh_registry.unregister_plugin("test-plugin")

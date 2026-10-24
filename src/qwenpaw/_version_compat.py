@@ -54,6 +54,13 @@ def check_plugin_version_compat(
     if current.pre is not None:
         current = Version(f"{current.major}.{current.minor}.{current.micro}")
 
+    # An omitted range is not an explicit promise to target version 0.1.
+    # SDK packages use their SDK contract and capability checks independently.
+    if manifest.qwenpaw_version is None and not (
+        {"min_version", "max_version"} & manifest.model_fields_set
+    ):
+        return True, ""
+
     qv = manifest.qwenpaw_version
     if qv is not None:
         min_v = Version(qv.min)

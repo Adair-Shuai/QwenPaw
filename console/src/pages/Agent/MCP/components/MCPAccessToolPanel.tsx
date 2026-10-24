@@ -1,4 +1,5 @@
-import React from "react";
+import React, { useMemo, useState } from "react";
+import { Input, Pagination } from "antd";
 import { Plus as PlusOutlined } from "lucide-react";
 import { Button, Tag } from "@agentscope-ai/design";
 import { useTranslation } from "react-i18next";
@@ -41,6 +42,29 @@ export const MCPAccessToolPanel: React.FC<MCPAccessToolPanelProps> = ({
   effectLabel,
 }) => {
   const { t } = useTranslation();
+  const [query, setQuery] = useState("");
+  const [page, setPage] = useState(1);
+  // Remote services can expose hundreds of tools. Mount only one page of
+  // editors so loading their schemas cannot starve the modal's close action.
+  const pageSize = 20;
+  const filtered = useMemo(() => {
+    const needle = query.trim().toLocaleLowerCase();
+    return needle
+      ? groups.filter((group) =>
+          `${group.toolName} ${group.description || ""}`
+            .toLocaleLowerCase()
+            .includes(needle),
+        )
+      : groups;
+  }, [groups, query]);
+  const currentPage = Math.min(
+    page,
+    Math.max(1, Math.ceil(filtered.length / pageSize)),
+  );
+  const visibleGroups = filtered.slice(
+    (currentPage - 1) * pageSize,
+    currentPage * pageSize,
+  );
 
   return (
     <div className={styles.accessToolsPanel}>
@@ -49,8 +73,18 @@ export const MCPAccessToolPanel: React.FC<MCPAccessToolPanelProps> = ({
           {t("mcp.access.toolSection")}
         </div>
       </div>
+      <Input
+        allowClear
+        aria-label={t("tools.search")}
+        placeholder={t("tools.search")}
+        value={query}
+        onChange={(event) => {
+          setQuery(event.target.value);
+          setPage(1);
+        }}
+      />
       <div className={styles.accessToolGroups}>
-        {groups.map((group) => (
+        {visibleGroups.map((group) => (
           <div key={group.toolName} className={styles.accessToolGroup}>
             <div className={styles.accessToolGroupHeader}>
               <div className={styles.accessToolInfo}>
@@ -87,20 +121,7 @@ export const MCPAccessToolPanel: React.FC<MCPAccessToolPanelProps> = ({
             {(group.description ||
               (group.inputSchema &&
                 Object.keys(group.inputSchema).length > 0)) && (
-              <details className={styles.toolSchema}>
-                <summary>{t("mcp.toolSchema")}</summary>
-                {group.description && (
-                  <div className={styles.toolSchemaDescription}>
-                    {group.description}
-                  </div>
-                )}
-                {group.inputSchema &&
-                  Object.keys(group.inputSchema).length > 0 && (
-                    <pre className={styles.toolSchemaContent}>
-                      {JSON.stringify(group.inputSchema, null, 2)}
-                    </pre>
-                  )}
-              </details>
+              <ToolSchema group={group} label={t("mcp.toolSchema")} />
             )}
 
             <MCPAccessRuleRows
@@ -117,6 +138,47 @@ export const MCPAccessToolPanel: React.FC<MCPAccessToolPanelProps> = ({
           </div>
         ))}
       </div>
+      <Pagination
+        size="small"
+        current={currentPage}
+        pageSize={pageSize}
+        total={filtered.length}
+        onChange={setPage}
+        showSizeChanger={false}
+        hideOnSinglePage
+      />
     </div>
   );
 };
+
+function ToolSchema({
+  group,
+  label,
+}: {
+  group: MCPAccessToolGroup;
+  label: string;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <details
+      className={styles.toolSchema}
+      onToggle={(event) => setExpanded(event.currentTarget.open)}
+    >
+      <summary>{label}</summary>
+      {expanded && (
+        <>
+          {group.description && (
+            <div className={styles.toolSchemaDescription}>
+              {group.description}
+            </div>
+          )}
+          {group.inputSchema && Object.keys(group.inputSchema).length > 0 && (
+            <pre className={styles.toolSchemaContent}>
+              {JSON.stringify(group.inputSchema, null, 2)}
+            </pre>
+          )}
+        </>
+      )}
+    </details>
+  );
+}

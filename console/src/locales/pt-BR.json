@@ -663,6 +663,13 @@
     }
   },
   "workspace": {
+    "officePreviewMode": "Modo de visualização Office",
+    "officeReading": "Ler documento",
+    "officePrint": "Layout de impressão",
+    "officePrintFallback": "O layout de impressão está indisponível. Exibindo a visualização de leitura.",
+    "officeZoomOut": "Reduzir",
+    "officeZoomReset": "Redefinir zoom",
+    "officeZoomIn": "Ampliar",
     "title": "Arquivos",
     "workspacePath": "Workspace:",
     "noFiles": "Nao Arquivos",
@@ -3463,7 +3470,8 @@
     "quickMenu": {
       "settings": "Configurações",
       "appearance": "Aparência",
-      "about": "Sobre o QwenPaw"
+      "manual": "Manual",
+      "about": "Sobre o UGSci"
     },
     "collapse": "Recolher barra lateral",
     "expand": "Expandir barra lateral",
@@ -3482,10 +3490,12 @@
     },
     "pages": {
       "general": "Geral",
+      "ugsci": "Configurações UGSci",
       "navigation": "Barra lateral"
     },
     "descriptions": {
       "general": "Idioma, tema e comportamento do aplicativo",
+      "ugsci": "GenUI e outras preferências do UGSci",
       "navigation": "Visibilidade da barra lateral",
       "agents": "Perfis do QwenPaw, Codex e Qoder",
       "models": "Provedores, credenciais e catálogo de modelos",

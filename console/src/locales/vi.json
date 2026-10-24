@@ -348,7 +348,8 @@
     "quickMenu": {
       "settings": "Cài đặt",
       "appearance": "Giao diện",
-      "about": "Giới thiệu QwenPaw"
+      "manual": "Hướng dẫn",
+      "about": "Giới thiệu UGSci"
     },
     "collapse": "Thu gọn thanh bên",
     "expand": "Mở rộng thanh bên",
@@ -367,10 +368,12 @@
     },
     "pages": {
       "general": "Chung",
+      "ugsci": "Cài đặt UGSci",
       "navigation": "Thanh bên"
     },
     "descriptions": {
       "general": "Ngôn ngữ, giao diện và hành vi ứng dụng",
+      "ugsci": "GenUI và các tùy chọn UGSci khác",
       "navigation": "Khả năng hiển thị của thanh bên",
       "agents": "Hồ sơ QwenPaw, Codex và Qoder",
       "models": "Nhà cung cấp, thông tin xác thực và danh mục mô hình",
@@ -1611,6 +1614,13 @@
     }
   },
   "workspace": {
+    "officePreviewMode": "Chế độ xem Office",
+    "officeReading": "Đọc tài liệu",
+    "officePrint": "Bố cục in",
+    "officePrintFallback": "Bố cục in không khả dụng. Đang hiển thị bản xem đọc.",
+    "officeZoomOut": "Thu nhỏ",
+    "officeZoomReset": "Đặt lại thu phóng",
+    "officeZoomIn": "Phóng to",
     "title": "Tệp tin",
     "workspacePath": "Workspace:",
     "noFiles": "Không có tệp tin",

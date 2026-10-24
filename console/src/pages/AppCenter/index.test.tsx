@@ -2,13 +2,14 @@ vi.mock("../../plugins/pawapp-sdk/browserSession", () => ({
   prepareBrowserSession: vi.fn().mockResolvedValue(null),
 }));
 // @vitest-environment jsdom
-import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { Modal } from "antd";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useLocation } from "react-router-dom";
 
 import { renderWithProviders } from "@/test/common_setup";
 import AppCenterPage from "./index";
+import { notifyPluginChange } from "@/utils/pluginChangeEvents";
 
 const hoisted = vi.hoisted(() => ({
   listApps: vi.fn(),
@@ -175,6 +176,29 @@ describe("AppCenterPage", () => {
       screen.queryByLabelText("appCenter.searchMarket"),
     ).not.toBeInTheDocument();
     expect(hoisted.fetchMarketPlugins).not.toHaveBeenCalled();
+  });
+
+  it("refreshes installed apps after external changes and ignores older responses", async () => {
+    let resolveOld!: (value: {
+      apps: ReturnType<typeof makeApp>[];
+      total: number;
+    }) => void;
+    hoisted.listApps.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveOld = resolve;
+      }),
+    );
+    renderPage();
+    await waitFor(() => expect(hoisted.listApps).toHaveBeenCalledTimes(1));
+    hoisted.listApps.mockResolvedValue({
+      apps: [makeApp("new-app")],
+      total: 1,
+    });
+    act(() => notifyPluginChange());
+    expect(await screen.findByText("new-app")).toBeVisible();
+    await act(async () => resolveOld({ apps: [makeApp("old-app")], total: 1 }));
+    expect(screen.getByText("new-app")).toBeVisible();
+    expect(screen.queryByText("old-app")).not.toBeInTheDocument();
   });
 
   it("enters the official view and loads featured apps lazily", async () => {

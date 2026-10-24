@@ -45,6 +45,8 @@ import {
 // ─────────────────────────────────────────────────────────────────────────────
 
 export interface QwenPawWorkspaceNamespace {
+  /** Embed the host's existing preview, including Office, on an app page. */
+  loadPreview: () => Promise<typeof import("./ArtifactPreview").default>;
   /**
    * 注册自定义渲染器
    * @returns Disposable，调用 dispose() 注销
@@ -105,6 +107,8 @@ export interface QwenPawWorkspaceNamespace {
 
 export function createWorkspaceNamespace(): QwenPawWorkspaceNamespace {
   return {
+    loadPreview: () =>
+      import("./ArtifactPreview").then((module) => module.default),
     registerRenderer: (renderer) => rendererRegistry.register(renderer),
 
     registerRenderers: (renderers) => rendererRegistry.registerAll(renderers),

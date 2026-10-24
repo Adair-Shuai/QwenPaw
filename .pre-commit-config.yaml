@@ -62,6 +62,7 @@ repos:
     rev: 23.3.0
     hooks:
       - id: black
+        language_version: python3.11
         args: [ --line-length=79 ]
         exclude: '(?x)(.*/skills/.*|^scripts/pack/|^e2e/)'
   - repo: https://github.com/PyCQA/flake8

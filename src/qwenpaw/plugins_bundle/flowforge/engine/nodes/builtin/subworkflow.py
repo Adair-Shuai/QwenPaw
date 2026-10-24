@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any
 
@@ -49,58 +50,59 @@ class SubworkflowNode(WorkflowNode):
             return NodeOutput(error="Subworkflow node missing 'subworkflow_id'")
 
         ctx = hidden.tool_context
-        registry = getattr(ctx, "workflow_registry", None) if ctx else None
-        if registry is None:
-            return NodeOutput(error="Workflow registry not available")
-
+        service = getattr(ctx, "workflow_service", None) if ctx else None
+        if service is None:
+            return NodeOutput(error="Workflow service not available")
         state = hidden.workflow_state
-        resolved_inputs = state.resolve_template(inputs.get("subworkflow_inputs") or {}) if state is not None else inputs.get("subworkflow_inputs") or {}
-
-        start = time.monotonic()
+        if state is None:
+            return NodeOutput(error="Subworkflow requires workflow state")
+        resolved = state.resolve_template(inputs.get("subworkflow_inputs") or {})
+        child_runs = state.metadata.setdefault("subworkflow_runs", {})
+        key = str(hidden.unique_id)
+        child_id = child_runs.get(key)
+        started = time.monotonic()
         try:
-            sub_def = await registry.get(sub_id)
-            if not sub_def:
-                return NodeOutput(error=f"Subworkflow '{sub_id}' not found")
-
-            from uuid import uuid4
-
-            from ...executor import (  # local import
-                WorkflowExecutor,
-                _ensure_document,
-            )
-
-            executor = WorkflowExecutor(
-                tool_registry=getattr(ctx, "tool_registry", None),
-                tool_executor=getattr(ctx, "tool_executor", None),
-                llm_service=getattr(ctx, "llm_service", None),
-                review_service=getattr(ctx, "review_service", None),
-                agent_runtime=hidden.agent_runtime or getattr(ctx, "agent_runtime", None),
-            )
-            # Child run inherits the parent's identity (agent nodes need
-            # user/session) and abort signal (cancelling the parent cancels
-            # nested runs too).
-            result = await executor.execute_async(
-                _ensure_document(sub_def),
-                resolved_inputs,
-                prompt_id=str(uuid4()),
-                extra_data={
-                    "user_id": hidden.user_id,
-                    "session_id": hidden.session_id,
-                    "parent_execution_id": hidden.execution_id,
-                },
-                abort_event=hidden.abort_event,
-            )
-            duration_ms = int((time.monotonic() - start) * 1000)
-
-            if result.success:
-                if state is not None and inputs.get("output"):
-                    state.set(inputs["output"], result.outputs)
+            if child_id:
+                record = service.get_run_record(child_id)
+                if record is None:
+                    return NodeOutput(error=f"Child run '{child_id}' not found")
+                # A reviewer may resume the child directly. Follow the existing
+                # continuation rather than repeat its side effects.
+                while record.get("resumed_by_run_id"):
+                    child_id = record["resumed_by_run_id"]
+                    record = service.get_run_record(child_id)
+                    if record is None:
+                        return NodeOutput(error="Child continuation not found")
+                payload = state.variables.pop(f"__resume__{key}", None)
+                if record["status"] in {"paused", "waiting_human"} and payload is not None:
+                    child_id = service.resume_run(child_id, payload).run_id
+            else:
+                child_id = service.start_run(sub_id, resolved, trigger_type="subworkflow").run_id
+            child_runs[key] = child_id
+            while True:
+                record = service.get_run_record(child_id)
+                handle = service.get_run(child_id)
+                if record is None:
+                    return NodeOutput(error="Child run disappeared")
+                if (handle is None or handle.is_done) and record["status"] not in {"queued", "running"}:
+                    break
+                await asyncio.sleep(0.02)
+            metadata = {"subworkflow_id": sub_id, "child_run_id": child_id,
+                        "duration_ms": int((time.monotonic() - started) * 1000)}
+            if record["status"] in {"paused", "waiting_human"}:
                 return NodeOutput(
-                    values=(result.outputs,),
-                    metadata={"subworkflow_id": sub_id, "duration_ms": duration_ms},
+                    values=({},), block_execution="awaiting_review" if record["status"] == "waiting_human" else "child_paused",
+                    ui={"child_run_id": child_id}, metadata=metadata,
                 )
-            err = "; ".join(result.errors) if result.errors else "Subworkflow failed"
-            return NodeOutput(error=err, metadata={"subworkflow_id": sub_id, "duration_ms": duration_ms})
-        except Exception as exc:  # noqa: BLE001
-            logger.error("subworkflow_error", subworkflow_id=sub_id, error=str(exc), exc_info=True)
+            if record["status"] == "completed":
+                if inputs.get("output"):
+                    state.set(inputs["output"], record["outputs"])
+                return NodeOutput(values=(record["outputs"],), metadata=metadata)
+            return NodeOutput(error=record.get("error") or "; ".join(record.get("errors") or []) or f"Subworkflow {record['status']}", metadata=metadata)
+        except asyncio.CancelledError:
+            if child_id:
+                service.cancel_run(child_id)
+            raise
+        except Exception as exc:
+            logger.exception("Subworkflow %s failed", sub_id)
             return NodeOutput(error=str(exc))

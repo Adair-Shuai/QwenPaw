@@ -11,6 +11,7 @@
 import React from "react";
 import i18n from "../i18n";
 import ReactDOM from "react-dom";
+import { useNavigate } from "react-router-dom";
 import * as antd from "antd";
 import * as antdIcons from "@ant-design/icons";
 import ReactMarkdown from "react-markdown";
@@ -74,6 +75,8 @@ export interface HostExternals {
   fetch?: (path: string, init?: RequestInit) => Promise<Response>;
   /** Set the currently selected agent (updates Zustand store + persists). */
   setSelectedAgent?: (agentId: string) => void;
+  /** Use the router that owns the plugin page, including desktop windows. */
+  useNavigate?: typeof useNavigate;
   /** Refresh agents, optionally forcing a post-mutation re-query. */
   refreshAgents?: (options?: { force?: boolean }) => Promise<void>;
   /** ReactMarkdown component for rendering markdown text. */
@@ -367,6 +370,7 @@ export function installHostExternals(): void {
     window.QwenPaw.host.refreshAgents = (options?: { force?: boolean }) =>
       useAgentStore.getState().refreshAgents(options);
   }
+  window.QwenPaw.host.useNavigate = useNavigate;
 
   // ── Console-wide extension API ─────────────────────────────────────────
   if (!window.QwenPaw.menu) window.QwenPaw.menu = buildMenuNamespace();

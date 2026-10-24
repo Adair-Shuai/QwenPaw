@@ -177,6 +177,81 @@ describe("FilesWorkspace directory changes", () => {
     lifecycle.loadMemoryFile.mockResolvedValue({ content: "" });
   });
 
+  it("keeps the most recently requested file active when an older load finishes last", async () => {
+    const finish = new Map<
+      string,
+      (value: { content: string; etag: string }) => void
+    >();
+    lifecycle.loadFileText.mockImplementation(
+      (path: string) => new Promise((resolve) => finish.set(path, resolve)),
+    );
+    const scope = { kind: "agent" as const, agentId: "agent-a" };
+    const { rerender } = render(
+      <FilesWorkspace
+        scope={scope}
+        initialTarget={{ source: "workspace", path: "first.txt" }}
+      />,
+    );
+    await waitFor(() => expect(finish.has("first.txt")).toBe(true));
+    rerender(
+      <FilesWorkspace
+        scope={scope}
+        initialTarget={{ source: "workspace", path: "second.txt" }}
+      />,
+    );
+    await waitFor(() => expect(finish.has("second.txt")).toBe(true));
+    await act(async () =>
+      finish.get("second.txt")!({ content: "latest", etag: "v2" }),
+    );
+    await act(async () =>
+      finish.get("first.txt")!({ content: "old", etag: "v1" }),
+    );
+    expect(lifecycle.openTab).toHaveBeenCalledOnce();
+    expect(lifecycle.openTab).toHaveBeenCalledWith(
+      "agent:agent-a",
+      expect.objectContaining({ path: "second.txt", content: "latest" }),
+    );
+    expect(lifecycle.setActiveTab).toHaveBeenLastCalledWith(
+      "agent:agent-a",
+      "second.txt",
+    );
+  });
+
+  it("keeps an existing tab selected when a previously requested file finishes loading", async () => {
+    lifecycle.tabs = [
+      {
+        path: "existing.txt",
+        source: "workspace",
+        content: "existing",
+        dirty: false,
+        previewKind: "text",
+      },
+    ];
+    lifecycle.activeTabPath = "existing.txt";
+    let finish!: (value: { content: string; etag: string }) => void;
+    lifecycle.loadFileText.mockImplementation((path: string) =>
+      path === "slow.txt"
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : Promise.resolve({ content: "existing", etag: "v1" }),
+    );
+    render(
+      <FilesWorkspace
+        scope={{ kind: "agent", agentId: "agent-a" }}
+        initialTarget={{ source: "workspace", path: "slow.txt" }}
+      />,
+    );
+    await waitFor(() => expect(finish).toBeTypeOf("function"));
+    act(() => lifecycle.editorProps?.onTabSelect("existing.txt"));
+    await act(async () => finish({ content: "too late", etag: "v2" }));
+    expect(lifecycle.openTab).not.toHaveBeenCalled();
+    expect(lifecycle.setActiveTab).toHaveBeenLastCalledWith(
+      "agent:agent-a",
+      "existing.txt",
+    );
+  });
+
   it("loads and saves profile files using the workspace agent", async () => {
     lifecycle.tabs = [
       {

@@ -457,6 +457,7 @@ interface MessageQueueStore {
     text: string,
     agentMentionModes?: Record<string, "delegate" | "collaborate">,
     agentDispatch?: QueueAgentDispatch,
+    requestContext?: Record<string, unknown>,
   ) => void;
   reorder: (sessionId: string, items: QueueItem[]) => void;
   clear: (sessionId: string) => void;
@@ -586,11 +587,20 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
     text: string,
     agentMentionModes?: Record<string, "delegate" | "collaborate">,
     agentDispatch?: QueueAgentDispatch,
+    requestContext?: Record<string, unknown>,
   ) => {
     set((state) => {
       const current = state.queues[sessionId] ?? [];
       const nextItems = current.map((it) =>
-        it.id === id ? { ...it, text, agentMentionModes, agentDispatch } : it,
+        it.id === id
+          ? {
+              ...it,
+              text,
+              agentMentionModes,
+              agentDispatch,
+              requestContext: requestContext ?? it.requestContext,
+            }
+          : it,
       );
       const next = { ...state.queues, [sessionId]: nextItems };
       writeQueueToStorage(

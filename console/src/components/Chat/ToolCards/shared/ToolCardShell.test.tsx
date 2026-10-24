@@ -46,6 +46,18 @@ vi.mock("./ToolCallControlPopover", () => ({
 import ToolCardShell from "./ToolCardShell";
 import type { ToolCallContent } from "./types";
 import { useBackgroundTasksStore } from "../../../../stores/backgroundTasksStore";
+import { adaptCardForV1 } from "../adapters/v1Adapter";
+import BackgroundTaskPanel from "../../../../pages/Chat/components/BackgroundTaskPanel";
+
+vi.mock("../../../../contexts/ThemeContext", () => ({
+  useTheme: () => ({ isDark: false }),
+}));
+vi.mock("../../../../hooks/useBackgroundTaskWatcher", () => ({
+  cancelBackgroundTask: vi.fn(),
+  startBackgroundTaskStream: vi.fn(),
+  stopBackgroundTaskStream: vi.fn(),
+  stopBackgroundTaskWatcher: vi.fn(),
+}));
 
 const content: ToolCallContent = {
   type: "tool_call",
@@ -103,6 +115,78 @@ describe("ToolCardShell lazy body", () => {
         status: "done",
       },
     ]);
+  });
+
+  it("shows no running agent after streamed SDK cards finish and old checks remount", () => {
+    sessionState.id = "session-1";
+    const Card = adaptCardForV1(({ content }) => (
+      <ToolCardShell content={content} title="Agent tool" icon={<span />} />
+    ));
+    const props = (
+      id: string,
+      name: string,
+      args: string,
+      output?: string,
+    ) => ({
+      data: {
+        status: "completed",
+        content: [
+          { data: { call_id: id, name, arguments: args } },
+          ...(output === undefined
+            ? []
+            : [{ data: { output, state: "success" } }]),
+        ],
+      },
+    });
+    const running = props(
+      "spawn-call",
+      "spawn_subagent",
+      '{"task":"Synthetic task"}',
+    );
+    const submitted = props(
+      "spawn-call",
+      "spawn_subagent",
+      '{"task":"Synthetic task"}',
+      "[TASK_ID: task-test]\nTask submitted successfully.",
+    );
+    const finished = props(
+      "check-call",
+      "check_agent_task",
+      '{"task_id":"task-test"}',
+      "[STATUS: finished]\nTask completed.",
+    );
+    const earlier = props(
+      "earlier-check",
+      "check_agent_task",
+      '{"task_id":"task-test"}',
+      "[STATUS: running]",
+    );
+    const tree = (data: typeof running, old = false) => (
+      <>
+        <Card {...data} />
+        {old && <Card {...earlier} />}
+        <BackgroundTaskPanel sessionId="session-1" embedded />
+      </>
+    );
+    const view = render(tree(running));
+    view.rerender(tree(submitted));
+    expect(useBackgroundTasksStore.getState().tasks).toHaveLength(1);
+    expect(useBackgroundTasksStore.getState().tasks[0].status).toBe("running");
+    view.rerender(tree(props("check-call", "check_agent_task", "{")));
+    expect(useBackgroundTasksStore.getState().tasks).toHaveLength(1);
+    view.rerender(tree(finished));
+    view.rerender(tree(finished, true));
+    expect(useBackgroundTasksStore.getState().tasks).toHaveLength(1);
+    expect(useBackgroundTasksStore.getState().tasks[0]).toMatchObject({
+      status: "done",
+      result: "[STATUS: finished]\nTask completed.",
+    });
+    expect(
+      screen.getByText("tool.control.bgQueue.emptyHiddenFinished"),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: /bgQueue.running/ }),
+    ).not.toBeInTheDocument();
   });
 
   it("opens file-facing results by default when requested", () => {

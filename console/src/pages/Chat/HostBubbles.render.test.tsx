@@ -99,11 +99,12 @@ vi.mock("./LazyAccordion", () => ({
   ),
 }));
 
-function provider(children: ReactNode) {
+function provider(children: ReactNode, nick?: string) {
   return (
     <ComposedProvider
       options={{
         api: {},
+        ...(nick ? { welcome: { nick, avatar: "/qwenpaw.png" } } : {}),
         session: {
           currentSessionId: undefined,
           api: {
@@ -134,6 +135,46 @@ beforeEach(() => {
   extensions.lists = {};
   localStorage.clear();
 });
+
+it.each([
+  AgentScopeRuntimeRunStatus.InProgress,
+  AgentScopeRuntimeRunStatus.Completed,
+])(
+  "renders the configured agent signature for response status %s",
+  (status) => {
+    const markdown = vi
+      .spyOn(assistantMarkdown, "AssistantMarkdown")
+      .mockImplementation(() => <span>A test reply</span>);
+    try {
+      render(
+        provider(
+          <HostResponseCard
+            id="named-response"
+            data={{
+              id: "response",
+              status,
+              output: [
+                {
+                  id: "message",
+                  type: AgentScopeRuntimeMessageType.MESSAGE,
+                  role: "assistant",
+                  status,
+                  content: [{ type: "text", text: "A test reply", status }],
+                },
+              ],
+            }}
+            isLast
+          />,
+          "储气库专家",
+        ),
+      );
+      expect(screen.getByText("储气库专家")).toBeInTheDocument();
+      expect(screen.queryByText("QwenPaw")).not.toBeInTheDocument();
+    } finally {
+      markdown.mockRestore();
+    }
+  },
+);
 afterEach(() => {
   cleanup();
   localStorage.clear();

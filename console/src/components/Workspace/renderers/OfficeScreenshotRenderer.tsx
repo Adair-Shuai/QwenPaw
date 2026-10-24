@@ -19,28 +19,33 @@ import {
   RightOutlined,
   CodeOutlined,
   FolderOpenOutlined,
+  ZoomInOutlined,
+  ZoomOutOutlined,
 } from "@ant-design/icons";
 import { useTranslation } from "react-i18next";
 import type { RendererContext } from "../types";
-import { buildAuthHeaders } from "@/api/authHeaders";
+import { buildWorkspaceScopeHeaders } from "@/api/authHeaders";
 import OfficeDocRenderer from "./OfficeDocRenderer";
 
 const API_BASE = "/api/workspace";
 
 type ViewMode = "screenshot" | "html";
 
-const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
+type ScreenshotContext = RendererContext & { onReadView?: () => void };
+const OfficeScreenshotContent: React.FC<ScreenshotContext> = ({
   artifact,
   theme,
   workspace,
   readOnly,
   locale,
   hostControls,
+  onReadView,
 }) => {
   const { t } = useTranslation();
   const [screenshotUrl, setScreenshotUrl] = useState<string>("");
   const [currentPage, setCurrentPage] = useState(1);
   const [pageCount, setPageCount] = useState(0); // 0 = unknown
+  const [zoom, setZoom] = useState(100);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [useFallback, setUseFallback] = useState(false);
@@ -48,9 +53,11 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
   const fileUrl = artifact.binaryUrl ?? "";
   const objectUrlRef = useRef<string>("");
   const mountedRef = useRef(true);
+  const requestRef = useRef(0);
 
   const fetchScreenshot = useCallback(
     async (page: number) => {
+      const requestId = ++requestRef.current;
       if (!fileUrl) {
         setError(t("workspace.noFileUrl"));
         setLoading(false);
@@ -65,13 +72,17 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
           method: "POST",
           headers: {
             "Content-Type": "application/json",
-            ...buildAuthHeaders(),
+            ...buildWorkspaceScopeHeaders({
+              agentId: artifact.agentId,
+              chatId: artifact.chatId,
+              projectDirOverride: artifact.projectDirOverride,
+            }),
           },
           body: JSON.stringify({ url: fileUrl, page }),
         });
 
         // Bail out if the component unmounted during the fetch.
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || requestId !== requestRef.current) return;
 
         if (res.status === 404) {
           // officecli not installed — fall back to OfficeDocRenderer
@@ -85,17 +96,13 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
           throw new Error(body?.detail ?? `HTTP ${res.status}`);
         }
 
-        // Revoke previous object URL to avoid memory leak
-        if (objectUrlRef.current) {
-          URL.revokeObjectURL(objectUrlRef.current);
-          objectUrlRef.current = "";
-        }
-
         const blob = await res.blob();
 
         // If the component unmounted while reading the blob, don't
         // create an Object URL — it would never be revoked.
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || requestId !== requestRef.current) return;
+
+        if (objectUrlRef.current) URL.revokeObjectURL(objectUrlRef.current);
 
         const url = URL.createObjectURL(blob);
         objectUrlRef.current = url;
@@ -111,15 +118,21 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
         }
       } catch {
         // Network error or other failure — fall back to HTML rendering
-        if (!mountedRef.current) return;
+        if (!mountedRef.current || requestId !== requestRef.current) return;
         setUseFallback(true);
       } finally {
-        if (mountedRef.current) {
+        if (mountedRef.current && requestId === requestRef.current) {
           setLoading(false);
         }
       }
     },
-    [fileUrl, t],
+    [
+      fileUrl,
+      artifact.agentId,
+      artifact.chatId,
+      artifact.projectDirOverride,
+      t,
+    ],
   );
 
   useEffect(() => {
@@ -145,14 +158,35 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
   // ── Fallback to OfficeDocRenderer ──
   if (useFallback || viewMode === "html") {
     return (
-      <OfficeDocRenderer
-        artifact={artifact}
-        theme={theme}
-        workspace={workspace}
-        readOnly={readOnly}
-        locale={locale}
-        hostControls={hostControls}
-      />
+      <div
+        style={{
+          display: "flex",
+          flexDirection: "column",
+          height: "100%",
+          minHeight: 0,
+        }}
+      >
+        {useFallback && (
+          <Alert
+            type="info"
+            showIcon
+            message={t(
+              "workspace.officePrintFallback",
+              "打印版式暂不可用，已显示文档阅读预览。",
+            )}
+          />
+        )}
+        <div style={{ flex: 1, minHeight: 0 }}>
+          <OfficeDocRenderer
+            artifact={artifact}
+            theme={theme}
+            workspace={workspace}
+            readOnly={readOnly}
+            locale={locale}
+            hostControls={hostControls}
+          />
+        </div>
+      </div>
     );
   }
 
@@ -201,7 +235,10 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
           >
             {t("workspace.retry")}
           </Button>
-          <Button icon={<CodeOutlined />} onClick={() => setViewMode("html")}>
+          <Button
+            icon={<CodeOutlined />}
+            onClick={() => (onReadView ? onReadView() : setViewMode("html"))}
+          >
             {t("workspace.switchToHtml")}
           </Button>
           <Button
@@ -248,6 +285,30 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
         </Space>
 
         <Space size={2}>
+          <Button
+            size="small"
+            type="text"
+            aria-label={t("workspace.officeZoomOut", "缩小")}
+            icon={<ZoomOutOutlined />}
+            disabled={zoom <= 50}
+            onClick={() => setZoom((value) => Math.max(50, value - 25))}
+          />
+          <Button
+            size="small"
+            type="text"
+            aria-label={t("workspace.officeZoomReset", "重置缩放")}
+            onClick={() => setZoom(100)}
+          >
+            {zoom}%
+          </Button>
+          <Button
+            size="small"
+            type="text"
+            aria-label={t("workspace.officeZoomIn", "放大")}
+            icon={<ZoomInOutlined />}
+            disabled={zoom >= 200}
+            onClick={() => setZoom((value) => Math.min(200, value + 25))}
+          />
           {/* Page navigation */}
           <Tooltip title={t("workspace.prevPage")}>
             <Button
@@ -284,7 +345,7 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
               size="small"
               type="text"
               icon={<CodeOutlined />}
-              onClick={() => setViewMode("html")}
+              onClick={() => (onReadView ? onReadView() : setViewMode("html"))}
             />
           </Tooltip>
 
@@ -334,7 +395,7 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
           flex: 1,
           overflow: "auto",
           display: "flex",
-          justifyContent: "center",
+          justifyContent: zoom > 100 ? "flex-start" : "center",
           alignItems: "flex-start",
           background: theme === "dark" ? "#1e1e1e" : "#f5f5f5",
           padding: 16,
@@ -357,7 +418,9 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
             src={screenshotUrl}
             alt={`${artifact.title} - ${t("workspace.page")} ${currentPage}`}
             style={{
-              maxWidth: "100%",
+              width: `${zoom}%`,
+              maxWidth: "none",
+              flexShrink: 0,
               height: "auto",
               boxShadow: "0 2px 8px rgba(0,0,0,0.15)",
               borderRadius: 4,
@@ -369,4 +432,14 @@ const OfficeScreenshotRenderer: React.FC<RendererContext> = ({
   );
 };
 
-export default OfficeScreenshotRenderer;
+export default function OfficeScreenshotRenderer(props: ScreenshotContext) {
+  const key = [
+    props.artifact.id,
+    props.artifact.binaryUrl,
+    props.artifact.agentId,
+    props.artifact.chatId,
+    props.artifact.projectDirOverride,
+    props.artifact.workspaceRoot,
+  ].join("|");
+  return <OfficeScreenshotContent key={key} {...props} />;
+}

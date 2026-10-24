@@ -20,6 +20,7 @@
     "preview:test": "vite preview --mode test",
     "test": "vitest",
     "test:run": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs run",
+    "test:fork-features": "node scripts/verify-fork-features.mjs",
     "test:coverage": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs run --coverage"
   },
   "dependencies": {

@@ -1,0 +1,177 @@
+[
+  {
+    "key": "project.name",
+    "label": "项目名称",
+    "group": "项目资料",
+    "kind": "text",
+    "required": true
+  },
+  {
+    "key": "org.name",
+    "label": "谈判邀请人/邀请单位",
+    "group": "单位与联系",
+    "kind": "text",
+    "required": true
+  },
+  {
+    "key": "dates.issue",
+    "label": "商务谈判文件及邀请函落款日期",
+    "group": "日期安排",
+    "kind": "date",
+    "required": true
+  },
+  {
+    "key": "project.background",
+    "label": "项目背景",
+    "group": "项目资料",
+    "kind": "textarea",
+    "required": true
+  },
+  {
+    "key": "project.task",
+    "label": "项目任务",
+    "group": "项目资料",
+    "kind": "textarea",
+    "required": true
+  },
+  {
+    "key": "org.address",
+    "label": "邀请单位地址",
+    "group": "单位与联系",
+    "kind": "text",
+    "required": true
+  },
+  {
+    "key": "contact.department",
+    "label": "项目承办部门",
+    "group": "单位与联系",
+    "kind": "text",
+    "required": true
+  },
+  {
+    "key": "contact.name",
+    "label": "项目联系人",
+    "group": "单位与联系",
+    "kind": "text",
+    "required": true
+  },
+  {
+    "key": "contact.office_phone",
+    "label": "办公电话",
+    "group": "单位与联系",
+    "kind": "text",
+    "required": true
+  },
+  {
+    "key": "contact.mobile_phone",
+    "label": "移动电话",
+    "group": "单位与联系",
+    "kind": "text",
+    "required": true
+  },
+  {
+    "key": "research.contents",
+    "label": "主要研究内容（整段）",
+    "group": "研究内容",
+    "kind": "textarea",
+    "required": true
+  },
+  {
+    "key": "research.technical_requirements",
+    "label": "技术要求（整段）",
+    "group": "研究内容",
+    "kind": "textarea",
+    "required": true
+  },
+  {
+    "key": "deliverables.results",
+    "label": "预期成果（整段）",
+    "group": "成果与考核",
+    "kind": "textarea",
+    "required": true
+  },
+  {
+    "key": "metrics.criteria",
+    "label": "考核指标（整段）",
+    "group": "成果与考核",
+    "kind": "textarea",
+    "required": true
+  },
+  {
+    "key": "workload.items",
+    "label": "实物工作量（整段）",
+    "group": "研究内容",
+    "kind": "textarea",
+    "required": true
+  },
+  {
+    "key": "milestones.schedule",
+    "label": "进度安排（整段）",
+    "group": "进度安排",
+    "kind": "textarea",
+    "required": true
+  },
+  {
+    "key": "qualification.start_year",
+    "label": "资质材料起始年份（至今）",
+    "group": "资格要求",
+    "kind": "text",
+    "required": true
+  },
+  {
+    "key": "submission.deadline",
+    "label": "响应文件提交截止时间",
+    "group": "日期安排",
+    "kind": "datetime-local",
+    "required": true
+  },
+  {
+    "key": "place.project_manager_office",
+    "label": "项目负责人办公地点/领取邀请函地点/答疑地点",
+    "group": "地点安排",
+    "kind": "text",
+    "required": true
+  },
+  {
+    "key": "place.negotiation",
+    "label": "商务谈判地点",
+    "group": "地点安排",
+    "kind": "text",
+    "required": true
+  },
+  {
+    "key": "events.invitation_time",
+    "label": "商务谈判文件：总体邀请函发放时段",
+    "group": "日期安排",
+    "kind": "text",
+    "required": true
+  },
+  {
+    "key": "events.negotiation_time",
+    "label": "商务谈判时间段",
+    "group": "日期安排",
+    "kind": "text",
+    "required": true
+  },
+  {
+    "key": "events.questions_time",
+    "label": "商务答疑时间段",
+    "group": "日期安排",
+    "kind": "text",
+    "required": true
+  },
+  {
+    "key": "budget.ceiling_number",
+    "label": "项目最高限价（元）",
+    "group": "费用信息",
+    "kind": "text",
+    "required": true
+  },
+  {
+    "key": "budget.ceiling_upper",
+    "label": "项目最高限价金额（大写）",
+    "group": "费用信息",
+    "kind": "text",
+    "required": true
+  }
+]

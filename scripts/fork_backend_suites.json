@@ -1,0 +1,157 @@
+{
+  "groups": {
+    "ugsci": [
+      "tests/unit/plugins/ugsci/test_bundle_sync.py",
+      "tests/unit/plugins/ugsci/test_derivation_workbench_frontend.py",
+      "tests/unit/plugins/ugsci/test_deterministic_core.py",
+      "tests/unit/plugins/ugsci/test_docs_api.py",
+      "tests/unit/plugins/ugsci/test_domain_common.py",
+      "tests/unit/plugins/ugsci/test_domain_computation.py",
+      "tests/unit/plugins/ugsci/test_domain_decline.py",
+      "tests/unit/plugins/ugsci/test_domain_edge_cases.py",
+      "tests/unit/plugins/ugsci/test_domain_engine_api.py",
+      "tests/unit/plugins/ugsci/test_domain_engine_catalog.py",
+      "tests/unit/plugins/ugsci/test_domain_runtime_install.py",
+      "tests/unit/plugins/ugsci/test_domain_trace.py",
+      "tests/unit/plugins/ugsci/test_domain_trace_freeform.py",
+      "tests/unit/plugins/ugsci/test_domain_well_log.py",
+      "tests/unit/plugins/ugsci/test_engine_config_migration.py",
+      "tests/unit/plugins/ugsci/test_engine_detector_portability.py",
+      "tests/unit/plugins/ugsci/test_engine_tools_fixes.py",
+      "tests/unit/plugins/ugsci/test_genui_catalog_contract.py",
+      "tests/unit/plugins/ugsci/test_genui_domain_cards.py",
+      "tests/unit/plugins/ugsci/test_genui_integration.py",
+      "tests/unit/plugins/ugsci/test_genui_json_repair.py",
+      "tests/unit/plugins/ugsci/test_genui_patch.py",
+      "tests/unit/plugins/ugsci/test_genui_registration.py",
+      "tests/unit/plugins/ugsci/test_genui_schema.py",
+      "tests/unit/plugins/ugsci/test_genui_state.py",
+      "tests/unit/plugins/ugsci/test_genui_tools.py",
+      "tests/unit/plugins/ugsci/test_health_api.py",
+      "tests/unit/plugins/ugsci/test_long_running_reliability.py",
+      "tests/unit/plugins/ugsci/test_neqsim_tools.py",
+      "tests/unit/plugins/ugsci/test_plugin_modules.py",
+      "tests/unit/plugins/ugsci/test_plugin_registration.py",
+      "tests/unit/plugins/ugsci/test_quality_script.py",
+      "tests/unit/plugins/ugsci/test_simulator_adapters.py",
+      "tests/unit/plugins/ugsci/test_skill_pool_ownership.py",
+      "tests/unit/plugins/ugsci/test_storage_dynamics.py",
+      "tests/unit/plugins/ugsci/test_storage_inventory.py",
+      "tests/unit/plugins/ugsci/test_team_api.py",
+      "tests/unit/plugins/ugsci/test_team_artifacts.py",
+      "tests/unit/plugins/ugsci/test_team_gate.py",
+      "tests/unit/plugins/ugsci/test_team_mode.py",
+      "tests/unit/plugins/ugsci/test_team_ownership.py",
+      "tests/unit/plugins/ugsci/test_team_state.py",
+      "tests/unit/plugins/ugsci/test_trust_reproducibility.py",
+      "tests/unit/plugins/ugsci/test_visualization_core.py",
+      "tests/unit/plugins/ugsci/test_visualization_run_center_bridge.py",
+      "tests/unit/plugins/ugsci/test_visualization_well_placement.py"
+    ],
+    "flowforge": [
+      "tests/unit/plugins/flowforge/test_bidirectional_calls.py",
+      "tests/unit/plugins/flowforge/test_media_genui.py",
+      "tests/unit/plugins/flowforge/test_node_catalog.py",
+      "tests/unit/plugins/flowforge/test_run_lifecycle.py",
+      "tests/unit/plugins/flowforge/test_workflow_contracts.py"
+    ],
+    "office": [
+      "tests/unit/agents/tools/test_office_tools.py",
+      "tests/unit/routers/test_workspace_office.py",
+      "tests/unit/tauri/test_stage_officecli.py"
+    ],
+    "mcp": [
+      "tests/unit/drivers/adapters/test_mcp_url_credentials.py",
+      "tests/unit/plugins/test_oss_cache.py"
+    ],
+    "avatars": [
+      "tests/unit/app/routers/test_avatars_router.py"
+    ],
+    "document_forms": [
+      "plugins/apps/document-forms/tests/test_document_forms.py",
+      "plugins/apps/document-forms/tests/test_publication.py"
+    ],
+    "inventory": [
+      "tests/unit/verify/test_fork_regression_inventory.py"
+    ],
+    "upstream_merge": [
+      "tests/unit/plugins/test_upstream_merge_compat.py",
+      "tests/unit/plugins/test_plugin_uninstall_tombstones.py",
+      "tests/unit/plugins/test_plugin_startup_perf.py",
+      "tests/unit/app/routers/test_plugins_router.py",
+      "tests/unit/app/routers/test_plugins_router_lifecycle.py"
+    ]
+  },
+  "required_cases": {
+    "tests/unit/plugins/ugsci/test_team_artifacts.py": [
+      "test_system_host_sdk_workflow_rework_restart_and_history",
+      "test_late_old_attempt_cannot_overwrite_new_published_result"
+    ],
+    "tests/unit/plugins/ugsci/test_team_ownership.py": [
+      "test_owner_restores_but_child_and_unrelated_chats_do_not",
+      "test_registered_tools_validate_and_compare_revision"
+    ],
+    "tests/unit/plugins/ugsci/test_domain_runtime_install.py": [
+      "test_requirements_are_allowlisted_and_unsupported_engines_rejected",
+      "test_worker_uses_host_installer_and_probes_after_success"
+    ],
+    "tests/unit/drivers/adapters/test_mcp_url_credentials.py": [
+      "test_query_tokens_are_masked_and_survive_console_roundtrip",
+      "test_query_credentials_do_not_follow_changed_endpoint"
+    ],
+    "tests/unit/plugins/test_oss_cache.py": [
+      "test_market_manifest_revalidates_after_one_minute_and_keeps_offline_copy"
+    ],
+    "tests/unit/verify/test_fork_regression_inventory.py": [
+      "test_missing_disabled_or_empty_critical_cases_block_merge",
+      "test_missing_suite_blocks_merge"
+    ],
+    "tests/unit/plugins/test_upstream_merge_compat.py": [
+      "test_shipped_plugin_accepts_current_core",
+      "test_explicit_range_still_rejects_incompatible_core",
+      "test_unspecified_range_does_not_invent_a_legacy_upper_bound",
+      "test_explicit_legacy_minimum_keeps_derived_upper_bound",
+      "test_native_uninstall_preserves_intent_and_reinstall_clears_it"
+    ],
+    "tests/unit/plugins/test_plugin_uninstall_tombstones.py": [
+      "test_api_uninstall_persists_tombstone_before_deleting",
+      "test_api_uninstall_restores_adoption_when_delete_fails",
+      "test_api_uninstall_does_not_mutate_when_adoption_write_fails",
+      "test_api_uninstalls_failed_plugin_with_transaction",
+      "test_explicit_reinstall_clears_persistent_tombstone"
+    ],
+    "tests/unit/plugins/test_plugin_startup_perf.py": [
+      "test_frozen_metadata_probe_searches_plugin_site_dir",
+      "test_satisfied_requirements_are_memoised",
+      "test_boot_checks_missing_dependencies_without_running_installer",
+      "test_registered_plugins_are_not_rechecked_on_second_boot_phase",
+      "test_missing_boot_dependency_can_be_repaired_explicitly",
+      "test_installs_serialised_through_shared_target_lock"
+    ],
+    "tests/unit/app/routers/test_plugins_router.py": [
+      "test_replace_installed_plugin_full_isolated_lifecycle"
+    ],
+    "tests/unit/app/routers/test_plugins_router_lifecycle.py": [
+      "test_failed_plugin_removal_preserves_tool_config"
+    ],
+    "plugins/apps/document-forms/tests/test_document_forms.py": [
+      "test_project_migration_groups_legacy_forms_without_rewriting_files",
+      "test_project_shared_profile_sync_is_selective_and_invalidates_review",
+      "test_stage_completion_requires_confirmation_and_tracks_upstream_rework",
+      "test_project_attachments_retain_versions_scope_and_real_archive",
+      "test_plan_approval_pdf_compares_and_applies_selected_changes",
+      "test_project_stage_defaults_do_not_replace_negotiation_defaults",
+      "test_project_sync_rejects_stale_confirmation_and_missing_archive_files",
+      "test_response_review_uses_scoped_agent_and_archives_immutable_inputs",
+      "test_response_review_rejects_invalid_inputs_and_runtime_failure",
+      "test_response_review_model_inheritance_preserves_custom_settings",
+      "test_project_single_form_reuses_stage_pages_and_preserves_old_materials",
+      "test_project_assistant_keeps_project_conversation_and_file_scope",
+      "test_plan_templates_split_shared_information_and_generate_word_and_excel",
+      "test_plan_full_necessity_upgrades_legacy_builtin_once_and_keeps_backups",
+      "test_excel_template_slots_reject_executable_and_formula_placeholders",
+      "test_selection_templates_generate_opinion_signature_sheet_and_upload_form",
+      "test_selection_controls_bind_budget_to_profile_and_reject_invalid_choices"
+    ]
+  }
+}

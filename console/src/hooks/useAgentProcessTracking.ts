@@ -46,8 +46,15 @@ function isSemanticFailure(result: string): boolean {
 }
 
 function checkedTaskStatus(result: string): BackgroundTaskStatus {
+  const status = result
+    .match(/\[STATUS:\s*([^\]]+)\]/i)?.[1]
+    ?.trim()
+    .toLowerCase();
+  if (status === "running") return "running";
+  if (["finished", "completed", "done"].includes(status || "")) return "done";
+  if (["cancelled", "canceled"].includes(status || "")) return "cancelled";
+  if (["error", "failed"].includes(status || "")) return "error";
   if (isSemanticFailure(result)) return "error";
-  if (/\[STATUS:\s*running\]/i.test(result)) return "running";
   return "done";
 }
 
@@ -161,14 +168,22 @@ export function useAgentProcessTracking(
     const store = useBackgroundTasksStore.getState();
     const isCheck = content.name === CHECK_AGENT_TOOL;
     const isSubmit = content.name === SUBMIT_AGENT_TOOL;
+    // A streamed check has no identity until its task_id arrives. It is an
+    // observation of an existing task, never a new background task itself.
+    if (isCheck && !parsedTaskId && content.status === "calling") return;
     const stableTaskId = parsedTaskId
       ? `agent-task:${parsedTaskId}`
       : content.id;
-    const existing = store.tasks.find(
+    const provisional = store.tasks.find(
       (task) =>
-        task.sessionId === resolvedSessionId &&
-        task.toolCallId === stableTaskId,
+        task.sessionId === resolvedSessionId && task.toolCallId === content.id,
     );
+    const existing =
+      store.tasks.find(
+        (task) =>
+          task.sessionId === resolvedSessionId &&
+          task.toolCallId === stableTaskId,
+      ) ?? provisional;
     const effectiveAgentId =
       agentId === "子智能体" && existing?.agentId ? existing.agentId : agentId;
 
@@ -201,6 +216,14 @@ export function useAgentProcessTracking(
           },
           { kind: "agent" },
         );
+        const current = useBackgroundTasksStore
+          .getState()
+          .tasks.find(
+            (task) =>
+              task.sessionId === resolvedSessionId &&
+              task.toolCallId === toolCallId,
+          );
+        if (current && current.status !== "running") return;
         store.updateTaskForSession(resolvedSessionId, toolCallId, {
           status: "running",
           liveOutput: spec?.task ? `任务：${spec.task}` : "",
@@ -209,7 +232,7 @@ export function useAgentProcessTracking(
       return;
     }
 
-    if (isSubmit && parsedTaskId && stableTaskId !== content.id) {
+    if (parsedTaskId && stableTaskId !== content.id) {
       store.removeTasksForSession([
         { sessionId: resolvedSessionId, toolCallId: content.id },
       ]);
@@ -241,13 +264,26 @@ export function useAgentProcessTracking(
       status = "running";
     } else if (content.status === "error") {
       status = "error";
-    } else if (isSubmit && parsedTaskId) {
+    } else if (
+      (isSubmit || content.name === "spawn_subagent") &&
+      parsedTaskId
+    ) {
       status = "running";
     } else if (isCheck) {
       status = checkedTaskStatus(resultText);
     } else {
       status = isSemanticFailure(resultText) ? "error" : "done";
     }
+
+    // Historical cards can mount after newer checks. Replaying a running
+    // observation must not reopen a terminal task or erase its final output.
+    if (
+      existing &&
+      existing.toolCallId === stableTaskId &&
+      existing.status !== "running" &&
+      status === "running"
+    )
+      return;
 
     store.updateTaskForSession(resolvedSessionId, stableTaskId, {
       status,

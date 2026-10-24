@@ -1174,7 +1174,7 @@ class TestUninstallPluginRoute:
 
     def test_unexpected_error_is_500(self, caplog):
         loader = _loader_stub([], record=_record("plug"))
-        loader.unload_plugin = AsyncMock(
+        loader.lifecycle.unload = AsyncMock(
             side_effect=RuntimeError("disk on fire"),
         )
         with (

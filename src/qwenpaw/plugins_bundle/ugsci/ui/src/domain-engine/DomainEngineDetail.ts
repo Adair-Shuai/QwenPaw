@@ -5,6 +5,9 @@
 import { getHost } from "../core/runtime";
 import type { DependencyStatusItem, DomainEngineView } from "./types";
 import { STATUS_COLORS, STATUS_LABELS } from "./runtimeStatus";
+import { OperationList } from "./OperationList";
+import { ENGINE_PRESENTATIONS } from "./operationPresentation";
+import { businessGroupFor } from "./presentationGroups";
 
 export function DomainEngineDetail({
   view,
@@ -32,7 +35,7 @@ export function DomainEngineDetail({
   } | null;
 }) {
   const React = getHost().React;
-  const { Drawer, Descriptions, Tag, Typography, Button, Space, Divider } =
+  const { Drawer, Descriptions, Tag, Typography, Button, Divider } =
     getHost().antd;
   const { Text, Paragraph } = Typography;
 
@@ -40,6 +43,8 @@ export function DomainEngineDetail({
 
   const def = view.definition;
   const depStatus = view.dependencyStatus;
+  const presentation = ENGINE_PRESENTATIONS[def.id];
+  const domainLabel = businessGroupFor(def.domain, def.id).title;
 
   return React.createElement(
     Drawer,
@@ -66,10 +71,16 @@ export function DomainEngineDetail({
     React.createElement(
       Descriptions,
       { column: 1, bordered: true, size: "small" },
+      React.createElement(Descriptions.Item, { label: "领域" }, domainLabel),
       React.createElement(
         Descriptions.Item,
-        { label: "领域" },
-        def.domain,
+        { label: "状态依据" },
+        view.statusDescription,
+      ),
+      React.createElement(
+        Descriptions.Item,
+        { label: "检测范围" },
+        "检查运行依赖、工具注册和当前专家的启用配置；未执行试算，不代表计算结果已验证。",
       ),
       React.createElement(
         Descriptions.Item,
@@ -79,8 +90,8 @@ export function DomainEngineDetail({
           : def.source === "builtin"
           ? "内置工具"
           : def.source === "mcp"
-            ? "MCP 服务"
-            : "科学计算库 / 技能",
+          ? "MCP 服务"
+          : "科学计算库 / 技能",
       ),
       React.createElement(
         Descriptions.Item,
@@ -93,10 +104,10 @@ export function DomainEngineDetail({
         def.execution_class === "deterministic"
           ? "确定性计算"
           : def.execution_class === "stochastic"
-            ? "随机/概率计算"
-            : def.execution_class === "external"
-              ? "外部 Provider"
-              : "可视化",
+          ? "随机/概率计算"
+          : def.execution_class === "external"
+          ? "外部 Provider"
+          : "可视化",
       ),
       React.createElement(
         Descriptions.Item,
@@ -106,7 +117,22 @@ export function DomainEngineDetail({
       React.createElement(
         Descriptions.Item,
         { label: "描述" },
-        def.description,
+        presentation?.description || def.description || "暂无领域说明",
+      ),
+      React.createElement(
+        Descriptions.Item,
+        { label: "总输入" },
+        presentation?.inputs || "输入信息未提供",
+      ),
+      React.createElement(
+        Descriptions.Item,
+        { label: "总输出" },
+        presentation?.outputs || "输出信息未提供",
+      ),
+      React.createElement(
+        Descriptions.Item,
+        { label: "已发现工具" },
+        view.discoveredToolCount,
       ),
       React.createElement(
         Descriptions.Item,
@@ -120,46 +146,12 @@ export function DomainEngineDetail({
       { style: { marginTop: 16, marginBottom: 8 } },
       React.createElement(Text, { strong: true }, "领域操作"),
     ),
-    ...def.operations.map((op: { id: string; name: string; description: string; tool_names: string[] }) =>
-      React.createElement(
-        "div",
-        {
-          key: op.id,
-          style: {
-            padding: "8px 12px",
-            marginBottom: 4,
-            background: "#fafafa",
-            borderRadius: 6,
-          },
-        },
-        React.createElement(
-          "div",
-          null,
-          React.createElement(Text, { strong: true, style: { fontSize: 13 } }, op.name),
-          React.createElement(
-            Text,
-            { type: "secondary", style: { fontSize: 11, marginLeft: 8 } },
-            op.id,
-          ),
-        ),
-        React.createElement(
-          Text,
-          { type: "secondary", style: { fontSize: 12 } },
-          op.description,
-        ),
-        op.tool_names.length > 0
-          ? React.createElement(
-              "div",
-              { style: { marginTop: 4, display: "flex", gap: 4, flexWrap: "wrap" } },
-              ...op.tool_names.map((name: string) =>
-                React.createElement(
-                  Tag,
-                  { key: name, color: "blue", style: { fontSize: 10 } },
-                  name,
-                ),
-              ),
-            )
-          : null,
+    React.createElement(OperationList, { operations: def.operations }),
+    React.createElement(
+      "div",
+      { style: { marginTop: 16, display: "flex", gap: 4, flexWrap: "wrap" } },
+      ...def.tags.map((tag: string) =>
+        React.createElement(Tag, { key: tag, color: "cyan" }, tag),
       ),
     ),
     // Dependencies
@@ -169,58 +161,65 @@ export function DomainEngineDetail({
       ? React.createElement(
           "div",
           { style: { marginTop: 8 } },
-          ...depStatus.dependencies.map(
-            (dep: DependencyStatusItem) =>
+          ...depStatus.dependencies.map((dep: DependencyStatusItem) =>
+            React.createElement(
+              "div",
+              {
+                key: dep.name,
+                style: {
+                  padding: "8px 0",
+                  borderBottom:
+                    "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+                },
+              },
               React.createElement(
                 "div",
                 {
-                  key: dep.name,
                   style: {
-                    padding: "8px 0",
-                    borderBottom: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+                    display: "flex",
+                    justifyContent: "space-between",
+                    alignItems: "center",
                   },
                 },
                 React.createElement(
-                  "div",
-                  {
-                    style: {
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                    },
-                  },
-                  React.createElement(Text, { style: { fontSize: 13 } }, dep.name),
-                  React.createElement(
-                    Tag,
-                    {
-                      color: STATUS_COLORS[dep.status] || "default",
-                      style: { fontSize: 11 },
-                    },
-                    STATUS_LABELS[dep.status] || dep.status,
-                  ),
+                  Text,
+                  { style: { fontSize: 13 } },
+                  dep.name,
                 ),
-                dep.status !== "available" && dep.reason
-                  ? React.createElement(
-                      Text,
-                      { type: "secondary", style: { display: "block", fontSize: 12, marginTop: 4 } },
-                      dep.reason,
-                    )
-                  : null,
-                dep.status !== "available" && dep.install_hint
-                  ? React.createElement(
-                      Text,
-                      { style: { display: "block", fontSize: 12, marginTop: 4 } },
-                      `安装：${dep.install_hint}`,
-                    )
-                  : null,
-                dep.status !== "available" && dep.enable_hint
-                  ? React.createElement(
-                      Text,
-                      { style: { display: "block", fontSize: 12, marginTop: 2 } },
-                      `启用：${dep.enable_hint}`,
-                    )
-                  : null,
+                React.createElement(
+                  Tag,
+                  {
+                    color: STATUS_COLORS[dep.status] || "default",
+                    style: { fontSize: 11 },
+                  },
+                  STATUS_LABELS[dep.status] || dep.status,
+                ),
               ),
+              dep.status !== "available" && dep.reason
+                ? React.createElement(
+                    Text,
+                    {
+                      type: "secondary",
+                      style: { display: "block", fontSize: 12, marginTop: 4 },
+                    },
+                    dep.reason,
+                  )
+                : null,
+              dep.status !== "available" && dep.install_hint
+                ? React.createElement(
+                    Text,
+                    { style: { display: "block", fontSize: 12, marginTop: 4 } },
+                    `安装：${dep.install_hint}`,
+                  )
+                : null,
+              dep.status !== "available" && dep.enable_hint
+                ? React.createElement(
+                    Text,
+                    { style: { display: "block", fontSize: 12, marginTop: 2 } },
+                    `启用：${dep.enable_hint}`,
+                  )
+                : null,
+            ),
           ),
         )
       : React.createElement(
@@ -240,7 +239,9 @@ export function DomainEngineDetail({
             {
               size: "small",
               type: "primary",
-              loading: neqsimInstallState?.status === "queued" || neqsimInstallState?.status === "running",
+              loading:
+                neqsimInstallState?.status === "queued" ||
+                neqsimInstallState?.status === "running",
               onClick: onInstallNeqsim,
             },
             neqsimInstallState?.status === "running"
@@ -255,12 +256,12 @@ export function DomainEngineDetail({
             "查看内置 MCP Driver",
           )
         : def.source === "library"
-          ? React.createElement(
-              Button,
-              { size: "small", onClick: onNavigateToSkills },
-              "查看相关技能",
-            )
-          : React.createElement(
+        ? React.createElement(
+            Button,
+            { size: "small", onClick: onNavigateToSkills },
+            "查看相关技能",
+          )
+        : React.createElement(
             Button,
             { size: "small", onClick: () => onNavigateToTools("builtin") },
             "查看内置工具",

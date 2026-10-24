@@ -20,7 +20,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import Any, AsyncIterator
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from .agent_definition import AgentDefinition
 from .agent_events import AgentEvent, AgentEventType
@@ -39,6 +39,13 @@ class AgentRuntime:
     def __init__(self, workspace_manager: Any | None = None) -> None:
         self.workspace_manager = workspace_manager
         self._registry = None
+
+    async def run_agent_turn(self, agent_id: str, query: str) -> str:
+        """Dispatch the basic AgentNode through the same adapter as agent nodes."""
+        result = await self.delegate(None, self.resolve(agent_id), query)
+        if not result["success"]:
+            raise RuntimeError(result["error"] or "Agent turn did not complete")
+        return result["text"]
 
     def resolve(self, agent_name: str) -> AgentDefinition:
         """Resolve an agent name into an :class:`AgentDefinition`."""
@@ -78,38 +85,23 @@ class AgentRuntime:
         agent_name = definition.name
 
         # Try to get the workspace for this agent
-        ws = self._get_workspace(agent_name)
+        try:
+            manager = self.workspace_manager
+            if manager is not None and hasattr(manager, "get_agent"):
+                ws = await manager.get_agent(agent_name)
+            else:
+                ws = self._get_workspace(agent_name)
+        except Exception as exc:
+            yield AgentEvent(AgentEventType.ERROR, {"error": str(exc)})
+            yield AgentEvent(AgentEventType.RESULT, {"reason": "failed"})
+            return
         if ws is None:
-            # No workspace — use LLM directly as a fallback
-            yield AgentEvent(
-                AgentEventType.ASSISTANT,
-                {"content": f"Agent '{agent_name}' not found — using direct LLM call."},
-            )
-            try:
-                from .llm_service import LLMService
-                from .chat_message import ChatMessage
-
-                svc = LLMService()
-                response = await svc.complete(
-                    messages=[ChatMessage.user(prompt)],
-                )
-                yield AgentEvent(
-                    AgentEventType.ASSISTANT,
-                    {"content": response.content},
-                )
-            except Exception as exc:  # noqa: BLE001
-                yield AgentEvent(
-                    AgentEventType.ERROR,
-                    {"error": str(exc)},
-                )
-            yield AgentEvent(
-                AgentEventType.RESULT,
-                {"reason": "completed"},
-            )
+            yield AgentEvent(AgentEventType.ERROR, {"error": f"Agent '{agent_name}' not found"})
+            yield AgentEvent(AgentEventType.RESULT, {"reason": "failed"})
             return
 
         # Dispatch to QwenPaw's agent runtime
-        async for event in self._run_qwenpaw_agent(ws, prompt, definition, cwd, abort_event):
+        async for event in self._run_qwenpaw_agent(ws, prompt, definition, cwd, abort_event, user_id=user_id):
             yield event
 
     async def delegate(
@@ -138,6 +130,7 @@ class AgentRuntime:
             prompt,
             cwd=cwd or ".",
             tool_extra=tool_extra,
+            abort_event=getattr(parent, "abort_event", None) if inherit_abort else None,
         )
 
         text_parts: list[str] = []
@@ -174,12 +167,12 @@ class AgentRuntime:
                         produced.append(str(path))
             elif etype == AgentEventType.RESULT:
                 reason = str(data.get("reason") or "completed")
-                error = data.get("error")
+                error = data.get("error") or error
             elif etype == AgentEventType.ERROR:
                 error = str(data.get("error") or "Unknown error")
 
         text = final_text or "".join(text_parts)
-        success = error is None
+        success = error is None and reason == "completed"
         return {
             "text": text,
             "success": success,
@@ -203,23 +196,14 @@ class AgentRuntime:
         tool_extra: dict[str, Any] | None = None,
         abort_event: asyncio.Event | None = None,
     ) -> AsyncIterator[AgentEvent]:
-        """Resume a paused agent turn from a checkpoint.
+        """Reject unsupported agent checkpoint recovery without replaying work.
 
-        QwenPaw doesn't have a direct checkpoint/resume mechanism yet,
-        so this starts a fresh turn with the answer as input.
+        Workflow checkpoints are supported separately by WorkflowService.
+        The host adapter has no verified agent checkpoint restoration API.
         """
-        definition = self.resolve(agent_name)
-        # Append the answer as a continuation prompt
-        prompt = f"[Resumed from checkpoint {checkpoint_id}]\n\n{answer}"
-        async for event in self.stream(
-            definition,
-            prompt,
-            user_id=user_id,
-            cwd=cwd,
-            tool_extra=tool_extra,
-            abort_event=abort_event,
-        ):
-            yield event
+        error = "Agent checkpoint resume is not supported by this adapter; no new turn was started"
+        yield AgentEvent(AgentEventType.ERROR, {"error": error})
+        yield AgentEvent(AgentEventType.RESULT, {"reason": "failed", "error": error})
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -245,6 +229,8 @@ class AgentRuntime:
         definition: AgentDefinition,
         cwd: str,
         abort_event: asyncio.Event | None,
+        *,
+        user_id: UUID | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Run a QwenPaw agent turn and yield events.
 
@@ -255,6 +241,49 @@ class AgentRuntime:
         import inspect
 
         try:
+            if abort_event is not None and abort_event.is_set():
+                raise asyncio.CancelledError()
+            if hasattr(workspace, "stream_query"):
+                from qwenpaw.app.agent_context import get_current_user_id
+                from ...invocation import current_run, workflow_stack
+
+                invocation = current_run.get() or {}
+
+                request = {
+                    "input": [{"role": "user", "content": [{"type": "text", "text": prompt}]}],
+                    "session_id": f"flowforge:{uuid4().hex}",
+                    "user_id": str(user_id or invocation.get("user_id") or get_current_user_id() or "flowforge"),
+                    "channel": "console",
+                    "request_context": {
+                        "source": "flowforge", "agent_id": definition.name,
+                        "workflow_stack": list(workflow_stack.get()),
+                        "workflow_run_id": invocation.get("run_id"),
+                        "root_workflow_run_id": invocation.get("root_run_id"),
+                        "parent_session_id": invocation.get("session_id"),
+                    },
+                }
+                async for event in workspace.stream_query(request):
+                    if abort_event is not None and abort_event.is_set():
+                        raise asyncio.CancelledError()
+                    status = _field(event, "status")
+                    status = getattr(status, "value", status)
+                    error = _field(event, "error")
+                    if error or status in ("failed", "cancelled"):
+                        raise RuntimeError(str(error or f"Agent turn {status}"))
+                    role = _field(event, "role")
+                    role = getattr(role, "value", role)
+                    if (_field(event, "object") == "message"
+                            and status == "completed" and role == "assistant"):
+                        text = "".join(
+                            str(_field(block, "text") or "")
+                            for block in (_field(event, "content") or [])
+                            if _field(block, "type") == "text"
+                        )
+                        if text:
+                            yield AgentEvent(AgentEventType.ASSISTANT, {"content": text})
+                yield AgentEvent(AgentEventType.RESULT, {"reason": "completed"})
+                return
+
             # Try workspace.process (single-agent workspace)
             process = getattr(workspace, "process", None)
             if process is not None:
@@ -278,19 +307,16 @@ class AgentRuntime:
                 yield AgentEvent(AgentEventType.RESULT, {"reason": "completed"})
                 return
 
-            # Fallback: direct LLM call
-            from .llm_service import LLMService
-            from .chat_message import ChatMessage
-
-            svc = LLMService()
-            response = await svc.complete(messages=[ChatMessage.user(prompt)])
-            yield AgentEvent(AgentEventType.ASSISTANT, {"content": response.content})
-            yield AgentEvent(AgentEventType.RESULT, {"reason": "completed"})
+            raise RuntimeError(f"Agent '{definition.name}' has no supported runtime")
 
         except Exception as exc:  # noqa: BLE001
-            logger.error("agent_runtime_error", agent=definition.name, error=str(exc), exc_info=True)
+            logger.exception("Agent %s failed: %s", definition.name, exc)
             yield AgentEvent(AgentEventType.ERROR, {"error": str(exc)})
             yield AgentEvent(AgentEventType.RESULT, {"reason": "failed", "error": str(exc)})
+
+
+def _field(value: Any, name: str) -> Any:
+    return value.get(name) if isinstance(value, dict) else getattr(value, name, None)
 
 
 def _extract_text(result: Any) -> str:

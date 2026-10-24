@@ -1,6 +1,6 @@
 import { useTranslation } from "react-i18next";
 import { Tag, Tooltip, Button, Space, Typography, Spin } from "antd";
-import { Package, Trash2, CheckCircle, XCircle } from "lucide-react";
+import { Package, Trash2 } from "lucide-react";
 import type {
   BundledPluginState,
   PluginType,

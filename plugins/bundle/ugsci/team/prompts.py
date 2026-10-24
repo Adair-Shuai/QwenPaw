@@ -47,6 +47,7 @@ class TeamPromptCtx:
     verify_retries: int = 0
     max_verify_retries: int = 3
     dispatch_retries: int = 0
+    artifact_protocol: int = 0
 
 
 def build_continuation(
@@ -61,6 +62,7 @@ def build_continuation(
     verify_retries: int = 0,
     max_verify_retries: int = 3,
     dispatch_retries: int = 0,
+    artifact_protocol: int = 0,
 ) -> str:
     """Return the controller prompt for the current team phase."""
     ctx = TeamPromptCtx(
@@ -74,6 +76,7 @@ def build_continuation(
         verify_retries=verify_retries,
         max_verify_retries=max_verify_retries,
         dispatch_retries=dispatch_retries,
+        artifact_protocol=artifact_protocol,
     )
     builders = {
         PHASE_PLAN: _plan,
@@ -85,7 +88,85 @@ def build_continuation(
     fn = builders.get(phase)
     if fn is None:
         return f"未知阶段: {phase}。请更新 state.json 设置有效的 current_phase。"
-    return fn(ctx)
+    from .state_tools import STATE_UPDATE_PROTOCOL
+
+    if artifact_protocol == 1 and phase in {
+        PHASE_DISPATCH,
+        PHASE_VERIFY,
+        PHASE_SYNTHESIZE,
+    }:
+        return STATE_UPDATE_PROTOCOL + "\n" + _versioned_phase(ctx, phase)
+    return STATE_UPDATE_PROTOCOL + "\n" + fn(ctx)
+
+
+def _versioned_phase(ctx: TeamPromptCtx, phase: str) -> str:
+    """Keep six orchestration styles while publishing through version tools."""
+    header = f"UGSci 专家团控制器 — 阶段: {phase}\n团队: {ctx.team_name}\n模式: {ctx.team_mode}\n"
+    if phase == PHASE_DISPATCH:
+        ordering = {
+            "pipeline": "按计划依赖顺序执行，先发布前一步，再把已发布快照交给后一步。",
+            "roundtable": "各成员独立评估，不相互传递意见；无依赖步骤并行派发。",
+            "coordinator": "协调者按需咨询；每个专家最多咨询3次，每轮重新准备候选。",
+            "router": "选择最小充分专家集合，保存 selected、skipped、reason；只对计划步骤派发。",
+            "review_loop": "严格按产出→独立评审→必要时修订顺序执行，保留每轮候选和已发布版本。",
+            "debate": "先并行独立立场，再一轮交叉质询，最后按证据裁决；每类产物须对应计划步骤。",
+        }.get(ctx.team_mode, "按计划步骤执行。")
+        calls = []
+        for member in ctx.members:
+            calls.append(
+                _member_dispatch_call(
+                    member,
+                    "执行 handoffs/plan.json 中分配给你的子任务。只返回非空JSON结果，"
+                    "或写入主控在本次调用中明确提供的候选路径；不得写正式成果或接管控制流程。",
+                    fork=ctx.team_mode in {"roundtable", "router", "debate"},
+                    parallel=ctx.team_mode in {"roundtable", "router", "debate"},
+                )
+            )
+        return header + f"""
+任务：{ctx.task}
+请使用 ugsci-roles 技能获取角色工具和技能配置。
+1. 读取 {ctx.loop_dir}/handoffs/plan.json，{ordering}
+2. 每次派发前 prepare_result，为调用填入返回的候选绝对路径，记录分派标识与后台任务ID。
+3. 按成员绑定模板调用，等待 check_agent_task 返回结束；只接收对应 attempt_id 的结果。
+4. 主控调用 publish_result；下一步和审核只能使用已发布版本，不能读未完成候选。
+5. 全部计划步骤发布后集成 fork 结果，再更新 forks_integrated=true、current_phase="verify"。
+{fork_merge_instructions()}
+成员模板（调用前补入实际步骤和候选路径）：
+{chr(10).join(calls)}
+"""
+    if phase == PHASE_VERIFY:
+        reviewer = next(
+            (
+                m
+                for m in ctx.members
+                if _member_role_key(m)
+                in {"domain-reviewer", "verifier", "result-reviewer"}
+            ),
+            None,
+        )
+        task = (
+            "独立审核主控本次提供的snapshot中的所有不可变成果。只读成果，不修改任何正式文件。"
+            "按主控提供的review_id和snapshot原样生成JSON审核报告，verdict为PASS/FAIL/PARTIAL，"
+            "issues列出具体问题。仅写入本次审核候选路径，或返回JSON给主控。"
+        )
+        call = (
+            _member_dispatch_call(reviewer, task, fork=True)
+            if reviewer
+            else format_spawn_call("domain-reviewer", task, fork=True)
+        )
+        return header + f"""
+1. 调用 prepare_review 获取 review_id、snapshot、审核候选路径。
+2. 将这些实际值补入下面的独立审核调用；审核全部snapshot成果，不要只检查目录中的某份旧文件。
+{call}
+3. 等待审核任务结束，调用 accept_review。PASS 后才进入 synthesize。
+4. FAIL/PARTIAL 回到 dispatch，重新 prepare 需修正步骤；修订后必须重新审核。
+"""
+    return header + """
+1. 从当前状态读取 artifact_results 中的不可变成果和 artifact_review 中的审核版本。
+2. 综合任务概述、各成员成果、交叉验证、建议、分歧、不确定性和来源。
+3. 调用 ugsci_team_publish_report(content=<Markdown正文>, expected_revision=<当前版本>)。
+4. 发布成功后再设置 current_phase="completed"；gate 会复核成果、审核和最终报告的完整性。
+"""
 
 
 # ── Member formatting helpers ────────────────────────────────────────
@@ -151,16 +232,12 @@ def _member_dispatch_call(
     if not agent_id:
         if binding == "fixed":
             return "配置错误：固定实例缺少 agent_id；不得静默派生，请停止并报告。"
-        return (
-            "首选实例未配置，按角色临时派生：\n"
-            + format_spawn_call(role_key, task_body, fork=fork)
+        return "首选实例未配置，按角色临时派生：\n" + format_spawn_call(
+            role_key, task_body, fork=fork
         )
 
     display = get_display_name(role_key)
-    text = (
-        f"<期望角色: {display} (role={role_key})>\n\n"
-        f"## 任务\n{task_body}"
-    )
+    text = f"<期望角色: {display} (role={role_key})>\n\n" f"## 任务\n{task_body}"
     if parallel:
         call = (
             "submit_to_agent("
@@ -390,12 +467,14 @@ def _dispatch_debate(ctx: TeamPromptCtx, member_str: str) -> str:
     """Collect independent positions, rebuttals, then an adjudication."""
     position_calls = []
     for i, member in enumerate(ctx.members[:-1] or ctx.members, start=1):
-        position_calls.append(_member_dispatch_call(
-            member,
-            f"独立提出可证伪的专业判断、证据和风险，写入 {ctx.loop_dir}/results/position-{i}.json。",
-            fork=True,
-            parallel=True,
-        ))
+        position_calls.append(
+            _member_dispatch_call(
+                member,
+                f"独立提出可证伪的专业判断、证据和风险，写入 {ctx.loop_dir}/results/position-{i}.json。",
+                fork=True,
+                parallel=True,
+            )
+        )
     judge = ctx.members[-1] if ctx.members else {}
     judge_name = judge.get("name", "裁决者")
     judge_call = _member_dispatch_call(
@@ -427,7 +506,8 @@ def _dispatch_pipeline(ctx: TeamPromptCtx, member_str: str) -> str:
         step_num = i + 1
         prev_file = (
             f"\n上下文：上一步结果文件: {ctx.loop_dir}/results/step-{step_num-1}.json"
-            if i > 0 else ""
+            if i > 0
+            else ""
         )
         spawn = _member_dispatch_call(
             m,
@@ -651,8 +731,7 @@ UGSci 专家团控制器 — 阶段: verify（验证审核）
 def _synthesize(ctx: TeamPromptCtx) -> str:
     member_str = _member_list(ctx.members)
     result_files = "\n".join(
-        f"   - {ctx.loop_dir}/results/step-{i+1}.json"
-        for i in range(len(ctx.members))
+        f"   - {ctx.loop_dir}/results/step-{i+1}.json" for i in range(len(ctx.members))
     )
 
     return f"""\

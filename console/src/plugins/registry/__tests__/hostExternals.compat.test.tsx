@@ -37,6 +37,7 @@ describe("legacy registerRoutes shim", () => {
     expect(typeof window.QwenPaw.slot?.fill).toBe("function");
     expect(typeof window.QwenPaw.audit?.overrides).toBe("function");
     expect(typeof window.QwenPaw.host.loadBuiltinPage).toBe("function");
+    expect(typeof window.QwenPaw.host.useNavigate).toBe("function");
   });
 
   it("loads allow-listed native pages for plugin composition", async () => {

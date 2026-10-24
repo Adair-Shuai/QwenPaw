@@ -70,6 +70,17 @@ export default defineConfig(({ command, mode }) => {
     server: {
       host: "0.0.0.0",
       port: 5173,
+      watch: {
+        // Desktop build output and audit checkouts contain large file trees.
+        // Watching them can starve the development server during startup.
+        ignored: [
+          "**/src-tauri/**",
+          "**/.codex-tmp/**",
+          "**/coverage/**",
+          "**/dist-tauri/**",
+          "**/public/ugsci_plugin/**",
+        ],
+      },
       proxy: {
         "/api": {
           target: "http://localhost:8088",
@@ -151,6 +162,7 @@ export default defineConfig(({ command, mode }) => {
       },
     },
     optimizeDeps: {
+      entries: ["index.html", "tauri.html"],
       include: ["diff"],
     },
     build: {

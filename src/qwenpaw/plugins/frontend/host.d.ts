@@ -291,6 +291,13 @@ export interface QwenPawHostNamespace {
 
   /** Auth-aware fetch. Automatically injects `Authorization` and `X-Agent-Id`. */
   fetch(path: string, init?: RequestInit): Promise<Response>;
+  refreshAgents(options?: { force?: boolean }): Promise<void>;
+  loadBuiltinPage(page: "tools" | "mcp" | "acp"): Promise<
+    React.ComponentType<{
+      embedded?: boolean;
+      embeddedLabels?: Record<string, string>;
+    }>
+  >;
 }
 
 export interface QwenPawAuditNamespace {

@@ -59,6 +59,14 @@ describe("builtin renderer integration boundaries", () => {
   });
 
   it.each([
+    ["docm", "application/vnd.ms-word.document.macroEnabled.12", "office-doc"],
+    ["xlsm", "application/vnd.ms-excel.sheet.macroEnabled.12", "office-doc"],
+    [
+      "pptm",
+      "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
+      "office-doc",
+    ],
+    ["docm", "application/octet-stream", "office-doc"],
     ["html", "text/html", "html"],
     ["csv", "text/csv", "csv"],
     ["tsv", "text/tab-separated-values", "csv"],

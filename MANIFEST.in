@@ -1,0 +1,4 @@
+# Visualization example datasets are local test fixtures, never release data.
+prune .codex-tmp
+prune plugins/bundle/ugsci/visualization/data
+prune src/qwenpaw/plugins_bundle/ugsci/visualization/data

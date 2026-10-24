@@ -118,6 +118,12 @@ class ToolNode(WorkflowNode):
     async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
         tool_name = str(inputs.get("tool_name") or "")
         context = hidden.tool_context
+        executor = getattr(context, "tool_executor", None)
+        if executor is not None:
+            result = await executor.execute(tool_name, inputs.get("args") or {}, hidden.workflow_state)
+            if not result.result.success:
+                return NodeOutput(error=result.result.error or "Tool execution failed")
+            return NodeOutput(values=(result.result.data,))
         registry = getattr(context, "tool_registry", context)
         descriptor = (
             registry.get(tool_name)

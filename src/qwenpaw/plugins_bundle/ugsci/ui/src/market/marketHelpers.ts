@@ -6,6 +6,8 @@
 
 import { getHost, apiUrl, apiFetch, hostFetch } from "../core/runtime";
 import { PRIMARY_BTN_STYLE } from "../core/shared";
+import { connectionVariables, normalizeMcpTransport, type CatalogInputHint } from "./mcpConnection";
+export { resolveMcpConnection } from "./mcpConnection";
 
 export interface MCPTemplate {
   id: string;
@@ -24,6 +26,12 @@ export interface MCPTemplate {
   /** http / sse transport */
   url?: string;
   headers?: Record<string, string>;
+  inputHints?: Record<string, CatalogInputHint>;
+  requirements?: string[];
+  limitations?: string[];
+  source?: string;
+  authType?: string;
+  availability?: string;
 }
 
 
@@ -86,8 +94,8 @@ export function mcpTemplateNeedsConfig(template: MCPTemplate): boolean {
   if (!template.env) return false;
   const entries = Object.entries(template.env);
   if (entries.length === 0) return false;
-  // Any non-empty env value is treated as needing configuration
-  return entries.some(([, v]) => typeof v === "string" && v.length > 0);
+  // Prompt for declared inputs and unresolved placeholders; preserve fixed values.
+  return entries.some(([, v]) => typeof v === "string" && (v.startsWith("your-") || v.includes("${")));
 }
 
 // ─── Marketplace Page ────────────────────────────────────────────────────────
@@ -154,18 +162,18 @@ export function ossProxyUrl(ossPath: string): string {
 }
 
 /** Fetch one OSS resource through QwenPaw's auth-aware proxy transport. */
-export function fetchOssResponse(ossPath: string): Promise<Response> {
+export function fetchOssResponse(ossPath: string, refresh = false): Promise<Response> {
   const cleanPath = ossPath.replace(/^\/+/, "");
-  return hostFetch(`/plugins/oss-proxy?path=${encodeURIComponent(cleanPath)}`);
+  return hostFetch(`/plugins/oss-proxy?path=${encodeURIComponent(cleanPath)}${refresh ? "&refresh=true" : ""}`, { cache: "no-store" });
 }
 
 /**
  * Fetch JSON from the official OSS bucket through QwenPaw's backend proxy.
  * Skills, MCP, and Expert templates all use this CORS-safe data path.
  */
-export async function fetchOssJson(ossPath: string): Promise<any> {
+export async function fetchOssJson(ossPath: string, refresh = false): Promise<any> {
   const cleanPath = ossPath.replace(/^\/+/, "");
-  const resp = await fetchOssResponse(cleanPath);
+  const resp = await fetchOssResponse(cleanPath, refresh);
   if (!resp.ok) {
     throw new Error(`OSS fetch failed (${resp.status}): ${cleanPath}`);
   }
@@ -189,7 +197,12 @@ export interface OssMcpServer {
   description: string;
   tags: string[];
   transport: string;
-  config?: { command: string; args: string[] };
+  config?: { command?: string; args?: string[]; url?: string; headers?: Record<string, string>; env?: Record<string, string>; cwd?: string; type?: string; transport?: string };
+  input_hints?: Record<string, CatalogInputHint>;
+  requirements?: string[];
+  limitations?: string[];
+  auth?: { type?: string; setup_url?: string };
+  availability?: string;
   env?: string[];
   source?: string;
   icon?: string;
@@ -218,6 +231,7 @@ export interface OssAgent {
 export function _tagGroupLabel(key: string): string {
   const labels: Record<string, string> = {
     domain: "领域",
+    research: "科研与文献",
     workflow: "工作流",
     computation: "计算与数据",
     integration: "集成与工具",
@@ -231,10 +245,12 @@ export function _tagGroupLabel(key: string): string {
 /** Map an OSS MCP server to the internal MCPTemplate format. */
 export function ossMcpToTemplate(server: OssMcpServer): MCPTemplate {
   const envObj: Record<string, string> = {};
-  if (server.env && server.env.length > 0) {
-    for (const envKey of server.env) {
-      envObj[envKey] = `your-${envKey.toLowerCase().replace(/_/g, "-")}`;
-    }
+  const config = server.config || {};
+  for (const envKey of new Set([...(server.env || []), ...connectionVariables(config)])) {
+    envObj[envKey] = `your-${envKey.toLowerCase().replace(/_/g, "-")}`;
+  }
+  for (const [key, value] of Object.entries(config.env || {})) {
+    if (!envObj[key]) envObj[key] = value;
   }
   // Pick an emoji based on icon name or id
   let emoji = "🔌";
@@ -263,7 +279,16 @@ export function ossMcpToTemplate(server: OssMcpServer): MCPTemplate {
       : undefined,
     category: server.category ? _tagGroupLabel(server.category) : "",
     description: server.description,
-    transport: (server.transport || "stdio") as "stdio" | "streamable_http" | "sse",
+    transport: normalizeMcpTransport(server.transport || config.transport || config.type, !!config.url),
+    url: config.url,
+    headers: config.headers,
+    cwd: config.cwd,
+    source: server.source,
+    authType: server.auth?.type,
+    availability: server.availability,
+    requirements: server.requirements,
+    limitations: server.limitations,
+    inputHints: server.input_hints,
     command: server.config?.command || "",
     args: server.config?.args || [],
     env: Object.keys(envObj).length > 0 ? envObj : undefined,
@@ -719,11 +744,11 @@ isOfficial: true,
 }
 
 /** Fetch MCP servers from the UGSci official OSS manifest. */
-export async function fetchOSSMcpManifest(): Promise<{
+export async function fetchOSSMcpManifest(refresh = false): Promise<{
   servers: OssMcpServer[];
   categories: DynamicCategory[];
 }> {
-  const manifest = await fetchOssJson("mcp/manifest.json");
+  const manifest = await fetchOssJson("mcp/manifest.json", refresh);
 
   // Extract dynamic categories from tag_groups
   const categories: DynamicCategory[] = [];
@@ -756,7 +781,12 @@ export async function fetchOSSMcpManifest(): Promise<{
       name: s.name || s.id,
       description: s.description || "",
       tags: serverTags,
-      transport: s.transport || "stdio",
+      transport: s.transport || s.config?.transport || s.config?.type || (s.config?.url ? "streamable_http" : "stdio"),
+      input_hints: s.input_hints,
+      requirements: s.requirements,
+      limitations: s.limitations,
+      auth: s.auth,
+      availability: s.availability,
       config: s.config,
       env: Array.isArray(s.env) ? s.env : undefined,
       source: s.source,

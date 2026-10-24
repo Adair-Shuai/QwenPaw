@@ -115,6 +115,7 @@ export function ExpertCard({
     ),
   ).slice(0, 3);
   const specialty =
+    agent.managed_by_app ? "应用专属专家" :
     bundle?.category || (agent.id === "default" ? "通用助手" : "自定义专家");
   const description = agent.description?.trim() || "";
   const skillNames = enabledSkills.map((skill) => skill.name);
@@ -330,7 +331,7 @@ export function ExpertCard({
           },
           style: PRIMARY_BTN_STYLE,
         },
-        "召唤专家",
+        agent.managed_by_app ? "打开应用" : "召唤专家",
       ),
     ),
   );
@@ -341,11 +342,13 @@ export function ExpertDrawer({
   open,
   onClose,
   onRefresh,
+  onSummon,
 }: {
   expert: ExpertData | null;
   open: boolean;
   onClose: () => void;
   onRefresh: () => void;
+  onSummon: (expert: ExpertData) => void;
 }) {
   const React = getHost().React;
   const {
@@ -922,23 +925,13 @@ export function ExpertDrawer({
             icon: ThunderboltOutlined
               ? React.createElement(ThunderboltOutlined)
               : undefined,
+            disabled: !agent.enabled,
             onClick: () => {
-              // Close the drawer first to avoid React unmount conflicts
               onClose();
-              // Set this agent as selected via the host store API
-              try {
-                const host = getHost();
-                if (host.setSelectedAgent) {
-                  host.setSelectedAgent(agent.id);
-                }
-              } catch (err) {
-                console.warn("[ugsci] Failed to set selected agent:", err);
-              }
-              // Defer navigation to allow React to process state updates
-              setTimeout(() => navigateTo("/chat"), 0);
+              onSummon(expert);
             },
           },
-          "开始对话",
+          agent.managed_by_app ? "打开应用" : "开始对话",
         ),
       ),
     },

@@ -26,6 +26,33 @@ import pytest
 class TestIsOfficecliAvailable:
     """Tests for _is_officecli_available."""
 
+    def test_failed_probe_retries_after_officecli_is_installed(
+        self, monkeypatch
+    ):
+        import qwenpaw.app.routers.workspace as ws
+
+        monkeypatch.setattr(ws, "_officecli_checked", False)
+        monkeypatch.setattr(ws, "_officecli_ok", False)
+        monkeypatch.setattr(ws, "_officecli_probe_at", 0.0)
+        with (
+            patch.object(ws.time, "monotonic", side_effect=[100, 101, 111]),
+            patch.object(
+                ws,
+                "_bundled_officecli_path",
+                side_effect=[None, "/bin/officecli"],
+            ),
+            patch.object(ws.shutil, "which", return_value=None),
+            patch.object(
+                ws.subprocess,
+                "run",
+                return_value=MagicMock(returncode=0, stdout="Commands: view"),
+            ) as run,
+        ):
+            assert not ws._is_officecli_available()
+            assert not ws._is_officecli_available()
+            assert ws._is_officecli_available()
+        run.assert_called_once()
+
     @patch("qwenpaw.app.routers.workspace.shutil.which")
     @patch("qwenpaw.app.routers.workspace._bundled_officecli_path")
     def test_available(self, mock_bundled, mock_which):

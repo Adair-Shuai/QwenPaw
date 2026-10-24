@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { message } from "antd";
 import { Check, ImagePlus, Upload } from "lucide-react";
 import { useTranslation } from "react-i18next";
-import { DEFAULT_AVATAR, useLocalAvatar } from "../stores/localAvatarStore";
+import { BUILTIN_AVATARS, useLocalAvatar } from "../stores/localAvatarStore";
 import { SharedModal } from "../components/interaction/SharedModal";
 import menu from "./sidebarSettingsPanel.module.less";
 import styles from "./localAvatarPicker.module.less";
@@ -123,24 +123,38 @@ export default function LocalAvatarPicker() {
               event.target.value = "";
             }}
           />
-          <p>{t("sidebar.avatarHistory")}</p>
+          <p>{t("sidebar.builtinAvatars")}</p>
           <div className={styles.grid}>
-            {[null, ...history.map((item) => item.id)].map((value, index) => (
+            {BUILTIN_AVATARS.map((avatar) => (
               <button
-                key={value ?? "default"}
+                key={avatar.id ?? "default"}
                 type="button"
                 data-press
-                aria-label={
-                  index === 0
-                    ? t("sidebar.defaultAvatar")
-                    : t("sidebar.historyAvatar", { number: index })
-                }
-                aria-pressed={selected === value}
+                aria-label={t(avatar.label)}
+                title={t(avatar.label)}
+                aria-pressed={selected === avatar.id}
                 disabled={busy}
-                onClick={() => void choose(value)}
+                onClick={() => void choose(avatar.id)}
               >
-                <img src={value ? images[value] : DEFAULT_AVATAR} alt="" />
-                {selected === value && <Check size={13} />}
+                <img src={avatar.src} alt="" />
+                {selected === avatar.id && <Check size={13} />}
+              </button>
+            ))}
+          </div>
+          {history.length > 0 && <p>{t("sidebar.avatarHistory")}</p>}
+          <div className={styles.grid}>
+            {history.map((item, index) => (
+              <button
+                key={item.id}
+                type="button"
+                data-press
+                aria-label={t("sidebar.historyAvatar", { number: index + 1 })}
+                aria-pressed={selected === item.id}
+                disabled={busy}
+                onClick={() => void choose(item.id)}
+              >
+                <img src={images[item.id]} alt="" />
+                {selected === item.id && <Check size={13} />}
               </button>
             ))}
           </div>

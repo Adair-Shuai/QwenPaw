@@ -24,6 +24,9 @@ jobs:
   publish:
     if: ${{ !inputs.dry_run }}
     runs-on: ubuntu-latest
+    env:
+      COMPONENT_BASE_URL: ${{ vars.COMPONENT_BASE_URL || 'https://ugsci-download.oss-cn-beijing.aliyuncs.com' }}
+      COMPONENT_SIGNING_PUBLIC_KEY: T0VO6V4iNHzSxU3eV68N4nifjq2CqtDfMO0QPtH72mw=
     strategy:
       fail-fast: false
       matrix:
@@ -44,6 +47,13 @@ jobs:
         with:
           name: component-release-${{ matrix.target }}
           path: component-release
+      - name: Verify signed update payloads before publication
+        run: |
+          manifest=$(find component-release/metadata/components/stable -maxdepth 1 \
+            -name '${{ matrix.target }}-*.json' ! -name '*.history.json' -type f -print -quit)
+          python scripts/pack-tauri/verify_component_release.py \
+            --release-root component-release --manifest "$manifest" \
+            --target '${{ matrix.target }}' --base-url "$COMPONENT_BASE_URL"
       - name: Install ossutil
         run: |
           wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip

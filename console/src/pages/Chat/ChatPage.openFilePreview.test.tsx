@@ -5,11 +5,11 @@
  * This file covers the same user path with a thinner render surface.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
+import { Children, isValidElement } from "react";
+import ChatActionGroup from "./components/ChatActionGroup";
 import { renderWithProviders } from "@/test/common_setup";
-import {
-  openFilePreview,
-} from "@/features/files-workspace/openFilePreview";
+import { openFilePreview } from "@/features/files-workspace/openFilePreview";
 import { useFilesSurfaceStore } from "@/stores/filesSurfaceStore";
 import { chatExtensions } from "@/plugins/registry/chatExtensions";
 
@@ -49,7 +49,6 @@ vi.mock("./components/ChatSessionInitializer", () => ({
   default: () => null,
 }));
 vi.mock("./components/ChatSessionDrawer", () => ({ default: () => null }));
-vi.mock("./components/ChatActionGroup", () => ({ default: () => null }));
 vi.mock("./components/ChatHeaderTitle", () => ({ default: () => null }));
 vi.mock("./ModelSelector", () => ({ default: () => null }));
 vi.mock("../../features/files-workspace/FilesDrawer", () => ({
@@ -88,8 +87,12 @@ vi.mock("@agentscope-ai/chat", () => ({
     MCP_CALL_OUTPUT: "mcp_call_output",
   },
   AgentScopeRuntimeWebUI: vi.fn((props: any) => {
-    void props;
-    return <div data-testid="chat-ui" />;
+    const actions = Children.toArray(
+      props.options.theme.rightHeader.props.children,
+    ).filter(
+      (child) => isValidElement(child) && child.type === ChatActionGroup,
+    );
+    return <div data-testid="chat-ui">{actions}</div>;
   }),
   useChatAnywhereSessionsState: vi.fn(() => ({
     sessions: [],
@@ -159,11 +162,14 @@ vi.mock("@/stores/agentStore", () => {
     getLastChatId: vi.fn(),
     removeLastChatId: vi.fn(),
   });
-  const useAgentStore = Object.assign(vi.fn(() => state()), {
-    getState: state,
-    setState: vi.fn(),
-    subscribe: vi.fn(() => vi.fn()),
-  });
+  const useAgentStore = Object.assign(
+    vi.fn(() => state()),
+    {
+      getState: state,
+      setState: vi.fn(),
+      subscribe: vi.fn(() => vi.fn()),
+    },
+  );
   return { useAgentStore };
 });
 
@@ -192,6 +198,9 @@ vi.mock("./sessionApi", () => ({
     discardLastUserMessage: vi.fn(),
     setVisibleSession: vi.fn(),
     getSession: vi.fn(async (id: string) => ({ id, messages: [] })),
+    getSessionIdentity: vi.fn((id) => ({ sdkSessionId: id, chatId: id, sessionId: id })),
+    getRouteResolutionVersion: vi.fn(() => 0),
+    isUnresolvedLocalSession: vi.fn(() => false),
     lastActiveChatId: null,
   },
 }));
@@ -253,15 +262,91 @@ describe("ChatPage message Markdown action", () => {
       });
     });
 
-    expect(Object.values(useFilesSurfaceStore.getState().sessionDrawers)).toContainEqual(
+    expect(
+      Object.values(useFilesSurfaceStore.getState().sessionDrawers),
+    ).toContainEqual(
       expect.objectContaining({
         kind: "preview",
         target: expect.objectContaining({
           source: "artifact",
           path: "reply.md",
-          artifact: expect.objectContaining({ textContent: "hello from reply" }),
+          artifact: expect.objectContaining({
+            textContent: "hello from reply",
+          }),
         }),
       }),
     );
+  });
+
+  it("UGSci workspace: the real header opens, expands and closes the current session panel", async () => {
+    renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
+    const open = await screen.findByRole("button", {
+      name: /^(打开工作区|Open Workspace|files.openWorkspace)$/i,
+    });
+    expect(open.querySelector(".lucide-layout-grid")).toBeInTheDocument();
+    fireEvent.click(open);
+    expect(
+      useFilesSurfaceStore.getState().sessionDrawers["session:default:new"],
+    ).toMatchObject({ kind: "workspace" });
+    const opened =
+      useFilesSurfaceStore.getState().sessionDrawers["session:default:new"];
+    expect(opened.kind !== "closed" && opened.trigger === open).toBe(true);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /^(关闭工作区|Close Workspace|files.closeWorkspace)$/i,
+      }),
+    );
+    expect(
+      useFilesSurfaceStore.getState().sessionDrawers["session:default:new"],
+    ).toEqual({ kind: "closed" });
+    const target = { source: "workspace" as const, path: "picked.txt" };
+    act(() => openFilePreview(target));
+    expect(
+      useFilesSurfaceStore.getState().sessionDrawers["session:default:new"],
+    ).toMatchObject({ kind: "preview", target });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /^(打开工作区|Open Workspace|files.openWorkspace)$/i,
+      }),
+    );
+    expect(
+      useFilesSurfaceStore.getState().sessionDrawers["session:default:new"],
+    ).toMatchObject({ kind: "workspace", target });
+    const next = { ...target, path: "another.txt" };
+    act(() => openFilePreview(next));
+    expect(
+      useFilesSurfaceStore.getState().sessionDrawers["session:default:new"],
+    ).toMatchObject({ kind: "workspace", target: next });
+  });
+
+  it("UGSci workspace: compute opens atomically and a later file request takes priority", async () => {
+    renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
+    await screen.findByTestId("chat-ui");
+    act(() =>
+      window.dispatchEvent(new CustomEvent("qwenpaw:open-compute-workbench")),
+    );
+    expect(
+      useFilesSurfaceStore.getState().sessionDrawers["session:default:new"],
+    ).toMatchObject({ kind: "workspace", mode: "compute" });
+    const target = { source: "workspace" as const, path: "next.txt" };
+    act(() => openFilePreview(target));
+    expect(
+      useFilesSurfaceStore.getState().sessionDrawers["session:default:new"],
+    ).toMatchObject({ kind: "workspace", target });
+    expect(
+      useFilesSurfaceStore.getState().sessionDrawers["session:default:new"],
+    ).not.toHaveProperty("mode");
+  });
+
+  it("UGSci workspace: inactive chat ignores global file and compute requests", async () => {
+    renderWithProviders(<ChatPage />, {
+      initialEntries: ["/ugsci-storage-dynamics"],
+    });
+    await screen.findByTestId("chat-ui");
+    act(() => {
+      openFilePreview({ source: "workspace", path: "ignored.txt" });
+      window.dispatchEvent(new CustomEvent("qwenpaw:open-compute-workbench"));
+    });
+    expect(useFilesSurfaceStore.getState().sessionDrawers).toEqual({});
   });
 });

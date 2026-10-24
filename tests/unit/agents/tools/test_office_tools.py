@@ -747,6 +747,17 @@ class TestOfficeViewDocument:
     """Tests for office_view_document."""
 
     @pytest.mark.asyncio
+    async def test_forms_mode_uses_engine_content_control_inspection(self):
+        from qwenpaw.agents.tools.office_tools import office_view_document
+
+        with patch("qwenpaw.agents.tools.office_tools._run_officecli", new_callable=AsyncMock) as run:
+            run.return_value = {"ok": True, "data": {"fields": []}}
+            result = await office_view_document("form.docx", "forms")
+        assert json.loads(result.content[0].text)["ok"]
+        assert run.call_args.args[0] == "view"
+        assert run.call_args.args[-1] == "forms"
+
+    @pytest.mark.asyncio
     @patch("qwenpaw.agents.tools.office_tools._run_officecli")
     async def test_outline_mode_uses_json(self, mock_run):
         mock_run.return_value = {"success": True, "ok": True, "outline": []}

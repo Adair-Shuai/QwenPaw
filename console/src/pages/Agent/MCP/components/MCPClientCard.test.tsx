@@ -8,6 +8,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 import type { MCPClientInfo } from "@/api/types";
 import { MCPClientCard } from "./MCPClientCard";
+import type { ReactNode } from "react";
 
 const confirm = vi.hoisted(() => vi.fn());
 vi.mock("react-i18next", () => ({
@@ -21,8 +22,17 @@ vi.mock("@/hooks/useAppMessage", () => ({
   }),
 }));
 vi.mock("@/components/interaction/ServiceCard", () => ({
-  ServiceCard: ({ onConfigure }: { onConfigure: () => void }) => (
-    <button onClick={onConfigure}>Configure connection</button>
+  ServiceCard: ({
+    onConfigure,
+    actions,
+  }: {
+    onConfigure: () => void;
+    actions: ReactNode;
+  }) => (
+    <>
+      <button onClick={onConfigure}>Configure connection</button>
+      {actions}
+    </>
   ),
 }));
 vi.mock("./MCPAccessModal", () => ({ MCPAccessModal: () => null }));
@@ -47,6 +57,59 @@ const client: MCPClientInfo = {
 };
 
 describe("MCP connection draft dismissal", () => {
+  it.each(["Authorization", "authorization"])(
+    "uses static %s credentials without offering an OAuth flow",
+    (header) => {
+      render(
+        <MCPClientCard
+          client={{
+            ...client,
+            transport: "streamable_http",
+            headers: { [header]: "********" },
+          }}
+          onToggle={vi.fn()}
+          onDelete={vi.fn()}
+          onUpdate={vi.fn()}
+          onUpdatePolicy={vi.fn()}
+        />,
+      );
+      expect(screen.getByText("mcp.headerAuth")).toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "mcp.oauth.manage" }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.getByRole("button", { name: "mcp.tools" }),
+      ).toBeInTheDocument();
+    },
+  );
+
+  it.each([
+    null,
+    { authorized: true, expires_at: 9999999999, scope: "", client_id: "test" },
+  ])(
+    "retains OAuth for unconfigured or existing OAuth connections: %j",
+    (status) => {
+      render(
+        <MCPClientCard
+          client={{
+            ...client,
+            transport: "streamable_http",
+            headers: status ? { Authorization: "********" } : {},
+            oauth_status: status,
+          }}
+          onToggle={vi.fn()}
+          onDelete={vi.fn()}
+          onUpdate={vi.fn()}
+          onUpdatePolicy={vi.fn()}
+        />,
+      );
+      expect(
+        screen.getByRole("button", { name: "mcp.oauth.manage" }),
+      ).toBeInTheDocument();
+      expect(screen.queryByText("mcp.headerAuth")).not.toBeInTheDocument();
+    },
+  );
+
   it("can discard invalid JSON and reopen the saved connection", async () => {
     const onUpdate = vi.fn().mockResolvedValue(true);
     render(

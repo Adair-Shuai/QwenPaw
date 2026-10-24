@@ -20,6 +20,7 @@ import os
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 from collections.abc import Mapping
 from datetime import datetime, timezone
@@ -1065,10 +1066,13 @@ _MIME_MAP: dict[str, str] = {
     "pdf": "application/pdf",
     # Office (served as binary for download/preview)
     "doc": "application/msword",
+    "docm": "application/vnd.ms-word.document.macroEnabled.12",
     "docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",  # noqa: E501
     "xls": "application/vnd.ms-excel",
+    "xlsm": "application/vnd.ms-excel.sheet.macroEnabled.12",
     "xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",  # noqa: E501
     "ppt": "application/vnd.ms-powerpoint",
+    "pptm": "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
     "pptx": (
         "application/vnd.openxmlformats-officedocument"
         ".presentationml.presentation"
@@ -1356,7 +1360,7 @@ class OfficeViewRequest(BaseModel):
     """Request body for /office-screenshot and /office-outline."""
 
     url: str = Field(..., description="File URL or path")
-    page: int = Field(1, description="Page/slide number (1-based)")
+    page: int = Field(1, ge=1, description="Page/slide number (1-based)")
 
 
 # ---------------------------------------------------------------------------
@@ -1368,6 +1372,8 @@ _OFFICECLI_TIMEOUT = 30  # seconds
 # Cache for officecli availability check (avoids repeated subprocess calls)
 _officecli_checked: bool = False
 _officecli_ok: bool = False
+_officecli_probe_at: float = 0.0
+_OFFICECLI_RETRY_AFTER = 10.0
 
 
 def _bundled_officecli_path() -> str | None:
@@ -1443,14 +1449,18 @@ def _is_officecli_available() -> bool:
     https://github.com/iOfficeAI/OfficeCLI/releases which supports
     ``view <file> html``, ``view <file> screenshot``, etc.
 
-    The check is cached after the first call to avoid repeated subprocess
-    invocations.
+    Successful checks are cached. Failed checks expire so installation or
+    a transient startup failure can recover without restarting the host.
     """
-    global _officecli_checked, _officecli_ok  # noqa: PLW0603
-    if _officecli_checked:
+    global _officecli_checked, _officecli_ok, _officecli_probe_at  # noqa: PLW0603
+    now = time.monotonic()
+    if _officecli_checked and (
+        _officecli_ok or now - _officecli_probe_at < _OFFICECLI_RETRY_AFTER
+    ):
         return _officecli_ok
 
     _officecli_checked = True
+    _officecli_probe_at = now
     resolved = _bundled_officecli_path() or shutil.which("officecli")
     if resolved is None:
         _officecli_ok = False

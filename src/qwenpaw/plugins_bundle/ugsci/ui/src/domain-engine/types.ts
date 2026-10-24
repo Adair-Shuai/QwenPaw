@@ -29,7 +29,11 @@ export interface DomainEngineDefinition {
   operations: DomainOperation[];
   dependencies: string[];
   tags: string[];
-  execution_class: "deterministic" | "stochastic" | "external" | "visualization";
+  execution_class:
+    | "deterministic"
+    | "stochastic"
+    | "external"
+    | "visualization";
   engine_version: string;
 }
 
@@ -67,7 +71,13 @@ export interface DomainEngineView {
   dependencyStatus: DependencyStatus;
   checkedAt: string;
   /** Effective availability derived from dependency + MCP status. */
-  effectiveStatus: ProbeStatus | "needs_install" | "unconfigured" | "error";
+  effectiveStatus:
+    | ProbeStatus
+    | "needs_install"
+    | "unconfigured"
+    | "partial"
+    | "error";
+  statusDescription: string;
   /** Number of tools discovered (for MCP engines, from tool list). */
   discoveredToolCount: number;
   /** MCP provider key (for MCP engines only). */
@@ -102,4 +112,24 @@ export interface NeqSimInstallTask {
   created_at?: number;
   finished_at?: number | null;
   recovered?: boolean;
+}
+
+export interface RuntimeInstallTask {
+  id: string;
+  engine_id: string;
+  status: "queued" | "running" | "completed" | "failed";
+  progress: number | null;
+  message: string;
+  error: string;
+  warning?: string;
+  restart_required?: boolean;
+}
+
+export interface EngineRuntimePlan {
+  engine_id: string;
+  installable: boolean;
+  packages: string[];
+  state: "ready" | "missing" | "blocked" | "unsupported";
+  message: string;
+  active_task: RuntimeInstallTask | null;
 }

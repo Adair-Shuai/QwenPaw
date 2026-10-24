@@ -49,309 +49,124 @@ def _assert_restart_does_not_restore(monkeypatch, plugins, source_root):
     assert not (plugins / "demo").exists()
 
 
-@pytest.mark.asyncio
-async def test_api_uninstall_persists_tombstone_before_deleting(
-    monkeypatch,
-    tmp_path,
-):
+@pytest.fixture
+async def native_install(tmp_path, monkeypatch, fresh_registry):
+    from qwenpaw.components import service
+    work = tmp_path / "work"
+    monkeypatch.setattr("qwenpaw.constant.WORKING_DIR", work)
+    monkeypatch.setattr("qwenpaw.config.utils.WORKING_DIR", work)
     plugins = tmp_path / "plugins"
-    installed = plugins / "demo"
     source_root = tmp_path / "bundle"
-    _write_plugin(installed)
-    _write_plugin(source_root / "demo")
-    monkeypatch.setattr(
-        "qwenpaw.config.utils.get_plugins_dir",
-        lambda: plugins,
-    )
+    source = source_root / "demo"
+    _write_plugin(source)
+    monkeypatch.setattr("qwenpaw.config.utils.get_plugins_dir", lambda: plugins)
+    adoption = {"demo": True}
+    monkeypatch.setattr(service, "is_component_update_adopted", lambda name: adoption.get(name, False))
+    monkeypatch.setattr(service, "set_component_update_adoption", lambda name, value: adoption.update({name: value}))
+    loader = PluginLoader([plugins])
+    loader.registry = fresh_registry
+    await loader.load_plugin_from_path(source)
+    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(plugin_loader=loader)))
+    try:
+        yield loader, request, plugins, source_root, adoption
+    finally:
+        if loader.get_loaded_plugin("demo") is not None:
+            await loader.unload_plugin("demo")
 
-    class FakeLoader:
-        registry = object()
 
-        @asynccontextmanager
-        async def plugin_lifecycle(self, _plugin_id):
-            yield
-
-        @staticmethod
-        def get_loaded_plugin(_plugin_id):
-            return SimpleNamespace(manifest=SimpleNamespace(meta={}))
-
-        @staticmethod
-        async def unload_plugin(_plugin_id, delete_files=False):
-            assert delete_files is True
-            assert (plugins / ".uninstalled" / "demo").is_file()
-            shutil.rmtree(installed)
-
-    request = SimpleNamespace(
-        app=SimpleNamespace(
-            state=SimpleNamespace(plugin_loader=FakeLoader()),
-        ),
-    )
-    monkeypatch.setattr(
-        plugin_router,
-        "_collect_plugin_runtime_ids",
-        lambda *_args: (set(), set()),
-    )
-    monkeypatch.setattr(plugin_router, "_post_unload_cleanup", lambda *_: None)
-    monkeypatch.setattr(
-        plugin_router,
-        "_remove_plugin_tools_from_agents",
-        lambda *_: None,
-    )
-    monkeypatch.setattr(
-        plugin_router,
-        "_schedule_all_agents_reload",
-        AsyncMock(),
-    )
-
-    result = await plugin_router.uninstall_plugin("demo", request)
-
-    assert result["id"] == "demo"
-    assert (plugins / ".uninstalled" / "demo").is_file()
+@pytest.mark.asyncio
+async def test_api_uninstall_persists_tombstone_before_deleting(native_install, monkeypatch):
+    from qwenpaw.plugins import loader as loader_module
+    loader, request, plugins, source_root, adoption = native_install
+    original = loader_module.safe_remove
+    observed = []
+    def remove(path, **kwargs):
+        if path == plugins / "demo":
+            observed.append((plugins / ".uninstalled/demo").is_file())
+        return original(path, **kwargs)
+    monkeypatch.setattr(loader_module, "safe_remove", remove)
+    assert (await plugin_router.uninstall_plugin("demo", request))["id"] == "demo"
+    assert observed == [True]
+    assert not adoption["demo"]
     _assert_restart_does_not_restore(monkeypatch, plugins, source_root)
 
 
 @pytest.mark.asyncio
-async def test_api_uninstall_restores_adoption_when_delete_fails(
-    monkeypatch,
-):
-    calls: list[tuple[str, bool]] = []
-
-    class FakeLoader:
-        registry = object()
-
-        @asynccontextmanager
-        async def plugin_lifecycle(self, _plugin_id):
-            yield
-
-        @staticmethod
-        def get_loaded_plugin(_plugin_id):
-            return SimpleNamespace(manifest=SimpleNamespace(meta={}))
-
-        @staticmethod
-        async def unload_plugin(_plugin_id, delete_files=False):
-            assert delete_files is True
-            raise OSError("locked")
-
-    request = SimpleNamespace(
-        app=SimpleNamespace(
-            state=SimpleNamespace(plugin_loader=FakeLoader()),
-        ),
-    )
-    monkeypatch.setattr(
-        plugin_router,
-        "_collect_plugin_runtime_ids",
-        lambda *_args: (set(), set()),
-    )
-    monkeypatch.setattr(bundled, "mark_plugin_uninstalled", lambda *_: True)
-    clear_marker = MagicMock()
-    monkeypatch.setattr(bundled, "clear_uninstalled_marker", clear_marker)
-    monkeypatch.setattr(
-        "qwenpaw.components.service.is_component_update_adopted",
-        lambda _plugin_id: True,
-    )
-    monkeypatch.setattr(
-        "qwenpaw.components.service.set_component_update_adoption",
-        lambda plugin_id, adopted: calls.append((plugin_id, adopted)),
-    )
-
-    with pytest.raises(HTTPException) as error:
+async def test_api_uninstall_restores_adoption_when_delete_fails(native_install, monkeypatch):
+    loader, request, plugins, _source, adoption = native_install
+    monkeypatch.setattr("qwenpaw.plugins.loader.safe_remove", MagicMock(side_effect=OSError("locked")))
+    with pytest.raises(HTTPException, match="locked"):
         await plugin_router.uninstall_plugin("demo", request)
-
-    assert error.value.status_code == 500
-    assert calls == [("demo", False), ("demo", True)]
-    clear_marker.assert_called_once_with("demo")
+    assert adoption["demo"]
+    assert (plugins / "demo").is_dir()
+    assert not bundled.is_plugin_uninstalled("demo", plugins_dir=plugins)
 
 
 @pytest.mark.asyncio
-async def test_api_uninstall_does_not_mutate_when_adoption_write_fails(
-    monkeypatch,
-):
-    unloaded = False
-
-    class FakeLoader:
-        registry = object()
-
-        @asynccontextmanager
-        async def plugin_lifecycle(self, _plugin_id):
-            yield
-
-        @staticmethod
-        def get_loaded_plugin(_plugin_id):
-            return SimpleNamespace(manifest=SimpleNamespace(meta={}))
-
-        @staticmethod
-        async def unload_plugin(_plugin_id, delete_files=False):
-            nonlocal unloaded
-            assert delete_files is True
-            unloaded = True
-
-    request = SimpleNamespace(
-        app=SimpleNamespace(
-            state=SimpleNamespace(plugin_loader=FakeLoader()),
-        ),
-    )
-    monkeypatch.setattr(
-        plugin_router,
-        "_collect_plugin_runtime_ids",
-        lambda *_args: (set(), set()),
-    )
-    mark_marker = MagicMock()
-    monkeypatch.setattr(bundled, "mark_plugin_uninstalled", mark_marker)
-    monkeypatch.setattr(
-        "qwenpaw.components.service.is_component_update_adopted",
-        lambda _plugin_id: True,
-    )
-    monkeypatch.setattr(
-        "qwenpaw.components.service.set_component_update_adoption",
-        MagicMock(side_effect=OSError("read-only filesystem")),
-    )
-
-    with pytest.raises(HTTPException) as error:
+async def test_api_uninstall_does_not_mutate_when_adoption_write_fails(native_install, monkeypatch):
+    loader, request, plugins, _source, adoption = native_install
+    old = loader.get_loaded_plugin("demo")
+    monkeypatch.setattr("qwenpaw.components.service.set_component_update_adoption", MagicMock(side_effect=OSError("read-only filesystem")))
+    with pytest.raises(HTTPException, match="read-only"):
         await plugin_router.uninstall_plugin("demo", request)
+    assert loader.get_loaded_plugin("demo") is old
+    assert (plugins / "demo").is_dir() and adoption["demo"]
+    assert not bundled.is_plugin_uninstalled("demo", plugins_dir=plugins)
 
-    assert error.value.status_code == 500
-    assert unloaded is False
-    mark_marker.assert_not_called()
 
-
-def test_offline_cli_uninstall_persists_tombstone_after_delete(
-    monkeypatch,
-    tmp_path,
-):
-    plugins = tmp_path / "plugins"
-    installed = plugins / "demo"
-    source_root = tmp_path / "bundle"
-    _write_plugin(installed)
-    _write_plugin(source_root / "demo")
+@pytest.mark.asyncio
+async def test_offline_cli_uninstall_persists_tombstone_after_delete(native_install, monkeypatch):
+    import asyncio
+    loader, _request, plugins, source_root, _adoption = native_install
+    # The offline process has no loaded instance.
+    await loader.unload_plugin("demo")
+    monkeypatch.delenv("QWENPAW_RUNTIME_ID", raising=False)
     monkeypatch.setattr(plugin_commands, "_is_running", lambda: False)
-    monkeypatch.setattr(
-        "qwenpaw.config.utils.get_plugins_dir",
-        lambda: plugins,
-    )
-    monkeypatch.setattr(
-        plugin_commands,
-        "_remove_tool_plugin_from_agents",
-        lambda *_: None,
-    )
-
-    result = CliRunner().invoke(
-        plugin_commands.uninstall,
-        ["demo"],
-        input="y\n",
-    )
-
+    result = await asyncio.to_thread(CliRunner().invoke, plugin_commands.uninstall, ["demo"], input="y\n")
     assert result.exit_code == 0, result.output
-    assert not installed.exists()
-    assert (plugins / ".uninstalled" / "demo").is_file()
+    assert not (plugins / "demo").exists()
     _assert_restart_does_not_restore(monkeypatch, plugins, source_root)
 
 
 def test_cli_uninstall_rejects_traversal_before_live_api(monkeypatch):
     api_uninstall = AsyncMock()
     monkeypatch.setattr(plugin_commands, "_is_running", lambda: True)
-    monkeypatch.setattr(
-        plugin_commands,
-        "_api_uninstall_plugin",
-        api_uninstall,
-    )
-
-    result = CliRunner().invoke(
-        plugin_commands.uninstall,
-        ["../escape"],
-    )
-
+    monkeypatch.setattr(plugin_commands, "_api_uninstall_plugin", api_uninstall)
+    result = CliRunner().invoke(plugin_commands.uninstall, ["../escape"])
     assert result.exit_code == 0
     assert "Invalid plugin ID" in result.output
     api_uninstall.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_explicit_reinstall_clears_persistent_tombstone(tmp_path):
-    plugins = tmp_path / "plugins"
-    source = tmp_path / "source"
-    _write_plugin(source)
-    bundled.mark_plugin_uninstalled("demo", plugins_dir=plugins)
-    loader = PluginLoader([plugins])
-
-    record = await loader.load_plugin_from_path(source)
-
-    assert record.manifest.id == "demo"
-    assert not bundled.is_plugin_uninstalled(
-        "demo",
-        plugins_dir=plugins,
-        plugin_dir=plugins / "demo",
-    )
-    assert [manifest.id for manifest, _ in loader.discover_plugins()] == [
-        "demo",
-    ]
+async def test_explicit_reinstall_clears_persistent_tombstone(native_install):
+    loader, request, plugins, source_root, _adoption = native_install
+    await plugin_router.uninstall_plugin("demo", request)
+    assert bundled.is_plugin_uninstalled("demo", plugins_dir=plugins)
+    assert (await loader.load_plugin_from_path(source_root / "demo")).status == "active"
+    assert not bundled.is_plugin_uninstalled("demo", plugins_dir=plugins)
+    assert [manifest.id for manifest, _ in loader.discover_plugins()] == ["demo"]
 
 
+@pytest.mark.asyncio
 @pytest.mark.parametrize("delete_fails", [False, True])
-def test_api_uninstalls_failed_plugin_with_transaction(
-    tmp_path,
-    monkeypatch,
-    delete_fails,
-):
+async def test_api_uninstalls_failed_plugin_with_transaction(native_install, monkeypatch, delete_fails):
+    import asyncio
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
-
-    plugins = tmp_path / "plugins"
-    source_root = tmp_path / "bundles"
-    installed = plugins / "demo"
-    _write_plugin(installed)
-    _write_plugin(source_root / "demo")
-    monkeypatch.setattr(
-        "qwenpaw.config.utils.get_plugins_dir",
-        lambda: plugins,
-    )
-    adoption = []
-    monkeypatch.setattr(
-        "qwenpaw.components.service.is_component_update_adopted",
-        lambda _: True,
-    )
-    monkeypatch.setattr(
-        "qwenpaw.components.service.set_component_update_adoption",
-        lambda plugin_id, enabled: adoption.append((plugin_id, enabled)),
-    )
-
-    class FailedLoader:
-        @asynccontextmanager
-        async def plugin_lifecycle(self, _plugin_id):
-            yield
-
-        def get_loaded_plugin(self, _plugin_id):
-            return None
-
-        def discover_plugins(self):
-            return [(SimpleNamespace(id="demo"), installed)]
-
-    cleanup = MagicMock()
-    monkeypatch.setattr(
-        plugin_router,
-        "_remove_plugin_tools_from_agents",
-        cleanup,
-    )
+    from qwenpaw.plugins.lifecycle import PluginState
+    loader, _request, plugins, source_root, adoption = native_install
+    loader.get_loaded_plugin("demo").status = "failed"
+    loader.lifecycle.get_instance("demo").state = PluginState.FAILED
     if delete_fails:
-        monkeypatch.setattr(
-            plugin_router,
-            "remove_tree",
-            MagicMock(side_effect=OSError("locked")),
-        )
+        monkeypatch.setattr("qwenpaw.plugins.loader.safe_remove", MagicMock(side_effect=OSError("locked")))
     app = FastAPI()
-    app.state.plugin_loader = FailedLoader()
+    app.state.plugin_loader = loader
     app.include_router(plugin_router.router, prefix="/api")
-    response = TestClient(app).delete("/api/plugins/demo")
+    response = await asyncio.to_thread(TestClient(app).delete, "/api/plugins/demo")
     assert response.status_code == (500 if delete_fails else 200)
-    assert installed.exists() == delete_fails
-    assert (
-        bundled.is_plugin_uninstalled("demo", plugins_dir=plugins)
-        != delete_fails
-    )
-    assert adoption == (
-        [("demo", False), ("demo", True)]
-        if delete_fails
-        else [("demo", False)]
-    )
-    cleanup.assert_not_called()
+    assert (plugins / "demo").exists() == delete_fails
+    assert bundled.is_plugin_uninstalled("demo", plugins_dir=plugins) != delete_fails
+    assert adoption["demo"] == delete_fails
     if not delete_fails:
         _assert_restart_does_not_restore(monkeypatch, plugins, source_root)

@@ -6,7 +6,15 @@
  * (no full-page navigation). The classic console mirrors the app path in the
  * URL; the Desktop OS keeps its single `/os` browser entry point.
  */
-import { lazy, Suspense, useEffect, useMemo, useState } from "react";
+import {
+  lazy,
+  Suspense,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, useSearchParams } from "react-router-dom";
 import {
@@ -36,6 +44,7 @@ import {
 import { MarketplaceHeader } from "@/pages/Market/components/MarketplaceHeader";
 import { useAppMessage } from "@/hooks/useAppMessage";
 import { pawappApi } from "../../api/modules/pawapp";
+import { subscribeToPluginChanges } from "@/utils/pluginChangeEvents";
 import type { InstallPluginResult } from "../../api/modules/plugin";
 import { useRoutes } from "../../plugins/registry/hooks";
 import { PawAppAccessGate } from "../../plugins/PawAppAccessGate";
@@ -90,6 +99,7 @@ export default function AppCenterPage() {
   const [activeApp, setActiveApp] = useState<AppCardData | null>(null);
   const [loadError, setLoadError] = useState(false);
   const [publisherOpen, setPublisherOpen] = useState(false);
+  const appsRequestId = useRef(0);
 
   // View state is URL-driven so refresh / back / forward keep working.
   // Unknown `view` values safely fall back to the installed-apps view.
@@ -106,11 +116,13 @@ export default function AppCenterPage() {
     setSearchParams(params);
   };
 
-  const fetchApps = async () => {
+  const fetchApps = useCallback(async () => {
+    const requestId = ++appsRequestId.current;
     setLoading(true);
     setLoadError(false);
     try {
       const data = await pawappApi.list();
+      if (requestId !== appsRequestId.current) return;
       setApps(
         data.apps.map((app) => ({
           id: app.id,
@@ -128,12 +140,13 @@ export default function AppCenterPage() {
         })),
       );
     } catch (err) {
+      if (requestId !== appsRequestId.current) return;
       console.error("Failed to fetch PawApps:", err);
       setLoadError(true);
     } finally {
-      setLoading(false);
+      if (requestId === appsRequestId.current) setLoading(false);
     }
-  };
+  }, []);
 
   const handleMarketInstalled = async (result?: InstallPluginResult) => {
     if (!result) {
@@ -150,8 +163,13 @@ export default function AppCenterPage() {
   };
 
   useEffect(() => {
-    fetchApps();
-  }, []);
+    void fetchApps();
+    const unsubscribe = subscribeToPluginChanges(() => void fetchApps());
+    return () => {
+      unsubscribe();
+      ++appsRequestId.current;
+    };
+  }, [fetchApps]);
 
   // Deep-link / refresh support: when the URL carries an app id (e.g. a hard
   // reload at /apps/<id>), open that app inline once the list has loaded so

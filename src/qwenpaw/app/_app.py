@@ -668,11 +668,22 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             loaded_plugins = await plugin_loader.load_all_plugins(
                 configs=plugin_configs,
             )
+            plugin_loader.registry.set_runtime_helpers(
+                RuntimeHelpers(provider_manager=provider_manager),
+            )
+            plugin_loader.registry.set_workspace_manager(workspace_registry)
+            app.state.bundled_plugins_status = {
+                "state": "registry_ready",
+                "installed": [],
+                "error": None,
+            }
+            startup_state.update("resources", "正在准备扩展资源…", 50)
+            await plugin_loader.activate_all_loaded()
             bundled_ready_ids = []
             bundled_health_errors = []
             for plugin_id in newly_installed:
                 record = loaded_plugins.get(plugin_id)
-                if record and record.enabled:
+                if record and record.enabled and record.status == "active":
                     try:
                         finalize_bundled_plugin_activation(
                             plugin_id,
@@ -752,7 +763,11 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                                     component_id,
                                 )
                                 record = loaded_plugins.get(component_id)
-                                if record and record.enabled:
+                                if (
+                                    record
+                                    and record.enabled
+                                    and record.status == "active"
+                                ):
                                     recovery_updater.finalize_activation(
                                         component_id,
                                         destination,
@@ -836,28 +851,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 provider_manager.sync_remote_catalogs(),
                 name="qwenpaw-provider-catalog-sync",
             )
-
-            # Phase 2: load remaining plugins (channel plugins already
-            # loaded — load_plugin skips them automatically)
-            loaded_plugins = await plugin_loader.load_all_plugins(
-                configs=plugin_configs,
-                activate=False,
-            )
-            logger.debug(f"Loaded {len(loaded_plugins)} plugin(s)")
-
-            runtime_helpers = RuntimeHelpers(
-                provider_manager=provider_manager,
-            )
-            plugin_loader.registry.set_runtime_helpers(runtime_helpers)
-            plugin_loader.registry.set_workspace_manager(
-                workspace_registry,
-            )
-
-            app.state.plugin_loader = plugin_loader
-            app.state.plugin_registry = plugin_loader.registry
-
-            logger.debug("Activating loaded plugins...")
-            await plugin_loader.activate_all_loaded()
 
             # ---- Approval Service ----
             try:

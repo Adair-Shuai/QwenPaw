@@ -142,6 +142,8 @@ jobs:
         env:
           COVERAGE_FILE: .coverage.unit
         run: |
+          python scripts/verify_update_regressions.py --check
+          python scripts/verify_fork_regressions.py --check
           # Coverage is collected only on the ubuntu/py3.13 entry so the
           # data file can be uploaded for coverage-report. Other matrix
           # entries only verify cross-platform compatibility.
@@ -154,6 +156,18 @@ jobs:
           else
             pytest tests/unit -v
           fi
+
+      - name: Verify document forms application contracts
+        if: matrix.python-version == '3.11'
+        shell: bash
+        run: pytest plugins/apps/document-forms/tests -v
+
+      - name: Verify real OfficeCLI engine contracts
+        if: matrix.python-version == '3.11'
+        shell: bash
+        run: |
+          python scripts/pack-tauri/stage_officecli.py --dest console/src-tauri/binaries/officecli
+          pytest tests/system/test_officecli_engine.py -v
 
       - name: Upload unit coverage data
         if: |
@@ -621,6 +635,12 @@ jobs:
           npm --prefix plugins/bundle/qwenpaw-run-center/ui ci
           npm --prefix plugins/bundle/qwenpaw-run-center/ui run build
           python scripts/sync_run_center_bundle.py --sync
+
+      - name: Verify fork feature regression inventory
+        run: node scripts/verify-fork-features.mjs --check
+
+      - name: Check frontend types
+        run: npx tsc -b --noEmit
 
       - name: Run vitest with coverage (ratchet enforced)
         run: npm run test:coverage

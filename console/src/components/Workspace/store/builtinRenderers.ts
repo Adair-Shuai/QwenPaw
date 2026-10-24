@@ -65,10 +65,12 @@ const CsvRenderer = lazyRenderer(() => import("../renderers/CsvRenderer"));
 const ImageRenderer = lazyRenderer(() => import("../renderers/ImageRenderer"));
 const PdfRenderer = lazyRenderer(() => import("../renderers/PdfRenderer"));
 const OfficeDocRenderer = lazyRenderer(
-  () => import("../renderers/OfficeDocRenderer"),
+  () => import("../renderers/OfficePreviewRenderer"),
 );
-const OfficeScreenshotRenderer = lazyRenderer(
-  () => import("../renderers/OfficeScreenshotRenderer"),
+const OfficeScreenshotRenderer = lazyRenderer(() =>
+  import("../renderers/OfficePreviewRenderer").then((module) => ({
+    default: module.OfficePrintPreviewRenderer,
+  })),
 );
 const MediaRenderer = lazyRenderer(() => import("../renderers/MediaRenderer"));
 const SandpackRenderer = lazyRenderer(
@@ -255,8 +257,28 @@ const builtinRenderers: RendererRegistration[] = [
     id: "office-doc",
     name: "Office Document",
     component: OfficeDocRenderer,
-    mimeTypes: [MimeTypes.DOCX, MimeTypes.XLSX, MimeTypes.PPTX],
-    extensions: ["docx", "xlsx", "pptx", "doc", "xls", "ppt"],
+    mimeTypes: [
+      MimeTypes.DOCX,
+      MimeTypes.XLSX,
+      MimeTypes.PPTX,
+      "application/vnd.ms-word.document.macroenabled.12",
+      "application/vnd.ms-excel.sheet.macroenabled.12",
+      "application/vnd.ms-powerpoint.presentation.macroenabled.12",
+      "application/vnd.ms-word.document.macroEnabled.12",
+      "application/vnd.ms-excel.sheet.macroEnabled.12",
+      "application/vnd.ms-powerpoint.presentation.macroEnabled.12",
+    ],
+    extensions: [
+      "docx",
+      "xlsx",
+      "pptx",
+      "docm",
+      "xlsm",
+      "pptm",
+      "doc",
+      "xls",
+      "ppt",
+    ],
     priority: 15,
     description:
       "Office 文档渲染（三级 fallback：后端转换 → 前端 OOXML 解析 → 下载），支持 DOCX/XLSX/PPTX 连续滚动阅读",

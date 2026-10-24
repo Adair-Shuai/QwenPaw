@@ -90,6 +90,12 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Verify fork feature regression inventory
+        run: node scripts/verify-fork-features.mjs --check
+
+      - name: Check frontend types
+        run: npx tsc -b --noEmit
+
       # A single vitest pass: runs the full suite AND enforces the coverage
       # ratchet (fails on test failures or coverage regression). The previous
       # separate `npm run test:run` pass executed the identical suite twice.

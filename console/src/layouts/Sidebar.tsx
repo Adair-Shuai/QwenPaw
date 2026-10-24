@@ -35,7 +35,11 @@ import SidebarSessionList from "./SidebarSessionList";
 import DockableSidebar from "./DockableSidebar";
 import skin from "./sidebarA.module.less";
 import SidebarUsage from "./SidebarUsage";
-import { DEFAULT_AVATAR, useLocalAvatar } from "../stores/localAvatarStore";
+import {
+  DEFAULT_AVATAR,
+  builtinAvatarSource,
+  useLocalAvatar,
+} from "../stores/localAvatarStore";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { InteractiveCard } from "../components/interaction/InteractiveCard";
 import { RunningGlow } from "../components/interaction/RunningGlow";
@@ -124,8 +128,10 @@ export default function Sidebar({
   const navigate = useNavigate();
   const location = useLocation();
   const { t, i18n } = useTranslation();
-  const localAvatar = useLocalAvatar((state) =>
-    state.selected ? state.images[state.selected] : undefined,
+  const localAvatar = useLocalAvatar(
+    (state) =>
+      builtinAvatarSource(state.selected) ??
+      (state.selected ? state.images[state.selected] : undefined),
   );
   useEffect(() => {
     const reload = () => {
@@ -1081,7 +1087,7 @@ export default function Sidebar({
               ) : (
                 <>
                   <span className={skin.avatar}>
-                    <img src={localAvatar ?? DEFAULT_AVATAR} alt="QwenPaw" />
+                    <img src={localAvatar ?? DEFAULT_AVATAR} alt="UGSci" />
                   </span>
                   <span className={skin.identityText}>
                     <strong>

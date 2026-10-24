@@ -147,6 +147,7 @@
     "installSuccess": "已安装",
     "installFailed": "安装失败",
     "installedStatus": "已安装",
+    "updateQueued": "等待重启更新",
     "update": "更新",
     "searchMarket": "搜索应用市场...",
     "marketFilters": "应用市场筛选",
@@ -356,7 +357,9 @@
     "changeAvatar": "头像管理",
     "uploadAvatar": "选择图片",
     "avatarHistory": "历史头像 · 最近 12 个",
-    "defaultAvatar": "恢复默认头像",
+    "defaultAvatar": "科研助手",
+    "builtinAvatars": "默认头像",
+    "cuteAvatar": "萌趣助手",
     "historyAvatar": "历史头像 {{number}}",
     "avatarInvalid": "请选择 PNG、JPG、WebP（最大 10 MB）或 GIF（最大 2 MB）",
     "avatarSaveFailed": "头像保存失败，请检查连接后重试",
@@ -375,6 +378,18 @@
     "dock": "侧栏归位",
     "newVersion": "发现新版本 v{{version}}，点击前往升级",
     "updateModal": {
+      "checkUpdates": "检查更新",
+      "guideTitle": "更新说明",
+      "componentsTitle": "有 {{count}} 项组件更新",
+      "componentList": "待更新组件",
+      "currentVersion": "当前版本 v{{version}}",
+      "targetVersion": "目标版本 v{{version}}",
+      "notInstalled": "未安装",
+      "updateAvailable": "有可用更新",
+      "upToDate": "当前已是最新版本",
+      "installUpdate": "现在更新",
+      "unifiedInstallHint": "更新将在应用重启后安装。",
+      "coreFirstInstallHint": "将先安装桌面核心 {{version}}，重启后继续检查组件更新。",
       "title": "发现新版本 v{{version}}",
       "viewReleases": "查看 Releases",
       "installDesktopUpdate": "现在更新",
@@ -413,7 +428,8 @@
     "quickMenu": {
       "settings": "设置",
       "appearance": "外观",
-      "about": "关于 QwenPaw"
+      "manual": "手册",
+      "about": "关于我们"
     },
     "collapse": "收起侧边栏",
     "expand": "展开侧边栏",
@@ -435,10 +451,12 @@
     },
     "pages": {
       "general": "通用",
+      "ugsci": "UGSci 设置",
       "navigation": "侧边栏"
     },
     "descriptions": {
       "general": "语言、主题和应用行为",
+      "ugsci": "GenUI 与其他 UGSci 功能偏好",
       "navigation": "侧边栏显示内容",
       "agents": "QwenPaw、Codex 和 Qoder 配置",
       "models": "服务商、凭据和模型目录",
@@ -768,6 +786,13 @@
     }
   },
   "workspace": {
+    "officePreviewMode": "Office 预览模式",
+    "officeReading": "文档阅读",
+    "officePrint": "打印版式",
+    "officePrintFallback": "打印版式暂不可用，已显示文档阅读预览。",
+    "officeZoomOut": "缩小",
+    "officeZoomReset": "重置缩放",
+    "officeZoomIn": "放大",
     "title": "文件",
     "workspacePath": "工作区路径：",
     "noFiles": "没有文件",
@@ -1519,6 +1544,8 @@
     },
     "local": "本地",
     "remote": "远程",
+    "headerAuth": "Token / 密钥认证",
+    "headerAuthHint": "连接时自动使用已配置的 Token 或密钥，无需重复 OAuth 授权。此标记不代表凭证有效性已验证。",
     "invalidJson": "请输入有效的 JSON，且至少包含一个 MCP 服务。"
   },
   "heartbeat": {
@@ -3995,7 +4022,7 @@
     "description": "我是一个智能助手，可以帮助你解答问题。",
     "prompt1": "让我们开启一段新的旅程吧！",
     "prompt2": "能告诉我你有哪些技能吗？",
-    "inputPlaceholder": "\"↑↓\" 浏览消息 · \"/\" 快捷指令",
+    "inputPlaceholder": "\"↑↓\" 浏览消息 · \"/\" 快捷指令 · \"@\" 指派 Agent",
     "composer": {
       "attach": "添加附件",
       "send": "发送消息",

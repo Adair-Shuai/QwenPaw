@@ -185,7 +185,7 @@ class TestHubPluginLifecycle:
             json.dumps(
                 {
                     "id": "config-plugin",
-                    "qwenpaw_version": {"min": "2.2.2"},
+                    "qwenpaw_version": {"min": "2.2.2", "max": "2.4.0"},
                     "version": "1.0.0",
                     "type": plugin_type,
                     "entry": {"backend": "plugin.py"},
@@ -255,7 +255,7 @@ class TestHubPluginLifecycle:
                     "plugin_id": "existing-tool",
                     "version": "1.0.0",
                     "kind": "tool",
-                    "qwenpaw_version": {"min": "2.2.2"},
+                    "qwenpaw_version": {"min": "2.2.2", "max": "2.4.0"},
                 },
             )
             is compatible
@@ -425,7 +425,7 @@ class TestHubPluginLifecycle:
             json.dumps(
                 {
                     "id": "broken-hub",
-                    "qwenpaw_version": {"min": "2.2.2"},
+                    "qwenpaw_version": {"min": "2.2.2", "max": "2.4.0"},
                     "name": "Broken Hub",
                     "version": "1.0.0",
                     "type": "hub",

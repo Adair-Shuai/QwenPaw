@@ -377,7 +377,8 @@
     "quickMenu": {
       "settings": "Pengaturan",
       "appearance": "Tampilan",
-      "about": "Tentang QwenPaw"
+      "manual": "Panduan",
+      "about": "Tentang UGSci"
     },
     "collapse": "Ciutkan bilah samping",
     "expand": "Luaskan bilah samping",
@@ -396,10 +397,12 @@
     },
     "pages": {
       "general": "Umum",
+      "ugsci": "Pengaturan UGSci",
       "navigation": "Bilah samping"
     },
     "descriptions": {
       "general": "Bahasa, tema, dan perilaku aplikasi",
+      "ugsci": "GenUI dan preferensi UGSci lainnya",
       "navigation": "Visibilitas bilah samping",
       "agents": "Profil QwenPaw, Codex, dan Qoder",
       "models": "Penyedia, kredensial, dan katalog model",
@@ -1402,6 +1405,13 @@
           "description": "Periksa file tanpa mengubahnya."
         },
         "workspace": {
+    "officePreviewMode": "Mode pratinjau Office",
+    "officeReading": "Baca dokumen",
+    "officePrint": "Tata letak cetak",
+    "officePrintFallback": "Tata letak cetak tidak tersedia. Menampilkan pratinjau baca.",
+    "officeZoomOut": "Perkecil",
+    "officeZoomReset": "Atur ulang zoom",
+    "officeZoomIn": "Perbesar",
           "name": "Akses ruang kerja",
           "description": "Izinkan perubahan ruang kerja tanpa konfirmasi."
         },

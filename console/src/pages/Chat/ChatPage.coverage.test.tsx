@@ -11,6 +11,7 @@ import { useNavigate } from "react-router-dom";
 import { renderWithProviders } from "@/test/common_setup";
 import { useMessageQueueStore } from "@/stores/messageQueueStore";
 import ChatPage from "./index";
+import i18n, { i18nReady } from "../../i18n";
 import { LongTextPasteInput } from "./LongTextPaste";
 import { ChatRunLifecycle } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Execution/runLifecycle";
 import sessionApi from "./sessionApi";
@@ -18,6 +19,10 @@ import { stopBackgroundQueue } from "./backgroundQueueRegistry";
 import { chatExtensions } from "@/plugins/registry/chatExtensions";
 import { useSessionFilesDrawer } from "@/stores/filesSurfaceStore";
 import { useStoppedTurnsStore } from "./stoppedTurns";
+import {
+  clearAgentMentionModes,
+  setAgentMentionMode,
+} from "./components/agentMentionModes";
 
 // ---------------------------------------------------------------------------
 // Hoisted mocks
@@ -42,6 +47,8 @@ const {
   mockSessionProjectDirectory,
   mockApprovalLevelToggle,
   mockHydrateBackgroundTasksForSession,
+  mockRenderSender,
+  mockAgentList,
 } = vi.hoisted(() => ({
   mockListProviders: vi.fn(),
   mockGetActiveModels: vi.fn(),
@@ -62,6 +69,8 @@ const {
   mockSessionProjectDirectory: vi.fn(),
   mockApprovalLevelToggle: vi.fn(),
   mockHydrateBackgroundTasksForSession: vi.fn(() => Promise.resolve()),
+  mockRenderSender: vi.fn(() => false),
+  mockAgentList: vi.fn(),
 }));
 
 let capturedOptions: any = null;
@@ -121,6 +130,15 @@ vi.mock("@agentscope-ai/chat", () => ({
     }));
     return (
       <div data-testid="chat-ui">
+        {mockRenderSender() && (
+          <div className="test-sender">
+            {props.options?.sender?.beforeUI}
+            <LongTextPasteInput
+              data-testid="mention-sender"
+              placeholder={props.options?.sender?.placeholder}
+            />
+          </div>
+        )}
         {props.options?.theme?.rightHeader}
         {props.options?.sender?.prefix}
         {props.options?.sender?.actionAffix}
@@ -197,7 +215,9 @@ vi.mock("@/stores/agentStore", () => {
       return mockSelectedAgent();
     },
     setSelectedAgent: mockSetSelectedAgent,
-    agents: [{ id: "default", name: "Default", backend: "qwenpaw" }],
+    get agents() {
+      return mockAgentList();
+    },
     setLastChatId: vi.fn(),
     getLastChatId: vi.fn(() => null),
     removeLastChatId: vi.fn(),
@@ -553,12 +573,14 @@ vi.mock("../../stores/codingTabsStore", () => ({
 }));
 
 vi.mock("./utils", async () => {
-  const actual = await vi.importActual("./utils");
+  const actual = await vi.importActual<typeof import("./utils")>("./utils");
   return {
     ...actual,
     copyText: mockCopyText,
     getActiveSenderTextarea: vi.fn(() => null),
-    getSenderTextareaFromTarget: vi.fn(() => null),
+    getSenderTextareaFromTarget: vi.fn((target: EventTarget | null) =>
+      mockRenderSender() ? actual.getSenderTextareaFromTarget(target) : null,
+    ),
     setTextareaValue: vi.fn(),
   };
 });
@@ -568,6 +590,11 @@ vi.mock("./utils", async () => {
 // ---------------------------------------------------------------------------
 describe("ChatPage coverage", () => {
   beforeEach(() => {
+    clearAgentMentionModes();
+    mockRenderSender.mockReturnValue(false);
+    mockAgentList.mockReturnValue([
+      { id: "default", name: "Default", backend: "qwenpaw" },
+    ]);
     stopBackgroundQueue();
     chatExtensions.__resetForTests();
     capturedOptions = null;
@@ -1331,6 +1358,140 @@ describe("ChatPage coverage", () => {
     );
   });
 
+  it("UGSci fork feature: @ opens the real Agent picker and keyboard selection inserts a mention", async () => {
+    mockRenderSender.mockReturnValue(true);
+    mockAgentList.mockReturnValue([
+      { id: "default", name: "Default", enabled: true, backend: "qwenpaw" },
+      { id: "reviewer", name: "Reviewer", enabled: true, backend: "qwenpaw" },
+      { id: "disabled", name: "Disabled", enabled: false, backend: "qwenpaw" },
+    ]);
+    renderWithProviders(<ChatPage />, {
+      initialEntries: ["/chat/test-session"],
+    });
+    const textarea = await screen.findByTestId("mention-sender");
+    await act(async () => {});
+    fireEvent.input(textarea, {
+      target: { value: "@", selectionStart: 1, selectionEnd: 1 },
+    });
+    expect(
+      await screen.findByRole("button", { name: /Reviewer/ }),
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: /Disabled/ }),
+    ).not.toBeInTheDocument();
+    fireEvent.keyDown(textarea, { key: "Enter" });
+    expect(textarea).toHaveValue("@Reviewer ");
+    expect(
+      document.querySelector("[data-agent-mention-popup]"),
+    ).not.toBeInTheDocument();
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+  });
+
+  it.each(["delegate", "collaborate"] as const)(
+    "UGSci fork feature: @ %s survives SDK input clearing and routes the actual request",
+    async (mode) => {
+      mockAgentList.mockReturnValue([
+        { id: "default", name: "Default", enabled: true, backend: "qwenpaw" },
+        { id: "reviewer", name: "Reviewer", enabled: true, backend: "qwenpaw" },
+      ]);
+      renderWithProviders(<ChatPage />, {
+        initialEntries: ["/chat/test-session"],
+      });
+      await screen.findByTestId("chat-ui");
+      await act(async () => {});
+      setAgentMentionMode("reviewer", mode);
+      mockBeginLoopModeSubmission.mockImplementation(
+        (text: string) => `/goal ${text}`,
+      );
+      let submitted: any;
+      await act(async () => {
+        submitted = await capturedOptions.sender.beforeSubmit({
+          query: "@Reviewer analyze",
+          context: { keep: "value" },
+        });
+      });
+      expect(submitted.proceed).toBe(true);
+      act(() => clearAgentMentionModes());
+      await capturedOptions.api.fetch({
+        context: submitted.context,
+        input: [
+          {
+            role: "user",
+            content: [
+              { type: "text", text: submitted.query },
+              { type: "file", file_url: "/api/files/a.txt" },
+            ],
+          },
+        ],
+      });
+      const call = vi
+        .mocked(fetch)
+        .mock.calls.find(
+          ([url, options]) =>
+            String(url).includes("/console/chat") && options?.method === "POST",
+        );
+      expect(call).toBeDefined();
+      const payload = JSON.parse(call![1]!.body as string);
+      expect(call![1]!.headers).toMatchObject({
+        "X-Agent-Id": mode === "delegate" ? "reviewer" : "default",
+      });
+      expect(payload.target_agent_id).toBe(
+        mode === "delegate" ? "reviewer" : undefined,
+      );
+      expect(payload.request_context.keep).toBe("value");
+      expect(payload.request_context.agent_coordination_requested).toBe(
+        mode === "collaborate" ? true : undefined,
+      );
+      expect(payload.input[0].content[0].text).toContain(
+        mode === "delegate" ? "analyze" : "chat_with_agent",
+      );
+      if (mode === "delegate")
+        expect(payload.input[0].content[0].text).toBe("/goal analyze");
+      expect(payload.input[0].content[1].type).toBe("file");
+    },
+  );
+
+  it("UGSci fork feature: queued @ collaboration keeps the enqueue-time selection", async () => {
+    const chatId = "33322222-2222-4222-8222-222222222222";
+    mockAgentList.mockReturnValue([
+      { id: "default", name: "Default", enabled: true, backend: "qwenpaw" },
+      { id: "reviewer", name: "Reviewer", enabled: true, backend: "qwenpaw" },
+    ]);
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    await screen.findByTestId("chat-ui");
+    await act(async () => {});
+    act(() => {
+      useMessageQueueStore
+        .getState()
+        .enqueue(chatId, { text: "waiting", agentId: "default" });
+      useMessageQueueStore.getState().setRunState(chatId, "paused");
+      setAgentMentionMode("reviewer", "collaborate");
+    });
+    await act(async () => {
+      await capturedOptions.sender.beforeSubmit({ query: "@Reviewer analyze" });
+    });
+    const item = useMessageQueueStore
+      .getState()
+      .getQueue(chatId)
+      .find((entry) => entry.text.includes("@Reviewer"));
+    expect(item).toBeDefined();
+    act(() => clearAgentMentionModes());
+    await capturedOptions.api.fetch({
+      context: item!.requestContext,
+      input: [{ role: "user", content: [{ type: "text", text: item!.text }] }],
+    });
+    const call = vi
+      .mocked(fetch)
+      .mock.calls.find(
+        ([url, options]) =>
+          String(url).includes("/console/chat") && options?.method === "POST",
+      );
+    const payload = JSON.parse(call![1]!.body as string);
+    expect(payload.target_agent_id).toBeUndefined();
+    expect(payload.request_context.agent_coordination_requested).toBe(true);
+    expect(payload.input[0].content[0].text).toContain("chat_with_agent");
+  });
+
   it("returns the prepared query after the SDK captures input data", async () => {
     mockBeginLoopModeSubmission.mockImplementation(
       (text: string) => `/goal ${text}`,
@@ -2060,16 +2221,38 @@ describe("ChatPage coverage", () => {
   });
 
   // ── sender placeholder ─────────────────────────────────────────────────
-  it("sender has placeholder text", async () => {
-    renderWithProviders(<ChatPage />, {
-      initialEntries: ["/chat/test-session"],
-    });
-    await screen.findByTestId("chat-ui");
-    await act(async () => {});
-
-    expect(capturedOptions?.sender?.placeholder).toBeTruthy();
-    expect(typeof capturedOptions?.sender?.placeholder).toBe("string");
-  });
+  it.each(["zh", "en"])(
+    "UGSci fork feature: sender placeholder advertises @ Agent assignment in %s",
+    async (language) => {
+      await i18nReady;
+      const previousLanguage = i18n.language;
+      await act(async () => {
+        await i18n.changeLanguage(language);
+      });
+      try {
+        mockRenderSender.mockReturnValue(true);
+        renderWithProviders(<ChatPage />, {
+          initialEntries: ["/chat/test-session"],
+        });
+        const textarea = await screen.findByTestId("mention-sender");
+        await act(async () => {});
+        for (const hint of ['"@"', "Agent", '"/"', "↑↓"]) {
+          expect(textarea).toHaveAttribute(
+            "placeholder",
+            expect.stringContaining(hint),
+          );
+        }
+        expect(textarea).toHaveAttribute(
+          "placeholder",
+          expect.stringContaining(language === "zh" ? "指派" : "assign"),
+        );
+      } finally {
+        await act(async () => {
+          await i18n.changeLanguage(previousLanguage);
+        });
+      }
+    },
+  );
 
   // ── sender suggestions ─────────────────────────────────────────────────
   it("sender has suggestions array", async () => {
@@ -2206,7 +2389,9 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.responseParser) {
-      expect(capturedOptions.api.responseParser("not valid json")).toMatchObject({
+      expect(
+        capturedOptions.api.responseParser("not valid json"),
+      ).toMatchObject({
         object: "message",
         type: "heartbeat",
       });

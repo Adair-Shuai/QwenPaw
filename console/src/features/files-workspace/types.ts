@@ -33,12 +33,20 @@ export interface FileTarget {
   column?: number;
 }
 
+export type WorkbenchMode =
+  | "files"
+  | "browser"
+  | "agents"
+  | "genui"
+  | "compute";
+
 export type FilesDrawerState =
   | { kind: "closed" }
   | { kind: "preview"; target: FileTarget; trigger: HTMLElement | null }
   | {
       kind: "workspace";
       target?: FileTarget;
+      mode?: WorkbenchMode;
       trigger: HTMLElement | null;
     };
 
@@ -51,10 +59,11 @@ export type FilesDrawerEvent =
   | {
       type: "OPEN_WORKSPACE";
       target?: FileTarget;
+      mode?: WorkbenchMode;
       trigger: HTMLElement | null;
     }
   | { type: "EXPAND_WORKSPACE" }
-  | { type: "COLLAPSE_TO_PREVIEW" }
+  | { type: "COLLAPSE_TO_PREVIEW"; target?: FileTarget }
   | { type: "CLOSE" };
 
 export interface FileMetadata {

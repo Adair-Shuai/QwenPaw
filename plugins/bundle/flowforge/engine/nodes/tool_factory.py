@@ -59,8 +59,8 @@ logger = get_logger(__name__)
 
 # ``output``/``retry_*`` live on every generated node and are not part of
 # the tool's own parameter schema. Tools that ship properties with these
-# exact names would collide with the control-plane inputs, so the bridge
-# drops them before generation.
+# exact names need distinct controls; the schema builder prefixes controls
+# until they no longer collide, preserving every business parameter.
 _RESERVED_INPUT_IDS = frozenset({"retry_count", "retry_delay_sec", "output"})
 
 _NODE_ID_PREFIX = "Tool."
@@ -95,7 +95,14 @@ def _describe_tool(tool: BaseTool) -> str:
 
 
 def _build_schema(tool: BaseTool) -> Schema:
-    typed_inputs = json_schema_to_inputs(tool.parameters, drop=_RESERVED_INPUT_IDS)
+    properties = tool.parameters.get("properties") or {}
+    controls = {}
+    for name in sorted(_RESERVED_INPUT_IDS):
+        candidate = name
+        while candidate in properties or candidate in controls.values():
+            candidate = "__flow_" + candidate
+        controls[name] = candidate
+    typed_inputs = json_schema_to_inputs(tool.parameters)
     category_slug = _tool_category_slug(tool.category)
     display = tool.name.replace("_", " ").title()
     return Schema(
@@ -106,16 +113,16 @@ def _build_schema(tool: BaseTool) -> Schema:
         inputs=[
             *typed_inputs,
             IO.Int.Input(
-                id="retry_count", optional=True, default=0, min=0, max=10,
+                id=controls["retry_count"], optional=True, default=0, min=0, max=10,
                 tooltip="Retry attempts on transient failure (exponential backoff).",
             ),
             IO.Float.Input(
-                id="retry_delay_sec", optional=True, default=1.0,
+                id=controls["retry_delay_sec"], optional=True, default=1.0,
                 min=0.0, max=60.0, step=0.5,
                 tooltip="Base delay between retries, doubled each attempt.",
             ),
             IO.String.Input(
-                id="output", optional=True,
+                id=controls["output"], optional=True,
                 tooltip="Optional workflow-state variable to store the result in.",
             ),
         ],
@@ -130,6 +137,7 @@ def _build_schema(tool: BaseTool) -> Schema:
             "tool_is_read_only": tool.is_read_only,
             "tool_is_destructive": tool.is_destructive,
             "auto_generated": True,
+            "control_inputs": controls,
         },
     )
 
@@ -141,7 +149,7 @@ def _collect_tool_params(
     """Extract tool parameters from node inputs, dropping control fields."""
     params: dict[str, Any] = {}
     for inp in schema.inputs:
-        if inp.id in _RESERVED_INPUT_IDS:
+        if inp.id in schema.metadata.get("control_inputs", {}).values():
             continue
         if inp.id not in inputs:
             continue
@@ -180,9 +188,10 @@ class _GeneratedToolNodeBase(WorkflowNode):
         if state is not None:
             params = state.resolve_template(params)
 
-        retry_count = int(inputs.get("retry_count") or 0)
-        retry_delay_sec = float(inputs.get("retry_delay_sec") or 1.0)
-        output_var = inputs.get("output")
+        controls = schema.metadata["control_inputs"]
+        retry_count = max(0, min(10, int(inputs.get(controls["retry_count"]) or 0)))
+        retry_delay_sec = max(0.0, min(60.0, float(inputs.get(controls["retry_delay_sec"], 1.0))))
+        output_var = inputs.get(controls["output"])
 
         tool_context = ctx.get_tool_context(state) if hasattr(ctx, "get_tool_context") else None
 
@@ -208,6 +217,8 @@ class _GeneratedToolNodeBase(WorkflowNode):
                         },
                     )
                 last_error = tool_result.error or "Tool execution failed"
+                if not getattr(tool_result, "retryable", True):
+                    break
                 logger.warning(
                     "tool_node_failed",
                     tool=tool_name, attempt=attempt + 1, error=last_error,
@@ -228,7 +239,7 @@ class _GeneratedToolNodeBase(WorkflowNode):
             error=last_error,
             metadata={
                 "tool": tool_name,
-                "attempts": retry_count + 1,
+                "attempts": attempt + 1,
                 "duration_ms": duration_ms,
                 "auto_generated": True,
             },
@@ -243,11 +254,10 @@ def build_node_class(tool: BaseTool) -> type[WorkflowNode]:
     compiled schema on the class object).
     """
     node_id = f"{_NODE_ID_PREFIX}{tool.name}"
-    cached = _FACTORY_CACHE.get(tool.name)
-    if cached is not None and cached.NODE_ID == node_id:
-        return cached
-
     schema = _build_schema(tool)
+    cached = _FACTORY_CACHE.get(tool.name)
+    if cached is not None and cached.NODE_ID == node_id and cached.get_schema().get_info_dict() == schema.get_info_dict():
+        return cached
 
     def define_schema(cls, _schema=schema) -> Schema:
         return _schema

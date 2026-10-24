@@ -11,8 +11,8 @@ launch" bug:
    reinstalled on every launch.
 2. Satisfied requirements are memoised in-process so the per-plugin dep probe
    is free after the first pass.
-3. ``load_all_plugins`` installs dependencies for all plugins concurrently
-   instead of serially.
+3. Boot only checks dependencies; it never runs network installers. Missing
+   dependencies are repaired explicitly, and ready plugins load first.
 """
 
 from __future__ import annotations
@@ -25,6 +25,7 @@ import pytest
 from packaging.requirements import Requirement
 
 import qwenpaw.plugins.loader as loader_mod
+import qwenpaw.plugins.dependency_gate as gate_mod
 from qwenpaw.plugins.loader import PluginLoader
 
 
@@ -49,7 +50,7 @@ def test_frozen_metadata_probe_searches_plugin_site_dir(
 ) -> None:
     """A dep installed into the plugin site dir must be found when frozen."""
     # Simulate the frozen desktop build.
-    monkeypatch.setattr(loader_mod, "_is_frozen", lambda: True)
+    monkeypatch.setattr(gate_mod, "_is_frozen", lambda: True)
     site = tmp_path / "site"
     monkeypatch.setattr(loader_mod, "_plugin_site_dir", lambda: site)
 
@@ -70,9 +71,9 @@ def test_frozen_metadata_probe_searches_plugin_site_dir(
 
     # Force the primary metadata probe to miss.
     def _raise_not_found(name):
-        raise loader_mod.PackageNotFoundError(name)
+        raise gate_mod.PackageNotFoundError(name)
 
-    monkeypatch.setattr(loader_mod, "_dist_version", _raise_not_found)
+    monkeypatch.setattr(gate_mod, "_dist_version", _raise_not_found)
 
     satisfied = PluginLoader._is_requirement_satisfied(Requirement("somepkg"))
     assert satisfied is True, (
@@ -125,196 +126,99 @@ def test_cache_cleared_after_install(monkeypatch: pytest.MonkeyPatch) -> None:
     assert "stale-dep" not in loader_mod._SATISFIED_REQUIREMENTS
 
 
-@pytest.mark.asyncio
-async def test_load_all_installs_dependencies_concurrently(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Dependency installs across plugins must overlap, not run serially."""
-    import asyncio
-
-    # Build three plugins that each declare a (fake) dependency.
-    plugin_ids = ["p-one", "p-two", "p-three"]
-    for pid in plugin_ids:
-        pdir = tmp_path / pid
-        pdir.mkdir(parents=True)
-        (pdir / "plugin.json").write_text(
-            json.dumps(
-                {
-                    "id": pid,
-                    "name": pid,
-                    "version": "1.0.0",
-                    "entry": {"backend": "plugin.py"},
-                    "qwenpaw_version": {"min": "0.1.0", "max": "99.0.0"},
-                },
-            ),
-            encoding="utf-8",
-        )
-        (pdir / "plugin.py").write_text(
-            "from qwenpaw.plugins.architecture import Plugin\n"
-            "plugin = Plugin()\n",
-            encoding="utf-8",
-        )
-        (pdir / "requirements.txt").write_text(
-            "dep-" + pid + "\n",
-            encoding="utf-8",
-        )
-
-    loader = PluginLoader(plugin_dirs=[tmp_path])
-
-    # Record concurrency of the dependency-install phase.
-    active = 0
-    max_active = 0
-    installed: list[str] = []
-
-    async def _fake_install(self, source_path: Path, plugin_id: str) -> None:
-        nonlocal active, max_active
-        active += 1
-        max_active = max(max_active, active)
-        await asyncio.sleep(0.05)  # simulate install latency
-        installed.append(plugin_id)
-        active -= 1
-
-    monkeypatch.setattr(
-        PluginLoader,
-        "_ensure_dependencies_installed",
-        _fake_install,
-    )
-
-    # Avoid actually importing/registering the stub backends: stub load_plugin.
-    async def _fake_load(self, manifest, source_path, config=None):
-        return None
-
-    monkeypatch.setattr(PluginLoader, "load_plugin", _fake_load)
-
-    await loader.load_all_plugins(configs={})
-
-    assert sorted(installed) == sorted(plugin_ids)
-    assert max_active > 1, (
-        f"dependency installs ran serially (max concurrency {max_active}); "
-        "load_all_plugins must install deps concurrently"
-    )
-
-
-@pytest.mark.asyncio
-async def test_phase2_skips_dep_check_for_phase1_successes(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Plugins whose deps phase-1 ensured must not be re-checked in phase 2."""
-    plugin_ids = ["p-alpha", "p-beta"]
-    for pid in plugin_ids:
-        pdir = tmp_path / pid
-        pdir.mkdir(parents=True)
-        (pdir / "plugin.json").write_text(
-            json.dumps(
-                {
-                    "id": pid,
-                    "name": pid,
-                    "version": "1.0.0",
-                    "entry": {"backend": "plugin.py"},
-                    "qwenpaw_version": {"min": "0.1.0", "max": "99.0.0"},
-                },
-            ),
-            encoding="utf-8",
-        )
-        (pdir / "plugin.py").write_text(
-            "from qwenpaw.plugins.architecture import Plugin\n"
-            "plugin = Plugin()\n",
-            encoding="utf-8",
-        )
-
-    loader = PluginLoader(plugin_dirs=[tmp_path])
-    calls: list[str] = []
-
-    async def _spy_ensure(self, source_path: Path, plugin_id: str) -> None:
-        calls.append(plugin_id)
-
-    monkeypatch.setattr(
-        PluginLoader,
-        "_ensure_dependencies_installed",
-        _spy_ensure,
-    )
-
-    captured: dict[str, bool] = {}
-
-    async def _fake_load(
-        self,
-        manifest,
-        source_path,
-        config=None,
-        *,
-        deps_ensured: bool = False,
-    ):
-        captured[manifest.id] = deps_ensured
-        return None
-
-    monkeypatch.setattr(PluginLoader, "load_plugin", _fake_load)
-
-    await loader.load_all_plugins(configs={})
-
-    # Phase 1 checked each plugin exactly once; phase 2 told load_plugin the
-    # deps were already ensured, so no second check per plugin.
-    assert sorted(calls) == plugin_ids
-    assert captured == {
-        "p-alpha": True,
-        "p-beta": True,
-    }, "phase 2 must pass deps_ensured=True for plugins phase 1 finished"
-
-
-@pytest.mark.asyncio
-async def test_phase2_retries_dep_check_for_phase1_failures(
-    tmp_path: Path,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Retry phase-1 dependency failures with deps_ensured disabled."""
-    pdir = tmp_path / "p-fail"
-    pdir.mkdir(parents=True)
-    (pdir / "plugin.json").write_text(
+def _plugin(root: Path, name: str, requirements: str = ""):
+    folder = root / name
+    folder.mkdir(parents=True)
+    (folder / "plugin.json").write_text(
         json.dumps(
             {
-                "id": "p-fail",
-                "name": "p-fail",
-                "version": "1.0.0",
-                "entry": {"backend": "plugin.py"},
-                "qwenpaw_version": {"min": "0.1.0", "max": "99.0.0"},
-            },
+                "id": name,
+                "version": "1.0",
+                "entry": {"backend": "main.py"},
+            }
         ),
         encoding="utf-8",
     )
-    (pdir / "plugin.py").write_text(
-        "from qwenpaw.plugins.architecture import Plugin\nplugin = Plugin()\n",
+    (folder / "main.py").write_text(
+        "class Plugin:\n    def register(self, api): pass\nplugin = Plugin()\n",
         encoding="utf-8",
     )
+    _write_requirements(folder, requirements.splitlines())
+    return folder
 
-    loader = PluginLoader(plugin_dirs=[tmp_path])
 
-    async def _boom(self, source_path: Path, plugin_id: str) -> None:
-        raise RuntimeError("simulated install failure")
+@pytest.mark.asyncio
+async def test_boot_checks_missing_dependencies_without_running_installer(
+    tmp_path, monkeypatch, fresh_registry
+):
+    _plugin(tmp_path, "missing", "qwenpaw-startup-probe-nonexistent==1.0")
+    _plugin(tmp_path, "ready")
+    loader = PluginLoader([tmp_path])
+    loader.registry = fresh_registry
 
-    monkeypatch.setattr(PluginLoader, "_ensure_dependencies_installed", _boom)
+    def forbidden_install(*args, **kwargs):
+        raise AssertionError("boot must never install dependencies")
 
-    captured: dict[str, bool] = {}
-
-    async def _fake_load(
-        self,
-        manifest,
-        source_path,
-        config=None,
-        *,
-        deps_ensured: bool = False,
-    ):
-        captured[manifest.id] = deps_ensured
-        return None
-
-    monkeypatch.setattr(PluginLoader, "load_plugin", _fake_load)
-
-    await loader.load_all_plugins(configs={})
-
-    assert captured == {"p-fail": False}, (
-        "phase-1 failures must reach load_plugin with deps_ensured=False so "
-        "the install is retried and reported through the normal record path"
+    monkeypatch.setattr(loader, "_install_requirements", forbidden_install)
+    records = await loader.load_all_plugins()
+    assert records["missing"].status == "failed"
+    assert records["ready"].status == "registered"
+    assert "qwenpaw-startup-probe-nonexistent" in " ".join(
+        records["missing"].diagnostics
     )
+    await loader.unload_plugin("ready")
+
+
+@pytest.mark.asyncio
+async def test_registered_plugins_are_not_rechecked_on_second_boot_phase(
+    tmp_path, monkeypatch, fresh_registry
+):
+    _plugin(tmp_path, "ready", "# no mandatory dependencies")
+    loader = PluginLoader([tmp_path])
+    loader.registry = fresh_registry
+    original = loader._ensure_dependencies_installed
+    calls = []
+
+    async def observe(*args, **kwargs):
+        calls.append(kwargs.get("allow_install", False))
+        return await original(*args, **kwargs)
+
+    monkeypatch.setattr(loader, "_ensure_dependencies_installed", observe)
+    await loader.load_all_plugins()
+    await loader.load_all_plugins()
+    assert calls == [False]
+    await loader.unload_plugin("ready")
+
+
+@pytest.mark.asyncio
+async def test_missing_boot_dependency_can_be_repaired_explicitly(
+    tmp_path, monkeypatch, fresh_registry
+):
+    name = "qwenpaw-startup-repair-probe"
+    _plugin(tmp_path, "repair", name + "==1.0")
+    loader = PluginLoader([tmp_path])
+    loader.registry = fresh_registry
+    installed = []
+    original = gate_mod._dist_version
+
+    def version(package):
+        if package == name and installed:
+            return "1.0"
+        return original(package)
+
+    monkeypatch.setattr(gate_mod, "_dist_version", version)
+
+    def install(*args, **kwargs):
+        installed.append("repair")
+
+    monkeypatch.setattr(loader, "_install_requirements", install)
+    records = await loader.load_all_plugins()
+    assert records["repair"].status == "failed"
+    assert installed == []
+    record = await loader.repair_dependencies("repair")
+    assert record.status == "active"
+    assert installed == ["repair"]
+    await loader.unload_plugin("repair")
 
 
 def test_satisfied_cache_is_lock_guarded() -> None:

@@ -144,7 +144,10 @@ include-package-data = true
     "plugins_bundle/**/*.pyc",
     "plugins_bundle/**/*.pyo",
     "plugins_bundle/**/*.map",
+    "plugins_bundle/ugsci/visualization/data/**",
 ]
+
+"qwenpaw.plugins_bundle.ugsci.visualization" = ["data/*", "data/**/*"]
 
 [build-system]
 requires = ["setuptools>=42", "wheel"]

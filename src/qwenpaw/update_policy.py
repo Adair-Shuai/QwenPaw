@@ -16,4 +16,8 @@ DEFAULT_PRESERVE_PATHS = (
     "user-data",
 )
 
-ALLOWED_PRESERVE_PATHS = frozenset(DEFAULT_PRESERVE_PATHS)
+# UGSci historically stored user imports beside local visualization samples.
+# It explicitly opts into preserving this data subtree without preserving code.
+ALLOWED_PRESERVE_PATHS = frozenset(
+    (*DEFAULT_PRESERVE_PATHS, "visualization/data"),
+)

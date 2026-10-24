@@ -13,6 +13,8 @@ export interface AgentSummary {
   description: string;
   workspace_dir: string;
   enabled: boolean;
+  managed_by_app?: string | null;
+  available_in_chat?: boolean;
   active_model?: { provider_id: string; model: string } | null;
 }
 

@@ -4,9 +4,14 @@
 static files.  Also provides runtime install / uninstall endpoints."""
 
 import asyncio
+from ..utils import schedule_agent_reload
+from ...plugins.runtime import invoke_plugin_callback
 import hashlib
 from urllib.parse import urlsplit
-from ...distribution import EXTERNAL_PLUGIN_UPGRADE_HOSTS, upgrade_source_requires_digest
+from ...distribution import (
+    EXTERNAL_PLUGIN_UPGRADE_HOSTS,
+    upgrade_source_requires_digest,
+)
 from ...utils.windows_paths import copy_tree, extract_zip, io_path, remove_tree
 import json
 import logging
@@ -440,7 +445,7 @@ async def list_plugins(request: Request):
             "enabled": is_plugin_enabled(raw),
             "loaded": True,
             "status": getattr(record, "status", "active"),
-            "diagnostics": list(record.diagnostics or []),
+            "diagnostics": list(getattr(record, "diagnostics", None) or []),
             "plugin_type": manifest.plugin_type,
             "frontend_entry": manifest.entry.frontend,
         }
@@ -549,18 +554,487 @@ async def uninstall_plugin_source(
     async with loader.plugin_lifecycle(plugin_id):
         from ...plugins.lifecycle import UnloadMode
 
+        # Keep explicit uninstalls out of bundled startup and signed updates.
+        # The native loader owns teardown; this host entry owns user intent.
+        roots = getattr(loader, "plugin_dirs", None)
+        root = (
+            Path(roots[0])
+            if isinstance(roots, (list, tuple)) and roots
+            else None
+        )
+        was_marked = False
+        was_adopted = False
+        if root is not None:
+            from ...plugins.bundled import (
+                is_plugin_uninstalled,
+                mark_plugin_uninstalled,
+                clear_uninstalled_marker,
+            )
+            from ...components.service import (
+                is_component_update_adopted,
+                set_component_update_adoption,
+            )
+
+            was_marked = await asyncio.to_thread(
+                is_plugin_uninstalled,
+                plugin_id,
+                plugins_dir=root,
+            )
+            was_adopted = await asyncio.to_thread(
+                is_component_update_adopted,
+                plugin_id,
+            )
+        try:
+            if root is not None:
+                if was_adopted:
+                    await asyncio.to_thread(
+                        set_component_update_adoption, plugin_id, False
+                    )
+                await asyncio.to_thread(
+                    mark_plugin_uninstalled, plugin_id, plugins_dir=root
+                )
+            report = await loader.lifecycle.unload(
+                plugin_id,
+                UnloadMode.UNINSTALL,
+                delete_files=True,
+                **_interrupt_options(interrupt_tasks),
+            )
+            still_loaded = loader.get_loaded_plugin(plugin_id) is not None
+            if not report.clean or not report.quiescent or still_loaded:
+                raise UnquiescentUnloadError(
+                    plugin_id,
+                    report,
+                    loaded=still_loaded,
+                )
+        except BaseException:
+            if root is not None:
+                if was_adopted:
+                    await asyncio.to_thread(
+                        set_component_update_adoption, plugin_id, True
+                    )
+                if not was_marked:
+                    await asyncio.to_thread(
+                        clear_uninstalled_marker, plugin_id, plugins_dir=root
+                    )
+            raise
+
+
+# Compatibility helpers for native integrations; HTTP uses lifecycle.
+async def _post_load_setup(  # pylint: disable=too-many-branches
+    request: Request,
+    plugin_id: str,
+) -> None:
+    """Perform post-load integration for a newly loaded plugin.
+
+    Registers newly created providers / control-commands, executes
+    startup hooks, and syncs tool entries into agent configs.
+
+    Does **not** schedule agent reloads — callers must do that after any
+    follow-up config cleanup (e.g. removing obsolete tools on
+    force-reinstall) so reload never races stale tool entries.
+
+    Args:
+        request: Current FastAPI request (for app.state access)
+        plugin_id: ID of the plugin that was just loaded
+    """
+    loader = getattr(request.app.state, "plugin_loader", None)
+    if loader is None:
+        return
+
+    registry = loader.registry
+
+    # Register any providers the plugin registered
+    provider_manager = getattr(
+        request.app.state,
+        "provider_manager",
+        None,
+    )
+    if provider_manager is not None:
+        for pid, reg in registry.get_all_providers().items():
+            if reg.plugin_id != plugin_id:
+                continue
+            try:
+                await provider_manager.register_plugin_provider_async(
+                    provider_id=pid,
+                    provider_class=reg.provider_class,
+                    label=reg.label,
+                    base_url=reg.base_url,
+                    metadata=reg.metadata,
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"Could not register provider '{pid}': {exc}",
+                )
+
+    # Register any control commands the plugin registered
+    try:
+        from ...runtime.commands.control import register_command
+        from ...app.channels.command_registry import CommandRegistry
+
+        command_registry = CommandRegistry()
+        for cmd_reg in registry.get_control_commands():
+            if cmd_reg.plugin_id != plugin_id:
+                continue
+            try:
+                register_command(cmd_reg.handler)
+                command_registry.register_command(
+                    f"/{cmd_reg.handler.command_name}",
+                    priority_level=cmd_reg.priority_level,
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"Could not register control command "
+                    f"'{cmd_reg.handler.command_name}': {exc}",
+                )
+    except Exception as exc:
+        logger.warning(f"Control command setup skipped: {exc}")
+
+    # Execute startup hooks for the new plugin
+    for hook in registry.get_startup_hooks():
+        if hook.plugin_id != plugin_id:
+            continue
+        try:
+            await invoke_plugin_callback(hook.callback)
+        except Exception as exc:
+            logger.error(
+                f"Startup hook '{hook.hook_name}' failed: {exc}",
+            )
+
+    # Sync the plugin's tools into every agent's builtin_tools config
+    # (config file I/O — keep off the event loop).
+    await asyncio.to_thread(_sync_plugin_tools_to_agents, loader, plugin_id)
+
+
+def _tool_names_from_meta(meta: dict) -> list[str]:
+    """Extract tool names from plugin manifest ``meta`` (legacy + multi).
+
+    Malformed ``meta.tools`` (``null``, non-list, non-dict entries) must
+    never raise — callers run this after the plugin is already loaded.
+    """
+    if not isinstance(meta, dict):
+        return []
+
+    tool_names: list[str] = []
+    seen: set[str] = set()
+
+    def _add(name: object) -> None:
+        if not isinstance(name, str):
+            return
+        stripped = name.strip()
+        if not stripped or stripped in seen:
+            return
+        seen.add(stripped)
+        tool_names.append(stripped)
+
+    _add(meta.get("tool_name"))
+    raw_tools = meta.get("tools")
+    if not isinstance(raw_tools, list):
+        raw_tools = []
+    for tool in raw_tools:
+        if not isinstance(tool, dict):
+            continue
+        _add(tool.get("name"))
+    return tool_names
+
+
+def _sync_plugin_tools_to_agents(loader, plugin_id: str) -> None:
+    """Add plugin tool entries to all existing agents.
+
+    Supports both old (``meta.tool_name``) and new (``meta.tools[]``)
+    manifest formats.
+
+    Args:
+        loader: PluginLoader instance
+        plugin_id: Plugin whose tools should be synced
+    """
+    record = loader.get_loaded_plugin(plugin_id)
+    if record is None:
+        return
+
+    tool_names = _tool_names_from_meta(record.manifest.meta or {})
+    if not tool_names:
+        return
+
+    try:
+        from ...config.utils import load_config
+        from ...config.config import (
+            BuiltinToolConfig,
+            load_agent_config,
+            save_agent_config,
+        )
+
+        raw_meta = record.manifest.meta
+        meta = raw_meta if isinstance(raw_meta, dict) else {}
+        raw_manifest_tools = meta.get("tools", [])
+        if not isinstance(raw_manifest_tools, list):
+            raw_manifest_tools = []
+        manifest_tools = {
+            item["name"].strip(): item
+            for item in raw_manifest_tools
+            if (
+                isinstance(item, dict)
+                and isinstance(item.get("name"), str)
+                and item["name"].strip()
+            )
+        }
+
+        config = load_config()
+        if not config.agents or not config.agents.profiles:
+            return
+
+        for agent_id in config.agents.profiles:
+            try:
+                agent_cfg = load_agent_config(agent_id)
+                changed = False
+                for tool_name in tool_names:
+                    if tool_name in agent_cfg.tools.builtin_tools:
+                        continue
+                    declaration = manifest_tools.get(tool_name, {})
+                    raw_enabled = declaration.get("enabled_by_default")
+                    raw_description = declaration.get("description")
+                    raw_icon = declaration.get("icon")
+                    agent_cfg.tools.builtin_tools[tool_name] = (
+                        BuiltinToolConfig(
+                            name=tool_name,
+                            enabled=(
+                                raw_enabled
+                                if isinstance(raw_enabled, bool)
+                                else False
+                            ),
+                            description=(
+                                raw_description
+                                if isinstance(raw_description, str)
+                                else ""
+                            ),
+                            display_to_user=True,
+                            async_execution=False,
+                            icon=(
+                                raw_icon if isinstance(raw_icon, str) else None
+                            ),
+                            config={},
+                        )
+                    )
+                    changed = True
+                if changed:
+                    save_agent_config(agent_id, agent_cfg)
+            except Exception as exc:
+                logger.warning(
+                    f"Failed to sync tools to agent '{agent_id}': {exc}",
+                )
+    except Exception as exc:
+        logger.warning(f"Tool sync skipped: {exc}")
+
+
+def _remove_named_tools_from_agents(
+    plugin_id: str,
+    tool_names: list[str],
+) -> None:
+    """Remove the given tool names from all agents' builtin_tools config."""
+    if not tool_names:
+        return
+
+    try:
+        from ...config.utils import load_config
+        from ...config.config import load_agent_config, save_agent_config
+
+        config = load_config()
+        if not config.agents or not config.agents.profiles:
+            return
+
+        for agent_id in config.agents.profiles:
+            try:
+                agent_cfg = load_agent_config(agent_id)
+                changed = False
+                for tool_name in tool_names:
+                    if tool_name in agent_cfg.tools.builtin_tools:
+                        del agent_cfg.tools.builtin_tools[tool_name]
+                        changed = True
+                if changed:
+                    save_agent_config(agent_id, agent_cfg)
+            except Exception as exc:
+                logger.warning(
+                    "Failed to remove tools from agent "
+                    f"'{_log_safe(agent_id)}': {_log_safe(exc)}",
+                )
+    except Exception as exc:
+        logger.warning(
+            "Tool removal from agents skipped for "
+            f"'{_log_safe(plugin_id)}': {_log_safe(exc)}",
+        )
+
+
+def _remove_plugin_tools_from_agents(plugin_id: str, meta: dict) -> None:
+    """Remove plugin tool entries from all agents.
+
+    Args:
+        plugin_id: Plugin being uninstalled (for logging)
+        meta: Plugin manifest ``meta`` section
+    """
+    _remove_named_tools_from_agents(
+        plugin_id,
+        _tool_names_from_meta(meta),
+    )
+
+
+async def _schedule_all_agents_reload(request: Request) -> None:
+    """Schedule a reload for every configured agent.
+
+    Args:
+        request: FastAPI request (for app.state access)
+    """
+    try:
+        from ...config.utils import load_config
+
+        config = await asyncio.to_thread(load_config)
+        if not config.agents or not config.agents.profiles:
+            return
+        for agent_id in config.agents.profiles:
+            schedule_agent_reload(request, agent_id)
+    except Exception as exc:
+        logger.warning(f"Could not schedule agent reloads: {exc}")
+
+
+def _post_unload_cleanup(
+    request: Request,
+    plugin_id: str,
+    provider_ids: list,
+    command_names: list,
+) -> None:
+    """Clean up runtime registrations after a plugin has been unloaded.
+
+    Removes the plugin's providers from ``provider_manager`` and its
+    control commands from both the handler registry and the priority
+    registry.  Called after ``loader.unload_plugin()`` so that UI lists
+    and command routing reflect the removal immediately.
+
+    Args:
+        request: FastAPI request (for ``app.state`` access).
+        plugin_id: ID of the unloaded plugin (for logging).
+        provider_ids: Provider IDs that were registered by this plugin.
+        command_names: Command names that were registered by this plugin.
+    """
+    # ── Providers ────────────────────────────────────────────────────────
+    provider_manager = getattr(
+        request.app.state,
+        "provider_manager",
+        None,
+    )
+    if provider_manager is not None:
+        for pid in provider_ids:
+            try:
+                provider_manager.unregister_plugin_provider(pid)
+            except Exception as exc:
+                logger.warning(
+                    f"Could not unregister provider '{_log_safe(pid)}' "
+                    f"for plugin '{_log_safe(plugin_id)}': {exc}",
+                )
+
+    # ── Control commands ─────────────────────────────────────────────────
+    if command_names:
+        try:
+            from ...runtime.commands.control import (
+                unregister_command as unregister_handler,
+            )
+            from ...app.channels.command_registry import CommandRegistry
+
+            command_registry = CommandRegistry()
+            for cmd_name in command_names:
+                try:
+                    unregister_handler(cmd_name)
+                except Exception as exc:
+                    logger.warning(
+                        f"Could not unregister handler '{cmd_name}': {exc}",
+                    )
+                try:
+                    command_registry.unregister_command(f"/{cmd_name}")
+                except Exception as exc:
+                    logger.warning(
+                        f"Could not unregister priority for"
+                        f" '/{cmd_name}': {exc}",
+                    )
+        except Exception as exc:
+            logger.warning(
+                f"Command cleanup skipped for plugin "
+                f"'{_log_safe(plugin_id)}': {exc}",
+            )
+
+
+def _collect_plugin_runtime_ids(
+    registry,
+    plugin_id: str,
+) -> tuple:
+    """Collect provider IDs and command names registered by a plugin.
+
+    Must be called *before* ``loader.unload_plugin()`` clears the
+    registry entries.
+
+    Args:
+        registry: ``PluginRegistry`` instance.
+        plugin_id: Plugin whose registrations should be collected.
+
+    Returns:
+        ``(provider_ids, command_names)`` tuple of lists.
+    """
+    provider_ids = [
+        pid
+        for pid, reg in registry.get_all_providers().items()
+        if reg.plugin_id == plugin_id
+    ]
+    command_names = [
+        cmd_reg.handler.command_name
+        for cmd_reg in registry.get_control_commands()
+        if cmd_reg.plugin_id == plugin_id
+    ]
+    return provider_ids, command_names
+
+
+async def _finish_plugin_install_after_load(
+    request: Request,
+    record,
+    *,
+    force: bool,
+    old_tools: set,
+    reload_agents: bool = True,
+) -> None:
+    """Post-load setup with force-reinstall tool cleanup before reload.
+
+    Guaranteed order:
+    1. sync new tools / providers / hooks (``_post_load_setup``)
+    2. remove obsolete tools (``old_tools - new_tools``) when *force*
+    3. schedule agent reload
+    """
+    await _post_load_setup(request, record.manifest.id)
+    if force:
+        new_tools = set(
+            _tool_names_from_meta(record.manifest.meta or {}),
+        )
+        removed_tools = sorted(old_tools - new_tools)
+        if removed_tools:
+            await asyncio.to_thread(
+                _remove_named_tools_from_agents,
+                record.manifest.id,
+                removed_tools,
+            )
+    if reload_agents:
+        await _schedule_all_agents_reload(request)
+
+
+async def _rollback_failed_remote_install(loader, request: Request, record):
+    """Revoke a URL install whose signed updater enrollment failed."""
+    from ...plugins.lifecycle import UnloadMode
+
+    async with loader.plugin_lifecycle(record.manifest.id):
         report = await loader.lifecycle.unload(
-            plugin_id,
+            record.manifest.id,
             UnloadMode.UNINSTALL,
             delete_files=True,
-            **_interrupt_options(interrupt_tasks),
         )
-        still_loaded = loader.get_loaded_plugin(plugin_id) is not None
-        if not report.clean or not report.quiescent or still_loaded:
+        if not report.clean or not report.quiescent:
             raise UnquiescentUnloadError(
-                plugin_id,
+                record.manifest.id,
                 report,
-                loaded=still_loaded,
+                loaded=loader.get_loaded_plugin(record.manifest.id)
+                is not None,
             )
 
 
@@ -646,7 +1120,7 @@ async def install_plugin(
         "description": record.manifest.description,
         "author": record.manifest.author,
         "loaded": True,
-        "diagnostics": list(record.diagnostics or []),
+        "diagnostics": list(getattr(record, "diagnostics", None) or []),
         "message": (
             f"Plugin '{record.manifest.name}' installed successfully."
         ),
@@ -883,7 +1357,7 @@ async def upload_plugin(
         "description": record.manifest.description,
         "author": record.manifest.author,
         "loaded": True,
-        "diagnostics": list(record.diagnostics or []),
+        "diagnostics": list(getattr(record, "diagnostics", None) or []),
         "message": (
             f"Plugin '{record.manifest.name}' installed successfully."
         ),
@@ -1053,7 +1527,7 @@ async def repair_plugin_dependencies(plugin_id: str, request: Request):
         "id": plugin_id,
         "status": record.status,
         "enabled": record.enabled,
-        "diagnostics": list(record.diagnostics or []),
+        "diagnostics": list(getattr(record, "diagnostics", None) or []),
         "message": (
             f"Plugin '{plugin_id}' repaired."
             if record.status != "failed"
@@ -1083,7 +1557,9 @@ async def get_plugin_status(plugin_id: str, request: Request):
                 "loaded": True,
                 "enabled": enabled,
                 "status": getattr(record, "status", "active"),
-                "diagnostics": list(record.diagnostics or []),
+                "diagnostics": list(
+                    getattr(record, "diagnostics", None) or []
+                ),
                 "version": record.manifest.version,
             }
 
@@ -1470,7 +1946,7 @@ _OSS_PROXY_TIMEOUT = 15
     "/oss-proxy",
     summary="Proxy OSS resources to avoid CORS",
 )
-async def oss_proxy(path: str):
+async def oss_proxy(path: str, refresh: bool = False):
     """Proxy a file from the UGSci OSS bucket to the frontend.
 
     The OSS bucket does not send CORS headers, so the browser cannot fetch
@@ -1483,6 +1959,7 @@ async def oss_proxy(path: str):
     try:
         content, content_type, cache_state = await fetch_oss_resource(
             clean_path,
+            force=refresh,
         )
         from fastapi.responses import Response
 
@@ -1490,7 +1967,11 @@ async def oss_proxy(path: str):
             content=content,
             media_type=content_type,
             headers={
-                "Cache-Control": "public, max-age=21600",
+                "Cache-Control": (
+                    "no-store"
+                    if refresh or clean_path.endswith("manifest.json")
+                    else "public, max-age=21600"
+                ),
                 "X-QwenPaw-Cache": cache_state,
             },
         )

@@ -8,6 +8,38 @@ import asyncio
 import json
 
 from qwenpaw.plugins import oss_cache
+import httpx
+import pytest
+
+
+@pytest.mark.parametrize("offline", [False, True])
+def test_market_manifest_revalidates_after_one_minute_and_keeps_offline_copy(monkeypatch, tmp_path, offline):
+    monkeypatch.setattr(oss_cache, "_CACHE_ROOT", tmp_path)
+    oss_cache._LOCKS.clear()
+    oss_cache._write_cached("mcp/manifest.json", b'{"servers": ["old"]}', {"content_type": "application/json", "fetched_at": 0})
+    calls = []
+
+    class Client:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def get(self, url, **kwargs):
+            calls.append(url)
+            if offline:
+                raise httpx.ConnectError("offline")
+            return httpx.Response(200, content=b'{"servers": ["new"]}', headers={"content-type": "application/json"}, request=httpx.Request("GET", url))
+
+    monkeypatch.setattr(oss_cache.httpx, "AsyncClient", Client)
+    result, _, state = asyncio.run(oss_cache.fetch_oss_resource("mcp/manifest.json"))
+    assert len(calls) == 1
+    assert state == ("stale" if offline else "network")
+    assert json.loads(result)["servers"] == (["old"] if offline else ["new"])
 
 
 def test_fresh_market_cache_avoids_network(monkeypatch, tmp_path) -> None:

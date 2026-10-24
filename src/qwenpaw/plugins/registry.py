@@ -161,6 +161,8 @@ class RunExecutorRegistration:
     handler: Callable[..., Any]
     provider_id: Optional[str] = None
     executor: Optional[Any] = None
+
+
 class MemoryBackendInUseError(RuntimeError):
     """A live or selected memory backend prevents a lifecycle change."""
 

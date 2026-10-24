@@ -314,7 +314,7 @@ class Plugin:
 plugin = Plugin()
 """,
         min_version="0.1.0",
-        max_version="0.2.0",
+        max_version="2.4.0",
     )
     async with PluginTestHost(tmp_path / "host") as host:
         legacy = await host._loader.load_plugin(
@@ -609,7 +609,7 @@ plugin = Plugin()
             "deadline-provider",
         )
         with pytest.raises(TimeoutError):
-            await getattr(provider, method)(timeout=0.05)
+            await getattr(provider, method)(timeout=0.5)
         assert ctx.storage.read_json("callback-stopped.json") is True
         if synchronous:
             assert ctx.storage.read_json("cancel-observed.json") is True
@@ -1280,10 +1280,11 @@ plugin = Plugin()
                     "state.txt",
                     b"version-two",
                 )
-                from urllib.parse import unquote, urlparse
+                from urllib.parse import urlparse
+                from urllib.request import url2pathname
 
                 assert (
-                    Path(unquote(urlparse(attachment.url).path)).read_bytes()
+                    Path(url2pathname(urlparse(attachment.url).path)).read_bytes()
                     == b"version-two"
                 )
             assert (

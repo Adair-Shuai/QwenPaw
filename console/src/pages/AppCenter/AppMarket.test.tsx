@@ -11,6 +11,8 @@ import { Modal } from "antd";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { MarketPluginEntry } from "@/api/modules/pluginMarket";
+import type { OfficialPluginCatalogEntry } from "@/api/modules/plugin";
+import { notifyPluginChange } from "@/utils/pluginChangeEvents";
 import { invoke, isTauri } from "@/test/tauri-mock";
 import { AppMarket } from "./AppMarket";
 
@@ -87,6 +89,26 @@ function makeEntry(
     view_count: 10,
     details_url: null,
     locales: { en: { description: `${id} description`, category: "app" } },
+    ...overrides,
+  };
+}
+
+function makeSignedEntry(
+  overrides: Partial<OfficialPluginCatalogEntry> = {},
+): OfficialPluginCatalogEntry {
+  return {
+    id: "demo-2.0.0",
+    plugin_id: "demo",
+    name: "Demo",
+    description: "Demo app",
+    version: "2.0.0",
+    author: "Demo",
+    kind: "apps",
+    size: "1 MB",
+    sha256: "a".repeat(64),
+    install_url: "https://cdn.example/demo.zip",
+    installed: false,
+    upgrade_available: false,
     ...overrides,
   };
 }
@@ -179,6 +201,183 @@ describe("AppMarket", () => {
       }),
     );
     expect(onInstalled).toHaveBeenCalled();
+  });
+
+  it.each([
+    ["qwenpaw", false],
+    ["qwenpaw", true],
+    ["ugsci", false],
+    ["ugsci", true],
+  ] as const)(
+    "refreshes %s app state after installation or replacement (was installed: %s)",
+    async (channel, wasInstalled) => {
+      const entry = makeSignedEntry({
+        installed: wasInstalled,
+        installed_version: wasInstalled ? "1.0.0" : undefined,
+        upgrade_available: wasInstalled,
+      });
+      const fetchCatalog =
+        channel === "ugsci"
+          ? hoisted.fetchUGSciPluginCatalog
+          : hoisted.fetchQwenPawPluginCatalog;
+      fetchCatalog.mockResolvedValue({ plugins: [entry] });
+      hoisted.installPlugin.mockImplementation(async () => {
+        fetchCatalog.mockResolvedValue({
+          plugins: [
+            {
+              ...entry,
+              installed: true,
+              installed_version: "2.0.0",
+              upgrade_available: false,
+            },
+          ],
+        });
+        return { id: "demo", name: "Demo", version: "2.0.0" };
+      });
+      hoisted.replaceInstalledPlugin.mockImplementation(async () => {
+        fetchCatalog.mockResolvedValue({
+          plugins: [
+            {
+              ...entry,
+              installed: true,
+              installed_version: "2.0.0",
+              upgrade_available: false,
+            },
+          ],
+        });
+        return { version: "2.0.0" };
+      });
+      hoisted.upgradeInstalledUGSciPlugin.mockImplementation(async () => {
+        fetchCatalog.mockResolvedValue({
+          plugins: [
+            {
+              ...entry,
+              installed: true,
+              installed_version: "2.0.0",
+              upgrade_available: false,
+            },
+          ],
+        });
+        return { method: "replaced", version: "2.0.0" };
+      });
+
+      render(<AppMarket channel={channel} onInstalled={vi.fn()} />);
+      const action = await screen.findByRole("button", {
+        name: wasInstalled ? "appCenter.update" : "appCenter.install",
+      });
+      await waitFor(() => expect(action).toBeEnabled());
+      fireEvent.click(action);
+
+      expect(
+        await screen.findByRole("button", {
+          name: "appCenter.installedStatus",
+        }),
+      ).toBeDisabled();
+      expect(fetchCatalog).toHaveBeenCalledTimes(2);
+      expect(
+        screen.queryByRole("button", { name: "appCenter.update" }),
+      ).not.toBeInTheDocument();
+    },
+  );
+
+  it("shows queued updates as pending restart and prevents repeat updates", async () => {
+    hoisted.fetchUGSciPluginCatalog.mockResolvedValue({
+      plugins: [
+        makeSignedEntry({
+          installed: true,
+          installed_version: "1.0.0",
+          upgrade_available: true,
+        }),
+      ],
+    });
+    hoisted.upgradeInstalledUGSciPlugin.mockResolvedValue({ method: "queued" });
+    render(<AppMarket channel="ugsci" onInstalled={vi.fn()} />);
+    const update = await screen.findByRole("button", {
+      name: "appCenter.update",
+    });
+    await waitFor(() => expect(update).toBeEnabled());
+    fireEvent.click(update);
+    const queued = await screen.findByRole("button", {
+      name: "appCenter.updateQueued",
+    });
+    expect(queued).toBeDisabled();
+    fireEvent.click(queued);
+    expect(hoisted.upgradeInstalledUGSciPlugin).toHaveBeenCalledTimes(1);
+    expect(
+      screen.queryByRole("button", { name: "appCenter.installedStatus" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("refreshes the open preview after install even if frontend loading fails", async () => {
+    const entry = makeSignedEntry();
+    hoisted.fetchQwenPawPluginCatalog.mockResolvedValue({ plugins: [entry] });
+    hoisted.installPlugin.mockImplementation(async () => {
+      hoisted.fetchQwenPawPluginCatalog.mockResolvedValue({
+        plugins: [{ ...entry, installed: true, installed_version: "2.0.0" }],
+      });
+      return { id: "demo", name: "Demo", version: "2.0.0" };
+    });
+    render(
+      <AppMarket
+        channel="qwenpaw"
+        onInstalled={vi
+          .fn()
+          .mockRejectedValue(new Error("Frontend load failed"))}
+      />,
+    );
+    fireEvent.click(await screen.findByRole("button", { name: "Demo" }));
+    const dialog = await screen.findByRole("dialog", { name: "Demo" });
+    const install = within(dialog).getByRole("button", {
+      name: "appCenter.install",
+    });
+    await waitFor(() => expect(install).toBeEnabled());
+    fireEvent.click(install);
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", {
+          name: "appCenter.installedStatus",
+        }),
+      ).toBeDisabled(),
+    );
+    expect(
+      screen.getAllByRole("button", {
+        name: "appCenter.installedStatus",
+        hidden: true,
+      }),
+    ).toHaveLength(2);
+  });
+
+  it("refreshes app cards when another surface changes plugins", async () => {
+    const entry = makeSignedEntry();
+    hoisted.fetchQwenPawPluginCatalog.mockResolvedValue({ plugins: [entry] });
+    render(<AppMarket channel="qwenpaw" onInstalled={vi.fn()} />);
+    await screen.findByRole("button", { name: "appCenter.install" });
+    hoisted.fetchQwenPawPluginCatalog.mockResolvedValue({
+      plugins: [{ ...entry, installed: true, installed_version: "2.0.0" }],
+    });
+    act(() => notifyPluginChange());
+    expect(
+      await screen.findByRole("button", { name: "appCenter.installedStatus" }),
+    ).toBeDisabled();
+  });
+
+  it("keeps install available when the operation fails", async () => {
+    hoisted.fetchQwenPawPluginCatalog.mockResolvedValue({
+      plugins: [makeSignedEntry()],
+    });
+    hoisted.installPlugin.mockRejectedValue(new Error("Download failed"));
+    render(<AppMarket channel="qwenpaw" onInstalled={vi.fn()} />);
+    const install = await screen.findByRole("button", {
+      name: "appCenter.install",
+    });
+    await waitFor(() => expect(install).toBeEnabled());
+    fireEvent.click(install);
+    await waitFor(() => expect(hoisted.installPlugin).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(install).toBeEnabled());
+    expect(
+      screen.queryByRole("button", { name: "appCenter.installedStatus" }),
+    ).not.toBeInTheDocument();
+    expect(hoisted.fetchQwenPawPluginCatalog).toHaveBeenCalledTimes(1);
   });
 
   it("requests featured apps for the official channel", async () => {
@@ -573,7 +772,18 @@ describe("AppMarket", () => {
       total: 1,
     });
     const installResult = { id: "installable", name: "installable" };
-    hoisted.installPlugin.mockResolvedValue(installResult);
+    hoisted.installPlugin.mockImplementation(async () => {
+      hoisted.fetchMarketPlugins.mockResolvedValue({
+        plugins: [
+          makeEntry("installable", {
+            installed: true,
+            installed_version: "1.0.0",
+          }),
+        ],
+        total: 1,
+      });
+      return installResult;
+    });
     const onInstalled = vi.fn();
 
     render(<AppMarket onInstalled={onInstalled} />);
@@ -587,6 +797,9 @@ describe("AppMarket", () => {
     expect(hoisted.installPlugin).toHaveBeenCalledWith(
       expect.stringContaining("archive/zip/master"),
     );
+    expect(
+      await screen.findByRole("button", { name: "appCenter.installedStatus" }),
+    ).toBeDisabled();
   });
 
   it("disables repeat installs while an install is in flight", async () => {

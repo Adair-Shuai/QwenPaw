@@ -70,6 +70,8 @@ function getHost() {
     antdIcons: any;
     getApiUrl: (path: string) => string;
     getApiToken: () => string;
+    getSelectedAgentId?: () => string;
+    useSelectedAgent?: () => { id: string };
   };
 }
 
@@ -81,7 +83,8 @@ function apiUrl(path: string): string { return getHost().getApiUrl(path); }
 
 function authHeaders(extra?: Record<string, string>): Record<string, string> {
   const token = getToken();
-  return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...extra };
+  const agentId = getHost().getSelectedAgentId?.();
+  return { "Content-Type": "application/json", ...(token ? { Authorization: `Bearer ${token}` } : {}), ...(agentId ? { "X-Agent-Id": agentId } : {}), ...extra };
 }
 
 async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
@@ -477,7 +480,11 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
   const VerticalAlignBottomOutlined = antdIcons?.VerticalAlignBottomOutlined;
 
   const [doc, setDoc] = useState<FlowDocument | null>(null);
+  const selectedAgentId = getHost().useSelectedAgent?.()?.id || getHost().getSelectedAgentId?.() || "default";
   const [nodeTypesList, setNodeTypesList] = useState<NodeTypeSpec[]>([]);
+  const [refreshingNodes, setRefreshingNodes] = useState(false);
+  const [nodeCatalogueError, setNodeCatalogueError] = useState("");
+  const catalogueRequest = useRef(0);
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState([]);
   const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState([]);
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
@@ -496,12 +503,10 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
     (async () => {
       setLoading(true);
       try {
-        const [flow, types] = await Promise.all([
-          apiFetch<FlowDocument>(`/flowforge/flows/${encodeURIComponent(flowId)}`),
-          apiFetch<NodeTypeSpec[]>("/flowforge/node-types"),
-        ]);
+        const flow = await apiFetch<FlowDocument>(`/flowforge/flows/${encodeURIComponent(flowId)}`);
+        const types: NodeTypeSpec[] = [];
         if (cancelled) return;
-        setDoc(flow); setNodeTypesList(types || []);
+        setDoc(flow);
         const savedPositions = (flow.metadata?.positions || {}) as Record<string, { x: number; y: number }>;
         const rfN: Node[] = Object.entries(flow.nodes || {}).map(([id, n]: [string, any], idx) => {
           const ct = n.class_type || n.type || "ToolNode";
@@ -527,6 +532,50 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
     })();
     return () => { cancelled = true; };
   }, [flowId]);
+
+  const refreshNodeTypes = useCallback(async (manual = false) => {
+    const request = ++catalogueRequest.current;
+    setRefreshingNodes(true);
+    try {
+      const types = await apiFetch<NodeTypeSpec[]>(manual ? "/flowforge/node-types/refresh" : "/flowforge/node-types", {
+        method: manual ? "POST" : "GET", headers: { "X-Agent-Id": selectedAgentId },
+      });
+      if (request === catalogueRequest.current) {
+        setNodeTypesList(types || []);
+        setNodeCatalogueError("");
+      }
+    } catch (error: any) {
+      if (request === catalogueRequest.current) {
+        setNodeTypesList([]);
+        setNodeCatalogueError("节点目录暂时不可用，请重试刷新");
+        if (manual) message?.error(`刷新节点失败: ${error.message}`);
+      }
+    } finally {
+      if (request === catalogueRequest.current) setRefreshingNodes(false);
+    }
+  }, [selectedAgentId]);
+
+  useEffect(() => {
+    setNodeTypesList([]);
+    void refreshNodeTypes();
+    const refresh = () => { void refreshNodeTypes(); };
+    const timer = window.setInterval(refresh, 30000);
+    window.addEventListener("focus", refresh);
+    return () => {
+      ++catalogueRequest.current;
+      window.clearInterval(timer);
+      window.removeEventListener("focus", refresh);
+    };
+  }, [refreshNodeTypes]);
+
+  useEffect(() => {
+    setRfNodes((nodes: Node[]) => nodes.map((node) => {
+      const spec = nodeTypesList.find((type) => type.class_type === node.data.class_type);
+      return { ...node, data: { ...node.data,
+        inputs_schema: spec?.inputs_schema || [], outputs_schema: spec?.outputs_schema || [],
+      } };
+    }));
+  }, [nodeTypesList, rfNodes.length]);
 
   // Sync run statuses to canvas nodes (execution overlay)
   useEffect(() => {
@@ -727,6 +776,7 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
       React.createElement(Button, { icon: ArrowLeftOutlined ? React.createElement(ArrowLeftOutlined) : undefined, onClick: onBack }, "返回"),
       React.createElement(Title, { level: 5, style: { margin: 0 } }, doc?.name || flowId),
       React.createElement(Tag, null, `${rfNodes.length} 节点 / ${rfEdges.length} 连接`),
+      nodeCatalogueError ? React.createElement(Tag, { color: "error" }, nodeCatalogueError) : null,
       validation ? (validation.ok
         ? React.createElement(Tag, { icon: CheckCircleOutlined ? React.createElement(CheckCircleOutlined) : undefined, color: "success" }, "验证通过")
         : React.createElement(Tooltip, { title: validation.errors.join("\n") },
@@ -735,6 +785,7 @@ function FlowEditorPage({ flowId, onBack, onRun, runStatuses }: EditorProps) {
       // Run status indicator
       Object.keys(runStatuses).length > 0 ? React.createElement(Tag, { color: "processing" }, `运行中: ${Object.values(runStatuses).filter((s) => s === "running").length} 执行中`) : null,
       React.createElement(Space, { style: { marginLeft: "auto" } },
+        React.createElement(Button, { onClick: () => { void refreshNodeTypes(true); }, loading: refreshingNodes }, "刷新节点"),
         React.createElement(Button, { onClick: () => setIoModalOpen(true) }, "输入/输出配置"),
         React.createElement(Button, { icon: CheckCircleOutlined ? React.createElement(CheckCircleOutlined) : undefined, onClick: validateFlow }, "验证"),
         React.createElement(Button, { icon: SaveOutlined ? React.createElement(SaveOutlined) : undefined, onClick: save, loading: saving }, "保存"),

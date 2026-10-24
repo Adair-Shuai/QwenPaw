@@ -153,6 +153,10 @@ class _ContextShim:
         return self._executor.workflow_registry
 
     @property
+    def workflow_service(self) -> Any:
+        return getattr(self._executor, "workflow_service", None)
+
+    @property
     def tool_registry(self) -> Any:
         return self._executor.tool_registry
 
@@ -460,13 +464,22 @@ class WorkflowExecutor:
             gather_coro = asyncio.gather(
                 *[_guarded(nid) for nid in batch],
             )
-            if deadline is not None:
-                remaining = deadline - time.monotonic()
-                try:
-                    results = await asyncio.wait_for(
-                        gather_coro, timeout=max(0.0, remaining),
-                    )
-                except asyncio.TimeoutError:
+            abort_wait = asyncio.create_task(hidden.abort_event.wait())
+            try:
+                remaining = max(0.0, deadline - time.monotonic()) if deadline is not None else None
+                done, _ = await asyncio.wait(
+                    [gather_coro, abort_wait], timeout=remaining,
+                    return_when=asyncio.FIRST_COMPLETED,
+                )
+                if abort_wait in done:
+                    gather_coro.cancel()
+                    await asyncio.gather(gather_coro, return_exceptions=True)
+                    state.status = WorkflowStatus.CANCELLED
+                    exec_list.cancel()
+                    return
+                if gather_coro not in done:
+                    gather_coro.cancel()
+                    await asyncio.gather(gather_coro, return_exceptions=True)
                     errors_list.append("workflow timed out")
                     state.error_stack.append("workflow timed out")
                     state.status = WorkflowStatus.TIMEOUT
@@ -479,8 +492,12 @@ class WorkflowExecutor:
                         ),
                     )
                     return
-            else:
                 results = await gather_coro
+            finally:
+                abort_wait.cancel()
+                if not gather_coro.done():
+                    gather_coro.cancel()
+                await asyncio.gather(abort_wait, gather_coro, return_exceptions=True)
 
             paused = False
             for node_id, node_def, result, exc in results:
@@ -707,6 +724,7 @@ class WorkflowExecutor:
         *,
         prompt_id: str | None = None,
         progress_registry: ProgressRegistry | None = None,
+        extra_data: dict[str, Any] | None = None,
     ) -> WorkflowResult:
         """Resume a paused run from its persisted snapshot."""
         if self.state_store is None:
@@ -729,6 +747,7 @@ class WorkflowExecutor:
             prompt_id=pid,
             resume_state=snapshot.state,
             progress_registry=progress_registry,
+            extra_data=extra_data or snapshot.state.metadata,
         )
 
     def cancel(self, state_id: UUID | str) -> bool:

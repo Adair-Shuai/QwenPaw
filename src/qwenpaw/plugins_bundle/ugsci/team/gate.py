@@ -72,10 +72,10 @@ class _TeamState:
     workspace_dir: Path
     agent_id: str = ""
     team_id: str = "ugsci-team"
-    team_mode: str = "pipeline"          # pipeline | coordinator | roundtable
-    team_name: str = ""                  # display name (e.g. "储层评价团队")
+    team_mode: str = "pipeline"  # pipeline | coordinator | roundtable
+    team_name: str = ""  # display name (e.g. "储层评价团队")
     members: list[dict[str, str]] = field(default_factory=list)
-    task: str = ""                       # user's original task description
+    task: str = ""  # user's original task description
     active: bool = True
     iteration: int = 0
     max_iterations: int = UGSCI_TEAM_MAX_ITERATIONS
@@ -86,6 +86,8 @@ class _TeamState:
     merge_waits: int = 0
     max_merge_waits: int = UGSCI_TEAM_MAX_MERGE_WAITS
     phase: str = PHASE_PLAN
+    owner_session_id: str = ""
+    artifact_protocol: int = 0
     blocked_on_merge: bool = False
 
 
@@ -110,6 +112,8 @@ class UGSciTeamGate(LoopGate):
         task: str,
         agent_id: str = "",
         max_dispatch_retries: int = UGSCI_TEAM_MAX_DISPATCH_RETRIES,
+        owner_session_id: str | None = None,
+        artifact_protocol: int = 0,
     ) -> Path:
         """Create the workflow instance directory and activate the gate."""
         try:
@@ -134,6 +138,8 @@ class UGSciTeamGate(LoopGate):
             members=members,
             task=task,
             max_dispatch_retries=max(1, min(5, max_dispatch_retries)),
+            owner_session_id=owner_session_id or self._session_id(),
+            artifact_protocol=artifact_protocol,
         )
         wf.write_state(
             {
@@ -152,6 +158,9 @@ class UGSciTeamGate(LoopGate):
                 "max_dispatch_retries": state.max_dispatch_retries,
                 "merge_waits": 0,
                 "created_at_ns": time.time_ns(),
+                "owner_session_id": state.owner_session_id,
+                "revision": 0,
+                "artifact_protocol": artifact_protocol,
             },
         )
         self.activate(state)
@@ -183,6 +192,8 @@ class UGSciTeamGate(LoopGate):
             "verify_retries": st.verify_retries,
             "dispatch_retries": st.dispatch_retries,
             "merge_waits": st.merge_waits,
+            "owner_session_id": st.owner_session_id,
+            "artifact_protocol": st.artifact_protocol,
         }
 
     async def _finish(
@@ -229,6 +240,7 @@ class UGSciTeamGate(LoopGate):
         self,
         workspace_dir: Path,
         agent_id: str = "",
+        owner_session_id: str | None = None,
     ) -> bool:
         """Restore the latest active workflow instance from disk.
 
@@ -246,7 +258,9 @@ class UGSciTeamGate(LoopGate):
         Returns ``True`` if state was restored, ``False`` otherwise.
         """
         if self._state() is not None:
-            return True  # already restored (or freshly activated)
+            return self._state().owner_session_id == (
+                owner_session_id or self._session_id()
+            )
 
         base = workspace_dir / ".qwenpaw" / "ugsci_teams"
         if not base.exists():
@@ -310,25 +324,27 @@ class UGSciTeamGate(LoopGate):
                 continue
 
             # Skip terminal workflows — they should never be revived.
+            # Legacy ownerless instances remain readable in history, but are
+            # never silently claimed by an unrelated or child conversation.
+            if not data.get("owner_session_id") or data["owner_session_id"] != (
+                owner_session_id or self._session_id()
+            ):
+                continue
+            # Match agent before deciding whether this owner's latest run
+            # is terminal. Never fall back to an older abandoned active run.
+            persisted_agent_id = data.get("agent_id", "")
+            if agent_id and persisted_agent_id and agent_id != persisted_agent_id:
+                continue
             workflow_status = data.get(
                 "workflow_status",
                 WORKFLOW_ACTIVE,
             )
             if workflow_status != WORKFLOW_ACTIVE:
-                continue
+                return False
 
             phase = data.get("current_phase", PHASE_PLAN)
-            if phase == PHASE_COMPLETED:
-                continue
-
-            # Match agent_id when both sides are non-empty.
-            persisted_agent_id = data.get("agent_id", "")
-            if (
-                agent_id
-                and persisted_agent_id
-                and agent_id != persisted_agent_id
-            ):
-                continue
+            if phase == PHASE_COMPLETED and data.get("artifact_protocol") != 1:
+                return False
 
             team_id = data.get("team_id", "ugsci-team")
             st = _TeamState(
@@ -341,6 +357,8 @@ class UGSciTeamGate(LoopGate):
                 members=data.get("members", []),
                 task=data.get("task", ""),
                 active=True,
+                owner_session_id=data["owner_session_id"],
+                artifact_protocol=data.get("artifact_protocol", 0),
                 iteration=int(data.get("iteration", 0)),
                 verify_retries=int(data.get("verify_retries", 0)),
                 dispatch_retries=int(
@@ -436,6 +454,21 @@ class UGSciTeamGate(LoopGate):
         phase = data.get("current_phase", PHASE_PLAN)
         st.phase = phase
 
+        from .artifacts import validate_phase
+        from .state import TeamStateConflictError
+
+        try:
+            await asyncio.to_thread(validate_phase, wf, data)
+        except (TeamStateConflictError, OSError, KeyError, TypeError):
+            logger.error("UGSci team artifact validation failed", exc_info=True)
+            return await self._finish(
+                wf,
+                st,
+                WORKFLOW_TERMINATED,
+                "artifact_invalid",
+                "UGSci team artifacts changed or were not reviewed",
+            )
+
         # ── Fork integration check (post-dispatch phases) ──────────
         if phase in POST_DISPATCH_PHASES:
             integrated = await asyncio.to_thread(
@@ -471,10 +504,7 @@ class UGSciTeamGate(LoopGate):
                         st,
                         WORKFLOW_TERMINATED,
                         "merge_wait_limit",
-                        (
-                            "Fork merge wait limit "
-                            f"({st.max_merge_waits})"
-                        ),
+                        ("Fork merge wait limit " f"({st.max_merge_waits})"),
                     )
                 return StopHandlerResult(
                     action=StopAction.INTERRUPT_AND_CONTINUE,
@@ -597,7 +627,13 @@ class UGSciTeamGate(LoopGate):
         if st is None:
             return ""
         if st.blocked_on_merge:
-            return merge_blocked_continuation(FORK_MERGE_PROTOCOL)
+            from .state_tools import STATE_UPDATE_PROTOCOL
+
+            return (
+                STATE_UPDATE_PROTOCOL
+                + "\n"
+                + merge_blocked_continuation(FORK_MERGE_PROTOCOL)
+            )
 
         # Import here to avoid circular imports
         from .prompts import build_continuation as _build
@@ -614,4 +650,5 @@ class UGSciTeamGate(LoopGate):
             verify_retries=st.verify_retries,
             max_verify_retries=st.max_verify_retries,
             dispatch_retries=st.dispatch_retries,
+            artifact_protocol=st.artifact_protocol,
         )

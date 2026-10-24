@@ -61,6 +61,9 @@ const {
 }));
 
 let capturedOptions: any = null;
+const mockAgentNames = vi.hoisted(() => ({
+  agents: [{ id: "default", name: "Default", backend: "qwenpaw" }],
+}));
 const mockSdkHistoryLoad = vi.fn(async (id: string) => ({
   id,
   name: id,
@@ -185,7 +188,7 @@ vi.mock("@/stores/agentStore", () => {
   const makeState = () => ({
     selectedAgent: mockSelectedAgent(),
     setSelectedAgent: mockSetSelectedAgent,
-    agents: [{ id: "default", name: "Default", backend: "qwenpaw" }],
+    agents: mockAgentNames.agents,
     setLastChatId,
     getLastChatId,
     removeLastChatId,
@@ -608,6 +611,9 @@ describe("ChatPage coverage", () => {
     mockSetSelectedAgent.mockImplementation((id: string) => {
       mockSelectedAgent.mockReturnValue(id);
     });
+    mockAgentNames.agents = [
+      { id: "default", name: "Default", backend: "qwenpaw" },
+    ];
     mockSdkInput.loading = false;
     mockGetChatStatus.mockReset();
     mockGetChatStatus.mockResolvedValue({ status: "idle" });
@@ -1700,7 +1706,11 @@ describe("ChatPage coverage", () => {
     const utils = await import("./utils");
     const textarea = document.createElement("textarea");
     document.body.appendChild(textarea);
-    vi.mocked(utils.getSenderTextareaFromTarget).mockReturnValueOnce(textarea);
+    // Both the mounted @ picker and the queue handler resolve this event's
+    // sender. Resolving it must not consume a one-shot fixture value.
+    const senderLookup = vi
+      .mocked(utils.getSenderTextareaFromTarget)
+      .mockImplementation((target) => (target === textarea ? textarea : null));
     const event = new KeyboardEvent("keydown", {
       key: "Enter",
       bubbles: true,
@@ -1721,6 +1731,7 @@ describe("ChatPage coverage", () => {
       }),
     );
     textarea.remove();
+    senderLookup.mockImplementation(() => null);
   });
 
   it("does not queue a new Chat's Enter because another Chat has a sending marker", async () => {
@@ -2349,6 +2360,36 @@ describe("ChatPage coverage", () => {
   });
 
   // ── welcome config ─────────────────────────────────────────────────────
+  it("uses the selected agent name for the SDK assistant signature and updates it after rename", async () => {
+    mockSelectedAgent.mockReturnValue("reservoir");
+    mockAgentNames.agents = [
+      { id: "reservoir", name: "储气库专家", backend: "qwenpaw" },
+    ];
+    const view = renderWithProviders(<ChatPage />, {
+      initialEntries: ["/chat/test-session"],
+    });
+    await screen.findByTestId("chat-ui");
+    expect(capturedOptions?.welcome?.nick).toBe("储气库专家");
+    mockAgentNames.agents = [
+      { id: "reservoir", name: "库容评价专家", backend: "qwenpaw" },
+    ];
+    view.rerender(<ChatPage />);
+    await waitFor(() =>
+      expect(capturedOptions?.welcome?.nick).toBe("库容评价专家"),
+    );
+  });
+
+  it("uses a customized default agent name instead of the product name", async () => {
+    mockAgentNames.agents = [
+      { id: "default", name: "科研助手", backend: "qwenpaw" },
+    ];
+    renderWithProviders(<ChatPage />, {
+      initialEntries: ["/chat/test-session"],
+    });
+    await screen.findByTestId("chat-ui");
+    expect(capturedOptions?.welcome?.nick).toBe("科研助手");
+  });
+
   it("welcome config has nick and avatar", async () => {
     renderWithProviders(<ChatPage />, {
       initialEntries: ["/chat/test-session"],

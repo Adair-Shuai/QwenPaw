@@ -655,10 +655,13 @@ class TestRegisterToolRollback:
             api.register_tool(tool_name, _tool, tool_type="network")
             hooks = preg.get_startup_hooks()
             assert len(hooks) == 1
-            with patch(
-                f"qwenpaw.plugins.api.{failure_point}",
-                side_effect=error,
-            ), pytest.raises(ProjectionError, match=str(error)):
+            with (
+                patch(
+                    f"qwenpaw.plugins.api.{failure_point}",
+                    side_effect=error,
+                ),
+                pytest.raises(ProjectionError, match=str(error)),
+            ):
                 await hooks[0].callback()
 
             assert tool_name not in runtime_tr
@@ -676,7 +679,8 @@ class TestRegisterToolRollback:
             DEFAULT_REGISTRY.unregister_python_tool(tool_name)
             PluginRegistry._instance = old
 
-    def test_expose_failure_rolls_back_ownership_and_governance(self):
+    @pytest.mark.asyncio
+    async def test_expose_failure_rolls_back_ownership_and_governance(self):
         plugin_id = "__ut_rollback_expose_fail__"
         tool_name = "__ut_rollback_expose_tool__"
         policy = "UtRollbackExposeTool"
@@ -703,7 +707,11 @@ class TestRegisterToolRollback:
                     tool_func=_tool,
                     tool_type="network",
                 )
-                self._run_startup_hooks(preg)
+                from qwenpaw.plugins.workspace_projector import ProjectionError
+
+                with pytest.raises(ProjectionError):
+                    for hook in preg.get_startup_hooks():
+                        await hook.callback()
 
             assert tool_name not in _TOOL_PLUGIN_OWNERS
             assert DEFAULT_REGISTRY.get_type(policy) == "unknown"
@@ -713,8 +721,9 @@ class TestRegisterToolRollback:
             DEFAULT_REGISTRY.unregister_python_tool(tool_name)
             PluginRegistry._instance = old
 
-    def test_write_config_failure_keeps_governed_runtime_tool(self):
-        """Preference persistence cannot roll back a governed runtime tool."""
+    @pytest.mark.asyncio
+    async def test_write_config_failure_rolls_back_governed_runtime_tool(self):
+        """Failed activation revokes published tools without leaving ownership."""
         plugin_id = "__ut_rollback_write_fail__"
         tool_name = "__ut_rollback_write_tool__"
         policy = "UtRollbackWriteTool"
@@ -761,12 +770,16 @@ class TestRegisterToolRollback:
                     tool_func=_tool,
                     tool_type="network",
                 )
-                self._run_startup_hooks(preg)
+                from qwenpaw.plugins.workspace_projector import ProjectionError
 
-            assert tool_name in runtime_tr
-            assert _tool in bootstrap["builtin_tool_funcs"]
-            assert _TOOL_PLUGIN_OWNERS[tool_name] == plugin_id
-            assert DEFAULT_REGISTRY.get_type(policy) == "network"
+                with pytest.raises(ProjectionError):
+                    for hook in preg.get_startup_hooks():
+                        await hook.callback()
+
+            assert tool_name not in runtime_tr
+            assert _tool not in bootstrap["builtin_tool_funcs"]
+            assert tool_name not in _TOOL_PLUGIN_OWNERS
+            assert DEFAULT_REGISTRY.get_type(policy) == "unknown"
         finally:
             from qwenpaw.agents import tools as tools_module
 
@@ -807,13 +820,23 @@ class TestRegisterToolRollback:
                 "qwenpaw.config.utils.load_config",
                 return_value=root_config,
             ),
-            patch("qwenpaw.config.config.mutate_agent_config", _mutate),
+            patch(
+                "qwenpaw.config.config.load_agent_config",
+                return_value=agent_config,
+            ),
+            patch(
+                "qwenpaw.config.config.save_agent_config",
+                side_effect=lambda agent_id, value: observed.update(
+                    agent_id=agent_id
+                ),
+            ),
         ):
             _write_tool_config(
                 "get_genui_guide",
                 True,
                 "Get the GenUI guide",
                 "",
+                plugin_id="ugsci",
             )
 
         assert observed["agent_id"] == "default"

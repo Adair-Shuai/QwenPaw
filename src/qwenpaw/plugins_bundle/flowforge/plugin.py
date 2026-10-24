@@ -16,18 +16,9 @@ route + sidebar menu entry (see ``ui/src/index.ts``).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from pathlib import Path
-from typing import Any
-
-from fastapi import APIRouter
-
-from .engine import (
-    NodeRegistry,
-    WorkflowExecutor,
-    build_workflow_state_store,
-    get_registry,
-)
 from .router import build_router
 from .service import WorkflowService, build_service
 
@@ -70,6 +61,15 @@ class FlowForgePlugin:
         except Exception as exc:
             logger.error("Failed to register HTTP router: %s", exc)
 
+        from .tools import build_tools
+
+        for tool in build_tools(self._service):
+            api.register_tool(
+                tool_name=tool.__name__, tool_func=tool,
+                description=(tool.__doc__ or "").split("\n", 1)[0],
+                tool_type="internal", icon="🔀",
+            )
+
         # 3. Wire the executor to the host's services once they are ready.
         api.register_startup_hook(
             hook_name=f"{PLUGIN_ID}_wire_services",
@@ -86,8 +86,8 @@ class FlowForgePlugin:
     # ------------------------------------------------------------------
     # Startup wiring
     # ------------------------------------------------------------------
-    def _wire_services(self) -> None:
-        """Populate executor.tool_registry / tool_executor / agent_runtime / llm_service.
+    async def _wire_services(self) -> None:
+        """Initialize agent-scoped discovery and the host runtime adapters.
 
         Wires the adapter-layer components that bridge QwenPaw's native
         systems (ToolRegistry, ProviderManager, workspace manager) into the
@@ -98,38 +98,22 @@ class FlowForgePlugin:
         executor = self._service.executor
 
         # ── 1. Tool layer ────────────────────────────────────────────────
-        # Wrap QwenPaw's native ToolRegistry with the adapter's ToolRegistry
-        # and create a ToolExecutor that calls tool functions directly.
         try:
             from qwenpaw.plugins.registry import PluginRegistry
+            from .node_catalog import AgentNodeCatalog
+            from .engine.adapter import AgentRuntime
 
-            registry = PluginRegistry()
-            mgr = registry.get_workspace_manager()
-            if mgr is not None:
-                agents = getattr(mgr, "agents", None) or getattr(
-                    mgr, "workspaces", None,
-                )
-                if agents:
-                    first_ws = next(iter(agents.values()))
-                    plugins_ctx = getattr(first_ws, "plugins", None)
-                    if plugins_ctx is not None:
-                        qp_tool_reg = getattr(plugins_ctx, "tool_registry", None)
-                        if qp_tool_reg is not None:
-                            from .engine.adapter import ToolRegistry as AdapterToolRegistry
-                            from .engine.adapter import ToolExecutor as AdapterToolExecutor
-
-                            adapter_reg = AdapterToolRegistry(qp_tool_reg)
-                            executor.tool_registry = adapter_reg
-                            executor.tool_executor = AdapterToolExecutor(adapter_reg)
-                            logger.info(
-                                "[%s] Wired tool_registry + tool_executor (%d tools)",
-                                PLUGIN_ID, len(adapter_reg),
-                            )
-                # Wire the agent runtime adapter
-                from .engine.adapter import AgentRuntime
-
-                executor.agent_runtime = AgentRuntime(workspace_manager=mgr)
-                logger.info("[%s] Wired agent_runtime", PLUGIN_ID)
+            mgr = PluginRegistry().get_workspace_manager()
+            if mgr is None:
+                raise RuntimeError("Workspace manager is not ready")
+            self._service.node_catalog = AgentNodeCatalog(
+                mgr, host_loop=asyncio.get_running_loop(),
+            )
+            executor.tool_registry = None
+            executor.tool_executor = None
+            executor.agent_runtime = AgentRuntime(workspace_manager=mgr)
+            types = await self._service.refresh_node_types()
+            logger.info("[%s] Agent-scoped node catalogue ready (%d nodes)", PLUGIN_ID, len(types))
         except Exception as exc:
             logger.warning("[%s] Failed to wire tool/agent services: %s", PLUGIN_ID, exc)
 

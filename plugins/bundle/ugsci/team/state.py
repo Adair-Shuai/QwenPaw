@@ -20,7 +20,9 @@ import json
 import logging
 import shutil
 import time
+import threading
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Literal
 
@@ -33,6 +35,17 @@ logger = logging.getLogger(__name__)
 WORKFLOW_ACTIVE = "active"
 WORKFLOW_COMPLETED = "completed"
 WORKFLOW_TERMINATED = "terminated"
+_STATE_LOCKS: dict[str, threading.RLock] = {}
+_LOCKS_LOCK = threading.Lock()
+
+
+def _state_lock(path: Path) -> threading.RLock:
+    with _LOCKS_LOCK:
+        return _STATE_LOCKS.setdefault(str(path.resolve()), threading.RLock())
+
+
+class TeamStateConflictError(ValueError):
+    """A stale writer or another session cannot replace workflow state."""
 
 
 class TeamStateInvalidError(ValueError):
@@ -73,6 +86,9 @@ class TeamStateDocument(BaseModel):
     created_at_ns: int = Field(default=0, ge=0)
     finished_at_ns: int = Field(default=0, ge=0)
     termination_reason: str = ""
+    owner_session_id: str = ""
+    revision: int = Field(default=0, ge=0)
+    artifact_protocol: Literal[0, 1] = 0
 
 
 def parse_state_document(data: Any) -> TeamStateDocument:
@@ -123,6 +139,14 @@ class TeamWorkflowState:
     def instance_dir(self) -> Path | None:
         return self._instance_dir
 
+    @contextmanager
+    def locked(self):
+        """Serialize a trusted read/check/publish/state transaction."""
+        if self._instance_dir is None:
+            raise TeamStateConflictError("Workflow instance is missing")
+        with _state_lock(self._instance_dir):
+            yield
+
     @classmethod
     def from_existing(
         cls,
@@ -159,21 +183,49 @@ class TeamWorkflowState:
         """Atomically replace state.json with *data*."""
         if not self._instance_dir:
             return
-        self._atomic_write_json(
-            self._instance_dir / "state.json",
-            data,
-        )
+        validate_state_document(data)
+        with _state_lock(self._instance_dir):
+            path = self._instance_dir / "state.json"
+            if path.exists():
+                try:
+                    old = json.loads(path.read_text(encoding="utf-8"))
+                except (ValueError, UnicodeDecodeError):
+                    old = {}
+                owner = old.get("owner_session_id") if isinstance(old, dict) else None
+                if owner and data.get("owner_session_id") != owner:
+                    raise TeamStateConflictError("Workflow owner is immutable")
+                if owner:
+                    revision = old.get("revision", 0)
+                    if data.get("revision", revision) != revision:
+                        raise TeamStateConflictError("Stale workflow state")
+                    data["revision"] = revision + 1
+            self._atomic_write_json(path, data)
 
-    def update_state(self, patch: dict[str, Any]) -> dict[str, Any]:
+    def update_state(
+        self,
+        patch: dict[str, Any],
+        *,
+        expected_revision: int | None = None,
+    ) -> dict[str, Any]:
         """Merge *patch* into state.json and write atomically.
 
         Returns the merged document.  Prefer this over
         :meth:`write_state` when the gate only owns some keys.
         """
-        data = self.read_state()
-        data.update(patch)
-        self.write_state(data)
-        return data
+        if not self._instance_dir:
+            raise TeamStateConflictError("Workflow instance is missing")
+        with _state_lock(self._instance_dir):
+            data = self.read_state()
+            revision = data.get("revision", 0)
+            if expected_revision is not None and expected_revision != revision:
+                raise TeamStateConflictError(
+                    "State changed; read state again before updating"
+                )
+            data.update(patch)
+            if data.get("owner_session_id"):
+                data["revision"] = revision
+            self.write_state(data)
+            return data
 
     def finalize(
         self,
@@ -182,6 +234,15 @@ class TeamWorkflowState:
         fallback: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """Persist a terminal snapshot that remains queryable after cleanup."""
+        with self.locked():
+            return self._finalize_locked(workflow_status, reason, fallback)
+
+    def _finalize_locked(
+        self,
+        workflow_status: str,
+        reason: str,
+        fallback: dict[str, Any] | None,
+    ) -> dict[str, Any]:
         if workflow_status not in {
             WORKFLOW_COMPLETED,
             WORKFLOW_TERMINATED,
@@ -195,6 +256,12 @@ class TeamWorkflowState:
             data = dict(fallback or {})
         data.setdefault("current_phase", PHASE_PLAN)
         if workflow_status == WORKFLOW_COMPLETED:
+            if data.get("artifact_protocol") == 1:
+                from .artifacts import validate_phase
+
+                if data["current_phase"] != PHASE_COMPLETED:
+                    raise TeamStateConflictError("Workflow has not reached completion")
+                validate_phase(self, data)
             data["current_phase"] = PHASE_COMPLETED
         data.update(
             {

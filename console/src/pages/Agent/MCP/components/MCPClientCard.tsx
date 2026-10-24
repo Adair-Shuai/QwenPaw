@@ -3,7 +3,7 @@ import { readConnection, connectionError } from "./connectionValue";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { ServiceCard } from "@/components/interaction/ServiceCard";
 import { SharedModal as Modal } from "@/components/interaction/SharedModal";
-import { Button, Tooltip } from "@agentscope-ai/design";
+import { Button, Tag, Tooltip } from "@agentscope-ai/design";
 import type { MCPAccessPolicy, MCPClientInfo } from "../../../../api/types";
 import { useTranslation } from "react-i18next";
 import React, { useId, useState } from "react";
@@ -63,6 +63,14 @@ export const MCPClientCard = React.memo(function MCPClientCard({
   const clientType = t(isRemote ? "mcp.remote" : "mcp.local");
 
   const oauthStatus = client.oauth_status;
+  // Static credentials already authenticate this connection. Do not send
+  // token-based services into the unrelated OAuth discovery flow.
+  const usesHeaderAuth =
+    isRemote &&
+    !oauthStatus &&
+    Object.entries(client.headers || {}).some(
+      ([key, value]) => key.toLowerCase() === "authorization" && !!value.trim(),
+    );
   const now = Date.now() / 1000;
   const isOauthAuthorized =
     !!oauthStatus?.authorized && oauthStatus.expires_at > now;
@@ -113,7 +121,12 @@ export const MCPClientCard = React.memo(function MCPClientCard({
                 onClick={() => setAccessModalOpen(true)}
               />
             </Tooltip>
-            {isRemote && (
+            {usesHeaderAuth && (
+              <Tooltip title={t("mcp.headerAuthHint")}>
+                <Tag>{t("mcp.headerAuth")}</Tag>
+              </Tooltip>
+            )}
+            {isRemote && !usesHeaderAuth && (
               <Tooltip title={t("mcp.oauth.manage")}>
                 <Button
                   type="text"

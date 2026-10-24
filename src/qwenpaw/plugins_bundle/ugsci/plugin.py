@@ -893,6 +893,10 @@ class UGSciPlugin:
             from .team.mode import UGSciTeamMode
 
             api.register_mode(UGSciTeamMode)
+            from .team.state_guard import state_guard_factory
+
+            if hasattr(api, "register_middleware"):
+                api.register_middleware(state_guard_factory, priority=40)
             logger.info(
                 "[%s] UGSci Team mode registered (/ugsci-team)",
                 PLUGIN_ID,

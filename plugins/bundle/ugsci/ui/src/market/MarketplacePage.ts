@@ -19,6 +19,7 @@ import {
   type MCPTemplate,
   MCP_ENV_HINTS,
   mcpTemplateNeedsConfig,
+  resolveMcpConnection,
   type GitHubSkill,
   type GitHubSkillSource,
   type DynamicCategory,
@@ -312,12 +313,12 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
   }, []);
 
   // Load all official OSS markets on mount (parallel).
-  const loadOssMarketData = useCallback(async () => {
+  const loadOssMarketData = useCallback(async (refresh = false) => {
     setOssMcpLoading(true);
     setOssAgentLoading(true);
     setGithubLoading(true);
     const [mcpResult, agentsResult, skillsResult] = await Promise.allSettled([
-      fetchOSSMcpManifest(),
+      fetchOSSMcpManifest(refresh),
       fetchOSSAgentsManifest(),
       fetchOSSSkillsManifest(),
     ]);
@@ -1243,7 +1244,7 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
     }
     // If template has env fields, open config modal for user to input tokens
     if (mcpTemplateNeedsConfig(template)) {
-      const envEntries = Object.entries(template.env!);
+      const envEntries = Object.entries(template.env!).filter(([, value]) => value.startsWith("your-") || value.includes("${"));
       const initialValues: Record<string, string> = {};
       for (const [k] of envEntries) {
         // Start with empty string so user must fill in their real value
@@ -1264,23 +1265,29 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
   ) => {
     setMcpInstalling((prev) => ({ ...prev, [template.id]: true }));
     try {
+      const resolved = resolveMcpConnection({
+        url: template.url, command: template.command, args: template.args,
+        headers: template.headers, cwd: template.cwd, env: { ...template.env, ...envValues },
+      }, envValues);
       const clientKey = template.id;
       await createMCPForAgent(mcpInstallTargetAgent, {
         client_key: clientKey,
         client: {
           name: template.name,
           description: template.description,
-          enabled: true,
+          enabled: template.authType !== "oauth2",
           transport: template.transport,
-          url: template.url || "",
-          command: template.command || "",
-          args: template.args || [],
-          env: envValues,
-          cwd: template.cwd || "",
-          headers: template.headers || {},
+          url: resolved.url || "",
+          command: resolved.command || "",
+          args: resolved.args || [],
+          env: resolved.env || {},
+          cwd: resolved.cwd || "",
+          headers: resolved.headers || {},
         },
       });
-      antdMsg.success(`MCP「${template.name}」已添加到当前专家`);
+      antdMsg.success(template.authType === "oauth2"
+        ? `「${template.name}」已添加，请在工具·技能的 MCP 管理中完成账号授权并启用`
+        : `MCP「${template.name}」已添加到当前专家，连接状态请在 MCP 管理中检测`);
       setExistingMcpKeys((prev) => new Set(prev).add(clientKey));
     } catch (err: any) {
       antdMsg.error(err.message || `添加 MCP「${template.name}」失败`);
@@ -1377,6 +1384,7 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
         },
         "配置 MCP 源",
       ),
+      React.createElement(Button, { size: "small", loading: ossMcpLoading, onClick: () => loadOssMarketData(true) }, "刷新目录"),
     ),
     // Dynamic category tag row (from OSS manifest tag_groups)
     ossMcpCategories.length > 0
@@ -1515,6 +1523,12 @@ template.iconUrl
               },
               template.description,
             ),
+            template.requirements?.length || template.limitations?.length
+              ? React.createElement("details", { style: { marginTop: 8, fontSize: 12 } },
+                  React.createElement("summary", { style: { cursor: "pointer", color: "var(--ant-color-primary, #1677ff)" } }, "接入要求与限制"),
+                  ...[...(template.requirements || []), ...(template.limitations || [])].map((text, i) => React.createElement("p", { key: i, style: { margin: "6px 0" } }, text)),
+                  template.source ? React.createElement("a", { href: template.source, target: "_blank", rel: "noopener noreferrer" }, "查看来源说明 ↗") : null)
+              : null,
             // Footer: config preview + install button
             React.createElement(
               "div",
@@ -1533,13 +1547,13 @@ template.iconUrl
                 { type: "secondary", style: { fontSize: 11 } },
                 template.transport === "stdio"
                   ? `${template.command} ${(template.args || []).join(" ")}`
-                  : template.url || "",
+                  : template.authType === "oauth2" ? "添加后需登录授权" : "远程服务 · 按账号权限连接",
               ),
               existingMcpKeys.has(template.id)
                 ? React.createElement(
                     Button,
                     { size: "small", disabled: true },
-                    "已安装",
+                    "已添加",
                   )
                 : React.createElement(
                     Button,
@@ -1552,7 +1566,7 @@ template.iconUrl
                         : undefined,
                       onClick: () => handleInstallMcp(template),
                     },
-                    "安装",
+                    template.transport === "stdio" ? "添加工具" : "连接",
                   ),
             ),
           ),
@@ -1594,7 +1608,7 @@ template.iconUrl
             "div",
             { style: { display: "flex", alignItems: "center", gap: 8 } },
             React.createElement("span", { style: { fontSize: 20, display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 24 } }, mcpConfigTemplate.iconUrl ? React.createElement("img", { src: mcpConfigTemplate.iconUrl, alt: mcpConfigTemplate.name, style: { width: 22, height: 22, objectFit: "contain" }, onError: (e: any) => { e.target.style.display = "none"; } }) : mcpConfigTemplate.emoji),
-            React.createElement("span", null, `配置 ${mcpConfigTemplate.name} 密钥`),
+            React.createElement("span", null, `连接 ${mcpConfigTemplate.name}`),
           ),
           open: !!mcpConfigTemplate,
           onCancel: () => {
@@ -1602,7 +1616,7 @@ template.iconUrl
             setMcpConfigEnvValues({});
           },
           onOk: confirmInstallMcp,
-          okText: "安装",
+          okText: "添加连接",
           cancelText: "取消",
           width: 520,
           destroyOnClose: true,
@@ -1613,9 +1627,11 @@ template.iconUrl
           { type: "secondary", style: { display: "block", marginBottom: 16, fontSize: 12 } },
           mcpConfigTemplate.description,
         ),
+        mcpConfigTemplate.requirements?.length
+          ? React.createElement("div", { style: { marginBottom: 16, fontSize: 12 } }, ...mcpConfigTemplate.requirements.map((text, i) => React.createElement("p", { key: i }, text))) : null,
         // Env fields
-        ...Object.entries(mcpConfigTemplate.env || {}).map(([envKey]) => {
-          const hint = MCP_ENV_HINTS[envKey];
+        ...Object.entries(mcpConfigTemplate.env || {}).filter(([, value]) => value.startsWith("your-") || value.includes("${")).map(([envKey]) => {
+          const hint = mcpConfigTemplate.inputHints?.[envKey] || MCP_ENV_HINTS[envKey];
           const isSecret = hint?.isSecret !== false; // default to secret
           return React.createElement(
             "div",

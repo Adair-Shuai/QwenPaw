@@ -44,6 +44,16 @@ def build_domain_engine_router() -> APIRouter:
 
         return discover_runtime().to_dict()
 
+    # Register before /{engine_id}; otherwise FastAPI treats these paths as IDs.
+    from .runtime_install import runtime_install_manager
+
+    @router.get("/install-tasks/{task_id}")
+    def domain_runtime_install_task_endpoint(task_id: str) -> dict[str, Any]:
+        task = runtime_install_manager.get_task(task_id)
+        if task is None:
+            raise HTTPException(status_code=404, detail="未找到依赖安装任务")
+        return task
+
     async def refresh_loaded_drivers() -> None:
         from qwenpaw.agents.builtin_mcp.neqsim import (
             ensure_neqsim_driver_registered,
@@ -65,6 +75,19 @@ def build_domain_engine_router() -> APIRouter:
         from qwenpaw.agents.builtin_mcp.neqsim_runtime import install_manager
 
         return install_manager.start(refresh_loaded_drivers).to_dict()
+
+    @router.get("/{engine_id}/runtime")
+    def domain_runtime_endpoint(engine_id: str) -> dict[str, Any]:
+        return runtime_install_manager.runtime(engine_id)
+
+    @router.post("/{engine_id}/install", status_code=202)
+    def domain_runtime_install_endpoint(engine_id: str) -> dict[str, Any]:
+        if get_engine(engine_id) is None:
+            raise HTTPException(status_code=404, detail="不支持的计算引擎")
+        try:
+            return runtime_install_manager.start(engine_id)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
 
     @router.get("/neqsim/install/{task_id}")
     def neqsim_install_task_endpoint(task_id: str) -> dict[str, Any]:

@@ -49,9 +49,9 @@ def bundled_environment(tmp_path):
     vendor = host / "sdk_owner_tool" / "_vendor"
     bundled = distribution(vendor, "sdk-audit-probe", "0.9")
     with (owner / "RECORD").open("a", encoding="utf-8") as record:
-        record.write(f"{bundled.relative_to(host)}/METADATA,,\n")
+        record.write(f"{bundled.relative_to(host).as_posix()}/METADATA,,\n")
         record.write(
-            f"{(vendor / 'sdk_audit_probe.py').relative_to(host)},,\n",
+            f"{(vendor / 'sdk_audit_probe.py').relative_to(host).as_posix()},,\n",
         )
     return host, vendor
 
@@ -89,7 +89,7 @@ def test_vendor_named_directory_without_owner_is_not_exempt(
         dependencies._installed_versions()
     diagnostic = str(caught.value)
     for detail in ("sdk-audit-probe", "1.0", "2.0", str(host), str(other)):
-        assert detail in diagnostic
+        assert detail in diagnostic.replace("\\\\", "\\")
 
 
 @pytest.mark.parametrize("sourceless", [False, True])

@@ -35,10 +35,19 @@ environment = {
 (root / "package.json").write_text(
     json.dumps({"private": True, "type": "module"}),
 )
+# Windows batch shims cannot be launched as native executables by Popen.
+npm_command = ["npm"]
+if os.name == "nt":
+    npm_path = Path(shutil.which("npm") or "npm.cmd")
+    npm_command = [
+        shutil.which("node") or "node",
+        str(npm_path.parent / "node_modules/npm/bin/npm-cli.js"),
+    ]
+
 packed = json.loads(
     subprocess.check_output(
         [
-            "npm",
+            *npm_command,
             "pack",
             str(args.package.resolve()),
             "--json",
@@ -53,7 +62,7 @@ packed = json.loads(
 tarball = root / packed["filename"]
 subprocess.run(
     [
-        "npm",
+        *npm_command,
         "install",
         "--ignore-scripts",
         "--offline",

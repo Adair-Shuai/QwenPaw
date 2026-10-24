@@ -36,8 +36,8 @@ def plugin_loader(tmp_path, monkeypatch, fresh_registry):
     "version_fields",
     [
         {},
-        {"min_version": "0.1.0", "max_version": "0.2.0"},
-        {"qwenpaw_version": {"min": "0.1.0", "max": "0.2.0"}},
+        {"min_version": "0.1.0", "max_version": "2.4.0"},
+        {"qwenpaw_version": {"min": "0.1.0", "max": "2.4.0"}},
     ],
 )
 async def test_undeclared_plugin_keeps_original_api_and_version_policy(

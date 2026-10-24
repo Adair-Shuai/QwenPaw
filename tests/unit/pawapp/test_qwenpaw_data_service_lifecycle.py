@@ -83,7 +83,7 @@ async def test_sidecar_retains_supervised_pid_and_stops_on_restart(
         PawApp(),
         "lifecycle",
         command=(
-            sys.executable,
+            getattr(sys, "_base_executable", sys.executable),
             "-m",
             "lifecycle_probe",
             "{host}",
@@ -101,7 +101,7 @@ async def test_sidecar_retains_supervised_pid_and_stops_on_restart(
         service.spec = replace(
             service.spec,
             command=(
-                sys.executable,
+                getattr(sys, "_base_executable", sys.executable),
                 "-c",
                 "import json,runpy,sys; "
                 "entry=runpy.run_path(sys.argv[1]); "

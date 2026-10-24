@@ -10,6 +10,7 @@
     "backend": "plugin.py"
   },
   "qwenpaw_version": {
-    "min": "2.2.2"
+    "min": "2.2.2",
+    "max": "2.4.0"
   }
 }

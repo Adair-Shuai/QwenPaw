@@ -19,13 +19,15 @@ import remarkMath from "remark-math";
 import rehypeKatex from "rehype-katex";
 import api from "../api";
 import { ExternalMarkdownLink } from "../components/Markdown/externalLinkComponents";
-import { useDesktopUpdate } from "../contexts/DesktopUpdateContext";
+import {
+  useDesktopUpdate,
+  type RefreshUpdatesResult,
+} from "../contexts/DesktopUpdateContext";
 import { useTheme } from "../contexts/ThemeContext";
 import { Slot } from "../plugins/registry/Slot";
 import { isDesktopApp } from "../tauri/backendRuntime";
 import { restartForComponentUpdates } from "../tauri/desktopUpdate";
-import { openExternalLink } from "../utils/openExternalLink";
-import { getReleaseNotesUrl, UPDATE_MD } from "./constants";
+import { UPDATE_MD } from "./constants";
 import styles from "./index.module.less";
 import {
   clearResumeComponentUpdatesAfterCore,
@@ -80,6 +82,9 @@ export default function AppBrand({
   const [loadedVersion, setLoadedVersion] = useState("");
   const version = versionProp ?? loadedVersion;
   const [updateModalOpen, setUpdateModalOpen] = useState(false);
+  const [modalUpdate, setModalUpdate] = useState<RefreshUpdatesResult | null>(
+    null,
+  );
   const [updateMarkdown, setUpdateMarkdown] = useState("");
   const [unifiedUpdateBusy, setUnifiedUpdateBusy] = useState(false);
   const unifiedUpdateBusyRef = useRef(false);
@@ -99,7 +104,9 @@ export default function AppBrand({
   // authoritative source for the badge and modal.
   const hasUpdate =
     onDesktop && (desktop.hasCoreUpdate || desktop.componentUpdateCount > 0);
-  const modalVersion = onDesktop ? desktop.version : version;
+  const modalVersion = modalUpdate?.hasCoreUpdate
+    ? modalUpdate.version
+    : version;
   const isBackgroundActive =
     onDesktop &&
     desktop.isBackground &&
@@ -147,6 +154,7 @@ export default function AppBrand({
           }
           clearResumeComponentUpdatesAfterCore();
           if (decision === "open") {
+            setModalUpdate(result);
             setUpdateMarkdown(t("sidebar.updateModal.unifiedInstallHint"));
             setUpdateModalOpen(true);
           }
@@ -200,10 +208,12 @@ export default function AppBrand({
     ? backgroundFailureTitle
     : hasUpdate
     ? t("sidebar.updateModal.updateAvailable")
-    : t("sidebar.updateModal.checkUpdates");
-  const handleOpenUpdateModal = () => {
-    setUpdateMarkdown("");
-    setUpdateModalOpen(true);
+    : t(
+        onDesktop
+          ? "sidebar.updateModal.checkUpdates"
+          : "sidebar.updateModal.guideTitle",
+      );
+  const handleOpenUpdateModal = (result?: RefreshUpdatesResult) => {
     const language = i18n.language?.startsWith("zh")
       ? "zh"
       : i18n.language?.startsWith("ru")
@@ -211,35 +221,53 @@ export default function AppBrand({
       : "en";
 
     if (onDesktop) {
-      const fallback = desktop.hasCoreUpdate
+      if (!result?.available) return;
+      setModalUpdate(result);
+      const fallback = result.hasCoreUpdate
         ? t("sidebar.updateModal.coreFirstInstallHint", {
-            version: desktop.version,
+            version: result.version,
             defaultValue:
               "The desktop core will be installed first. Component updates will be checked after restart.",
           })
         : t("sidebar.updateModal.unifiedInstallHint");
-      setUpdateMarkdown(desktop.body || fallback);
+      setUpdateMarkdown(
+        result.hasCoreUpdate ? result.body || fallback : fallback,
+      );
+      setUpdateModalOpen(true);
       return;
     }
+    // Browser/source installs can show instructions, but cannot claim that
+    // the displayed local version is a newly discovered desktop release.
+    setModalUpdate(null);
+    setUpdateMarkdown(UPDATE_MD[language] ?? UPDATE_MD.en);
+    setUpdateModalOpen(true);
+  };
 
-    const faqLanguage = language === "zh" ? "zh" : "en";
-    fetch(`https://qwenpaw.agentscope.io/docs/faq.${faqLanguage}.md`, {
-      cache: "no-cache",
-    })
-      .then((response) => (response.ok ? response.text() : Promise.reject()))
-      .then((text) => {
-        const zhPattern = /###\s*QwenPaw如何更新[\s\S]*?(?=\n###|$)/;
-        const enPattern = /###\s*How to update QwenPaw[\s\S]*?(?=\n###|$)/;
-        const match = text.match(faqLanguage === "zh" ? zhPattern : enPattern);
-        setUpdateMarkdown(
-          match && language !== "ru"
-            ? match[0].trim()
-            : UPDATE_MD[language] ?? UPDATE_MD.en,
-        );
-      })
-      .catch(() => {
-        setUpdateMarkdown(UPDATE_MD[language] ?? UPDATE_MD.en);
-      });
+  const handleCheckUpdates = async () => {
+    if (unifiedUpdateBusyRef.current || installActionRef.current) return;
+    if (!onDesktop) {
+      handleOpenUpdateModal();
+      return;
+    }
+    unifiedUpdateBusyRef.current = true;
+    setUnifiedUpdateBusy(true);
+    setUpdateModalOpen(false);
+    try {
+      // A badge is only the last known result, never a reason to skip checking.
+      const result = await desktop.refreshUpdates();
+      if (result.available) handleOpenUpdateModal(result);
+      else {
+        setModalUpdate(null);
+        setUpdateMarkdown("");
+        message.success(t("sidebar.updateModal.upToDate"));
+      }
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      message.error(`${t("sidebar.updateModal.failedTitle")}: ${detail}`);
+    } finally {
+      unifiedUpdateBusyRef.current = false;
+      setUnifiedUpdateBusy(false);
+    }
   };
 
   const handleLogoClick = () => {
@@ -273,7 +301,11 @@ export default function AppBrand({
             className={`${styles.versionBadge} ${
               hasUpdate && !isReady ? styles.versionBadgeClickable : ""
             }`}
-            onClick={hasUpdate && !isReady ? handleOpenUpdateModal : undefined}
+            onClick={
+              hasUpdate && !isReady
+                ? () => void handleCheckUpdates()
+                : undefined
+            }
           >
             v{version}
           </span>
@@ -336,6 +368,9 @@ export default function AppBrand({
           <Button
             type="text"
             size="small"
+            className={styles.appBrandUpdateButton}
+            // The design Button forwards its size to icons; Lucide needs a length.
+            iconSize={18}
             aria-label={unifiedUpdateTitle}
             aria-busy={
               unifiedUpdateBusy ||
@@ -348,31 +383,9 @@ export default function AppBrand({
               isBackgroundActive ||
               isApplyingDownloadedUpdate
             }
-            onClick={async (event) => {
+            onClick={(event) => {
               event.stopPropagation();
-              if (unifiedUpdateBusyRef.current || installActionRef.current) {
-                return;
-              }
-              if (!onDesktop || hasUpdate) {
-                handleOpenUpdateModal();
-                return;
-              }
-              unifiedUpdateBusyRef.current = true;
-              setUnifiedUpdateBusy(true);
-              try {
-                const result = await desktop.refreshUpdates();
-                if (result.available) handleOpenUpdateModal();
-                else message.success(t("sidebar.updateModal.upToDate"));
-              } catch (error) {
-                const detail =
-                  error instanceof Error ? error.message : String(error);
-                message.error(
-                  `${t("sidebar.updateModal.failedTitle")}: ${detail}`,
-                );
-              } finally {
-                unifiedUpdateBusyRef.current = false;
-                setUnifiedUpdateBusy(false);
-              }
+              void handleCheckUpdates();
             }}
           />
         </Tooltip>
@@ -407,7 +420,9 @@ export default function AppBrand({
           <Button key="close" onClick={() => setUpdateModalOpen(false)}>
             {t("common.close")}
           </Button>,
-          onDesktop && desktop.hasCoreUpdate && desktop.supportsLaterInstall ? (
+          onDesktop &&
+          modalUpdate?.hasCoreUpdate &&
+          desktop.supportsLaterInstall ? (
             <Button
               key="later"
               onClick={() => {
@@ -418,7 +433,7 @@ export default function AppBrand({
               {t("sidebar.updateModal.updateLater")}
             </Button>
           ) : null,
-          onDesktop ? (
+          onDesktop && modalUpdate?.available ? (
             <Button
               key="install"
               type="primary"
@@ -428,18 +443,7 @@ export default function AppBrand({
             >
               {t("sidebar.updateModal.installUpdate")}
             </Button>
-          ) : (
-            <Button
-              key="releases"
-              type="primary"
-              className={styles.updateViewReleasesBtn}
-              onClick={() =>
-                openExternalLink(getReleaseNotesUrl(i18n.language))
-              }
-            >
-              {t("sidebar.updateModal.viewReleases")}
-            </Button>
-          ),
+          ) : null,
         ].filter(Boolean)}
         width={960}
         className={styles.updateModal}
@@ -448,17 +452,42 @@ export default function AppBrand({
           <div className={styles.updateModalBannerLeft}>
             <span className={styles.updateModalVersionTag}>
               <TagOutlined size="1em" />
-              Version {modalVersion || version}
+              {t(
+                modalUpdate?.hasCoreUpdate
+                  ? "sidebar.updateModal.targetVersion"
+                  : "sidebar.updateModal.currentVersion",
+                { version: modalVersion || version },
+              )}
             </span>
             <div className={styles.updateModalBannerTitle}>
-              {t("sidebar.updateModal.title", {
-                version: modalVersion || version,
-              })}
+              {modalUpdate?.hasCoreUpdate
+                ? t("sidebar.updateModal.title", {
+                    version: modalUpdate.version,
+                  })
+                : modalUpdate?.componentCount
+                ? t("sidebar.updateModal.componentsTitle", {
+                    count: modalUpdate.componentCount,
+                  })
+                : t("sidebar.updateModal.guideTitle")}
             </div>
           </div>
         </div>
 
         <div className={styles.updateModalBody}>
+          {modalUpdate &&
+            !modalUpdate.hasCoreUpdate &&
+            modalUpdate.components?.length > 0 && (
+              <ul aria-label={t("sidebar.updateModal.componentList")}>
+                {modalUpdate.components.map((component) => (
+                  <li key={component.component}>
+                    <strong>{component.component}</strong>{" "}
+                    {component.from_version ||
+                      t("sidebar.updateModal.notInstalled")}{" "}
+                    → {component.target_version}
+                  </li>
+                ))}
+              </ul>
+            )}
           {updateMarkdown ? (
             <ReactMarkdown
               remarkPlugins={[remarkGfm, remarkMath]}

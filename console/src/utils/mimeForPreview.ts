@@ -92,10 +92,13 @@ const EXT_TO_MIME: Record<string, string> = {
   pdf: "application/pdf",
   doc: "application/msword",
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  docm: "application/vnd.ms-word.document.macroenabled.12",
   xls: "application/vnd.ms-excel",
   xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  xlsm: "application/vnd.ms-excel.sheet.macroenabled.12",
   ppt: "application/vnd.ms-powerpoint",
   pptx: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+  pptm: "application/vnd.ms-powerpoint.presentation.macroenabled.12",
   odt: "application/vnd.oasis.opendocument.text",
   ods: "application/vnd.oasis.opendocument.spreadsheet",
   odp: "application/vnd.oasis.opendocument.presentation",
@@ -150,6 +153,9 @@ const IMAGE_MIMES = new Set([
 const PDF_MIMES = new Set(["application/pdf"]);
 
 const OFFICE_DOC_MIMES = new Set([
+  "application/vnd.ms-word.document.macroenabled.12",
+  "application/vnd.ms-excel.sheet.macroenabled.12",
+  "application/vnd.ms-powerpoint.presentation.macroenabled.12",
   "application/msword",
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   "application/vnd.ms-excel",
@@ -426,7 +432,7 @@ export function isPdfMime(mime: string): boolean {
 }
 
 export function isOfficeDocMime(mime: string): boolean {
-  return OFFICE_DOC_MIMES.has(mime);
+  return OFFICE_DOC_MIMES.has(mime.toLowerCase());
 }
 
 export function isOfficeOoxmlMime(mime: string): boolean {

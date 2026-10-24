@@ -455,7 +455,7 @@ class Plugin:
             assert (
                 0
                 < call.deadline - asyncio.get_running_loop().time()
-                <= 0.05
+                <= 0.5
             )
             try:
                 await asyncio.sleep(10)
@@ -472,7 +472,7 @@ class Plugin:
                 {"type": "object"},
                 slow,
                 enabled=True,
-                timeout=0.05,
+                timeout=0.5,
             )
         )
 

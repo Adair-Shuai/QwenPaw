@@ -174,10 +174,104 @@ describe("DesktopUpdateContext", () => {
       await result.current.refreshUpdates();
     });
 
-    // setVersion((prev) => prev || info.version): an already-cached version
-    // must win over the remote one.
+    // The cached installer stays usable, but must not show another release's notes.
     expect(result.current.version).toBe("2.3.0");
-    expect(result.current.body).toBe("notes");
+    expect(result.current.body).toBe("");
+  });
+
+  it("replaces old remote metadata when a later check finds a new release", async () => {
+    mocks.checkDesktopUpdate
+      .mockResolvedValueOnce({ version: "2.4.0", body: "Old notes" })
+      .mockResolvedValueOnce({ version: "2.5.0", body: "New notes" });
+    const { result } = renderUpdate();
+    await flush();
+    await act(async () => {
+      await result.current.refreshUpdates();
+    });
+    await act(async () => {
+      await result.current.refreshUpdates();
+    });
+    expect(result.current.version).toBe("2.5.0");
+    expect(result.current.body).toBe("New notes");
+  });
+
+  it("clears all remote metadata after the advertised update is gone", async () => {
+    mocks.checkDesktopUpdate
+      .mockResolvedValueOnce({
+        version: "2.4.0",
+        body: "Old notes",
+        supportsLaterInstall: true,
+      })
+      .mockResolvedValueOnce(null);
+    const { result } = renderUpdate();
+    await flush();
+    await act(async () => {
+      await result.current.refreshUpdates();
+    });
+    await act(async () => {
+      expect((await result.current.refreshUpdates()).available).toBe(false);
+    });
+    expect(result.current.hasCoreUpdate).toBe(false);
+    expect(result.current.version).toBe("");
+    expect(result.current.body).toBe("");
+    expect(result.current.supportsLaterInstall).toBe(false);
+  });
+
+  it("revalidates a previously cached installer before advertising it again", async () => {
+    mocks.checkCachedUpdate
+      .mockResolvedValueOnce("2.3.0")
+      .mockResolvedValue(null);
+    const { result } = renderUpdate();
+    await flush();
+    expect(result.current.phase).toBe("downloaded");
+    await act(async () => {
+      expect((await result.current.refreshUpdates()).available).toBe(false);
+    });
+    expect(result.current.phase).toBe("idle");
+    expect(result.current.hasCoreUpdate).toBe(false);
+    expect(result.current.version).toBe("");
+  });
+
+  it("does not resurrect an old cache probe after a manual check", async () => {
+    let finishStartup!: (version: string | null) => void;
+    mocks.checkCachedUpdate
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          finishStartup = resolve;
+        }),
+      )
+      .mockResolvedValue(null);
+    const { result } = renderUpdate();
+    await act(async () => {
+      await result.current.refreshUpdates();
+    });
+    await act(async () => {
+      finishStartup("2.3.0");
+    });
+    expect(result.current.hasCoreUpdate).toBe(false);
+    expect(result.current.phase).toBe("idle");
+  });
+
+  it("clears stale core state when both update sources fail", async () => {
+    mocks.checkDesktopUpdate.mockResolvedValueOnce({
+      version: "2.4.0",
+      body: "Old notes",
+    });
+    const { result } = renderUpdate();
+    await flush();
+    await act(async () => {
+      await result.current.refreshUpdates();
+    });
+    mocks.checkDesktopUpdate.mockRejectedValue(new Error("Core unavailable"));
+    mocks.checkComponentUpdates.mockRejectedValue(
+      new Error("Components unavailable"),
+    );
+    await act(async () => {
+      await expect(result.current.refreshUpdates()).rejects.toThrow();
+    });
+    expect(result.current.hasCoreUpdate).toBe(false);
+    expect(result.current.componentUpdateCount).toBe(0);
+    expect(result.current.body).toBe("");
   });
 
   it("ignores a null cached version", async () => {
@@ -188,6 +282,81 @@ describe("DesktopUpdateContext", () => {
 
     expect(result.current.phase).toBe("idle");
     expect(result.current.hasUpdate).toBe(false);
+  });
+
+  it("keeps a valid downloaded update installable when the remote check fails", async () => {
+    mocks.checkCachedUpdate.mockResolvedValue("2.3.0");
+    mocks.checkDesktopUpdate.mockRejectedValue(new Error("Offline"));
+    const { result } = renderUpdate();
+    await flush();
+    await act(async () => {
+      const info = await result.current.refreshUpdates();
+      expect(info.hasCoreUpdate).toBe(true);
+      expect(info.version).toBe("2.3.0");
+    });
+    expect(result.current.phase).toBe("downloaded");
+    expect(result.current.hasCoreUpdate).toBe(true);
+  });
+
+  it("clears a stale background failure when a new check confirms no updates", async () => {
+    mocks.checkCachedUpdate
+      .mockResolvedValueOnce("2.3.0")
+      .mockResolvedValue(null);
+    const { result } = renderUpdate();
+    await flush();
+    act(() => handlers.onError?.(err()));
+    expect(result.current.phase).toBe("failed");
+    await act(async () => {
+      await result.current.refreshUpdates();
+    });
+    expect(result.current.hasCoreUpdate).toBe(false);
+    expect(result.current.phase).toBe("idle");
+    expect(result.current.isBackground).toBe(false);
+    expect(result.current.error).toBeNull();
+  });
+
+  it("reports no update when the exact compatible release's components are all current", async () => {
+    mocks.checkDesktopUpdate.mockResolvedValue({
+      version: "2.4.0",
+      body: "Already applied release",
+    });
+    mocks.checkComponentUpdates.mockResolvedValue({
+      enabled: true,
+      compatible_desktop_version: "2.4.0",
+      updates: [],
+    });
+    const { result } = renderUpdate();
+    await flush();
+    await act(async () => {
+      expect((await result.current.refreshUpdates()).available).toBe(false);
+    });
+    expect(result.current.hasCoreUpdate).toBe(false);
+    expect(result.current.componentUpdateCount).toBe(0);
+    expect(result.current.version).toBe("");
+    expect(result.current.body).toBe("");
+  });
+
+  it("clears the component badge when a later check confirms the component was updated", async () => {
+    mocks.checkComponentUpdates
+      .mockResolvedValueOnce({
+        enabled: true,
+        updates: [
+          { component: "demo", from_version: "1.0.0", target_version: "2.0.0" },
+        ],
+      })
+      .mockResolvedValue({ enabled: true, updates: [] });
+    const { result } = renderUpdate();
+    await flush();
+    await act(async () => {
+      await result.current.refreshUpdates();
+    });
+    expect(result.current.componentUpdateCount).toBe(1);
+    await act(async () => {
+      const info = await result.current.refreshUpdates();
+      expect(info.available).toBe(false);
+      expect(info.components).toEqual([]);
+    });
+    expect(result.current.componentUpdateCount).toBe(0);
   });
 
   it("swallows a cached-update probe failure without a remote startup probe", async () => {

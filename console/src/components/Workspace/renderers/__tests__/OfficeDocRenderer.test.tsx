@@ -194,6 +194,42 @@ describe("OfficeDocRenderer", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
   });
 
+  it("retries OfficeCLI after reopening a simplified detached preview", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ html: "<p>Simplified</p>", engine: "legacy" }),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({
+          html: "<html>Full layout</html>",
+          engine: "officecli",
+        }),
+      });
+    global.fetch = fetchMock as unknown as typeof global.fetch;
+    const context = makeContext();
+    const first = render(<OfficeDocRenderer {...context} />);
+    await waitFor(() =>
+      expect(
+        first.container.querySelector("iframe")?.getAttribute("srcDoc"),
+      ).toContain("Simplified"),
+    );
+    first.unmount();
+    const second = render(<OfficeDocRenderer {...context} />);
+    await waitFor(() =>
+      expect(
+        second.container.querySelector("iframe")?.getAttribute("srcDoc"),
+      ).toBe("<html>Full layout</html>"),
+    );
+    expect(second.container.querySelector("iframe")).toHaveAttribute(
+      "sandbox",
+      "allow-scripts",
+    );
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
   it("reloads a detached file even when a conversion is cached", async () => {
     const fetchMock = vi
       .fn()

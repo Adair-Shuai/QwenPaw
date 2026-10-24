@@ -30,6 +30,7 @@ const mocks = vi.hoisted(() => {
   };
   return {
     isDesktop: false,
+    language: "zh",
     desktop,
     restartForComponentUpdates: vi.fn(),
   };
@@ -41,7 +42,7 @@ vi.mock("react-i18next", () => {
   return {
     useTranslation: () => ({
       t,
-      i18n: { language: "zh", changeLanguage: vi.fn() },
+      i18n: { language: mocks.language, changeLanguage: vi.fn() },
     }),
   };
 });
@@ -112,7 +113,7 @@ import {
 
 function updateEntryButton() {
   return screen.getByRole("button", {
-    name: /sidebar\.updateModal\.(checkUpdates|updateAvailable)/,
+    name: /sidebar\.updateModal\.(checkUpdates|updateAvailable|guideTitle)/,
   });
 }
 
@@ -122,6 +123,7 @@ function emptyRefreshResult() {
     hasCoreUpdate: false,
     componentsChecked: true,
     componentCount: 0,
+    components: [],
     version: "",
     body: "",
   };
@@ -133,6 +135,9 @@ function componentRefreshResult(count = 1) {
     hasCoreUpdate: false,
     componentsChecked: true,
     componentCount: count,
+    components: count
+      ? [{ component: "demo", from_version: "1.0.0", target_version: "2.0.0" }]
+      : [],
     version: "",
     body: "",
   };
@@ -141,15 +146,27 @@ function componentRefreshResult(count = 1) {
 describe("Header update entry", () => {
   beforeEach(() => {
     mocks.isDesktop = false;
+    mocks.language = "zh";
     mocks.desktop.phase = "idle";
+    mocks.desktop.isBackground = false;
+    mocks.desktop.supportsLaterInstall = false;
     mocks.desktop.hasCoreUpdate = false;
     mocks.desktop.componentUpdateCount = 0;
     mocks.desktop.version = "";
     mocks.desktop.body = "";
     mocks.desktop.checkWarning = null;
-    mocks.desktop.refreshUpdates
-      .mockReset()
-      .mockResolvedValue(emptyRefreshResult());
+    mocks.desktop.refreshUpdates.mockReset().mockImplementation(async () =>
+      mocks.desktop.hasCoreUpdate
+        ? {
+            ...emptyRefreshResult(),
+            available: true,
+            hasCoreUpdate: true,
+            componentsChecked: false,
+            version: mocks.desktop.version,
+            body: mocks.desktop.body,
+          }
+        : componentRefreshResult(mocks.desktop.componentUpdateCount),
+    );
     mocks.desktop.queueComponentUpdates.mockReset().mockResolvedValue(false);
     mocks.desktop.startInstall.mockReset().mockResolvedValue(undefined);
     mocks.desktop.installDownloaded.mockReset().mockResolvedValue(undefined);
@@ -161,7 +178,7 @@ describe("Header update entry", () => {
     render(<AppBrand />);
 
     const button = screen.getByRole("button", {
-      name: "sidebar.updateModal.checkUpdates",
+      name: "sidebar.updateModal.guideTitle",
     });
     const version = await screen.findByText("v2.1.1b7");
 
@@ -173,6 +190,115 @@ describe("Header update entry", () => {
     expect(version.closest("[class*='appBrandVersionArea']")).toContainElement(
       button,
     );
+  });
+
+  it.each([
+    ["zh", "UGSci 桌面端更新", "现在更新", "当前已是最新版本"],
+    ["en", "Updating UGSci Desktop", "Update now", "You're up to date"],
+    [
+      "ru",
+      "Обновление UGSci для компьютера",
+      "Обновить сейчас",
+      "последняя версия",
+    ],
+  ])(
+    "shows desktop-only update instructions without upstream links in %s",
+    async (language, heading, installLabel, upToDate) => {
+      mocks.language = language;
+      render(<AppBrand version="2.2.2" />);
+      fireEvent.click(updateEntryButton());
+      const dialog = await screen.findByRole("dialog");
+      expect(dialog).toHaveTextContent("sidebar.updateModal.guideTitle");
+      expect(dialog).toHaveTextContent(
+        "sidebar.updateModal.currentVersion:2.2.2",
+      );
+      expect(dialog).not.toHaveTextContent("sidebar.updateModal.title");
+      expect(screen.getByRole("heading", { name: heading })).toBeVisible();
+      expect(dialog).toHaveTextContent(installLabel);
+      expect(dialog).toHaveTextContent(upToDate);
+      expect(dialog).not.toHaveTextContent(
+        /源码|仓库|source install|git pull|pip|npm|QWENPAW_|исходник/i,
+      );
+      expect(dialog.querySelector("pre, code, a")).toBeNull();
+      expect(
+        screen.queryByRole("button", {
+          name: "sidebar.updateModal.viewReleases",
+        }),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", {
+          name: "sidebar.updateModal.installUpdate",
+        }),
+      ).not.toBeInTheDocument();
+      expect(mocks.desktop.refreshUpdates).not.toHaveBeenCalled();
+    },
+  );
+
+  it("rechecks an existing update badge and does not reopen stale notes when current", async () => {
+    mocks.isDesktop = true;
+    mocks.desktop.hasCoreUpdate = true;
+    mocks.desktop.version = "2.2.2";
+    mocks.desktop.body = "Obsolete release notes";
+    mocks.desktop.refreshUpdates.mockResolvedValue(emptyRefreshResult());
+    render(<AppBrand version="2.2.2" />);
+    fireEvent.click(updateEntryButton());
+    await waitFor(() =>
+      expect(mocks.desktop.refreshUpdates).toHaveBeenCalledTimes(1),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      screen.queryByText("Obsolete release notes"),
+    ).not.toBeInTheDocument();
+    expect(mocks.desktop.startInstall).not.toHaveBeenCalled();
+  });
+
+  it("opens the version and notes returned by the current check", async () => {
+    mocks.isDesktop = true;
+    mocks.desktop.hasCoreUpdate = true;
+    mocks.desktop.version = "2.3.0";
+    mocks.desktop.body = "Obsolete notes";
+    mocks.desktop.refreshUpdates.mockResolvedValue({
+      ...emptyRefreshResult(),
+      available: true,
+      hasCoreUpdate: true,
+      version: "2.4.0",
+      body: "Current release notes",
+    });
+    render(<AppBrand />);
+    fireEvent.click(updateEntryButton());
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("sidebar.updateModal.title:2.4.0");
+    expect(dialog).toHaveTextContent("Current release notes");
+    expect(dialog).not.toHaveTextContent("Obsolete notes");
+  });
+
+  it("labels component-only updates separately and shows their actual versions", async () => {
+    mocks.isDesktop = true;
+    mocks.desktop.componentUpdateCount = 1;
+    mocks.desktop.body = "Old desktop changelog";
+    mocks.desktop.refreshUpdates.mockResolvedValue(componentRefreshResult(1));
+    render(<AppBrand version="2.2.2" />);
+    fireEvent.click(updateEntryButton());
+    const dialog = await screen.findByRole("dialog");
+    expect(dialog).toHaveTextContent("sidebar.updateModal.componentsTitle");
+    expect(dialog).toHaveTextContent("demo 1.0.0 → 2.0.0");
+    expect(dialog).not.toHaveTextContent("sidebar.updateModal.title");
+    expect(dialog).not.toHaveTextContent("Old desktop changelog");
+  });
+
+  it("does not treat a failed refresh of an old badge as an update", async () => {
+    mocks.isDesktop = true;
+    mocks.desktop.hasCoreUpdate = true;
+    mocks.desktop.refreshUpdates.mockRejectedValue(
+      new Error("Network unavailable"),
+    );
+    render(<AppBrand />);
+    fireEvent.click(updateEntryButton());
+    await waitFor(() =>
+      expect(mocks.desktop.refreshUpdates).toHaveBeenCalledTimes(1),
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(mocks.desktop.startInstall).not.toHaveBeenCalled();
   });
 
   it("installs the desktop core without queuing components first", async () => {

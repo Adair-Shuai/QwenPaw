@@ -147,6 +147,7 @@
     "installSuccess": "Installed",
     "installFailed": "Install failed",
     "installedStatus": "Installed",
+    "updateQueued": "Update queued — restart required",
     "update": "Update",
     "searchMarket": "Search app market...",
     "marketFilters": "App market filters",
@@ -356,7 +357,9 @@
     "changeAvatar": "Avatar manager",
     "uploadAvatar": "Choose image",
     "avatarHistory": "Recent avatars · Last 12",
-    "defaultAvatar": "Restore default avatar",
+    "defaultAvatar": "Science assistant",
+    "builtinAvatars": "Default avatars",
+    "cuteAvatar": "Cute assistant",
     "historyAvatar": "Previous avatar {{number}}",
     "avatarInvalid": "Choose PNG, JPG or WebP under 10 MB, or GIF under 2 MB",
     "avatarSaveFailed": "Could not save avatar. Check your connection and retry.",
@@ -375,6 +378,18 @@
     "dock": "Return sidebar to left edge",
     "newVersion": "New version available: v{{version}}, click to upgrade",
     "updateModal": {
+      "checkUpdates": "Check for updates",
+      "guideTitle": "Update instructions",
+      "componentsTitle": "{{count}} component updates available",
+      "componentList": "Pending component updates",
+      "currentVersion": "Current version v{{version}}",
+      "targetVersion": "Target version v{{version}}",
+      "notInstalled": "Not installed",
+      "updateAvailable": "Update available",
+      "upToDate": "You're up to date",
+      "installUpdate": "Update now",
+      "unifiedInstallHint": "Updates will be installed after the app restarts.",
+      "coreFirstInstallHint": "The desktop core {{version}} will be installed first. Component updates will be checked after restart.",
       "title": "New version available: v{{version}}",
       "viewReleases": "View Releases",
       "installDesktopUpdate": "Update Now",
@@ -413,7 +428,8 @@
     "quickMenu": {
       "settings": "Settings",
       "appearance": "Appearance",
-      "about": "About QwenPaw"
+      "manual": "Manual",
+      "about": "About UGSci"
     },
     "collapse": "Collapse sidebar",
     "expand": "Expand sidebar",
@@ -435,10 +451,12 @@
     },
     "pages": {
       "general": "General",
+      "ugsci": "UGSci settings",
       "navigation": "Sidebar"
     },
     "descriptions": {
       "general": "Language, theme and application behavior",
+      "ugsci": "GenUI and other UGSci preferences",
       "navigation": "Sidebar visibility",
       "agents": "QwenPaw, Codex and Qoder profiles",
       "models": "Providers, credentials and model catalog",
@@ -1000,6 +1018,13 @@
     }
   },
   "workspace": {
+    "officePreviewMode": "Office preview mode",
+    "officeReading": "Read document",
+    "officePrint": "Print layout",
+    "officePrintFallback": "Print layout is unavailable. Showing the reading preview.",
+    "officeZoomOut": "Zoom out",
+    "officeZoomReset": "Reset zoom",
+    "officeZoomIn": "Zoom in",
     "title": "Files",
     "workspacePath": "Workspace:",
     "noFiles": "No files",
@@ -1680,6 +1705,8 @@
     },
     "local": "Local",
     "remote": "Remote",
+    "headerAuth": "Token / key authentication",
+    "headerAuthHint": "Uses the configured token or key when connecting; no additional OAuth flow is needed. This label does not indicate that the credential has been validated.",
     "invalidJson": "Enter valid JSON containing at least one MCP server."
   },
   "heartbeat": {
@@ -4137,7 +4164,7 @@
     "description": "I am a helpful assistant that can help you with your questions.",
     "prompt1": "Let's start a new journey!",
     "prompt2": "Can you tell me what skills you have?",
-    "inputPlaceholder": "\"↑↓\" for message navigation · \"/\" for quick commands",
+    "inputPlaceholder": "\"↑↓\" for message navigation · \"/\" for quick commands · \"@\" to assign an Agent",
     "composer": {
       "attach": "Attach files",
       "send": "Send message",

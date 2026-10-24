@@ -71,7 +71,7 @@ import styles from "./sidebarSessionList.module.less";
  * otherwise the row margin collapses into the next row and adjacent
  * hover/active backgrounds touch.
  */
-const SESSION_ROW_HEIGHT = 38;
+const SESSION_ROW_HEIGHT = 32;
 const GROUP_HEADER_HEIGHT = 36;
 const DATE_HEADER_HEIGHT = 36;
 

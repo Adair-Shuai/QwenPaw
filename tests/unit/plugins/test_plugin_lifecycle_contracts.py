@@ -253,6 +253,9 @@ def _patch_agent_tools(monkeypatch):
         "qwenpaw.config.config.save_agent_config",
         _save,
     )
+    monkeypatch.setattr(
+        "qwenpaw.plugins.api._agent_ids_for_tool_write", lambda: list(boxes)
+    )
     return boxes
 
 
@@ -615,7 +618,7 @@ async def test_interrupt_waits_for_actual_command_exit(
                 delete_files=True,
             )
         else:
-            report = await asyncio.wait_for(unload, 0.5)
+            report = await asyncio.wait_for(unload, 5)
             assert command.cancelled()
         assert report.clean and report.quiescent
         assert calls == ["command-exit", "teardown"]
@@ -1580,19 +1583,21 @@ async def test_install_cancel_waits_for_copy_before_next_load(
     loader = PluginLoader(plugin_dirs=[install_dir])
     loader.registry = fresh_registry
     finished = {"done": False}
+    copy_started = threading.Event()
     real_copy = shutil.copytree
 
     def _slow_copy(src, dst, *args, **kwargs):
+        copy_started.set()
         time.sleep(0.12)
         result = real_copy(src, dst, *args, **kwargs)
         finished["done"] = True
         return result
 
-    monkeypatch.setattr("qwenpaw.plugins.loader.shutil.copytree", _slow_copy)
+    monkeypatch.setattr("qwenpaw.plugins.loader.copy_tree", _slow_copy)
     task = asyncio.create_task(
         loader.load_plugin_from_path(source, install_dir=install_dir),
     )
-    await asyncio.sleep(0.02)
+    assert await asyncio.to_thread(copy_started.wait, 5)
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task

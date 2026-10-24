@@ -536,7 +536,7 @@ class TestInstallCommandOffline:
         def boom(s, t, **kw):
             raise OSError("disk full")
 
-        monkeypatch.setattr(pc.shutil, "copytree", boom)
+        monkeypatch.setattr("qwenpaw.plugins.loader.copy_tree", boom)
         res = CliRunner().invoke(pc.plugin, ["install", str(src)])
         assert res.exit_code != 0
         assert "disk full" in res.output
