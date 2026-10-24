@@ -306,7 +306,7 @@ scroll 不再有独立的 token 工具结果 cap。所有实时 preview 都使�
 | `scroll_config.db_filename`                      | `"history.db"` | SQLite 文件路径：相对 agent 工作区，或绝对路径（可以在工作区外）。支持 `..`、`~` 和符号链接；反斜杠统一转换为 `/`。升级不移动数据库。备份包含 SQLite 快照；恢复时将数据库放入目标工作区，并更新恢复后的配置。 |
 | `scroll_config.tool_output_token_cap`            | `3000`         | 已废弃且会被忽略；显式配置会输出 warning。请改用 `pruning_recent_msg_max_bytes`。                                                                                                                             |
 | `scroll_config.repl_timeout_s`                   | `300`          | `recall_history_python` 单次调用超时时间。                                                                                                                                                                    |
-| `scroll_config.history_retention_days`           | `0`            | 默认永久保留；只有显式设置为正数时才自动清理早于该天数的历史行。                   |
+| `scroll_config.history_retention_days`           | `0`            | 默认永久保留；只有显式设置为正数时才自动清理早于该天数的历史行。                                                                                                                                              |
 | `scroll_config.offload_dialog`                   | `false`        | 是否额外写旧版 `dialog/*.jsonl` 归档；`history.db` 仍是真相来源。                                                                                                                                             |
 
 ## 手动压缩
