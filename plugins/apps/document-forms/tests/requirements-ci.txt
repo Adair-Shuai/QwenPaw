@@ -18,7 +18,7 @@ chardet
 filelock
 wcmatch
 aiofiles
-agentscope==2.0.10
+agentscope[model-ollama,classifier-jev]==2.0.10
 pillow>=10
 google-genai
 ollama
