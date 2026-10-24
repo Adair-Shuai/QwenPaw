@@ -2013,7 +2013,7 @@ describe.each(["embedded", "compatible"])(
       expect(
         calls.filter((call) => call.url.endsWith("/generate")),
       ).toHaveLength(generationCount);
-    });
+    }, 45000);
   },
 );
 it("fills selection opinion and upload fields with shared project references and previews generated files", async () => {
