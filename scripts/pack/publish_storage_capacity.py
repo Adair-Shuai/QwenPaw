@@ -50,6 +50,8 @@ EXPECTED = {
     "backend/reports.py",
     "backend/service.py",
     "backend/workbench.py",
+    "backend/workflow.py",
+    "backend/assistant.py",
 }
 
 

@@ -20,6 +20,360 @@
   container-type: inline-size;
   container-name: capacity;
 }
+
+/* Workflow shell: keep navigation stable while forms and conversation scroll. */
+.sc-workflow {
+  position: relative;
+  overflow: hidden;
+  min-height: 0;
+  height: 100%;
+}
+.sc-workflow .sc-sidebar {
+  width: 220px;
+  padding: 18px 12px 10px;
+  gap: 12px;
+  overflow: auto;
+}
+.sc-workflow .sc-sidebar h1 {
+  font-size: 19px;
+  margin: 0;
+}
+.sc-workflow .sc-sidebar footer {
+  font-size: 11px;
+  padding-top: 10px;
+}
+.sc-project-select {
+  display: grid;
+  gap: 5px;
+  font-size: 12px;
+  color: var(--sc-muted);
+}
+.sc-project-select select,
+.sc-node-toolbar select {
+  min-width: 0;
+  width: 100%;
+  border: 1px solid var(--sc-line);
+  border-radius: 6px;
+  padding: 7px;
+  background: var(--sc-paper);
+}
+.sc-flow-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.sc-flow-group {
+  color: var(--sc-muted);
+  font-size: 11px;
+  padding: 9px 10px 3px;
+}
+.sc-flow-nav button {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  border-color: transparent;
+  padding: 7px 9px;
+  background: transparent;
+  text-align: left;
+}
+.sc-flow-nav button[aria-selected="true"] {
+  background: var(--sc-paper);
+  border-color: var(--sc-line);
+  color: var(--sc-accent);
+}
+.sc-step-number {
+  color: var(--sc-muted);
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+.sc-step-text {
+  flex: 1;
+  font-size: 13px;
+}
+.sc-step-text small {
+  display: block;
+  font-size: 10px;
+  color: var(--sc-muted);
+  line-height: 1.2;
+}
+.sc-step-done {
+  color: #23815c;
+}
+.sc-workflow .sc-main {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.sc-workflow .sc-header {
+  padding: 15px 22px;
+  flex-shrink: 0;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.sc-workflow .sc-header h2 {
+  font-size: 16px;
+}
+.sc-node-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: 1px solid var(--sc-line);
+  padding: 12px 22px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+}
+.sc-node-toolbar h2 {
+  font-size: 18px;
+  margin: 0;
+}
+.sc-node-toolbar select {
+  width: auto;
+  max-width: 220px;
+}
+.sc-workflow .sc-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 20px 22px 40px;
+}
+.sc-workflow .sc-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 220px), 1fr));
+}
+.sc-workflow .sc-unit {
+  padding: 0;
+  border: none;
+}
+.sc-workflow .sc-unit-top h3 {
+  font-size: 14px;
+}
+.sc-node-result {
+  border-top: 1px solid var(--sc-line);
+  margin-top: 25px;
+  padding-top: 16px;
+}
+.sc-node-empty {
+  padding: 15px;
+  margin-top: 20px;
+  color: var(--sc-muted);
+  background: var(--sc-soft);
+  border-radius: 6px;
+  font-size: 12px;
+}
+.sc-node-values {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 16px;
+  padding: 14px;
+  background: var(--sc-soft);
+  border-radius: 6px;
+}
+.sc-node-values dt {
+  font-size: 12px;
+  color: var(--sc-muted);
+}
+.sc-node-values dd {
+  margin: 3px 0 0;
+  font-size: 22px;
+  font-variant-numeric: tabular-nums;
+}
+.sc-node-values dd small {
+  font-size: 11px;
+  margin-left: 5px;
+  color: var(--sc-muted);
+}
+.sc-warning {
+  color: #9b6500;
+}
+.sc-result-table {
+  max-height: 400px;
+  overflow: auto;
+}
+.sc-field-sources {
+  margin-top: 20px;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.sc-assistant {
+  position: relative;
+  flex-shrink: 0;
+  border-left: 1px solid var(--sc-line);
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--sc-paper);
+}
+.sc-assistant > header {
+  padding: 16px 88px 16px 16px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 1px solid var(--sc-line);
+  gap: 10px;
+}
+.sc-assistant header small {
+  display: block;
+  font-size: 11px;
+  color: var(--sc-muted);
+}
+.sc-resizer {
+  position: absolute;
+  top: 0;
+  left: -4px;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+  z-index: 2;
+}
+.sc-resizer:hover,
+.sc-resizer:focus-visible {
+  background: #0d76fd22;
+  outline: none;
+}
+.sc-chat-history {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+.sc-chat-welcome {
+  color: var(--sc-muted);
+  font-size: 13px;
+}
+.sc-chat-welcome button {
+  display: block;
+  margin: 8px 0;
+  white-space: normal;
+  width: 100%;
+  text-align: left;
+  font-size: 12px;
+}
+.sc-message {
+  margin-bottom: 18px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.sc-message > small {
+  display: block;
+  font-size: 11px;
+  color: var(--sc-muted);
+  margin-bottom: 5px;
+}
+.sc-message > div {
+  white-space: pre-wrap;
+}
+.sc-message-user {
+  padding: 10px 12px;
+  background: var(--sc-soft);
+  border-radius: 7px;
+}
+.sc-chat-compose {
+  border-top: 1px solid var(--sc-line);
+  padding: 12px;
+}
+.sc-chat-compose textarea {
+  display: block;
+  width: 100%;
+  min-height: 95px;
+  max-height: 220px;
+  resize: vertical;
+  border: 1px solid var(--sc-line);
+  border-radius: 7px;
+  padding: 10px;
+  background: var(--sc-paper);
+}
+.sc-chat-compose .sc-actions {
+  margin-top: 9px;
+  justify-content: space-between;
+}
+.sc-chat-sources {
+  max-height: 150px;
+  overflow: auto;
+  font-size: 12px;
+  padding: 6px 0;
+}
+.sc-chat-sources label {
+  display: flex;
+  gap: 6px;
+  overflow-wrap: anywhere;
+  margin: 5px 0;
+}
+.sc-attachments {
+  max-height: 90px;
+  overflow: auto;
+  font-size: 11px;
+}
+.sc-attachments span {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  overflow-wrap: anywhere;
+}
+.sc-attachments button {
+  padding: 0 4px;
+}
+.sc-proposals {
+  border-top: 1px solid var(--sc-line);
+  padding: 12px 0;
+  font-size: 12px;
+}
+.sc-proposals > div {
+  border: 1px solid var(--sc-line);
+  border-radius: 6px;
+  padding: 10px;
+  margin: 8px 0;
+}
+.sc-proposals small {
+  display: block;
+  color: var(--sc-muted);
+}
+.sc-proposals p {
+  margin: 4px 0;
+  overflow-wrap: anywhere;
+}
+.sc-proposals button {
+  margin-top: 6px;
+  font-size: 12px;
+}
+@container capacity (max-width: 1100px) {
+  .sc-workflow .sc-sidebar {
+    width: 185px;
+  }
+  .sc-assistant {
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    max-width: calc(100% - 40px);
+    box-shadow: -6px 0 18px #00000010;
+    z-index: 5;
+  }
+}
+@container capacity (max-width: 700px) {
+  .sc-workflow .sc-sidebar {
+    display: flex;
+    width: 155px;
+    padding: 12px 8px;
+  }
+  .sc-step-text {
+    font-size: 12px;
+  }
+  .sc-step-number {
+    display: none;
+  }
+  .sc-workflow .sc-body,
+  .sc-workflow .sc-header,
+  .sc-node-toolbar {
+    padding: 12px;
+  }
+  .sc-workflow .sc-actions {
+    flex-wrap: wrap;
+  }
+}
 .sc-app * {
   box-sizing: border-box;
 }
@@ -590,5 +944,942 @@
   }
   .sc-ok {
     color: #90c5a5;
+  }
+}
+
+/* Keep app actions clear of the host fullscreen toolbar. */
+.sc-workflow .sc-header {
+  padding-right: 108px;
+}
+.sc-workflow:has(.sc-assistant) .sc-header {
+  padding-right: 22px;
+}
+
+/* Editing surface with a separate, bounded results desktop. */
+.sc-center {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+}
+.sc-center > .sc-main {
+  min-height: 180px;
+}
+.sc-node-figures {
+  border-top: 1px solid var(--sc-line);
+  margin-top: 24px;
+  padding-top: 18px;
+}
+.sc-node-figures h3 {
+  margin: 0;
+}
+.sc-node-figures small {
+  color: var(--sc-muted);
+  font-size: 11px;
+}
+.sc-figure-tabs {
+  display: flex;
+  gap: 5px;
+  overflow: auto;
+  border-bottom: 1px solid var(--sc-line);
+  margin: 12px 0;
+  padding-bottom: 6px;
+}
+.sc-figure-tabs button {
+  white-space: nowrap;
+  font-size: 12px;
+  border-color: transparent;
+  background: transparent;
+}
+.sc-figure-tabs button[aria-selected="true"] {
+  color: var(--sc-accent);
+  border-color: var(--sc-line);
+  background: var(--sc-paper);
+}
+.sc-figure-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  padding: 6px 0;
+}
+.sc-figure-tools button {
+  padding: 3px 7px;
+  font-size: 11px;
+}
+.sc-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.sc-chart-legend button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: none;
+}
+.sc-chart-legend i {
+  height: 3px;
+  width: 15px;
+  display: inline-block;
+}
+.sc-chart-legend button[aria-pressed="false"] {
+  opacity: 0.4;
+  text-decoration: line-through;
+}
+.sc-chart-svg {
+  display: block;
+  width: 100%;
+  min-height: 180px;
+}
+.sc-chart-note {
+  color: var(--sc-muted);
+  font-size: 11px;
+  margin: 5px 0;
+  line-height: 1.6;
+}
+.sc-chart-empty {
+  padding: 26px 16px;
+  background: var(--sc-soft);
+  color: var(--sc-muted);
+  font-size: 12px;
+}
+.sc-chart-table {
+  overflow: auto;
+  max-height: 370px;
+  font-size: 12px;
+}
+.sc-chart-table .sc-table td {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.sc-results-workspace {
+  position: relative;
+  flex-direction: column;
+  flex-shrink: 0;
+  min-height: 240px;
+  max-height: calc(100% - 180px);
+  border-top: 1px solid var(--sc-line);
+  background: var(--sc-soft);
+}
+.sc-results-workspace.expanded {
+  flex: 1;
+  max-height: 100%;
+}
+.sc-dock-resizer {
+  position: absolute;
+  top: -4px;
+  height: 7px;
+  width: 100%;
+  cursor: ns-resize;
+  z-index: 3;
+  touch-action: none;
+}
+.sc-dock-resizer:hover,
+.sc-dock-resizer:focus {
+  background: var(--sc-accent);
+  opacity: 0.35;
+}
+.sc-results-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--sc-line);
+  background: var(--sc-paper);
+}
+.sc-results-header strong {
+  font-size: 13px;
+}
+.sc-results-header small {
+  margin-left: 8px;
+  font-size: 11px;
+  font-weight: normal;
+  color: var(--sc-muted);
+}
+.sc-results-header button {
+  font-size: 11px;
+  padding: 4px 8px;
+}
+.sc-result-window-strip {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 6px 12px;
+  overflow: auto;
+  min-height: 34px;
+  flex-shrink: 0;
+}
+.sc-result-window-strip button {
+  max-width: 230px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  padding: 2px 7px;
+}
+.sc-result-window-strip button[aria-pressed="false"] {
+  opacity: 0.6;
+}
+.sc-result-window-strip span {
+  font-size: 11px;
+  color: var(--sc-muted);
+}
+.sc-result-canvas-scroll {
+  flex: 1;
+  overflow: auto;
+  overflow-anchor: none;
+  min-height: 0;
+}
+.sc-result-canvas {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  background: var(--sc-soft);
+}
+.sc-result-window {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  border: 1px solid #bcc9d6;
+  border-radius: 5px;
+  background: var(--sc-paper);
+  box-shadow: 0 4px 16px #172b4d15;
+  overflow: hidden;
+}
+.sc-result-window:focus-within {
+  border-color: var(--sc-accent);
+}
+.sc-result-titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 7px 5px 11px;
+  min-height: 37px;
+  border-bottom: 1px solid var(--sc-line);
+  background: var(--sc-paper);
+  cursor: move;
+  touch-action: none;
+  user-select: none;
+}
+.sc-result-titlebar strong {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+}
+.sc-result-titlebar small {
+  margin-left: 7px;
+  font-size: 10px;
+  font-weight: normal;
+  color: var(--sc-muted);
+}
+.sc-result-titlebar .sc-actions {
+  flex-wrap: nowrap;
+  gap: 2px;
+}
+.sc-result-titlebar button {
+  padding: 0 7px;
+  height: 25px;
+  min-width: 25px;
+  font-size: 12px;
+  border: none;
+  background: transparent;
+}
+.sc-window-basis {
+  padding: 3px 10px;
+  font-size: 10px;
+  color: var(--sc-muted);
+  background: var(--sc-soft);
+}
+.sc-window-basis.outdated {
+  color: #966019;
+  background: #fff7e8;
+}
+.sc-window-body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 5px 10px;
+}
+.sc-window-body .sc-chart-svg {
+  min-height: 150px;
+}
+.sc-result-window footer {
+  margin: 0;
+  padding: 3px 25px 3px 10px;
+  border-top: 1px solid var(--sc-line);
+  font-size: 10px;
+  color: var(--sc-muted);
+}
+.sc-window-resizer {
+  position: absolute;
+  bottom: 0;
+  right: 0;
+  height: 22px;
+  width: 22px;
+  padding: 0 !important;
+  border: 0 !important;
+  background: transparent !important;
+  color: #8395aa;
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.sc-results-workspace.expanded .sc-results-header {
+  padding-right: 102px;
+}
+.sc-workflow:has(.sc-assistant)
+  .sc-results-workspace.expanded
+  .sc-results-header {
+  padding-right: 12px;
+}
+
+/* A quiet application shell: one editing surface and a separate comparison dock. */
+.sc-workflow {
+  --sc-muted: #697586;
+  --sc-line: #e3e7ed;
+  --sc-accent: #1769c2;
+}
+.sc-workflow [hidden] {
+  display: none !important;
+}
+.sc-icon {
+  flex: 0 0 auto;
+  vertical-align: middle;
+}
+.sc-workflow button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  font-size: 12px;
+}
+.sc-workflow .sc-icon-button {
+  padding: 5px;
+  width: 28px;
+  height: 28px;
+  border-color: transparent;
+  background: transparent;
+}
+.sc-workflow .sc-sidebar {
+  width: 210px;
+  padding: 20px 14px 12px;
+  gap: 17px;
+  background: #f7f8fa;
+}
+.sc-workflow .sc-sidebar h1 {
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.3px;
+}
+.sc-workflow .sc-sidebar > div:first-child {
+  padding: 0 6px;
+}
+.sc-workflow .sc-sidebar > div:first-child > span {
+  font-size: 10px;
+  letter-spacing: 0.8px;
+}
+.sc-workflow .sc-create {
+  justify-content: flex-start;
+  padding: 8px 11px;
+  background: white;
+  color: #344054;
+  box-shadow: 0 1px 2px #172b4d04;
+}
+.sc-workflow .sc-project-select {
+  font-size: 11px;
+  padding: 0 3px;
+  gap: 6px;
+}
+.sc-workflow .sc-project-select select {
+  font-size: 12px;
+  padding: 8px 6px;
+  background: transparent;
+}
+.sc-workflow .sc-flow-group {
+  padding: 12px 9px 6px;
+  font-size: 10px;
+  letter-spacing: 1px;
+  color: #8a93a1;
+}
+.sc-workflow .sc-flow-nav {
+  gap: 3px;
+}
+.sc-workflow .sc-flow-nav button {
+  background: transparent;
+  border: 0;
+  min-height: 38px;
+  padding: 7px 9px;
+  border-radius: 6px;
+  gap: 10px;
+  justify-content: flex-start;
+}
+.sc-workflow .sc-flow-nav button:hover {
+  background: #eceff3;
+}
+.sc-workflow .sc-flow-nav button[aria-selected="true"] {
+  background: #e8f0fa;
+  color: #175b9c;
+}
+.sc-workflow .sc-step-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 21px;
+  height: 21px;
+  flex: 0 0 21px;
+  font-size: 10px;
+  border: 1px solid #d9e0e8;
+  border-radius: 50%;
+  color: #7c8795;
+  background: #fff;
+}
+.sc-workflow .sc-flow-nav button[aria-selected="true"] .sc-step-number {
+  background: #276aa9;
+  border-color: #276aa9;
+  color: white;
+}
+.sc-workflow .sc-step-text {
+  font-size: 12px;
+  font-weight: 500;
+}
+.sc-workflow .sc-step-text small {
+  display: none;
+  margin-top: 3px;
+  font-size: 10px;
+  font-weight: normal;
+}
+.sc-workflow .sc-flow-nav button[aria-selected="true"] small,
+.sc-workflow .sc-flow-nav button[data-status="blocked"] small,
+.sc-workflow .sc-flow-nav button[data-status="stale"] small {
+  display: block;
+}
+.sc-workflow .sc-flow-nav button[data-status="blocked"] small,
+.sc-workflow .sc-flow-nav button[data-status="stale"] small {
+  color: #a27236;
+}
+.sc-workflow .sc-step-done {
+  font-size: 12px;
+  color: #699482;
+}
+.sc-workflow .sc-sidebar footer {
+  padding: 12px 6px 0;
+  font-size: 10px;
+  line-height: 1.9;
+  color: #929aa5;
+}
+.sc-workflow .sc-header {
+  padding: 12px 24px;
+  min-height: 66px;
+  background: #fff;
+  gap: 10px;
+}
+.sc-workflow .sc-header h2 {
+  font-size: 14px;
+  margin-bottom: 2px;
+}
+.sc-workflow:not(:has(.sc-assistant)) .sc-header {
+  padding-right: 104px;
+}
+.sc-workflow .sc-header > div:first-child {
+  min-width: 180px;
+  flex: 1;
+}
+.sc-workflow .sc-header .sc-muted {
+  font-size: 11px;
+}
+.sc-workflow .sc-header .sc-actions {
+  gap: 5px;
+}
+.sc-workflow .sc-header button {
+  padding: 5px 8px;
+  border-color: transparent;
+  color: #536174;
+  background: transparent;
+}
+.sc-workflow .sc-header button:hover,
+.sc-workflow .sc-header button[aria-pressed="true"] {
+  background: #edf3f9;
+  color: #175b9c;
+}
+.sc-workflow .sc-node-toolbar {
+  padding: 17px 24px 8px;
+  border: 0;
+  gap: 10px;
+  background: white;
+}
+.sc-workflow .sc-node-toolbar h2 {
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.4px;
+}
+.sc-workflow .sc-node-toolbar small {
+  font-size: 11px;
+}
+.sc-workflow .sc-node-toolbar select {
+  font-size: 12px;
+  padding: 6px 9px;
+  min-width: 90px;
+  background: white;
+}
+.sc-workflow .sc-node-toolbar .sc-primary {
+  padding: 7px 13px;
+}
+.sc-content-tabs {
+  display: flex;
+  align-items: center;
+  gap: 22px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--sc-line);
+  flex-shrink: 0;
+  background: white;
+}
+.sc-workflow .sc-content-tabs button {
+  padding: 11px 0 10px;
+  background: transparent;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  color: var(--sc-muted);
+  font-size: 12px;
+}
+.sc-workflow .sc-content-tabs button[aria-selected="true"] {
+  color: #175b9c;
+  border-bottom-color: #276aa9;
+  font-weight: 600;
+}
+.sc-content-tabs > span {
+  margin-left: auto;
+  font-size: 10px;
+  color: #8b95a3;
+}
+.sc-workflow .sc-body {
+  padding: 24px 26px 30px;
+  background: #fff;
+}
+.sc-workflow .sc-body > [role="tabpanel"],
+.sc-workflow .sc-body [role="tabpanel"] {
+  max-width: 1120px;
+  margin: 0 auto;
+}
+.sc-workflow .sc-grid {
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+  gap: 18px 22px;
+}
+.sc-workflow .sc-field {
+  color: #526071;
+  font-size: 12px;
+  gap: 6px;
+}
+.sc-workflow .sc-field input,
+.sc-workflow .sc-field select,
+.sc-workflow .sc-field textarea {
+  background: #fcfdfe;
+  border-color: #d9e0e8;
+  padding: 8px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+}
+.sc-workflow .sc-field input:focus,
+.sc-workflow .sc-field textarea:focus {
+  background: #fff;
+}
+.sc-workflow .sc-unit-top {
+  margin-bottom: 12px;
+}
+.sc-workflow .sc-unit-top > .sc-muted {
+  font-size: 10px;
+  padding: 2px 7px;
+  background: #f2f5f7;
+  border-radius: 4px;
+}
+.sc-method-context {
+  font-size: 12px;
+  color: #526071;
+  margin-bottom: 10px;
+}
+.sc-method-context summary {
+  cursor: pointer;
+  width: fit-content;
+}
+.sc-method-context summary > span {
+  margin-left: 12px;
+  font-size: 11px;
+  color: #8b95a3;
+}
+.sc-method-context p {
+  padding: 10px 12px;
+  background: #f6f8fa;
+  line-height: 1.8;
+}
+.sc-workflow .sc-formula {
+  padding: 10px 13px;
+  margin: 12px 0 20px;
+  border: 0;
+  border-left: 2px solid #c3d5e8;
+  border-radius: 0 5px 5px 0;
+  background: #f6f8fb;
+  color: #3c5067;
+  font-size: 12px;
+}
+.sc-workflow .sc-note {
+  background: #f7f9fb;
+  font-size: 11px;
+  color: #728093;
+  padding: 9px 12px;
+}
+.sc-workflow .sc-node-figures {
+  border: 0;
+  padding: 0;
+  margin: 0;
+}
+.sc-workflow .sc-node-figures .sc-section-head {
+  align-items: center;
+  margin-bottom: 16px;
+}
+.sc-workflow .sc-node-figures h3 {
+  font-size: 16px;
+  font-weight: 600;
+  margin: 0 0 3px;
+}
+.sc-workflow .sc-node-figures .sc-section-head small {
+  font-size: 11px;
+}
+.sc-workflow .sc-open-figure {
+  border-color: #d6e1ed;
+  color: #336b9a;
+  padding: 6px 10px;
+  font-size: 11px;
+}
+.sc-workflow .sc-figure-tabs {
+  gap: 4px;
+  border: 0;
+  margin: 0 0 16px;
+  padding: 3px;
+  background: #f3f5f8;
+  border-radius: 6px;
+  width: fit-content;
+  max-width: 100%;
+}
+.sc-workflow .sc-figure-tabs button {
+  padding: 6px 12px;
+  border: 0;
+  color: #758195;
+  font-size: 11px;
+}
+.sc-workflow .sc-figure-tabs button[aria-selected="true"] {
+  background: #fff;
+  color: #254f78;
+  box-shadow: 0 1px 4px #132e4b12;
+  border-radius: 4px;
+}
+.sc-workflow .sc-node-figures > .sc-figure {
+  border: 1px solid #e8edf2;
+  border-radius: 8px;
+  padding: 10px 16px 8px;
+}
+.sc-workflow .sc-figure-tools {
+  padding: 2px 0 10px;
+  gap: 6px;
+}
+.sc-workflow .sc-figure-tools .sc-actions {
+  gap: 3px;
+}
+.sc-workflow .sc-figure-tools button {
+  background: transparent;
+  border-color: transparent;
+  color: #6b7b8d;
+  font-size: 11px;
+}
+.sc-workflow .sc-figure-tools button:hover {
+  background: #f0f4f8;
+  color: #285c8e;
+}
+.sc-workflow .sc-chart-legend button {
+  padding: 3px 5px;
+  color: #506076;
+}
+.sc-workflow .sc-chart-note {
+  font-size: 10px;
+  line-height: 1.7;
+  padding-top: 7px;
+  margin-top: 6px;
+  color: #8a95a3;
+}
+.sc-workflow .sc-node-result {
+  margin-top: 24px;
+  padding-top: 18px;
+}
+.sc-workflow .sc-node-values {
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr));
+  padding: 0;
+  gap: 12px;
+  background: transparent;
+  border: 0;
+}
+.sc-workflow .sc-node-values > div {
+  padding: 14px 17px;
+  border-radius: 6px;
+  background: #f5f8fb;
+  border: 1px solid #e6ecf2;
+}
+.sc-workflow .sc-node-values dd {
+  font-size: 24px;
+  font-weight: 600;
+  color: #284c70;
+}
+.sc-workflow .sc-results-workspace {
+  background: #f1f4f8;
+  border-top-color: #ccd6e1;
+}
+.sc-workflow .sc-results-header {
+  padding: 9px 14px;
+  min-height: 44px;
+  background: #f8fafc;
+  border-bottom-color: #e3e9f0;
+}
+.sc-workflow .sc-results-header > strong {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: #3f536b;
+  font-weight: 600;
+}
+.sc-workflow .sc-results-header small {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 19px;
+  height: 18px;
+  margin: 0;
+  border-radius: 4px;
+  background: #e7edf4;
+  font-size: 10px;
+  color: #64768a;
+}
+.sc-workflow .sc-results-header .sc-actions {
+  gap: 3px;
+}
+.sc-workflow .sc-results-header button {
+  background: transparent;
+  border-color: transparent;
+  padding: 4px 7px;
+  color: #6b7b8d;
+  font-size: 11px;
+}
+.sc-workflow .sc-result-window-strip {
+  padding: 6px 14px;
+  min-height: 32px;
+  gap: 6px;
+}
+.sc-workflow .sc-result-window-strip button {
+  border-color: transparent;
+  background: transparent;
+  color: #8a95a3;
+  font-size: 10px;
+  padding: 3px 7px;
+}
+.sc-workflow .sc-result-window-strip button[aria-pressed="true"] {
+  background: #e3eaf3;
+  color: #46617f;
+}
+.sc-workflow .sc-result-canvas {
+  background: #f1f4f8;
+}
+.sc-workflow .sc-result-window {
+  border: 1px solid #d4dee8;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 2px 5px #263f5b08;
+}
+.sc-workflow .sc-result-window:focus-within {
+  border-color: #91aec9;
+  box-shadow: 0 2px 8px #263f5b10;
+}
+.sc-workflow .sc-result-titlebar {
+  min-height: 39px;
+  padding: 6px 9px 6px 13px;
+  background: #fff;
+  border-color: #edf1f5;
+}
+.sc-workflow .sc-result-titlebar strong {
+  font-weight: 600;
+  color: #3c526c;
+}
+.sc-workflow .sc-result-titlebar small {
+  background: #eef3f8;
+  color: #64809c;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 10px;
+}
+.sc-workflow .sc-result-titlebar button {
+  padding: 3px;
+  min-width: 22px;
+  width: 22px;
+  height: 22px;
+  color: #95a1b0;
+}
+.sc-workflow .sc-result-titlebar button:hover {
+  color: #3b5f83;
+  background: #eef3f8;
+}
+.sc-workflow .sc-window-body {
+  padding: 8px 13px 4px;
+}
+.sc-workflow .sc-result-window footer {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 5px 24px 5px 13px;
+  background: #fafbfd;
+  border-color: #eef2f6;
+  font-size: 10px;
+  color: #8a97a8;
+}
+.sc-result-window footer time {
+  white-space: nowrap;
+}
+.sc-result-window footer .outdated {
+  color: #aa742f;
+}
+.sc-workflow .sc-window-resizer {
+  color: #a9b8c8;
+}
+.sc-workflow .sc-dock-resizer {
+  height: 5px;
+  top: -3px;
+}
+.sc-workflow .sc-dock-resizer:focus-visible {
+  outline: 1px solid #84a5c8;
+}
+.sc-workflow .sc-assistant {
+  background: #fbfcfe;
+  border-color: #e1e7ef;
+}
+.sc-workflow .sc-assistant > header {
+  padding: 18px 85px 15px 18px;
+  min-height: 75px;
+  background: #fff;
+}
+.sc-workflow .sc-assistant header strong {
+  font-size: 13px;
+  font-weight: 600;
+}
+.sc-workflow .sc-assistant header small {
+  margin-top: 3px;
+  font-size: 10px;
+  color: #91a0b1;
+}
+.sc-workflow .sc-chat-history {
+  padding: 22px 18px;
+}
+.sc-workflow .sc-chat-welcome p {
+  font-size: 12px;
+  line-height: 1.8;
+  margin: 0 0 17px;
+  color: #7d8b9d;
+}
+.sc-workflow .sc-chat-welcome button {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  border-color: #e3eaf2;
+  color: #667c95;
+  background: white;
+  padding: 9px 11px;
+  border-radius: 6px;
+}
+.sc-workflow .sc-chat-welcome button::after {
+  content: "↗";
+  color: #8da3ba;
+}
+.sc-workflow .sc-chat-compose {
+  padding: 12px 14px 16px;
+  border-top-color: #edf1f5;
+}
+.sc-workflow .sc-chat-compose > .sc-link {
+  margin-bottom: 9px;
+  font-size: 11px;
+  color: #6b7f96;
+}
+.sc-compose-box {
+  border: 1px solid #d5e0eb;
+  border-radius: 10px;
+  background: white;
+  box-shadow: 0 2px 5px #18385804;
+  padding: 2px;
+}
+.sc-compose-box:focus-within {
+  border-color: #8eacc9;
+}
+.sc-workflow .sc-compose-box textarea {
+  padding: 10px 11px;
+  min-height: 86px;
+  border: 0;
+  background: transparent;
+  outline: none;
+  font-size: 12px;
+}
+.sc-workflow .sc-compose-box .sc-actions {
+  padding: 3px 7px 7px;
+  margin: 0;
+}
+.sc-workflow .sc-compose-box button {
+  padding: 5px 8px;
+  font-size: 11px;
+  border-color: transparent;
+}
+.sc-workflow .sc-compose-box button:not(.sc-primary) {
+  color: #728399;
+}
+@container capacity (max-width: 1100px) {
+  .sc-workflow .sc-sidebar {
+    width: 178px;
+    padding: 16px 10px;
+  }
+  .sc-workflow .sc-header {
+    padding-right: 100px;
+  }
+  .sc-workflow .sc-body {
+    padding: 18px;
+  }
+}
+@container capacity (max-width: 700px) {
+  .sc-workflow .sc-sidebar {
+    width: 148px;
+    padding: 14px 8px;
+  }
+  .sc-workflow .sc-step-number {
+    display: none;
+  }
+  .sc-workflow .sc-content-tabs {
+    padding: 0 14px;
+    gap: 15px;
+  }
+  .sc-content-tabs > span {
+    display: none;
+  }
+  .sc-workflow .sc-node-toolbar {
+    padding: 12px 14px 7px;
+  }
+  .sc-workflow .sc-header h2 {
+    font-size: 12px;
+  }
+  .sc-workflow .sc-node-toolbar h2 {
+    font-size: 18px;
+  }
+  .sc-result-window footer time {
+    display: none;
   }
 }

@@ -48,7 +48,8 @@
       "tests/unit/plugins/ugsci/test_visualization_run_center_bridge.py",
       "tests/unit/plugins/ugsci/test_visualization_well_placement.py",
       "tests/unit/plugins/test_storage_capacity_app.py",
-      "tests/unit/plugins/test_storage_capacity_workbench.py"
+      "tests/unit/plugins/test_storage_capacity_workbench.py",
+      "tests/unit/plugins/test_storage_capacity_flow.py"
     ],
     "flowforge": [
       "tests/unit/plugins/flowforge/test_bidirectional_calls.py",
@@ -172,6 +173,14 @@
       "test_external_simulation_is_referenced_not_falsely_executed",
       "test_http_persistence_scope_revision_report_and_original_evidence",
       "test_evidence_xlsx_csv_pptx_mapping_preserves_location_and_rejects_bad_numbers"
+    ],
+    "tests/unit/plugins/test_storage_capacity_flow.py": [
+      "test_nodes_run_independently_and_fingerprint_only_affected_unit_inputs",
+      "test_pressure_pvt_transfer_uses_interpreted_and_datum_values_without_overwriting_raw",
+      "test_node_http_snapshots_survive_restart_stale_edits_and_report_contains_trace",
+      "test_document_agent_proposals_validate_evidence_conflicts_and_judgement",
+      "test_late_agent_reply_cannot_overwrite_a_new_revision",
+      "test_chart_context_keeps_original_unit_data_bound_to_immutable_node_result"
     ]
   }
 }

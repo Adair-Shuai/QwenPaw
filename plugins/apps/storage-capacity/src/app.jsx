@@ -1,4 +1,14 @@
 import styles from "./workbench.css";
+import { makeViewModel } from "./charts.js";
+import { NodeFigures, ResultsWorkspace } from "./results.jsx";
+import { Icon } from "./icons.jsx";
+import {
+  FLOW,
+  FlowNav,
+  NodeInputs,
+  NodeResult,
+  AssistantPanel,
+} from "./flow.jsx";
 const Q = window.QwenPaw,
   React = Q.host.React;
 const { useState, useEffect, useRef, useId } = React;
@@ -87,6 +97,12 @@ const fieldNames = {
   name: "单元／井名",
   weight: "权重",
   source: "来源",
+  interpreted_pressure: "解释压力（MPa）",
+  depth: "测点垂深（m）",
+  shut_in_days: "关井天数",
+  time: "相对时间",
+  x: "井 A 压力（MPa）",
+  y: "井 B 压力（MPa）",
   pressure: "压力（MPa）",
   z: "Z 因子",
   cumulative_produced: "本段累采量（亿m³）",
@@ -547,19 +563,24 @@ function Scope({ data, edit, cat }) {
               ["cycle", "周期评估"],
               ["calibration", "阶段标定"],
               ["design_review", "设计复核"],
+              ["forecast", "剩余能力预测"],
             ]}
             onChange={(v) => edit({ purpose: v })}
           />
           <Field
             label="建库类型"
             value={data.storage_type}
-            options={cat.storage_types}
+            options={[
+              ["auto", "根据资料判断"],
+              ...cat.storage_types.map((t) => [t.value, t.label]),
+            ]}
             onChange={(v) => edit({ storage_type: v })}
           />
           <Field
-            label="储集体"
+            label="岩性"
             value={data.rock_type}
             options={[
+              ["auto", "根据资料判断"],
               ["sandstone", "砂岩"],
               ["carbonate", "碳酸盐岩"],
               ["fractured", "裂缝／洞穴"],
@@ -567,6 +588,39 @@ function Scope({ data, edit, cat }) {
               ["other", "其他"],
             ]}
             onChange={(v) => edit({ rock_type: v })}
+          />
+          <Field
+            label="储集空间"
+            value={data.reservoir_medium || "auto"}
+            options={[
+              ["auto", "根据资料判断"],
+              ["pore", "孔隙型"],
+              ["fracture", "裂缝型"],
+              ["cavity", "孔洞型"],
+              ["mixed", "复合型"],
+              ["cavern", "人工腔体"],
+            ]}
+            onChange={(v) => edit({ reservoir_medium: v })}
+          />
+          <Field
+            label="运行阶段"
+            value={data.operating_stage || "auto"}
+            options={[
+              ["auto", "根据资料判断"],
+              ["development", "扩容达产"],
+              ["stable", "稳定运行"],
+              ["changed", "井网或工艺调整后"],
+            ]}
+            onChange={(v) => edit({ operating_stage: v })}
+          />
+          <Field
+            label="新单元方法偏好"
+            value={data.method_preference || "auto"}
+            options={[
+              ["auto", "根据资料推荐"],
+              ...cat.methods.map((m) => [m.id, m.name]),
+            ]}
+            onChange={(v) => edit({ method_preference: v })}
           />
           <Field
             label="压力口径"
@@ -640,6 +694,7 @@ function Scope({ data, edit, cat }) {
                   {
                     ...clone(cat.unit_template),
                     name: `评估单元 ${data.units.length + 1}`,
+                    method: data.method_preference || "auto",
                   },
                 ],
               })
@@ -823,7 +878,7 @@ function Accounting({ data, edit }) {
   );
 }
 
-function Methods({ data, edit, cat }) {
+function Methods({ data, edit, cat, stage = "inventory" }) {
   const change = (i, patch) =>
     edit({
       units: data.units.map((u, j) => (i === j ? { ...u, ...patch } : u)),
@@ -834,7 +889,15 @@ function Methods({ data, edit, cat }) {
         <p className="sc-note">请先在评估范围中添加单元。</p>
       )}
       {data.units.map((u, i) => {
-        const m = cat.methods.find((m) => m.id === u.method) || cat.methods[0];
+        const m = cat.methods.find((m) => m.id === u.method) || {
+          name: "待选方法",
+          mode: "calculation",
+          fields: [],
+          required: [],
+          condition: "运行方法节点查看推荐及适用性；资料不足时保留待判。",
+          formula: "",
+          reference: "",
+        };
         const cond = (k, v) =>
           change(i, { conditions: { ...u.conditions, [k]: v } });
         const param = (k, v) =>
@@ -869,103 +932,124 @@ function Methods({ data, edit, cat }) {
                 {m.mode === "external" ? "真实外部成果复核" : "确定性计算"}
               </span>
             </div>
-            <div className="sc-grid">
-              <Field
-                label="主评估方法"
-                value={u.method}
-                options={cat.methods.map((m) => [m.id, m.name])}
-                onChange={(v) => change(i, { method: v })}
-              />
-              <Field
-                label="水体影响"
-                value={u.conditions.water_drive}
-                options={[
-                  ["unknown", "尚未判断"],
-                  ["none", "无水侵"],
-                  ["weak", "弱水侵，已论证可忽略"],
-                  ["moderate", "中等水侵"],
-                  ["strong", "强水侵"],
-                ]}
-                onChange={(v) => cond("water_drive", v)}
-              />
-              <Field
-                label="流体与相态"
-                value={u.conditions.fluid}
-                options={[
-                  ["unknown", "尚未判断"],
-                  ["dry_gas", "干气，气相为主"],
-                  ["stable_gas", "油环／凝析影响已论证可忽略"],
-                  ["oil", "油环或油气水传质显著"],
-                  ["condensate", "凝析影响显著"],
-                ]}
-                onChange={(v) => cond("fluid", v)}
-              />
-              <Field
-                label="井间干扰"
-                value={u.conditions.interference}
-                options={[
-                  ["unknown", "尚未判断"],
-                  ["none", "无明显干扰"],
-                  ["weak", "弱干扰、井控范围不重叠"],
-                  ["strong", "强干扰"],
-                ]}
-                onChange={(v) => cond("interference", v)}
-              />
-              <Field
-                label="参数与适用性依据"
-                value={u.source}
-                onChange={(v) => change(i, { source: v })}
-                wide
-              />
-              <Field
-                label="适用条件确认方式"
-                value={u.condition_basis || "verified"}
-                options={[
-                  ["verified", "经资料核查确认"],
-                  ["reported", "沿用原报告前提，作条件复算"],
-                ]}
-                onChange={(v) => change(i, { condition_basis: v })}
-              />
-            </div>
-            <Check
-              label="已核实本单元压力／体积的代表性、单元边界及取值依据"
-              value={u.conditions.pressure_representative}
-              onChange={(v) => cond("pressure_representative", v)}
-            />
-            {["pz", "pz_regression", "water_mbe"].includes(u.method) && (
-              <Check
-                label="本段内无同期注气，孔隙体积可近似不变；两状态压力使用相同口径"
-                value={u.conditions.closed_during_segment}
-                onChange={(v) => cond("closed_during_segment", v)}
-              />
-            )}
-            {u.method === "water_mbe" && (
-              <Check
-                label="水侵量、产水量与水体积系数已有独立核实依据"
-                value={u.conditions.water_volume_verified}
-                onChange={(v) => cond("water_volume_verified", v)}
-              />
-            )}
-            <p className="sc-note">
-              {m.condition}
-              <br />
-              {m.reference}
-            </p>
-            <div className="sc-formula">{m.formula}</div>
-            <div className="sc-grid">
-              {m.fields.map((k) => (
-                <Field
-                  key={k}
-                  label={`${cat.fields[k].label}（${cat.fields[k].unit}）${
-                    m.required.includes(k) ? " *" : ""
-                  }`}
-                  type="number"
-                  value={u.parameters[k]}
-                  onChange={(v) => param(k, v)}
+            {stage === "methods" && (
+              <>
+                <div className="sc-grid">
+                  <Field
+                    label="主评估方法"
+                    value={u.method}
+                    options={[
+                      ["auto", "根据资料推荐"],
+                      ...cat.methods.map((m) => [m.id, m.name]),
+                    ]}
+                    onChange={(v) => change(i, { method: v })}
+                  />
+                  <Field
+                    label="水体影响"
+                    value={u.conditions.water_drive}
+                    options={[
+                      ["unknown", "尚未判断"],
+                      ["none", "无水侵"],
+                      ["weak", "弱水侵，已论证可忽略"],
+                      ["moderate", "中等水侵"],
+                      ["strong", "强水侵"],
+                    ]}
+                    onChange={(v) => cond("water_drive", v)}
+                  />
+                  <Field
+                    label="流体与相态"
+                    value={u.conditions.fluid}
+                    options={[
+                      ["unknown", "尚未判断"],
+                      ["dry_gas", "干气，气相为主"],
+                      ["stable_gas", "油环／凝析影响已论证可忽略"],
+                      ["oil", "油环或油气水传质显著"],
+                      ["condensate", "凝析影响显著"],
+                    ]}
+                    onChange={(v) => cond("fluid", v)}
+                  />
+                  <Field
+                    label="井间干扰"
+                    value={u.conditions.interference}
+                    options={[
+                      ["unknown", "尚未判断"],
+                      ["none", "无明显干扰"],
+                      ["weak", "弱干扰、井控范围不重叠"],
+                      ["strong", "强干扰"],
+                    ]}
+                    onChange={(v) => cond("interference", v)}
+                  />
+                  <Field
+                    label="参数与适用性依据"
+                    value={u.source}
+                    onChange={(v) => change(i, { source: v })}
+                    wide
+                  />
+                  <Field
+                    label="适用条件确认方式"
+                    value={u.condition_basis || "verified"}
+                    options={[
+                      ["verified", "经资料核查确认"],
+                      ["reported", "沿用原报告前提，作条件复算"],
+                    ]}
+                    onChange={(v) => change(i, { condition_basis: v })}
+                  />
+                </div>
+                <Check
+                  label="已核实本单元压力／体积的代表性、单元边界及取值依据"
+                  value={u.conditions.pressure_representative}
+                  onChange={(v) => cond("pressure_representative", v)}
                 />
-              ))}
-            </div>
-            {u.method === "pz_regression" && (
+                {["pz", "pz_regression", "water_mbe"].includes(u.method) && (
+                  <Check
+                    label="本段内无同期注气，孔隙体积可近似不变；两状态压力使用相同口径"
+                    value={u.conditions.closed_during_segment}
+                    onChange={(v) => cond("closed_during_segment", v)}
+                  />
+                )}
+                {u.method === "water_mbe" && (
+                  <Check
+                    label="水侵量、产水量与水体积系数已有独立核实依据"
+                    value={u.conditions.water_volume_verified}
+                    onChange={(v) => cond("water_volume_verified", v)}
+                  />
+                )}
+              </>
+            )}
+            <details className="sc-method-context">
+              <summary>
+                {m.name}
+                <span>适用条件与依据</span>
+              </summary>
+              <p>
+                {m.condition}
+                <br />
+                {m.reference}
+              </p>
+            </details>
+            <div className="sc-formula">{m.formula}</div>
+            {["inventory", "window"].includes(stage) && (
+              <div className="sc-grid">
+                {m.fields
+                  .filter(
+                    (k) =>
+                      stage === "window" ||
+                      (!k.startsWith("minimum") && !k.startsWith("maximum")),
+                  )
+                  .map((k) => (
+                    <Field
+                      key={k}
+                      label={`${cat.fields[k].label}（${cat.fields[k].unit}）${
+                        m.required.includes(k) ? " *" : ""
+                      }`}
+                      type="number"
+                      value={u.parameters[k]}
+                      onChange={(v) => param(k, v)}
+                    />
+                  ))}
+              </div>
+            )}
+            {stage === "inventory" && u.method === "pz_regression" && (
               <TableEditor
                 title="同一采气段 p/Z 序列"
                 columns={["cumulative_produced", "pressure", "z"]}
@@ -973,120 +1057,74 @@ function Methods({ data, edit, cat }) {
                 onChange={(v) => change(i, { series: v })}
               />
             )}
-            {m.mode === "external" && (
-              <>
-                <div className="sc-grid">
-                  {[
-                    ["software", "解释／模拟软件"],
-                    ["model_version", "模型版本"],
-                    ["run_id", "运行编号"],
-                    ["input_reference", "输入版本／校验摘要"],
-                    ["source", "成果文件与位置"],
-                    ["cycle_id", "成果周期"],
-                    ["state", "成果起始状态"],
-                    ["match_metric", "历史拟合指标"],
-                    ["match_unit", "拟合指标单位"],
-                  ].map(([k, l]) => (
-                    <Field
-                      key={k}
-                      label={l}
-                      value={u.external?.[k]}
-                      onChange={(v) => ext(k, v)}
-                    />
-                  ))}
-                  {[
-                    "effective_inventory",
-                    "geological_swing",
-                    "deliverable_swing",
-                    "movable_cushion",
-                    "capacity",
-                    "working_gas",
-                  ].map((k) => (
-                    <Field
-                      key={k}
-                      label={
-                        (cat.terms.find((t) => t.key === k)?.name || k) +
-                        "（亿m³）"
-                      }
-                      value={u.external?.[k]}
-                      type="number"
-                      onChange={(v) => ext(k, v)}
-                    />
-                  ))}
-                </div>
-                <Check
-                  label="外部气量已换算为亿标准 m³，且标准状态与当前评估一致"
-                  value={
-                    u.external?.gas_volume_unit === "1e8_sm3" &&
-                    JSON.stringify(u.external?.standard) ===
-                      JSON.stringify(data.standard)
-                  }
-                  onChange={(v) =>
-                    change(i, {
-                      external: {
-                        ...u.external,
-                        gas_volume_unit: v ? "1e8_sm3" : "",
-                        standard: v ? clone(data.standard) : null,
-                      },
-                    })
-                  }
-                />
-                <TableEditor
-                  title="历史拟合记录"
-                  columns={["observed", "simulated"]}
-                  rows={u.external?.history_match || []}
-                  onChange={(v) => ext("history_match", v)}
-                />
-              </>
-            )}
-            {["pz", "pz_regression", "volumetric"].includes(u.method) && (
-              <details>
-                <summary>PVT 数据与插值</summary>
-                <p className="sc-muted">
-                  对应 Z
-                  未填写时，使用下表线性插值。保留压力和温度条件，不外推。
-                </p>
-                <TableEditor
-                  title="PVT 表"
-                  columns={["pressure", "z"]}
-                  rows={u.pvt || []}
-                  onChange={(v) => change(i, { pvt: v })}
-                />
-              </details>
-            )}
-            {u.method === "pz" && (
-              <details>
-                <summary>测压加权计算</summary>
-                <p className="sc-muted">
-                  填入记录后，以加权结果替代本单元相应压力。只合并同一状态、同一压力基准且具有代表性的井；权重应有独立依据，不能跨连通单元平均。
-                </p>
-                <div className="sc-grid">
-                  <Field
-                    label="权重依据"
-                    value={u.pressure_weight_basis}
-                    onChange={(v) => change(i, { pressure_weight_basis: v })}
+            {["inventory", "window", "deliverability"].includes(stage) &&
+              m.mode === "external" && (
+                <>
+                  <div className="sc-grid">
+                    {[
+                      ["software", "解释／模拟软件"],
+                      ["model_version", "模型版本"],
+                      ["run_id", "运行编号"],
+                      ["input_reference", "输入版本／校验摘要"],
+                      ["source", "成果文件与位置"],
+                      ["cycle_id", "成果周期"],
+                      ["state", "成果起始状态"],
+                      ["match_metric", "历史拟合指标"],
+                      ["match_unit", "拟合指标单位"],
+                    ].map(([k, l]) => (
+                      <Field
+                        key={k}
+                        label={l}
+                        value={u.external?.[k]}
+                        onChange={(v) => ext(k, v)}
+                      />
+                    ))}
+                    {[
+                      "effective_inventory",
+                      "geological_swing",
+                      "deliverable_swing",
+                      "movable_cushion",
+                      "capacity",
+                      "working_gas",
+                    ].map((k) => (
+                      <Field
+                        key={k}
+                        label={
+                          (cat.terms.find((t) => t.key === k)?.name || k) +
+                          "（亿m³）"
+                        }
+                        value={u.external?.[k]}
+                        type="number"
+                        onChange={(v) => ext(k, v)}
+                      />
+                    ))}
+                  </div>
+                  <Check
+                    label="外部气量已换算为亿标准 m³，且标准状态与当前评估一致"
+                    value={
+                      u.external?.gas_volume_unit === "1e8_sm3" &&
+                      JSON.stringify(u.external?.standard) ===
+                        JSON.stringify(data.standard)
+                    }
+                    onChange={(v) =>
+                      change(i, {
+                        external: {
+                          ...u.external,
+                          gas_volume_unit: v ? "1e8_sm3" : "",
+                          standard: v ? clone(data.standard) : null,
+                        },
+                      })
+                    }
                   />
-                  <Field
-                    label="测压状态与来源"
-                    value={u.pressure_source}
-                    onChange={(v) => change(i, { pressure_source: v })}
+                  <TableEditor
+                    title="历史拟合记录"
+                    columns={["observed", "simulated"]}
+                    rows={u.external?.history_match || []}
+                    onChange={(v) => ext("history_match", v)}
                   />
-                </div>
-                <TableEditor
-                  title="起始状态测压"
-                  columns={["name", "pressure", "weight"]}
-                  rows={u.start_pressures || []}
-                  onChange={(v) => change(i, { start_pressures: v })}
-                />
-                <TableEditor
-                  title="末期状态测压"
-                  columns={["name", "pressure", "weight"]}
-                  rows={u.end_pressures || []}
-                  onChange={(v) => change(i, { end_pressures: v })}
-                />
-              </details>
-            )}
-            {u.method === "pz" && (
+                </>
+              )}
+            {stage === "inventory" && u.method === "pz" && (
               <details>
                 <summary>输入敏感性</summary>
                 <Field
@@ -1100,53 +1138,77 @@ function Methods({ data, edit, cat }) {
                 </p>
               </details>
             )}
-            <details>
-              <summary>综合调峰与冲峰约束</summary>
-              <div className="sc-grid">
+            {stage === "deliverability" && (
+              <details open>
+                <summary>综合调峰与冲峰约束</summary>
                 <Field
-                  label="方案采气期（天）"
-                  value={u.withdrawal_days}
-                  type="number"
-                  onChange={(v) => change(i, { withdrawal_days: v })}
+                  label="预测方式"
+                  value={u.forecast?.mode || "schedule"}
+                  options={[
+                    ["schedule", "导入预测曲线／固定工况产能"],
+                    ["dynamic", "日步长库存—压力—产能耦合"],
+                  ]}
+                  onChange={(v) =>
+                    change(i, { forecast: { ...u.forecast, mode: v } })
+                  }
                 />
-                <Field
-                  label="单元地面处理限额（万m³/d）"
-                  value={u.surface_limit}
-                  type="number"
-                  onChange={(v) => change(i, { surface_limit: v })}
+                {u.forecast?.mode === "dynamic" && (
+                  <Check
+                    label="已核实井底流压的井筒与外输依据，以及产能系数单位为万m³/d"
+                    value={u.forecast?.boundary_verified}
+                    onChange={(v) =>
+                      change(i, {
+                        forecast: { ...u.forecast, boundary_verified: v },
+                      })
+                    }
+                  />
+                )}
+                <div className="sc-grid">
+                  <Field
+                    label="方案采气期（天）"
+                    value={u.withdrawal_days}
+                    type="number"
+                    onChange={(v) => change(i, { withdrawal_days: v })}
+                  />
+                  <Field
+                    label="单元地面处理限额（万m³/d）"
+                    value={u.surface_limit}
+                    type="number"
+                    onChange={(v) => change(i, { surface_limit: v })}
+                  />
+                  <Field
+                    label="预测曲线依据与外输条件"
+                    value={u.schedule_source}
+                    onChange={(v) => change(i, { schedule_source: v })}
+                  />
+                </div>
+                <p className="sc-note">
+                  曲线输入为各时间段平均日采气量，必须覆盖完整采气期。算法分段积分并施加地面上限，再与地层调峰气量取小值。井底压力需来自井筒／管网计算，不以井口压力替代。
+                </p>
+                <TableEditor
+                  title="采气预测"
+                  columns={["day", "rate"]}
+                  rows={u.schedule || []}
+                  onChange={(v) => change(i, { schedule: v })}
                 />
-                <Field
-                  label="预测曲线依据与外输条件"
-                  value={u.schedule_source}
-                  onChange={(v) => change(i, { schedule_source: v })}
+                <TableEditor
+                  title="二项式产能"
+                  columns={[
+                    "name",
+                    "a",
+                    "b",
+                    "reservoir_pressure",
+                    "bottomhole_pressure",
+                  ]}
+                  rows={u.wells || []}
+                  onChange={(v) => change(i, { wells: v })}
                 />
-              </div>
-              <p className="sc-note">
-                曲线输入为各时间段平均日采气量，必须覆盖完整采气期。算法分段积分并施加地面上限，再与地层调峰气量取小值。井底压力需来自井筒／管网计算，不以井口压力替代。
-              </p>
-              <TableEditor
-                title="采气预测"
-                columns={["day", "rate"]}
-                rows={u.schedule || []}
-                onChange={(v) => change(i, { schedule: v })}
-              />
-              <TableEditor
-                title="二项式产能"
-                columns={[
-                  "name",
-                  "a",
-                  "b",
-                  "reservoir_pressure",
-                  "bottomhole_pressure",
-                ]}
-                rows={u.wells || []}
-                onChange={(v) => change(i, { wells: v })}
-              />
-            </details>
+              </details>
+            )}
           </div>
         );
       })}
-      {data.units.length > 1 && (
+      {stage === "deliverability" && data.units.length > 1 && (
         <Check
           label="各单元地面设施及外输通道完全独立，可按同周期成果汇总综合调峰能力"
           value={data.independent_surface}
@@ -1442,16 +1504,51 @@ function App() {
     [cases, setCases] = useState([]),
     [record, setRecord] = useState(null),
     [tab, setTab] = useState("scope"),
+    [contentView, setContentView] = useState("inputs"),
     [dirty, setDirty] = useState(false),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
     [evaluation, setEvaluation] = useState(null),
     [review, setReview] = useState(null),
     [doc, setDoc] = useState(null),
-    [preview, setPreview] = useState("");
+    [preview, setPreview] = useState(""),
+    [unitIndex, setUnitIndex] = useState(0),
+    [workflow, setWorkflow] = useState(null),
+    [assistantHidden, setAssistantHidden] = useState(false),
+    [resultsVisible, setResultsVisible] = useState(false),
+    [resultsExpanded, setResultsExpanded] = useState(false),
+    [openRequest, setOpenRequest] = useState(null);
+  const windowRequest = useRef(0),
+    bodyRef = useRef();
   const fileRef = useRef(),
     generation = useRef(0);
   const data = record?.case;
+  useEffect(() => setContentView("inputs"), [tab]);
+  useEffect(() => {
+    if (bodyRef.current) bodyRef.current.scrollTop = 0;
+  }, [contentView, tab, unitIndex]);
+  useEffect(() => {
+    if (record && unitIndex >= record.case.units.length) setUnitIndex(0);
+  }, [record?.case.units.length, unitIndex]);
+  const loadWorkflow = async (r = record, index = unitIndex) => {
+    if (!r) return;
+    const state = await request(`/cases/${r.id}/workflow?unit_index=${index}`);
+    setWorkflow(state);
+  };
+  useEffect(() => {
+    if (!record?.id) return;
+    let active = true;
+    request(`/cases/${record.id}/workflow?unit_index=${unitIndex}`)
+      .then((state) => {
+        if (active) setWorkflow(state);
+      })
+      .catch((e) => {
+        if (active) setError(e.message);
+      });
+    return () => {
+      active = false;
+    };
+  }, [record?.id, record?.revision, unitIndex]);
   const run = async (action) => {
     if (busy) return;
     setBusy(true);
@@ -1487,12 +1584,18 @@ function App() {
     setPreview("");
   };
   const accept = (r) => {
+    setContentView("inputs");
+    setOpenRequest(null);
+    setResultsVisible(false);
+    setResultsExpanded(false);
     setRecord(r);
     setDirty(false);
     setEvaluation(r.evaluation || null);
     setReview(r.review || null);
     setDoc(null);
     setPreview("");
+    setUnitIndex(0);
+    setWorkflow(null);
   };
   const save = async () => {
     if (!dirty) return record;
@@ -1534,6 +1637,66 @@ function App() {
       setRecord({ ...r, latest_run: e.run_id, stale: false });
       setPreview("");
       setTab("results");
+    });
+  const runNode = () =>
+    run(async () => {
+      const r = await save();
+      await request(
+        `/cases/${r.id}/nodes/${tab}/run`,
+        json({ revision: r.revision, unit_index: unitIndex }),
+      );
+      await loadWorkflow(r);
+      setContentView("charts");
+    });
+  const assistantAction = (action, body = {}) =>
+    run(async () => {
+      const r = await save();
+      const next = await request(
+        `/cases/${r.id}/assistant/${action}`,
+        json({ revision: r.revision, ...body }),
+      );
+      setRecord({ ...next, stale: true });
+      setDirty(false);
+      setPreview("");
+      await loadWorkflow(next);
+      return true;
+    });
+  const sendMessage = (message, files, documentIds) =>
+    run(async () => {
+      let r = await save();
+      const attached = [...documentIds];
+      if (files.length) {
+        const fd = new FormData();
+        fd.append("revision", r.revision);
+        files.forEach((f) => fd.append("files", f));
+        r = await request(`/cases/${r.id}/documents`, {
+          method: "POST",
+          body: fd,
+        });
+        setRecord({ ...r, stale: true });
+        setDirty(false);
+        setPreview("");
+        const names = new Set(files.map((f) => f.name));
+        r.case.documents
+          .filter((d) => names.has(d.name))
+          .forEach((d) => attached.push(d.id));
+      }
+      const next = await request(
+        `/cases/${r.id}/assistant`,
+        json({
+          revision: r.revision,
+          node: tab,
+          unit_index: unitIndex,
+          message,
+          document_ids: [...new Set(attached)].slice(0, 20),
+        }),
+      );
+      setRecord({ ...next, stale: true });
+      setDirty(false);
+      setPreview("");
+      await loadWorkflow(next);
+      await refresh();
+      return true;
     });
   const upload = (files) =>
     run(async () => {
@@ -1585,387 +1748,630 @@ function App() {
     setError("");
   };
   const stale = dirty || record?.stale || !evaluation;
+  const chartModel =
+    record &&
+    makeViewModel({
+      record,
+      node: tab,
+      index: unitIndex,
+      state: workflow?.nodes?.find((n) => n.id === tab),
+      evaluation,
+      cat,
+      dirty,
+    });
+  const openFigure = (model, chart) => {
+    setOpenRequest({ token: ++windowRequest.current, model, chart });
+    setResultsVisible(true);
+    setContentView("inputs");
+  };
   return (
-    <div className="sc-app">
+    <div className="sc-app sc-workflow">
       <aside className="sc-sidebar">
         <div>
           <h1>库容评估</h1>
           <span className="sc-muted">UGSci 工程应用</span>
         </div>
-        <button className="sc-primary" disabled={busy || !cat} onClick={create}>
+        <button className="sc-create" disabled={busy || !cat} onClick={create}>
+          <Icon name="plus" />
           新建评估
         </button>
-        <div>
-          <p className="sc-muted">评估项目</p>
-          <nav className="sc-projects" aria-label="评估项目">
+        <label className="sc-project-select">
+          评估项目
+          <select
+            aria-label="选择评估项目"
+            disabled={busy}
+            value={record?.id || ""}
+            onChange={(e) => e.target.value && open(e.target.value)}
+          >
+            <option value="">选择项目</option>
             {cases.map((c) => (
-              <button
-                key={c.id}
-                disabled={busy}
-                aria-current={record?.id === c.id ? "page" : undefined}
-                onClick={() => open(c.id)}
-              >
-                <strong>{c.name}</strong>
-                <span>{c.cycle || "周期待填写"}</span>
-              </button>
+              <option key={c.id} value={c.id}>
+                {c.name} · {c.cycle || "待填周期"}
+              </option>
             ))}
-          </nav>
-          {!cases.length && <p className="sc-muted">尚无评估项目</p>}
-        </div>
+          </select>
+        </label>
+        {record && (
+          <FlowNav
+            active={tab}
+            select={(node) => {
+              setTab(node);
+              setResultsExpanded(false);
+            }}
+            nodes={workflow?.nodes}
+            dirty={dirty}
+            busy={busy}
+          />
+        )}
         <footer>
           按单元计算，按周期留存
           <br />
           SY/T 7686-2023
         </footer>
       </aside>
-      <main className="sc-main">
-        <header className="sc-header">
-          <div>
-            <h2>{data?.case_name || "库容评估工作台"}</h2>
-            <span className="sc-muted">
-              {record
-                ? `${data.cycle_id || "评估周期待填写"}　${
-                    busy ? "正在处理…" : dirty ? "有未保存修改" : "已保存"
-                  }`
-                : "建立评估项目，整理资料并形成报告"}
-            </span>
-          </div>
+      <div className="sc-center">
+        <main
+          className="sc-main"
+          style={{
+            display: resultsVisible && resultsExpanded ? "none" : "flex",
+          }}
+        >
+          <header className="sc-header">
+            <div>
+              <h2>{data?.case_name || "库容评估工作台"}</h2>
+              <span className="sc-muted">
+                {record
+                  ? `${data.cycle_id || "评估周期待填写"}　${
+                      busy ? "正在处理…" : dirty ? "有未保存修改" : "已保存"
+                    }`
+                  : "建立评估项目，整理资料并形成报告"}
+              </span>
+            </div>
+            {record && (
+              <div className="sc-actions">
+                <button disabled={busy || !dirty} onClick={() => run(save)}>
+                  保存
+                </button>
+                <button disabled={busy} onClick={calculate}>
+                  运行计算
+                </button>
+                <button
+                  aria-pressed={resultsVisible}
+                  onClick={() => setResultsVisible((v) => !v)}
+                >
+                  <Icon name="layers" />
+                  结果视窗
+                </button>
+                <button onClick={() => setAssistantHidden((v) => !v)}>
+                  <Icon name="panel" />
+                  {assistantHidden ? "展开评估助手" : "收起助手"}
+                </button>
+              </div>
+            )}
+          </header>
           {record && (
-            <div className="sc-actions">
-              <button disabled={busy || !dirty} onClick={() => run(save)}>
-                保存
+            <div className="sc-node-toolbar">
+              <div>
+                <h2>{FLOW.find((n) => n[0] === tab)?.[1]}</h2>
+                <small className="sc-muted">
+                  {[
+                    "scope",
+                    "data",
+                    "accounting",
+                    "results",
+                    "report",
+                  ].includes(tab)
+                    ? "项目级成果"
+                    : "按单元处理，可独立运行"}
+                </small>
+              </div>
+              <div className="sc-actions">
+                {!["scope", "data", "accounting", "results", "report"].includes(
+                  tab,
+                ) && (
+                  <select
+                    aria-label="当前评估单元"
+                    value={unitIndex}
+                    disabled={busy}
+                    onChange={(e) => {
+                      setWorkflow(null);
+                      setUnitIndex(Number(e.target.value));
+                    }}
+                  >
+                    {data.units.map((u, i) => (
+                      <option key={i} value={i}>
+                        {u.name}
+                      </option>
+                    ))}
+                  </select>
+                )}
+                <button
+                  className="sc-primary"
+                  disabled={
+                    busy ||
+                    (![
+                      "scope",
+                      "data",
+                      "accounting",
+                      "results",
+                      "report",
+                    ].includes(tab) &&
+                      !data.units[unitIndex])
+                  }
+                  onClick={runNode}
+                >
+                  运行本节点
+                </button>
+              </div>
+            </div>
+          )}
+          {record && (
+            <div
+              className="sc-content-tabs"
+              role="tablist"
+              aria-label="节点视图"
+            >
+              <button
+                id="sc-input-tab"
+                role="tab"
+                aria-selected={contentView === "inputs"}
+                aria-controls="sc-input-panel"
+                onClick={() => setContentView("inputs")}
+              >
+                <Icon name="fields" />
+                参数资料
               </button>
               <button
-                className="sc-primary"
-                disabled={busy}
-                onClick={calculate}
+                id="sc-chart-tab"
+                role="tab"
+                aria-selected={contentView === "charts"}
+                aria-controls="sc-chart-panel"
+                onClick={() => setContentView("charts")}
               >
-                运行计算
+                <Icon name="chart" />
+                图表结果
+              </button>
+              <span>
+                {chartModel?.charts.length
+                  ? `${chartModel.charts.length} 项图表`
+                  : "补充资料后查看图表"}
+              </span>
+            </div>
+          )}
+          {error && (
+            <div role="alert" className="sc-alert">
+              <span>{error}</span>
+              <button className="sc-link" onClick={() => setError("")}>
+                关闭
               </button>
             </div>
           )}
-        </header>
-        {record && (
-          <nav className="sc-tabs" role="tablist" aria-label="评估步骤">
-            {tabs.map(([key, title], i) => (
-              <button
-                key={key}
-                role="tab"
-                aria-selected={tab === key}
-                disabled={busy}
-                onClick={() => setTab(key)}
-              >
-                {i + 1}. {title}
-              </button>
-            ))}
-          </nav>
-        )}
-        {error && (
-          <div role="alert" className="sc-alert">
-            <span>{error}</span>
-            <button className="sc-link" onClick={() => setError("")}>
-              关闭
-            </button>
-          </div>
-        )}
-        <div className="sc-body" aria-busy={busy}>
-          {!cat ? (
-            <p className="sc-muted">正在读取工作台…</p>
-          ) : !record ? (
-            <div className="sc-empty">
-              <h2>从一份评估项目开始</h2>
-              <p>
-                按储气库类型与资料条件选择方法。支持
-                Excel、CSV、报告及外部模拟成果，保留输入依据和计算过程，生成可复核的库容评估报告。
-              </p>
-              <button className="sc-primary" onClick={create} disabled={busy}>
-                新建评估
-              </button>
-            </div>
-          ) : (
-            <>
-              {tab === "scope" && <Scope data={data} edit={edit} cat={cat} />}
-              {tab === "data" && (
-                <section>
-                  <div className="sc-section">
-                    <div className="sc-upload">
-                      <div>
-                        <strong>导入评估资料</strong>
-                        <p>
-                          Excel、CSV、JSON、PPTX、PDF、Word。保留原件，选择字段后应用。
-                        </p>
-                      </div>
-                      <button
-                        disabled={busy}
-                        onClick={() => fileRef.current.click()}
-                      >
-                        选择文件
-                      </button>
-                      <input
-                        ref={fileRef}
-                        type="file"
-                        multiple
-                        accept=".xlsx,.csv,.tsv,.json,.pptx,.pdf,.docx,.txt,.md"
-                        hidden
-                        aria-label="上传评估资料"
-                        onChange={(e) => {
-                          upload(e.target.files);
-                          e.target.value = "";
-                        }}
-                      />
-                    </div>
-                    <div className="sc-table-wrap">
-                      <table className="sc-table">
-                        <tbody>
-                          {data.documents.map((d) => (
-                            <tr key={d.id}>
-                              <td>{d.name}</td>
-                              <td>
-                                {d.tables.length} 张表 / {d.pages.length} 段文字
-                              </td>
-                              <td>
-                                {d.status === "manual_review"
-                                  ? "待人工读取"
-                                  : "已读取，待核对"}
-                              </td>
-                              <td>
-                                <button
-                                  className="sc-link"
-                                  disabled={busy}
-                                  onClick={() =>
-                                    run(async () =>
-                                      setDoc(
-                                        await request(
-                                          `/cases/${record.id}/documents/${d.id}`,
-                                        ),
-                                      ),
-                                    )
-                                  }
-                                >
-                                  查看与映射
-                                </button>
-                              </td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
-                    </div>
-                    {doc && (
-                      <SourcePanel
-                        key={doc.id}
-                        doc={doc}
-                        cat={cat}
-                        record={record}
-                        apply={apply}
-                        run={run}
-                      />
-                    )}
-                  </div>
-                  <Accounting data={data} edit={edit} />
-                  <details>
-                    <summary>多周期成果</summary>
-                    <p className="sc-muted">
-                      可从表格映射导入或填写历史成果，单位为亿m³；冲峰能力为万m³/d。历史成果不自动替代本次计算。
-                    </p>
-                    <TableEditor
-                      title="历史指标"
-                      columns={[
-                        "cycle_id",
-                        "book_inventory",
-                        "effective_inventory",
-                        "deliverable_swing",
-                        "peak_rate",
-                        "source",
-                      ]}
-                      rows={data.history || []}
-                      onChange={(v) => edit({ history: v })}
-                    />
-                  </details>
-                </section>
-              )}
-              {tab === "methods" && (
-                <Methods data={data} edit={edit} cat={cat} />
-              )}
-              {tab === "results" && (
-                <>
-                  <Results
-                    evaluation={evaluation}
-                    review={review}
-                    cat={cat}
-                    stale={stale}
-                    busy={busy}
-                    onReview={() =>
-                      run(async () =>
-                        setReview(
-                          await request(
-                            `/cases/${record.id}/review`,
-                            json({ revision: record.revision }),
-                          ),
-                        ),
-                      )
-                    }
-                  />
-                  <details>
-                    <summary>对比成果与项目提示阈值</summary>
-                    <Field
-                      label="偏差提示阈值（%，项目设置，非行业标准）"
-                      value={data.comparison_tolerance_percent}
-                      type="number"
-                      onChange={(v) =>
-                        edit({ comparison_tolerance_percent: v })
-                      }
-                    />
-                    {(data.benchmarks || []).map((b, i) => (
-                      <div className="sc-unit" key={i}>
-                        <div className="sc-grid">
-                          {[
-                            ["metric", "指标"],
-                            ["value", "报告／其他方法值"],
-                            ["source", "成果来源"],
-                            ["cycle_id", "周期"],
-                            ["state", "状态"],
-                          ].map(([k, l]) => (
-                            <Field
-                              key={k}
-                              label={l}
-                              type={k === "value" ? "number" : "text"}
-                              value={b[k]}
-                              options={
-                                k === "metric"
-                                  ? cat.terms
-                                      .filter((t) =>
-                                        [
-                                          "effective_inventory",
-                                          "geological_swing",
-                                          "deliverable_swing",
-                                          "capacity",
-                                          "working_gas",
-                                          "peak_rate",
-                                        ].includes(t.key),
-                                      )
-                                      .map((t) => [t.key, t.name])
-                                  : undefined
-                              }
-                              onChange={(v) =>
-                                edit({
-                                  benchmarks: data.benchmarks.map((r, j) =>
-                                    j === i ? { ...r, [k]: v } : r,
-                                  ),
-                                })
-                              }
-                            />
-                          ))}
+          <div ref={bodyRef} className="sc-body" aria-busy={busy}>
+            {!cat ? (
+              <p className="sc-muted">正在读取工作台…</p>
+            ) : !record ? (
+              <div className="sc-empty">
+                <h2>从一份评估项目开始</h2>
+                <p>
+                  按储气库类型与资料条件选择方法。支持
+                  Excel、CSV、报告及外部模拟成果，保留输入依据和计算过程，生成可复核的库容评估报告。
+                </p>
+                <button className="sc-primary" onClick={create} disabled={busy}>
+                  新建评估
+                </button>
+              </div>
+            ) : (
+              <>
+                <div
+                  id="sc-input-panel"
+                  role="tabpanel"
+                  aria-labelledby="sc-input-tab"
+                  hidden={contentView !== "inputs"}
+                >
+                  {tab === "scope" && (
+                    <Scope data={data} edit={edit} cat={cat} />
+                  )}
+                  {tab === "data" && (
+                    <section>
+                      <div className="sc-section">
+                        <div className="sc-upload">
+                          <div>
+                            <strong>导入评估资料</strong>
+                            <p>
+                              Excel、CSV、JSON、PPTX、PDF、Word。保留原件，选择字段后应用。
+                            </p>
+                          </div>
+                          <button
+                            disabled={busy}
+                            onClick={() => fileRef.current.click()}
+                          >
+                            选择文件
+                          </button>
+                          <input
+                            ref={fileRef}
+                            type="file"
+                            multiple
+                            accept=".xlsx,.csv,.tsv,.json,.pptx,.pdf,.docx,.txt,.md"
+                            hidden
+                            aria-label="上传评估资料"
+                            onChange={(e) => {
+                              upload(e.target.files);
+                              e.target.value = "";
+                            }}
+                          />
                         </div>
-                        <button
-                          className="sc-link"
-                          onClick={() =>
-                            edit({
-                              benchmarks: data.benchmarks.filter(
-                                (_, j) => j !== i,
-                              ),
-                            })
-                          }
-                        >
-                          移除对比成果
-                        </button>
+                        <div className="sc-table-wrap">
+                          <table className="sc-table">
+                            <tbody>
+                              {data.documents.map((d) => (
+                                <tr key={d.id}>
+                                  <td>{d.name}</td>
+                                  <td>
+                                    {d.tables.length} 张表 / {d.pages.length}{" "}
+                                    段文字
+                                  </td>
+                                  <td>
+                                    {d.status === "manual_review"
+                                      ? "待人工读取"
+                                      : "已读取，待核对"}
+                                  </td>
+                                  <td>
+                                    <button
+                                      className="sc-link"
+                                      disabled={busy}
+                                      onClick={() =>
+                                        run(async () =>
+                                          setDoc(
+                                            await request(
+                                              `/cases/${record.id}/documents/${d.id}`,
+                                            ),
+                                          ),
+                                        )
+                                      }
+                                    >
+                                      查看与映射
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                        {doc && (
+                          <SourcePanel
+                            key={doc.id}
+                            doc={doc}
+                            cat={cat}
+                            record={record}
+                            apply={apply}
+                            run={run}
+                          />
+                        )}
                       </div>
-                    ))}
-                    <button
-                      onClick={() =>
-                        edit({
-                          benchmarks: [
-                            ...(data.benchmarks || []),
-                            {
-                              metric: "effective_inventory",
-                              value: null,
-                              source: "",
-                              cycle_id: data.cycle_id,
-                              state: data.start_state,
-                            },
-                          ],
-                        })
-                      }
-                    >
-                      添加对比成果
-                    </button>
-                  </details>
-                </>
-              )}
-              {tab === "report" && (
-                <section>
-                  <div className="sc-section">
-                    <h3>库容评估报告</h3>
-                    <p className="sc-muted">
-                      报告包含范围、数据来源、适用条件、分单元计算、交叉校验、资料缺项与复核状态。资料不齐时导出带缺项的阶段报告。
-                    </p>
-                    <Field
-                      label="项目复核意见"
-                      type="textarea"
-                      value={data.review_notes}
-                      onChange={(v) => edit({ review_notes: v })}
-                      wide
+                      <details>
+                        <summary>多周期成果</summary>
+                        <p className="sc-muted">
+                          可从表格映射导入或填写历史成果，单位为亿m³；冲峰能力为万m³/d。历史成果不自动替代本次计算。
+                        </p>
+                        <TableEditor
+                          title="历史指标"
+                          columns={[
+                            "cycle_id",
+                            "book_inventory",
+                            "effective_inventory",
+                            "deliverable_swing",
+                            "peak_rate",
+                            "source",
+                          ]}
+                          rows={data.history || []}
+                          onChange={(v) => edit({ history: v })}
+                        />
+                      </details>
+                    </section>
+                  )}
+                  {tab === "accounting" && (
+                    <Accounting data={data} edit={edit} />
+                  )}
+                  {["pvt", "pressure", "connectivity"].includes(tab) && (
+                    <NodeInputs
+                      node={tab}
+                      data={data}
+                      index={unitIndex}
+                      edit={edit}
+                      cat={cat}
+                      Field={Field}
+                      Check={Check}
+                      TableEditor={TableEditor}
                     />
-                    <p className="sc-note">
-                      {stale
-                        ? "尚无当前输入的计算结果。请保存并重新计算。"
-                        : "当前报告绑定本次计算快照；更改输入后需重新计算。"}
-                    </p>
-                    <div className="sc-actions">
-                      <button
-                        disabled={busy || stale}
-                        onClick={() =>
+                  )}
+                  {[
+                    "methods",
+                    "inventory",
+                    "window",
+                    "deliverability",
+                  ].includes(tab) && (
+                    <Methods
+                      data={{
+                        ...data,
+                        units: data.units[unitIndex]
+                          ? [data.units[unitIndex]]
+                          : [],
+                      }}
+                      edit={(patch) => {
+                        if (patch.units) {
+                          const units = clone(data.units);
+                          units[unitIndex] = patch.units[0];
+                          edit({ ...patch, units });
+                        } else edit(patch);
+                      }}
+                      cat={cat}
+                      stage={tab}
+                    />
+                  )}
+                  {tab === "deliverability" && data.units.length > 1 && (
+                    <section className="sc-card">
+                      <h3>全库地面能力</h3>
+                      <Check
+                        label="各单元地面设施相互独立"
+                        value={data.independent_surface}
+                        onChange={(v) => edit({ independent_surface: v })}
+                      />
+                      <Field
+                        label="全库共享地面采气上限（万方/天）"
+                        value={data.site_surface_limit}
+                        onChange={(v) => edit({ site_surface_limit: v })}
+                      />
+                    </section>
+                  )}
+                  {tab === "results" && (
+                    <>
+                      <Results
+                        evaluation={evaluation}
+                        review={review}
+                        cat={cat}
+                        stale={stale}
+                        busy={busy}
+                        onReview={() =>
                           run(async () =>
-                            setPreview(
-                              await (
-                                await request(
-                                  `/cases/${record.id}/report?format=html`,
-                                  undefined,
-                                  true,
-                                )
-                              ).text(),
+                            setReview(
+                              await request(
+                                `/cases/${record.id}/review`,
+                                json({ revision: record.revision }),
+                              ),
                             ),
                           )
                         }
-                      >
-                        预览报告
-                      </button>
-                      {[
-                        ["docx", "导出 Word"],
-                        ["html", "导出打印版"],
-                        ["zip", "下载复算包"],
-                        ["json", "导出计算记录"],
-                      ].map(([format, label]) => (
+                      />
+                      <details>
+                        <summary>对比成果与项目提示阈值</summary>
+                        <Field
+                          label="偏差提示阈值（%，项目设置，非行业标准）"
+                          value={data.comparison_tolerance_percent}
+                          type="number"
+                          onChange={(v) =>
+                            edit({ comparison_tolerance_percent: v })
+                          }
+                        />
+                        {(data.benchmarks || []).map((b, i) => (
+                          <div className="sc-unit" key={i}>
+                            <div className="sc-grid">
+                              {[
+                                ["metric", "指标"],
+                                ["value", "报告／其他方法值"],
+                                ["source", "成果来源"],
+                                ["cycle_id", "周期"],
+                                ["state", "状态"],
+                              ].map(([k, l]) => (
+                                <Field
+                                  key={k}
+                                  label={l}
+                                  type={k === "value" ? "number" : "text"}
+                                  value={b[k]}
+                                  options={
+                                    k === "metric"
+                                      ? cat.terms
+                                          .filter((t) =>
+                                            [
+                                              "effective_inventory",
+                                              "geological_swing",
+                                              "deliverable_swing",
+                                              "capacity",
+                                              "working_gas",
+                                              "peak_rate",
+                                            ].includes(t.key),
+                                          )
+                                          .map((t) => [t.key, t.name])
+                                      : undefined
+                                  }
+                                  onChange={(v) =>
+                                    edit({
+                                      benchmarks: data.benchmarks.map((r, j) =>
+                                        j === i ? { ...r, [k]: v } : r,
+                                      ),
+                                    })
+                                  }
+                                />
+                              ))}
+                            </div>
+                            <button
+                              className="sc-link"
+                              onClick={() =>
+                                edit({
+                                  benchmarks: data.benchmarks.filter(
+                                    (_, j) => j !== i,
+                                  ),
+                                })
+                              }
+                            >
+                              移除对比成果
+                            </button>
+                          </div>
+                        ))}
                         <button
-                          key={format}
-                          disabled={busy || stale}
                           onClick={() =>
-                            run(() =>
-                              download(
-                                `/cases/${record.id}/report?format=${format}`,
-                                `${data.case_name}-库容评估报告.${format}`,
-                              ),
-                            )
+                            edit({
+                              benchmarks: [
+                                ...(data.benchmarks || []),
+                                {
+                                  metric: "effective_inventory",
+                                  value: null,
+                                  source: "",
+                                  cycle_id: data.cycle_id,
+                                  state: data.start_state,
+                                },
+                              ],
+                            })
                           }
                         >
-                          {label}
+                          添加对比成果
                         </button>
-                      ))}
-                    </div>
-                  </div>
-                  {preview && (
-                    <iframe
-                      title="库容评估报告预览"
-                      className="sc-report-preview"
-                      sandbox=""
-                      srcDoc={preview}
+                      </details>
+                    </>
+                  )}
+                  {tab === "report" && (
+                    <section>
+                      <div className="sc-section">
+                        <h3>库容评估报告</h3>
+                        <p className="sc-muted">
+                          报告包含范围、数据来源、适用条件、分单元计算、交叉校验、资料缺项与复核状态。资料不齐时导出带缺项的阶段报告。
+                        </p>
+                        <Field
+                          label="项目复核意见"
+                          type="textarea"
+                          value={data.review_notes}
+                          onChange={(v) => edit({ review_notes: v })}
+                          wide
+                        />
+                        <p className="sc-note">
+                          {stale
+                            ? "尚无当前输入的计算结果。请保存并重新计算。"
+                            : "当前报告绑定本次计算快照；更改输入后需重新计算。"}
+                        </p>
+                        <div className="sc-actions">
+                          <button
+                            disabled={busy || stale}
+                            onClick={() =>
+                              run(async () =>
+                                setPreview(
+                                  await (
+                                    await request(
+                                      `/cases/${record.id}/report?format=html`,
+                                      undefined,
+                                      true,
+                                    )
+                                  ).text(),
+                                ),
+                              )
+                            }
+                          >
+                            预览报告
+                          </button>
+                          {[
+                            ["docx", "导出 Word"],
+                            ["html", "导出打印版"],
+                            ["zip", "下载复算包"],
+                            ["json", "导出计算记录"],
+                          ].map(([format, label]) => (
+                            <button
+                              key={format}
+                              disabled={busy || stale}
+                              onClick={() =>
+                                run(() =>
+                                  download(
+                                    `/cases/${record.id}/report?format=${format}`,
+                                    `${data.case_name}-库容评估报告.${format}`,
+                                  ),
+                                )
+                              }
+                            >
+                              {label}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      {preview && (
+                        <iframe
+                          title="库容评估报告预览"
+                          className="sc-report-preview"
+                          sandbox=""
+                          srcDoc={preview}
+                        />
+                      )}
+                    </section>
+                  )}
+                </div>
+                <div
+                  id="sc-chart-panel"
+                  role="tabpanel"
+                  aria-labelledby="sc-chart-tab"
+                  hidden={contentView !== "charts"}
+                >
+                  <NodeFigures model={chartModel} open={openFigure} />
+                  {tab !== "results" && tab !== "report" && (
+                    <NodeResult
+                      result={workflow?.nodes?.find((n) => n.id === tab)}
+                      dirty={dirty}
+                      cat={cat}
+                      onMethod={(method) =>
+                        edit({
+                          units: data.units.map((u, i) =>
+                            i === unitIndex ? { ...u, method } : u,
+                          ),
+                        })
+                      }
                     />
                   )}
-                </section>
-              )}
-            </>
-          )}
-        </div>
-      </main>
+                </div>
+                {data.field_sources && (
+                  <details className="sc-field-sources">
+                    <summary>
+                      对话填写来源（{Object.keys(data.field_sources).length}）
+                    </summary>
+                    {Object.entries(data.field_sources).map(
+                      ([path, source]) => (
+                        <p key={path}>
+                          <strong>
+                            {cat.fields[path.split(".").at(-1)]?.label || path}
+                          </strong>{" "}
+                          · {source.location}
+                          <br />
+                          {source.quote}
+                        </p>
+                      ),
+                    )}
+                  </details>
+                )}
+              </>
+            )}
+          </div>
+        </main>
+        {record && (
+          <ResultsWorkspace
+            key={record.id}
+            record={record}
+            openRequest={openRequest}
+            visible={resultsVisible}
+            hide={() => {
+              setResultsVisible(false);
+              setResultsExpanded(false);
+            }}
+            expanded={resultsExpanded}
+            setExpanded={setResultsExpanded}
+          />
+        )}
+      </div>
+      <AssistantPanel
+        record={record}
+        node={tab}
+        index={unitIndex}
+        busy={busy}
+        cat={cat}
+        send={sendMessage}
+        adopt={(ids) => assistantAction("adopt", { ids })}
+        undo={() => assistantAction("undo")}
+        hidden={assistantHidden}
+        close={() => setAssistantHidden(true)}
+      />
     </div>
   );
 }

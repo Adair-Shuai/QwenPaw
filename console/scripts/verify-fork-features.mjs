@@ -108,6 +108,11 @@ for (const [file, titles] of [
       "runs the mounted page from editable parameters to report and invalidates stale exports",
       "maps uploaded evidence into real unit inputs without overwriting existing units",
       "keeps deterministic results available when optional agent review fails",
+      "runs an independent PVT node and retains the editable form beside its result",
+      "fills the mounted form through conversation and supports undo and adjustable assistant",
+      "uploads conversation attachments before sending their evidence IDs to the assistant",
+      "opens independent result windows and preserves snapshots while moving resizing and editing",
+      "plots source data without converting missing observations into zero or inventing map results",
     ],
   ],
   [

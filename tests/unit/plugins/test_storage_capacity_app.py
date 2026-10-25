@@ -104,9 +104,13 @@ def test_manifest_and_frontend_contract():
     frontend = (PLUGIN_DIR / "ui" / "index.js").read_text(encoding="utf-8")
 
     assert manifest["id"] == "storage-capacity"
-    assert manifest["version"] == "0.2.0"
+    assert manifest["version"] == "0.3.0"
     assert manifest["type"] == "app"
-    assert set(manifest["dependencies"]) == {"openpyxl>=3.1", "pypdf>=4", "python-docx>=1"}
+    assert set(manifest["dependencies"]) == {
+        "openpyxl>=3.1",
+        "pypdf>=4",
+        "python-docx>=1",
+    }
     assert manifest["entry"]["backend"] == "backend/main.py"
     assert manifest["entry"]["frontend"] == "ui/index.js"
     assert "/apps/storage-capacity" in frontend
@@ -182,27 +186,52 @@ def test_ingest_unstructured_evidence_does_not_fake_values():
     assert result["case"]["design_capacity"] is None
 
 
-def test_release_upgrade_replaces_stale_capacity_compatibility(tmp_path, monkeypatch):
+def test_release_upgrade_replaces_stale_capacity_compatibility(
+    tmp_path,
+    monkeypatch,
+):
     from qwenpaw.plugins import bundled
     from qwenpaw.plugins.architecture import PluginManifest
     from qwenpaw._version_compat import check_plugin_version_compat
 
     target = tmp_path / "storage-capacity"
     target.mkdir()
-    current = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
-    old = dict(current, version="0.1.5", qwenpaw_version={"min": "2.1.0", "max": "2.3.0"})
+    current = json.loads(
+        (PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"),
+    )
+    old = dict(
+        current,
+        version="0.1.5",
+        qwenpaw_version={"min": "2.1.0", "max": "2.3.0"},
+    )
     (target / "plugin.json").write_text(json.dumps(old), encoding="utf-8")
     monkeypatch.setattr(bundled, "_is_development_environment", lambda: False)
-    assert bundled._install_or_update_plugin(PLUGIN_DIR, target, "storage-capacity", current)
-    installed = PluginManifest.from_dict(json.loads((target / "plugin.json").read_text(encoding="utf-8")))
+    assert (
+        bundled._install_or_update_plugin(  # pylint: disable=protected-access
+            PLUGIN_DIR,
+            target,
+            "storage-capacity",
+            current,
+        )
+    )
+    installed = PluginManifest.from_dict(
+        json.loads((target / "plugin.json").read_text(encoding="utf-8")),
+    )
     assert check_plugin_version_compat(installed) == (True, "")
     assert (target / "backend/evaluation.py").is_file()
     assert (target / "ui/index.js").is_file()
 
 
 def test_capacity_dependency_gate_does_not_install_plugin_id_as_pypi_package():
-    from qwenpaw.plugins.dependency_gate import combined_requirements, DependencyGate
+    from qwenpaw.plugins.dependency_gate import (
+        combined_requirements,
+        DependencyGate,
+    )
 
     with combined_requirements(PLUGIN_DIR) as requirements:
-        decision = DependencyGate().evaluate(requirements, allow_install=False, plugin_id="storage-capacity")
+        decision = DependencyGate().evaluate(
+            requirements,
+            allow_install=False,
+            plugin_id="storage-capacity",
+        )
     assert decision.already_satisfied, decision.reason
