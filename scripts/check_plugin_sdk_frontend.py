@@ -73,8 +73,29 @@ subprocess.run(
     check=True,
     env=environment,
 )
+react_types_package = (
+    args.dependencies / "@types/react/package.json"
+).resolve()
 for name in ("@types/react", "@types/prop-types", "csstype"):
-    shutil.copytree(args.dependencies / name, root / "node_modules" / name)
+    # pnpm keeps React's transitive types beside the real React type package,
+    # rather than hoisting every dependency into the console node_modules.
+    source = Path(
+        subprocess.check_output(
+            [
+                "node",
+                "-e",
+                "const {createRequire} = require('node:module');"
+                "const {dirname} = require('node:path');"
+                "const resolve = createRequire(process.argv[1]).resolve;"
+                "process.stdout.write(dirname("
+                "resolve(process.argv[2] + '/package.json')));",
+                str(react_types_package),
+                name,
+            ],
+            text=True,
+        ),
+    )
+    shutil.copytree(source, root / "node_modules" / name)
 (root / "author.ts").write_text(
     """
 import {
