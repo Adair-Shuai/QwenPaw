@@ -74,3 +74,34 @@ async def test_one_mutation_retries_a_refusing_cleanup_only_once():
     finally:
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+
+@pytest.mark.usefixtures("short_interrupt_timeout")
+async def test_mutation_releases_invocation_before_host_task_finishes():
+    activity = PluginActivity("host-continuation")
+    entered = asyncio.Event()
+    host_finish = asyncio.Event()
+    exited = asyncio.Event()
+
+    async def request():
+        with activity.invocation():
+            entered.set()
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                pass
+        exited.set()
+        await host_finish.wait()
+
+    task = asyncio.create_task(request())
+    try:
+        await entered.wait()
+        async with activity.mutation(interrupt_tasks=True):
+            assert exited.is_set()
+            assert not task.done()
+            assert not activity.tasks
+        assert not activity.blocked
+    finally:
+        host_finish.set()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)

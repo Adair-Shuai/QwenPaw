@@ -54,11 +54,17 @@ class PluginActivity:
             self.tasks[task] -= 1
             if not self.tasks[task]:
                 del self.tasks[task]
+                self._cleanup_changed.set()
 
     def retain_cleanup(self, task):
         """Reserve only an already-admitted SDK request's terminal callback."""
         self.cleanup_tasks.add(task)
         task.add_done_callback(self.cleanup_tasks.discard)
+        self._cleanup_changed.set()
+
+    def release_cleanup(self, task):
+        """Release a terminal callback before its host task continues."""
+        self.cleanup_tasks.discard(task)
         self._cleanup_changed.set()
 
     async def retry_cleanup(self):
@@ -95,7 +101,7 @@ class PluginActivity:
     async def _wait_pending(self, pending, deadline):
         changed = asyncio.create_task(self._cleanup_changed.wait())
         try:
-            _, remaining = await asyncio.wait(
+            await asyncio.wait(
                 pending | {changed},
                 return_when=asyncio.FIRST_COMPLETED,
                 timeout=max(
@@ -103,7 +109,9 @@ class PluginActivity:
                     deadline - asyncio.get_running_loop().time(),
                 ),
             )
-            return (remaining - {changed}) | self._pending()
+            # A host task may keep running after its last invocation exits.
+            # Retain only current owners, including new terminal callbacks.
+            return self._pending()
         finally:
             changed.cancel()
             await asyncio.gather(changed, return_exceptions=True)

@@ -672,6 +672,7 @@ def register(plugin, spec):
                             await self._end_run(payload)
                         finally:
                             self._tracker_calls.discard(task)
+                            plugin._instance.activity.release_cleanup(task)
 
         def _set_run_status(self, request, status):
             state = self._run_states.get(id(request))
