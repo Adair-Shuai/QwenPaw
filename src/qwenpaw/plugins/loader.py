@@ -53,7 +53,7 @@ from .module_isolation import (
 )
 from .safe_fs import safe_remove, same_location
 from .registry import PluginRegistry
-from ..utils.windows_paths import copy_tree, remove_tree
+from ..utils.windows_paths import copy_tree
 
 logger = logging.getLogger(__name__)
 
@@ -191,7 +191,9 @@ def _install_lock_path(plugin_id: str) -> Path:
     Keyed per plugin so unrelated plugins can install concurrently, but
     every process installing the *same* plugin serialises through one lock.
     """
-    safe_id = "".join(c if c.isalnum() or c in "-_." else "_" for c in plugin_id)
+    safe_id = "".join(
+        c if c.isalnum() or c in "-_." else "_" for c in plugin_id
+    )
     return _plugin_runtime_dir() / "install-locks" / f"{safe_id}.lock"
 
 
@@ -277,7 +279,8 @@ def _is_disabled_plugin_dir(path: Path) -> bool:
 
 def _marker_matches(marker: dict[str, Any], owner: dict[str, Any]) -> bool:
     return all(
-        marker.get(key) == owner.get(key) for key in ("owner", "provider", "source_id")
+        marker.get(key) == owner.get(key)
+        for key in ("owner", "provider", "source_id")
     )
 
 
@@ -658,7 +661,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         if decision.already_satisfied or not decision.allow_install:
             return decision
         logger.info(
-            "Plugin '%s' has %d unsatisfied dependency(ies): %s. " + "Installing...",
+            "Plugin '%s' has %d unsatisfied dependency(ies): %s. "
+            + "Installing...",
             plugin_id,
             len(decision.missing),
             ", ".join(decision.missing),
@@ -709,25 +713,31 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         from .install_lock import plugin_install_lock
 
         with plugin_install_lock(_install_lock_path(plugin_id)):
-            with plugin_install_lock(_shared_install_lock_path(), timeout=1800.0):
+            with plugin_install_lock(
+                _shared_install_lock_path(),
+                timeout=1800.0,
+            ):
                 # Another process may have installed while we waited; re-probe
                 # with fresh import caches before spending resources on pip.
                 _ensure_plugin_site_on_path()
                 importlib.invalidate_caches()
-                missing = self._find_unsatisfied_dependencies(requirements_file)
+                missing = self._find_unsatisfied_dependencies(
+                    requirements_file,
+                )
                 from ._sdk_dependencies import loaded_sdk_conflicts
-    
+
                 conflicts = loaded_sdk_conflicts(
                     source_path or requirements_file.parent,
                     missing,
                 )
                 if conflicts:
                     from .errors import SDKRestartRequiredError
-    
+
                     raise SDKRestartRequiredError(
                         f"Plugin '{plugin_id}' cannot safely replace "
                         "distributions in this process "
-                        f"({', '.join(conflicts)}). Restart the backend to apply.",
+                        f"({', '.join(conflicts)}). "
+                        "Restart the backend to apply.",
                     )
                 if not missing:
                     logger.info(
@@ -765,7 +775,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 f"(entry.backend or entry.frontend)",
             )
 
-        backend_exists = backend_entry_file is not None and backend_entry_file.exists()
+        backend_exists = (
+            backend_entry_file is not None and backend_entry_file.exists()
+        )
         frontend_exists = (
             frontend_entry_file is not None and frontend_entry_file.exists()
         )
@@ -891,7 +903,10 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                     plugin_id,
                 )
             else:
-                if instance is not None and instance.state is PluginState.DISPOSED:
+                if (
+                    instance is not None
+                    and instance.state is PluginState.DISPOSED
+                ):
                     self.lifecycle.drop_instance(plugin_id)
                 self._cleanup_failed_load(
                     plugin_id,
@@ -1092,7 +1107,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
 
         # 2. sys.modules — by module-name prefix
         prefix = module_name + "."
-        stale = [k for k in sys.modules if k == module_name or k.startswith(prefix)]
+        stale = [
+            k for k in sys.modules if k == module_name or k.startswith(prefix)
+        ]
         for k in stale:
             sys.modules.pop(k, None)
 
@@ -1233,7 +1250,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
             ):
                 self.lifecycle.drop_instance(plugin_id)
             raise
-        if decision.unsupported or (decision.missing and not decision.allow_install):
+        if decision.unsupported or (
+            decision.missing and not decision.allow_install
+        ):
             instance.mark_failed(decision.reason)
             logger.error(
                 "Plugin '%s' marked FAILED: %s",
@@ -1252,8 +1271,12 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
 
         backend_entry = manifest.entry.backend
         frontend_entry = manifest.entry.frontend
-        backend_entry_file = source_path / backend_entry if backend_entry else None
-        frontend_entry_file = source_path / frontend_entry if frontend_entry else None
+        backend_entry_file = (
+            source_path / backend_entry if backend_entry else None
+        )
+        frontend_entry_file = (
+            source_path / frontend_entry if frontend_entry else None
+        )
 
         plugin_def = saved_plugin_def
         backend_exists = False
@@ -1352,7 +1375,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
 
         try:
             ids = await run_sync_io(
-                lambda: set(interrupted_update_ids()) | set(provision_ids_to_recover()),
+                lambda: set(interrupted_update_ids())
+                | set(provision_ids_to_recover()),
             )
         except Exception:  # noqa: BLE001
             logger.exception(
@@ -1457,12 +1481,18 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         """
         await self._recover_startup_transactions()
         discovered = self.discover_plugins()
+
         def startup_order(item):
             try:
-                missing = bool(self._find_unsatisfied_dependencies(item[1] / "requirements.txt"))
+                missing = bool(
+                    self._find_unsatisfied_dependencies(
+                        item[1] / "requirements.txt",
+                    ),
+                )
             except (OSError, ValueError):
                 missing = True
             return missing, item[0].plugin_type == "app", item[0].id
+
         discovered.sort(key=startup_order)
 
         for manifest, plugin_dir in discovered:
@@ -1675,7 +1705,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         if result.returncode == 0:
             self._after_successful_install()
             logger.info(
-                f"Dependencies installed for plugin '{plugin_id}'" " (via pip)",
+                f"Dependencies installed for plugin '{plugin_id}'"
+                " (via pip)",
             )
             return
 
@@ -1882,7 +1913,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         old_path = Path(record.source_path)
         old_manifest = record.manifest
         old_config = dict(
-            getattr(self.lifecycle.get_instance(plugin_id), "config", {}) or {},
+            getattr(self.lifecycle.get_instance(plugin_id), "config", {})
+            or {},
         )
         old_generation = 0
         inst = self.lifecycle.get_instance(plugin_id)
@@ -1922,7 +1954,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                     unchanged=True,
                     errors=[decision.reason],
                     needs_restart=bool(
-                        incoming_manifest.sdk is not None and decision.require_restart,
+                        incoming_manifest.sdk is not None
+                        and decision.require_restart,
                     ),
                 )
             if decision.missing and not decision.allow_install:
@@ -2158,7 +2191,10 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
             return errors
         if swapped is not None:
             try:
-                if await run_sync_io(preserved_update_backup, plugin_id) is None:
+                if (
+                    await run_sync_io(preserved_update_backup, plugin_id)
+                    is None
+                ):
                     await run_sync_io(_remove_dir, swapped)
             except Exception as exc:  # noqa: BLE001
                 errors.append(f"committed backup cleanup failed: {exc}")
@@ -2223,7 +2259,11 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
             except (FileNotFoundError, ValueError) as exc:
                 if not allow_incomplete_target:
                     raise
-                if old_path.is_symlink() or not old_path.is_dir() or has_runtime:
+                if (
+                    old_path.is_symlink()
+                    or not old_path.is_dir()
+                    or has_runtime
+                ):
                     raise RuntimeError(
                         "incomplete plugin target is not quiescent",
                     ) from exc
@@ -2418,9 +2458,13 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 )
                 failed.errors.append(f"rollback unload failed: {exc}")
                 return failed
-            if not unload_report.quiescent or plugin_id in self._loaded_plugins:
+            if (
+                not unload_report.quiescent
+                or plugin_id in self._loaded_plugins
+            ):
                 failed.errors.extend(
-                    unload_report.errors or ["rollback unload did not go quiescent"],
+                    unload_report.errors
+                    or ["rollback unload did not go quiescent"],
                 )
                 return failed
         try:
@@ -2467,7 +2511,11 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
             failed.errors.append(f"restore failed: {exc}")
             return failed
         instance = self.lifecycle.get_instance(plugin_id)
-        if record.status != "active" or instance is None or not instance.activated:
+        if (
+            record.status != "active"
+            or instance is None
+            or not instance.activated
+        ):
             failed.errors.append(
                 f"restore load returned status={record.status}",
             )
@@ -2485,6 +2533,7 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         self,
         plugin_id: str,
         install_dir: Path | None,
+        source_path: Path | None = None,
     ) -> Tuple[Path, Path]:
         """Resolve and validate the installation target before side effects."""
         if install_dir is None:
@@ -2492,8 +2541,20 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 raise RuntimeError("No plugin directories configured")
             install_dir = self.plugin_dirs[0]
         base = Path(install_dir).resolve()
-        target = (base / plugin_id).resolve()
-        if target == base or not target.is_relative_to(base):
+        candidate = base / plugin_id
+        target = candidate.resolve()
+        # A pre-existing development link may already point at the source.
+        # Only load may reuse that exact link; copying and other sources must
+        # still reject targets outside the managed installation directory.
+        development_link = (
+            source_path is not None
+            and candidate.parent == base
+            and candidate.is_symlink()
+            and same_location(source_path, target)
+        )
+        if target == base or (
+            not target.is_relative_to(base) and not development_link
+        ):
             raise ValueError(
                 f"Plugin id '{plugin_id}' does not resolve to a safe child "
                 f"of the plugin directory ({base}). Refusing to install.",
@@ -2515,7 +2576,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         async with self.plugin_lifecycle(manifest.id):
             if not self.lifecycle.delegate.owns_commit(manifest.id):
                 raise RuntimeError(
-                    f"Plugin '{manifest.id}' commit is not owned " "by this process",
+                    f"Plugin '{manifest.id}' commit is not owned "
+                    "by this process",
                 )
             _, target = await asyncio.to_thread(
                 self._install_paths,
@@ -2695,7 +2757,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
             except BaseException:
                 inst = self.lifecycle.get_instance(plugin_id)
                 already_committed = record is not None and (
-                    record.status == "active" or (inst is not None and inst.activated)
+                    record.status == "active"
+                    or (inst is not None and inst.activated)
                 )
                 if (
                     record is not None
@@ -2715,7 +2778,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                     )
                 raise
 
-    # pylint: disable-next=too-many-statements
+    # Keep the existing lifecycle complexity exemption before its signature.
+    # pylint: disable=too-many-statements,too-many-branches
     async def _load_plugin_from_path_unlocked(
         self,
         source_path: Path,
@@ -2731,7 +2795,6 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         """Install+load from path; caller must hold lifecycle for id."""
         from ..utils.io_utils import run_sync_io
 
-        # pylint: disable=too-many-statements,too-many-branches
         plugin_id = manifest.id
         if not self.lifecycle.delegate.owns_commit(plugin_id):
             raise RuntimeError(
@@ -2748,6 +2811,7 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
             self._install_paths,
             plugin_id,
             install_dir,
+            source_path,
         )
         # Copy files when source is not already the target (off the loop).
         # Identity, not string equality: a case-alias of the same
@@ -2756,7 +2820,6 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         # never rmtree the only copy, then copytree.
         swapped = None
         if not same_location(source_path, target_dir):
-            from ..utils.io_utils import run_sync_io
 
             def _recover_incomplete() -> None:
                 if not target_dir.exists():
@@ -2821,14 +2884,17 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
             target_exists = await asyncio.to_thread(target_dir.exists)
             if target_exists and not replace_files:
                 raise ValueError(
-                    f"Plugin installation target already exists: " f"{target_dir}",
+                    f"Plugin installation target already exists: "
+                    f"{target_dir}",
                 )
             if target_exists and replace_files:
                 swapped = await self._swap_plugin_dir(
                     plugin_id,
                     target_dir,
                     source_path,
-                    allow_incomplete_target=not (install_base / plugin_id).is_symlink(),
+                    allow_incomplete_target=not (
+                        install_base / plugin_id
+                    ).is_symlink(),
                 )
                 if pawport_owner is not None:
                     await run_sync_io(_write_pawport)
@@ -2945,13 +3011,15 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                             and instance.state is PluginState.FAILED
                             and not instance.activated
                             and not instance.has_runtime_ledger()
-                            and self.lifecycle.get_instance(plugin_id) is instance
+                            and self.lifecycle.get_instance(plugin_id)
+                            is instance
                         ):
                             self._loaded_plugins.pop(plugin_id)
                             self.lifecycle.drop_instance(plugin_id)
                 except Exception:  # noqa: BLE001
                     logger.exception(
-                        "Failed to restore plugin '%s' after " "unloaded force install",
+                        "Failed to restore plugin '%s' after "
+                        "unloaded force install",
                         plugin_id,
                     )
             raise
@@ -2993,7 +3061,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         """
         resolved = mode
         if resolved is None:
-            resolved = UnloadMode.UNINSTALL if delete_files else UnloadMode.UNLOAD
+            resolved = (
+                UnloadMode.UNINSTALL if delete_files else UnloadMode.UNLOAD
+            )
         return await self.lifecycle.unload(
             plugin_id,
             resolved,
@@ -3283,7 +3353,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         # gets a fresh copy (e.g. plugin_foo.utils must not be reused).
         module_name = f"plugin_{plugin_id.replace('-', '_')}"
         prefix = module_name + "."
-        stale = [k for k in sys.modules if k == module_name or k.startswith(prefix)]
+        stale = [
+            k for k in sys.modules if k == module_name or k.startswith(prefix)
+        ]
         for k in stale:
             sys.modules.pop(k, None)
 
@@ -3456,7 +3528,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                     )
                 except Exception as unbridge_exc:  # noqa: BLE001
                     logger.debug(
-                        "Runtime unbridge failed for '%s' " "(plugin '%s'): %s",
+                        "Runtime unbridge failed for '%s' "
+                        "(plugin '%s'): %s",
                         tool_name,
                         plugin_id,
                         unbridge_exc,
@@ -3477,7 +3550,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 )
         except Exception as exc:
             logger.warning(
-                f"Failed to clean up tools for plugin '{plugin_id}': " f"{exc}",
+                f"Failed to clean up tools for plugin '{plugin_id}': "
+                f"{exc}",
             )
 
     async def _run_shutdown_hooks(
@@ -3489,7 +3563,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
     ) -> None:
         """Run registry shutdown hooks and record failures on *report*."""
         hooks = [
-            h for h in self.registry.get_shutdown_hooks() if h.plugin_id == plugin_id
+            h
+            for h in self.registry.get_shutdown_hooks()
+            if h.plugin_id == plugin_id
         ]
         for hook in hooks:
             try:
@@ -3557,7 +3633,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
     ) -> None:
         """Run historical uninstall hooks (unload and uninstall modes)."""
         hooks = [
-            h for h in self.registry.get_uninstall_hooks() if h.plugin_id == plugin_id
+            h
+            for h in self.registry.get_uninstall_hooks()
+            if h.plugin_id == plugin_id
         ]
         for hook in hooks:
             try:
@@ -3585,7 +3663,7 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         return None
 
     def _find_installed_plugin_dir(self, plugin_id: str) -> Optional[Path]:
-        """Locate failed installs even when their folder differs from the ID."""
+        """Find failed installs whose folder differs from the plugin ID."""
         direct = self.find_installed_plugin_dir(plugin_id)
         if direct is not None:
             return direct
@@ -3595,10 +3673,17 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
             if not root.is_dir():
                 continue
             for candidate in sorted(root.iterdir()):
-                if _is_disabled_plugin_dir(candidate) or not candidate.is_dir():
+                if (
+                    _is_disabled_plugin_dir(candidate)
+                    or not candidate.is_dir()
+                ):
                     continue
                 try:
-                    value = json.loads((candidate / "plugin.json").read_text(encoding="utf-8"))
+                    value = json.loads(
+                        (candidate / "plugin.json").read_text(
+                            encoding="utf-8",
+                        ),
+                    )
                 except (OSError, ValueError):
                     continue
                 if isinstance(value, dict) and value.get("id") == plugin_id:
@@ -3627,7 +3712,11 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         if source_path is None:
             discovered = await asyncio.to_thread(self.discover_plugins)
             source_path = next(
-                (path for manifest, path in discovered if manifest.id == plugin_id),
+                (
+                    path
+                    for manifest, path in discovered
+                    if manifest.id == plugin_id
+                ),
                 None,
             )
         has_inventory = inventory_path(plugin_id).is_file()
@@ -3713,7 +3802,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
 
         leftover = leftover_dests(created or declared)
         for dest in leftover:
-            prefix = "candidate leftover" if candidate else "inventory leftover"
+            prefix = (
+                "candidate leftover" if candidate else "inventory leftover"
+            )
             report.errors.append(f"{prefix}: {dest}")
             report.clean = False
 
@@ -3936,10 +4027,14 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                         agent_tools_before=agent_tools_before,
                         location_keys_before=location_keys_before,
                         created_dests=(
-                            instance.created_dests() if instance is not None else []
+                            instance.created_dests()
+                            if instance is not None
+                            else []
                         ),
                         txn_escapes=(
-                            instance.txn_escapes() if instance is not None else []
+                            instance.txn_escapes()
+                            if instance is not None
+                            else []
                         ),
                     )
 
@@ -3948,11 +4043,15 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                         # Undo this activation's writes after quiescence,
                         # without dropping the config transaction's instance
                         # or evicting its modules. The caller restores config.
-                        cleanup_report = await self._dispose_then_undo_txn_disk(
-                            plugin_id,
-                            instance,
-                            use_teardown=True,
-                            undo_disk=_rollback if snapshot_ready else None,
+                        cleanup_report = (
+                            await self._dispose_then_undo_txn_disk(
+                                plugin_id,
+                                instance,
+                                use_teardown=True,
+                                undo_disk=(
+                                    _rollback if snapshot_ready else None
+                                ),
+                            )
                         )
                         setattr(exc, "plugin_cleanup_report", cleanup_report)
                     else:
@@ -4132,7 +4231,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 await self._invoke_startup_hook(hook)
             except Exception as exc:  # noqa: BLE001
                 logger.error(
-                    "✗ Failed to execute startup hook '%s' " "from plugin '%s': %s",
+                    "✗ Failed to execute startup hook '%s' "
+                    "from plugin '%s': %s",
                     hook.hook_name,
                     plugin_id,
                     exc,
@@ -4149,7 +4249,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
             if hook.plugin_id in failed:
                 continue
             logger.debug(
-                "Executing startup hook '%s' from plugin '%s' " "(priority=%s)",
+                "Executing startup hook '%s' from plugin '%s' "
+                "(priority=%s)",
                 hook.hook_name,
                 hook.plugin_id,
                 hook.priority,
@@ -4158,7 +4259,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 await self._invoke_startup_hook(hook)
             except Exception as exc:  # noqa: BLE001
                 logger.error(
-                    "✗ Failed to execute startup hook '%s' " "from plugin '%s': %s",
+                    "✗ Failed to execute startup hook '%s' "
+                    "from plugin '%s': %s",
                     hook.hook_name,
                     hook.plugin_id,
                     exc,
@@ -4226,7 +4328,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 record.enabled = False
                 record.diagnostics = list(instance.diagnostics)
             logger.error(
-                "Plugin '%s' marked FAILED after startup " "(not quiescent): %s",
+                "Plugin '%s' marked FAILED after startup "
+                "(not quiescent): %s",
                 plugin_id,
                 reason,
             )

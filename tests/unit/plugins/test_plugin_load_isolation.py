@@ -108,6 +108,10 @@ async def test_load_from_exact_development_symlink(tmp_path: Path) -> None:
     PluginRegistry._instance = None
     try:
         loader = PluginLoader(plugin_dirs=[install_root])
+        with pytest.raises(ValueError, match="safe child"):
+            loader._install_paths("demo", install_root)
+        with pytest.raises(ValueError, match="safe child"):
+            loader._install_paths("demo", install_root, tmp_path / "other")
         record = await loader.load_plugin_from_path(source)
         assert record.manifest.id == "demo"
         assert record.source_path == source.resolve()
