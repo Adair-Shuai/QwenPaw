@@ -35,14 +35,14 @@ from dataclasses import dataclass, field
 from typing import Any, AsyncIterator
 from uuid import UUID
 
-import logging
+from ..adapter.log_compat import get_logger
 
 from ..adapter import playbook_ids_from_context
 from ..adapter import AgentEventType
 from ..io import HiddenHolder, NodeOutput
 from .agent_model import apply_model_override, parse_agent_model_override
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 #: Canonical output slot order shared by every agent node. Keep in sync
 #: with the ``outputs=[...]`` in each node's ``define_schema``.
@@ -107,7 +107,9 @@ class _AggregatedRun:
 
 
 async def _aggregate_agent_events(
-    events: AsyncIterator[Any], *, emit: Any,
+    events: AsyncIterator[Any],
+    *,
+    emit: Any,
 ) -> _AggregatedRun:
     """Drive an :class:`AgentEvent` stream and fold it into an aggregate."""
     text_parts: list[str] = []
@@ -145,7 +147,10 @@ async def _aggregate_agent_events(
             agg.checkpoint_id = str(data.get("checkpoint_id") or "")
 
     agg.text = final_text or "".join(text_parts)
-    agg.success = error is None and agg.reason in ("completed", AWAITING_USER_INPUT)
+    agg.success = error is None and agg.reason in (
+        "completed",
+        AWAITING_USER_INPUT,
+    )
     agg.meta = {
         "reason": agg.reason,
         "partial": agg.reason not in ("completed", ""),
@@ -156,7 +161,8 @@ async def _aggregate_agent_events(
 
 
 def _take_resume_payload(
-    state: Any, node_id: str | None,
+    state: Any,
+    node_id: str | None,
 ) -> tuple[str, str] | None:
     """Pop this node's resume answer + stashed checkpoint id, if any.
 
@@ -187,12 +193,18 @@ def _take_resume_payload(
     return checkpoint_id, answer or "continue"
 
 
-def _stash_checkpoint(state: Any, node_id: str | None, checkpoint_id: str) -> None:
+def _stash_checkpoint(
+    state: Any,
+    node_id: str | None,
+    checkpoint_id: str,
+) -> None:
     """Record the kernel checkpoint id so the executor resume path finds it."""
     if state is None or not node_id or not checkpoint_id:
         return
     try:
-        state.metadata.setdefault("agent_checkpoints", {})[str(node_id)] = checkpoint_id
+        state.metadata.setdefault("agent_checkpoints", {})[
+            str(node_id)
+        ] = checkpoint_id
     except Exception:  # noqa: BLE001
         pass
 
@@ -208,7 +220,11 @@ def _finalize(
     if state is not None and output_var:
         state.set(output_var, agg.text)
     _stash_checkpoint(state, hidden.unique_id, agg.checkpoint_id)
-    meta = {**meta, "text": (agg.text or "")[:4000], "success": bool(agg.success)}
+    meta = {
+        **meta,
+        "text": (agg.text or "")[:4000],
+        "success": bool(agg.success),
+    }
     return NodeOutput(
         values=(
             agg.text,
@@ -264,7 +280,9 @@ async def run_agent_node(
     merged_tool_extra = dict(tool_extra or {})
     playbook_ids = playbook_ids_from_context(
         tool_extra=merged_tool_extra,
-        metadata=getattr(state, "metadata", None) if state is not None else None,
+        metadata=getattr(state, "metadata", None)
+        if state is not None
+        else None,
     )
     if playbook_ids:
         merged_tool_extra["playbook_ids"] = playbook_ids
@@ -309,7 +327,10 @@ async def run_agent_node(
         meta["mode"] = "resume"
         meta["resumed_from"] = checkpoint_id
         return _finalize(
-            agg, hidden=hidden, state=state, meta=meta,
+            agg,
+            hidden=hidden,
+            state=state,
+            meta=meta,
             output_var=output_var,
         )
 
@@ -381,7 +402,10 @@ async def run_agent_node(
                 )
     except Exception as exc:  # noqa: BLE001
         logger.error(
-            "agent_node_error", agent=agent_name, error=str(exc), exc_info=True,
+            "agent_node_error",
+            agent=agent_name,
+            error=str(exc),
+            exc_info=True,
         )
         return NodeOutput(
             error=str(exc),
@@ -389,7 +413,10 @@ async def run_agent_node(
         )
 
     return _finalize(
-        agg, hidden=hidden, state=state, meta=meta,
+        agg,
+        hidden=hidden,
+        state=state,
+        meta=meta,
         output_var=output_var,
     )
 

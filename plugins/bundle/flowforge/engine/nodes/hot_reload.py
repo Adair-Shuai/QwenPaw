@@ -13,12 +13,12 @@ import threading
 import time
 from pathlib import Path
 
-import logging
+from ..adapter.log_compat import get_logger
 
 from .loader import load_directory
 from .registry import NodeRegistry, get_registry
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class HotReloader:
@@ -51,18 +51,16 @@ class HotReloader:
             logger.warning("hot_reload_disabled_no_watchdog")
             return
 
-        class _Handler(FileSystemEventHandler):
-            def __init__(self, parent: "HotReloader") -> None:
-                super().__init__()
-                self._parent = parent
+        schedule = self._schedule
 
-            def on_any_event(self, event) -> None:  # type: ignore[no-untyped-def]
+        class _Handler(FileSystemEventHandler):
+            def on_any_event(self, event) -> None:
                 if event.is_directory:
                     return
-                self._parent._schedule(event.src_path)
+                schedule(event.src_path)
 
         observer = Observer()
-        observer.schedule(_Handler(self), str(self.path), recursive=True)
+        observer.schedule(_Handler(), str(self.path), recursive=True)
         observer.start()
         self._observer = observer
         logger.info("hot_reload_started", path=str(self.path))
@@ -79,11 +77,16 @@ class HotReloader:
             self._pending[src_path] = time.monotonic()
         if self._loop is None:
             return
-        self._loop.call_later(
-            self.debounce_sec,
-            lambda: asyncio.run_coroutine_threadsafe(self._maybe_fire(src_path), self._loop)  # type: ignore[arg-type]
-            if self._loop else None,
-        )
+
+        def submit_reload() -> None:
+            loop = self._loop
+            if loop is not None:
+                asyncio.run_coroutine_threadsafe(
+                    self._maybe_fire(src_path),
+                    loop,
+                )
+
+        self._loop.call_later(self.debounce_sec, submit_reload)
 
     async def _maybe_fire(self, src_path: str) -> None:
         with self._lock:
@@ -95,7 +98,11 @@ class HotReloader:
         with self._lock:
             self._pending.pop(src_path, None)
         try:
-            await load_directory(self.path, self.registry, run_prestartup=False)
+            await load_directory(
+                self.path,
+                self.registry,
+                run_prestartup=False,
+            )
             logger.info("hot_reload_applied", src_path=src_path)
         except Exception:  # noqa: BLE001
             logger.error("hot_reload_failed", src_path=src_path, exc_info=True)

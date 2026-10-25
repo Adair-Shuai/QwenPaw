@@ -63,7 +63,8 @@
       "tests/unit/plugins/flowforge/test_runtime_reliability.py",
       "tests/unit/plugins/flowforge/test_business_acceptance.py",
       "tests/unit/plugins/flowforge/test_llm_adapter.py",
-      "tests/unit/plugins/flowforge/test_quality_gate_routing.py"
+      "tests/unit/plugins/flowforge/test_quality_gate_routing.py",
+      "tests/unit/plugins/flowforge/test_node_failure_logging.py"
     ],
     "office": [
       "tests/unit/agents/tools/test_office_tools.py",
@@ -209,6 +210,12 @@
       "test_team_plan_guard_returns_boolean_without_changing_protected_paths",
       "test_tool_manifest_checks_duplicate_names_before_filtering",
       "test_tool_manifest_keeps_callable_and_target_binding_validation"
+    ],
+    "tests/unit/plugins/flowforge/test_node_failure_logging.py": [
+      "test_llm_failure_returns_provider_error_and_traceback",
+      "test_domain_failure_returns_adapter_error_and_traceback",
+      "test_agent_failure_returns_original_error_in_both_paths",
+      "test_hot_reload_delivers_change_and_logs_result"
     ]
   }
 }
