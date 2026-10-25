@@ -49,7 +49,8 @@
       "tests/unit/plugins/ugsci/test_visualization_well_placement.py",
       "tests/unit/plugins/test_storage_capacity_app.py",
       "tests/unit/plugins/test_storage_capacity_workbench.py",
-      "tests/unit/plugins/test_storage_capacity_flow.py"
+      "tests/unit/plugins/test_storage_capacity_flow.py",
+      "tests/unit/plugins/ugsci/test_manifest_guard_contracts.py"
     ],
     "flowforge": [
       "tests/unit/plugins/flowforge/test_bidirectional_calls.py",
@@ -203,6 +204,11 @@
     "tests/unit/plugins/test_sdk_channel_routing_contract.py": [
       "test_lifecycle_interrupt_closes_started_stream_once",
       "test_interrupt_reload_retains_blocked_terminal_until_public_retry"
+    ],
+    "tests/unit/plugins/ugsci/test_manifest_guard_contracts.py": [
+      "test_team_plan_guard_returns_boolean_without_changing_protected_paths",
+      "test_tool_manifest_checks_duplicate_names_before_filtering",
+      "test_tool_manifest_keeps_callable_and_target_binding_validation"
     ]
   }
 }
