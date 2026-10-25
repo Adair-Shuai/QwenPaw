@@ -14,7 +14,10 @@ class PyMCAdapter(_PyMCAdapter):
 
 
 class PymooAdapter(_PymooAdapter):
-    """Pymoo is a stochastic optimizer and belongs to workflow/provider level."""
+    (
+        "Pymoo is a stochastic optimizer and belongs to workflow/provider "
+        "level."
+    )
 
     deterministic = False
 

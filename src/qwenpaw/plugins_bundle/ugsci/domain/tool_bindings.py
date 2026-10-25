@@ -79,12 +79,18 @@ def get_domain_tool_bindings() -> dict[str, Callable[..., Any]]:
         "ugsci_vogel_ipr": ugsci_vogel_ipr,
         "ugsci_nodal_analysis": ugsci_nodal_analysis,
         "ugsci_conservation_check": ugsci_conservation_check,
-        "ugsci_storage_inventory_accounting": ugsci_storage_inventory_accounting,
+        "ugsci_storage_inventory_accounting": (
+            ugsci_storage_inventory_accounting
+        ),
         "ugsci_storage_effective_inventory": ugsci_storage_effective_inventory,
         "ugsci_storage_inventory_evaluate": ugsci_storage_inventory_evaluate,
         "ugsci_storage_capacity_evaluate": ugsci_storage_capacity_evaluate,
-        "ugsci_storage_injection_allocation_optimize": ugsci_storage_injection_allocation_optimize,
-        "ugsci_storage_production_allocation_optimize": ugsci_storage_production_allocation_optimize,
+        "ugsci_storage_injection_allocation_optimize": (
+            ugsci_storage_injection_allocation_optimize
+        ),
+        "ugsci_storage_production_allocation_optimize": (
+            ugsci_storage_production_allocation_optimize
+        ),
         "ugsci_storage_scenario_optimize": ugsci_storage_scenario_optimize,
         "ugsci_symbolic_polynomial_roots": ugsci_symbolic_polynomial_roots,
         "ugsci_bayesian_normal_estimate": ugsci_bayesian_normal_estimate,
