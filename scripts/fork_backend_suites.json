@@ -65,7 +65,8 @@
       "tests/unit/plugins/flowforge/test_llm_adapter.py",
       "tests/unit/plugins/flowforge/test_quality_gate_routing.py",
       "tests/unit/plugins/flowforge/test_node_failure_logging.py",
-      "tests/unit/plugins/flowforge/test_public_adapter_contract.py"
+      "tests/unit/plugins/flowforge/test_public_adapter_contract.py",
+      "tests/unit/plugins/flowforge/test_runner_pipeline_contract.py"
     ],
     "office": [
       "tests/unit/agents/tools/test_office_tools.py",
@@ -225,6 +226,12 @@
       "test_native_tool_schema_keeps_identity_and_empty_fallback",
       "test_public_registry_entry_points_share_native_singleton",
       "test_public_registry_retains_legacy_getter_fallback"
+    ],
+    "tests/unit/plugins/flowforge/test_runner_pipeline_contract.py": [
+      "test_runner_preserves_resolution_retry_lazy_cache_and_progress",
+      "test_runner_keeps_cache_bypass_and_legacy_output_normalization",
+      "test_runner_keeps_expansion_guard_and_blocked_cache_rules",
+      "test_runner_cancellation_propagates_without_retry_or_cache_write"
     ],
     "tests/unit/market/test_search_deadline.py": [
       "test_search_deadline_keeps_fast_results_and_reports_slow_source",

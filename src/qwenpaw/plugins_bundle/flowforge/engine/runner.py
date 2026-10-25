@@ -15,12 +15,10 @@ import math
 import time
 from typing import Any
 
-import logging
 from .adapter.log_compat import get_logger
-logger = get_logger(__name__)
-from .io import Hidden, HiddenHolder, NodeOutput
+from .io import HiddenHolder, NodeOutput, Schema
 from .io.contract import NOT_CACHEABLE
-from .nodes import NodeRegistry
+from .nodes import NodeRegistry, WorkflowNode
 
 from .cache_provider import CacheProvider, NullCacheProvider
 from .caching import BaseCache, CacheEntry, CacheKeySet, hash_signature
@@ -56,7 +54,7 @@ _TRANSIENT_MARKERS = (
 
 
 def _is_transient(exc: BaseException) -> bool:
-    """Heuristically classify an exception as a transient (retryable) failure."""
+    """Classify an exception as a transient (retryable) failure."""
     if getattr(exc, "retryable", None) is False:
         return False
     if isinstance(exc, _TRANSIENT_EXCEPTIONS):
@@ -66,7 +64,7 @@ def _is_transient(exc: BaseException) -> bool:
 
 
 def _retry_policy(node_def: dict[str, Any]) -> tuple[int, float]:
-    """Read ``control.max_retries`` / ``control.retry_delay_sec`` for a node."""
+    """Read a node's maximum retries and retry delay from its control."""
     control = node_def.get("control", {}) or {}
     try:
         max_retries = int(control.get("max_retries", 0) or 0)
@@ -83,8 +81,12 @@ class NodeRunResult:
     __slots__ = ("output", "cached", "duration_ms", "error")
 
     def __init__(
-        self, output: NodeOutput | None, *, cached: bool = False,
-        duration_ms: int = 0, error: str | None = None,
+        self,
+        output: NodeOutput | None,
+        *,
+        cached: bool = False,
+        duration_ms: int = 0,
+        error: str | None = None,
     ) -> None:
         self.output = output
         self.cached = cached
@@ -119,27 +121,120 @@ class NodeRunner:
         upstream_values: dict[tuple[str, int], Any],
         hidden: HiddenHolder,
     ) -> NodeRunResult:
-        """Execute a single node. Resolves link inputs from ``upstream_values``."""
+        """Execute one node, resolving links from ``upstream_values``."""
 
         class_type = node_def.get("class_type", "")
         node_cls = self.registry.get(class_type)
         if node_cls is None:
-            return NodeRunResult(None, error=f"Unknown node class: {class_type}")
+            return NodeRunResult(
+                None,
+                error=f"Unknown node class: {class_type}",
+            )
 
         schema = node_cls.get_schema()
 
+        resolved_inputs = self._resolve_inputs(
+            node_id,
+            node_def,
+            upstream_values,
+            hidden,
+            schema,
+        )
+
+        # -------------------- instance memoization --------------------
+        instance_entry = self.object_cache.get(node_id)
+        if instance_entry is None:
+            instance = node_cls()
+            self.object_cache.set(node_id, CacheEntry(value=instance))
+        else:
+            instance = instance_entry.value
+
+        # Fingerprint-aware cache lookup.
+        fingerprint: Any = None
+        cacheable = not schema.not_idempotent and not schema.control_flow
+        if cacheable:
+            try:
+                fingerprint = instance.fingerprint_inputs(**resolved_inputs)
+            except Exception:
+                fingerprint = None
+            if fingerprint is NOT_CACHEABLE:
+                cacheable = False
+
+        base_key = (
+            self.cache_keys.signature(node_id)
+            + ":"
+            + hash_signature(resolved_inputs)
+        )
+        key = (
+            base_key
+            if fingerprint in (None, NOT_CACHEABLE)
+            else f"{base_key}#{fingerprint}"
+        )
+
+        if cacheable:
+            cached = self.output_cache.get(key)
+            if cached is None:
+                provider_hit = await self.cache_provider.on_lookup(key)
+                if provider_hit is not None:
+                    cached = CacheEntry(
+                        value=_output_from_payload(provider_hit),
+                    )
+            if cached is not None:
+                self.progress.set_status(node_id, NodeStatus.CACHED)
+                return NodeRunResult(cached.value, cached=True)
+
+        self._resolve_lazy_inputs(instance, resolved_inputs, schema)
+
+        scoped_hidden = hidden.with_unique_id(node_id)
+        self.progress.set_status(node_id, NodeStatus.RUNNING)
+        start = time.monotonic()
+        output = await self._execute_with_retries(
+            node_id,
+            node_def,
+            class_type,
+            instance,
+            scoped_hidden,
+            resolved_inputs,
+        )
+        return await self._finalize_output(
+            node_id,
+            node_def,
+            class_type,
+            schema,
+            output,
+            start,
+            cacheable,
+            key,
+        )
+
+    def _resolve_inputs(
+        self,
+        node_id: str,
+        node_def: dict[str, Any],
+        upstream_values: dict[tuple[str, int], Any],
+        hidden: HiddenHolder,
+        schema: Schema,
+    ) -> dict[str, Any]:
+        """Resolve linked/default inputs and validate before node creation."""
+
         # -------------------- input marshalling --------------------
         def resolve(value: Any) -> Any:
-            if (isinstance(value, list) and len(value) == 2
-                    and isinstance(value[0], str) and isinstance(value[1], int)
-                    and not isinstance(value[1], bool)):
+            if (
+                isinstance(value, list)
+                and len(value) == 2
+                and isinstance(value[0], str)
+                and isinstance(value[1], int)
+                and not isinstance(value[1], bool)
+            ):
                 return upstream_values.get((value[0], value[1]))
             if isinstance(value, dict):
                 return {name: resolve(item) for name, item in value.items()}
             if isinstance(value, list):
                 return [resolve(item) for item in value]
             state = hidden.workflow_state
-            return state.resolve_template(value) if state is not None else value
+            return (
+                state.resolve_template(value) if state is not None else value
+            )
 
         resolved_inputs = {
             name: resolve(value)
@@ -154,44 +249,31 @@ class NodeRunner:
                 elif inp.optional:
                     continue
                 else:
-                    raise NodeExecutionError(node_id, f"Required input '{inp.id}' missing")
+                    raise NodeExecutionError(
+                        node_id,
+                        f"Required input '{inp.id}' missing",
+                    )
             ok, error = inp.validate(resolved_inputs.get(inp.id))
             if not ok:
-                self.progress.set_status(node_id, NodeStatus.ERROR, error=error)
-                raise NodeExecutionError(node_id, error or f"invalid input '{inp.id}'")
+                self.progress.set_status(
+                    node_id,
+                    NodeStatus.ERROR,
+                    error=error,
+                )
+                raise NodeExecutionError(
+                    node_id,
+                    error or f"invalid input '{inp.id}'",
+                )
 
-        # -------------------- instance memoization --------------------
-        instance_entry = self.object_cache.get(node_id)
-        if instance_entry is None:
-            instance = node_cls()
-            self.object_cache.set(node_id, CacheEntry(value=instance))
-        else:
-            instance = instance_entry.value
+        return resolved_inputs
 
-        # -------------------- cache lookup (fingerprint-aware) --------------------
-        fingerprint: Any = None
-        cacheable = not schema.not_idempotent and not schema.control_flow
-        if cacheable:
-            try:
-                fingerprint = instance.fingerprint_inputs(**resolved_inputs)
-            except Exception:
-                fingerprint = None
-            if fingerprint is NOT_CACHEABLE:
-                cacheable = False
-
-        base_key = self.cache_keys.signature(node_id) + ":" + hash_signature(resolved_inputs)
-        key = base_key if fingerprint in (None, NOT_CACHEABLE) else f"{base_key}#{fingerprint}"
-
-        if cacheable:
-            cached = self.output_cache.get(key)
-            if cached is None:
-                provider_hit = await self.cache_provider.on_lookup(key)
-                if provider_hit is not None:
-                    cached = CacheEntry(value=_output_from_payload(provider_hit))
-            if cached is not None:
-                self.progress.set_status(node_id, NodeStatus.CACHED)
-                return NodeRunResult(cached.value, cached=True)
-
+    @staticmethod
+    def _resolve_lazy_inputs(
+        instance: WorkflowNode,
+        resolved_inputs: dict[str, Any],
+        schema: Schema,
+    ) -> None:
+        """Ask lazy nodes for missing inputs after cache lookup."""
         # -------------------- lazy input resolution --------------------
         has_lazy = any(getattr(inp, "lazy", False) for inp in schema.inputs)
         if has_lazy:
@@ -200,37 +282,61 @@ class NodeRunner:
             except Exception:  # noqa: BLE001
                 pending = []
             missing = [
-                iid for iid in pending if iid not in resolved_inputs
-                or resolved_inputs[iid] is None
+                iid
+                for iid in pending
+                if iid not in resolved_inputs or resolved_inputs[iid] is None
             ]
             for iid in missing:
                 resolved_inputs.setdefault(iid, None)
 
-        scoped_hidden = hidden.with_unique_id(node_id)
-        self.progress.set_status(node_id, NodeStatus.RUNNING)
+    async def _execute_with_retries(
+        self,
+        node_id: str,
+        node_def: dict[str, Any],
+        class_type: str,
+        instance: WorkflowNode,
+        scoped_hidden: HiddenHolder,
+        resolved_inputs: dict[str, Any],
+    ) -> object:
+        """Return one successful attempt or raise the original node error."""
         max_retries, retry_delay = _retry_policy(node_def)
-        start = time.monotonic()
         attempt = 0
         while True:
             try:
                 with CurrentNodeContext(node_id):
-                    call = instance.execute(hidden=scoped_hidden, **resolved_inputs)
-                    raw_timeout = (node_def.get("control") or {}).get("timeout_sec")
-                    timeout = float(raw_timeout) if raw_timeout is not None else None
-                    if timeout is not None and (not math.isfinite(timeout) or timeout <= 0):
+                    call = instance.execute(
+                        hidden=scoped_hidden,
+                        **resolved_inputs,
+                    )
+                    raw_timeout = (node_def.get("control") or {}).get(
+                        "timeout_sec",
+                    )
+                    timeout = (
+                        float(raw_timeout) if raw_timeout is not None else None
+                    )
+                    if timeout is not None and (
+                        not math.isfinite(timeout) or timeout <= 0
+                    ):
                         call.close()
-                        raise ValueError("control.timeout_sec must be a positive finite number")
+                        raise ValueError(
+                            "control.timeout_sec must be "
+                            "a positive finite number",
+                        )
                     output = await asyncio.wait_for(call, timeout=timeout)
-                    # Native provider/tool adapters return structured errors.
+                    # Provider/tool adapters return structured errors.
                     if isinstance(output, NodeOutput) and output.error:
-                        raise NodeExecutionError(node_id, output.error, retryable=output.metadata.get("retryable"))
-                break
+                        raise NodeExecutionError(
+                            node_id,
+                            output.error,
+                            retryable=output.metadata.get("retryable"),
+                        )
+                return output
             except Exception as exc:  # noqa: BLE001
                 # Centralized retry policy: transient failures are retried with
                 # exponential backoff up to ``control.max_retries`` before the
                 # node is surfaced as a hard failure to the executor.
                 if attempt < max_retries and _is_transient(exc):
-                    delay = min(60.0, retry_delay * (2 ** attempt))
+                    delay = min(60.0, retry_delay * (2**attempt))
                     logger.info(
                         "workflow_node_retry",
                         node_id=node_id,
@@ -241,18 +347,40 @@ class NodeRunner:
                         error=str(exc),
                     )
                     self.progress.set_status(
-                        node_id, NodeStatus.RUNNING,
-                        metadata={"retry": attempt + 1, "max_retries": max_retries},
+                        node_id,
+                        NodeStatus.RUNNING,
+                        metadata={
+                            "retry": attempt + 1,
+                            "max_retries": max_retries,
+                        },
                     )
                     await asyncio.sleep(delay)
                     attempt += 1
                     continue
-                duration_ms = int((time.monotonic() - start) * 1000)
-                self.progress.set_status(node_id, NodeStatus.ERROR, error=str(exc))
+                self.progress.set_status(
+                    node_id,
+                    NodeStatus.ERROR,
+                    error=str(exc),
+                )
                 if isinstance(exc, NodeExecutionError):
                     raise
-                raise NodeExecutionError(node_id, str(exc) or type(exc).__name__) from exc
+                raise NodeExecutionError(
+                    node_id,
+                    str(exc) or type(exc).__name__,
+                ) from exc
 
+    async def _finalize_output(
+        self,
+        node_id: str,
+        node_def: dict[str, Any],
+        class_type: str,
+        schema: Schema,
+        output: object,
+        start: float,
+        cacheable: bool,
+        key: str,
+    ) -> NodeRunResult:
+        """Normalize the result, enforce expansion and publish/cache it."""
         if not isinstance(output, NodeOutput):
             output = NodeOutput(values=output)
 
@@ -266,14 +394,21 @@ class NodeRunner:
 
         if output.error:
             self.progress.set_status(
-                node_id, NodeStatus.ERROR, error=output.error,
+                node_id,
+                NodeStatus.ERROR,
+                error=output.error,
                 metadata={"duration_ms": duration_ms},
             )
-            return NodeRunResult(output, duration_ms=duration_ms, error=output.error)
+            return NodeRunResult(
+                output,
+                duration_ms=duration_ms,
+                error=output.error,
+            )
 
         if output.block_execution:
             self.progress.set_status(
-                node_id, NodeStatus.BLOCKED,
+                node_id,
+                NodeStatus.BLOCKED,
                 metadata={
                     "tag": output.block_execution,
                     "duration_ms": duration_ms,
@@ -285,10 +420,14 @@ class NodeRunner:
         if cacheable:
             self.output_cache.set(key, CacheEntry(value=output))
             if self.cache_provider.should_cache(key, node_def):
-                await self.cache_provider.on_store(key, _payload_from_output(output))
+                await self.cache_provider.on_store(
+                    key,
+                    _payload_from_output(output),
+                )
 
         self.progress.set_status(
-            node_id, NodeStatus.SUCCESS,
+            node_id,
+            NodeStatus.SUCCESS,
             metadata={"duration_ms": duration_ms, **output.metadata},
         )
         return NodeRunResult(output, duration_ms=duration_ms)
