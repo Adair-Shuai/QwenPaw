@@ -491,6 +491,11 @@ class MultiAgentManager:
         else:
             if await self._stop_retired_instance(old_instance, agent_id):
                 logger.info("Old workspace instance stopped: %s", agent_id)
+                logger.info(
+                    "Zero-downtime reload completed: %s. "
+                    "Old instance stopped.",
+                    sanitize_log_value(agent_id),
+                )
                 return
             cleanup = self._retry_retired_instance(old_instance, agent_id)
 

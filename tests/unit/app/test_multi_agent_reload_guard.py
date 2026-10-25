@@ -15,7 +15,8 @@ the fresh state.
 from __future__ import annotations
 
 import asyncio
-from types import SimpleNamespace
+import logging
+from types import MethodType, SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -102,6 +103,35 @@ async def test_reload_swaps_when_no_write_intervenes(manager):
     assert await mgr.reload_agent("agent") is True
     assert mgr.agents["agent"] is new_instance
     assert mgr.agents["agent"] is not old_instance
+
+
+async def test_reload_reports_completion_after_immediate_cleanup(
+    manager,
+    monkeypatch,
+    caplog,
+):
+    mgr, old_instance = manager
+    new_instance = _fake_workspace()
+    old_instance.task_tracker.snapshot_active_tasks.return_value = {}
+    old_instance.cron_manager = new_instance.cron_manager = None
+    mgr._create_workspace = lambda agent_id, workspace_dir: new_instance
+    monkeypatch.setattr(
+        mgr,
+        "_graceful_stop_old_instance",
+        MethodType(MultiAgentManager._graceful_stop_old_instance, mgr),
+    )
+
+    with caplog.at_level(
+        logging.INFO,
+        logger="qwenpaw.app.multi_agent_manager",
+    ):
+        assert await mgr.reload_agent("agent") is True
+
+    assert mgr.agents["agent"] is new_instance
+    old_instance.stop.assert_awaited_once_with(final=False)
+    assert not mgr._retired_instances
+    assert not mgr._cleanup_tasks
+    assert caplog.text.count("Zero-downtime reload completed: agent.") == 1
 
 
 async def test_cancelled_plugin_setup_cleans_uncommitted_candidate(manager):
