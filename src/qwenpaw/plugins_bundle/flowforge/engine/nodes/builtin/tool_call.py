@@ -66,6 +66,7 @@ class ToolCallNode(WorkflowNode):
 
         tool_context = ctx.get_tool_context(state) if hasattr(ctx, "get_tool_context") else None
         last_error: str | None = None
+        last_retryable = True
         start = time.monotonic()
         for attempt in range(retry_count + 1):
             try:
@@ -83,7 +84,8 @@ class ToolCallNode(WorkflowNode):
                         },
                     )
                 last_error = tool_result.error or "Tool execution failed"
-                if not getattr(tool_result, "retryable", True):
+                last_retryable = getattr(tool_result, "retryable", True)
+                if not last_retryable:
                     break
                 logger.warning("tool_call_failed", tool=tool, attempt=attempt + 1, error=last_error)
             except Exception as exc:  # noqa: BLE001
@@ -99,5 +101,5 @@ class ToolCallNode(WorkflowNode):
         duration_ms = int((time.monotonic() - start) * 1000)
         return NodeOutput(
             error=last_error,
-            metadata={"tool": tool, "attempts": attempt + 1, "duration_ms": duration_ms},
+            metadata={"tool": tool, "attempts": attempt + 1, "duration_ms": duration_ms, "retryable": last_retryable and retry_count == 0},
         )

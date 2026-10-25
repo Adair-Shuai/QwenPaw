@@ -1,25 +1,8 @@
 # -*- coding: utf-8 -*-
-"""``ScriptNode`` — run a short Python snippet in the in-process sandbox.
+"""Run trusted local snippets in a bounded worker process.
 
-The node is the lightweight companion of the out-of-process
-``CodeExecutionTool``: it solves the "just let me glue these two tool
-calls with three lines of Python" use case without requiring a
-subprocess or Docker. Code executes inside
-:mod:`leagent.tools._sandbox.inproc`, which wraps
-:mod:`RestrictedPython` with a curated builtins/imports set.
-
-The node exposes three sockets:
-
-* ``result``  — whichever value the script binds to the name ``result``
-  (or the full locals dict when ``emit_locals`` is true).
-* ``stdout``  — captured ``print`` output (truncated at 64 KB).
-* ``stderr``  — reserved for future runtimes; always an empty string in
-  the in-process tier so the downstream wiring is stable between
-  sandbox backends.
-
-All of the dangerous knobs (``allow_modules``, timeout, stdout limit)
-are kept tight by default; operators who need more latitude should use
-``CodeExecutionTool`` instead.
+The worker is killed on timeout/cancellation. This is not a security sandbox;
+untrusted arbitrary code requires an external OS/container sandbox service.
 """
 
 from __future__ import annotations
@@ -46,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 
 class ScriptNode(WorkflowNode):
-    """Execute a Python snippet in the restricted in-process sandbox."""
+    """Execute a Python snippet in the bounded worker process."""
 
     NODE_ID = "ScriptNode"
 
@@ -57,7 +40,7 @@ class ScriptNode(WorkflowNode):
             display_name="Script",
             category="workflow/code",
             description=(
-                "Run a short Python snippet in the restricted in-process "
+                "Run a short Python snippet in the bounded worker-process "
                 "sandbox. Assign to `result` to emit a value. Use the "
                 "CodeExecutionTool for heavier workloads."
             ),
@@ -151,7 +134,7 @@ class ScriptNode(WorkflowNode):
                 allow_modules=[str(m) for m in allow_modules],
             )
         except ScriptTimeoutError as exc:
-            logger.warning("script_node_timeout", node=hidden.unique_id, error=str(exc))
+            logger.warning("script_node_timeout node=%s error=%s", hidden.unique_id, exc)
             return NodeOutput(
                 error=str(exc),
                 metadata={
@@ -161,7 +144,7 @@ class ScriptNode(WorkflowNode):
                 },
             )
         except ScriptExecutionError as exc:
-            logger.warning("script_node_error", node=hidden.unique_id, error=str(exc))
+            logger.warning("script_node_error node=%s error=%s", hidden.unique_id, exc)
             return NodeOutput(
                 error=str(exc),
                 metadata={"node_id": hidden.unique_id, "reason": "script_error"},
@@ -177,6 +160,6 @@ class ScriptNode(WorkflowNode):
                 "duration_ms": script_result.duration_ms,
                 "truncated_stdout": script_result.truncated_stdout,
                 "emit_locals": emit_locals,
-                "sandbox": "inproc",
+                "execution_isolation": "process", "trusted_code_only": True,
             },
         )

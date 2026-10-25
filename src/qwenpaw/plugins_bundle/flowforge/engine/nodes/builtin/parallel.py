@@ -55,6 +55,9 @@ class ParallelNode(WorkflowNode):
 
         strategy = inputs.get("merge_strategy") or control.get("merge_strategy") or "collect"
 
+        executor = getattr(hidden.tool_context, "workflow_executor", None) if hidden.tool_context else None
+        if any(branch.get("nodes") for branch in branches) and not callable(getattr(executor, "execute_single_node_async", None)):
+            return NodeOutput(error="Embedded parallel branches require a branch executor; use independent canvas nodes for parallel execution")
         start = time.monotonic()
         tasks: list[asyncio.Task[dict[str, Any]]] = []
         executor = getattr(hidden.tool_context, "workflow_executor", None) if hidden.tool_context else None
@@ -92,6 +95,7 @@ class ParallelNode(WorkflowNode):
 
         return NodeOutput(
             values=(merged,),
+            error="One or more parallel branches failed" if failed else None,
             metadata={
                 "branch_count": len(branches), "task_count": len(tasks),
                 "failed_count": len(failed), "duration_ms": duration_ms,
@@ -115,7 +119,7 @@ async def _execute_branch(
             "variables": dict(getattr(branch_state, "variables", {}) or {}),
         }
     except Exception as exc:  # noqa: BLE001
-        logger.error("branch_execution_failed", branch_id=branch.get("id"), error=str(exc), exc_info=True)
+        logger.error("branch_execution_failed branch_id=%s error=%s", branch.get("id"), exc, exc_info=True)
         return {"branch_id": branch.get("id", ""), "status": "failed", "error": str(exc)}
 
 

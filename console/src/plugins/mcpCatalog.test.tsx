@@ -176,7 +176,9 @@ describe.each([
     await userEvent.click(screen.getByRole("button", { name: /^连\s*接$/ }));
     const dialog = await screen.findByRole("dialog");
     expect(posts).toHaveLength(0);
-    expect(within(dialog).getByText("需要研究机构授权")).toBeVisible();
+    await waitFor(() =>
+      expect(within(dialog).getByText("需要研究机构授权")).toBeVisible(),
+    );
     await userEvent.type(
       within(dialog).getByPlaceholderText("请输入 研究平台密钥"),
       "a+b&c=d",

@@ -1,39 +1,36 @@
 # -*- coding: utf-8 -*-
-"""FlowForge canonical workflow document.
+"""The persisted workflow contract shared by the canvas and executor.
 
-Simplified, self-contained port of ``leagent.workflow.io``:
-
-  * :class:`WorkflowDocument` — the single persisted shape.
-  * :func:`load` — parse a raw dict into a validated document.
-  * :func:`validate` — check the graph is well-formed (node existence,
-    link targets, cycle detection on strong links).
-
-Node inputs declare data links as ``[upstream_node_id, slot]`` tuples
-(mirroring LeAgent). Control-flow edges live under the node's
-``control`` dict (``next``, ``conditions``, ``else`` …).
-
-A ReactFlow-style frontend serialises into this shape via the REST
-API; the executor consumes it directly.
+Canvas edges project into typed node inputs/control targets. Documents predating
+canvas edges are upgraded from their references. Validation never executes tools
+and may use the selected agent's dynamic node registry for schema checks.
 """
-
 from __future__ import annotations
 
 import copy
+import math
 from dataclasses import dataclass, field
 from typing import Any, Iterable
 
 from pydantic import BaseModel, Field
 
 from .errors import ValidationError
-from .types import _resolve_template  # noqa: F401  (re-exported for symmetry)
+from .types import _resolve_template  # noqa: F401
+
+CONTROL_TARGET_FIELDS = (
+    "next",
+    "else",
+    "else_node",
+    "on_reject",
+    "error_handler",
+    "pass_node",
+    "fail_node",
+    "retry_node",
+    "exhausted_node",
+)
 
 
 class WorkflowDocument(BaseModel):
-    """The single canonical workflow document shape.
-
-    Fields mirror LeAgent's loader output so documents are portable.
-    """
-
     id: str
     name: str = ""
     description: str = ""
@@ -53,140 +50,203 @@ class ValidationResult:
     errors: list[str] = field(default_factory=list)
 
 
+def _is_link(value: Any) -> bool:
+    # Include invalid negative/bool slots here so validation can reject them.
+    # Two strings are ordinary array data, not a reference.
+    return (
+        isinstance(value, (list, tuple))
+        and len(value) == 2
+        and isinstance(value[0], str)
+        and isinstance(value[1], int)
+    )
+
+
+def _links(value: Any, path: str = "") -> Iterable[tuple[str, Any, str]]:
+    if _is_link(value):
+        yield value[0], value[1], path
+    elif isinstance(value, dict):
+        for key, child in value.items():
+            yield from _links(child, f"{path}.{key}" if path else str(key))
+    elif isinstance(value, (list, tuple)):
+        for index, child in enumerate(value):
+            yield from _links(child, f"{path}[{index}]")
+
+
 def canonicalize(data: dict[str, Any]) -> dict[str, Any]:
-    """Normalize authoring edges into the scheduler's graph projection.
+    """Return a non-mutating, idempotent executable projection of the canvas.
 
-    Canvas ``edges`` are authoritative whenever present. Legacy documents
-    without edges are upgraded from their input/control references first.
+    Explicit edges, including [], own top-level wired sockets and control
+    targets. Nested object bindings remain in their objects; ordering-only edges
+    never replace those objects. Invalid edges are retained for error reporting.
     """
-    normalized = copy.deepcopy(data)
-    nodes = normalized.get("nodes") or {}
+    result = copy.deepcopy(data)
+    nodes = result.get("nodes")
     if not isinstance(nodes, dict):
-        return normalized
-    edges = [
-        dict(edge)
-        for edge in (normalized.get("edges") or [])
-        if isinstance(edge, dict)
-    ]
+        return result
+    authoritative = "edges" in result
+    raw_edges = result.get("edges", [])
+    if not isinstance(raw_edges, list):
+        raise ValidationError("'edges' must be an array")
+    edges = []
+    for index, edge in enumerate(raw_edges):
+        if not isinstance(edge, dict):
+            raise ValidationError(f"edge '{index}' must be an object")
+        edge = dict(edge)
+        for snake, camel in (
+            ("source_handle", "sourceHandle"),
+            ("target_handle", "targetHandle"),
+            ("source_slot", "sourceSlot"),
+        ):
+            if snake not in edge and camel in edge:
+                edge[snake] = edge[camel]
+            edge.pop(camel, None)
+        edge.setdefault("kind", "data")
+        edge.setdefault("source_slot", 0)
+        edges.append(edge)
 
-    def append_edge(
-        source: str,
-        target: str,
-        *,
-        kind: str = "data",
-        source_handle: str | None = None,
-        target_handle: str | None = None,
-        source_slot: int = 0,
-    ) -> None:
-        if source not in nodes or target not in nodes:
-            return
+    def add(
+        source, target, *, kind="data", source_handle=None, target_handle=None, slot=0
+    ):
         candidate = {
-            "id": f"e-{source}-{target}-{kind}-{target_handle or source_handle or source_slot}",
             "source": source,
             "target": target,
             "kind": kind,
             "source_handle": source_handle,
             "target_handle": target_handle,
-            "source_slot": source_slot,
+            "source_slot": slot,
         }
-        signature = (
-            source, target, kind, source_handle, target_handle, source_slot,
-        )
-        for edge in edges:
-            try:
-                edge_slot = int(edge.get("source_slot", 0) or 0)
-            except (TypeError, ValueError):
-                edge_slot = 0
-            if (
-                str(edge.get("source") or ""),
-                str(edge.get("target") or ""),
-                str(edge.get("kind") or "data"),
-                edge.get("source_handle"),
-                edge.get("target_handle"),
-                edge_slot,
-            ) == signature:
-                return
+        if any(
+            all(edge.get(key) == value for key, value in candidate.items())
+            for edge in edges
+        ):
+            return
+        candidate["id"] = f"e-{len(edges)}-{source}-{target}"
         edges.append(candidate)
 
-    if not edges:
-        for node_id, node in nodes.items():
-            if not isinstance(node, dict):
-                continue
-            for input_id, value in (node.get("inputs") or {}).items():
-                refs: list[list[Any]] = []
-                if (
-                    isinstance(value, list)
-                    and len(value) == 2
-                    and isinstance(value[0], str)
-                ):
-                    refs = [value]
+    def survives(source, target, field_id, slot):
+        return any(
+            edge.get("source") == source
+            and edge.get("target") == target
+            and edge.get("kind", "data") == "data"
+            and edge.get("source_slot", 0) == slot
+            and edge.get("target_handle") in (None, "", field_id)
+            for edge in edges
+        )
+
+    for nid, node in nodes.items():
+        if not isinstance(node, dict):
+            continue
+        inputs, control = node.setdefault("inputs", {}), node.setdefault("control", {})
+        if not isinstance(inputs, dict) or not isinstance(control, dict):
+            continue
+        if authoritative:
+            for key, value in list(inputs.items()):
+                if _is_link(value) and value[0] in nodes:
+                    if not survives(value[0], nid, key, value[1]):
+                        inputs.pop(key)
                 elif (
                     isinstance(value, list)
                     and value
-                    and all(
-                        isinstance(ref, list)
-                        and len(ref) == 2
-                        and isinstance(ref[0], str)
-                        for ref in value
-                    )
+                    and all(_is_link(item) for item in value)
                 ):
-                    refs = value
-                for upstream, slot in refs:
-                    append_edge(
-                        str(upstream), str(node_id),
-                        target_handle=(
-                            None
-                            if input_id == "__flow_dependencies"
-                            else input_id
-                        ),
-                        source_slot=int(slot),
+                    remaining = [
+                        item
+                        for item in value
+                        if item[0] not in nodes or survives(item[0], nid, key, item[1])
+                    ]
+                    if remaining:
+                        inputs[key] = remaining
+                    else:
+                        inputs.pop(key)
+            for key in CONTROL_TARGET_FIELDS:
+                target = control.get(key)
+                if isinstance(target, str) and target in nodes:
+                    control.pop(key)
+            conditions = control.get("conditions", [])
+            if isinstance(conditions, list):
+                for condition in conditions:
+                    if isinstance(condition, dict):
+                        for key in ("then", "then_node"):
+                            target = condition.get(key)
+                            if isinstance(target, str) and target in nodes:
+                                condition.pop(key)
+        else:
+            for field_id, value in inputs.items():
+                for upstream, slot, path in _links(value):
+                    add(
+                        upstream,
+                        nid,
+                        slot=slot,
+                        target_handle=field_id
+                        if not path and field_id != "__flow_dependencies"
+                        else None,
                     )
-            control = node.get("control") or {}
-            for handle in ("next", "else", "else_node", "on_reject", "error_handler"):
-                target = control.get(handle)
-                if target:
-                    append_edge(
-                        str(node_id), str(target), kind="control",
-                        source_handle=handle,
-                    )
+            for key in CONTROL_TARGET_FIELDS:
+                if control.get(key):
+                    add(nid, control[key], kind="control", source_handle=key)
+            conditions = control.get("conditions", [])
+            if isinstance(conditions, list):
+                for index, condition in enumerate(conditions):
+                    if isinstance(condition, dict):
+                        target = condition.get("then_node") or condition.get("then")
+                        if target:
+                            add(
+                                nid,
+                                target,
+                                kind="control",
+                                source_handle=f"condition:{index}",
+                            )
+        inputs.pop("__flow_dependencies", None)
 
-    # Scheduler fields are a deterministic projection, never a second source.
-    for node in nodes.values():
-        if isinstance(node, dict):
-            node.setdefault("inputs", {}).pop("__flow_dependencies", None)
     incoming: dict[str, list[list[Any]]] = {}
     for edge in edges:
-        source = str(edge.get("source") or "")
-        target = str(edge.get("target") or "")
+        source, target = edge.get("source"), edge.get("target")
+        if not isinstance(source, str) or not isinstance(target, str):
+            continue
         if source not in nodes or target not in nodes:
             continue
-        if str(edge.get("kind") or "data") == "control":
-            handle = edge.get("source_handle")
-            if isinstance(handle, str) and handle and not handle.startswith("condition:"):
-                nodes[source].setdefault("control", {})[handle] = target
+        if not isinstance(nodes[source], dict) or not isinstance(nodes[target], dict):
             continue
-        try:
-            slot = int(edge.get("source_slot", 0) or 0)
-        except (TypeError, ValueError):
-            slot = 0
-        reference = [source, slot]
+        if edge.get("kind") == "control":
+            control = nodes[source].get("control")
+            handle = edge.get("source_handle")
+            if not isinstance(control, dict):
+                continue
+            if handle in CONTROL_TARGET_FIELDS:
+                control[handle] = target
+            elif (
+                isinstance(handle, str)
+                and handle.startswith("condition:")
+                and handle[10:].isdigit()
+            ):
+                index = int(handle[10:])
+                conditions = control.get("conditions", [])
+                if (
+                    isinstance(conditions, list)
+                    and index < len(conditions)
+                    and isinstance(conditions[index], dict)
+                ):
+                    conditions[index]["then_node"] = target
+            continue
+        if edge.get("kind") != "data":
+            continue
+        inputs = nodes[target].get("inputs")
+        if not isinstance(inputs, dict):
+            continue
+        reference = [source, edge.get("source_slot", 0)]
         dependencies = incoming.setdefault(target, [])
         if reference not in dependencies:
             dependencies.append(reference)
-        target_handle = edge.get("target_handle")
-        if isinstance(target_handle, str) and target_handle:
-            nodes[target].setdefault("inputs", {})[target_handle] = reference
+        handle = edge.get("target_handle")
+        if isinstance(handle, str) and handle:
+            inputs[handle] = reference
     for target, dependencies in incoming.items():
-        nodes[target].setdefault("inputs", {})[
-            "__flow_dependencies"
-        ] = dependencies
-    normalized["nodes"] = nodes
-    normalized["edges"] = edges
-    return normalized
+        nodes[target]["inputs"]["__flow_dependencies"] = dependencies
+    result["edges"] = edges
+    return result
 
 
 def load(data: dict[str, Any] | str) -> WorkflowDocument:
-    """Parse a raw dict (or JSON string) into a :class:`WorkflowDocument`."""
     if isinstance(data, str):
         import json
 
@@ -194,151 +254,321 @@ def load(data: dict[str, Any] | str) -> WorkflowDocument:
     if not isinstance(data, dict):
         raise ValidationError("workflow document must be a JSON object")
     data = canonicalize(data)
-    if "id" not in data or not data["id"]:
+    if not data.get("id"):
         raise ValidationError("workflow document missing required 'id' field")
-    nodes = data.get("nodes") or {}
+    nodes = data.get("nodes", {})
     if not isinstance(nodes, dict):
         raise ValidationError("'nodes' must be an object keyed by node id")
-    # Normalise: every node has ``class_type`` and ``inputs`` dict.
-    norm_nodes: dict[str, dict[str, Any]] = {}
     for nid, node in nodes.items():
         if not isinstance(node, dict):
             raise ValidationError(f"node '{nid}' must be an object")
-        node = dict(node)
         node.setdefault("id", nid)
         node.setdefault("class_type", node.get("type") or "ToolNode")
         node.setdefault("inputs", {})
         node.setdefault("control", {})
-        norm_nodes[str(nid)] = node
-    data = dict(data)
-    data["nodes"] = norm_nodes
+        for key in ("inputs", "control"):
+            if not isinstance(node[key], dict):
+                raise ValidationError(f"node '{nid}' {key} must be an object")
     return WorkflowDocument.model_validate(data)
 
 
-def validate(
-    doc: WorkflowDocument,
-    *,
-    registry: Any = None,
-) -> ValidationResult:
-    """Validate a document structurally.
+def _cycle_errors(graph: dict[str, set[str]], kind: str) -> list[str]:
+    errors, color = [], {}
+    for start in graph:
+        if color.get(start):
+            continue
+        color[start] = 1
+        stack = [(start, iter(sorted(graph[start])))]
+        while stack:
+            current, children = stack[-1]
+            child = next(children, None)
+            if child is None:
+                color[current] = 2
+                stack.pop()
+            elif color.get(child) == 1:
+                errors.append(f"{kind} cycle detected: '{current}' -> '{child}'")
+            elif not color.get(child):
+                color[child] = 1
+                stack.append((child, iter(sorted(graph[child]))))
+    return errors
 
-    Returns ``(ok, output_nodes, errors)``.
-    """
-    errors: list[str] = []
-    nodes = doc.nodes
+
+def validate(doc: WorkflowDocument, *, registry: Any = None) -> ValidationResult:
+    """Check structural invariants and, when supplied, current registry schemas."""
+    from .io.types import types_compatible
+    from .types import ConditionExpression
+
+    nodes, errors = doc.nodes, []
     if not nodes:
-        errors.append("workflow has no nodes")
-        return ValidationResult(False, [], errors)
-
-    # Resolve outputs spec → list of node ids.
-    output_nodes: list[str] = []
-    if isinstance(doc.outputs, list):
-        output_nodes = [str(n) for n in doc.outputs]
-    elif isinstance(doc.outputs, dict):
-        output_nodes = [str(k) for k in doc.outputs.keys()]
-    if not output_nodes:
-        # Fall back: every leaf node (no successors) is an output.
-        non_leaves: set[str] = set()
-        for nid, node in nodes.items():
-            ctrl = node.get("control") or {}
-            if ctrl.get("next"):
-                non_leaves.add(nid)
-            for cond in ctrl.get("conditions", []) or []:
-                t = cond.get("then_node") or cond.get("then")
-                if t:
-                    non_leaves.add(nid)
-            for key in ("else_node", "else", "on_reject"):
-                if ctrl.get(key):
-                    non_leaves.add(nid)
-
-            def mark_upstream(value: Any) -> None:
-                if (
-                    isinstance(value, list)
-                    and len(value) == 2
-                    and isinstance(value[0], str)
+        return ValidationResult(False, [], ["workflow has no nodes"])
+    if doc.start_id is not None and doc.start_id not in nodes:
+        errors.append(f"start node '{doc.start_id}' not in nodes")
+    for spec in doc.inputs:
+        name = spec.get("name")
+        if isinstance(name, str) and name.startswith("__"):
+            errors.append(f"workflow input '{name}' uses a reserved internal name")
+    schemas = {}
+    for nid, node in nodes.items():
+        class_type = node.get("class_type")
+        if not isinstance(class_type, str) or not class_type:
+            errors.append(f"node '{nid}' class_type must be a non-empty string")
+        elif registry is not None:
+            cls = registry.get(class_type)
+            if cls is None:
+                errors.append(f"node '{nid}' has unknown class_type '{class_type}'")
+            else:
+                schemas[nid] = cls.get_schema()
+    data_graph = {nid: set() for nid in nodes}
+    control_graph = {nid: set() for nid in nodes}
+    wired = set()
+    for index, edge in enumerate(doc.edges):
+        source, target = edge.get("source"), edge.get("target")
+        label = edge.get("id", index)
+        for name, nid in (("source", source), ("target", target)):
+            if not isinstance(nid, str) or nid not in nodes:
+                errors.append(f"edge '{label}' references unknown {name} '{nid}'")
+        kind = edge.get("kind", "data")
+        if kind == "data":
+            slot, handle = edge.get("source_slot", 0), edge.get("target_handle")
+            if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
+                errors.append(
+                    f"edge '{label}' source_slot must be a non-negative integer"
+                )
+            source_handle = edge.get("source_handle")
+            if isinstance(source, str) and source in schemas and source_handle:
+                output_names = [
+                    output.id or f"out{i}"
+                    for i, output in enumerate(schemas[source].outputs)
+                ]
+                if source_handle not in output_names:
+                    errors.append(
+                        f"node '{source}' has no output socket '{source_handle}'"
+                    )
+                elif type(slot) is int and output_names.index(source_handle) != slot:
+                    errors.append(
+                        f"edge '{label}' source_handle and source_slot do not match"
+                    )
+            if isinstance(target, str) and isinstance(handle, str) and handle:
+                if (target, handle) in wired:
+                    errors.append(
+                        f"node '{target}' input '{handle}' has multiple canvas bindings"
+                    )
+                wired.add((target, handle))
+                if target in schemas and handle not in {
+                    item.id for item in schemas[target].inputs
+                }:
+                    errors.append(f"node '{target}' has no input socket '{handle}'")
+        elif kind == "control":
+            handle = edge.get("source_handle")
+            control = (
+                nodes.get(source, {}).get("control")
+                if isinstance(source, str)
+                else None
+            )
+            conditions = (
+                control.get("conditions", []) if isinstance(control, dict) else []
+            )
+            valid_condition = (
+                isinstance(handle, str)
+                and handle.startswith("condition:")
+                and handle[10:].isdigit()
+                and isinstance(conditions, list)
+                and int(handle[10:]) < len(conditions)
+            )
+            if handle not in CONTROL_TARGET_FIELDS and not valid_condition:
+                errors.append(f"edge '{label}' has invalid control handle '{handle}'")
+        else:
+            errors.append(f"edge '{label}' has unknown kind '{kind}'")
+    for nid, node in nodes.items():
+        inputs, control = node.get("inputs", {}), node.get("control", {})
+        if not isinstance(inputs, dict):
+            errors.append(f"node '{nid}' inputs must be an object")
+            inputs = {}
+        if not isinstance(control, dict):
+            errors.append(f"node '{nid}' control must be an object")
+            control = {}
+        for source, slot, path in _links(inputs):
+            if source not in nodes:
+                errors.append(
+                    f"node '{nid}' input '{path}' references unknown node '{source}'"
+                )
+                continue
+            data_graph[source].add(nid)
+            if isinstance(slot, bool) or slot < 0:
+                errors.append(
+                    f"node '{nid}' input '{path}' output slot must be a non-negative integer"
+                )
+            elif (
+                source in schemas
+                and slot >= len(schemas[source].outputs)
+                and not path.startswith("__flow_dependencies")
+            ):
+                errors.append(
+                    f"node '{nid}' input '{path}' output slot {slot} does not exist on '{source}'"
+                )
+        if nid in schemas:
+            for inp in schemas[nid].inputs:
+                value = inputs.get(inp.id)
+                if value is None:
+                    if not inp.optional and getattr(inp, "default", None) is None:
+                        errors.append(
+                            f"node '{nid}' required input '{inp.id}' is missing"
+                        )
+                    continue
+                if _is_link(value):
+                    source, slot = value
+                    if (
+                        source in schemas
+                        and type(slot) is int
+                        and 0 <= slot < len(schemas[source].outputs)
+                    ):
+                        upstream_type = schemas[source].outputs[slot].get_io_type()
+                        if not types_compatible(upstream_type, inp.get_io_type()):
+                            errors.append(
+                                f"node '{nid}' input '{inp.id}' type mismatch: {upstream_type} -> {inp.get_io_type()}"
+                            )
+                    continue
+                if isinstance(value, str) and "${" in value:
+                    continue
+                io_type = inp.get_io_type()
+                if io_type == "OBJECT" and not isinstance(value, dict):
+                    errors.append(f"node '{nid}' input '{inp.id}' must be an object")
+                elif io_type == "ARRAY" and not isinstance(value, list):
+                    errors.append(f"node '{nid}' input '{inp.id}' must be an array")
+                elif (
+                    io_type in ("INT", "FLOAT")
+                    and isinstance(value, (int, float))
+                    and not math.isfinite(value)
                 ):
-                    non_leaves.add(value[0])
-                    return
-                if isinstance(value, dict):
-                    for nested in value.values():
-                        mark_upstream(nested)
-                elif isinstance(value, list):
-                    for nested in value:
-                        mark_upstream(nested)
-
-            for inp in (node.get("inputs") or {}).values():
-                mark_upstream(inp)
-        output_nodes = [nid for nid in nodes if nid not in non_leaves]
-        if not output_nodes:
-            output_nodes = list(nodes.keys())
-
+                    errors.append(f"node '{nid}' input '{inp.id}' must be finite")
+                else:
+                    try:
+                        ok, detail = inp.validate(value)
+                    except (TypeError, ValueError) as exc:
+                        ok, detail = False, str(exc)
+                    if not ok:
+                        errors.append(f"node '{nid}' input '{inp.id}': {detail}")
+        bounded_refine = node.get("class_type") == "IterativeRefineNode"
+        if bounded_refine:
+            budget = inputs.get("max_iterations", 3)
+            if type(budget) is not int or not 1 <= budget <= 20:
+                errors.append(
+                    f"node '{nid}' max_iterations must be a literal integer from 1 to 20"
+                )
+            for key in ("retry_node", "exhausted_node"):
+                target = control.get(key)
+                if not isinstance(target, str) or target not in nodes:
+                    errors.append(
+                        f"node '{nid}' requires an explicit control.{key} target"
+                    )
+            if control.get("retry_node") == control.get("exhausted_node"):
+                errors.append(f"node '{nid}' retry and exhausted targets must differ")
+            if any(control.get(key) for key in ("next", "else", "else_node")):
+                errors.append(
+                    f"node '{nid}' must use retry_node/exhausted_node instead of next/else aliases"
+                )
+        for key in CONTROL_TARGET_FIELDS:
+            target = control.get(key)
+            if target is not None:
+                if not isinstance(target, str) or target not in nodes:
+                    errors.append(
+                        f"node '{nid}' control.{key} -> unknown node '{target}'"
+                    )
+                elif not (bounded_refine and key == "retry_node"):
+                    control_graph[nid].add(target)
+        conditions = control.get("conditions", [])
+        if not isinstance(conditions, list):
+            errors.append(f"node '{nid}' control.conditions must be an array")
+        else:
+            for index, condition in enumerate(conditions):
+                if not isinstance(condition, dict):
+                    errors.append(f"node '{nid}' condition {index} must be an object")
+                    continue
+                target = condition.get("then_node") or condition.get("then")
+                if not isinstance(target, str) or target not in nodes:
+                    errors.append(
+                        f"node '{nid}' condition {index} -> unknown node '{target}'"
+                    )
+                else:
+                    control_graph[nid].add(target)
+                expression = next(
+                    (
+                        condition[key]
+                        for key in ("if", "if_expr", "condition", "expr")
+                        if key in condition
+                    ),
+                    condition,
+                )
+                try:
+                    ConditionExpression.model_validate(expression)
+                except Exception:
+                    errors.append(
+                        f"node '{nid}' condition {index} has an invalid expression"
+                    )
+        branches = control.get("branches", [])
+        if not isinstance(branches, list):
+            errors.append(f"node '{nid}' control.branches must be an array")
+        else:
+            for index, branch in enumerate(branches):
+                if not isinstance(branch, dict) or not isinstance(
+                    branch.get("nodes", []), list
+                ):
+                    errors.append(
+                        f"node '{nid}' branch {index} must contain a nodes array"
+                    )
+                    continue
+                for target in branch.get("nodes", []):
+                    if not isinstance(target, str) or target not in nodes:
+                        errors.append(
+                            f"node '{nid}' branch {index} -> unknown node '{target}'"
+                        )
+        for key, low, high, integer in (
+            ("max_retries", 0, 10, True),
+            ("retry_delay_sec", 0, 60, False),
+            ("timeout_sec", 0, 86400, False),
+        ):
+            if key in control:
+                value = control[key]
+                valid = (
+                    isinstance(value, (int, float))
+                    and not isinstance(value, bool)
+                    and math.isfinite(value)
+                    and low <= value <= high
+                    and (not integer or type(value) is int)
+                    and (key != "timeout_sec" or value > 0)
+                )
+                if not valid:
+                    errors.append(
+                        f"node '{nid}' control.{key} is outside its allowed range"
+                    )
+        if control.get("mode", "run") not in ("run", "mute", "bypass"):
+            errors.append(f"node '{nid}' control.mode must be run, mute or bypass")
+    errors.extend(_cycle_errors(data_graph, "data dependency"))
+    combined = {nid: data_graph[nid] | control_graph[nid] for nid in nodes}
+    errors.extend(_cycle_errors(combined, "workflow"))
+    output_nodes = list(
+        dict.fromkeys(
+            doc.outputs if isinstance(doc.outputs, list) else doc.outputs.keys()
+        )
+    )
+    if not output_nodes:
+        output_nodes = [nid for nid in nodes if not combined[nid]]
     for out in output_nodes:
         if out not in nodes:
             errors.append(f"output node '{out}' not in nodes")
-
-    # Check input-link targets exist.
-    for nid, node in nodes.items():
-        for fname, value in (node.get("inputs") or {}).items():
-            refs: list[list[Any]] = []
-            if (
-                isinstance(value, list)
-                and len(value) == 2
-                and isinstance(value[0], str)
-            ):
-                refs.append(value)
-            elif (
-                isinstance(value, list)
-                and value
-                and all(
-                    isinstance(item, list)
-                    and len(item) == 2
-                    and isinstance(item[0], str)
-                    for item in value
-                )
-            ):
-                refs.extend(value)
-            for up_id, _slot in refs:
-                if up_id not in nodes:
-                    errors.append(
-                        f"node '{nid}' input '{fname}' references "
-                        f"unknown node '{up_id}'",
-                    )
-
-    # Check control successors exist.
-    for nid, node in nodes.items():
-        ctrl = node.get("control") or {}
-        for key in ("next", "else_node", "else", "on_reject", "error_handler"):
-            tgt = ctrl.get(key)
-            if tgt and tgt not in nodes:
-                errors.append(
-                    f"node '{nid}' control.{key} -> unknown node '{tgt}'",
-                )
-        for cond in ctrl.get("conditions", []) or []:
-            t = cond.get("then_node") or cond.get("then")
-            if t and t not in nodes:
-                errors.append(
-                    f"node '{nid}' condition -> unknown node '{t}'",
-                )
-
-    ok = not errors
-    return ValidationResult(ok, output_nodes, errors)
+    return ValidationResult(not errors, output_nodes, list(dict.fromkeys(errors)))
 
 
 def to_json(doc: WorkflowDocument) -> str:
-    """Serialise a document to canonical JSON."""
     return doc.model_dump_json(indent=2)
 
 
 def graph_hash(doc: WorkflowDocument) -> str:
-    """Stable content hash of the document (for cache-busting)."""
     import hashlib
     import json
 
     payload = json.dumps(
-        doc.model_dump(mode="json"),
-        sort_keys=True,
-        ensure_ascii=False,
-        default=str,
+        doc.model_dump(mode="json"), sort_keys=True, ensure_ascii=False, default=str
     )
     return hashlib.md5(payload.encode("utf-8")).hexdigest()
 

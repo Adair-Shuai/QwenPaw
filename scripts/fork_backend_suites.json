@@ -55,7 +55,12 @@
       "tests/unit/plugins/flowforge/test_media_genui.py",
       "tests/unit/plugins/flowforge/test_node_catalog.py",
       "tests/unit/plugins/flowforge/test_run_lifecycle.py",
-      "tests/unit/plugins/flowforge/test_workflow_contracts.py"
+      "tests/unit/plugins/flowforge/test_workflow_contracts.py",
+      "tests/unit/plugins/flowforge/test_authoring_service.py",
+      "tests/unit/plugins/flowforge/test_definition_validation.py",
+      "tests/unit/plugins/flowforge/test_runtime_reliability.py",
+      "tests/unit/plugins/flowforge/test_business_acceptance.py",
+      "tests/unit/plugins/flowforge/test_llm_adapter.py"
     ],
     "office": [
       "tests/unit/agents/tools/test_office_tools.py",

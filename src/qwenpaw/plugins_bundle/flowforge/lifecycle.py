@@ -15,8 +15,14 @@ from uuid import UUID, uuid4
 
 from .engine import ProgressEvent, ProgressRegistry, WorkflowStatus, load
 from .invocation import MAX_WORKFLOW_DEPTH, current_run, workflow_stack
+from .flow_repository import RevisionConflict
 
 PAUSED = {"paused", "waiting_human"}
+
+
+class ResumeInputError(ValueError):
+    """Invalid review input must not consume a paused continuation."""
+
 
 if TYPE_CHECKING:
     from .service import RunHandle
@@ -57,6 +63,9 @@ class RunLifecycleMixin:
             payload = self.get_flow(flow_id)
             if payload is None:
                 raise FileNotFoundError(f"flow '{flow_id}' not found")
+            from .engine.executor import _merge_schema_input_defaults
+
+            inputs = _merge_schema_input_defaults(load(payload), inputs or {})
             from qwenpaw.app.agent_context import (
                 get_current_user_id,
                 get_current_session_id,
@@ -80,6 +89,7 @@ class RunLifecycleMixin:
                     else parent.get("agent_id") or get_current_agent_id()
                 ),
                 "channel": parent.get("channel") or get_current_channel() or "console",
+                "flow_revision": payload.get("revision", 0),
             }
             return self._submit_run(
                 run_id, flow_id, payload, inputs or {}, metadata, on_event=on_event
@@ -95,7 +105,7 @@ class RunLifecycleMixin:
                 raise FileNotFoundError(f"run '{run_id}' not found")
             persisted = self._execution_repository.get(run_id) or {}
             if persisted.get("resumed_by_run_id"):
-                raise ValueError(
+                raise RevisionConflict(
                     "Run already resumed; use resumed_by_run_id to follow its continuation"
                 )
             handle = self._runs.get(run_id)
@@ -128,6 +138,7 @@ class RunLifecycleMixin:
                 workflow_stack=metadata.get("workflow_stack") or [flow_id],
                 trigger_type="resume",
                 resumed_from_run_id=run_id,
+                flow_revision=payload.get("revision", record.get("flow_revision", 0)),
             )
             active_parent = current_run.get()
             if active_parent:
@@ -138,11 +149,82 @@ class RunLifecycleMixin:
                 if parent and parent["status"] == "cancelled":
                     raise ValueError("Cannot resume a child of a cancelled run")
             state_id = UUID(str(record["state_id"]))
-            result = self._submit_run(
-                new_id, flow_id, payload, inputs or {}, metadata, state_id=state_id
-            )
-            self._execution_repository.update(run_id, resumed_by_run_id=new_id)
+            self._validate_resume_inputs(record, payload, inputs or {})
+            self._flow_repository.claim_resume(run_id, new_id)
+            try:
+                self._execution_repository.update(run_id, resumed_by_run_id=new_id)
+                result = self._submit_run(
+                    new_id, flow_id, payload, inputs or {}, metadata, state_id=state_id
+                )
+            except Exception:
+                self._flow_repository.release_resume(run_id, new_id)
+                self._execution_repository.update(run_id, resumed_by_run_id=None)
+                raise
             return result
+
+    def _validate_resume_inputs(self, record, payload, inputs, *, depth=0):
+        if any(str(key).startswith("__") for key in inputs):
+            raise ResumeInputError("恢复输入不能包含运行时保留变量。")
+        if "approved" in inputs and not isinstance(inputs["approved"], bool):
+            raise ResumeInputError("人工审核 approved 必须为布尔值。")
+        blocked = [
+            node_id
+            for node_id, status in record.get("node_statuses", {}).items()
+            if status == "blocked"
+        ]
+        target = inputs.get("node_id")
+        if len(blocked) > 1 and target is None:
+            raise ResumeInputError("多个节点等待处理，请指定 node_id。")
+        if target is not None and (
+            not isinstance(target, str) or target not in blocked
+        ):
+            raise ResumeInputError("node_id 不属于当前等待节点。")
+        for node_id in [target] if target else blocked:
+            kind = payload.get("nodes", {}).get(node_id, {}).get("class_type")
+            if kind == "HumanReviewNode" and not isinstance(
+                inputs.get("approved"), bool
+            ):
+                raise ResumeInputError("人工审核必须提供布尔值 approved。")
+            if kind == "SubworkflowNode" and depth < MAX_WORKFLOW_DEPTH:
+                entries = [
+                    item
+                    for item in record.get("execution_history", [])
+                    if item.get("node_id") == node_id
+                ]
+                child_id = next(
+                    (
+                        item.get("metadata", {}).get("child_run_id")
+                        for item in reversed(entries)
+                        if item.get("metadata", {}).get("child_run_id")
+                    ),
+                    None,
+                )
+                child = self._execution_repository.get(child_id) if child_id else None
+                followed = set()
+                while (
+                    child
+                    and child.get("resumed_by_run_id")
+                    and child["run_id"] not in followed
+                ):
+                    followed.add(child["run_id"])
+                    child = self._execution_repository.get(child["resumed_by_run_id"])
+                if child and child.get("status") in PAUSED:
+                    decision = inputs.get(
+                        "child_inputs",
+                        {
+                            key: value
+                            for key, value in inputs.items()
+                            if key != "node_id"
+                        },
+                    )
+                    if not isinstance(decision, dict):
+                        raise ResumeInputError("子流程审核 child_inputs 必须为对象。")
+                    self._validate_resume_inputs(
+                        child,
+                        child.get("flow_snapshot") or {},
+                        decision,
+                        depth=depth + 1,
+                    )
 
     def _submit_run(
         self,
@@ -202,6 +284,11 @@ class RunLifecycleMixin:
                         metadata.get("agent_id") or get_current_agent_id(),
                         {**metadata, "run_id": run_id},
                     )
+                validation = self.validate_flow(
+                    payload, executor=executor, resuming=state_id is not None
+                )
+                if not validation["ok"]:
+                    raise ValueError("工作流校验失败：" + "; ".join(validation["errors"]))
                 if state_id is not None:
                     return await executor.resume(
                         doc,
@@ -262,6 +349,17 @@ class RunLifecycleMixin:
                         error=str(exc),
                         finished_at=handle.finished_at,
                     )
+                    # A failed preparation/validation performed no node work.
+                    # Release its resume claim so corrected input or a restored
+                    # model/tool connection can be retried on the original run.
+                    original = metadata.get("resumed_from_run_id")
+                    if original and not progress.node_statuses():
+                        self._flow_repository.release_resume(original, run_id)
+                        parent_record = self._execution_repository.get(original) or {}
+                        if parent_record.get("resumed_by_run_id") == run_id:
+                            self._execution_repository.update(
+                                original, resumed_by_run_id=None
+                            )
                 finally:
                     handle.finalized = True
                 # Failed/cancelled parents must not leave unawaited agent-started children running.

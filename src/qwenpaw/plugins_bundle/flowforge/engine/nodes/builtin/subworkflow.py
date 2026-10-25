@@ -75,7 +75,10 @@ class SubworkflowNode(WorkflowNode):
                         return NodeOutput(error="Child continuation not found")
                 payload = state.variables.pop(f"__resume__{key}", None)
                 if record["status"] in {"paused", "waiting_human"} and payload is not None:
-                    child_id = service.resume_run(child_id, payload).run_id
+                    child_payload = payload.get("child_inputs", payload)
+                    if not isinstance(child_payload, dict):
+                        return NodeOutput(error="child_inputs must be an object")
+                    child_id = service.resume_run(child_id, child_payload).run_id
             else:
                 child_id = service.start_run(sub_id, resolved, trigger_type="subworkflow").run_id
             child_runs[key] = child_id

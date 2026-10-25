@@ -18,11 +18,21 @@ interface FlowRun {
   status: string;
   started_at: number;
   finished_at?: number | null;
+  resumed_by_run_id?: string | null;
   error?: string | null;
   node_statuses?: Record<string, string> | null;
   duration_ms?: number;
   /** Optional execution events emitted by FlowForge for richer run inspection. */
   events?: Array<Record<string, unknown>> | null;
+}
+
+interface AuthoringProposal {
+  proposal_id: string;
+  base_revision: number;
+  flow: { id: string; name?: string };
+  changes: Array<{ description: string }>;
+  validation: { ok: boolean; errors: string[] };
+  warnings: string[];
 }
 
 const DOMAIN_TEMPLATES = [
@@ -169,6 +179,10 @@ function formatFlowEvent(event: Record<string, unknown>, index: number): string 
 
 const ACTIVE_RUN_STATUSES = new Set(["running", "queued", "paused", "waiting_human"]);
 
+function isActiveRun(run: FlowRun) {
+  return !run.resumed_by_run_id && ACTIVE_RUN_STATUSES.has(run.status);
+}
+
 export function CollaborationWorkflowSection() {
   const React = getHost().React;
   const { useCallback, useEffect, useRef, useState } = React;
@@ -180,6 +194,7 @@ export function CollaborationWorkflowSection() {
     Empty,
     Input,
     Popconfirm,
+    Modal,
     Row,
     Space,
     Spin,
@@ -211,14 +226,19 @@ export function CollaborationWorkflowSection() {
   const [loading, setLoading] = useState(true);
   const [available, setAvailable] = useState(true);
   const [creating, setCreating] = useState<string | null>(null);
+  const [proposal, setProposal] = useState<AuthoringProposal | null>(null);
+  const [proposalError, setProposalError] = useState("");
+  const requestSequence = useRef(0);
+  const currentAgent = useRef(controllerAgentId);
+  currentAgent.current = controllerAgentId;
   const [naturalName, setNaturalName] = useState("");
   const [naturalPrompt, setNaturalPrompt] = useState("");
   const [activeTab, setActiveTab] = useState<string>("templates");
   const [cancellingRuns, setCancellingRuns] = useState<Set<string>>(new Set());
   const [expandedRuns, setExpandedRuns] = useState<Set<string>>(new Set());
-  const pollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pollTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const hasActiveRuns = runs.some((r) => ACTIVE_RUN_STATUSES.has(r.status));
+  const hasActiveRuns = runs.some(isActiveRun);
 
   // Build a flow_id → name lookup map
   const flowNameMap = React.useMemo(() => {
@@ -231,7 +251,7 @@ export function CollaborationWorkflowSection() {
   const activeRunByFlow = React.useMemo(() => {
     const m: Record<string, number> = {};
     runs.forEach((r) => {
-      if (ACTIVE_RUN_STATUSES.has(r.status)) {
+      if (isActiveRun(r)) {
         m[r.flow_id] = (m[r.flow_id] || 0) + 1;
       }
     });
@@ -252,7 +272,7 @@ export function CollaborationWorkflowSection() {
       setAvailable(true);
     } catch (error) {
       console.warn("[ugsci] FlowForge is unavailable:", error);
-      setAvailable(false);
+      if (!silent) setAvailable(false);
     } finally {
       if (!silent) setLoading(false);
     }
@@ -267,17 +287,20 @@ export function CollaborationWorkflowSection() {
   useEffect(() => {
     if (!available || !hasActiveRuns) {
       if (pollTimerRef.current) {
-        clearTimeout(pollTimerRef.current);
+        clearInterval(pollTimerRef.current);
         pollTimerRef.current = null;
       }
       return;
     }
-    pollTimerRef.current = setTimeout(() => {
-      void load(true);
+    let inFlight = false;
+    pollTimerRef.current = setInterval(async () => {
+      if (inFlight) return;
+      inFlight = true;
+      try { await load(true); } finally { inFlight = false; }
     }, POLL_INTERVAL_MS);
     return () => {
       if (pollTimerRef.current) {
-        clearTimeout(pollTimerRef.current);
+        clearInterval(pollTimerRef.current);
         pollTimerRef.current = null;
       }
     };
@@ -375,67 +398,52 @@ export function CollaborationWorkflowSection() {
     [agents, controllerAgentId, creating, load, message],
   );
 
+  useEffect(() => {
+    requestSequence.current++;
+    setProposal(null);
+    setProposalError("");
+    setCreating(null);
+  }, [controllerAgentId]);
+
   const createFromNaturalLanguage = useCallback(async () => {
-    if (creating) return; // concurrent guard
-    if (!naturalPrompt.trim()) {
-      message.warning("请先描述工作流步骤和控制要求");
-      return;
-    }
+    if (creating || !naturalPrompt.trim()) return;
+    const sequence = ++requestSequence.current;
     setCreating("natural-language");
+    setProposalError("");
     try {
-      const generated = await apiFetch<Record<string, unknown>>(
-        "/flowforge/generate",
-        {
-          method: "POST",
-          body: JSON.stringify({
-            prompt: naturalPrompt.trim(),
-            name: naturalName.trim(),
-            agent_id: controllerAgentId,
-          }),
-        },
-      );
-      const flow = {
-        ...generated,
-        id: `natural-${Date.now()}`,
-        metadata: {
-          ...((generated.metadata as Record<string, unknown>) || {}),
-          domain: "oil-gas",
-          source: "natural-language",
-          expert_binding_policy: "fixed_instance",
-          controller_agent_id: controllerAgentId,
-        },
-      };
-      await apiFetch("/flowforge/flows", {
+      const result = await apiFetch<AuthoringProposal>("/flowforge/authoring/proposals", {
         method: "POST",
-        body: JSON.stringify(flow),
+        body: JSON.stringify({ prompt: naturalPrompt.trim(), name: naturalName.trim(), agent_id: controllerAgentId }),
       });
-      message.success("已从自然语言生成可编辑工作流草稿");
+      if (sequence === requestSequence.current) setProposal(result);
+    } catch (error: any) {
+      if (sequence === requestSequence.current) setProposalError(error.message || "生成失败，请检查模型配置后重试");
+    } finally {
+      if (sequence === requestSequence.current) setCreating(null);
+    }
+  }, [controllerAgentId, creating, naturalName, naturalPrompt]);
+
+  const applyProposal = useCallback(async () => {
+    if (!proposal?.validation.ok || creating) return;
+    const agentId = controllerAgentId;
+    setCreating("apply");
+    setProposalError("");
+    try {
+      const flow = await apiFetch<{ id: string }>(`/flowforge/authoring/proposals/${encodeURIComponent(proposal.proposal_id)}/apply`, {
+        method: "POST", body: JSON.stringify({ expected_revision: proposal.base_revision }),
+      });
+      if (currentAgent.current !== agentId) return;
+      setProposal(null);
       setNaturalName("");
       setNaturalPrompt("");
-      await load();
+      message.success("方案已应用并保存");
+      openFlowForge(flow.id);
     } catch (error: any) {
-      message.error(error.message || "自然语言生成失败");
+      if (currentAgent.current === agentId) setProposalError(error.message || "应用失败，请重新生成方案");
     } finally {
-      setCreating(null);
+      if (currentAgent.current === agentId) setCreating(null);
     }
-  }, [controllerAgentId, creating, load, message, naturalName, naturalPrompt]);
-
-  // ── Run / delete / cancel handlers ──
-  const runFlow = useCallback(
-    async (flowId: string, flowName: string) => {
-      try {
-        await apiFetch(`/flowforge/flows/${encodeURIComponent(flowId)}/run`, {
-          method: "POST",
-          body: JSON.stringify({ inputs: {} }),
-        });
-        message.success(`已启动工作流「${flowName}」`);
-        await load(true);
-      } catch (error: any) {
-        message.error(error.message || "启动工作流失败");
-      }
-    },
-    [load, message],
-  );
+  }, [proposal, creating, controllerAgentId, message]);
 
   const deleteFlow = useCallback(
     async (flowId: string, flowName: string) => {
@@ -493,12 +501,14 @@ export function CollaborationWorkflowSection() {
         Space,
         { direction: "vertical", style: { width: "100%" }, size: 10 },
         React.createElement(Input, {
+          "aria-label": "工作流名称",
           value: naturalName,
           onChange: (event: any) => setNaturalName(event.target.value),
           placeholder: "工作流名称（可选）",
           maxLength: 80,
         }),
         React.createElement(Input.TextArea, {
+          "aria-label": "工作流需求描述",
           value: naturalPrompt,
           onChange: (event: any) => setNaturalPrompt(event.target.value),
           placeholder:
@@ -511,10 +521,10 @@ export function CollaborationWorkflowSection() {
             type: "primary",
             onClick: () => void createFromNaturalLanguage(),
             loading: creating === "natural-language",
-            disabled: !available || !!creating,
+            disabled: !available || !!creating || !naturalPrompt.trim(),
             style: PRIMARY_BTN_STYLE,
           },
-          "生成可编辑草稿",
+          "生成并预览方案",
         ),
       ),
     ),
@@ -631,8 +641,8 @@ export function CollaborationWorkflowSection() {
                     type: "primary",
                     icon: PlayCircleOutlined ? React.createElement(PlayCircleOutlined) : undefined,
                     disabled: !available,
-                    onClick: () => void runFlow(flow.id, flow.name),
-                  }, "运行"),
+                    onClick: () => openFlowForge(flow.id),
+                  }, "配置并运行"),
                   React.createElement(Button, {
                     size: "small",
                     onClick: () => openFlowForge(flow.id),
@@ -669,7 +679,7 @@ export function CollaborationWorkflowSection() {
           { style: { display: "flex", flexDirection: "column", gap: 8 } },
           ...runs.map((run) => {
             const flowName = flowNameMap[run.flow_id] || run.flow_id;
-            const isActive = ACTIVE_RUN_STATUSES.has(run.status);
+            const isActive = isActiveRun(run);
             const nodeProgress = summarizeNodeProgress(run.node_statuses);
             const nodeEntries = Object.entries(run.node_statuses || {});
             const doneNodes = nodeEntries.filter(([, s]) => ["success", "completed", "skipped", "cached"].includes(s)).length;
@@ -714,7 +724,7 @@ export function CollaborationWorkflowSection() {
                 React.createElement(
                   Tag,
                   { color: STATUS_COLORS[run.status] || "default" },
-                  run.status,
+                  run.resumed_by_run_id ? "已恢复" : run.status,
                 ),
                 React.createElement(Text, { strong: true }, flowName),
                 React.createElement(
@@ -876,6 +886,20 @@ export function CollaborationWorkflowSection() {
           style: { marginBottom: 16 },
         })
       : null,
+    proposalError ? React.createElement(Alert, { type: "error", showIcon: true, message: "方案未应用", description: proposalError, style: { marginBottom: 12 } }) : null,
+    React.createElement(Modal, {
+      title: "审查工作流方案", open: !!proposal, width: 720,
+      onCancel: () => { if (!creating) { setProposal(null); setProposalError(""); } },
+      onOk: () => void applyProposal(), okText: "应用并打开编辑器", cancelText: "放弃方案",
+      confirmLoading: creating === "apply", okButtonProps: { disabled: !proposal?.validation.ok || !!creating },
+      cancelButtonProps: { disabled: !!creating }, closable: !creating, maskClosable: !creating,
+    }, proposal ? React.createElement(Space, { direction: "vertical", style: { width: "100%" } },
+      React.createElement(Alert, { type: proposal.validation.ok ? "success" : "error", showIcon: true,
+        message: proposal.validation.ok ? "结构验证通过，请检查业务逻辑" : "方案未通过验证", description: proposal.validation.errors.join("；") || "确认后保存流程，可在编辑器配置业务输入并试运行。" }),
+      ...proposal.warnings.map((warning, index) => React.createElement(Alert, { key: `warning-${index}`, type: "warning", message: warning })),
+      React.createElement("ul", null, ...proposal.changes.map((change, index) => React.createElement("li", { key: index }, change.description))),
+      proposalError ? React.createElement(Alert, { type: "error", message: proposalError }) : null,
+    ) : null),
     React.createElement(Tabs, {
       items: [
         { key: "templates", label: "工作流模板", children: templatesTab },
@@ -891,7 +915,7 @@ export function CollaborationWorkflowSection() {
               ? React.createElement(
                   "span",
                   { style: { color: "#1677ff", marginLeft: 2 } },
-                  `·${runs.filter((r) => ACTIVE_RUN_STATUSES.has(r.status)).length} 活跃`,
+                  `·${runs.filter((r) => isActiveRun(r)).length} 活跃`,
                 )
               : null,
             ")",

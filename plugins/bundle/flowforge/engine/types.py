@@ -200,7 +200,13 @@ class WorkflowState(BaseModel):
         ctx: dict[str, Any] = {}
         ctx.update(self.inputs)
         ctx.update(self.variables)
-        ctx.update(self.outputs)
+        # Stored output slots stay intact for recovery; public templates use
+        # the single output value directly (outputs.method.value).
+        outputs = {
+            key: value[0] if isinstance(value, (tuple, list)) and len(value) == 1 else value
+            for key, value in self.outputs.items()
+        }
+        ctx.update(outputs)
         ctx.update(
             {
                 "input": self.inputs,
@@ -208,8 +214,8 @@ class WorkflowState(BaseModel):
                 "var": self.variables,
                 "vars": self.variables,
                 "variables": self.variables,
-                "output": self.outputs,
-                "outputs": self.outputs,
+                "output": outputs,
+                "outputs": outputs,
                 "state": {
                     "id": str(self.id),
                     "workflow_id": self.workflow_id,

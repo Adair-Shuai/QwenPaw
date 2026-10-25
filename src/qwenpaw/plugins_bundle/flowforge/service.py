@@ -10,7 +10,6 @@ Sits between the REST router and the :class:`WorkflowExecutor`. Owns:
 from __future__ import annotations
 
 import asyncio
-import json
 import logging
 import os
 import threading
@@ -23,6 +22,8 @@ from typing import Any
 from uuid import UUID
 
 from .execution_repository import ExecutionRepository
+from .flow_repository import FlowRepository, RevisionConflict
+from .engine.errors import ValidationError as WorkflowValidationError
 from .lifecycle import RunLifecycleMixin
 from .engine import (
     ProgressRegistry,
@@ -99,10 +100,7 @@ class RunHandle:
             "outputs": self.result.outputs if self.result else {},
             "errors": self.result.errors if self.result else [],
             "duration_ms": self.result.duration_ms if self.result else 0,
-            "events": [
-                event.to_dict()
-                for event in history[-RUN_SUMMARY_EVENT_LIMIT:]
-            ],
+            "events": [event.to_dict() for event in history[-RUN_SUMMARY_EVENT_LIMIT:]],
         }
 
 
@@ -123,6 +121,7 @@ class WorkflowService(RunLifecycleMixin):
     ) -> None:
         self._flows_dir = Path(flows_dir)
         self._flows_dir.mkdir(parents=True, exist_ok=True)
+        self._flow_repository = FlowRepository(self._flows_dir)
         self._execution_repository = ExecutionRepository(self._flows_dir)
         recovered = self._execution_repository.recover_incomplete(
             active_owner_pid=os.getpid(),
@@ -166,74 +165,245 @@ class WorkflowService(RunLifecycleMixin):
     # Flow CRUD
     # ------------------------------------------------------------------
     def list_flows(self) -> list[dict[str, Any]]:
-        out: list[dict[str, Any]] = []
-        for path in sorted(self._flows_dir.glob("*.json")):
-            try:
-                data = json.loads(path.read_text(encoding="utf-8"))
-                out.append(
-                    {
-                        "id": data.get("id", path.stem),
-                        "name": data.get("name", path.stem),
-                        "description": data.get("description", ""),
-                        "version": data.get("version", "1.0"),
-                        "node_count": len(data.get("nodes", {})),
-                        "updated_at": path.stat().st_mtime,
-                    },
-                )
-            except Exception:
-                logger.warning("skip malformed flow file %s", path)
-        return out
+        return [
+            {
+                "id": data["id"],
+                "name": data.get("name", data["id"]),
+                "description": data.get("description", ""),
+                "version": data.get("version", "1.0"),
+                "revision": data["revision"],
+                "node_count": len(data.get("nodes", {})),
+                "updated_at": data["updated_at"],
+            }
+            for data in self._flow_repository.list()
+        ]
 
     def get_flow(self, flow_id: str) -> dict[str, Any] | None:
-        path = self._flow_path(flow_id)
-        if not path.exists():
-            return None
-        return json.loads(path.read_text(encoding="utf-8"))
+        return self._flow_repository.get(flow_id)
 
-    def save_flow(self, flow_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    def save_flow(
+        self,
+        flow_id: str,
+        payload: dict[str, Any],
+        *,
+        expected_revision: int | None = None,
+        proposal_id: str | None = None,
+    ) -> dict[str, Any]:
+        if not flow_id or len(flow_id) > 200:
+            raise ValueError("工作流ID必须为1–200字符。")
+        if expected_revision is None:
+            expected_revision = payload.get("revision")
         payload = _materialize_edge_dependencies(payload)
         payload["id"] = flow_id
-        # Strip runtime-only fields (e.g. inline ``func`` callables) that
-        # cannot survive JSON round-trip.
-        nodes = payload.get("nodes") or {}
-        for nid, node in list(nodes.items()):
+        for node in (payload.get("nodes") or {}).values():
             if isinstance(node, dict):
-                for runtime_key in ("func",):
-                    node.pop(runtime_key, None)
-        # Validate it parses as a document (raises ValidationError on bad shape).
-        doc = load(payload)
-        # Round-trip through the model to normalise.
-        normalised = doc.model_dump(mode="json")
-        path = self._flow_path(flow_id)
-        path.write_text(
-            json.dumps(normalised, indent=2, ensure_ascii=False),
-            encoding="utf-8",
+                node.pop("func", None)
+        # Drafts may be incomplete. Their shape is normalized, while execution
+        # and proposal application use the selected agent's current catalogue.
+        normalized = load(payload).model_dump(mode="json")
+        return self._flow_repository.save(
+            flow_id, normalized, expected_revision, proposal_id=proposal_id
         )
-        return normalised
 
     def delete_flow(self, flow_id: str) -> bool:
-        path = self._flow_path(flow_id)
-        if not path.exists():
-            return False
-        path.unlink()
-        return True
+        return self._flow_repository.delete(flow_id)
 
-    def validate_flow(self, payload: dict[str, Any], *, node_registry=None) -> dict[str, Any]:
-        doc = load(_materialize_edge_dependencies(payload))
-        result = validate(doc, registry=node_registry or self._executor.node_registry)
-        return {
-            "ok": result.ok,
-            "errors": result.errors,
-            "output_nodes": result.output_nodes,
+    @staticmethod
+    def available_tool_names(executor) -> list[str]:
+        names = {
+            str(cls.get_schema().metadata["tool_name"])
+            for _, cls in executor.node_registry.items()
+            if cls.get_schema().metadata.get("auto_generated")
+            and cls.get_schema().metadata.get("tool_name")
         }
+        registry = executor.tool_registry
+        if registry is not None:
+            if hasattr(registry, "names"):
+                names.update(registry.names())
+            elif isinstance(registry, dict):
+                names.update(registry)
+        return sorted(names)
 
-    async def validate_flow_for_agent(self, payload: dict[str, Any], agent_id: str | None = None) -> dict[str, Any]:
-        if self.node_catalog is None:
-            return self.validate_flow(payload)
+    def validate_flow(
+        self,
+        payload: dict[str, Any],
+        *,
+        node_registry=None,
+        executor=None,
+        resuming=False,
+    ) -> dict[str, Any]:
+        executor = executor or self._executor
+        try:
+            doc = load(_materialize_edge_dependencies(payload))
+            result = validate(doc, registry=node_registry or executor.node_registry)
+            unavailable = {
+                item["class_type"]: item["unavailable_reason"]
+                for item in self.node_types(executor=executor)
+                if not item.get("available", True)
+            }
+            tools = self.available_tool_names(executor)
+            for node_id, node in doc.nodes.items():
+                kind = node.get("class_type")
+                if kind in unavailable:
+                    result.errors.append(f"节点 {node_id} 当前不可用：{unavailable[kind]}")
+                values = node.get("inputs") or {}
+                if not isinstance(values, dict):
+                    continue
+                if kind in {"ToolNode", "ToolCallNode"}:
+                    tool = (
+                        values.get("tool_name")
+                        if kind == "ToolNode"
+                        else values.get("tool")
+                    )
+                    if not isinstance(tool, str) or tool not in tools:
+                        result.errors.append(f"节点 {node_id} 引用了当前专家未启用的工具：{tool}")
+                if kind == "SubworkflowNode" and not resuming:
+                    target = values.get("subworkflow_id")
+                    if isinstance(target, str) and not self.get_flow(target):
+                        result.errors.append(f"节点 {node_id} 引用了不存在的子工作流：{target}")
+            return {
+                "ok": not result.errors,
+                "errors": result.errors,
+                "output_nodes": result.output_nodes,
+            }
+        except (
+            ValueError,
+            TypeError,
+            AttributeError,
+            KeyError,
+            WorkflowValidationError,
+        ) as exc:
+            return {"ok": False, "errors": [str(exc)], "output_nodes": []}
+
+    async def authoring_executor(self, agent_id: str | None = None):
         from qwenpaw.app.agent_context import get_current_agent_id
 
-        scoped = await self.node_catalog.prepare(self._executor, agent_id or get_current_agent_id(), {})
-        return self.validate_flow(payload, node_registry=scoped.node_registry)
+        scope = agent_id or get_current_agent_id() or "default"
+        if self.node_catalog is None:
+            return scope, self._executor
+        try:
+            return scope, await self.node_catalog.prepare(self._executor, scope, {})
+        except RuntimeError as exc:
+            from .authoring import AuthoringUnavailable
+
+            raise AuthoringUnavailable("专家能力目录暂不可用，请检查宿主服务后重试。") from exc
+
+    async def authoring_agents(self, scope_id: str) -> list[dict[str, str]]:
+        if self.node_catalog is None:
+            return [{"id": scope_id, "name": scope_id}]
+        from qwenpaw.config.utils import load_config
+        from qwenpaw.config.config import load_agent_config
+
+        config = await asyncio.to_thread(load_config)
+        result = []
+        for agent_id, profile in config.agents.profiles.items():
+            if not getattr(profile, "enabled", True):
+                continue
+            try:
+                settings = await asyncio.to_thread(load_agent_config, agent_id)
+                if str(getattr(settings, "template_id", "") or "").startswith(
+                    "pawapp:"
+                ):
+                    continue
+                if getattr(settings, "available_in_chat", True) is False or getattr(
+                    settings, "managed_by_app", None
+                ):
+                    continue
+                result.append(
+                    {
+                        "id": agent_id,
+                        "name": str(getattr(settings, "name", agent_id)),
+                        "description": str(getattr(settings, "description", "") or "")[
+                            :500
+                        ],
+                    }
+                )
+            except Exception:
+                # Missing agent configuration is not evidence of availability.
+                continue
+        return result
+
+    async def validate_flow_for_agent(
+        self, payload: dict[str, Any], agent_id: str | None = None
+    ) -> dict[str, Any]:
+        _, executor = await self.authoring_executor(agent_id)
+        return self.validate_flow(payload, executor=executor)
+
+    async def create_proposal(
+        self,
+        prompt: str,
+        *,
+        flow=None,
+        name="",
+        agent_id="default",
+        scope_agent_id=None,
+    ):
+        from .authoring import propose
+
+        return await propose(
+            self,
+            prompt,
+            flow=flow,
+            name=name,
+            agent_id=agent_id,
+            scope_agent_id=scope_agent_id,
+        )
+
+    def _proposal_to_apply(self, proposal_id, expected_revision):
+        proposal = self._flow_repository.proposal(proposal_id)
+        if proposal is None:
+            raise RevisionConflict("修改建议已应用或已过期，请重新生成。")
+        if expected_revision != proposal["base_revision"]:
+            raise RevisionConflict("修改建议基础版本不匹配。")
+        if not proposal["validation"]["ok"]:
+            raise ValueError("修改建议未通过校验，不能应用。")
+        return proposal
+
+    def apply_proposal(self, proposal_id: str, expected_revision: int):
+        if self.node_catalog is not None:
+            raise ValueError("动态专家目录需通过异步apply_proposal_for_agent复核。")
+        proposal = self._proposal_to_apply(proposal_id, expected_revision)
+        return self._apply_validated_proposal(
+            proposal, expected_revision, self._executor
+        )
+
+    def _apply_validated_proposal(self, proposal, expected_revision, executor):
+        flow = proposal["flow"]
+        validation = self.validate_flow(flow, executor=executor)
+        if not validation["ok"]:
+            raise ValueError("修改建议已失效：" + "; ".join(validation["errors"]))
+        return self.save_flow(
+            flow["id"],
+            flow,
+            expected_revision=expected_revision,
+            proposal_id=proposal["proposal_id"],
+        )
+
+    async def apply_proposal_for_agent(
+        self, proposal_id: str, expected_revision: int, agent_id: str | None = None
+    ):
+        proposal = self._proposal_to_apply(proposal_id, expected_revision)
+        scope = proposal["scope_agent_id"]
+        if agent_id and agent_id != scope:
+            raise RevisionConflict("修改建议属于其他专家范围，请切换至原专家或重新生成。")
+        _, executor = await self.authoring_executor(scope)
+        agents = {item["id"] for item in await self.authoring_agents(scope)}
+        for node in proposal["flow"]["nodes"].values():
+            if (
+                node.get("class_type") == "AgentNode"
+                and node.get("inputs", {}).get("agent_id", "default") not in agents
+            ):
+                raise ValueError("修改建议中的专家已禁用或不允许通用调用。")
+        return self._apply_validated_proposal(proposal, expected_revision, executor)
+
+    def flow_versions(self, flow_id: str):
+        return self._flow_repository.versions(flow_id)
+
+    def restore_version(self, flow_id: str, revision: int, expected_revision: int):
+        flow = self._flow_repository.version(flow_id, revision)
+        if flow is None:
+            raise FileNotFoundError("工作流历史版本不存在。")
+        return self.save_flow(flow_id, flow, expected_revision=expected_revision)
 
     def generate_flow(
         self,
@@ -249,7 +419,9 @@ class WorkflowService(RunLifecycleMixin):
         raw_steps = re.split(r"(?:\n+|[。；;]+|\s*(?:->|→)\s*)", prompt)
         steps = []
         for item in raw_steps:
-            item = re.sub(r"^\s*(?:第?[一二三四五六七八九十\d]+[步、.：:]?|\d+[.)、])\s*", "", item).strip()
+            item = re.sub(
+                r"^\s*(?:第?[一二三四五六七八九十\d]+[步、.：:]?|\d+[.)、])\s*", "", item
+            ).strip()
             if item and item not in steps:
                 steps.append(item)
         if len(steps) == 1:
@@ -257,12 +429,16 @@ class WorkflowService(RunLifecycleMixin):
             steps = [chunk.strip() for chunk in chunks if chunk.strip()]
         steps = steps[:12] or [prompt]
 
-        flow_id = re.sub(r"[^a-zA-Z0-9_-]+", "-", name or steps[0])[:40].strip("-").lower()
+        flow_id = (
+            re.sub(r"[^a-zA-Z0-9_-]+", "-", name or steps[0])[:40].strip("-").lower()
+        )
         flow_id = flow_id or f"sop-{int(time.time())}"
         nodes: dict[str, dict[str, Any]] = {
             "input": {
-                "id": "input", "class_type": "InputNode",
-                "inputs": {"name": "request"}, "control": {"next": "step_1"},
+                "id": "input",
+                "class_type": "InputNode",
+                "inputs": {"name": "request"},
+                "control": {"next": "step_1"},
                 "label": "业务输入",
             },
         }
@@ -273,7 +449,8 @@ class WorkflowService(RunLifecycleMixin):
             node_id = f"step_{index}"
             next_id = f"step_{index + 1}" if index < len(steps) else "output"
             nodes[node_id] = {
-                "id": node_id, "class_type": "AgentNode",
+                "id": node_id,
+                "class_type": "AgentNode",
                 "label": f"步骤 {index}",
                 "inputs": {
                     # Bind by the runtime's stable agent identifier. Display
@@ -288,48 +465,77 @@ class WorkflowService(RunLifecycleMixin):
                 "control": {"next": next_id},
             }
             positions[node_id] = {"x": 360 + (index - 1) * 300, "y": 180}
-            edges.append({"id": f"e-{previous}-{node_id}", "source": previous, "target": node_id})
+            edges.append(
+                {"id": f"e-{previous}-{node_id}", "source": previous, "target": node_id}
+            )
             previous = node_id
         nodes["output"] = {
-            "id": "output", "class_type": "OutputNode", "label": "流程结果",
-            "inputs": {"value": [previous, 0]}, "control": {},
+            "id": "output",
+            "class_type": "OutputNode",
+            "label": "流程结果",
+            "inputs": {"value": [previous, 0]},
+            "control": {},
         }
         positions["output"] = {"x": 360 + len(steps) * 300, "y": 180}
-        edges.append({"id": f"e-{previous}-output", "source": previous, "target": "output"})
+        edges.append(
+            {"id": f"e-{previous}-output", "source": previous, "target": "output"}
+        )
         return {
             "id": flow_id,
             "name": name.strip() or f"{steps[0][:20]} SOP",
             "description": prompt[:240],
             "nodes": nodes,
             "edges": edges,
-            "inputs": [{"name": "request", "type": "string", "required": True, "label": "业务输入"}],
+            "inputs": [
+                {
+                    "name": "request",
+                    "type": "string",
+                    "required": False,
+                    "default": "",
+                    "label": "业务输入",
+                }
+            ],
             "outputs": ["output"],
             "start_id": "input",
-            "metadata": {"positions": positions, "source": "agent-generated", "sop": prompt},
+            "metadata": {
+                "positions": positions,
+                "source": "sequential-template",
+                "sop": prompt,
+            },
             "version": "1.0",
         }
 
     # ------------------------------------------------------------------
     # Run lifecycle
     # ------------------------------------------------------------------
-    def node_types(self) -> list[dict[str, Any]]:
-        return self._executor.node_registry.all_types()
+    def node_types(self, *, executor=None) -> list[dict[str, Any]]:
+        executor = executor or self._executor
+        catalog = executor.node_registry.all_types()
+        for item in catalog:
+            reason = None
+            if item["class_type"] == "ParallelNode":
+                reason = "内嵌分支执行器未接入，请使用独立DAG分支与下游汇合。"
+            elif (
+                item["class_type"] == "SubworkflowNode"
+                and getattr(executor, "workflow_service", None) is None
+            ):
+                reason = "工作流服务未接入，无法运行子工作流。"
+            item["available"] = reason is None
+            if reason:
+                item["unavailable_reason"] = reason
+        return catalog
 
-    async def refresh_node_types(self, agent_id: str | None = None) -> list[dict[str, Any]]:
-        if self.node_catalog is None:
-            return self.node_types()
-        from qwenpaw.app.agent_context import get_current_agent_id
-
-        scoped = await self.node_catalog.prepare(self._executor, agent_id or get_current_agent_id(), {})
-        return scoped.node_registry.all_types()
+    async def refresh_node_types(
+        self, agent_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        _, executor = await self.authoring_executor(agent_id)
+        return self.node_types(executor=executor)
 
     # ------------------------------------------------------------------
     # Internal helpers
     # ------------------------------------------------------------------
     def _flow_path(self, flow_id: str) -> Path:
-        safe = "".join(
-            c if c.isalnum() or c in "-_." else "_" for c in flow_id
-        )
+        safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in flow_id)
         return self._flows_dir / f"{safe}.json"
 
 

@@ -156,7 +156,9 @@ class NodeRegistry:
                         or {
                             "ConditionNode": ["conditions", "else_node", "error_handler"],
                             "ParallelNode": ["branches", "error_handler"],
-                            "HumanReviewNode": ["next", "error_handler"],
+                            "HumanReviewNode": ["next", "on_reject", "error_handler"],
+                            "QualityGateNode": ["pass_node", "fail_node", "error_handler"],
+                            "IterativeRefineNode": ["retry_node", "exhausted_node", "error_handler"],
                         }.get(
                             node_id,
                             ["next", "error_handler"] if schema.control_flow else [],

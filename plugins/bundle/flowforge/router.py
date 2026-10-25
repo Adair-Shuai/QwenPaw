@@ -27,11 +27,22 @@ import json
 import logging
 from typing import Any
 
-from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect, Body, Request
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    WebSocket,
+    WebSocketDisconnect,
+    Body,
+    Request,
+)
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from .service import RunHandle, WorkflowService
+from .authoring import AuthoringUnavailable
+from .flow_repository import RevisionConflict
+from .lifecycle import ResumeInputError
+from .engine.errors import ValidationError as WorkflowValidationError
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +73,8 @@ class FlowPayload(BaseModel):
     start_id: str | None = None
     metadata: dict[str, Any] = {}
     version: str = "1.0"
+    revision: int | None = Field(default=None, ge=0, strict=True)
+    expected_revision: int | None = Field(default=None, ge=0, strict=True)
 
 
 class RunRequest(BaseModel):
@@ -76,6 +89,29 @@ class GenerateRequest(BaseModel):
     prompt: str
     name: str = ""
     agent_id: str = "default"
+
+
+class ProposalRequest(BaseModel):
+    prompt: str = Field(min_length=1, max_length=20000)
+    flow: dict[str, Any] | None = None
+    name: str = ""
+    agent_id: str = "default"
+
+
+class RevisionRequest(BaseModel):
+    expected_revision: int = Field(ge=0, strict=True)
+
+
+def _service_error(exc: Exception) -> HTTPException:
+    if isinstance(exc, RevisionConflict):
+        return HTTPException(409, str(exc))
+    if isinstance(exc, FileNotFoundError):
+        return HTTPException(404, str(exc))
+    if isinstance(exc, AuthoringUnavailable):
+        return HTTPException(503, str(exc))
+    if isinstance(exc, WorkflowValidationError) and exc.errors:
+        return HTTPException(422, "; ".join(exc.errors))
+    return HTTPException(422, str(exc))
 
 
 def build_router(service: WorkflowService) -> APIRouter:
@@ -95,6 +131,8 @@ def build_router(service: WorkflowService) -> APIRouter:
             return await service.refresh_node_types(_request_agent_id(request))
         except ValueError as exc:
             raise HTTPException(404, str(exc))
+        except AuthoringUnavailable as exc:
+            raise _service_error(exc) from exc
 
     @router.post("/node-types/refresh")
     async def refresh_node_types(request: Request) -> list[dict[str, Any]]:
@@ -111,7 +149,15 @@ def build_router(service: WorkflowService) -> APIRouter:
     async def create_flow(payload: FlowPayload = Body(...)) -> dict[str, Any]:
         data = payload.model_dump()
         flow_id = data.get("id") or data.get("name") or "flow"
-        return service.save_flow(flow_id, data)
+        try:
+            expected = (
+                payload.expected_revision
+                if payload.expected_revision is not None
+                else payload.revision or 0
+            )
+            return service.save_flow(flow_id, data, expected_revision=expected)
+        except (ValueError, TypeError, WorkflowValidationError) as exc:
+            raise _service_error(exc) from exc
 
     @router.get("/flows/{flow_id}")
     async def get_flow(flow_id: str) -> dict[str, Any]:
@@ -121,10 +167,20 @@ def build_router(service: WorkflowService) -> APIRouter:
         return flow
 
     @router.put("/flows/{flow_id}")
-    async def update_flow(flow_id: str, payload: FlowPayload = Body(...)) -> dict[str, Any]:
+    async def update_flow(
+        flow_id: str, payload: FlowPayload = Body(...)
+    ) -> dict[str, Any]:
         data = payload.model_dump()
         data["id"] = flow_id
-        return service.save_flow(flow_id, data)
+        try:
+            expected = (
+                payload.expected_revision
+                if payload.expected_revision is not None
+                else payload.revision or 0
+            )
+            return service.save_flow(flow_id, data, expected_revision=expected)
+        except (ValueError, TypeError, WorkflowValidationError) as exc:
+            raise _service_error(exc) from exc
 
     @router.delete("/flows/{flow_id}")
     async def delete_flow(flow_id: str) -> dict[str, bool]:
@@ -138,20 +194,80 @@ def build_router(service: WorkflowService) -> APIRouter:
         flow = service.get_flow(flow_id)
         if flow is None:
             raise HTTPException(404, f"flow '{flow_id}' not found")
-        return await service.validate_flow_for_agent(flow, _request_agent_id(request))
+        try:
+            return await service.validate_flow_for_agent(
+                flow, _request_agent_id(request)
+            )
+        except (ValueError, AuthoringUnavailable) as exc:
+            raise _service_error(exc) from exc
 
     @router.post("/flows/validate")
-    async def validate_payload(request: Request, payload: FlowPayload = Body(...)) -> dict[str, Any]:
-        return await service.validate_flow_for_agent(payload.model_dump(), _request_agent_id(request))
+    async def validate_payload(
+        request: Request, payload: FlowPayload = Body(...)
+    ) -> dict[str, Any]:
+        try:
+            return await service.validate_flow_for_agent(
+                payload.model_dump(), _request_agent_id(request)
+            )
+        except (ValueError, AuthoringUnavailable) as exc:
+            raise _service_error(exc) from exc
+
+    @router.get("/flows/{flow_id}/versions")
+    async def flow_versions(flow_id: str):
+        return service.flow_versions(flow_id)
+
+    @router.post("/flows/{flow_id}/versions/{revision}/restore")
+    async def restore_version(
+        flow_id: str, revision: int, payload: RevisionRequest = Body(...)
+    ):
+        try:
+            return service.restore_version(flow_id, revision, payload.expected_revision)
+        except (ValueError, FileNotFoundError, WorkflowValidationError) as exc:
+            raise _service_error(exc) from exc
 
     @router.post("/generate")
-    async def generate_flow(payload: GenerateRequest = Body(...)) -> dict[str, Any]:
-        """Draft an editable workflow from a natural-language SOP."""
-        return service.generate_flow(
-            payload.prompt,
-            name=payload.name,
-            agent_id=payload.agent_id,
-        )
+    async def generate_flow(payload: GenerateRequest = Body(...)):
+        """Explicit legacy sequential template; AI creation uses proposals."""
+        try:
+            return service.generate_flow(
+                payload.prompt, name=payload.name, agent_id=payload.agent_id
+            )
+        except ValueError as exc:
+            raise _service_error(exc) from exc
+
+    @router.post("/authoring/proposals")
+    async def create_proposal(request: Request, payload: ProposalRequest = Body(...)):
+        try:
+            return await service.create_proposal(
+                payload.prompt,
+                flow=payload.flow,
+                name=payload.name,
+                agent_id=payload.agent_id,
+                scope_agent_id=_request_agent_id(request),
+            )
+        except (
+            ValueError,
+            TypeError,
+            AuthoringUnavailable,
+            WorkflowValidationError,
+        ) as exc:
+            raise _service_error(exc) from exc
+
+    @router.post("/authoring/proposals/{proposal_id}/apply")
+    async def apply_proposal(
+        proposal_id: str, request: Request, payload: RevisionRequest = Body(...)
+    ):
+        try:
+            return await service.apply_proposal_for_agent(
+                proposal_id, payload.expected_revision, _request_agent_id(request)
+            )
+        except (
+            ValueError,
+            TypeError,
+            AuthoringUnavailable,
+            WorkflowValidationError,
+        ) as exc:
+            raise _service_error(exc) from exc
 
     # ---------------------------------------------------------------- #
     # Run lifecycle
@@ -164,9 +280,11 @@ def build_router(service: WorkflowService) -> APIRouter:
     ) -> dict[str, Any]:
         inputs = (body.inputs if body else {}) or {}
         try:
-            handle = service.start_run(flow_id, inputs, agent_id=_request_agent_id(request))
-        except FileNotFoundError as exc:
-            raise HTTPException(404, str(exc))
+            handle = service.start_run(
+                flow_id, inputs, agent_id=_request_agent_id(request)
+            )
+        except (FileNotFoundError, ValueError, WorkflowValidationError) as exc:
+            raise _service_error(exc) from exc
         return {
             "run_id": handle.run_id,
             "flow_id": handle.flow_id,
@@ -202,8 +320,10 @@ def build_router(service: WorkflowService) -> APIRouter:
             handle = service.resume_run(run_id, inputs)
         except FileNotFoundError as exc:
             raise HTTPException(404, str(exc))
+        except ResumeInputError as exc:
+            raise HTTPException(422, str(exc)) from exc
         except ValueError as exc:
-            raise HTTPException(409, str(exc))
+            raise HTTPException(409, str(exc)) from exc
         return {
             "run_id": handle.run_id,
             "flow_id": handle.flow_id,
@@ -221,11 +341,14 @@ def build_router(service: WorkflowService) -> APIRouter:
             raise HTTPException(404, f"run '{run_id}' not found")
 
         if handle is None:
+
             async def persisted_event_generator():
                 for event in record.get("events", []):
                     yield _sse_pack(event)
+
             return StreamingResponse(
-                persisted_event_generator(), media_type="text/event-stream",
+                persisted_event_generator(),
+                media_type="text/event-stream",
             )
 
         # Poll handle.progress.history() + handle.is_done on a short cadence.
@@ -282,11 +405,7 @@ def build_router(service: WorkflowService) -> APIRouter:
                         msg = {"type": raw}
                     if msg.get("type") == "subscribe" and msg.get("run_id"):
                         # Detach from previous run.
-                        if (
-                            subscribed_run
-                            and queue is not None
-                            and attached
-                        ):
+                        if subscribed_run and queue is not None and attached:
                             prev = service.get_run(subscribed_run)
                             if prev is not None:
                                 prev.progress.detach_queue()
@@ -334,11 +453,7 @@ def build_router(service: WorkflowService) -> APIRouter:
                     except asyncio.QueueEmpty:
                         pass
                     handle = service.get_run(subscribed_run) if subscribed_run else None
-                    if (
-                        handle
-                        and handle.is_done
-                        and queue.empty()
-                    ):
+                    if handle and handle.is_done and queue.empty():
                         await websocket.send_text(
                             json.dumps(
                                 {
@@ -352,11 +467,7 @@ def build_router(service: WorkflowService) -> APIRouter:
         except WebSocketDisconnect:
             pass
         finally:
-            if (
-                subscribed_run
-                and attached
-                and queue is not None
-            ):
+            if subscribed_run and attached and queue is not None:
                 handle = service.get_run(subscribed_run)
                 if handle is not None:
                     handle.progress.detach_queue()

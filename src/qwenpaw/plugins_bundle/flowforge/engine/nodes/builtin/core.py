@@ -122,7 +122,7 @@ class ToolNode(WorkflowNode):
         if executor is not None:
             result = await executor.execute(tool_name, inputs.get("args") or {}, hidden.workflow_state)
             if not result.result.success:
-                return NodeOutput(error=result.result.error or "Tool execution failed")
+                return NodeOutput(error=result.result.error or "Tool execution failed", metadata={"retryable": getattr(result.result, "retryable", True)})
             return NodeOutput(values=(result.result.data,))
         registry = getattr(context, "tool_registry", context)
         descriptor = (
@@ -238,19 +238,12 @@ class CodeNode(WorkflowNode):
         )
 
     async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
-        local_vars = {"inputs": inputs, "result": None}
-        try:
-            exec(  # noqa: S102
-                str(inputs["code"]),
-                {
-                    "__builtins__": self._BUILTINS,
-                    "asyncio": asyncio, "json": json, "math": math, "re": re,
-                },
-                local_vars,
-            )
-        except Exception as exc:  # noqa: BLE001
-            return NodeOutput(error=f"{type(exc).__name__}: {exc}")
-        return NodeOutput(values=(local_vars.get("result"),))
+        from ...adapter.sandbox import execute_script
+        node = (hidden.prompt or {}).get(hidden.unique_id or "", {})
+        timeout = min(30.0, float((node.get("control") or {}).get("timeout_sec", 5.0)))
+        result = await execute_script(str(inputs["code"]), inputs={"inputs": inputs}, timeout_sec=timeout)
+        return NodeOutput(values=(result.result,), metadata={"execution_isolation": "process", "trusted_code_only": True})
+
 
 
 async def _dispatch_agent_turn(runtime: Any, agent_id: str, query: str) -> str:

@@ -109,6 +109,7 @@ class TopologicalSort:
                 isinstance(value, list)
                 and len(value) == 2
                 and isinstance(value[0], str)
+                and isinstance(value[1], int) and not isinstance(value[1], bool)
             ):
                 links.append((value[0], int(value[1])))
                 return
@@ -119,6 +120,7 @@ class TopologicalSort:
                     isinstance(item, list)
                     and len(item) == 2
                     and isinstance(item[0], str)
+                    and isinstance(item[1], int) and not isinstance(item[1], bool)
                     for item in value
                 )
             ):
@@ -136,6 +138,28 @@ class TopologicalSort:
             walk(value)
         return links
 
+    def control_predecessors_of(self, node_id: str) -> set[str]:
+        """A control edge gates execution even when no data socket is connected."""
+        predecessors: set[str] = set()
+        for candidate in self.prompt.all_ids:
+            control = (self.prompt.get(candidate) or {}).get("control") or {}
+            targets = {control.get(key) for key in (
+                "next", "else", "else_node", "on_reject", "pass_node", "fail_node", "exhausted_node", "error_handler",
+            )}
+            targets.update(
+                condition.get("then_node") or condition.get("then")
+                for condition in control.get("conditions", []) or []
+            )
+            if node_id in targets:
+                predecessors.add(candidate)
+        return predecessors
+
+    def downstream_of(self, node_id: str) -> set[str]:
+        return self.successors_of(node_id) | {
+            candidate for candidate in self.prompt.all_ids
+            if any(upstream == node_id for upstream, _ in self.upstream_of(candidate))
+        }
+
     def successors_of(self, node_id: str) -> set[str]:
         """Successors currently considered active."""
         if node_id in self._active_succ:
@@ -151,7 +175,7 @@ class TopologicalSort:
             t = cond.get("then_node") or cond.get("then")
             if t:
                 succ.add(t)
-        for key in ("else_node", "else", "on_reject"):
+        for key in ("else_node", "else", "on_reject", "pass_node", "fail_node", "exhausted_node"):
             if control.get(key):
                 succ.add(control[key])
         for branch in control.get("branches", []) or []:
@@ -209,7 +233,9 @@ class ExecutionList:
             seen.add(nid)
             if self.prompt.get(nid) is None:
                 continue
-            for up_id, _slot in self.topo.upstream_of(nid):
+            dependencies = {up for up, _ in self.topo.upstream_of(nid)}
+            dependencies.update(self.topo.control_predecessors_of(nid))
+            for up_id in dependencies:
                 if self.prompt.get(up_id) is not None:
                     self.state.strong_links.setdefault(nid, set()).add(up_id)
                 if up_id not in seen:
@@ -217,6 +243,8 @@ class ExecutionList:
             if (
                 nid not in self.state.completed
                 and nid not in self.state.in_progress
+                and nid not in self.state.skipped
+                and nid not in self.state.blocked
             ):
                 if not self._remaining_deps(nid):
                     self.state.ready.add(nid)
@@ -244,9 +272,11 @@ class ExecutionList:
             t = cond.get("then_node") or cond.get("then")
             if t:
                 all_succ.add(t)
-        for key in ("else_node", "else", "on_reject"):
+        for key in ("else_node", "else", "on_reject", "pass_node", "fail_node", "exhausted_node"):
             if control.get(key):
                 all_succ.add(control[key])
+        if control.get("retry_node"):
+            all_succ.add(control["retry_node"])
         active = set() if chosen is None else {chosen}
         pruned = all_succ - active
         self.topo.set_active_successors(node_id, active)
@@ -256,8 +286,33 @@ class ExecutionList:
         }
         for p in pruned:
             self.state.pruned_edges.add((node_id, p))
+        protected: set[str] = set()
+        stack = list(active)
+        while stack:
+            current = stack.pop()
+            if current in protected:
+                continue
+            protected.add(current)
+            stack.extend(self.topo.downstream_of(current))
         for p in pruned:
-            self._skip_subtree(p)
+            self._skip_subtree(p, protected=protected)
+
+    def skip_unused_error_handler(self, node_id: str) -> None:
+        """A fallback route must never run on the successful path."""
+        control = (self.prompt.get(node_id) or {}).get("control") or {}
+        handler = control.get("error_handler")
+        if not handler:
+            return
+        protected: set[str] = set()
+        stack = list(self.topo.successors_of(node_id))
+        while stack:
+            current = stack.pop()
+            if current in protected:
+                continue
+            protected.add(current)
+            stack.extend(self.topo.downstream_of(current))
+        self.state.pruned_edges.add((node_id, handler))
+        self._skip_subtree(handler, protected=protected)
 
     def reopen_or_add(self, node_id: str, *, allow_reopen: bool = False) -> None:
         """Route to ``node_id``, re-executing it only on a loop back-edge."""
@@ -269,7 +324,7 @@ class ExecutionList:
             self.add_node(node_id)
 
     def reopen(self, node_id: str) -> None:
-        """Reset a completed/skipped node and its completed descendants."""
+        """Reset a bounded loop region including obsolete routing decisions."""
         if self.prompt.get(node_id) is None:
             return
         stack = [node_id]
@@ -283,29 +338,24 @@ class ExecutionList:
             self.state.skipped.discard(nid)
             self.state.ready.discard(nid)
             self.state.in_progress.discard(nid)
-            for succ in self.topo.successors_of(nid):
-                if succ in self.state.completed or succ in self.state.skipped:
-                    stack.append(succ)
-            for down, ups in self.state.strong_links.items():
-                if nid in ups and (
-                    down in self.state.completed or down in self.state.skipped
-                ):
-                    stack.append(down)
+            self.topo._active_succ.pop(nid, None)
+            self.topo._pruned.pop(nid, None)
+            self.state.pruned_edges = {(s, d) for s, d in self.state.pruned_edges if s != nid}
+            stack.extend(self.topo.downstream_of(nid))
         self.add_node(node_id)
 
-    def _skip_subtree(self, node_id: str) -> None:
-        """Mark ``node_id`` + downstream graph as skipped (pruned branch)."""
+    def _skip_subtree(self, node_id: str, *, protected: set[str] | None = None) -> None:
+        """Prune unselected descendants while retaining the selected arm's join."""
+        protected = protected or set()
         stack = [node_id]
         while stack:
             nid = stack.pop()
-            if nid in self.state.completed or nid in self.state.skipped:
-                continue
-            if any(nid in ups for ups in self.state.strong_links.values()):
+            if nid in protected or nid in self.state.completed or nid in self.state.skipped:
                 continue
             self.state.skipped.add(nid)
             self.state.ready.discard(nid)
-            for succ in self.topo.successors_of(nid):
-                stack.append(succ)
+            self.state.in_progress.discard(nid)
+            stack.extend(self.topo.downstream_of(nid))
 
     # ------------------------------------------------------------------
     # External blocks (async human_review, etc.)
@@ -371,6 +421,8 @@ class ExecutionList:
                 node_id in ups
                 and down not in self.state.completed
                 and down not in self.state.skipped
+                and down not in self.state.in_progress
+                and down not in self.state.blocked
             ):
                 if (node_id, down) in self.state.pruned_edges:
                     continue
@@ -381,7 +433,7 @@ class ExecutionList:
     def fail_node_execution(self, node_id: str) -> None:
         """Mark a node as failed."""
         self.state.in_progress.discard(node_id)
-        self.state.skipped.add(node_id)
+        self._skip_subtree(node_id)
         self._unblocked.set()
 
     def cancel(self) -> None:

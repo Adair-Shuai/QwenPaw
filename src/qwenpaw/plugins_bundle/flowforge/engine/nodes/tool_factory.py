@@ -128,7 +128,9 @@ def _build_schema(tool: BaseTool) -> Schema:
         ],
         outputs=[IO.Any.Output(id="result")],
         hidden=[Hidden.UNIQUE_ID, Hidden.TOOL_CONTEXT, Hidden.WORKFLOW_STATE],
-        not_idempotent=not tool.is_read_only,
+        # Read-only describes side effects, not immutable data or permission.
+        # Every invocation must re-enter the host governance adapter.
+        not_idempotent=True,
         metadata={
             "tool_name": tool.name,
             "tool_category": category_slug,
@@ -197,6 +199,7 @@ class _GeneratedToolNodeBase(WorkflowNode):
 
         start = time.monotonic()
         last_error: str | None = None
+        last_retryable = True
         tool_name = self.TOOL_NAME
 
         for attempt in range(retry_count + 1):
@@ -217,7 +220,8 @@ class _GeneratedToolNodeBase(WorkflowNode):
                         },
                     )
                 last_error = tool_result.error or "Tool execution failed"
-                if not getattr(tool_result, "retryable", True):
+                last_retryable = getattr(tool_result, "retryable", True)
+                if not last_retryable:
                     break
                 logger.warning(
                     "tool_node_failed",
@@ -242,6 +246,7 @@ class _GeneratedToolNodeBase(WorkflowNode):
                 "attempts": attempt + 1,
                 "duration_ms": duration_ms,
                 "auto_generated": True,
+                "retryable": last_retryable and retry_count == 0,
             },
         )
 

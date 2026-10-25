@@ -10,6 +10,8 @@ each step.
 from __future__ import annotations
 
 import asyncio
+import copy
+import math
 import time
 from typing import Any
 
@@ -21,7 +23,7 @@ from .io.contract import NOT_CACHEABLE
 from .nodes import NodeRegistry
 
 from .cache_provider import CacheProvider, NullCacheProvider
-from .caching import BaseCache, CacheEntry, CacheKeySet
+from .caching import BaseCache, CacheEntry, CacheKeySet, hash_signature
 from .errors import NodeExecutionError, WorkflowEngineError
 from .progress import CurrentNodeContext, NodeStatus, ProgressRegistry
 
@@ -55,6 +57,8 @@ _TRANSIENT_MARKERS = (
 
 def _is_transient(exc: BaseException) -> bool:
     """Heuristically classify an exception as a transient (retryable) failure."""
+    if getattr(exc, "retryable", None) is False:
+        return False
     if isinstance(exc, _TRANSIENT_EXCEPTIONS):
         return True
     message = str(exc).lower()
@@ -69,10 +73,10 @@ def _retry_policy(node_def: dict[str, Any]) -> tuple[int, float]:
     except (TypeError, ValueError):
         max_retries = 0
     try:
-        retry_delay = float(control.get("retry_delay_sec", 0.5) or 0.5)
+        retry_delay = float(control.get("retry_delay_sec", 0.5))
     except (TypeError, ValueError):
         retry_delay = 0.5
-    return max(0, max_retries), max(0.0, retry_delay)
+    return min(10, max(0, max_retries)), min(60.0, max(0.0, retry_delay))
 
 
 class NodeRunResult:
@@ -125,57 +129,36 @@ class NodeRunner:
         schema = node_cls.get_schema()
 
         # -------------------- input marshalling --------------------
-        resolved_inputs: dict[str, Any] = {}
-        linked_keys: set[str] = set()
-        for key_name, value in (node_def.get("inputs") or {}).items():
-            if key_name.startswith("__"):
-                continue
-            # Single link reference: [upstream_id, slot]
-            if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
-                up_id, slot = value
-                resolved_inputs[key_name] = upstream_values.get((up_id, int(slot)))
-                linked_keys.add(key_name)
-                continue
-
-            # Multi-link reference (ARRAY input): [[upstream_id, slot], ...]
-            if (
-                isinstance(value, list)
-                and value
-                and all(
-                    isinstance(item, list)
-                    and len(item) == 2
-                    and isinstance(item[0], str)
-                    for item in value
-                )
-            ):
-                out: list[Any] = []
-                for up_id, slot in value:
-                    out.append(upstream_values.get((up_id, int(slot))))
-                resolved_inputs[key_name] = out
-                linked_keys.add(key_name)
-                continue
-
+        def resolve(value: Any) -> Any:
+            if (isinstance(value, list) and len(value) == 2
+                    and isinstance(value[0], str) and isinstance(value[1], int)
+                    and not isinstance(value[1], bool)):
+                return upstream_values.get((value[0], value[1]))
+            if isinstance(value, dict):
+                return {name: resolve(item) for name, item in value.items()}
+            if isinstance(value, list):
+                return [resolve(item) for item in value]
             state = hidden.workflow_state
-            resolved_inputs[key_name] = (
-                state.resolve_template(value)
-                if state is not None and hasattr(state, "resolve_template")
-                else value
-            )
+            return state.resolve_template(value) if state is not None else value
 
-        # -------------------- runtime input validation --------------------
-        # Validate literal (widget) inputs against their declared type/range/
-        # enum constraints before executing. Linked inputs are skipped — their
-        # wire compatibility is enforced statically by the validator and the
-        # upstream node owns the produced value's shape.
+        resolved_inputs = {
+            name: resolve(value)
+            for name, value in (node_def.get("inputs") or {}).items()
+            if name != "__flow_dependencies"
+        }
         for inp in schema.inputs:
-            if inp.id in linked_keys:
-                continue
-            if inp.id not in resolved_inputs and getattr(inp, "optional", False):
-                continue
-            ok_v, err_v = inp.validate(resolved_inputs.get(inp.id))
-            if not ok_v:
-                self.progress.set_status(node_id, NodeStatus.ERROR, error=err_v)
-                raise NodeExecutionError(err_v or f"invalid input '{inp.id}'", node_id=node_id)
+            if inp.id not in resolved_inputs:
+                default = getattr(inp, "default", None)
+                if default is not None:
+                    resolved_inputs[inp.id] = copy.deepcopy(default)
+                elif inp.optional:
+                    continue
+                else:
+                    raise NodeExecutionError(node_id, f"Required input '{inp.id}' missing")
+            ok, error = inp.validate(resolved_inputs.get(inp.id))
+            if not ok:
+                self.progress.set_status(node_id, NodeStatus.ERROR, error=error)
+                raise NodeExecutionError(node_id, error or f"invalid input '{inp.id}'")
 
         # -------------------- instance memoization --------------------
         instance_entry = self.object_cache.get(node_id)
@@ -187,7 +170,7 @@ class NodeRunner:
 
         # -------------------- cache lookup (fingerprint-aware) --------------------
         fingerprint: Any = None
-        cacheable = not schema.not_idempotent
+        cacheable = not schema.not_idempotent and not schema.control_flow
         if cacheable:
             try:
                 fingerprint = instance.fingerprint_inputs(**resolved_inputs)
@@ -196,7 +179,7 @@ class NodeRunner:
             if fingerprint is NOT_CACHEABLE:
                 cacheable = False
 
-        base_key = self.cache_keys.signature(node_id)
+        base_key = self.cache_keys.signature(node_id) + ":" + hash_signature(resolved_inputs)
         key = base_key if fingerprint in (None, NOT_CACHEABLE) else f"{base_key}#{fingerprint}"
 
         if cacheable:
@@ -231,14 +214,23 @@ class NodeRunner:
         while True:
             try:
                 with CurrentNodeContext(node_id):
-                    output = await instance.execute(hidden=scoped_hidden, **resolved_inputs)
+                    call = instance.execute(hidden=scoped_hidden, **resolved_inputs)
+                    raw_timeout = (node_def.get("control") or {}).get("timeout_sec")
+                    timeout = float(raw_timeout) if raw_timeout is not None else None
+                    if timeout is not None and (not math.isfinite(timeout) or timeout <= 0):
+                        call.close()
+                        raise ValueError("control.timeout_sec must be a positive finite number")
+                    output = await asyncio.wait_for(call, timeout=timeout)
+                    # Native provider/tool adapters return structured errors.
+                    if isinstance(output, NodeOutput) and output.error:
+                        raise NodeExecutionError(node_id, output.error, retryable=output.metadata.get("retryable"))
                 break
             except Exception as exc:  # noqa: BLE001
                 # Centralized retry policy: transient failures are retried with
                 # exponential backoff up to ``control.max_retries`` before the
                 # node is surfaced as a hard failure to the executor.
                 if attempt < max_retries and _is_transient(exc):
-                    delay = retry_delay * (2 ** attempt)
+                    delay = min(60.0, retry_delay * (2 ** attempt))
                     logger.info(
                         "workflow_node_retry",
                         node_id=node_id,
@@ -257,7 +249,9 @@ class NodeRunner:
                     continue
                 duration_ms = int((time.monotonic() - start) * 1000)
                 self.progress.set_status(node_id, NodeStatus.ERROR, error=str(exc))
-                raise NodeExecutionError(str(exc), node_id=node_id) from exc
+                if isinstance(exc, NodeExecutionError):
+                    raise
+                raise NodeExecutionError(node_id, str(exc) or type(exc).__name__) from exc
 
         if not isinstance(output, NodeOutput):
             output = NodeOutput(values=output)

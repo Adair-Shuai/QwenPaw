@@ -83,6 +83,8 @@ const suites = {
     "src/plugins/documentForms.test.tsx",
     "src/plugins/storageCapacity.test.tsx",
     "src/plugins/hostSdk/ugsciWorkflow.test.tsx",
+    "src/plugins/hostSdk/ugsciAuthoring.test.tsx",
+    "src/plugins/hostSdk/flowforgeModel.test.ts",
   ],
 };
 const files = [...new Set(Object.values(suites).flat())];

@@ -27,9 +27,11 @@ class DependencyCycleError(WorkflowEngineError):
 class NodeExecutionError(WorkflowEngineError):
     """Raised when a single node fails during execution."""
 
-    def __init__(self, node_id: str, message: str) -> None:
+    def __init__(self, node_id: str, message: str, *, retryable: bool | None = None) -> None:
         super().__init__(f"{node_id}: {message}")
         self.node_id = node_id
+        self.message = message
+        self.retryable = retryable
 
 
 class BlockedError(WorkflowEngineError):

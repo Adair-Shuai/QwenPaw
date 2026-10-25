@@ -13,6 +13,8 @@ Ported from ``leagent.workflow.state_store``. Provides:
 from __future__ import annotations
 
 import json
+import os
+import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Protocol
@@ -79,18 +81,19 @@ class InMemoryWorkflowStateStore:
 
     async def save(self, snapshot: WorkflowRunSnapshot) -> None:
         key = str(snapshot.state.id)
-        self._by_state[key] = snapshot
+        self._by_state[key] = WorkflowRunSnapshot.from_payload(snapshot.to_payload())
         if snapshot.prompt_id:
             self._by_prompt[snapshot.prompt_id] = key
 
     async def load(self, state_id: UUID) -> WorkflowRunSnapshot | None:
-        return self._by_state.get(str(state_id))
+        snapshot = self._by_state.get(str(state_id))
+        return WorkflowRunSnapshot.from_payload(snapshot.to_payload()) if snapshot else None
 
     async def load_by_prompt_id(self, prompt_id: str) -> WorkflowRunSnapshot | None:
         key = self._by_prompt.get(prompt_id)
         if key is None:
             return None
-        return self._by_state.get(key)
+        return await self.load(UUID(key))
 
     async def delete(self, state_id: UUID) -> None:
         snap = self._by_state.pop(str(state_id), None)
@@ -125,20 +128,27 @@ class JsonWorkflowStateStore:
             except Exception:
                 self._index = {}
 
-    def _save_index(self) -> None:
+    @staticmethod
+    def _atomic_write(path: Path, content: str) -> None:
+        descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
         try:
-            self._index_path().write_text(
-                json.dumps(self._index, ensure_ascii=False),
-                encoding="utf-8",
-            )
-        except OSError:
-            pass
+            with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+                stream.write(content)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, path)
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+
+    def _save_index(self) -> None:
+        self._atomic_write(self._index_path(), json.dumps(self._index, ensure_ascii=False))
 
     async def save(self, snapshot: WorkflowRunSnapshot) -> None:
         key = str(snapshot.state.id)
         payload = snapshot.to_payload()
         path = self._state_path(key)
-        path.write_text(payload, encoding="utf-8")
+        self._atomic_write(path, payload)
         if snapshot.prompt_id:
             self._index[snapshot.prompt_id] = key
             self._save_index()

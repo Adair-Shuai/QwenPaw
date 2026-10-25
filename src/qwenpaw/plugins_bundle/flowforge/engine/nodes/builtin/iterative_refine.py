@@ -68,13 +68,9 @@ class IterativeRefineNode(WorkflowNode):
         var = str(inputs.get("iteration_var") or "refine_iteration")
         max_iter = int(inputs.get("max_iterations") if inputs.get("max_iterations") is not None else 3)
 
-        current = 0
-        if state is not None:
-            try:
-                current = int(state.get(var, 0) or 0)
-            except (ValueError, TypeError):
-                current = 0
-        current += 1
+        counters = state.metadata.setdefault("refine_counters", {}) if state is not None else {}
+        current = int(counters.get(node_id, 0)) + 1
+        counters[node_id] = current
         if state is not None:
             state.set(var, current)
             if inputs.get("feedback"):

@@ -1,0 +1,323 @@
+.ff-editor {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 480px;
+  font-size: 13px;
+  background: var(--ant-color-bg-container, #fff);
+  color: var(--ant-color-text, #172b4d);
+}
+.ff-center {
+  height: 100%;
+  min-height: 340px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+}
+.ff-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--ant-color-border-secondary, #e8edf3);
+  flex-wrap: wrap;
+}
+.ff-title {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-width: 200px;
+}
+.ff-title strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 15px;
+}
+.ff-title span,
+.ff-muted {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ant-color-text-secondary, #748094);
+}
+.ff-toolbar-actions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-left: auto;
+}
+.ff-editor-body {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  position: relative;
+}
+.ff-palette {
+  width: 248px;
+  flex-shrink: 0;
+  padding: 16px 12px 0;
+  border-right: 1px solid var(--ant-color-border-secondary, #e8edf3);
+  display: flex;
+  flex-direction: column;
+}
+.ff-palette-closed {
+  display: none;
+}
+.ff-palette p {
+  margin: 10px 2px 14px;
+}
+.ff-node-list {
+  overflow: auto;
+  flex: 1;
+  padding: 8px 0 16px;
+}
+.ff-node-list h4 {
+  font-size: 11px;
+  letter-spacing: 0.5px;
+  color: var(--ant-color-text-tertiary, #7c8697);
+  margin: 16px 6px 8px;
+}
+.ff-palette-item {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  text-align: left;
+  gap: 9px;
+  padding: 10px 8px;
+  margin: 5px 0;
+  border: 1px solid var(--ant-color-border-secondary, #e8edf3);
+  border-radius: 8px;
+  color: inherit;
+  background: var(--ant-color-bg-container, #fff);
+  cursor: pointer;
+  font: inherit;
+}
+.ff-palette-item:hover,
+.ff-palette-item:focus-visible {
+  border-color: var(--ant-color-primary, #2563eb);
+}
+.ff-palette-item > span:nth-child(2) {
+  flex: 1;
+  min-width: 0;
+}
+.ff-palette-item small {
+  display: block;
+  color: var(--ant-color-text-tertiary, #8c96a5);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 160px;
+  margin-top: 3px;
+}
+.ff-canvas {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+  background: var(--ant-color-fill-quaternary, #f8fafc);
+}
+.ff-canvas-help {
+  position: absolute;
+  bottom: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  border: 1px solid var(--ant-color-border-secondary, #e8edf3);
+  border-radius: 20px;
+  padding: 7px 13px;
+  background: var(--ant-color-bg-container, #fff);
+  color: var(--ant-color-text-tertiary, #8490a3);
+  font-size: 10px;
+  pointer-events: none;
+  white-space: nowrap;
+}
+.ff-empty-canvas {
+  position: absolute;
+  top: 44%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 360px;
+  max-width: 90%;
+  text-align: center;
+  padding: 32px 24px;
+  border: 1px solid var(--ant-color-border-secondary, #e8edf3);
+  border-radius: 16px;
+  background: var(--ant-color-bg-container, #fff);
+  box-shadow: 0 8px 40px #23304c07;
+}
+.ff-empty-canvas > span {
+  font-size: 34px;
+  color: #2563eb;
+}
+.ff-empty-canvas h2 {
+  font-size: 19px;
+  margin: 14px 0 10px;
+}
+.ff-empty-canvas p {
+  font-size: 12px;
+  color: var(--ant-color-text-secondary, #7b879a);
+  margin-bottom: 20px;
+}
+.ff-field-label {
+  display: block;
+  font-weight: 600;
+  margin: 22px 0 10px;
+}
+.ff-example-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 12px 0 18px;
+}
+.ff-spaced {
+  margin-top: 16px;
+}
+.ff-change,
+.ff-version {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--ant-color-border-secondary, #eef1f5);
+}
+.ff-change > div {
+  flex: 1;
+  min-width: 0;
+}
+.ff-change p,
+.ff-version p {
+  font-size: 12px;
+  color: var(--ant-color-text-secondary, #748094);
+  line-height: 1.7;
+  margin: 5px 0 0;
+}
+.ff-version {
+  justify-content: space-between;
+}
+.ff-code {
+  white-space: pre-wrap;
+  word-break: break-word;
+  background: var(--ant-color-fill-quaternary, #f8fafc);
+  padding: 14px;
+  border-radius: 8px;
+  font-size: 11px;
+  max-height: 500px;
+  overflow: auto;
+}
+.ff-errors {
+  margin: 5px 0;
+  padding-left: 20px;
+  max-height: 150px;
+  overflow: auto;
+  font-size: 12px;
+}
+.ff-diff-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  margin-top: 10px;
+  table-layout: fixed;
+}
+.ff-diff-table th,
+.ff-diff-table td {
+  padding: 7px 6px;
+  border: 1px solid var(--ant-color-border-secondary, #e8edf3);
+  text-align: left;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.ff-diff-table th {
+  background: var(--ant-color-fill-quaternary, #f8fafc);
+}
+.ff-diff-table td:nth-child(2) {
+  color: var(--ant-color-text-secondary, #7b879a);
+}
+.ff-diff-table td:nth-child(3) {
+  color: var(--ant-color-success, #389e0d);
+}
+.ff-mobile-ai {
+  display: none;
+}
+@media (max-width: 1050px) {
+  .ff-toolbar-actions {
+    margin-left: 0;
+  }
+  .ff-canvas-help {
+    display: none;
+  }
+  .ff-palette {
+    width: 215px;
+  }
+  .ff-palette-item small {
+    max-width: 130px;
+  }
+}
+@media (max-width: 720px) {
+  .ff-mobile-ai {
+    display: inline-flex;
+  }
+  .ff-canvas .react-flow__minimap {
+    display: none;
+  }
+  .ff-palette-open {
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    z-index: 5;
+    background: var(--ant-color-bg-container, #fff);
+    width: 230px;
+    box-shadow: 4px 0 20px #1527441a;
+  }
+  .ff-toolbar {
+    padding: 10px;
+  }
+  .ff-toolbar-actions {
+    gap: 5px;
+  }
+  .ff-toolbar-actions .ant-btn {
+    font-size: 12px;
+    padding: 3px 8px;
+    height: 29px;
+  }
+  .ff-title span {
+    font-size: 10px;
+  }
+  .ff-canvas {
+    min-height: 360px;
+  }
+  .ff-empty-canvas {
+    padding: 20px 12px;
+  }
+}
+
+.ff-review {
+  padding: 14px;
+  border: 1px solid #ffe58f;
+  border-radius: 8px;
+  margin: 16px 0;
+}
+.ff-run-node {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 8px 0;
+}
+.ff-run-node code {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.ff-child-runs {
+  padding: 12px;
+  border: 1px solid var(--ant-color-border-secondary, #e8edf3);
+  border-radius: 8px;
+  margin-bottom: 14px;
+}
+
+.ff-condition {
+  padding: 12px;
+  margin: 10px 0;
+  border: 1px solid var(--ant-color-border-secondary, #e8edf3);
+  border-radius: 8px;
+}

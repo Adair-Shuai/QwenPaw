@@ -6,12 +6,8 @@ The evaluation gate of the self-correction loop. It derives a quality
 ``score >= threshold`` else ``control.fail_node`` (typically an
 :class:`IterativeRefineNode` back-edge).
 
-Scoring strategy (first match wins):
-
-1. An explicit ``score`` input (e.g. wired from an LLM critique node).
-2. A deterministic heuristic that *improves with the refine iteration*
-   (``base + step * iteration``) so offline / demo pipelines exercise the
-   full generate -> evaluate -> regenerate loop reproducibly.
+An explicit score is required from a real evaluator or upstream tool. The
+runtime never invents an improving quality score from the iteration counter.
 """
 
 from __future__ import annotations
@@ -48,8 +44,8 @@ class QualityGateNode(WorkflowNode):
                     tooltip="The asset (image/video/mesh) being evaluated.",
                 ),
                 IO.Float.Input(
-                    id="score", optional=True, min=0.0, max=1.0,
-                    tooltip="Explicit quality score; overrides the heuristic.",
+                    id="score", min=0.0, max=1.0,
+                    tooltip="Actual quality score from an evaluator or upstream tool.",
                 ),
                 IO.Float.Input(
                     id="threshold", optional=True, default=0.7, min=0.0, max=1.0,
@@ -63,14 +59,7 @@ class QualityGateNode(WorkflowNode):
                     id="iteration_var", optional=True, default="refine_iteration",
                     tooltip="State variable holding the refine iteration count.",
                 ),
-                IO.Float.Input(
-                    id="base_score", optional=True, default=0.45, min=0.0, max=1.0,
-                    tooltip="Heuristic base score at iteration 0.",
-                ),
-                IO.Float.Input(
-                    id="score_step", optional=True, default=0.3, min=0.0, max=1.0,
-                    tooltip="Heuristic score gain per refine iteration.",
-                ),
+
             ],
             outputs=[
                 IO.Float.Output(id="score"),
@@ -131,29 +120,10 @@ class QualityGateNode(WorkflowNode):
 
     def _resolve_score(self, inputs: dict[str, Any], state: Any) -> float:
         explicit = inputs.get("score")
-        if explicit is not None:
-            try:
-                return max(0.0, min(float(explicit), 1.0))
-            except (ValueError, TypeError):
-                pass
-        iteration = 0
-        if state is not None:
-            var = str(inputs.get("iteration_var") or "refine_iteration")
-            try:
-                iteration = int(state.get(var, 0) or 0)
-            except (ValueError, TypeError):
-                iteration = 0
-        base = float(inputs.get("base_score") if inputs.get("base_score") is not None else 0.45)
-        step = float(inputs.get("score_step") if inputs.get("score_step") is not None else 0.3)
-        return max(0.0, min(base + step * iteration, 1.0))
+        if not isinstance(explicit, (float, int)) or isinstance(explicit, bool):
+            raise ValueError("QualityGateNode requires an explicit evaluator score")
+        return float(explicit)
 
-
-def _first_then(control: dict[str, Any]) -> str | None:
-    for cond in control.get("conditions", []) or []:
-        target = cond.get("then_node") or cond.get("then")
-        if target:
-            return target
-    return None
 
 
 def _control_for(hidden: HiddenHolder, node_id: str | None) -> dict[str, Any]:

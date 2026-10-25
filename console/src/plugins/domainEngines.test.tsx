@@ -502,9 +502,11 @@ describe.each([
     expect(
       within(dialog).queryByRole("button", { name: /^开始安装/ }),
     ).not.toBeInTheDocument();
-    expect(
-      within(dialog).getByRole("button", { name: "前往工具或技能管理入口" }),
-    ).toBeVisible();
+    await waitFor(() =>
+      expect(
+        within(dialog).getByRole("button", { name: "前往工具或技能管理入口" }),
+      ).toBeVisible(),
+    );
     expect(installStarts).toBe(0);
   });
 
@@ -559,7 +561,9 @@ describe.each([
     );
     dialog = await screen.findByRole("dialog", { name: /运行环境/ });
     expect(installStarts).toBe(1);
-    expect(await within(dialog).findByText("正在安装依赖")).toBeVisible();
+    await waitFor(() =>
+      expect(within(dialog).getByText("正在安装依赖")).toBeVisible(),
+    );
     holdInstall = false;
     await waitFor(() => expect(dependencyOverall).toBe("available"), {
       timeout: 6000,

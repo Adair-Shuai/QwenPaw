@@ -5,7 +5,10 @@ LeAgent's workflow nodes call ``llm_service.complete(messages=..., model=..., te
 and expect a response object with ``.content`` (str).
 
 QwenPaw uses agentscope 2.0's ``ChatModelBase.__call__`` which takes
-``Msg`` objects and returns a ``ChatResponse``.  This adapter:
+``Msg`` objects and returns a ``ChatResponse`` or an async response stream.
+The final ``is_last=True`` response contains the complete text; earlier
+responses are deltas and must not be appended to that final response.
+This adapter:
 
 1. Accepts ``ChatMessage`` objects (from :mod:`.chat_message`).
 2. Converts them to agentscope ``Msg``.
@@ -15,8 +18,10 @@ QwenPaw uses agentscope 2.0's ``ChatModelBase.__call__`` which takes
 
 from __future__ import annotations
 
+import asyncio
+import inspect
 import logging
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, is_dataclass
 from typing import Any
 
 from .chat_message import ChatMessage
@@ -89,7 +94,9 @@ class LLMService:
 
         prov = pm.get_provider(active.provider_id)
         if prov is None:
-            raise RuntimeError(f"Active provider '{active.provider_id}' not found")
+            raise RuntimeError(
+                f"Active provider '{active.provider_id}' not found"
+            )
 
         chat_model = prov.get_chat_model_instance(active.model)
         return chat_model, active.provider_id, active.model
@@ -113,7 +120,7 @@ class LLMService:
             temperature: Sampling temperature.
             max_tokens: Maximum tokens to generate.
         """
-        from agentscope.message import Msg, TextBlock
+        from agentscope.message import Msg
 
         # Convert ChatMessage → Msg
         msgs: list[Msg] = []
@@ -142,60 +149,106 @@ class LLMService:
             gen_config["max_tokens"] = max_tokens
         gen_config.update(kwargs)
 
-        # Call the model
-        try:
-            response = await chat_model(msgs, **gen_config)
-        except TypeError:
-            # Some models are synchronous
-            response = chat_model(msgs, **gen_config)
-
-        # Extract text content
+        # Invoke exactly once. A TypeError raised *inside* a provider is a
+        # failure, not evidence that it should be called a second time.
+        response = chat_model(msgs, **gen_config)
+        if inspect.isawaitable(response):
+            response = await response
+        _check_cancellation()
+        response = await _complete_response(response)
         content = _extract_text(response)
+
+        usage = _field(response, "usage")
+        if is_dataclass(usage) and not isinstance(usage, type):
+            usage = asdict(usage)
+        elif hasattr(usage, "model_dump"):
+            usage = usage.model_dump()
 
         return LLMResponse(
             content=content,
             model=resolved_model,
             provider=resolved_provider,
+            usage=usage if isinstance(usage, dict) else None,
             raw=response,
         )
 
 
+def _field(value: Any, name: str, default: Any = None) -> Any:
+    return (
+        value.get(name, default)
+        if isinstance(value, dict)
+        else getattr(value, name, default)
+    )
+
+
+def _check_cancellation() -> None:
+    # AgentScope converts a cancelled API call/stream into an interrupted
+    # response. Keep cancellation observable to wait_for and the run engine.
+    task = asyncio.current_task()
+    if task is not None and task.cancelling():
+        raise asyncio.CancelledError()
+
+
+def _check_response(response: Any) -> None:
+    _check_cancellation()
+    reason = _field(response, "finished_reason")
+    reason = getattr(reason, "value", reason)
+    status = _field(response, "status")
+    status = getattr(status, "value", status)
+    if reason in {"interrupted", "cancelled", "canceled"} or status in {
+        "cancelled",
+        "canceled",
+    }:
+        raise asyncio.CancelledError("Model completion was interrupted")
+    error = _field(response, "error")
+    if error or reason in {"error", "failed"} or status in {"error", "failed"}:
+        raise RuntimeError("Model completion failed")
+
+
+async def _complete_response(response: Any) -> Any:
+    if not hasattr(response, "__aiter__"):
+        _check_response(response)
+        if _field(response, "is_last") is False:
+            raise RuntimeError("Model returned an incomplete response")
+        return response
+
+    terminal = None
+    try:
+        async for chunk in response:
+            _check_response(chunk)
+            if _field(chunk, "is_last") is True:
+                # The current host protocol guarantees complete content here.
+                # Do not concatenate either incremental or cumulative previews.
+                terminal = chunk
+                # Exhaust the SDK wrapper so its underlying transport reaches
+                # its cleanup block, including after an explicit final chunk.
+    finally:
+        close = getattr(response, "aclose", None)
+        if close is not None:
+            await close()
+    if terminal is None:
+        raise RuntimeError("Model stream ended without a complete response")
+    return terminal
+
+
 def _extract_text(response: Any) -> str:
     """Extract text from an agentscope ``ChatResponse`` or similar."""
-    # ChatResponse has .text or .content
-    if hasattr(response, "text") and isinstance(response.text, str):
-        return response.text
-
-    # Try .content (could be a list of blocks or a string)
-    content = getattr(response, "content", None)
+    if isinstance(response, str):
+        return response
+    content = _field(response, "content")
     if isinstance(content, str):
         return content
-
     if isinstance(content, list):
-        parts: list[str] = []
-        for block in content:
-            text = getattr(block, "text", None)
-            if isinstance(text, str) and text:
-                parts.append(text)
-        if parts:
-            return "\n".join(parts)
-
-    # Msg object
-    if hasattr(response, "content"):
-        c = response.content
-        if isinstance(c, str):
-            return c
-        if isinstance(c, list):
-            parts = []
-            for block in c:
-                text = getattr(block, "text", None)
-                if isinstance(text, str) and text:
-                    parts.append(text)
-            if parts:
-                return "\n".join(parts)
-
-    # Last resort
-    return str(response) if response is not None else ""
+        return "".join(
+            text
+            for block in content
+            if _field(block, "type", "text") == "text"
+            and isinstance(text := _field(block, "text"), str)
+        )
+    text = _field(response, "text")
+    if isinstance(text, str):
+        return text
+    raise RuntimeError("Model returned an unsupported completion response")
 
 
 __all__ = ["LLMResponse", "LLMService"]
