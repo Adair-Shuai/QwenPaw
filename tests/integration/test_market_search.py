@@ -10,8 +10,11 @@ from __future__ import annotations
 
 import pytest
 from helpers import default_http_timeout
+from qwenpaw.market.providers.base import MARKET_SEARCH_TIMEOUT_S
 
-_MARKET_HTTP_TIMEOUT = default_http_timeout(15.0)
+# The service can spend the full provider budget before returning an error;
+# allow response serialization and local HTTP delivery after that deadline.
+_MARKET_HTTP_TIMEOUT = default_http_timeout(MARKET_SEARCH_TIMEOUT_S + 5.0)
 
 
 # ------------------------------------------------------------------ #

@@ -93,7 +93,8 @@
       "tests/unit/app/routers/test_plugins_router_lifecycle.py",
       "tests/unit/plugins/test_activity_retry_handoff.py",
       "tests/unit/plugins/test_channel_tracker_custody.py",
-      "tests/unit/plugins/test_sdk_channel_routing_contract.py"
+      "tests/unit/plugins/test_sdk_channel_routing_contract.py",
+      "tests/unit/market/test_search_deadline.py"
     ]
   },
   "required_cases": {
@@ -216,6 +217,11 @@
       "test_domain_failure_returns_adapter_error_and_traceback",
       "test_agent_failure_returns_original_error_in_both_paths",
       "test_hot_reload_delivers_change_and_logs_result"
+    ],
+    "tests/unit/market/test_search_deadline.py": [
+      "test_search_deadline_keeps_fast_results_and_reports_slow_source",
+      "test_search_deadline_retains_owner_until_cancelled_source_cleans_up",
+      "test_search_external_cancellation_propagates_and_releases_owner"
     ]
   }
 }

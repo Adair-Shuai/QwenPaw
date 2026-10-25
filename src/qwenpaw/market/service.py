@@ -9,6 +9,7 @@ import logging
 from typing import Any
 
 from .categories import resolve as resolve_category
+from .providers import base as provider_contract
 from .registry import market_registry
 from .schema import MarketResult, MarketSearchError, ProviderInfo
 
@@ -127,7 +128,22 @@ async def _search_provider(
         candidates["category"] = native_code
     kwargs = _supported_kwargs(provider.search, **candidates)
     try:
-        return await provider.search(effective_query, limit, page, **kwargs)
+        # Transport timeouts apply to each attempt. Bound retries and page
+        # walks by the search budget while retaining ownership through cleanup.
+        async with asyncio.timeout(provider_contract.MARKET_SEARCH_TIMEOUT_S):
+            return await provider.search(
+                effective_query,
+                limit,
+                page,
+                **kwargs,
+            )
+    except TimeoutError:
+        logger.warning(
+            "Market provider %s timed out for query=%r",
+            key,
+            query,
+        )
+        return MarketSearchError(provider=key, message="Search timed out")
     except Exception as exc:
         logger.warning(
             "Market provider %s failed for query=%r: %s",
