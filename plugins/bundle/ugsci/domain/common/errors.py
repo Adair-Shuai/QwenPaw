@@ -84,7 +84,12 @@ def wrap_unknown_error(exc: Exception) -> DomainError:
     retain full diagnostics, but the agent-facing error only carries the
     exception type name and message — never the full traceback.
     """
-    logger.warning("Wrapping unknown exception: %s: %s", type(exc).__name__, exc, exc_info=True)
+    logger.warning(
+        "Wrapping unknown exception: %s: %s",
+        type(exc).__name__,
+        exc,
+        exc_info=True,
+    )
     return DomainError(
         DomainErrorCode.CALCULATION_FAILED,
         message=f"Unexpected error: {type(exc).__name__}: {exc}",

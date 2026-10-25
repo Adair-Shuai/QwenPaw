@@ -14,9 +14,16 @@ from typing import Any
 
 
 class ChatMessage:
-    """Light wrapper around agentscope ``Msg`` with LeAgent-compatible factory API."""
+    """Light wrapper around agentscope ``Msg`` with LeAgent-compatible factory
+    API."""
 
-    def __init__(self, role: str, content: str, *, name: str | None = None) -> None:
+    def __init__(
+        self,
+        role: str,
+        content: str,
+        *,
+        name: str | None = None,
+    ) -> None:
         self.role = role
         self.content = content
         self.name = name or role

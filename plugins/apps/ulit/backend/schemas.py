@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 
 # ── Project schemas ─────────────────────────────────────────────────
 
+
 class ProjectCreate(BaseModel):
     name: str
     question: str = ""
@@ -24,6 +25,7 @@ class ProjectPatch(BaseModel):
 
 
 # ── Paper schemas ───────────────────────────────────────────────────
+
 
 class PaperPatch(BaseModel):
     title: Optional[str] = None
@@ -54,6 +56,7 @@ class BibliographyImport(BaseModel):
 
 # ── Annotation schemas ──────────────────────────────────────────────
 
+
 class AnnotationCreate(BaseModel):
     file_id: str
     page_index: int
@@ -73,6 +76,7 @@ class AnnotationPatch(BaseModel):
 
 
 # ── Note schemas ────────────────────────────────────────────────────
+
 
 class NoteCreate(BaseModel):
     project_id: Optional[str] = None
@@ -96,6 +100,7 @@ class NoteFromAnnotations(BaseModel):
 
 # ── Evidence schemas ────────────────────────────────────────────────
 
+
 class EvidenceCreate(BaseModel):
     project_id: str
     paper_id: Optional[str] = None
@@ -114,6 +119,7 @@ class EvidenceVerify(BaseModel):
 
 # ── Search schemas ──────────────────────────────────────────────────
 
+
 class SearchQuery(BaseModel):
     query: str
     project_id: Optional[str] = None
@@ -123,6 +129,7 @@ class SearchQuery(BaseModel):
 
 
 # ── AI schemas ──────────────────────────────────────────────────────
+
 
 class AISessionCreate(BaseModel):
     scope_type: str = "paper"  # paper | project
@@ -139,6 +146,7 @@ class AIQuestion(BaseModel):
 
 # ── Job schemas ─────────────────────────────────────────────────────
 
+
 class JobResponse(BaseModel):
     id: str
     type: str
@@ -152,6 +160,7 @@ class JobResponse(BaseModel):
 
 
 # ── Export schemas ──────────────────────────────────────────────────
+
 
 class ExportRequest(BaseModel):
     project_id: Optional[str] = None

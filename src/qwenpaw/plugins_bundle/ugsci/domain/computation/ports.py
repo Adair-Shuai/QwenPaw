@@ -38,7 +38,8 @@ class ComputationAdapter(Protocol):
     operation: str
     deterministic: bool
 
-    def compute(self, request: Any) -> ComputationOutput | dict[str, Any]: ...
+    def compute(self, request: Any) -> ComputationOutput | dict[str, Any]:
+        ...
 
 
 Request = (

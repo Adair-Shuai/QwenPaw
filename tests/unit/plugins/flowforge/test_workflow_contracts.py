@@ -43,7 +43,8 @@ def test_compat_node_runner_reports_unknown_node_with_stable_error() -> None:
 
     runner = NodeRunner(registry=NodeRegistry())
     with pytest.raises(
-        NodeExecutionError, match="node-1: unknown node"
+        NodeExecutionError,
+        match="node-1: unknown node",
     ) as exc:
         asyncio.run(
             runner.run(

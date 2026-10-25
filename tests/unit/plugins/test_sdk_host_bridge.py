@@ -1284,7 +1284,9 @@ plugin = Plugin()
                 from urllib.request import url2pathname
 
                 assert (
-                    Path(url2pathname(urlparse(attachment.url).path)).read_bytes()
+                    Path(
+                        url2pathname(urlparse(attachment.url).path),
+                    ).read_bytes()
                     == b"version-two"
                 )
             assert (

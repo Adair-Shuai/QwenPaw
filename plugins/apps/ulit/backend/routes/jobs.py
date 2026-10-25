@@ -21,7 +21,12 @@ async def list_jobs(
     paper_id: str | None = None,
     limit: int = 50,
 ) -> dict:
-    jobs = await asyncio.to_thread(repo.list_jobs, state=state, paper_id=paper_id, limit=limit)
+    jobs = await asyncio.to_thread(
+        repo.list_jobs,
+        state=state,
+        paper_id=paper_id,
+        limit=limit,
+    )
     return {"jobs": jobs}
 
 

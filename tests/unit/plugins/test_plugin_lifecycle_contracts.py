@@ -254,7 +254,8 @@ def _patch_agent_tools(monkeypatch):
         _save,
     )
     monkeypatch.setattr(
-        "qwenpaw.plugins.api._agent_ids_for_tool_write", lambda: list(boxes)
+        "qwenpaw.plugins.api._agent_ids_for_tool_write",
+        lambda: list(boxes),
     )
     return boxes
 

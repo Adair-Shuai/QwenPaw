@@ -135,12 +135,13 @@ def _plugin(root: Path, name: str, requirements: str = ""):
                 "id": name,
                 "version": "1.0",
                 "entry": {"backend": "main.py"},
-            }
+            },
         ),
         encoding="utf-8",
     )
     (folder / "main.py").write_text(
-        "class Plugin:\n    def register(self, api): pass\nplugin = Plugin()\n",
+        "class Plugin:\n    def register(self, api): pass\n"
+        "plugin = Plugin()\n",
         encoding="utf-8",
     )
     _write_requirements(folder, requirements.splitlines())
@@ -149,7 +150,9 @@ def _plugin(root: Path, name: str, requirements: str = ""):
 
 @pytest.mark.asyncio
 async def test_boot_checks_missing_dependencies_without_running_installer(
-    tmp_path, monkeypatch, fresh_registry
+    tmp_path,
+    monkeypatch,
+    fresh_registry,
 ):
     _plugin(tmp_path, "missing", "qwenpaw-startup-probe-nonexistent==1.0")
     _plugin(tmp_path, "ready")
@@ -164,14 +167,16 @@ async def test_boot_checks_missing_dependencies_without_running_installer(
     assert records["missing"].status == "failed"
     assert records["ready"].status == "registered"
     assert "qwenpaw-startup-probe-nonexistent" in " ".join(
-        records["missing"].diagnostics
+        records["missing"].diagnostics,
     )
     await loader.unload_plugin("ready")
 
 
 @pytest.mark.asyncio
 async def test_registered_plugins_are_not_rechecked_on_second_boot_phase(
-    tmp_path, monkeypatch, fresh_registry
+    tmp_path,
+    monkeypatch,
+    fresh_registry,
 ):
     _plugin(tmp_path, "ready", "# no mandatory dependencies")
     loader = PluginLoader([tmp_path])
@@ -192,7 +197,9 @@ async def test_registered_plugins_are_not_rechecked_on_second_boot_phase(
 
 @pytest.mark.asyncio
 async def test_missing_boot_dependency_can_be_repaired_explicitly(
-    tmp_path, monkeypatch, fresh_registry
+    tmp_path,
+    monkeypatch,
+    fresh_registry,
 ):
     name = "qwenpaw-startup-repair-probe"
     _plugin(tmp_path, "repair", name + "==1.0")

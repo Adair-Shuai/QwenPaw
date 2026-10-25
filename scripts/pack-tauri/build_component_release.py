@@ -409,7 +409,7 @@ def build_release(
             # Existence/ZIP validation alone cannot catch structural changes
             # that the installer cannot apply (e.g. directory -> file).
             with tempfile.TemporaryDirectory(
-                prefix="component-verify-"
+                prefix="component-verify-",
             ) as temp:
                 apply_delta(
                     base_source,
@@ -454,7 +454,7 @@ def build_release(
         "product": product,
         "protocol_version": protocol_version,
         "host_fingerprint": host_fingerprint(
-            Path(__file__).resolve().parents[2]
+            Path(__file__).resolve().parents[2],
         ),
         "channel": channel,
         "target": target,
@@ -546,20 +546,20 @@ def main() -> int:
     compatibility = json.loads(
         Path(__file__)
         .with_name("component_compatibility.json")
-        .read_text(encoding="utf-8")
+        .read_text(encoding="utf-8"),
     )
     minimum = args.core_min_version or compatibility["core_min_version"]
     from packaging.version import Version
 
     if Version(minimum) < Version(compatibility["core_min_version"]):
         raise SystemExit(
-            "minimum core version predates the component protocol bridge"
+            "minimum core version predates the component protocol bridge",
         )
     if args.release_version and Version(args.release_version) < Version(
-        minimum
+        minimum,
     ):
         raise SystemExit(
-            "release version must include the component protocol bridge"
+            "release version must include the component protocol bridge",
         )
     if not args.private_key:
         raise SystemExit(

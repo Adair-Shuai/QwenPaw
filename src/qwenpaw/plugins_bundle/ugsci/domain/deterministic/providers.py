@@ -23,7 +23,10 @@ class ProviderSpec:
     version: str = "1.0.0"
 
     def available(self) -> bool:
-        return not self.dependency_package or importlib.util.find_spec(self.dependency_package) is not None
+        return (
+            not self.dependency_package
+            or importlib.util.find_spec(self.dependency_package) is not None
+        )
 
 
 @dataclass(frozen=True)
@@ -46,7 +49,9 @@ class CapabilityProviderRegistry:
     def register(self, spec: ProviderSpec) -> None:
         providers = self._providers.setdefault(spec.capability_id, [])
         if any(item.provider_id == spec.provider_id for item in providers):
-            raise ValueError(f"Duplicate provider: {spec.capability_id}/{spec.provider_id}")
+            raise ValueError(
+                f"Duplicate provider: {spec.capability_id}/{spec.provider_id}",
+            )
         providers.append(spec)
         providers.sort(key=lambda item: item.priority)
 
@@ -56,7 +61,12 @@ class CapabilityProviderRegistry:
             raise ValueError(f"Duplicate support library: {spec.package}")
         self._support_libraries[spec.package] = spec
 
-    def resolve(self, capability_id: str, *, execution_class: ExecutionClass = "deterministic") -> Any:
+    def resolve(
+        self,
+        capability_id: str,
+        *,
+        execution_class: ExecutionClass = "deterministic",
+    ) -> Any:
         candidates = [
             item
             for item in self._providers.get(capability_id, [])
@@ -65,10 +75,28 @@ class CapabilityProviderRegistry:
         if not candidates:
             known = self._providers.get(capability_id, [])
             if not known:
-                raise DomainError(DomainErrorCode.UNSUPPORTED_OPERATION, f"No provider registered for {capability_id}")
-            dependency = next((item.dependency_package for item in known if item.dependency_package), None)
-            code = DomainErrorCode.DEPENDENCY_UNAVAILABLE if dependency else DomainErrorCode.ENGINE_UNAVAILABLE
-            raise DomainError(code, f"No available provider for {capability_id}", details={"dependency": dependency or ""})
+                raise DomainError(
+                    DomainErrorCode.UNSUPPORTED_OPERATION,
+                    f"No provider registered for {capability_id}",
+                )
+            dependency = next(
+                (
+                    item.dependency_package
+                    for item in known
+                    if item.dependency_package
+                ),
+                None,
+            )
+            code = (
+                DomainErrorCode.DEPENDENCY_UNAVAILABLE
+                if dependency
+                else DomainErrorCode.ENGINE_UNAVAILABLE
+            )
+            raise DomainError(
+                code,
+                f"No available provider for {capability_id}",
+                details={"dependency": dependency or ""},
+            )
         provider = candidates[0]
         adapter = provider.factory()
         if (
@@ -106,7 +134,10 @@ class CapabilityProviderRegistry:
                 "optional": spec.optional,
                 "available": spec.available(),
             }
-            for spec in sorted(self._support_libraries.values(), key=lambda item: item.package)
+            for spec in sorted(
+                self._support_libraries.values(),
+                key=lambda item: item.package,
+            )
         ]
 
 
@@ -133,29 +164,150 @@ def build_default_registry() -> CapabilityProviderRegistry:
 
     registry = CapabilityProviderRegistry()
     registrations = (
-        ("units.convert", "ugsci-unit-system", UnitConversionAdapter, None, "1.1.0"),
-        ("reservoir.volumetrics.oil_in_place", "ugsci-petroleum-core", VolumetricOilInPlaceAdapter, None, "1.1.0"),
-        ("reservoir.material_balance.oil", "ugsci-petroleum-core", OilMaterialBalanceAdapter, None, "1.1.0"),
-        ("reservoir.material_balance.gas_pz", "ugsci-petroleum-core", GasMaterialBalanceAdapter, None, "1.1.0"),
-        ("fluid.pvt.standing_black_oil", "ugsci-petroleum-core", StandingBlackOilAdapter, None, "1.1.0"),
-        ("production.ipr.vogel", "ugsci-petroleum-core", VogelIPRAdapter, None, "1.1.0"),
-        ("production.nodal_analysis", "ugsci-petroleum-core", NodalAnalysisAdapter, None, "1.1.0"),
-        ("validation.conservation_check", "ugsci-petroleum-core", ConservationCheckAdapter, None, "1.1.0"),
-        ("math.symbolic", "ugsci-symbolic-sympy", SymPyAdapter, "sympy", "1.0.0"),
-        ("simulation.queue.deterministic", "ugsci-queue-simpy", SimPyAdapter, "simpy", "1.0.0"),
-        ("graph.network.analyze", "ugsci-graph-networkx", NetworkXAdapter, "networkx", "1.0.0"),
-        ("geospatial.points.analyze", "ugsci-geospatial-geopandas", GeoPandasAdapter, "geopandas", "1.0.0"),
-        ("machine_learning.linear_regression", "ugsci-ml-scikit-learn", ScikitLearnAdapter, "sklearn", "1.0.0"),
-        ("statistics.ols_regression", "ugsci-statistics-statsmodels", StatsmodelsAdapter, "statsmodels", "1.0.0"),
+        (
+            "units.convert",
+            "ugsci-unit-system",
+            UnitConversionAdapter,
+            None,
+            "1.1.0",
+        ),
+        (
+            "reservoir.volumetrics.oil_in_place",
+            "ugsci-petroleum-core",
+            VolumetricOilInPlaceAdapter,
+            None,
+            "1.1.0",
+        ),
+        (
+            "reservoir.material_balance.oil",
+            "ugsci-petroleum-core",
+            OilMaterialBalanceAdapter,
+            None,
+            "1.1.0",
+        ),
+        (
+            "reservoir.material_balance.gas_pz",
+            "ugsci-petroleum-core",
+            GasMaterialBalanceAdapter,
+            None,
+            "1.1.0",
+        ),
+        (
+            "fluid.pvt.standing_black_oil",
+            "ugsci-petroleum-core",
+            StandingBlackOilAdapter,
+            None,
+            "1.1.0",
+        ),
+        (
+            "production.ipr.vogel",
+            "ugsci-petroleum-core",
+            VogelIPRAdapter,
+            None,
+            "1.1.0",
+        ),
+        (
+            "production.nodal_analysis",
+            "ugsci-petroleum-core",
+            NodalAnalysisAdapter,
+            None,
+            "1.1.0",
+        ),
+        (
+            "validation.conservation_check",
+            "ugsci-petroleum-core",
+            ConservationCheckAdapter,
+            None,
+            "1.1.0",
+        ),
+        (
+            "math.symbolic",
+            "ugsci-symbolic-sympy",
+            SymPyAdapter,
+            "sympy",
+            "1.0.0",
+        ),
+        (
+            "simulation.queue.deterministic",
+            "ugsci-queue-simpy",
+            SimPyAdapter,
+            "simpy",
+            "1.0.0",
+        ),
+        (
+            "graph.network.analyze",
+            "ugsci-graph-networkx",
+            NetworkXAdapter,
+            "networkx",
+            "1.0.0",
+        ),
+        (
+            "geospatial.points.analyze",
+            "ugsci-geospatial-geopandas",
+            GeoPandasAdapter,
+            "geopandas",
+            "1.0.0",
+        ),
+        (
+            "machine_learning.linear_regression",
+            "ugsci-ml-scikit-learn",
+            ScikitLearnAdapter,
+            "sklearn",
+            "1.0.0",
+        ),
+        (
+            "statistics.ols_regression",
+            "ugsci-statistics-statsmodels",
+            StatsmodelsAdapter,
+            "statsmodels",
+            "1.0.0",
+        ),
     )
     for capability, provider_id, factory, dependency, version in registrations:
-        registry.register(ProviderSpec(capability, provider_id, factory, dependency_package=dependency, version=version))
-    registry.register(ProviderSpec("statistics.bayesian.normal_mean", "ugsci-bayesian-pymc", PyMCAdapter, execution_class="stochastic", dependency_package="pymc", version="1.0.0"))
-    registry.register(ProviderSpec("optimization.quadratic.pareto", "ugsci-optimization-pymoo", PymooAdapter, execution_class="stochastic", dependency_package="pymoo", version="1.0.0"))
-    registry.register_support_library(SupportLibrarySpec("pytoolbox", "Optional general-purpose helpers and compatibility utilities for UGSci Providers"))
+        registry.register(
+            ProviderSpec(
+                capability,
+                provider_id,
+                factory,
+                dependency_package=dependency,
+                version=version,
+            ),
+        )
+    registry.register(
+        ProviderSpec(
+            "statistics.bayesian.normal_mean",
+            "ugsci-bayesian-pymc",
+            PyMCAdapter,
+            execution_class="stochastic",
+            dependency_package="pymc",
+            version="1.0.0",
+        ),
+    )
+    registry.register(
+        ProviderSpec(
+            "optimization.quadratic.pareto",
+            "ugsci-optimization-pymoo",
+            PymooAdapter,
+            execution_class="stochastic",
+            dependency_package="pymoo",
+            version="1.0.0",
+        ),
+    )
+    registry.register_support_library(
+        SupportLibrarySpec(
+            "pytoolbox",
+            "Optional general-purpose helpers and "
+            "compatibility utilities for UGSci Providers",
+        ),
+    )
     return registry
 
 
 default_registry = build_default_registry()
 
-__all__ = ["CapabilityProviderRegistry", "ProviderSpec", "SupportLibrarySpec", "default_registry"]
+__all__ = [
+    "CapabilityProviderRegistry",
+    "ProviderSpec",
+    "SupportLibrarySpec",
+    "default_registry",
+]

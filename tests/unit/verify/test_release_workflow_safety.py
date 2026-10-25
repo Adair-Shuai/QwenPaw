@@ -18,16 +18,29 @@ def test_release_builds_run_center_and_docker_runtime_dependencies() -> None:
     release = _workflow("release.yml")
     resumable = _workflow("release-resume.yml")
     standalone = _workflow("plugins-release.yml")
-    dockerfile = (REPO_ROOT / "deploy" / "Dockerfile").read_text(encoding="utf-8")
+    dockerfile = (REPO_ROOT / "deploy" / "Dockerfile").read_text(
+        encoding="utf-8",
+    )
 
     for workflow in (release, resumable, standalone):
-        assert "npm --prefix plugins/bundle/qwenpaw-run-center/ui ci" in workflow
-        assert "npm --prefix plugins/bundle/qwenpaw-run-center/ui run build" in workflow
-        assert workflow.index("Build Run Center frontend") < workflow.index(
-            "Pack plugins and build index"
+        assert (
+            "npm --prefix plugins/bundle/qwenpaw-run-center/ui ci" in workflow
         )
-    assert "COPY scripts/pack-tauri/runtime_staging.py /tmp/runtime_staging.py" in dockerfile
-    assert "COPY scripts/pack-tauri/copy_windows_tree.py /tmp/copy_windows_tree.py" in dockerfile
+        assert (
+            "npm --prefix plugins/bundle/qwenpaw-run-center/ui run build"
+            in workflow
+        )
+        assert workflow.index("Build Run Center frontend") < workflow.index(
+            "Pack plugins and build index",
+        )
+    assert (
+        "COPY scripts/pack-tauri/runtime_staging.py /tmp/runtime_staging.py"
+        in dockerfile
+    )
+    assert (
+        "COPY scripts/pack-tauri/copy_windows_tree.py "
+        "/tmp/copy_windows_tree.py" in dockerfile
+    )
     assert (
         "rm /tmp/stage_python_runtime.py /tmp/runtime_staging.py "
         "/tmp/copy_windows_tree.py"
@@ -43,7 +56,8 @@ def test_resumable_release_publish_waits_for_full_test_gate() -> None:
         ("publish-components", "full-test-gate"),
     ):
         block = release.split(f"  {job}:\n", 1)[1].split(
-            f"  {following}:\n", 1
+            f"  {following}:\n",
+            1,
         )[0]
         assert "cleanup-draft-immutable-artifacts, full-test-gate]" in block
         assert "needs.full-test-gate.result == 'success'" in block
@@ -61,15 +75,17 @@ def test_distribution_builds_embed_run_center_frontend() -> None:
         assert text.index("Build bundled Run Center frontend") < text.index(
             "python -m build"
             if workflow != "release-verify.yml"
-            else "Run install script"
+            else "Run install script",
         )
         assert "python scripts/sync_run_center_bundle.py --sync" in text
         assert (
-            "test -s src/qwenpaw/plugins_bundle/qwenpaw-run-center/ui/dist/index.js"
-            in text
+            "test -s src/qwenpaw/plugins_bundle/"
+            "qwenpaw-run-center/ui/dist/index.js" in text
         )
 
-    dockerfile = (REPO_ROOT / "deploy" / "Dockerfile").read_text(encoding="utf-8")
+    dockerfile = (REPO_ROOT / "deploy" / "Dockerfile").read_text(
+        encoding="utf-8",
+    )
     assert "npm --prefix /app/run-center-ui run build" in dockerfile
     assert (
         "COPY --from=console-builder /app/run-center-ui/dist/ "
@@ -83,7 +99,8 @@ def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
 
     assert 'source_path="$(jq -r .path' in release
     assert (
-        'if [ "$source_path" != ".github/workflows/release-resume.yml" ]' in release
+        'if [ "$source_path" != ".github/workflows/release-resume.yml" ]'
+        in release
     )
     assert 'if [ "$source_sha" != "$sha" ]' in release
     assert "validate_artifact_reuse_diff" in release

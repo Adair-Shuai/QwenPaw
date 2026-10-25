@@ -35,7 +35,11 @@ from .backend.store import (
     reset_demo,
     update_project,
 )
-from .backend.ai import generate_agenda, generate_minutes_items, generate_weekly
+from .backend.ai import (
+    generate_agenda,
+    generate_minutes_items,
+    generate_weekly,
+)
 
 app = PawApp(name="UProject", app_id="uproject")
 router = APIRouter()
@@ -138,13 +142,19 @@ async def api_list_projects(ctx=Depends(get_ctx)) -> Dict[str, Any]:
 
 
 @router.post("/projects")
-async def api_create_project(body: ProjectCreate, ctx=Depends(get_ctx)) -> Dict[str, Any]:
+async def api_create_project(
+    body: ProjectCreate,
+    ctx=Depends(get_ctx),
+) -> Dict[str, Any]:
     project = await create_project(ctx, body.model_dump())
     return {"project": project}
 
 
 @router.get("/projects/{project_id}")
-async def api_get_project(project_id: str, ctx=Depends(get_ctx)) -> Dict[str, Any]:
+async def api_get_project(
+    project_id: str,
+    ctx=Depends(get_ctx),
+) -> Dict[str, Any]:
     bundle = await get_project_bundle(ctx, project_id)
     if bundle is None:
         raise HTTPException(status_code=404, detail="project not found")
@@ -168,7 +178,10 @@ async def api_update_project(
 
 
 @router.delete("/projects/{project_id}")
-async def api_delete_project(project_id: str, ctx=Depends(get_ctx)) -> Dict[str, Any]:
+async def api_delete_project(
+    project_id: str,
+    ctx=Depends(get_ctx),
+) -> Dict[str, Any]:
     if not await delete_project(ctx, project_id):
         raise HTTPException(status_code=404, detail="project not found")
     return {"ok": True}
@@ -216,7 +229,10 @@ async def api_patch_milestone(
 
 
 @router.delete("/milestones/{milestone_id}")
-async def api_delete_milestone(milestone_id: str, ctx=Depends(get_ctx)) -> Dict[str, Any]:
+async def api_delete_milestone(
+    milestone_id: str,
+    ctx=Depends(get_ctx),
+) -> Dict[str, Any]:
     if not await delete_child(ctx, "milestones", milestone_id):
         raise HTTPException(status_code=404, detail="milestone not found")
     return {"ok": True}
@@ -272,7 +288,10 @@ async def api_patch_item(
 
 
 @router.delete("/items/{item_id}")
-async def api_delete_item(item_id: str, ctx=Depends(get_ctx)) -> Dict[str, Any]:
+async def api_delete_item(
+    item_id: str,
+    ctx=Depends(get_ctx),
+) -> Dict[str, Any]:
     if not await delete_child(ctx, "items", item_id):
         raise HTTPException(status_code=404, detail="item not found")
     return {"ok": True}
@@ -320,7 +339,10 @@ async def api_patch_meeting(
 
 
 @router.delete("/meetings/{meeting_id}")
-async def api_delete_meeting(meeting_id: str, ctx=Depends(get_ctx)) -> Dict[str, Any]:
+async def api_delete_meeting(
+    meeting_id: str,
+    ctx=Depends(get_ctx),
+) -> Dict[str, Any]:
     if not await delete_child(ctx, "meetings", meeting_id):
         raise HTTPException(status_code=404, detail="meeting not found")
     return {"ok": True}
@@ -334,19 +356,35 @@ async def _require_bundle(ctx: Any, project_id: str) -> Dict[str, Any]:
 
 
 @router.post("/projects/{project_id}/ai/agenda")
-async def api_ai_agenda(project_id: str, ctx=Depends(get_ctx)) -> Dict[str, Any]:
+async def api_ai_agenda(
+    project_id: str,
+    ctx=Depends(get_ctx),
+) -> Dict[str, Any]:
     bundle = await _require_bundle(ctx, project_id)
     content, source = await generate_agenda(ctx, bundle)
     brief = await add_brief(ctx, project_id, "agenda", content, source)
-    return {"kind": "agenda", "content": content, "source": source, "brief": brief}
+    return {
+        "kind": "agenda",
+        "content": content,
+        "source": source,
+        "brief": brief,
+    }
 
 
 @router.post("/projects/{project_id}/ai/weekly")
-async def api_ai_weekly(project_id: str, ctx=Depends(get_ctx)) -> Dict[str, Any]:
+async def api_ai_weekly(
+    project_id: str,
+    ctx=Depends(get_ctx),
+) -> Dict[str, Any]:
     bundle = await _require_bundle(ctx, project_id)
     content, source = await generate_weekly(ctx, bundle)
     brief = await add_brief(ctx, project_id, "weekly", content, source)
-    return {"kind": "weekly", "content": content, "source": source, "brief": brief}
+    return {
+        "kind": "weekly",
+        "content": content,
+        "source": source,
+        "brief": brief,
+    }
 
 
 @router.post("/projects/{project_id}/ai/minutes")
@@ -364,7 +402,8 @@ async def api_ai_minutes(
             if row is not None:
                 created.append(row)
     content = "\n".join(
-        f"- [{item.get('status')}] {item.get('title')}" for item in (created or items)
+        f"- [{item.get('status')}] {item.get('title')}"
+        for item in (created or items)
     )
     brief = await add_brief(ctx, project_id, "minutes", content, source)
     return {

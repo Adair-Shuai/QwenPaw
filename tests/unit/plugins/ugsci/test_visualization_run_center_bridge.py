@@ -45,7 +45,7 @@ class _MemoryJobStore:
             return stream[-1]["sequence"], False
         sequence = len(stream) + 1
         stream.append(
-            {"sequence": sequence, "data": json.loads(json.dumps(event))}
+            {"sequence": sequence, "data": json.loads(json.dumps(event))},
         )
         return sequence, True
 
@@ -80,7 +80,10 @@ def test_import_job_can_be_rehydrated_after_restart(monkeypatch):
     monkeypatch.setattr(manager, "_job_store", lambda: store)
 
     original = manager.ImportJob(
-        job_id="import-2", name="grid", status="completed", progress=1.0
+        job_id="import-2",
+        name="grid",
+        status="completed",
+        progress=1.0,
     )
     original.add_event("completed", {"dataset_id": "dataset-1"})
 
@@ -135,7 +138,8 @@ def test_cancelled_import_does_not_emit_late_worker_events(monkeypatch):
 
 
 def test_manifest_commit_and_cancellation_are_serialized(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ):
     manager = _manager_module()
     package = manager.__package__.split(".backend", 1)[0]

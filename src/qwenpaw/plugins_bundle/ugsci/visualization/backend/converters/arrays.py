@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Shared binary loaders and histogram helpers for visualization post-processing."""
+"""Shared binary loaders and histogram helpers for visualization
+post-processing."""
 
 from __future__ import annotations
 
@@ -23,7 +24,10 @@ def load_u32(path: Path) -> list[int]:
     return list(struct.unpack(f"<{len(raw) // 4}I", raw))
 
 
-def compute_histogram(values: Sequence[float], bins: int = 24) -> dict[str, object]:
+def compute_histogram(
+    values: Sequence[float],
+    bins: int = 24,
+) -> dict[str, object]:
     finite = [float(value) for value in values if math.isfinite(float(value))]
     if not finite:
         raise ValueError("property contains no finite values")

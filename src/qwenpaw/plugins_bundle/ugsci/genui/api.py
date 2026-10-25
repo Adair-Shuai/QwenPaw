@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """HTTP API for the global UGSci GenUI feature switch."""
 
 from __future__ import annotations

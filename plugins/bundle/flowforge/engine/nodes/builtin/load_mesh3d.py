@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Builtin node: load a 3D mesh into a typed MediaRef (ComfyUI-style LoadMesh)."""
+"""Builtin node: load a 3D mesh into a typed MediaRef (ComfyUI-style
+LoadMesh)."""
 
 from __future__ import annotations
 
@@ -8,7 +9,15 @@ from pathlib import Path
 from typing import Any
 
 from ...adapter.tool_output import register_tool_artifact
-from ...io import IO, Hidden, HiddenHolder, MediaRef, NodeOutput, Schema, to_gen_ui_ui
+from ...io import (
+    IO,
+    Hidden,
+    HiddenHolder,
+    MediaRef,
+    NodeOutput,
+    Schema,
+    to_gen_ui_ui,
+)
 from ..base import WorkflowNode
 
 _MESH_MIMES = frozenset(
@@ -42,7 +51,8 @@ class LoadMesh3DNode(WorkflowNode):
             node_id=cls.NODE_ID,
             display_name="Load 3D mesh",
             category="builtin/media",
-            description="Load a GLB/GLTF/OBJ mesh into a typed MESH3D socket (MediaRef).",
+            description="Load a GLB/GLTF/OBJ mesh into a typed MESH3D"
+            " socket (MediaRef).",
             inputs=[
                 IO.File.Input(
                     id="file",
@@ -61,11 +71,19 @@ class LoadMesh3DNode(WorkflowNode):
             ],
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         raw = inputs.get("file")
         value = str(raw or "").strip()
         if not value:
-            return NodeOutput(values=(None, "", False), error="LoadMesh3D: missing 'file'")
+            return NodeOutput(
+                values=(None, "", False),
+                error="LoadMesh3D: missing 'file'",
+            )
 
         path = Path(value)
         if path.exists() and path.is_file():
@@ -85,7 +103,10 @@ class LoadMesh3DNode(WorkflowNode):
             )
             ref = MediaRef.from_artifact(attachment, kind="model3d", mime=mime)
             if ref is None:
-                return NodeOutput(values=(None, "", False), error="LoadMesh3D: failed to register file")
+                return NodeOutput(
+                    values=(None, "", False),
+                    error="LoadMesh3D: failed to register file",
+                )
         else:
             ref = MediaRef(kind="model3d", file_id=value)
 

@@ -24,9 +24,15 @@ def build_docs_router(plugin_dir: Path) -> APIRouter:
         try:
             candidate.relative_to(root)
         except ValueError as exc:
-            raise HTTPException(status_code=404, detail="Documentation file not found") from exc
+            raise HTTPException(
+                status_code=404,
+                detail="Documentation file not found",
+            ) from exc
         if not candidate.is_file():
-            raise HTTPException(status_code=404, detail="Documentation file not found")
+            raise HTTPException(
+                status_code=404,
+                detail="Documentation file not found",
+            )
         return candidate
 
     @router.get("/", include_in_schema=False)

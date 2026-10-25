@@ -170,7 +170,10 @@ _ALIASES = {
 
 def normalize_unit(unit: str) -> str:
     if not isinstance(unit, str) or not unit.strip():
-        raise DomainError(DomainErrorCode.INVALID_INPUT, "Unit must be a non-empty string")
+        raise DomainError(
+            DomainErrorCode.INVALID_INPUT,
+            "Unit must be a non-empty string",
+        )
     key = unit.strip().lower().replace(" ", "")
     return _ALIASES.get(key, key)
 
@@ -180,17 +183,29 @@ def convert(value: float, from_unit: str, to_unit: str) -> float:
     try:
         numeric = float(value)
     except (TypeError, ValueError) as exc:
-        raise DomainError(DomainErrorCode.INVALID_INPUT, "Unit conversion requires a numeric value") from exc
+        raise DomainError(
+            DomainErrorCode.INVALID_INPUT,
+            "Unit conversion requires a numeric value",
+        ) from exc
     if not math.isfinite(numeric):
-        raise DomainError(DomainErrorCode.INVALID_INPUT, "Unit conversion requires a finite value")
+        raise DomainError(
+            DomainErrorCode.INVALID_INPUT,
+            "Unit conversion requires a finite value",
+        )
     source = normalize_unit(from_unit)
     target = normalize_unit(to_unit)
     if source not in _UNITS or target not in _UNITS:
-        raise DomainError(DomainErrorCode.INVALID_INPUT, f"Unsupported unit conversion: {from_unit} -> {to_unit}")
+        raise DomainError(
+            DomainErrorCode.INVALID_INPUT,
+            f"Unsupported unit conversion: {from_unit} -> {to_unit}",
+        )
     source_dimension, source_factor = _UNITS[source]
     target_dimension, target_factor = _UNITS[target]
     if source_dimension != target_dimension:
-        raise DomainError(DomainErrorCode.INVALID_INPUT, f"Incompatible units: {from_unit} and {to_unit}")
+        raise DomainError(
+            DomainErrorCode.INVALID_INPUT,
+            f"Incompatible units: {from_unit} and {to_unit}",
+        )
     if source_dimension == "temperature":
         kelvin = {
             "k": numeric,
@@ -199,7 +214,10 @@ def convert(value: float, from_unit: str, to_unit: str) -> float:
             "r": numeric * 5.0 / 9.0,
         }[source]
         if kelvin < 0.0:
-            raise DomainError(DomainErrorCode.INVALID_INPUT, "Temperature cannot be below absolute zero")
+            raise DomainError(
+                DomainErrorCode.INVALID_INPUT,
+                "Temperature cannot be below absolute zero",
+            )
         result = {
             "k": kelvin,
             "c": kelvin - 273.15,
@@ -213,9 +231,15 @@ def convert(value: float, from_unit: str, to_unit: str) -> float:
 def require_unit(unit: str, dimension: str) -> str:
     normalized = normalize_unit(unit)
     if normalized not in _UNITS:
-        raise DomainError(DomainErrorCode.INVALID_INPUT, f"Expected a {dimension} unit, got {unit}")
+        raise DomainError(
+            DomainErrorCode.INVALID_INPUT,
+            f"Expected a {dimension} unit, got {unit}",
+        )
     physical_dimension = _UNITS[normalized][0]
     semantic_kinds = _GENERIC_KINDS.get(normalized, set())
     if physical_dimension != dimension and dimension not in semantic_kinds:
-        raise DomainError(DomainErrorCode.INVALID_INPUT, f"Expected a {dimension} unit, got {unit}")
+        raise DomainError(
+            DomainErrorCode.INVALID_INPUT,
+            f"Expected a {dimension} unit, got {unit}",
+        )
     return normalized

@@ -1463,10 +1463,13 @@ def test_oss_proxy_http_route_is_not_plugin_lookup(resource):
 
     app = FastAPI()
     app.include_router(plugins_module.router, prefix="/api")
-    fetch = AsyncMock(return_value=(b'{"items": []}', "application/json", "hit"))
+    fetch = AsyncMock(
+        return_value=(b'{"items": []}', "application/json", "hit"),
+    )
     with patch("qwenpaw.plugins.oss_cache.fetch_oss_resource", fetch):
         response = TestClient(app).get(
-            "/api/plugins/oss-proxy", params={"path": f"{resource}/manifest.json"}
+            "/api/plugins/oss-proxy",
+            params={"path": f"{resource}/manifest.json"},
         )
     assert response.status_code == 200
     assert response.json() == {"items": []}
@@ -1480,5 +1483,9 @@ def test_literal_plugin_get_routes_precede_catch_all():
         if "GET" not in getattr(route, "methods", ()) or "{" in route.path:
             continue
         scope = {"type": "http", "method": "GET", "path": route.path}
-        winner = next(r for r in plugins_module.router.routes if r.matches(scope)[0] == Match.FULL)
+        winner = next(
+            r
+            for r in plugins_module.router.routes
+            if r.matches(scope)[0] == Match.FULL
+        )
         assert winner is route, f"{route.path} shadowed by {winner.path}"

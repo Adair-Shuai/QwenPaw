@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Small, JSON-safe public contracts for the independent Run Center."""
 
 from __future__ import annotations
@@ -190,7 +191,9 @@ class Run:
         value = asdict(self)
         value["stages"] = [stage.to_dict() for stage in self.stages]
         value["artifacts"] = [ref.to_dict() for ref in self.artifacts]
-        value["provenance"] = self.provenance.to_dict() if self.provenance else None
+        value["provenance"] = (
+            self.provenance.to_dict() if self.provenance else None
+        )
         return {"contract_version": CONTRACT_VERSION, **value}
 
 

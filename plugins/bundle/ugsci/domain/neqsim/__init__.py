@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Stable UGSci interfaces for the built-in NeqSim Driver."""
 
 from .tools import (

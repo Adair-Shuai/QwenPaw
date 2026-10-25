@@ -16,7 +16,9 @@ def emit_tool_chunk(payload: dict[str, Any], *, error: bool = False) -> Any:
     body = payload
     if not error:
         try:
-            from qwenpaw.plugins_bundle.ugsci.genui.domain_cards import attach_genui
+            from qwenpaw.plugins_bundle.ugsci.genui.domain_cards import (
+                attach_genui,
+            )
 
             body = attach_genui(payload)
         except Exception:

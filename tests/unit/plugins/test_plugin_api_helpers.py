@@ -134,7 +134,9 @@ class TestWriteToolConfig:
         ), patch(
             "qwenpaw.config.utils.load_config",
             return_value=root_config,
-        ), patch("qwenpaw.config.config.mutate_agent_config") as mutate:
+        ), patch(
+            "qwenpaw.config.config.mutate_agent_config",
+        ) as mutate:
             plugins_api._write_tool_config(
                 "my_tool",
                 enabled=True,

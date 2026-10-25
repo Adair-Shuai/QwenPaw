@@ -120,12 +120,12 @@ class AnthropicModel(AnthropicChatModel):
                 "api_key"
             ] = self.credential.api_key.get_secret_value()
             if should_use_custom_http_client():
-                client_kwargs["http_client"] = (
-                    anthropic.DefaultAsyncHttpxClient(
-                        **build_httpx_proxy_kwargs(
-                            self.credential.base_url,
-                        ),
-                    )
+                client_kwargs[
+                    "http_client"
+                ] = anthropic.DefaultAsyncHttpxClient(
+                    **build_httpx_proxy_kwargs(
+                        self.credential.base_url,
+                    ),
                 )
 
         self._qp_cached_client = anthropic.AsyncAnthropic(

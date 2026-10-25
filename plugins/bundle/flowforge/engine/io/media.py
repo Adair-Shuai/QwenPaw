@@ -18,7 +18,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 MediaKind = Literal["image", "video", "model3d", "audio", "vfx"]
 
@@ -99,7 +99,7 @@ class MediaRef:
             return None
         kind = str(raw.get("kind") or "image")
         return cls(
-            kind=kind if kind in KIND_TO_IO_TYPE else "image",  # type: ignore[arg-type]
+            kind=cast(MediaKind, kind if kind in KIND_TO_IO_TYPE else "image"),
             file_id=raw.get("file_id"),
             preview_url=raw.get("preview_url") or raw.get("src"),
             download_url=raw.get("download_url"),
@@ -119,11 +119,14 @@ class MediaRef:
         mime: str = "",
         meta: dict[str, Any] | None = None,
     ) -> "MediaRef | None":
-        """Build a MediaRef from a ``register_tool_artifact`` attachment dict."""
+        """Build a MediaRef from a ``register_tool_artifact`` attachment
+        dict."""
         if not isinstance(attachment, dict):
             return None
         file_id = str(attachment.get("id") or "") or None
-        preview = attachment.get("preview_url") or attachment.get("preview_path")
+        preview = attachment.get("preview_url") or attachment.get(
+            "preview_path",
+        )
         if not preview and file_id:
             preview = f"/api/v1/files/{file_id}/preview"
         return cls(
@@ -132,7 +135,9 @@ class MediaRef:
             preview_url=preview,
             download_url=attachment.get("download_url"),
             mime=mime or str(attachment.get("content_type") or ""),
-            filename=str(attachment.get("filename") or attachment.get("name") or ""),
+            filename=str(
+                attachment.get("filename") or attachment.get("name") or "",
+            ),
             meta=dict(meta or {}),
         )
 
@@ -179,8 +184,11 @@ def _validate_gen_ui_tree(tree: dict[str, Any]) -> dict[str, Any]:
 
 
 def _flowforge_ui_id(*parts: str | None) -> str:
-    """Build a UGSci ``ui_id`` (``ui_`` + 4–80 safe chars) unique per payload."""
-    raw = "_".join(str(part or "").strip() for part in parts if str(part or "").strip())
+    """Build a UGSci ``ui_id`` (``ui_`` + 4–80 safe chars) unique per
+    payload."""
+    raw = "_".join(
+        str(part or "").strip() for part in parts if str(part or "").strip()
+    )
     digest = hashlib.sha1(raw.encode("utf-8")).hexdigest()[:10]
     head = re.sub(r"[^a-zA-Z0-9]+", "_", raw.lower()).strip("_")[:48]
     body = f"ff_{head}_{digest}" if head else f"ff_{digest}"
@@ -196,35 +204,62 @@ def publish_gen_ui(tree: dict[str, Any], *, ui_id: str = "") -> dict[str, Any]:
     normalized = _validate_gen_ui_tree(tree)
     ui: dict[str, Any] = {"gen_ui": normalized}
     try:
-        from qwenpaw.plugins_bundle.ugsci.genui.emit_core import get_session_id, store_validated_tree
+        from qwenpaw.plugins_bundle.ugsci.genui.emit_core import (
+            get_session_id,
+            store_validated_tree,
+        )
 
         if get_session_id():
-            envelope = store_validated_tree(normalized, ui_id=ui_id or _flowforge_ui_id("asset"))
+            envelope = store_validated_tree(
+                normalized,
+                ui_id=ui_id or _flowforge_ui_id("asset"),
+            )
             ui["genui"] = envelope
     except Exception:
         pass
     return ui
 
 
-def to_gen_ui_tree(refs: list[MediaRef], *, title: str | None = None) -> dict[str, Any]:
+def to_gen_ui_tree(
+    refs: list[MediaRef],
+    *,
+    title: str | None = None,
+) -> dict[str, Any]:
     """Wrap one or more MediaRefs into a UGSci-validated GenUI asset tree."""
     children = [r.gen_ui_node() for r in refs if r.src]
     root_children: list[dict[str, Any]] = []
     if title:
-        root_children.append({"kind": "SectionHeader", "props": {"title": title}})
+        root_children.append(
+            {"kind": "SectionHeader", "props": {"title": title}},
+        )
     if len(children) > 1:
-        root_children.append({"kind": "Grid", "props": {"columns": 2}, "children": children})
+        root_children.append(
+            {"kind": "Grid", "props": {"columns": 2}, "children": children},
+        )
     else:
         root_children.extend(children)
-    return _validate_gen_ui_tree({"schemaVersion": "1", "root": {"kind": "Stack", "children": root_children}})
+    return _validate_gen_ui_tree(
+        {
+            "schemaVersion": "1",
+            "root": {"kind": "Stack", "children": root_children},
+        },
+    )
 
 
-def to_gen_ui_ui(refs: list[MediaRef], *, title: str | None = None) -> dict[str, Any]:
-    """NodeOutput.ui payload: validated tree plus UGSci envelope when possible."""
+def to_gen_ui_ui(
+    refs: list[MediaRef],
+    *,
+    title: str | None = None,
+) -> dict[str, Any]:
+    """NodeOutput.ui payload: validated tree plus UGSci envelope when
+    possible."""
     extra = ""
     if refs:
         extra = str(refs[0].file_id or refs[0].src or "")
-    return publish_gen_ui(to_gen_ui_tree(refs, title=title), ui_id=_flowforge_ui_id(title, extra))
+    return publish_gen_ui(
+        to_gen_ui_tree(refs, title=title),
+        ui_id=_flowforge_ui_id(title, extra),
+    )
 
 
 def flowforge_gen_ui_id(*parts: str | None) -> str:

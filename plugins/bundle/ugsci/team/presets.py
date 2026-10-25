@@ -21,10 +21,7 @@ PRESET_UGSCI_TEAMS: list[dict] = [
         "emoji": "🛢️",
         "category": "油气勘探",
         "mode": "pipeline",
-        "description": (
-            "从测井解释到储量计算的完整储层评价流程，依次调用测井分析师、"
-            "地球物理专家和油藏工程师"
-        ),
+        "description": ("从测井解释到储量计算的完整储层评价流程，依次调用测井分析师、" "地球物理专家和油藏工程师"),
         "members": [
             {"name": "测井分析师", "role": "岩性识别与孔隙度计算", "emoji": "📡"},
             {"name": "地球物理专家", "role": "储层预测与含油气检测", "emoji": "🌍"},
@@ -52,10 +49,7 @@ PRESET_UGSCI_TEAMS: list[dict] = [
         "emoji": "⛏️",
         "category": "钻完井",
         "mode": "coordinator",
-        "description": (
-            "由钻井工程师主导，协调地球物理专家（地层预测）和采油工程师"
-            "（完井方案），完成钻井工程设计"
-        ),
+        "description": ("由钻井工程师主导，协调地球物理专家（地层预测）和采油工程师" "（完井方案），完成钻井工程设计"),
         "members": [
             {"name": "钻井工程师", "role": "井身结构与套管设计", "emoji": "⛏️"},
             {"name": "地球物理专家", "role": "地层压力预测", "emoji": "🌍"},
@@ -83,10 +77,7 @@ PRESET_UGSCI_TEAMS: list[dict] = [
         "emoji": "📋",
         "category": "油气开发",
         "mode": "roundtable",
-        "description": (
-            "油藏工程师、钻井工程师和采油工程师独立评估同一区块的开发方案，"
-            "对比不同视角后综合出最优方案"
-        ),
+        "description": ("油藏工程师、钻井工程师和采油工程师独立评估同一区块的开发方案，" "对比不同视角后综合出最优方案"),
         "members": [
             {"name": "油藏工程师", "role": "储量与开发方式评估", "emoji": "🛢️"},
             {"name": "钻井工程师", "role": "工程可行性评估", "emoji": "⛏️"},
@@ -114,10 +105,7 @@ PRESET_UGSCI_TEAMS: list[dict] = [
         "emoji": "🧪",
         "category": "流体性质",
         "mode": "pipeline",
-        "description": (
-            "PVT分析师进行流体物性计算，地球物理专家辅助相态验证，"
-            "油藏工程师完成开发方案适配"
-        ),
+        "description": ("PVT分析师进行流体物性计算，地球物理专家辅助相态验证，" "油藏工程师完成开发方案适配"),
         "members": [
             {"name": "PVT 分析师", "role": "PVT实验拟合与物性计算", "emoji": "🧪"},
             {"name": "地球物理专家", "role": "相态行为验证", "emoji": "🌍"},

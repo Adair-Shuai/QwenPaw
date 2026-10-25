@@ -52,13 +52,13 @@ def convert_regular_surface(
     cell_ids = list(range(len(indices) // 3))
 
     (bin_dir / f"{prefix}_positions.f32").write_bytes(
-        struct.pack(f"<{len(positions)}f", *positions)
+        struct.pack(f"<{len(positions)}f", *positions),
     )
     (bin_dir / f"{prefix}_indices.u32").write_bytes(
-        struct.pack(f"<{len(indices)}I", *indices)
+        struct.pack(f"<{len(indices)}I", *indices),
     )
     (bin_dir / f"{prefix}_cell_ids.u32").write_bytes(
-        struct.pack(f"<{len(cell_ids)}I", *cell_ids)
+        struct.pack(f"<{len(cell_ids)}I", *cell_ids),
     )
 
     return {

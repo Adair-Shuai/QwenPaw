@@ -91,17 +91,25 @@ class AvatarService:
         cached = self.cached_avatar_path(seed)
         failed = cached.with_suffix(".failed")
         now = time.time()
-        if cached.is_file() and now - cached.stat().st_mtime < AVATAR_CACHE_TTL_SECONDS:
+        if (
+            cached.is_file()
+            and now - cached.stat().st_mtime < AVATAR_CACHE_TTL_SECONDS
+        ):
             return cached
         with _seed_lock(seed):
             now = time.time()
-            if cached.is_file() and now - cached.stat().st_mtime < AVATAR_CACHE_TTL_SECONDS:
+            if (
+                cached.is_file()
+                and now - cached.stat().st_mtime < AVATAR_CACHE_TTL_SECONDS
+            ):
                 return cached
             if (
                 failed.is_file()
                 and now - failed.stat().st_mtime < AVATAR_FAILURE_TTL_SECONDS
             ):
-                return cached if cached.is_file() else self.default_avatar_path()
+                return (
+                    cached if cached.is_file() else self.default_avatar_path()
+                )
             try:
                 content = self.fetch_avatar_png_online(seed)
                 temporary = cached.with_suffix(f".{threading.get_ident()}.tmp")
@@ -256,8 +264,10 @@ class AvatarService:
         start = -math.pi / 2
         return [
             (
-                center_x + radius * math.cos(start + 2 * math.pi * index / count),
-                center_y + radius * math.sin(start + 2 * math.pi * index / count),
+                center_x
+                + radius * math.cos(start + 2 * math.pi * index / count),
+                center_y
+                + radius * math.sin(start + 2 * math.pi * index / count),
             )
             for index in range(count)
         ]
@@ -356,7 +366,9 @@ class AvatarService:
 
         @router.get("/team/{team_id}")
         def get_team_avatar(team_id: str) -> Response:
-            seeds = [seed.strip() for seed in team_id.split(",") if seed.strip()]
+            seeds = [
+                seed.strip() for seed in team_id.split(",") if seed.strip()
+            ]
             if not seeds:
                 raise HTTPException(
                     status_code=400,

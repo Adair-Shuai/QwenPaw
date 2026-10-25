@@ -95,7 +95,9 @@ class QwenPawLocalWorkspace(AgentScopeLocalWorkspace):
             # Empty means deny workspace tools, except the two explicitly
             # requested coordination tools added below.
             if not subagent_whitelist:
-                if not (request_context or {}).get("agent_coordination_requested"):
+                if not (request_context or {}).get(
+                    "agent_coordination_requested",
+                ):
                     return []
                 allowed = set()
             sa_set = set(subagent_whitelist)
@@ -112,7 +114,9 @@ class QwenPawLocalWorkspace(AgentScopeLocalWorkspace):
             denied -= self_authorizing
 
         allowed, denied = self._apply_coordination_tool_gates(
-            allowed, denied, request_context,
+            allowed,
+            denied,
+            request_context,
         )
 
         descs = self._tool_registry.filter(
@@ -142,12 +146,15 @@ class QwenPawLocalWorkspace(AgentScopeLocalWorkspace):
         request_context: dict[str, Any] | None,
     ) -> tuple[set[str] | None, set[str]]:
         """Allow inter-Agent tools for this explicit coordination request."""
-        if (request_context or {}).get("agent_coordination_requested") is not True:
+        if (request_context or {}).get(
+            "agent_coordination_requested",
+        ) is not True:
             return allowed, denied
         required = {"list_agents", "chat_with_agent"}
-        next_allowed = (set(allowed) | required) if allowed is not None else None
+        next_allowed = (
+            (set(allowed) | required) if allowed is not None else None
+        )
         return next_allowed, set(denied) - required
-
 
     def _resolve_config_gates(
         self,

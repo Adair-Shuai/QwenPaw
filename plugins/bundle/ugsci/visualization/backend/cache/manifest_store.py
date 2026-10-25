@@ -17,7 +17,9 @@ from typing import Any
 
 from .layout import CacheLayout
 
-logger = logging.getLogger("qwenpaw").getChild("plugin.oilgas_vis.cache.manifest")
+logger = logging.getLogger("qwenpaw").getChild(
+    "plugin.oilgas_vis.cache.manifest",
+)
 
 
 def _repair_legacy_dataset_names(manifest: dict[str, Any]) -> None:
@@ -49,7 +51,9 @@ class ManifestStore:
                     _repair_legacy_dataset_names(manifest)
                     return manifest
             except (json.JSONDecodeError, OSError):
-                logger.warning("Manifest unreadable or corrupted, starting fresh")
+                logger.warning(
+                    "Manifest unreadable or corrupted, starting fresh",
+                )
             return {"version": 1, "datasets": []}
 
     def upsert(self, dataset_info: dict[str, Any]) -> None:

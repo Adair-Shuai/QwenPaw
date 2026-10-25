@@ -103,7 +103,7 @@ def main() -> int:
     if args.sync:
         copied, removed = sync(source, destination)
         print(
-            f"[run-center-sync] copied {copied} file(s); removed {removed} obsolete file(s)"
+            f"[run-center-sync] copied {copied} file(s); removed {removed} obsolete file(s)",
         )
     drift = find_drift(source, destination)
     if drift:

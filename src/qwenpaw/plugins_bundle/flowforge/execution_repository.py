@@ -20,7 +20,12 @@ class ExecutionRepository:
         self.root.mkdir(parents=True, exist_ok=True)
         self._lock = threading.RLock()
 
-    def create(self, run_id: str, flow_id: str, **fields: Any) -> dict[str, Any]:
+    def create(
+        self,
+        run_id: str,
+        flow_id: str,
+        **fields: Any,
+    ) -> dict[str, Any]:
         record = {
             "run_id": run_id,
             "flow_id": flow_id,
@@ -67,7 +72,9 @@ class ExecutionRepository:
             state = event.get("state") or {}
             node_id = event.get("node_id")
             if node_id and state.get("status"):
-                record.setdefault("node_statuses", {})[node_id] = state["status"]
+                record.setdefault("node_statuses", {})[node_id] = state[
+                    "status"
+                ]
             self.save(record)
 
     def list(self) -> list[dict[str, Any]]:
@@ -77,10 +84,16 @@ class ExecutionRepository:
             if (record := self.get(path.stem)) is not None
         ]
         return sorted(
-            records, key=lambda item: item.get("started_at") or 0, reverse=True,
+            records,
+            key=lambda item: item.get("started_at") or 0,
+            reverse=True,
         )
 
-    def recover_incomplete(self, *, active_owner_pid: int | None = None) -> int:
+    def recover_incomplete(
+        self,
+        *,
+        active_owner_pid: int | None = None,
+    ) -> int:
         """Mark process-local runs left behind by a crash as failed."""
         recovered = 0
         for record in self.list():
@@ -97,7 +110,8 @@ class ExecutionRepository:
                 {
                     "status": "failed",
                     "finished_at": time.time(),
-                    "error": "FlowForge process stopped before the run completed",
+                    "error": "FlowForge process stopped before the run "
+                    "completed",
                     "errors": [
                         "FlowForge process stopped before the run completed",
                     ],
@@ -124,7 +138,9 @@ class ExecutionRepository:
                 temporary.unlink(missing_ok=True)
 
     def _path(self, run_id: str) -> Path:
-        safe = "".join(char if char.isalnum() or char in "-_." else "_" for char in run_id)
+        safe = "".join(
+            char if char.isalnum() or char in "-_." else "_" for char in run_id
+        )
         return self.root / f"{safe}.json"
 
 

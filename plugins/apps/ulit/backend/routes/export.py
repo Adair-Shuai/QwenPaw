@@ -51,17 +51,29 @@ async def export(body: ExportRequest) -> PlainTextResponse:
 
         buf = _io.StringIO()
         writer = _csv.writer(buf)
-        writer.writerow(["id", "paper_id", "claim", "quote", "kind", "verification_status", "page_index"])
+        writer.writerow(
+            [
+                "id",
+                "paper_id",
+                "claim",
+                "quote",
+                "kind",
+                "verification_status",
+                "page_index",
+            ],
+        )
         for e in evidence:
-            writer.writerow([
-                e.get("id", ""),
-                e.get("paper_id", ""),
-                e.get("claim", ""),
-                e.get("quote", ""),
-                e.get("kind", ""),
-                e.get("verification_status", ""),
-                str(e.get("page_index", "")),
-            ])
+            writer.writerow(
+                [
+                    e.get("id", ""),
+                    e.get("paper_id", ""),
+                    e.get("claim", ""),
+                    e.get("quote", ""),
+                    e.get("kind", ""),
+                    e.get("verification_status", ""),
+                    str(e.get("page_index", "")),
+                ],
+            )
         return PlainTextResponse(buf.getvalue(), media_type="text/csv")
     else:
         raise HTTPException(400, f"Unknown format: {fmt}")

@@ -238,7 +238,10 @@ def _resolve_registered_workspace(agent_id: str) -> Path | None:
     return Path(workspace_dir).expanduser().resolve()
 
 
-def _latest_team_state(workspace_dir: Path, agent_id: str) -> TeamStateResponse:
+def _latest_team_state(
+    workspace_dir: Path,
+    agent_id: str,
+) -> TeamStateResponse:
     """Read the newest workflow state under a trusted workspace root."""
     base = workspace_dir / ".qwenpaw" / "ugsci_teams"
     try:
@@ -310,18 +313,12 @@ def _latest_team_state(workspace_dir: Path, agent_id: str) -> TeamStateResponse:
 
         phase = data["current_phase"]
         workflow_status = data.get("workflow_status", WORKFLOW_ACTIVE)
-        active = (
-            workflow_status == WORKFLOW_ACTIVE
-            and phase != "completed"
-        )
+        active = workflow_status == WORKFLOW_ACTIVE and phase != "completed"
         if active:
             response_status = "active"
         elif workflow_status == WORKFLOW_TERMINATED:
             response_status = "terminated"
-        elif (
-            workflow_status == WORKFLOW_COMPLETED
-            or phase == "completed"
-        ):
+        elif workflow_status == WORKFLOW_COMPLETED or phase == "completed":
             response_status = "completed"
         else:
             response_status = "unreadable"
@@ -410,7 +407,8 @@ def build_team_router(
 
     @router.get("/custom", response_model=list[StoredCustomTeamResponse])
     def list_custom_team_defs() -> list[StoredCustomTeamResponse]:
-        """List complete custom team definitions (backend is source of truth)."""
+        """List complete custom team definitions (backend is source of
+        truth)."""
         return [_stored_team_response(team) for team in list_custom_teams()]
 
     @router.get("/custom/{team_id}", response_model=StoredCustomTeamResponse)
@@ -419,7 +417,10 @@ def build_team_router(
 
         team = load_custom_team(team_id)
         if team is None:
-            raise HTTPException(status_code=404, detail="Expert team not found")
+            raise HTTPException(
+                status_code=404,
+                detail="Expert team not found",
+            )
         return _stored_team_response(team)
 
     @router.put("/custom/{team_id}", response_model=CustomTeamResponse)
@@ -430,7 +431,10 @@ def build_team_router(
         from .custom_store import load_custom_team
 
         if load_custom_team(team_id) is None:
-            raise HTTPException(status_code=404, detail="Expert team not found")
+            raise HTTPException(
+                status_code=404,
+                detail="Expert team not found",
+            )
         team_def = req.model_dump(
             by_alias=True,
             exclude={"expected_updated_at", "expected_version"},
@@ -457,7 +461,10 @@ def build_team_router(
         except CustomTeamStoreError as exc:
             raise HTTPException(status_code=503, detail=str(exc)) from exc
         if not deleted:
-            raise HTTPException(status_code=404, detail="Expert team not found")
+            raise HTTPException(
+                status_code=404,
+                detail="Expert team not found",
+            )
 
     @router.get("/state", response_model=TeamStateResponse)
     def get_team_state(request: Request) -> TeamStateResponse:
@@ -481,10 +488,16 @@ def build_team_router(
         """List expert-team runs for the selected controller workspace."""
         agent_id = request.headers.get("X-Agent-Id", "").strip()
         if not agent_id:
-            raise HTTPException(status_code=400, detail="X-Agent-Id header is required")
+            raise HTTPException(
+                status_code=400,
+                detail="X-Agent-Id header is required",
+            )
         workspace_dir = resolve_workspace(agent_id)
         if workspace_dir is None:
-            raise HTTPException(status_code=404, detail="Agent workspace is not registered")
+            raise HTTPException(
+                status_code=404,
+                detail="Agent workspace is not registered",
+            )
         return _list_team_runs(workspace_dir)
 
     return router
@@ -571,7 +584,9 @@ def _list_team_runs(workspace_dir: Path) -> list[TeamRunSummary]:
             json.JSONDecodeError,
             TeamStateInvalidError,
         ):
-            runs.append(TeamRunSummary(instance_id=instance.name, status="unreadable"))
+            runs.append(
+                TeamRunSummary(instance_id=instance.name, status="unreadable"),
+            )
     return sorted(
         runs,
         key=lambda run: (run.created_at_ns, run.instance_id),

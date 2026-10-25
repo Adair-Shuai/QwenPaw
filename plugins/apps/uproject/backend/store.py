@@ -344,7 +344,10 @@ async def ensure_seeded(ctx: Any) -> Dict[str, Any]:
         return state
 
 
-def annotate_project(project: Dict[str, Any], state: Dict[str, Any]) -> Dict[str, Any]:
+def annotate_project(
+    project: Dict[str, Any],
+    state: Dict[str, Any],
+) -> Dict[str, Any]:
     pid = project.get("id")
     items = [i for i in state.get("items", []) if i.get("project_id") == pid]
     milestones = [
@@ -352,8 +355,12 @@ def annotate_project(project: Dict[str, Any], state: Dict[str, Any]) -> Dict[str
     ]
     out = dict(project)
     out["open_count"] = sum(1 for i in items if i.get("status") == "open")
-    out["proposed_count"] = sum(1 for i in items if i.get("status") == "proposed")
-    out["blocked_count"] = sum(1 for i in items if i.get("status") == "blocked")
+    out["proposed_count"] = sum(
+        1 for i in items if i.get("status") == "proposed"
+    )
+    out["blocked_count"] = sum(
+        1 for i in items if i.get("status") == "blocked"
+    )
     out["agreed_count"] = sum(1 for i in items if i.get("status") == "agreed")
     out["pending_milestones"] = sum(
         1 for m in milestones if m.get("status") != "done"
@@ -361,7 +368,10 @@ def annotate_project(project: Dict[str, Any], state: Dict[str, Any]) -> Dict[str
     return out
 
 
-def find_by_id(rows: List[Dict[str, Any]], item_id: str) -> Optional[Dict[str, Any]]:
+def find_by_id(
+    rows: List[Dict[str, Any]],
+    item_id: str,
+) -> Optional[Dict[str, Any]]:
     for row in rows:
         if row.get("id") == item_id:
             return row
@@ -375,7 +385,10 @@ async def list_projects(ctx: Any) -> List[Dict[str, Any]]:
     return projects
 
 
-async def get_project_bundle(ctx: Any, project_id: str) -> Optional[Dict[str, Any]]:
+async def get_project_bundle(
+    ctx: Any,
+    project_id: str,
+) -> Optional[Dict[str, Any]]:
     state = await ensure_seeded(ctx)
     project = find_by_id(state["projects"], project_id)
     if project is None:
@@ -385,11 +398,15 @@ async def get_project_bundle(ctx: Any, project_id: str) -> Optional[Dict[str, An
         "milestones": [
             m for m in state["milestones"] if m.get("project_id") == project_id
         ],
-        "items": [i for i in state["items"] if i.get("project_id") == project_id],
+        "items": [
+            i for i in state["items"] if i.get("project_id") == project_id
+        ],
         "meetings": [
             m for m in state["meetings"] if m.get("project_id") == project_id
         ],
-        "briefs": [b for b in state["briefs"] if b.get("project_id") == project_id],
+        "briefs": [
+            b for b in state["briefs"] if b.get("project_id") == project_id
+        ],
     }
 
 
@@ -477,7 +494,9 @@ async def delete_project(ctx: Any, project_id: str) -> bool:
             return False
         for key in ("milestones", "items", "meetings", "briefs"):
             state[key] = [
-                row for row in state[key] if row.get("project_id") != project_id
+                row
+                for row in state[key]
+                if row.get("project_id") != project_id
             ]
         await save_state(ctx, state)
         return True
