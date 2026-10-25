@@ -105,3 +105,51 @@ async def test_mutation_releases_invocation_before_host_task_finishes():
         host_finish.set()
         task.cancel()
         await asyncio.gather(task, return_exceptions=True)
+
+
+async def test_mutation_observes_release_during_waiter_teardown(monkeypatch):
+    from qwenpaw.plugins import activity as activity_module
+
+    activity = PluginActivity("waiter-teardown")
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    exited = asyncio.Event()
+    host_finish = asyncio.Event()
+    original_gather = asyncio.gather
+    released = False
+
+    async def request():
+        with activity.invocation():
+            entered.set()
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                await release.wait()
+        exited.set()
+        await host_finish.wait()
+
+    async def tear_down_waiter(*tasks, **kwargs):
+        nonlocal released
+        if not released:
+            released = True
+            release.set()
+            await exited.wait()
+        return await original_gather(*tasks, **kwargs)
+
+    task = asyncio.create_task(request())
+    try:
+        await entered.wait()
+        # Force the boundary; ownership exits during the change-waiter's
+        # asynchronous teardown, while the host task remains alive.
+        monkeypatch.setattr(activity_module, "INTERRUPT_TIMEOUT_SECONDS", 0)
+        monkeypatch.setattr(asyncio, "gather", tear_down_waiter)
+        async with activity.mutation(interrupt_tasks=True):
+            assert exited.is_set()
+            assert not task.done()
+            assert not activity.tasks
+        assert not activity.blocked
+    finally:
+        release.set()
+        host_finish.set()
+        task.cancel()
+        await original_gather(task, return_exceptions=True)

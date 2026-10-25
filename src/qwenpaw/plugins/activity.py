@@ -109,12 +109,13 @@ class PluginActivity:
                     deadline - asyncio.get_running_loop().time(),
                 ),
             )
-            # A host task may keep running after its last invocation exits.
-            # Retain only current owners, including new terminal callbacks.
-            return self._pending()
         finally:
             changed.cancel()
             await asyncio.gather(changed, return_exceptions=True)
+        # Waiter teardown yields too: an invocation may exit or a terminal
+        # callback may be retained before it finishes. Read ownership after
+        # that final await, even when the interruption deadline has elapsed.
+        return self._pending()
 
     @asynccontextmanager
     async def mutation(self, *, interrupt_tasks=False):

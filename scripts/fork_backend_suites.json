@@ -201,7 +201,8 @@
     "tests/unit/plugins/test_activity_retry_handoff.py": [
       "test_mutation_wakes_cleanup_registered_after_interruption_starts",
       "test_one_mutation_retries_a_refusing_cleanup_only_once",
-      "test_mutation_releases_invocation_before_host_task_finishes"
+      "test_mutation_releases_invocation_before_host_task_finishes",
+      "test_mutation_observes_release_during_waiter_teardown"
     ],
     "tests/unit/plugins/test_channel_tracker_custody.py": [
       "test_unload_keeps_tracker_generation_live_through_terminal_delivery"
