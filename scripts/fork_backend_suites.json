@@ -61,7 +61,8 @@
       "tests/unit/plugins/flowforge/test_definition_validation.py",
       "tests/unit/plugins/flowforge/test_runtime_reliability.py",
       "tests/unit/plugins/flowforge/test_business_acceptance.py",
-      "tests/unit/plugins/flowforge/test_llm_adapter.py"
+      "tests/unit/plugins/flowforge/test_llm_adapter.py",
+      "tests/unit/plugins/flowforge/test_quality_gate_routing.py"
     ],
     "office": [
       "tests/unit/agents/tools/test_office_tools.py",
@@ -181,6 +182,13 @@
       "test_document_agent_proposals_validate_evidence_conflicts_and_judgement",
       "test_late_agent_reply_cannot_overwrite_a_new_revision",
       "test_chart_context_keeps_original_unit_data_bound_to_immutable_node_result"
+    ],
+    "tests/unit/plugins/flowforge/test_quality_gate_routing.py": [
+      "test_quality_gate_uses_declared_routes_without_missing_helpers",
+      "test_quality_gate_fallback_executes_only_the_selected_workflow_branch",
+      "test_quality_gate_default_preserves_an_explicit_zero",
+      "test_refine_default_preserves_an_explicit_zero",
+      "test_node_schema_cache_is_local_to_each_class_and_can_be_invalidated"
     ]
   }
 }

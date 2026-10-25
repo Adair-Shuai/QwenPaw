@@ -19,7 +19,7 @@ npx tsc -b --noEmit
 
 2026-10-22 补强：前端清单使用 TypeScript 语法树读取实际测试声明，拒绝以注释／字符串保留标题、空测试、`.skip`、`.todo`、`.only`、条件跳过及预期失败替代正常回归；门禁自身含隔离变异测试。固定入口当前覆盖 45 个前端测试文件，包含原生外链、紧凑会话列表、消息渲染、专家入口、头像、MCP 和 Office 预览。
 
-后端运行 `python scripts/verify_fork_regressions.py`，固定 `scripts/fork_backend_suites.json` 的 65 个文件；UGSci 团队状态／成果、领域计算与安装、GenUI、可视化、FlowForge、Office、MCP、头像和文书填报均列入。`--check` 用于 CI 的清单与关键用例检查；普通 CI 与 nightly 完整单元测试执行后端用例，并单独执行不在 `tests/unit` 下的文书填报测试。普通前端 CI 和 nightly 同时保留清单检查及类型检查。清单与断言不能防止所有逻辑退化，仍须运行实际行为测试并审阅上游合并差异。
+后端运行 `python scripts/verify_fork_regressions.py`，执行 `scripts/fork_backend_suites.json` 清单中的全部测试文件；UGSci 团队状态／成果、领域计算与安装、GenUI、可视化、FlowForge、Office、MCP、头像和文书填报均列入。`--check` 用于 CI 的清单与关键用例检查；普通 CI 与 nightly 完整单元测试执行后端用例，并单独执行不在 `tests/unit` 下的文书填报测试。普通前端 CI 和 nightly 同时保留清单检查及类型检查。清单与断言不能防止所有逻辑退化，仍须运行实际行为测试并审阅上游合并差异。
 
 ## 保护范围
 
@@ -124,3 +124,5 @@ MCP 卡片对已配置 Authorization 请求头且没有 OAuth 凭证记录的连
 - 保留 `tests/unit/plugins/test_storage_capacity_workbench.py` 的真实 HTTP 项目/原件持久化、用户/智能体边界、修订冲突、Word/复算包与过期导出阻断，以及多方法/测压加权/共用设施约束的数值回归。
 - 不得以静态文案、虚构专家轨迹或固定演示值替代实际计算与报告。缺测不得转为零；原报告值须与复算结果分开，复杂外部模拟须提供模型和运行依据。
 - 用户原始培训资料和真实项目仅留在本机资料库，不进入插件发布包。
+
+FlowForge 质量评分节点保留显式通过／失败路由，未指定 `pass_node` 时按首个条件目标回退；没有通过目标时也不能因缺失辅助函数阻断失败分支。评分仍须来自真实评估器，默认阈值与迭代预算只对缺省或 null 生效，显式零值不被覆盖。`test_quality_gate_routing.py` 已纳入后端固定清单和关键用例检查，覆盖实际工作流只执行所选分支，以及节点 Schema 缓存的类间隔离与失效重建。

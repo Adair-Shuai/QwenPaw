@@ -25,9 +25,8 @@ from __future__ import annotations
 import abc
 from typing import Any, ClassVar
 
-from ..io import Hidden, HiddenHolder, NodeOutput, Schema
+from ..io import HiddenHolder, NodeOutput, Schema
 from ..io.contract import (
-    NOT_CACHEABLE,
     default_check_lazy_status,
     default_fingerprint_inputs,
 )
@@ -36,7 +35,12 @@ from ..io.contract import (
 class _WorkflowNodeMeta(abc.ABCMeta):
     """Metaclass that lazily caches ``define_schema()`` results per class."""
 
-    def __init__(cls, name: str, bases: tuple[type, ...], namespace: dict[str, Any]):
+    def __init__(
+        cls,
+        name: str,
+        bases: tuple[type, ...],
+        namespace: dict[str, Any],
+    ):
         super().__init__(name, bases, namespace)
         cls._schema_cache = None
 
@@ -46,6 +50,7 @@ class WorkflowNode(abc.ABC, metaclass=_WorkflowNodeMeta):
 
     #: Human-readable identifier registered in the node registry.
     NODE_ID: ClassVar[str] = ""
+    _schema_cache: ClassVar[Schema | None] = None
 
     #: Set by :func:`nodes.loader.register_module` at load time.
     MODULE_PATH: ClassVar[str] = ""
@@ -57,12 +62,13 @@ class WorkflowNode(abc.ABC, metaclass=_WorkflowNodeMeta):
 
     @classmethod
     def get_schema(cls) -> Schema:
-        if cls._schema_cache is None:
+        schema = cls._schema_cache
+        if schema is None:
             schema = cls.define_schema().finalize()
             if not schema.node_id and cls.NODE_ID:
                 schema.node_id = cls.NODE_ID
             cls._schema_cache = schema
-        return cls._schema_cache
+        return schema
 
     @classmethod
     def invalidate_schema_cache(cls) -> None:
@@ -93,7 +99,7 @@ class WorkflowNode(abc.ABC, metaclass=_WorkflowNodeMeta):
         return cls.get_schema().is_output_node
 
     @classmethod
-    def IS_CHANGED(cls, **kwargs: Any) -> Any:  # noqa: N802
+    def IS_CHANGED(cls, **_kwargs: Any) -> Any:  # noqa: N802
         """Legacy alias for :meth:`fingerprint_inputs`.
 
         Kept for nodes that historically relied on the ``IS_CHANGED``
@@ -121,6 +127,7 @@ class WorkflowNode(abc.ABC, metaclass=_WorkflowNodeMeta):
 
     async def on_validate(self, inputs: dict[str, Any]) -> list[str]:
         """Optional per-instance validation hook returning error strings."""
+        del inputs  # The default hook accepts every input without validation.
         return []
 
     def fingerprint_inputs(self, **kwargs: Any) -> Any:
