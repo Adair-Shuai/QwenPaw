@@ -86,7 +86,8 @@
       "plugins/apps/document-forms/tests/test_publication.py"
     ],
     "inventory": [
-      "tests/unit/verify/test_fork_regression_inventory.py"
+      "tests/unit/verify/test_fork_regression_inventory.py",
+      "tests/unit/verify/test_pylint_namespace.py"
     ],
     "upstream_merge": [
       "tests/unit/plugins/test_upstream_merge_compat.py",
@@ -101,6 +102,14 @@
     ]
   },
   "required_cases": {
+    "tests/unit/verify/test_pylint_namespace.py": [
+      "test_namespace_plugin_modules_keep_distinct_qualified_names",
+      "test_module_resolution_never_executes_package_initializers",
+      "test_non_module_inputs_are_forwarded_as_original_files",
+      "test_shadowed_namespace_is_forwarded_without_dropping_file",
+      "test_cli_preserves_all_arguments_files_and_exit_bits",
+      "test_cli_requires_explicit_option_boundary"
+    ],
     "tests/unit/plugins/flowforge/test_authoring_conversion_contract.py": [
       "test_editor_shell_priority_survives_canonical_loader",
       "test_authoring_type_precedence_is_preserved",

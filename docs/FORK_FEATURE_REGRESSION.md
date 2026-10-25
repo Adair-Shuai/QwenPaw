@@ -1,5 +1,7 @@
 # 自有功能合并回归
 
+Pylint 经完整模块名区分插件命名空间，避免不同应用的 backend、engine 等同名模块共用错误解析结果。包装器只替换确实指向原文件的模块参数，初始化文件及无法映射的脚本原样交给检查器，不执行包初始化器，不缩减 pre-commit 选中文件、原有检查选项或错误退出位；`test_pylint_namespace.py` 保护这些边界。GitHub 的全量 pre-commit 检查继续执行。
+
 FlowForge 编辑器节点归并、配置补全及类型推断分别处理，保留 config、class_type、data.type、原始 type 和图标的既有优先级；显式空参数、零超时、工具别名、外层 metadata 以及自动补齐的起止节点不能丢失。`test_authoring_conversion_contract.py` 在两份实际转换器上经 canonical loader 验证完整节点、输入、控制字段和原始数据不变，原有画布执行及工作流定义回归继续执行。
 
 插件中断等待器收尾仍会让出事件循环，重载须在该收尾结束后读取实际调用及终态回调占用，不能使用收尾前的任务快照误报忙碌。`test_mutation_observes_release_during_waiter_teardown` 在截止边界释放最后一次插件调用，同时保留宿主任务，验证无需延长超时便可继续重载；原有拒绝清理、每轮仅重试一次及终态交付门禁保持不变。
