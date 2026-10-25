@@ -645,7 +645,15 @@ def register(plugin, spec):
         async def _stream_with_tracker(self, payload):
             if not self._receiving:
                 return
-            async with self._owned_call():
+            # The tracker outlives its model producer. Keep the generation
+            # active until its final run notification has been delivered.
+            async with (
+                self._owned_call(),
+                plugin._invocation(
+                    workspace_id=self._workspace.agent_id,
+                    session_id=payload.session_id,
+                ),
+            ):
                 task = asyncio.current_task()
                 self._tracker_calls.add(task)
                 stream = super()._stream_with_tracker(payload)
@@ -656,6 +664,7 @@ def register(plugin, spec):
                     self._set_run_status(payload, "cancelled")
                     raise
                 finally:
+                    plugin._instance.activity.retain_cleanup(task)
                     try:
                         await stream.aclose()
                     finally:
