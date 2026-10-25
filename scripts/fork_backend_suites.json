@@ -64,7 +64,8 @@
       "tests/unit/plugins/flowforge/test_business_acceptance.py",
       "tests/unit/plugins/flowforge/test_llm_adapter.py",
       "tests/unit/plugins/flowforge/test_quality_gate_routing.py",
-      "tests/unit/plugins/flowforge/test_node_failure_logging.py"
+      "tests/unit/plugins/flowforge/test_node_failure_logging.py",
+      "tests/unit/plugins/flowforge/test_public_adapter_contract.py"
     ],
     "office": [
       "tests/unit/agents/tools/test_office_tools.py",
@@ -218,6 +219,12 @@
       "test_domain_failure_returns_adapter_error_and_traceback",
       "test_agent_failure_returns_original_error_in_both_paths",
       "test_hot_reload_delivers_change_and_logs_result"
+    ],
+    "tests/unit/plugins/flowforge/test_public_adapter_contract.py": [
+      "test_public_tool_schema_preserves_parameter_contract",
+      "test_native_tool_schema_keeps_identity_and_empty_fallback",
+      "test_public_registry_entry_points_share_native_singleton",
+      "test_public_registry_retains_legacy_getter_fallback"
     ],
     "tests/unit/market/test_search_deadline.py": [
       "test_search_deadline_keeps_fast_results_and_reports_slow_source",
