@@ -66,7 +66,8 @@
       "tests/unit/plugins/flowforge/test_quality_gate_routing.py",
       "tests/unit/plugins/flowforge/test_node_failure_logging.py",
       "tests/unit/plugins/flowforge/test_public_adapter_contract.py",
-      "tests/unit/plugins/flowforge/test_runner_pipeline_contract.py"
+      "tests/unit/plugins/flowforge/test_runner_pipeline_contract.py",
+      "tests/unit/plugins/flowforge/test_authoring_conversion_contract.py"
     ],
     "office": [
       "tests/unit/agents/tools/test_office_tools.py",
@@ -100,6 +101,13 @@
     ]
   },
   "required_cases": {
+    "tests/unit/plugins/flowforge/test_authoring_conversion_contract.py": [
+      "test_editor_shell_priority_survives_canonical_loader",
+      "test_authoring_type_precedence_is_preserved",
+      "test_editor_tool_alias_and_empty_params_are_preserved",
+      "test_canonical_input_aliases_and_boundaries_remain_intact",
+      "test_invalid_authoring_root_keeps_original_error"
+    ],
     "tests/unit/plugins/ugsci/test_team_artifacts.py": [
       "test_system_host_sdk_workflow_rework_restart_and_history",
       "test_late_old_attempt_cannot_overwrite_new_published_result"
