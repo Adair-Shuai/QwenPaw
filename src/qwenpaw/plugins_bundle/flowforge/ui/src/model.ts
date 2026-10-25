@@ -1,4 +1,20 @@
-import type { Edge, Node } from "@xyflow/react";
+// Serialization uses plain canvas records so host consumers do not need the
+// editor's ReactFlow dependency just to inspect or convert a workflow.
+interface Node {
+  id: string;
+  position: { x: number; y: number };
+  data: Record<string, any>;
+  type?: string;
+}
+interface Edge {
+  id: string;
+  source: string;
+  target: string;
+  sourceHandle?: string | null;
+  targetHandle?: string | null;
+  data?: Record<string, any>;
+  type?: string;
+}
 
 export interface FlowDocument {
   id: string;
