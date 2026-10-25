@@ -91,12 +91,15 @@ def _windows_process_snapshot() -> dict[int, tuple[Optional[int], str, str]]:
                 "-NoProfile",
                 "-Command",
                 (
+                    "$OutputEncoding = [Console]::OutputEncoding = "
+                    "[Text.UTF8Encoding]::new($false); "
                     "Get-CimInstance Win32_Process | "
                     "Select-Object ProcessId,ParentProcessId,Name,"
                     "CommandLine | ConvertTo-Json -Compress"
                 ),
             ],
             _parse_windows_process_snapshot_json,
+            "utf-8",
         ),
         (
             [
@@ -107,15 +110,18 @@ def _windows_process_snapshot() -> dict[int, tuple[Optional[int], str, str]]:
                 "/FORMAT:CSV",
             ],
             _parse_windows_process_snapshot_csv,
+            None,
         ),
     )
 
-    for command, parser in commands:
+    for command, parser, encoding in commands:
         try:
             result = subprocess.run(
                 command,
                 capture_output=True,
                 text=True,
+                encoding=encoding,
+                errors="replace",
                 timeout=15,
                 check=False,
             )
