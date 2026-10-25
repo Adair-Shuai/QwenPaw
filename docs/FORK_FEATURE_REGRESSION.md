@@ -1,5 +1,7 @@
 # 自有功能合并回归
 
+TaskTracker 在广播取消、异常或提前结束时，须先关闭源异步流再进入宿主完成回调，避免源流停在 yield 时继续持有插件调用。`test_tracker_stream_cleanup.py` 通过实际队列锁和取消，在宿主持久化仍暂停时验证源流已关闭、插件可安全重载；同时保留没有 aclose 方法的普通异步迭代器、原有事件和终态交付行为。
+
 Pylint 经完整模块名区分插件命名空间，避免不同应用的 backend、engine 等同名模块共用错误解析结果。包装器只替换确实指向原文件的模块参数，初始化文件及无法映射的脚本原样交给检查器，不执行包初始化器，不缩减 pre-commit 选中文件、原有检查选项或错误退出位；`test_pylint_namespace.py` 保护这些边界。GitHub 的全量 pre-commit 检查继续执行。
 
 FlowForge 编辑器节点归并、配置补全及类型推断分别处理，保留 config、class_type、data.type、原始 type 和图标的既有优先级；显式空参数、零超时、工具别名、外层 metadata 以及自动补齐的起止节点不能丢失。`test_authoring_conversion_contract.py` 在两份实际转换器上经 canonical loader 验证完整节点、输入、控制字段和原始数据不变，原有画布执行及工作流定义回归继续执行。
