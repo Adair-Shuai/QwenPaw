@@ -17,7 +17,10 @@ from .adapters import (
     SymPyAdapter,
 )
 from ..stochastic.adapters import PyMCAdapter, PymooAdapter
-from ..deterministic.providers import default_registry
+from ..deterministic.providers import (
+    ExecutionClass as _ExecutionClass,
+    default_registry,
+)
 from .models import (
     BayesianNormalRequest,
     GeospatialPointsRequest,
@@ -45,7 +48,7 @@ def _run(
     assumptions: list[str] | None = None,
     *,
     capability_id: str | None = None,
-    execution_class: str = "deterministic",
+    execution_class: _ExecutionClass = "deterministic",
 ) -> Any:
     try:
         if capability_id:
@@ -82,15 +85,29 @@ async def ugsci_symbolic_polynomial_roots(coefficients: list[float]) -> Any:
     ``coefficients`` are ordered from highest power to the constant term.
     """
     try:
-        require(len(coefficients) >= 2, "At least two coefficients are required")
+        require(
+            len(coefficients) >= 2,
+            "At least two coefficients are required",
+        )
         require(coefficients[0] != 0, "Leading coefficient must be non-zero")
-        require(len(coefficients) <= 21, "Polynomial degree must not exceed 20")
-        request = PolynomialRootsRequest([float(value) for value in coefficients])
+        require(
+            len(coefficients) <= 21,
+            "Polynomial degree must not exceed 20",
+        )
+        request = PolynomialRootsRequest(
+            [float(value) for value in coefficients],
+        )
     except DomainError as exc:
         return _chunk(exc.to_dict(), error=True)
     except (TypeError, ValueError) as exc:
         return _invalid_input(exc)
-    return _run("sympy", None, request, "symbolic_nroots", capability_id="math.symbolic")
+    return _run(
+        "sympy",
+        None,
+        request,
+        "symbolic_nroots",
+        capability_id="math.symbolic",
+    )
 
 
 async def ugsci_bayesian_normal_estimate(
@@ -104,18 +121,38 @@ async def ugsci_bayesian_normal_estimate(
 ) -> Any:
     """Estimate an unknown normal mean with a PyMC Bayesian model."""
     try:
-        require(len(observations) >= 2, "At least two observations are required")
-        require(prior_std > 0 and observation_std > 0, "Standard deviations must be positive")
-        require(100 <= draws <= 5000 and 0 <= tune <= 5000, "draws/tune are outside safe limits")
+        require(
+            len(observations) >= 2,
+            "At least two observations are required",
+        )
+        require(
+            prior_std > 0 and observation_std > 0,
+            "Standard deviations must be positive",
+        )
+        require(
+            100 <= draws <= 5000 and 0 <= tune <= 5000,
+            "draws/tune are outside safe limits",
+        )
         request = BayesianNormalRequest(
-            [float(value) for value in observations], float(prior_mean),
-            float(prior_std), float(observation_std), draws, tune, seed,
+            [float(value) for value in observations],
+            float(prior_mean),
+            float(prior_std),
+            float(observation_std),
+            draws,
+            tune,
+            seed,
         )
     except DomainError as exc:
         return _chunk(exc.to_dict(), error=True)
     except (TypeError, ValueError) as exc:
         return _invalid_input(exc)
-    return _run("pymc", PyMCAdapter(), request, "mcmc_nuts", ["Normal likelihood with known observation standard deviation"])
+    return _run(
+        "pymc",
+        PyMCAdapter(),
+        request,
+        "mcmc_nuts",
+        ["Normal likelihood with known observation standard deviation"],
+    )
 
 
 async def ugsci_multiobjective_quadratic(
@@ -128,9 +165,19 @@ async def ugsci_multiobjective_quadratic(
     """Compute a Pareto set for structured quadratic objectives."""
     try:
         dimensions = validate_matrix(centers, "centers")
-        require(len(centers) >= 2, "At least two objective centers are required")
-        require(len(bounds) == dimensions and all(len(row) == 2 and row[0] < row[1] for row in bounds), "bounds must contain [lower, upper] for every variable")
-        require(20 <= population_size <= 500 and 10 <= generations <= 2000, "optimizer limits exceeded")
+        require(
+            len(centers) >= 2,
+            "At least two objective centers are required",
+        )
+        require(
+            len(bounds) == dimensions
+            and all(len(row) == 2 and row[0] < row[1] for row in bounds),
+            "bounds must contain [lower, upper] for every variable",
+        )
+        require(
+            20 <= population_size <= 500 and 10 <= generations <= 2000,
+            "optimizer limits exceeded",
+        )
         request = MultiObjectiveQuadraticRequest(
             [[float(value) for value in row] for row in centers],
             [[float(value) for value in row] for row in bounds],
@@ -153,15 +200,32 @@ async def ugsci_queue_simulate(
 ) -> Any:
     """Run a deterministic first-in-first-out queue simulation."""
     try:
-        require(arrival_interval > 0 and service_time > 0 and duration > 0, "Time inputs must be positive")
+        require(
+            arrival_interval > 0 and service_time > 0 and duration > 0,
+            "Time inputs must be positive",
+        )
         require(1 <= servers <= 100, "servers must be between 1 and 100")
-        require(duration / arrival_interval <= 100000, "simulation would create too many arrivals")
-        request = QueueSimulationRequest(arrival_interval, service_time, servers, duration)
+        require(
+            duration / arrival_interval <= 100000,
+            "simulation would create too many arrivals",
+        )
+        request = QueueSimulationRequest(
+            arrival_interval,
+            service_time,
+            servers,
+            duration,
+        )
     except DomainError as exc:
         return _chunk(exc.to_dict(), error=True)
     except (TypeError, ValueError) as exc:
         return _invalid_input(exc)
-    return _run("simpy", None, request, "deterministic_fifo", capability_id="simulation.queue.deterministic")
+    return _run(
+        "simpy",
+        None,
+        request,
+        "deterministic_fifo",
+        capability_id="simulation.queue.deterministic",
+    )
 
 
 async def ugsci_graph_analyze(
@@ -175,31 +239,62 @@ async def ugsci_graph_analyze(
     try:
         require(bool(nodes), "nodes must not be empty")
         require(len(nodes) == len(set(nodes)), "nodes must be unique")
-        require(all(len(edge) == 2 for edge in edges), "every edge must have two node IDs")
+        require(
+            all(len(edge) == 2 for edge in edges),
+            "every edge must have two node IDs",
+        )
         node_set = set(nodes)
-        require(all(edge[0] in node_set and edge[1] in node_set for edge in edges), "edges must reference declared nodes")
-        require((source is None) == (target is None), "source and target must be provided together")
-        require(source is None or (source in node_set and target in node_set), "source and target must reference declared nodes")
+        require(
+            all(edge[0] in node_set and edge[1] in node_set for edge in edges),
+            "edges must reference declared nodes",
+        )
+        require(
+            (source is None) == (target is None),
+            "source and target must be provided together",
+        )
+        require(
+            source is None or (source in node_set and target in node_set),
+            "source and target must reference declared nodes",
+        )
         request = GraphAnalysisRequest(nodes, edges, directed, source, target)
     except DomainError as exc:
         return _chunk(exc.to_dict(), error=True)
-    return _run("networkx", None, request, "networkx_graph_algorithms", capability_id="graph.network.analyze")
+    return _run(
+        "networkx",
+        None,
+        request,
+        "networkx_graph_algorithms",
+        capability_id="graph.network.analyze",
+    )
 
 
-async def ugsci_geospatial_points_analyze(points: list[list[float]], crs: str = "EPSG:4326") -> Any:
+async def ugsci_geospatial_points_analyze(
+    points: list[list[float]],
+    crs: str = "EPSG:4326",
+) -> Any:
     """Compute bounds and centroid for a structured point set."""
     try:
-        require(bool(points) and all(len(point) == 2 for point in points), "points must contain [x, y] pairs")
+        require(
+            bool(points) and all(len(point) == 2 for point in points),
+            "points must contain [x, y] pairs",
+        )
         require(len(points) <= 100000, "point count exceeds safe limit")
         require(bool(crs.strip()), "crs is required")
         request = GeospatialPointsRequest(
-            [[float(value) for value in point] for point in points], crs
+            [[float(value) for value in point] for point in points],
+            crs,
         )
     except DomainError as exc:
         return _chunk(exc.to_dict(), error=True)
     except (TypeError, ValueError) as exc:
         return _invalid_input(exc)
-    return _run("geopandas", None, request, "geopandas_geometry", capability_id="geospatial.points.analyze")
+    return _run(
+        "geopandas",
+        None,
+        request,
+        "geopandas_geometry",
+        capability_id="geospatial.points.analyze",
+    )
 
 
 async def ugsci_ml_regression(
@@ -210,8 +305,15 @@ async def ugsci_ml_regression(
     """Fit deterministic linear regression and predict structured rows."""
     try:
         width = validate_matrix(features, "features")
-        require(len(features) == len(targets) and len(targets) >= width + 1, "targets length or sample count is invalid")
-        require(bool(predict_features) and all(len(row) == width for row in predict_features), "predict_features width must match training features")
+        require(
+            len(features) == len(targets) and len(targets) >= width + 1,
+            "targets length or sample count is invalid",
+        )
+        require(
+            bool(predict_features)
+            and all(len(row) == width for row in predict_features),
+            "predict_features width must match training features",
+        )
         request = MachineLearningRegressionRequest(
             [[float(value) for value in row] for row in features],
             [float(value) for value in targets],
@@ -221,7 +323,13 @@ async def ugsci_ml_regression(
         return _chunk(exc.to_dict(), error=True)
     except (TypeError, ValueError) as exc:
         return _invalid_input(exc)
-    return _run("scikit-learn", None, request, "ordinary_least_squares", capability_id="machine_learning.linear_regression")
+    return _run(
+        "scikit-learn",
+        None,
+        request,
+        "ordinary_least_squares",
+        capability_id="machine_learning.linear_regression",
+    )
 
 
 async def ugsci_statistical_regression(
@@ -232,9 +340,15 @@ async def ugsci_statistical_regression(
     """Fit OLS regression with inferential statistics."""
     try:
         width = validate_matrix(features, "features")
-        require(len(features) == len(targets) and len(targets) > width + 1, "insufficient observations for OLS")
+        require(
+            len(features) == len(targets) and len(targets) > width + 1,
+            "insufficient observations for OLS",
+        )
         names = feature_names or [f"x{index + 1}" for index in range(width)]
-        require(len(names) == width and len(names) == len(set(names)), "feature_names must be unique and match feature width")
+        require(
+            len(names) == width and len(names) == len(set(names)),
+            "feature_names must be unique and match feature width",
+        )
         request = StatisticalRegressionRequest(
             [[float(value) for value in row] for row in features],
             [float(value) for value in targets],
@@ -244,4 +358,50 @@ async def ugsci_statistical_regression(
         return _chunk(exc.to_dict(), error=True)
     except (TypeError, ValueError) as exc:
         return _invalid_input(exc)
-    return _run("statsmodels", None, request, "ordinary_least_squares", capability_id="statistics.ols_regression")
+    return _run(
+        "statsmodels",
+        None,
+        request,
+        "ordinary_least_squares",
+        capability_id="statistics.ols_regression",
+    )
+
+
+# Preserve the module's historical adapter, request and tool exports.
+__all__ = [
+    "annotations",
+    "json",
+    "Any",
+    "DomainError",
+    "DomainErrorCode",
+    "wrap_unknown_error",
+    "emit_tool_chunk",
+    "GeoPandasAdapter",
+    "NetworkXAdapter",
+    "ScikitLearnAdapter",
+    "SimPyAdapter",
+    "StatsmodelsAdapter",
+    "SymPyAdapter",
+    "PyMCAdapter",
+    "PymooAdapter",
+    "default_registry",
+    "BayesianNormalRequest",
+    "GeospatialPointsRequest",
+    "GraphAnalysisRequest",
+    "MachineLearningRegressionRequest",
+    "MultiObjectiveQuadraticRequest",
+    "PolynomialRootsRequest",
+    "QueueSimulationRequest",
+    "StatisticalRegressionRequest",
+    "ComputationService",
+    "require",
+    "validate_matrix",
+    "ugsci_symbolic_polynomial_roots",
+    "ugsci_bayesian_normal_estimate",
+    "ugsci_multiobjective_quadratic",
+    "ugsci_queue_simulate",
+    "ugsci_graph_analyze",
+    "ugsci_geospatial_points_analyze",
+    "ugsci_ml_regression",
+    "ugsci_statistical_regression",
+]
