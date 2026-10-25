@@ -11,23 +11,31 @@ from qwenpaw.plugins.architecture import PluginManifest
 
 ROOT = Path(__file__).resolve().parents[3]
 MANIFESTS = sorted(
-    path
-    for folder in (
-        "plugins/bundle",
-        "plugins/apps",
-        "plugins/hub",
-        "src/qwenpaw/plugins_bundle",
-    )
-    for path in (ROOT / folder).glob("*/plugin.json")
+    [
+        path
+        for folder in (
+            "plugins/bundle",
+            "plugins/apps",
+            "plugins/hub",
+            "src/qwenpaw/plugins_bundle",
+        )
+        for path in (ROOT / folder).glob("*/plugin.json")
+    ]
+    + [
+        ROOT / "plugins/tool/gpt-image2/plugin.json",
+        ROOT / "plugins/middleware-demo/thinking-log-middleware/plugin.json",
+    ],
 )
 
 
 @pytest.mark.parametrize(
-    "path", MANIFESTS, ids=lambda p: str(p.relative_to(ROOT))
+    "path",
+    MANIFESTS,
+    ids=lambda p: str(p.relative_to(ROOT)),
 )
 def test_shipped_plugin_accepts_current_core(path):
     manifest = PluginManifest.from_dict(
-        json.loads(path.read_text(encoding="utf-8"))
+        json.loads(path.read_text(encoding="utf-8")),
     )
     compatible, reason = check_plugin_version_compat(manifest)
     assert compatible, reason
@@ -46,7 +54,7 @@ def test_explicit_range_still_rejects_incompatible_core(monkeypatch, host):
             "id": "bounded-probe",
             "version": "1.0",
             "qwenpaw_version": {"min": "2.3.0", "max": "2.4.0"},
-        }
+        },
     )
     assert check_plugin_version_compat(manifest)[0] is False
 
@@ -57,14 +65,15 @@ def test_explicit_legacy_minimum_keeps_derived_upper_bound():
             "id": "legacy-probe",
             "version": "1.0",
             "min_version": "0.1.0",
-        }
+        },
     )
     assert check_plugin_version_compat(manifest)[0] is False
 
 
 @pytest.mark.asyncio
 async def test_native_uninstall_preserves_intent_and_reinstall_clears_it(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ):
     from types import SimpleNamespace
 
@@ -77,7 +86,9 @@ async def test_native_uninstall_preserves_intent_and_reinstall_clears_it(
 
     source = make_plugin(
         tmp_path,
-        "class Plugin:\n    def register(self, ctx): pass\nplugin = Plugin()\n",
+        "class Plugin:\n"
+        "    def register(self, ctx): pass\n"
+        "plugin = Plugin()\n",
         [],
     )
     adoption = {"extension-contract": True}
@@ -93,7 +104,7 @@ async def test_native_uninstall_preserves_intent_and_reinstall_clears_it(
     )
     async with PluginTestHost(tmp_path / "host") as host:
         await host.install(source)
-        loader = host._loader
+        loader = host._loader  # pylint: disable=protected-access
         root = loader.plugin_dirs[0]
         app = SimpleNamespace(state=SimpleNamespace(plugin_loader=loader))
         await uninstall_plugin_source("extension-contract", app=app)
@@ -103,5 +114,6 @@ async def test_native_uninstall_preserves_intent_and_reinstall_clears_it(
         assert not (root / "extension-contract").exists()
         assert (await host.install(source)).ok
         assert not is_plugin_uninstalled(
-            "extension-contract", plugins_dir=root
+            "extension-contract",
+            plugins_dir=root,
         )
