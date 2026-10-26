@@ -55,7 +55,8 @@
       "tests/unit/plugins/ugsci/test_las_conversion_contract.py",
       "tests/unit/plugins/ugsci/test_eclipse_conversion_contract.py",
       "tests/unit/plugins/ugsci/test_genui_card_stage_contract.py",
-      "tests/unit/plugins/ugsci/test_visualization_http_contract.py"
+      "tests/unit/plugins/ugsci/test_visualization_http_contract.py",
+      "tests/unit/plugins/ugsci/test_runtime_host_contract.py"
     ],
     "flowforge": [
       "tests/unit/plugins/flowforge/test_bidirectional_calls.py",
@@ -173,7 +174,12 @@
     ],
     "tests/unit/plugins/ugsci/test_domain_runtime_install.py": [
       "test_requirements_are_allowlisted_and_unsupported_engines_rejected",
-      "test_worker_uses_host_installer_and_probes_after_success"
+      "test_worker_uses_host_installer_and_probes_after_success",
+      "test_one_global_task_and_same_engine_deduplication",
+      "test_worker_failure_is_sanitized_and_persisted",
+      "test_recovery_marks_interrupted_tasks_failed",
+      "test_api_status_task_404_and_runtime_path_order",
+      "test_neqsim_install_keeps_its_dedicated_route"
     ],
     "tests/unit/drivers/adapters/test_mcp_url_credentials.py": [
       "test_query_tokens_are_masked_and_survive_console_roundtrip",
@@ -344,6 +350,14 @@
       "test_slice_persists_selected_geometry_ids_and_zero_scalars",
       "test_slice_and_property_failures_keep_http_details",
       "test_catalog_cascade_hides_examples_and_removes_managed_files"
+    ],
+    "tests/unit/plugins/ugsci/test_runtime_host_contract.py": [
+      "test_public_runtime_probe_retains_desktop_interpreter_rules",
+      "test_public_runtime_installer_uses_both_actual_host_locks",
+      "test_runtime_task_uuid_matches_executor_and_retained_disk_records",
+      "test_runtime_submit_failure_persists_the_same_sanitized_task",
+      "test_runtime_ready_result_does_not_submit_or_persist_a_worker",
+      "test_runtime_admission_retains_managed_and_desktop_guards"
     ]
   }
 }
