@@ -35,9 +35,9 @@ def module_target(filename: str, root: Path) -> str:
         relative = path.relative_to(root)
     except ValueError:
         return filename
-    # Keep explicit initializer files as files: passing a package name can
-    # recursively analyze files outside pre-commit's selected input set.
-    if relative.suffix != ".py" or relative.name == "__init__.py":
+    # Keep the explicit __init__ suffix: passing the package name itself
+    # would recursively analyze files outside pre-commit's selected set.
+    if relative.suffix != ".py":
         return filename
     if relative.parts[0] == "src":
         relative = relative.relative_to("src")

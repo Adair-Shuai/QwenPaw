@@ -109,7 +109,8 @@
       "test_non_module_inputs_are_forwarded_as_original_files",
       "test_shadowed_namespace_is_forwarded_without_dropping_file",
       "test_cli_preserves_all_arguments_files_and_exit_bits",
-      "test_cli_requires_explicit_option_boundary"
+      "test_cli_requires_explicit_option_boundary",
+      "test_initializer_does_not_select_package_or_unrequested_children"
     ],
     "tests/unit/plugins/flowforge/test_authoring_conversion_contract.py": [
       "test_editor_shell_priority_survives_canonical_loader",

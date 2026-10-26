@@ -23,6 +23,9 @@ def test_namespace_plugin_modules_keep_distinct_qualified_names(tmp_path):
         "plugins/bundle/example/engine/tools.py",
         "src/qwenpaw/plugins_bundle/example/engine/tools.py",
         "plugins/apps/dashed-name/backend/store.py",
+        "plugins/apps/first/backend/__init__.py",
+        "plugins/apps/second/backend/__init__.py",
+        "src/qwenpaw/plugins_bundle/example/engine/__init__.py",
     ]
     for name in names:
         write_source(tmp_path, name)
@@ -35,6 +38,9 @@ def test_namespace_plugin_modules_keep_distinct_qualified_names(tmp_path):
         "plugins.bundle.example.engine.tools",
         "qwenpaw.plugins_bundle.example.engine.tools",
         "plugins.apps.dashed-name.backend.store",
+        "plugins.apps.first.backend.__init__",
+        "plugins.apps.second.backend.__init__",
+        "qwenpaw.plugins_bundle.example.engine.__init__",
     ]
     assert len(set(targets)) == len(names)
     for name, target in zip(names, targets):
@@ -65,11 +71,15 @@ def test_module_resolution_never_executes_package_initializers(tmp_path):
         pylint_namespace.module_origin("isolated_pkg.child.check", (tmp_path,))
         == target
     )
+    assert (
+        pylint_namespace.module_target("isolated_pkg/__init__.py", tmp_path)
+        == "isolated_pkg.__init__"
+    )
 
 
 @pytest.mark.parametrize(
     "name",
-    ["package/__init__.py", ".local_probe.py", "tool.pyw", "plain"],
+    [".local_probe.py", "tool.pyw", "plain"],
 )
 def test_non_module_inputs_are_forwarded_as_original_files(tmp_path, name):
     write_source(tmp_path, name)
@@ -92,6 +102,17 @@ def test_shadowed_namespace_is_forwarded_without_dropping_file(tmp_path):
     )
 
 
+def test_initializer_does_not_select_package_or_unrequested_children(tmp_path):
+    write_source(tmp_path, "package/__init__.py", "raise RuntimeError()\n")
+    write_source(tmp_path, "package/unselected.py", "raise RuntimeError()\n")
+    target = pylint_namespace.module_target("package/__init__.py", tmp_path)
+    assert target == "package.__init__"
+    assert (
+        pylint_namespace.module_origin(target, (tmp_path,))
+        == tmp_path / "package/__init__.py"
+    )
+
+
 @pytest.mark.parametrize("status", [0, 2, 4, 8, 16, 30, 32])
 def test_cli_preserves_all_arguments_files_and_exit_bits(
     tmp_path,
@@ -102,6 +123,7 @@ def test_cli_preserves_all_arguments_files_and_exit_bits(
     monkeypatch.setattr(pylint_namespace, "__file__", str(script))
     write_source(tmp_path, "plugins/first/backend/store.py")
     write_source(tmp_path, "plugins/second/backend/store.py")
+    write_source(tmp_path, "plugins/first/backend/__init__.py")
     write_source(tmp_path, ".local_probe.py")
     calls = []
 
@@ -123,6 +145,7 @@ def test_cli_preserves_all_arguments_files_and_exit_bits(
             "--",
             "plugins/first/backend/store.py",
             "plugins/second/backend/store.py",
+            "plugins/first/backend/__init__.py",
             ".local_probe.py",
         ],
     )
@@ -134,6 +157,7 @@ def test_cli_preserves_all_arguments_files_and_exit_bits(
                 "--",
                 "plugins.first.backend.store",
                 "plugins.second.backend.store",
+                "plugins.first.backend.__init__",
                 ".local_probe.py",
             ],
             False,
