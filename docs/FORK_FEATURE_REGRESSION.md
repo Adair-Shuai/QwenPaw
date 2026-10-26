@@ -1,5 +1,7 @@
 # 自有功能合并回归
 
+FlowForge 历史列表须容忍枚举文件后、再次读取前记录被删除或损坏，保留其他记录的排序、谱系字段和独立快照；`test_lifecycle_listing_contract.py` 对两份实际生命周期实现及磁盘仓库在该交接点执行真实文件删除／损坏。运行提交的 canonical 化、图快照、文档加载与输入深拷贝保持原顺序，现有实际 WorkflowService 的嵌套执行、恢复、取消和业务回归继续执行。
+
 Eclipse 读取器将网格二进制写出单独处理，保留显式 INIT／UNRST 路径优先、大小写不敏感的同名伴随文件、空路径回退、活动单元的原始索引和角点顺序，以及静态／动态 NaN 转零、无穷值、时间步排序和首／中／末抽样。`test_eclipse_conversion_contract.py` 在两份实际读取器上使用 NumPy 数组形式的 xtgeo 依赖边界夹具，保护真实转换器与二进制输出；GRDECL 无 xtgeo 的真实文件回归继续执行。
 
 渠道外层 SSE 流关闭时，BaseChannel 必须先关闭仍暂停在 yield 的实际处理流，再执行浏览器响应周期收尾；清理异常仍向调用方传播，浏览器收尾仍须执行。`test_base_core.py` 的嵌套流回归经真实 ConsoleChannel、TaskTracker 广播锁与 PluginActivity 验证：取消广播后，宿主完成回调尚未结束时插件占用已释放；不依赖异步生成器的垃圾回收来完成关闭。原有公开 app／channel 清理拒绝和重载重试继续执行。

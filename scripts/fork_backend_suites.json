@@ -70,7 +70,8 @@
       "tests/unit/plugins/flowforge/test_public_adapter_contract.py",
       "tests/unit/plugins/flowforge/test_agent_registry_config.py",
       "tests/unit/plugins/flowforge/test_runner_pipeline_contract.py",
-      "tests/unit/plugins/flowforge/test_authoring_conversion_contract.py"
+      "tests/unit/plugins/flowforge/test_authoring_conversion_contract.py",
+      "tests/unit/plugins/flowforge/test_lifecycle_listing_contract.py"
     ],
     "office": [
       "tests/unit/agents/tools/test_office_tools.py",
@@ -281,6 +282,10 @@
     ],
     "tests/unit/plugins/ugsci/test_eclipse_conversion_contract.py": [
       "test_eclipse_reader_preserves_companions_geometry_and_properties"
+    ],
+    "tests/unit/plugins/flowforge/test_lifecycle_listing_contract.py": [
+      "test_listing_omits_record_lost_between_durable_reads",
+      "test_listing_preserves_order_metadata_and_independent_snapshots"
     ]
   }
 }
