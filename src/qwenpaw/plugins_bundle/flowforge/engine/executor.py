@@ -22,7 +22,6 @@ from uuid import UUID, uuid4
 from .document import WorkflowDocument, load, validate
 from .errors import (
     DependencyCycleError,
-    NodeExecutionError,
     ValidationError,
 )
 from .graph import DynamicPrompt, ExecutionList, ExpandFrame, TopologicalSort
@@ -30,9 +29,19 @@ from .io import HiddenHolder, NodeOutput
 from .nodes import NodeRegistry, bootstrap
 from .runner import NodeRunner
 from .caching import BasicCache, CacheKeySetInputSignature
-from .progress import NodeStatus, ProgressEvent, ProgressHandler, ProgressRegistry
+from .progress import (
+    NodeStatus,
+    ProgressEvent,
+    ProgressHandler,
+    ProgressRegistry,
+)
 from .state_store import WorkflowRunSnapshot, WorkflowStateStore
-from .types import NodeExecutionResult, WorkflowResult, WorkflowState, WorkflowStatus
+from .types import (
+    NodeExecutionResult,
+    WorkflowResult,
+    WorkflowState,
+    WorkflowStatus,
+)
 
 
 def _ensure_document(definition: Any) -> WorkflowDocument:
@@ -53,7 +62,10 @@ def _merge_schema_input_defaults(
     doc: WorkflowDocument,
     inputs: dict[str, Any] | None,
 ) -> dict[str, Any]:
-    """Merge workflow schema defaults with caller-supplied inputs (user wins)."""
+    (
+        "Merge workflow schema defaults with "
+        "caller-supplied inputs (user wins)."
+    )
     defaults: dict[str, Any] = {}
     for spec in doc.inputs or []:
         if not isinstance(spec, dict):
@@ -70,27 +82,7 @@ def _merge_schema_input_defaults(
     if any(str(key).startswith("__") for key in user):
         raise ValidationError("Workflow inputs contain reserved runtime keys")
     merged = {**defaults, **user}
-    from jsonschema import Draft202012Validator
-    from jsonschema.exceptions import SchemaError
-    failures: list[str] = []
-    for spec in doc.inputs or []:
-        if not isinstance(spec, dict) or not spec.get("name"):
-            continue
-        name = str(spec["name"])
-        if name not in merged:
-            if spec.get("required") is True:
-                failures.append(f"required workflow input '{name}' is missing")
-            continue
-        schema = {key: value for key, value in spec.items() if key not in {"name", "label", "value"}}
-        if isinstance(schema.get("required"), bool):
-            schema.pop("required")
-        try:
-            Draft202012Validator.check_schema(schema)
-            for error in Draft202012Validator(schema).iter_errors(merged[name]):
-                path = ".".join(str(item) for item in error.path)
-                failures.append(f"input '{name}{'.' + path if path else ''}': {error.message}")
-        except SchemaError as exc:
-            failures.append(f"input '{name}' has an invalid schema: {exc.message}")
+    failures = _schema_input_failures(doc, merged)
     if failures:
         raise ValidationError("Workflow inputs are invalid", errors=failures)
     return merged
@@ -101,10 +93,10 @@ def _node_mode(node_def: dict[str, Any]) -> str:
 
 
 def _mode_passthrough_output(
-    registry: NodeRegistry,
+    _registry: NodeRegistry,
     node_def: dict[str, Any],
     upstream_values: dict[tuple[str, int], Any],
-    mode: str,
+    _mode: str,
 ) -> NodeOutput:
     """Mute/bypass: pass the first upstream slot through unchanged."""
     for value in (node_def.get("inputs") or {}).values():
@@ -123,7 +115,7 @@ def _next_call_idx(exec_list: ExecutionList, node_id: str) -> int:
     # Best-effort: count ephemeral children whose prefix matches.
     count = 0
     prompt = exec_list.prompt
-    for eid in prompt._ephemeral:  # noqa: SLF001 — internal access for bookkeeping
+    for eid in prompt.ephemeral_ids:
         if eid.startswith(f"{node_id}:"):
             count += 1
     return count
@@ -141,6 +133,188 @@ def _sanitize_ui(ui: Any) -> Any:
         return json.loads(json.dumps(ui, default=str))
     except Exception:
         return str(ui)
+
+
+def _schema_input_failures(
+    doc: WorkflowDocument,
+    merged: dict[str, Any],
+) -> list[str]:
+    from jsonschema import Draft202012Validator
+    from jsonschema.exceptions import SchemaError
+
+    failures: list[str] = []
+    for spec in doc.inputs or []:
+        if not isinstance(spec, dict) or not spec.get("name"):
+            continue
+        name = str(spec["name"])
+        if name not in merged:
+            if spec.get("required") is True:
+                failures.append(f"required workflow input '{name}' is missing")
+            continue
+        schema = {
+            key: value
+            for key, value in spec.items()
+            if key not in {"name", "label", "value"}
+        }
+        if isinstance(schema.get("required"), bool):
+            schema.pop("required")
+        try:
+            Draft202012Validator.check_schema(schema)
+            for error in Draft202012Validator(schema).iter_errors(
+                merged[name],
+            ):
+                path = ".".join(str(item) for item in error.path)
+                failures.append(
+                    (
+                        f"input '"
+                        f"{name}"
+                        f"{('.' + path if path else '')}"
+                        f"': "
+                        f"{error.message}"
+                    ),
+                )
+        except SchemaError as exc:
+            failures.append(
+                f"input '{name}' has an invalid schema: {exc.message}",
+            )
+    return failures
+
+
+def _restore_scheduler(
+    doc: WorkflowDocument,
+    resume_state: WorkflowState | None,
+    state: WorkflowState,
+    exec_list: ExecutionList,
+    topo: TopologicalSort,
+    upstream_values: dict[tuple[str, int], Any],
+) -> None:
+    saved_scheduler = (
+        state.metadata.get("scheduler_checkpoint")
+        if resume_state is not None
+        else None
+    )
+    saved_completed = (
+        set(saved_scheduler.get("completed", []))
+        if isinstance(saved_scheduler, dict)
+        else None
+    )
+    if resume_state is not None:
+        for entry in state.execution_history:
+            if (
+                entry.status == WorkflowStatus.COMPLETED
+                and entry.node_id in doc.nodes
+                and (
+                    saved_completed is None or entry.node_id in saved_completed
+                )
+            ):
+                exec_list.state.completed.add(entry.node_id)
+                values = state.outputs.get(entry.node_id, entry.output)
+                if not isinstance(values, tuple):
+                    values = (
+                        tuple(values)
+                        if isinstance(values, list)
+                        else (values,)
+                    )
+                for slot, value in enumerate(values):
+                    upstream_values[(entry.node_id, slot)] = value
+
+    if isinstance(saved_scheduler, dict):
+        exec_list.state.skipped.update(saved_scheduler.get("skipped", []))
+        for node_id, successors in saved_scheduler.get(
+            "active_successors",
+            {},
+        ).items():
+            topo.set_active_successors(node_id, successors)
+        exec_list.state.pruned_edges.update(
+            tuple(edge) for edge in saved_scheduler.get("pruned_edges", [])
+        )
+    elif resume_state is not None:
+        # Backward-compatible restoration of earlier checkpoint format.
+        for entry in state.execution_history:
+            definition = doc.nodes.get(entry.node_id) or {}
+            if entry.status == WorkflowStatus.COMPLETED and (
+                entry.next_node is not None
+                or definition.get("class_type") == "ConditionNode"
+            ):
+                exec_list.select_branch(entry.node_id, entry.next_node)
+
+
+def _route_node_output(
+    exec_list: ExecutionList,
+    node_id: str,
+    class_type: str,
+    output: NodeOutput,
+) -> None:
+    if output.expand:
+        frame = ExpandFrame(
+            parent_id=node_id,
+            call_idx=_next_call_idx(exec_list, node_id),
+            nodes=output.expand.get("nodes", {}),
+        )
+        added = exec_list.prompt.add_expanded(frame)
+        for nid in added:
+            exec_list.add_node(nid)
+
+    exec_list.skip_unused_error_handler(node_id)
+    allow_reopen = class_type in ("IterativeRefineNode", "LoopNode")
+    if output.next_node is not None or class_type == "ConditionNode":
+        exec_list.select_branch(node_id, output.next_node)
+        # Mark this routing node completed so the scheduler can finish
+        # (otherwise it stays in_progress and is_done() never flips).
+        exec_list.complete_node_execution(node_id)
+        if output.next_node:
+            exec_list.reopen_or_add(
+                output.next_node,
+                allow_reopen=allow_reopen,
+            )
+    else:
+        exec_list.complete_node_execution(node_id)
+        for succ in exec_list.topo.successors_of(node_id):
+            exec_list.add_node(succ)
+
+
+def _apply_resume_payload(
+    snapshot: WorkflowRunSnapshot,
+    doc: WorkflowDocument,
+    inputs: dict[str, Any] | None,
+) -> None:
+    resume_payload = dict(inputs or {})
+    target = resume_payload.pop("node_id", None)
+    if len(snapshot.blocked_nodes) > 1 and target is None:
+        raise ValueError(
+            "node_id is required when multiple nodes await review",
+        )
+    if target is not None and target not in snapshot.blocked_nodes:
+        raise ValueError("node_id does not identify a blocked node")
+    review_nodes = [target] if target else snapshot.blocked_nodes
+    for node_id in review_nodes:
+        definition = doc.nodes.get(node_id) or {}
+        if definition.get(
+            "class_type",
+        ) == "HumanReviewNode" and not isinstance(
+            resume_payload.get("approved"),
+            bool,
+        ):
+            raise ValueError(
+                "review decision requires a boolean approved field",
+            )
+        snapshot.state.variables[f"__resume__{node_id}"] = resume_payload
+
+
+def _finish_execution_status(
+    state: WorkflowState,
+    errors_list: list[str],
+) -> None:
+    if state.status == WorkflowStatus.TIMEOUT:
+        pass
+    elif errors_list:
+        state.status = WorkflowStatus.FAILED
+    elif state.status not in (
+        WorkflowStatus.WAITING_HUMAN,
+        WorkflowStatus.PAUSED,
+        WorkflowStatus.CANCELLED,
+    ):
+        state.status = WorkflowStatus.COMPLETED
 
 
 class _ContextShim:
@@ -224,7 +398,9 @@ class WorkflowExecutor:
         self.agent_controller = agent_controller
         self.agent_runtime = agent_runtime
         self.node_registry = node_registry or bootstrap()
-        self._progress_handlers: list[ProgressHandler] = list(progress_handlers or [])
+        self._progress_handlers: list[ProgressHandler] = list(
+            progress_handlers or [],
+        )
         self._active_lists: dict[str, ExecutionList] = {}
         self._states: dict[str, WorkflowState] = {}
         self._abort_events: dict[str, asyncio.Event] = {}
@@ -269,34 +445,17 @@ class WorkflowExecutor:
             raise ValidationError("Workflow validation failed", errors=errors)
 
         if outputs_to_execute:
-            output_nodes = [n for n in outputs_to_execute if n in doc.nodes] or output_nodes
+            output_nodes = [
+                n for n in outputs_to_execute if n in doc.nodes
+            ] or output_nodes
 
-        merged_inputs = _merge_schema_input_defaults(doc, resume_state.inputs if resume_state is not None else inputs)
-
-        if resume_state is not None:
-            state = resume_state
-            state.status = WorkflowStatus.RUNNING
-            state.completed_at = None
-            for key, value in merged_inputs.items():
-                state.variables.setdefault(key, value)
-        else:
-            state = WorkflowState(
-                workflow_id=doc.id or prompt_id,
-                status=WorkflowStatus.RUNNING,
-                inputs=dict(merged_inputs),
-                variables=dict(merged_inputs),
-                started_at=datetime.utcnow(),
-            )
-
-        if extra_data:
-            state.metadata.update(
-                {k: v for k, v in extra_data.items() if v is not None},
-            )
-        state.metadata["prompt_id"] = prompt_id
-        if doc.metadata:
-            state.metadata.update(
-                {k: v for k, v in doc.metadata.items() if v is not None and k not in {"scheduler_checkpoint", "refine_counters", "subworkflow_runs", "prompt_id"}},
-            )
+        state = self._prepare_state(
+            doc,
+            inputs,
+            prompt_id,
+            extra_data,
+            resume_state,
+        )
 
         state_id = str(state.id)
         self._states[state_id] = state
@@ -329,35 +488,14 @@ class WorkflowExecutor:
         # Resume from the durable checkpoint: completed nodes stay completed
         # and their output slots are restored, while the blocked node is
         # intentionally left pending so it can consume the resume payload.
-        saved_scheduler = state.metadata.get("scheduler_checkpoint") if resume_state is not None else None
-        saved_completed = set(saved_scheduler.get("completed", [])) if isinstance(saved_scheduler, dict) else None
-        if resume_state is not None:
-            for entry in state.execution_history:
-                if (
-                    entry.status == WorkflowStatus.COMPLETED
-                    and entry.node_id in doc.nodes
-                    and (saved_completed is None or entry.node_id in saved_completed)
-                ):
-                    exec_list.state.completed.add(entry.node_id)
-                    values = state.outputs.get(entry.node_id, entry.output)
-                    if not isinstance(values, tuple):
-                        values = tuple(values) if isinstance(values, list) else (values,)
-                    for slot, value in enumerate(values):
-                        upstream_values[(entry.node_id, slot)] = value
-
-        if isinstance(saved_scheduler, dict):
-            exec_list.state.skipped.update(saved_scheduler.get("skipped", []))
-            for node_id, successors in saved_scheduler.get("active_successors", {}).items():
-                topo.set_active_successors(node_id, successors)
-            exec_list.state.pruned_edges.update(tuple(edge) for edge in saved_scheduler.get("pruned_edges", []))
-        elif resume_state is not None:
-            # Backward-compatible restoration of earlier checkpoint format.
-            for entry in state.execution_history:
-                definition = doc.nodes.get(entry.node_id) or {}
-                if entry.status == WorkflowStatus.COMPLETED and (
-                    entry.next_node is not None or definition.get("class_type") == "ConditionNode"
-                ):
-                    exec_list.select_branch(entry.node_id, entry.next_node)
+        _restore_scheduler(
+            doc,
+            resume_state,
+            state,
+            exec_list,
+            topo,
+            upstream_values,
+        )
 
         for out_id in output_nodes:
             exec_list.add_node(out_id)
@@ -371,7 +509,8 @@ class WorkflowExecutor:
             output_cache=output_cache,
             object_cache=BasicCache(),
             cache_keys=CacheKeySetInputSignature(
-                doc.nodes, registry=self.node_registry,
+                doc.nodes,
+                registry=self.node_registry,
             ),
             progress=progress,
         )
@@ -415,16 +554,7 @@ class WorkflowExecutor:
         duration_ms = int((time.monotonic() - start_ts) * 1000)
         state.completed_at = datetime.utcnow()
 
-        if state.status == WorkflowStatus.TIMEOUT:
-            pass
-        elif errors_list:
-            state.status = WorkflowStatus.FAILED
-        elif state.status not in (
-            WorkflowStatus.WAITING_HUMAN,
-            WorkflowStatus.PAUSED,
-            WorkflowStatus.CANCELLED,
-        ):
-            state.status = WorkflowStatus.COMPLETED
+        _finish_execution_status(state, errors_list)
 
         await self._persist_run_snapshot(state, prompt_id, exec_list)
         resolved_outputs = self._resolve_outputs(doc, state, output_nodes)
@@ -456,9 +586,141 @@ class WorkflowExecutor:
             metadata={"prompt_id": prompt_id},
         )
 
+    def _prepare_state(
+        self,
+        doc: WorkflowDocument,
+        inputs: dict[str, Any],
+        prompt_id: str,
+        extra_data: dict[str, Any] | None,
+        resume_state: WorkflowState | None,
+    ) -> WorkflowState:
+        merged_inputs = _merge_schema_input_defaults(
+            doc,
+            resume_state.inputs if resume_state is not None else inputs,
+        )
+
+        if resume_state is not None:
+            state = resume_state
+            state.status = WorkflowStatus.RUNNING
+            state.completed_at = None
+            for key, value in merged_inputs.items():
+                state.variables.setdefault(key, value)
+        else:
+            state = WorkflowState(
+                workflow_id=doc.id or prompt_id,
+                status=WorkflowStatus.RUNNING,
+                inputs=dict(merged_inputs),
+                variables=dict(merged_inputs),
+                started_at=datetime.utcnow(),
+            )
+
+        if extra_data:
+            state.metadata.update(
+                {k: v for k, v in extra_data.items() if v is not None},
+            )
+        state.metadata["prompt_id"] = prompt_id
+        if doc.metadata:
+            state.metadata.update(
+                {
+                    k: v
+                    for k, v in doc.metadata.items()
+                    if v is not None
+                    and k
+                    not in {
+                        "scheduler_checkpoint",
+                        "refine_counters",
+                        "subworkflow_runs",
+                        "prompt_id",
+                    }
+                },
+            )
+
+        return state
+
     # ------------------------------------------------------------------
     # Main scheduler loop
     # ------------------------------------------------------------------
+    async def _run_ready_batch(
+        self,
+        batch: list[str],
+        max_par: int,
+        deadline: float | None,
+        exec_list: ExecutionList,
+        runner: NodeRunner,
+        hidden: HiddenHolder,
+        upstream_values: dict[tuple[str, int], Any],
+        progress: ProgressRegistry,
+        state: WorkflowState,
+        errors_list: list[str],
+        prompt_id: str,
+        doc: WorkflowDocument,
+    ) -> list[
+        tuple[str, dict[str, Any] | None, Any | None, Exception | None]
+    ] | None:
+        sem = asyncio.Semaphore(max_par)
+
+        async def _guarded(
+            nid: str,
+        ) -> tuple[str, dict[str, Any] | None, Any | None, Exception | None]:
+            async with sem:
+                return await self._execute_node(
+                    nid,
+                    exec_list,
+                    runner,
+                    hidden,
+                    upstream_values,
+                    progress,
+                )
+
+        gather_coro = asyncio.gather(
+            *[_guarded(nid) for nid in batch],
+        )
+        abort_wait = asyncio.create_task(hidden.abort_event.wait())
+        try:
+            remaining = (
+                max(0.0, deadline - time.monotonic())
+                if deadline is not None
+                else None
+            )
+            done, _ = await asyncio.wait(
+                [gather_coro, abort_wait],
+                timeout=remaining,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if abort_wait in done:
+                gather_coro.cancel()
+                await asyncio.gather(gather_coro, return_exceptions=True)
+                state.status = WorkflowStatus.CANCELLED
+                exec_list.cancel()
+                return None
+            if gather_coro not in done:
+                gather_coro.cancel()
+                await asyncio.gather(gather_coro, return_exceptions=True)
+                errors_list.append("workflow timed out")
+                state.error_stack.append("workflow timed out")
+                state.status = WorkflowStatus.TIMEOUT
+                exec_list.cancel()
+                progress.emit(
+                    ProgressEvent(
+                        type="execution_timeout",
+                        prompt_id=prompt_id,
+                        data={"timeout_sec": self._timeout_sec(doc)},
+                    ),
+                )
+                return None
+            results = await gather_coro
+        finally:
+            abort_wait.cancel()
+            if not gather_coro.done():
+                gather_coro.cancel()
+            await asyncio.gather(
+                abort_wait,
+                gather_coro,
+                return_exceptions=True,
+            )
+
+        return results
+
     async def _run_loop(
         self,
         exec_list: ExecutionList,
@@ -500,56 +762,22 @@ class WorkflowExecutor:
             if not batch:
                 break
 
-            sem = asyncio.Semaphore(max_par)
-
-            async def _guarded(nid: str) -> tuple[
-                str,
-                dict[str, Any] | None,
-                Any | None,
-                Exception | None,
-            ]:
-                async with sem:
-                    return await self._execute_node(
-                        nid, exec_list, runner, hidden, upstream_values, progress,
-                    )
-
-            gather_coro = asyncio.gather(
-                *[_guarded(nid) for nid in batch],
+            results = await self._run_ready_batch(
+                batch,
+                max_par,
+                deadline,
+                exec_list,
+                runner,
+                hidden,
+                upstream_values,
+                progress,
+                state,
+                errors_list,
+                prompt_id,
+                doc,
             )
-            abort_wait = asyncio.create_task(hidden.abort_event.wait())
-            try:
-                remaining = max(0.0, deadline - time.monotonic()) if deadline is not None else None
-                done, _ = await asyncio.wait(
-                    [gather_coro, abort_wait], timeout=remaining,
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-                if abort_wait in done:
-                    gather_coro.cancel()
-                    await asyncio.gather(gather_coro, return_exceptions=True)
-                    state.status = WorkflowStatus.CANCELLED
-                    exec_list.cancel()
-                    return
-                if gather_coro not in done:
-                    gather_coro.cancel()
-                    await asyncio.gather(gather_coro, return_exceptions=True)
-                    errors_list.append("workflow timed out")
-                    state.error_stack.append("workflow timed out")
-                    state.status = WorkflowStatus.TIMEOUT
-                    exec_list.cancel()
-                    progress.emit(
-                        ProgressEvent(
-                            type="execution_timeout",
-                            prompt_id=prompt_id,
-                            data={"timeout_sec": self._timeout_sec(doc)},
-                        ),
-                    )
-                    return
-                results = await gather_coro
-            finally:
-                abort_wait.cancel()
-                if not gather_coro.done():
-                    gather_coro.cancel()
-                await asyncio.gather(abort_wait, gather_coro, return_exceptions=True)
+            if results is None:
+                return
 
             paused = False
             for node_id, node_def, result, exc in results:
@@ -585,25 +813,27 @@ class WorkflowExecutor:
         hidden: HiddenHolder,
         upstream_values: dict[tuple[str, int], Any],
         progress: ProgressRegistry,
-    ) -> tuple[
-        str,
-        dict[str, Any] | None,
-        Any | None,
-        Exception | None,
-    ]:
+    ) -> tuple[str, dict[str, Any] | None, Any | None, Exception | None]:
         """Execute a single staged node (or its mute/bypass passthrough)."""
         node_def = exec_list.prompt.get(node_id)
         if node_def is None:
             return (node_id, None, None, None)
         mode = _node_mode(node_def)
         if mode in ("mute", "bypass"):
-            progress.set_status(node_id, NodeStatus.SKIPPED, metadata={"mode": mode})
+            progress.set_status(
+                node_id,
+                NodeStatus.SKIPPED,
+                metadata={"mode": mode},
+            )
             result = type(
                 "PassthroughResult",
                 (),
                 {
                     "output": _mode_passthrough_output(
-                        self.node_registry, node_def, upstream_values, mode,
+                        self.node_registry,
+                        node_def,
+                        upstream_values,
+                        mode,
                     ),
                     "duration_ms": 0,
                     "cached": False,
@@ -611,7 +841,12 @@ class WorkflowExecutor:
             )()
             return (node_id, node_def, result, None)
         try:
-            result = await runner.run(node_id, node_def, upstream_values, hidden)
+            result = await runner.run(
+                node_id,
+                node_def,
+                upstream_values,
+                hidden,
+            )
             return (node_id, node_def, result, None)
         except Exception as exc:
             return (node_id, node_def, None, exc)
@@ -710,29 +945,7 @@ class WorkflowExecutor:
             )
             return "paused"
 
-        if output.expand:
-            frame = ExpandFrame(
-                parent_id=node_id,
-                call_idx=_next_call_idx(exec_list, node_id),
-                nodes=output.expand.get("nodes", {}),
-            )
-            added = exec_list.prompt.add_expanded(frame)
-            for nid in added:
-                exec_list.add_node(nid)
-
-        exec_list.skip_unused_error_handler(node_id)
-        allow_reopen = class_type in ("IterativeRefineNode", "LoopNode")
-        if output.next_node is not None or class_type == "ConditionNode":
-            exec_list.select_branch(node_id, output.next_node)
-            # Mark this routing node completed so the scheduler can finish
-            # (otherwise it stays in_progress and is_done() never flips).
-            exec_list.complete_node_execution(node_id)
-            if output.next_node:
-                exec_list.reopen_or_add(output.next_node, allow_reopen=allow_reopen)
-        else:
-            exec_list.complete_node_execution(node_id)
-            for succ in exec_list.topo.successors_of(node_id):
-                exec_list.add_node(succ)
+        _route_node_output(exec_list, node_id, class_type, output)
 
         state.record_execution(
             NodeExecutionResult(
@@ -757,25 +970,23 @@ class WorkflowExecutor:
         state.metadata["scheduler_checkpoint"] = {
             "completed": sorted(exec_list.state.completed),
             "skipped": sorted(exec_list.state.skipped),
-            "active_successors": {node: sorted(successors) for node, successors in exec_list.topo._active_succ.items()},
+            "active_successors": exec_list.topo.active_successors_snapshot(),
             "pruned_edges": sorted(exec_list.state.pruned_edges),
         }
         blocked = list(exec_list.state.blocked.keys())
         snapshot = WorkflowRunSnapshot(
             state=state,
             output_cache=dict(state.outputs),
-            dynamic_prompt={
-                node_id: exec_list.prompt.get(node_id)
-                for node_id in exec_list.prompt.all_ids
-                if exec_list.prompt.get(node_id) is not None
-            },
+            dynamic_prompt=exec_list.prompt.snapshot_nodes(),
             blocked_nodes=blocked,
             prompt_id=prompt_id,
         )
         try:
             await self.state_store.save(snapshot)
         except Exception as exc:
-            raise RuntimeError("workflow checkpoint could not be persisted") from exc
+            raise RuntimeError(
+                "workflow checkpoint could not be persisted",
+            ) from exc
 
     # ------------------------------------------------------------------
     # Resume / cancel
@@ -796,8 +1007,13 @@ class WorkflowExecutor:
         snapshot = await self.state_store.load(state_id)
         if snapshot is None:
             raise RuntimeError(f"no snapshot for state_id {state_id}")
-        if snapshot.state.status not in (WorkflowStatus.PAUSED, WorkflowStatus.WAITING_HUMAN):
-            raise ValueError("only paused or waiting_human runs can be resumed")
+        if snapshot.state.status not in (
+            WorkflowStatus.PAUSED,
+            WorkflowStatus.WAITING_HUMAN,
+        ):
+            raise ValueError(
+                "only paused or waiting_human runs can be resumed",
+            )
         doc = _ensure_document(definition)
         if snapshot.state.workflow_id != doc.id:
             raise ValueError("checkpoint belongs to another workflow")
@@ -805,18 +1021,7 @@ class WorkflowExecutor:
             doc = doc.model_copy(deep=True)
             doc.nodes.update(snapshot.dynamic_prompt)
         pid = prompt_id or snapshot.prompt_id or str(uuid4())
-        resume_payload = dict(inputs or {})
-        target = resume_payload.pop("node_id", None)
-        if len(snapshot.blocked_nodes) > 1 and target is None:
-            raise ValueError("node_id is required when multiple nodes await review")
-        if target is not None and target not in snapshot.blocked_nodes:
-            raise ValueError("node_id does not identify a blocked node")
-        review_nodes = [target] if target else snapshot.blocked_nodes
-        for node_id in review_nodes:
-            definition = doc.nodes.get(node_id) or {}
-            if definition.get("class_type") == "HumanReviewNode" and not isinstance(resume_payload.get("approved"), bool):
-                raise ValueError("review decision requires a boolean approved field")
-            snapshot.state.variables[f"__resume__{node_id}"] = resume_payload
+        _apply_resume_payload(snapshot, doc, inputs)
         return await self.execute_async(
             doc,
             {},
@@ -863,7 +1068,10 @@ class WorkflowExecutor:
         state: WorkflowState,
         inferred_output_nodes: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Resolve declared outputs from ``doc.outputs`` against final state."""
+        (
+            "Resolve declared outputs from "
+            "``doc.outputs`` against final state."
+        )
         result: dict[str, Any] = {}
         if isinstance(doc.outputs, list):
             names = doc.outputs or list(inferred_output_nodes or [])

@@ -78,7 +78,8 @@
       "tests/unit/plugins/flowforge/test_runner_pipeline_contract.py",
       "tests/unit/plugins/flowforge/test_authoring_conversion_contract.py",
       "tests/unit/plugins/flowforge/test_lifecycle_listing_contract.py",
-      "tests/unit/plugins/flowforge/test_router_stream_contract.py"
+      "tests/unit/plugins/flowforge/test_router_stream_contract.py",
+      "tests/unit/plugins/flowforge/test_executor_stage_contract.py"
     ],
     "office": [
       "tests/unit/agents/tools/test_office_tools.py",
@@ -376,6 +377,13 @@
       "test_inactive_allocation_retains_zero_and_feasibility_gate",
       "test_scenario_ranking_retains_feasible_ranges_ties_and_pareto",
       "test_scenario_validation_retains_original_error_precedence"
+    ],
+    "tests/unit/plugins/flowforge/test_executor_stage_contract.py": [
+      "test_executor_retains_passthrough_without_tool_side_effect",
+      "test_executor_retains_input_defaults_and_metadata",
+      "test_executor_rejects_invalid_input_before_execution",
+      "test_executor_restart_retains_siblings_and_review_guards",
+      "test_graph_snapshot_and_reopen_keep_visible_nodes_and_branches"
     ]
   }
 }
