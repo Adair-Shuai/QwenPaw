@@ -51,7 +51,8 @@
       "tests/unit/plugins/test_storage_capacity_workbench.py",
       "tests/unit/plugins/test_storage_capacity_flow.py",
       "tests/unit/plugins/ugsci/test_manifest_guard_contracts.py",
-      "tests/unit/plugins/ugsci/test_las_conversion_contract.py"
+      "tests/unit/plugins/ugsci/test_las_conversion_contract.py",
+      "tests/unit/plugins/ugsci/test_eclipse_conversion_contract.py"
     ],
     "flowforge": [
       "tests/unit/plugins/flowforge/test_bidirectional_calls.py",
@@ -277,6 +278,9 @@
     "tests/unit/channels/test_base_core.py": [
       "test_tracker_stream_closes_nested_process_before_browser_cleanup",
       "test_tracker_closes_nested_channel_process_before_host_completion"
+    ],
+    "tests/unit/plugins/ugsci/test_eclipse_conversion_contract.py": [
+      "test_eclipse_reader_preserves_companions_geometry_and_properties"
     ]
   }
 }

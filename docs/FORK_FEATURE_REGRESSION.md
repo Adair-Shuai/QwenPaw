@@ -1,5 +1,7 @@
 # 自有功能合并回归
 
+Eclipse 读取器将网格二进制写出单独处理，保留显式 INIT／UNRST 路径优先、大小写不敏感的同名伴随文件、空路径回退、活动单元的原始索引和角点顺序，以及静态／动态 NaN 转零、无穷值、时间步排序和首／中／末抽样。`test_eclipse_conversion_contract.py` 在两份实际读取器上使用 NumPy 数组形式的 xtgeo 依赖边界夹具，保护真实转换器与二进制输出；GRDECL 无 xtgeo 的真实文件回归继续执行。
+
 渠道外层 SSE 流关闭时，BaseChannel 必须先关闭仍暂停在 yield 的实际处理流，再执行浏览器响应周期收尾；清理异常仍向调用方传播，浏览器收尾仍须执行。`test_base_core.py` 的嵌套流回归经真实 ConsoleChannel、TaskTracker 广播锁与 PluginActivity 验证：取消广播后，宿主完成回调尚未结束时插件占用已释放；不依赖异步生成器的垃圾回收来完成关闭。原有公开 app／channel 清理拒绝和重载重试继续执行。
 
 LAS 文本读取将头字段与数值行解析分开，保留深度列 DEPT／DEPTH／MD 的原有优先级、换行数据、NULL 哨兵、井名与坐标；lasio 可用时仍优先使用，NaN 曲线仍按原规则转换。`test_las_conversion_contract.py` 在两份实际读取器上用真实 LAS 文件核对位置、曲线、索引和单元 ID 的二进制输出，并保护缺少曲线、空数据、列数不整除及非数值数据的原错误信息；现有测井空间定位与可视化接口回归继续执行。
