@@ -56,7 +56,8 @@
       "tests/unit/plugins/ugsci/test_eclipse_conversion_contract.py",
       "tests/unit/plugins/ugsci/test_genui_card_stage_contract.py",
       "tests/unit/plugins/ugsci/test_visualization_http_contract.py",
-      "tests/unit/plugins/ugsci/test_runtime_host_contract.py"
+      "tests/unit/plugins/ugsci/test_runtime_host_contract.py",
+      "tests/unit/plugins/ugsci/test_visualization_tool_contract.py"
     ],
     "flowforge": [
       "tests/unit/plugins/flowforge/test_bidirectional_calls.py",
@@ -350,6 +351,15 @@
       "test_slice_persists_selected_geometry_ids_and_zero_scalars",
       "test_slice_and_property_failures_keep_http_details",
       "test_catalog_cascade_hides_examples_and_removes_managed_files"
+    ],
+    "tests/unit/plugins/ugsci/test_visualization_tool_contract.py": [
+      "test_dispatch_posts_original_paths_and_payloads",
+      "test_dispatch_retains_queue_payload_and_acknowledgement",
+      "test_dispatch_view_configuration_keeps_order_and_zero",
+      "test_reports_retain_finite_statistics_and_real_json",
+      "test_dispatch_errors_preserve_details_without_queue",
+      "test_corrupt_scalar_report_keeps_original_error",
+      "test_well_filter_retains_actual_trajectory_and_path_guards"
     ],
     "tests/unit/plugins/ugsci/test_runtime_host_contract.py": [
       "test_public_runtime_probe_retains_desktop_interpreter_rules",
