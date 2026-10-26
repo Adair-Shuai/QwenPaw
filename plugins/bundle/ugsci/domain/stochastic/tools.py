@@ -3,12 +3,14 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from ..common.errors import DomainError, DomainErrorCode, wrap_unknown_error
 from ..common.tool_chunk import emit_tool_chunk
-from ..computation.models import BayesianNormalRequest, MultiObjectiveQuadraticRequest
+from ..computation.models import (
+    BayesianNormalRequest,
+    MultiObjectiveQuadraticRequest,
+)
 from ..computation.service import ComputationService, require, validate_matrix
 from ..deterministic.providers import default_registry
 
@@ -19,13 +21,25 @@ def _chunk(payload: dict[str, Any], *, error: bool = False) -> Any:
     return emit_tool_chunk(payload, error=error)
 
 
-def _run(capability_id: str, request: Any, method: str, assumptions: list[str]) -> Any:
+def _run(
+    capability_id: str,
+    request: Any,
+    method: str,
+    assumptions: list[str],
+) -> Any:
     try:
-        adapter = default_registry.resolve(capability_id, execution_class="stochastic")
+        adapter = default_registry.resolve(
+            capability_id,
+            execution_class="stochastic",
+        )
         return _chunk(
             _service.execute(
-                capability_id, adapter, request, method=method, assumptions=assumptions
-            ).to_dict()
+                capability_id,
+                adapter,
+                request,
+                method=method,
+                assumptions=assumptions,
+            ).to_dict(),
         )
     except DomainError as exc:
         return _chunk(exc.to_dict(), error=True)
@@ -44,7 +58,10 @@ async def ugsci_bayesian_normal_estimate(
 ) -> Any:
     """Estimate a normal mean with an explicitly stochastic PyMC Provider."""
     try:
-        require(len(observations) >= 2, "At least two observations are required")
+        require(
+            len(observations) >= 2,
+            "At least two observations are required",
+        )
         require(
             prior_std > 0 and observation_std > 0,
             "Standard deviations must be positive",
@@ -67,7 +84,8 @@ async def ugsci_bayesian_normal_estimate(
     except (TypeError, ValueError) as exc:
         return _chunk(
             DomainError(
-                DomainErrorCode.INVALID_INPUT, f"Invalid stochastic input: {exc}"
+                DomainErrorCode.INVALID_INPUT,
+                f"Invalid stochastic input: {exc}",
             ).to_dict(),
             error=True,
         )
@@ -92,7 +110,10 @@ async def ugsci_multiobjective_quadratic(
     """Compute a seeded stochastic NSGA-II Pareto set."""
     try:
         dimensions = validate_matrix(centers, "centers")
-        require(len(centers) >= 2, "At least two objective centers are required")
+        require(
+            len(centers) >= 2,
+            "At least two objective centers are required",
+        )
         require(
             len(bounds) == dimensions
             and all(len(row) == 2 and row[0] < row[1] for row in bounds),
@@ -114,7 +135,8 @@ async def ugsci_multiobjective_quadratic(
     except (TypeError, ValueError) as exc:
         return _chunk(
             DomainError(
-                DomainErrorCode.INVALID_INPUT, f"Invalid stochastic input: {exc}"
+                DomainErrorCode.INVALID_INPUT,
+                f"Invalid stochastic input: {exc}",
             ).to_dict(),
             error=True,
         )
@@ -123,7 +145,8 @@ async def ugsci_multiobjective_quadratic(
         request,
         "nsga2",
         [
-            "Seeded NSGA-II is reproducible for a fixed Provider version but remains stochastic"
+            "Seeded NSGA-II is reproducible for a fixed Provider "
+            "version but remains stochastic",
         ],
     )
 

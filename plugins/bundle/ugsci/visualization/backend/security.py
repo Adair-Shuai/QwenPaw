@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import hashlib
 import logging
-import os
 import re
 from pathlib import Path
 
@@ -37,7 +36,11 @@ def safe_resolve(path: Path, base_dir: Path) -> Path | None:
         full = (base_dir / path).resolve()
         # Check the resolved path is within base
         if not full.is_relative_to(base_resolved):
-            logger.warning("Path escape blocked: %s (resolved to %s)", path, full)
+            logger.warning(
+                "Path escape blocked: %s (resolved to %s)",
+                path,
+                full,
+            )
             return None
         return full
     except Exception as exc:
@@ -71,7 +74,7 @@ def sanitize_filename(filename: str) -> str | None:
 def sanitize_identifier(value: str, default: str = "dataset") -> str:
     """Return a filesystem-safe, stable identifier for generated resources."""
     cleaned = re.sub(r"[^A-Za-z0-9_-]+", "_", value.strip()).strip("_-")
-    return (cleaned[:80] or default)
+    return cleaned[:80] or default
 
 
 def compute_file_fingerprint(file_path: Path) -> str:
