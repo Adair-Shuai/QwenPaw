@@ -723,7 +723,10 @@ class TestRegisterToolRollback:
 
     @pytest.mark.asyncio
     async def test_write_config_failure_rolls_back_governed_runtime_tool(self):
-        """Failed activation revokes published tools without leaving ownership."""
+        (
+            "Failed activation revokes published "
+            "tools without leaving ownership."
+        )
         plugin_id = "__ut_rollback_write_fail__"
         tool_name = "__ut_rollback_write_tool__"
         policy = "UtRollbackWriteTool"
@@ -794,8 +797,6 @@ class TestRegisterToolRollback:
 
     def test_missing_active_agent_uses_existing_profile_without_mutation(self):
         """A stale active_agent must not break GenUI preference seeding."""
-        from types import SimpleNamespace
-
         root_config = SimpleNamespace(
             agents=SimpleNamespace(
                 active_agent="cloud-orchestrator",
@@ -827,7 +828,7 @@ class TestRegisterToolRollback:
             patch(
                 "qwenpaw.config.config.save_agent_config",
                 side_effect=lambda agent_id, value: observed.update(
-                    agent_id=agent_id
+                    agent_id=agent_id,
                 ),
             ),
         ):
