@@ -1,282 +1,112 @@
-/**
- * Workspace Renderer — zero-copy file handoff and deferred inline viewer.
- *
- * Large oil-field files must never take the old browser path
- * workspace-download -> Blob -> File -> multipart upload.  The renderer now
- * sends an authenticated workspace-relative path to the backend, which reads
- * the file directly from the agent/project workspace on a worker thread.
- */
-
+/** Workspace file handoff: no browser copy of large reservoir files. */
 import { getHost } from "../core/runtime";
 import { loadViewerRuntime, type ViewerHandle } from "./viewerLoader";
+import { hostViewerOptions, type WorkspaceFileRef } from "./hostAdapter";
+import { ApiClient } from "./viewer/api/client";
+import { waitForWorkspaceImport, WorkspaceImportFailedError } from "./workspaceImport";
 
-type ImportPhase = "queued" | "running" | "completed" | "failed" | "cancelled";
-
-type WorkspaceFileRef = {
-  workspacePath?: string;
-  title?: string;
-  filename?: string;
-  id?: string;
-  path?: string;
-  size?: number;
-  workspaceRoot?: "project" | "workspace";
-  agentId?: string;
-  chatId?: string;
-  projectDirOverride?: string;
-};
-
-function scopedHeaders(host: any, file: WorkspaceFileRef): Record<string, string> {
-  const token = host.getApiToken?.() || "";
-  const headers: Record<string, string> = typeof host.buildAuthHeaders === "function"
-    ? { ...host.buildAuthHeaders(file.agentId) }
-    : (token ? { Authorization: `Bearer ${token}` } : {});
-  if (file.agentId) headers["X-Agent-Id"] = file.agentId;
-  if (file.chatId) headers["X-Chat-Id"] = file.chatId;
-  if (!file.chatId && file.projectDirOverride) {
-    headers["X-Session-Project-Dir"] = file.projectDirOverride;
-  }
-  return headers;
-}
-
-async function apiRequest(host: any, path: string, init: RequestInit): Promise<Response> {
-  if (typeof host.fetch === "function") {
-    return host.fetch(path, init);
-  }
-  const relative = path.replace(/^\/ugsci\/visualization/, "");
-  return fetch(`${host.getApiUrl("ugsci/visualization")}${relative}`, init);
-}
-
-function phaseLabel(phase: ImportPhase): string {
-  switch (phase) {
-    case "queued": return "已提交，等待后台处理";
-    case "running": return "后台解析中，大型网格可能需要一些时间";
-    case "completed": return "导入完成，正在加载三维场景";
-    case "cancelled": return "导入任务已取消";
-    default: return "";
-  }
-}
-
-/** Polls the lightweight job endpoint first; Three.js is loaded only after success. */
-function InlineViewer({ jobId, file }: { jobId: string; file: WorkspaceFileRef }) {
-  const React = getHost().React;
-  const { useEffect, useRef, useState } = React;
+function InlineViewer({ jobId, file, onOpen, onRetryImport }: { jobId: string; file: WorkspaceFileRef; onOpen: (id: string) => void; onRetryImport: () => void }) {
   const host = getHost();
+  const React = host.React;
+  const { useEffect, useRef, useState } = React;
+  const { Button, Alert } = host.antd;
   const containerRef = useRef<HTMLDivElement>(null);
-  const handleRef = useRef<ViewerHandle | null>(null);
-  const [phase, setPhase] = useState<ImportPhase>("queued");
-  const [progress, setProgress] = useState(0);
-  const [message, setMessage] = useState<string | null>(null);
+  const [text, setText] = useState("等待后台处理…");
+  const [error, setError] = useState<string | null>(null);
   const [datasetId, setDatasetId] = useState<string | null>(null);
-
+  const [ready, setReady] = useState(false);
+  const [retry, setRetry] = useState(0);
+  const [needsImport, setNeedsImport] = useState(false);
   useEffect(() => {
-    let cancelled = false;
-    const poll = async () => {
-      const apiPath = `/ugsci/visualization/imports/${jobId}`;
-      for (let attempt = 0; attempt < 240 && !cancelled; attempt += 1) {
-        try {
-          const response = await apiRequest(host, apiPath, {
-            headers: { ...scopedHeaders(host, file) },
-          });
-          if (!response.ok) throw new Error(`状态查询失败: HTTP ${response.status}`);
-          const status = await response.json();
-          if (cancelled) return;
-          setProgress(Number(status.progress || 0));
-          setPhase(status.status as ImportPhase);
-          if (status.status === "completed") {
-            if (!status.result?.id) throw new Error("导入完成但未返回数据集 ID");
-            setDatasetId(status.result.id);
-            return;
-          }
-          if (status.status === "failed" || status.status === "cancelled") {
-            setMessage(status.error || phaseLabel(status.status));
-            return;
-          }
-        } catch (err) {
-          if (attempt >= 239 && !cancelled) {
-            setPhase("failed");
-            setMessage(err instanceof Error ? err.message : String(err));
-            return;
-          }
-        }
-        await new Promise((resolve) => setTimeout(resolve, 750));
-      }
-    };
-    poll();
-    return () => { cancelled = true; };
-  }, [jobId, file.agentId, file.chatId, file.projectDirOverride]);
-
-  // This effect is intentionally separate from polling: no viewer runtime,
-  // canvas, GPU buffers, or default demo dataset exist while import is queued.
-  useEffect(() => {
-    if (phase !== "completed" || !datasetId || !containerRef.current) return;
-    let cancelled = false;
-    (async () => {
+    const controller = new AbortController();
+    let handle: ViewerHandle | null = null;
+    setError(null);
+    setNeedsImport(false);
+    setReady(false);
+    setDatasetId(null);
+    const options = hostViewerOptions(host, file);
+    const client = new ApiClient(options.apiBase, options.authToken, options);
+    void (async () => {
       try {
-        const runtime = await loadViewerRuntime();
-        if (cancelled || !containerRef.current) return;
-        handleRef.current = runtime.mount(containerRef.current, {
-          apiBase: host.getApiUrl("ugsci/visualization"),
-          authToken: host.getApiToken() || undefined,
+        const id = await waitForWorkspaceImport(client, jobId, {
+          signal: controller.signal,
+          onProgress: (job) => setText(`${job.status === "queued" ? "等待后台处理" : "正在解析数据"}（${Math.round(job.progress * 100)}%）`),
         });
-        // mount() starts its initial manifest request asynchronously.  A
-        // workspace import can finish before that request populates the
-        // viewer's in-memory catalog, so retry the open command briefly
-        // instead of reporting a false "dataset not found" race.
-        let lastError: unknown;
-        for (let attempt = 0; attempt < 20 && !cancelled; attempt += 1) {
-          try {
-            await handleRef.current.executeCommand?.("open", { datasetId });
-            lastError = undefined;
-            break;
-          } catch (err) {
-            lastError = err;
-            const text = err instanceof Error ? err.message : String(err);
-            if (!text.includes("数据集不存在") && !text.includes("dataset")) {
-              throw err;
-            }
-            await new Promise((resolve) => setTimeout(resolve, 250));
-          }
-        }
-        if (lastError && !cancelled) throw lastError;
+        if (controller.signal.aborted) return;
+        setDatasetId(id);
+        setText("正在加载场景…");
+        const runtime = await loadViewerRuntime();
+        if (controller.signal.aborted || !containerRef.current) return;
+        handle = runtime.mount(containerRef.current, { ...options, initialDatasetId: id, autoLoad: false, compact: true, enableCommands: false });
+        await handle.ready;
+        if (!controller.signal.aborted) setReady(true);
       } catch (err) {
-        if (!cancelled) {
-          setPhase("failed");
-          setMessage(err instanceof Error ? err.message : String(err));
-        }
+        if (controller.signal.aborted) return;
+        handle?.dispose();
+        handle = null;
+        setNeedsImport(err instanceof WorkspaceImportFailedError);
+        setError(err instanceof Error ? err.message : String(err));
       }
     })();
-    return () => {
-      cancelled = true;
-      try { handleRef.current?.dispose(); } catch {}
-      handleRef.current = null;
-    };
-  }, [phase, datasetId]);
+    return () => { controller.abort(); handle?.dispose(); };
+  }, [jobId, retry, file.agentId, file.chatId, file.projectDirOverride]);
 
-  return React.createElement(
-    "div",
-    { style: { width: "100%", marginTop: 8 } },
-    phase === "completed"
-      ? React.createElement("div", {
-          ref: containerRef,
-          style: {
-            // The legacy viewer uses absolute-positioned panels.  Establish a
-            // local positioning context so those panels stay inside the
-            // preview card instead of anchoring to the workspace viewport.
-            position: "relative",
-            isolation: "isolate",
-            width: "100%", height: "300px", minHeight: 0,
-            border: "1px solid #30363d", borderRadius: 8, overflow: "hidden",
-            contain: "layout paint style",
-          },
-        })
-      : React.createElement(
-          "div",
-          { style: { padding: "12px 16px", width: "100%", color: "#8b949e" } },
-          `${phaseLabel(phase)}${progress > 0 ? `（${Math.round(progress * 100)}%）` : ""}`,
-        ),
-    message
-      ? React.createElement(
-          "div",
-          { style: { marginTop: 6, color: "#ff7875", fontSize: 12 } },
-          `预览状态：${message}`,
-        )
-      : null,
+  return React.createElement("div", { style: { width: "100%", marginTop: 8 } },
+    React.createElement("div", { ref: containerRef, "aria-label": "油气三维预览", style: {
+      position: "relative", isolation: "isolate", width: "100%", height: 360, minHeight: 0,
+      border: "1px solid #30363d", borderRadius: 8, overflow: "hidden", contain: "layout paint style",
+      display: error ? "none" : "block",
+    } }),
+    !ready && !error && React.createElement("div", { role: "status", style: { padding: 12 } }, text),
+    error && React.createElement(Alert, { type: "warning", message: "预览失败", description: error, showIcon: true }),
+    error && React.createElement(Button, { onClick: () => needsImport ? onRetryImport() : setRetry((value) => value + 1), style: { marginTop: 8 } }, needsImport ? "重新导入" : "重试预览"),
+    datasetId && React.createElement(Button, { type: "primary", onClick: () => onOpen(datasetId), style: { marginTop: 8 } }, "在可视化页面展开"),
   );
 }
 
-export function OilGasWorkspaceRenderer(props: {
-  artifact?: WorkspaceFileRef;
-  file?: WorkspaceFileRef;
-  workspacePath?: string;
-  filename?: string;
-}) {
-  const React = getHost().React;
+export function OilGasWorkspaceRenderer(props: { artifact?: WorkspaceFileRef; file?: WorkspaceFileRef; workspacePath?: string; filename?: string }) {
+  const host = getHost();
+  const React = host.React;
   const { useEffect, useState } = React;
-  const { Button, Spin, Alert, Typography } = getHost().antd;
-  const { Text } = Typography;
-
-  const file = props.artifact || props.file || {};
-  const fileName = file.filename || file.title || props.filename || "unknown";
+  const { Button, Spin, Alert, Typography } = host.antd;
+  const navigate = host.useNavigate?.();
+  const selectedAgent = host.useSelectedAgent?.().id || host.getSelectedAgentId?.();
+  const sourceFile = props.artifact || props.file || {};
+  const file: WorkspaceFileRef = { ...sourceFile, agentId: sourceFile.agentId || selectedAgent };
+  const fileName = file.filename || file.title || props.filename || "未命名文件";
   const workspacePath = file.workspacePath || file.path || props.workspacePath;
-  const [phase, setPhase] = useState<"idle" | "submitting" | "submitted" | "failed">("idle");
-  const [jobId, setJobId] = useState<string | null>(null);
+  const importKey = JSON.stringify([workspacePath, fileName, file.workspaceRoot, file.agentId, file.chatId, file.projectDirOverride]);
+  const [job, setJob] = useState<{ id: string; key: string } | null>(null);
+  const jobId = job?.key === importKey ? job.id : null;
   const [error, setError] = useState<string | null>(null);
-
+  const [retry, setRetry] = useState(0);
   useEffect(() => {
-    if (!workspacePath) return;
-    let cancelled = false;
-    setPhase("submitting");
-    setJobId(null);
+    const controller = new AbortController();
+    setJob(null);
     setError(null);
+    if (!workspacePath) { setError("文件缺少工作区路径，无法导入预览"); return; }
+    const options = hostViewerOptions(host, file);
+    const client = new ApiClient(options.apiBase, options.authToken, options);
+    void client.createWorkspaceImport(workspacePath, file.workspaceRoot || "project", fileName.replace(/\.[^.]+$/, ""), controller.signal)
+      .then((result) => { if (!controller.signal.aborted) setJob({ id: result.job_id, key: importKey }); })
+      .catch((err) => { if (!controller.signal.aborted) setError(err instanceof Error ? err.message : String(err)); });
+    return () => controller.abort();
+  }, [importKey, retry]);
 
-    (async () => {
-      try {
-        const host = getHost();
-        const response = await apiRequest(host, "/ugsci/visualization/imports/workspace", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            ...scopedHeaders(host, file),
-          },
-          body: JSON.stringify({
-            path: workspacePath,
-            root: file.workspaceRoot || "project",
-            name: fileName.replace(/\.[^.]+$/, ""),
-          }),
-        });
-        if (!response.ok) throw new Error(`Import failed: HTTP ${response.status}`);
-        const result = await response.json();
-        if (!cancelled) {
-          setJobId(result.job_id);
-          setPhase("submitted");
-        }
-      } catch (err) {
-        if (!cancelled) {
-          setError(err instanceof Error ? err.message : String(err));
-          setPhase("failed");
-        }
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [workspacePath, fileName, file.workspaceRoot, file.agentId, file.chatId, file.projectDirOverride]);
-
-  if (phase === "submitting") {
-    return React.createElement(
-      "div",
-      { style: { padding: 24, textAlign: "center" } },
-      React.createElement(Spin, { size: "large" }),
-      React.createElement("div", { style: { marginTop: 8, color: "#8b949e" } },
-        "正在提交工作区文件，浏览器不会复制大型文件..."),
-    );
-  }
-
-  if (phase === "failed") {
-    return React.createElement(
-      "div",
-      { style: { padding: 24 } },
-      React.createElement(Alert, {
-        type: "warning", message: "导入失败", description: error, showIcon: true,
-      }),
-      React.createElement(Button, {
-        type: "primary", onClick: () => window.location.reload(), style: { marginTop: 12 },
-      }, "重试"),
-    );
-  }
-
-  return React.createElement(
-    "div",
-    { style: { padding: 24, display: "flex", flexDirection: "column", gap: 12, alignItems: "center" } },
-    React.createElement(Text, { strong: true }, `文件: ${fileName}`),
-    file.size ? React.createElement(Text, { type: "secondary" }, `大小: ${(file.size / 1024 / 1024).toFixed(1)} MB`) : null,
-    jobId
-      ? React.createElement(InlineViewer, { jobId, file })
-      : React.createElement(Text, { type: "secondary" }, "正在准备导入任务..."),
-    React.createElement(Button, {
-      type: "primary",
-      onClick: () => {
-        window.history.pushState({}, "", "/oilgas-visualization");
-        window.dispatchEvent(new PopStateEvent("popstate"));
-      },
-    }, "打开油气可视化页面"),
+  const open = (datasetId: string) => {
+    if (!navigate) { setError("当前宿主未提供页面导航，请从侧栏打开油气可视化"); return; }
+    const query = new URLSearchParams({ datasetId });
+    const agentId = file.agentId;
+    if (agentId) query.set("agentId", agentId);
+    if (file.chatId) query.set("chatId", file.chatId);
+    else if (file.projectDirOverride) query.set("projectDirOverride", file.projectDirOverride);
+    navigate(`/oilgas-visualization?${query}`);
+  };
+  return React.createElement("div", { style: { padding: 16, display: "flex", flexDirection: "column", gap: 12, alignItems: "center", width: "100%", boxSizing: "border-box" } },
+    React.createElement(Typography.Text, { strong: true }, `文件：${fileName}`),
+    !jobId && !error && React.createElement(Spin, { tip: "正在提交工作区文件…" }),
+    error && React.createElement(Alert, { type: "warning", message: "预览提示", description: error, showIcon: true }),
+    error && !jobId && workspacePath && React.createElement(Button, { onClick: () => setRetry((value) => value + 1) }, "重试导入"),
+    jobId && React.createElement(InlineViewer, { key: `${jobId}:${file.agentId || ""}:${file.chatId || ""}:${file.projectDirOverride || ""}`, jobId, file, onOpen: open, onRetryImport: () => setRetry((value) => value + 1) }),
   );
 }

@@ -99,6 +99,17 @@ class EngineInfo:
 
 DEFAULT_ENGINES: List[Dict[str, Any]] = [
     {
+        "id": "opm_flow",
+        "name": "OPM Flow",
+        "vendor": "Open Porous Media",
+        "category": "reservoir_simulation",
+        "description": "开源油藏数值模拟器，读取 Eclipse DATA 并输出兼容的网格、场与摘要结果；需配置已有 Flow 可执行文件。",
+        "invocation_hint": "flow <完整 model.DATA 路径> --output-dir=<输出目录>\n仅校验用户配置路径或 OPM_FLOW_EXECUTABLE，不自动安装，不执行 PATH 中的同名程序；未执行试算。",
+        "status": "configured",
+        "is_default": True,
+        "is_custom": False,
+    },
+    {
         "id": "cmg",
         "name": "CMG",
         "vendor": "Computer Modelling Group",

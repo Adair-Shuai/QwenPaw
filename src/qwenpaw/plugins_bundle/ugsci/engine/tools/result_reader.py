@@ -101,6 +101,11 @@ async def read_simulation_results(
             ],
         )
 
+    # A tool read is an explicit user/agent action. Historical jobs may start
+    # their durable result collector here; HTTP GET remains side-effect free.
+    from .result_service import safe_start_collection
+    safe_start_collection(job_id)
+
     lines = [
         f"Simulation results for job: {job_id}",
         f"Simulator: {job.simulator}",
@@ -255,8 +260,10 @@ async def read_simulation_results(
                 for warning in warnings[:10]:
                     lines.append(f"      warning: {warning}")
 
+    from .presentation import simulation_reference
+
     return ToolChunk(
         is_last=True,
         state=ToolResultState.SUCCESS,
-        content=[TextBlock(type="text", text="\n".join(lines))],
+        content=[TextBlock(type="text", text="\n".join(lines)), simulation_reference(job_id, job.simulator)],
     )

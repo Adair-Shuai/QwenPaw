@@ -70,6 +70,8 @@ class RunCenterPlugin:
             hook_name="run_center_shutdown",
             callback=self._on_uninstall,
         )
+        from .runtime.presentation import register_presentation_tools
+        register_presentation_tools(api, self.repository)
         logger.info("[%s] Run Center registered at /api/run-center", PLUGIN_ID)
 
     def _on_startup(self) -> None:

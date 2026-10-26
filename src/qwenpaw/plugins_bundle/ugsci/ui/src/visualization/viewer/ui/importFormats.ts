@@ -1,4 +1,5 @@
 /** Shared import filename rules for the viewer picker and workspace browser. */
+import { ApiClient } from "../api/client";
 
 export const IMPORT_EXTENSIONS = [
   "egrid", "grid", "grdecl", "init", "unrst", "roff", "roffbin",
@@ -43,10 +44,20 @@ export function classifyPickedFiles(files: Iterable<File>): {
     const rightRank = PRIMARY_RANK.indexOf(fileExtension(right.name));
     return (leftRank < 0 ? 99 : leftRank) - (rightRank < 0 ? 99 : rightRank);
   });
+  const primary = ranked[0];
+  const extension = fileExtension(primary.name);
+  const stem = primary.name.replace(/\.[^.]+$/, "").toLowerCase();
+  const companions = ["egrid", "grid", "grdecl", "data"].includes(extension)
+    ? ["init", "unrst"] : ["dat", "sr3"].includes(extension) ? ["dat", "sr3", "irf"] : [];
+  const companion = ranked.slice(1).find((file) =>
+    file.name.replace(/\.[^.]+$/, "").toLowerCase() === stem
+    && fileExtension(file.name) !== extension
+    && companions.includes(fileExtension(file.name)),
+  );
   return {
-    primary: ranked[0],
-    companion: ranked[1],
-    extra: ranked.slice(2),
+    primary,
+    companion,
+    extra: ranked.slice(1).filter((file) => file !== companion),
   };
 }
 
@@ -90,12 +101,19 @@ export async function listWorkspaceTree(options: {
   path?: string;
   root?: WorkspaceRoot;
   cursor?: string | null;
+  signal?: AbortSignal;
+  apiBase?: string;
+  authToken?: string;
+  headers?: Record<string, string>;
+  request?: typeof fetch;
 }): Promise<WorkspaceTreePage> {
   const params = new URLSearchParams();
   if (options.path) params.set("path", options.path);
   params.set("root", options.root || "project");
   if (options.cursor) params.set("cursor", options.cursor);
-  const response = await hostApiFetch(`/workspace/tree?${params.toString()}`);
+  const response = options.apiBase
+    ? await new ApiClient(options.apiBase.replace(/\/ugsci\/visualization\/?$/, "") + "/workspace", options.authToken, { headers: options.headers, request: options.request }).request(`/tree?${params.toString()}`, { signal: options.signal })
+    : await hostApiFetch(`/workspace/tree?${params.toString()}`, { signal: options.signal });
   if (!response.ok) {
     const text = await response.text().catch(() => "");
     throw new Error(text || `工作区列表失败: HTTP ${response.status}`);
@@ -106,22 +124,20 @@ export async function listWorkspaceTree(options: {
 export async function pollImportJob(options: {
   apiBase: string;
   authToken?: string;
+  headers?: Record<string, string>;
+  request?: typeof fetch;
   jobId: string;
   onProgress?: (progress: number, status: string) => void;
   signal?: AbortSignal;
 }): Promise<{ id: string; name?: string }> {
-  const headers: Record<string, string> = options.authToken
-    ? { Authorization: `Bearer ${options.authToken}` }
-    : {};
+  if (!options.jobId || typeof options.jobId !== "string") throw new Error("导入任务未返回有效编号，请重试");
+  const api = new ApiClient(options.apiBase, options.authToken, options);
   for (let attempt = 0; attempt < 240; attempt += 1) {
     if (options.signal?.aborted) throw new Error("导入已取消");
-    const response = await fetch(`${options.apiBase}/imports/${options.jobId}`, {
-      headers,
-      signal: options.signal,
-    });
-    if (!response.ok) throw new Error(`导入状态查询失败: HTTP ${response.status}`);
-    const status = await response.json();
-    options.onProgress?.(Number(status.progress || 0), String(status.status || ""));
+    const status = await api.getJobStatus(options.jobId, options.signal);
+    const progress = Number(status.progress);
+    const labels: Record<string, string> = { pending: "等待处理", queued: "排队中", running: "处理中", completed: "已完成", failed: "失败", cancelled: "已取消" };
+    options.onProgress?.(Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0, labels[String(status.status)] || "处理中");
     if (status.status === "completed") {
       const id = status.result?.id;
       if (!id) throw new Error("导入完成但未返回数据集 ID");

@@ -34,6 +34,7 @@ import csv
 import asyncio
 import logging
 import tempfile
+import uuid
 from pathlib import Path
 from typing import Any, Literal
 
@@ -60,6 +61,7 @@ class IntersectionRequest(BaseModel):
     z_max: float = 5000.0
     name: str = Field(default="section", max_length=128)
     property: str = Field(default="", max_length=64)
+    time_step: int = Field(default=0, ge=0)
 
 
 class SliceRequest(BaseModel):
@@ -69,6 +71,7 @@ class SliceRequest(BaseModel):
     index: int = Field(ge=1, le=100_000)
     property: str = Field(default="", max_length=64)
     name: str = Field(default="slice", max_length=128)
+    time_step: int = Field(default=0, ge=0)
 
 
 class WellSectionRequest(BaseModel):
@@ -78,6 +81,7 @@ class WellSectionRequest(BaseModel):
     offset: float = Field(default=50.0, gt=0, le=10_000)
     property: str = Field(default="", max_length=64)
     name: str = Field(default="wellsec", max_length=128)
+    time_step: int = Field(default=0, ge=0)
 
 
 class CommandAckRequest(BaseModel):
@@ -129,11 +133,29 @@ def build_router(plugin_dir: Path) -> APIRouter:
     from .cache.resource_store import ResourceStore
     from .cache.catalog_state import CatalogState
     from .tools import command_bus
+    from .simulation import SimulationCatalog, SimulationResources, runtime_directory
 
     cache_layout = CacheLayout(data_dir)
-    manifest_store = ManifestStore(bin_dir, cache_layout)
-    resource_store = ResourceStore(bin_dir)
+    manifest_store = SimulationCatalog(ManifestStore(bin_dir, cache_layout))
+    resource_store = SimulationResources(bin_dir)
     catalog_state = CatalogState(data_dir)
+
+    def _derived_destination(ds: dict, name: str) -> tuple[Path, str]:
+        if (ds.get("metadata") or {}).get("simulation_run_id"):
+            destination = runtime_directory() / "bin"
+            destination.mkdir(parents=True, exist_ok=True)
+            return destination, f"{name}_{uuid.uuid4().hex[:12]}"
+        return bin_dir, name
+
+    def _publish_derived(result: dict, source: dict, time_step: int) -> None:
+        metadata = result.setdefault("metadata", {})
+        metadata.update(parent_dataset=source["id"], time_step=time_step, managed=True)
+        run_id = (source.get("metadata") or {}).get("simulation_run_id")
+        if run_id:
+            metadata["simulation_run_id"] = run_id
+        result["properties"] = {key: {**value, "count": result.get("n_vertices" if value.get("association") == "point" else "n_cells", 0)} for key, value in (source.get("properties") or {}).items()
+                                if key in result.get("files", {}).get("scalars", {})}
+        manifest_store.upsert(result)
 
     def _is_managed(ds: dict) -> bool:
         return bool((ds.get("metadata") or {}).get("managed"))
@@ -264,8 +286,8 @@ def build_router(plugin_dir: Path) -> APIRouter:
         if safe_name is None:
             raise HTTPException(400, "Invalid filename")
 
-        file_path = safe_resolve(Path(safe_name), bin_dir)
-        if file_path is None or not file_path.exists():
+        file_path = resource_store.get_path(safe_name)
+        if not file_path.exists():
             raise HTTPException(404, f"Resource not found: {filename}")
 
         # Determine media type
@@ -526,11 +548,22 @@ def build_router(plugin_dir: Path) -> APIRouter:
             ]
         })
 
+    async def _command_agent_id(request: Request) -> str:
+        # Resolve through the host so unknown/disabled Agents and scoped
+        # routes follow the same validation as workspace operations. A
+        # viewerId is only a delivery cursor, never an authorization scope.
+        from qwenpaw.app.agent_context import get_agent_for_request
+
+        workspace = await get_agent_for_request(request)
+        return workspace.agent_id
+
     @router.get("/commands")
     async def drain_viewer_commands(
+        request: Request,
         viewer_id: str = Query("default", alias="viewerId", max_length=128),
     ):
         """Return pending Agent commands once for this viewer instance."""
+        agent_id = await _command_agent_id(request)
         return {
             "commands": [
                 {
@@ -538,25 +571,30 @@ def build_router(plugin_dir: Path) -> APIRouter:
                     "command": item.command,
                     "args": item.args,
                 }
-                for item in command_bus.drain(viewer_id)
+                for item in command_bus.drain(viewer_id, agent_id=agent_id)
             ],
         }
 
     @router.post("/commands/{command_id}/ack")
-    async def acknowledge_viewer_command(command_id: str, payload: CommandAckRequest):
+    async def acknowledge_viewer_command(
+        command_id: str, payload: CommandAckRequest, request: Request,
+    ):
         """Receive an execution ACK from the browser viewer."""
+        agent_id = await _command_agent_id(request)
         if not command_bus.acknowledge(
             command_id,
             status=payload.status,
             result=payload.result,
             error=payload.error,
+            agent_id=agent_id,
         ):
             raise HTTPException(404, f"Command not found: {command_id}")
         return {"commandId": command_id, "status": payload.status}
 
     @router.get("/commands/{command_id}")
-    async def get_viewer_command_status(command_id: str):
-        status = command_bus.status(command_id)
+    async def get_viewer_command_status(command_id: str, request: Request):
+        agent_id = await _command_agent_id(request)
+        status = command_bus.status(command_id, agent_id=agent_id)
         if status is None:
             raise HTTPException(404, f"Command not found: {command_id}")
         return status
@@ -570,12 +608,12 @@ def build_router(plugin_dir: Path) -> APIRouter:
         return JSONResponse(ds)
 
     @router.get("/datasets/{dataset_id}/stats")
-    async def dataset_property_stats(dataset_id: str, property: str = ""):
+    async def dataset_property_stats(dataset_id: str, property: str = "", time_step: int = Query(0, ge=0)):
         """Return descriptive statistics for one cached scalar property."""
         ds = manifest_store.get_dataset(dataset_id)
         if not ds:
             raise HTTPException(404, f"Dataset not found: {dataset_id}")
-        filename = (ds.get("files", {}).get("scalars", {}) or {}).get(property)
+        filename = _dataset_scalar_files(ds, time_step).get(property)
         if not filename:
             raise HTTPException(404, f"Property not found: {property}")
         try:
@@ -596,7 +634,9 @@ def build_router(plugin_dir: Path) -> APIRouter:
         return {
             "dataset_id": dataset_id,
             "property": property,
+            "time_step": time_step,
             "count": len(finite),
+            "missing_count": len(values) - len(finite),
             "min": min(finite),
             "max": max(finite),
             "mean": sum(finite) / len(finite),
@@ -606,14 +646,18 @@ def build_router(plugin_dir: Path) -> APIRouter:
         }
 
     @router.get("/datasets/{dataset_id}/cells/{cell_id}")
-    async def dataset_cell_details(dataset_id: str, cell_id: int):
+    async def dataset_cell_details(dataset_id: str, cell_id: int, time_step: int = Query(0, ge=0)):
         """Return I/J/K, center coordinate and all scalar values for a cell."""
         ds = manifest_store.get_dataset(dataset_id)
         if not ds:
             raise HTTPException(404, f"Dataset not found: {dataset_id}")
+        scalar_files = _dataset_scalar_files(ds, time_step)
         cell_offset = cell_id
         cell_ids_file = ds.get("files", {}).get("cell_ids")
-        if cell_ids_file:
+        if _property_association(ds) == "point":
+            if cell_id < 0 or cell_id >= int(ds.get("n_vertices", 0)):
+                raise HTTPException(404, f"Point not found: {cell_id}")
+        elif cell_ids_file:
             try:
                 raw_ids = resource_store.get_path(cell_ids_file).read_bytes()
                 cell_ids = struct.unpack(f"<{len(raw_ids) // 4}I", raw_ids)
@@ -635,52 +679,81 @@ def build_router(plugin_dir: Path) -> APIRouter:
                 positions = struct.unpack(f"<{len(raw) // 4}f", raw)
                 n_cells = int(ds.get("n_cells", 0)) or 1
                 verts_per_cell = (len(positions) // 3) // n_cells
-                if verts_per_cell >= 8 and len(positions) >= (cell_offset + 1) * verts_per_cell * 3:
+                metadata = ds.get("metadata") or {}
+                if _property_association(ds) == "point":
+                    point = positions[cell_offset * 3:(cell_offset + 1) * 3]
+                    center = list(point) if len(point) == 3 else None
+                elif ds.get("source") in ("network", "network-tube"):
+                    vertex_stride = int(metadata.get("vertices_per_cell") or (2 if ds.get("source") == "network" else verts_per_cell))
+                    start = cell_offset * vertex_stride * 3
+                    points = [positions[offset:offset + 3] for offset in range(start, start + vertex_stride * 3, 3)]
+                    if points and all(len(point) == 3 for point in points):
+                        center = [sum(point[axis] for point in points) / len(points) for axis in range(3)]
+                elif metadata.get("geometry_primitive") == "triangles" and metadata.get("indices_per_cell") == 3:
+                    raw_indices = resource_store.get_path(ds["files"]["indices"]).read_bytes()
+                    indices = struct.unpack(f"<{len(raw_indices) // 4}I", raw_indices)
+                    points = [positions[index * 3:index * 3 + 3] for index in indices[cell_offset * 3:cell_offset * 3 + 3]]
+                    if len(points) == 3 and all(len(point) == 3 for point in points):
+                        center = [sum(point[axis] for point in points) / 3 for axis in range(3)]
+                elif verts_per_cell >= 8 and len(positions) >= (cell_offset + 1) * verts_per_cell * 3:
                     base = cell_offset * verts_per_cell
                     points = [positions[(base + i) * 3:(base + i + 1) * 3] for i in range(8)]
                     center = [sum(point[axis] for point in points) / 8 for axis in range(3)]
             except (ValueError, OSError, struct.error):
                 center = None
         properties = {}
-        for name, filename in (ds.get("files", {}).get("scalars", {}) or {}).items():
+        for name, filename in scalar_files.items():
             try:
                 raw = resource_store.get_path(filename).read_bytes()
                 values = struct.unpack(f"<{len(raw) // 4}{'f' if filename.endswith('.f32') else 'I'}", raw)
                 if cell_offset < len(values):
-                    properties[name] = values[cell_offset]
+                    value = values[cell_offset]
+                    properties[name] = value if math.isfinite(value) else None
             except (ValueError, OSError, struct.error):
                 continue
-        return {"dataset_id": dataset_id, "cell_id": cell_id, "ijk": ijk, "center": center, "properties": properties}
+        if center is not None and not all(math.isfinite(value) for value in center):
+            center = None
+        return {"dataset_id": dataset_id, "cell_id": cell_id, "time_step": time_step, "association": _property_association(ds), "ijk": ijk, "center": center, "properties": properties}
 
     @router.get("/datasets/{dataset_id}/export")
-    async def export_dataset(dataset_id: str, format: str = "json"):
+    async def export_dataset(dataset_id: str, format: str = "json", time_step: int = Query(0, ge=0)):
         """Export a portable manifest or a scalar-cell CSV."""
         ds = manifest_store.get_dataset(dataset_id)
         if not ds:
             raise HTTPException(404, f"Dataset not found: {dataset_id}")
+        scalar_files = _dataset_scalar_files(ds, time_step)
         if format == "json":
-            return JSONResponse(ds)
+            return JSONResponse({
+                **ds,
+                "files": {**ds.get("files", {}), "scalars": scalar_files},
+                "selected_time_step": time_step,
+            })
         if format != "csv":
             raise HTTPException(400, "format must be json or csv")
         output = io.StringIO()
-        fields = ["cell_id"] + list((ds.get("files", {}).get("scalars", {}) or {}).keys())
+        point_data = _property_association(ds) == "point"
+        id_field = "point_id" if point_data else "cell_id"
+        fields = [id_field] + list(scalar_files)
         writer = csv.DictWriter(output, fieldnames=fields)
         writer.writeheader()
         columns: dict[str, tuple] = {}
-        for name, filename in (ds.get("files", {}).get("scalars", {}) or {}).items():
+        for name, filename in scalar_files.items():
             raw = resource_store.get_path(filename).read_bytes()
             columns[name] = struct.unpack(f"<{len(raw) // 4}{'f' if filename.endswith('.f32') else 'I'}", raw)
         export_cell_ids: tuple[int, ...] | range
         cell_ids_file = ds.get("files", {}).get("cell_ids")
-        if cell_ids_file:
+        if point_data:
+            export_cell_ids = range(int(ds.get("n_vertices", 0)))
+        elif cell_ids_file:
             raw_ids = resource_store.get_path(cell_ids_file).read_bytes()
             export_cell_ids = struct.unpack(f"<{len(raw_ids) // 4}I", raw_ids)
         else:
             export_cell_ids = range(int(ds.get("n_cells", 0)))
         for cell_offset, original_cell_id in enumerate(export_cell_ids):
-            row = {"cell_id": original_cell_id}
+            row = {id_field: original_cell_id}
             for name, values in columns.items():
-                if cell_offset < len(values): row[name] = values[cell_offset]
+                if cell_offset < len(values) and math.isfinite(values[cell_offset]):
+                    row[name] = values[cell_offset]
             writer.writerow(row)
         return Response(
             output.getvalue(), media_type="text/csv",
@@ -705,8 +778,8 @@ def build_router(plugin_dir: Path) -> APIRouter:
         if safe_name is None:
             raise HTTPException(400, "Invalid resource path")
 
-        file_path = safe_resolve(Path(safe_name), bin_dir)
-        if file_path is None or not file_path.exists():
+        file_path = resource_store.get_path(safe_name)
+        if not file_path.exists():
             raise HTTPException(404, f"File not found: {all_files[resource_id]}")
 
         return FileResponse(
@@ -753,25 +826,27 @@ def build_router(plugin_dir: Path) -> APIRouter:
             from .converters.arrays import load_f32, load_u32
             from .security import sanitize_identifier
             files = ds.get("files") or {}
-            property_name = payload.property or next(iter((files.get("scalars") or {})), "")
+            scalar_files = _dataset_scalar_files(ds, payload.time_step)
+            property_name = payload.property or next(iter(scalar_files), "")
             grid_positions: list[float] = []
             grid_cell_ids: list[int] = []
             property_values: list[float] = []
             if files.get("positions") and files.get("cell_ids") and property_name:
                 grid_positions = load_f32(resource_store.get_path(files["positions"]))
                 grid_cell_ids = load_u32(resource_store.get_path(files["cell_ids"]))
-                scalar_file = (files.get("scalars") or {}).get(property_name)
+                scalar_file = scalar_files.get(property_name)
                 if scalar_file:
                     property_values = load_f32(resource_store.get_path(scalar_file))
+            destination, result_name = _derived_destination(ds, sanitize_identifier(payload.name, "section"))
             result = create_intersection_along_polyline(
                 grid_positions, [], grid_cell_ids,
                 payload.polyline_x, payload.polyline_y,
                 payload.z_min, payload.z_max,
-                sanitize_identifier(payload.name, "section"), bin_dir,
+                result_name, destination,
                 property_values=property_values or None,
                 property_name=property_name,
             )
-            manifest_store.upsert(result)
+            _publish_derived(result, ds, payload.time_step)
             return JSONResponse(result)
         except Exception as exc:
             logger.error("Intersection failed: %s", exc, exc_info=True)
@@ -792,19 +867,21 @@ def build_router(plugin_dir: Path) -> APIRouter:
             positions = load_f32(resource_store.get_path(files["positions"]))
             indices = load_u32(resource_store.get_path(files["indices"]))
             cell_ids = load_u32(resource_store.get_path(files["cell_ids"]))
-            property_name = payload.property or next(iter((files.get("scalars") or {})), "")
+            scalar_files = _dataset_scalar_files(ds, payload.time_step)
+            property_name = payload.property or next(iter(scalar_files), "")
             scalars = {}
-            if property_name and (files.get("scalars") or {}).get(property_name):
+            if property_name and scalar_files.get(property_name):
                 scalars[property_name] = load_f32(
-                    resource_store.get_path(files["scalars"][property_name]),
+                    resource_store.get_path(scalar_files[property_name]),
                 )
+            destination, result_name = _derived_destination(ds, sanitize_identifier(payload.name, "slice"))
             result = create_ijk_slice(
                 positions, indices, cell_ids, ds.get("grid_dims") or [],
                 payload.axis, payload.index,
-                sanitize_identifier(payload.name, "slice"), bin_dir,
+                result_name, destination,
                 scalars=scalars or None,
             )
-            manifest_store.upsert(result)
+            _publish_derived(result, ds, payload.time_step)
             return JSONResponse(result)
         except ValueError as exc:
             raise HTTPException(422, str(exc))
@@ -834,26 +911,28 @@ def build_router(plugin_dir: Path) -> APIRouter:
             well_y = [coords[index] for index in range(1, len(coords), 3)]
             well_tvd = [-coords[index] for index in range(2, len(coords), 3)]
             files = ds.get("files") or {}
-            property_name = payload.property or next(iter((files.get("scalars") or {})), "")
+            scalar_files = _dataset_scalar_files(ds, payload.time_step)
+            property_name = payload.property or next(iter(scalar_files), "")
             grid_positions: list[float] = []
             grid_cell_ids: list[int] = []
             property_values: list[float] = []
             if files.get("positions") and files.get("cell_ids") and property_name:
                 grid_positions = load_f32(resource_store.get_path(files["positions"]))
                 grid_cell_ids = load_u32(resource_store.get_path(files["cell_ids"]))
-                scalar_file = (files.get("scalars") or {}).get(property_name)
+                scalar_file = scalar_files.get(property_name)
                 if scalar_file:
                     property_values = load_f32(resource_store.get_path(scalar_file))
+            destination, result_name = _derived_destination(ds, sanitize_identifier(payload.name, "wellsec"))
             result = create_well_intersection(
                 well_x, well_y, well_tvd,
-                sanitize_identifier(payload.name, "wellsec"), bin_dir,
+                result_name, destination,
                 offset=payload.offset,
                 grid_positions=grid_positions or None,
                 grid_cell_ids=grid_cell_ids or None,
                 property_values=property_values or None,
                 property_name=property_name,
             )
-            manifest_store.upsert(result)
+            _publish_derived(result, ds, payload.time_step)
             return JSONResponse(result)
         except ValueError as exc:
             raise HTTPException(422, str(exc))
@@ -864,11 +943,12 @@ def build_router(plugin_dir: Path) -> APIRouter:
     @router.get("/datasets/{dataset_id}/histogram")
     async def dataset_histogram(
         dataset_id: str, property: str = "", bins: int = 24,
+        time_step: int = Query(0, ge=0),
     ):
         ds = manifest_store.get_dataset(dataset_id)
         if not ds:
             raise HTTPException(404, f"Dataset not found: {dataset_id}")
-        filename = (ds.get("files", {}).get("scalars", {}) or {}).get(property)
+        filename = _dataset_scalar_files(ds, time_step).get(property)
         if not filename:
             raise HTTPException(404, f"Property not found: {property}")
         try:
@@ -876,7 +956,7 @@ def build_router(plugin_dir: Path) -> APIRouter:
             path = resource_store.get_path(filename)
             values = load_f32(path) if filename.endswith(".f32") else [float(v) for v in load_u32(path)]
             payload = compute_histogram(values, bins)
-            payload.update({"dataset_id": dataset_id, "property": property})
+            payload.update({"dataset_id": dataset_id, "property": property, "time_step": time_step})
             return JSONResponse(payload)
         except ValueError as exc:
             raise HTTPException(422, str(exc))
@@ -970,6 +1050,33 @@ def _get_capabilities() -> dict[str, bool]:
     }
 
 
+def _dataset_scalar_files(ds: dict, time_step: int = 0) -> dict[str, str]:
+    """Match viewer selection: zero is static, positive values are index + 1.
+
+    A known step can omit static-only properties; those keep their static
+    values. An unknown step must never silently export the wrong snapshot.
+    """
+    scalars = dict((ds.get("files") or {}).get("scalars") or {})
+    if time_step == 0:
+        return scalars
+    selected = next((step for step in ds.get("time_steps") or [] if step.get("index") == time_step - 1), None)
+    if selected is None:
+        raise HTTPException(404, f"Time step not found: {time_step}")
+    scalars.update(selected.get("scalars") or {})
+    return scalars
+
+
+def _property_association(ds: dict, property_name: str = "") -> str:
+    descriptor = (ds.get("properties") or {}).get(property_name) or {}
+    if isinstance(descriptor, dict) and descriptor.get("association") in ("point", "cell"):
+        return descriptor["association"]
+    association = (ds.get("metadata") or {}).get("scalar_association")
+    if association in ("point", "cell"):
+        return association
+    # The old LAS/DLIS resource contract omitted its point association.
+    return "point" if ds.get("source") in ("las", "dlis", "wellbore") else "cell"
+
+
 def _build_resource_descriptors(ds: dict, resource_store) -> list[dict]:
     """Build ResourceDescriptor list for a dataset."""
     descriptors = []
@@ -992,10 +1099,24 @@ def _build_resource_descriptors(ds: dict, resource_store) -> list[dict]:
         ))
     for prop_name, fname in files.get("scalars", {}).items():
         dtype = "float32" if fname.endswith(".f32") else "uint32"
-        descriptors.append(resource_store.describe(
+        association = _property_association(ds, prop_name)
+        descriptor = resource_store.describe(
             fname, "property", dtype,
-            [ds.get("n_cells", 0)], prop_name,
-        ))
+            [ds.get("n_vertices" if association == "point" else "n_cells", 0)], prop_name,
+        )
+        descriptor["association"] = association
+        descriptor["propertyName"] = prop_name
+        descriptors.append(descriptor)
+
+    for step in ds.get("time_steps") or []:
+        for prop_name, fname in (step.get("scalars") or {}).items():
+            association = _property_association(ds, prop_name)
+            descriptor = resource_store.describe(
+                fname, "property", "float32" if fname.endswith(".f32") else "uint32",
+                [ds.get("n_vertices" if association == "point" else "n_cells", 0)], prop_name,
+            )
+            descriptor.update(association=association, propertyName=prop_name, timeStep=int(step["index"]) + 1)
+            descriptors.append(descriptor)
 
     return descriptors
 

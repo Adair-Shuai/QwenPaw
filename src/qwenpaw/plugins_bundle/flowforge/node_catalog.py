@@ -120,6 +120,10 @@ class AgentNodeCatalog:
         scoped.node_registry = registry
         scoped.tool_registry = None  # Raw callable dispatch is unavailable here.
         scoped.tool_executor = GovernedWorkflowTools(self, agent_id, metadata)
+        from .engine.adapter.llm_service import LLMService
+
+        if isinstance(executor.llm_service, LLMService):
+            scoped.llm_service = executor.llm_service.for_agent(agent_id)
         return scoped
 
     async def invoke(self, agent_id: str, metadata: dict, tool_name: str, params: dict):

@@ -224,7 +224,7 @@ async def launch_simulation(
         simulator (`str`):
             Simulator type. One of: ``"eclipse"``, ``"cmg_imex"``,
             ``"cmg_stars"``, ``"cmg_gem"``, ``"comsol"``,
-            ``"intersect"``, ``"tnavigator"``.
+            ``"intersect"``, ``"tnavigator"``, ``"opm_flow"`` (explicitly configured OPM Flow).
         deck_file (`str`):
             Path to the input/deck file (e.g. ``model.DATA``,
             ``case.dat``, ``study.mph``).  Relative paths resolve from
@@ -311,6 +311,7 @@ async def launch_simulation(
         "comsol": "comsol",
         "intersect": "intersect",
         "tnavigator": "tnavigator",
+        "opm_flow": "opm_flow",
     }
     engine_id = engine_id_map.get(simulator.lower().strip(), simulator)
 
@@ -396,6 +397,8 @@ async def launch_simulation(
             },
         )
         if native is not None:
+            from .presentation import simulation_reference
+
             return ToolChunk(
                 is_last=True,
                 state=ToolResultState.SUCCESS,
@@ -421,6 +424,7 @@ async def launch_simulation(
                             )
                         ),
                     ),
+                    simulation_reference(native_run_id, simulator, agent_id=agent_id, session_id=session_id),
                 ],
             )
     except Exception as exc:
@@ -550,11 +554,15 @@ async def launch_simulation(
 
     # ── Start background monitor ─────────────────────────────────────
     _ensure_monitor_task(job_id)
+    from .result_service import safe_start_collection
+    safe_start_collection(job_id)
 
     logger.info(
         "Simulation started: job=%s simulator=%s pid=%d deck=%s",
         job_id, simulator, proc.pid, deck_path,
     )
+
+    from .presentation import simulation_reference
 
     return ToolChunk(
         is_last=True,
@@ -581,6 +589,7 @@ async def launch_simulation(
                     )
                 ),
             ),
+            simulation_reference(job_id, simulator, agent_id=agent_id, session_id=session_id),
         ],
     )
 
@@ -882,6 +891,10 @@ def recover_persisted_jobs() -> int:
         job = _recover_job(job_id)
         if job is None:
             continue
+        from .result_service import safe_start_collection, load_snapshot
+        snapshot = load_snapshot(job_id)
+        if job.status == "running" or (snapshot and not snapshot.get("archived")):
+            safe_start_collection(job_id)
         if job.status == "running":
             recovered += 1
         elif (
@@ -1019,6 +1032,8 @@ async def _monitor_job(job_id: str) -> None:
     except Exception as exc:
         logger.warning("Failed to update job status %s: %s", job_id, exc)
 
+    from .result_service import safe_finish_collection
+    safe_finish_collection(job_id, job.status)
     await _notify_terminal_job(job)
 
     logger.info(
@@ -1069,6 +1084,8 @@ async def _monitor_recovered_job(job: SimJob) -> None:
         error=job.error,
         end_ts=job.end_ts,
     )
+    from .result_service import safe_finish_collection
+    safe_finish_collection(job.job_id, job.status)
     await _notify_terminal_job(job)
 
 

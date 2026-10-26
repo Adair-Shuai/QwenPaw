@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import math
 import sys
 import asyncio
 import struct
@@ -42,6 +43,14 @@ configure_tools = importlib.import_module(
     "ugsci_visualization_test_plugin.backend.tools",
 ).configure_tools
 configure_tools(PLUGIN_DIR)
+
+
+@pytest.fixture(autouse=True)
+def isolate_simulation_runtime(tmp_path, monkeypatch):
+    """API catalog overlays must never read the developer's running projects."""
+    from ugsci_visualization_test_plugin.backend import simulation
+
+    monkeypatch.setattr(simulation, "runtime_directory", lambda: tmp_path / "simulation-runtime")
 
 
 def test_router_uses_package_relative_imports_despite_global_api_collision(
@@ -974,6 +983,146 @@ def test_viewer_command_bus_delivers_once_per_viewer():
     assert [item.command_id for item in bus.drain("viewer-b")] == [command_id]
 
 
+@pytest.fixture
+def viewer_command_client(tmp_path, monkeypatch):
+    """Exercise real command routes and host Agent resolution at HTTP level."""
+    from qwenpaw.app import agent_context
+    from ugsci_visualization_test_plugin.backend import tools
+    from ugsci_visualization_test_plugin.backend.api import build_router
+
+    bus = tools.ViewerCommandBus()
+    monkeypatch.setattr(tools, "command_bus", bus)
+    config = SimpleNamespace(agents=SimpleNamespace(
+        active_agent="alpha",
+        profiles={
+            name: SimpleNamespace(enabled=name != "disabled")
+            for name in ("default", "alpha", "beta", "disabled")
+        },
+    ))
+    monkeypatch.setattr(agent_context, "load_config", lambda: config)
+
+    async def get_agent(agent_id):
+        return SimpleNamespace(agent_id=agent_id, workspace_dir=tmp_path / agent_id)
+
+    app = FastAPI()
+    app.state.multi_agent_manager = SimpleNamespace(get_agent=get_agent)
+
+    @app.middleware("http")
+    async def scoped_agent_route(request, call_next):
+        if request.url.path.startswith("/scoped/"):
+            request.state.agent_id = "alpha"
+        return await call_next(request)
+
+    router = build_router(tmp_path)
+    app.include_router(router, prefix="/api")
+    app.include_router(router, prefix="/scoped")
+    with TestClient(app) as client:
+        yield client, tools, bus
+
+
+def _call_viewer_tool(agent_id, coroutine):
+    from qwenpaw.app import agent_context
+
+    token = agent_context._current_agent_id.set(agent_id)
+    try:
+        return asyncio.run(coroutine)
+    finally:
+        agent_context._current_agent_id.reset(token)
+
+
+def test_viewer_command_http_isolates_agent_delivery_ack_and_status(viewer_command_client):
+    client, tools, _bus = viewer_command_client
+    alpha_id = _call_viewer_tool("alpha", tools.open_oilgas_visualization("grid"))["commandId"]
+    beta_id = _call_viewer_tool("beta", tools.open_oilgas_visualization("grid"))["commandId"]
+    assert alpha_id != beta_id
+    alpha = {"X-Agent-Id": "alpha"}
+    beta = {"X-Agent-Id": "beta"}
+
+    def drain(headers, viewer="shared-viewer"):
+        response = client.get("/api/commands", params={"viewerId": viewer}, headers=headers)
+        assert response.status_code == 200
+        return [item["commandId"] for item in response.json()["commands"]]
+
+    # Identical viewer IDs cannot consume another Agent's delivery cursor.
+    assert drain(alpha) == [alpha_id]
+    assert drain(beta) == [beta_id]
+    assert drain(alpha) == []
+    assert drain({"X-Agent-Id": "default"}) == []
+    assert client.get(f"/api/commands/{alpha_id}", headers=beta).status_code == 404
+    assert client.post(
+        f"/api/commands/{alpha_id}/ack", headers=beta,
+        json={"status": "completed", "result": "wrong agent"},
+    ).status_code == 404
+    assert client.get(f"/api/commands/{alpha_id}", headers=alpha).json()["status"] == "pending"
+    assert _call_viewer_tool(
+        "beta", tools.get_visualization_command_status(alpha_id),
+    )["kind"] == "error"
+
+    assert client.post(
+        f"/api/commands/{alpha_id}/ack", headers=alpha,
+        json={"status": "completed", "result": {"datasetId": "grid"}},
+    ).status_code == 200
+    status = _call_viewer_tool("alpha", tools.get_visualization_command_status(alpha_id))
+    assert status["status"] == "completed"
+    assert status["result"] == {"datasetId": "grid"}
+    assert client.get(f"/api/commands/{beta_id}", headers=beta).json()["status"] == "pending"
+    # Preserve same-Agent broadcast even if the first viewer has already ACKed.
+    assert drain(alpha, "second-viewer") == [alpha_id]
+    assert drain(alpha, "second-viewer") == []
+
+
+@pytest.mark.parametrize("terminal_status", ["completed", "failed"])
+def test_viewer_command_http_repeats_after_terminal_ack(viewer_command_client, terminal_status):
+    client, tools, _bus = viewer_command_client
+    headers = {"X-Agent-Id": "alpha"}
+    first = _call_viewer_tool("alpha", tools.open_oilgas_visualization("grid"))["commandId"]
+    duplicate = _call_viewer_tool("alpha", tools.open_oilgas_visualization("grid"))["commandId"]
+    assert duplicate == first
+    assert [item["commandId"] for item in client.get(
+        "/api/commands?viewerId=viewer", headers=headers,
+    ).json()["commands"]] == [first]
+    response = client.post(
+        f"/api/commands/{first}/ack", headers=headers,
+        json={"status": terminal_status},
+    )
+    assert response.status_code == 200
+    repeated = _call_viewer_tool("alpha", tools.open_oilgas_visualization("grid"))["commandId"]
+    assert repeated != first
+    assert [item["commandId"] for item in client.get(
+        "/api/commands?viewerId=viewer", headers=headers,
+    ).json()["commands"]] == [repeated]
+    assert client.get(f"/api/commands/{first}", headers=headers).json()["status"] == terminal_status
+    assert client.get(f"/api/commands/{repeated}", headers=headers).json()["status"] == "pending"
+
+
+def test_viewer_command_http_uses_validated_host_agent_scope(viewer_command_client):
+    client, tools, bus = viewer_command_client
+    alpha_id = _call_viewer_tool("alpha", tools.open_oilgas_visualization("grid"))["commandId"]
+    beta_id = _call_viewer_tool("beta", tools.open_oilgas_visualization("grid"))["commandId"]
+    for agent_id, expected in (("missing", 404), ("disabled", 403)):
+        headers = {"X-Agent-Id": agent_id}
+        assert client.get("/api/commands", headers=headers).status_code == expected
+        assert client.get(f"/api/commands/{alpha_id}", headers=headers).status_code == expected
+        assert client.post(
+            f"/api/commands/{alpha_id}/ack", headers=headers, json={"status": "completed"},
+        ).status_code == expected
+
+    # Host-selected route scope wins over a conflicting client-supplied header.
+    scoped = client.get("/scoped/commands", headers={"X-Agent-Id": "beta"})
+    assert [item["commandId"] for item in scoped.json()["commands"]] == [alpha_id]
+    assert client.get(
+        f"/scoped/commands/{beta_id}", headers={"X-Agent-Id": "beta"},
+    ).status_code == 404
+    folded = client.get("/api/commands", headers={"X-Agent-Id": "alpha, beta"})
+    assert [item["commandId"] for item in folded.json()["commands"]] == [beta_id]
+
+    # Tool calls without context retain the default scope, not the active UI Agent.
+    default_id = _call_viewer_tool(None, tools.open_oilgas_visualization("grid"))["commandId"]
+    assert [item.command_id for item in bus.drain("legacy-viewer")] == [default_id]
+    assert bus.status(alpha_id) is None
+    assert not bus.acknowledge(alpha_id)
+
+
 def test_agent_report_can_be_saved_to_explicit_json_path(tmp_path):
     from ugsci_visualization_test_plugin.backend import tools
 
@@ -1063,6 +1212,123 @@ def test_foundational_oilfield_converters_emit_shared_manifest_contract(
             for filename in result["files"].values()
             if isinstance(filename, str)
         )
+
+
+def _read_binary(path, code="f"):
+    raw = path.read_bytes()
+    return struct.unpack(f"<{len(raw) // 4}{code}", raw)
+
+
+def test_network_readers_share_topology_missing_values_and_geometry_contract(tmp_path):
+    from ugsci_visualization_test_plugin.backend.formats import convert_source
+
+    csv_source = tmp_path / "network.csv"
+    csv_source.write_text(
+        "segment_id,start_node,end_node,x1,y1,z1,x2,y2,z2,pressure,flow_rate\n"
+        "管段甲,A,B,0,0,10,10,0,10,12,\n"
+        "管段乙,B,C,10,0,10,20,0,20,,0\n",
+        encoding="utf-8-sig",
+    )
+    json_source = tmp_path / "network.json"
+    json_source.write_text(json.dumps({
+        "type": "network", "segments": [
+            {"segment_id": "管段甲", "start_node": "A", "end_node": "B", "x1": 0, "y1": 0, "z1": 10, "x2": 10, "y2": 0, "z2": 10, "pressure": 12},
+            {"segment_id": "管段乙", "start_node": "B", "end_node": "C", "x1": 10, "y1": 0, "z1": 10, "x2": 20, "y2": 0, "z2": 20, "flow_rate": 0},
+        ],
+    }), encoding="utf-8")
+    csv_dataset = convert_source(csv_source, "csv", tmp_path)
+    json_dataset = convert_source(json_source, "json", tmp_path)
+    for dataset in (csv_dataset, json_dataset):
+        assert dataset["n_indices"] == 4
+        assert dataset["n_cells"] == 2
+        assert dataset["metadata"]["geometry_primitive"] == "lines"
+        assert len(dataset["metadata"]["topology"]["nodes"]) == 3
+        assert dataset["metadata"]["topology"]["edges"][1]["from"] == "B"
+        pressure = _read_binary(tmp_path / dataset["files"]["scalars"]["pressure"])
+        assert pressure[0] == 12
+        assert math.isnan(pressure[1])
+        flow = _read_binary(tmp_path / dataset["files"]["scalars"]["flow_rate"])
+        assert math.isnan(flow[0]) and flow[1] == 0
+        assert "temperature" not in dataset["files"]["scalars"]
+        assert dataset["properties"]["pressure"]["association"] == "cell"
+        assert dataset["properties"]["pressure"]["unit"] is None
+    for role in ("positions", "indices", "cell_ids"):
+        assert (tmp_path / csv_dataset["files"][role]).read_bytes() == (tmp_path / json_dataset["files"][role]).read_bytes()
+
+
+def test_network_tubes_preserve_segment_ids_properties_and_z_direction(tmp_path):
+    from ugsci_visualization_test_plugin.backend.converters.network import convert_network_to_tubes
+
+    dataset = convert_network_to_tubes([
+        {"x1": 0, "y1": 0, "z1": 100, "x2": 0, "y2": 0, "z2": 110, "pressure": 9, "diameter": 2, "properties": {"custom pressure": 3}},
+        {"x1": 0, "y1": 0, "z1": 110, "x2": 10, "y2": 0, "z2": 110, "pressure": 7, "diameter": 2},
+    ], "tube", tmp_path, segments_per_circle=6)
+    assert dataset["n_cells"] == 2
+    assert dataset["n_vertices"] == 24
+    assert dataset["n_indices"] == 72
+    assert _read_binary(tmp_path / dataset["files"]["cell_ids"], "I") == (0, 1)
+    assert _read_binary(tmp_path / dataset["files"]["scalars"]["pressure"]) == (9, 7)
+    positions = _read_binary(tmp_path / dataset["files"]["positions"])
+    assert positions[2:18:3] == pytest.approx([-100] * 6)
+    assert positions[20:36:3] == pytest.approx([-110] * 6)
+    assert dataset["properties"]["custom pressure"]["count"] == 2
+
+
+@pytest.mark.parametrize("segments", [
+    [],
+    [{"x1": 0, "y1": 0, "x2": 0, "y2": 0}],
+    [{"x1": 0, "y1": 0, "x2": float("inf"), "y2": 1}],
+    [{"x1": 0, "y1": 0, "y2": 1}],
+    [{"x1": 0, "y1": 0, "x2": 1, "y2": 1, "pressure": "bad"}],
+    [
+        {"x1": 0, "y1": 0, "x2": 1, "y2": 1, "start_node": "A"},
+        {"x1": 2, "y1": 2, "x2": 3, "y2": 3, "start_node": "A"},
+    ],
+])
+def test_invalid_network_inputs_fail_before_writing_files(tmp_path, segments):
+    from ugsci_visualization_test_plugin.backend.converters.network import convert_network_to_lines
+
+    with pytest.raises(ValueError):
+        convert_network_to_lines(segments, "invalid", tmp_path)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_network_http_details_keep_unknown_values_and_export_them_blank(tmp_path):
+    from ugsci_visualization_test_plugin.backend.api import build_router
+    from ugsci_visualization_test_plugin.backend.converters.network import convert_network_to_lines
+
+    bin_dir = tmp_path / "data" / "bin"
+    dataset = convert_network_to_lines([
+        {"x1": 0, "y1": 0, "x2": 10, "y2": 0, "pressure": 12},
+        {"x1": 10, "y1": 0, "x2": 20, "y2": 0},
+    ], "api", bin_dir)
+    (bin_dir / "manifest.json").write_text(json.dumps({"version": 1, "datasets": [dataset]}), encoding="utf-8")
+    app = FastAPI()
+    app.include_router(build_router(tmp_path), prefix="/api")
+    client = TestClient(app)
+    details = client.get(f"/api/datasets/{dataset['id']}/cells/1")
+    assert details.status_code == 200
+    assert details.json()["properties"]["pressure"] is None
+    assert details.json()["center"] == [15, 0, 0]
+    stats = client.get(f"/api/datasets/{dataset['id']}/stats?property=pressure").json()
+    assert stats["count"] == 1 and stats["missing_count"] == 1
+    exported = client.get(f"/api/datasets/{dataset['id']}/export?format=csv")
+    assert exported.text.splitlines()[-1] == "1,"
+
+
+def test_foundational_datasets_validate_against_shared_json_schema(tmp_path):
+    import jsonschema
+    from ugsci_visualization_test_plugin.backend.converters.network import convert_network_to_lines
+    from ugsci_visualization_test_plugin.backend.converters.wellbore import convert_well_trajectory
+    from ugsci_visualization_test_plugin.backend.converters.surface import convert_regular_surface
+
+    datasets = [
+        convert_network_to_lines([{"x1": 0, "y1": 0, "x2": 1, "y2": 1, "pressure": 12}], "network", tmp_path),
+        convert_well_trajectory([0, 10], [0, 10], [0, 0], [0, 0], "well", tmp_path),
+        convert_regular_surface([0, 1], [0, 1], [[1, 2], [2, 3]], "surface", tmp_path),
+    ]
+    schema = json.loads((PLUGIN_DIR / "contracts" / "dataset-manifest.schema.json").read_text(encoding="utf-8"))
+    jsonschema.validate({"version": 1, "datasets": datasets}, schema)
 
 
 def test_vtk_reader_supports_vtu_surface_and_cell_data(tmp_path):
@@ -1301,3 +1567,109 @@ def test_slice_histogram_and_well_section_endpoints(tmp_path):
     )
     assert curtain.status_code == 200
     assert "porosity" in curtain.json()["files"]["scalars"]
+
+
+def test_geojson_import_keeps_all_trajectories_and_signed_elevation(tmp_path):
+    from ugsci_visualization_test_plugin.backend.formats import convert_source
+
+    source = tmp_path / "wells.json"
+    source.write_text(json.dumps({
+        "type": "FeatureCollection",
+        "coordinate_system": {"crs": "LOCAL", "z_positive": "up"},
+        "features": [
+            {"properties": {"name": "井甲"}, "geometry": {"type": "LineString", "coordinates": [[0, 0, 10], [10, 0, -10]]}},
+            {"properties": {"name": "井乙"}, "geometry": {"type": "GeometryCollection", "geometries": [
+                {"type": "MultiLineString", "coordinates": [[[20, 0, 5], [20, 0, -10]], [[30, 0, 5], [30, 0, -10]]]},
+            ]}},
+        ],
+    }), encoding="utf-8")
+    dataset = convert_source(source, "wells", tmp_path)
+    assert len(dataset["related_datasets"]) == 2
+    assert len({item["id"] for item in [dataset, *dataset["related_datasets"]]}) == 3
+    positions = _read_binary(tmp_path / dataset["files"]["positions"])
+    assert positions[2::3] == (10, -10)
+    md = _read_binary(tmp_path / dataset["files"]["scalars"]["md"])
+    assert md[1] == pytest.approx(math.sqrt(500))
+    assert dataset["metadata"]["coordinate_system"]["source_z_positive"] == "up"
+
+
+def test_geojson_geographic_coordinates_are_not_silently_treated_as_metres(tmp_path):
+    from ugsci_visualization_test_plugin.backend.formats import convert_source
+
+    source = tmp_path / "geographic.json"
+    source.write_text(json.dumps({"type": "FeatureCollection", "features": [
+        {"geometry": {"type": "LineString", "coordinates": [[116, 39, 10], [117, 40, 20]]}},
+    ]}), encoding="utf-8")
+    with pytest.raises(ValueError, match="经纬度"):
+        convert_source(source, "geographic", tmp_path)
+    assert list(tmp_path.glob("*.f32")) == []
+
+
+@pytest.mark.parametrize("reverse", [False, True])
+def test_network_mixed_anonymous_and_explicit_nodes_keep_one_junction(tmp_path, reverse):
+    from ugsci_visualization_test_plugin.backend.converters.network import convert_network_to_lines
+
+    segments = [
+        {"segment_id": "a", "x1": 0, "y1": 0, "x2": 1, "y2": 0},
+        {"segment_id": "b", "x1": 1, "y1": 0, "x2": 2, "y2": 0, "start_node": "junction-a"},
+    ]
+    dataset = convert_network_to_lines(list(reversed(segments)) if reverse else segments, "connected", tmp_path)
+    topology = dataset["metadata"]["topology"]
+    edges = {edge["id"]: edge for edge in topology["edges"]}
+    assert edges["a"]["to"] == edges["b"]["from"] == "junction-a"
+    assert len(topology["nodes"]) == 3
+
+
+def test_network_anonymous_endpoint_rejects_ambiguous_coincident_named_nodes(tmp_path):
+    from ugsci_visualization_test_plugin.backend.converters.network import convert_network_to_lines
+
+    segments = [
+        {"x1": 0, "y1": 0, "x2": 1, "y2": 0},
+        {"x1": 1, "y1": 0, "x2": 2, "y2": 0, "start_node": "junction-a"},
+        {"x1": 1, "y1": 0, "x2": 3, "y2": 0, "start_node": "junction-b"},
+    ]
+    with pytest.raises(ValueError, match="多个节点"):
+        convert_network_to_lines(segments, "ambiguous", tmp_path)
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_dynamic_timestep_statistics_details_and_exports_use_selected_snapshot(tmp_path):
+    from ugsci_visualization_test_plugin.backend.api import build_router
+    from ugsci_visualization_test_plugin.backend.converters.network import convert_network_to_lines
+
+    bin_dir = tmp_path / "data" / "bin"
+    dataset = convert_network_to_lines([
+        {"x1": 0, "y1": 0, "x2": 1, "y2": 0, "pressure": 30, "diameter": 2},
+        {"x1": 1, "y1": 0, "x2": 2, "y2": 0, "pressure": 40, "diameter": 2},
+    ], "dynamic", bin_dir)
+    for filename, values in (("step1.f32", [10, 20]), ("step2.f32", [5, math.nan]), ("saturation.f32", [0.1, 0.2])):
+        (bin_dir / filename).write_bytes(struct.pack("<2f", *values))
+    dataset["time_steps"] = [
+        {"index": 0, "step_number": 7, "scalars": {"pressure": "step1.f32"}},
+        {"index": 1, "step_number": 14, "scalars": {"pressure": "step2.f32", "saturation": "saturation.f32"}},
+    ]
+    (bin_dir / "manifest.json").write_text(json.dumps({"version": 1, "datasets": [dataset]}), encoding="utf-8")
+    app = FastAPI()
+    app.include_router(build_router(tmp_path), prefix="/api")
+    client = TestClient(app)
+    base = f"/api/datasets/{dataset['id']}"
+    for time_step, pressure, mean in ((0, 40, 35), (1, 20, 15), (2, None, 5)):
+        stats = client.get(f"{base}/stats?property=pressure&time_step={time_step}")
+        assert stats.status_code == 200
+        assert stats.json()["mean"] == mean
+        detail = client.get(f"{base}/cells/1?time_step={time_step}").json()
+        assert detail["properties"]["pressure"] == pressure
+        assert detail["properties"]["diameter"] == 2
+        exported = client.get(f"{base}/export?format=csv&time_step={time_step}")
+        assert exported.status_code == 200
+        assert exported.text.splitlines()[-1].split(",")[1] == ("" if pressure is None else str(float(pressure)))
+    manifest = client.get(f"{base}/export?time_step=2").json()
+    assert manifest["selected_time_step"] == 2
+    assert manifest["files"]["scalars"]["pressure"] == "step2.f32"
+    assert "saturation" in manifest["files"]["scalars"]
+    assert client.get(f"{base}/histogram?property=pressure&time_step=2").json()["count"] == 1
+    assert client.get(f"{base}/stats?property=saturation&time_step=2").status_code == 200
+    for endpoint in ("stats?property=pressure", "cells/0?", "export?format=csv", "histogram?property=pressure"):
+        assert client.get(f"{base}/{endpoint}&time_step=99").status_code == 404
+        assert client.get(f"{base}/{endpoint}&time_step=-1").status_code == 422
+    assert client.get(f"{base}/stats?property=pressure").json()["mean"] == 35

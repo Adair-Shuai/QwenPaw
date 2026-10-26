@@ -38,6 +38,9 @@ def test_legacy_router_factories_delegate_to_extracted_modules() -> None:
     assert {route.path for route in _build_sim_router().routes} == {
         "/jobs",
         "/jobs/{job_id}/stream",
+        "/jobs/{job_id}/results",
+        "/jobs/{job_id}/results/export",
+        "/jobs/{job_id}/results/refresh",
     }
 
 

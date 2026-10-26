@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
-import { pluginSystem } from "./hostExternals";
+import { installHostExternals, pluginSystem } from "./hostExternals";
 import { removePluginRuntime } from "./pluginRuntimeCleanup";
 import { chatExtensions } from "./registry/chatExtensions";
 import { menuRegistry, routeRegistry, slotRegistry } from "./registry/store";
@@ -10,6 +10,7 @@ import { marketplaceExtensionRegistry } from "../pages/Market/marketplaceRegistr
 const PLUGIN_ID = "cleanup-test";
 
 beforeEach(() => {
+  installHostExternals();
   removePluginRuntime(PLUGIN_ID);
   menuRegistry.__resetForTests();
   routeRegistry.__resetForTests();
@@ -72,5 +73,47 @@ describe("plugin runtime cleanup", () => {
     removePluginRuntime(PLUGIN_ID);
 
     expectPluginRegistrationCount(0);
+  });
+
+  it("revokes the shared OpenUI renderer when its owner is removed", () => {
+    const namespace = window.QwenPaw as typeof window.QwenPaw & {
+      openui?: { dispose: () => void; TaskLayout: () => null };
+    };
+    const dispose = vi.fn();
+    const changed = vi.fn();
+    namespace.openui = { dispose, TaskLayout: () => null };
+    window.addEventListener("qwenpaw:openui-task-layout-ready", changed);
+    try {
+      removePluginRuntime(PLUGIN_ID);
+      expect(namespace.openui).toBeDefined();
+      expect(dispose).not.toHaveBeenCalled();
+      removePluginRuntime("qwenpaw-openui");
+      expect(dispose).toHaveBeenCalledOnce();
+      expect(namespace.openui).toBeUndefined();
+      expect(changed).toHaveBeenCalledOnce();
+      removePluginRuntime("qwenpaw-openui");
+      expect(dispose).toHaveBeenCalledOnce();
+    } finally {
+      delete namespace.openui;
+      window.removeEventListener("qwenpaw:openui-task-layout-ready", changed);
+    }
+  });
+
+  it("still removes registrations and stale OpenUI capability after a cleanup error", () => {
+    const namespace = window.QwenPaw as typeof window.QwenPaw & {
+      openui?: { dispose: () => void };
+    };
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    namespace.openui = { dispose: () => { throw new Error("fixture cleanup failure"); } };
+    routeRegistry.add("qwenpaw-openui", { id: "openui.fixture", path: "/fixture", component: () => null });
+    try {
+      removePluginRuntime("qwenpaw-openui");
+      expect(namespace.openui).toBeUndefined();
+      expect(routeRegistry.snapshot().some((route) => route.source === "qwenpaw-openui")).toBe(false);
+      expect(warn).toHaveBeenCalledOnce();
+    } finally {
+      delete namespace.openui;
+      warn.mockRestore();
+    }
   });
 });

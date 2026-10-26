@@ -3,6 +3,7 @@ import {
   Expand,
   Blocks,
   Calculator,
+  ChartNoAxesCombined,
   FileText,
   Globe2,
   MessageSquarePlus,
@@ -32,6 +33,7 @@ import {
   WorkbenchBrowserPanel,
   WorkbenchComputePanel,
   WorkbenchGenUiPanel,
+  WorkbenchSimulationPanel,
   type WorkbenchMode,
 } from "./WorkbenchPanels";
 import styles from "./FilesWorkspace.module.less";
@@ -106,7 +108,8 @@ function SessionFilesDrawer({
     return stored === "browser" ||
       stored === "agents" ||
       stored === "genui" ||
-      stored === "compute"
+      stored === "compute" ||
+      stored === "simulation"
       ? stored
       : "files";
   });
@@ -300,6 +303,8 @@ function SessionFilesDrawer({
               ? "智能体进程"
               : mode === "compute"
               ? "计算轨道"
+              : mode === "simulation"
+              ? "数模监测"
               : "GenUI"}
           </strong>
           {!isWorkspace && <span>{t("files.preview")}</span>}
@@ -333,6 +338,7 @@ function SessionFilesDrawer({
               ["agents", Network, "智能体进程"],
               ["genui", Blocks, "GenUI"],
               ["compute", Calculator, "计算轨道"],
+              ["simulation", ChartNoAxesCombined, "数模监测"],
             ] as const
           ).map(([nextMode, Icon, label]) => (
             <button
@@ -364,6 +370,12 @@ function SessionFilesDrawer({
           />
         )}
         {mode === "compute" && <WorkbenchComputePanel />}
+        {mode === "simulation" && (
+          <WorkbenchSimulationPanel
+            runId={state.kind === "workspace" ? state.simulationRunId : undefined}
+            scope={scope}
+          />
+        )}
 
         <AnimatePresence initial={false} mode="popLayout">
           <motion.div

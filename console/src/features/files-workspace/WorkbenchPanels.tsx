@@ -1,4 +1,4 @@
-import { FormEvent, useEffect, useState, useSyncExternalStore } from "react";
+import { FormEvent, createElement, useEffect, useState, useSyncExternalStore } from "react";
 import { message } from "antd";
 import {
   ArrowLeft,
@@ -475,6 +475,31 @@ export function WorkbenchComputePanel() {
           暂无推导记录。运行 UGSci 公式后可在此查看。
         </div>
       </Slot>
+    </div>
+  );
+}
+
+/** The runtime plugin owns monitoring; this surface only supplies session scope. */
+export function WorkbenchSimulationPanel({ runId, scope }: {
+  runId?: string;
+  scope: Extract<FilesWorkspaceScope, { kind: "session" }>;
+}) {
+  const [, setVersion] = useState(0);
+  useEffect(() => {
+    const changed = () => setVersion((version) => version + 1);
+    window.addEventListener("qwenpaw:simulation-monitor-ready", changed);
+    return () => window.removeEventListener("qwenpaw:simulation-monitor-ready", changed);
+  }, []);
+  const Monitor = (window as any).QwenPaw?.runCenter?.SimulationMonitor;
+  return (
+    <div className={`${styles.workbenchPanel} ${styles.genUiPanel}`}>
+      {!runId ? <p>从聊天中的模拟任务卡片选择“在侧栏监测”，即可持续查看曲线和场图。</p>
+        : !Monitor ? <p role="status">运行中心监测组件尚未加载，请启用运行中心插件。</p>
+        : createElement(Monitor, {
+          key: `${scope.agentId}:${scope.sessionId}:${runId}`,
+          runId,
+          scope: { agentId: scope.agentId, chatId: scope.chatId || scope.sessionId },
+        })}
     </div>
   );
 }

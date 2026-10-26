@@ -27,6 +27,31 @@ def run(executor, definition, inputs=None):
     return asyncio.run(executor.execute(load(definition), inputs or {}))
 
 
+@pytest.mark.parametrize("value", ["AI搭建修复验收通过", 0, False, None, {"answer": 42}])
+def test_end_node_returns_its_declared_value(value):
+    result = run(WorkflowExecutor(), {
+        "id": "end-value",
+        "nodes": {"end": {"class_type": "EndNode", "inputs": {"value": value}}},
+        "outputs": ["end"],
+    })
+    assert result.status == WorkflowStatus.COMPLETED
+    assert result.outputs == {"end": value}
+
+
+def test_end_node_without_value_preserves_collected_outputs():
+    result = run(WorkflowExecutor(), {
+        "id": "end-collect",
+        "nodes": {
+            "before": {"class_type": "OutputNode", "inputs": {"value": "kept"}},
+            "end": {"class_type": "EndNode", "inputs": {"__flow_dependencies": [["before", 0]]}},
+        },
+        "outputs": ["end"],
+    })
+    assert result.status == WorkflowStatus.COMPLETED
+    # Preserve the existing collector's output-slot representation.
+    assert result.outputs == {"end": {"before": ("kept",)}}
+
+
 def tool(name, **extra):
     return {
         "class_type": "ToolNode",

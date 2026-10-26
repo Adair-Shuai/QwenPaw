@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "title": "OilGas Visualization Dataset Manifest",
-  "description": "Catalog of available 3D grid datasets for visualization",
+  "description": "Reusable reservoir, geological surface, well and surface-network datasets",
   "type": "object",
   "properties": {
     "version": {
@@ -24,15 +24,18 @@
           },
           "n_vertices": {
             "type": "integer",
+            "minimum": 0,
             "description": "Total vertex count (3 floats each)"
           },
           "n_cells": {
             "type": "integer",
+            "minimum": 0,
             "description": "Active cell count"
           },
           "n_indices": {
             "type": "integer",
-            "description": "Triangle index count"
+            "minimum": 0,
+            "description": "Index count; geometry_primitive determines line pairs or triangle triples"
           },
           "grid_dims": {
             "type": "array",
@@ -41,8 +44,48 @@
           },
           "source": {
             "type": "string",
-            "enum": ["roff", "egrid", "grdecl", "cmg", "synthetic"],
             "description": "Original data format"
+          },
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "geometry_primitive": {"enum": ["lines", "triangles", "points"]},
+              "scalar_association": {"enum": ["cell", "point"]},
+              "vertices_per_cell": {"type": "integer", "minimum": 1},
+              "indices_per_cell": {"type": "integer", "minimum": 1},
+              "coordinate_system": {
+                "type": "object",
+                "properties": {
+                  "axis_order": {"type": "string"},
+                  "z_positive": {"enum": ["up", "down"]},
+                  "source_z_positive": {"enum": ["up", "down"]},
+                  "length_unit": {"type": ["string", "null"]},
+                  "crs": {"type": ["string", "null"]}
+                }
+              },
+              "topology": {
+                "type": "object",
+                "properties": {
+                  "nodes": {"type": "array", "items": {"type": "object", "required": ["id", "position"]}},
+                  "edges": {"type": "array", "items": {"type": "object", "required": ["id", "from", "to", "cell_id"]}}
+                },
+                "required": ["nodes", "edges"]
+              }
+            }
+          },
+          "properties": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "object",
+              "properties": {
+                "label": {"type": "string"},
+                "association": {"enum": ["cell", "point"]},
+                "count": {"type": "integer", "minimum": 0},
+                "unit": {"type": ["string", "null"]},
+                "no_data": {"const": "nan"}
+              },
+              "required": ["association", "count"]
+            }
           },
           "files": {
             "type": "object",

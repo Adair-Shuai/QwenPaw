@@ -11,10 +11,71 @@ all early-return paths), ``PluginApi._get_workspace_from_info``
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
+import json
+import threading
+
+import pytest
 
 
 from qwenpaw.plugins import api as plugins_api
 from qwenpaw.plugins.api import PluginApi
+
+
+@pytest.mark.parametrize("continuous_conflict", [False, True, "deleted"])
+def test_tool_projection_rebases_concurrent_config_edits(tmp_path, monkeypatch, continuous_conflict):
+    from qwenpaw.config import config as config_module, utils
+    from qwenpaw.config.config import AgentProfileConfig, AgentProfileRef, AgentsConfig, Config
+    from qwenpaw.exceptions import AgentConfigConflictError
+    from qwenpaw.utils.io_utils import write_json_atomic
+
+    monkeypatch.setattr("qwenpaw.constant.WORKING_DIR", tmp_path / "work")
+    workspace = tmp_path / "agent"
+    workspace.mkdir()
+    path = workspace / "agent.json"
+    write_json_atomic(path, AgentProfileConfig(id="agent", name="Agent").model_dump(exclude_none=True))
+    root = Config(agents=AgentsConfig(active_agent="agent", profiles={
+        "agent": AgentProfileRef(id="agent", workspace_dir=str(workspace))
+    }))
+    monkeypatch.setattr(utils, "load_config", lambda: root)
+    monkeypatch.setattr(utils, "_agent_config_cache", {})
+    monkeypatch.setattr(utils, "_agent_config_lock", threading.RLock())
+    save = config_module.save_agent_config
+    attempts = []
+
+    def concurrent_save(agent_id, candidate):
+        attempts.append(True)
+        if continuous_conflict == "deleted":
+            path.unlink()
+        elif continuous_conflict or len(attempts) == 1:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            raw["description"] = f"concurrent edit {len(attempts)}"
+            raw.setdefault("tools", {}).setdefault("builtin_tools", {})["my_tool"] = {
+                "name": "my_tool", "enabled": False, "config": {"user_setting": "kept"}
+            }
+            write_json_atomic(path, raw)
+        save(agent_id, candidate)
+
+    monkeypatch.setattr(config_module, "save_agent_config", concurrent_save)
+    snapshot = {}
+
+    def project():
+        plugins_api._write_tool_config("my_tool", True, "new tool", "", "ugsci", snapshot)
+
+    if continuous_conflict:
+        with pytest.raises(AgentConfigConflictError):
+            project()
+        assert len(attempts) == (1 if continuous_conflict == "deleted" else 3)
+        assert snapshot == {}
+        if continuous_conflict == "deleted":
+            assert not path.exists()
+    else:
+        project()
+        assert len(attempts) == 2
+        result = config_module.load_agent_config("agent")
+        assert result.description == "concurrent edit 1"
+        assert result.tools.builtin_tools["my_tool"].enabled is False
+        assert result.tools.builtin_tools["my_tool"].config == {"user_setting": "kept"}
+        assert snapshot["agent"]["my_tool"]["config"] == {"user_setting": "kept"}
 
 
 # ---------------------------------------------------------------------------

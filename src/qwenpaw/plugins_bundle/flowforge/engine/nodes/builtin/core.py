@@ -208,7 +208,13 @@ class LLMNode(WorkflowNode):
                 messages.append({"role": "user", "content": inputs["prompt"]})
                 result = service.chat(messages=messages)
             else:
-                result = service.complete(inputs["prompt"])
+                from ...adapter.chat_message import ChatMessage
+
+                messages = []
+                if inputs.get("system"):
+                    messages.append(ChatMessage.system(inputs["system"]))
+                messages.append(ChatMessage.user(inputs["prompt"]))
+                result = service.complete(messages=messages)
             if inspect.isawaitable(result):
                 result = await result
         except Exception as exc:  # noqa: BLE001

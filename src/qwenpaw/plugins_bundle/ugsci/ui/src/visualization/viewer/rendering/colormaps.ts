@@ -12,7 +12,7 @@ export const COLORMAP_NAMES = Object.keys(COLORMAPS);
 
 export function sampleColormap(name: string, t: number): [number, number, number] {
   const cm = COLORMAPS[name] || COLORMAPS.viridis;
-  const normalized = Math.max(0, Math.min(1, t));
+  const normalized = Number.isFinite(t) ? Math.max(0, Math.min(1, t)) : 0;
   const position = normalized * (cm.length - 1);
   const index = Math.floor(position);
   const next = Math.min(cm.length - 1, index + 1);

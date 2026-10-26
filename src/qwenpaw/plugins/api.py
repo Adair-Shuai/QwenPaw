@@ -364,6 +364,7 @@ def _write_tool_config(
         save_agent_config,
     )
     from .provision import apply_tool_factory, merge_tool_factory
+    from ..exceptions import AgentConfigConflictError
 
     agent_ids = _agent_ids_for_tool_write()
     if not agent_ids:
@@ -376,12 +377,16 @@ def _write_tool_config(
     factory = _tool_factory(enabled, description, icon)
     persisted = False
     previous_factory: dict | None = None
-    # Use the same transaction lock as mutate_agent_config, preserving the
-    # existing read-failure skip and write-failure propagation below.
-    for agent_id in agent_ids:
+
+    def write_agent(agent_id: str) -> bool:
+        nonlocal persisted, previous_factory
+        # Serialize host writers. External processes can still replace the
+        # file, so callers rebase only this tool's fields on a fresh snapshot.
         with _agent_config_lock:
             try:
                 agent_config = load_agent_config(agent_id)
+            except AgentConfigConflictError:
+                raise
             except Exception:  # noqa: BLE001
                 logger.debug(
                     "Skip tool '%s' write for agent '%s'",
@@ -389,7 +394,7 @@ def _write_tool_config(
                     agent_id,
                     exc_info=True,
                 )
-                continue
+                return False
             if not agent_config.tools:
                 agent_config.tools = ToolsConfig()
             existing = agent_config.tools.builtin_tools.get(tool_name)
@@ -401,11 +406,6 @@ def _write_tool_config(
                     if isinstance(raw, dict):
                         current = raw
                         current.pop("name", None)
-            if agent_before is not None:
-                agent_before.setdefault(agent_id, {}).setdefault(
-                    tool_name,
-                    current,
-                )
             if not persisted:
                 merged = apply_tool_factory(
                     plugin_id,
@@ -432,11 +432,31 @@ def _write_tool_config(
                 **merged,
             )
             save_agent_config(agent_id, agent_config)
-        logger.info(
-            "Wrote tool '%s' into agent '%s' config",
-            tool_name,
-            agent_id,
-        )
+            # A failed attempt wrote nothing. Rollback must restore the
+            # successful attempt's input, including intervening user edits.
+            if agent_before is not None:
+                agent_before.setdefault(agent_id, {}).setdefault(tool_name, current)
+            return True
+
+    for agent_id in agent_ids:
+        for attempt in range(3):
+            try:
+                if write_agent(agent_id):
+                    logger.info("Wrote tool '%s' into agent '%s' config", tool_name, agent_id)
+                break
+            except AgentConfigConflictError:
+                if attempt == 2:
+                    raise
+                from pathlib import Path
+                from ..config.utils import load_config
+
+                profile = load_config().agents.profiles.get(agent_id)
+                if profile is None or not (
+                    Path(profile.workspace_dir).expanduser() / "agent.json"
+                ).is_file():
+                    # Deletion is not a transient edit. Do not let the next
+                    # load recreate a profile that a user just removed.
+                    raise
 
 
 def _remove_tool_config(

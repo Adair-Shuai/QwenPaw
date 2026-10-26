@@ -42,6 +42,41 @@ def child_node(child):
     return {"class_type": "SubworkflowNode", "inputs": {"subworkflow_id": child}}
 
 
+def test_cancel_finalizes_node_events_live_and_persisted_records(service):
+    flow(service, "cancel-status", {
+        "before": {"class_type": "OutputNode", "inputs": {"value": "kept"}},
+        "wait": {"class_type": "WaitNode", "inputs": {"seconds": 60, "__flow_dependencies": [["before", 0]]}},
+        "after": {"class_type": "OutputNode", "inputs": {"value": ["wait", 0]}},
+    })
+    handle = service.start_run("cancel-status")
+    deadline = time.monotonic() + 3
+    while handle.progress.node_statuses().get("wait") != "running" and time.monotonic() < deadline:
+        time.sleep(0.01)
+    assert handle.progress.node_statuses()["wait"] == "running"
+    assert service.cancel_run(handle.run_id)
+    result = wait(handle)
+    assert result["status"] == "cancelled"
+    assert result["node_statuses"] == {"before": "success", "wait": "cancelled"}
+    events = service._execution_repository.get(handle.run_id)["events"]
+    cancelled = next(event for event in events if event["type"] == "node_cancelled")
+    assert cancelled["node_id"] == "wait" and cancelled["state"]["finished_at_ms"]
+    assert events[-1]["type"] == "execution_cancelled"
+    service._runs.pop(handle.run_id)
+    assert service.get_run_record(handle.run_id)["node_statuses"] == result["node_statuses"]
+
+
+def test_cancel_paused_and_legacy_records_closes_only_unfinished_nodes(service):
+    service._execution_repository.create("legacy", "review", status="waiting_human",
+        node_statuses={"before": "success", "review": "blocked", "skip": "skipped"})
+    assert service.cancel_run("legacy")
+    result = service.get_run_record("legacy")
+    assert result["status"] == "cancelled"
+    assert result["node_statuses"] == {"before": "success", "review": "cancelled", "skip": "skipped"}
+    assert result["finished_at"]
+    service._execution_repository.create("old", "cancel", status="cancelled", node_statuses={"wait": "running"})
+    assert service.get_run_record("old")["node_statuses"] == {"wait": "cancelled"}
+
+
 def review_flow(service, flow_id="review"):
     return flow(
         service,

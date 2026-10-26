@@ -179,8 +179,10 @@ async def check_simulation_status(
         except Exception as exc:
             _logger.debug("Failed to parse warnings for job %s: %s", job_id, exc)
 
+    from .presentation import simulation_reference
+
     return ToolChunk(
         is_last=True,
         state=ToolResultState.SUCCESS,
-        content=[TextBlock(type="text", text="\n".join(lines))],
+        content=[TextBlock(type="text", text="\n".join(lines)), simulation_reference(job_id, job.simulator)],
     )

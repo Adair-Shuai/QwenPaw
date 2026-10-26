@@ -1,6 +1,7 @@
 import "./runtime";
 import { OpenUIBlock } from "./OpenUIBlock";
 import { getHost, PLUGIN_ID } from "./host";
+import { registerTaskLayout } from "./taskApi";
 
 const api = getHost();
 if (!api?.chat?.codeBlock || !api.chat.submit || !api.host.openExternalLink) {
@@ -29,6 +30,7 @@ try {
       },
     };
   });
+  registerTaskLayout(api);
 } catch (error) {
   renderer.dispose();
   throw error;

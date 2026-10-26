@@ -38,7 +38,8 @@ export type WorkbenchMode =
   | "browser"
   | "agents"
   | "genui"
-  | "compute";
+  | "compute"
+  | "simulation";
 
 export type FilesDrawerState =
   | { kind: "closed" }
@@ -47,6 +48,7 @@ export type FilesDrawerState =
       kind: "workspace";
       target?: FileTarget;
       mode?: WorkbenchMode;
+      simulationRunId?: string;
       trigger: HTMLElement | null;
     };
 
@@ -60,6 +62,7 @@ export type FilesDrawerEvent =
       type: "OPEN_WORKSPACE";
       target?: FileTarget;
       mode?: WorkbenchMode;
+      simulationRunId?: string;
       trigger: HTMLElement | null;
     }
   | { type: "EXPAND_WORKSPACE" }

@@ -102,13 +102,15 @@ function buildGroup(
   datasets: DatasetInfo[],
   options: ComponentTreeRenderOptions,
 ): HTMLElement {
-  const collapsed = options.collapsedGroups.has(groupId);
+  // Search results must remain visible without changing the user's saved folds.
+  const collapsed = !options.query.trim() && options.collapsedGroups.has(groupId);
   const group = document.createElement("div");
   group.dataset.groupId = groupId;
   group.style.cssText = "margin-bottom:6px;";
 
   const header = document.createElement("button");
   header.type = "button";
+  header.setAttribute("aria-expanded", String(!collapsed));
   header.style.cssText = [
     "display:flex;align-items:center;gap:6px;width:100%;",
     "background:transparent;border:0;color:#8b949e;cursor:pointer;",
@@ -145,6 +147,8 @@ function buildGroup(
 
 function buildItem(dataset: DatasetInfo, options: ComponentTreeRenderOptions): HTMLElement {
   const item = document.createElement("div");
+  item.setAttribute("role", "group");
+  item.setAttribute("aria-label", datasetListLabel(dataset));
   const active = dataset.id === options.activeId;
   const selected = dataset.id === options.selectedId;
   const depthOnly = isDepthOnlyWell(dataset);
@@ -172,8 +176,11 @@ function buildItem(dataset: DatasetInfo, options: ComponentTreeRenderOptions): H
   check.addEventListener("click", (event) => event.stopPropagation());
   check.addEventListener("change", () => options.onToggleVisible(dataset, check.checked));
 
-  const text = document.createElement("div");
-  text.style.cssText = "min-width:0;flex:1;";
+  const text = document.createElement("button");
+  text.type = "button";
+  text.setAttribute("aria-label", "选择 " + datasetListLabel(dataset));
+  text.setAttribute("aria-pressed", String(selected || active));
+  text.style.cssText = "min-width:0;flex:1;border:0;padding:0;background:transparent;text-align:left;color:inherit;cursor:pointer;";
   const name = document.createElement("div");
   name.textContent = depthOnly ? datasetListLabel(dataset) + "\uff08\u4ec5\u6df1\u5ea6\uff09" : datasetListLabel(dataset);
   name.style.cssText = "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;line-height:1.3;";
@@ -200,7 +207,7 @@ function buildItem(dataset: DatasetInfo, options: ComponentTreeRenderOptions): H
   }
   item.title = depthOnly
     ? dataset.name + " \u00b7 \u4ec5\u6df1\u5ea6\uff0c\u6253\u5f00\u300c\u6d4b\u4e95\u300d\u9875\u7b7e"
-    : dataset.name + " \u00b7 " + dataset.n_cells.toLocaleString() + " cells";
+    : dataset.name + " \u00b7 " + dataset.n_cells.toLocaleString() + " 单元";
   item.addEventListener("click", () => options.onSelect(dataset));
   item.addEventListener("dblclick", (event) => {
     event.preventDefault();
@@ -226,6 +233,6 @@ function datasetMeta(dataset: DatasetInfo): string {
   if (dataset.grid_dims && dataset.grid_dims.length >= 3) {
     return dataset.grid_dims[0] + " x " + dataset.grid_dims[1] + " x " + dataset.grid_dims[2];
   }
-  if (dataset.n_cells > 0) return dataset.n_cells.toLocaleString() + " cells";
+  if (dataset.n_cells > 0) return dataset.n_cells.toLocaleString() + " 单元";
   return dataset.source || "\u5bf9\u8c61";
 }

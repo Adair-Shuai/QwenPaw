@@ -78,6 +78,7 @@ class OAuthSession:
         self.redirect_uri = redirect_uri
         self.scope = scope
         self.created_at = time.monotonic()
+        self.phase = "pending"
 
     def is_expired(self) -> bool:
         """Return True if this session has exceeded the TTL."""
@@ -85,6 +86,7 @@ class OAuthSession:
 
 
 _state_store: Dict[str, OAuthSession] = {}
+_completed_sessions: Dict[str, OAuthSession] = {}
 
 
 def _purge_expired() -> None:
@@ -92,6 +94,9 @@ def _purge_expired() -> None:
     expired = [k for k, v in _state_store.items() if v.is_expired()]
     for k in expired:
         del _state_store[k]
+    for k, session in list(_completed_sessions.items()):
+        if session.is_expired():
+            del _completed_sessions[k]
 
 
 # ---------------------------------------------------------------------------
@@ -326,6 +331,7 @@ class OAuthStatusResponse(BaseModel):
     authorized: bool
     expires_at: float
     scope: str
+    phase: Optional[str] = None
 
 
 # ---------------------------------------------------------------------------
@@ -492,6 +498,10 @@ async def oauth_start(
     state = secrets.token_hex(16)
 
     # -- Store session -----------------------------------------------------
+    # Superseded browser callbacks must not overwrite a newer authorization.
+    for old in _state_store.values():
+        if old.agent_id == agent_id and old.client_key == client_key:
+            old.phase = "cancelled"
     _state_store[state] = OAuthSession(
         agent_id=agent_id,
         client_key=client_key,
@@ -563,7 +573,7 @@ async def _exchange_code_for_tokens(
     if resp.status_code not in (200, 201):
         raise ValueError(
             f"Token exchange failed (HTTP {resp.status_code}): "
-            f"{resp.text[:300]}",
+            "The authorization server rejected the token exchange.",
         )
     return resp.json()
 
@@ -708,21 +718,33 @@ async def oauth_callback(
     _purge_expired()
 
     if error:
+        failed = _state_store.get(state or "")
+        if failed is not None and failed.phase == "pending":
+            failed.phase = "denied" if error == "access_denied" else "failed"
         return _make_error_page(error_description or error)
 
     if not code or not state:
         return _make_error_page("Missing 'code' or 'state' parameter.")
 
     session = _state_store.get(state)
-    if session is None or session.is_expired():
+    if session is None or session.is_expired() or session.phase != "pending":
         return _make_error_page(
             "OAuth session expired or not found. Please try again.",
         )
 
     try:
+        session.phase = "exchanging"
         tokens = await _exchange_code_for_tokens(session, code)
+        if (
+            session.phase != "exchanging"
+            or _state_store.get(state) is not session
+        ):
+            return _make_error_page(
+                "OAuth session cancelled. Please try again."
+            )
         await _persist_tokens(request, session, tokens)
     except Exception as exc:
+        session.phase = "failed"
         logger.error(
             f"OAuth callback failed for '{session.client_key}': {exc}",
             exc_info=True,
@@ -731,6 +753,8 @@ async def oauth_callback(
         return _make_error_page(str(detail))
 
     _state_store.pop(state, None)
+    session.phase = "authorized"
+    _completed_sessions[state] = session
 
     success_body = (
         "<p style='color:#27ae60;font-size:1.8em;margin:0'>&#10003;</p>"
@@ -754,22 +778,48 @@ async def oauth_callback(
 @router.get(
     "/oauth/status/{client_key:path}",
     response_model=OAuthStatusResponse,
+    response_model_exclude_none=True,
 )
 async def oauth_status(
     client_key: str,
     request: Request,
+    session_id: Optional[str] = None,
 ) -> OAuthStatusResponse:
     """Return the current OAuth token status for an MCP client."""
     from ..agent_context import get_agent_for_request
 
     agent = await get_agent_for_request(request)
     await _load_mcp_card_for_oauth(agent, client_key)
+    _purge_expired()
+    phase = None
+    if session_id:
+        session = _state_store.get(session_id) or _completed_sessions.get(
+            session_id
+        )
+        if session is None:
+            return OAuthStatusResponse(
+                authorized=False, expires_at=0, scope="", phase="expired"
+            )
+        if (
+            session.agent_id != agent.agent_id
+            or session.client_key != client_key
+        ):
+            raise HTTPException(
+                status_code=404, detail="OAuth session not found"
+            )
+        phase = session.phase
+        if phase != "authorized":
+            # An older token does not prove this browser flow succeeded.
+            return OAuthStatusResponse(
+                authorized=False, expires_at=0, scope="", phase=phase
+            )
     oauth = await _load_optional_oauth_credential(agent, client_key)
     if oauth is None or not oauth.secrets.get("access_token"):
         return OAuthStatusResponse(
             authorized=False,
             expires_at=0.0,
             scope="",
+            phase=phase,
         )
 
     # Token is valid only when not expired (expires_at=0 means no expiry set)
@@ -779,7 +829,30 @@ async def oauth_status(
         authorized=not_expired,
         expires_at=expires_at,
         scope=str(oauth.public.get("scope") or ""),
+        phase=phase,
     )
+
+
+@router.delete("/oauth/session/{client_key:path}", response_model=dict)
+async def oauth_cancel_session(
+    client_key: str, request: Request, session_id: str
+) -> dict:
+    """Cancel only the selected browser flow; keep existing account tokens."""
+    from ..agent_context import get_agent_for_request
+
+    agent = await get_agent_for_request(request)
+    await _load_mcp_card_for_oauth(agent, client_key)
+    session = _state_store.get(session_id)
+    if session is not None:
+        if (
+            session.agent_id != agent.agent_id
+            or session.client_key != client_key
+        ):
+            raise HTTPException(
+                status_code=404, detail="OAuth session not found"
+            )
+        session.phase = "cancelled"
+    return {"message": "OAuth session cancelled"}
 
 
 @router.delete("/oauth/{client_key:path}", response_model=dict)

@@ -8,7 +8,7 @@
 
 import type { EngineHandle, EngineMountOptions, RenderingEngine } from "./base";
 
-type EngineFactory = (options: EngineMountOptions) => EngineHandle;
+export type EngineFactory = (options: EngineMountOptions) => EngineHandle;
 
 const factories = new Map<string, EngineFactory>();
 
@@ -21,9 +21,13 @@ export function createRegisteredEngine(
   engine: RenderingEngine,
   options: EngineMountOptions,
 ): EngineHandle {
-  const factory = factories.get(engine.id);
+  return createEngine(engine.id, options);
+}
+
+export function createEngine(id: string, options: EngineMountOptions): EngineHandle {
+  const factory = factories.get(id);
   if (!factory) {
-    throw new Error(`Rendering engine is not registered: ${engine.id}`);
+    throw new Error(`尚未注册可视化引擎：${id}`);
   }
   return factory(options);
 }

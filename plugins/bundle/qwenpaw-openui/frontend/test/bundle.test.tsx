@@ -14,6 +14,7 @@ import type {
   ChatCodeBlockProps,
   ChatRequestPayloadTransform,
 } from "../src/qwenpaw-host";
+import type { TaskLayoutProps } from "../src/TaskLayout";
 
 afterEach(cleanup);
 
@@ -489,4 +490,37 @@ it("keeps repeated references as independent instances while earlier siblings ar
   expect(after[1]).toBe(before[1]);
   expect(after[0].getAttribute("aria-selected")).toBe("true");
   expect(after[1].getAttribute("aria-selected")).toBe("false");
+});
+
+it("ships the task-layout API using the real renderer and keeps panels alive through live updates", () => {
+  const TaskSurface = (window as unknown as { QwenPaw: { openui: {
+    version: number; TaskLayout: React.ComponentType<TaskLayoutProps>;
+  } } }).QwenPaw.openui.TaskLayout;
+  expect(TaskSurface).toBeTruthy();
+  const plan: TaskLayoutProps["plan"] = { title: "Run", layout: "tabs", panels: [
+    { id: "fields", title: "Fields" }, { id: "curves", title: "Curves" },
+  ] };
+  const mounted = vi.fn();
+  const unmounted = vi.fn();
+  function LivePanel({ value }: { value: string }) {
+    React.useEffect(() => { mounted(); return unmounted; }, []);
+    return <input aria-label={value} defaultValue="retained" />;
+  }
+  const panels = (value: string) => ({ fields: <LivePanel value={value} />, curves: <p>{value}</p> });
+  const view = render(<TaskSurface scopeKey="real-run" plan={plan} panels={panels("first")} />);
+  const input = screen.getByRole("textbox", { name: "first" });
+  fireEvent.change(input, { target: { value: "user zoom state" } });
+  fireEvent.click(screen.getByRole("tab", { name: "Curves" }));
+  view.rerender(<TaskSurface scopeKey="real-run" plan={{ ...plan, title: "Updated run" }} panels={panels("second")} />);
+  expect(screen.getByRole("tab", { name: "Curves" }).getAttribute("aria-selected")).toBe("true");
+  fireEvent.click(screen.getByRole("tab", { name: "Fields" }));
+  expect(screen.getByRole("textbox", { name: "second" })).toBe(input);
+  expect((input as HTMLInputElement).value).toBe("user zoom state");
+  view.rerender(<TaskSurface scopeKey="real-run" plan={{ ...plan, layout: "dashboard" }} panels={panels("third")} />);
+  expect(screen.getByRole("textbox", { name: "third" })).toBe(input);
+  expect(mounted).toHaveBeenCalledTimes(1);
+  expect(unmounted).not.toHaveBeenCalled();
+  expect(submit).not.toHaveBeenCalled();
+  view.unmount();
+  expect(unmounted).toHaveBeenCalledTimes(1);
 });

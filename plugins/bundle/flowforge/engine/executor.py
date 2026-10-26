@@ -426,6 +426,8 @@ class WorkflowExecutor:
         ):
             state.status = WorkflowStatus.COMPLETED
 
+        if state.status in {WorkflowStatus.CANCELLED, WorkflowStatus.TIMEOUT}:
+            progress.finish_unfinished(NodeStatus(state.status.value))
         await self._persist_run_snapshot(state, prompt_id, exec_list)
         resolved_outputs = self._resolve_outputs(doc, state, output_nodes)
         progress.emit(

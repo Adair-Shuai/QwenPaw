@@ -1936,7 +1936,7 @@ _OSS_PROXY_TIMEOUT = 15
     "/oss-proxy",
     summary="Proxy OSS resources to avoid CORS",
 )
-async def oss_proxy(path: str, refresh: bool = False):
+async def oss_proxy(request: Request, path: str, refresh: bool = False):
     """Proxy a file from the UGSci OSS bucket to the frontend.
 
     The OSS bucket does not send CORS headers, so the browser cannot fetch
@@ -1953,17 +1953,30 @@ async def oss_proxy(path: str, refresh: bool = False):
         )
         from fastapi.responses import Response
 
+        etag = f'"{hashlib.sha256(content).hexdigest()}"'
+        headers = {
+            "Cache-Control": (
+                "no-store"
+                if refresh
+                else (
+                    "private, no-cache"
+                    if clean_path.endswith("manifest.json")
+                    else "public, max-age=21600"
+                )
+            ),
+            "ETag": etag,
+            "X-QwenPaw-Cache": cache_state,
+        }
+        validators = request.headers.get("if-none-match", "").split(",")
+        if not refresh and any(
+            value.strip().removeprefix("W/") in {etag, "*"}
+            for value in validators
+        ):
+            return Response(status_code=304, headers=headers)
         return Response(
             content=content,
             media_type=content_type,
-            headers={
-                "Cache-Control": (
-                    "no-store"
-                    if refresh or clean_path.endswith("manifest.json")
-                    else "public, max-age=21600"
-                ),
-                "X-QwenPaw-Cache": cache_state,
-            },
+            headers=headers,
         )
     except Exception as exc:
         logger.warning("OSS proxy failed for %s: %s", clean_path, exc)

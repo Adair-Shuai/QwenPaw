@@ -26,13 +26,13 @@ export function createReadoutPanel(): HTMLElement {
     boxSizing: "border-box",
   } as CSSStyleDeclaration);
   el.innerHTML = [
-    '<div style="color:#8b949e;font:600 10px/1 -apple-system,sans-serif;letter-spacing:.06em;margin-bottom:6px;">SELECTED</div>',
+    '<div style="color:#8b949e;font:600 10px/1 -apple-system,sans-serif;letter-spacing:.06em;margin-bottom:6px;">选中对象</div>',
     '<div data-readout="selected" style="color:#e6edf3;font-weight:600;margin-bottom:2px;">—</div>',
     '<div data-readout="meta" style="color:#8b949e;margin-bottom:8px;">将指针移到场景中拾取</div>',
-    '<div style="color:#8b949e;font:600 10px/1 -apple-system,sans-serif;letter-spacing:.06em;margin-bottom:6px;">READOUT</div>',
-    row("Easting", "easting"),
-    row("Northing", "northing"),
-    row("TVD", "tvd"),
+    '<div style="color:#8b949e;font:600 10px/1 -apple-system,sans-serif;letter-spacing:.06em;margin-bottom:6px;">拾取坐标</div>',
+    row("东向 X", "easting"),
+    row("北向 Y", "northing"),
+    row("垂向 Z", "tvd"),
   ].join("");
   return el;
 }

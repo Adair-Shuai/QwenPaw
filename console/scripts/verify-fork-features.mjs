@@ -57,6 +57,16 @@ const suites = {
     "src/layouts/constants.test.ts",
   ],
   workspaceAndPlugins: [
+    "src/plugins/pluginRuntimeCleanup.test.ts",
+    "src/plugins/runCenterAdaptive.test.tsx",
+    "src/plugins/openuiRunCenterIntegration.test.tsx",
+    "src/plugins/simulationChat.test.tsx",
+    "src/plugins/runCenterSimulation.test.tsx",
+    "src/plugins/runCenterBundle.test.tsx",
+    "src/plugins/uideas.test.tsx",
+    "src/plugins/visualizationEmbedding.test.tsx",
+    "src/plugins/oilgasViewerUi.test.ts",
+    "src/plugins/visualizationEngine.test.ts",
     "src/utils/openExternalLink.test.ts",
     "src/layouts/SidebarSessionList.test.tsx",
     "src/components/SessionItem/SessionItem.test.tsx",
@@ -78,6 +88,9 @@ const suites = {
     "src/plugins/ugsciSettings.test.tsx",
     "src/plugins/domainEngines.test.tsx",
     "src/plugins/mcpCatalog.test.tsx",
+    "src/plugins/marketLoading.test.tsx",
+    "src/plugins/marketCache.test.ts",
+    "src/components/UGSciPublisher/UGSciPublisherModal.test.tsx",
     "src/pages/Agent/MCP/components/MCPAccessModal.largeCatalog.test.tsx",
     "src/pages/Agent/MCP/components/MCPClientCard.test.tsx",
     "src/plugins/documentForms.test.tsx",
@@ -102,6 +115,133 @@ for (const file of files) {
   requireCases(file, []);
 }
 for (const [file, titles] of [
+  [
+    "src/plugins/openuiRunCenterIntegration.test.tsx",
+    [
+      "renders Run Center result panels through the published OpenUI runtime and preserves tab and DOM state across polling",
+      "uses the real plugin cleanup to revoke OpenUI and keep Run Center results readable in the native layout",
+    ],
+  ],
+  [
+    "src/plugins/runCenterAdaptive.test.tsx",
+    [
+      "projects analysis metrics/tables and bounded raw data without interpreting input text or calling simulation APIs",
+      "uses newest result events for comparisons and shows stage metrics for workflows",
+      "imports a real dataset reference, preserves the viewer across updates/layout and saves/reloads presentation",
+      "retains unsaved edits through remote revisions and reports a save conflict instead of overwriting",
+      "disables draft changes and pauses plan polling during a pending save",
+      "honors saved compact panel titles/order and directs unsupported field panels to the full sidebar",
+      "skips malformed series points while preserving an explicit missing value as an ECharts gap",
+      "ignores a delayed old scope response and rejects malformed plans with readable native fallback",
+      "loads the published OpenUI runtime on readiness and falls back when the plugin is disposed",
+      "applies simulation plan defaults once while retaining manual filters and field state across plan changes",
+    ],
+  ],
+  [
+    "../plugins/bundle/qwenpaw-openui/frontend/test/TaskLayout.test.tsx",
+    [
+      "uses the real runtime and preserves host viewers across polling, tabs, layout, titles and filtering",
+      "appends new panels without replacing existing host elements or tab state",
+      "treats quoted panel IDs and model text as inert data and isolates task instances",
+      "publishes a replaceable API and releases its global reference on disposal",
+    ],
+  ],
+  [
+    "../plugins/bundle/qwenpaw-openui/frontend/test/bundle.test.tsx",
+    [
+      "ships the task-layout API using the real renderer and keeps panels alive through live updates",
+    ],
+  ],
+  [
+    "src/plugins/marketLoading.test.tsx",
+    [
+      "paints skills and MCP before a slow expert catalog and limits initial cards",
+      "searches the whole catalog beyond the first batch and keeps cards on refresh failure",
+      "opens the expert publisher from the real market and blocks unconfigured OSS uploads",
+    ],
+  ],
+  [
+    "src/components/UGSciPublisher/UGSciPublisherModal.test.tsx",
+    [
+      "requires package inspection and consent before upload then shows the OSS receipt",
+      "keeps local preparation distinct from a remote submission and clears the temporary token",
+    ],
+  ],
+  [
+    "src/plugins/marketCache.test.ts",
+    [
+      "shares cold requests and reuses a fresh catalog when reopening",
+      "returns stale cards immediately and notifies once background validation finishes",
+      "follows backend stale responses without blocking the first catalog paint",
+    ],
+  ],
+  [
+    "src/plugins/pluginRuntimeCleanup.test.ts",
+    [
+      "revokes the shared OpenUI renderer when its owner is removed",
+      "still removes registrations and stale OpenUI capability after a cleanup error",
+    ],
+  ],
+  [
+    "src/plugins/simulationChat.test.tsx",
+    [
+      "only accepts simulation tool references from live and historical messages",
+      "registers a real chat card that opens a scoped monitor without automatically subscribing",
+      "mounts the shared sidebar monitor with session scope and handles late plugin loading",
+    ],
+  ],
+  [
+    "src/plugins/runCenterSimulation.test.tsx",
+    [
+      "mounts monitoring from the real run page, keeps logs and disables unsupported pause",
+      "filters multiple well curves, keeps missing values and exports the complete selected series with host scope",
+      "refreshes live fields in place, preserves manual timestep and disposes the viewer and timers",
+      "continues polling after solver exit until final results, then retains the final snapshot",
+      "uses archived ISO timestamps and job status without chat props and only collects history on request",
+      "uses SSE updates, falls back to polling, retains old results on failure and retries",
+      "isolates a delayed old run response, captures Agent scope and tolerates a missing UGSci viewer",
+    ],
+  ],
+  [
+    "src/plugins/uideas.test.tsx",
+    [
+      "captures inline metadata without accidental Enter submission and retains drafts across tabs",
+      "searches full content and expansion, clears filters, reads full ideas and navigates cluster sources",
+      "preserves edited text during realtime refresh and retains explicit experiment links",
+      "archives and restores original status from the mounted idea board",
+      "paginates and sorts the real library while keyboard navigation retains filters",
+      "adopts a suggestion then completes and reopens its action without SSE",
+      "keeps queued jobs busy across tabs and polls completion without realtime events",
+      "shows recoverable task failures and retries from the real page",
+      "retries loading errors and exports all records including archived ideas",
+    ],
+  ],
+  [
+    "src/plugins/visualizationEngine.test.ts",
+    [
+      "mounts two real engines with independent stores and keeps the surviving engine usable after disposal",
+      "retains loaded scalars for filtering and exposes selected objects to the embedding host",
+      "waits for initialization before open and rejects invalid geometry instead of acknowledging success",
+      "silently synchronizes loaded tube, depth-log and spatial-well views without selecting a different dataset",
+      "saves and restores scenes and cameras independently across real engines and custom card namespaces",
+      "cancels a deferred scene restoration when Agent scope changes without altering the new restoration",
+    ],
+  ],
+  [
+    "src/plugins/visualizationEmbedding.test.tsx",
+    [
+      "mounts the registered page and disposes its own viewer without reloading the host",
+      "opens the imported dataset with captured workspace scope through host navigation",
+      "does not execute a late command after the viewer is disposed",
+    ],
+  ],
+  [
+    "src/plugins/oilgasViewerUi.test.ts",
+    [
+      "localizes inspector controls and switches tabs by keyboard without duplicate ARIA IDs",
+      "renders matching objects inside folded groups and exposes real keyboard-selectable controls",
+    ],
+  ],
   [
     "src/plugins/storageCapacity.test.tsx",
     [
@@ -167,6 +307,9 @@ for (const [file, titles] of [
       "imports the actual market remote URL headers and user credential after confirmation",
       "keeps OAuth catalog connections disabled until the user authorizes them",
       "refreshes the OSS catalog explicitly without relying on the browser cache",
+      "authorizes from the actual marketplace and verifies tools before reporting connected",
+      "retries denied marketplace authorization and cancels without enabling or duplicating clients",
+      "keeps saved token connections retryable without displaying upstream credentials",
     ],
   ],
   [
@@ -282,6 +425,8 @@ for (const title of [
   "UGSci workspace: the real header opens, expands and closes the current session panel",
   "UGSci workspace: compute opens atomically and a later file request takes priority",
   "UGSci workspace: inactive chat ignores global file and compute requests",
+  "UGSci simulation: the real chat opens the requested run and rejects another agent or session",
+  "UGSci simulation: accepts the current runtime session when its Chat UUID differs",
 ]) {
   if (
     !inspectForkTestSource(

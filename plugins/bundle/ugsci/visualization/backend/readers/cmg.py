@@ -503,6 +503,7 @@ class CmgReader(BaseReader):
             from .cmg_results import attach_sr3_spatial_properties
             time_steps, sr3_info = attach_sr3_spatial_properties(
                 sr3_path, active_ids, n_total, prefix, bin_dir,
+                max_steps=int(options.get("max_steps", 8)),
             )
             deck_metadata.update(sr3_info)
 
@@ -523,11 +524,13 @@ class CmgReader(BaseReader):
                 "scalars": scalar_files,
             },
             "time_steps": time_steps,
+            "properties": {key: {"label": key, "association": "cell", "count": n_active, "unit": None}
+                           for key in set(scalar_files).union(*(set(step["scalars"]) for step in time_steps))},
             "related_datasets": related_datasets,
             "metadata": {
                 **deck_metadata,
                 "format": "CMG DAT",
-                "units": "SI",
+                "units": None,
                 "grid_type": "corner-point" if grid_type == "corner" else "cartesian",
                 "n_total_cells": n_total,
                 "n_active_cells": n_active,

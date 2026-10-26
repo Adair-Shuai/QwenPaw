@@ -45,7 +45,15 @@ class ExecutionRepository:
         if not path.is_file():
             return None
         try:
-            return json.loads(path.read_text(encoding="utf-8"))
+            record = json.loads(path.read_text(encoding="utf-8"))
+            # Older runners persisted active node labels after cancellation.
+            # Normalize those records when read without changing their history.
+            if record.get("status") == "cancelled":
+                record["node_statuses"] = {
+                    node_id: "cancelled" if status in {"pending", "running", "blocked"} else status
+                    for node_id, status in record.get("node_statuses", {}).items()
+                }
+            return record
         except (OSError, json.JSONDecodeError):
             return None
 

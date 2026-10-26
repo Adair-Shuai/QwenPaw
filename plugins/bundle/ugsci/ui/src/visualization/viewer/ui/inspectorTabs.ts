@@ -2,13 +2,17 @@
  * Right-rail inspector: Controls / Actions / Addons tabs and Name/Control rows.
  */
 
+import { controlLabel } from "./labels";
+
 export type InspectorTabId = "controls" | "actions" | "addons";
 
 export const INSPECTOR_TABS: ReadonlyArray<{ id: InspectorTabId; label: string }> = [
-  { id: "controls", label: "Controls" },
-  { id: "actions", label: "Actions" },
-  { id: "addons", label: "Addons" },
+  { id: "controls", label: "属性" },
+  { id: "actions", label: "操作" },
+  { id: "addons", label: "扩展" },
 ];
+
+let inspectorSequence = 0;
 
 export interface InspectorTabs {
   tabBar: HTMLElement;
@@ -21,8 +25,11 @@ export interface InspectorTabs {
 
 export function createInspectorTabs(onChange?: (id: InspectorTabId) => void): InspectorTabs {
   let active: InspectorTabId = "controls";
+  const prefix = `oilgas-inspector-${++inspectorSequence}`;
   const tabBar = document.createElement("div");
   tabBar.className = "oilgas-inspector-tabs";
+  tabBar.setAttribute("role", "tablist");
+  tabBar.setAttribute("aria-label", "场景属性面板");
   tabBar.style.cssText = [
     "display:flex;gap:4px;padding:0 0 8px;margin:0 0 8px;",
     "border-bottom:1px solid #30363d;flex:0 0 auto;",
@@ -41,6 +48,7 @@ export function createInspectorTabs(onChange?: (id: InspectorTabId) => void): In
         btn.style.background = on ? "rgba(31,111,235,.32)" : "transparent";
         btn.style.color = on ? "#e6edf3" : "#8b949e";
         btn.setAttribute("aria-selected", String(on));
+        btn.tabIndex = on ? 0 : -1;
       }
       if (pane) pane.style.display = on ? "block" : "none";
     }
@@ -52,6 +60,8 @@ export function createInspectorTabs(onChange?: (id: InspectorTabId) => void): In
     btn.type = "button";
     btn.dataset.tab = tab.id;
     btn.setAttribute("role", "tab");
+    btn.id = `${prefix}-${tab.id}-tab`;
+    btn.setAttribute("aria-controls", `${prefix}-${tab.id}-pane`);
     btn.title = tab.label;
     btn.style.cssText = [
       "flex:1;display:flex;align-items:center;justify-content:center;gap:6px;",
@@ -73,11 +83,26 @@ export function createInspectorTabs(onChange?: (id: InspectorTabId) => void): In
       active = tab.id;
       apply();
     });
+    btn.addEventListener("keydown", (event) => {
+      const current = INSPECTOR_TABS.findIndex((item) => item.id === active);
+      const next = event.key === "ArrowRight" ? (current + 1) % INSPECTOR_TABS.length
+        : event.key === "ArrowLeft" ? (current + INSPECTOR_TABS.length - 1) % INSPECTOR_TABS.length
+        : event.key === "Home" ? 0 : event.key === "End" ? INSPECTOR_TABS.length - 1 : -1;
+      if (next < 0) return;
+      event.preventDefault();
+      event.stopPropagation();
+      active = INSPECTOR_TABS[next].id;
+      apply();
+      buttons.get(active)?.focus();
+    });
     tabBar.appendChild(btn);
     buttons.set(tab.id, btn);
     badges.set(tab.id, badge);
 
     const pane = document.createElement("div");
+    pane.id = `${prefix}-${tab.id}-pane`;
+    pane.setAttribute("role", "tabpanel");
+    pane.setAttribute("aria-labelledby", btn.id);
     pane.dataset.inspectorPane = tab.id;
     pane.style.cssText = "display:none;padding-bottom:8px;";
     panes[tab.id] = pane;
@@ -101,7 +126,7 @@ export function createInspectorTabs(onChange?: (id: InspectorTabId) => void): In
     },
     setBadge: (id, count) => {
       const badge = badges.get(id);
-      if (badge) badge.textContent = String(count);
+      if (badge) badge.textContent = String(Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0);
     },
     active: () => active,
   };
@@ -117,9 +142,9 @@ export function createControlTable(): { table: HTMLElement; body: HTMLElement } 
     "letter-spacing:.06em;text-transform:uppercase;border-bottom:1px solid #21262d;",
   ].join("");
   const name = document.createElement("div");
-  name.textContent = "Name";
+  name.textContent = "项目";
   const control = document.createElement("div");
-  control.textContent = "Control";
+  control.textContent = "设置";
   head.append(name, control);
   const body = document.createElement("div");
   table.append(head, body);
@@ -127,6 +152,7 @@ export function createControlTable(): { table: HTMLElement; body: HTMLElement } 
 }
 
 export function appendControlRow(body: HTMLElement, name: string, control: HTMLElement): HTMLElement {
+  name = controlLabel(name);
   const row = document.createElement("div");
   row.style.cssText = [
     "display:grid;grid-template-columns:42% 1fr;gap:8px;align-items:center;",
@@ -137,6 +163,11 @@ export function appendControlRow(body: HTMLElement, name: string, control: HTMLE
   label.style.cssText = "color:#8b949e;font-size:11px;word-break:break-word;";
   const cell = document.createElement("div");
   cell.style.minWidth = "0";
+  const inputs = control.matches("input,select,textarea") ? [control] : Array.from(control.querySelectorAll<HTMLElement>("input,select,textarea"));
+  for (const input of inputs) {
+    if (!input.hasAttribute("aria-label") && !input.hasAttribute("aria-labelledby")) input.setAttribute("aria-label", name);
+  }
+  if (control.getAttribute("role") === "group") control.setAttribute("aria-label", name);
   cell.appendChild(control);
   row.append(label, cell);
   body.appendChild(row);
@@ -149,22 +180,28 @@ export function createBoolSwitch(
   onChange: (value: boolean) => void,
 ): HTMLElement {
   const wrap = document.createElement("div");
+  wrap.setAttribute("role", "group");
   wrap.style.cssText = "display:flex;border:1px solid #30363d;border-radius:5px;overflow:hidden;height:24px;";
   const input = document.createElement("input");
   input.type = "checkbox";
   input.id = id;
   input.checked = initial;
   input.style.cssText = "position:absolute;opacity:0;width:0;height:0;";
-  const falseBtn = pill("False");
-  const trueBtn = pill("True");
+  input.tabIndex = -1;
+  input.setAttribute("aria-hidden", "true");
+  const falseBtn = pill("关闭");
+  const trueBtn = pill("开启");
   const paint = () => {
     const on = input.checked;
     falseBtn.style.background = on ? "transparent" : "#1f6feb";
     falseBtn.style.color = on ? "#8b949e" : "#fff";
     trueBtn.style.background = on ? "#1f6feb" : "transparent";
     trueBtn.style.color = on ? "#fff" : "#8b949e";
+    falseBtn.setAttribute("aria-pressed", String(!on));
+    trueBtn.setAttribute("aria-pressed", String(on));
   };
   const set = (value: boolean) => {
+    if (input.checked === value) return;
     input.checked = value;
     paint();
     onChange(value);

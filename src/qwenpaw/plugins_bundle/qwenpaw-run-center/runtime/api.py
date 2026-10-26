@@ -58,6 +58,8 @@ def build_router(
     research_service: Any | None = None,
 ) -> APIRouter:
     router = APIRouter()
+    from .presentation import build_presentation_router
+    router.routes.extend(build_presentation_router(repository).routes)
 
     def _executor_started() -> bool:
         if executor_service is None:

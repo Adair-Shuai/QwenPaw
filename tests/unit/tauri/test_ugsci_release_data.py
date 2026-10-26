@@ -273,6 +273,13 @@ def test_packaged_visualization_imports_user_data_without_shipped_examples(
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     import importlib
+    from qwenpaw import constant
+
+    # A packaged plugin overlays published simulation fields from WORKING_DIR
+    # as well as its own data directory. Isolate that real runtime store before
+    # loading the package so this release test never reads local user results.
+    working_dir = tmp_path / "runtime"
+    monkeypatch.setattr(constant, "WORKING_DIR", working_dir)
 
     source = ROOT / "plugins/bundle/ugsci"
     packaged = tmp_path / "ugsci"
@@ -295,6 +302,8 @@ def test_packaged_visualization_imports_user_data_without_shipped_examples(
     monkeypatch.setitem(sys.modules, name, package)
     spec.loader.exec_module(package)
     api = importlib.import_module(f"{name}.backend.api")
+    simulation = importlib.import_module(f"{name}.backend.simulation")
+    assert simulation.runtime_directory() == working_dir / "ugsci" / "visualization"
     manager = importlib.import_module(f"{name}.backend.jobs.manager")
     monkeypatch.setattr(manager, "_job_store", lambda: None)
     app = FastAPI()

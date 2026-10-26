@@ -7,19 +7,18 @@ import { PRIMARY_BTN_STYLE, renderMarkdown, PageHeader } from "../core/shared";
 import type { AgentSummary, MCPClientInfo } from "../core/types";
 import { fetchAgents, fetchPoolSkills } from "../core/api";
 import { ExpertAvatar } from "../components/avatars";
+import { MCPConnectModal } from "./MCPConnectModal";
+import { safeMcpLink } from "./mcpConnection";
+import { ExpertPublishModal } from "./ExpertPublishModal";
 import {
   extractPromptFromSkills,
   installSkillFromPool,
   deletePoolSkill,
   writeKnowledgeFile,
   fetchAgentMCPClients,
-  createMCPForAgent,
 } from "../expert/expertApi";
 import {
   type MCPTemplate,
-  MCP_ENV_HINTS,
-  mcpTemplateNeedsConfig,
-  resolveMcpConnection,
   type GitHubSkill,
   type GitHubSkillSource,
   type DynamicCategory,
@@ -43,6 +42,7 @@ import {
   fetchOSSSkillsManifest,
   fetchOSSAgentsManifest,
   fetchAllGitHubSkills,
+  subscribeOssManifestUpdates,
   _extractSkillCategories,
   SourceConfigModal,
   GenericSourceConfigModal,
@@ -218,12 +218,13 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
 
   // MCP market state
   const [mcpSearchText, setMcpSearchText] = useState("");
-  const [mcpInstalling, setMcpInstalling] = useState<Record<string, boolean>>({});
   const [mcpInstallTargetAgent, setMcpInstallTargetAgent] = useState<string>("");
-  const [existingMcpKeys, setExistingMcpKeys] = useState<Set<string>>(new Set());
-  // MCP install config modal (for templates that require token/env input)
-  const [mcpConfigTemplate, setMcpConfigTemplate] = useState<MCPTemplate | null>(null);
-  const [mcpConfigEnvValues, setMcpConfigEnvValues] = useState<Record<string, string>>({});
+  const [existingMcps, setExistingMcps] = useState<Record<string, MCPClientInfo>>({});
+  const [connectedMcps, setConnectedMcps] = useState<Set<string>>(new Set());
+  const [mcpConfig, setMcpConfig] = useState<{ template: MCPTemplate; agentId: string; existing?: MCPClientInfo } | null>(null);
+  const [mcpVisibleCount, setMcpVisibleCount] = useState(24);
+  const mcpTargetRef = useRef(mcpInstallTargetAgent);
+  mcpTargetRef.current = mcpInstallTargetAgent;
 
   // GitHub skill sources state
   const [githubSources, setGithubSources] = useState<GitHubSkillSource[]>([]);
@@ -232,6 +233,9 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
   // cannot accidentally hide the canonical registry.
   const [ossSkills, setOssSkills] = useState<GitHubSkill[]>([]);
   const [ossSkillsError, setOssSkillsError] = useState("");
+  const [ossSkillsLoading, setOssSkillsLoading] = useState(false);
+  const [skillVisibleCount, setSkillVisibleCount] = useState(24);
+  const [expertVisibleCount, setExpertVisibleCount] = useState(24);
   const [githubLoading, setGithubLoading] = useState(false);
   const [sourceConfigOpen, setSourceConfigOpen] = useState(false);
 
@@ -242,17 +246,20 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
   // Expert sources state
   const [expertSources, setExpertSources] = useState<GenericSource[]>([]);
   const [expertSourceConfigOpen, setExpertSourceConfigOpen] = useState(false);
+  const [expertPublishOpen, setExpertPublishOpen] = useState(false);
 
   // ── OSS MCP market state (dynamic from official manifest) ──
   const [ossMcpServers, setOssMcpServers] = useState<OssMcpServer[]>([]);
   const [ossMcpCategories, setOssMcpCategories] = useState<DynamicCategory[]>([]);
   const [ossMcpLoading, setOssMcpLoading] = useState(false);
+  const [ossMcpError, setOssMcpError] = useState("");
   const [mcpSelectedCategory, setMcpSelectedCategory] = useState("");
 
   // ── OSS Agents market state (dynamic from official manifest) ──
   const [ossAgents, setOssAgents] = useState<OssAgent[]>([]);
   const [ossAgentCategories, setOssAgentCategories] = useState<DynamicCategory[]>([]);
   const [ossAgentLoading, setOssAgentLoading] = useState(false);
+  const [ossAgentError, setOssAgentError] = useState("");
   const [expertSelectedCategory, setExpertSelectedCategory] = useState("");
   const [ossAgentCreating, setOssAgentCreating] = useState(false);
   const [agentDetail, setAgentDetail] = useState<OssAgent | null>(null);
@@ -261,39 +268,42 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
   const [ossSkillCategories, setOssSkillCategories] = useState<DynamicCategory[]>([]);
 
   const searchTimerRef = useRef<any>(null);
+  const catalogGeneration = useRef(0);
+  const githubGeneration = useRef(0);
 
   // Load providers and categories on mount
   useEffect(() => {
-    Promise.all([
-      fetchMarketProviders().catch(() => []),
-      fetchMarketCategories("zh").catch(() => []),
-      fetchAgents().catch(() => []),
-    ]).then(([provs, cats, agentList]) => {
-      setProviders(provs);
-      setCategories(cats);
+    let alive = true;
+    fetchMarketProviders().then((value) => { if (alive) setProviders(value); }).catch(() => {});
+    fetchMarketCategories("zh").then((value) => { if (alive) setCategories(value); }).catch(() => {});
+    fetchAgents().then((agentList) => {
+      if (!alive) return;
       setAgents(agentList);
       if (agentList.length > 0) {
         setInstallTargetAgent(agentList[0].id);
         setMcpInstallTargetAgent(agentList[0].id);
       }
-    });
+    }).catch(() => {});
+    return () => { alive = false; };
   }, []);
 
   // Load GitHub sources from localStorage on mount, then fetch skills
   const loadGithubSkills = useCallback(async (sources?: GitHubSkillSource[]) => {
+    const generation = ++githubGeneration.current;
     const srcs = sources ?? loadGithubSources();
     if (sources) setGithubSources(sources);
     else setGithubSources(srcs);
     const enabled = srcs.filter((s) => s.enabled);
     if (enabled.length === 0) {
       setGithubSkills([]);
+      setGithubLoading(false);
       return;
     }
     setGithubLoading(true);
     try {
-      const { skills, errors, categories } = await fetchAllGitHubSkills(srcs);
+      const { skills, errors } = await fetchAllGitHubSkills(srcs);
+      if (generation !== githubGeneration.current) return;
       setGithubSkills(skills);
-      setOssSkillCategories(categories);
       // Extract dynamic categories from OSS skills that have tags
       // (Categories computed dynamically via unifiedCategories)
       if (errors.length > 0) {
@@ -305,55 +315,46 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
         );
       }
     } catch (err: any) {
+      if (generation !== githubGeneration.current) return;
       antdMsg.error(err.message || "加载技能源失败");
-      setGithubSkills([]);
     } finally {
-      setGithubLoading(false);
+      if (generation === githubGeneration.current) setGithubLoading(false);
     }
   }, []);
 
-  // Load all official OSS markets on mount (parallel).
+  // Each catalog paints independently; a slow source never gates another tab.
   const loadOssMarketData = useCallback(async (refresh = false) => {
+    const generation = ++catalogGeneration.current;
+    const current = () => generation === catalogGeneration.current;
     setOssMcpLoading(true);
     setOssAgentLoading(true);
-    setGithubLoading(true);
-    const [mcpResult, agentsResult, skillsResult] = await Promise.allSettled([
-      fetchOSSMcpManifest(refresh),
-      fetchOSSAgentsManifest(),
-      fetchOSSSkillsManifest(),
+    setOssSkillsLoading(true);
+    await Promise.allSettled([
+      fetchOSSMcpManifest(refresh).then((value) => {
+        if (!current()) return;
+        setOssMcpServers(value.servers);
+        setOssMcpCategories(value.categories);
+        setOssMcpError("");
+      }).catch(() => {
+        if (current()) setOssMcpError("MCP 目录暂时无法更新，已有内容仍可浏览。");
+      }).finally(() => { if (current()) setOssMcpLoading(false); }),
+      fetchOSSAgentsManifest(refresh).then((value) => {
+        if (!current()) return;
+        setOssAgents(value.agents);
+        setOssAgentCategories(value.categories);
+        setOssAgentError("");
+      }).catch(() => {
+        if (current()) setOssAgentError("人才目录暂时无法更新，已有内容仍可浏览。");
+      }).finally(() => { if (current()) setOssAgentLoading(false); }),
+      fetchOSSSkillsManifest(refresh).then((value) => {
+        if (!current()) return;
+        setOssSkills(value.skills);
+        setOssSkillCategories(value.categories);
+        setOssSkillsError("");
+      }).catch(() => {
+        if (current()) setOssSkillsError("技能目录暂时无法更新，已有内容仍可浏览。");
+      }).finally(() => { if (current()) setOssSkillsLoading(false); }),
     ]);
-    // Process MCP result
-    if (mcpResult.status === "fulfilled") {
-      setOssMcpServers(mcpResult.value.servers);
-      setOssMcpCategories(mcpResult.value.categories);
-    } else {
-      console.warn(`[ugsci] MCP manifest error: ${mcpResult.reason?.message || mcpResult.reason}`);
-      setOssMcpServers([]);
-      setOssMcpCategories([]);
-    }
-    setOssMcpLoading(false);
-    // Process Agents result
-    if (agentsResult.status === "fulfilled") {
-      setOssAgents(agentsResult.value.agents);
-      setOssAgentCategories(agentsResult.value.categories);
-    } else {
-      console.warn(`[ugsci] Agents manifest error: ${agentsResult.reason?.message || agentsResult.reason}`);
-      setOssAgents([]);
-      setOssAgentCategories([]);
-    }
-    setOssAgentLoading(false);
-    // Process Skills result
-    if (skillsResult.status === "fulfilled") {
-      setOssSkills(skillsResult.value.skills);
-      setOssSkillsError("");
-    } else {
-      const errorMessage =
-        skillsResult.reason?.message || String(skillsResult.reason);
-      console.warn(`[ugsci] Skills manifest error: ${errorMessage}`);
-      setOssSkills([]);
-      setOssSkillsError(errorMessage);
-    }
-    setGithubLoading(false);
   }, []);
 
   useEffect(() => {
@@ -362,7 +363,16 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
     // Load MCP and Expert sources from localStorage
     setMcpSources(loadMcpSources());
     setExpertSources(loadExpertSources());
+    const unsubscribe = subscribeOssManifestUpdates(() => { void loadOssMarketData(); });
+    return () => {
+      unsubscribe();
+      catalogGeneration.current += 1;
+      githubGeneration.current += 1;
+    };
   }, [loadGithubSkills, loadOssMarketData]);
+
+  useEffect(() => { setSkillVisibleCount(24); }, [searchText, selectedCategory]);
+  useEffect(() => { setExpertVisibleCount(24); }, [expertSearchText, expertSelectedCategory]);
 
   const doSearch = useCallback(
     async (query: string, category: string, pages: Record<string, number>) => {
@@ -570,7 +580,7 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
   }, [results, selectedCategory, availableProviders]);
 
   // Skill Market Tab
-  const skillsMarketTab = React.createElement(
+  const skillsMarketTab = activeTab === "skills" ? React.createElement(
     "div",
     null,
     // Top bar: search + filters + install target
@@ -613,14 +623,18 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
         },
         "配置技能源",
       ),
+      React.createElement(Button, {
+        size: "small", loading: ossSkillsLoading,
+        onClick: () => { void loadOssMarketData(true); void loadGithubSkills(); },
+      }, "刷新技能目录"),
     ),
     // Dynamic category filter tags (from OSS manifest tags + imported sources)
-    ossSkillsError && allSkills.length === 0
+    ossSkillsError
       ? React.createElement(Alert, {
           type: "warning",
           showIcon: true,
           message: "UGSci 官方 OSS 技能库加载失败",
-          description: "请检查网络或后端 OSS 代理服务，然后点击右上角“刷新”重试。",
+          description: "请检查网络后点击“刷新技能目录”重试，已加载的技能仍可浏览。",
           style: { marginBottom: 12 },
         })
       : null,
@@ -685,7 +699,7 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
         )
       : null,
     // GitHub skills section
-    githubLoading && allSkills.length === 0
+    (githubLoading || ossSkillsLoading) && allSkills.length === 0
       ? React.createElement(
           "div",
           { style: { textAlign: "center", padding: 40, marginBottom: 16 } },
@@ -719,7 +733,7 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
             React.createElement(
               Row,
               { gutter: [12, 12] },
-              ...filteredGithubSkills.map((skill) => {
+              ...filteredGithubSkills.slice(0, skillVisibleCount).map((skill) => {
                 const itemKey = `github:${skill.sourceId}:${skill.name}`;
                 const installState = installing[itemKey];
                 return React.createElement(
@@ -858,6 +872,11 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
             ),
           )
         : null,
+    filteredGithubSkills.length > skillVisibleCount
+      ? React.createElement("div", { style: { textAlign: "center", marginBottom: 20 } },
+          React.createElement(Button, { onClick: () => setSkillVisibleCount((count: number) => count + 24) },
+            `显示更多技能（已显示 ${Math.min(skillVisibleCount, filteredGithubSkills.length)} / ${filteredGithubSkills.length}）`))
+      : null,
     // Market results section title
     filteredResults.length > 0 || loading
       ? React.createElement(
@@ -1149,7 +1168,7 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
             : null,
         )
       : null,
-  );
+  ) : null;
 
   // Expert Templates Tab — filtered from OSS agents (dynamic)
   const filteredOssAgents = useMemo(() => {
@@ -1173,33 +1192,24 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
     if (ossAgentCreating) return;
     setOssAgentCreating(true);
     try {
-      // Fetch instructions (AGENTS.md) from OSS if available
-      let systemPrompt = agent.description;
-      if (agent.instructions) {
-        try {
-          const instrPath = agent.instructions.replace(/^\/+/, "");
-          const resp = await fetchOssResponse(instrPath);
-          if (resp.ok) {
-            systemPrompt = await resp.text();
-          }
-        } catch {}
-      }
-      // Fetch skills manifest from OSS if available
-      let skillNames: string[] = [];
-      if (agent.skills_manifest) {
-        try {
-          const manifestPath = agent.skills_manifest.replace(/^\/+/, "");
-          const resp = await fetchOssResponse(manifestPath);
-          if (resp.ok) {
-            const data = await resp.json();
-            if (Array.isArray(data)) {
-              skillNames = data.map((s: any) => typeof s === "string" ? s : s.name).filter(Boolean);
-            } else if (data.skills) {
-              skillNames = data.skills.map((s: any) => typeof s === "string" ? s : s.name).filter(Boolean);
-            }
-          }
-        } catch {}
-      }
+      // Download the complete published template before creating local state.
+      const [systemPrompt, skillNames] = await Promise.all([
+        agent.instructions ? (async () => {
+          const resp = await fetchOssResponse(agent.instructions!.replace(/^\/+/, ""));
+          if (!resp.ok) throw new Error("专家提示词加载失败，请重试后再创建");
+          const content = await resp.text();
+          if (!content.trim()) throw new Error("专家提示词为空，无法创建");
+          return content;
+        })() : Promise.resolve(agent.description),
+        agent.skills_manifest ? (async () => {
+          const resp = await fetchOssResponse(agent.skills_manifest!.replace(/^\/+/, ""));
+          if (!resp.ok) throw new Error("专家技能清单加载失败，请重试后再创建");
+          const data = await resp.json();
+          const list = Array.isArray(data) ? data : data.skills;
+          if (!Array.isArray(list)) throw new Error("专家技能清单格式无效");
+          return list.map((item: any) => typeof item === "string" ? item : item?.name).filter((item: any) => typeof item === "string" && item.trim());
+        })() : Promise.resolve([] as string[]),
+      ]);
       const agentRef = await apiFetch<{ id: string }>("/agents", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -1219,104 +1229,33 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
     }
   };
 
-  // ── MCP Market: load existing MCP keys when target agent changes ──
+  // Read persisted configuration separately from verified connection status.
   const loadExistingMcpKeys = useCallback(async (agentId: string) => {
     if (!agentId) return;
     try {
       const data = await fetchAgentMCPClients(agentId);
-      setExistingMcpKeys(new Set(data.map((m) => m.key)));
+      if (mcpTargetRef.current !== agentId) return;
+      setExistingMcps(Object.fromEntries(data.map((client) => [client.key, client])));
     } catch {
-      setExistingMcpKeys(new Set());
+      if (mcpTargetRef.current === agentId) setExistingMcps({});
     }
   }, []);
 
   useEffect(() => {
-    if (mcpInstallTargetAgent) {
-      loadExistingMcpKeys(mcpInstallTargetAgent);
-    }
+    setExistingMcps({});
+    setConnectedMcps(new Set());
+    if (mcpInstallTargetAgent) loadExistingMcpKeys(mcpInstallTargetAgent);
   }, [mcpInstallTargetAgent, loadExistingMcpKeys]);
 
-  // ── MCP Market: install handler ──
-  const handleInstallMcp = async (template: MCPTemplate) => {
+  useEffect(() => { setMcpVisibleCount(24); }, [mcpSearchText, mcpSelectedCategory]);
+
+  const handleInstallMcp = (template: MCPTemplate) => {
     if (!mcpInstallTargetAgent) {
       antdMsg.warning("请先选择目标专家");
       return;
     }
-    // If template has env fields, open config modal for user to input tokens
-    if (mcpTemplateNeedsConfig(template)) {
-      const envEntries = Object.entries(template.env!).filter(([, value]) => value.startsWith("your-") || value.includes("${"));
-      const initialValues: Record<string, string> = {};
-      for (const [k] of envEntries) {
-        // Start with empty string so user must fill in their real value
-        initialValues[k] = "";
-      }
-      setMcpConfigEnvValues(initialValues);
-      setMcpConfigTemplate(template);
-      return;
-    }
-    // No env config needed — install directly
-    await doInstallMcp(template, template.env || {});
+    setMcpConfig({ template, agentId: mcpInstallTargetAgent, existing: existingMcps[template.id] });
   };
-
-  // ── MCP Market: actual install (called after config or directly) ──
-  const doInstallMcp = async (
-    template: MCPTemplate,
-    envValues: Record<string, string>,
-  ) => {
-    setMcpInstalling((prev) => ({ ...prev, [template.id]: true }));
-    try {
-      const resolved = resolveMcpConnection({
-        url: template.url, command: template.command, args: template.args,
-        headers: template.headers, cwd: template.cwd, env: { ...template.env, ...envValues },
-      }, envValues);
-      const clientKey = template.id;
-      await createMCPForAgent(mcpInstallTargetAgent, {
-        client_key: clientKey,
-        client: {
-          name: template.name,
-          description: template.description,
-          enabled: template.authType !== "oauth2",
-          transport: template.transport,
-          url: resolved.url || "",
-          command: resolved.command || "",
-          args: resolved.args || [],
-          env: resolved.env || {},
-          cwd: resolved.cwd || "",
-          headers: resolved.headers || {},
-        },
-      });
-      antdMsg.success(template.authType === "oauth2"
-        ? `「${template.name}」已添加，请在工具·技能的 MCP 管理中完成账号授权并启用`
-        : `MCP「${template.name}」已添加到当前专家，连接状态请在 MCP 管理中检测`);
-      setExistingMcpKeys((prev) => new Set(prev).add(clientKey));
-    } catch (err: any) {
-      antdMsg.error(err.message || `添加 MCP「${template.name}」失败`);
-    } finally {
-      setMcpInstalling((prev) => ({ ...prev, [template.id]: false }));
-    }
-  };
-
-  // ── MCP Market: confirm install from config modal ──
-  const confirmInstallMcp = async () => {
-    if (!mcpConfigTemplate) return;
-    // Validate that all required env fields are filled
-    const missing: string[] = [];
-    for (const [k, v] of Object.entries(mcpConfigEnvValues)) {
-      if (!v || !v.trim()) {
-        const hint = MCP_ENV_HINTS[k];
-        missing.push(hint?.label || k);
-      }
-    }
-    if (missing.length > 0) {
-      antdMsg.warning(`请填写以下配置项: ${missing.join(", ")}`);
-      return;
-    }
-    const template = mcpConfigTemplate;
-    setMcpConfigTemplate(null);
-    setMcpConfigEnvValues({});
-    await doInstallMcp(template, { ...mcpConfigEnvValues });
-  };
-
   // ── MCP Market: filtered servers from OSS (dynamic) ──
   const filteredMcpTemplates = useMemo(() => {
     let filtered = ossMcpServers;
@@ -1335,7 +1274,7 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
     return filtered.map(ossMcpToTemplate);
   }, [ossMcpServers, mcpSearchText, mcpSelectedCategory]);
 
-  const mcpMarketTab = React.createElement(
+  const mcpMarketTab = activeTab === "mcp" ? React.createElement(
     "div",
     null,
     // Search + agent selector
@@ -1386,6 +1325,7 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
       ),
       React.createElement(Button, { size: "small", loading: ossMcpLoading, onClick: () => loadOssMarketData(true) }, "刷新目录"),
     ),
+    ossMcpError ? React.createElement(Alert, { type: "warning", showIcon: true, message: ossMcpError, style: { marginBottom: 12 } }) : null,
     // Dynamic category tag row (from OSS manifest tag_groups)
     ossMcpCategories.length > 0
       ? React.createElement(
@@ -1445,7 +1385,7 @@ export function MarketplacePage({ embedded = false }: { embedded?: boolean } = {
         : React.createElement(
             Row,
             { gutter: [12, 12] },
-            ...filteredMcpTemplates.map((template) =>
+            ...filteredMcpTemplates.slice(0, mcpVisibleCount).map((template, index) =>
               React.createElement(
                 Col,
                 { key: template.id, xs: 24, sm: 12, md: 8 },
@@ -1474,6 +1414,7 @@ template.iconUrl
   ? React.createElement("img", {
       src: template.iconUrl,
       alt: template.name,
+      width: 28, height: 28, decoding: "async", loading: index < 12 ? "eager" : "lazy",
       style: { width: 28, height: 28, objectFit: "contain" },
       onError: (e: any) => { e.target.style.display = "none"; },
     })
@@ -1503,7 +1444,8 @@ template.iconUrl
                     },
                     template.transport,
                   ),
-                  template.env && Object.keys(template.env).length > 0
+                  template.authType === "oauth2" ? React.createElement(Tag, { color: "geekblue", style: { fontSize: 10 } }, "账号登录授权") : null,
+                  template.env && Object.values(template.env).some((value) => value.startsWith("your-") || value.includes("${"))
                     ? React.createElement(
                         Tag,
                         { color: "orange", style: { fontSize: 10 } },
@@ -1527,7 +1469,7 @@ template.iconUrl
               ? React.createElement("details", { style: { marginTop: 8, fontSize: 12 } },
                   React.createElement("summary", { style: { cursor: "pointer", color: "var(--ant-color-primary, #1677ff)" } }, "接入要求与限制"),
                   ...[...(template.requirements || []), ...(template.limitations || [])].map((text, i) => React.createElement("p", { key: i, style: { margin: "6px 0" } }, text)),
-                  template.source ? React.createElement("a", { href: template.source, target: "_blank", rel: "noopener noreferrer" }, "查看来源说明 ↗") : null)
+                  safeMcpLink(template.source) ? React.createElement("a", { href: safeMcpLink(template.source), target: "_blank", rel: "noopener noreferrer" }, "查看来源说明 ↗") : null)
               : null,
             // Footer: config preview + install button
             React.createElement(
@@ -1545,34 +1487,28 @@ template.iconUrl
               React.createElement(
                 Text,
                 { type: "secondary", style: { fontSize: 11 } },
-                template.transport === "stdio"
+                connectedMcps.has(template.id) ? "已连接 · 工具检测通过" : existingMcps[template.id] ? (template.authType === "oauth2" && !existingMcps[template.id].oauth_status?.authorized ? "已保存 · 待登录授权" : "已保存 · 连接待检测") : template.transport === "stdio"
                   ? `${template.command} ${(template.args || []).join(" ")}`
-                  : template.authType === "oauth2" ? "添加后需登录授权" : "远程服务 · 按账号权限连接",
+                  : template.authType === "oauth2" ? "浏览器登录 · 自动检测连接" : "远程服务 · 按账号权限连接",
               ),
-              existingMcpKeys.has(template.id)
-                ? React.createElement(
-                    Button,
-                    { size: "small", disabled: true },
-                    "已添加",
-                  )
-                : React.createElement(
+              React.createElement(
                     Button,
                     {
                       type: "primary",
                       size: "small",
-                      loading: !!mcpInstalling[template.id],
                       icon: ApiOutlined
                         ? React.createElement(ApiOutlined)
                         : undefined,
                       onClick: () => handleInstallMcp(template),
                     },
-                    template.transport === "stdio" ? "添加工具" : "连接",
+                    existingMcps[template.id] ? "管理连接" : template.transport === "stdio" ? "添加工具" : "连接",
                   ),
             ),
           ),
         ),
       ),
     ),
+    filteredMcpTemplates.length > mcpVisibleCount ? React.createElement("div", { style: { textAlign: "center", marginTop: 16 } }, React.createElement(Button, { onClick: () => setMcpVisibleCount((count) => count + 24) }, `加载更多 MCP（已显示 ${Math.min(mcpVisibleCount, filteredMcpTemplates.length)} / ${filteredMcpTemplates.length}）`)) : null,
     // Future expansion hint
     React.createElement(
       "div",
@@ -1597,113 +1533,25 @@ template.iconUrl
         "MCP 服务器列表来自 UGSci 官方源，自动同步更新",
       ),
     ),
-  );
+  ) : null;
 
-  // ── MCP Config Modal (for templates requiring token/secret input) ──
-  const mcpConfigModal = mcpConfigTemplate
-    ? React.createElement(
-        Modal,
-        {
-          title: React.createElement(
-            "div",
-            { style: { display: "flex", alignItems: "center", gap: 8 } },
-            React.createElement("span", { style: { fontSize: 20, display: "inline-flex", alignItems: "center", justifyContent: "center", width: 24, height: 24 } }, mcpConfigTemplate.iconUrl ? React.createElement("img", { src: mcpConfigTemplate.iconUrl, alt: mcpConfigTemplate.name, style: { width: 22, height: 22, objectFit: "contain" }, onError: (e: any) => { e.target.style.display = "none"; } }) : mcpConfigTemplate.emoji),
-            React.createElement("span", null, `连接 ${mcpConfigTemplate.name}`),
-          ),
-          open: !!mcpConfigTemplate,
-          onCancel: () => {
-            setMcpConfigTemplate(null);
-            setMcpConfigEnvValues({});
-          },
-          onOk: confirmInstallMcp,
-          okText: "添加连接",
-          cancelText: "取消",
-          width: 520,
-          destroyOnClose: true,
-        },
-        // Description
-        React.createElement(
-          Text,
-          { type: "secondary", style: { display: "block", marginBottom: 16, fontSize: 12 } },
-          mcpConfigTemplate.description,
-        ),
-        mcpConfigTemplate.requirements?.length
-          ? React.createElement("div", { style: { marginBottom: 16, fontSize: 12 } }, ...mcpConfigTemplate.requirements.map((text, i) => React.createElement("p", { key: i }, text))) : null,
-        // Env fields
-        ...Object.entries(mcpConfigTemplate.env || {}).filter(([, value]) => value.startsWith("your-") || value.includes("${")).map(([envKey]) => {
-          const hint = mcpConfigTemplate.inputHints?.[envKey] || MCP_ENV_HINTS[envKey];
-          const isSecret = hint?.isSecret !== false; // default to secret
-          return React.createElement(
-            "div",
-            { key: envKey, style: { marginBottom: 16 } },
-            React.createElement(
-              "div",
-              { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 4 } },
-              React.createElement(
-                Text,
-                { strong: true, style: { fontSize: 13 } },
-                hint?.label || envKey,
-              ),
-              React.createElement(
-                Tag,
-                { color: "orange", style: { fontSize: 10 } },
-                "必填",
-              ),
-            ),
-            // Help text with optional link
-            hint
-              ? React.createElement(
-                  "div",
-                  { style: { marginBottom: 6, fontSize: 12, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
-                  hint.help,
-                  hint.link
-                    ? React.createElement(
-                        "a",
-                        {
-                          href: hint.link,
-                          target: "_blank",
-                          rel: "noopener noreferrer",
-                          style: { marginLeft: 4, fontSize: 12 },
-                        },
-                        "获取方式 ↗",
-                      )
-                    : null,
-                )
-              : null,
-            // Input field
-            isSecret
-              ? React.createElement(Input.Password, {
-                  placeholder: `请输入 ${hint?.label || envKey}`,
-                  value: mcpConfigEnvValues[envKey] || "",
-                  onChange: (e: any) =>
-                    setMcpConfigEnvValues((prev: any) => ({
-                      ...prev,
-                      [envKey]: e.target.value,
-                    })),
-                  style: { width: "100%" },
-                })
-              : React.createElement(Input, {
-                  placeholder: `请输入 ${hint?.label || envKey}`,
-                  value: mcpConfigEnvValues[envKey] || "",
-                  onChange: (e: any) =>
-                    setMcpConfigEnvValues((prev: any) => ({
-                      ...prev,
-                      [envKey]: e.target.value,
-                    })),
-                  style: { width: "100%" },
-                }),
-            // Show env key name for reference
-            React.createElement(
-              Text,
-              { type: "secondary", style: { fontSize: 11, display: "block", marginTop: 2 } },
-              `环境变量名: ${envKey}`,
-            ),
-          );
-        }),
-      )
-    : null;
-
-  const expertsMarketTab = React.createElement(
+  const mcpConfigModal = mcpConfig ? React.createElement(MCPConnectModal, {
+    key: `${mcpConfig.agentId}:${mcpConfig.template.id}`,
+    template: mcpConfig.template,
+    agentId: mcpConfig.agentId,
+    agentName: agents.find((agent) => agent.id === mcpConfig.agentId)?.name || mcpConfig.agentId,
+    existing: mcpConfig.existing,
+    onSaved: (client: MCPClientInfo) => {
+      if (mcpTargetRef.current !== mcpConfig.agentId) return;
+      setExistingMcps((old) => ({ ...old, [client.key]: client }));
+      setConnectedMcps((old) => { const next = new Set(old); next.delete(client.key); return next; });
+    },
+    onConnected: () => {
+      if (mcpTargetRef.current === mcpConfig.agentId) setConnectedMcps((old) => new Set(old).add(mcpConfig.template.id));
+    },
+    onClose: () => setMcpConfig(null),
+  }) : null;
+  const expertsMarketTab = activeTab === "experts" ? React.createElement(
     "div",
     null,
     React.createElement(
@@ -1734,7 +1582,10 @@ template.iconUrl
         },
         "配置专家源",
       ),
+      React.createElement(Button, { size: "small", loading: ossAgentLoading, onClick: () => loadOssMarketData(true) }, "刷新人才目录"),
+      React.createElement(Button, { type: "primary", size: "small", onClick: () => setExpertPublishOpen(true) }, "发布 / 更新专家"),
     ),
+    ossAgentError ? React.createElement(Alert, { type: "warning", showIcon: true, message: ossAgentError, style: { marginBottom: 12 } }) : null,
     // Dynamic category tag row (from OSS manifest tag_groups)
     ossAgentCategories.length > 0
       ? React.createElement(
@@ -1794,7 +1645,7 @@ template.iconUrl
         : React.createElement(
             Row,
             { gutter: [12, 12] },
-            ...filteredOssAgents.map((agent) =>
+            ...filteredOssAgents.slice(0, expertVisibleCount).map((agent) =>
               React.createElement(
                 Col,
                 { key: agent.id, xs: 24, sm: 12, md: 8 },
@@ -1890,6 +1741,11 @@ template.iconUrl
               ),
             ),
           ),
+    filteredOssAgents.length > expertVisibleCount
+      ? React.createElement("div", { style: { textAlign: "center", marginTop: 16 } },
+          React.createElement(Button, { onClick: () => setExpertVisibleCount((count: number) => count + 24) },
+            `显示更多人才（已显示 ${Math.min(expertVisibleCount, filteredOssAgents.length)} / ${filteredOssAgents.length}）`))
+      : null,
     // Info hint
     React.createElement(
       "div",
@@ -1914,7 +1770,7 @@ template.iconUrl
         "人才市场来自 UGSci 官方源，自动同步更新",
       ),
     ),
-  );
+  ) : null;
 
   const tabItems = [
     {
@@ -1977,11 +1833,12 @@ template.iconUrl
                 onClick: () => {
                   doSearch(searchText, selectedCategory, {});
                   loadGithubSkills();
-                  loadOssMarketData();
+                  loadOssMarketData(true);
                 },
                 loading:
                   loading ||
                   githubLoading ||
+                  ossSkillsLoading ||
                   ossMcpLoading ||
                   ossAgentLoading,
               },
@@ -2015,6 +1872,7 @@ template.iconUrl
     // MCP token config modal (for templates requiring secrets)
     mcpConfigModal,
     // Expert source config modal
+    React.createElement(ExpertPublishModal, { open: expertPublishOpen, onClose: () => { setExpertPublishOpen(false); void loadOssMarketData(); } }),
     React.createElement(GenericSourceConfigModal, {
       open: expertSourceConfigOpen,
       onClose: () => setExpertSourceConfigOpen(false),

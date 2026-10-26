@@ -29,7 +29,7 @@ import asyncio
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional
 
 # PluginLoader 将 backend/main.py 以插件根目录为包的搜索路径加载，
 # 相对导入不可靠。这里把 backend 目录加入 sys.path，统一使用绝对导入。
@@ -76,6 +76,10 @@ class IdeaUpdate(BaseModel):
 
 class SuggestionStatusUpdate(BaseModel):
     status: str
+
+
+class TodoStatusUpdate(BaseModel):
+    status: Literal["todo", "done"]
 
 
 class MetaUpdate(BaseModel):
@@ -197,6 +201,8 @@ async def create_idea(body: IdeaCreate, ctx=Depends(get_ctx)):
     proactive.cache_ctx(ctx)
     from store import create_idea
 
+    if not body.title.strip() and not body.content.strip():
+        raise HTTPException(status_code=400, detail="请填写灵感标题或内容")
     idea = await create_idea(
         ctx,
         title=body.title,
@@ -358,6 +364,23 @@ async def update_suggestion(
     return {"suggestion": suggestion}
 
 
+# ─── 行动 ───────────────────────────────────────────────────────────
+
+@router.patch("/todos/{todo_id}")
+async def update_todo(
+    todo_id: str, body: TodoStatusUpdate, ctx=Depends(get_ctx)
+):
+    proactive.cache_ctx(ctx)
+    from store import update_todo_status
+    from sse import broadcast
+
+    todo = await update_todo_status(ctx, todo_id, body.status)
+    if todo is None:
+        raise HTTPException(status_code=404, detail="行动不存在")
+    await broadcast({"type": "todo:updated", "todo": todo})
+    return {"todo": todo}
+
+
 # ─── 聚类 ───────────────────────────────────────────────────────────
 
 @router.get("/clusters")
@@ -412,6 +435,10 @@ async def stream(ctx=Depends(get_ctx)):
 
     async def event_gen():
         try:
+            # Flush headers immediately, even when the event history is empty.
+            # Otherwise buffering proxies can leave EventSource connecting
+            # until the first event/30-second keepalive arrives.
+            yield ": connected\n\n"
             # 先回放最近事件
             for ev in recent_events():
                 yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"

@@ -9,10 +9,12 @@
  */
 
 import type { ViewerHandle, ViewerMountOptions } from "./viewer/contracts/types";
+import type { EngineFactory } from "./viewer/engines/registry";
 
 export type { ViewerHandle, ViewerMountOptions } from "./viewer/contracts/types";
 
 export interface ViewerRuntime {
+  registerEngine(id: string, factory: EngineFactory): void;
   mount(
     element: HTMLElement,
     options: ViewerMountOptions,
@@ -36,11 +38,12 @@ export function loadViewerRuntime(): Promise<ViewerRuntime> {
     }
 
     // The viewer runtime is served by the plugin's static file handler.
-    // In production, this is a content-hashed filename written by the build.
-    // In development, we use a fixed name.
+    // Fixed-name assets must use the server's revalidation policy. A constant
+    // ?v= value opts into immutable caching and can retain an old command API
+    // for a year after the plugin has been upgraded.
     const url = `${host.getApiUrl(
       "frontend_plugin/ugsci/files/ui/dist/viewer-runtime.js",
-    )}?v=0.3.6`;
+    )}`;
 
     console.info("[oilgas-vis] Loading viewer runtime from", url);
 
@@ -48,14 +51,21 @@ export function loadViewerRuntime(): Promise<ViewerRuntime> {
       const script = document.createElement("script");
       script.dataset.plugin = "ugsci";
       script.src = url;
-      script.onload = () => resolve();
-      script.onerror = () =>
-        reject(new Error("Viewer runtime failed to load"));
+      const finish = (error?: Error) => {
+        clearTimeout(timer);
+        script.onload = null;
+        script.onerror = null;
+        if (error) { script.remove(); reject(error); }
+        else resolve();
+      };
+      const timer = setTimeout(() => finish(new Error("可视化引擎加载超时，请重试")), 30_000);
+      script.onload = () => finish();
+      script.onerror = () => finish(new Error("可视化引擎脚本加载失败，请检查服务连接"));
       document.head.appendChild(script);
     });
 
     const runtime = (window as any).OilGasViewerRuntime;
-    if (!runtime) {
+    if (!runtime || typeof runtime.mount !== "function") {
       throw new Error(
         "[oilgas-vis] window.OilGasViewerRuntime not found after script load",
       );

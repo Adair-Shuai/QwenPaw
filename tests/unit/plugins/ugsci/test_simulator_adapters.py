@@ -31,6 +31,7 @@ def test_registry_contains_all_managed_simulators() -> None:
         "comsol",
         "eclipse",
         "intersect",
+        "opm_flow",
         "tnavigator",
     ]
 

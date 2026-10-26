@@ -264,8 +264,10 @@ async def wait_for_simulation(
         except Exception:
             pass
 
+    from .presentation import simulation_reference
+
     return ToolChunk(
         is_last=True,
         state=ToolResultState.SUCCESS,
-        content=[TextBlock(type="text", text="\n".join(lines))],
+        content=[TextBlock(type="text", text="\n".join(lines)), simulation_reference(job_id, job.simulator)],
     )

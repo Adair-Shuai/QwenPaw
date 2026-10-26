@@ -12,7 +12,7 @@ export interface SlicePlayer {
 }
 
 export function sliceRangeText(index: number): string {
-  const n = Math.max(1, Math.round(index));
+  const n = Number.isFinite(index) ? Math.max(1, Math.round(index)) : 1;
   return n + ":" + n;
 }
 
@@ -23,10 +23,13 @@ export function createSlicePlayer(options: {
 }): SlicePlayer {
   let axis: SliceAxis | null = null;
   let playing = false;
+  let hasDims = false;
   const dims = { i: 1, j: 1, k: 1 };
 
   const root = document.createElement("div");
   root.className = "oilgas-slice-player";
+  root.setAttribute("role", "group");
+  root.setAttribute("aria-label", "网格切片播放");
   root.style.cssText = [
     "position:absolute;height:32px;display:flex;align-items:center;gap:6px;",
     "padding:0 8px;background:rgba(13,17,23,.82);border:1px solid #30363d;",
@@ -46,6 +49,8 @@ export function createSlicePlayer(options: {
       const on = (id === "off" && axis === null) || id === axis;
       btn.style.background = on ? "#1f6feb" : "#21262d";
       btn.style.color = on ? "#fff" : "#8b949e";
+      btn.setAttribute("aria-pressed", String(on));
+      btn.disabled = id !== "off" && !hasDims;
     }
   };
 
@@ -53,6 +58,7 @@ export function createSlicePlayer(options: {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.textContent = text;
+    btn.setAttribute("aria-label", id === "off" ? "显示完整网格" : `沿 ${text} 方向切片`);
     btn.style.cssText = "width:28px;height:22px;padding:0;border:1px solid #30363d;border-radius:4px;cursor:pointer;font:600 11px/22px sans-serif;";
     btn.addEventListener("click", () => {
       axis = id === "off" ? null : id;
@@ -76,6 +82,9 @@ export function createSlicePlayer(options: {
   slider.min = "1";
   slider.max = "1";
   slider.value = "1";
+  slider.step = "1";
+  slider.disabled = true;
+  slider.setAttribute("aria-label", "切片层号");
   slider.style.cssText = "flex:1;min-width:80px;margin:0;";
   slider.addEventListener("input", () => {
     if (!axis) return;
@@ -93,10 +102,12 @@ export function createSlicePlayer(options: {
   const paintPlay = () => {
     playBtn.textContent = playing ? "||" : ">";
     playBtn.title = playing ? "\u505c\u6b62\u64ad\u653e" : "\u6cbf I/J/K \u64ad\u653e";
-    playBtn.disabled = !axis;
+    playBtn.setAttribute("aria-label", playBtn.title);
+    playBtn.setAttribute("aria-pressed", String(playing));
+    playBtn.disabled = !axis || !hasDims || dims[axis] <= 1;
   };
   playBtn.addEventListener("click", () => {
-    if (!axis) return;
+    if (!axis || !hasDims || dims[axis] <= 1) return;
     playing = !playing;
     paintPlay();
     options.onPlay(playing);
@@ -105,7 +116,7 @@ export function createSlicePlayer(options: {
   const updateSlider = () => {
     const max = axis ? Math.max(1, dims[axis]) : 1;
     slider.max = String(max);
-    slider.disabled = !axis;
+    slider.disabled = !axis || !hasDims;
     if (Number(slider.value) > max) slider.value = "1";
     readout.textContent = axis ? slider.value : "-";
     paintPlay();
@@ -118,18 +129,28 @@ export function createSlicePlayer(options: {
   return {
     root,
     setDims: (next) => {
-      dims.i = Math.max(1, Number(next?.[0]) || 1);
-      dims.j = Math.max(1, Number(next?.[1]) || 1);
-      dims.k = Math.max(1, Number(next?.[2]) || 1);
+      hasDims = Boolean(next && next.length >= 3 && next.slice(0, 3).every((n) => Number.isSafeInteger(n) && n > 0));
+      dims.i = hasDims ? next![0] : 1;
+      dims.j = hasDims ? next![1] : 1;
+      dims.k = hasDims ? next![2] : 1;
+      if (playing) {
+        playing = false;
+        options.onPlay(false);
+      }
+      if (!hasDims && axis) {
+        axis = null;
+        options.onAxis(null);
+      }
+      paintAxis();
       updateSlider();
     },
     setPlaying: (value) => {
-      playing = value;
+      playing = value && hasDims && axis !== null && dims[axis] > 1;
       paintPlay();
     },
     setIndex: (value) => {
       const max = axis ? Math.max(1, dims[axis]) : 1;
-      const next = Math.min(max, Math.max(1, Math.round(value)));
+      const next = Number.isFinite(value) ? Math.min(max, Math.max(1, Math.round(value))) : 1;
       slider.value = String(next);
       readout.textContent = axis ? slider.value : "-";
       if (axis) options.onIndex(axis, next);

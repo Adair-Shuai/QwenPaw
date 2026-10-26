@@ -13,6 +13,7 @@ deterministic and never leaves the machine; persistence legs run against
 a real temporary workspace so the assertions read back what was actually
 written to disk.
 """
+
 # pylint: disable=protected-access,redefined-outer-name,unused-argument
 from __future__ import annotations
 
@@ -119,8 +120,10 @@ def _session(**overrides: Any) -> mo.OAuthSession:
 def _clear_state_store() -> Any:
     """Every test starts and ends with an empty OAuth state store."""
     mo._state_store.clear()
+    mo._completed_sessions.clear()
     yield
     mo._state_store.clear()
+    mo._completed_sessions.clear()
 
 
 @pytest.fixture(autouse=True)
@@ -709,14 +712,12 @@ class TestExchangeCodeForTokens:
         await mo._exchange_code_for_tokens(_session(client_id=""), "code-1")
         assert "client_id" not in seen["form"]
 
-    async def test_error_status_raises_with_truncated_body(
+    async def test_error_status_does_not_echo_provider_credentials(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
-        # "z" is deliberately a character absent from the message prefix,
-        # so counting it measures only the echoed body (counting "x" would
-        # also hit the "x" inside the word "exchange").
-        long_body = "z" * 400
+        # Provider error bodies can echo access tokens or authorization codes.
+        long_body = "access_token=provider-secret&code=authorization-secret"
 
         def handler(request: httpx.Request) -> httpx.Response:
             return httpx.Response(400, text=long_body)
@@ -727,7 +728,8 @@ class TestExchangeCodeForTokens:
             await mo._exchange_code_for_tokens(_session(), "code-1")
         message = str(excinfo.value)
         assert message.startswith("Token exchange failed (HTTP 400): ")
-        assert message.count("z") == 300
+        assert "provider-secret" not in message
+        assert "authorization-secret" not in message
 
     async def test_transport_error_raises_value_error(
         self,
@@ -1616,3 +1618,197 @@ class TestOauthRevokeEndpoint:
         patch_agent: Any,
     ) -> None:
         assert client.delete("/api/mcp/oauth/ghost").status_code == 404
+
+
+class TestMarketplaceOAuthSessions:
+    """Real routes distinguish a saved account from this browser authorization."""
+
+    def _start(self, client: TestClient) -> str:
+        response = client.post(
+            "/api/mcp/oauth/start/k1",
+            json={
+                "url": "",
+                "auth_endpoint": f"{AS_URL}/authorize",
+                "token_endpoint": f"{AS_URL}/token",
+            },
+        )
+        assert response.status_code == 200
+        return response.json()["session_id"]
+
+    def test_session_status_does_not_mistake_old_tokens_for_new_authorization(
+        self,
+        client,
+        patch_agent,
+        saved_card,
+        workspace,
+    ):
+        _seed_credential(
+            workspace, secrets={"access_token": "existing-secret"}
+        )
+        session_id = self._start(client)
+        response = client.get(
+            "/api/mcp/oauth/status/k1",
+            params={"session_id": session_id},
+        )
+        assert response.json() == {
+            "authorized": False,
+            "expires_at": 0,
+            "scope": "",
+            "phase": "pending",
+        }
+        assert "existing-secret" not in response.text
+        assert (
+            client.get("/api/mcp/oauth/status/k1").json()["authorized"] is True
+        )
+
+    def test_denied_authorization_is_reported_without_provider_error_secrets(
+        self,
+        client,
+        patch_agent,
+        saved_card,
+    ):
+        session_id = self._start(client)
+        client.get(
+            "/api/mcp/oauth/callback",
+            params={
+                "state": session_id,
+                "error": "access_denied",
+                "error_description": "provider-sensitive-details",
+            },
+        )
+        response = client.get(
+            "/api/mcp/oauth/status/k1",
+            params={"session_id": session_id},
+        )
+        assert response.json()["phase"] == "denied"
+        assert response.json()["authorized"] is False
+        assert "provider-sensitive-details" not in response.text
+
+    def test_cancelling_session_blocks_late_callback_without_revoking_account(
+        self,
+        client,
+        patch_agent,
+        saved_card,
+        workspace,
+        monkeypatch,
+    ):
+        _seed_credential(
+            workspace, secrets={"access_token": "old-account-token"}
+        )
+        session_id = self._start(client)
+        response = client.delete(
+            "/api/mcp/oauth/session/k1",
+            params={"session_id": session_id},
+        )
+        assert response.status_code == 200
+        exchange = AsyncMock()
+        monkeypatch.setattr(mo, "_exchange_code_for_tokens", exchange)
+        callback = client.get(
+            "/api/mcp/oauth/callback",
+            params={
+                "state": session_id,
+                "code": "late-code",
+            },
+        )
+        assert callback.status_code == 400
+        exchange.assert_not_awaited()
+        status = client.get(
+            "/api/mcp/oauth/status/k1", params={"session_id": session_id}
+        )
+        assert status.json()["phase"] == "cancelled"
+        assert (
+            client.get("/api/mcp/oauth/status/k1").json()["authorized"] is True
+        )
+
+    def test_retry_supersedes_previous_session_and_enforces_agent_scope(
+        self,
+        client,
+        patch_agent,
+        saved_card,
+        workspace,
+    ):
+        first = self._start(client)
+        second = self._start(client)
+        assert first != second
+        assert (
+            client.get(
+                "/api/mcp/oauth/status/k1", params={"session_id": first}
+            ).json()["phase"]
+            == "cancelled"
+        )
+        patch_agent.return_value = WorkspaceStub(
+            workspace.workspace_dir, "different-agent"
+        )
+        assert (
+            client.get(
+                "/api/mcp/oauth/status/k1", params={"session_id": second}
+            ).status_code
+            == 404
+        )
+        assert (
+            client.delete(
+                "/api/mcp/oauth/session/k1", params={"session_id": second}
+            ).status_code
+            == 404
+        )
+        assert mo._state_store[second].phase == "pending"
+
+    def test_success_reports_current_session_and_keeps_disabled_until_connect(
+        self,
+        client,
+        patch_agent,
+        saved_card,
+        workspace,
+        monkeypatch,
+    ):
+        saved_card.enabled = False
+        dump_card(
+            saved_card,
+            DriverConfigService(workspace).card_path(
+                "k1", protocol=PROTOCOL_MCP
+            ),
+        )
+        session_id = self._start(client)
+        monkeypatch.setattr(
+            mo,
+            "_exchange_code_for_tokens",
+            AsyncMock(
+                return_value={
+                    "access_token": "new-secret",
+                    "expires_in": 3600,
+                }
+            ),
+        )
+        callback = client.get(
+            "/api/mcp/oauth/callback",
+            params={"state": session_id, "code": "current-code"},
+        )
+        assert callback.status_code == 200
+        response = client.get(
+            "/api/mcp/oauth/status/k1", params={"session_id": session_id}
+        )
+        assert response.json()["phase"] == "authorized"
+        assert response.json()["authorized"] is True
+        assert "new-secret" not in response.text
+        assert (
+            load_card(
+                DriverConfigService(workspace).card_path(
+                    "k1", protocol=PROTOCOL_MCP
+                )
+            ).enabled
+            is False
+        )
+
+    def test_expired_session_returns_actionable_state(
+        self,
+        client,
+        patch_agent,
+        saved_card,
+    ):
+        session_id = self._start(client)
+        mo._state_store[session_id].created_at -= mo._TTL_SECONDS + 1
+        response = client.get(
+            "/api/mcp/oauth/status/k1", params={"session_id": session_id}
+        )
+        assert response.json()["phase"] == "expired"
+        assert response.json()["authorized"] is False

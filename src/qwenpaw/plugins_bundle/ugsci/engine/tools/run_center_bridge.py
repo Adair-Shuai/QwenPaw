@@ -125,8 +125,12 @@ def execute_simulation(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
         return event
 
     context.emit = emit
+    from .result_service import safe_start_collection, safe_finish_collection
+    safe_start_collection(context.run_id, context)
+    terminal_status = "failed"
     try:
         result = process_executor.execute(payload.get("command"), context, payload)
+        terminal_status = "completed"
         output_dir = Path(str(payload.get("output_dir") or ""))
         log_path = Path(str(payload.get("log_path") or ""))
         repository = context.repository
@@ -159,6 +163,7 @@ def execute_simulation(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
             "log_path": str(log_path),
         }
     except execution_cancelled:
+        terminal_status = "cancelled"
         if job_store is not None:
             try:
                 job_store.update_job_status(
@@ -171,6 +176,7 @@ def execute_simulation(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
                 pass
         raise
     except execution_timeout:
+        terminal_status = "timeout"
         if job_store is not None:
             try:
                 job_store.update_job_status(
@@ -184,6 +190,7 @@ def execute_simulation(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
         raise
     finally:
         context.emit = original_emit
+        safe_finish_collection(context.run_id, terminal_status)
 
 
 def execute_visualization_import(context: Any, payload: dict[str, Any]) -> dict[str, Any]:

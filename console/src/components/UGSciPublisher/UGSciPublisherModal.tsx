@@ -2,8 +2,10 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   Alert,
   Button,
+  Checkbox,
   Descriptions,
   Modal,
+  Input,
   Radio,
   Select,
   Spin,
@@ -21,6 +23,7 @@ import {
   type PublishInspection,
   type PublishMode,
   type PublisherStatus,
+  type PublishResult,
 } from "@/api/modules/publisher";
 import { fetchPlugins } from "@/api/modules/plugin";
 import { pawappApi } from "@/api/modules/pawapp";
@@ -57,6 +60,13 @@ export function UGSciPublisherModal({
   const [inspection, setInspection] = useState<PublishInspection | null>(null);
   const [mode, setMode] = useState<PublishMode>("submission");
   const [archive, setArchive] = useState<File | null>(null);
+  const [token, setToken] = useState("");
+  const [confirmed, setConfirmed] = useState(false);
+  const [receipt, setReceipt] = useState<PublishResult | null>(null);
+  const [phase, setPhase] = useState("");
+  const [checkedSource, setCheckedSource] = useState<
+    "installed" | "upload" | null
+  >(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const assetLabel = kind === "app" ? "应用" : "插件";
@@ -68,6 +78,10 @@ export function UGSciPublisherModal({
     setLoading(true);
     setInspection(null);
     setArchive(null);
+    setToken("");
+    setConfirmed(false);
+    setReceipt(null);
+    setCheckedSource(null);
     Promise.all([
       fetchPublisherStatus(),
       kind === "app"
@@ -84,9 +98,7 @@ export function UGSciPublisherModal({
         }));
         setCandidates(nextCandidates);
         setSelectedId(nextCandidates[0]?.id);
-        setMode(
-          nextStatus.direct_publish_configured ? "release" : "submission",
-        );
+        setMode("submission");
       })
       .catch((error) =>
         message.error(
@@ -107,10 +119,13 @@ export function UGSciPublisherModal({
   const runInspect = async () => {
     if (!selectedId) return;
     setLoading(true);
+    setPhase("正在检查文件、入口与隐私排除规则…");
+    setCheckedSource(null);
     try {
       setInspection(
         await inspectInstalledAsset({ pluginId: selectedId, kind }),
       );
+      setCheckedSource("installed");
     } catch (error) {
       message.error(error instanceof Error ? error.message : "发布检查失败");
     } finally {
@@ -119,13 +134,16 @@ export function UGSciPublisherModal({
   };
 
   const runInstalledPublish = async (nextMode: PublishMode) => {
-    if (!selectedId) return;
+    if (!selectedId || !confirmed || checkedSource !== "installed") return;
     setLoading(true);
+    setPhase("正在打包并校验；远端接收后将返回投稿回执…");
+    setReceipt(null);
     try {
       const result = await publishInstalledAsset({
         pluginId: selectedId,
         kind,
         mode: nextMode,
+        token,
       });
       message.success(
         result.status === "published"
@@ -135,6 +153,7 @@ export function UGSciPublisherModal({
           : `标准发布包已生成：${result.archive_path ?? "本地发布箱"}`,
       );
       setInspection(result);
+      setReceipt(result);
     } catch (error) {
       message.error(error instanceof Error ? error.message : "发布失败");
     } finally {
@@ -142,11 +161,30 @@ export function UGSciPublisherModal({
     }
   };
 
-  const runArchiveUpload = async () => {
+  const runArchiveUpload = async (inspectOnly = false) => {
     if (!archive) return;
+    if (!inspectOnly && (!confirmed || checkedSource !== "upload")) return;
     setLoading(true);
+    if (inspectOnly) setCheckedSource(null);
+    setPhase(
+      inspectOnly
+        ? "正在检查 ZIP 结构、入口与隐私数据…"
+        : "正在上传并等待服务端校验回执…",
+    );
+    setReceipt(null);
     try {
-      const result = await uploadPublishArchive({ file: archive, kind, mode });
+      const result = await uploadPublishArchive({
+        file: archive,
+        kind,
+        mode,
+        token,
+        inspectOnly,
+      });
+      if (inspectOnly) {
+        setInspection(result);
+        setCheckedSource("upload");
+        return;
+      }
       message.success(
         result.status === "published"
           ? "插件包已发布到 UGSci 分发链路"
@@ -155,6 +193,7 @@ export function UGSciPublisherModal({
           : `插件包已保存到本地审核箱：${result.archive_path ?? ""}`,
       );
       setInspection(result);
+      setReceipt(result);
     } catch (error) {
       message.error(error instanceof Error ? error.message : "上传失败");
     } finally {
@@ -165,19 +204,26 @@ export function UGSciPublisherModal({
   return (
     <Modal
       open={open}
-      onCancel={onClose}
+      onCancel={() => {
+        if (!loading) {
+          setToken("");
+          onClose();
+        }
+      }}
+      closable={!loading}
+      maskClosable={!loading}
       footer={null}
       width={760}
-      title={`发布 UGSci ${assetLabel}`}
+      title={`发布 / 更新 UGSci ${assetLabel}`}
       destroyOnHidden
     >
-      <Spin spinning={loading}>
+      <Spin spinning={loading} tip={phase}>
         <Alert
           className={styles.intro}
           type="info"
           showIcon
-          message="发布链路与上游官方目录隔离"
-          description="正式发布使用受控发布服务写入 UGSci OSS；用户上传只进入审核区。桌面端不保存 OSS 长期密钥。"
+          message="上传、检查、审核后上架"
+          description="使用管理员分配的投稿凭证；ID 须以您的命名空间开头。更新保留原 ID 并增加版本号；已发布版本内容不可覆盖。投稿先存入 OSS 私有审核区，审核通过后市场可见。"
         />
 
         <div className={styles.statusGrid}>
@@ -199,6 +245,30 @@ export function UGSciPublisherModal({
           </div>
         </div>
 
+        <div className={styles.formRow}>
+          <span className={styles.label}>投稿 / 发布凭证（仅本次使用）</span>
+          <Input.Password
+            aria-label="投稿凭证"
+            autoComplete="off"
+            value={token}
+            onChange={(event) => setToken(event.target.value)}
+            placeholder="填写管理员分配的凭证，无需 OSS AccessKey"
+          />
+        </div>
+        <Checkbox
+          checked={confirmed}
+          onChange={(event) => setConfirmed(event.target.checked)}
+        >
+          我确认发布包可公开分享，已检查不含私人资料、账号密钥和用户数据
+        </Checkbox>
+        {!status?.submission_configured && (
+          <Alert
+            style={{ marginTop: 12 }}
+            type="warning"
+            message="尚未配置投稿服务；生成标准包仅保存到本机，不会上传 OSS 或进入远端审核。"
+          />
+        )}
+
         <Tabs
           items={[
             {
@@ -213,6 +283,9 @@ export function UGSciPublisherModal({
                       onChange={(value) => {
                         setSelectedId(value);
                         setInspection(null);
+                        setCheckedSource(null);
+                        setReceipt(null);
+                        setConfirmed(false);
                       }}
                       style={{ width: "100%" }}
                       options={candidates.map((candidate) => ({
@@ -233,7 +306,10 @@ export function UGSciPublisherModal({
                     <Button
                       icon={<FileArchive size={15} />}
                       disabled={
-                        !selected || Boolean(inspection?.blockers.length)
+                        !selected ||
+                        !confirmed ||
+                        checkedSource !== "installed" ||
+                        Boolean(inspection?.blockers.length)
                       }
                       onClick={() => runInstalledPublish("submission")}
                     >
@@ -247,6 +323,8 @@ export function UGSciPublisherModal({
                       disabled={
                         !directEnabled ||
                         !selected ||
+                        !confirmed ||
+                        checkedSource !== "installed" ||
                         Boolean(inspection?.blockers.length)
                       }
                       onClick={() => runInstalledPublish("release")}
@@ -286,6 +364,9 @@ export function UGSciPublisherModal({
                       onChange={(event) => {
                         setArchive(event.target.files?.[0] ?? null);
                         setInspection(null);
+                        setCheckedSource(null);
+                        setConfirmed(false);
+                        setReceipt(null);
                       }}
                     />
                     <Button
@@ -304,12 +385,24 @@ export function UGSciPublisherModal({
                   </div>
                   <div className={styles.actions}>
                     <Button
+                      disabled={!archive}
+                      onClick={() => runArchiveUpload(true)}
+                    >
+                      检查 ZIP 包
+                    </Button>
+                    <Button
                       type="primary"
                       icon={<Upload size={15} />}
-                      disabled={!archive}
-                      onClick={runArchiveUpload}
+                      disabled={
+                        !archive || !confirmed || checkedSource !== "upload"
+                      }
+                      onClick={() => runArchiveUpload()}
                     >
-                      {mode === "release" ? "验证并发布" : "验证并提交审核"}
+                      {mode === "release"
+                        ? "发布新版本"
+                        : status?.submission_configured
+                        ? "上传到 OSS 待审核"
+                        : "保存到本地发布箱"}
                     </Button>
                   </div>
                 </>
@@ -317,6 +410,32 @@ export function UGSciPublisherModal({
             },
           ]}
         />
+
+        {receipt && (
+          <Alert
+            style={{ marginTop: 16 }}
+            showIcon
+            type={receipt.status === "prepared" ? "warning" : "success"}
+            message={
+              receipt.status === "published"
+                ? "已发布，OSS 内容与目录已校验"
+                : receipt.status === "submitted"
+                ? "已上传 OSS，等待管理员审核"
+                : "仅已生成本地包，尚未上传 OSS"
+            }
+            description={
+              <div>
+                <div>回执：{receipt.remote?.receipt_id || "无远端回执"}</div>
+                <div>
+                  版本：{receipt.version} · SHA-256：{receipt.sha256}
+                </div>
+                {receipt.remote?.object_key && (
+                  <div>对象：{receipt.remote.object_key}</div>
+                )}
+              </div>
+            }
+          />
+        )}
 
         {inspection && (
           <div className={styles.inspection}>

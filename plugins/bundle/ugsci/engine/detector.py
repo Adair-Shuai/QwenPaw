@@ -1646,6 +1646,24 @@ def _detect_generic(engine: EngineInfo) -> EngineInfo:
     return engine
 
 
+@_register_strategy("opm_flow")
+def _detect_opm_flow(engine: EngineInfo) -> EngineInfo:
+    """Only inspect explicitly configured paths; do not execute a namesake flow."""
+    configured = engine.executable_path or os.environ.get("OPM_FLOW_EXECUTABLE", "")
+    if not configured:
+        engine.status = "configured"
+        return engine
+    path = Path(os.path.expandvars(configured)).expanduser()
+    if path.is_absolute() and path.is_file():
+        engine.executable_path = str(path.resolve())
+        engine.install_dir = str(path.resolve().parent)
+        engine.status = "detected"
+        engine.extra_info["verification"] = "explicit_path_exists; solver_not_executed"
+    else:
+        engine.status = "not_found"
+    return engine
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Parallel detection entry point
 # ──────────────────────────────────────────────────────────────────────────────

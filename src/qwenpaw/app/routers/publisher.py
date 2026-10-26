@@ -9,6 +9,7 @@ desktop builds serve static frontend assets and never start Vite.
 from __future__ import annotations
 
 import base64
+import asyncio
 import hashlib
 import io
 import json
@@ -31,7 +32,7 @@ from ...constant import WORKING_DIR
 
 router = APIRouter(prefix="/publisher", tags=["publisher"])
 
-PublishAssetKind = Literal["plugin", "app"]
+PublishAssetKind = Literal["plugin", "app", "expert"]
 PublishMode = Literal["release", "submission"]
 
 _ARCHIVE_LIMIT = 256 * 1024 * 1024
@@ -57,6 +58,82 @@ class InstalledPublishRequest(BaseModel):
     plugin_id: str = Field(alias="pluginId")
     kind: PublishAssetKind
     mode: PublishMode = "submission"
+
+
+def inspect_expert(value: Any) -> dict[str, Any]:
+    """Accept only an explicitly composed public template, never runtime state."""
+    if not isinstance(value, dict):
+        raise ValueError("专家模板必须是 JSON 对象")
+    allowed = {
+        "id",
+        "name",
+        "description",
+        "version",
+        "author",
+        "tags",
+        "system_prompt",
+        "recommended_skills",
+    }
+    if set(value) - allowed:
+        raise ValueError(
+            "专家模板只接受公开元数据、提示词与技能名称；不能包含模型凭证、记忆、知识文件或本机配置"
+        )
+    for key, maximum in {
+        "id": 128,
+        "version": 128,
+        "name": 160,
+        "description": 4000,
+        "author": 160,
+        "system_prompt": 100000,
+    }.items():
+        if not isinstance(value.get(key, ""), str) or len(value.get(key, "")) > maximum:
+            raise ValueError(f"专家字段 {key} 格式或长度无效")
+    if not value.get("name", "").strip() or not value.get("system_prompt", "").strip():
+        raise ValueError("请填写专家名称和公开提示词")
+    for key in ("tags", "recommended_skills"):
+        items = value.get(key, [])
+        if (
+            not isinstance(items, list)
+            or len(items) > 100
+            or any(not isinstance(item, str) or len(item) > 160 for item in items)
+        ):
+            raise ValueError(f"专家字段 {key} 必须为文本列表")
+    data = json.dumps(value, ensure_ascii=False, sort_keys=True).encode()
+    return {
+        "id": _segment(value.get("id"), "expert id"),
+        "version": _segment(value.get("version"), "expert version"),
+        "manifest": value,
+        "catalog_kind": "agents",
+        "file_count": 1,
+        "source_size": len(data),
+    }
+
+
+def _private_path(relative: str) -> bool:
+    parts = PurePosixPath(relative.lower()).parts
+    # Mandatory exclusions do not depend on a contributor-controlled manifest.
+    return (
+        bool(
+            set(parts)
+            & {".git", ".ssh", ".aws", ".codex", "__pycache__", "node_modules"}
+        )
+        or any(
+            part == ".env"
+            or part.startswith(".env.")
+            or part.endswith((".pem", ".key", ".sqlite", ".sqlite3"))
+            for part in parts
+        )
+        or relative.lower().startswith(
+            (
+                "visualization/data/",
+                "data/",
+                "workspaces/",
+                "sessions/",
+                "memory/",
+                "logs/",
+            )
+        )
+    )
 
 
 def _segment(value: Any, label: str) -> str:
@@ -95,11 +172,21 @@ def _read_manifest(root: Path) -> tuple[dict[str, Any], str, str]:
         raise ValueError(f"Invalid plugin.json: {exc}") from exc
     if not isinstance(manifest, dict):
         raise ValueError("plugin.json must contain a JSON object")
+    _validate_public_manifest(manifest)
     return (
         manifest,
         _segment(manifest.get("id"), "plugin id"),
         _segment(manifest.get("version"), "plugin version"),
     )
+
+
+def _validate_public_manifest(manifest: dict[str, Any]) -> None:
+    if manifest.get("publish") is False:
+        raise ValueError("此应用已在 plugin.json 禁止公开发布")
+    if manifest.get("id") == "document-forms":
+        raise ValueError(
+            "外协助手包含受保护的标准文书模板；请使用现有专用发布流程执行模板清单、摘要与隐私校验，通用发布器不能绕过该检查"
+        )
 
 
 def _normalize_pack_exclude(manifest: dict[str, Any]) -> list[str]:
@@ -146,6 +233,13 @@ def _collect_publish_files(
         nonlocal excluded
         for entry in sorted(current.iterdir(), key=lambda item: item.name):
             relative = entry.relative_to(root).as_posix()
+            if _private_path(relative + ("/" if entry.is_dir() else "")):
+                if relative in protected:
+                    raise ValueError(
+                        f"Private data cannot be a plugin entry: {relative}"
+                    )
+                excluded += 1
+                continue
             if _is_pack_excluded(relative, patterns, protected):
                 # Prune excluded directories before descending into them.
                 # Large generated datasets must not make metadata inspection
@@ -170,11 +264,13 @@ def _collect_publish_files(
 
 def _declared_entries(manifest: dict[str, Any]) -> list[str]:
     entry = manifest.get("entry")
-    if not isinstance(entry, dict):
-        return []
+    values = list(entry.values()) if isinstance(entry, dict) else []
+    required = manifest.get("pack_requires", [])
+    if isinstance(required, list):
+        values += required
     return [
         value.replace("\\", "/")
-        for value in entry.values()
+        for value in values
         if isinstance(value, str) and value.strip()
     ]
 
@@ -286,13 +382,11 @@ def _inspect_archive(  # pylint: disable=too-many-branches
                 file_type = stat.S_IFMT(unix_mode)
                 if file_type not in (0, stat.S_IFREG, stat.S_IFDIR):
                     raise ValueError(
-                        "Plugin archive links and special files are not "
-                        "allowed",
+                        "Plugin archive links and special files are not " "allowed",
                     )
                 if name.parts[: len(root_parts)] != root_parts:
                     raise ValueError(
-                        "Plugin archive contains files outside the plugin "
-                        "root",
+                        "Plugin archive contains files outside the plugin " "root",
                     )
                 relative_parts = name.parts[len(root_parts) :]
                 if not relative_parts:
@@ -300,6 +394,10 @@ def _inspect_archive(  # pylint: disable=too-many-branches
                 if item.is_dir():
                     continue
                 relative = PurePosixPath(*relative_parts).as_posix()
+                if _private_path(relative):
+                    raise ValueError(
+                        f"Archive contains private or generated data: {relative}"
+                    )
                 if relative in relative_files:
                     raise ValueError("Plugin archive contains duplicate paths")
                 relative_files.add(relative)
@@ -324,6 +422,7 @@ def _inspect_archive(  # pylint: disable=too-many-branches
         raise ValueError(f"Invalid plugin archive: {exc}") from exc
     if not isinstance(manifest, dict):
         raise ValueError("plugin.json must contain a JSON object")
+    _validate_public_manifest(manifest)
     plugin_id = _segment(manifest.get("id"), "plugin id")
     version = _segment(manifest.get("version"), "plugin version")
     for entry in _declared_entries(manifest):
@@ -363,11 +462,7 @@ def _inspection(
 
 
 def _endpoint(mode: PublishMode) -> str:
-    key = (
-        "UGSCI_PUBLISH_ENDPOINT"
-        if mode == "release"
-        else "UGSCI_SUBMISSION_ENDPOINT"
-    )
+    key = "UGSCI_PUBLISH_ENDPOINT" if mode == "release" else "UGSCI_SUBMISSION_ENDPOINT"
     return os.environ.get(key, "").strip()
 
 
@@ -384,16 +479,36 @@ def _display_endpoint(endpoint: str) -> str | None:
     return urlunsplit((parsed.scheme, hostname, parsed.path, "", ""))
 
 
-async def _forward(mode: PublishMode, payload: dict[str, Any]) -> Any | None:
+async def _forward(
+    mode: PublishMode, payload: dict[str, Any], token: str = "", *, inspect=False
+) -> Any | None:
     endpoint = _endpoint(mode)
     if not endpoint:
         return None
+    parsed = urlsplit(endpoint)
+    if parsed.scheme != "https" and not (
+        parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+    ):
+        raise ValueError("发布服务必须使用 HTTPS")
+    if parsed.username or parsed.password or parsed.query or parsed.fragment:
+        raise ValueError("发布服务地址不能包含凭证或查询参数")
+    if inspect:
+        endpoint = endpoint.rstrip("/") + "/inspect"
+    token = (
+        token.strip()
+        or os.environ.get(
+            "UGSCI_PUBLISH_TOKEN" if mode == "release" else "UGSCI_SUBMISSION_TOKEN", ""
+        ).strip()
+    )
+    if not token:
+        raise ValueError("请填写管理员分配的投稿或发布凭证")
     async with httpx.AsyncClient(timeout=httpx.Timeout(180.0)) as client:
         response = await client.post(
             endpoint,
             headers={
                 "Content-Type": "application/json",
                 "X-UGSci-Publisher": "qwenpaw-local",
+                "Authorization": f"Bearer {token}",
             },
             json=payload,
         )
@@ -408,6 +523,17 @@ async def _forward(mode: PublishMode, payload: dict[str, Any]) -> Any | None:
         raise ValueError(
             str(detail or f"Publish service failed ({response.status_code})"),
         )
+    expected = (
+        "checked" if inspect else "published" if mode == "release" else "submitted"
+    )
+    if (
+        not isinstance(body, dict)
+        or body.get("status") != expected
+        or not body.get("receipt_id")
+        or body.get("sha256") != payload["sha256"]
+        or (mode == "release" and not inspect and body.get("verified") is not True)
+    ):
+        raise ValueError("发布服务未返回可验证回执，未确认提交或发布成功")
     return body
 
 
@@ -467,14 +593,17 @@ async def _publish(
     inspected: dict[str, Any],
     mode: PublishMode,
     kind: PublishAssetKind,
+    token: str = "",
 ) -> dict[str, Any]:
+    if mode == "release" and not _endpoint(mode):
+        raise ValueError("尚未配置正式发布服务；可先生成本地发布包")
     if (kind == "app") != (inspected["catalog_kind"] == "apps"):
         raise ValueError(
-            "Package type does not match the selected "
-            f"{kind} publishing channel",
+            "Package type does not match the selected " f"{kind} publishing channel",
         )
     sha256 = hashlib.sha256(archive).hexdigest()
-    archive_path, metadata_path = _store_local(
+    archive_path, metadata_path = await asyncio.to_thread(
+        _store_local,
         archive,
         sha256,
         inspected,
@@ -492,15 +621,14 @@ async def _publish(
             "sha256": sha256,
             "archive_base64": base64.b64encode(archive).decode("ascii"),
         },
+        token,
     )
     return {
         **_inspection(inspected, kind),
         "status": (
             "published"
             if remote is not None and mode == "release"
-            else "submitted"
-            if remote is not None
-            else "prepared"
+            else "submitted" if remote is not None else "prepared"
         ),
         "sha256": sha256,
         "archive_size_bytes": len(archive),
@@ -530,7 +658,11 @@ async def inspect_installed_asset(
     request: InstalledPublishRequest,
 ) -> dict[str, Any]:
     try:
-        inspected = _inspect_directory(_asset_root(request.plugin_id))
+        inspected = await asyncio.to_thread(
+            _inspect_directory, _asset_root(request.plugin_id)
+        )
+        if (request.kind == "app") != (inspected["catalog_kind"] == "apps"):
+            raise ValueError("Package type does not match selected publishing channel")
         return _inspection(inspected, request.kind)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -539,10 +671,19 @@ async def inspect_installed_asset(
 @router.post("/publish")
 async def publish_installed_asset(
     request: InstalledPublishRequest,
+    http_request: Request,
 ) -> dict[str, Any]:
     try:
-        archive, inspected = _package_directory(_asset_root(request.plugin_id))
-        return await _publish(archive, inspected, request.mode, request.kind)
+        archive, inspected = await asyncio.to_thread(
+            _package_directory, _asset_root(request.plugin_id)
+        )
+        return await _publish(
+            archive,
+            inspected,
+            request.mode,
+            request.kind,
+            http_request.headers.get("X-UGSci-Publisher-Token", ""),
+        )
     except (ValueError, httpx.HTTPError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -573,7 +714,57 @@ async def upload_publish_archive(request: Request) -> dict[str, Any]:
         kind = cast(PublishAssetKind, kind_value)
         mode = cast(PublishMode, mode_value)
         archive = b"".join(chunks)
-        inspected = _inspect_archive(archive)
-        return await _publish(archive, inspected, mode, kind)
+        inspected = await asyncio.to_thread(_inspect_archive, archive)
+        if request.headers.get("X-UGSci-Inspect-Only") == "true":
+            if (kind == "app") != (inspected["catalog_kind"] == "apps"):
+                raise ValueError(
+                    "Package type does not match selected publishing channel"
+                )
+            return _inspection(inspected, kind)
+        return await _publish(
+            archive,
+            inspected,
+            mode,
+            kind,
+            request.headers.get("X-UGSci-Publisher-Token", ""),
+        )
     except (ValueError, httpx.HTTPError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.post("/expert/{action}")
+async def publish_expert(action: str, request: Request):
+    if action not in ("inspect", "publish"):
+        raise HTTPException(404, "Unknown publisher action")
+    chunks, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > 1024 * 1024:
+            raise HTTPException(413, "专家模板过大")
+        chunks.append(chunk)
+    try:
+        body = json.loads(b"".join(chunks))
+        inspected = inspect_expert(body.get("expert"))
+        mode = body.get("mode", "submission")
+        if mode not in ("release", "submission"):
+            raise ValueError("Invalid publish mode")
+        if not _endpoint(mode):
+            raise ValueError("管理员尚未配置远端发布服务，专家未上传到 OSS")
+        payload = {
+            "asset_kind": "expert",
+            "expert": inspected["manifest"],
+            "sha256": hashlib.sha256(
+                json.dumps(
+                    inspected["manifest"], ensure_ascii=False, sort_keys=True
+                ).encode()
+            ).hexdigest(),
+        }
+        remote = await _forward(
+            mode,
+            payload,
+            request.headers.get("X-UGSci-Publisher-Token", ""),
+            inspect=action == "inspect",
+        )
+        return {**_inspection(inspected, "expert"), **remote}
+    except (ValueError, httpx.HTTPError) as exc:
+        raise HTTPException(400, str(exc)) from exc

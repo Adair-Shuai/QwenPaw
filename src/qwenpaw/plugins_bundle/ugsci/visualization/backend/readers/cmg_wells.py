@@ -13,6 +13,7 @@ grid reader so wells land on the reservoir they belong to.
 from __future__ import annotations
 
 import re
+import math
 from pathlib import Path
 from typing import Any, Callable
 
@@ -101,7 +102,9 @@ def parse_cmg_wells(path: Path) -> dict[str, dict[str, Any]]:
                     elif len(values) == 3:
                         x, y, tvd = values
                         stations = bucket(current_traj)["trajectory"]
-                        md = stations[-1][0] + abs(tvd - stations[-1][1]) if stations else 0.0
+                        md = stations[-1][0] + math.dist(
+                            [tvd, x, y], stations[-1][1:4],
+                        ) if stations else 0.0
                         stations.append([md, tvd, x, y])
                     continue
 
@@ -157,7 +160,10 @@ def convert_cmg_wells(
                     continue
                 x, y, z = xyz
                 tvd = abs(z)
-                md = stations[-1][0] + abs(tvd - stations[-1][1]) if stations else 0.0
+                distance = math.dist([tvd, x, y], stations[-1][1:4]) if stations else 0.0
+                if stations and distance == 0:
+                    continue
+                md = stations[-1][0] + distance if stations else 0.0
                 stations.append([md, tvd, x, y])
         if len(stations) == 1:
             md, tvd, x, y = stations[0]

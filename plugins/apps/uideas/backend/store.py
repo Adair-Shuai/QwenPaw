@@ -118,6 +118,8 @@ async def create_idea(
     related_experiments: Optional[List[str]] = None,
     source: str = "user",
 ) -> Dict[str, Any]:
+    if not title.strip() and not content.strip():
+        raise ValueError("请填写灵感标题或内容")
     async with transaction():
         ideas = await get_ideas(ctx)
         now = now_iso()
@@ -174,17 +176,24 @@ async def update_idea(
     status: Optional[str] = None,
     cluster_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
+    if status is not None and status not in IDEA_STATUSES:
+        raise ValueError(f"invalid idea status: {status}")
     async with transaction():
         ideas = await get_ideas(ctx)
         target = next((i for i in ideas if i.get("id") == idea_id), None)
         if target is None:
             return None
+        next_title = target.get("title", "") if title is None else title.strip()
+        next_content = target.get("content", "") if content is None else content.strip()
+        if not next_title and not next_content:
+            raise ValueError("请保留灵感标题或内容")
         if title is not None:
             target["title"] = title.strip()
         if content is not None:
             target["content"] = content.strip()
+        if content is not None or title is not None:
             parsed_tags, parsed_experiments = parse_inline_metadata(
-                f"{target.get('title', '')}\n{target['content']}"
+                f"{target.get('title', '')}\n{target.get('content', '')}"
             )
             if tags is None:
                 tags = target.get("tags") or []
@@ -343,6 +352,34 @@ async def update_suggestion_status(
 
 
 # ─── 元数据工具 ─────────────────────────────────────────────────────
+
+async def update_todo_status(
+    ctx: Any, todo_id: str, status: str
+) -> Optional[Dict[str, Any]]:
+    """Complete/reopen one existing action without replacing the queue.
+
+    Keep the original suggestion and source IDs, and preserve concurrent
+    suggestion adoption/settings changes under the same transaction lock.
+    Repeating a completion is idempotent, including its completion time.
+    """
+    if status not in ("todo", "done"):
+        raise ValueError("行动状态必须是 todo 或 done")
+    async with transaction():
+        meta = await get_meta(ctx)
+        queue = list(meta.get("todo_queue") or [])
+        item = next((t for t in queue if t.get("id") == todo_id), None)
+        if item is None:
+            return None
+        if item.get("status") != status:
+            item["status"] = status
+            item["updated_at"] = now_iso()
+            if status == "done":
+                item["completed_at"] = item["updated_at"]
+            else:
+                item.pop("completed_at", None)
+            meta["todo_queue"] = queue
+            await save_meta(ctx, meta)
+        return item
 
 async def record_think(
     ctx: Any,

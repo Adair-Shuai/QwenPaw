@@ -9,6 +9,7 @@
 import { getHost } from "../core/runtime";
 import { OilGasPluginPage } from "./PluginPage";
 import { OilGasWorkspaceRenderer } from "./WorkspaceRenderer";
+import { mountVisualization } from "./embed";
 
 export function registerVisualizationFrontend(QP: any, React: any): void {
   // The host can re-evaluate a plugin bundle during dev/HMR or after a
@@ -18,6 +19,9 @@ export function registerVisualizationFrontend(QP: any, React: any): void {
   const globalWindow = window as any;
   if (globalWindow[registrationKey]) return;
   globalWindow[registrationKey] = true;
+  // A lazy, container-based API: applications reuse the engine without
+  // duplicating Three.js, a route shell, or private workspace import logic.
+  QP.ugsci = { ...QP.ugsci, visualization: { version: 1, mount: mountVisualization } };
 
   const antdIcons = getHost().antdIcons || {};
   const GlobalOutlined = antdIcons.GlobalOutlined || antdIcons.AppstoreOutlined;
@@ -26,6 +30,14 @@ export function registerVisualizationFrontend(QP: any, React: any): void {
     id: "ugsci.visualization",
     path: "/oilgas-visualization",
     component: OilGasPluginPage,
+    meta: {
+      domain: "workspace",
+      title: "油气可视化",
+      description: "地质气藏、井筒与地面管网的统一可视化工作台",
+      scope: "agent",
+      layout: "workbench",
+      navigation: "rail",
+    },
   });
   QP.menu.add("ugsci", {
     id: "ugsci.visualization",

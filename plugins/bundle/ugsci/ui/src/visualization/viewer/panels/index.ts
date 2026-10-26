@@ -58,11 +58,12 @@ export function createPanels(container: HTMLElement): PanelManager {
   const hud = document.createElement("div");
   applyStyles(hud, DARK_STYLE.hud as any);
   const metrics = ["FPS", "Frame", "Draw Calls", "Triangles", "JS Heap"];
+  const metricLabels: Record<string, string> = { FPS: "帧率", Frame: "帧耗时", "Draw Calls": "绘制调用", Triangles: "三角面", "JS Heap": "脚本内存" };
   for (const label of metrics) {
     const row = document.createElement("div");
     row.style.cssText = "display: flex; justify-content: space-between; gap: 16px; margin: 2px 0;";
     const lbl = document.createElement("span");
-    lbl.textContent = label;
+    lbl.textContent = metricLabels[label];
     lbl.style.color = "#8b949e";
     const val = document.createElement("span");
     val.textContent = "—";
@@ -79,6 +80,7 @@ export function createPanels(container: HTMLElement): PanelManager {
   const infoBar = document.createElement("div");
   applyStyles(infoBar, DARK_STYLE.infoBar as any);
   infoBar.textContent = "加载中...";
+  infoBar.setAttribute("role", "status");
   container.appendChild(infoBar);
 
   return {
@@ -89,13 +91,22 @@ export function createPanels(container: HTMLElement): PanelManager {
     updateDatasets(datasets: DatasetInfo[]) {
       const select = sidebar.querySelector("#vis-dataset") as HTMLSelectElement;
       if (select) {
+        const selected = select.value;
         select.innerHTML = "";
         for (const ds of datasets) {
           const opt = document.createElement("option");
           opt.value = ds.id;
-          opt.textContent = `${ds.name} (${ds.n_cells.toLocaleString()} cells)`;
+          opt.textContent = `${ds.name}（${ds.n_cells.toLocaleString()} 单元）`;
           select.appendChild(opt);
         }
+        if (datasets.some((dataset) => dataset.id === selected)) select.value = selected;
+        if (datasets.length === 0) {
+          const empty = document.createElement("option");
+          empty.textContent = "暂无数据集，请先导入";
+          empty.value = "";
+          select.appendChild(empty);
+        }
+        select.disabled = datasets.length === 0;
       }
     },
 

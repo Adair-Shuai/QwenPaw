@@ -14,6 +14,7 @@ from typing import Any, Callable, TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from .engine import ProgressEvent, ProgressRegistry, WorkflowStatus, load
+from .engine.progress import NodeStatus
 from .invocation import MAX_WORKFLOW_DEPTH, current_run, workflow_stack
 from .flow_repository import RevisionConflict
 
@@ -319,6 +320,13 @@ class RunLifecycleMixin:
                     handle.state_id = handle.result.state_id
                     if handle.cancel_requested:
                         handle.result.status = WorkflowStatus.CANCELLED
+                        progress.finish_unfinished(NodeStatus.CANCELLED)
+                        events = progress.history()
+                        if not events or events[-1].type != "execution_cancelled":
+                            progress.emit(ProgressEvent(
+                                type="execution_cancelled", prompt_id=run_id,
+                                data={"outputs": handle.result.outputs, "errors": handle.result.errors},
+                            ))
                     self._execution_repository.update(
                         run_id,
                         state_id=str(handle.state_id),
@@ -336,6 +344,7 @@ class RunLifecycleMixin:
                 except Exception as exc:
                     handle.error = str(exc)
                     status = "cancelled" if handle.cancel_requested else "failed"
+                    progress.finish_unfinished(NodeStatus(status))
                     progress.emit(
                         ProgressEvent(
                             type=f"execution_{status}",
@@ -348,6 +357,7 @@ class RunLifecycleMixin:
                         status=status,
                         error=str(exc),
                         finished_at=handle.finished_at,
+                        node_statuses=progress.node_statuses(),
                     )
                     # A failed preparation/validation performed no node work.
                     # Release its resume claim so corrected input or a restored
@@ -415,6 +425,23 @@ class RunLifecycleMixin:
                 if handle is not None and not handle.is_done:
                     self._loop.call_soon_threadsafe(
                         self._executor.cancel_by_prompt_id, run_id
+                    )
+                else:
+                    # A paused run has no live executor to publish its final
+                    # node states. Cancel it durably, including after restart.
+                    progress = handle.progress if handle else ProgressRegistry(run_id)
+                    if handle is None:
+                        progress.add_handler(
+                            lambda event: self._execution_repository.append_event(
+                                run_id, event.to_dict()
+                            )
+                        )
+                        for node_id, status in record.get("node_statuses", {}).items():
+                            progress.state(node_id).status = NodeStatus(status)
+                    progress.finish_unfinished(NodeStatus.CANCELLED)
+                    progress.emit(ProgressEvent(type="execution_cancelled", prompt_id=run_id))
+                    self._execution_repository.update(
+                        run_id, finished_at=time.time(), node_statuses=progress.node_statuses()
                     )
             self._cancel_children(run_id)
             return True

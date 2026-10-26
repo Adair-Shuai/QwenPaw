@@ -24,12 +24,33 @@ logger = logging.getLogger("qwenpaw").getChild("plugin.oilgas_vis.tools")
 
 # ─── Viewer Command Bridge ──────────────────────────────────────────────────
 
+def command_agent_id(agent_id: str | None = None) -> str:
+    """Resolve an opaque Agent scope without consulting the active UI profile.
+
+    Tool calls inherit their Agent's ContextVar. A standalone conversion or
+    test without that context remains in the legacy ``default`` scope.
+    """
+    if agent_id is None:
+        try:
+            from qwenpaw.app.agent_context import (
+                get_current_agent_id, peek_current_agent_id,
+            )
+            agent_id = get_current_agent_id() if peek_current_agent_id() else "default"
+        except ImportError:
+            agent_id = "default"
+    # Match the host's rightmost-explicit-header convention; do not truncate
+    # Agent identifiers, as truncation would merge otherwise distinct scopes.
+    parts = [part.strip() for part in str(agent_id or "").split(",")]
+    return next((part for part in reversed(parts) if part), "default")
+
+
 @dataclass
 class PendingCommand:
     """A command queued for delivery to the viewer."""
     command_id: str
     command: str
     args: dict[str, Any]
+    agent_id: str = "default"
     result: Any | None = None
     created_at: float = field(default_factory=time.time)
     delivered_to: set[str] = field(default_factory=set)
@@ -43,24 +64,30 @@ class ViewerCommandBus:
 
     - Agent tools call enqueue() to submit commands.
     - The viewer (when mounted) calls drain() to consume pending commands.
-    - Commands are deduplicated by commandId.
+    - Identical pending commands are deduplicated within one Agent scope.
     - The bus only carries small structured commands, never geometry arrays.
     """
 
     def __init__(self, max_queue: int = 50) -> None:
         self._queue: list[PendingCommand] = []
         self._max_queue = max_queue
-        self._seen_ids: set[str] = set()
         self._lock = threading.Lock()
 
-    def enqueue(self, command: str, args: dict[str, Any] | None = None) -> str:
+    def enqueue(
+        self, command: str, args: dict[str, Any] | None = None,
+        *, agent_id: str | None = None,
+    ) -> str:
         """Submit a command. Returns the command_id."""
         command_id = str(uuid.uuid4())[:8]
+        scope = command_agent_id(agent_id)
 
         with self._lock:
-            # Deduplicate: if same command+args already pending, reuse id
+            self._queue = [item for item in self._queue if time.time() - item.created_at < 300]
+            # Coalesce only this Agent's in-flight command. Completed/failed
+            # work must get a new ID so the same viewer can execute it again.
             for existing in self._queue:
-                if existing.command == command and existing.args == (args or {}):
+                if (existing.agent_id == scope and existing.status == "pending"
+                        and existing.command == command and existing.args == (args or {})):
                     return existing.command_id
 
             if len(self._queue) >= self._max_queue:
@@ -70,26 +97,30 @@ class ViewerCommandBus:
                 command_id=command_id,
                 command=command,
                 args=args or {},
+                agent_id=scope,
             )
             self._queue.append(cmd)
-            self._seen_ids.add(command_id)
         logger.info("[oilgas-vis] Command queued: %s (%s)", command, command_id)
         return command_id
 
-    def drain(self, viewer_id: str = "default") -> list[PendingCommand]:
+    def drain(
+        self, viewer_id: str = "default", *, agent_id: str = "default",
+    ) -> list[PendingCommand]:
         """Return commands once per viewer instance.
 
-        Commands are broadcast to all mounted viewers instead of being
+        Commands are broadcast to all mounted viewers in the same Agent instead of being
         destructively consumed by whichever tab happens to poll first.  This
         matters when the workspace is open in more than one tab or an old
         renderer is still unmounting.  The bounded queue and TTL keep this
         delivery state from growing indefinitely.
         """
         viewer_id = (viewer_id or "default")[:128]
+        scope = command_agent_id(agent_id)
         now = time.time()
         with self._lock:
             self._queue = [item for item in self._queue if now - item.created_at < 300]
-            cmds = [item for item in self._queue if viewer_id not in item.delivered_to]
+            cmds = [item for item in self._queue
+                    if item.agent_id == scope and viewer_id not in item.delivered_to]
             for item in cmds:
                 item.delivered_to.add(viewer_id)
         return cmds
@@ -105,12 +136,15 @@ class ViewerCommandBus:
         status: str = "completed",
         result: Any | None = None,
         error: str | None = None,
+        agent_id: str = "default",
     ) -> bool:
         """Record the result of a command executed by a mounted viewer."""
         if status not in {"completed", "failed"}:
             return False
         with self._lock:
-            item = next((candidate for candidate in self._queue if candidate.command_id == command_id), None)
+            scope = command_agent_id(agent_id)
+            item = next((candidate for candidate in self._queue
+                         if candidate.command_id == command_id and candidate.agent_id == scope), None)
             if item is None:
                 return False
             item.status = status
@@ -119,9 +153,11 @@ class ViewerCommandBus:
             item.acked_at = time.time()
             return True
 
-    def status(self, command_id: str) -> dict[str, Any] | None:
+    def status(self, command_id: str, *, agent_id: str = "default") -> dict[str, Any] | None:
         with self._lock:
-            item = next((candidate for candidate in self._queue if candidate.command_id == command_id), None)
+            scope = command_agent_id(agent_id)
+            item = next((candidate for candidate in self._queue
+                         if candidate.command_id == command_id and candidate.agent_id == scope), None)
             if item is None:
                 return None
             return {
@@ -241,7 +277,7 @@ async def configure_visualization_view(
 
 async def get_visualization_command_status(command_id: str) -> dict[str, Any]:
     """Return pending/completed/failed state for a viewer command."""
-    status = command_bus.status(command_id)
+    status = command_bus.status(command_id, agent_id=command_agent_id())
     if status is None:
         return {"kind": "error", "error": f"Command not found: {command_id}"}
     return {"kind": "oilgas.viewer-command-status", **status}

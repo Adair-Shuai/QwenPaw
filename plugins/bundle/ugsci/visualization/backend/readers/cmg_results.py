@@ -14,6 +14,7 @@ matches the imported grid (active cells or the full IJK lattice).
 from __future__ import annotations
 
 import logging
+import math
 from array import array
 from pathlib import Path
 from typing import Any, Iterable
@@ -85,7 +86,7 @@ def _as_float_list(dataset: Any) -> list[float] | None:
             number = float(item)
         except (TypeError, ValueError):
             return None
-        values.append(0.0 if number != number else number)
+        values.append(number if math.isfinite(number) else float("nan"))
     return values
 
 

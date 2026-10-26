@@ -47,6 +47,7 @@ class VtkReader(BaseReader):
         options: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         import meshio
+        import numpy as np
 
         mesh = meshio.read(file_path)
         points = mesh.points
@@ -57,7 +58,8 @@ class VtkReader(BaseReader):
         primitive_cells: list[int] = []
         primitive_types: list[str] = []
         scalar_values: dict[str, list[float]] = {}
-        scalar_source = dict(getattr(mesh, "point_data", {}) or {})
+        point_data = dict(getattr(mesh, "point_data", {}) or {})
+        properties: dict[str, dict[str, Any]] = {}
         cell_data = getattr(mesh, "cell_data", {}) or {}
         prefix = f"vtk_{sanitize_identifier(name, 'mesh')}"
 
@@ -92,16 +94,39 @@ class VtkReader(BaseReader):
             # Cell data arrays are keyed by name and contain one array per
             # cell block. Replicate each source value across generated faces.
             for prop_name, arrays in cell_data.items():
-                if block_index >= len(arrays):
+                values = np.asarray(arrays[block_index]) if block_index < len(arrays) else np.empty(0)
+                if values.ndim > 1:
+                    # Vector/tensor postprocessing needs an explicit component choice.
+                    # Never silently cast or take a misleading first component.
                     continue
-                values = arrays[block_index]
-                output = scalar_values.setdefault(sanitize_identifier(str(prop_name), "property"), [])
+                key = sanitize_identifier(str(prop_name), "property")
+                output = scalar_values.setdefault(key, [])
                 for source_index in block_primitive_cells:
-                    output.append(float(values[source_index]) if source_index < len(values) else 0.0)
+                    value = float(values[source_index]) if source_index < len(values) else float("nan")
+                    output.append(value if np.isfinite(value) else float("nan"))
+                properties[key] = {"label": str(prop_name), "association": "cell", "unit": None}
 
         if not indices:
             raise ValueError("VTK file contains no supported line or surface cells")
+        if "line" in primitive_types and any(kind != "line" for kind in primitive_types):
+            raise ValueError("Mixed VTK line/surface topology requires separate datasets")
         cell_ids = list(range(len(primitive_types)))
+        for prop_name, raw in point_data.items():
+            values = np.asarray(raw)
+            if values.ndim > 1:
+                continue
+            if len(values) != len(points):
+                raise ValueError(f"VTK point property {prop_name} does not match point count")
+            key = sanitize_identifier(str(prop_name), "property")
+            if key in scalar_values:
+                key += "_point"
+            scalar_values[key] = [float(v) if np.isfinite(v) else float("nan") for v in values]
+            properties[key] = {"label": str(prop_name), "association": "point", "count": len(points), "unit": None}
+        for key, info in properties.items():
+            if info["association"] == "cell":
+                info["count"] = len(cell_ids)
+                if len(scalar_values[key]) != len(cell_ids):
+                    raise ValueError(f"VTK cell property {key} does not match generated primitives")
         write_f32(bin_dir / f"{prefix}_positions.f32", positions)
         write_u32(bin_dir / f"{prefix}_indices.u32", indices)
         write_u32(bin_dir / f"{prefix}_cell_ids.u32", cell_ids)
@@ -124,7 +149,9 @@ class VtkReader(BaseReader):
                 "cell_ids": f"{prefix}_cell_ids.u32",
                 "scalars": scalar_files,
             },
-            "metadata": {"format": Path(file_path).suffix.lower(), "cell_types": sorted(set(primitive_types))},
+            "properties": properties,
+            "metadata": {"format": Path(file_path).suffix.lower(), "cell_types": sorted(set(primitive_types)),
+                         "geometry_primitive": "lines" if set(primitive_types) == {"line"} else "triangles"},
         }
 
 

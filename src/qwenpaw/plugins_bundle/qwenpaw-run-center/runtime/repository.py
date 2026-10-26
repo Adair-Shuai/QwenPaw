@@ -171,6 +171,15 @@ class RunRepository:
                     PRIMARY KEY (run_id, sequence)
                 )""",
                 )
+                # Presentation is editable independently of immutable solver
+                # input/lifecycle records, including completed and legacy Runs.
+                conn.execute("CREATE TABLE IF NOT EXISTS run_presentations ("
+                             "run_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, "
+                             "plan TEXT NOT NULL, agent_id TEXT NOT NULL, updated_at TEXT NOT NULL)")
+                conn.execute("CREATE TABLE IF NOT EXISTS run_presentation_events ("
+                             "run_id TEXT NOT NULL, revision INTEGER NOT NULL, "
+                             "payload TEXT NOT NULL, agent_id TEXT NOT NULL, created_at TEXT NOT NULL, "
+                             "PRIMARY KEY(run_id, revision))")
                 conn.execute(
                 """CREATE TABLE IF NOT EXISTS operation_registry (
                     operation TEXT NOT NULL,

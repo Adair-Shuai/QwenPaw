@@ -295,7 +295,7 @@ describe("Inspector tabs", () => {
   it("exposes Controls, Actions and Addons", async () => {
     const { INSPECTOR_TABS } = await import("../ui/inspectorTabs");
     expect(INSPECTOR_TABS.map((tab) => tab.id)).toEqual(["controls", "actions", "addons"]);
-    expect(INSPECTOR_TABS.map((tab) => tab.label)).toEqual(["Controls", "Actions", "Addons"]);
+    expect(INSPECTOR_TABS.map((tab) => tab.label)).toEqual(["属性", "操作", "扩展"]);
   });
 });
 

@@ -52,6 +52,42 @@ def service(model):
     return LLMService(manager)
 
 
+@pytest.mark.asyncio
+async def test_agent_model_selection_is_isolated_refreshes_and_honors_overrides(monkeypatch):
+    slots = {
+        "a": SimpleNamespace(provider_id="first", model="a-model"),
+        "b": SimpleNamespace(provider_id="second", model="b-model"),
+    }
+    monkeypatch.setattr(
+        "qwenpaw.config.config.load_agent_config",
+        lambda agent: SimpleNamespace(active_model=slots[agent]),
+    )
+    providers = {
+        name: SimpleNamespace(
+            enabled=True,
+            get_chat_model_instance=lambda model: lambda *a, **kw: {"content": model},
+        )
+        for name in ["first", "second"]
+    }
+    shared = LLMService(SimpleNamespace(
+        get_active_model=lambda: None, get_provider=providers.get
+    ))
+    a, b = shared.for_agent("a"), shared.for_agent("b")
+    messages = [ChatMessage.user("hello")]
+    answers = await asyncio.gather(a.complete(messages=messages), b.complete(messages=messages))
+    assert [(r.provider, r.content) for r in answers] == [("first", "a-model"), ("second", "b-model")]
+    assert shared.agent_id is None
+    slots["a"] = slots["b"]
+    assert (await a.complete(messages=messages)).model == "b-model"
+    assert (await a.complete(messages=messages, model="custom")).model == "custom"
+    assert (await a.complete(messages=messages, model="first/override")).provider == "first"
+    providers["second"].enabled = False
+    with pytest.raises(RuntimeError, match="disabled"):
+        await b.complete(messages=messages)
+    with pytest.raises(KeyError):
+        await shared.for_agent("missing").complete(messages=messages)
+
+
 def delta(text):
     return ChatResponse(
         content=[TextBlock(id="body", text=text)], is_last=False

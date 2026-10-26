@@ -12,6 +12,7 @@ export interface EngineMountOptions extends ViewerMountOptions {
 }
 
 export interface EngineHandle {
+  readonly ready?: Promise<void>;
   loadDataset(datasetId: string): Promise<void>;
   setProperty(name: string): void;
   setColorMap(name: string): void;

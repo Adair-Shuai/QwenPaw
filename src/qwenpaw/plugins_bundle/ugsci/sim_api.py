@@ -9,8 +9,8 @@ import logging
 import time
 from typing import Any
 
-from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Request, HTTPException
+from fastapi.responses import StreamingResponse, Response
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.sim_api")
 
@@ -18,6 +18,56 @@ logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.sim_api")
 def build_sim_router(plugin_id: str) -> APIRouter:
     """Build job-list and server-sent-event monitoring routes."""
     router = APIRouter()
+
+    async def owned_job(job_id: str, request: Request):
+        from .engine.tools.result_service import normalize_run_id, read_job
+        try:
+            run_id = normalize_run_id(job_id)
+        except ValueError:
+            raise HTTPException(status_code=404, detail="Simulation job not found") from None
+        # This lookup never invokes launcher recovery (which can wake an agent).
+        metadata = read_job(run_id)
+        if metadata is None:
+            raise HTTPException(status_code=404, detail="Simulation job not found")
+        from qwenpaw.app.agent_context import get_agent_for_request, get_current_session_id, get_current_user_id
+        # Resolve against host configuration and the live workspace manager,
+        # including unknown/disabled agents. Never trust a bare header/context
+        # value or skip ownership checks on the global plugin route.
+        workspace = await get_agent_for_request(request)
+        agent = workspace.agent_id
+        session = get_current_session_id()
+        user = get_current_user_id()
+        if (((metadata.get("agent_id") or "default") != agent)
+                or (metadata.get("user_id") and user and metadata["user_id"] != user)
+                or (metadata.get("session_id") and session and metadata["session_id"] != session)):
+            raise HTTPException(status_code=404, detail="Simulation job not found")
+        return run_id, metadata
+
+    @router.get("/jobs/{job_id}/results")
+    async def get_results(job_id: str, request: Request):
+        from .engine.tools.result_service import load_snapshot, empty_snapshot, sampled_snapshot
+        run_id, metadata = await owned_job(job_id, request)
+        return await asyncio.to_thread(lambda: sampled_snapshot(load_snapshot(run_id) or empty_snapshot(run_id, metadata)))
+
+    @router.get("/jobs/{job_id}/results/export")
+    async def export_results(job_id: str, request: Request, series_id: str):
+        from .engine.tools.result_service import load_snapshot, export_csv
+        run_id, _ = await owned_job(job_id, request)
+        snapshot = await asyncio.to_thread(load_snapshot, run_id)
+        if snapshot is None:
+            raise HTTPException(status_code=404, detail="Results have not been collected")
+        try:
+            body = await asyncio.to_thread(export_csv, snapshot, series_id)
+        except KeyError:
+            raise HTTPException(status_code=404, detail="Result series not found") from None
+        return Response(body, media_type="text/csv; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="simulation-series.csv"'})
+
+    @router.post("/jobs/{job_id}/results/refresh", status_code=202)
+    async def refresh_results(job_id: str, request: Request):
+        from .engine.tools.result_service import start_collection
+        run_id, _ = await owned_job(job_id, request)
+        await asyncio.to_thread(start_collection, run_id)
+        return {"run_id": run_id, "status": "collection_requested"}
 
     @router.get("/jobs")
     def list_sim_jobs() -> dict[str, Any]:

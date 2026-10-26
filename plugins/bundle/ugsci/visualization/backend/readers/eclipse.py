@@ -9,8 +9,8 @@ Provides:
 
 from __future__ import annotations
 
-import struct
 import time
+import math
 from pathlib import Path
 from typing import Any
 
@@ -48,6 +48,11 @@ class EclipseReader(BaseReader):
         """
         source_path = Path(file_path)
         suffix = source_path.suffix.lower()
+        if suffix in {".init", ".unrst"}:
+            source_path = _find_sibling(source_path, {".egrid", ".grid"})
+            if not source_path.is_file():
+                raise ValueError("Eclipse properties require their same-case EGRID/GRID")
+            suffix = source_path.suffix.lower()
         try:
             import xtgeo
         except ImportError:
@@ -63,7 +68,7 @@ class EclipseReader(BaseReader):
         grid_format = "grdecl" if suffix == ".grdecl" else "egrid"
         grd = xtgeo.grid_from_file(str(source_path), fformat=grid_format)
         dims = grd.dimensions
-        ncol, nrow, nlay = dims.ncol, dims.nrow, dims.nlay
+        ncol, nrow, nlay = map(int, dims)
         n_total = ncol * nrow * nlay
 
         actnum = grd.get_actnum()
@@ -91,9 +96,9 @@ class EclipseReader(BaseReader):
                 continue
             for eclipse_index in XTGEO_TO_VTK:
                 x_arr, y_arr, z_arr = corner_xyz[eclipse_index]
-                x = float(x_arr[cell_idx]) if x_arr[cell_idx] is not None else 0.0
-                y = float(y_arr[cell_idx]) if y_arr[cell_idx] is not None else 0.0
-                z = float(z_arr[cell_idx]) if z_arr[cell_idx] is not None else 0.0
+                x, y, z = float(x_arr[cell_idx]), float(y_arr[cell_idx]), float(z_arr[cell_idx])
+                if not all(math.isfinite(value) for value in (x, y, z)):
+                    raise ValueError("Active Eclipse cell has missing/nonfinite coordinates")
                 positions.extend([x, y, -z])
             cell_ids.append(cell_idx)
 
@@ -113,7 +118,7 @@ class EclipseReader(BaseReader):
         if init_path.exists():
             scalars_files.update(
                 self._read_init_properties(
-                    str(init_path), n_total, active_mask, prefix, bin_dir
+                    str(init_path), n_total, active_mask, prefix, bin_dir, grd
                 )
             )
 
@@ -124,7 +129,7 @@ class EclipseReader(BaseReader):
             time_steps = self._read_unrst_properties(
                 str(unrst_path), n_total, active_mask, prefix, bin_dir,
                 options.get("properties", ["PRESSURE", "SWAT", "SGAS"]),
-                options.get("timeSteps", "manifest-only"),
+                options.get("timeSteps", "range"), grd,
             )
 
         elapsed = time.time() - t0
@@ -145,6 +150,10 @@ class EclipseReader(BaseReader):
                 "scalars": scalars_files,
             },
             "time_steps": time_steps,
+            "properties": {
+                key: {"label": key.upper(), "association": "cell", "count": n_active, "unit": None}
+                for key in set(scalars_files).union(*(set(step["scalars"]) for step in time_steps))
+            },
             "metadata": {
                 "simulator": "Eclipse-compatible",
                 "format": suffix.lstrip(".").upper(),
@@ -155,101 +164,80 @@ class EclipseReader(BaseReader):
         }
 
     @staticmethod
+    def _active_values(prop: Any, active_mask: Any, n_total: int) -> list[float]:
+        import numpy as np
+        values = np.ma.asarray(prop.values, dtype=float).filled(np.nan).flatten(order="F")
+        if len(values) != n_total:
+            raise ValueError("Eclipse property/grid cell count mismatch")
+        values[~np.isfinite(values)] = np.nan
+        return values[active_mask].tolist()
+
+    @staticmethod
     def _read_init_properties(
         init_path: str, n_total: int, active_mask: Any,
-        prefix: str, bin_dir: Path,
+        prefix: str, bin_dir: Path, grid: Any,
     ) -> dict[str, str]:
-        """Read static properties from an INIT file."""
+        """Read actual present keywords, retaining missing values as NaN."""
         import xtgeo
+        import resfo
+        # Read complete records: a truncated file is not a valid static frame.
+        present = set()
+        for record in resfo.lazy_read(init_path):
+            present.add(record.read_keyword().strip())
+            record.read_array()
         result: dict[str, str] = {}
-
         for prop_name in ["PORO", "PERMX", "PERMY", "PERMZ", "NTG"]:
-            try:
-                prop = xtgeo.gridproperty_from_file(
-                    init_path, fformat="init", name=prop_name
-                )
-                prop_values = prop.values.flatten(order="F")
-                active_values: list[float] = []
-                for cell_idx in range(n_total):
-                    if active_mask[cell_idx]:
-                        v = float(prop_values[cell_idx])
-                        active_values.append(v if v == v else 0.0)
-
-                safe_name = prop_name.lower()
-                write_f32(
-                    bin_dir / f"{prefix}_scalars_{safe_name}.f32",
-                    active_values,
-                )
-                result[safe_name] = f"{prefix}_scalars_{safe_name}.f32"
-            except Exception:
-                pass  # Property not found
-
+            if prop_name not in present:
+                continue
+            prop = xtgeo.gridproperty_from_file(init_path, fformat="init", name=prop_name, grid=grid)
+            values = EclipseReader._active_values(prop, active_mask, n_total)
+            key = prop_name.lower()
+            filename = f"{prefix}_scalars_{key}.f32"
+            write_f32(bin_dir / filename, values)
+            result[key] = filename
         return result
 
     @staticmethod
     def _read_unrst_properties(
         unrst_path: str, n_total: int, active_mask: Any,
         prefix: str, bin_dir: Path,
-        property_names: list[str],
-        time_step_mode: str,
+        property_names: list[str], time_step_mode: str, grid: Any,
     ) -> list[dict[str, Any]]:
-        """Read dynamic properties from a UNRST file.
+        """Use XTGeo's public date scan and bind each property to its grid.
 
-        Returns a list of time step descriptors, each with
-        property → filename mappings.
+        Every advertised timestep has real scalar resources. The legacy
+        ``manifest-only`` spelling no longer produces an incomplete catalog.
         """
         import xtgeo
-
-        time_steps: list[dict[str, Any]] = []
-
-        # Discover available time steps
-        try:
-            # xtgeo can list properties in UNRST
-            prop_list = xtgeo.list_gridproperties(unrst_path, fformat="unrst")
-            # Extract unique time step numbers from property names
-            step_numbers = set()
-            for p in prop_list:
-                if hasattr(p, "date") and p.date:
-                    step_numbers.add(p.date)
-        except Exception:
-            step_numbers = set([0])  # Fallback: single step
-
-        steps = sorted(step_numbers)
-        if time_step_mode == "manifest-only" and len(steps) > 3:
-            steps = [steps[0], steps[len(steps) // 2], steps[-1]]
-        elif time_step_mode == "range":
-            pass  # Use all steps
-
-        for step_i, step_num in enumerate(steps):
-            step_info: dict[str, Any] = {
-                "index": step_i,
-                "step_number": step_num,
-                "scalars": {},
-            }
-
+        import resfo
+        names_by_step: dict[int, set[str]] = {}
+        seqno = None
+        for record in resfo.lazy_read(unrst_path):
+            keyword = record.read_keyword().strip()
+            values = record.read_array()
+            if keyword == "SEQNUM":
+                seqno = int(values[0])
+                names_by_step[seqno] = set()
+            elif seqno is not None:
+                names_by_step[seqno].add(keyword)
+        dates = xtgeo.GridProperties.scan_dates(unrst_path)
+        time_steps = []
+        for step_num, date in dates:
+            names = names_by_step.get(int(step_num), set())
+            step = {"index": len(time_steps), "step_number": int(step_num), "date": str(date), "scalars": {}}
             for prop_name in property_names:
-                try:
-                    prop = xtgeo.gridproperty_from_file(
-                        unrst_path, fformat="unrst",
-                        name=prop_name, date=step_num,
-                    )
-                    prop_values = prop.values.flatten(order="F")
-                    active_values: list[float] = []
-                    for cell_idx in range(n_total):
-                        if active_mask[cell_idx]:
-                            v = float(prop_values[cell_idx])
-                            active_values.append(v if v == v else 0.0)
-
-                    safe_name = prop_name.lower()
-                    fname = f"{prefix}_scalars_{safe_name}_ts{step_i}.f32"
-                    write_f32(bin_dir / fname, active_values)
-                    step_info["scalars"][safe_name] = fname
-                except Exception:
-                    pass  # Property not found at this step
-
-            if step_info["scalars"]:
-                time_steps.append(step_info)
-
+                if prop_name not in names:
+                    continue
+                prop = xtgeo.gridproperty_from_file(
+                    unrst_path, fformat="unrst", name=prop_name, date=int(date), grid=grid,
+                )
+                values = EclipseReader._active_values(prop, active_mask, n_total)
+                key = prop_name.lower()
+                filename = f"{prefix}_scalars_{key}_ts{step['index']}.f32"
+                write_f32(bin_dir / filename, values)
+                step["scalars"][key] = filename
+            if step["scalars"]:
+                time_steps.append(step)
         return time_steps
 
 

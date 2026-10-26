@@ -6,6 +6,17 @@ export interface CatalogInputHint {
   isSecret?: boolean;
 }
 
+/** Only link to web pages; catalog metadata must not execute URL schemes. */
+export function safeMcpLink(value?: string): string | undefined {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    if (url.username || url.password) return undefined;
+    if (url.protocol === "https:" || (url.protocol === "http:" && ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))) return url.href;
+  } catch { /* Invalid catalog link. */ }
+  return undefined;
+}
+
 export function normalizeMcpTransport(value: unknown, hasUrl = false): "stdio" | "sse" | "streamable_http" {
   const key = String(value || "").trim().toLowerCase().replace(/[-_]/g, "");
   if (key === "sse") return "sse";

@@ -14,6 +14,7 @@ import copy
 import contextvars
 import inspect
 import threading
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -28,6 +29,8 @@ class NodeStatus(str, Enum):
     BLOCKED = "blocked"
     CACHED = "cached"
     SKIPPED = "skipped"
+    CANCELLED = "cancelled"
+    TIMEOUT = "timeout"
     # Compat members for old flowforge code (independent values)
     COMPLETED = "completed"
     FAILED = "failed"
@@ -217,3 +220,11 @@ class ProgressRegistry:
                 state=st,
             ),
         )
+
+    def finish_unfinished(self, status: NodeStatus) -> None:
+        """Close interrupted nodes after their tasks have drained."""
+        with self._lock:
+            for node_id, state in list(self._states.items()):
+                if state.status in {NodeStatus.PENDING, NodeStatus.RUNNING, NodeStatus.BLOCKED}:
+                    state.finished_at_ms = int(time.time() * 1000)
+                    self.set_status(node_id, status)

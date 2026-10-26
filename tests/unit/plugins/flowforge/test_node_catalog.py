@@ -127,6 +127,55 @@ def test_catalog_is_scoped_and_refreshes_enable_disable_unregister(environment):
     asyncio.run(scenario())
 
 
+def test_authoring_and_execution_bind_the_selected_agent_model(environment, monkeypatch):
+    from qwenpaw.plugins_bundle.flowforge.engine.adapter.llm_service import LLMService
+
+    document = {"nodes": {"out": {"class_type": "OutputNode", "inputs": {"value": "done"}}}, "outputs": ["out"]}
+    calls = []
+
+    def model(model_id):
+        async def complete(*args, **kwargs):
+            calls.append(model_id)
+            return {"content": json.dumps({"flow": document, "warnings": []})}
+        return complete
+
+    environment.workspace("a", [])
+    environment.workspace("b", [])
+    monkeypatch.setattr(
+        "qwenpaw.config.config.load_agent_config",
+        lambda agent: SimpleNamespace(
+            active_model=SimpleNamespace(provider_id="provider", model=agent),
+            enabled=True, name=agent, description="",
+        ),
+    )
+    environment.service.executor.llm_service = LLMService(SimpleNamespace(
+        get_active_model=lambda: None,
+        get_provider=lambda _: SimpleNamespace(enabled=True, get_chat_model_instance=model),
+    ))
+
+    async def scenario():
+        for agent in ["a", "b"]:
+            proposal = await environment.service.create_proposal("输出 done", scope_agent_id=agent)
+            assert proposal["validation"]["ok"], proposal
+            scoped = await environment.catalog.prepare(environment.service.executor, agent, {})
+            assert scoped.llm_service.agent_id == agent
+        assert environment.service.executor.llm_service.agent_id is None
+
+    asyncio.run(scenario())
+    assert calls == ["a", "b"]
+    environment.service.save_flow("model-run", {
+        "id": "model-run",
+        "nodes": {"llm": {"class_type": "LLMNode", "inputs": {"prompt": "hello"}}},
+        "outputs": ["llm"],
+    })
+    handles = [environment.service.start_run("model-run", agent_id=agent) for agent in ["a", "b"]]
+    for handle in handles:
+        result = wait(handle)
+        assert result["status"] == "completed", result
+        assert json.loads(result["outputs"]["llm"])["flow"] == document
+    assert sorted(calls[2:]) == ["a", "b"]
+
+
 def test_schema_changes_and_output_parameter_collision(environment):
     async def report(output: str, format: Literal["pdf", "docx"] = "pdf"):
         return output

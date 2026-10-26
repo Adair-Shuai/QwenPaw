@@ -7,6 +7,7 @@
 import { getHost, apiUrl, apiFetch, hostFetch } from "../core/runtime";
 import { PRIMARY_BTN_STYLE } from "../core/shared";
 import { connectionVariables, normalizeMcpTransport, type CatalogInputHint } from "./mcpConnection";
+import { createMarketManifestCache } from "./marketCache";
 export { resolveMcpConnection } from "./mcpConnection";
 
 export interface MCPTemplate {
@@ -31,6 +32,7 @@ export interface MCPTemplate {
   limitations?: string[];
   source?: string;
   authType?: string;
+  setupUrl?: string;
   availability?: string;
 }
 
@@ -164,8 +166,13 @@ export function ossProxyUrl(ossPath: string): string {
 /** Fetch one OSS resource through QwenPaw's auth-aware proxy transport. */
 export function fetchOssResponse(ossPath: string, refresh = false): Promise<Response> {
   const cleanPath = ossPath.replace(/^\/+/, "");
-  return hostFetch(`/plugins/oss-proxy?path=${encodeURIComponent(cleanPath)}${refresh ? "&refresh=true" : ""}`, { cache: "no-store" });
+  return hostFetch(`/plugins/oss-proxy?path=${encodeURIComponent(cleanPath)}${refresh ? "&refresh=true" : ""}`, { cache: refresh ? "no-store" : "no-cache" });
 }
+
+const officialManifestCache = createMarketManifestCache(fetchOssResponse);
+
+/** Notify mounted markets when a stale catalog finishes refreshing. */
+export const subscribeOssManifestUpdates = officialManifestCache.subscribe;
 
 /**
  * Fetch JSON from the official OSS bucket through QwenPaw's backend proxy.
@@ -173,6 +180,9 @@ export function fetchOssResponse(ossPath: string, refresh = false): Promise<Resp
  */
 export async function fetchOssJson(ossPath: string, refresh = false): Promise<any> {
   const cleanPath = ossPath.replace(/^\/+/, "");
+  if (/^(skills|mcp|agents)\/manifest\.json$/.test(cleanPath)) {
+    return officialManifestCache.get(cleanPath, refresh);
+  }
   const resp = await fetchOssResponse(cleanPath, refresh);
   if (!resp.ok) {
     throw new Error(`OSS fetch failed (${resp.status}): ${cleanPath}`);
@@ -285,6 +295,7 @@ export function ossMcpToTemplate(server: OssMcpServer): MCPTemplate {
     cwd: config.cwd,
     source: server.source,
     authType: server.auth?.type,
+    setupUrl: server.auth?.setup_url,
     availability: server.availability,
     requirements: server.requirements,
     limitations: server.limitations,
@@ -803,11 +814,11 @@ export async function fetchOSSMcpManifest(refresh = false): Promise<{
  * Fetch the official skill registry independently of browser source settings.
  * This mirrors the permanent official-source behavior of MCP and Experts.
  */
-export async function fetchOSSSkillsManifest(): Promise<{
+export async function fetchOSSSkillsManifest(refresh = false): Promise<{
   skills: GitHubSkill[];
   categories: DynamicCategory[];
 }> {
-  const manifest = await fetchOssJson("skills/manifest.json");
+  const manifest = await fetchOssJson("skills/manifest.json", refresh);
   const skills: GitHubSkill[] = [];
   const tags = new Set<string>();
 
@@ -879,11 +890,11 @@ export async function fetchOSSSkillsManifest(): Promise<{
 }
 
 /** Fetch agents from the UGSci official OSS manifest. */
-export async function fetchOSSAgentsManifest(): Promise<{
+export async function fetchOSSAgentsManifest(refresh = false): Promise<{
   agents: OssAgent[];
   categories: DynamicCategory[];
 }> {
-  const manifest = await fetchOssJson("agents/manifest.json");
+  const manifest = await fetchOssJson("agents/manifest.json", refresh);
 
   // Extract dynamic categories from tag_groups
   const categories: DynamicCategory[] = [];
