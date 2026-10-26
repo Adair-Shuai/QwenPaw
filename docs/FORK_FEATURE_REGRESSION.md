@@ -1,5 +1,7 @@
 # 自有功能合并回归
 
+FlowForge 路由分组注册时须保留全部接口的顺序、模式与 HTTP 错误响应。实时 WebSocket 订阅使用实际进度注册表的公开 handler 接口及每连接线程安全队列，重订阅、断线和结束均释放该连接自己的 handler；历史快照与队列交接处的同一事件只发送一次，取消后先排空进度再发送终态，重启后的持久化回放与 SSE 行为继续保留。`test_router_stream_contract.py` 经两份插件的实际 FastAPI／Starlette ASGI 路由、WorkflowService、内置 WaitNode／OutputNode 和 ProgressRegistry 验证上述行为，不能仅用模拟进度队列替代。
+
 运行中心研究回归的共享夹具以公开仓库操作的结构类型标注，动态加载的插件类不能直接用作静态类型。Sobol 种子回归经公开设计生成接口，在三个独立 SQLite 仓库重新生成相同和不同种子的单参数设计，同时核对原有相等／不等断言、固定采样值、数据库与 Run 输入来源；模型版本引用清理仍在隔离数据库中启用外键并以事务完成。`test_research.py` 的全部研究回归及上述关键用例加入固定回归清单，其他原有断言保留。
 
 UGSci 原生储气库处理器由独立实例持有注册时解析的适配器与请求类型，Run Center 继续负责调度和生命周期；保留七种计算的参数包优先级、零值、取消检查，以及来源信息先于结果事件的持久化顺序。依赖缺失仍在原有注册边界隔离，模拟和可视化桥仍独立绑定且不受加载顺序影响。`test_native_storage_executors.py` 经两份插件的公开注册入口及真实 RunExecutorService、ExecutionContext 和 SQLite 仓库验证上述行为；原有兼容宿主和插件注册回归继续执行。

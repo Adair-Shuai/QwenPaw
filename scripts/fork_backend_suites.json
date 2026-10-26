@@ -73,7 +73,8 @@
       "tests/unit/plugins/flowforge/test_agent_registry_config.py",
       "tests/unit/plugins/flowforge/test_runner_pipeline_contract.py",
       "tests/unit/plugins/flowforge/test_authoring_conversion_contract.py",
-      "tests/unit/plugins/flowforge/test_lifecycle_listing_contract.py"
+      "tests/unit/plugins/flowforge/test_lifecycle_listing_contract.py",
+      "tests/unit/plugins/flowforge/test_router_stream_contract.py"
     ],
     "office": [
       "tests/unit/agents/tools/test_office_tools.py",
@@ -115,6 +116,16 @@
     ]
   },
   "required_cases": {
+    "tests/unit/plugins/flowforge/test_router_stream_contract.py": [
+      "test_socket_live_handle_replays_history_and_finishes",
+      "test_socket_forwards_thread_progress_and_detaches",
+      "test_socket_resubscription_releases_each_handler",
+      "test_socket_missing_run_keeps_ping_available",
+      "test_socket_persisted_replay_retains_all_events",
+      "test_socket_history_boundary_delivers_each_event_once",
+      "test_socket_cancel_drains_events_before_terminal",
+      "test_router_sse_and_missing_run_http_contract"
+    ],
     "tests/unit/plugins/run_center/test_research.py": [
       "test_sobol_design_uses_seed_for_reproducible_scrambling",
       "test_design_ids_are_stable_and_duplicate_metrics_are_rejected",

@@ -25,7 +25,8 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any
+from typing import Any, Literal
+from queue import Empty, Queue
 
 from fastapi import (
     APIRouter,
@@ -39,6 +40,7 @@ from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from .service import RunHandle, WorkflowService
+from .engine.progress import ProgressEvent, ProgressHandler, ProgressRegistry
 from .authoring import AuthoringUnavailable
 from .flow_repository import RevisionConflict
 from .lifecycle import ResumeInputError
@@ -51,7 +53,8 @@ def _request_agent_id(request: Request) -> str | None:
     from qwenpaw.app.agent_context import _normalize_agent_id
 
     return _normalize_agent_id(
-        getattr(request.state, "agent_id", None) or request.headers.get("X-Agent-Id")
+        getattr(request.state, "agent_id", None)
+        or request.headers.get("X-Agent-Id"),
     )
 
 
@@ -117,10 +120,20 @@ def _service_error(exc: Exception) -> HTTPException:
 def build_router(service: WorkflowService) -> APIRouter:
     """Build the FastAPI router bound to *service*."""
     router = APIRouter()
+    _register_health_routes(router, service)
+    _register_flow_routes(router, service)
+    _register_validation_routes(router, service)
+    _register_authoring_routes(router, service)
+    _register_run_routes(router, service)
+    _register_event_routes(router, service)
+    _register_websocket_route(router, service)
+    return router
 
-    # ---------------------------------------------------------------- #
-    # Health + node types
-    # ---------------------------------------------------------------- #
+
+def _register_health_routes(
+    router: APIRouter,
+    service: WorkflowService,
+) -> None:
     @router.get("/health")
     async def health() -> dict[str, Any]:
         return {"status": "ok", "flows_dir": str(service.flows_dir)}
@@ -130,7 +143,7 @@ def build_router(service: WorkflowService) -> APIRouter:
         try:
             return await service.refresh_node_types(_request_agent_id(request))
         except ValueError as exc:
-            raise HTTPException(404, str(exc))
+            raise HTTPException(404, str(exc)) from exc
         except AuthoringUnavailable as exc:
             raise _service_error(exc) from exc
 
@@ -138,9 +151,8 @@ def build_router(service: WorkflowService) -> APIRouter:
     async def refresh_node_types(request: Request) -> list[dict[str, Any]]:
         return await node_types(request)
 
-    # ---------------------------------------------------------------- #
-    # Flow CRUD
-    # ---------------------------------------------------------------- #
+
+def _register_flow_routes(router: APIRouter, service: WorkflowService) -> None:
     @router.get("/flows")
     async def list_flows() -> list[dict[str, Any]]:
         return service.list_flows()
@@ -168,7 +180,8 @@ def build_router(service: WorkflowService) -> APIRouter:
 
     @router.put("/flows/{flow_id}")
     async def update_flow(
-        flow_id: str, payload: FlowPayload = Body(...)
+        flow_id: str,
+        payload: FlowPayload = Body(...),
     ) -> dict[str, Any]:
         data = payload.model_dump()
         data["id"] = flow_id
@@ -189,6 +202,11 @@ def build_router(service: WorkflowService) -> APIRouter:
             raise HTTPException(404, f"flow '{flow_id}' not found")
         return {"deleted": True}
 
+
+def _register_validation_routes(
+    router: APIRouter,
+    service: WorkflowService,
+) -> None:
     @router.post("/flows/{flow_id}/validate")
     async def validate_flow(flow_id: str, request: Request) -> dict[str, Any]:
         flow = service.get_flow(flow_id)
@@ -196,18 +214,21 @@ def build_router(service: WorkflowService) -> APIRouter:
             raise HTTPException(404, f"flow '{flow_id}' not found")
         try:
             return await service.validate_flow_for_agent(
-                flow, _request_agent_id(request)
+                flow,
+                _request_agent_id(request),
             )
         except (ValueError, AuthoringUnavailable) as exc:
             raise _service_error(exc) from exc
 
     @router.post("/flows/validate")
     async def validate_payload(
-        request: Request, payload: FlowPayload = Body(...)
+        request: Request,
+        payload: FlowPayload = Body(...),
     ) -> dict[str, Any]:
         try:
             return await service.validate_flow_for_agent(
-                payload.model_dump(), _request_agent_id(request)
+                payload.model_dump(),
+                _request_agent_id(request),
             )
         except (ValueError, AuthoringUnavailable) as exc:
             raise _service_error(exc) from exc
@@ -218,25 +239,41 @@ def build_router(service: WorkflowService) -> APIRouter:
 
     @router.post("/flows/{flow_id}/versions/{revision}/restore")
     async def restore_version(
-        flow_id: str, revision: int, payload: RevisionRequest = Body(...)
+        flow_id: str,
+        revision: int,
+        payload: RevisionRequest = Body(...),
     ):
         try:
-            return service.restore_version(flow_id, revision, payload.expected_revision)
+            return service.restore_version(
+                flow_id,
+                revision,
+                payload.expected_revision,
+            )
         except (ValueError, FileNotFoundError, WorkflowValidationError) as exc:
             raise _service_error(exc) from exc
 
+
+def _register_authoring_routes(
+    router: APIRouter,
+    service: WorkflowService,
+) -> None:
     @router.post("/generate")
     async def generate_flow(payload: GenerateRequest = Body(...)):
         """Explicit legacy sequential template; AI creation uses proposals."""
         try:
             return service.generate_flow(
-                payload.prompt, name=payload.name, agent_id=payload.agent_id
+                payload.prompt,
+                name=payload.name,
+                agent_id=payload.agent_id,
             )
         except ValueError as exc:
             raise _service_error(exc) from exc
 
     @router.post("/authoring/proposals")
-    async def create_proposal(request: Request, payload: ProposalRequest = Body(...)):
+    async def create_proposal(
+        request: Request,
+        payload: ProposalRequest = Body(...),
+    ):
         try:
             return await service.create_proposal(
                 payload.prompt,
@@ -255,11 +292,15 @@ def build_router(service: WorkflowService) -> APIRouter:
 
     @router.post("/authoring/proposals/{proposal_id}/apply")
     async def apply_proposal(
-        proposal_id: str, request: Request, payload: RevisionRequest = Body(...)
+        proposal_id: str,
+        request: Request,
+        payload: RevisionRequest = Body(...),
     ):
         try:
             return await service.apply_proposal_for_agent(
-                proposal_id, payload.expected_revision, _request_agent_id(request)
+                proposal_id,
+                payload.expected_revision,
+                _request_agent_id(request),
             )
         except (
             ValueError,
@@ -269,9 +310,8 @@ def build_router(service: WorkflowService) -> APIRouter:
         ) as exc:
             raise _service_error(exc) from exc
 
-    # ---------------------------------------------------------------- #
-    # Run lifecycle
-    # ---------------------------------------------------------------- #
+
+def _register_run_routes(router: APIRouter, service: WorkflowService) -> None:
     @router.post("/flows/{flow_id}/run")
     async def start_run(
         flow_id: str,
@@ -281,7 +321,9 @@ def build_router(service: WorkflowService) -> APIRouter:
         inputs = (body.inputs if body else {}) or {}
         try:
             handle = service.start_run(
-                flow_id, inputs, agent_id=_request_agent_id(request)
+                flow_id,
+                inputs,
+                agent_id=_request_agent_id(request),
             )
         except (FileNotFoundError, ValueError, WorkflowValidationError) as exc:
             raise _service_error(exc) from exc
@@ -319,7 +361,7 @@ def build_router(service: WorkflowService) -> APIRouter:
         try:
             handle = service.resume_run(run_id, inputs)
         except FileNotFoundError as exc:
-            raise HTTPException(404, str(exc))
+            raise HTTPException(404, str(exc)) from exc
         except ResumeInputError as exc:
             raise HTTPException(422, str(exc)) from exc
         except ValueError as exc:
@@ -330,9 +372,11 @@ def build_router(service: WorkflowService) -> APIRouter:
             "status": handle.status.value,
         }
 
-    # ---------------------------------------------------------------- #
-    # SSE event stream
-    # ---------------------------------------------------------------- #
+
+def _register_event_routes(
+    router: APIRouter,
+    service: WorkflowService,
+) -> None:
     @router.get("/runs/{run_id}/events")
     async def run_events(run_id: str) -> StreamingResponse:
         handle = service.get_run(run_id)
@@ -379,15 +423,110 @@ def build_router(service: WorkflowService) -> APIRouter:
             },
         )
 
-    # ---------------------------------------------------------------- #
-    # WebSocket endpoint (live run updates)
-    # ---------------------------------------------------------------- #
+
+class _WebSocketSubscription:
+    """Keep one socket's live progress registration and replay state."""
+
+    def __init__(self, service: WorkflowService) -> None:
+        self.service = service
+        self.run_id: str | None = None
+        self.queue: Queue[ProgressEvent] | None = None
+        self.progress: ProgressRegistry | None = None
+        self.handler: ProgressHandler | None = None
+        self.replayed: set[int] = set()
+
+    def detach(self) -> None:
+        if self.progress is not None and self.handler is not None:
+            self.progress.remove_handler(self.handler)
+        self.progress = None
+        self.handler = None
+
+    async def subscribe(
+        self,
+        websocket: WebSocket,
+        run_id: str,
+    ) -> Literal["missing", "persisted", "live"]:
+        self.detach()
+        self.run_id = run_id
+        handle = self.service.get_run(run_id)
+        if handle is None:
+            record = self.service.get_run_record(run_id)
+            if record is None:
+                await websocket.send_text(
+                    json.dumps(
+                        {
+                            "type": "error",
+                            "error": f"run '{run_id}' not found",
+                        },
+                    ),
+                )
+                self.run_id = None
+                return "missing"
+            for event in record.get("events", []):
+                await websocket.send_text(json.dumps(event))
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "type": "run_finished",
+                        "run_id": run_id,
+                        "status": record.get("status"),
+                    },
+                ),
+            )
+            return "persisted"
+
+        # Progress emits on the workflow's background thread. This queue is
+        # deliberately synchronous: the socket polls without awaiting it.
+        event_queue: Queue[ProgressEvent] = Queue()
+        self.queue = event_queue
+        self.progress = handle.progress
+        self.handler = event_queue.put_nowait
+        self.progress.add_handler(self.handler)
+        history = handle.progress.history()
+        # Registry history and handlers share the same immutable event objects.
+        # An event emitted at attachment can reach both history and the queue.
+        self.replayed = {id(event) for event in history}
+        for event in history:
+            await websocket.send_text(json.dumps(event.to_dict()))
+        return "live"
+
+    async def forward(self, websocket: WebSocket) -> bool:
+        if self.queue is None:
+            return False
+        try:
+            while True:
+                event = self.queue.get_nowait()
+                if id(event) in self.replayed:
+                    continue
+                await websocket.send_text(json.dumps(event.to_dict()))
+                break
+        except Empty:
+            pass
+        handle: RunHandle | None = (
+            self.service.get_run(self.run_id) if self.run_id else None
+        )
+        if handle and handle.is_done and self.queue.empty():
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "type": "run_finished",
+                        "run_id": self.run_id,
+                        "status": handle.status.value,
+                    },
+                ),
+            )
+            return True
+        return False
+
+
+def _register_websocket_route(
+    router: APIRouter,
+    service: WorkflowService,
+) -> None:
     @router.websocket("/ws")
     async def websocket_endpoint(websocket: WebSocket) -> None:
         await websocket.accept()
-        subscribed_run: str | None = None
-        attached: bool = False
-        queue: asyncio.Queue | None = None
+        subscription = _WebSocketSubscription(service)
         try:
             while True:
                 # Drain incoming control messages (subscribe / cancel / ping).
@@ -404,75 +543,22 @@ def build_router(service: WorkflowService) -> APIRouter:
                     except json.JSONDecodeError:
                         msg = {"type": raw}
                     if msg.get("type") == "subscribe" and msg.get("run_id"):
-                        # Detach from previous run.
-                        if subscribed_run and queue is not None and attached:
-                            prev = service.get_run(subscribed_run)
-                            if prev is not None:
-                                prev.progress.detach_queue()
-                        subscribed_run = msg["run_id"]
-                        handle = service.get_run(subscribed_run)
-                        if handle is None:
-                            record = service.get_run_record(subscribed_run)
-                            if record is None:
-                                await websocket.send_text(
-                                    json.dumps(
-                                        {
-                                            "type": "error",
-                                            "error": f"run '{subscribed_run}' not found",
-                                        },
-                                    ),
-                                )
-                                subscribed_run = None
-                                continue
-                            for event in record.get("events", []):
-                                await websocket.send_text(json.dumps(event))
-                            await websocket.send_text(
-                                json.dumps(
-                                    {
-                                        "type": "run_finished",
-                                        "run_id": subscribed_run,
-                                        "status": record.get("status"),
-                                    },
-                                ),
-                            )
+                        outcome = await subscription.subscribe(
+                            websocket,
+                            msg["run_id"],
+                        )
+                        if outcome == "missing":
+                            continue
+                        if outcome == "persisted":
                             break
-                        queue = handle.progress.attach_queue()
-                        attached = True
-                        for ev in handle.progress.history():
-                            await websocket.send_text(
-                                json.dumps(ev.to_dict()),
-                            )
                     elif msg.get("type") == "ping":
                         await websocket.send_text(json.dumps({"type": "pong"}))
-
-                # Forward any queued events for the subscribed run.
-                if queue is not None:
-                    try:
-                        ev = queue.get_nowait()
-                        await websocket.send_text(json.dumps(ev.to_dict()))
-                    except asyncio.QueueEmpty:
-                        pass
-                    handle = service.get_run(subscribed_run) if subscribed_run else None
-                    if handle and handle.is_done and queue.empty():
-                        await websocket.send_text(
-                            json.dumps(
-                                {
-                                    "type": "run_finished",
-                                    "run_id": subscribed_run,
-                                    "status": handle.status.value,
-                                },
-                            ),
-                        )
-                        break
+                if await subscription.forward(websocket):
+                    break
         except WebSocketDisconnect:
             pass
         finally:
-            if subscribed_run and attached and queue is not None:
-                handle = service.get_run(subscribed_run)
-                if handle is not None:
-                    handle.progress.detach_queue()
-
-    return router
+            subscription.detach()
 
 
 def _sse_pack(payload: dict[str, Any]) -> str:
