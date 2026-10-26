@@ -54,7 +54,8 @@
       "tests/unit/plugins/ugsci/test_manifest_guard_contracts.py",
       "tests/unit/plugins/ugsci/test_las_conversion_contract.py",
       "tests/unit/plugins/ugsci/test_eclipse_conversion_contract.py",
-      "tests/unit/plugins/ugsci/test_genui_card_stage_contract.py"
+      "tests/unit/plugins/ugsci/test_genui_card_stage_contract.py",
+      "tests/unit/plugins/ugsci/test_visualization_http_contract.py"
     ],
     "flowforge": [
       "tests/unit/plugins/flowforge/test_bidirectional_calls.py",
@@ -335,6 +336,14 @@
       "test_trace_form_preserves_delivery_content_groups_and_revision",
       "test_card_storage_failure_preserves_original_payload",
       "test_card_admission_guards_preserve_original_payload"
+    ],
+    "tests/unit/plugins/ugsci/test_visualization_http_contract.py": [
+      "test_scalar_queries_and_exports_keep_public_parameters",
+      "test_resource_ranges_preserve_real_bytes_and_headers",
+      "test_resource_invalid_ranges_remain_unsatisfiable",
+      "test_slice_persists_selected_geometry_ids_and_zero_scalars",
+      "test_slice_and_property_failures_keep_http_details",
+      "test_catalog_cascade_hides_examples_and_removes_managed_files"
     ]
   }
 }
