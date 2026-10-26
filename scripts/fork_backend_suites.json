@@ -66,6 +66,7 @@
       "tests/unit/plugins/flowforge/test_quality_gate_routing.py",
       "tests/unit/plugins/flowforge/test_node_failure_logging.py",
       "tests/unit/plugins/flowforge/test_public_adapter_contract.py",
+      "tests/unit/plugins/flowforge/test_agent_registry_config.py",
       "tests/unit/plugins/flowforge/test_runner_pipeline_contract.py",
       "tests/unit/plugins/flowforge/test_authoring_conversion_contract.py"
     ],
@@ -261,6 +262,11 @@
     "tests/unit/plugins/test_tracker_stream_cleanup.py": [
       "test_tracker_closes_suspended_source_before_host_completion",
       "test_tracker_accepts_async_iterator_without_aclose"
+    ],
+    "tests/unit/plugins/flowforge/test_agent_registry_config.py": [
+      "test_registry_discovers_configured_workspace_profiles",
+      "test_registry_retains_lazy_snapshot_until_a_new_instance",
+      "test_registry_continues_after_an_invalid_agent_file"
     ]
   }
 }
