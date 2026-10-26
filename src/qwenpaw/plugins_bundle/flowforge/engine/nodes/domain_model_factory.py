@@ -22,7 +22,6 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING, Any
 
-import logging
 
 from ..adapter.log_compat import get_logger
 
@@ -67,7 +66,9 @@ def register_domain_model_nodes(
     """
     if domain_registry is None:
         try:
-            from ..adapter.domain_registry import register_builtin_domain_models
+            from ..adapter.domain_registry import (
+                register_builtin_domain_models,
+            )
             from ..adapter.domain_registry import (
                 get_domain_registry,
                 load_domain_model_plugins,
@@ -99,7 +100,8 @@ def register_domain_model_nodes(
         try:
             cls = builder(spec)
             node_registry.register(
-                cls, module_path=f"domain_model_factory:{cls.NODE_ID}",
+                cls,
+                module_path=f"domain_model_factory:{cls.NODE_ID}",
             )
             registered.append(cls.NODE_ID)
         except Exception as exc:  # noqa: BLE001
