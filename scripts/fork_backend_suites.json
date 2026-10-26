@@ -57,7 +57,8 @@
       "tests/unit/plugins/ugsci/test_genui_card_stage_contract.py",
       "tests/unit/plugins/ugsci/test_visualization_http_contract.py",
       "tests/unit/plugins/ugsci/test_runtime_host_contract.py",
-      "tests/unit/plugins/ugsci/test_visualization_tool_contract.py"
+      "tests/unit/plugins/ugsci/test_visualization_tool_contract.py",
+      "tests/unit/plugins/ugsci/test_storage_inventory_stage_contract.py"
     ],
     "flowforge": [
       "tests/unit/plugins/flowforge/test_bidirectional_calls.py",
@@ -368,6 +369,13 @@
       "test_runtime_submit_failure_persists_the_same_sanitized_task",
       "test_runtime_ready_result_does_not_submit_or_persist_a_worker",
       "test_runtime_admission_retains_managed_and_desktop_guards"
+    ],
+    "tests/unit/plugins/ugsci/test_storage_inventory_stage_contract.py": [
+      "test_book_inventory_retains_missing_zero_and_source_precedence",
+      "test_allocation_retains_weighted_filling_bounds_and_row_order",
+      "test_inactive_allocation_retains_zero_and_feasibility_gate",
+      "test_scenario_ranking_retains_feasible_ranges_ties_and_pareto",
+      "test_scenario_validation_retains_original_error_precedence"
     ]
   }
 }
