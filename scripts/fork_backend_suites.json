@@ -52,7 +52,8 @@
       "tests/unit/plugins/test_storage_capacity_flow.py",
       "tests/unit/plugins/ugsci/test_manifest_guard_contracts.py",
       "tests/unit/plugins/ugsci/test_las_conversion_contract.py",
-      "tests/unit/plugins/ugsci/test_eclipse_conversion_contract.py"
+      "tests/unit/plugins/ugsci/test_eclipse_conversion_contract.py",
+      "tests/unit/plugins/ugsci/test_genui_card_stage_contract.py"
     ],
     "flowforge": [
       "tests/unit/plugins/flowforge/test_bidirectional_calls.py",
@@ -286,6 +287,12 @@
     "tests/unit/plugins/flowforge/test_lifecycle_listing_contract.py": [
       "test_listing_omits_record_lost_between_durable_reads",
       "test_listing_preserves_order_metadata_and_independent_snapshots"
+    ],
+    "tests/unit/plugins/ugsci/test_genui_card_stage_contract.py": [
+      "test_domain_card_keeps_chart_priority_stats_and_validated_storage",
+      "test_trace_form_preserves_delivery_content_groups_and_revision",
+      "test_card_storage_failure_preserves_original_payload",
+      "test_card_admission_guards_preserve_original_payload"
     ]
   }
 }
