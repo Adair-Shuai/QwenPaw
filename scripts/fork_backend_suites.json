@@ -92,7 +92,8 @@
       "plugins/apps/document-forms/tests/test_publication.py"
     ],
     "run_center": [
-      "tests/unit/plugins/run_center/test_research_router_contract.py"
+      "tests/unit/plugins/run_center/test_research_router_contract.py",
+      "tests/unit/plugins/run_center/test_research.py"
     ],
     "inventory": [
       "tests/unit/verify/test_fork_regression_inventory.py",
@@ -114,6 +115,11 @@
     ]
   },
   "required_cases": {
+    "tests/unit/plugins/run_center/test_research.py": [
+      "test_sobol_design_uses_seed_for_reproducible_scrambling",
+      "test_design_ids_are_stable_and_duplicate_metrics_are_rejected",
+      "test_model_version_and_model_soft_delete_restore_and_reference_protection"
+    ],
     "tests/unit/plugins/ugsci/test_native_storage_executors.py": [
       "test_public_storage_executor_runs_and_persists_results",
       "test_storage_executor_preserves_envelope_priority_and_zero",
