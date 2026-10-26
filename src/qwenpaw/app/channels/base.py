@@ -1030,8 +1030,6 @@ class BaseChannel(ABC):
                 f"{sanitize_log_value(raw_session)[:34]}",
             )
             self._clear_session_turn_usage(session_id)
-            if process_iterator is not None:
-                await process_iterator.aclose()
             raise
 
         except Exception as e:
@@ -1048,7 +1046,12 @@ class BaseChannel(ABC):
             )
             raise
         finally:
-            await self._finish_response_cycle(session_id)
+            try:
+                close = getattr(process_iterator, "aclose", None)
+                if close is not None:
+                    await close()
+            finally:
+                await self._finish_response_cycle(session_id)
 
     @staticmethod
     def _sanitize_surrogate_text(text: str) -> str:

@@ -101,7 +101,8 @@
       "tests/unit/plugins/test_tracker_stream_cleanup.py",
       "tests/unit/plugins/test_channel_tracker_custody.py",
       "tests/unit/plugins/test_sdk_channel_routing_contract.py",
-      "tests/unit/market/test_search_deadline.py"
+      "tests/unit/market/test_search_deadline.py",
+      "tests/unit/channels/test_base_core.py"
     ]
   },
   "required_cases": {
@@ -272,6 +273,10 @@
     "tests/unit/plugins/ugsci/test_las_conversion_contract.py": [
       "test_las_file_preserves_depth_curves_nulls_and_placement",
       "test_las_file_retains_invalid_input_errors"
+    ],
+    "tests/unit/channels/test_base_core.py": [
+      "test_tracker_stream_closes_nested_process_before_browser_cleanup",
+      "test_tracker_closes_nested_channel_process_before_host_completion"
     ]
   }
 }

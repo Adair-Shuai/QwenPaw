@@ -1,5 +1,7 @@
 # 自有功能合并回归
 
+渠道外层 SSE 流关闭时，BaseChannel 必须先关闭仍暂停在 yield 的实际处理流，再执行浏览器响应周期收尾；清理异常仍向调用方传播，浏览器收尾仍须执行。`test_base_core.py` 的嵌套流回归经真实 ConsoleChannel、TaskTracker 广播锁与 PluginActivity 验证：取消广播后，宿主完成回调尚未结束时插件占用已释放；不依赖异步生成器的垃圾回收来完成关闭。原有公开 app／channel 清理拒绝和重载重试继续执行。
+
 LAS 文本读取将头字段与数值行解析分开，保留深度列 DEPT／DEPTH／MD 的原有优先级、换行数据、NULL 哨兵、井名与坐标；lasio 可用时仍优先使用，NaN 曲线仍按原规则转换。`test_las_conversion_contract.py` 在两份实际读取器上用真实 LAS 文件核对位置、曲线、索引和单元 ID 的二进制输出，并保护缺少曲线、空数据、列数不整除及非数值数据的原错误信息；现有测井空间定位与可视化接口回归继续执行。
 
 FlowForge 的兼容专家注册表从宿主当前根配置中的 profiles 发现工作区，再通过真实 load_agent_config 加载专家，不导入已移除的 list_agent_ids。`test_agent_registry_config.py` 对两份插件通过隔离的真实配置文件保护自定义工作区路径、排序和模型／轮次信息、单个损坏配置的隔离，以及注册表实例的惰性快照缓存；现有专家节点治理和执行回归继续运行。
