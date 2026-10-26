@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """HTTP API for the lightweight model and Study services."""
 
 from __future__ import annotations
@@ -14,7 +15,10 @@ def _call(callback: Callable[[], Any]) -> Any:
     try:
         return callback()
     except KeyError as exc:
-        raise HTTPException(status_code=404, detail="Referenced record not found") from exc
+        raise HTTPException(
+            status_code=404,
+            detail="Referenced record not found",
+        ) from exc
     except ReferenceConflictError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
@@ -35,7 +39,8 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
         return {
             "contract_version": CONTRACT_VERSION,
             "models": repository.list_models(
-                project_id, include_deleted=include_deleted
+                project_id,
+                include_deleted=include_deleted,
             ),
         }
 
@@ -45,7 +50,8 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
 
     @router.get("/models/{model_id}")
     def get_model(
-        model_id: str, include_deleted: bool = Query(default=False)
+        model_id: str,
+        include_deleted: bool = Query(default=False),
     ) -> dict[str, Any]:
         item = repository.get_model(model_id, include_deleted=include_deleted)
         if item is None:
@@ -62,21 +68,30 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
 
     @router.get("/models/{model_id}/branches")
     def list_model_branches(
-        model_id: str, include_deleted: bool = Query(default=False)
+        model_id: str,
+        include_deleted: bool = Query(default=False),
     ) -> dict[str, Any]:
-        if repository.get_model(model_id, include_deleted=include_deleted) is None:
+        if (
+            repository.get_model(model_id, include_deleted=include_deleted)
+            is None
+        ):
             raise HTTPException(status_code=404, detail="Model not found")
         return {
             "contract_version": CONTRACT_VERSION,
             "model_id": model_id,
             "branches": repository.list_model_branches(
-                model_id, include_deleted=include_deleted
+                model_id,
+                include_deleted=include_deleted,
             ),
         }
 
-    @router.post("/models/{model_id}/branches", status_code=status.HTTP_201_CREATED)
+    @router.post(
+        "/models/{model_id}/branches",
+        status_code=status.HTTP_201_CREATED,
+    )
     def create_model_branch(
-        model_id: str, payload: dict[str, Any] = Body(...)
+        model_id: str,
+        payload: dict[str, Any] = Body(...),
     ) -> dict[str, Any]:
         return _call(lambda: repository.create_model_branch(model_id, payload))
 
@@ -87,47 +102,72 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
         include_deleted: bool = Query(default=False),
     ) -> dict[str, Any]:
         item = repository.get_model_branch(
-            model_id, branch_name, include_deleted=include_deleted
+            model_id,
+            branch_name,
+            include_deleted=include_deleted,
         )
         if item is None:
-            raise HTTPException(status_code=404, detail="Model branch not found")
+            raise HTTPException(
+                status_code=404,
+                detail="Model branch not found",
+            )
         return item
 
     @router.put("/models/{model_id}/branches/{branch_name:path}")
     def set_model_branch_head(
-        model_id: str, branch_name: str, payload: dict[str, Any] = Body(...)
+        model_id: str,
+        branch_name: str,
+        payload: dict[str, Any] = Body(...),
     ) -> dict[str, Any]:
         return _call(
             lambda: repository.set_model_branch_head(
-                model_id, branch_name, str(payload.get("version_id") or "")
-            )
+                model_id,
+                branch_name,
+                str(payload.get("version_id") or ""),
+            ),
         )
 
     @router.delete("/models/{model_id}/branches/{branch_name:path}")
     def delete_model_branch(model_id: str, branch_name: str) -> dict[str, Any]:
-        return _call(lambda: repository.delete_model_branch(model_id, branch_name))
+        return _call(
+            lambda: repository.delete_model_branch(model_id, branch_name),
+        )
 
     @router.post("/models/{model_id}/branches/{branch_name:path}/restore")
-    def restore_model_branch(model_id: str, branch_name: str) -> dict[str, Any]:
-        return _call(lambda: repository.restore_model_branch(model_id, branch_name))
+    def restore_model_branch(
+        model_id: str,
+        branch_name: str,
+    ) -> dict[str, Any]:
+        return _call(
+            lambda: repository.restore_model_branch(model_id, branch_name),
+        )
 
     @router.get("/models/{model_id}/tags")
     def list_model_tags(
-        model_id: str, include_deleted: bool = Query(default=False)
+        model_id: str,
+        include_deleted: bool = Query(default=False),
     ) -> dict[str, Any]:
-        if repository.get_model(model_id, include_deleted=include_deleted) is None:
+        if (
+            repository.get_model(model_id, include_deleted=include_deleted)
+            is None
+        ):
             raise HTTPException(status_code=404, detail="Model not found")
         return {
             "contract_version": CONTRACT_VERSION,
             "model_id": model_id,
             "tags": repository.list_model_tags(
-                model_id, include_deleted=include_deleted
+                model_id,
+                include_deleted=include_deleted,
             ),
         }
 
-    @router.post("/models/{model_id}/tags", status_code=status.HTTP_201_CREATED)
+    @router.post(
+        "/models/{model_id}/tags",
+        status_code=status.HTTP_201_CREATED,
+    )
     def create_model_tag(
-        model_id: str, payload: dict[str, Any] = Body(...)
+        model_id: str,
+        payload: dict[str, Any] = Body(...),
     ) -> dict[str, Any]:
         return _call(lambda: repository.create_model_tag(model_id, payload))
 
@@ -138,7 +178,9 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
         include_deleted: bool = Query(default=False),
     ) -> dict[str, Any]:
         item = repository.get_model_tag(
-            model_id, tag_name, include_deleted=include_deleted
+            model_id,
+            tag_name,
+            include_deleted=include_deleted,
         )
         if item is None:
             raise HTTPException(status_code=404, detail="Model tag not found")
@@ -146,9 +188,13 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
 
     @router.put("/models/{model_id}/tags/{tag_name}")
     def set_model_tag(
-        model_id: str, tag_name: str, payload: dict[str, Any] = Body(...)
+        model_id: str,
+        tag_name: str,
+        payload: dict[str, Any] = Body(...),
     ) -> dict[str, Any]:
-        return _call(lambda: repository.set_model_tag(model_id, tag_name, payload))
+        return _call(
+            lambda: repository.set_model_tag(model_id, tag_name, payload),
+        )
 
     @router.delete("/models/{model_id}/tags/{tag_name}")
     def delete_model_tag(model_id: str, tag_name: str) -> dict[str, Any]:
@@ -158,39 +204,63 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
     def restore_model_tag(model_id: str, tag_name: str) -> dict[str, Any]:
         return _call(lambda: repository.restore_model_tag(model_id, tag_name))
 
-    @router.post("/models/{model_id}/versions", status_code=status.HTTP_201_CREATED)
+    @router.post(
+        "/models/{model_id}/versions",
+        status_code=status.HTTP_201_CREATED,
+    )
     def create_model_version(
-        model_id: str, payload: dict[str, Any] = Body(...)
+        model_id: str,
+        payload: dict[str, Any] = Body(...),
     ) -> dict[str, Any]:
-        return _call(lambda: repository.create_model_version(model_id, payload))
+        return _call(
+            lambda: repository.create_model_version(model_id, payload),
+        )
 
     @router.get("/models/{model_id}/versions")
     def list_model_versions(
-        model_id: str, include_deleted: bool = Query(default=False)
+        model_id: str,
+        include_deleted: bool = Query(default=False),
     ) -> dict[str, Any]:
-        if repository.get_model(model_id, include_deleted=include_deleted) is None:
+        if (
+            repository.get_model(model_id, include_deleted=include_deleted)
+            is None
+        ):
             raise HTTPException(status_code=404, detail="Model not found")
         return {
             "contract_version": CONTRACT_VERSION,
             "model_id": model_id,
             "versions": repository.list_model_versions(
-                model_id, include_deleted=include_deleted
+                model_id,
+                include_deleted=include_deleted,
             ),
         }
 
     @router.get("/model-versions/{version_id}")
     def get_model_version(
-        version_id: str, include_deleted: bool = Query(default=False)
+        version_id: str,
+        include_deleted: bool = Query(default=False),
     ) -> dict[str, Any]:
-        item = repository.get_model_version(version_id, include_deleted=include_deleted)
+        item = repository.get_model_version(
+            version_id,
+            include_deleted=include_deleted,
+        )
         if item is None:
-            raise HTTPException(status_code=404, detail="Model version not found")
+            raise HTTPException(
+                status_code=404,
+                detail="Model version not found",
+            )
         return item
 
     @router.get("/model-versions/{version_id}/references")
     def model_version_references(version_id: str) -> dict[str, Any]:
-        if repository.get_model_version(version_id, include_deleted=True) is None:
-            raise HTTPException(status_code=404, detail="Model version not found")
+        if (
+            repository.get_model_version(version_id, include_deleted=True)
+            is None
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail="Model version not found",
+            )
         return {
             "contract_version": CONTRACT_VERSION,
             "version_id": version_id,
@@ -207,7 +277,8 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
 
     @router.post("/model-versions/{version_id}/validate")
     def validate_model_version(
-        version_id: str, payload: dict[str, Any] = Body(default={})
+        version_id: str,
+        payload: dict[str, Any] = Body(default={}),
     ) -> dict[str, Any]:
         """Validate an immutable model snapshot and persist its report."""
         inline_files = payload.get("inline_files")
@@ -217,14 +288,17 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
                 inline_files=inline_files,
                 check_syntax=bool(payload.get("check_syntax", True)),
                 promote=bool(payload.get("promote", True)),
-            )
+            ),
         )
 
     @router.get("/model-versions/{version_id}/validation")
     def get_model_version_validation(version_id: str) -> dict[str, Any]:
         item = repository.get_model_version(version_id)
         if item is None:
-            raise HTTPException(status_code=404, detail="Model version not found")
+            raise HTTPException(
+                status_code=404,
+                detail="Model version not found",
+            )
         return {
             "contract_version": CONTRACT_VERSION,
             "version_id": version_id,
@@ -246,17 +320,25 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
                 version_id,
                 review_id=payload.get("review_id"),
                 require_review=bool(payload.get("require_review", False)),
-            )
+            ),
         )
 
     @router.get("/model-versions/{version_id}/diff/{other_version_id}")
-    def diff_model_versions(version_id: str, other_version_id: str) -> dict[str, Any]:
+    def diff_model_versions(
+        version_id: str,
+        other_version_id: str,
+    ) -> dict[str, Any]:
         return _call(
-            lambda: repository.diff_model_versions(version_id, other_version_id)
+            lambda: repository.diff_model_versions(
+                version_id,
+                other_version_id,
+            ),
         )
 
     @router.get("/studies")
-    def list_studies(project_id: str | None = Query(default=None)) -> dict[str, Any]:
+    def list_studies(
+        project_id: str | None = Query(default=None),
+    ) -> dict[str, Any]:
         return {
             "contract_version": CONTRACT_VERSION,
             "studies": repository.list_studies(project_id),
@@ -276,31 +358,43 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
 
     @router.get("/studies/{study_id}")
     def get_study(
-        study_id: str, revision: int | None = Query(default=None, ge=1)
+        study_id: str,
+        revision: int | None = Query(default=None, ge=1),
     ) -> dict[str, Any]:
         item = repository.get_study(study_id, revision=revision)
         if item is None:
             raise HTTPException(status_code=404, detail="Study not found")
         return item
 
-    @router.post("/studies/{study_id}/revisions", status_code=status.HTTP_201_CREATED)
+    @router.post(
+        "/studies/{study_id}/revisions",
+        status_code=status.HTTP_201_CREATED,
+    )
     def create_study_revision(
-        study_id: str, payload: dict[str, Any] = Body(...)
+        study_id: str,
+        payload: dict[str, Any] = Body(...),
     ) -> dict[str, Any]:
         definition = payload.get("definition")
         if not isinstance(definition, dict):
-            raise HTTPException(status_code=400, detail="definition must be an object")
+            raise HTTPException(
+                status_code=400,
+                detail="definition must be an object",
+            )
         return _call(
             lambda: repository.create_study_revision(
                 study_id,
                 definition,
                 created_by=payload.get("created_by"),
-            )
+            ),
         )
 
-    @router.post("/studies/{study_id}/design", status_code=status.HTTP_201_CREATED)
+    @router.post(
+        "/studies/{study_id}/design",
+        status_code=status.HTTP_201_CREATED,
+    )
     def generate_design(
-        study_id: str, payload: dict[str, Any] = Body(default={})
+        study_id: str,
+        payload: dict[str, Any] = Body(default={}),
     ) -> dict[str, Any]:
         method = str(payload.get("method") or "latin_hypercube")
         budget = int(payload.get("budget") or 10)
@@ -316,7 +410,7 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
                 seed=seed,
                 constraints=constraints,
                 enqueue=bool(payload.get("enqueue", False)),
-            )
+            ),
         )
         design = {
             "design_fingerprint": realizations[0]["design_fingerprint"]
@@ -361,7 +455,8 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
 
     @router.get("/studies/{study_id}/designs")
     def list_designs(
-        study_id: str, revision: int | None = Query(default=None, ge=1)
+        study_id: str,
+        revision: int | None = Query(default=None, ge=1),
     ) -> dict[str, Any]:
         if repository.get_study(study_id, revision=revision) is None:
             raise HTTPException(status_code=404, detail="Study not found")
@@ -373,16 +468,27 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
 
     @router.post("/realizations/{realization_id}/metrics")
     def record_metrics(
-        realization_id: str, payload: dict[str, Any] = Body(...)
+        realization_id: str,
+        payload: dict[str, Any] = Body(...),
     ) -> dict[str, Any]:
         metrics = payload.get("metrics")
+        if metrics is None:
+            metrics = []
         return {
             "contract_version": CONTRACT_VERSION,
             "metrics": _call(
-                lambda: repository.record_metrics(realization_id, metrics)
+                lambda: repository.record_metrics(realization_id, metrics),
             ),
         }
 
+    _register_analysis_routes(router, repository)
+    return router
+
+
+def _register_analysis_routes(
+    router: APIRouter,
+    repository: ResearchRepository,
+) -> None:
     @router.get("/comparisons/{comparison_id}")
     def get_comparison(comparison_id: str) -> dict[str, Any]:
         item = repository.get_comparison(comparison_id)
@@ -391,7 +497,9 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
         return item
 
     @router.get("/comparisons")
-    def list_comparisons(study_id: str | None = Query(default=None)) -> dict[str, Any]:
+    def list_comparisons(
+        study_id: str | None = Query(default=None),
+    ) -> dict[str, Any]:
         return {
             "contract_version": CONTRACT_VERSION,
             "comparisons": repository.list_comparisons(study_id=study_id),
@@ -405,11 +513,20 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
     ) -> dict[str, Any]:
         if repository.get_study(study_id) is None:
             raise HTTPException(status_code=404, detail="Study not found")
-        return repository.study_analysis(study_id, metric_key, time_basis=time_basis)
+        return repository.study_analysis(
+            study_id,
+            metric_key,
+            time_basis=time_basis,
+        )
 
     @router.get("/surrogates")
-    def list_surrogates(study_id: str | None = Query(default=None)) -> dict[str, Any]:
-        return {"contract_version": CONTRACT_VERSION, "surrogates": repository.list_surrogates(study_id=study_id)}
+    def list_surrogates(
+        study_id: str | None = Query(default=None),
+    ) -> dict[str, Any]:
+        return {
+            "contract_version": CONTRACT_VERSION,
+            "surrogates": repository.list_surrogates(study_id=study_id),
+        }
 
     @router.get("/surrogates/{surrogate_id}")
     def get_surrogate(surrogate_id: str) -> dict[str, Any]:
@@ -418,25 +535,54 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
             raise HTTPException(status_code=404, detail="Surrogate not found")
         return item
 
-    @router.post("/studies/{study_id}/surrogates", status_code=status.HTTP_201_CREATED)
-    def train_surrogate(study_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-        return _call(lambda: repository.train_surrogate(
-            study_id, str(payload.get("metric_key") or ""),
-            revision=payload.get("revision"), algorithm=str(payload.get("algorithm") or "linear"),
-            min_samples=int(payload.get("min_samples") or 3), created_by=payload.get("created_by")))
+    @router.post(
+        "/studies/{study_id}/surrogates",
+        status_code=status.HTTP_201_CREATED,
+    )
+    def train_surrogate(
+        study_id: str,
+        payload: dict[str, Any] = Body(...),
+    ) -> dict[str, Any]:
+        return _call(
+            lambda: repository.train_surrogate(
+                study_id,
+                str(payload.get("metric_key") or ""),
+                revision=payload.get("revision"),
+                algorithm=str(payload.get("algorithm") or "linear"),
+                min_samples=int(payload.get("min_samples") or 3),
+                created_by=payload.get("created_by"),
+            ),
+        )
 
     @router.post("/surrogates/{surrogate_id}/predict")
-    def predict_surrogate(surrogate_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-        return _call(lambda: repository.predict_surrogate(surrogate_id, payload.get("parameters") or {}))
+    def predict_surrogate(
+        surrogate_id: str,
+        payload: dict[str, Any] = Body(...),
+    ) -> dict[str, Any]:
+        return _call(
+            lambda: repository.predict_surrogate(
+                surrogate_id,
+                payload.get("parameters") or {},
+            ),
+        )
 
     @router.post("/studies/{study_id}/optimize")
-    def optimize_study(study_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-        return _call(lambda: repository.optimize_study(
-            study_id, payload.get("objectives") or [], limit=int(payload.get("limit") or 10)
-        ))
+    def optimize_study(
+        study_id: str,
+        payload: dict[str, Any] = Body(...),
+    ) -> dict[str, Any]:
+        return _call(
+            lambda: repository.optimize_study(
+                study_id,
+                payload.get("objectives") or [],
+                limit=int(payload.get("limit") or 10),
+            ),
+        )
 
     @router.post("/comparisons", status_code=status.HTTP_201_CREATED)
-    def create_comparison(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    def create_comparison(
+        payload: dict[str, Any] = Body(...),
+    ) -> dict[str, Any]:
         return _call(lambda: repository.create_comparison(payload))
 
     @router.get("/reviews")
@@ -456,7 +602,7 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
                     subject_id=subject_id,
                     status=review_status,
                     input_fingerprint=input_fingerprint,
-                )
+                ),
             ),
         }
 
@@ -481,7 +627,8 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
 
     @router.post("/reviews/{review_id}/transition")
     def transition_review(
-        review_id: str, payload: dict[str, Any] = Body(...)
+        review_id: str,
+        payload: dict[str, Any] = Body(...),
     ) -> dict[str, Any]:
         return _call(
             lambda: repository.transition_review(
@@ -492,7 +639,7 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
                 metadata=payload.get("metadata")
                 if isinstance(payload.get("metadata"), dict)
                 else None,
-            )
+            ),
         )
 
     @router.get("/reports")
@@ -503,7 +650,8 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
         return {
             "contract_version": CONTRACT_VERSION,
             "reports": repository.list_reports(
-                study_id=study_id, comparison_id=comparison_id
+                study_id=study_id,
+                comparison_id=comparison_id,
             ),
         }
 
@@ -517,8 +665,6 @@ def build_research_router(repository: ResearchRepository) -> APIRouter:
     @router.post("/reports", status_code=status.HTTP_201_CREATED)
     def create_report(payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
         return _call(lambda: repository.create_report(payload))
-
-    return router
 
 
 __all__ = ["build_research_router"]

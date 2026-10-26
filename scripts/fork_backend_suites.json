@@ -90,6 +90,9 @@
       "plugins/apps/document-forms/tests/test_document_forms.py",
       "plugins/apps/document-forms/tests/test_publication.py"
     ],
+    "run_center": [
+      "tests/unit/plugins/run_center/test_research_router_contract.py"
+    ],
     "inventory": [
       "tests/unit/verify/test_fork_regression_inventory.py",
       "tests/unit/verify/test_pylint_namespace.py"
@@ -110,6 +113,15 @@
     ]
   },
   "required_cases": {
+    "tests/unit/plugins/run_center/test_research_router_contract.py": [
+      "test_metrics_http_retains_missing_null_and_non_array_errors",
+      "test_metrics_http_retains_element_value_and_duplicate_errors",
+      "test_metrics_http_preserves_zero_and_existing_metric_identity",
+      "test_review_http_preserves_status_alias_and_durable_transition",
+      "test_report_http_preserves_persisted_markdown_artifact",
+      "test_research_http_retains_missing_record_errors",
+      "test_research_http_retains_openapi_and_route_order"
+    ],
     "tests/unit/verify/test_pylint_namespace.py": [
       "test_namespace_plugin_modules_keep_distinct_qualified_names",
       "test_module_resolution_never_executes_package_initializers",
