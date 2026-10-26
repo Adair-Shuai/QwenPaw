@@ -14,7 +14,7 @@ import os
 import sqlite3
 import threading
 from pathlib import Path
-from typing import Any, Optional
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +62,8 @@ CREATE TABLE IF NOT EXISTS paper_identifiers (
     value     TEXT NOT NULL,
     PRIMARY KEY (scheme, value)
 );
-CREATE INDEX IF NOT EXISTS idx_pidentifiers_paper ON paper_identifiers(paper_id);
+CREATE INDEX IF NOT EXISTS idx_pidentifiers_paper ON \
+paper_identifiers(paper_id);
 
 -- ── Authors ───────────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS authors (
@@ -85,7 +86,8 @@ CREATE TABLE IF NOT EXISTS project_papers (
     paper_id       TEXT NOT NULL REFERENCES papers(id) ON DELETE CASCADE,
     reading_status TEXT DEFAULT 'unread',
     priority       INTEGER DEFAULT 0,
-    added_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    added_at       TEXT NOT NULL DEFAULT \
+(strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     PRIMARY KEY (project_id, paper_id)
 );
 CREATE INDEX IF NOT EXISTS idx_pp_project ON project_papers(project_id);
@@ -179,7 +181,8 @@ CREATE TABLE IF NOT EXISTS annotations (
     comment        TEXT DEFAULT '',
     anchor_json    TEXT DEFAULT '{}',
     created_by     TEXT DEFAULT 'human',
-    created_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    created_at     TEXT NOT NULL DEFAULT \
+(strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     updated_at     TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_anno_file ON annotations(file_id);
@@ -193,8 +196,10 @@ CREATE TABLE IF NOT EXISTS notes (
     title            TEXT DEFAULT '',
     content_markdown TEXT DEFAULT '',
     created_by       TEXT DEFAULT 'human',
-    created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-    updated_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+    created_at       TEXT NOT NULL DEFAULT \
+(strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    updated_at       TEXT NOT NULL DEFAULT \
+(strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_notes_project ON notes(project_id);
 CREATE INDEX IF NOT EXISTS idx_notes_paper ON notes(paper_id);
@@ -202,7 +207,8 @@ CREATE INDEX IF NOT EXISTS idx_notes_paper ON notes(paper_id);
 -- ── Evidence cards ────────────────────────────────────────────────
 CREATE TABLE IF NOT EXISTS evidence_cards (
     id                   TEXT PRIMARY KEY,
-    project_id           TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    project_id           TEXT NOT NULL REFERENCES projects(id) ON \
+DELETE CASCADE,
     paper_id             TEXT REFERENCES papers(id) ON DELETE SET NULL,
     claim                TEXT NOT NULL DEFAULT '',
     quote                TEXT DEFAULT '',
@@ -213,8 +219,10 @@ CREATE TABLE IF NOT EXISTS evidence_cards (
     created_by           TEXT DEFAULT 'human',
     ai_run_id            TEXT,
     tags_json            TEXT DEFAULT '[]',
-    created_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
-    updated_at           TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+    created_at           TEXT NOT NULL DEFAULT \
+(strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    updated_at           TEXT NOT NULL DEFAULT \
+(strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_evidence_project ON evidence_cards(project_id);
 CREATE INDEX IF NOT EXISTS idx_evidence_paper ON evidence_cards(paper_id);
@@ -226,21 +234,25 @@ CREATE TABLE IF NOT EXISTS ai_sessions (
     scope_id          TEXT NOT NULL,
     qwen_session_id   TEXT NOT NULL,
     title             TEXT DEFAULT '',
-    created_at        TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+    created_at        TEXT NOT NULL DEFAULT \
+(strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
-CREATE INDEX IF NOT EXISTS idx_aisess_scope ON ai_sessions(scope_type, scope_id);
+CREATE INDEX IF NOT EXISTS idx_aisess_scope ON ai_sessions(scope_type, \
+scope_id);
 
 -- ── AI runs (auditable records) ───────────────────────────────────
 CREATE TABLE IF NOT EXISTS ai_runs (
     id               TEXT PRIMARY KEY,
-    session_id       TEXT NOT NULL REFERENCES ai_sessions(id) ON DELETE CASCADE,
+    session_id       TEXT NOT NULL REFERENCES ai_sessions(id) ON DELETE \
+CASCADE,
     model            TEXT DEFAULT '',
     prompt_version   TEXT DEFAULT '',
     input_refs_json  TEXT DEFAULT '[]',
     output_json      TEXT DEFAULT '{}',
     status           TEXT DEFAULT 'pending',
     grounding_status TEXT DEFAULT 'ungrounded',
-    created_at       TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+    created_at       TEXT NOT NULL DEFAULT \
+(strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE INDEX IF NOT EXISTS idx_airuns_session ON ai_runs(session_id);
 
@@ -288,11 +300,13 @@ CREATE TRIGGER IF NOT EXISTS papers_ai AFTER INSERT ON papers BEGIN
 END;
 CREATE TRIGGER IF NOT EXISTS papers_ad AFTER DELETE ON papers BEGIN
     INSERT INTO papers_fts(papers_fts, rowid, paper_id, title, abstract)
-    VALUES ('delete', old.rowid, old.id, old.title, COALESCE(old.abstract, ''));
+    VALUES ('delete', old.rowid, old.id, old.title, \
+COALESCE(old.abstract, ''));
 END;
 CREATE TRIGGER IF NOT EXISTS papers_au AFTER UPDATE ON papers BEGIN
     INSERT INTO papers_fts(papers_fts, rowid, paper_id, title, abstract)
-    VALUES ('delete', old.rowid, old.id, old.title, COALESCE(old.abstract, ''));
+    VALUES ('delete', old.rowid, old.id, old.title, \
+COALESCE(old.abstract, ''));
     INSERT INTO papers_fts(rowid, paper_id, title, abstract)
     VALUES (new.rowid, new.id, new.title, COALESCE(new.abstract, ''));
 END;
@@ -338,7 +352,7 @@ class Database:
         conn.executescript(_SCHEMA_SQL)
         conn.commit()
         row = conn.execute(
-            "SELECT value FROM schema_meta WHERE key='version'"
+            "SELECT value FROM schema_meta WHERE key='version'",
         ).fetchone()
         current = int(row["value"]) if row else 0
         if current < 2:
@@ -352,7 +366,7 @@ class Database:
                    FROM chunks c
                    JOIN documents d ON d.id = c.document_id
                    JOIN files f ON f.id = d.file_id
-                   WHERE f.paper_id IS NOT NULL"""
+                   WHERE f.paper_id IS NOT NULL""",
             )
             current = 2
         if current != _SCHEMA_VERSION:

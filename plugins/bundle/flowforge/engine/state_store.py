@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID
 
-from .types import WorkflowState, WorkflowStatus
+from .types import WorkflowState
 
 
 @dataclass
@@ -42,7 +42,9 @@ class WorkflowRunSnapshot:
                 "dynamic_prompt": self.dynamic_prompt,
                 "blocked_nodes": self.blocked_nodes,
                 "prompt_id": self.prompt_id,
-                "execution_id": str(self.execution_id) if self.execution_id else None,
+                "execution_id": str(self.execution_id)
+                if self.execution_id
+                else None,
             },
             ensure_ascii=False,
             default=str,
@@ -66,10 +68,20 @@ class WorkflowRunSnapshot:
 class WorkflowStateStore(Protocol):
     """Protocol every state store implements."""
 
-    async def save(self, snapshot: WorkflowRunSnapshot) -> None: ...
-    async def load(self, state_id: UUID) -> WorkflowRunSnapshot | None: ...
-    async def load_by_prompt_id(self, prompt_id: str) -> WorkflowRunSnapshot | None: ...
-    async def delete(self, state_id: UUID) -> None: ...
+    async def save(self, snapshot: WorkflowRunSnapshot) -> None:
+        ...
+
+    async def load(self, state_id: UUID) -> WorkflowRunSnapshot | None:
+        ...
+
+    async def load_by_prompt_id(
+        self,
+        prompt_id: str,
+    ) -> WorkflowRunSnapshot | None:
+        ...
+
+    async def delete(self, state_id: UUID) -> None:
+        ...
 
 
 class InMemoryWorkflowStateStore:
@@ -81,15 +93,24 @@ class InMemoryWorkflowStateStore:
 
     async def save(self, snapshot: WorkflowRunSnapshot) -> None:
         key = str(snapshot.state.id)
-        self._by_state[key] = WorkflowRunSnapshot.from_payload(snapshot.to_payload())
+        self._by_state[key] = WorkflowRunSnapshot.from_payload(
+            snapshot.to_payload(),
+        )
         if snapshot.prompt_id:
             self._by_prompt[snapshot.prompt_id] = key
 
     async def load(self, state_id: UUID) -> WorkflowRunSnapshot | None:
         snapshot = self._by_state.get(str(state_id))
-        return WorkflowRunSnapshot.from_payload(snapshot.to_payload()) if snapshot else None
+        return (
+            WorkflowRunSnapshot.from_payload(snapshot.to_payload())
+            if snapshot
+            else None
+        )
 
-    async def load_by_prompt_id(self, prompt_id: str) -> WorkflowRunSnapshot | None:
+    async def load_by_prompt_id(
+        self,
+        prompt_id: str,
+    ) -> WorkflowRunSnapshot | None:
         key = self._by_prompt.get(prompt_id)
         if key is None:
             return None
@@ -130,7 +151,10 @@ class JsonWorkflowStateStore:
 
     @staticmethod
     def _atomic_write(path: Path, content: str) -> None:
-        descriptor, temporary = tempfile.mkstemp(prefix=f".{path.name}.", dir=path.parent)
+        descriptor, temporary = tempfile.mkstemp(
+            prefix=f".{path.name}.",
+            dir=path.parent,
+        )
         try:
             with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
                 stream.write(content)
@@ -142,7 +166,10 @@ class JsonWorkflowStateStore:
                 os.unlink(temporary)
 
     def _save_index(self) -> None:
-        self._atomic_write(self._index_path(), json.dumps(self._index, ensure_ascii=False))
+        self._atomic_write(
+            self._index_path(),
+            json.dumps(self._index, ensure_ascii=False),
+        )
 
     async def save(self, snapshot: WorkflowRunSnapshot) -> None:
         key = str(snapshot.state.id)
@@ -164,7 +191,10 @@ class JsonWorkflowStateStore:
         except Exception:
             return None
 
-    async def load_by_prompt_id(self, prompt_id: str) -> WorkflowRunSnapshot | None:
+    async def load_by_prompt_id(
+        self,
+        prompt_id: str,
+    ) -> WorkflowRunSnapshot | None:
         key = self._index.get(prompt_id)
         if key is None:
             return None

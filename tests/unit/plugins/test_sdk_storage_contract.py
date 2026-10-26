@@ -3,7 +3,7 @@
 
 import json
 from pathlib import Path
-from urllib.parse import unquote, urlparse
+from urllib.parse import urlparse
 from urllib.request import url2pathname
 
 import pytest

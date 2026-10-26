@@ -11,7 +11,7 @@ L3 主动思考的输入：结合
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
@@ -38,13 +38,13 @@ async def collect_idea_summary(ctx: Any) -> str:
             tags = "、".join(idea.get("tags") or []) or "无标签"
             lines.append(
                 f"- [{idea.get('status', 'raw')}] {idea.get('title', '')}"
-                f"（标签：{tags}）\n  {idea.get('content', '')[:120]}"
+                f"（标签：{tags}）\n  {idea.get('content', '')[:120]}",
             )
     if clusters:
         lines.append(f"【已归纳的聚类方向共 {len(clusters)} 个】")
         for c in clusters[-8:]:
             lines.append(
-                f"- {c.get('name', '')}（{len(c.get('idea_ids') or [])} 条灵感）"
+                f"- {c.get('name', '')}（{len(c.get('idea_ids') or [])} 条灵感）",
             )
     if suggestions:
         lines.append(f"【此前已提出 {len(suggestions)} 条建议】")
@@ -88,7 +88,9 @@ async def collect_session_memories(ctx: Any) -> str:
 
 
 def _compress_history(
-    history: List[Dict[str, Any]], *, label: str = "global"
+    history: List[Dict[str, Any]],
+    *,
+    label: str = "global",
 ) -> str:
     """压缩会话历史为可读文本。
 
@@ -109,7 +111,10 @@ def _compress_history(
             kept.append(f"[{role}] {content}")
     if not kept:
         return ""
-    header = f"会话消息（user {roles['user']} / assistant {roles['assistant']}，来源 {label}）："
+    header = (
+        f"会话消息（user {roles['user']} / "
+        f"assistant {roles['assistant']}，来源 {label}）："
+    )
     return header + "\n" + "\n".join(kept[-_MAX_HISTORY_PER_ROLE:])
 
 
@@ -127,7 +132,10 @@ async def build_expand_context(ctx: Any, idea: Dict[str, Any]) -> str:
     """拼装 L2 单条灵感扩充的上下文。"""
     from store import get_clusters, get_ideas
 
-    lines = [f"目标灵感：\n- 标题：{idea.get('title', '')}\n- 内容：{idea.get('content', '')}"]
+    lines = [
+        f"目标灵感：\n- 标题：{idea.get('title', '')}\n"
+        f"- 内容：{idea.get('content', '')}",
+    ]
     tags = idea.get("tags") or []
     if tags:
         lines.append(f"标签：{'、'.join(tags)}")
@@ -137,7 +145,9 @@ async def build_expand_context(ctx: Any, idea: Dict[str, Any]) -> str:
     if others:
         lines.append("\n相关灵感（供参考）：")
         for i in others:
-            lines.append(f"- {i.get('title', '')}：{i.get('content', '')[:100]}")
+            lines.append(
+                f"- {i.get('title', '')}：{i.get('content', '')[:100]}",
+            )
 
     clusters = await get_clusters(ctx)
     if clusters:
