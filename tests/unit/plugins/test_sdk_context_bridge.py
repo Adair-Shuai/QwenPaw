@@ -7,12 +7,83 @@
 import json
 import socket
 import threading
+from contextlib import contextmanager
+from types import AsyncGeneratorType
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
 from .test_sdk_context_services import package
+
+
+@contextmanager
+def _describe_cleanup_failure(host, plugin_ids):
+    from qwenpaw.plugins import PluginBusyError
+
+    try:
+        yield
+    except PluginBusyError as exc:
+        exc.add_note(
+            "Cleanup owners at public reload failure:\n"
+            + _cleanup_snapshot(host, plugin_ids),
+        )
+        raise
+
+
+def _cleanup_snapshot(host, plugin_ids):
+    """Describe retained owners on failure without reading request contents."""
+    snapshots = {}
+    for plugin_id in plugin_ids:
+        instance = host._loader.lifecycle.get_instance(plugin_id)
+        if instance is None:
+            continue
+        activity = instance.activity
+        snapshots[plugin_id] = [
+            _cleanup_task_snapshot(activity, task)
+            for task in activity._pending()
+        ]
+    return json.dumps(snapshots, ensure_ascii=False, indent=2)
+
+
+def _cleanup_task_snapshot(activity, task):
+    pending = [task.get_coro()]
+    seen = set()
+    frames = []
+    while pending and len(seen) < 64:
+        current = pending.pop()
+        if current is None or id(current) in seen:
+            continue
+        seen.add(id(current))
+        frame = getattr(current, "cr_frame", None) or getattr(
+            current,
+            "ag_frame",
+            None,
+        )
+        if frame is not None:
+            frames.append(
+                f"{frame.f_code.co_filename}:{frame.f_lineno}:"
+                f"{frame.f_code.co_name}",
+            )
+            # Native async-generator send objects hide their await chain.
+            # Follow only generators in the frame, never request values.
+            pending.extend(
+                value
+                for value in frame.f_locals.values()
+                if isinstance(value, AsyncGeneratorType)
+            )
+        pending.append(
+            getattr(current, "cr_await", None)
+            or getattr(current, "ag_await", None),
+        )
+    return {
+        "task": task.get_name(),
+        "cancelling": task.cancelling(),
+        "invocations": activity.tasks.get(task, 0),
+        "terminal": task in activity.cleanup_tasks,
+        "retry": task in activity.cleanup_retries,
+        "frames": frames,
+    }
 
 
 async def configure_loopback(host, base_url):
@@ -1225,12 +1296,16 @@ plugin = Plugin()
             )
             attempts = provider.storage.read_json("attempts.json")
             provider.storage.write_json("release.json", True)
-            assert (
-                await host.reload(
-                    "runtime-cleanup-caller",
-                    interrupt_tasks=True,
-                )
-            ).ok
+            with _describe_cleanup_failure(
+                host,
+                ("runtime-cleanup-caller", "runtime-cleanup-provider"),
+            ):
+                assert (
+                    await host.reload(
+                        "runtime-cleanup-caller",
+                        interrupt_tasks=True,
+                    )
+                ).ok
             assert provider.storage.read_json("closed.json") is True
             assert provider.storage.read_json("attempts.json") > attempts
             assert (
