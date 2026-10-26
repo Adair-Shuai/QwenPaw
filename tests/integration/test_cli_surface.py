@@ -49,15 +49,26 @@ _SUBCOMMANDS = [
 
 
 def _run_cli(*args, timeout=60):
-    return subprocess.run(
-        [sys.executable, "-m", "qwenpaw", *args],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-        check=False,
-        encoding="utf-8",
-        errors="replace",
-    )
+    try:
+        return subprocess.run(
+            [sys.executable, "-m", "qwenpaw", *args],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            check=False,
+            encoding="utf-8",
+            errors="replace",
+        )
+    except subprocess.TimeoutExpired as exc:
+        for label, output in (("stdout", exc.stdout), ("stderr", exc.stderr)):
+            if output:
+                text = (
+                    output.decode("utf-8", errors="replace")
+                    if isinstance(output, bytes)
+                    else output
+                )
+                exc.add_note(f"CLI {label} tail:\n{text[-6000:]}")
+        raise
 
 
 @pytest.mark.integration
