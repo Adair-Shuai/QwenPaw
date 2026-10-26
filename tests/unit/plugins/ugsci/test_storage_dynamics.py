@@ -19,10 +19,6 @@ from plugins.bundle.ugsci.domain.storage_dynamics.analysis import (
 from plugins.bundle.ugsci.domain.storage_dynamics.api import (
     build_storage_dynamics_router,
 )
-from plugins.bundle.ugsci.domain.storage_dynamics.reader import (
-    day_string,
-    read_file,
-)
 from plugins.bundle.ugsci.domain.storage_dynamics.store import DatasetStore
 from plugins.bundle.ugsci.domain.storage_dynamics.tools import save_report
 
@@ -41,7 +37,7 @@ def source(tmp_path, rows, name="history.csv", unit="万方", mode="采"):
                 "油压(兆帕)",
                 "日产水量(吨)",
                 "备注",
-            ]
+            ],
         )
         writer.writerows(rows)
     return path
@@ -237,7 +233,8 @@ def test_injection_and_withdrawal_separate_even_same_well(tmp_path):
 
 def test_report_persists_exact_parameters_and_provenance(tmp_path):
     store, m = import_rows(
-        tmp_path, [["库A", "井1", "2026-01-01", 24, 10, 15, 0, ""]]
+        tmp_path,
+        [["库A", "井1", "2026-01-01", 24, 10, 15, 0, ""]],
     )
     r = analyze(store, m["id"], cycle_start_month=5)
     saved = save_report(store, r)
@@ -246,7 +243,7 @@ def test_report_persists_exact_parameters_and_provenance(tmp_path):
     from pathlib import Path
 
     snapshot = json.loads(
-        Path(saved["analysis_path"]).read_text(encoding="utf-8")
+        Path(saved["analysis_path"]).read_text(encoding="utf-8"),
     )
     assert snapshot["parameters"]["cycle_start_month"] == 5
     assert "气年度 5 月起" in saved["markdown"]
@@ -290,19 +287,22 @@ def test_http_import_analysis_export_and_validation(tmp_path):
         assert client.post("/api/test/export", json=body).status_code == 200
         assert (
             client.post(
-                "/api/test/analyze", json={**body, "cycle_start_month": 13}
+                "/api/test/analyze",
+                json={**body, "cycle_start_month": 13},
             ).status_code
             == 422
         )
         assert (
             client.post(
-                "/api/test/analyze", json={**body, "dataset_id": "../escape"}
+                "/api/test/analyze",
+                json={**body, "dataset_id": "../escape"},
             ).status_code
             == 422
         )
         assert (
             client.post(
-                "/api/test/analyze", json={**body, "facility": "不存在"}
+                "/api/test/analyze",
+                json={**body, "facility": "不存在"},
             ).status_code
             == 422
         )

@@ -13,7 +13,6 @@ from __future__ import annotations
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
 
 from .catalog import get_engine, get_engine_ids, list_engines
 from .dependency_probe import (
@@ -24,7 +23,6 @@ from .dependency_probe import (
 from .service import (
     get_engine_with_probe,
     list_engines_with_probes,
-    serialize_engine_with_probe,
 )
 
 
@@ -44,7 +42,7 @@ def build_domain_engine_router() -> APIRouter:
 
         return discover_runtime().to_dict()
 
-    # Register before /{engine_id}; otherwise FastAPI treats these paths as IDs.
+    # Register before /{engine_id}; these paths must not be parsed as IDs.
     from .runtime_install import runtime_install_manager
 
     @router.get("/install-tasks/{task_id}")
@@ -63,11 +61,18 @@ def build_domain_engine_router() -> APIRouter:
         manager = PluginRegistry().get_workspace_manager()
         if manager is None:
             return
-        workspaces = getattr(manager, "agents", getattr(manager, "workspaces", {}))
+        workspaces = getattr(
+            manager,
+            "agents",
+            getattr(manager, "workspaces", {}),
+        )
         for workspace in list(workspaces.values()):
             driver_manager = getattr(workspace, "driver_manager", None)
             if driver_manager is not None:
-                await ensure_neqsim_driver_registered(workspace, driver_manager)
+                await ensure_neqsim_driver_registered(
+                    workspace,
+                    driver_manager,
+                )
 
     @router.post("/neqsim/install", status_code=202)
     async def install_neqsim_endpoint() -> dict[str, Any]:
@@ -95,7 +100,10 @@ def build_domain_engine_router() -> APIRouter:
 
         task = install_manager.get(task_id)
         if task is None:
-            raise HTTPException(status_code=404, detail="Install task not found")
+            raise HTTPException(
+                status_code=404,
+                detail="Install task not found",
+            )
         return task.to_dict()
 
     @router.get("/{engine_id}")
@@ -104,7 +112,8 @@ def build_domain_engine_router() -> APIRouter:
         result = get_engine_with_probe(engine_id)
         if result is None:
             raise HTTPException(
-                status_code=404, detail=f"Engine not found: {engine_id}"
+                status_code=404,
+                detail=f"Engine not found: {engine_id}",
             )
         return result
 
@@ -122,7 +131,7 @@ def build_domain_engine_router() -> APIRouter:
                         "dependencies": [
                             serialize_dependency(d) for d in probe.dependencies
                         ],
-                    }
+                    },
                 )
             except Exception:
                 results.append(
@@ -130,7 +139,7 @@ def build_domain_engine_router() -> APIRouter:
                         "engine_id": engine.id,
                         "overall": "unknown",
                         "dependencies": [],
-                    }
+                    },
                 )
         return {"results": results}
 
@@ -139,17 +148,21 @@ def build_domain_engine_router() -> APIRouter:
         """Probe dependencies for a single engine."""
         if engine_id not in get_engine_ids():
             raise HTTPException(
-                status_code=404, detail=f"Engine not found: {engine_id}"
+                status_code=404,
+                detail=f"Engine not found: {engine_id}",
             )
         probe = probe_engine_by_id(engine_id)
         if probe is None:
             raise HTTPException(
-                status_code=404, detail=f"Engine not found: {engine_id}"
+                status_code=404,
+                detail=f"Engine not found: {engine_id}",
             )
         return {
             "engine_id": probe.engine_id,
             "overall": probe.overall,
-            "dependencies": [serialize_dependency(d) for d in probe.dependencies],
+            "dependencies": [
+                serialize_dependency(d) for d in probe.dependencies
+            ],
         }
 
     return router

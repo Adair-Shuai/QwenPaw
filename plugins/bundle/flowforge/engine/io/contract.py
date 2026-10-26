@@ -36,7 +36,7 @@ NOT_CACHEABLE: _NotCacheableSentinel = _NotCacheableSentinel()
 # Return value telling the runner to skip cache lookup + insertion.
 
 
-def default_fingerprint_inputs(node: Any, /, **kwargs: Any) -> str:
+def default_fingerprint_inputs(_node: Any, /, **kwargs: Any) -> str:
     """Default fingerprint: SHA-256 of the JSON-stable kwargs dict."""
     try:
         payload = json.dumps(kwargs, sort_keys=True, default=_default_encode)
@@ -45,7 +45,7 @@ def default_fingerprint_inputs(node: Any, /, **kwargs: Any) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def default_check_lazy_status(node: Any, /, **kwargs: Any) -> list[str]:
+def default_check_lazy_status(_node: Any, /, **_kwargs: Any) -> list[str]:
     """Default: no lazy inputs — everything should be resolved."""
     return []
 
