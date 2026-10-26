@@ -158,6 +158,12 @@ def register(plugin, spec):
                         self._set_run_status(request, status)
                         raise
                     finally:
+                        # This dedicated producer has entered teardown. A late
+                        # consumer close must wait for it, not cancel an active
+                        # cleanup retry and strand it until another reload.
+                        plugin._instance.activity.retain_cleanup(
+                            asyncio.current_task(),
+                        )
                         try:
                             if source is not None:
                                 await source.aclose()

@@ -103,6 +103,7 @@
       "tests/unit/plugins/test_activity_retry_handoff.py",
       "tests/unit/plugins/test_tracker_stream_cleanup.py",
       "tests/unit/plugins/test_channel_tracker_custody.py",
+      "tests/unit/plugins/test_channel_cleanup_retry_race.py",
       "tests/unit/plugins/test_sdk_channel_routing_contract.py",
       "tests/unit/market/test_search_deadline.py",
       "tests/unit/channels/test_base_core.py"
@@ -231,6 +232,11 @@
     ],
     "tests/unit/plugins/test_channel_tracker_custody.py": [
       "test_unload_keeps_tracker_generation_live_through_terminal_delivery"
+    ],
+    "tests/unit/plugins/test_channel_cleanup_retry_race.py": [
+      "test_channel_reload_does_not_recancel_draining_producer",
+      "test_observing_draining_task_retains_stop_deadline",
+      "test_observing_draining_task_propagates_parent_cancellation"
     ],
     "tests/unit/plugins/test_sdk_channel_routing_contract.py": [
       "test_lifecycle_interrupt_closes_started_stream_once",

@@ -398,7 +398,11 @@ class PluginContext:  # pylint: disable=protected-access
                     if not receiver.done():
                         receiver.cancel()
         finally:
-            await stop_task(producer, label)
+            await stop_task(
+                producer,
+                label,
+                cancel=producer not in self._instance.activity.cleanup_tasks,
+            )
 
     def register_channel(self, spec: ChannelSpec) -> Registration:
         from ._channels import register

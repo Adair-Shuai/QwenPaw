@@ -22,15 +22,22 @@ WATCH_STOP_SECONDS = 5.0
 CONNECTION_STOP_SECONDS = 5.0
 
 
-async def stop_task(task: asyncio.Task[Any], desc: str) -> None:
-    """Cancel *task* and wait until it finishes or the budget expires.
+async def stop_task(
+    task: asyncio.Task[Any],
+    desc: str,
+    *,
+    cancel: bool = True,
+) -> None:
+    """Stop *task* and wait until it finishes or the budget expires.
 
     A ``CancelledError`` from the hosted task after we cancelled it is
     success. A cancellation of *this* coroutine must propagate.
+    Already draining SDK producers may be observed with ``cancel=False``.
     """
     if task.done():
         return
-    task.cancel()
+    if cancel:
+        task.cancel()
     # wait_for waits for cancellation acknowledgement after its deadline.
     # Observe completion without cancelling again or awaiting a stubborn task.
     _, pending = await asyncio.wait({task}, timeout=TASK_STOP_SECONDS)
