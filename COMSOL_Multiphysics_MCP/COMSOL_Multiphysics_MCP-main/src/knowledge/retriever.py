@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 from dataclasses import dataclass
 
-from .pdf_processor import PDFProcessor, DocumentChunk
+from .pdf_processor import PDFProcessor, DocumentChunk, check_pdf_dependencies
 
 logger = logging.getLogger(__name__)
 
@@ -341,3 +341,26 @@ def search_docs(
     retriever = get_retriever()
     results = retriever.search(query, n_results, module_filter)
     return [r.to_dict() for r in results]
+
+
+# Retain every historical public name, including compatibility re-exports.
+__all__ = [
+    "DEFAULT_DB_DIR",
+    "DEFAULT_PDF_DIR",
+    "DocumentChunk",
+    "EMBEDDING_MODEL",
+    "HF_MIRROR",
+    "Optional",
+    "PDFProcessor",
+    "Path",
+    "SearchResult",
+    "VectorRetriever",
+    "check_pdf_dependencies",
+    "dataclass",
+    "get_retriever",
+    "logger",
+    "logging",
+    "os",
+    "search_docs",
+    "setup_hf_mirror",
+]
