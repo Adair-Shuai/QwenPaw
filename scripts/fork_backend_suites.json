@@ -50,7 +50,8 @@
       "tests/unit/plugins/test_storage_capacity_app.py",
       "tests/unit/plugins/test_storage_capacity_workbench.py",
       "tests/unit/plugins/test_storage_capacity_flow.py",
-      "tests/unit/plugins/ugsci/test_manifest_guard_contracts.py"
+      "tests/unit/plugins/ugsci/test_manifest_guard_contracts.py",
+      "tests/unit/plugins/ugsci/test_las_conversion_contract.py"
     ],
     "flowforge": [
       "tests/unit/plugins/flowforge/test_bidirectional_calls.py",
@@ -267,6 +268,10 @@
       "test_registry_discovers_configured_workspace_profiles",
       "test_registry_retains_lazy_snapshot_until_a_new_instance",
       "test_registry_continues_after_an_invalid_agent_file"
+    ],
+    "tests/unit/plugins/ugsci/test_las_conversion_contract.py": [
+      "test_las_file_preserves_depth_curves_nulls_and_placement",
+      "test_las_file_retains_invalid_input_errors"
     ]
   }
 }

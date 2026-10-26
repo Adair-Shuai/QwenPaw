@@ -12,6 +12,8 @@ Each LAS file produces:
 
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+import math
 from pathlib import Path
 from typing import Any
 
@@ -23,15 +25,25 @@ _XY_X_MNEMONICS = ("XWELL", "XCOORD", "EASTING", "UTMX", "XLOC")
 _XY_Y_MNEMONICS = ("YWELL", "YCOORD", "NORTHING", "UTMY", "YLOC")
 
 
-def _header_number(remainder: str) -> float | None:
-    text = remainder.strip() if remainder[:1].isspace() else (
-        remainder.split(None, 1)[1] if len(remainder.split(None, 1)) > 1 else ""
+def _header_text(remainder: str) -> str:
+    return (
+        remainder.strip()
+        if remainder[:1].isspace()
+        else (
+            remainder.split(None, 1)[1]
+            if len(remainder.split(None, 1)) > 1
+            else ""
+        )
     )
+
+
+def _header_number(remainder: str) -> float | None:
+    text = _header_text(remainder)
     try:
         value = float(text.split()[0])
     except (ValueError, IndexError):
         return None
-    if value != value:
+    if math.isnan(value):
         return None
     return value
 
@@ -51,27 +63,77 @@ def _lasio_xy(well: Any) -> tuple[float | None, float | None]:
                 value = float(raw)
             except (TypeError, ValueError):
                 continue
-            if value == value:
+            if not math.isnan(value):
                 return value
         return None
 
     return grab(_XY_X_MNEMONICS), grab(_XY_Y_MNEMONICS)
 
 
-def _parse_las_text(path: Path) -> tuple[list[float], list[tuple[str, list[float]]], str, float | None, float | None]:
+@dataclass
+class _LasHeader:
+    mnemonics: list[str] = field(default_factory=list)
+    null_value: float = -999.25
+    well_name: str = ""
+    x_east: float | None = None
+    y_north: float | None = None
+
+    def read_line(self, section: str, line: str) -> None:
+        head, _, _ = line.partition(":")
+        mnemonic, dot, remainder = head.partition(".")
+        if not dot:
+            return
+        mnemonic = mnemonic.strip().upper()
+        if section == "C":
+            self.mnemonics.append(mnemonic)
+        elif mnemonic == "NULL":
+            try:
+                self.null_value = float(remainder.split()[-1])
+            except (ValueError, IndexError):
+                pass
+        elif mnemonic == "WELL":
+            self.well_name = _header_text(remainder).strip() or self.well_name
+        elif mnemonic in _XY_X_MNEMONICS:
+            parsed = _header_number(remainder)
+            if parsed is not None:
+                self.x_east = parsed
+        elif mnemonic in _XY_Y_MNEMONICS:
+            parsed = _header_number(remainder)
+            if parsed is not None:
+                self.y_north = parsed
+
+
+def _append_las_values(rows: list[float], line: str) -> None:
+    for token in line.split():
+        try:
+            rows.append(float(token))
+        except ValueError as exc:
+            raise ValueError(f"Non-numeric LAS data token: {token}") from exc
+
+
+def _parse_las_text(
+    path: Path,
+) -> tuple[
+    list[float],
+    list[tuple[str, list[float]]],
+    str,
+    float | None,
+    float | None,
+]:
     """Parse a LAS 2.0 text file without lasio.
 
     Returns (depths, curves, well name, x_east, y_north).
     """
-    mnemonics: list[str] = []
-    null_value = -999.25
-    well_name = ""
-    x_east: float | None = None
-    y_north: float | None = None
+    header = _LasHeader()
     section = ""
     rows: list[float] = []
 
-    with path.open("r", encoding="utf-8", errors="replace", newline=None) as handle:
+    with path.open(
+        "r",
+        encoding="utf-8",
+        errors="replace",
+        newline=None,
+    ) as handle:
         for raw in handle:
             line = raw.strip()
             if not line or line.startswith("#"):
@@ -80,66 +142,38 @@ def _parse_las_text(path: Path) -> tuple[list[float], list[tuple[str, list[float
                 section = line[1:2].upper()
                 continue
             if section == "A":
-                for token in line.split():
-                    try:
-                        rows.append(float(token))
-                    except ValueError:
-                        raise ValueError(f"Non-numeric LAS data token: {token}")
+                _append_las_values(rows, line)
                 continue
             if section not in ("W", "C"):
                 continue
-            head, _, _ = line.partition(":")
-            mnemonic, dot, remainder = head.partition(".")
-            if not dot:
-                continue
-            mnemonic = mnemonic.strip().upper()
-            if section == "C":
-                mnemonics.append(mnemonic)
-            elif mnemonic == "NULL":
-                try:
-                    null_value = float(remainder.split()[-1])
-                except (ValueError, IndexError):
-                    pass
-            elif mnemonic == "WELL":
-                value = remainder if remainder[:1].isspace() else (
-                    remainder.split(None, 1)[1] if len(remainder.split(None, 1)) > 1 else ""
-                )
-                well_name = value.strip() or well_name
-            elif mnemonic in _XY_X_MNEMONICS:
-                parsed = _header_number(remainder)
-                if parsed is not None:
-                    x_east = parsed
-            elif mnemonic in _XY_Y_MNEMONICS:
-                parsed = _header_number(remainder)
-                if parsed is not None:
-                    y_north = parsed
+            header.read_line(section, line)
 
-    if not mnemonics:
+    if not header.mnemonics:
         raise ValueError("LAS file has no ~Curve section")
-    n_curves = len(mnemonics)
+    n_curves = len(header.mnemonics)
     if not rows or len(rows) % n_curves:
         raise ValueError(
-            f"LAS data section is not a multiple of {n_curves} curve columns"
+            f"LAS data section is not a multiple of {n_curves} curve columns",
         )
 
     columns: list[list[float]] = [[] for _ in range(n_curves)]
     for index, value in enumerate(rows):
         columns[index % n_curves].append(
-            0.0 if value == null_value else value
+            0.0 if value == header.null_value else value,
         )
 
     depth_index = 0
     for candidate in _DEPTH_MNEMONICS:
-        if candidate in mnemonics:
-            depth_index = mnemonics.index(candidate)
+        if candidate in header.mnemonics:
+            depth_index = header.mnemonics.index(candidate)
             break
     depths = columns[depth_index]
     curves = [
-        (mnemonics[index], columns[index])
+        (header.mnemonics[index], columns[index])
         for index in range(n_curves)
         if index != depth_index
     ]
-    return depths, curves, well_name, x_east, y_north
+    return depths, curves, header.well_name, header.x_east, header.y_north
 
 
 class LasReader(BaseReader):
@@ -168,34 +202,59 @@ class LasReader(BaseReader):
         try:
             import lasio
         except ImportError:
-            depths, curves, well_name, x_east, y_north = _parse_las_text(Path(file_path))
+            depths, curves, well_name, x_east, y_north = _parse_las_text(
+                Path(file_path),
+            )
             return self._build_dataset(
-                name, bin_dir, depths, curves, well_name or name, "builtin-las",
-                x_east, y_north,
+                name,
+                bin_dir,
+                depths,
+                curves,
+                well_name or name,
+                "builtin-las",
+                x_east,
+                y_north,
             )
 
         las = lasio.read(file_path)
 
-        depth_mnemonic = options.get("depth_mnemonic", "DEPT") if options else "DEPT"
-        curves_by_name = {curve.mnemonic.upper(): curve for curve in las.curves}
+        depth_mnemonic = (
+            options.get("depth_mnemonic", "DEPT") if options else "DEPT"
+        )
+        curves_by_name = {
+            curve.mnemonic.upper(): curve for curve in las.curves
+        }
         depth_curve = curves_by_name.get(depth_mnemonic.upper())
         if depth_curve is None:
-            depth_curve = curves_by_name.get("DEPT") or curves_by_name.get("MD")
+            depth_curve = curves_by_name.get("DEPT") or curves_by_name.get(
+                "MD",
+            )
         depths = depth_curve.data if depth_curve is not None else las.index
         if len(depths) == 0:
             raise ValueError("LAS file contains no depth samples")
 
         curves = [
-            (curve.mnemonic, [float(v) if v == v else 0.0 for v in curve.data])
+            (
+                curve.mnemonic,
+                [float(v) if not math.isnan(v) else 0.0 for v in curve.data],
+            )
             for curve in las.curves
             if curve is not depth_curve
         ]
         well_info = las.well
-        well_name = str(well_info.WELL.value) if hasattr(well_info, "WELL") else name
+        well_name = (
+            str(well_info.WELL.value) if hasattr(well_info, "WELL") else name
+        )
         x_east, y_north = _lasio_xy(well_info)
         return self._build_dataset(
-            name, bin_dir, [float(d) for d in depths], curves, well_name, "lasio",
-            x_east, y_north,
+            name,
+            bin_dir,
+            [float(d) for d in depths],
+            curves,
+            well_name,
+            "lasio",
+            x_east,
+            y_north,
         )
 
     @staticmethod
@@ -215,8 +274,16 @@ class LasReader(BaseReader):
         if n_samples == 0:
             raise ValueError("LAS file contains no depth samples")
 
-        easts = [float(x_east)] * n_samples if x_east is not None else [0.0] * n_samples
-        norths = [float(y_north)] * n_samples if y_north is not None else [0.0] * n_samples
+        easts = (
+            [float(x_east)] * n_samples
+            if x_east is not None
+            else [0.0] * n_samples
+        )
+        norths = (
+            [float(y_north)] * n_samples
+            if y_north is not None
+            else [0.0] * n_samples
+        )
         placement = trajectory_placement(easts, norths)
         if not placement["spatial"]:
             easts = [0.0] * n_samples
@@ -233,7 +300,10 @@ class LasReader(BaseReader):
         for index in range(n_samples - 1):
             indices.extend([index, index + 1])
         write_u32(bin_dir / f"{prefix}_indices.u32", indices)
-        write_u32(bin_dir / f"{prefix}_cell_ids.u32", list(range(max(n_samples - 1, 0))))
+        write_u32(
+            bin_dir / f"{prefix}_cell_ids.u32",
+            list(range(max(n_samples - 1, 0))),
+        )
 
         scalars_files: dict[str, str] = {}
         for mnemonic, values in curves:
