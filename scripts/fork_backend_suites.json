@@ -1,6 +1,7 @@
 {
   "groups": {
     "ugsci": [
+      "tests/unit/plugins/ugsci/test_native_storage_executors.py",
       "tests/unit/plugins/ugsci/test_bundle_sync.py",
       "tests/unit/plugins/ugsci/test_derivation_workbench_frontend.py",
       "tests/unit/plugins/ugsci/test_deterministic_core.py",
@@ -113,6 +114,12 @@
     ]
   },
   "required_cases": {
+    "tests/unit/plugins/ugsci/test_native_storage_executors.py": [
+      "test_public_storage_executor_runs_and_persists_results",
+      "test_storage_executor_preserves_envelope_priority_and_zero",
+      "test_storage_executor_keeps_cancellation_and_persistence_order",
+      "test_storage_executor_keeps_input_shape_errors"
+    ],
     "tests/unit/plugins/run_center/test_research_router_contract.py": [
       "test_metrics_http_retains_missing_null_and_non_array_errors",
       "test_metrics_http_retains_element_value_and_duplicate_errors",
