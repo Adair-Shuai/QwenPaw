@@ -13,9 +13,11 @@ function se(e, t) {
   const n = window.QwenPaw, a = n == null ? void 0 : n.host, r = ((s = a == null ? void 0 : a.getApiToken) == null ? void 0 : s.call(a)) || "", l = {};
   return r && !l.Authorization && (l.Authorization = `Bearer ${r}`), window.fetch(e, { ...t, headers: l });
 }
-async function q(e) {
+async function G(e) {
   try {
-    const t = oe(`/ugsci-research/research-mode/${encodeURIComponent(e)}`), n = await se(t);
+    const t = oe(
+      `/ugsci-research/research-mode/${encodeURIComponent(e)}`
+    ), n = await se(t);
     if (!n.ok) return { enabled: !1, domain: "general" };
     const a = await n.json();
     return {
@@ -27,7 +29,7 @@ async function q(e) {
   }
 }
 function ce() {
-  var _, F;
+  var O, H;
   const e = d().React, { useState: t, useEffect: n, useCallback: a } = e, {
     Card: r,
     Tabs: l,
@@ -46,25 +48,25 @@ function ce() {
     FileTextOutlined: I,
     ReloadOutlined: z,
     DownloadOutlined: A
-  } = d().antdIcons, O = d().ReactMarkdown, b = d().remarkGfm, m = window.QwenPaw;
-  (F = (_ = m == null ? void 0 : m.host) == null ? void 0 : _.getCurrentSessionId) == null || F.call(_);
-  const [B, $] = t([]), [Y, N] = t(!1), [L, Z] = t("all"), U = a(async () => {
-    var c, h, w, R, H;
-    N(!0);
+  } = d().antdIcons, _ = d().ReactMarkdown, b = d().remarkGfm, m = window.QwenPaw;
+  (H = (O = m == null ? void 0 : m.host) == null ? void 0 : O.getCurrentSessionId) == null || H.call(O);
+  const [$, L] = t([]), [Y, F] = t(!1), [U, Z] = t("all"), D = a(async () => {
+    var c, h, w, R, J;
+    F(!0);
     try {
-      const ne = ((c = m == null ? void 0 : m.host) == null ? void 0 : c.fetch) || window.fetch.bind(window), ae = ((h = m == null ? void 0 : m.host) == null ? void 0 : h.apiBaseUrl) || "", le = ((R = (w = m == null ? void 0 : m.host) == null ? void 0 : w.getSelectedAgentId) == null ? void 0 : R.call(w)) || "default", J = await ne(
+      const ne = ((c = m == null ? void 0 : m.host) == null ? void 0 : c.fetch) || window.fetch.bind(window), ae = ((h = m == null ? void 0 : m.host) == null ? void 0 : h.apiBaseUrl) || "", le = ((R = (w = m == null ? void 0 : m.host) == null ? void 0 : w.getSelectedAgentId) == null ? void 0 : R.call(w)) || "default", M = await ne(
         `${ae}/api/files/list?path=.&agent_id=${le}`
       );
-      if (!J.ok) {
-        $([]);
+      if (!M.ok) {
+        L([]);
         return;
       }
-      const M = await J.json(), re = M.files || M.entries || [], W = [];
+      const W = await M.json(), re = W.files || W.entries || [], q = [];
       for (const S of re) {
-        const v = S.name || S.filename || "", k = ((H = v.split(".").pop()) == null ? void 0 : H.toLowerCase()) || "";
+        const v = S.name || S.filename || "", k = ((J = v.split(".").pop()) == null ? void 0 : J.toLowerCase()) || "";
         if (!(/^(fig|figure|plot|chart|table|artifact)/i.test(v) || ["png", "jpg", "jpeg", "svg", "csv", "json"].includes(k))) continue;
         let T = "text";
-        ["png", "jpg", "jpeg", "svg", "gif"].includes(k) ? T = "figure" : ["csv", "tsv"].includes(k) ? T = "table" : ["py", "js", "ts", "sh"].includes(k) ? T = "code" : k === "las" && (T = "las"), W.push({
+        ["png", "jpg", "jpeg", "svg", "gif"].includes(k) ? T = "figure" : ["csv", "tsv"].includes(k) ? T = "table" : ["py", "js", "ts", "sh"].includes(k) ? T = "code" : k === "las" && (T = "las"), q.push({
           id: v,
           type: T,
           title: v,
@@ -73,17 +75,17 @@ function ce() {
           createdAt: S.modified || Date.now()
         });
       }
-      $(W);
+      L(q);
     } catch {
-      $([]);
+      L([]);
     } finally {
-      N(!1);
+      F(!1);
     }
   }, [m]);
   n(() => {
-    U();
-  }, [U]);
-  const Q = B.filter((c) => L === "all" ? !0 : c.type === L), ee = (c) => {
+    D();
+  }, [D]);
+  const Q = $.filter((c) => U === "all" ? !0 : c.type === U), ee = (c) => {
     var w, R;
     const h = ((R = (w = window.QwenPaw) == null ? void 0 : w.host) == null ? void 0 : R.apiBaseUrl) || "";
     switch (c.type) {
@@ -152,7 +154,7 @@ function ce() {
         return e.createElement(
           "div",
           { style: { fontSize: 13 } },
-          O ? e.createElement(O, {
+          _ ? e.createElement(_, {
             remarkPlugins: b ? [b] : [],
             children: c.content
           }) : c.content
@@ -185,7 +187,7 @@ function ce() {
         e.createElement(
           o,
           { color: "blue", style: { fontSize: 10 } },
-          String(B.length)
+          String($.length)
         )
       ),
       extra: e.createElement(
@@ -198,18 +200,18 @@ function ce() {
             size: "small",
             type: "text",
             icon: e.createElement(z),
-            onClick: U,
+            onClick: D,
             loading: Y
           })
         )
       ),
       style: { height: "100%", overflow: "auto" }
     },
-    B.length === 0 ? e.createElement(s, {
+    $.length === 0 ? e.createElement(s, {
       description: "No artifacts yet. Run research tasks to generate figures and data.",
       image: s.PRESENTED_IMAGE_SIMPLE
     }) : e.createElement(l, {
-      activeKey: L,
+      activeKey: U,
       onChange: Z,
       size: "small",
       items: te.map((c) => ({
@@ -244,16 +246,16 @@ function ie() {
   const e = d(), t = e.React, { useState: n, useEffect: a } = t, { Button: r, Tooltip: l } = e.antd, { PictureOutlined: s } = e.antdIcons, [i, g] = n(!1), u = window.QwenPaw, f = ((C = (E = u == null ? void 0 : u.host) == null ? void 0 : E.getSelectedAgentId) == null ? void 0 : C.call(E)) || "default", [p, o] = n(!1);
   if (a(() => {
     let A = !0;
-    q(f).then((b) => {
+    G(f).then((b) => {
       A && o(b.enabled);
     });
-    const O = setInterval(() => {
-      q(f).then((b) => {
+    const _ = setInterval(() => {
+      G(f).then((b) => {
         A && o(b.enabled);
       });
     }, 3e3);
     return () => {
-      A = !1, clearInterval(O);
+      A = !1, clearInterval(_);
     };
   }, [f]), !p) return null;
   const y = {
@@ -302,7 +304,12 @@ function ie() {
         { title: "Collapse", placement: "left" },
         t.createElement(
           r,
-          { type: "text", size: "small", onClick: () => g(!0), style: { fontSize: 12 } },
+          {
+            type: "text",
+            size: "small",
+            onClick: () => g(!0),
+            style: { fontSize: 12 }
+          },
           "‹"
         )
       )
@@ -314,8 +321,8 @@ function ie() {
     )
   );
 }
-function G(e) {
-  const t = d().React, { ToolCardShell: n, DefaultBlock: a } = j(), { BookOutlined: r, Tag: l } = { ...d().antdIcons, ...d().antd }, s = e.data || e.content || {}, i = s.params || {}, g = i.query || "", u = i.source || "all", f = typeof s.result == "string" ? s.result : JSON.stringify(s.result, null, 2);
+function K(e) {
+  const t = d().React, { ToolCardShell: n, DefaultBlock: a } = N(), { BookOutlined: r, Tag: l } = { ...d().antdIcons, ...d().antd }, s = e.data || e.content || {}, i = s.params || {}, g = i.query || "", u = i.source || "all", f = typeof s.result == "string" ? s.result : JSON.stringify(s.result, null, 2);
   let p = [];
   try {
     p = JSON.parse(f).results || [];
@@ -382,8 +389,8 @@ function G(e) {
     )
   });
 }
-function K(e) {
-  const t = d().React, { ToolCardShell: n, DefaultBlock: a } = j(), { SearchOutlined: r } = d().antdIcons, l = e.data || e.content || {}, i = (l.params || {}).query || "", g = typeof l.result == "string" ? l.result : JSON.stringify(l.result, null, 2);
+function P(e) {
+  const t = d().React, { ToolCardShell: n, DefaultBlock: a } = N(), { SearchOutlined: r } = d().antdIcons, l = e.data || e.content || {}, i = (l.params || {}).query || "", g = typeof l.result == "string" ? l.result : JSON.stringify(l.result, null, 2);
   return t.createElement(n, {
     content: l,
     isStreaming: e.isStreaming,
@@ -396,7 +403,7 @@ function K(e) {
   });
 }
 function V(e) {
-  const t = d().React, { ToolCardShell: n, DefaultBlock: a } = j(), { BarChartOutlined: r } = d().antdIcons, l = e.data || e.content || {}, s = l.params || {}, i = s.data_path || "", g = s.operation || "summary", u = typeof l.result == "string" ? l.result : JSON.stringify(l.result, null, 2), f = i.split("/").pop() || i;
+  const t = d().React, { ToolCardShell: n, DefaultBlock: a } = N(), { BarChartOutlined: r } = d().antdIcons, l = e.data || e.content || {}, s = l.params || {}, i = s.data_path || "", g = s.operation || "summary", u = typeof l.result == "string" ? l.result : JSON.stringify(l.result, null, 2), f = i.split("/").pop() || i;
   return t.createElement(n, {
     content: l,
     isStreaming: e.isStreaming,
@@ -408,9 +415,9 @@ function V(e) {
     })
   });
 }
-let P = null;
-function j() {
-  if (P) return P;
+let B = null;
+function N() {
+  if (B) return B;
   const e = d().React, t = ({
     title: a,
     content: r
@@ -438,7 +445,7 @@ function j() {
       r
     )
   );
-  return P = { ToolCardShell: ({
+  return B = { ToolCardShell: ({
     content: a,
     isStreaming: r,
     icon: l,
@@ -484,7 +491,7 @@ function j() {
         content: JSON.stringify(a.result, null, 2)
       }) : g
     );
-  }, DefaultBlock: t }, P;
+  }, DefaultBlock: t }, B;
 }
 function de() {
   var a, r;
@@ -497,32 +504,36 @@ function de() {
   }
   const t = d().React, n = "ugsci_research";
   e.registerToolRender && (e.registerToolRender(n, {
-    literature_search: G,
-    web_search: K,
+    literature_search: K,
+    research_web_search: P,
+    // Preserve the renderer used by historical research messages.
+    web_search: P,
     data_analysis: V
-  }), console.info("[ugsci-research] Registered 3 custom tool cards")), (a = e.chat) != null && a.toolRender && (e.chat.toolRender(n, "literature_search", G), e.chat.toolRender(n, "web_search", K), e.chat.toolRender(n, "data_analysis", V)), (r = e.slot) != null && r.fill && (e.slot.fill(
+  }), console.info("[ugsci-research] Registered 3 custom tool cards")), (a = e.chat) != null && a.toolRender && (e.chat.toolRender(n, "literature_search", K), e.chat.toolRender(n, "research_web_search", P), e.chat.toolRender(n, "web_search", P), e.chat.toolRender(n, "data_analysis", V)), (r = e.slot) != null && r.fill && (e.slot.fill(
     n,
     "chat.rightPanel",
     () => t.createElement(ie),
     { id: "research-artifact-panel" }
-  ), console.info("[ugsci-research] Registered artifact panel in chat.rightPanel slot")), console.info(
+  ), console.info(
+    "[ugsci-research] Registered artifact panel in chat.rightPanel slot"
+  )), console.info(
     "[ugsci-research] Plugin registered: tool cards + artifact panel"
   );
 }
-function D() {
+function j() {
   try {
     de();
   } catch (e) {
-    console.error("[ugsci-research] Failed to build plugin:", e), setTimeout(D, 500);
+    console.error("[ugsci-research] Failed to build plugin:", e), setTimeout(j, 500);
   }
 }
 var X;
 if ((X = window.QwenPaw) != null && X.host)
-  D();
+  j();
 else {
   const e = setInterval(() => {
     var t;
-    (t = window.QwenPaw) != null && t.host && (clearInterval(e), D());
+    (t = window.QwenPaw) != null && t.host && (clearInterval(e), j());
   }, 200);
   setTimeout(() => clearInterval(e), 1e4);
 }

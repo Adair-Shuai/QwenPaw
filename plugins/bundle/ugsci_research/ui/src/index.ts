@@ -3,7 +3,7 @@
  *
  * Registers:
  * 1. Artifact panel — displays figures, plots, tables from research sessions
- * 2. Custom tool cards for research tools (literature_search, web_search, data_analysis)
+ * 2. Research tool cards, including historical web_search results
  *
  * Uses window.QwenPaw host API for all registrations.
  */
@@ -866,7 +866,7 @@ function ResearchDashboardPage() {
       action: "在对话中使用 /research on 后自动可用",
     },
     {
-      name: "web_search",
+      name: "research_web_search",
       desc: "网络搜索科学信息",
       icon: "🔍",
       action: "在对话中使用 /research on 后自动可用",
@@ -1494,6 +1494,8 @@ function buildPlugin() {
   if (QP.registerToolRender) {
     QP.registerToolRender(PLUGIN_ID, {
       literature_search: LiteratureSearchCard,
+      research_web_search: WebSearchCard,
+      // Preserve the renderer used by historical research messages.
       web_search: WebSearchCard,
       data_analysis: DataAnalysisCard,
     });
@@ -1503,6 +1505,7 @@ function buildPlugin() {
   // Also register via chat API if available
   if (QP.chat?.toolRender) {
     QP.chat.toolRender(PLUGIN_ID, "literature_search", LiteratureSearchCard);
+    QP.chat.toolRender(PLUGIN_ID, "research_web_search", WebSearchCard);
     QP.chat.toolRender(PLUGIN_ID, "web_search", WebSearchCard);
     QP.chat.toolRender(PLUGIN_ID, "data_analysis", DataAnalysisCard);
   }

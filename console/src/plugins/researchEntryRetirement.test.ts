@@ -45,6 +45,7 @@ describe.each([
         "ugsci_research",
         expect.objectContaining({
           literature_search: expect.any(Function),
+          research_web_search: expect.any(Function),
           web_search: expect.any(Function),
           data_analysis: expect.any(Function),
         }),
