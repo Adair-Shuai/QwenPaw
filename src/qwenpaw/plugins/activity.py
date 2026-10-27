@@ -148,8 +148,11 @@ class PluginActivity:
                 len(pending),
                 can_interrupt=False,
             )
-        cleanup_only = pending <= (
-            self.cleanup_retries.keys() | self.cleanup_tasks
+        # A protected producer still owns an active run, even when it waits
+        # for a cleanup retry. An ordinary reload must refuse without closing
+        # admission to that run's stop/status controls.
+        cleanup_only = not (pending & self.protected_cleanup_tasks) and (
+            pending <= (self.cleanup_retries.keys() | self.cleanup_tasks)
         )
         if pending and not interrupt_tasks and not cleanup_only:
             raise PluginBusyError(

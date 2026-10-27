@@ -293,13 +293,18 @@ async def test_finished_call_context_cannot_start_another_model_invocation(
 def _deadline_provider_source():
     return ASYNC_PROVIDER.replace(
         '            ctx.storage.write_json("entered.json", True)',
-        """            remaining = (
-                call.deadline - asyncio.get_running_loop().time()
+        """            measured_at = asyncio.get_running_loop().time()
+            remaining = (
+                call.deadline - measured_at
                 if call.deadline is not None else None
             )
             ctx.storage.write_json("entered.json", True)
             ctx.storage.write_json(
-                "deadline.json", {"remaining": remaining},
+                "deadline.json", {
+                    "remaining": remaining,
+                    "deadline": call.deadline,
+                    "measured_at": measured_at,
+                },
             )""",
     )
 
@@ -388,8 +393,16 @@ async def test_bound_model_uses_earliest_deadline_and_closes_provider(
         await _warm_deadline_route(host, provider)
         with pytest.raises(SDKError, match="deadline"):
             await host.call_tool("bound_deadline", {}, workspace_id="bound")
-        remaining = provider.storage.read_json("deadline.json")["remaining"]
-        assert remaining is not None and 0 < remaining <= 0.08
+        measured = provider.storage.read_json("deadline.json")
+        remaining = measured["remaining"]
+        assert remaining is not None and 0 < remaining
+        # Compare absolute monotonic timestamps. Subtracting two large clock
+        # values can turn exactly 80ms into 0.08000000000004093 on Windows.
+        # Keep the real 80ms deadline and both provider-entry/closure guards.
+        assert measured["deadline"] <= measured["measured_at"] + min(
+            tool_timeout,
+            model_timeout,
+        )
         assert provider.storage.read_json("provider-closed.json") is True
         for owner in ("deadline-provider", "deadline-caller"):
             assert host.resource_snapshot(owner)["active_calls"] == 0
