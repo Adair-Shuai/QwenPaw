@@ -2,11 +2,119 @@
 """Public persistent storage and configuration boundaries."""
 
 import json
+import os
 from pathlib import Path
+from types import SimpleNamespace
 from urllib.parse import urlparse
 from urllib.request import url2pathname
 
 import pytest
+
+
+@pytest.mark.parametrize("winerror", [5, 32])
+def test_storage_retries_transient_windows_replace_without_partial_publication(
+    tmp_path,
+    monkeypatch,
+    winerror,
+):
+    from qwenpaw.plugins import storage
+
+    path = tmp_path / "state.bin"
+    path.write_bytes(b"old")
+    attempts = []
+    real_replace = os.replace
+
+    def replace(source, destination):
+        assert Path(source).read_bytes() == b"new\x00payload"
+        assert path.read_bytes() == b"old"
+        attempts.append(source)
+        if len(attempts) < 3:
+            error = PermissionError("transient Windows reader lock")
+            error.winerror = winerror
+            raise error
+        real_replace(source, destination)
+
+    monkeypatch.setattr(
+        storage,
+        "os",
+        SimpleNamespace(**{**vars(os), "replace": replace}),
+    )
+    monkeypatch.setattr(storage, "time", SimpleNamespace(sleep=lambda _: None))
+    owned = storage.PluginStorage(tmp_path, lambda: None)
+    owned.write_bytes("state.bin", b"new\x00payload")
+    assert len(attempts) == 3
+    assert path.read_bytes() == b"new\x00payload"
+    assert list(tmp_path.iterdir()) == [path]
+
+
+@pytest.mark.parametrize("winerror,attempts_expected", [(None, 1), (5, 7)])
+def test_storage_failed_replace_preserves_bytes_and_removes_temporary_file(
+    tmp_path,
+    monkeypatch,
+    winerror,
+    attempts_expected,
+):
+    from qwenpaw.plugins import storage
+
+    path = tmp_path / "state.bin"
+    path.write_bytes(b"retained")
+    attempts = []
+
+    def replace(source, _destination):
+        attempts.append(source)
+        error = PermissionError("persistent access failure")
+        if winerror is not None:
+            error.winerror = winerror
+        raise error
+
+    monkeypatch.setattr(
+        storage,
+        "os",
+        SimpleNamespace(**{**vars(os), "replace": replace}),
+    )
+    monkeypatch.setattr(storage, "time", SimpleNamespace(sleep=lambda _: None))
+    owned = storage.PluginStorage(tmp_path, lambda: None)
+    with pytest.raises(PermissionError, match="persistent access failure"):
+        owned.write_bytes("state.bin", b"must not publish")
+    assert len(attempts) == attempts_expected
+    assert path.read_bytes() == b"retained"
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def test_storage_retry_rechecks_generation_before_publication(
+    tmp_path,
+    monkeypatch,
+):
+    from qwenpaw.plugins import StaleContextError, storage
+
+    path = tmp_path / "state.bin"
+    path.write_bytes(b"retained")
+    valid, attempts = True, []
+
+    def guard():
+        if not valid:
+            raise StaleContextError("generation ended during retry")
+
+    def replace(source, _destination):
+        nonlocal valid
+        attempts.append(source)
+        valid = False
+        error = PermissionError("temporary Windows lock")
+        error.winerror = 32
+        raise error
+
+    monkeypatch.setattr(
+        storage,
+        "os",
+        SimpleNamespace(**{**vars(os), "replace": replace}),
+    )
+    monkeypatch.setattr(storage, "time", SimpleNamespace(sleep=lambda _: None))
+    owned = storage.PluginStorage(tmp_path, guard)
+    with pytest.raises(StaleContextError, match="generation ended"):
+        owned.write_bytes("state.bin", b"stale bytes")
+    assert len(attempts) == 1
+    assert path.read_bytes() == b"retained"
+    assert list(tmp_path.iterdir()) == [path]
 
 
 def make_plugin(tmp_path):

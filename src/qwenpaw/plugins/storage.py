@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from contextlib import nullcontext
 from pathlib import Path
 from typing import Any, Callable, ContextManager, TypeVar
@@ -71,8 +72,21 @@ class PluginStorage:
                 stream.write(data)
                 stream.flush()
                 os.fsync(stream.fileno())
-            self._guard()
-            os.replace(temporary, path)
+            for attempt in range(7):
+                # A reader or scanner may temporarily deny FILE_SHARE_DELETE
+                # on Windows. Retain the complete sibling temp file and keep
+                # checking generation ownership before every publication.
+                self._guard()
+                try:
+                    os.replace(temporary, path)
+                    break
+                except PermissionError as exc:
+                    if (
+                        getattr(exc, "winerror", None) not in (5, 32)
+                        or attempt == 6
+                    ):
+                        raise
+                    time.sleep(min(0.02 * (2**attempt), 0.32))
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)

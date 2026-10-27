@@ -44,6 +44,7 @@ jobs:
           python-version: ${{ matrix.python }}
           cache: pip
       - name: Install production test dependencies
+        id: dependencies
         shell: bash
         run: |
           python -m pip install --upgrade 'pip>=26.2.2' 'certifi>=2026.10.19'
@@ -59,6 +60,7 @@ jobs:
               tests/unit/plugins/test_sdk_app_task_stream.py::test_cancel_keeps_run_owned_until_failed_thread_scope_really_stops \
               tests/unit/plugins/test_sdk_context_lifecycle.py::test_bound_model_uses_earliest_deadline_and_closes_provider \
               tests/unit/plugins/test_sdk_workspace_contract.py::test_request_cancellation_finishes_delegated_resources \
+              tests/unit/plugins/test_sdk_storage_contract.py::test_storage_retries_transient_windows_replace_without_partial_publication \
               tests/unit/utils/test_io_utils.py::test_write_text_atomic_retries_transient_windows_lock
           done
       - name: Verify SDK run custody and filesystem behavior
@@ -72,14 +74,17 @@ jobs:
             tests/unit/plugins/test_sdk_app_task_storage.py \
             tests/unit/plugins/test_sdk_context_lifecycle.py \
             tests/unit/plugins/test_sdk_workspace_contract.py \
+            tests/unit/plugins/test_sdk_storage_contract.py \
             tests/unit/utils/test_io_utils.py
       - name: Verify document forms application contracts
+        if: ${{ always() && steps.dependencies.outcome == 'success' }}
         timeout-minutes: 20
         shell: bash
         run: |
           python -m pip install -r plugins/apps/document-forms/requirements.txt
           python -m pytest plugins/apps/document-forms/tests -v
       - name: Verify real OfficeCLI engine contracts
+        if: ${{ always() && steps.dependencies.outcome == 'success' }}
         timeout-minutes: 20
         shell: bash
         run: |
