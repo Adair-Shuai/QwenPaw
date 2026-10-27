@@ -4,15 +4,20 @@
 from __future__ import annotations
 
 import importlib.util
+import sqlite3
 import sys
+from contextlib import closing
 from pathlib import Path
+from typing import Any, Protocol
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 
-_PLUGIN_ROOT = Path(__file__).parents[4] / "plugins" / "bundle" / "qwenpaw-run-center"
+_PLUGIN_ROOT = (
+    Path(__file__).parents[4] / "plugins" / "bundle" / "qwenpaw-run-center"
+)
 
 
 def _runtime_module():
@@ -45,14 +50,43 @@ _research_spec.loader.exec_module(_research_module)
 build_research_router = _research_module.build_research_router
 
 
-def _mark_succeeded(repository: ResearchRepository, run_id: str) -> None:
+class _RunTransitions(Protocol):
+    def transition(self, run_id: str, status: str) -> dict[str, Any]:
+        ...
+
+
+class _ResearchFixtureRepository(Protocol):
+    """Public repository operations needed by the shared test fixtures."""
+
+    @property
+    def runs(self) -> _RunTransitions:
+        ...
+
+    def create_model(self, payload: dict[str, Any]) -> dict[str, Any]:
+        ...
+
+    def create_model_version(
+        self,
+        model_id: str,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        ...
+
+    def create_study(self, payload: dict[str, Any]) -> dict[str, Any]:
+        ...
+
+
+def _mark_succeeded(
+    repository: _ResearchFixtureRepository,
+    run_id: str,
+) -> None:
     repository.runs.transition(run_id, "queued")
     repository.runs.transition(run_id, "preparing")
     repository.runs.transition(run_id, "running")
     repository.runs.transition(run_id, "succeeded")
 
 
-def _model_version(repository: ResearchRepository) -> dict:
+def _model_version(repository: _ResearchFixtureRepository) -> dict:
     repository.create_model(
         {"model_id": "storage-a", "name": "储气库 A", "project_id": "p1"},
     )
@@ -75,7 +109,7 @@ def _model_version(repository: ResearchRepository) -> dict:
     )
 
 
-def _study(repository: ResearchRepository) -> dict:
+def _study(repository: _ResearchFixtureRepository) -> dict:
     _model_version(repository)
     return repository.create_study(
         {
@@ -127,11 +161,20 @@ def test_model_versions_are_immutable_snapshots_and_diffable(tmp_path) -> None:
     assert first["revision"] == 1
     assert second["revision"] == 2
     assert first["snapshot_hash"] != second["snapshot_hash"]
-    diff = repository.diff_model_versions(first["version_id"], second["version_id"])
+    diff = repository.diff_model_versions(
+        first["version_id"],
+        second["version_id"],
+    )
     assert diff["files"]["changed"] == ["model/CASE.DATA"]
     assert diff["files"]["added"] == ["scripts/post.py"]
-    assert diff["parameters"]["porosity_multiplier"] == {"left": 1.0, "right": 1.1}
-    assert repository.freeze_model_version(second["version_id"])["status"] == "frozen"
+    assert diff["parameters"]["porosity_multiplier"] == {
+        "left": 1.0,
+        "right": 1.1,
+    }
+    assert (
+        repository.freeze_model_version(second["version_id"])["status"]
+        == "frozen"
+    )
 
 
 def test_model_version_rejects_unsafe_file_paths(tmp_path) -> None:
@@ -139,11 +182,14 @@ def test_model_version_rejects_unsafe_file_paths(tmp_path) -> None:
     repository.create_model({"model_id": "m", "name": "M"})
     with pytest.raises(ValueError, match="relative"):
         repository.create_model_version(
-            "m", {"files": [{"path": "../outside.DATA"}]},
+            "m",
+            {"files": [{"path": "../outside.DATA"}]},
         )
 
 
-def test_model_version_validation_checks_manifest_and_python_syntax(tmp_path) -> None:
+def test_model_version_validation_checks_manifest_and_python_syntax(
+    tmp_path,
+) -> None:
     repository = ResearchRepository(RunRepository(tmp_path / "run-center"))
     repository.create_model({"model_id": "m", "name": "M"})
     version = repository.create_model_version(
@@ -160,12 +206,16 @@ def test_model_version_validation_checks_manifest_and_python_syntax(tmp_path) ->
     )
     failed = repository.validate_model_version(
         version["version_id"],
-        inline_files=[{"path": "scripts/run.py", "content": "def broken(:\n  pass\n"}],
+        inline_files=[
+            {"path": "scripts/run.py", "content": "def broken(:\n  pass\n"},
+        ],
     )
     assert failed["validation"]["status"] == "failed"
     assert failed["validation"]["valid"] is False
     assert repository.get_model_version("v1")["status"] == "draft"
-    assert repository.get_model_version("v1")["validation"]["status"] == "failed"
+    assert (
+        repository.get_model_version("v1")["validation"]["status"] == "failed"
+    )
 
     passed = repository.validate_model_version(
         version["version_id"],
@@ -176,11 +226,16 @@ def test_model_version_validation_checks_manifest_and_python_syntax(tmp_path) ->
     assert passed["model_version"]["snapshot_hash"] == version["snapshot_hash"]
 
 
-def test_model_version_release_requires_validation_and_is_idempotent(tmp_path) -> None:
+def test_model_version_release_requires_validation_and_is_idempotent(
+    tmp_path,
+) -> None:
     repository = ResearchRepository(RunRepository(tmp_path / "run-center"))
     repository.create_model({"model_id": "m", "name": "M"})
     with pytest.raises(ValueError, match="release endpoint"):
-        repository.create_model_version("m", {"status": "released", "files": []})
+        repository.create_model_version(
+            "m",
+            {"status": "released", "files": []},
+        )
     version = repository.create_model_version(
         "m",
         {
@@ -192,12 +247,16 @@ def test_model_version_release_requires_validation_and_is_idempotent(tmp_path) -
     with pytest.raises(ValueError, match="pass validation"):
         repository.release_model_version(version["version_id"])
     repository.validate_model_version(
-        version["version_id"], inline_files={"run.py": "print('ok')\n"},
+        version["version_id"],
+        inline_files={"run.py": "print('ok')\n"},
     )
     released = repository.release_model_version(version["version_id"])
     assert released["status"] == "released"
     assert released["frozen_at"]
-    assert repository.release_model_version(version["version_id"])["status"] == "released"
+    assert (
+        repository.release_model_version(version["version_id"])["status"]
+        == "released"
+    )
     with pytest.raises(ValueError, match="immutable"):
         repository.freeze_model_version(version["version_id"])
 
@@ -205,46 +264,74 @@ def test_model_version_release_requires_validation_and_is_idempotent(tmp_path) -
 def test_model_version_release_http_endpoint(tmp_path) -> None:
     research = ResearchRepository(RunRepository(tmp_path / "run-center"))
     app = FastAPI()
-    app.include_router(build_research_router(research), prefix="/api/run-center")
+    app.include_router(
+        build_research_router(research),
+        prefix="/api/run-center",
+    )
     with TestClient(app) as client:
-        assert client.post(
-            "/api/run-center/models", json={"model_id": "m1", "name": "模型"},
-        ).status_code == 201
-        assert client.post(
-            "/api/run-center/models/m1/versions",
-            json={
-                "version_id": "v1",
-                "manifest": {"entrypoint": "run.py"},
-                "files": [{"path": "run.py", "sha256": "a" * 64}],
-            },
-        ).status_code == 201
+        assert (
+            client.post(
+                "/api/run-center/models",
+                json={"model_id": "m1", "name": "模型"},
+            ).status_code
+            == 201
+        )
+        assert (
+            client.post(
+                "/api/run-center/models/m1/versions",
+                json={
+                    "version_id": "v1",
+                    "manifest": {"entrypoint": "run.py"},
+                    "files": [{"path": "run.py", "sha256": "a" * 64}],
+                },
+            ).status_code
+            == 201
+        )
         blocked = client.post("/api/run-center/model-versions/v1/release")
         assert blocked.status_code == 400
         assert "validation" in blocked.json()["detail"]
-        assert client.post(
-            "/api/run-center/model-versions/v1/validate",
-            json={"inline_files": {"run.py": "print('ok')\n"}},
-        ).status_code == 200
+        assert (
+            client.post(
+                "/api/run-center/model-versions/v1/validate",
+                json={"inline_files": {"run.py": "print('ok')\n"}},
+            ).status_code
+            == 200
+        )
         released = client.post("/api/run-center/model-versions/v1/release")
         assert released.status_code == 200
         assert released.json()["status"] == "released"
 
 
-def test_model_branch_tag_lifecycle_and_model_listing_includes_versions(tmp_path) -> None:
+def test_model_branch_tag_lifecycle_and_model_listing_includes_versions(
+    tmp_path,
+) -> None:
     repository = ResearchRepository(RunRepository(tmp_path / "run-center"))
     repository.create_model({"model_id": "m", "name": "模型"})
-    first = repository.create_model_version("m", {"version_id": "v1", "files": []})
+    first = repository.create_model_version(
+        "m",
+        {"version_id": "v1", "files": []},
+    )
     branch = repository.create_model_branch(
-        "m", {"name": "calibration", "head_version_id": "v1"},
+        "m",
+        {"name": "calibration", "head_version_id": "v1"},
     )
     second = repository.create_model_version(
         "m",
-        {"version_id": "v2", "branch_name": "calibration", "parent_version_id": "v1", "files": []},
+        {
+            "version_id": "v2",
+            "branch_name": "calibration",
+            "parent_version_id": "v1",
+            "files": [],
+        },
     )
     assert branch["head_version_id"] == "v1"
-    assert repository.get_model_branch("m", "calibration")["head_version_id"] == "v2"
+    assert (
+        repository.get_model_branch("m", "calibration")["head_version_id"]
+        == "v2"
+    )
     tag = repository.create_model_tag(
-        "m", {"name": "candidate", "version_id": "v2", "metadata": {"kind": "qa"}},
+        "m",
+        {"name": "candidate", "version_id": "v2", "metadata": {"kind": "qa"}},
     )
     assert tag["version_id"] == "v2"
     model = repository.list_models()[0]
@@ -252,7 +339,10 @@ def test_model_branch_tag_lifecycle_and_model_listing_includes_versions(tmp_path
     assert model["branches"][0]["name"] == "calibration"
     assert model["tags"][0]["name"] == "candidate"
     repository.set_model_branch_head("m", "calibration", "v1")
-    assert repository.get_model_branch("m", "calibration")["head_version_id"] == "v1"
+    assert (
+        repository.get_model_branch("m", "calibration")["head_version_id"]
+        == "v1"
+    )
     repository.delete_model_tag("m", "candidate")
     assert repository.get_model_tag("m", "candidate") is None
     repository.restore_model_tag("m", "candidate")
@@ -265,7 +355,9 @@ def test_model_branch_tag_lifecycle_and_model_listing_includes_versions(tmp_path
     assert second["branch_name"] == "calibration"
 
 
-def test_model_version_and_model_soft_delete_restore_and_reference_protection(tmp_path) -> None:
+def test_model_version_and_model_soft_delete_restore_and_reference_protection(
+    tmp_path,
+) -> None:
     repository = ResearchRepository(RunRepository(tmp_path / "run-center"))
     version = _model_version(repository)
     study = repository.create_study(
@@ -279,7 +371,10 @@ def test_model_version_and_model_soft_delete_restore_and_reference_protection(tm
     )
     with pytest.raises(ValueError, match="still referenced") as exc_info:
         repository.delete_model_version(version["version_id"])
-    assert getattr(exc_info.value, "references", [])[0]["reference_type"] == "study"
+    assert (
+        getattr(exc_info.value, "references", [])[0]["reference_type"]
+        == "study"
+    )
     repository.runs.create_run(
         {
             "run_id": "run-ref",
@@ -291,13 +386,24 @@ def test_model_version_and_model_soft_delete_restore_and_reference_protection(tm
     assert {item["reference_type"] for item in refs} == {"run", "study"}
     # Remove the study and run rows only in this isolated test database to
     # exercise the successful lifecycle path after reference cleanup.
-    with repository.runs._connection(write=True) as conn:  # noqa: SLF001
-        conn.execute("DELETE FROM runs WHERE run_id='run-ref'")
-        conn.execute("DELETE FROM studies WHERE study_id=?", (study["study_id"],))
+    with closing(
+        sqlite3.connect(repository.runs.database, timeout=30),
+    ) as conn:
+        conn.execute("PRAGMA foreign_keys=ON")
+        conn.execute("BEGIN IMMEDIATE")
+        with conn:
+            conn.execute("DELETE FROM runs WHERE run_id='run-ref'")
+            conn.execute(
+                "DELETE FROM studies WHERE study_id=?",
+                (study["study_id"],),
+            )
     deleted = repository.delete_model_version(version["version_id"])
     assert deleted["deleted_at"]
     assert repository.get_model_version(version["version_id"]) is None
-    assert repository.get_model_version(version["version_id"], include_deleted=True)["deleted_at"]
+    assert repository.get_model_version(
+        version["version_id"],
+        include_deleted=True,
+    )["deleted_at"]
     restored = repository.restore_model_version(version["version_id"])
     assert restored["deleted_at"] is None
     deleted_model = repository.delete_model("storage-a")
@@ -311,41 +417,100 @@ def test_model_version_and_model_soft_delete_restore_and_reference_protection(tm
 def test_model_governance_http_api_and_conflict_status(tmp_path) -> None:
     research = ResearchRepository(RunRepository(tmp_path / "run-center"))
     app = FastAPI()
-    app.include_router(build_research_router(research), prefix="/api/run-center")
+    app.include_router(
+        build_research_router(research),
+        prefix="/api/run-center",
+    )
     with TestClient(app) as client:
-        assert client.post("/api/run-center/models", json={"model_id": "m", "name": "M"}).status_code == 201
-        assert client.post(
-            "/api/run-center/models/m/versions",
-            json={"version_id": "v1", "files": []},
-        ).status_code == 201
-        assert client.post(
-            "/api/run-center/models/m/branches", json={"name": "dev", "head_version_id": "v1"},
-        ).status_code == 201
-        assert client.post(
-            "/api/run-center/models/m/tags", json={"name": "latest", "version_id": "v1"},
-        ).status_code == 201
+        assert (
+            client.post(
+                "/api/run-center/models",
+                json={"model_id": "m", "name": "M"},
+            ).status_code
+            == 201
+        )
+        assert (
+            client.post(
+                "/api/run-center/models/m/versions",
+                json={"version_id": "v1", "files": []},
+            ).status_code
+            == 201
+        )
+        assert (
+            client.post(
+                "/api/run-center/models/m/branches",
+                json={"name": "dev", "head_version_id": "v1"},
+            ).status_code
+            == 201
+        )
+        assert (
+            client.post(
+                "/api/run-center/models/m/tags",
+                json={"name": "latest", "version_id": "v1"},
+            ).status_code
+            == 201
+        )
         listed = client.get("/api/run-center/models").json()["models"][0]
         assert listed["versions"][0]["version_id"] == "v1"
         assert listed["branches"][0]["name"] in {"dev", "main"}
         assert listed["tags"][0]["name"] == "latest"
-        assert client.get("/api/run-center/models/m/branches/dev").json()["name"] == "dev"
-        assert client.get("/api/run-center/models/m/tags/latest").json()["name"] == "latest"
-        assert client.delete("/api/run-center/models/m/tags/latest").status_code == 200
-        assert client.post("/api/run-center/models/m/tags/latest/restore").status_code == 200
-        assert client.delete("/api/run-center/models/m/branches/dev").status_code == 200
-        assert client.post("/api/run-center/models/m/branches/dev/restore").status_code == 200
-        assert client.delete("/api/run-center/model-versions/v1").status_code == 200
-        assert client.post("/api/run-center/model-versions/v1/restore").status_code == 200
+        assert (
+            client.get("/api/run-center/models/m/branches/dev").json()["name"]
+            == "dev"
+        )
+        assert (
+            client.get("/api/run-center/models/m/tags/latest").json()["name"]
+            == "latest"
+        )
+        assert (
+            client.delete("/api/run-center/models/m/tags/latest").status_code
+            == 200
+        )
+        assert (
+            client.post(
+                "/api/run-center/models/m/tags/latest/restore",
+            ).status_code
+            == 200
+        )
+        assert (
+            client.delete("/api/run-center/models/m/branches/dev").status_code
+            == 200
+        )
+        assert (
+            client.post(
+                "/api/run-center/models/m/branches/dev/restore",
+            ).status_code
+            == 200
+        )
+        assert (
+            client.delete("/api/run-center/model-versions/v1").status_code
+            == 200
+        )
+        assert (
+            client.post(
+                "/api/run-center/model-versions/v1/restore",
+            ).status_code
+            == 200
+        )
 
 
-def test_model_version_delete_http_returns_references_with_conflict(tmp_path) -> None:
+def test_model_version_delete_http_returns_references_with_conflict(
+    tmp_path,
+) -> None:
     research = ResearchRepository(RunRepository(tmp_path / "run-center"))
     app = FastAPI()
-    app.include_router(build_research_router(research), prefix="/api/run-center")
+    app.include_router(
+        build_research_router(research),
+        prefix="/api/run-center",
+    )
     with TestClient(app) as client:
-        client.post("/api/run-center/models", json={"model_id": "m", "name": "M"})
         client.post(
-            "/api/run-center/models/m/versions", json={"version_id": "v1", "files": []},
+            "/api/run-center/models",
+            json={"model_id": "m", "name": "M"},
+        )
+        client.post(
+            "/api/run-center/models/m/versions",
+            json={"version_id": "v1", "files": []},
         )
         client.post(
             "/api/run-center/studies",
@@ -366,7 +531,9 @@ def test_model_version_delete_http_returns_references_with_conflict(tmp_path) ->
         assert references.json()["references"][0]["reference_id"] == "s1"
 
 
-def test_reviews_are_fingerprint_bound_and_terminal_decisions_are_immutable(tmp_path) -> None:
+def test_reviews_are_fingerprint_bound_and_terminal_decisions_are_immutable(
+    tmp_path,
+) -> None:
     repository = ResearchRepository(RunRepository(tmp_path / "run-center"))
     version = _model_version(repository)
     review = repository.create_review(
@@ -382,15 +549,30 @@ def test_reviews_are_fingerprint_bound_and_terminal_decisions_are_immutable(tmp_
     assert review["status"] == "pending"
     assert review["input_fingerprint"] == version["snapshot_hash"]
     assert review["model_version_id"] == version["version_id"]
-    assert review["snapshot"]["model_version"]["version_id"] == version["version_id"]
-    assert repository.list_reviews(subject_type="model_version", subject_id="storage-a-v1")[0]["review_id"] == "review-v1"
+    assert (
+        review["snapshot"]["model_version"]["version_id"]
+        == version["version_id"]
+    )
+    assert (
+        repository.list_reviews(
+            subject_type="model_version",
+            subject_id="storage-a-v1",
+        )[0]["review_id"]
+        == "review-v1"
+    )
     with pytest.raises(ValueError, match="reviewer_id"):
         repository.transition_review("review-v1", "approved")
     approved = repository.transition_review(
-        "review-v1", "approved", reviewer_id="reviewer-1", decision_comment="通过",
+        "review-v1",
+        "approved",
+        reviewer_id="reviewer-1",
+        decision_comment="通过",
     )
     assert approved["decided_at"]
-    assert [event["to_status"] for event in repository.list_review_events("review-v1")] == [
+    assert [
+        event["to_status"]
+        for event in repository.list_review_events("review-v1")
+    ] == [
         "pending",
         "approved",
     ]
@@ -400,7 +582,12 @@ def test_reviews_are_fingerprint_bound_and_terminal_decisions_are_immutable(tmp_
         input_fingerprint=version["snapshot_hash"],
     )
     with pytest.raises(ValueError, match="immutable"):
-        repository.transition_review("review-v1", "rejected", reviewer_id="reviewer-2", decision_comment="退回")
+        repository.transition_review(
+            "review-v1",
+            "rejected",
+            reviewer_id="reviewer-2",
+            decision_comment="退回",
+        )
     with pytest.raises(ValueError, match="does not match"):
         repository.create_review(
             {
@@ -416,25 +603,45 @@ def test_model_release_can_require_approved_review(tmp_path) -> None:
     version = _model_version(repository)
     repository.validate_model_version(version["version_id"])
     with pytest.raises(ValueError, match="approved review"):
-        repository.release_model_version(version["version_id"], require_review=True)
+        repository.release_model_version(
+            version["version_id"],
+            require_review=True,
+        )
     review = repository.create_review(
         {"subject_type": "model_version", "subject_id": version["version_id"]},
     )
     with pytest.raises(ValueError, match="approved review"):
-        repository.release_model_version(version["version_id"], require_review=True)
-    repository.transition_review(review["review_id"], "approved", reviewer_id="r1")
-    released = repository.release_model_version(version["version_id"], require_review=True)
+        repository.release_model_version(
+            version["version_id"],
+            require_review=True,
+        )
+    repository.transition_review(
+        review["review_id"],
+        "approved",
+        reviewer_id="r1",
+    )
+    released = repository.release_model_version(
+        version["version_id"],
+        require_review=True,
+    )
     assert released["status"] == "released"
 
 
 def test_review_http_api_supports_query_and_transition(tmp_path) -> None:
     research = ResearchRepository(RunRepository(tmp_path / "run-center"))
     app = FastAPI()
-    app.include_router(build_research_router(research), prefix="/api/run-center")
+    app.include_router(
+        build_research_router(research),
+        prefix="/api/run-center",
+    )
     with TestClient(app) as client:
-        assert client.post(
-            "/api/run-center/models", json={"model_id": "m-review", "name": "模型"},
-        ).status_code == 201
+        assert (
+            client.post(
+                "/api/run-center/models",
+                json={"model_id": "m-review", "name": "模型"},
+            ).status_code
+            == 201
+        )
         created_version = client.post(
             "/api/run-center/models/m-review/versions",
             json={"version_id": "v-review", "files": []},
@@ -450,17 +657,33 @@ def test_review_http_api_supports_query_and_transition(tmp_path) -> None:
             },
         )
         assert created.status_code == 201
-        assert client.get("/api/run-center/reviews?status=pending").json()["reviews"][0]["review_id"] == "http-review"
+        assert (
+            client.get("/api/run-center/reviews?status=pending").json()[
+                "reviews"
+            ][0]["review_id"]
+            == "http-review"
+        )
         approved = client.post(
             "/api/run-center/reviews/http-review/transition",
-            json={"status": "approved", "reviewer_id": "bob", "decision_comment": "ok"},
+            json={
+                "status": "approved",
+                "reviewer_id": "bob",
+                "decision_comment": "ok",
+            },
         )
         assert approved.status_code == 200
         assert approved.json()["status"] == "approved"
-        assert client.get("/api/run-center/reviews/http-review").json()["status"] == "approved"
-        event_response = client.get("/api/run-center/reviews/http-review/events")
+        assert (
+            client.get("/api/run-center/reviews/http-review").json()["status"]
+            == "approved"
+        )
+        event_response = client.get(
+            "/api/run-center/reviews/http-review/events",
+        )
         assert event_response.status_code == 200
-        assert [item["to_status"] for item in event_response.json()["events"]] == [
+        assert [
+            item["to_status"] for item in event_response.json()["events"]
+        ] == [
             "pending",
             "approved",
         ]
@@ -469,19 +692,29 @@ def test_review_http_api_supports_query_and_transition(tmp_path) -> None:
 def test_model_version_validation_http_endpoint_is_readable(tmp_path) -> None:
     research = ResearchRepository(RunRepository(tmp_path / "run-center"))
     app = FastAPI()
-    app.include_router(build_research_router(research), prefix="/api/run-center")
+    app.include_router(
+        build_research_router(research),
+        prefix="/api/run-center",
+    )
     with TestClient(app) as client:
-        assert client.post(
-            "/api/run-center/models", json={"model_id": "m1", "name": "模型"},
-        ).status_code == 201
-        assert client.post(
-            "/api/run-center/models/m1/versions",
-            json={
-                "version_id": "v1",
-                "manifest": {"entrypoint": "run.py"},
-                "files": [{"path": "run.py", "sha256": "a" * 64}],
-            },
-        ).status_code == 201
+        assert (
+            client.post(
+                "/api/run-center/models",
+                json={"model_id": "m1", "name": "模型"},
+            ).status_code
+            == 201
+        )
+        assert (
+            client.post(
+                "/api/run-center/models/m1/versions",
+                json={
+                    "version_id": "v1",
+                    "manifest": {"entrypoint": "run.py"},
+                    "files": [{"path": "run.py", "sha256": "a" * 64}],
+                },
+            ).status_code
+            == 201
+        )
         response = client.post(
             "/api/run-center/model-versions/v1/validate",
             json={"inline_files": {"run.py": "print('ok')\n"}},
@@ -504,13 +737,23 @@ def test_model_and_study_payloads_require_objects(tmp_path) -> None:
         repository.create_model_version("m", None)  # type: ignore[arg-type]
 
 
-def test_design_generation_uses_stable_realization_ids_and_rejects_duplicate_metrics(
+def test_design_ids_are_stable_and_duplicate_metrics_are_rejected(
     tmp_path,
 ) -> None:
     repository = ResearchRepository(RunRepository(tmp_path / "run-center"))
     _study(repository)
-    first = repository.generate_design("study-a", method="random", budget=3, seed=9)
-    second = repository.generate_design("study-a", method="random", budget=3, seed=9)
+    first = repository.generate_design(
+        "study-a",
+        method="random",
+        budget=3,
+        seed=9,
+    )
+    second = repository.generate_design(
+        "study-a",
+        method="random",
+        budget=3,
+        seed=9,
+    )
     assert [item["realization_id"] for item in first] == [
         item["realization_id"] for item in second
     ]
@@ -527,37 +770,69 @@ def test_metrics_require_successful_realization_run(tmp_path) -> None:
     realization = repository.generate_design("study-a", budget=1)[0]
     with pytest.raises(ValueError, match="Run succeeded"):
         repository.record_metrics(
-            realization["realization_id"], [{"key": "x", "value": 1.0}],
+            realization["realization_id"],
+            [{"key": "x", "value": 1.0}],
         )
     _mark_succeeded(repository, realization["run_id"])
     repository.record_metrics(
-        realization["realization_id"], [{"key": "x", "value": 1.0}],
+        realization["realization_id"],
+        [{"key": "x", "value": 1.0}],
     )
 
 
 def test_sobol_design_uses_seed_for_reproducible_scrambling(tmp_path) -> None:
-    repository = ResearchRepository(RunRepository(tmp_path / "run-center"))
-    _study(repository)
-    first = repository._design_points(  # noqa: SLF001 - contract regression
-        [{"key": "x", "type": "continuous", "lower": 0.0, "upper": 1.0}],
-        "sobol",
-        4,
-        1,
-    )
-    replay = repository._design_points(  # noqa: SLF001
-        [{"key": "x", "type": "continuous", "lower": 0.0, "upper": 1.0}],
-        "sobol",
-        4,
-        1,
-    )
-    other = repository._design_points(  # noqa: SLF001
-        [{"key": "x", "type": "continuous", "lower": 0.0, "upper": 1.0}],
-        "sobol",
-        4,
-        999,
-    )
+    points = []
+    for label, seed in (("first", 1), ("replay", 1), ("other", 999)):
+        # Separate databases force regeneration instead of a cached design.
+        repository = ResearchRepository(RunRepository(tmp_path / label))
+        version = _model_version(repository)
+        repository.create_study(
+            {
+                "study_id": "sobol-x",
+                "model_version_id": version["version_id"],
+                "type": "uncertainty",
+                "name": "Seeded Sobol design",
+                "definition": {
+                    "parameters": [
+                        {
+                            "key": "x",
+                            "type": "continuous",
+                            "lower": 0.0,
+                            "upper": 1.0,
+                        },
+                    ],
+                },
+            },
+        )
+        generated = repository.generate_design(
+            "sobol-x",
+            method="sobol",
+            budget=4,
+            seed=seed,
+        )
+        assert len(generated) == 4
+        values = [item["parameter_values"] for item in generated]
+        assert values == [
+            item["parameter_values"]
+            for item in repository.list_realizations("sobol-x")
+        ]
+        for item in generated:
+            run = repository.runs.get_run(item["run_id"])
+            snapshot = run["payload"]["input_snapshot"]
+            assert snapshot["parameters"] == item["parameter_values"]
+            assert snapshot["design_seed"] == seed
+        points.append(values)
+    first, replay, other = points
     assert first == replay
     assert first != other
+    assert [item["x"] for item in first] == pytest.approx(
+        [
+            0.6343642441124012,
+            0.8843642441124012,
+            0.3843642441124012,
+            0.5093642441124012,
+        ],
+    )
 
 
 def test_comparison_validates_scope_and_objective_direction(tmp_path) -> None:
@@ -589,15 +864,23 @@ def test_comparison_validates_scope_and_objective_direction(tmp_path) -> None:
         )
 
 
-def test_study_design_is_reproducible_and_creates_traceable_runs(tmp_path) -> None:
+def test_study_design_is_reproducible_and_creates_traceable_runs(
+    tmp_path,
+) -> None:
     runs = RunRepository(tmp_path / "run-center")
     repository = ResearchRepository(runs)
     study = _study(repository)
     points = repository.generate_design(
-        study["study_id"], method="latin_hypercube", budget=12, seed=42,
+        study["study_id"],
+        method="latin_hypercube",
+        budget=12,
+        seed=42,
     )
     replay = repository.generate_design(
-        study["study_id"], method="latin_hypercube", budget=12, seed=42,
+        study["study_id"],
+        method="latin_hypercube",
+        budget=12,
+        seed=42,
     )
 
     assert points == replay
@@ -609,21 +892,35 @@ def test_study_design_is_reproducible_and_creates_traceable_runs(tmp_path) -> No
     assert first_run["payload"]["input_snapshot"]["study_revision"] == 1
 
 
-def test_different_doe_inputs_get_distinct_design_fingerprints(tmp_path) -> None:
+def test_different_doe_inputs_get_distinct_design_fingerprints(
+    tmp_path,
+) -> None:
     repository = ResearchRepository(RunRepository(tmp_path / "run-center"))
     _study(repository)
 
     lhs = repository.generate_design(
-        "study-a", method="latin_hypercube", budget=3, seed=11,
+        "study-a",
+        method="latin_hypercube",
+        budget=3,
+        seed=11,
     )
     random_design = repository.generate_design(
-        "study-a", method="random", budget=3, seed=11,
+        "study-a",
+        method="random",
+        budget=3,
+        seed=11,
     )
     different_seed = repository.generate_design(
-        "study-a", method="latin_hypercube", budget=3, seed=12,
+        "study-a",
+        method="latin_hypercube",
+        budget=3,
+        seed=12,
     )
     different_budget = repository.generate_design(
-        "study-a", method="latin_hypercube", budget=4, seed=11,
+        "study-a",
+        method="latin_hypercube",
+        budget=4,
+        seed=11,
     )
     different_constraints = repository.generate_design(
         "study-a",
@@ -642,19 +939,30 @@ def test_different_doe_inputs_get_distinct_design_fingerprints(tmp_path) -> None
     }
     assert len(fingerprints) == 5
     assert len({item["realization_id"] for item in lhs}) == 3
-    assert not {
-        item["realization_id"] for item in lhs
-    }.intersection(item["realization_id"] for item in random_design)
+    assert not {item["realization_id"] for item in lhs}.intersection(
+        item["realization_id"] for item in random_design
+    )
     assert [item["design_version"] for item in lhs] == [1, 1, 1]
     assert [item["design_version"] for item in random_design] == [2, 2, 2]
     assert [item["design_version"] for item in different_seed] == [3, 3, 3]
-    assert [item["design_version"] for item in different_budget] == [4, 4, 4, 4]
-    assert [item["design_version"] for item in different_constraints] == [5, 5, 5]
+    assert [item["design_version"] for item in different_budget] == [
+        4,
+        4,
+        4,
+        4,
+    ]
+    assert [item["design_version"] for item in different_constraints] == [
+        5,
+        5,
+        5,
+    ]
     designs = repository.list_designs("study-a", revision=1)
     assert [item["realization_count"] for item in designs] == [3, 3, 3, 4, 3]
 
 
-def test_study_revision_fingerprint_isolated_from_prior_realizations(tmp_path) -> None:
+def test_study_revision_fingerprint_isolated_from_prior_realizations(
+    tmp_path,
+) -> None:
     repository = ResearchRepository(RunRepository(tmp_path / "run-center"))
     _study(repository)
     first = repository.generate_design("study-a", budget=2, seed=1)
@@ -663,7 +971,9 @@ def test_study_revision_fingerprint_isolated_from_prior_realizations(tmp_path) -
         {
             "forward_operation": "storage.capacity.evaluate",
             "provider_id": "ugsci-storage-capacity",
-            "constraints": [{"key": "max_pressure", "operator": "<=", "value": 24}],
+            "constraints": [
+                {"key": "max_pressure", "operator": "<=", "value": 24},
+            ],
             "parameters": [
                 {
                     "key": "porosity_multiplier",
@@ -680,7 +990,12 @@ def test_study_revision_fingerprint_isolated_from_prior_realizations(tmp_path) -
             ],
         },
     )
-    second = repository.generate_design("study-a", revision=2, budget=2, seed=1)
+    second = repository.generate_design(
+        "study-a",
+        revision=2,
+        budget=2,
+        seed=1,
+    )
     assert revision["revision"] == 2
     assert first[0]["design_fingerprint"] != second[0]["design_fingerprint"]
     assert {item["revision"] for item in second} == {2}
@@ -688,11 +1003,17 @@ def test_study_revision_fingerprint_isolated_from_prior_realizations(tmp_path) -
     assert len(repository.list_realizations("study-a", revision=2)) == 2
 
 
-def test_run_review_uses_realization_study_revision_after_study_changes(tmp_path) -> None:
+def test_run_review_uses_realization_study_revision_after_study_changes(
+    tmp_path,
+) -> None:
     repository = ResearchRepository(RunRepository(tmp_path / "run-center"))
     _study(repository)
     realization = repository.generate_design(
-        "study-a", revision=1, budget=1, seed=7, enqueue=True,
+        "study-a",
+        revision=1,
+        budget=1,
+        seed=7,
+        enqueue=True,
     )[0]
     review = repository.create_review(
         {
@@ -705,7 +1026,9 @@ def test_run_review_uses_realization_study_revision_after_study_changes(tmp_path
         },
     )
     repository.transition_review(
-        review["review_id"], "approved", reviewer_id="reviewer-1",
+        review["review_id"],
+        "approved",
+        reviewer_id="reviewer-1",
     )
     repository.create_study_revision(
         "study-a",
@@ -740,7 +1063,10 @@ def test_uncertainty_sensitivity_and_pareto_comparison(tmp_path) -> None:
     repository = ResearchRepository(RunRepository(tmp_path / "run-center"))
     _study(repository)
     realizations = repository.generate_design(
-        "study-a", method="sobol", budget=12, seed=7,
+        "study-a",
+        method="sobol",
+        budget=12,
+        seed=7,
     )
     for index, realization in enumerate(realizations):
         _mark_succeeded(repository, realization["run_id"])
@@ -772,7 +1098,9 @@ def test_uncertainty_sensitivity_and_pareto_comparison(tmp_path) -> None:
         {
             "study_id": "study-a",
             "name": "候选方案",
-            "realization_ids": [item["realization_id"] for item in realizations[:4]],
+            "realization_ids": [
+                item["realization_id"] for item in realizations[:4]
+            ],
             "metric_keys": ["working_gas", "pressure_deviation"],
             "objectives": [
                 {"key": "working_gas", "direction": "maximize"},
@@ -782,22 +1110,38 @@ def test_uncertainty_sensitivity_and_pareto_comparison(tmp_path) -> None:
     )
     assert comparison["result"]["pareto_realization_ids"]
     assert len(comparison["result"]["rows"]) == 4
-    assert repository.get_comparison(comparison["comparison_id"])["result"] == comparison["result"]
-    assert repository.list_comparisons(study_id="study-a")[0]["comparison_id"] == comparison["comparison_id"]
+    assert (
+        repository.get_comparison(comparison["comparison_id"])["result"]
+        == comparison["result"]
+    )
+    assert (
+        repository.list_comparisons(study_id="study-a")[0]["comparison_id"]
+        == comparison["comparison_id"]
+    )
 
 
 def test_research_http_api(tmp_path) -> None:
     research = ResearchRepository(RunRepository(tmp_path / "run-center"))
     app = FastAPI()
-    app.include_router(build_research_router(research), prefix="/api/run-center")
+    app.include_router(
+        build_research_router(research),
+        prefix="/api/run-center",
+    )
     with TestClient(app) as client:
-        assert client.post(
-            "/api/run-center/models", json={"model_id": "m1", "name": "模型"},
-        ).status_code == 201
-        assert client.post(
-            "/api/run-center/models/m1/versions",
-            json={"version_id": "v1", "files": []},
-        ).status_code == 201
+        assert (
+            client.post(
+                "/api/run-center/models",
+                json={"model_id": "m1", "name": "模型"},
+            ).status_code
+            == 201
+        )
+        assert (
+            client.post(
+                "/api/run-center/models/m1/versions",
+                json={"version_id": "v1", "files": []},
+            ).status_code
+            == 201
+        )
         created = client.post(
             "/api/run-center/studies",
             json={
@@ -807,7 +1151,12 @@ def test_research_http_api(tmp_path) -> None:
                 "name": "方案比较",
                 "definition": {
                     "parameters": [
-                        {"key": "rate", "type": "integer", "lower": 1, "upper": 3},
+                        {
+                            "key": "rate",
+                            "type": "integer",
+                            "lower": 1,
+                            "upper": 3,
+                        },
                     ],
                 },
             },
@@ -820,12 +1169,19 @@ def test_research_http_api(tmp_path) -> None:
         assert design.status_code == 201
         assert len(design.json()["realizations"]) == 2
         assert design.json()["design"]["design_fingerprint"]
-        assert client.get("/api/run-center/studies/s1/designs").json()["designs"]
+        assert client.get("/api/run-center/studies/s1/designs").json()[
+            "designs"
+        ]
         assert client.get("/api/run-center/comparisons").status_code == 200
-        assert client.get("/api/run-center/comparisons/missing").status_code == 404
+        assert (
+            client.get("/api/run-center/comparisons/missing").status_code
+            == 404
+        )
 
 
-def test_analysis_exposes_samples_failures_units_assumptions_and_data_gaps(tmp_path) -> None:
+def test_analysis_exposes_samples_failures_units_assumptions_and_data_gaps(
+    tmp_path,
+) -> None:
     repository = ResearchRepository(RunRepository(tmp_path / "run-center"))
     _model_version(repository)
     repository.create_study(
@@ -838,12 +1194,21 @@ def test_analysis_exposes_samples_failures_units_assumptions_and_data_gaps(tmp_p
                 "assumptions": ["孔隙度在给定范围内均匀分布"],
                 "data_gaps": ["缺少最新压力监测数据"],
                 "parameters": [
-                    {"key": "p", "type": "continuous", "lower": 1.0, "upper": 3.0},
+                    {
+                        "key": "p",
+                        "type": "continuous",
+                        "lower": 1.0,
+                        "upper": 3.0,
+                    },
                 ],
             },
         },
     )
-    realizations = repository.generate_design("study-review", method="random", budget=3)
+    realizations = repository.generate_design(
+        "study-review",
+        method="random",
+        budget=3,
+    )
     _mark_succeeded(repository, realizations[0]["run_id"])
     repository.record_metrics(
         realizations[0]["realization_id"],
@@ -884,7 +1249,9 @@ def test_analysis_can_filter_metric_time_basis(tmp_path) -> None:
     assert monthly["samples"][0]["value"] == 1.0
 
 
-def test_research_reports_are_durable_markdown_artifacts_and_http_queryable(tmp_path) -> None:
+def test_research_reports_are_durable_markdown_artifacts_and_http_queryable(
+    tmp_path,
+) -> None:
     repository = ResearchRepository(RunRepository(tmp_path / "run-center"))
     _study(repository)
     realization = repository.generate_design("study-a", budget=1)[0]
@@ -905,19 +1272,31 @@ def test_research_reports_are_durable_markdown_artifacts_and_http_queryable(tmp_
     assert report["artifact"]["kind"] == "report"
     assert report["artifact"]["media_type"].startswith("text/markdown")
     assert len(report["artifact"]["sha256"]) == 64
-    assert report["artifact"]["size_bytes"] == len(report["content"].encode("utf-8"))
+    assert report["artifact"]["size_bytes"] == len(
+        report["content"].encode("utf-8"),
+    )
     assert "# 工作气量审查报告" in report["content"]
     assert "成功样本" in report["content"]
-    assert repository.get_report("report-study-a")["content"] == report["content"]
-    assert repository.list_reports(study_id="study-a")[0]["report_id"] == "report-study-a"
+    assert (
+        repository.get_report("report-study-a")["content"] == report["content"]
+    )
+    assert (
+        repository.list_reports(study_id="study-a")[0]["report_id"]
+        == "report-study-a"
+    )
 
     app = FastAPI()
-    app.include_router(build_research_router(repository), prefix="/api/run-center")
+    app.include_router(
+        build_research_router(repository),
+        prefix="/api/run-center",
+    )
     with TestClient(app) as client:
         response = client.get("/api/run-center/reports/report-study-a")
         assert response.status_code == 200
         assert response.json()["artifact"]["ref_id"] == "report-report-study-a"
-        assert client.get("/api/run-center/reports?study_id=study-a").json()["reports"]
+        assert client.get("/api/run-center/reports?study_id=study-a").json()[
+            "reports"
+        ]
         assert client.get("/api/run-center/reports/missing").status_code == 404
 
 
@@ -935,7 +1314,9 @@ def test_comparison_result_contains_review_context(tmp_path) -> None:
         {
             "study_id": "study-a",
             "name": "审查比较",
-            "realization_ids": [item["realization_id"] for item in realizations],
+            "realization_ids": [
+                item["realization_id"] for item in realizations
+            ],
             "metric_keys": ["x"],
             "objectives": [{"key": "x", "direction": "maximize"}],
         },
@@ -947,40 +1328,69 @@ def test_comparison_result_contains_review_context(tmp_path) -> None:
     assert result["failed_rows"] == []
 
 
-def test_linear_surrogate_is_reproducible_and_warns_outside_domain(tmp_path) -> None:
+def test_linear_surrogate_is_reproducible_and_warns_outside_domain(
+    tmp_path,
+) -> None:
     repository = ResearchRepository(RunRepository(tmp_path / "run-center"))
     _study(repository)
-    realizations = repository.generate_design("study-a", method="random", budget=4, seed=3)
+    realizations = repository.generate_design(
+        "study-a",
+        method="random",
+        budget=4,
+        seed=3,
+    )
     for realization in realizations:
         _mark_succeeded(repository, realization["run_id"])
         params = realization["parameter_values"]
         repository.record_metrics(
             realization["realization_id"],
-            [{"key": "capacity", "value": 2.0 * params["porosity_multiplier"] + 3.0 * params["max_pressure"], "unit": "GSm3"}],
+            [
+                {
+                    "key": "capacity",
+                    "value": 2.0 * params["porosity_multiplier"]
+                    + 3.0 * params["max_pressure"],
+                    "unit": "GSm3",
+                },
+            ],
         )
     surrogate = repository.train_surrogate("study-a", "capacity")
     assert surrogate["algorithm"] == "linear"
     assert surrogate["diagnostics"]["sample_count"] == 4
     prediction = repository.predict_surrogate(
-        surrogate["surrogate_id"], {"porosity_multiplier": 1.0, "max_pressure": 22.0},
+        surrogate["surrogate_id"],
+        {"porosity_multiplier": 1.0, "max_pressure": 22.0},
     )
     assert prediction["unit"] == "GSm3"
     assert prediction["out_of_domain"] == []
     outside = repository.predict_surrogate(
-        surrogate["surrogate_id"], {"porosity_multiplier": 99.0, "max_pressure": 22.0},
+        surrogate["surrogate_id"],
+        {"porosity_multiplier": 99.0, "max_pressure": 22.0},
     )
     assert "porosity_multiplier" in outside["out_of_domain"]
     assert outside["warning"]
 
 
-def test_observed_optimization_ranks_only_completed_realizations(tmp_path) -> None:
+def test_observed_optimization_ranks_only_completed_realizations(
+    tmp_path,
+) -> None:
     repository = ResearchRepository(RunRepository(tmp_path / "run-center"))
     _study(repository)
-    realizations = repository.generate_design("study-a", method="random", budget=3, seed=5)
+    realizations = repository.generate_design(
+        "study-a",
+        method="random",
+        budget=3,
+        seed=5,
+    )
     for index, realization in enumerate(realizations[:2]):
         _mark_succeeded(repository, realization["run_id"])
-        repository.record_metrics(realization["realization_id"], [{"key": "score", "value": float(index + 1), "unit": "u"}])
-    result = repository.optimize_study("study-a", [{"key": "score", "direction": "maximize"}])
+        repository.record_metrics(
+            realization["realization_id"],
+            [{"key": "score", "value": float(index + 1), "unit": "u"}],
+        )
+    result = repository.optimize_study(
+        "study-a",
+        [{"key": "score", "direction": "maximize"}],
+    )
     assert result["algorithm"] == "observed-ranking"
     assert result["candidate_count"] == 2
     assert result["candidates"][0]["metrics"]["score"]["value"] == 2.0

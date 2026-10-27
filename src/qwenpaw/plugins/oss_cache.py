@@ -190,10 +190,17 @@ async def _refresh_resource(
             metadata = dict(cached[1])
             metadata["fetched_at"] = time.time()
             await asyncio.to_thread(
-                _write_cached, clean_path, cached[0], metadata,
+                _write_cached,
+                clean_path,
+                cached[0],
+                metadata,
             )
             _RETRY_AFTER.pop(clean_path, None)
-            return cached[0], _content_type(clean_path, metadata), "revalidated"
+            return (
+                cached[0],
+                _content_type(clean_path, metadata),
+                "revalidated",
+            )
         response.raise_for_status()
         if clean_path.endswith("manifest.json"):
             # A gateway error can arrive with HTTP 200. Never replace the
@@ -201,7 +208,9 @@ async def _refresh_resource(
             manifest = json.loads(response.content)
             if not isinstance(manifest, (dict, list)):
                 raise ValueError("invalid OSS manifest")
-        content_type = response.headers.get("content-type", "").split(";", 1)[0]
+        content_type = response.headers.get("content-type", "").split(";", 1)[
+            0
+        ]
         content_type = content_type or _content_type(clean_path, {})
         metadata = {
             "content_type": content_type,
@@ -209,7 +218,10 @@ async def _refresh_resource(
             "last_modified": response.headers.get("last-modified"),
         }
         await asyncio.to_thread(
-            _write_cached, clean_path, response.content, metadata,
+            _write_cached,
+            clean_path,
+            response.content,
+            metadata,
         )
         _RETRY_AFTER.pop(clean_path, None)
         return response.content, content_type, "network"

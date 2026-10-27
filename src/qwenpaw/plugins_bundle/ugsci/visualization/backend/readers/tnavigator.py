@@ -47,11 +47,17 @@ class TNavigatorReader(BaseReader):
             raise FileNotFoundError(f"tNavigator deck not found: {source}")
 
         options = options or {}
-        grid_path = Path(options["grid_path"]) if options.get("grid_path") else self._resolve_grid(source)
+        grid_path = (
+            Path(options["grid_path"])
+            if options.get("grid_path")
+            else self._resolve_grid(source)
+        )
         if grid_path is None:
             raise ValueError(
-                "tNavigator deck has no resolvable GRID/EGRID/GRDECL companion. "
-                "Upload the deck together with its grid or keep INCLUDE paths relative."
+                "tNavigator deck has no resolvable "
+                "GRID/EGRID/GRDECL companion. "
+                "Upload the deck together with its grid or "
+                "keep INCLUDE paths relative.",
             )
 
         from .eclipse import EclipseReader
@@ -59,12 +65,14 @@ class TNavigatorReader(BaseReader):
         result = EclipseReader().read(str(grid_path), name, bin_dir, options)
         result["source"] = "tnavigator"
         result["name"] = result["name"].replace("Eclipse:", "tNavigator:", 1)
-        result.setdefault("metadata", {}).update({
-            "simulator": "tNavigator",
-            "input_deck": source.name,
-            "grid_file": grid_path.name,
-            "format": source.suffix.lower().lstrip("."),
-        })
+        result.setdefault("metadata", {}).update(
+            {
+                "simulator": "tNavigator",
+                "input_deck": source.name,
+                "grid_file": grid_path.name,
+                "format": source.suffix.lower().lstrip("."),
+            },
+        )
         return result
 
     def _resolve_grid(self, source: Path) -> Path | None:
@@ -74,7 +82,9 @@ class TNavigatorReader(BaseReader):
         except OSError:
             text = ""
         upper = text.upper()
-        if {"SPECGRID", "COORD", "ZCORN"}.issubset(set(re.findall(r"\b[A-Z][A-Z0-9_]+", upper))):
+        if {"SPECGRID", "COORD", "ZCORN"}.issubset(
+            set(re.findall(r"\b[A-Z][A-Z0-9_]+", upper)),
+        ):
             return source
 
         # Resolve INCLUDE paths first, preserving the deck's relative layout.
@@ -87,7 +97,10 @@ class TNavigatorReader(BaseReader):
                 # Never allow a deck uploaded through the workspace preview
                 # to escape its staging directory via INCLUDE paths.
                 continue
-            if candidate.exists() and candidate.suffix.lower() in _GRID_SUFFIXES:
+            if (
+                candidate.exists()
+                and candidate.suffix.lower() in _GRID_SUFFIXES
+            ):
                 return candidate
             for suffix in _GRID_SUFFIXES:
                 alternate = candidate.with_suffix(suffix)
@@ -96,7 +109,10 @@ class TNavigatorReader(BaseReader):
 
         # Finally use a same-stem companion, case-insensitively.
         for candidate in source.parent.iterdir():
-            if candidate.stem.lower() == source.stem.lower() and candidate.suffix.lower() in _GRID_SUFFIXES:
+            if (
+                candidate.stem.lower() == source.stem.lower()
+                and candidate.suffix.lower() in _GRID_SUFFIXES
+            ):
                 return candidate
         return None
 

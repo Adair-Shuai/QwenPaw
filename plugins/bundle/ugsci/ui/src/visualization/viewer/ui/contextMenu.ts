@@ -21,7 +21,10 @@ export function showContextMenu(
   onPick: (id: string) => void,
 ): () => void {
   closeContextMenu(host);
-  const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+  const previousFocus =
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
   const menu = document.createElement("div");
   menu.className = "oilgas-context-menu";
   menu.setAttribute("role", "menu");
@@ -36,8 +39,19 @@ export function showContextMenu(
   const rect = host.getBoundingClientRect();
   const left = Math.max(8, rect.left);
   const top = Math.max(8, rect.top);
-  menu.style.left = Math.max(left, Math.min(clientX, Math.min(rect.right, window.innerWidth) - 188)) + "px";
-  menu.style.top = Math.max(top, Math.min(clientY, Math.min(rect.bottom, window.innerHeight) - 12 - items.length * 32)) + "px";
+  menu.style.left =
+    Math.max(
+      left,
+      Math.min(clientX, Math.min(rect.right, window.innerWidth) - 188),
+    ) + "px";
+  menu.style.top =
+    Math.max(
+      top,
+      Math.min(
+        clientY,
+        Math.min(rect.bottom, window.innerHeight) - 12 - items.length * 32,
+      ),
+    ) + "px";
 
   for (const item of items) {
     const row = document.createElement("button");
@@ -71,7 +85,12 @@ export function showContextMenu(
     window.removeEventListener("mousedown", onDown, true);
     menu.removeEventListener("keydown", onKey);
     if (openMenus.get(host) === close) openMenus.delete(host);
-    if (previousFocus?.isConnected && (document.activeElement === document.body || menu.contains(document.activeElement))) previousFocus.focus();
+    if (
+      previousFocus?.isConnected &&
+      (document.activeElement === document.body ||
+        menu.contains(document.activeElement))
+    )
+      previousFocus.focus();
   };
   const onDown = (event: MouseEvent) => {
     if (!menu.contains(event.target as Node)) close();
@@ -85,27 +104,44 @@ export function showContextMenu(
     } else if (["ArrowDown", "ArrowUp", "Home", "End"].includes(event.key)) {
       event.preventDefault();
       event.stopPropagation();
-      const buttons = Array.from(menu.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"));
-      const current = buttons.indexOf(document.activeElement as HTMLButtonElement);
-      const next = event.key === "Home" ? 0 : event.key === "End" ? buttons.length - 1
-        : (current + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) % buttons.length;
+      const buttons = Array.from(
+        menu.querySelectorAll<HTMLButtonElement>("button:not(:disabled)"),
+      );
+      const current = buttons.indexOf(
+        document.activeElement as HTMLButtonElement,
+      );
+      const next =
+        event.key === "Home"
+          ? 0
+          : event.key === "End"
+          ? buttons.length - 1
+          : (current + (event.key === "ArrowDown" ? 1 : -1) + buttons.length) %
+            buttons.length;
       buttons[next]?.focus();
     } else if (event.key === "Tab") close();
   };
-  const observer = new MutationObserver(() => { if (!menu.isConnected) close(); });
+  const observer = new MutationObserver(() => {
+    if (!menu.isConnected) close();
+  });
   observer.observe(host, { childList: true });
   window.addEventListener("mousedown", onDown, true);
   menu.addEventListener("keydown", onKey);
   host.appendChild(menu);
   openMenus.set(host, close);
-  (menu.querySelector<HTMLButtonElement>("button:not(:disabled)") || menu).focus();
+  (
+    menu.querySelector<HTMLButtonElement>("button:not(:disabled)") || menu
+  ).focus();
   return close;
 }
 
 export function objectContextItems(hasTarget: boolean): ContextMenuItem[] {
   return [
     { id: "focus", label: "\u805a\u7126 / \u9002\u914d", disabled: !hasTarget },
-    { id: "isolate", label: "\u4ec5\u663e\u793a\u6b64\u9879", disabled: !hasTarget },
+    {
+      id: "isolate",
+      label: "\u4ec5\u663e\u793a\u6b64\u9879",
+      disabled: !hasTarget,
+    },
     { id: "hide", label: "\u9690\u85cf", disabled: !hasTarget },
     { id: "show-all", label: "\u663e\u793a\u5168\u90e8" },
     { id: "delete", label: "\u5220\u9664", danger: true, disabled: !hasTarget },

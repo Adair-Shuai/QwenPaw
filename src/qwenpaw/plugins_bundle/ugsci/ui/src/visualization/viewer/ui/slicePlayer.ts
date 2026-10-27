@@ -58,8 +58,12 @@ export function createSlicePlayer(options: {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.textContent = text;
-    btn.setAttribute("aria-label", id === "off" ? "显示完整网格" : `沿 ${text} 方向切片`);
-    btn.style.cssText = "width:28px;height:22px;padding:0;border:1px solid #30363d;border-radius:4px;cursor:pointer;font:600 11px/22px sans-serif;";
+    btn.setAttribute(
+      "aria-label",
+      id === "off" ? "显示完整网格" : `沿 ${text} 方向切片`,
+    );
+    btn.style.cssText =
+      "width:28px;height:22px;padding:0;border:1px solid #30363d;border-radius:4px;cursor:pointer;font:600 11px/22px sans-serif;";
     btn.addEventListener("click", () => {
       axis = id === "off" ? null : id;
       playing = false;
@@ -93,15 +97,19 @@ export function createSlicePlayer(options: {
   });
 
   const readout = document.createElement("span");
-  readout.style.cssText = "font:600 11px/1 monospace;color:#c9d1d9;min-width:36px;text-align:right;";
+  readout.style.cssText =
+    "font:600 11px/1 monospace;color:#c9d1d9;min-width:36px;text-align:right;";
   readout.textContent = "-";
 
   const playBtn = document.createElement("button");
   playBtn.type = "button";
-  playBtn.style.cssText = "width:28px;height:22px;padding:0;border:1px solid #30363d;border-radius:4px;background:#21262d;color:#c9d1d9;cursor:pointer;font-size:11px;";
+  playBtn.style.cssText =
+    "width:28px;height:22px;padding:0;border:1px solid #30363d;border-radius:4px;background:#21262d;color:#c9d1d9;cursor:pointer;font-size:11px;";
   const paintPlay = () => {
     playBtn.textContent = playing ? "||" : ">";
-    playBtn.title = playing ? "\u505c\u6b62\u64ad\u653e" : "\u6cbf I/J/K \u64ad\u653e";
+    playBtn.title = playing
+      ? "\u505c\u6b62\u64ad\u653e"
+      : "\u6cbf I/J/K \u64ad\u653e";
     playBtn.setAttribute("aria-label", playBtn.title);
     playBtn.setAttribute("aria-pressed", String(playing));
     playBtn.disabled = !axis || !hasDims || dims[axis] <= 1;
@@ -129,7 +137,11 @@ export function createSlicePlayer(options: {
   return {
     root,
     setDims: (next) => {
-      hasDims = Boolean(next && next.length >= 3 && next.slice(0, 3).every((n) => Number.isSafeInteger(n) && n > 0));
+      hasDims = Boolean(
+        next &&
+          next.length >= 3 &&
+          next.slice(0, 3).every((n) => Number.isSafeInteger(n) && n > 0),
+      );
       dims.i = hasDims ? next![0] : 1;
       dims.j = hasDims ? next![1] : 1;
       dims.k = hasDims ? next![2] : 1;
@@ -150,7 +162,9 @@ export function createSlicePlayer(options: {
     },
     setIndex: (value) => {
       const max = axis ? Math.max(1, dims[axis]) : 1;
-      const next = Number.isFinite(value) ? Math.min(max, Math.max(1, Math.round(value))) : 1;
+      const next = Number.isFinite(value)
+        ? Math.min(max, Math.max(1, Math.round(value)))
+        : 1;
       slider.value = String(next);
       readout.textContent = axis ? slider.value : "-";
       if (axis) options.onIndex(axis, next);

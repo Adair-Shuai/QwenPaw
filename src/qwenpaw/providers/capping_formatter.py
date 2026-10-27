@@ -243,7 +243,10 @@ class _CappingAnthropicFormatter(
             return legacy_formatter(source, block_type)
         raise ValueError(f"Unsupported Anthropic block type: {block_type}")
 
-    def _format_anthropic_data_block(self, block):  # type: ignore[no-untyped-def]
+    def _format_anthropic_data_block(  # type: ignore[no-untyped-def]
+        self,
+        block,
+    ):
         """Retain PDF support after AgentScope narrowed its base formatter."""
         media_type = str(getattr(block.source, "media_type", "") or "")
         if media_type == "application/pdf":
@@ -341,7 +344,7 @@ class _CappingDashScopeFormatter(
             return {
                 "type": "input_audio",
                 "input_audio": {
-                    "data": (f"data:{media_type};base64,{source.data}"),
+                    "data": f"data:{media_type};base64,{source.data}",
                     "format": provider_format,
                 },
             }

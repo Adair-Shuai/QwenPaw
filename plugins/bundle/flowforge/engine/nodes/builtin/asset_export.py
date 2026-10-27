@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import logging
 
 from ...adapter.log_compat import get_logger
 from ...io import (
@@ -49,24 +48,44 @@ class AssetExportNode(WorkflowNode):
                 "with import metadata, and render them as a gallery."
             ),
             inputs=[
-                IO.Image.Input(id="image", optional=True, tooltip="Image asset to export."),
-                IO.Video.Input(id="video", optional=True, tooltip="Video asset to export."),
-                IO.Mesh3D.Input(id="mesh", optional=True, tooltip="3D mesh asset to export."),
+                IO.Image.Input(
+                    id="image",
+                    optional=True,
+                    tooltip="Image asset to export.",
+                ),
+                IO.Video.Input(
+                    id="video",
+                    optional=True,
+                    tooltip="Video asset to export.",
+                ),
+                IO.Mesh3D.Input(
+                    id="mesh",
+                    optional=True,
+                    tooltip="3D mesh asset to export.",
+                ),
                 IO.Combo.Input(
-                    id="engine", optional=True, default="generic",
+                    id="engine",
+                    optional=True,
+                    default="generic",
                     choices=list(EXPORT_ENGINES),
                     tooltip="Target game engine import profile.",
                 ),
                 IO.Boolean.Input(
-                    id="embed_assets", optional=True, default=True,
-                    tooltip="Embed raw asset bytes in the bundle (vs. by-reference).",
+                    id="embed_assets",
+                    optional=True,
+                    default=True,
+                    tooltip="Embed raw asset bytes in the bundle (vs. "
+                    "by-reference).",
                 ),
                 IO.String.Input(
-                    id="asset_name", optional=True, default="asset",
+                    id="asset_name",
+                    optional=True,
+                    default="asset",
                     tooltip="Base name for the exported asset bundle.",
                 ),
                 IO.String.Input(
-                    id="output", optional=True,
+                    id="output",
+                    optional=True,
                     tooltip="Optional state variable to store the manifest.",
                 ),
             ],
@@ -75,12 +94,22 @@ class AssetExportNode(WorkflowNode):
                 IO.Array.Output(id="assets"),
                 IO.String.Output(id="bundle_url"),
             ],
-            hidden=[Hidden.UNIQUE_ID, Hidden.WORKFLOW_STATE, Hidden.SESSION_ID, Hidden.USER_ID],
+            hidden=[
+                Hidden.UNIQUE_ID,
+                Hidden.WORKFLOW_STATE,
+                Hidden.SESSION_ID,
+                Hidden.USER_ID,
+            ],
             is_output_node=True,
             not_idempotent=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         name = str(inputs.get("asset_name") or "asset")
         engine = str(inputs.get("engine") or "generic")
         embed = inputs.get("embed_assets")
@@ -99,7 +128,10 @@ class AssetExportNode(WorkflowNode):
             asset_bytes = await self._collect_bytes(refs, hidden)
 
         zip_bytes, descriptor = build_export_bundle(
-            name=name, entries=assets, engine=engine, asset_bytes=asset_bytes,
+            name=name,
+            entries=assets,
+            engine=engine,
+            asset_bytes=asset_bytes,
         )
         bundle = await self._register_bundle(zip_bytes, name, engine, hidden)
 
@@ -126,8 +158,11 @@ class AssetExportNode(WorkflowNode):
 
         bundle_url = (bundle or {}).get("url") or ""
         logger.info(
-            "asset_export", node_id=hidden.unique_id, count=len(assets),
-            engine=engine, embedded=descriptor.get("embedded_count", 0),
+            "asset_export",
+            node_id=hidden.unique_id,
+            count=len(assets),
+            engine=engine,
+            embedded=descriptor.get("embedded_count", 0),
             bundle=bool(bundle),
         )
         return NodeOutput(
@@ -143,9 +178,11 @@ class AssetExportNode(WorkflowNode):
 
     @staticmethod
     async def _collect_bytes(
-        refs: list[MediaRef], hidden: HiddenHolder,
+        refs: list[MediaRef],
+        hidden: HiddenHolder,
     ) -> dict[str, bytes]:
-        """Best-effort fetch of managed asset bytes by file id for embedding."""
+        """Best-effort fetch of managed asset bytes by file id for \
+embedding."""
         out: dict[str, bytes] = {}
         file_service = None
         try:
@@ -172,9 +209,13 @@ class AssetExportNode(WorkflowNode):
 
     @staticmethod
     async def _register_bundle(
-        zip_bytes: bytes, name: str, engine: str, hidden: HiddenHolder,
+        zip_bytes: bytes,
+        name: str,
+        engine: str,
+        hidden: HiddenHolder,
     ) -> dict[str, Any] | None:
-        """Persist the bundle as a managed artifact; return its download info."""
+        """Persist the bundle as a managed artifact; return its download \
+info."""
         from ...adapter.tool_output import register_tool_artifact
 
         filename = f"{name}_{engine}_bundle.zip"
@@ -203,7 +244,7 @@ class AssetExportNode(WorkflowNode):
 
     @staticmethod
     def _manifest_entry(name: str, ref: MediaRef) -> dict[str, Any]:
-        ext = (ref.filename.rsplit(".", 1)[-1] if "." in ref.filename else "")
+        ext = ref.filename.rsplit(".", 1)[-1] if "." in ref.filename else ""
         return {
             "name": name,
             "kind": ref.kind,

@@ -22,7 +22,10 @@ export interface EngineHandle {
   focusObject(objectType: string, id: string): void;
   captureScreenshot(): string | null;
   runBenchmark(): Promise<BenchmarkResult>;
-  executeCommand?(command: string, args: Record<string, unknown>): Promise<unknown>;
+  executeCommand?(
+    command: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown>;
   update?(options: Partial<ViewerMountOptions>): void;
   dispose(): void;
 }

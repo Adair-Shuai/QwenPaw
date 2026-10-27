@@ -39,11 +39,20 @@ async def register_tool_artifact(
     """
     # Try QwenPaw's file service first
     try:
-        artifact = await _register_via_qwenpaw(data, filename, content_type, session_id, user_id)
+        artifact = await _register_via_qwenpaw(
+            data,
+            filename,
+            content_type,
+            session_id,
+            user_id,
+        )
         if artifact is not None:
             return artifact
     except Exception:  # noqa: BLE001
-        logger.debug("register_tool_artifact: QwenPaw file service unavailable", exc_info=True)
+        logger.debug(
+            "register_tool_artifact: QwenPaw file service unavailable",
+            exc_info=True,
+        )
 
     # Fallback: write to temp dir
     return await _register_fallback(data, filename, content_type)
@@ -69,7 +78,11 @@ async def _register_via_qwenpaw(
         file_service = getattr(mgr, "file_service", None)
         if file_service is None:
             # Try to get it from the first workspace
-            agents = getattr(mgr, "agents", None) or getattr(mgr, "workspaces", None)
+            agents = getattr(mgr, "agents", None) or getattr(
+                mgr,
+                "workspaces",
+                None,
+            )
             if agents:
                 first_ws = next(iter(agents.values()))
                 file_service = getattr(first_ws, "file_service", None)

@@ -1,7 +1,7 @@
 # QwenPaw v2.0.1 新增能力与接口文档
 
-> 上游合并日期：2026-07-21  
-> 上游版本：v2.0.1b1（从 v2.0.0 升级）  
+> 上游合并日期：2026-07-21
+> 上游版本：v2.0.1b1（从 v2.0.0 升级）
 > 合并提交：`0c39b5ec` (Merge remote-tracking branch 'upstream/main' into lobehub-style)
 
 ---
@@ -21,8 +21,8 @@
 
 ## 1. PawApp SDK — 应用开发框架
 
-**提交**: `8a9f8ab0` (#6150)  
-**规模**: ~7000 行新增代码，涉及 40 个文件  
+**提交**: `8a9f8ab0` (#6150)
+**规模**: ~7000 行新增代码，涉及 40 个文件
 **核心模块**: `src/qwenpaw/pawapp/`
 
 PawApp SDK 是本次最大的新增功能，提供了一套高于 PluginApi 的应用开发范式，让开发者可以用装饰器模式快速构建带前后端的 AI 应用。
@@ -48,7 +48,7 @@ PawApp SDK 是本次最大的新增功能，提供了一套高于 PluginApi 的�
 
 ### 1.2 后端 SDK — `PawApp` 类
 
-**源文件**: `src/qwenpaw/pawapp/app.py`  
+**源文件**: `src/qwenpaw/pawapp/app.py`
 **导入**: `from qwenpaw.pawapp import PawApp, PawAppContext, get_ctx`
 
 `PawApp` 是对底层 `PluginApi` 的薄封装，提供装饰器语法糖。在插件加载时由 `PluginLoader` 调用 `register(api)` 注入真实 API 实例，之前的装饰器注册会被缓冲，在 `register` 时统一应用。
@@ -269,7 +269,7 @@ task.cancel(); // 取消任务
 
 ### 1.5 PawApp REST API
 
-**源文件**: `src/qwenpaw/app/routers/pawapps.py`  
+**源文件**: `src/qwenpaw/app/routers/pawapps.py`
 **路由前缀**: `/api/pawapps`
 
 | 方法 | 路径 | 说明 |
@@ -513,15 +513,15 @@ Governance 工具自动注册 — UGSci 插件工具不再被误判为"unknown t
 ```python
 class AgentMode:
     name: str
-    
+
     def setup(self, workspace) -> None:
         """注册所有贡献到 workspace"""
-        
+
     def commands(self) -> list[CommandSpec]: ...
     def tools(self) -> list[ToolDescriptor]: ...
     def hooks(self) -> list[HookBase]: ...
     def prompt_contributors(self) -> list[PromptContributor]: ...
-    
+
     async def on_turn_start(self, ctx: HookContext) -> None: ...
     def on_conversation_reset(self, ctx: HookContext) -> None: ...
     def is_active(self, ctx: HookContext) -> bool: ...
@@ -536,7 +536,7 @@ class AgentMode:
 ```python
 class DefaultMode(AgentMode):
     name = "default"
-    
+
     def _build_gates(self, running_config) -> list[StopGate]:
         gates = []
         if loop_config.iteration.enabled:
@@ -677,19 +677,19 @@ async def launch_and_analyze(ctx, deck_path: str):
     # 1. 启动模拟
     job_id = await _launch(ctx, deck_path)
     await ctx.ui.push("launched", {"job_id": job_id})
-    
+
     # 2. 等待完成
     result = await _wait_for_completion(job_id)
     await ctx.storage.set(f"result_{job_id}", result.to_dict())
-    
+
     # 3. 自动让 Agent 分析
     reply = await ctx.chat(
         f"ECLIPSE 模拟已完成（{result.time_steps} 步），请分析收敛性和物质平衡误差。"
     )
-    
+
     # 4. 推送分析结果到前端
     await ctx.ui.push("analysis", {"text": reply.text, "job_id": job_id})
-    
+
     return {"job_id": job_id, "analysis": reply.text}
 ```
 

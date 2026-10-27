@@ -184,3 +184,8 @@ docs/reviews/
 /.pytest_cache/
 /.mypy_cache/
 tmp/
+
+# Local visualization imports and conversion caches. Existing tracked
+# examples are retained; newly generated datasets must stay local.
+/plugins/bundle/ugsci/visualization/data/
+/src/qwenpaw/plugins_bundle/ugsci/visualization/data/

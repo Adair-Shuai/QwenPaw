@@ -46,7 +46,8 @@ def check_plugin_version_compat(
     """
     from .__version__ import __version__ as current_version_str
 
-    current = Version(current_version_str)
+    installed = Version(current_version_str)
+    current = installed
 
     # Pre-release versions (e.g. 2.0.0b2) should be treated as their base
     # release for compatibility purposes — developers on a pre-release build
@@ -76,7 +77,11 @@ def check_plugin_version_compat(
     # Full-range check: left-closed, right-open (>=min, <max).  The upper
     # bound is enforced so a plugin cannot silently run on an incompatible
     # newer core after an upstream merge bumps the version.
-    if current < min_v or current >= max_v:
+    # An explicitly prerelease minimum may require APIs introduced between
+    # beta builds. Preserve that lower bound while keeping the existing
+    # upcoming-stable-minimum and exclusive-upper-bound behavior.
+    lower_current = installed if min_v.pre is not None else current
+    if lower_current < min_v or current >= max_v:
         msg = f"requires QwenPaw >={min_v}, <{max_v}, current is {current}"
         return False, msg
     return True, ""

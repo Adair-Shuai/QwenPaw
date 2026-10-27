@@ -29,6 +29,16 @@ SUITES = (
     "tests/unit/tauri/test_storage_capacity_publication.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/tauri/test_component_service.py": {
+        "test_runtime_cleanup_is_once_per_boot_and_retries_next_boot",
+    },
+    "tests/unit/tauri/test_component_updater.py": {
+        "test_directory_candidate_snapshot_is_isolated",
+    },
+    "tests/unit/verify/test_release_workflow_safety.py": {
+        "test_clean_release_and_frontend_checks_build_openui_runtime",
+        "test_reusable_plugin_build_matches_release_artifact_scope",
+    },
     "tests/unit/tauri/test_stage_officecli.py": {
         "test_reviewed_pin_does_not_query_latest",
         "test_matching_marker_cannot_bypass_cached_binary_validation",

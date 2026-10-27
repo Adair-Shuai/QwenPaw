@@ -101,7 +101,17 @@ def build_continuation(
 
 def _versioned_phase(ctx: TeamPromptCtx, phase: str) -> str:
     """Keep six orchestration styles while publishing through version tools."""
-    header = f"UGSci 专家团控制器 — 阶段: {phase}\n团队: {ctx.team_name}\n模式: {ctx.team_mode}\n"
+    header = (
+        f"UGSci 专家团控制器 — 阶段: "
+        f"{phase}"
+        f"\n"
+        f"团队: "
+        f"{ctx.team_name}"
+        f"\n"
+        f"模式: "
+        f"{ctx.team_mode}"
+        f"\n"
+    )
     if phase == PHASE_DISPATCH:
         ordering = {
             "pipeline": "按计划依赖顺序执行，先发布前一步，再把已发布快照交给后一步。",
@@ -119,10 +129,13 @@ def _versioned_phase(ctx: TeamPromptCtx, phase: str) -> str:
                     "执行 handoffs/plan.json 中分配给你的子任务。只返回非空JSON结果，"
                     "或写入主控在本次调用中明确提供的候选路径；不得写正式成果或接管控制流程。",
                     fork=ctx.team_mode in {"roundtable", "router", "debate"},
-                    parallel=ctx.team_mode in {"roundtable", "router", "debate"},
-                )
+                    parallel=ctx.team_mode
+                    in {"roundtable", "router", "debate"},
+                ),
             )
-        return header + f"""
+        return (
+            header
+            + f"""
 任务：{ctx.task}
 请使用 ugsci-roles 技能获取角色工具和技能配置。
 1. 读取 {ctx.loop_dir}/handoffs/plan.json，{ordering}
@@ -134,6 +147,7 @@ def _versioned_phase(ctx: TeamPromptCtx, phase: str) -> str:
 成员模板（调用前补入实际步骤和候选路径）：
 {chr(10).join(calls)}
 """
+        )
     if phase == PHASE_VERIFY:
         reviewer = next(
             (
@@ -154,19 +168,26 @@ def _versioned_phase(ctx: TeamPromptCtx, phase: str) -> str:
             if reviewer
             else format_spawn_call("domain-reviewer", task, fork=True)
         )
-        return header + f"""
+        return (
+            header
+            + f"""
 1. 调用 prepare_review 获取 review_id、snapshot、审核候选路径。
 2. 将这些实际值补入下面的独立审核调用；审核全部snapshot成果，不要只检查目录中的某份旧文件。
 {call}
 3. 等待审核任务结束，调用 accept_review。PASS 后才进入 synthesize。
 4. FAIL/PARTIAL 回到 dispatch，重新 prepare 需修正步骤；修订后必须重新审核。
 """
-    return header + """
-1. 从当前状态读取 artifact_results 中的不可变成果和 artifact_review 中的审核版本。
-2. 综合任务概述、各成员成果、交叉验证、建议、分歧、不确定性和来源。
-3. 调用 ugsci_team_publish_report(content=<Markdown正文>, expected_revision=<当前版本>)。
-4. 发布成功后再设置 current_phase="completed"；gate 会复核成果、审核和最终报告的完整性。
-"""
+        )
+    return (
+        header + "\n"
+        "1. 从当前状态读取 artifact_results 中的不可变成果和 artifact_review "
+        "中的审核版本。\n"
+        "2. 综合任务概述、各成员成果、交叉验证、建议、分歧、不确定性和来源。\n"
+        "3. 调用 ugsci_team_publish_report(content=<Markdown正文>"
+        ", expected_revision=<当前版本>)。\n"
+        '4. 发布成功后再设置 current_phase="completed"；gate '
+        "会复核成果、审核和最终报告的完整性。\n"
+    )
 
 
 # ── Member formatting helpers ────────────────────────────────────────
@@ -233,7 +254,9 @@ def _member_dispatch_call(
         if binding == "fixed":
             return "配置错误：固定实例缺少 agent_id；不得静默派生，请停止并报告。"
         return "首选实例未配置，按角色临时派生：\n" + format_spawn_call(
-            role_key, task_body, fork=fork
+            role_key,
+            task_body,
+            fork=fork,
         )
 
     display = get_display_name(role_key)
@@ -258,10 +281,7 @@ def _member_dispatch_call(
             f"{fallback}\n"
             "调用完成后，控制器必须核验返回内容并写入任务指定的产物文件。"
         )
-    return (
-        f"固定实例（禁止自动替换）：\n   {call}\n"
-        "调用完成后，控制器必须核验返回内容并写入任务指定的产物文件。"
-    )
+    return f"固定实例（禁止自动替换）：\n   {call}\n" "调用完成后，控制器必须核验返回内容并写入任务指定的产物文件。"
 
 
 # ── Phase: plan ──────────────────────────────────────────────────────
@@ -407,7 +427,18 @@ def _dispatch_router(ctx: TeamPromptCtx, member_str: str) -> str:
     for i, member in enumerate(ctx.members, start=1):
         name = member.get("name", member.get("display_name", f"专家{i}"))
         candidates.append(
-            f"- {name}: {_member_dispatch_call(member, f'执行路由器分配给你的子任务；将结果写入 {ctx.loop_dir}/results/route-{i}.json。', fork=True, parallel=True)}",
+            f"- "
+            f"{name}"
+            f": "
+            f"""{(
+                _member_dispatch_call(
+                    member,
+                    f"执行路由器分配给你的子任务；将结果写入 "
+                    f"{ctx.loop_dir}/results/route-{i}.json。",
+                    fork=True,
+                    parallel=True,
+                )
+            )}""",
         )
     return f"""\
 UGSci 协作工作流控制器 — dispatch / 智能路由
@@ -441,26 +472,46 @@ def _dispatch_review_loop(ctx: TeamPromptCtx, member_str: str) -> str:
     )
     reviewer_call = _member_dispatch_call(
         reviewer,
-        f"按计划中的成功标准独立审查 draft.json，输出结构化结论到 {ctx.loop_dir}/results/review.json，包含 verdict、issues、required_changes。",
+        f"按计划中的成功标准独立审查 draft.json，输出结构化结论到 "
+        f"{ctx.loop_dir}"
+        f"/results/review.json，包含 verdict、issues、required_changes。",
         fork=True,
     )
-    return f"""\
-UGSci 协作工作流控制器 — dispatch / 评审迭代
-工作流: {ctx.team_name}　工作流重试: {ctx.dispatch_retries}
-
-本轮严格执行“产出 → 独立评审 → 必要时修订”：
-1. {executor_name} 产出：
-{executor_call}
-2. {reviewer_name} 在独立上下文中评审：
-{reviewer_call}
-3. 必须等待 {executor_name} 完成并确认 draft.json 已落盘，才能启动 {reviewer_name}；后台任务用 check_agent_task 轮询。
-4. 若 verdict=revise，立即把 required_changes 交回 {executor_name} 修订一次；保留前后版本。
-5. 不得由执行者自我宣布通过。验证阶段仍未通过时，OMP gate 会带着反馈重新进入本阶段。
-
-团队成员：
-{member_str}
-
-{_finish_dispatch(ctx)}"""
+    return (
+        f"UGSci 协作工作流控制器 — dispatch / 评审迭代\n"
+        f"工作流: "
+        f"{ctx.team_name}"
+        f"\u3000工作流重试: "
+        f"{ctx.dispatch_retries}"
+        f"\n"
+        f"\n"
+        f"本轮严格执行“产出 → 独立评审 → 必要时修订”：\n"
+        f"1. "
+        f"{executor_name}"
+        f" 产出：\n"
+        f"{executor_call}"
+        f"\n"
+        f"2. "
+        f"{reviewer_name}"
+        f" 在独立上下文中评审：\n"
+        f"{reviewer_call}"
+        f"\n"
+        f"3. 必须等待 "
+        f"{executor_name}"
+        f" 完成并确认 draft.json 已落盘，才能启动 "
+        f"{reviewer_name}"
+        f"；后台任务用 check_agent_task 轮询。\n"
+        f"4. 若 verdict=revise，立即把 required_changes 交回 "
+        f"{executor_name}"
+        f" 修订一次；保留前后版本。\n"
+        f"5. 不得由执行者自我宣布通过。验证阶段仍未通过时，OMP gate 会带着反馈重新进入本阶段。\n"
+        f"\n"
+        f"团队成员：\n"
+        f"{member_str}"
+        f"\n"
+        f"\n"
+        f"{_finish_dispatch(ctx)}"
+    )
 
 
 def _dispatch_debate(ctx: TeamPromptCtx, member_str: str) -> str:
@@ -470,10 +521,14 @@ def _dispatch_debate(ctx: TeamPromptCtx, member_str: str) -> str:
         position_calls.append(
             _member_dispatch_call(
                 member,
-                f"独立提出可证伪的专业判断、证据和风险，写入 {ctx.loop_dir}/results/position-{i}.json。",
+                f"独立提出可证伪的专业判断、证据和风险，写入 "
+                f"{ctx.loop_dir}"
+                f"/results/position-"
+                f"{i}"
+                f".json。",
                 fork=True,
                 parallel=True,
-            )
+            ),
         )
     judge = ctx.members[-1] if ctx.members else {}
     judge_name = judge.get("name", "裁决者")
@@ -614,7 +669,6 @@ def _dispatch_coordinator(ctx: TeamPromptCtx, member_str: str) -> str:
     # First member is typically the coordinator
     coordinator = ctx.members[0] if ctx.members else {}
     coord_name = coordinator.get("name", "协调者")
-    coord_role = _member_role_key(coordinator)
 
     # Build spawn calls for non-coordinator members
     other_spawns = []
@@ -731,7 +785,8 @@ UGSci 专家团控制器 — 阶段: verify（验证审核）
 def _synthesize(ctx: TeamPromptCtx) -> str:
     member_str = _member_list(ctx.members)
     result_files = "\n".join(
-        f"   - {ctx.loop_dir}/results/step-{i+1}.json" for i in range(len(ctx.members))
+        f"   - {ctx.loop_dir}/results/step-{i+1}.json"
+        for i in range(len(ctx.members))
     )
 
     return f"""\

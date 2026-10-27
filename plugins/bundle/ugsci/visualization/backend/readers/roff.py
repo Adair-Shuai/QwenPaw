@@ -14,15 +14,14 @@ from __future__ import annotations
 
 import struct
 import time
-import warnings
+import math
 from pathlib import Path
 from typing import Any
-
-warnings.filterwarnings("ignore", category=UserWarning)
 
 
 def _write_f32(path: Path, values: list[float]) -> None:
     path.write_bytes(struct.pack(f"<{len(values)}f", *values))
+
 
 def _write_u32(path: Path, values: list[int]) -> None:
     path.write_bytes(struct.pack(f"<{len(values)}I", *values))
@@ -62,6 +61,10 @@ def convert_grid_to_binary(
         Dataset manifest entry with file descriptors.
     """
     import xtgeo
+    from ..converters.geometry import (
+        finite_number,
+        property_descriptor,
+    )
 
     fformat = _detect_format(grid_path)
 
@@ -101,11 +104,13 @@ def convert_grid_to_binary(
             continue
         for eclipse_index in XTGEO_TO_VTK:
             x_arr, y_arr, z_arr = corner_xyz[eclipse_index]
-            x = float(x_arr[cell_idx]) if x_arr[cell_idx] is not None else 0.0
-            y = float(y_arr[cell_idx]) if y_arr[cell_idx] is not None else 0.0
-            z = float(z_arr[cell_idx]) if z_arr[cell_idx] is not None else 0.0
+            x = finite_number(x_arr[cell_idx], "ROFF corner x")
+            y = finite_number(y_arr[cell_idx], "ROFF corner y")
+            z = finite_number(z_arr[cell_idx], "ROFF corner z")
             positions.extend([x, y, -z])
-        cell_ids.append(cell_idx)  # Store ORIGINAL cell index, not output index
+        cell_ids.append(
+            cell_idx,
+        )  # Store ORIGINAL cell index, not output index
 
     positions, packed_indices = compact_hex_centroid_mesh(positions)
     n_vertices = len(positions) // 3
@@ -118,48 +123,14 @@ def convert_grid_to_binary(
     print(f"  Vertices: {n_vertices:,}, Triangles: {len(indices) // 3:,}")
 
     # Extract properties — Bug 6 fix: auto-detect property format
-    scalars_files: dict[str, str] = {}
-    for prop_name, prop_path in prop_files.items():
-        print(f"  Loading property: {prop_name} from {prop_path}")
-        prop_format = _detect_format(prop_path)
-
-        # Auto-discover property name
-        try:
-            prop_names = xtgeo.list_gridproperties(prop_path, fformat=prop_format)
-            prop_name_in_file = prop_names[0] if len(prop_names) == 1 else prop_name.upper()
-        except Exception:
-            prop_name_in_file = prop_name.upper()
-
-        prop = xtgeo.gridproperty_from_file(
-            prop_path, fformat=prop_format, name=prop_name_in_file,
-        )
-        prop_values = prop.values.flatten(order="F")
-
-        active_values: list[float] = []
-        for cell_idx in range(n_total):
-            if active_mask[cell_idx]:
-                v = float(prop_values[cell_idx])
-                active_values.append(v if v == v else 0.0)  # NaN check
-
-        ext = ".f32"
-        _write_f32(bin_dir / f"{name}_scalars_{prop_name}{ext}", active_values)
-        scalars_files[prop_name] = f"{name}_scalars_{prop_name}{ext}"
-        print(f"    {prop_name}: min={min(active_values):.4f}, max={max(active_values):.4f}")
-
-    # Generate derived properties
-    if "porosity" in scalars_files:
-        poro_data = struct.unpack(
-            f"<{n_active}f",
-            (bin_dir / scalars_files["porosity"]).read_bytes(),
-        )
-        if "permeability" not in scalars_files:
-            perm = [p**3 * 1000 + 0.01 for p in poro_data]
-            _write_f32(bin_dir / f"{name}_scalars_permeability.f32", perm)
-            scalars_files["permeability"] = f"{name}_scalars_permeability.f32"
-        if "facies" not in scalars_files:
-            facies = [int(p > 0.15) + int(p > 0.25) for p in poro_data]
-            _write_u32(bin_dir / f"{name}_scalars_facies.u32", facies)
-            scalars_files["facies"] = f"{name}_scalars_facies.u32"
+    scalars_files = _convert_properties(
+        prop_files,
+        name,
+        bin_dir,
+        dims,
+        active_mask,
+        n_total,
+    )
 
     elapsed = time.time() - t0
     print(f"  Conversion time: {elapsed:.2f}s")
@@ -172,6 +143,11 @@ def convert_grid_to_binary(
         "n_indices": len(indices),
         "grid_dims": [ncol, nrow, nlay],
         "source": fformat,
+        "scalar_association": "cell",
+        "properties": {
+            key: property_descriptor(key, "cell", n_active)
+            for key in scalars_files
+        },
         "files": {
             "positions": f"{name}_positions.f32",
             "indices": f"{name}_indices.u32",
@@ -179,3 +155,62 @@ def convert_grid_to_binary(
             "scalars": scalars_files,
         },
     }
+
+
+def _convert_properties(
+    prop_files: dict[str, str],
+    name: str,
+    bin_dir: Path,
+    dims: Any,
+    active_mask: Any,
+    n_total: int,
+) -> dict[str, str]:
+    """Write source properties with unknown cells and dimensions intact."""
+    import xtgeo
+    from ..converters.geometry import active_cell_scalars
+
+    scalars_files: dict[str, str] = {}
+    for prop_name, prop_path in prop_files.items():
+        print(f"  Loading property: {prop_name} from {prop_path}")
+        prop_format = _detect_format(prop_path)
+
+        # Auto-discover property name
+        try:
+            prop_names = xtgeo.list_gridproperties(
+                prop_path,
+                fformat=prop_format,
+            )
+            prop_name_in_file = (
+                prop_names[0] if len(prop_names) == 1 else prop_name.upper()
+            )
+        except Exception:
+            prop_name_in_file = prop_name.upper()
+
+        prop = xtgeo.gridproperty_from_file(
+            prop_path,
+            fformat=prop_format,
+            name=prop_name_in_file,
+        )
+        if prop.dimensions != dims:
+            raise ValueError("ROFF property dimensions do not match grid")
+        active_values = active_cell_scalars(
+            prop.values,
+            active_mask,
+            n_total,
+            "ROFF",
+        )
+
+        ext = ".f32"
+        _write_f32(bin_dir / f"{name}_scalars_{prop_name}{ext}", active_values)
+        scalars_files[prop_name] = f"{name}_scalars_{prop_name}{ext}"
+        finite_values = [
+            value for value in active_values if math.isfinite(value)
+        ]
+        if finite_values:
+            print(
+                f"    {prop_name}: min={min(finite_values):.4f}, "
+                f"max={max(finite_values):.4f}",
+            )
+        else:
+            print(f"    {prop_name}: no finite measurements")
+    return scalars_files

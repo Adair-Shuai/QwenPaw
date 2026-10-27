@@ -94,9 +94,14 @@ async def ugsci_replay_calculation(replay_token: str) -> Any:
         result = await ugsci_trace_calculation(formula_id, inputs)
         if hasattr(result, "content") and result.content:
             import json
+
             data = json.loads(result.content[0].text)
         else:
-            data = result.get("payload", result) if isinstance(result, dict) else {}
+            data = (
+                result.get("payload", result)
+                if isinstance(result, dict)
+                else {}
+            )
         if data.get("code"):
             return _chunk(data, error=True)
         current = data.get("provenance", {})
@@ -107,20 +112,32 @@ async def ugsci_replay_calculation(replay_token: str) -> Any:
             for key in ("engine_id", "engine_version", "provider_version")
             if payload.get(key) != current.get(key)
         }
-        status = "reproducible" if fingerprint_match and not version_diff else "version_changed"
+        status = (
+            "reproducible"
+            if fingerprint_match and not version_diff
+            else "version_changed"
+        )
         diff = dict(version_diff)
         if not fingerprint_match:
-            diff["input_fingerprint"] = {"expected": expected, "actual": current.get("input_fingerprint")}
-        return _chunk({
-            "replay_id": str(uuid.uuid4()),
-            "status": status,
-            "reproducible": status == "reproducible",
-            "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
-            "diff": diff,
-            "result": data,
-        })
+            diff["input_fingerprint"] = {
+                "expected": expected,
+                "actual": current.get("input_fingerprint"),
+            }
+        return _chunk(
+            {
+                "replay_id": str(uuid.uuid4()),
+                "status": status,
+                "reproducible": status == "reproducible",
+                "elapsed_ms": round((time.perf_counter() - started) * 1000, 3),
+                "diff": diff,
+                "result": data,
+            },
+        )
     except (ValueError, TypeError) as exc:
-        error = DomainError(DomainErrorCode.INVALID_INPUT, f"Invalid replay token: {exc}")
+        error = DomainError(
+            DomainErrorCode.INVALID_INPUT,
+            f"Invalid replay token: {exc}",
+        )
         return _chunk(error.to_dict(), error=True)
 
 
@@ -131,8 +148,9 @@ async def ugsci_list_derivation_formulas() -> Any:
         {
             "formulas": catalog,
             "count": len(catalog),
-            "message": "Run ugsci_trace_calculation with one of these formula_id values.",
-        }
+            "message": "Run ugsci_trace_calculation with one of "
+            "these formula_id values.",
+        },
     )
 
 
@@ -163,12 +181,15 @@ def _validate_inputs(formula_id: str, inputs: Any) -> dict[str, Any]:
             DomainErrorCode.INVALID_INPUT,
             f"Unknown input(s) for {formula_id}: {', '.join(sorted(unknown))}",
         )
-    required = {name for name in spec.unit_dimensions if not name.endswith("_unit")}
+    required = {
+        name for name in spec.unit_dimensions if not name.endswith("_unit")
+    }
     missing = sorted(name for name in required if name not in inputs)
     if missing:
         raise DomainError(
             DomainErrorCode.INVALID_INPUT,
-            f"Missing required input(s) for {formula_id}: {', '.join(missing)}",
+            f"Missing required input(s) for {formula_id}: "
+            f"{', '.join(missing)}",
             details={"missing": missing},
         )
     coerced: dict[str, Any] = {}
@@ -212,4 +233,8 @@ def _validate_inputs(formula_id: str, inputs: Any) -> dict[str, Any]:
     return coerced
 
 
-__all__ = ["ugsci_trace_calculation", "ugsci_replay_calculation", "ugsci_list_derivation_formulas"]
+__all__ = [
+    "ugsci_trace_calculation",
+    "ugsci_replay_calculation",
+    "ugsci_list_derivation_formulas",
+]

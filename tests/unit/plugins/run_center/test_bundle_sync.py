@@ -13,7 +13,8 @@ def test_run_center_mirror_removes_excluded_build_files(
     destination.mkdir()
     (source / "plugin.json").write_text('{"id":"demo"}\n', encoding="utf-8")
     (destination / "plugin.json").write_text(
-        '{"id":"demo"}\n', encoding="utf-8"
+        '{"id":"demo"}\n',
+        encoding="utf-8",
     )
     stale = destination / "__pycache__" / "old.pyc"
     stale.parent.mkdir()

@@ -10,7 +10,11 @@ import {
   extractGenUiResults,
 } from "../stores/genUi";
 import type { GenUiNode, GenUiSnapshot, GenUiTreeResult } from "../types/genUi";
-import { exportGenUiHtml, exportGenUiPng, printGenUiPdf } from "../lib/genUiExport";
+import {
+  exportGenUiHtml,
+  exportGenUiPng,
+  printGenUiPdf,
+} from "../lib/genUiExport";
 import { DerivationSummary } from "../../derivation/DerivationSummary";
 import {
   addDerivation,
@@ -64,8 +68,7 @@ function traceTreePresentation(root: GenUiNode) {
   );
   const warning = nodes.some(
     (node) =>
-      node.kind === "Alert" &&
-      String(node.props?.severity || "") === "warning",
+      node.kind === "Alert" && String(node.props?.severity || "") === "warning",
   );
   const metrics = nodes
     .filter((node) => node.kind === "MetricCard")
@@ -115,13 +118,19 @@ function traceTreePresentation(root: GenUiNode) {
   return { title, warning, inputs, conditions, results };
 }
 
-export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactElement | null {
+export function GenUiInline({
+  data,
+}: {
+  data: Record<string, unknown>;
+}): ReactElement | null {
   const host = (window as any).QwenPaw?.host;
   const React = host?.React;
   if (!React) return null;
 
   const store = useGenUiActions();
-  const exportedValues = React.useRef(new Map<string, Record<string, unknown>>());
+  const exportedValues = React.useRef(
+    new Map<string, Record<string, unknown>>(),
+  );
 
   // Get sessionId from the host (response data doesn't carry it directly).
   // During initial replay the host may not have resolved the backend session
@@ -132,18 +141,14 @@ export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactE
   // Normalize once instead of repeatedly asserting `unknown` to `unknown[]`.
   // This also keeps malformed/streaming response envelopes from reaching the
   // store with an undefined value.
-  const output: unknown[] = Array.isArray(data.output) ? data.output : EMPTY_OUTPUT;
+  const output: unknown[] = Array.isArray(data.output)
+    ? data.output
+    : EMPTY_OUTPUT;
 
   // Memoize results to prevent useEffect from firing on every render
   // (extractGenUiResults returns a new array reference each call).
-  const results = React.useMemo(
-    () => extractGenUiResults(output),
-    [output],
-  );
-  const derivations = React.useMemo(
-    () => extractDerivations(output),
-    [output],
-  );
+  const results = React.useMemo(() => extractGenUiResults(output), [output]);
+  const derivations = React.useMemo(() => extractDerivations(output), [output]);
 
   // Persist new snapshots in a useEffect (NOT during render) to avoid
   // the React anti-pattern of calling state setters during render.
@@ -166,22 +171,26 @@ export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactE
   }, [results, sessionId]);
 
   const baseUiIds = React.useMemo(
-    () => (results as GenUiTreeResult[])
-      .filter((result) => result.kind === "genui" && Boolean(result.ui_id))
-      .map((result) => result.ui_id as string),
+    () =>
+      (results as GenUiTreeResult[])
+        .filter((result) => result.kind === "genui" && Boolean(result.ui_id))
+        .map((result) => result.ui_id as string),
     [results],
   );
   const baseUiIdsKey = baseUiIds.join("\u0000");
   React.useEffect(() => {
     for (const uiId of baseUiIds) mountBase(uiId);
-    return () => { for (const uiId of baseUiIds) unmountBase(uiId); };
+    return () => {
+      for (const uiId of baseUiIds) unmountBase(uiId);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [baseUiIdsKey]);
 
   const resultUiIds = React.useMemo(
-    () => (results as GenUiTreeResult[])
-      .map((result) => result.ui_id)
-      .filter((uiId): uiId is string => Boolean(uiId)),
+    () =>
+      (results as GenUiTreeResult[])
+        .map((result) => result.ui_id)
+        .filter((uiId): uiId is string => Boolean(uiId)),
     [results],
   );
   const storeSnapshots = useGenUiSnapshots(sessionId, resultUiIds);
@@ -192,11 +201,11 @@ export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactE
   const sessionSnapshots = storeSnapshots
     .filter((snap: GenUiSnapshot) =>
       // Only include snapshots whose ui_id appears in this response's results
-      results.some((r: GenUiTreeResult) =>
-          r.ui_id === snap.uiId && (
-          r.kind === "genui" ||
-          (r.kind === "genui_patch" && !hasMountedBase(snap.uiId))
-        ),
+      results.some(
+        (r: GenUiTreeResult) =>
+          r.ui_id === snap.uiId &&
+          (r.kind === "genui" ||
+            (r.kind === "genui_patch" && !hasMountedBase(snap.uiId))),
       ),
     )
     .sort((a: GenUiSnapshot, b: GenUiSnapshot) => a.updatedAt - b.updatedAt);
@@ -218,8 +227,7 @@ export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactE
                 index,
             ),
             style: {
-              border:
-                "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+              border: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
               borderRadius: 12,
               padding: 12,
               background: "var(--ant-color-bg-container, #fff)",
@@ -253,8 +261,7 @@ export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactE
         className: "qwenpaw-genui-tree",
         "data-genui-id": snap.uiId,
         style: {
-          border:
-            "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+          border: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
           borderRadius: 12,
           padding: 16,
           marginBottom: 8,
@@ -378,8 +385,7 @@ export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactE
           className: "qwenpaw-derivation-inline",
           "data-trace-ui-id": snap.uiId,
           style: {
-            border:
-              "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+            border: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
             borderRadius: 12,
             padding: 12,
             marginBottom: 8,
@@ -406,8 +412,7 @@ export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactE
               "div",
               {
                 style: {
-                  color:
-                    "var(--ant-color-text-secondary, rgba(0,0,0,.45))",
+                  color: "var(--ant-color-text-secondary, rgba(0,0,0,.45))",
                   fontSize: 12,
                 },
               },
@@ -430,8 +435,7 @@ export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactE
               "span",
               {
                 style: {
-                  color:
-                    "var(--ant-color-text-secondary, rgba(0,0,0,.45))",
+                  color: "var(--ant-color-text-secondary, rgba(0,0,0,.45))",
                   fontSize: 12,
                 },
               },
@@ -499,8 +503,7 @@ export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactE
               "div",
               {
                 style: {
-                  color:
-                    "var(--ant-color-text-secondary, rgba(0,0,0,.45))",
+                  color: "var(--ant-color-text-secondary, rgba(0,0,0,.45))",
                   fontSize: 12,
                   lineHeight: 1.6,
                 },
@@ -513,8 +516,7 @@ export function GenUiInline({ data }: { data: Record<string, unknown> }): ReactE
               "div",
               {
                 style: {
-                  color:
-                    "var(--ant-color-text-secondary, rgba(0,0,0,.45))",
+                  color: "var(--ant-color-text-secondary, rgba(0,0,0,.45))",
                   fontSize: 12,
                   lineHeight: 1.6,
                 },

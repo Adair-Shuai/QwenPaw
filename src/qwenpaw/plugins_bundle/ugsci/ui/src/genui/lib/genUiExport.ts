@@ -10,7 +10,10 @@ function triggerDownload(href: string, filename: string): void {
   link.click();
 }
 
-export async function exportGenUiPng(element: HTMLElement, filename: string): Promise<void> {
+export async function exportGenUiPng(
+  element: HTMLElement,
+  filename: string,
+): Promise<void> {
   const { toPng } = await import("html-to-image");
   const dataUrl = await toPng(element, {
     cacheBust: true,
@@ -18,14 +21,18 @@ export async function exportGenUiPng(element: HTMLElement, filename: string): Pr
     backgroundColor: "#ffffff",
   });
   triggerDownload(dataUrl, `${filename}.png`);
-  console.info("[ugsci.genui] PNG export created", { filename, via: "html-to-image" });
+  console.info("[ugsci.genui] PNG export created", {
+    filename,
+    via: "html-to-image",
+  });
 }
 
 function blobToDataUrl(blob: Blob): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve(String(reader.result || ""));
-    reader.onerror = () => reject(reader.error || new Error("media encoding failed"));
+    reader.onerror = () =>
+      reject(reader.error || new Error("media encoding failed"));
     reader.readAsDataURL(blob);
   });
 }
@@ -53,17 +60,23 @@ async function imageToDataUrl(image: HTMLImageElement): Promise<string | null> {
   }
 }
 
-async function collectEmbeddedMedia(element: HTMLElement): Promise<{ sources: Record<string, string>; missing: string[] }> {
+async function collectEmbeddedMedia(
+  element: HTMLElement,
+): Promise<{ sources: Record<string, string>; missing: string[] }> {
   const sources: Record<string, string> = {};
   const missing: string[] = [];
-  const images = Array.from(element.querySelectorAll<HTMLImageElement>("img[data-genui-media-source]"));
-  await Promise.all(images.map(async (image) => {
-    const source = image.dataset.genuiMediaSource || "";
-    const dataUrl = await imageToDataUrl(image);
-    if (!source) return;
-    if (dataUrl) sources[source] = dataUrl;
-    else missing.push(source);
-  }));
+  const images = Array.from(
+    element.querySelectorAll<HTMLImageElement>("img[data-genui-media-source]"),
+  );
+  await Promise.all(
+    images.map(async (image) => {
+      const source = image.dataset.genuiMediaSource || "";
+      const dataUrl = await imageToDataUrl(image);
+      if (!source) return;
+      if (dataUrl) sources[source] = dataUrl;
+      else missing.push(source);
+    }),
+  );
   return { sources, missing: Array.from(new Set(missing)) };
 }
 
@@ -76,13 +89,27 @@ export async function exportGenUiHtml(
   title = filename,
 ): Promise<void> {
   const embeddedMedia = await collectEmbeddedMedia(element);
-  const documentHtml = buildGenUiHtmlDocument(tree, values, embeddedMedia, title);
+  const documentHtml = buildGenUiHtmlDocument(
+    tree,
+    values,
+    embeddedMedia,
+    title,
+  );
   const blob = new Blob([documentHtml], { type: "text/html;charset=utf-8" });
   const url = URL.createObjectURL(blob);
   triggerDownload(url, `${filename}.html`);
   setTimeout(() => URL.revokeObjectURL(url), 1000);
-  if (embeddedMedia.missing.length) console.warn("[ugsci.genui] HTML export has media that could not be embedded", { filename, missing: embeddedMedia.missing });
-  console.info("[ugsci.genui] HTML export created", { filename, bytes: blob.size, embeddedMedia: Object.keys(embeddedMedia.sources).length, missingMedia: embeddedMedia.missing.length });
+  if (embeddedMedia.missing.length)
+    console.warn(
+      "[ugsci.genui] HTML export has media that could not be embedded",
+      { filename, missing: embeddedMedia.missing },
+    );
+  console.info("[ugsci.genui] HTML export created", {
+    filename,
+    bytes: blob.size,
+    embeddedMedia: Object.keys(embeddedMedia.sources).length,
+    missingMedia: embeddedMedia.missing.length,
+  });
 }
 
 /** Print / save-as-PDF from the same HTML document as export, with blob images inlined. */
@@ -93,7 +120,12 @@ export async function printGenUiPdf(
   title: string,
 ): Promise<void> {
   const embeddedMedia = await collectEmbeddedMedia(element);
-  const documentHtml = buildGenUiHtmlDocument(tree, values, embeddedMedia, title);
+  const documentHtml = buildGenUiHtmlDocument(
+    tree,
+    values,
+    embeddedMedia,
+    title,
+  );
   const popup = window.open("", "_blank", "noopener,noreferrer");
   if (!popup) throw new Error("print window was blocked");
   popup.document.open();
@@ -112,6 +144,9 @@ export async function printGenUiPdf(
   popup.print();
   popup.close();
   if (embeddedMedia.missing.length) {
-    console.warn("[ugsci.genui] PDF print has media that could not be embedded", { missing: embeddedMedia.missing });
+    console.warn(
+      "[ugsci.genui] PDF print has media that could not be embedded",
+      { missing: embeddedMedia.missing },
+    );
   }
 }

@@ -22,7 +22,11 @@ from component_manifest import validate_manifest
 from verify_component_artifacts import _archive_limits, _is_preserved
 
 
-def _verify_signature(path: Path, signature: str, key: Ed25519PublicKey) -> None:
+def _verify_signature(
+    path: Path,
+    signature: str,
+    key: Ed25519PublicKey,
+) -> None:
     with path.open("rb") as stream:
         with mmap.mmap(stream.fileno(), 0, access=mmap.ACCESS_READ) as data:
             key.verify(decode_base64(signature, label="signature"), data)
@@ -46,7 +50,11 @@ def _artifact_path(root: Path, base_url: str, url: str) -> Path:
     return path
 
 
-def _verify_payload(archive: zipfile.ZipFile, name: str, expected: dict) -> None:
+def _verify_payload(
+    archive: zipfile.ZipFile,
+    name: str,
+    expected: dict,
+) -> None:
     digest = hashlib.sha256()
     size = 0
     with archive.open(name) as stream:
@@ -57,8 +65,108 @@ def _verify_payload(archive: zipfile.ZipFile, name: str, expected: dict) -> None
         raise ValueError(f"artifact payload differs from manifest: {name}")
 
 
+def _verify_full_archive(
+    archive: zipfile.ZipFile,
+    names: list[str],
+    component: str,
+    entry: dict,
+) -> None:
+    """Verify the full managed inventory and read preserved defaults."""
+    managed = {
+        name
+        for name in names
+        if not _is_preserved(name, tuple(entry["preserve"]))
+    }
+    if managed != set(entry["files"]):
+        raise ValueError(f"full artifact inventory differs: {component}")
+    for name in managed:
+        _verify_payload(archive, name, entry["files"][name])
+    # Preserved defaults are allowed for a first install, but CRC
+    # errors in them must still fail before publication.
+    for name in set(names) - managed:
+        with archive.open(name) as stream:
+            while stream.read(1024 * 1024):
+                pass
+
+
+def _verify_delta_archive(
+    archive: zipfile.ZipFile,
+    names: list[str],
+    component: str,
+    entry: dict,
+    delta: dict,
+) -> None:
+    """Verify identity, reconstruction operations and every delta byte."""
+    document = json.loads(archive.read("delta.json"))
+    if (
+        document.get("schema_version") != 1
+        or document.get("component") != component
+        or document.get("base_version") != delta["from"]
+    ):
+        raise ValueError(f"delta identity/inventory differs: {component}")
+    if (
+        document.get("target_version") != entry["version"]
+        or document.get("final_files") != entry["files"]
+        or (not isinstance(document.get("base_files"), dict))
+    ):
+        raise ValueError(f"delta identity/inventory differs: {component}")
+    operations = {}
+    for operation in ("add", "replace", "delete"):
+        values = document.get(operation)
+        if not isinstance(values, list) or any(
+            (not isinstance(p, str) for p in values)
+        ):
+            raise ValueError("invalid delta operation list")
+        if len(values) != len(set(values)):
+            raise ValueError("duplicate delta operation")
+        for name in values:
+            if safe_relative_path(name) != name or _is_preserved(
+                name,
+                tuple(entry["preserve"]),
+            ):
+                raise ValueError("delta modifies a preserved or unsafe path")
+        operations[operation] = set(values)
+    adds, replaces, deletes = (
+        operations[key] for key in ("add", "replace", "delete")
+    )
+    before, after = (set(document["base_files"]), set(entry["files"]))
+    if (
+        adds & replaces
+        or (adds | replaces) & deletes
+        or adds != after - before
+    ):
+        raise ValueError(
+            "delta operations cannot reconstruct target inventory",
+        )
+    if (
+        deletes != before - after
+        or not replaces <= before & after
+        or any(
+            (
+                document["base_files"][name] != entry["files"][name]
+                for name in (before & after) - replaces
+            )
+        )
+    ):
+        raise ValueError(
+            "delta operations cannot reconstruct target inventory",
+        )
+    if set(names) != {
+        "delta.json",
+        *(f"files/{name}" for name in adds | replaces),
+    }:
+        raise ValueError(
+            "delta operations cannot reconstruct target inventory",
+        )
+    for name in adds | replaces:
+        _verify_payload(archive, f"files/{name}", entry["files"][name])
+
+
 def _verify_archive(
-    path: Path, component: str, entry: dict, delta: dict | None
+    path: Path,
+    component: str,
+    entry: dict,
+    delta: dict | None,
 ) -> None:
     with zipfile.ZipFile(path) as archive:
         infos = archive.infolist()
@@ -75,9 +183,12 @@ def _verify_archive(
             if (
                 info.is_dir()
                 or safe_relative_path(info.filename) != info.filename
-                or stat.S_IFMT(info.external_attr >> 16) not in (0, stat.S_IFREG)
+                or stat.S_IFMT(info.external_attr >> 16)
+                not in (0, stat.S_IFREG)
             ):
-                raise ValueError(f"unsupported archive member: {info.filename}")
+                raise ValueError(
+                    f"unsupported archive member: {info.filename}",
+                )
             relative = (
                 info.filename.removeprefix("files/")
                 if delta is not None
@@ -87,69 +198,13 @@ def _verify_archive(
                 relative == "visualization/data"
                 or relative.startswith("visualization/data/")
             ):
-                raise ValueError("UGSci visualization test data must not be published")
+                raise ValueError(
+                    "UGSci visualization test data must not be published",
+                )
         if delta is None:
-            managed = {
-                name
-                for name in names
-                if not _is_preserved(name, tuple(entry["preserve"]))
-            }
-            if managed != set(entry["files"]):
-                raise ValueError(f"full artifact inventory differs: {component}")
-            for name in managed:
-                _verify_payload(archive, name, entry["files"][name])
-            # Preserved defaults are allowed for a first install, but CRC
-            # errors in them must still fail before publication.
-            for name in set(names) - managed:
-                with archive.open(name) as stream:
-                    while stream.read(1024 * 1024):
-                        pass
+            _verify_full_archive(archive, names, component, entry)
             return
-        document = json.loads(archive.read("delta.json"))
-        if (
-            document.get("schema_version") != 1
-            or document.get("component") != component
-            or document.get("base_version") != delta["from"]
-            or document.get("target_version") != entry["version"]
-            or document.get("final_files") != entry["files"]
-            or not isinstance(document.get("base_files"), dict)
-        ):
-            raise ValueError(f"delta identity/inventory differs: {component}")
-        operations = {}
-        for operation in ("add", "replace", "delete"):
-            values = document.get(operation)
-            if not isinstance(values, list) or any(
-                not isinstance(p, str) for p in values
-            ):
-                raise ValueError("invalid delta operation list")
-            if len(values) != len(set(values)):
-                raise ValueError("duplicate delta operation")
-            for name in values:
-                if safe_relative_path(name) != name or _is_preserved(
-                    name, tuple(entry["preserve"])
-                ):
-                    raise ValueError("delta modifies a preserved or unsafe path")
-            operations[operation] = set(values)
-        adds, replaces, deletes = (
-            operations[key] for key in ("add", "replace", "delete")
-        )
-        before, after = set(document["base_files"]), set(entry["files"])
-        if (
-            adds & replaces
-            or (adds | replaces) & deletes
-            or adds != after - before
-            or deletes != before - after
-            or not replaces <= (before & after)
-            or any(
-                document["base_files"][name] != entry["files"][name]
-                for name in (before & after) - replaces
-            )
-            or set(names)
-            != {"delta.json", *(f"files/{name}" for name in adds | replaces)}
-        ):
-            raise ValueError("delta operations cannot reconstruct target inventory")
-        for name in adds | replaces:
-            _verify_payload(archive, f"files/{name}", entry["files"][name])
+        _verify_delta_archive(archive, names, component, entry, delta)
 
 
 def verify_release(
@@ -161,14 +216,18 @@ def verify_release(
     public_key: str,
 ) -> dict:
     key = Ed25519PublicKey.from_public_bytes(
-        decode_base64(public_key, label="public key")
+        decode_base64(public_key, label="public key"),
     )
     _verify_signature(
-        manifest_path, manifest_path.with_suffix(".json.sig").read_text().strip(), key
+        manifest_path,
+        manifest_path.with_suffix(".json.sig").read_text().strip(),
+        key,
     )
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     validate_manifest(
-        manifest, expected_target=target, core_version=manifest["release_version"]
+        manifest,
+        expected_target=target,
+        core_version=manifest["release_version"],
     )
     count = 0
     for component, entry in manifest["components"].items():
@@ -200,17 +259,24 @@ def main() -> int:
     parser.add_argument("--target", required=True)
     parser.add_argument("--base-url", required=True)
     parser.add_argument(
-        "--public-key", default=os.environ.get("COMPONENT_SIGNING_PUBLIC_KEY", "")
+        "--public-key",
+        default=os.environ.get("COMPONENT_SIGNING_PUBLIC_KEY", ""),
     )
     args = parser.parse_args()
     policy = json.loads(
-        Path(__file__).with_name("component_compatibility.json").read_text()
+        Path(__file__)
+        .with_name("component_compatibility.json")
+        .read_text(encoding="utf-8"),
     )
     manifest = json.loads(args.manifest.read_text(encoding="utf-8"))
-    if manifest.get("protocol_version") != policy["protocol_version"] or Version(
-        manifest["core_min_version"]
-    ) < Version(policy["core_min_version"]):
-        raise SystemExit("release does not satisfy the desktop compatibility policy")
+    if manifest.get("protocol_version") != policy[
+        "protocol_version"
+    ] or Version(manifest["core_min_version"]) < Version(
+        policy["core_min_version"],
+    ):
+        raise SystemExit(
+            "release does not satisfy the desktop compatibility policy",
+        )
     print(
         json.dumps(
             verify_release(
@@ -219,8 +285,8 @@ def main() -> int:
                 target=args.target,
                 base_url=args.base_url,
                 public_key=args.public_key,
-            )
-        )
+            ),
+        ),
     )
     return 0
 

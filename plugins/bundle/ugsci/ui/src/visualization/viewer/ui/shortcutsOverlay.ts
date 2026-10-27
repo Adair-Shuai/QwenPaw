@@ -21,7 +21,8 @@ export function createShortcutsOverlay(): HTMLElement {
 }
 
 export function toggleShortcutsOverlay(root: HTMLElement): void {
-  root.style.display = root.style.display === "none" || !root.style.display ? "block" : "none";
+  root.style.display =
+    root.style.display === "none" || !root.style.display ? "block" : "none";
 }
 
 export function hideShortcutsOverlay(root: HTMLElement): void {

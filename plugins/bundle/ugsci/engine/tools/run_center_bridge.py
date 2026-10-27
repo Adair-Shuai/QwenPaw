@@ -36,7 +36,11 @@ def _plugin() -> Any | None:
     )
     for module in candidates:
         value = getattr(module, "plugin", None) if module is not None else None
-        if value is not None and getattr(value, "repository", None) and getattr(value, "executor_service", None):
+        if (
+            value is not None
+            and getattr(value, "repository", None)
+            and getattr(value, "executor_service", None)
+        ):
             return value
     return None
 
@@ -52,15 +56,20 @@ def loaded() -> bool:
     return _plugin() is not None
 
 
-def execute_simulation(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
-    """Run one prepared simulator command through Run Center's process executor."""
+def execute_simulation(
+    context: Any,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
+    """Run one prepared simulator command through Run Center's process \
+executor."""
     module = sys.modules.get(f"{RUN_CENTER_MODULE}.runtime.executors")
     if module is None:
         module = next(
             (
                 candidate
                 for name, candidate in list(sys.modules.items())
-                if candidate is not None and name.endswith("qwenpaw_run_center.runtime.executors")
+                if candidate is not None
+                and name.endswith("qwenpaw_run_center.runtime.executors")
             ),
             None,
         )
@@ -87,7 +96,12 @@ def execute_simulation(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
         job_store = None
     original_emit = context.emit
 
-    def emit(event_type: str, data: dict[str, Any] | None = None, *, stage_id: str | None = None):
+    def emit(
+        event_type: str,
+        data: dict[str, Any] | None = None,
+        *,
+        stage_id: str | None = None,
+    ):
         event = original_emit(event_type, data or {}, stage_id=stage_id)
         value = dict(data or {})
         if job_store is not None:
@@ -104,14 +118,18 @@ def execute_simulation(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
                     job_store.update_job_status(
                         context.run_id,
                         "completed" if returncode == 0 else "failed",
-                        returncode=int(returncode) if returncode is not None else None,
+                        returncode=int(returncode)
+                        if returncode is not None
+                        else None,
                         end_ts=time.time(),
                     )
                 elif event_type == "process.timeout":
                     job_store.update_job_status(
                         context.run_id,
                         "timeout",
-                        error=f"simulation exceeded timeout {value.get('timeout')}s",
+                        error=f"simulation exceeded timeout "
+                        f"{value.get('timeout')}"
+                        f"s",
                         end_ts=time.time(),
                     )
                 elif event_type in {"process.stdout", "process.stderr"}:
@@ -126,10 +144,15 @@ def execute_simulation(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
 
     context.emit = emit
     from .result_service import safe_start_collection, safe_finish_collection
+
     safe_start_collection(context.run_id, context)
     terminal_status = "failed"
     try:
-        result = process_executor.execute(payload.get("command"), context, payload)
+        result = process_executor.execute(
+            payload.get("command"),
+            context,
+            payload,
+        )
         terminal_status = "completed"
         output_dir = Path(str(payload.get("output_dir") or ""))
         log_path = Path(str(payload.get("log_path") or ""))
@@ -193,7 +216,10 @@ def execute_simulation(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
         safe_finish_collection(context.run_id, terminal_status)
 
 
-def execute_visualization_import(context: Any, payload: dict[str, Any]) -> dict[str, Any]:
+def execute_visualization_import(
+    context: Any,
+    payload: dict[str, Any],
+) -> dict[str, Any]:
     """Execute one visualization import synchronously inside a Run worker.
 
     ``JobManager`` still performs its carefully serialized manifest commit and
@@ -207,16 +233,23 @@ def execute_visualization_import(context: Any, payload: dict[str, Any]) -> dict[
     try:
         from ...visualization.backend.jobs.manager import job_manager
     except Exception as exc:  # pragma: no cover - plugin isolation boundary
-        raise RuntimeError("UGSci visualization import manager is unavailable") from exc
+        raise RuntimeError(
+            "UGSci visualization import manager is unavailable",
+        ) from exc
     executor_module = next(
         (
             candidate
             for name, candidate in list(sys.modules.items())
-            if candidate is not None and name.endswith("qwenpaw_run_center.runtime.executors")
+            if candidate is not None
+            and name.endswith("qwenpaw_run_center.runtime.executors")
         ),
         None,
     )
-    execution_cancelled = getattr(executor_module, "ExecutionCancelled", RuntimeError)
+    execution_cancelled = getattr(
+        executor_module,
+        "ExecutionCancelled",
+        RuntimeError,
+    )
     job = job_manager.get_job(context.run_id)
     if job is None:
         raise KeyError(f"visualization import job not found: {context.run_id}")
@@ -249,7 +282,9 @@ def execute_visualization_import(context: Any, payload: dict[str, Any]) -> dict[
         job_manager.submit_import(
             job.name,
             Path(str(payload.get("upload_path") or "")),
-            Path(str(payload["prop_path"])) if payload.get("prop_path") else None,
+            Path(str(payload["prop_path"]))
+            if payload.get("prop_path")
+            else None,
             Path(str(payload.get("bin_dir") or "")),
             [Path(str(item)) for item in payload.get("companion_paths") or []],
             _existing_job=job,
@@ -284,7 +319,11 @@ def create_and_submit(
 ) -> dict[str, Any] | None:
     """Create a native Run and submit it, returning ``None`` if unavailable."""
     runtime = _plugin()
-    if runtime is None or not getattr(runtime.executor_service, "started", False):
+    if runtime is None or not getattr(
+        runtime.executor_service,
+        "started",
+        False,
+    ):
         return None
     now = time.time()
     job_store = None
@@ -340,16 +379,31 @@ def create_and_submit(
                 "start_ts": now,
                 "input_inspection": input_inspection,
                 "stages": [
-                    {"stage_id": "prepare", "operation": "simulation.prepare", "ordinal": 0},
-                    {"stage_id": "execute", "operation": "simulation.execute", "ordinal": 1},
-                    {"stage_id": "finalize", "operation": "simulation.finalize", "ordinal": 2},
+                    {
+                        "stage_id": "prepare",
+                        "operation": "simulation.prepare",
+                        "ordinal": 0,
+                    },
+                    {
+                        "stage_id": "execute",
+                        "operation": "simulation.execute",
+                        "ordinal": 1,
+                    },
+                    {
+                        "stage_id": "finalize",
+                        "operation": "simulation.finalize",
+                        "ordinal": 2,
+                    },
                 ],
                 "provenance": {
                     "provider_id": SIMULATION_PROVIDER,
                     "provider_version": "1.0",
-                    "metadata": {"simulator": simulator, "input_inspection": input_inspection},
+                    "metadata": {
+                        "simulator": simulator,
+                        "input_inspection": input_inspection,
+                    },
                 },
-            }
+            },
         )
         runtime.executor_service.submit(run_id)
         return run
@@ -375,7 +429,11 @@ def create_import_run(
 ) -> dict[str, Any] | None:
     """Create and submit a native ``visualization.import`` Run."""
     runtime = _plugin()
-    if runtime is None or not getattr(runtime.executor_service, "started", False):
+    if runtime is None or not getattr(
+        runtime.executor_service,
+        "started",
+        False,
+    ):
         return None
     payload = {
         "run_id": run_id,
@@ -395,9 +453,21 @@ def create_import_run(
             "companion_paths": [str(item) for item in companion_paths],
         },
         "stages": [
-            {"stage_id": "validate", "operation": "visualization.import.validate", "ordinal": 0},
-            {"stage_id": "convert", "operation": "visualization.import.convert", "ordinal": 1},
-            {"stage_id": "publish", "operation": "visualization.import.publish", "ordinal": 2},
+            {
+                "stage_id": "validate",
+                "operation": "visualization.import.validate",
+                "ordinal": 0,
+            },
+            {
+                "stage_id": "convert",
+                "operation": "visualization.import.convert",
+                "ordinal": 1,
+            },
+            {
+                "stage_id": "publish",
+                "operation": "visualization.import.publish",
+                "ordinal": 2,
+            },
         ],
         "provenance": {
             "provider_id": "ugsci.visualization",

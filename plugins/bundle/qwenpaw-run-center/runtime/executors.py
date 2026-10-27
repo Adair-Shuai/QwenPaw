@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Execution abstractions for the independent Run Center.
 
 The service intentionally keeps execution provider-agnostic. Domain plugins
@@ -31,7 +32,12 @@ logger = logging.getLogger("qwenpaw").getChild("plugin.run_center.executors")
 class Executor(Protocol):
     """Provider-neutral executor contract."""
 
-    def execute(self, handler: Any, context: "ExecutionContext", payload: dict[str, Any]) -> Any:
+    def execute(
+        self,
+        handler: Any,
+        context: "ExecutionContext",
+        payload: dict[str, Any],
+    ) -> Any:
         ...
 
     # Optional protocol method.  Executors that can restore a process or a
@@ -65,10 +71,25 @@ class ExecutionContext:
     def paused(self) -> bool:
         return self.pause_event.is_set()
 
-    def emit(self, event_type: str, data: dict[str, Any] | None = None, *, stage_id: str | None = None) -> dict[str, Any]:
-        return self.repository.append_event(self.run_id, event_type, data or {}, stage_id=stage_id)
+    def emit(
+        self,
+        event_type: str,
+        data: dict[str, Any] | None = None,
+        *,
+        stage_id: str | None = None,
+    ) -> dict[str, Any]:
+        return self.repository.append_event(
+            self.run_id,
+            event_type,
+            data or {},
+            stage_id=stage_id,
+        )
 
-    def heartbeat(self, *, metrics: dict[str, Any] | None = None) -> dict[str, Any]:
+    def heartbeat(
+        self,
+        *,
+        metrics: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         """Record a provider heartbeat in the durable Run event stream.
 
         Long-running providers should call this from their polling loop.  The
@@ -95,12 +116,22 @@ class ExecutionContext:
             raise TypeError("resource sample must be a mapping")
         return self.emit("worker.resource_sample", dict(sample))
 
-    def progress(self, value: float, *, phase: str | None = None, data: dict[str, Any] | None = None) -> dict[str, Any]:
+    def progress(
+        self,
+        value: float,
+        *,
+        phase: str | None = None,
+        data: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
         current = self.repository.get_run(self.run_id)
         if current is None:
             raise KeyError(self.run_id)
         # Progress updates are represented by a durable event and run snapshot.
-        if current.get("status") not in {RunStatus.RUNNING, RunStatus.PREPARING, RunStatus.FINALIZING}:
+        if current.get("status") not in {
+            RunStatus.RUNNING,
+            RunStatus.PREPARING,
+            RunStatus.FINALIZING,
+        }:
             return current
         updated = self.repository.transition(
             self.run_id,
@@ -112,7 +143,8 @@ class ExecutionContext:
         return updated
 
     def wait_if_paused(self, timeout: float = 0.25) -> bool:
-        """Block cooperatively while paused; return False after cancellation."""
+        """Block cooperatively while paused; return False after \
+cancellation."""
         while self.pause_event.is_set() and not self.cancel_event.is_set():
             self.cancel_event.wait(timeout)
         return not self.cancel_event.is_set()
@@ -187,12 +219,19 @@ class ExecutionTimeout(RuntimeError):
 class InProcessExecutor:
     """Run a registered Python callable in a managed worker thread."""
 
-    def execute(self, handler: Any, context: ExecutionContext, payload: dict[str, Any]) -> Any:
+    def execute(
+        self,
+        handler: Any,
+        context: ExecutionContext,
+        payload: dict[str, Any],
+    ) -> Any:
         if not callable(handler):
             raise TypeError("in-process executor handler must be callable")
         checkpoint = context.resume_checkpoint
-        resume_handler = getattr(handler, "resume", None) if checkpoint else None
-        if callable(resume_handler):
+        resume_handler = (
+            getattr(handler, "resume", None) if checkpoint else None
+        )
+        if checkpoint is not None and callable(resume_handler):
             return self.resume(handler, context, payload, checkpoint)
         return self._invoke(handler, context, payload)
 
@@ -217,7 +256,12 @@ class InProcessExecutor:
         return self._invoke(handler, context, payload)
 
     @staticmethod
-    def _invoke(handler: Any, context: ExecutionContext, payload: dict[str, Any], checkpoint: dict[str, Any] | None = None) -> Any:
+    def _invoke(
+        handler: Any,
+        context: ExecutionContext,
+        payload: dict[str, Any],
+        checkpoint: dict[str, Any] | None = None,
+    ) -> Any:
         try:
             parameters = list(inspect.signature(handler).parameters.values())
         except (TypeError, ValueError):
@@ -225,11 +269,19 @@ class InProcessExecutor:
         # Support the two stable provider forms: (context, payload) and
         # (context). A provider may also accept keyword-only payload.
         payload_parameter = next(
-            (parameter for parameter in parameters if parameter.name == "payload"),
+            (
+                parameter
+                for parameter in parameters
+                if parameter.name == "payload"
+            ),
             None,
         )
         checkpoint_parameter = next(
-            (parameter for parameter in parameters if parameter.name in {"checkpoint", "resume_checkpoint"}),
+            (
+                parameter
+                for parameter in parameters
+                if parameter.name in {"checkpoint", "resume_checkpoint"}
+            ),
             None,
         )
         positional = [
@@ -263,7 +315,11 @@ class InProcessExecutor:
                     break
             if checkpoint_parameter.kind == inspect.Parameter.KEYWORD_ONLY:
                 kwargs = {checkpoint_parameter.name: checkpoint}
-                if payload_parameter is not None and payload_parameter.kind == inspect.Parameter.KEYWORD_ONLY:
+                if (
+                    payload_parameter is not None
+                    and payload_parameter.kind
+                    == inspect.Parameter.KEYWORD_ONLY
+                ):
                     kwargs[payload_parameter.name] = payload
                 result = handler(*args, **kwargs)
             else:
@@ -278,7 +334,11 @@ class InProcessExecutor:
             result = handler(context)
         if inspect.isawaitable(result):
             try:
-                return asyncio.run(result)
+
+                async def await_result():
+                    return await result
+
+                return asyncio.run(await_result())
             except RuntimeError:
                 # A provider invoked from an already-running loop can still be
                 # executed synchronously in this worker thread.
@@ -291,11 +351,25 @@ class InProcessExecutor:
 
 
 class ProcessExecutor:
-    """Execute an argv command without a shell and stream stdout/stderr events."""
+    """Execute an argv command without a shell and stream stdout/stderr \
+events."""
 
-    def execute(self, handler: Any, context: ExecutionContext, payload: dict[str, Any]) -> dict[str, Any]:
-        argv = handler if isinstance(handler, (list, tuple)) else payload.get("argv")
-        if not isinstance(argv, (list, tuple)) or not argv or not all(isinstance(item, str) and item for item in argv):
+    def execute(
+        self,
+        handler: Any,
+        context: ExecutionContext,
+        payload: dict[str, Any],
+    ) -> dict[str, Any]:
+        argv = (
+            handler
+            if isinstance(handler, (list, tuple))
+            else payload.get("argv")
+        )
+        if (
+            not isinstance(argv, (list, tuple))
+            or not argv
+            or not all(isinstance(item, str) and item for item in argv)
+        ):
             raise ValueError("process executor requires a non-empty argv list")
         timeout_value = payload.get("timeout", 0)
         try:
@@ -310,7 +384,11 @@ class ProcessExecutor:
             try:
                 log_target = Path(str(log_path)).expanduser().resolve()
                 log_target.parent.mkdir(parents=True, exist_ok=True)
-                log_handle = log_target.open("w", encoding="utf-8", errors="replace")
+                log_handle = log_target.open(
+                    "w",
+                    encoding="utf-8",
+                    errors="replace",
+                )
             except OSError:
                 # Logging is auxiliary; execution remains valid when the
                 # requested compatibility log cannot be opened.
@@ -324,9 +402,13 @@ class ProcessExecutor:
         # Process based providers commonly rely on relative include paths and
         # simulator generated output.  Honor the execution directory carried
         # by the Run payload instead of inheriting the host process cwd.
-        execution_dir = payload.get("working_dir") or payload.get("execution_dir")
+        execution_dir = payload.get("working_dir") or payload.get(
+            "execution_dir",
+        )
         if execution_dir:
-            process_kwargs["cwd"] = str(Path(str(execution_dir)).expanduser().resolve())
+            process_kwargs["cwd"] = str(
+                Path(str(execution_dir)).expanduser().resolve(),
+            )
         try:
             process = subprocess.Popen(
                 list(argv),
@@ -336,7 +418,10 @@ class ProcessExecutor:
             if log_handle is not None:
                 log_handle.close()
             raise
-        context.emit("process.started", {"pid": process.pid, "argv": list(argv)})
+        context.emit(
+            "process.started",
+            {"pid": process.pid, "argv": list(argv)},
+        )
         deadline = time.monotonic() + timeout if timeout > 0 else None
         lines: queue.Queue[tuple[str, str]] = queue.Queue()
 
@@ -354,8 +439,16 @@ class ProcessExecutor:
                 lines.put((event_type, text))
 
         readers = [
-            threading.Thread(target=_read, args=(process.stdout, "process.stdout"), daemon=True),
-            threading.Thread(target=_read, args=(process.stderr, "process.stderr"), daemon=True),
+            threading.Thread(
+                target=_read,
+                args=(process.stdout, "process.stdout"),
+                daemon=True,
+            ),
+            threading.Thread(
+                target=_read,
+                args=(process.stderr, "process.stderr"),
+                daemon=True,
+            ),
         ]
         for reader in readers:
             reader.start()
@@ -368,7 +461,9 @@ class ProcessExecutor:
                     except subprocess.TimeoutExpired:
                         process.kill()
                         process.wait(timeout=5)
-                    raise ExecutionCancelled("Process terminated after cancellation")
+                    raise ExecutionCancelled(
+                        "Process terminated after cancellation",
+                    )
                 if deadline is not None and time.monotonic() >= deadline:
                     process.terminate()
                     try:
@@ -376,9 +471,12 @@ class ProcessExecutor:
                     except subprocess.TimeoutExpired:
                         process.kill()
                         process.wait(timeout=5)
-                    context.emit("process.timeout", {"timeout": timeout, "argv": list(argv)})
+                    context.emit(
+                        "process.timeout",
+                        {"timeout": timeout, "argv": list(argv)},
+                    )
                     raise ExecutionTimeout(
-                        f"process exceeded timeout of {timeout:.3f} seconds"
+                        f"process exceeded timeout of {timeout:.3f} seconds",
                     )
                 while True:
                     try:
@@ -398,9 +496,17 @@ class ProcessExecutor:
                 context.emit(event_type, {"line": line})
             returncode = int(process.returncode or 0)
             if returncode != 0:
-                context.emit("process.exit", {"returncode": returncode, "argv": list(argv)})
-                raise RuntimeError(f"process exited with return code {returncode}")
-            context.emit("process.exit", {"returncode": returncode, "argv": list(argv)})
+                context.emit(
+                    "process.exit",
+                    {"returncode": returncode, "argv": list(argv)},
+                )
+                raise RuntimeError(
+                    f"process exited with return code {returncode}",
+                )
+            context.emit(
+                "process.exit",
+                {"returncode": returncode, "argv": list(argv)},
+            )
             return {"returncode": returncode, "argv": list(argv)}
         finally:
             if process.poll() is None:
@@ -505,28 +611,56 @@ class RunExecutorService:
         with self._lock:
             return len(self._registrations)
 
-    def register(self, operation: str, handler: Any, *, provider_id: str | None = None, executor: Executor | None = None) -> None:
+    def register(
+        self,
+        operation: str,
+        handler: Any,
+        *,
+        provider_id: str | None = None,
+        executor: Executor | None = None,
+    ) -> None:
         operation = str(operation or "").strip()
-        if not operation or not callable(handler) and not isinstance(handler, (list, tuple)):
+        if (
+            not operation
+            or not callable(handler)
+            and not isinstance(handler, (list, tuple))
+        ):
             raise ValueError("operation and executable handler are required")
         if provider_id is not None:
             provider_id = str(provider_id).strip() or None
         selected = executor or InProcessExecutor()
         with self._lock:
-            self._registrations[(operation, provider_id)] = _Registration(handler, selected, provider_id)
+            self._registrations[(operation, provider_id)] = _Registration(
+                handler,
+                selected,
+                provider_id,
+            )
             started = self._started
         if started:
             for run in self._fair_queue_order(
                 self.repository.list_runs(
-                    status=RunStatus.QUEUED, operation=operation, limit=500
-                )
+                    status=RunStatus.QUEUED,
+                    operation=operation,
+                    limit=500,
+                ),
             ):
-                if provider_id is None or run.get("provider_id") == provider_id:
+                if (
+                    provider_id is None
+                    or run.get("provider_id") == provider_id
+                ):
                     self._submit_discovered_run(run["run_id"])
 
-    def unregister(self, operation: str, *, provider_id: str | None = None) -> None:
+    def unregister(
+        self,
+        operation: str,
+        *,
+        provider_id: str | None = None,
+    ) -> None:
         with self._lock:
-            self._registrations.pop((str(operation).strip(), provider_id), None)
+            self._registrations.pop(
+                (str(operation).strip(), provider_id),
+                None,
+            )
 
     def replace_registrations(self, registrations: list[Any]) -> None:
         """Atomically replace host-owned executor registrations.
@@ -541,9 +675,12 @@ class RunExecutorService:
             handler = getattr(item, "handler", None)
             provider_id = getattr(item, "provider_id", None)
             if not operation or (
-                not callable(handler) and not isinstance(handler, (list, tuple))
+                not callable(handler)
+                and not isinstance(handler, (list, tuple))
             ):
-                raise ValueError("operation and executable handler are required")
+                raise ValueError(
+                    "operation and executable handler are required",
+                )
             if provider_id is not None:
                 provider_id = str(provider_id).strip() or None
             executor = getattr(item, "executor", None) or InProcessExecutor()
@@ -557,10 +694,11 @@ class RunExecutorService:
             started = self._started
         if started:
             for run in self._fair_queue_order(
-                self.repository.list_runs(status=RunStatus.QUEUED, limit=500)
+                self.repository.list_runs(status=RunStatus.QUEUED, limit=500),
             ):
                 if self._find_registration(
-                    run.get("operation"), run.get("provider_id")
+                    run.get("operation"),
+                    run.get("provider_id"),
                 ):
                     self._submit_discovered_run(run["run_id"])
 
@@ -576,17 +714,26 @@ class RunExecutorService:
             try:
                 self.repository.cleanup_stale_resource_leases()
             except (KeyError, ValueError):
-                logger.debug("Stale resource lease cleanup failed", exc_info=True)
-            self._pool = ThreadPoolExecutor(max_workers=self.max_workers, thread_name_prefix="run-center")
+                logger.debug(
+                    "Stale resource lease cleanup failed",
+                    exc_info=True,
+                )
+            self._pool = ThreadPoolExecutor(
+                max_workers=self.max_workers,
+                thread_name_prefix="run-center",
+            )
             self._started = True
         # Queue only runs for which this process has an executor. Unknown
         # operations remain queued and can be picked up after plugin reload.
         self._queue_review_pending_drafts()
         queued = self._fair_queue_order(
-            self.repository.list_runs(status=RunStatus.QUEUED, limit=500)
+            self.repository.list_runs(status=RunStatus.QUEUED, limit=500),
         )
         for run in queued:
-            if self._find_registration(run.get("operation"), run.get("provider_id")):
+            if self._find_registration(
+                run.get("operation"),
+                run.get("provider_id"),
+            ):
                 self._submit_discovered_run(run["run_id"])
 
     def _submit_discovered_run(self, run_id: str) -> None:
@@ -601,12 +748,19 @@ class RunExecutorService:
             self.submit(run_id)
         except (KeyError, ValueError) as exc:
             if "approved review is required" in str(exc):
-                logger.info("Run %s remains queued pending an approved review", run_id)
+                logger.info(
+                    "Run %s remains queued pending an approved review",
+                    run_id,
+                )
             else:
                 # Queue state may change concurrently between discovery and
                 # submission.  Keep automatic recovery best-effort while an
                 # explicit API submission continues to return the error.
-                logger.debug("Automatic submission skipped for Run %s", run_id, exc_info=True)
+                logger.debug(
+                    "Automatic submission skipped for Run %s",
+                    run_id,
+                    exc_info=True,
+                )
 
     def _queue_review_pending_drafts(self) -> None:
         """Promote only review-gated drafts into the durable queue.
@@ -616,34 +770,65 @@ class RunExecutorService:
         state while awaiting approval so users can review and then explicitly
         submit them without losing the request on restart.
         """
-        for run in self.repository.list_runs(status=RunStatus.DRAFT, limit=500):
+        for run in self.repository.list_runs(
+            status=RunStatus.DRAFT,
+            limit=500,
+        ):
             try:
                 record = self.repository.get_operation(
                     str(run.get("operation") or ""),
                     provider_id=run.get("provider_id"),
                 )
                 descriptor = (record or {}).get("descriptor") or {}
-                risk = descriptor.get("risk") if isinstance(descriptor, dict) else {}
-                requires_review = isinstance(risk, dict) and risk.get("requires_review") is True
-                payload = run.get("payload") if isinstance(run.get("payload"), dict) else {}
-                requires_review = requires_review or payload.get("require_review") is True
+                risk = (
+                    descriptor.get("risk")
+                    if isinstance(descriptor, dict)
+                    else {}
+                )
+                requires_review = (
+                    isinstance(risk, dict)
+                    and risk.get("requires_review") is True
+                )
+                payload = (
+                    run.get("payload")
+                    if isinstance(run.get("payload"), dict)
+                    else {}
+                )
+                requires_review = (
+                    requires_review or payload.get("require_review") is True
+                )
                 if requires_review:
                     self.repository.transition(
-                        run["run_id"], RunStatus.QUEUED,
+                        run["run_id"],
+                        RunStatus.QUEUED,
                         data={"reason": "awaiting_review"},
                     )
             except (KeyError, TypeError, ValueError):
-                logger.debug("Review draft promotion skipped for Run %s", run.get("run_id"), exc_info=True)
+                logger.debug(
+                    "Review draft promotion skipped for Run %s",
+                    run.get("run_id"),
+                    exc_info=True,
+                )
 
-    def _fair_queue_order(self, runs: list[dict[str, Any]]) -> list[dict[str, Any]]:
-        """Interleave queued projects while retaining priority/FIFO per project.
+    def _fair_queue_order(
+        self,
+        runs: list[dict[str, Any]],
+    ) -> list[dict[str, Any]]:
+        """Interleave queued projects while retaining priority/FIFO per \
+project.
 
-        This is a deliberately small local fairness policy: each project gets
-        one turn before another turn is granted, and runs from the same project
-        are ordered by durable priority then creation/update order.  Explicit
-        ``submit(run_id)`` calls remain authoritative; this ordering governs
-        automatic startup/reload dispatch and can be replaced by a weighted
-        scheduler without changing the repository/API contract.
+        This is a deliberately small local fairness policy: \
+each project gets
+        one turn before another turn is granted, and runs \
+from the same project
+        are ordered by durable priority then creation/update \
+order.  Explicit
+        ``submit(run_id)`` calls remain authoritative; this \
+ordering governs
+        automatic startup/reload dispatch and can be replaced \
+by a weighted
+        scheduler without changing the repository/API \
+contract.
         """
         if len(runs) < 2:
             return runs
@@ -658,10 +843,16 @@ class RunExecutorService:
         for items in groups.values():
             items.sort(
                 key=lambda item: (
-                    -int(item.get("priority") or (item.get("payload") or {}).get("priority") or 0),
-                    str(item.get("created_at") or item.get("updated_at") or ""),
+                    -int(
+                        item.get("priority")
+                        or (item.get("payload") or {}).get("priority")
+                        or 0,
+                    ),
+                    str(
+                        item.get("created_at") or item.get("updated_at") or "",
+                    ),
                     str(item.get("run_id") or ""),
-                )
+                ),
             )
         result: list[dict[str, Any]] = []
         while True:
@@ -699,11 +890,17 @@ class RunExecutorService:
         if pool is not None:
             pool.shutdown(wait=wait, cancel_futures=False)
 
-    def _find_registration(self, operation: str | None, provider_id: str | None) -> _Registration | None:
+    def _find_registration(
+        self,
+        operation: str | None,
+        provider_id: str | None,
+    ) -> _Registration | None:
         if not operation:
             return None
         with self._lock:
-            return self._registrations.get((operation, provider_id)) or self._registrations.get((operation, None))
+            return self._registrations.get(
+                (operation, provider_id),
+            ) or self._registrations.get((operation, None))
 
     def submit(self, run_id: str) -> None:
         if not self._started:
@@ -725,12 +922,16 @@ class RunExecutorService:
             self.repository.transition(run_id, RunStatus.QUEUED)
             run = self.repository.get_run(run_id) or run
         if run.get("status") != RunStatus.QUEUED:
-            raise ValueError(f"Run cannot be submitted from state: {run.get('status')}")
+            raise ValueError(
+                f"Run cannot be submitted from state: {run.get('status')}",
+            )
         # Review gating is enabled by either the immutable Run request or the
         # registered Operation Descriptor.  The descriptor is authoritative
         # for high-risk providers, so a client cannot bypass a mandatory gate
         # simply by omitting ``require_review`` from its payload.
-        payload = run.get("payload") if isinstance(run.get("payload"), dict) else {}
+        payload = (
+            run.get("payload") if isinstance(run.get("payload"), dict) else {}
+        )
         descriptor_requires_review = False
         try:
             operation_record = self.repository.get_operation(
@@ -738,9 +939,11 @@ class RunExecutorService:
                 provider_id=run.get("provider_id"),
             )
             descriptor = (operation_record or {}).get("descriptor") or {}
-            risk = descriptor.get("risk") if isinstance(descriptor, dict) else {}
+            risk = (
+                descriptor.get("risk") if isinstance(descriptor, dict) else {}
+            )
             descriptor_requires_review = bool(
-                isinstance(risk, dict) and risk.get("requires_review") is True
+                isinstance(risk, dict) and risk.get("requires_review") is True,
             )
         except (KeyError, TypeError, ValueError):
             # A missing or malformed descriptor is handled by the normal
@@ -749,10 +952,19 @@ class RunExecutorService:
             descriptor_requires_review = False
         if payload.get("require_review") is True or descriptor_requires_review:
             if self.review_checker is None or not self.review_checker(run):
-                raise ValueError("an approved review is required before submitting this Run")
-        registration = self._find_registration(run.get("operation"), run.get("provider_id"))
+                raise ValueError(
+                    "an approved review is required "
+                    "before submitting this Run",
+                )
+        registration = self._find_registration(
+            run.get("operation"),
+            run.get("provider_id"),
+        )
         if registration is None:
-            raise ValueError(f"No executor registered for operation: {run.get('operation')}")
+            raise ValueError(
+                "No executor registered for operation: "
+                f"{run.get('operation')}",
+            )
         with self._lock:
             if run_id in self._futures and not self._futures[run_id].done():
                 return
@@ -760,7 +972,13 @@ class RunExecutorService:
             cancel_event = threading.Event()
             pause_event = threading.Event()
             self._controls[run_id] = (cancel_event, pause_event)
-            self._futures[run_id] = self._pool.submit(self._execute, run, registration, cancel_event, pause_event)
+            self._futures[run_id] = self._pool.submit(
+                self._execute,
+                run,
+                registration,
+                cancel_event,
+                pause_event,
+            )
 
     def request_control(self, run_id: str, action: str) -> None:
         with self._lock:
@@ -787,9 +1005,17 @@ class RunExecutorService:
             # resumed directly to ``running``; a queued-and-paused future must
             # first return to ``queued`` so its pending worker can start.
             executing = run_id in self._active
-        if normalized == "resume" and executing and current.get("status") == RunStatus.PAUSED:
+        if (
+            normalized == "resume"
+            and executing
+            and current.get("status") == RunStatus.PAUSED
+        ):
             self.request_control(run_id, "resume")
-            return self.repository.transition(run_id, RunStatus.RUNNING, data={"action": "resume"})
+            return self.repository.transition(
+                run_id,
+                RunStatus.RUNNING,
+                data={"action": "resume"},
+            )
         result = self.repository.control(run_id, normalized)
         self.request_control(run_id, normalized)
         if normalized == "resume" and result.get("status") == RunStatus.QUEUED:
@@ -805,12 +1031,21 @@ class RunExecutorService:
                 # A provider may intentionally resume from the beginning; the
                 # legacy behavior remains valid when no checkpoint exists.
                 pass
-            registration = self._find_registration(result.get("operation"), result.get("provider_id"))
+            registration = self._find_registration(
+                result.get("operation"),
+                result.get("provider_id"),
+            )
             if registration is not None:
                 self.submit(run_id)
         return result
 
-    def _execute(self, run: dict[str, Any], registration: _Registration, cancel_event: threading.Event, pause_event: threading.Event) -> None:
+    def _execute(
+        self,
+        run: dict[str, Any],
+        registration: _Registration,
+        cancel_event: threading.Event,
+        pause_event: threading.Event,
+    ) -> None:
         run_id = run["run_id"]
         payload = dict(run.get("payload") or {})
         resume_checkpoint = self._resume_checkpoint(run_id, payload)
@@ -852,15 +1087,25 @@ class RunExecutorService:
                 return
             payload_resources = payload.get("resource_request")
             if not isinstance(payload_resources, dict):
-                payload_resources = payload.get("resources") if isinstance(payload.get("resources"), dict) else {}
+                payload_resources = (
+                    payload.get("resources")
+                    if isinstance(payload.get("resources"), dict)
+                    else {}
+                )
             if not payload_resources:
                 try:
                     descriptor_record = self.repository.get_operation(
                         str(current.get("operation") or ""),
                         provider_id=current.get("provider_id"),
                     )
-                    descriptor = (descriptor_record or {}).get("descriptor") or {}
-                    declared = descriptor.get("resources") if isinstance(descriptor, dict) else None
+                    descriptor = (descriptor_record or {}).get(
+                        "descriptor",
+                    ) or {}
+                    declared = (
+                        descriptor.get("resources")
+                        if isinstance(descriptor, dict)
+                        else None
+                    )
                     if isinstance(declared, dict):
                         payload_resources = dict(declared)
                 except (KeyError, TypeError, ValueError):
@@ -875,8 +1120,14 @@ class RunExecutorService:
                 if key != "pool"
                 and value is not None
                 and (
-                    (isinstance(value, (int, float)) and not isinstance(value, bool))
-                    or (isinstance(value, list) and all(isinstance(item, str) for item in value))
+                    (
+                        isinstance(value, (int, float))
+                        and not isinstance(value, bool)
+                    )
+                    or (
+                        isinstance(value, list)
+                        and all(isinstance(item, str) for item in value)
+                    )
                 )
             }
             project_id = current.get("project_id") or payload.get("project_id")
@@ -905,12 +1156,21 @@ class RunExecutorService:
                     if cancel_event.is_set():
                         return
                     current = self.repository.get_run(run_id)
-                    if not current or current.get("status") in TERMINAL_STATUSES:
+                    if (
+                        not current
+                        or current.get("status") in TERMINAL_STATUSES
+                    ):
                         return
                     try:
                         context.heartbeat()
-                    except Exception:  # pragma: no cover - telemetry must not fail a Run
-                        logger.debug("Run %s heartbeat failed", run_id, exc_info=True)
+                    except (
+                        Exception
+                    ):  # pragma: no cover - telemetry must not fail a Run
+                        logger.debug(
+                            "Run %s heartbeat failed",
+                            run_id,
+                            exc_info=True,
+                        )
 
             heartbeat_thread = threading.Thread(
                 target=_heartbeat_loop,
@@ -925,20 +1185,41 @@ class RunExecutorService:
                 resume_checkpoint,
             )
             current = self.repository.get_run(run_id)
-            if cancel_event.is_set() or not current or current.get("status") in {RunStatus.CANCELLING, RunStatus.CANCELLED}:
+            if (
+                cancel_event.is_set()
+                or not current
+                or current.get("status")
+                in {RunStatus.CANCELLING, RunStatus.CANCELLED}
+            ):
                 if current and current.get("status") == RunStatus.CANCELLING:
-                    self.repository.transition(run_id, RunStatus.CANCELLED, data={"reason": "cancel_requested"})
+                    self.repository.transition(
+                        run_id,
+                        RunStatus.CANCELLED,
+                        data={"reason": "cancel_requested"},
+                    )
                 return
             if current.get("status") == RunStatus.PAUSED:
                 # A provider that returns while paused must not silently mark
                 # the run successful; it can be resumed and submitted again.
                 return
-            self.repository.transition(run_id, RunStatus.FINALIZING, data={"result": _json_safe(result)})
-            self.repository.transition(run_id, RunStatus.SUCCEEDED, data={"result": _json_safe(result)})
+            self.repository.transition(
+                run_id,
+                RunStatus.FINALIZING,
+                data={"result": _json_safe(result)},
+            )
+            self.repository.transition(
+                run_id,
+                RunStatus.SUCCEEDED,
+                data={"result": _json_safe(result)},
+            )
         except ExecutionCancelled as exc:
             current = self.repository.get_run(run_id)
             if current and current.get("status") == RunStatus.CANCELLING:
-                self.repository.transition(run_id, RunStatus.CANCELLED, data={"reason": str(exc)})
+                self.repository.transition(
+                    run_id,
+                    RunStatus.CANCELLED,
+                    data={"reason": str(exc)},
+                )
         except ExecutionTimeout as exc:
             current = self.repository.get_run(run_id)
             if current and current.get("status") not in TERMINAL_STATUSES:
@@ -951,7 +1232,9 @@ class RunExecutorService:
                     )
                 except ValueError:
                     pass
-        except Exception as exc:  # provider boundary: persist a classified failure
+        except (
+            Exception
+        ) as exc:  # provider boundary: persist a classified failure
             logger.exception("Run %s failed", run_id)
             current = self.repository.get_run(run_id)
             if current and current.get("status") == RunStatus.CANCELLING:
@@ -962,19 +1245,31 @@ class RunExecutorService:
                     self.repository.transition(
                         run_id,
                         RunStatus.CANCELLED,
-                        data={"reason": "cancel_requested", "provider_error": str(exc)},
+                        data={
+                            "reason": "cancel_requested",
+                            "provider_error": str(exc),
+                        },
                     )
                 except ValueError:
                     pass
             elif current and current.get("status") != RunStatus.CANCELLED:
                 try:
-                    self.repository.transition(run_id, RunStatus.FAILED, error={"kind": "executor_error", "message": str(exc)})
+                    self.repository.transition(
+                        run_id,
+                        RunStatus.FAILED,
+                        error={"kind": "executor_error", "message": str(exc)},
+                    )
                 except ValueError:
                     pass
         finally:
             heartbeat_stop.set()
-            if heartbeat_thread is not None and heartbeat_thread is not threading.current_thread():
-                heartbeat_thread.join(timeout=min(1.0, self.heartbeat_interval))
+            if (
+                heartbeat_thread is not None
+                and heartbeat_thread is not threading.current_thread()
+            ):
+                heartbeat_thread.join(
+                    timeout=min(1.0, self.heartbeat_interval),
+                )
             with self._lock:
                 self._active.discard(run_id)
                 self._controls.pop(run_id, None)
@@ -987,15 +1282,24 @@ class RunExecutorService:
                         allow_active_run=True,
                     )
                 except (KeyError, ValueError):
-                    logger.debug("Failed to release lease for Run %s", run_id, exc_info=True)
+                    logger.debug(
+                        "Failed to release lease for Run %s",
+                        run_id,
+                        exc_info=True,
+                    )
             if admission_retry:
                 # Schedule only after this Future has been removed.  Doing it
                 # earlier can race with ``submit``'s duplicate guard and leave
                 # a durable queued Run without another admission attempt.
                 self._schedule_admission_retry(run_id)
 
-    def _schedule_admission_retry(self, run_id: str, delay: float = 0.1) -> None:
+    def _schedule_admission_retry(
+        self,
+        run_id: str,
+        delay: float = 0.1,
+    ) -> None:
         """Retry a queued Run after project admission became unavailable."""
+
         def retry() -> None:
             with self._lock:
                 self._admission_timers.discard(timer)
@@ -1007,7 +1311,11 @@ class RunExecutorService:
                 if current and current.get("status") == RunStatus.QUEUED:
                     self.submit(run_id)
             except (KeyError, ValueError):
-                logger.debug("Admission retry skipped for Run %s", run_id, exc_info=True)
+                logger.debug(
+                    "Admission retry skipped for Run %s",
+                    run_id,
+                    exc_info=True,
+                )
 
         timer = threading.Timer(max(0.01, float(delay)), retry)
         timer.daemon = True
@@ -1049,7 +1357,11 @@ class RunExecutorService:
         resume = getattr(registration.executor, "resume", None)
         if checkpoint is not None and callable(resume):
             return resume(registration.handler, context, payload, checkpoint)
-        return registration.executor.execute(registration.handler, context, payload)
+        return registration.executor.execute(
+            registration.handler,
+            context,
+            payload,
+        )
 
 
 def _json_safe(value: Any) -> Any:

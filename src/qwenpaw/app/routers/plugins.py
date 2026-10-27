@@ -4,15 +4,8 @@
 static files.  Also provides runtime install / uninstall endpoints."""
 
 import asyncio
-from ..utils import schedule_agent_reload
-from ...plugins.runtime import invoke_plugin_callback
 import hashlib
 from urllib.parse import urlsplit
-from ...distribution import (
-    EXTERNAL_PLUGIN_UPGRADE_HOSTS,
-    upgrade_source_requires_digest,
-)
-from ...utils.windows_paths import copy_tree, extract_zip, io_path, remove_tree
 import json
 import logging
 import mimetypes
@@ -32,6 +25,13 @@ from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
+from ..utils import schedule_agent_reload
+from ...plugins.runtime import invoke_plugin_callback
+from ...distribution import (
+    EXTERNAL_PLUGIN_UPGRADE_HOSTS,
+    upgrade_source_requires_digest,
+)
+from ...utils.windows_paths import copy_tree, extract_zip, io_path, remove_tree
 from ...market.registry import MarketProviderBusyError
 from ...plugins.activity import PluginBusyError
 from ...plugins.registry import MemoryBackendInUseError
@@ -588,10 +588,14 @@ async def uninstall_plugin_source(
             if root is not None:
                 if was_adopted:
                     await asyncio.to_thread(
-                        set_component_update_adoption, plugin_id, False
+                        set_component_update_adoption,
+                        plugin_id,
+                        False,
                     )
                 await asyncio.to_thread(
-                    mark_plugin_uninstalled, plugin_id, plugins_dir=root
+                    mark_plugin_uninstalled,
+                    plugin_id,
+                    plugins_dir=root,
                 )
             report = await loader.lifecycle.unload(
                 plugin_id,
@@ -610,11 +614,15 @@ async def uninstall_plugin_source(
             if root is not None:
                 if was_adopted:
                     await asyncio.to_thread(
-                        set_component_update_adoption, plugin_id, True
+                        set_component_update_adoption,
+                        plugin_id,
+                        True,
                     )
                 if not was_marked:
                     await asyncio.to_thread(
-                        clear_uninstalled_marker, plugin_id, plugins_dir=root
+                        clear_uninstalled_marker,
+                        plugin_id,
+                        plugins_dir=root,
                     )
             raise
 
@@ -793,26 +801,24 @@ def _sync_plugin_tools_to_agents(loader, plugin_id: str) -> None:
                     raw_enabled = declaration.get("enabled_by_default")
                     raw_description = declaration.get("description")
                     raw_icon = declaration.get("icon")
-                    agent_cfg.tools.builtin_tools[tool_name] = (
-                        BuiltinToolConfig(
-                            name=tool_name,
-                            enabled=(
-                                raw_enabled
-                                if isinstance(raw_enabled, bool)
-                                else False
-                            ),
-                            description=(
-                                raw_description
-                                if isinstance(raw_description, str)
-                                else ""
-                            ),
-                            display_to_user=True,
-                            async_execution=False,
-                            icon=(
-                                raw_icon if isinstance(raw_icon, str) else None
-                            ),
-                            config={},
-                        )
+                    agent_cfg.tools.builtin_tools[
+                        tool_name
+                    ] = BuiltinToolConfig(
+                        name=tool_name,
+                        enabled=(
+                            raw_enabled
+                            if isinstance(raw_enabled, bool)
+                            else False
+                        ),
+                        description=(
+                            raw_description
+                            if isinstance(raw_description, str)
+                            else ""
+                        ),
+                        display_to_user=True,
+                        async_execution=False,
+                        icon=(raw_icon if isinstance(raw_icon, str) else None),
+                        config={},
                     )
                     changed = True
                 if changed:
@@ -1558,7 +1564,7 @@ async def get_plugin_status(plugin_id: str, request: Request):
                 "enabled": enabled,
                 "status": getattr(record, "status", "active"),
                 "diagnostics": list(
-                    getattr(record, "diagnostics", None) or []
+                    getattr(record, "diagnostics", None) or [],
                 ),
                 "version": record.manifest.version,
             }

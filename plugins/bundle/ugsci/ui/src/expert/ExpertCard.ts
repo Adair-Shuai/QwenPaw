@@ -114,9 +114,9 @@ export function ExpertCard({
         : enabledSkills.flatMap((skill) => skill.tags || []),
     ),
   ).slice(0, 3);
-  const specialty =
-    agent.managed_by_app ? "应用专属专家" :
-    bundle?.category || (agent.id === "default" ? "通用助手" : "自定义专家");
+  const specialty = agent.managed_by_app
+    ? "应用专属专家"
+    : bundle?.category || (agent.id === "default" ? "通用助手" : "自定义专家");
   const description = agent.description?.trim() || "";
   const skillNames = enabledSkills.map((skill) => skill.name);
 

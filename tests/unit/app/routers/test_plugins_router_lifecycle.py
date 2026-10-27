@@ -1463,10 +1463,13 @@ def test_oss_proxy_http_route_is_not_plugin_lookup(resource):
 
     app = FastAPI()
     app.include_router(plugins_module.router, prefix="/api")
-    fetch = AsyncMock(return_value=(b'{"items": []}', "application/json", "hit"))
+    fetch = AsyncMock(
+        return_value=(b'{"items": []}', "application/json", "hit"),
+    )
     with patch("qwenpaw.plugins.oss_cache.fetch_oss_resource", fetch):
         response = TestClient(app).get(
-            "/api/plugins/oss-proxy", params={"path": f"{resource}/manifest.json"}
+            "/api/plugins/oss-proxy",
+            params={"path": f"{resource}/manifest.json"},
         )
     assert response.status_code == 200
     assert response.json() == {"items": []}
@@ -1480,7 +1483,11 @@ def test_literal_plugin_get_routes_precede_catch_all():
         if "GET" not in getattr(route, "methods", ()) or "{" in route.path:
             continue
         scope = {"type": "http", "method": "GET", "path": route.path}
-        winner = next(r for r in plugins_module.router.routes if r.matches(scope)[0] == Match.FULL)
+        winner = next(
+            r
+            for r in plugins_module.router.routes
+            if r.matches(scope)[0] == Match.FULL
+        )
         assert winner is route, f"{route.path} shadowed by {winner.path}"
 
 
@@ -1490,16 +1497,29 @@ def test_oss_proxy_revalidates_browser_etag_and_force_bypasses_it():
 
     app = FastAPI()
     app.include_router(plugins_module.router, prefix="/api")
-    fetch = AsyncMock(return_value=(b'{"skills": []}', "application/json", "fresh"))
+    fetch = AsyncMock(
+        return_value=(b'{"skills": []}', "application/json", "fresh"),
+    )
     with patch("qwenpaw.plugins.oss_cache.fetch_oss_resource", fetch):
         client = TestClient(app)
-        first = client.get("/api/plugins/oss-proxy", params={"path": "skills/manifest.json"})
+        first = client.get(
+            "/api/plugins/oss-proxy",
+            params={"path": "skills/manifest.json"},
+        )
         assert first.headers["cache-control"] == "private, no-cache"
         headers = {"If-None-Match": f'W/{first.headers["etag"]}'}
-        unchanged = client.get("/api/plugins/oss-proxy", params={"path": "skills/manifest.json"}, headers=headers)
+        unchanged = client.get(
+            "/api/plugins/oss-proxy",
+            params={"path": "skills/manifest.json"},
+            headers=headers,
+        )
         assert unchanged.status_code == 304
         assert unchanged.content == b""
-        forced = client.get("/api/plugins/oss-proxy", params={"path": "skills/manifest.json", "refresh": "true"}, headers=headers)
+        forced = client.get(
+            "/api/plugins/oss-proxy",
+            params={"path": "skills/manifest.json", "refresh": "true"},
+            headers=headers,
+        )
         assert forced.status_code == 200
         assert forced.json() == {"skills": []}
         assert forced.headers["cache-control"] == "no-store"

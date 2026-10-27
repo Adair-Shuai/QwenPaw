@@ -28,7 +28,9 @@ export function mountViewer(
   let disposed = false;
 
   return {
-    get ready() { return engine.ready; },
+    get ready() {
+      return engine.ready;
+    },
     executeCommand: (command, args) => {
       if (disposed) return Promise.reject(new Error("查看器已关闭"));
       if (!engine.executeCommand) {

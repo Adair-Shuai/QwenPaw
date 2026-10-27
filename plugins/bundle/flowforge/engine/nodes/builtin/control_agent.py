@@ -21,7 +21,6 @@ from __future__ import annotations
 import time
 from typing import Any
 
-import logging
 
 from ...adapter.log_compat import get_logger
 from ...adapter.prompts import (
@@ -58,7 +57,8 @@ class ControlAgentNode(WorkflowNode):
                     id="mode",
                     choices=mode_choices(),
                     default="custom",
-                    tooltip="Preset orchestration task (loads default templates).",
+                    tooltip="Preset orchestration task (loads default "
+                    "templates).",
                 ),
                 IO.String.Input(
                     id="instruction",
@@ -72,7 +72,8 @@ class ControlAgentNode(WorkflowNode):
                     id="system_template",
                     optional=True,
                     multiline=True,
-                    tooltip="Optional system prompt override (mode default when blank).",
+                    tooltip="Optional system prompt override (mode "
+                    "default when blank).",
                 ),
                 IO.String.Input(
                     id="context_template",
@@ -80,7 +81,8 @@ class ControlAgentNode(WorkflowNode):
                     multiline=True,
                     default="${context}",
                     tooltip=(
-                        "How to render the linked context object into the prompt."
+                        "How to render the linked context "
+                        "object into the prompt."
                     ),
                 ),
                 IO.String.Input(
@@ -93,12 +95,14 @@ class ControlAgentNode(WorkflowNode):
                     id="examples",
                     optional=True,
                     multiline=True,
-                    tooltip="Optional few-shot examples appended to the user message.",
+                    tooltip="Optional few-shot examples appended to "
+                    "the user message.",
                 ),
                 IO.Object.Input(
                     id="context",
                     optional=True,
-                    tooltip="Upstream context bag (link from Start or Transform).",
+                    tooltip="Upstream context bag (link from Start or "
+                    "Transform).",
                 ),
                 IO.String.Input(
                     id="target",
@@ -150,7 +154,12 @@ class ControlAgentNode(WorkflowNode):
             },
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         ctx = hidden.tool_context
         llm = getattr(ctx, "llm_service", None) if ctx else None
         if llm is None:
@@ -270,7 +279,10 @@ class ControlAgentNode(WorkflowNode):
             )
             return NodeOutput(
                 error=str(exc),
-                metadata={"node_id": hidden.unique_id, "duration_ms": duration_ms},
+                metadata={
+                    "node_id": hidden.unique_id,
+                    "duration_ms": duration_ms,
+                },
             )
 
 

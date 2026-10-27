@@ -16,12 +16,22 @@ from __future__ import annotations
 
 from .hidden import Hidden, HiddenHolder
 from .loader import WorkflowDocument, WorkflowLoaderError, load
-from .media import MediaRef, flowforge_gen_ui_id, publish_gen_ui, to_gen_ui_tree, to_gen_ui_ui
+from .media import (
+    MediaRef,
+    flowforge_gen_ui_id,
+    publish_gen_ui,
+    to_gen_ui_tree,
+    to_gen_ui_ui,
+)
 from .node_output import NodeOutput
 from .schema import Schema
 from .schema_bridge import json_schema_to_inputs
 from .serializer import export, graph_hash, save, to_json, to_yaml
-from .contract import Contract, default_check_lazy_status, default_fingerprint_inputs
+from .contract import (
+    Contract,
+    default_check_lazy_status,
+    default_fingerprint_inputs,
+)
 from .types import (
     IO,
     Input,

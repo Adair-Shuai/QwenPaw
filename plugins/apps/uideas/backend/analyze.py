@@ -33,7 +33,7 @@ def _extract_json(text: str) -> Optional[Any]:
     else:
         # 截取第一个 { 到最后一个 }
         start, end = stripped.find("{"), stripped.rfind("}")
-        if start >= 0 and end > start:
+        if 0 <= start < end:
             stripped = stripped[start : end + 1]
     try:
         return json.loads(stripped)
@@ -57,12 +57,56 @@ async def _chat(ctx: Any, prompt: str, *, skill: str = "") -> str:
 
 # ─── L1 整理 ─────────────────────────────────────────────────────────
 
+
+def _append_clusters(clusters, clusters_raw, valid_ids, assigned) -> None:
+    """Apply the original validated analysis metadata in input order."""
+    for c in clusters_raw:
+        if not isinstance(c, dict) or not c.get("name"):
+            continue
+        idea_ids = []
+        for iid in c.get("idea_ids") or []:
+            if (
+                isinstance(iid, str)
+                and iid in valid_ids
+                and iid not in assigned
+            ):
+                idea_ids.append(iid)
+                assigned.add(iid)
+        clusters.append(
+            {
+                "id": _new_id("cl"),
+                "name": str(c.get("name"))[:40],
+                "description": str(c.get("description") or "")[:200],
+                "idea_ids": idea_ids,
+                "formed_at": _now_iso(),
+            },
+        )
+
+
+def _populate_tag_map(
+    data,
+    tag_map,
+):
+    """Populate tag map."""
+    tags_raw = data.get("tags") or {}
+    if isinstance(tags_raw, dict):
+        for iid, tlist in tags_raw.items():
+            if isinstance(tlist, list):
+                tag_map[str(iid)] = [str(t) for t in tlist if str(t).strip()]
+
+
 async def organize_ideas(ctx: Any) -> Dict[str, Any]:
     """对全部未归档灵感进行聚类整理。
 
     返回 {"clusters": [...], "ideas": [...]}，并写回存储。
     """
-    from store import get_clusters, get_ideas, save_clusters, save_ideas, transaction
+    from store import (
+        get_clusters,
+        get_ideas,
+        save_clusters,
+        save_ideas,
+        transaction,
+    )
 
     ideas = await get_ideas(ctx)
     active = [i for i in ideas if i.get("status") != "archived"]
@@ -94,8 +138,13 @@ async def organize_ideas(ctx: Any) -> Dict[str, Any]:
     data = _extract_json(reply)
 
     old_clusters = await get_clusters(ctx)
-    if not isinstance(data, dict) or not isinstance(data.get("clusters"), list):
-        logger.warning("[uideas] organize returned invalid JSON; keeping old clusters")
+    if not isinstance(data, dict) or not isinstance(
+        data.get("clusters"),
+        list,
+    ):
+        logger.warning(
+            "[uideas] organize returned invalid JSON; keeping old clusters",
+        )
         return {
             "clusters": old_clusters,
             "ideas": ideas,
@@ -110,23 +159,7 @@ async def organize_ideas(ctx: Any) -> Dict[str, Any]:
     clusters_raw = data.get("clusters") or []
     valid_ids = {str(i.get("id")) for i in active}
     assigned: set[str] = set()
-    for c in clusters_raw:
-        if not isinstance(c, dict) or not c.get("name"):
-            continue
-        idea_ids = []
-        for iid in c.get("idea_ids") or []:
-            if isinstance(iid, str) and iid in valid_ids and iid not in assigned:
-                idea_ids.append(iid)
-                assigned.add(iid)
-        clusters.append(
-            {
-                "id": _new_id("cl"),
-                "name": str(c.get("name"))[:40],
-                "description": str(c.get("description") or "")[:200],
-                "idea_ids": idea_ids,
-                "formed_at": _now_iso(),
-            }
-        )
+    _append_clusters(clusters, clusters_raw, valid_ids, assigned)
     if not clusters:
         return {
             "clusters": old_clusters,
@@ -135,11 +168,10 @@ async def organize_ideas(ctx: Any) -> Dict[str, Any]:
             "tagged": 0,
             "warning": "agent_output_empty",
         }
-    tags_raw = data.get("tags") or {}
-    if isinstance(tags_raw, dict):
-        for iid, tlist in tags_raw.items():
-            if isinstance(tlist, list):
-                tag_map[str(iid)] = [str(t) for t in tlist if str(t).strip()]
+    _populate_tag_map(
+        data,
+        tag_map,
+    )
 
     # 回写：更新灵感状态、标签、聚类归属
     by_id = {i["id"]: i for i in ideas}
@@ -148,7 +180,11 @@ async def organize_ideas(ctx: Any) -> Dict[str, Any]:
             idea = by_id.get(iid)
             if idea:
                 idea["cluster_id"] = cl["id"]
-                idea["status"] = "organized" if idea.get("status") == "raw" else idea.get("status", "raw")
+                idea["status"] = (
+                    "organized"
+                    if idea.get("status") == "raw"
+                    else idea.get("status", "raw")
+                )
     for iid, tags in tag_map.items():
         idea = by_id.get(iid)
         if idea:
@@ -170,7 +206,7 @@ async def organize_ideas(ctx: Any) -> Dict[str, Any]:
                         key: snapshot_idea[key]
                         for key in ("tags", "status", "cluster_id")
                         if key in snapshot_idea
-                    }
+                    },
                 )
         await save_clusters(ctx, clusters)
         await save_ideas(ctx, current)
@@ -197,6 +233,7 @@ def _new_id(prefix: str) -> str:
 
 # ─── L2 扩充 ─────────────────────────────────────────────────────────
 
+
 async def expand_idea(ctx: Any, idea: Dict[str, Any]) -> Dict[str, Any]:
     """对单条灵感调用 Agent 扩充，返回扩充结果并写回灵感。"""
     from memory import build_expand_context
@@ -209,7 +246,7 @@ async def expand_idea(ctx: Any, idea: Dict[str, Any]) -> Dict[str, Any]:
         "{\n"
         '  "title": "优化后的标题",\n'
         '  "expansion": "扩充正文：研究背景、可能的思路/方法、关键科学问题、'
-        "下一步行动建议（2~4 个要点）\",\n"
+        '下一步行动建议（2~4 个要点）",\n'
         '  "related_tags": ["补充标签"]\n'
         "}\n\n"
         f"研究灵感：\n{context}"
@@ -227,7 +264,9 @@ async def expand_idea(ctx: Any, idea: Dict[str, Any]) -> Dict[str, Any]:
         expansion = str(data.get("expansion") or "").strip()
         new_title = str(data.get("title") or "").strip() or new_title
         related_tags = [
-            str(t).strip() for t in (data.get("related_tags") or []) if str(t).strip()
+            str(t).strip()
+            for t in (data.get("related_tags") or [])
+            if str(t).strip()
         ]
 
     if not expansion:

@@ -1,4 +1,6 @@
-"""Real publication validation/routes with an isolated in-memory OSS boundary."""
+# -*- coding: utf-8 -*-
+"""Real publication validation/routes with an isolated in-memory OSS \
+boundary."""
 
 import base64
 import hashlib
@@ -32,11 +34,18 @@ class Bucket:
             raise StorageError(404)
         return io.BytesIO(
             self.objects[key]
-            + (b"corrupt" if self.corrupt and key.endswith(self.corrupt) else b"")
+            + (
+                b"corrupt"
+                if self.corrupt and key.endswith(self.corrupt)
+                else b""
+            ),
         )
 
     def put_object(self, key, data, headers):
-        if headers.get("x-oss-forbid-overwrite") == "true" and key in self.objects:
+        if (
+            headers.get("x-oss-forbid-overwrite") == "true"
+            and key in self.objects
+        ):
             raise StorageError(409)
         self.objects[key] = data
         self.headers[key] = headers
@@ -51,11 +60,15 @@ class Bucket:
         return SimpleNamespace(acl=self.headers[key]["x-oss-object-acl"])
 
 
-@pytest.fixture
-def setup(monkeypatch):
+@pytest.fixture(name="setup")
+def _setup_fixture(monkeypatch):
     bucket = Bucket()
     bucket.objects["metadata/index.json"] = service._json(
-        {"products": {"plugins": {"index_url": "/metadata/plugins/index.json"}}}
+        {
+            "products": {
+                "plugins": {"index_url": "/metadata/plugins/index.json"},
+            },
+        },
     )
     monkeypatch.setattr(service, "_bucket", lambda kind: bucket)
     monkeypatch.setenv(
@@ -66,11 +79,11 @@ def setup(monkeypatch):
                     "namespace": name,
                     "role": "admin" if name == "admin" else "contributor",
                     "token_sha256": hashlib.sha256(
-                        (name + "-token").encode()
+                        (name + "-token").encode(),
                     ).hexdigest(),
                 }
                 for name in ("alice", "bob", "admin")
-            ]
+            ],
         ),
     )
     return TestClient(service.app), bucket
@@ -80,7 +93,12 @@ def headers(name="alice"):
     return {"Authorization": "Bearer " + name + "-token"}
 
 
-def app_payload(version="1.0.0", asset_id="alice-app", content="VALUE=1", extra=None):
+def app_payload(
+    version="1.0.0",
+    asset_id="alice-app",
+    content="VALUE=1",
+    extra=None,
+):
     output = io.BytesIO()
     with zipfile.ZipFile(output, "w") as archive:
         archive.writestr(
@@ -92,7 +110,7 @@ def app_payload(version="1.0.0", asset_id="alice-app", content="VALUE=1", extra=
                     "version": version,
                     "type": "app",
                     "entry": {"backend": "main.py"},
-                }
+                },
             ),
         )
         archive.writestr(asset_id + "/main.py", content)
@@ -123,32 +141,48 @@ def expert_payload(version="1.0.0"):
 
 def test_contributor_upload_approve_and_update_preserve_catalog(setup):
     client, bucket = setup
-    legacy = {"id": "old", "plugin_id": "old", "version": "1.0.0", "sha256": "existing"}
+    legacy = {
+        "id": "old",
+        "plugin_id": "old",
+        "version": "1.0.0",
+        "sha256": "existing",
+    }
     bucket.objects["metadata/plugins/index.json"] = service._json(
-        {"files": {"old": legacy}, "platforms": {}}
+        {"files": {"old": legacy}, "platforms": {}},
     )
     payload = app_payload()
-    checked = client.post("/v1/submissions/inspect", json=payload, headers=headers())
+    checked = client.post(
+        "/v1/submissions/inspect",
+        json=payload,
+        headers=headers(),
+    )
     assert checked.status_code == 200 and checked.json()["status"] == "checked"
     assert not any(
-        key.startswith("publisher-private/submissions") for key in bucket.objects
+        key.startswith("publisher-private/submissions")
+        for key in bucket.objects
     )
     submitted = client.post("/v1/submissions", json=payload, headers=headers())
-    assert submitted.status_code == 200 and submitted.json()["status"] == "submitted"
     assert (
-        bucket.headers[submitted.json()["object_key"]]["x-oss-object-acl"] == "private"
+        submitted.status_code == 200
+        and submitted.json()["status"] == "submitted"
     )
-    assert json.loads(bucket.objects["metadata/plugins/index.json"])["files"] == {
-        "old": legacy
-    }
+    assert (
+        bucket.headers[submitted.json()["object_key"]]["x-oss-object-acl"]
+        == "private"
+    )
+    assert json.loads(bucket.objects["metadata/plugins/index.json"])[
+        "files"
+    ] == {"old": legacy}
     assert (
         client.post(
-            "/v1/approve/alice/app/alice-app/1.0.0", headers=headers()
+            "/v1/approve/alice/app/alice-app/1.0.0",
+            headers=headers(),
         ).status_code
         == 403
     )
     approved = client.post(
-        "/v1/approve/alice/app/alice-app/1.0.0", headers=headers("admin")
+        "/v1/approve/alice/app/alice-app/1.0.0",
+        headers=headers("admin"),
     )
     assert approved.status_code == 200 and approved.json()["verified"] is True
     assert (
@@ -156,11 +190,17 @@ def test_contributor_upload_approve_and_update_preserve_catalog(setup):
         == "public-read"
     )
     assert (
-        client.post("/v1/submissions", json=payload, headers=headers()).status_code
+        client.post(
+            "/v1/submissions",
+            json=payload,
+            headers=headers(),
+        ).status_code
         == 200
     )
     changed = client.post(
-        "/v1/submissions", json=app_payload(content="VALUE=2"), headers=headers()
+        "/v1/submissions",
+        json=app_payload(content="VALUE=2"),
+        headers=headers(),
     )
     assert changed.status_code == 409
     assert (
@@ -173,17 +213,20 @@ def test_contributor_upload_approve_and_update_preserve_catalog(setup):
     )
     assert (
         client.post(
-            "/v1/approve/alice/app/alice-app/1.1.0", headers=headers("admin")
+            "/v1/approve/alice/app/alice-app/1.1.0",
+            headers=headers("admin"),
         ).status_code
         == 200
     )
     catalog = json.loads(bucket.objects["metadata/plugins/index.json"])
     assert len(catalog["files"]) == 3 and catalog["files"]["old"] == legacy
     entry = next(
-        row for row in catalog["files"].values() if row.get("version") == "1.1.0"
+        row
+        for row in catalog["files"].values()
+        if row.get("version") == "1.1.0"
     )
     assert entry["platform"] == "apps" and entry["url"].startswith(
-        "/files/plugins/apps/alice-app/"
+        "/files/plugins/apps/alice-app/",
     )
     assert entry["id"] in catalog["platforms"]["apps"]["versions"]
 
@@ -194,7 +237,8 @@ def test_expert_publication_matches_market_import_contract(setup):
     posted = client.post("/v1/submissions", json=payload, headers=headers())
     assert posted.status_code == 200
     approved = client.post(
-        "/v1/approve/alice/expert/alice-expert/1.0.0", headers=headers("admin")
+        "/v1/approve/alice/expert/alice-expert/1.0.0",
+        headers=headers("admin"),
     )
     assert approved.status_code == 200
     manifest = json.loads(bucket.objects["agents/manifest.json"])
@@ -203,11 +247,14 @@ def test_expert_publication_matches_market_import_contract(setup):
         bucket.objects[entry["instructions"]].decode()
         == payload["expert"]["system_prompt"]
     )
-    assert json.loads(bucket.objects[entry["skills_manifest"]]) == ["public-skill"]
+    assert json.loads(bucket.objects[entry["skills_manifest"]]) == [
+        "public-skill",
+    ]
     assert entry["publisher_namespace"] == "alice"
     assert (
         client.post(
-            "/v1/approve/alice/expert/alice-expert/1.0.0", headers=headers("admin")
+            "/v1/approve/alice/expert/alice-expert/1.0.0",
+            headers=headers("admin"),
         ).status_code
         == 200
     )
@@ -215,21 +262,34 @@ def test_expert_publication_matches_market_import_contract(setup):
 
 def test_publication_auth_namespace_version_and_privacy_guards(setup):
     client, bucket = setup
-    assert client.get("/v1/identity", headers=headers()).json()["id_prefix"] == "alice-"
-    assert client.post("/v1/submissions", json=app_payload()).status_code == 401
+    assert (
+        client.get("/v1/identity", headers=headers()).json()["id_prefix"]
+        == "alice-"
+    )
+    assert (
+        client.post("/v1/submissions", json=app_payload()).status_code == 401
+    )
     assert (
         client.post(
-            "/v1/submissions", json=app_payload(), headers=headers("bob")
+            "/v1/submissions",
+            json=app_payload(),
+            headers=headers("bob"),
         ).status_code
         == 403
     )
     assert (
-        client.post("/v1/releases", json=app_payload(), headers=headers()).status_code
+        client.post(
+            "/v1/releases",
+            json=app_payload(),
+            headers=headers(),
+        ).status_code
         == 403
     )
     assert (
         client.post(
-            "/v1/submissions", json=app_payload("not-a-version"), headers=headers()
+            "/v1/submissions",
+            json=app_payload("not-a-version"),
+            headers=headers(),
         ).status_code
         == 400
     )
@@ -242,26 +302,41 @@ def test_publication_auth_namespace_version_and_privacy_guards(setup):
     ):
         assert (
             client.post(
-                "/v1/submissions", json=app_payload(extra=path), headers=headers()
+                "/v1/submissions",
+                json=app_payload(extra=path),
+                headers=headers(),
             ).status_code
             == 400
         )
-    for field in ("memory_seeds", "knowledge_files", "model_config", "mcp_clients"):
+    for field in (
+        "memory_seeds",
+        "knowledge_files",
+        "model_config",
+        "mcp_clients",
+    ):
         payload = expert_payload()
         payload["expert"][field] = []
         assert (
-            client.post("/v1/submissions", json=payload, headers=headers()).status_code
+            client.post(
+                "/v1/submissions",
+                json=payload,
+                headers=headers(),
+            ).status_code
             == 400
         )
     assert (
         client.post(
-            "/v1/submissions", json=app_payload("2.0.0"), headers=headers()
+            "/v1/submissions",
+            json=app_payload("2.0.0"),
+            headers=headers(),
         ).status_code
         == 200
     )
     assert (
         client.post(
-            "/v1/submissions", json=app_payload("1.0.0"), headers=headers()
+            "/v1/submissions",
+            json=app_payload("1.0.0"),
+            headers=headers(),
         ).status_code
         == 409
     )
@@ -273,14 +348,20 @@ def test_lock_and_failed_readback_never_report_success(setup):
     bucket.objects[service._LOCK_KEY] = b"other-writer"
     assert (
         client.post(
-            "/v1/submissions", json=app_payload(), headers=headers()
+            "/v1/submissions",
+            json=app_payload(),
+            headers=headers(),
         ).status_code
         == 409
     )
     assert bucket.objects[service._LOCK_KEY] == b"other-writer"
     del bucket.objects[service._LOCK_KEY]
     bucket.corrupt = ".zip"
-    response = client.post("/v1/submissions", json=app_payload(), headers=headers())
+    response = client.post(
+        "/v1/submissions",
+        json=app_payload(),
+        headers=headers(),
+    )
     assert response.status_code == 502
     assert not any(key.endswith("1.0.0.json") for key in bucket.objects)
     assert service._LOCK_KEY not in bucket.objects
@@ -291,20 +372,28 @@ def test_admin_can_update_legacy_official_asset_without_namespace(setup):
     bucket.objects["metadata/plugins/index.json"] = service._json(
         {
             "files": {
-                "legacy": {"plugin_id": "official", "version": "1.0.0", "sha256": "old"}
+                "legacy": {
+                    "plugin_id": "official",
+                    "version": "1.0.0",
+                    "sha256": "old",
+                },
             },
             "platforms": {},
-        }
+        },
     )
     result = client.post(
-        "/v1/releases", json=app_payload("2.0.0", "official"), headers=headers("admin")
+        "/v1/releases",
+        json=app_payload("2.0.0", "official"),
+        headers=headers("admin"),
     )
     assert result.status_code == 200 and result.json()["status"] == "published"
     assert result.json()["verified"] is True
 
 
 def test_local_runtime_forwards_temporary_token_and_checks_receipt(
-    setup, monkeypatch, tmp_path
+    setup,
+    monkeypatch,
+    tmp_path,
 ):
     _, bucket = setup
     original_client = httpx.AsyncClient
@@ -312,11 +401,13 @@ def test_local_runtime_forwards_temporary_token_and_checks_receipt(
         publisher.httpx,
         "AsyncClient",
         lambda **kwargs: original_client(
-            transport=httpx.ASGITransport(app=service.app), **kwargs
+            transport=httpx.ASGITransport(app=service.app),
+            **kwargs,
         ),
     )
     monkeypatch.setenv(
-        "UGSCI_SUBMISSION_ENDPOINT", "https://publisher.test/v1/submissions"
+        "UGSCI_SUBMISSION_ENDPOINT",
+        "https://publisher.test/v1/submissions",
     )
     monkeypatch.setattr(publisher, "_PUBLISH_ROOT", tmp_path)
     local = FastAPI()
@@ -327,18 +418,26 @@ def test_local_runtime_forwards_temporary_token_and_checks_receipt(
         json={"expert": expert_payload()["expert"]},
         headers={"X-UGSci-Publisher-Token": "alice-token"},
     )
-    assert response.status_code == 200 and response.json()["status"] == "checked"
+    assert (
+        response.status_code == 200 and response.json()["status"] == "checked"
+    )
     response = client.post(
         "/api/publisher/expert/publish",
         json={"expert": expert_payload()["expert"]},
         headers={"X-UGSci-Publisher-Token": "alice-token"},
     )
-    assert response.status_code == 200 and response.json()["status"] == "submitted"
+    assert (
+        response.status_code == 200
+        and response.json()["status"] == "submitted"
+    )
     package = app_payload()
     response = client.post(
         "/api/publisher/upload",
         content=base64.b64decode(package["archive_base64"]),
-        headers={"X-UGSci-Asset-Kind": "app", "X-UGSci-Publisher-Token": "alice-token"},
+        headers={
+            "X-UGSci-Asset-Kind": "app",
+            "X-UGSci-Publisher-Token": "alice-token",
+        },
     )
     assert response.status_code == 200 and response.json()["remote"][
         "receipt_id"
@@ -350,11 +449,13 @@ def test_local_runtime_forwards_temporary_token_and_checks_receipt(
     )
 
 
-def test_installed_packaging_excludes_private_data_without_manifest_rules(tmp_path):
+def test_installed_packaging_excludes_private_data_without_manifest_rules(
+    tmp_path,
+):
     root = tmp_path / "app"
     root.mkdir()
     (root / "plugin.json").write_text(
-        json.dumps({"id": "alice-app", "version": "1.0.0"})
+        json.dumps({"id": "alice-app", "version": "1.0.0"}),
     )
     (root / ".env").write_text("SECRET=fixture")
     (root / "data").mkdir()
@@ -365,7 +466,8 @@ def test_installed_packaging_excludes_private_data_without_manifest_rules(tmp_pa
 
 
 def test_unverified_remote_response_cannot_be_reported_as_published(
-    monkeypatch, tmp_path
+    monkeypatch,
+    tmp_path,
 ):
     original_client = httpx.AsyncClient
 
@@ -377,10 +479,14 @@ def test_unverified_remote_response_cannot_be_reported_as_published(
         publisher.httpx,
         "AsyncClient",
         lambda **kwargs: original_client(
-            transport=httpx.MockTransport(respond), **kwargs
+            transport=httpx.MockTransport(respond),
+            **kwargs,
         ),
     )
-    monkeypatch.setenv("UGSCI_PUBLISH_ENDPOINT", "https://publisher.test/v1/releases")
+    monkeypatch.setenv(
+        "UGSCI_PUBLISH_ENDPOINT",
+        "https://publisher.test/v1/releases",
+    )
     monkeypatch.setattr(publisher, "_PUBLISH_ROOT", tmp_path)
     local = FastAPI()
     local.include_router(publisher.router)
@@ -398,7 +504,8 @@ def test_unverified_remote_response_cannot_be_reported_as_published(
 
 
 def test_release_without_endpoint_is_not_a_successful_local_fallback(
-    monkeypatch, tmp_path
+    monkeypatch,
+    tmp_path,
 ):
     monkeypatch.delenv("UGSCI_PUBLISH_ENDPOINT", raising=False)
     monkeypatch.setattr(publisher, "_PUBLISH_ROOT", tmp_path)
@@ -407,39 +514,53 @@ def test_release_without_endpoint_is_not_a_successful_local_fallback(
     response = TestClient(local).post(
         "/publisher/upload",
         content=base64.b64decode(app_payload()["archive_base64"]),
-        headers={"X-UGSci-Asset-Kind": "app", "X-UGSci-Publish-Mode": "release"},
+        headers={
+            "X-UGSci-Asset-Kind": "app",
+            "X-UGSci-Publish-Mode": "release",
+        },
     )
     assert response.status_code == 400
     assert not list(tmp_path.rglob("*.zip"))
 
 
-def test_app_and_expert_publications_use_their_market_buckets(setup, monkeypatch):
+def test_app_and_expert_publications_use_their_market_buckets(
+    setup,
+    monkeypatch,
+):
     client, apps = setup
     experts = Bucket()
     monkeypatch.setattr(
-        service, "_bucket", lambda kind: experts if kind == "expert" else apps
+        service,
+        "_bucket",
+        lambda kind: experts if kind == "expert" else apps,
     )
     assert (
         client.post(
-            "/v1/submissions", json=app_payload(), headers=headers()
+            "/v1/submissions",
+            json=app_payload(),
+            headers=headers(),
         ).status_code
         == 200
     )
     assert (
         client.post(
-            "/v1/submissions", json=expert_payload(), headers=headers()
+            "/v1/submissions",
+            json=expert_payload(),
+            headers=headers(),
         ).status_code
         == 200
     )
     assert (
         client.post(
-            "/v1/approve/alice/app/alice-app/1.0.0", headers=headers("admin")
+            "/v1/approve/alice/app/alice-app/1.0.0",
+            headers=headers("admin"),
         ).status_code
         == 200
     )
     assert (
         client.post(
-            "/v1/approve/alice/expert/alice-expert/1.0.0", headers=headers("admin")
+            "/v1/approve/alice/expert/alice-expert/1.0.0",
+            headers=headers("admin"),
         ).status_code
         == 200
     )
@@ -456,10 +577,15 @@ def test_app_and_expert_publications_use_their_market_buckets(setup, monkeypatch
 def test_missing_market_main_index_blocks_upload(setup):
     client, bucket = setup
     del bucket.objects["metadata/index.json"]
-    response = client.post("/v1/submissions", json=app_payload(), headers=headers())
+    response = client.post(
+        "/v1/submissions",
+        json=app_payload(),
+        headers=headers(),
+    )
     assert response.status_code == 503
     assert not any(
-        key.startswith("publisher-private/submissions/") for key in bucket.objects
+        key.startswith("publisher-private/submissions/")
+        for key in bucket.objects
     )
 
 
@@ -478,30 +604,40 @@ def test_publication_preserves_legacy_host_version_constraints(setup):
                     "version": "1.0.0",
                     "type": "app",
                     "min_version": "999.0.0",
-                }
+                },
             ),
         )
     payload = {
         "asset_kind": "app",
         "archive_base64": base64.b64encode(data.getvalue()).decode(),
     }
-    result = client.post("/v1/releases", json=payload, headers=headers("admin"))
+    result = client.post(
+        "/v1/releases",
+        json=payload,
+        headers=headers("admin"),
+    )
     assert result.status_code == 200
     entry = next(
         iter(
-            json.loads(bucket.objects["metadata/plugins/index.json"])["files"].values()
-        )
+            json.loads(bucket.objects["metadata/plugins/index.json"])[
+                "files"
+            ].values(),
+        ),
     )
     assert entry["qwenpaw_version"] == {"min": "999.0.0"}
     assert not _is_entry_compatible(entry)
 
 
-def test_generic_publisher_cannot_bypass_protected_document_template_gate(setup):
+def test_generic_publisher_cannot_bypass_protected_document_template_gate(
+    setup,
+):
     client, bucket = setup
     response = client.post(
         "/v1/releases",
         json=app_payload(
-            "99.0.0", "document-forms", extra="templates/private-project.docx"
+            "99.0.0",
+            "document-forms",
+            extra="templates/private-project.docx",
         ),
         headers=headers("admin"),
     )
@@ -519,6 +655,10 @@ def test_retried_publication_repairs_private_object_acl_before_success(setup):
         base64.b64decode(payload["archive_base64"]),
         {"x-oss-object-acl": "private"},
     )
-    response = client.post("/v1/releases", json=payload, headers=headers("admin"))
+    response = client.post(
+        "/v1/releases",
+        json=payload,
+        headers=headers("admin"),
+    )
     assert response.status_code == 200 and response.json()["verified"] is True
     assert bucket.get_object_acl(public_key).acl == "public-read"

@@ -10,7 +10,6 @@ truncates.  A thrown guard is a ``DomainError(NON_CONVERGENT)``.
 from __future__ import annotations
 
 import math
-import signal
 import threading
 from typing import Any
 
@@ -85,7 +84,8 @@ def _expr_depth(expr: Any, visited: set | None = None) -> int:
 
 
 def check_finite(value: float, symbol: str) -> float:
-    """Ensure a numeric result is finite; raise ``invalid_result`` otherwise."""
+    """Ensure a numeric result is finite; raise ``invalid_result`` \
+otherwise."""
     try:
         numeric = float(value)
     except (TypeError, ValueError) as exc:
@@ -102,7 +102,11 @@ def check_magnitude(value: float, symbol: str) -> float:
     """Reject values whose magnitude exceeds ``MAX_MAGNITUDE``."""
     numeric = check_finite(value, symbol)
     if abs(numeric) > MAX_MAGNITUDE:
-        raise _ff_errors.guard_exceeded("MAX_MAGNITUDE", abs(numeric), MAX_MAGNITUDE)
+        raise _ff_errors.guard_exceeded(
+            "MAX_MAGNITUDE",
+            abs(numeric),
+            MAX_MAGNITUDE,
+        )
     return numeric
 
 
@@ -113,7 +117,11 @@ def check_steps(current_count: int, max_steps: int | None = None) -> None:
     """Reject derivation traces exceeding ``MAX_TRACE_STEPS``."""
     limit = max_steps if max_steps is not None else MAX_TRACE_STEPS
     if current_count >= limit:
-        raise _ff_errors.guard_exceeded("MAX_TRACE_STEPS", current_count, limit)
+        raise _ff_errors.guard_exceeded(
+            "MAX_TRACE_STEPS",
+            current_count,
+            limit,
+        )
 
 
 def check_substitutions(count: int) -> None:
@@ -129,7 +137,10 @@ class _Timeout(Exception):
     """Internal timeout sentinel."""
 
 
-def _windows_timeout_handler(signum: int, frame: Any) -> None:  # pragma: no cover
+def _windows_timeout_handler(
+    signum: int,
+    frame: Any,
+) -> None:  # pragma: no cover
     raise _Timeout
 
 
@@ -146,16 +157,19 @@ def with_timeout(seconds: float | None, func, *args, **kwargs):
 
     if not _TRANSFORM_SLOT.acquire(blocking=False):
         raise _ff_errors.guard_exceeded(
-            "MAX_TRANSFORM_CONCURRENCY", 1, 1,
+            "MAX_TRANSFORM_CONCURRENCY",
+            1,
+            1,
         )
 
-    result: dict[str, Any] = {"value": None, "error": None, "done": False}
+    result: dict[str, Any] = {"value": None, "done": False}
+    errors: list[Exception] = []
 
     def _runner() -> None:
         try:
             result["value"] = func(*args, **kwargs)
         except Exception as exc:
-            result["error"] = exc
+            errors.append(exc)
         finally:
             result["done"] = True
             _TRANSFORM_SLOT.release()
@@ -170,10 +184,12 @@ def with_timeout(seconds: float | None, func, *args, **kwargs):
 
     if not result["done"]:
         raise _ff_errors.guard_exceeded(
-            "MAX_TRANSFORM_SECONDS", seconds, MAX_TRANSFORM_SECONDS,
+            "MAX_TRANSFORM_SECONDS",
+            seconds,
+            MAX_TRANSFORM_SECONDS,
         )
-    if result["error"] is not None:
-        raise result["error"]
+    if errors:
+        raise errors[0]
     return result["value"]
 
 

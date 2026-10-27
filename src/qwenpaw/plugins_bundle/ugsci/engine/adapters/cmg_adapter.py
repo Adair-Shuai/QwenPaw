@@ -17,7 +17,13 @@ import importlib
 from pathlib import Path
 from typing import Any, List, Optional
 
-from .base import BaseSimAdapter, SimCapabilities, SimProgress, SimSummary, SimWarning
+from .base import (
+    BaseSimAdapter,
+    SimCapabilities,
+    SimProgress,
+    SimSummary,
+    SimWarning,
+)
 
 
 class CMGAdapter(BaseSimAdapter):
@@ -83,23 +89,31 @@ class CMGAdapter(BaseSimAdapter):
         if simulation_logs:
             return max(simulation_logs, key=lambda path: path.stat().st_mtime)
         outputs = [*directory.glob("*.out"), *directory.glob("*.OUT")]
-        return max(outputs, key=lambda path: path.stat().st_mtime) if outputs else None
+        return (
+            max(outputs, key=lambda path: path.stat().st_mtime)
+            if outputs
+            else None
+        )
 
     # ------------------------------------------------------------------
     # Progress parsing
     # ------------------------------------------------------------------
 
     _RE_TIME = re.compile(
-        r"TIME\s*=\s*([\d.]+)\s*(DAYS|DAY|HOURS|HR)", re.IGNORECASE,
+        r"TIME\s*=\s*([\d.]+)\s*(DAYS|DAY|HOURS|HR)",
+        re.IGNORECASE,
     )
     _RE_DT = re.compile(
-        r"\bDT\s*=\s*([\d.eE+\-]+)", re.IGNORECASE,
+        r"\bDT\s*=\s*([\d.eE+\-]+)",
+        re.IGNORECASE,
     )
     _RE_NEWTON = re.compile(
-        r"NEWTON\s+ITERATION\s*#?\s*(\d+)", re.IGNORECASE,
+        r"NEWTON\s+ITERATION\s*#?\s*(\d+)",
+        re.IGNORECASE,
     )
     _RE_MBE = re.compile(
-        r"MASS\s+BALANCE\s+ERROR\s*=\s*([\d.eE+\-]+)", re.IGNORECASE,
+        r"MASS\s+BALANCE\s+ERROR\s*=\s*([\d.eE+\-]+)",
+        re.IGNORECASE,
     )
     _RE_TIMESTEP_ROW = re.compile(
         r"^\s*(\d+)[A-Za-z]?\s+([\d.]+)\s+\d+\s+\d+\s+"
@@ -121,11 +135,14 @@ class CMGAdapter(BaseSimAdapter):
         # Status
         upper_tail = log_tail[-300:].upper()
         message_counts = list(self._RE_MESSAGE_COUNTS.finditer(log_tail))
-        final_error_count = int(message_counts[-1].group(2)) if message_counts else 0
+        final_error_count = (
+            int(message_counts[-1].group(2)) if message_counts else 0
+        )
         if final_error_count > 0:
             progress.status = "failed"
         elif re.search(
-            r"(?:SIMULATION\s+COMPLETED|END\s+OF\s+SIMULATION|NORMAL\s+TERMINATION)",
+            "(?:SIMULATION\\s+COMPLETED|END\\s+OF\\s+SIMULATION|"
+            "NORMAL\\s+TERMINATION)",
             upper_tail,
         ) or re.search(r"^\s*STOP\s*$", upper_tail, re.MULTILINE):
             progress.status = "completed"
@@ -143,7 +160,9 @@ class CMGAdapter(BaseSimAdapter):
             if timestep:
                 progress.current_step = int(timestep.group(1))
                 progress.time_step_size = f"{timestep.group(2)} days"
-                progress.current_time = f"{timestep.group(3)} days ({timestep.group(4)})"
+                progress.current_time = (
+                    f"{timestep.group(3)} days ({timestep.group(4)})"
+                )
                 continue
             m = self._RE_TIME.search(line)
             if m:
@@ -172,7 +191,9 @@ class CMGAdapter(BaseSimAdapter):
         return progress
 
     def parse_warnings(
-        self, working_dir: str | Path, limit: int = 20,
+        self,
+        working_dir: str | Path,
+        limit: int = 20,
     ) -> List[SimWarning]:
         warnings: List[SimWarning] = []
         log_file = self.find_log_file(working_dir)
@@ -201,7 +222,16 @@ class CMGAdapter(BaseSimAdapter):
     ) -> Optional[Path]:
         """Find .irf or .out result file."""
         working_dir = Path(working_dir)
-        for ext in [".sr3", ".irf", ".csv", ".out", ".SR3", ".IRF", ".CSV", ".OUT"]:
+        for ext in [
+            ".sr3",
+            ".irf",
+            ".csv",
+            ".out",
+            ".SR3",
+            ".IRF",
+            ".CSV",
+            ".OUT",
+        ]:
             matches = (
                 list(working_dir.glob(f"{case_stem}{ext}"))
                 if case_stem
@@ -227,14 +257,22 @@ class CMGAdapter(BaseSimAdapter):
         summary = SimSummary()
         result_file = self.find_summary_file(working_dir, case_stem=case_stem)
         if result_file and result_file.suffix.lower() == ".sr3":
-            sr3_summary = self._read_sr3_with_h5py(result_file, variables, wells)
+            sr3_summary = self._read_sr3_with_h5py(
+                result_file,
+                variables,
+                wells,
+            )
             if sr3_summary is not None:
                 return sr3_summary
         if result_file and result_file.suffix.lower() == ".irf":
             # The official CMG Results API is optional and proprietary.  Use
             # it when installed, while keeping a deterministic CSV export
             # fallback for headless machines and CI.
-            api_summary = self._read_irf_with_optional_api(result_file, variables, wells)
+            api_summary = self._read_irf_with_optional_api(
+                result_file,
+                variables,
+                wells,
+            )
             if api_summary is not None:
                 return api_summary
         if result_file and result_file.suffix.lower() == ".csv":
@@ -289,7 +327,9 @@ class CMGAdapter(BaseSimAdapter):
         decoded: list[str] = []
         for value in values:
             if isinstance(value, bytes):
-                decoded.append(value.decode("utf-8", errors="replace").rstrip("\x00 "))
+                decoded.append(
+                    value.decode("utf-8", errors="replace").rstrip("\x00 "),
+                )
             else:
                 decoded.append(str(value).rstrip("\x00 "))
         return decoded
@@ -330,26 +370,51 @@ class CMGAdapter(BaseSimAdapter):
         try:
             with h5py.File(path, "r") as handle:
                 master = handle["General/MasterTimeTable"][:]
-                offsets = {int(row["Index"]): float(row["Offset in days"]) for row in master}
-                dates = {int(row["Index"]): float(row["Date"]) for row in master}
+                offsets = {
+                    int(row["Index"]): float(row["Offset in days"])
+                    for row in master
+                }
+                dates = {
+                    int(row["Index"]): float(row["Date"]) for row in master
+                }
 
                 groups = handle["TimeSeries/GROUPS"]
                 group_variables = cls._decode_strings(groups["Variables"][:])
                 group_origins = cls._decode_strings(groups["Origins"][:])
                 group_steps = [int(value) for value in groups["Timesteps"][:]]
-                summary.dates = [cls._format_sr3_date(dates.get(step)) for step in group_steps]
+                summary.dates = [
+                    cls._format_sr3_date(dates.get(step))
+                    for step in group_steps
+                ]
                 for origin_index, origin in enumerate(group_origins):
-                    role = "PRO" if "PRO" in origin.upper() else "INJ" if "INJ" in origin.upper() else ""
+                    role = (
+                        "PRO"
+                        if "PRO" in origin.upper()
+                        else "INJ"
+                        if "INJ" in origin.upper()
+                        else ""
+                    )
                     if not role:
                         continue
                     for variable_index, raw_name in enumerate(group_variables):
                         alias = field_aliases.get((role, raw_name.upper()))
-                        if not alias or (allowed and alias not in allowed and raw_name.upper() not in allowed):
+                        if not alias or (
+                            allowed
+                            and alias not in allowed
+                            and raw_name.upper() not in allowed
+                        ):
                             continue
-                        values = groups["Data"][:, variable_index, origin_index]
+                        values = groups["Data"][
+                            :,
+                            variable_index,
+                            origin_index,
+                        ]
                         summary.vectors[alias] = [
                             (offsets.get(step, float(index)), float(value))
-                            for index, (step, value) in enumerate(zip(group_steps, values), 1)
+                            for index, (step, value) in enumerate(
+                                zip(group_steps, values),
+                                1,
+                            )
                         ]
 
                 # Loading all wells from a multi-gigabyte SR3 can consume
@@ -357,20 +422,39 @@ class CMGAdapter(BaseSimAdapter):
                 # requested wells; field summaries remain available by default.
                 if requested_wells:
                     well_group = handle["TimeSeries/WELLS"]
-                    well_variables = cls._decode_strings(well_group["Variables"][:])
-                    well_origins = cls._decode_strings(well_group["Origins"][:])
-                    well_steps = [int(value) for value in well_group["Timesteps"][:]]
+                    well_variables = cls._decode_strings(
+                        well_group["Variables"][:],
+                    )
+                    well_origins = cls._decode_strings(
+                        well_group["Origins"][:],
+                    )
+                    well_steps = [
+                        int(value) for value in well_group["Timesteps"][:]
+                    ]
                     for origin_index, origin in enumerate(well_origins):
                         if origin.upper() not in requested_wells:
                             continue
-                        for variable_index, raw_name in enumerate(well_variables):
+                        for variable_index, raw_name in enumerate(
+                            well_variables,
+                        ):
                             alias = well_aliases.get(raw_name.upper())
-                            if not alias or (allowed and alias not in allowed and raw_name.upper() not in allowed):
+                            if not alias or (
+                                allowed
+                                and alias not in allowed
+                                and raw_name.upper() not in allowed
+                            ):
                                 continue
-                            values = well_group["Data"][:, variable_index, origin_index]
+                            values = well_group["Data"][
+                                :,
+                                variable_index,
+                                origin_index,
+                            ]
                             summary.well_vectors[f"{alias}:{origin}"] = [
                                 (offsets.get(step, float(index)), float(value))
-                                for index, (step, value) in enumerate(zip(well_steps, values), 1)
+                                for index, (step, value) in enumerate(
+                                    zip(well_steps, values),
+                                    1,
+                                )
                             ]
             return summary
         except (OSError, KeyError, TypeError, ValueError):
@@ -400,7 +484,12 @@ class CMGAdapter(BaseSimAdapter):
         allowed = {item.upper() for item in variables or []}
         allowed_wells = {item.upper() for item in wells or []}
         for index, row in enumerate(rows, 1):
-            time_value = row.get("TIME") or row.get("DAYS") or row.get("DATE") or str(index)
+            time_value = (
+                row.get("TIME")
+                or row.get("DAYS")
+                or row.get("DATE")
+                or str(index)
+            )
             try:
                 numeric_time = float(time_value)
             except (TypeError, ValueError):
@@ -417,11 +506,18 @@ class CMGAdapter(BaseSimAdapter):
                 if allowed and upper not in allowed:
                     continue
                 if ":" in upper:
-                    if allowed_wells and upper.split(":", 1)[1] not in allowed_wells:
+                    if (
+                        allowed_wells
+                        and upper.split(":", 1)[1] not in allowed_wells
+                    ):
                         continue
-                    summary.well_vectors.setdefault(upper, []).append((numeric_time, value))
+                    summary.well_vectors.setdefault(upper, []).append(
+                        (numeric_time, value),
+                    )
                 else:
-                    summary.vectors.setdefault(upper, []).append((numeric_time, value))
+                    summary.vectors.setdefault(upper, []).append(
+                        (numeric_time, value),
+                    )
         return summary
 
     @staticmethod
@@ -435,7 +531,11 @@ class CMGAdapter(BaseSimAdapter):
                 module = importlib.import_module(module_name)
             except ImportError:
                 continue
-            reader = getattr(module, "read_irf", None) or getattr(module, "read_summary", None)
+            reader = getattr(module, "read_irf", None) or getattr(
+                module,
+                "read_summary",
+                None,
+            )
             if not callable(reader):
                 continue
             try:

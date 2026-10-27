@@ -26,8 +26,18 @@ from .loader import WorkflowDocument
 _LOOP_SAFE_TYPES = {"ErrorHandlerNode", "WaitNode", "IterativeRefineNode"}
 
 
-def _error(type_: str, message: str, details: str = "", **extra: Any) -> dict[str, Any]:
-    return {"type": type_, "message": message, "details": details, "extra_info": extra}
+def _error(
+    type_: str,
+    message: str,
+    details: str = "",
+    **extra: Any,
+) -> dict[str, Any]:
+    return {
+        "type": type_,
+        "message": message,
+        "details": details,
+        "extra_info": extra,
+    }
 
 
 def validate(
@@ -54,7 +64,9 @@ def validate(
         node_errors: list[dict[str, Any]] = []
         class_type = node_def.get("class_type")
         if not class_type:
-            node_errors.append(_error("missing_class_type", "Node has no class_type"))
+            node_errors.append(
+                _error("missing_class_type", "Node has no class_type"),
+            )
             errors[node_id] = node_errors
             continue
 
@@ -64,8 +76,13 @@ def validate(
             if node_cls is None:
                 node_errors.append(
                     _error(
-                        "unknown_node", f"Unknown node class: {class_type}",
-                        details=f"Node '{node_id}' references unregistered class '{class_type}'",
+                        "unknown_node",
+                        f"Unknown node class: {class_type}",
+                        details=f"Node '"
+                        f"{node_id}"
+                        f"' references unregistered class '"
+                        f"{class_type}"
+                        f"'",
                     ),
                 )
                 errors[node_id] = node_errors
@@ -75,7 +92,9 @@ def validate(
             schema = node_cls.get_schema()
             if schema.is_output_node:
                 output_nodes.append(node_id)
-            node_errors.extend(_validate_node_inputs(node_id, node_def, schema, node_ids))
+            node_errors.extend(
+                _validate_node_inputs(node_id, node_def, schema, node_ids),
+            )
 
         control = node_def.get("control", {}) or {}
         node_errors.extend(_validate_node_control(node_id, control, node_ids))
@@ -129,13 +148,23 @@ def _validate_node_inputs(
             continue
 
         # Link reference: [upstream_id, slot]
-        if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
+        if (
+            isinstance(value, list)
+            and len(value) == 2
+            and isinstance(value[0], str)
+        ):
             up_id, slot = value
             if up_id not in node_ids:
                 errors.append(
                     _error(
                         "dangling_link",
-                        f"Input '{inp.id}' on '{node_id}' links to missing node '{up_id}'",
+                        f"Input '"
+                        f"{inp.id}"
+                        f"' on '"
+                        f"{node_id}"
+                        f"' links to missing node '"
+                        f"{up_id}"
+                        f"'",
                     ),
                 )
             continue
@@ -155,7 +184,11 @@ def _validate_node_inputs(
                 errors.append(
                     _error(
                         "type_mismatch",
-                        f"Input '{inp.id}' on '{node_id}' does not accept multiple links",
+                        f"Input '"
+                        f"{inp.id}"
+                        f"' on '"
+                        f"{node_id}"
+                        f"' does not accept multiple links",
                         details=f"type={inp.get_io_type()}",
                     ),
                 )
@@ -165,7 +198,13 @@ def _validate_node_inputs(
                     errors.append(
                         _error(
                             "dangling_link",
-                            f"Input '{inp.id}' on '{node_id}' links to missing node '{up_id}'",
+                            f"Input '"
+                            f"{inp.id}"
+                            f"' on '"
+                            f"{node_id}"
+                            f"' links to missing node '"
+                            f"{up_id}"
+                            f"'",
                         ),
                     )
             continue
@@ -178,7 +217,12 @@ def _validate_node_inputs(
                 errors.append(
                     _error(
                         "invalid_combo",
-                        f"Input '{inp.id}' on '{node_id}' must be one of {choices}",
+                        f"Input '"
+                        f"{inp.id}"
+                        f"' on '"
+                        f"{node_id}"
+                        f"' must be one of "
+                        f"{choices}",
                         details=f"got {value!r}",
                     ),
                 )
@@ -188,29 +232,43 @@ def _validate_node_inputs(
                     try:
                         value = int(value)
                     except ValueError:
-                        errors.append(_error("type_mismatch", f"'{inp.id}' must be int"))
+                        errors.append(
+                            _error("type_mismatch", f"'{inp.id}' must be int"),
+                        )
                         continue
                 else:
-                    errors.append(_error("type_mismatch", f"'{inp.id}' must be int"))
+                    errors.append(
+                        _error("type_mismatch", f"'{inp.id}' must be int"),
+                    )
                     continue
             mn = getattr(inp, "min", None)
             mx = getattr(inp, "max", None)
             if mn is not None and value < mn:
-                errors.append(_error("out_of_range", f"'{inp.id}' below min {mn}"))
+                errors.append(
+                    _error("out_of_range", f"'{inp.id}' below min {mn}"),
+                )
             if mx is not None and value > mx:
-                errors.append(_error("out_of_range", f"'{inp.id}' above max {mx}"))
+                errors.append(
+                    _error("out_of_range", f"'{inp.id}' above max {mx}"),
+                )
         elif io_type == "FLOAT":
             if not isinstance(value, (int, float)) or isinstance(value, bool):
-                errors.append(_error("type_mismatch", f"'{inp.id}' must be number"))
+                errors.append(
+                    _error("type_mismatch", f"'{inp.id}' must be number"),
+                )
         elif io_type == "BOOLEAN":
             if not isinstance(value, bool):
-                errors.append(_error("type_mismatch", f"'{inp.id}' must be bool"))
+                errors.append(
+                    _error("type_mismatch", f"'{inp.id}' must be bool"),
+                )
 
     return errors
 
 
 def _validate_node_control(
-    node_id: str, control: dict[str, Any], node_ids: set[str],
+    node_id: str,
+    control: dict[str, Any],
+    node_ids: set[str],
 ) -> list[dict[str, Any]]:
     errors: list[dict[str, Any]] = []
     for key in ("next", "error_handler", "else_node", "on_reject"):
@@ -219,7 +277,13 @@ def _validate_node_control(
             errors.append(
                 _error(
                     "dangling_edge",
-                    f"Control edge '{key}' on '{node_id}' targets missing node '{target}'",
+                    f"Control edge '"
+                    f"{key}"
+                    f"' on '"
+                    f"{node_id}"
+                    f"' targets missing node '"
+                    f"{target}"
+                    f"'",
                 ),
             )
     for cond in control.get("conditions", []) or []:
@@ -228,7 +292,11 @@ def _validate_node_control(
             errors.append(
                 _error(
                     "dangling_edge",
-                    f"Condition on '{node_id}' targets missing node '{target}'",
+                    f"Condition on '"
+                    f"{node_id}"
+                    f"' targets missing node '"
+                    f"{target}"
+                    f"'",
                 ),
             )
     for branch in control.get("branches", []) or []:
@@ -237,7 +305,11 @@ def _validate_node_control(
                 errors.append(
                     _error(
                         "dangling_edge",
-                        f"Parallel branch on '{node_id}' references missing node '{ref}'",
+                        f"Parallel branch on '"
+                        f"{node_id}"
+                        f"' references missing node '"
+                        f"{ref}"
+                        f"'",
                     ),
                 )
     return errors
@@ -258,7 +330,8 @@ def _detect_cycles(doc: WorkflowDocument) -> dict[str, list[dict[str, Any]]]:
             if v:
                 succ.append(v)
         if class_type == "ErrorHandlerNode":
-            # error_handler targets are treated as separate non-contributing edges
+            # error_handler targets are treated as separate non-contributing
+            # edges
             pass
         elif control.get("error_handler"):
             succ.append(control["error_handler"])
@@ -282,7 +355,7 @@ def _detect_cycles(doc: WorkflowDocument) -> dict[str, list[dict[str, Any]]]:
                 src_cls = doc.nodes.get(nid, {}).get("class_type", "")
                 if nxt_cls in _LOOP_SAFE_TYPES or src_cls in _LOOP_SAFE_TYPES:
                     continue
-                cycle = path[path.index(nxt):] + [nxt]
+                cycle = path[path.index(nxt) :] + [nxt]
                 errors.setdefault(nid, []).append(
                     _error(
                         "cycle",

@@ -51,7 +51,10 @@ def bundled_environment(tmp_path):
     with (owner / "RECORD").open("a", encoding="utf-8") as record:
         record.write(f"{bundled.relative_to(host).as_posix()}/METADATA,,\n")
         record.write(
-            f"{(vendor / 'sdk_audit_probe.py').relative_to(host).as_posix()},,\n",
+            f"""{(
+                        vendor / "sdk_audit_probe.py"
+                    ).relative_to(host).as_posix()}"""
+            ",,\n",
         )
     return host, vendor
 

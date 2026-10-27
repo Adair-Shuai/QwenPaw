@@ -177,7 +177,10 @@ def _decode_store(
             message = f"custom team record '{key}' must be a JSON object"
             if strict_records:
                 raise ValueError(message)
-            logger.warning("Ignoring malformed custom team record: %s", message)
+            logger.warning(
+                "Ignoring malformed custom team record: %s",
+                message,
+            )
             continue
         candidate = dict(record)
         candidate.setdefault("team_id", key)
@@ -200,7 +203,10 @@ def _decode_store(
             )
             if strict_records:
                 raise ValueError(message)
-            logger.warning("Ignoring malformed custom team record: %s", message)
+            logger.warning(
+                "Ignoring malformed custom team record: %s",
+                message,
+            )
             continue
         # Keep the established storage naming for top-level fields while
         # retaining API aliases (agentId, roleKey, ...) in nested definitions.
@@ -238,7 +244,10 @@ def _load_store(*, strict: bool = False) -> dict[str, dict[str, Any]]:
             logger.warning("Recovered custom team store from %s", backup)
             return recovered
         except Exception as backup_exc:
-            logger.error("Backup custom team store is also unreadable: %s", backup_exc)
+            logger.error(
+                "Backup custom team store is also unreadable: %s",
+                backup_exc,
+            )
 
     # No usable backup: isolate the bad file and keep the API usable with an
     # empty store. The quarantined file remains available for manual recovery.
@@ -334,9 +343,7 @@ def save_custom_team(
             "coordinator_name": team_def.get("coordinatorName", ""),
             "task_template": team_def.get("taskTemplate", ""),
             "created_at": (
-                team_def.get("createdAt")
-                or existing.get("created_at")
-                or now
+                team_def.get("createdAt") or existing.get("created_at") or now
             ),
             "updated_at": now,
             "version": actual_version + 1,

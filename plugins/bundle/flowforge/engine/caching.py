@@ -55,7 +55,11 @@ def _canonical(value: Any) -> Any:
 
 
 def hash_signature(value: Any) -> str:
-    payload = json.dumps(_canonical(value), sort_keys=True, ensure_ascii=False).encode("utf-8")
+    payload = json.dumps(
+        _canonical(value),
+        sort_keys=True,
+        ensure_ascii=False,
+    ).encode("utf-8")
     return hashlib.sha256(payload).hexdigest()
 
 
@@ -82,9 +86,19 @@ def immediate_node_signature(
             is_changed = node_cls.IS_CHANGED(**immediate_inputs)
         except Exception:  # noqa: BLE001
             is_changed = None
-    if node_cls is not None and getattr(node_cls.get_schema(), "not_idempotent", False):
+    if node_cls is not None and getattr(
+        node_cls.get_schema(),
+        "not_idempotent",
+        False,
+    ):
         immediate_inputs["__node_id__"] = node_id
-    return hash_signature({"class": cls_name, "inputs": immediate_inputs, "is_changed": is_changed})
+    return hash_signature(
+        {
+            "class": cls_name,
+            "inputs": immediate_inputs,
+            "is_changed": is_changed,
+        },
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -107,7 +121,9 @@ class CacheKeySetID(CacheKeySet):
 
     def signature(self, node_id: str) -> str:
         node = self._prompt.get(node_id) or {}
-        return hash_signature({"node_id": node_id, "class_type": node.get("class_type", "")})
+        return hash_signature(
+            {"node_id": node_id, "class_type": node.get("class_type", "")},
+        )
 
 
 class CacheKeySetInputSignature(CacheKeySet):
@@ -129,7 +145,11 @@ class CacheKeySetInputSignature(CacheKeySet):
             sig = hash_signature({"missing": node_id})
             self._memo[node_id] = sig
             return sig
-        cls = self._registry.get(node.get("class_type", "")) if self._registry else None
+        cls = (
+            self._registry.get(node.get("class_type", ""))
+            if self._registry
+            else None
+        )
         immediate = immediate_node_signature(node_id, node, cls)
 
         upstream_sigs: list[tuple[str, str]] = []
@@ -137,10 +157,12 @@ class CacheKeySetInputSignature(CacheKeySet):
             if isinstance(v, list) and len(v) == 2 and isinstance(v[0], str):
                 upstream_sigs.append((k, self.signature(v[0])))
 
-        sig = hash_signature({
-            "immediate": immediate,
-            "upstream": sorted(upstream_sigs),
-        })
+        sig = hash_signature(
+            {
+                "immediate": immediate,
+                "upstream": sorted(upstream_sigs),
+            },
+        )
         self._memo[node_id] = sig
         return sig
 
@@ -160,7 +182,10 @@ class CacheEntry:
 class BaseCache:
     """Interface shared by all cache flavours."""
 
-    def get(self, key: str) -> CacheEntry | None:  # pragma: no cover - abstract
+    def get(
+        self,
+        key: str,
+    ) -> CacheEntry | None:  # pragma: no cover - abstract
         raise NotImplementedError
 
     def set(self, key: str, entry: CacheEntry) -> None:  # pragma: no cover
@@ -205,7 +230,10 @@ class BasicCache(BaseCache):
         """Serialize cache entries for durable workflow resume."""
         with self._lock:
             return {
-                key: {"value": entry.value, "metadata": dict(entry.metadata or {})}
+                key: {
+                    "value": entry.value,
+                    "metadata": dict(entry.metadata or {}),
+                }
                 for key, entry in self._store.items()
             }
 
@@ -360,7 +388,9 @@ def build_cache_set(mode: str = "classic", **options: Any) -> CacheSet:
     elif mode == "lru":
         outputs = LRUCache(max_size=int(options.get("lru_size", 128)))
     elif mode == "ram":
-        outputs = RAMPressureCache(ram_budget_mb=int(options.get("ram_mb", 256)))
+        outputs = RAMPressureCache(
+            ram_budget_mb=int(options.get("ram_mb", 256)),
+        )
     elif mode == "hierarchical":
         factory_name = options.get("factory", "basic")
         factory: Callable[[], BaseCache]

@@ -4,11 +4,13 @@
 Includes channel/feature gating per PLAN §8 and REVIEW D14:
 - Tools and prompts are only registered when GenUI is enabled and
   the current channel supports GenUI rendering.
-- Config keys: genui_enabled, genui_channels, genui_allow_html, genui_allow_actions.
+- Config keys: genui_enabled, genui_channels, genui_allow_html, \
+genui_allow_actions.
 
 Configuration precedence (highest to lowest):
 1. Environment variables (GENUI_ENABLED, GENUI_CHANNELS, ...)
-2. Plugin config (api.config["genui_enabled"], api.config["genui_channels"], ...)
+2. Plugin config (api.config[\"genui_enabled\"], \
+api.config[\"genui_channels\"], ...)
 3. Built-in defaults
 """
 
@@ -39,7 +41,9 @@ logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.genui")
 # ─── Configuration ──────────────────────────────────────────────────────────
 
 # Channels that support GenUI rendering (REVIEW D14)
-_GENUI_CAPABLE_CHANNELS: frozenset[str] = frozenset({"console", "web", "pywebview"})
+_GENUI_CAPABLE_CHANNELS: frozenset[str] = frozenset(
+    {"console", "web", "pywebview"},
+)
 
 # Default allowed actions (REVIEW D9)
 _DEFAULT_ALLOWED_ACTIONS: tuple[str, ...] = ("send_message",)
@@ -116,39 +120,61 @@ def get_genui_config(api: Any = None) -> dict[str, Any]:
 
     # The plugin-owned switch is global and defaults to enabled.  Environment
     # variables remain the highest-precedence operational override.
-    cfg["enabled"] = _coerce_bool(load_settings().get("enabled"), cfg["enabled"])
+    cfg["enabled"] = _coerce_bool(
+        load_settings().get("enabled"),
+        cfg["enabled"],
+    )
 
     # Layer 1: plugin config (api.config)
     if api is not None:
         api_cfg = getattr(api, "config", None) or {}
         if isinstance(api_cfg, dict):
             if "genui_enabled" in api_cfg:
-                cfg["enabled"] = _coerce_bool(api_cfg["genui_enabled"], cfg["enabled"])
+                cfg["enabled"] = _coerce_bool(
+                    api_cfg["genui_enabled"],
+                    cfg["enabled"],
+                )
             if "genui_channels" in api_cfg:
-                cfg["channels"] = _coerce_list(api_cfg["genui_channels"], cfg["channels"])
+                cfg["channels"] = _coerce_list(
+                    api_cfg["genui_channels"],
+                    cfg["channels"],
+                )
             if "genui_allow_html" in api_cfg:
-                cfg["allow_html"] = _coerce_bool(api_cfg["genui_allow_html"], cfg["allow_html"])
+                cfg["allow_html"] = _coerce_bool(
+                    api_cfg["genui_allow_html"],
+                    cfg["allow_html"],
+                )
             if "genui_allow_actions" in api_cfg:
-                cfg["allow_actions"] = _coerce_list(api_cfg["genui_allow_actions"], cfg["allow_actions"])
+                cfg["allow_actions"] = _coerce_list(
+                    api_cfg["genui_allow_actions"],
+                    cfg["allow_actions"],
+                )
 
     # Layer 2: environment overrides
     cfg["enabled"] = _read_bool_env("GENUI_ENABLED", cfg["enabled"])
     cfg["channels"] = _read_list_env("GENUI_CHANNELS", cfg["channels"])
     cfg["allow_html"] = _read_bool_env("GENUI_ALLOW_HTML", cfg["allow_html"])
-    cfg["allow_actions"] = _read_list_env("GENUI_ALLOW_ACTIONS", cfg["allow_actions"])
+    cfg["allow_actions"] = _read_list_env(
+        "GENUI_ALLOW_ACTIONS",
+        cfg["allow_actions"],
+    )
 
     return cfg
 
 
 def get_allowed_actions(api: Any = None) -> list[str]:
     """Return the list of allowed GenUI actions for the current config."""
-    return get_genui_config(api).get("allow_actions", list(_DEFAULT_ALLOWED_ACTIONS))
+    return get_genui_config(api).get(
+        "allow_actions",
+        list(_DEFAULT_ALLOWED_ACTIONS),
+    )
 
 
 def _get_current_channel() -> str:
     """Determine the current request channel from agent context."""
     try:
         from qwenpaw.app.agent_context import get_current_channel
+
         ch = get_current_channel()
         if ch:
             return ch
@@ -158,7 +184,10 @@ def _get_current_channel() -> str:
     return ""
 
 
-def is_genui_enabled_for_context(config: dict[str, Any] | None = None, api: Any = None) -> bool:
+def is_genui_enabled_for_context(
+    config: dict[str, Any] | None = None,
+    api: Any = None,
+) -> bool:
     """Check if GenUI should be enabled for the current context.
 
     Returns True only when:
@@ -166,7 +195,8 @@ def is_genui_enabled_for_context(config: dict[str, Any] | None = None, api: Any 
     - current channel is in genui_channels (channel gate)
 
     Args:
-        config: Pre-computed config dict (optional). If None, reads from api/defaults.
+        config: Pre-computed config dict (optional). If None, reads \
+from api/defaults.
         api: PluginApi instance for reading plugin config (optional).
     """
     cfg = config or get_genui_config(api)
@@ -224,12 +254,8 @@ def _on_session_deleted(session_id: str) -> None:
     get_state_store().clear_session(session_id)
 
 
-def _bind_session_cleanup(plugin_id: str) -> None:
-    """Hook chat-session deletion so SQLite snapshots do not outlive the chat."""
-    rec = None
-    with _active_lock:
-        rec = _active.get(plugin_id)
-    previous = rec.get("session_deleted_unreg") if rec else None
+def _release_session_listener(previous: Any, plugin_id: str) -> None:
+    """Release the previous registration before binding its replacement."""
     if callable(previous):
         try:
             previous()
@@ -239,11 +265,22 @@ def _bind_session_cleanup(plugin_id: str) -> None:
                 plugin_id,
                 exc_info=True,
             )
+
+
+def _bind_session_cleanup(plugin_id: str) -> None:
+    """Hook chat-session deletion so SQLite snapshots do not outlive the \
+chat."""
+    rec = None
+    with _active_lock:
+        rec = _active.get(plugin_id)
+    previous = rec.get("session_deleted_unreg") if rec else None
+    _release_session_listener(previous, plugin_id)
     try:
         from qwenpaw.app.chats.session_events import register_session_deleted
     except Exception:
         logger.debug(
-            "[%s.genui] session_events unavailable; skip snapshot cleanup hook",
+            "[%s.genui] session_events unavailable; skip "
+            "snapshot cleanup hook",
             plugin_id,
             exc_info=True,
         )
@@ -265,7 +302,9 @@ def _remove_prompt_section(registry: Any, name: str | None) -> None:
     names = getattr(registry, "_prompt_section_names", None)
     if isinstance(sections, list):
         sections[:] = [
-            section for section in sections if getattr(section, "name", None) != name
+            section
+            for section in sections
+            if getattr(section, "name", None) != name
         ]
     if isinstance(names, set):
         names.discard(name)
@@ -400,7 +439,9 @@ def register_genui(api: Any, plugin_id: str = "ugsci") -> None:
 
         if registered_tools:
             logger.info(
-                "[%s.genui] Registered %d tool(s) (descriptor_enabled=%s, global_enabled=%s, channel='%s', "
+                "[%s.genui] Registered %d tool(s) "
+                "(descriptor_enabled=%s, global_enabled=%s, "
+                "channel='%s', "
                 "allow_actions=%s, allow_html=%s)",
                 plugin_id,
                 len(registered_tools),
@@ -411,11 +452,15 @@ def register_genui(api: Any, plugin_id: str = "ugsci") -> None:
                 config.get("allow_html"),
             )
         elif existing_names:
-            logger.info("[%s.genui] All GenUI tools owned upstream; prompt still registered", plugin_id)
+            logger.info(
+                "[%s.genui] All GenUI tools owned upstream; "
+                "prompt still registered",
+                plugin_id,
+            )
         else:
             logger.error("[%s.genui] No tools registered", plugin_id)
             return
-        _register_prompt(api, plugin_id, config)
+        _register_prompt(api, plugin_id)
         _remember_registration(
             plugin_id,
             api=api,
@@ -431,7 +476,7 @@ def register_genui(api: Any, plugin_id: str = "ugsci") -> None:
         )
 
 
-def _register_prompt(api: Any, plugin_id: str, config: dict[str, Any]) -> None:
+def _register_prompt(api: Any, plugin_id: str) -> None:
     """Register the GenUI prompt section."""
     try:
         api.register_prompt_section(
@@ -465,7 +510,9 @@ def _sync_all_agent_tool_configs() -> None:
             changed_agents,
         )
     except Exception:
-        logger.exception("[ugsci.genui] Failed to sync GenUI defaults to agents")
+        logger.exception(
+            "[ugsci.genui] Failed to sync GenUI defaults to agents",
+        )
 
 
 def dispose_genui(plugin_id: str = "ugsci") -> None:
@@ -513,6 +560,7 @@ def dispose_genui(plugin_id: str = "ugsci") -> None:
                 exc_info=True,
             )
     from .state import dispose_state_store
+
     dispose_state_store()
 
 

@@ -1558,3 +1558,130 @@ class TestModelFallbackNotice:
 # Test order example:
 #   - Modify DingTalk: Run dingtalk unit tests first
 #     → then dingtalk contract tests
+
+
+@pytest.mark.parametrize("cleanup_fails", [False, True])
+async def test_tracker_stream_closes_nested_process_before_browser_cleanup(
+    monkeypatch,
+    cleanup_fails,
+):
+    import asyncio
+
+    closed = asyncio.Event()
+    browser_cleanup = []
+
+    async def process(_request):
+        try:
+            yield SimpleNamespace(object="test", status=None)
+        finally:
+            closed.set()
+            if cleanup_fails:
+                raise RuntimeError("process cleanup failed")
+
+    async def finish_response(_session_id):
+        browser_cleanup.append(closed.is_set())
+
+    source = process(None)
+    channel = ConsoleChannel(
+        process=lambda _request: source,
+        enabled=True,
+        bot_prefix="",
+    )
+    monkeypatch.setattr(channel, "_finish_response_cycle", finish_response)
+    request = SimpleNamespace(
+        session_id="nested-close",
+        input=[],
+        user_id="user",
+        channel_meta={},
+    )
+    stream = channel._stream_with_tracker(request)
+    try:
+        assert (await anext(stream)).startswith("data: ")
+        if cleanup_fails:
+            with pytest.raises(RuntimeError, match="process cleanup failed"):
+                await stream.aclose()
+        else:
+            await stream.aclose()
+        assert closed.is_set()
+        assert browser_cleanup == [True]
+    finally:
+        await stream.aclose()
+        try:
+            await source.aclose()
+        except RuntimeError:
+            # Release the original source even when the implementation under
+            # test failed to close it; this cannot satisfy the assertions.
+            pass
+
+
+async def test_tracker_closes_nested_channel_process_before_host_completion():
+    import asyncio
+
+    from qwenpaw.app.task_tracker import TaskTracker
+    from qwenpaw.plugins.activity import PluginActivity
+
+    tracker = TaskTracker()
+    activity = PluginActivity("nested-channel")
+    entered = asyncio.Event()
+    broadcast = asyncio.Event()
+    yielded = asyncio.Event()
+    closed = asyncio.Event()
+    finishing = asyncio.Event()
+    finish = asyncio.Event()
+
+    async def process(_request):
+        with activity.invocation():
+            entered.set()
+            try:
+                await broadcast.wait()
+                yielded.set()
+                yield SimpleNamespace(object="test", status=None)
+            finally:
+                closed.set()
+
+    async def host_finished(_key, _time):
+        finishing.set()
+        await finish.wait()
+
+    source = process(None)
+    channel = ConsoleChannel(
+        process=lambda _request: source,
+        enabled=True,
+        bot_prefix="",
+    )
+    request = SimpleNamespace(
+        session_id="nested-broadcast",
+        input=[],
+        user_id="user",
+        channel_meta={},
+    )
+    stream = channel._stream_with_tracker(request)
+    await tracker.attach_or_start(
+        "nested",
+        request,
+        lambda _payload: stream,
+        on_finished=host_finished,
+    )
+    producer = (await tracker.snapshot_active_tasks())["nested"]
+    held = False
+    try:
+        await entered.wait()
+        await tracker.lock.acquire()
+        held = True
+        broadcast.set()
+        await yielded.wait()
+        await asyncio.sleep(0)
+        producer.cancel()
+        await finishing.wait()
+        assert closed.is_set()
+        assert not activity.tasks
+        assert not producer.done()
+        async with activity.mutation(interrupt_tasks=True):
+            assert not activity.tasks
+    finally:
+        if held:
+            tracker.lock.release()
+        finish.set()
+        await asyncio.gather(producer, return_exceptions=True)
+        await stream.aclose()
+        await source.aclose()

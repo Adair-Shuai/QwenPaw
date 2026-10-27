@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Model boundary, transactional versioning and non-mutating AI previews."""
 import asyncio
 import copy
@@ -35,7 +36,7 @@ def document(name="Inventory"):
                 "source": "input",
                 "target": "output",
                 "target_handle": "value",
-            }
+            },
         ],
         "start_id": "input",
         "outputs": ["output"],
@@ -59,16 +60,15 @@ class RecordingModel:
         return SimpleNamespace(
             content=result
             if isinstance(result, str)
-            else json.dumps({"flow": result})
+            else json.dumps({"flow": result}),
         )
 
 
-@pytest.fixture
-def service(tmp_path):
+@pytest.fixture(name="service")
+def _service_fixture(tmp_path):
     service = WorkflowService(flows_dir=tmp_path)
     yield service
-    service._loop.call_soon_threadsafe(service._loop.stop)
-    service._loop_thread.join(timeout=2)
+    service.close(timeout=2)
 
 
 def client(service):
@@ -100,7 +100,7 @@ def test_edit_uses_unsaved_canvas_and_rejects_stale_apply(service):
     draft = copy.deepcopy(saved)
     draft["name"] = "unsaved title"
     service.executor.llm_service = RecordingModel(
-        lambda request: {**request["current_flow"], "description": "updated"}
+        lambda request: {**request["current_flow"], "description": "updated"},
     )
     proposal = asyncio.run(service.create_proposal("只修改说明", flow=draft))
     assert proposal["flow"]["name"] == "unsaved title"
@@ -123,7 +123,8 @@ def test_unknown_nodes_remain_unappliable(service):
 
 
 @pytest.mark.parametrize(
-    "node_type,key", [("ToolCallNode", "tool"), ("ToolNode", "tool_name")]
+    "node_type,key",
+    [("ToolCallNode", "tool"), ("ToolNode", "tool_name")],
 )
 def test_cannot_invent_tool_names(service, node_type, key):
     flow = document()
@@ -139,7 +140,8 @@ def test_cannot_invent_tool_names(service, node_type, key):
 
 def test_offline_model_503_without_template_fallback(service):
     response = client(service).post(
-        "/authoring/proposals", json={"prompt": "建工作流"}
+        "/authoring/proposals",
+        json={"prompt": "建工作流"},
     )
     assert response.status_code == 503
     assert not service.list_flows()
@@ -147,10 +149,11 @@ def test_offline_model_503_without_template_fallback(service):
 
 def test_provider_exception_does_not_expose_secret(service):
     service.executor.llm_service = RecordingModel(
-        RuntimeError("api_key=private-value")
+        RuntimeError("api_key=private-value"),
     )
     response = client(service).post(
-        "/authoring/proposals", json={"prompt": "建工作流"}
+        "/authoring/proposals",
+        json={"prompt": "建工作流"},
     )
     assert response.status_code == 503
     assert "private-value" not in response.text
@@ -169,7 +172,8 @@ def test_provider_exception_does_not_expose_secret(service):
 def test_malformed_model_responses_are422_and_nonmutating(service, reply):
     service.executor.llm_service = RecordingModel(reply)
     response = client(service).post(
-        "/authoring/proposals", json={"prompt": "创建"}
+        "/authoring/proposals",
+        json={"prompt": "创建"},
     )
     assert response.status_code == 422
     assert not service.list_flows()
@@ -219,13 +223,13 @@ def test_credentials_redacted_from_model_context_and_preserved(service):
 def test_exact_parameter_diff_with_redacted_credentials():
     old = {
         "nodes": {
-            "check": {"inputs": {"threshold": 3, "api_key": "old-secret"}}
-        }
+            "check": {"inputs": {"threshold": 3, "api_key": "old-secret"}},
+        },
     }
     new = {
         "nodes": {
-            "check": {"inputs": {"threshold": 5, "api_key": "new-secret"}}
-        }
+            "check": {"inputs": {"threshold": 5, "api_key": "new-secret"}},
+        },
     }
     changes = workflow_diff(old, new)
     assert {"path": "inputs.threshold", "before": 3, "after": 5} in changes[0][
@@ -233,7 +237,7 @@ def test_exact_parameter_diff_with_redacted_credentials():
     ]
     assert "3 → 5" in changes[0]["description"]
     assert "old-secret" not in json.dumps(
-        changes
+        changes,
     ) and "new-secret" not in json.dumps(changes)
 
 
@@ -245,11 +249,13 @@ def test_api_revision_guard_and_restore_creates_new_version(service):
         api.put("/flows/inventory", json=document("stale")).status_code == 409
     )
     second = api.put(
-        "/flows/inventory", json={**first.json(), "name": "changed"}
+        "/flows/inventory",
+        json={**first.json(), "name": "changed"},
     )
     assert second.status_code == 200 and second.json()["revision"] == 2
     restored = api.post(
-        "/flows/inventory/versions/1/restore", json={"expected_revision": 2}
+        "/flows/inventory/versions/1/restore",
+        json={"expected_revision": 2},
     )
     assert restored.status_code == 200 and restored.json()["revision"] == 3
     assert restored.json()["name"] == "Inventory"
@@ -334,7 +340,8 @@ def _wait(handle):
 
 
 def test_failed_resume_admission_releases_claim_and_marker(
-    service, monkeypatch
+    service,
+    monkeypatch,
 ):
     service.save_flow(
         "review",
@@ -344,23 +351,23 @@ def test_failed_resume_admission_releases_claim_and_marker(
                 "review": {
                     "class_type": "HumanReviewNode",
                     "inputs": {"reviewer": "owner"},
-                }
+                },
             },
             "outputs": ["review"],
         },
     )
     original = service.start_run("review")
     assert _wait(original)["status"] == "waiting_human"
-    submit = service._submit_run
-
     def fail(*args, **kwargs):
         raise OSError("test unavailable disk")
 
-    monkeypatch.setattr(service, "_submit_run", fail)
-    with pytest.raises(OSError):
-        service.resume_run(original.run_id, {"approved": True})
-    assert not service.get_run_record(original.run_id).get("resumed_by_run_id")
-    monkeypatch.setattr(service, "_submit_run", submit)
+    with monkeypatch.context() as failure:
+        failure.setattr(service, "_submit_run", fail)
+        with pytest.raises(OSError):
+            service.resume_run(original.run_id, {"approved": True})
+        assert not service.get_run_record(original.run_id).get(
+            "resumed_by_run_id"
+        )
     assert (
         _wait(service.resume_run(original.run_id, {"approved": True}))[
             "status"
@@ -370,7 +377,8 @@ def test_failed_resume_admission_releases_claim_and_marker(
 
 
 def test_failed_resume_preparation_releases_claim_before_any_node_work(
-    service, monkeypatch
+    service,
+    monkeypatch,
 ):
     service.save_flow(
         "review",
@@ -380,7 +388,7 @@ def test_failed_resume_preparation_releases_claim_before_any_node_work(
                 "review": {
                     "class_type": "HumanReviewNode",
                     "inputs": {"reviewer": "owner"},
-                }
+                },
             },
             "outputs": ["review"],
         },

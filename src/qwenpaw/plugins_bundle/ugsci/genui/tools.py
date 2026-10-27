@@ -32,7 +32,11 @@ from .emit_core import (
 )
 from .guide import get_genui_guide
 from .json_repair import try_parse_json_object
-from .schema import GENUI_MAX_JSON_CHARS, list_component_catalog, validate_ui_patch
+from .schema import (
+    GENUI_MAX_JSON_CHARS,
+    list_component_catalog,
+    validate_ui_patch,
+)
 from .state import get_state_store
 from .settings import load_settings
 
@@ -53,8 +57,14 @@ def _ok(payload: dict[str, Any]) -> ToolChunk:
 
 
 def _err(error_code: str, message: str, hint: str = "") -> ToolChunk:
-    payload: dict[str, Any] = {"ok": False, "kind": "genui_error", "error_code": error_code, "message": message}
-    if hint: payload["hint"] = hint
+    payload: dict[str, Any] = {
+        "ok": False,
+        "kind": "genui_error",
+        "error_code": error_code,
+        "message": message,
+    }
+    if hint:
+        payload["hint"] = hint
     return _result(json.dumps(payload, ensure_ascii=False), ok=False)
 
 
@@ -70,8 +80,10 @@ def _get_session_id() -> str:
     session_id = ""
     try:
         from qwenpaw.app.agent_context import get_current_session_id
+
         sid = get_current_session_id()
-        if sid: session_id = sid
+        if sid:
+            session_id = sid
     except Exception:
         pass
     return session_id
@@ -81,6 +93,7 @@ def _get_tool_call_id() -> str:
     """Get the current tool_call_id from the ToolCallContext contextvar."""
     try:
         from qwenpaw.tool_calls._ctxvars import get_call_context
+
         ctx = get_call_context()
         if ctx and ctx.tool_call_id:
             return ctx.tool_call_id
@@ -109,55 +122,82 @@ def _payload_size(value: Any) -> int:
     if isinstance(value, str):
         return len(value)
     try:
-        return len(json.dumps(value, ensure_ascii=False, separators=(",", ":")))
+        return len(
+            json.dumps(value, ensure_ascii=False, separators=(",", ":")),
+        )
     except (TypeError, ValueError):
         return GENUI_MAX_JSON_CHARS + 1
 
 
 def emit_ui_tree(tree: dict[str, Any] | str, ui_id: str = "") -> ToolChunk:
-    """Emit a validated generative UI tree that renders inline in the chat.
+    """Emit a validated generative UI tree that renders inline in the \
+chat.
 
-    Use this tool for cards, dashboards, tables, KPIs, charts, and other
-    component-based layouts when the user wants visual UI instead of plain
+    Use this tool for cards, dashboards, tables, KPIs, charts, \
+and other
+    component-based layouts when the user wants visual UI instead \
+of plain
     markdown. Do NOT use it for simple Q&A or navigation.
 
-    The ``tree`` parameter is a JSON string of the UI tree. Acceptable
+    The ``tree`` parameter is a JSON string of the UI tree. \
+Acceptable
     formats:
-    - Full envelope: ``{"schemaVersion":"1","root":{"kind":"Stack","props":{},"children":[]}}``
-    - Bare root: ``{"kind":"Stack","props":{},"children":[]}``
+    - Full envelope: \
+``{\"schemaVersion\":\"1\",\"root\":{\"kind\":\"Stack\",\"props\":{},\"children\":[]}}``
+    - Bare root: \
+``{\"kind\":\"Stack\",\"props\":{},\"children\":[]}``
 
     Every node has exactly ``{kind, props, children, nodeId}``:
-    - ``kind``: PascalCase component name (call list_ui_components first).
-    - ``props``: all component configuration (title, value, chart, etc.).
+    - ``kind``: PascalCase component name (call \
+list_ui_components first).
+    - ``props``: all component configuration (title, value, \
+chart, etc.).
     - ``children``: nested node objects only (never raw strings).
 
-    Call ``get_genui_guide`` and ``list_ui_components`` before authoring
+    Call ``get_genui_guide`` and ``list_ui_components`` before \
+authoring
     non-trivial trees (dashboards, multi-card layouts, 6+ nodes).
 
-    To replace an existing card in this session, pass the previous ``ui_id``.
+    To replace an existing card in this session, pass the \
+previous ``ui_id``.
     Prefer ``emit_ui_patch`` for small field updates.
 
     Args:
-        tree: JSON string of the generative UI tree. Must be valid JSON
-              or a repairable JSON-like string (code fences, trailing
+        tree: JSON string of the generative UI tree. Must be \
+valid JSON
+              or a repairable JSON-like string (code fences, \
+trailing
               commas, and truncation are handled).
-        ui_id: Optional existing id (``ui_...``) to replace in-session.
+        ui_id: Optional existing id (``ui_...``) to replace \
+in-session.
 
     Returns:
-        ToolChunk with JSON text: ``{ok, kind, ui_id, revision, tree}``
-        on success, or ``{ok:false, kind:"genui_error", error_code, message}``
+        ToolChunk with JSON text: ``{ok, kind, ui_id, revision, \
+tree}``
+        on success, or ``{ok:false, kind:\"genui_error\", \
+error_code, message}``
         on failure.
     """
     if not load_settings().get("enabled", True):
         return _err("feature_disabled", "GenUI is disabled in UGSci settings.")
     if _payload_size(tree) > GENUI_MAX_JSON_CHARS:
-        return _err("payload_too_large", f"tree JSON exceeds {GENUI_MAX_JSON_CHARS} chars")
+        return _err(
+            "payload_too_large",
+            f"tree JSON exceeds {GENUI_MAX_JSON_CHARS} chars",
+        )
 
     if not isinstance(tree, (str, dict)):
-        return _err("invalid_type", f"tree must be a JSON string, got {type(tree).__name__}")
+        return _err(
+            "invalid_type",
+            f"tree must be a JSON string, got {type(tree).__name__}",
+        )
 
     if isinstance(tree, str) and not tree.strip():
-        return _err("empty_tree", "tree parameter is empty", "Provide a JSON UI tree object.")
+        return _err(
+            "empty_tree",
+            "tree parameter is empty",
+            "Provide a JSON UI tree object.",
+        )
 
     parsed_tree = _parse_tree_param(tree)
 
@@ -165,7 +205,7 @@ def emit_ui_tree(tree: dict[str, Any] | str, ui_id: str = "") -> ToolChunk:
         return _err(
             "parse_failed",
             "Failed to parse tree as a JSON object.",
-            "Check JSON escaping: use \\\" for quotes and \\n for newlines.",
+            'Check JSON escaping: use \\" for quotes and \\n for newlines.',
         )
 
     requested_id = ui_id.strip() if isinstance(ui_id, str) else ""
@@ -174,48 +214,79 @@ def emit_ui_tree(tree: dict[str, Any] | str, ui_id: str = "") -> ToolChunk:
     except RuntimeError as exc:
         code = str(exc)
         if code == "feature_disabled":
-            return _err("feature_disabled", "GenUI is disabled in UGSci settings.")
+            return _err(
+                "feature_disabled",
+                "GenUI is disabled in UGSci settings.",
+            )
         if code == "missing_session_context":
-            return _err("missing_session_context", "GenUI requires an active session context.")
-        return _err("invalid_tree", code, "Call list_ui_components to verify kind/prop names.")
+            return _err(
+                "missing_session_context",
+                "GenUI requires an active session context.",
+            )
+        return _err(
+            "invalid_tree",
+            code,
+            "Call list_ui_components to verify kind/prop names.",
+        )
     except ValueError as exc:
-        return _err("invalid_ui_id", str(exc), "Pass a previous ui_id from this session, or omit it.")
+        return _err(
+            "invalid_ui_id",
+            str(exc),
+            "Pass a previous ui_id from this session, or omit it.",
+        )
     except Exception as exc:
-        return _err("invalid_tree", str(exc), "Call list_ui_components to verify kind/prop names.")
+        return _err(
+            "invalid_tree",
+            str(exc),
+            "Call list_ui_components to verify kind/prop names.",
+        )
 
-    logger.info("[ugsci.genui] emit_ui_tree: ui_id=%s, session=%s", result.get("ui_id"), get_session_id())
+    logger.info(
+        "[ugsci.genui] emit_ui_tree: ui_id=%s, session=%s",
+        result.get("ui_id"),
+        get_session_id(),
+    )
     return _ok(result)
 
 
 def emit_ui_patch(patches: dict[str, Any] | str) -> ToolChunk:
     """Apply JSON Patch operations to an existing GenUI tree.
 
-    Use this to update a previously emitted UI tree without re-sending the
-    entire tree. Patches follow a subset of RFC 6902 (replace, add, remove).
+    Use this to update a previously emitted UI tree without \
+re-sending the
+    entire tree. Patches follow a subset of RFC 6902 (replace, \
+add, remove).
 
     The ``patches`` parameter is a JSON string:
-    ``{"ui_id":"ui_xxx","base_revision":1,"patches":[{"op":"replace","path":"/root/children/0/props/text","value":"Updated"}]}``
+    \
+``{\"ui_id\":\"ui_xxx\",\"base_revision\":1,\"patches\":[{\"op\":\"replace\",\"path\":\"/root/children/0/props/text\",\"value\":\"Updated\"}]}``
 
     Rules:
     - ``ui_id`` must be a tree previously emitted in this session.
-    - ``base_revision`` must match the current revision of the tree.
+    - ``base_revision`` must match the current revision of the \
+tree.
     - ``path`` must start with ``/root`` and cannot modify
       ``schemaVersion``, ``root/nodeId``, or ``root/kind``.
-    - After patching, the tree is re-validated; invalid trees are rejected.
+    - After patching, the tree is re-validated; invalid trees are \
+rejected.
 
     Args:
-        patches: JSON string with ``ui_id``, ``base_revision``, and
+        patches: JSON string with ``ui_id``, ``base_revision``, \
+and
                  ``patches`` array.
 
     Returns:
-        ToolChunk with JSON: ``{ok, kind:"genui_patch", ui_id,
+        ToolChunk with JSON: ``{ok, kind:\"genui_patch\", ui_id,
         base_revision, revision, patches, tree}`` on success,
-        or ``{ok:false, kind:"genui_error", ...}`` on failure.
+        or ``{ok:false, kind:\"genui_error\", ...}`` on failure.
     """
     if not load_settings().get("enabled", True):
         return _err("feature_disabled", "GenUI is disabled in UGSci settings.")
     if _payload_size(patches) > GENUI_MAX_JSON_CHARS:
-        return _err("payload_too_large", f"patches JSON exceeds {GENUI_MAX_JSON_CHARS} chars")
+        return _err(
+            "payload_too_large",
+            f"patches JSON exceeds {GENUI_MAX_JSON_CHARS} chars",
+        )
 
     # Parse patches parameter
     parsed: Any = None
@@ -230,16 +301,27 @@ def emit_ui_patch(patches: dict[str, Any] | str) -> ToolChunk:
         except json.JSONDecodeError:
             parsed = try_parse_json_object(raw)
     else:
-        return _err("invalid_type", f"patches must be a JSON string, got {type(patches).__name__}")
+        return _err(
+            "invalid_type",
+            f"patches must be a JSON string, got {type(patches).__name__}",
+        )
 
     if not isinstance(parsed, dict):
-        return _err("parse_failed", "Failed to parse patches as a JSON object.")
+        return _err(
+            "parse_failed",
+            "Failed to parse patches as a JSON object.",
+        )
 
     # Validate patch structure
     try:
         validated_patch = validate_ui_patch(parsed)
     except Exception as exc:
-        return _err("invalid_patch", str(exc), "Check patch format: {ui_id, base_revision, patches:[{op,path,value?}]}")
+        return _err(
+            "invalid_patch",
+            str(exc),
+            "Check patch format: {ui_id, base_revision, "
+            "patches:[{op,path,value?}]}",
+        )
 
     ui_id = validated_patch["ui_id"]
     base_revision = validated_patch["base_revision"]
@@ -247,7 +329,10 @@ def emit_ui_patch(patches: dict[str, Any] | str) -> ToolChunk:
 
     session_id = get_session_id()
     if not session_id:
-        return _err("missing_session_context", "GenUI patching requires an active session context.")
+        return _err(
+            "missing_session_context",
+            "GenUI patching requires an active session context.",
+        )
     store = get_state_store()
 
     try:
@@ -262,11 +347,23 @@ def emit_ui_patch(patches: dict[str, Any] | str) -> ToolChunk:
     except ValueError as exc:
         msg = str(exc)
         if "revision conflict" in msg:
-            return _err("revision_conflict", msg, "Call emit_ui_tree to get the latest revision, then retry.")
+            return _err(
+                "revision_conflict",
+                msg,
+                "Call emit_ui_tree to get the latest revision, then retry.",
+            )
         elif "not found" in msg:
-            return _err("ui_id_not_found", msg, "The ui_id does not exist in this session.")
+            return _err(
+                "ui_id_not_found",
+                msg,
+                "The ui_id does not exist in this session.",
+            )
         else:
-            return _err("patch_failed", msg, "The patch could not be applied to the tree.")
+            return _err(
+                "patch_failed",
+                msg,
+                "The patch could not be applied to the tree.",
+            )
 
     result: dict[str, Any] = {
         "ok": True,
@@ -278,7 +375,12 @@ def emit_ui_patch(patches: dict[str, Any] | str) -> ToolChunk:
         "tree": snapshot.tree,
         "tool_call_id": snapshot.tool_call_id or "",
     }
-    logger.info("[ugsci.genui] emit_ui_patch: ui_id=%s, revision=%d->%d", snapshot.ui_id, base_revision, snapshot.revision)
+    logger.info(
+        "[ugsci.genui] emit_ui_patch: ui_id=%s, revision=%d->%d",
+        snapshot.ui_id,
+        base_revision,
+        snapshot.revision,
+    )
     return _ok(result)
 
 
@@ -291,21 +393,26 @@ def list_ui_components() -> ToolChunk:
     Returns:
         ToolChunk with JSON: ``{node_shape, rules, components}``.
     """
-    return _ok({
-        "node_shape": '{"kind": "...", "props": { ... }, "children": [ ... ]}',
-        "rules": [
-            "Every component prop goes inside `props`.",
-            "`children` is only for nested nodes, never strings.",
-            "Use `nodeId` only if you want a stable id; otherwise omit.",
-        ],
-        "components": list_component_catalog(),
-    })
+    return _ok(
+        {
+            "node_shape": '{"kind": "...", "props": { ... }, '
+            '"children": [ ... ]}',
+            "rules": [
+                "Every component prop goes inside `props`.",
+                "`children` is only for nested nodes, never strings.",
+                "Use `nodeId` only if you want a stable id; otherwise omit.",
+            ],
+            "components": list_component_catalog(),
+        },
+    )
 
 
 def get_genui_guide_tool() -> ToolChunk:
-    """Return the GenUI guide: wire format, syntax, layout, and visual design.
+    """Return the GenUI guide: wire format, syntax, layout, and visual \
+design.
 
-    Call before non-trivial emit_ui_tree (dashboards, multi-card UIs, 6+ nodes).
+    Call before non-trivial emit_ui_tree (dashboards, multi-card UIs, \
+6+ nodes).
     Read-only, no side effects.
 
     Returns:

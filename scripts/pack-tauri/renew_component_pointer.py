@@ -51,7 +51,7 @@ def renew(
         (now + timedelta(days=30)).isoformat().replace("+00:00", "Z")
     )
     pointer["signature"] = base64.b64encode(
-        private.sign(canonical_json(pointer))
+        private.sign(canonical_json(pointer)),
     ).decode("ascii")
     atomic_write_bytes(output, canonical_json(pointer))
 
@@ -91,7 +91,14 @@ def renew_oss(bucket: str, target: str) -> None:
             paths[name] = root / f"{name}.json"
             copy(f"oss://{bucket}{url.path}", paths[name])
         renewed = root / "renewed.json"
-        renew(current, renewed, private_key_b64=key, target=target, **paths)
+        renew(
+            current,
+            renewed,
+            private_key_b64=key,
+            target=target,
+            manifest=paths["manifest"],
+            history=paths["history"],
+        )
         # Also guard against a writer outside the shared workflow concurrency group.
         check = root / "check.json"
         copy(uri, check)
@@ -115,7 +122,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bucket", required=True)
     parser.add_argument(
-        "--target", choices=("windows-x86_64", "macos-aarch64"), required=True
+        "--target",
+        choices=("windows-x86_64", "macos-aarch64"),
+        required=True,
     )
     args = parser.parse_args()
     renew_oss(args.bucket, args.target)

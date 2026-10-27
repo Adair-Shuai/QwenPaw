@@ -105,12 +105,13 @@ def build_mcp_credential_record(
         secrets[secret_key] = restore_masked_value(str(value), old_value)
 
     _, query_secrets = split_query_credentials(
-        str(_read_field(client, "url", "") or "")
+        str(_read_field(client, "url", "") or ""),
     )
     for key, value in query_secrets.items():
         secret_key = query_secret_key(key)
         secrets[secret_key] = restore_masked_value(
-            value, existing_secrets.get(secret_key, "")
+            value,
+            existing_secrets.get(secret_key, ""),
         )
 
     if not query_secrets:
@@ -185,7 +186,9 @@ def build_mcp_driver_card(
             "url": str(data.get("url") or ""),
             "headers": header_binding,
         }
-        clean_url, query_values = split_query_credentials(str(data.get("url") or ""))
+        clean_url, query_values = split_query_credentials(
+            str(data.get("url") or ""),
+        )
         endpoint["url"] = clean_url
         if query_values:
             endpoint["query"] = source_binding_from_split(
@@ -198,7 +201,8 @@ def build_mcp_driver_card(
             and clean_url == existing.endpoint.get("url")
             and existing.endpoint.get("query")
         ):
-            # A metadata-only update must retain the saved URL credential binding.
+            # A metadata-only update must retain the saved URL credential
+            # binding.
             endpoint["query"] = existing.endpoint["query"]
         http_timeout = data.get("http_timeout")
         if http_timeout is not None:

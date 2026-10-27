@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Durable, multi-signal activity snapshots for simulation jobs."""
 from __future__ import annotations
 
@@ -62,7 +63,15 @@ def capture_activity(job) -> ActivitySnapshot:
         pass
     alive, cpu = _process_cpu(int(job.pid or 0))
     cpu_token = round(cpu, 1) if cpu is not None else None
-    token = (log_path, size, round(mtime, 3), current_time, current_step, cpu_token, alive)
+    token = (
+        log_path,
+        size,
+        round(mtime, 3),
+        current_time,
+        current_step,
+        cpu_token,
+        alive,
+    )
     return ActivitySnapshot(
         token=token,
         log_path=log_path,
@@ -76,7 +85,10 @@ def capture_activity(job) -> ActivitySnapshot:
     )
 
 
-def has_progress(previous: ActivitySnapshot | None, current: ActivitySnapshot) -> bool:
+def has_progress(
+    previous: ActivitySnapshot | None,
+    current: ActivitySnapshot,
+) -> bool:
     if previous is None:
         return True
     return current.token != previous.token

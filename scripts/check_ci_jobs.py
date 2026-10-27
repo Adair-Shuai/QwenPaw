@@ -11,8 +11,8 @@ REPO = "Adair-Shuai/QwenPaw"
 def get_json(url: str) -> dict:
     req = urllib.request.Request(url)
     req.add_header("User-Agent", "Python")
-    resp = urllib.request.urlopen(req)
-    return json.loads(resp.read())
+    with urllib.request.urlopen(req) as resp:
+        return json.loads(resp.read())
 
 
 def list_run_jobs(run_id: int) -> None:
@@ -26,10 +26,16 @@ def list_run_jobs(run_id: int) -> None:
         name = j["name"]
         status = j["status"]
         conclusion = j.get("conclusion", "—")
-        marker = "FAIL" if conclusion == "failure" else "OK" if conclusion == "success" else "SKIP"
+        marker = (
+            "FAIL"
+            if conclusion == "failure"
+            else "OK"
+            if conclusion == "success"
+            else "SKIP"
+        )
         print(f"{marker} {name:<53} {status:<12} {conclusion}")
 
 
 if __name__ == "__main__":
-    run_id = int(sys.argv[1]) if len(sys.argv) > 1 else 29815658189
-    list_run_jobs(run_id)
+    requested_run_id = int(sys.argv[1]) if len(sys.argv) > 1 else 29815658189
+    list_run_jobs(requested_run_id)

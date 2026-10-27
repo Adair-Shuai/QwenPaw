@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """JSON worker for trusted local snippets; not a security sandbox."""
 from __future__ import annotations
 
@@ -9,8 +10,30 @@ import json
 import sys
 import types
 
-_ALLOWED = {"math", "json", "re", "statistics", "datetime", "itertools", "collections", "functools", "operator", "string", "random", "decimal", "fractions"}
-_NAMES = "abs all any ascii bin bool bytes bytearray callable chr dict divmod enumerate filter float format frozenset hex int isinstance issubclass iter len list map max min next oct ord pow range repr reversed round set sorted str sum tuple type zip Exception ValueError TypeError KeyError IndexError AttributeError RuntimeError StopIteration ZeroDivisionError ImportError NotImplementedError ArithmeticError LookupError OverflowError".split()
+_ALLOWED = {
+    "math",
+    "json",
+    "re",
+    "statistics",
+    "datetime",
+    "itertools",
+    "collections",
+    "functools",
+    "operator",
+    "string",
+    "random",
+    "decimal",
+    "fractions",
+}
+_NAMES = (
+    "abs all any ascii bin bool bytes bytearray callable chr dict divmod "
+    "enumerate filter float format frozenset hex int isinstance "
+    "issubclass iter len list map max min next oct ord pow range repr "
+    "reversed round set sorted str sum tuple type zip Exception "
+    "ValueError TypeError KeyError IndexError AttributeError RuntimeError "
+    "StopIteration ZeroDivisionError ImportError NotImplementedError "
+    "ArithmeticError LookupError OverflowError"
+).split()
 
 
 class CappedOutput(io.StringIO):
@@ -32,25 +55,49 @@ def main() -> None:
     # requires a dedicated OS/container sandbox outside the application.
     try:
         import resource
+
         resource.setrlimit(resource.RLIMIT_CPU, (35, 35))
-        resource.setrlimit(resource.RLIMIT_AS, (256 * 1024 * 1024, 256 * 1024 * 1024))
+        resource.setrlimit(
+            resource.RLIMIT_AS,
+            (256 * 1024 * 1024, 256 * 1024 * 1024),
+        )
     except (ImportError, OSError, ValueError):
         pass
     unknown = set(payload.get("allow_modules") or []) - _ALLOWED
     if unknown:
-        raise ValueError("module is not permitted: " + ", ".join(sorted(unknown)))
+        raise ValueError(
+            "module is not permitted: " + ", ".join(sorted(unknown)),
+        )
     stream = CappedOutput(int(payload.get("max_stdout", 65536)))
     namespace = {name: importlib.import_module(name) for name in _ALLOWED}
     namespace.update(payload.get("inputs") or {})
-    namespace["__builtins__"] = {name: getattr(builtins, name) for name in _NAMES}
-    namespace["print"] = lambda *args, **kwargs: print(*args, file=stream, **{key: value for key, value in kwargs.items() if key != "file"})
+    namespace["__builtins__"] = {
+        name: getattr(builtins, name) for name in _NAMES
+    }
+    namespace["print"] = lambda *args, **kwargs: print(
+        *args,
+        file=stream,
+        **{key: value for key, value in kwargs.items() if key != "file"},
+    )
     namespace["result"] = None
     original = set(namespace)
-    with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(stream):
+    with contextlib.redirect_stdout(stream), contextlib.redirect_stderr(
+        stream,
+    ):
         exec(payload["source"], namespace, namespace)
     result = {
         "result": namespace.get("result"),
-        "locals": {key: value for key, value in namespace.items() if key == "result" or (key not in original and not key.startswith("_") and not callable(value) and not isinstance(value, types.ModuleType))},
+        "locals": {
+            key: value
+            for key, value in namespace.items()
+            if key == "result"
+            or (
+                key not in original
+                and not key.startswith("_")
+                and not callable(value)
+                and not isinstance(value, types.ModuleType)
+            )
+        },
         "stdout": stream.getvalue(),
         "truncated_stdout": stream.truncated,
     }

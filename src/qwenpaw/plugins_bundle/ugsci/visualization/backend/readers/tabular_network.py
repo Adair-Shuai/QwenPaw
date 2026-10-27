@@ -6,7 +6,8 @@ Reads CSV or Apache Arrow files describing a flow network
 them to binary format for 3D rendering.
 
 Expected CSV format:
-  segment_id, x1, y1, z1, x2, y2, z2, diameter, pressure, flow_rate, temperature, phase
+  segment_id, x1, y1, z1, x2, y2, z2, diameter, pressure, flow_rate, \
+temperature, phase
 
 Or Arrow IPC format with the same columns.
 """
@@ -48,20 +49,21 @@ class TabularNetworkReader(BaseReader):
         if not rows:
             raise ValueError("No data rows found in network file")
 
-        from ..converters.network import convert_network_to_lines, convert_network_to_tubes
-
-        converter = (
-            convert_network_to_tubes
-            if (options or {}).get("representation") == "tubes"
-            else convert_network_to_lines
+        from ..converters.network import (
+            convert_network_to_lines,
+            convert_network_to_tubes,
         )
-        return converter(rows, name, bin_dir)
+
+        if (options or {}).get("representation") == "tubes":
+            return convert_network_to_tubes(rows, name, bin_dir)
+        return convert_network_to_lines(rows, name, bin_dir)
 
     @staticmethod
     def _load_table(file_path: str, ext: str) -> list[dict[str, Any]]:
         """Load a CSV or Arrow file as a list of dict rows."""
         if ext == ".csv":
             import csv
+
             with open(file_path, "r", encoding="utf-8-sig", newline="") as f:
                 reader = csv.DictReader(f)
                 return list(reader)
@@ -69,7 +71,7 @@ class TabularNetworkReader(BaseReader):
         if ext in (".arrow", ".parquet"):
             try:
                 import pyarrow as pa
-                import pyarrow.ipc as ipc
+                from pyarrow import ipc
                 import pyarrow.parquet as pq
 
                 if ext == ".arrow":
@@ -82,10 +84,10 @@ class TabularNetworkReader(BaseReader):
                 else:
                     table = pq.read_table(file_path)
                 return table.to_pylist()
-            except ImportError:
+            except ImportError as exc:
                 raise ImportError(
-                    "pyarrow is required to read Arrow/Parquet files"
-                )
+                    "pyarrow is required to read Arrow/Parquet files",
+                ) from exc
 
         raise ValueError(f"Unsupported file format: {ext}")
 

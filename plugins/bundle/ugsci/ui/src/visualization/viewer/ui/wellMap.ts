@@ -111,7 +111,10 @@ export function hitTestWellMap(
   return bestId;
 }
 
-export function createWellMapPanel(): { root: HTMLElement; canvas: HTMLCanvasElement } {
+export function createWellMapPanel(): {
+  root: HTMLElement;
+  canvas: HTMLCanvasElement;
+} {
   const root = document.createElement("div");
   root.className = "oilgas-well-map";
   Object.assign(root.style, {
@@ -128,7 +131,8 @@ export function createWellMapPanel(): { root: HTMLElement; canvas: HTMLCanvasEle
 
   const title = document.createElement("div");
   title.textContent = "井位平面图";
-  title.style.cssText = "position:absolute;top:6px;left:8px;font:600 11px/1 -apple-system,sans-serif;color:#8b949e;pointer-events:none;";
+  title.style.cssText =
+    "position:absolute;top:6px;left:8px;font:600 11px/1 -apple-system,sans-serif;color:#8b949e;pointer-events:none;";
   root.appendChild(title);
 
   const canvas = document.createElement("canvas");
@@ -168,7 +172,12 @@ export function drawWellMap(
     const [x1, y1] = transform.toPixel(gridBounds.maxX, gridBounds.maxY);
     ctx.strokeStyle = "#30363d";
     ctx.lineWidth = 1;
-    ctx.strokeRect(Math.min(x0, x1), Math.min(y0, y1), Math.abs(x1 - x0), Math.abs(y1 - y0));
+    ctx.strokeRect(
+      Math.min(x0, x1),
+      Math.min(y0, y1),
+      Math.abs(x1 - x0),
+      Math.abs(y1 - y0),
+    );
   }
 
   ctx.lineWidth = 1.4;

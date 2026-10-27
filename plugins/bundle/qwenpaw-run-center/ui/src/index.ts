@@ -119,8 +119,12 @@ import { createAdaptiveRunView } from "./adaptive";
     const [compareLoading, setCompareLoading] = React.useState(false);
     const [report, setReport] = React.useState(null as any | null);
     const [reportLoading, setReportLoading] = React.useState(false);
-    const [simulationCapabilities, setSimulationCapabilities] = React.useState(null as { runId: string; checkpoint_resume?: unknown } | null);
-    const selectedAgentScope = React.useRef(getHost().getSelectedAgentId?.() || "");
+    const [simulationCapabilities, setSimulationCapabilities] = React.useState(
+      null as { runId: string; checkpoint_resume?: unknown } | null,
+    );
+    const selectedAgentScope = React.useRef(
+      getHost().getSelectedAgentId?.() || "",
+    );
     const selectedRef = React.useRef(null as RunRecord | null);
     const listRequestSerial = React.useRef(0);
     const detailRequestSerial = React.useRef(0);
@@ -261,7 +265,9 @@ import { createAdaptiveRunView } from "./adaptive";
         while (active) {
           try {
             const host = getHost();
-            const streamPath = `/run-center/runs/${encodeURIComponent(runId)}/events/stream?after_seq=${lastSeq}`;
+            const streamPath = `/run-center/runs/${encodeURIComponent(
+              runId,
+            )}/events/stream?after_seq=${lastSeq}`;
             const response = host.fetch
               ? await host.fetch(streamPath, {
                   signal: controller.signal,
@@ -289,7 +295,9 @@ import { createAdaptiveRunView } from "./adaptive";
                   .find((line) => line.startsWith("data:"));
                 if (!dataLine) continue;
                 try {
-                  const event = JSON.parse(dataLine.slice(5).trim()) as RunEvent;
+                  const event = JSON.parse(
+                    dataLine.slice(5).trim(),
+                  ) as RunEvent;
                   const sequence = Number(event.seq ?? event.sequence ?? 0);
                   if (sequence > lastSeq) lastSeq = sequence;
                   setEvents((current: RunEvent[]) => {
@@ -314,7 +322,8 @@ import { createAdaptiveRunView } from "./adaptive";
           } catch {
             if (!active) return;
           }
-          if (active) await new Promise((resolve) => window.setTimeout(resolve, 1000));
+          if (active)
+            await new Promise((resolve) => window.setTimeout(resolve, 1000));
         }
       };
       void consume();
@@ -561,13 +570,29 @@ import { createAdaptiveRunView } from "./adaptive";
       String(selected?.run_id || "").startsWith("ugsci:");
     const controls = [] as any[];
     const simulation = selected?.operation === "simulation.run";
-    const resumeCapability = simulationCapabilities?.runId === selected?.run_id ? simulationCapabilities?.checkpoint_resume : undefined;
+    const resumeCapability =
+      simulationCapabilities?.runId === selected?.run_id
+        ? simulationCapabilities?.checkpoint_resume
+        : undefined;
     const cannotResume = simulation && resumeCapability !== true;
-    const resumeHint = resumeCapability === false ? "此模拟器不支持检查点暂停／续算" : "尚未确认此模拟器支持检查点暂停／续算";
+    const resumeHint =
+      resumeCapability === false
+        ? "此模拟器不支持检查点暂停／续算"
+        : "尚未确认此模拟器支持检查点暂停／续算";
     if (!isLegacy && status === "running")
-      controls.push(button("暂停", "pause", { disabled: cannotResume, title: cannotResume ? resumeHint : undefined }));
+      controls.push(
+        button("暂停", "pause", {
+          disabled: cannotResume,
+          title: cannotResume ? resumeHint : undefined,
+        }),
+      );
     if (!isLegacy && status === "paused")
-      controls.push(button("恢复", "resume", { disabled: cannotResume, title: cannotResume ? resumeHint : undefined }));
+      controls.push(
+        button("恢复", "resume", {
+          disabled: cannotResume,
+          title: cannotResume ? resumeHint : undefined,
+        }),
+      );
     if (!isLegacy && ACTIVE_STATUSES.has(status))
       controls.push(button("取消", "cancel", { danger: true }));
     if (!isLegacy && ["failed", "blocked", "cancelled"].includes(status))
@@ -1003,7 +1028,9 @@ import { createAdaptiveRunView } from "./adaptive";
                       React.createElement(
                         "div",
                         { style: { color: "#389e0d", fontSize: 12 } },
-                        `报告已生成 · ${report.artifact?.ref_id || report.report_id}`,
+                        `报告已生成 · ${
+                          report.artifact?.ref_id || report.report_id
+                        }`,
                       ),
                       React.createElement(
                         "pre",
@@ -1013,7 +1040,8 @@ import { createAdaptiveRunView } from "./adaptive";
                             overflow: "auto",
                             padding: 10,
                             whiteSpace: "pre-wrap",
-                            background: "var(--ant-color-fill-tertiary, #f5f5f5)",
+                            background:
+                              "var(--ant-color-fill-tertiary, #f5f5f5)",
                             fontSize: 11,
                           },
                         },
@@ -1616,8 +1644,14 @@ import { createAdaptiveRunView } from "./adaptive";
                       events,
                       agentId: selected.agent_id || selectedAgentScope.current,
                       subscribe: false,
-                      refreshKey: events.length ? eventSequence(events[events.length - 1]) : 0,
-                      onCapabilities: (value: Record<string, unknown>) => setSimulationCapabilities({ runId: selected.run_id, ...value }),
+                      refreshKey: events.length
+                        ? eventSequence(events[events.length - 1])
+                        : 0,
+                      onCapabilities: (value: Record<string, unknown>) =>
+                        setSimulationCapabilities({
+                          runId: selected.run_id,
+                          ...value,
+                        }),
                     })
                   : null,
                 React.createElement(
@@ -1747,7 +1781,11 @@ import { createAdaptiveRunView } from "./adaptive";
     (window as any).__qwenpawRunCenterRegistered = true;
     const React = getHost().React;
     SimulationMonitor = createSimulationMonitor(React, getHost());
-    AdaptiveRunView = createAdaptiveRunView(React, getHost(), SimulationMonitor);
+    AdaptiveRunView = createAdaptiveRunView(
+      React,
+      getHost(),
+      SimulationMonitor,
+    );
     QP.runCenter = { ...QP.runCenter, SimulationMonitor, AdaptiveRunView };
     window.dispatchEvent(new Event("qwenpaw:simulation-monitor-ready"));
     const routeId = "qwenpaw-run-center.run-center";

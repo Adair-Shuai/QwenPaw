@@ -1,21 +1,29 @@
 # -*- coding: utf-8 -*-
-"""Authoring helpers: convert human-friendly workflow definitions to the canonical shape.
+"""Authoring helpers: convert human-friendly workflow definitions to \
+the canonical shape.
 
-This is NOT a schema migration layer. The engine exposes a single canonical
+This is NOT a schema migration layer. The engine exposes a single \
+canonical
 document shape (see :mod:`loader`). Two sources still
 need a light conversion to reach that shape:
 
-* **LLM-authored chat workflow embeds** (``chat_workflow_embed_emit``)
-  — models may emit a flat ``nodes: [...]`` list with type strings like
-  ``"tool_call"`` and top-level control keys (``next``, ``conditions``,
+* **LLM-authored chat workflow embeds** \
+(``chat_workflow_embed_emit``)
+  — models may emit a flat ``nodes: [...]`` list with type strings \
+like
+  ``\"tool_call\"`` and top-level control keys (``next``, \
+``conditions``,
   ``error_handler``); that surface is easier to generate than the
   runtime-optimized ``nodes: {id: {class_type, control}}`` dict.
-* **scripts/workflow/migrate_flows.py** — the one-shot upgrade tool for
+* **scripts/workflow/migrate_flows.py** — the one-shot upgrade tool\
+ for
   historical DB rows.
 
-Both funnel through :func:`to_canonical`, which produces the canonical
+Both funnel through :func:`to_canonical`, which produces the \
+canonical
 document that :func:`load` accepts. Stored data
-(flows table, templates, chat embed extensions) is always canonical.
+(flows table, templates, chat embed extensions) is always \
+canonical.
 """
 
 from __future__ import annotations
@@ -29,7 +37,8 @@ logger = logging.getLogger(__name__)
 _TYPE_TO_CLASS: dict[str, str] = {
     "start": "StartNode",
     "end": "EndNode",
-    # ComfyUI / LiteGraph shorthand LLMs often emit instead of StartNode/EndNode.
+    # ComfyUI / LiteGraph shorthand LLMs often emit instead of
+    # StartNode/EndNode.
     "input": "StartNode",
     "output": "EndNode",
     # Generic processing step (not a socket/widget default).
@@ -50,15 +59,19 @@ _TYPE_TO_CLASS: dict[str, str] = {
     "code_agent": "ScriptAgentNode",  # legacy authoring id → same node
 }
 
-# Editors and LLMs often emit camelCase (e.g. ``toolCall``) instead of ``tool_call``.
+# Editors and LLMs often emit camelCase (e.g. ``toolCall``) instead of
+# ``tool_call``.
 for _snake_key, _cls in list(_TYPE_TO_CLASS.items()):
     if "_" not in _snake_key:
         continue
     _parts = _snake_key.split("_")
-    _camel = _parts[0] + "".join(p[:1].upper() + p[1:] if p else "" for p in _parts[1:])
+    _camel = _parts[0] + "".join(
+        p[:1].upper() + p[1:] if p else "" for p in _parts[1:]
+    )
     _TYPE_TO_CLASS.setdefault(_camel, _cls)
 
-# LLMs often emit camelCase + ``Node`` suffix (e.g. ``startNode``, ``toolCallNode``).
+# LLMs often emit camelCase + ``Node`` suffix (e.g. ``startNode``,
+# ``toolCallNode``).
 for _cls in set(_TYPE_TO_CLASS.values()):
     if _cls.endswith("Node") and len(_cls) > 4:
         _camel_node = _cls[0].lower() + _cls[1:]
@@ -66,16 +79,27 @@ for _cls in set(_TYPE_TO_CLASS.values()):
 
 # Prefer snake_case as the canonical authoring id when reversing class_type.
 _CLASS_TO_TYPE: dict[str, str] = {}
-for _k, _v in sorted(_TYPE_TO_CLASS.items(), key=lambda kv: (0 if "_" in kv[0] else 1, kv[0])):
+for _k, _v in sorted(
+    _TYPE_TO_CLASS.items(),
+    key=lambda kv: (0 if "_" in kv[0] else 1, kv[0]),
+):
     _CLASS_TO_TYPE.setdefault(_v, _k)
-# Prefer ``script_agent`` as the canonical authoring id (``code_agent`` is legacy).
+# Prefer ``script_agent`` as the canonical authoring id (``code_agent`` is
+# legacy).
 _CLASS_TO_TYPE["ScriptAgentNode"] = "script_agent"
 
 _KNOWN_AUTHORING_TYPES: set[str] = set(_TYPE_TO_CLASS.keys())
 
-# LLMs frequently emit ``tool_id`` / ``tool_name`` for the ToolCallNode ``tool``
-# input. Treat them as aliases so authored graphs validate without manual fixes.
-_TOOL_INPUT_ALIASES: tuple[str, ...] = ("tool_id", "tool_name", "toolId", "toolName")
+# LLMs frequently emit ``tool_id`` / ``tool_name`` for the ToolCallNode
+# ``tool``
+# input. Treat them as aliases so authored graphs validate without manual
+# fixes.
+_TOOL_INPUT_ALIASES: tuple[str, ...] = (
+    "tool_id",
+    "tool_name",
+    "toolId",
+    "toolName",
+)
 
 _INPUT_KEYS: tuple[str, ...] = (
     "tool",
@@ -114,7 +138,10 @@ _CONTROL_KEYS: tuple[str, ...] = (
 
 
 def _alias_tool_input(inputs: dict[str, Any]) -> dict[str, Any]:
-    """Fold ``tool_id`` / ``tool_name`` aliases into the canonical ``tool`` input."""
+    (
+        "Fold ``tool_id`` / ``tool_name`` aliases into the canonical ``tool`` "
+        "input."
+    )
     if not isinstance(inputs, dict) or inputs.get("tool") is not None:
         return inputs
     for alias in _TOOL_INPUT_ALIASES:
@@ -129,7 +156,10 @@ def _alias_tool_input(inputs: dict[str, Any]) -> dict[str, Any]:
 
 
 def _normalize_registered_class_type(class_type: str) -> str:
-    """Map short LLM aliases (e.g. ``tool``) to registered ``*Node`` class names."""
+    (
+        "Map short LLM aliases (e.g. ``tool``) to registered ``*Node`` class n"
+        "ames."
+    )
     text = class_type.strip()
     if not text:
         return text
@@ -142,7 +172,10 @@ def _normalize_registered_class_type(class_type: str) -> str:
 
 
 def _finalize_canonical_document(canon: dict[str, Any]) -> dict[str, Any]:
-    """Normalize node class aliases and synthesize missing start/end boundary nodes."""
+    (
+        "Normalize node class aliases and synthesize missing start/end boundar"
+        "y nodes."
+    )
     out = dict(canon)
     nodes_raw = out.get("nodes")
     if not isinstance(nodes_raw, dict):
@@ -197,7 +230,11 @@ def class_type_for(type_str: str) -> str:
     mapped = _TYPE_TO_CLASS.get(type_str)
     if mapped is not None:
         return mapped
-    if type_str.endswith("Node") and type_str[0].islower() and len(type_str) > 4:
+    if (
+        type_str.endswith("Node")
+        and type_str[0].islower()
+        and len(type_str) > 4
+    ):
         pascal = type_str[0].upper() + type_str[1:]
         mapped = _TYPE_TO_CLASS.get(pascal)
         if mapped is not None:
@@ -216,7 +253,10 @@ def _safe_str(value: Any) -> str | None:
 
 def _config_authoring_type(node: dict[str, Any]) -> str | None:
     """Return ``config.node_type`` when it is a concrete authoring type."""
-    for container in (node, node.get("data") if isinstance(node.get("data"), dict) else None):
+    for container in (
+        node,
+        node.get("data") if isinstance(node.get("data"), dict) else None,
+    ):
         if not isinstance(container, dict):
             continue
         config = container.get("config")
@@ -230,18 +270,29 @@ def _config_authoring_type(node: dict[str, Any]) -> str | None:
     return None
 
 
+def _class_authoring_type(value: Any) -> str | None:
+    """Resolve a registered class name through the existing authoring map."""
+    class_type = _safe_str(value)
+    if not class_type:
+        return None
+    if class_type in _CLASS_TO_TYPE:
+        return _CLASS_TO_TYPE[class_type]
+    if class_type.endswith("Node") and class_type in set(
+        _TYPE_TO_CLASS.values(),
+    ):
+        return _CLASS_TO_TYPE.get(class_type, class_type)
+    return None
+
+
 def _infer_authoring_type(node: dict[str, Any], node_id: str) -> str:
     """Best-effort infer authoring node type from editor-shaped payloads."""
     cfg_type = _config_authoring_type(node)
     if cfg_type:
         return cfg_type
 
-    class_type = _safe_str(node.get("class_type"))
-    if class_type:
-        if class_type in _CLASS_TO_TYPE:
-            return _CLASS_TO_TYPE[class_type]
-        if class_type.endswith("Node") and class_type in set(_TYPE_TO_CLASS.values()):
-            return _CLASS_TO_TYPE.get(class_type, class_type)
+    class_type = _class_authoring_type(node.get("class_type"))
+    if class_type is not None:
+        return class_type
 
     data = node.get("data")
     if isinstance(data, dict):
@@ -268,7 +319,10 @@ def _infer_authoring_type(node: dict[str, Any], node_id: str) -> str:
 
 
 def _collect_node_inputs(node: dict[str, Any]) -> dict[str, Any]:
-    """Gather engine input sockets from flattened editor / LLM node payloads."""
+    (
+        "Gather engine input sockets from flattened editor / LLM node payloads"
+        "."
+    )
     inputs: dict[str, Any] = {}
     for key in _INPUT_KEYS:
         if key in node and node[key] is not None:
@@ -282,18 +336,16 @@ def _collect_node_inputs(node: dict[str, Any]) -> dict[str, Any]:
 
     config = node.get("config")
     if isinstance(config, dict):
-        if config.get("source") is not None and "source" not in inputs:
-            inputs["source"] = config["source"]
-        if config.get("inputs") is not None and "inputs" not in inputs:
-            inputs["inputs"] = config["inputs"]
-        if config.get("output") is not None and "output" not in inputs:
-            inputs["output"] = config["output"]
-        if config.get("timeout_sec") is not None and "timeout_sec" not in inputs:
-            inputs["timeout_sec"] = config["timeout_sec"]
-        if config.get("tool") is not None and "tool" not in inputs:
-            inputs["tool"] = config["tool"]
-        if config.get("params") is not None and "params" not in inputs:
-            inputs["params"] = config["params"]
+        for key in (
+            "source",
+            "inputs",
+            "output",
+            "timeout_sec",
+            "tool",
+            "params",
+        ):
+            if config.get(key) is not None and key not in inputs:
+                inputs[key] = config[key]
         if inputs.get("tool") is None:
             for alias in _TOOL_INPUT_ALIASES:
                 if config.get(alias) is not None:
@@ -301,6 +353,56 @@ def _collect_node_inputs(node: dict[str, Any]) -> dict[str, Any]:
                     break
 
     return inputs
+
+
+def _hoist_editor_config(merged: dict[str, Any]) -> None:
+    """Copy absent editor config fields without replacing explicit values."""
+    cfg = merged.get("config")
+    if not isinstance(cfg, dict):
+        return
+    if merged.get("class_type") is None and cfg.get("node_type") == "start":
+        merged["class_type"] = "StartNode"
+    if merged.get("class_type") is None and cfg.get("node_type") == "end":
+        merged["class_type"] = "EndNode"
+    for cfg_key in (
+        "source",
+        "inputs",
+        "output",
+        "timeout_sec",
+        "tool",
+        "params",
+    ):
+        if cfg_key in cfg and merged.get(cfg_key) is None:
+            merged[cfg_key] = cfg[cfg_key]
+
+
+def _normalize_editor_node(node: dict[str, Any]) -> dict[str, Any]:
+    """Unwrap an editor shell while preserving the original field priority."""
+    data = node.get("data") if isinstance(node, dict) else None
+    if not (
+        isinstance(node, dict)
+        and isinstance(data, dict)
+        and (
+            "type" in data
+            or "class_type" in data
+            or "type" in node
+            or "class_type" in node
+        )
+    ):
+        return node
+    merged: dict[str, Any] = {
+        **data,
+        "id": node.get("id", ""),
+        "metadata": node.get("metadata", {}) or {},
+    }
+    if merged.get("type") is None and node.get("type") is not None:
+        merged["type"] = node["type"]
+    if merged.get("class_type") is None and node.get("class_type") is not None:
+        merged["class_type"] = node["class_type"]
+    _hoist_editor_config(merged)
+    if merged.get("params") is None and merged.get("tool_inputs") is not None:
+        merged["params"] = merged["tool_inputs"]
+    return merged
 
 
 def to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
@@ -316,55 +418,22 @@ def to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
     are returned unchanged.
     """
     if not isinstance(raw, dict):
-        raise TypeError(f"Workflow document must be a mapping, got {type(raw).__name__}")
+        raise TypeError(
+            f"Workflow document must be a mapping, got {type(raw).__name__}",
+        )
 
     if "workflow" in raw and isinstance(raw["workflow"], dict):
         raw = raw["workflow"]
 
-    if isinstance(raw.get("nodes"), dict) and isinstance(raw.get("control"), dict):
+    if isinstance(raw.get("nodes"), dict) and isinstance(
+        raw.get("control"),
+        dict,
+    ):
         return _finalize_canonical_document(dict(raw))
 
     legacy_nodes: list[dict[str, Any]] = list(raw.get("nodes", []) or [])
 
-    normalized_nodes: list[dict[str, Any]] = []
-    for node in legacy_nodes:
-        data = node.get("data") if isinstance(node, dict) else None
-        has_editor_shell = (
-            isinstance(node, dict)
-            and isinstance(data, dict)
-            and (
-                "type" in data
-                or "class_type" in data
-                or "type" in node
-                or "class_type" in node
-            )
-        )
-        if has_editor_shell:
-            merged: dict[str, Any] = {
-                **data,
-                "id": node.get("id", ""),
-                "metadata": node.get("metadata", {}) or {},
-            }
-            if merged.get("type") is None and node.get("type") is not None:
-                merged["type"] = node["type"]
-            if merged.get("class_type") is None and node.get("class_type") is not None:
-                merged["class_type"] = node["class_type"]
-            # React Flow / editor: hoist nested config (node_type, source, inputs, …).
-            cfg = merged.get("config")
-            if isinstance(cfg, dict):
-                if merged.get("class_type") is None and cfg.get("node_type") == "start":
-                    merged["class_type"] = "StartNode"
-                if merged.get("class_type") is None and cfg.get("node_type") == "end":
-                    merged["class_type"] = "EndNode"
-                for cfg_key in ("source", "inputs", "output", "timeout_sec", "tool", "params"):
-                    if cfg_key in cfg and merged.get(cfg_key) is None:
-                        merged[cfg_key] = cfg[cfg_key]
-            # React Flow / editor: tool_inputs matches engine input id ``params``.
-            if merged.get("params") is None and merged.get("tool_inputs") is not None:
-                merged["params"] = merged["tool_inputs"]
-            normalized_nodes.append(merged)
-        else:
-            normalized_nodes.append(node)
+    normalized_nodes = [_normalize_editor_node(node) for node in legacy_nodes]
 
     canonical_nodes: dict[str, dict[str, Any]] = {}
     for node in normalized_nodes:
@@ -401,13 +470,15 @@ def to_canonical(raw: dict[str, Any]) -> dict[str, Any]:
         "tags": list(raw.get("tags", []) or []),
     }
 
-    return _finalize_canonical_document({
-        "id": raw.get("id", "") or "",
-        "name": raw.get("name", "Unnamed Workflow") or "Unnamed Workflow",
-        "description": raw.get("description", "") or "",
-        "inputs": list(raw.get("inputs", []) or []),
-        "outputs": list(raw.get("outputs", []) or []),
-        "metadata": dict(raw.get("metadata", {}) or {}),
-        "nodes": canonical_nodes,
-        "control": control_block,
-    })
+    return _finalize_canonical_document(
+        {
+            "id": raw.get("id", "") or "",
+            "name": raw.get("name", "Unnamed Workflow") or "Unnamed Workflow",
+            "description": raw.get("description", "") or "",
+            "inputs": list(raw.get("inputs", []) or []),
+            "outputs": list(raw.get("outputs", []) or []),
+            "metadata": dict(raw.get("metadata", {}) or {}),
+            "nodes": canonical_nodes,
+            "control": control_block,
+        },
+    )

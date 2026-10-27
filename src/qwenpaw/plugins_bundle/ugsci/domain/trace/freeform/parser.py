@@ -50,9 +50,24 @@ def _get_sympy() -> Any:
 def _build_allowed(sp) -> dict[str, Any]:
     """Build the locked-down ``local_dict`` for ``parse_expr``."""
     from sympy import (
-        Abs, E, I, Integer, Max, Min, Rational, Symbol, cos, exp, log,
-        pi, sin, sqrt, tan, atan,
+        Abs,
+        E,
+        I,
+        Integer,
+        Max,
+        Min,
+        Rational,
+        Symbol,
+        cos,
+        exp,
+        log,
+        pi,
+        sin,
+        sqrt,
+        tan,
+        atan,
     )
+
     return {
         # Constants
         "pi": pi,
@@ -82,47 +97,91 @@ def _build_allowed(sp) -> dict[str, Any]:
 # transform that would let a bare token become a function call.
 # implicit_multiplication is excluded by default (§17 Risk #2).
 
-def _get_transforms(sp):
+
+def _get_transforms():
     """Return the explicit, minimal transformation list."""
     try:
-        from sympy.parsing.sympy_parser import (
-            standard_transformations,
-            implicit_multiplication_application,
-            auto_symbol,
-            split_symbols,
-            convert_xor,
-        )
-    except ImportError:
+        from sympy.parsing import sympy_parser
+
+        for name in (
+            "standard_transformations",
+            "implicit_multiplication_application",
+            "auto_symbol",
+            "split_symbols",
+            "convert_xor",
+        ):
+            getattr(sympy_parser, name)
+    except (ImportError, AttributeError):
         return None
 
     # Start with the safe standard set; deliberately exclude:
     #   convert_xor (§6.2 — opt out of ^ ambiguity)
     #   implicit_multiplication (§17 Risk #2 — excluded by default)
-    transforms = list(standard_transformations)
+    transforms = list(sympy_parser.standard_transformations)
     return tuple(transforms)
 
 
 # ── Post-parse structural validation (§6.3) ─────────────────────────────────
 
 # Forbidden SymPy node types — no Derivative, Integral, Piecewise, etc.
-_FORBIDDEN_TYPES = frozenset({
-    "Derivative", "Integral", "Piecewise", "Tuple", "Lambda",
-    "Subs", "FunctionClass", "UnevaluatedExpr",
-})
-_SAFE_FUNCTION_NAMES = frozenset({
-    "sqrt", "exp", "log", "sin", "cos", "tan", "atan", "Min", "Max", "Abs",
-})
-_FORBIDDEN_IDENTIFIERS = frozenset({
-    "eval", "exec", "open", "compile", "input", "__import__", "import",
-    "getattr", "setattr", "delattr", "globals", "locals", "vars", "dir",
-    "os", "sys", "subprocess", "pathlib", "builtins", "lambda",
-})
+_FORBIDDEN_TYPES = frozenset(
+    {
+        "Derivative",
+        "Integral",
+        "Piecewise",
+        "Tuple",
+        "Lambda",
+        "Subs",
+        "FunctionClass",
+        "UnevaluatedExpr",
+    },
+)
+_SAFE_FUNCTION_NAMES = frozenset(
+    {
+        "sqrt",
+        "exp",
+        "log",
+        "sin",
+        "cos",
+        "tan",
+        "atan",
+        "Min",
+        "Max",
+        "Abs",
+    },
+)
+_FORBIDDEN_IDENTIFIERS = frozenset(
+    {
+        "eval",
+        "exec",
+        "open",
+        "compile",
+        "input",
+        "__import__",
+        "import",
+        "getattr",
+        "setattr",
+        "delattr",
+        "globals",
+        "locals",
+        "vars",
+        "dir",
+        "os",
+        "sys",
+        "subprocess",
+        "pathlib",
+        "builtins",
+        "lambda",
+    },
+)
 
 
 def _reject_unsafe_text(raw: str) -> None:
     """Reject code-like syntax before SymPy sees the input."""
     if any(char in raw for char in ("'", '"', ";", "[", "]", "{", "}")):
-        raise _ff_errors.parse_error("string, statement, or container syntax is not allowed")
+        raise _ff_errors.parse_error(
+            "string, statement, or container syntax is not allowed",
+        )
     if re.search(r"[A-Za-z_]\w*\s*\.|\.\s*[A-Za-z_]", raw):
         raise _ff_errors.parse_error("attribute access is not allowed")
     identifiers = re.findall(r"[A-Za-z_]\w*", raw)
@@ -131,7 +190,12 @@ def _reject_unsafe_text(raw: str) -> None:
             raise _ff_errors.symbol_not_allowed(name)
 
 
-def _parse_one(sp: Any, raw: str, allowed: dict[str, Any], transforms: Any) -> Any:
+def _parse_one(
+    sp: Any,
+    raw: str,
+    allowed: dict[str, Any],
+    transforms: Any,
+) -> Any:
     global_dict = {"__builtins__": {}, **allowed}
     return sp.parse_expr(
         raw,
@@ -176,7 +240,11 @@ def _validate_structure(expr, allowed_symbol_names: set[str]) -> list[str]:
                 offending.append(name)
         # Check Function nodes
         if isinstance(node, sp.Function):
-            name = str(getattr(node, "func", node).__name__ if hasattr(node, "func") else node)
+            name = str(
+                getattr(node, "func", node).__name__
+                if hasattr(node, "func")
+                else node,
+            )
             if name not in _SAFE_FUNCTION_NAMES:
                 offending.append(f"Function:{name}")
 
@@ -195,9 +263,12 @@ def parse_expression(
     """Parse a string into a validated SymPy expression.
 
     Args:
-        raw: The expression string (e.g. ``"G_p = OGIP * (1 - (p/z) / (p_i/z_i))"``).
-        allowed_symbols: Set of symbol names that are permitted.  If ``None``,
-            all symbols are allowed (used when the request does not constrain
+        raw: The expression string (e.g. ``\"G_p = OGIP * (1 - (p/z) \
+/ (p_i/z_i))\"``).
+        allowed_symbols: Set of symbol names that are permitted.  If \
+``None``,
+            all symbols are allowed (used when the request does not \
+constrain
             the symbol set).
 
     Returns:
@@ -212,9 +283,10 @@ def parse_expression(
 
     sp = _get_sympy()
     allowed = _build_allowed(sp)
-    transforms = _get_transforms(sp)
+    transforms = _get_transforms()
 
-    # Strip equation form (lhs = rhs) — we parse as Eq(lhs, rhs) if '=' present.
+    # Strip equation form (lhs = rhs) — we parse as Eq(lhs, rhs) if '='
+    # present.
     try:
         if "=" in raw and not raw.strip().startswith("="):
             parts = raw.split("=", 1)
@@ -231,7 +303,9 @@ def parse_expression(
         raise _ff_errors.parse_error(str(exc)) from exc
 
     if not isinstance(expr, sp.Basic):
-        raise _ff_errors.parse_error("expression did not produce a SymPy object")
+        raise _ff_errors.parse_error(
+            "expression did not produce a SymPy object",
+        )
 
     # Post-parse structural validation
     symbol_names = allowed_symbols
@@ -264,16 +338,35 @@ def parser_hash() -> str:
     import json
 
     config = {
-        "allowed": sorted([
-            "pi", "E", "I", "Integer", "Rational", "Float", "Symbol",
-            "sqrt", "exp", "log", "sin", "cos", "tan", "atan", "Min", "Max", "Abs",
-        ]),
+        "allowed": sorted(
+            [
+                "pi",
+                "E",
+                "I",
+                "Integer",
+                "Rational",
+                "Float",
+                "Symbol",
+                "sqrt",
+                "exp",
+                "log",
+                "sin",
+                "cos",
+                "tan",
+                "atan",
+                "Min",
+                "Max",
+                "Abs",
+            ],
+        ),
         "transforms": "standard_transformations",
         "forbidden": sorted(_FORBIDDEN_TYPES),
         "max_ops": guards.MAX_SYMPY_OPS,
         "max_symbols": guards.MAX_SYMBOLS,
     }
-    encoded = json.dumps(config, sort_keys=True, ensure_ascii=True).encode("utf-8")
+    encoded = json.dumps(config, sort_keys=True, ensure_ascii=True).encode(
+        "utf-8",
+    )
     return f"sha256:{hashlib.sha256(encoded).hexdigest()[:16]}"
 
 

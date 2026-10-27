@@ -31,20 +31,10 @@ class EngineRequest(BaseModel):
     module_paths: dict[str, str] = Field(default_factory=dict)
 
 
-def build_engine_router(plugin_dir: Path) -> APIRouter:
-    """Build the engine router, including its detection-result cache."""
-    router = APIRouter()
-    cache_ttl = 300
-    detect_cache: dict[str, Any] = {
-        "data": None,
-        "ts": 0.0,
-        "lock": threading.Lock(),
-    }
-
-    def invalidate_detect_cache() -> None:
-        with detect_cache["lock"]:
-            detect_cache["data"] = None
-            detect_cache["ts"] = 0.0
+def _register_engine_summary_routes(
+    router,
+):
+    """Register engine summary routes."""
 
     @router.get("/list")
     def list_engines_endpoint() -> dict[str, Any]:
@@ -60,7 +50,8 @@ def build_engine_router(plugin_dir: Path) -> APIRouter:
 
     @router.get("/adapters")
     def list_adapter_capabilities_endpoint() -> dict[str, Any]:
-        """Expose simulator adapter capabilities separately from install state."""
+        """Expose simulator adapter capabilities separately from install \
+state."""
         from .adapters import get_adapter, list_supported_simulators
 
         adapters: list[dict[str, Any]] = []
@@ -77,6 +68,14 @@ def build_engine_router(plugin_dir: Path) -> APIRouter:
             )
         return {"adapters": adapters}
 
+
+def _register_engine_detection_routes(
+    router,
+    detect_cache,
+    cache_ttl,
+):
+    """Register engine detection routes."""
+
     @router.post("/detect")
     def detect_engines_endpoint() -> dict[str, Any]:
         from . import detect_engines, engines_to_list
@@ -88,7 +87,10 @@ def build_engine_router(plugin_dir: Path) -> APIRouter:
 
         with detect_cache["lock"]:
             cached = detect_cache["data"]
-            if cached is not None and time.time() - detect_cache["ts"] < cache_ttl:
+            if (
+                cached is not None
+                and time.time() - detect_cache["ts"] < cache_ttl
+            ):
                 return {"engines": cached}
             result = {"engines": engines_to_list(detect_engines())}
             detect_cache["data"] = result["engines"]
@@ -104,6 +106,13 @@ def build_engine_router(plugin_dir: Path) -> APIRouter:
             detect_cache["data"] = result["engines"]
             detect_cache["ts"] = time.time()
             return result
+
+
+def _register_engine_icon_route(
+    router,
+    plugin_dir,
+):
+    """Register engine icon route."""
 
     @router.get("/icon/{engine_id}")
     def get_engine_icon(engine_id: str):
@@ -162,6 +171,13 @@ def build_engine_router(plugin_dir: Path) -> APIRouter:
                 )
         raise HTTPException(status_code=404, detail="Icon not found")
 
+
+def _register_engine_edit_routes(
+    router,
+    invalidate_detect_cache,
+):
+    """Register engine edit routes."""
+
     @router.get("/{engine_id}")
     def get_engine_endpoint(engine_id: str) -> dict[str, Any]:
         from . import get_engine, to_dict
@@ -206,6 +222,42 @@ def build_engine_router(plugin_dir: Path) -> APIRouter:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         invalidate_detect_cache()
         return {"success": success}
+
+
+def build_engine_router(plugin_dir: Path) -> APIRouter:
+    """Build the engine router, including its detection-result cache."""
+    router = APIRouter()
+    cache_ttl = 300
+    detect_cache: dict[str, Any] = {
+        "data": None,
+        "ts": 0.0,
+        "lock": threading.Lock(),
+    }
+
+    def invalidate_detect_cache() -> None:
+        with detect_cache["lock"]:
+            detect_cache["data"] = None
+            detect_cache["ts"] = 0.0
+
+    _register_engine_summary_routes(
+        router,
+    )
+
+    _register_engine_detection_routes(
+        router,
+        detect_cache,
+        cache_ttl,
+    )
+
+    _register_engine_icon_route(
+        router,
+        plugin_dir,
+    )
+
+    _register_engine_edit_routes(
+        router,
+        invalidate_detect_cache,
+    )
 
     return router
 

@@ -5,16 +5,16 @@ All freeform failures are surfaced as ``DomainError`` with a code from
 ``DomainErrorCode``.  The mapping follows the design doc §15:
 
 +-----------------------------------+-------------------------------+----------+
-| Condition                         | Code                          | Retryable|
+| Condition | Code | Retryable |
 +===================================+===============================+==========+
-| sympy missing                     | dependency_unavailable        | no       |
-| Parse fails / invalid syntax      | invalid_input                 | yes      |
-| Symbol not in allowlist           | unsupported_operation         | yes      |
-| Unit mismatch                      | invalid_input                 | yes      |
-| Non-finite intermediate result    | invalid_result                | yes      |
-| Exceeded op/symbol/depth cap      | non_convergent                | yes      |
-| Transform timed out               | non_convergent                | yes      |
-| Solve produced no real root       | calculation_failed            | yes      |
+| sympy missing | dependency_unavailable | no |
+| Parse fails / invalid syntax | invalid_input | yes |
+| Symbol not in allowlist | unsupported_operation | yes |
+| Unit mismatch | invalid_input | yes |
+| Non-finite intermediate result | invalid_result | yes |
+| Exceeded op/symbol/depth cap | non_convergent | yes |
+| Transform timed out | non_convergent | yes |
+| Solve produced no real root | calculation_failed | yes |
 +-----------------------------------+-------------------------------+----------+
 """
 
@@ -25,7 +25,9 @@ from typing import Any
 from ...common.errors import DomainError, DomainErrorCode
 
 
-def dependency_unavailable(message: str = "SymPy is required for freeform mode") -> DomainError:
+def dependency_unavailable(
+    message: str = "SymPy is required for freeform mode",
+) -> DomainError:
     """SymPy is not installed — freeform tools cannot run."""
     return DomainError(
         DomainErrorCode.DEPENDENCY_UNAVAILABLE,
@@ -34,7 +36,11 @@ def dependency_unavailable(message: str = "SymPy is required for freeform mode")
     )
 
 
-def parse_error(message: str, *, details: dict[str, Any] | None = None) -> DomainError:
+def parse_error(
+    message: str,
+    *,
+    details: dict[str, Any] | None = None,
+) -> DomainError:
     """Expression could not be parsed — agent should rephrase."""
     return DomainError(
         DomainErrorCode.INVALID_INPUT,
@@ -44,7 +50,11 @@ def parse_error(message: str, *, details: dict[str, Any] | None = None) -> Domai
     )
 
 
-def symbol_not_allowed(name: str, *, allowed: list[str] | None = None) -> DomainError:
+def symbol_not_allowed(
+    name: str,
+    *,
+    allowed: list[str] | None = None,
+) -> DomainError:
     """A symbol or function is outside the allowlist."""
     details: dict[str, Any] = {"offending_symbol": name}
     if allowed is not None:
@@ -57,7 +67,11 @@ def symbol_not_allowed(name: str, *, allowed: list[str] | None = None) -> Domain
     )
 
 
-def unit_mismatch(message: str, *, details: dict[str, Any] | None = None) -> DomainError:
+def unit_mismatch(
+    message: str,
+    *,
+    details: dict[str, Any] | None = None,
+) -> DomainError:
     """Unit dimension incompatibility during evaluation."""
     return DomainError(
         DomainErrorCode.INVALID_INPUT,

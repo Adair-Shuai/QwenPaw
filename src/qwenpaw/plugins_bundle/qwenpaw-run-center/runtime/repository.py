@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Durable Run Center repository with a non-invasive legacy bridge."""
 
 from __future__ import annotations
@@ -8,7 +9,7 @@ import math
 import sqlite3
 import threading
 import uuid
-from contextlib import contextmanager
+from contextlib import AbstractContextManager, contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator
@@ -45,7 +46,7 @@ def _json(raw: Any) -> dict[str, Any]:
             value = json.loads(
                 raw or "{}",
                 parse_constant=lambda constant: (_ for _ in ()).throw(
-                    ValueError(f"non-finite JSON constant: {constant}")
+                    ValueError(f"non-finite JSON constant: {constant}"),
                 ),
             )
         except (TypeError, ValueError, json.JSONDecodeError):
@@ -89,14 +90,16 @@ def _bounded_progress(value: Any) -> float | None:
     try:
         normalized = float(value)
     except (TypeError, ValueError, OverflowError) as exc:
-        raise ValueError("progress must be a finite number between 0 and 1") from exc
+        raise ValueError(
+            "progress must be a finite number between 0 and 1",
+        ) from exc
     if not math.isfinite(normalized) or not 0 <= normalized <= 1:
         raise ValueError("progress must be a finite number between 0 and 1")
     return normalized
 
 
-class RunRepository:
-    """Owns the Run Center database and reads legacy UGSci jobs read-only."""
+class _RunStorage:
+    """Scoped connections, schema creation and migration."""
 
     def __init__(self, root: Path | None = None) -> None:
         self.root = Path(root) if root else _working_dir() / "run-center"
@@ -104,8 +107,25 @@ class RunRepository:
         self._initialized = False
         self._init_lock = threading.Lock()
 
+    def connection(
+        self,
+        *,
+        write: bool = False,
+    ) -> AbstractContextManager[sqlite3.Connection]:
+        """Open a scoped connection for collaborating Run Center stores.
+
+        Write scopes retain the repository's immediate transaction, commit,
+        rollback and connection-close guarantees. Callers never own the raw
+        connection beyond this context.
+        """
+        return self._connection(write=write)
+
     @contextmanager
-    def _connection(self, *, write: bool = False) -> Iterator[sqlite3.Connection]:
+    def _connection(
+        self,
+        *,
+        write: bool = False,
+    ) -> Iterator[sqlite3.Connection]:
         self.root.mkdir(parents=True, exist_ok=True)
         conn = sqlite3.connect(self.database, timeout=30, isolation_level=None)
         conn.row_factory = sqlite3.Row
@@ -142,10 +162,10 @@ class RunRepository:
                 # single-column Operation primary key.
                 conn.execute(
                     "CREATE TABLE IF NOT EXISTS schema_migrations ("
-                    "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"
+                    "version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)",
                 )
                 conn.execute(
-                """CREATE TABLE IF NOT EXISTS runs (
+                    """CREATE TABLE IF NOT EXISTS runs (
                     run_id TEXT PRIMARY KEY,
                     operation TEXT NOT NULL,
                     status TEXT NOT NULL,
@@ -162,7 +182,7 @@ class RunRepository:
                 )""",
                 )
                 conn.execute(
-                """CREATE TABLE IF NOT EXISTS run_events (
+                    """CREATE TABLE IF NOT EXISTS run_events (
                     run_id TEXT NOT NULL,
                     sequence INTEGER NOT NULL,
                     event_type TEXT NOT NULL,
@@ -173,15 +193,21 @@ class RunRepository:
                 )
                 # Presentation is editable independently of immutable solver
                 # input/lifecycle records, including completed and legacy Runs.
-                conn.execute("CREATE TABLE IF NOT EXISTS run_presentations ("
-                             "run_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, "
-                             "plan TEXT NOT NULL, agent_id TEXT NOT NULL, updated_at TEXT NOT NULL)")
-                conn.execute("CREATE TABLE IF NOT EXISTS run_presentation_events ("
-                             "run_id TEXT NOT NULL, revision INTEGER NOT NULL, "
-                             "payload TEXT NOT NULL, agent_id TEXT NOT NULL, created_at TEXT NOT NULL, "
-                             "PRIMARY KEY(run_id, revision))")
                 conn.execute(
-                """CREATE TABLE IF NOT EXISTS operation_registry (
+                    "CREATE TABLE IF NOT EXISTS run_presentations ("
+                    "run_id TEXT PRIMARY KEY, revision INTEGER NOT NULL, "
+                    "plan TEXT NOT NULL, agent_id TEXT NOT "
+                    "NULL, updated_at TEXT NOT NULL)",
+                )
+                conn.execute(
+                    "CREATE TABLE IF NOT EXISTS run_presentation_events ("
+                    "run_id TEXT NOT NULL, revision INTEGER NOT NULL, "
+                    "payload TEXT NOT NULL, agent_id TEXT NOT "
+                    "NULL, created_at TEXT NOT NULL, "
+                    "PRIMARY KEY(run_id, revision))",
+                )
+                conn.execute(
+                    """CREATE TABLE IF NOT EXISTS operation_registry (
                     operation TEXT NOT NULL,
                     provider_id TEXT NOT NULL DEFAULT '',
                     descriptor TEXT NOT NULL,
@@ -191,73 +217,99 @@ class RunRepository:
                 )""",
                 )
                 conn.execute(
-                """CREATE TABLE IF NOT EXISTS run_stages (
-                    run_id TEXT NOT NULL,
-                    stage_id TEXT NOT NULL,
-                    ordinal INTEGER NOT NULL DEFAULT 0,
-                    operation TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    progress REAL,
-                    attempt INTEGER NOT NULL DEFAULT 0,
-                    payload TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    PRIMARY KEY (run_id, stage_id),
-                    FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
-                )""",
+                    "CREATE TABLE IF NOT EXISTS run_stages (\n"
+                    "                    run_id TEXT NOT NULL,\n"
+                    "                    stage_id TEXT NOT NULL,\n"
+                    "                    ordinal INTEGER NOT "
+                    "NULL DEFAULT 0,\n"
+                    "                    operation TEXT NOT NULL,\n"
+                    "                    status TEXT NOT NULL,\n"
+                    "                    progress REAL,\n"
+                    "                    attempt INTEGER NOT "
+                    "NULL DEFAULT 0,\n"
+                    "                    payload TEXT NOT NULL,\n"
+                    "                    created_at TEXT NOT "
+                    "NULL,\n"
+                    "                    updated_at TEXT NOT "
+                    "NULL,\n"
+                    "                    PRIMARY KEY (run_id, "
+                    "stage_id),\n"
+                    "                    FOREIGN KEY (run_id) "
+                    "REFERENCES runs(run_id) ON DELETE CASCADE\n"
+                    "                )",
                 )
                 conn.execute(
-                """CREATE TABLE IF NOT EXISTS run_artifacts (
-                    run_id TEXT NOT NULL,
-                    ref_id TEXT NOT NULL,
-                    stage_id TEXT NOT NULL DEFAULT '',
-                    role TEXT NOT NULL DEFAULT 'output',
-                    kind TEXT NOT NULL DEFAULT 'artifact',
-                    uri TEXT NOT NULL DEFAULT '',
-                    media_type TEXT,
-                    sha256 TEXT,
-                    size_bytes INTEGER,
-                    metadata TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    PRIMARY KEY (run_id, ref_id, stage_id, role),
-                    FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
-                )""",
+                    "CREATE TABLE IF NOT EXISTS run_artifacts (\n"
+                    "                    run_id TEXT NOT NULL,\n"
+                    "                    ref_id TEXT NOT NULL,\n"
+                    "                    stage_id TEXT NOT "
+                    "NULL DEFAULT '',\n"
+                    "                    role TEXT NOT NULL "
+                    "DEFAULT 'output',\n"
+                    "                    kind TEXT NOT NULL "
+                    "DEFAULT 'artifact',\n"
+                    "                    uri TEXT NOT NULL "
+                    "DEFAULT '',\n"
+                    "                    media_type TEXT,\n"
+                    "                    sha256 TEXT,\n"
+                    "                    size_bytes INTEGER,\n"
+                    "                    metadata TEXT NOT NULL,\n"
+                    "                    created_at TEXT NOT "
+                    "NULL,\n"
+                    "                    updated_at TEXT NOT "
+                    "NULL,\n"
+                    "                    PRIMARY KEY (run_id, "
+                    "ref_id, stage_id, role),\n"
+                    "                    FOREIGN KEY (run_id) "
+                    "REFERENCES runs(run_id) ON DELETE CASCADE\n"
+                    "                )",
                 )
                 conn.execute(
-                """CREATE TABLE IF NOT EXISTS run_checkpoints (
-                    checkpoint_id TEXT PRIMARY KEY,
-                    run_id TEXT NOT NULL,
-                    stage_id TEXT NOT NULL DEFAULT '',
-                    artifact_ref TEXT,
-                    state TEXT NOT NULL DEFAULT 'ready',
-                    resume_token TEXT,
-                    metadata TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
-                )""",
+                    "CREATE TABLE IF NOT EXISTS run_checkpoints (\n"
+                    "                    checkpoint_id TEXT "
+                    "PRIMARY KEY,\n"
+                    "                    run_id TEXT NOT NULL,\n"
+                    "                    stage_id TEXT NOT "
+                    "NULL DEFAULT '',\n"
+                    "                    artifact_ref TEXT,\n"
+                    "                    state TEXT NOT NULL "
+                    "DEFAULT 'ready',\n"
+                    "                    resume_token TEXT,\n"
+                    "                    metadata TEXT NOT NULL,\n"
+                    "                    created_at TEXT NOT "
+                    "NULL,\n"
+                    "                    updated_at TEXT NOT "
+                    "NULL,\n"
+                    "                    FOREIGN KEY (run_id) "
+                    "REFERENCES runs(run_id) ON DELETE CASCADE\n"
+                    "                )",
                 )
                 conn.execute(
-                """CREATE TABLE IF NOT EXISTS run_provenance (
-                    provenance_id TEXT PRIMARY KEY,
-                    run_id TEXT NOT NULL,
-                    artifact_ref_id TEXT NOT NULL DEFAULT '',
-                    input_fingerprint TEXT,
-                    provider_id TEXT,
-                    provider_version TEXT,
-                    software_version TEXT,
-                    unit_system TEXT,
-                    coordinate_system TEXT,
-                    metadata TEXT NOT NULL,
-                    created_at TEXT NOT NULL,
-                    updated_at TEXT NOT NULL,
-                    UNIQUE (run_id, artifact_ref_id),
-                    FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
-                )""",
+                    "CREATE TABLE IF NOT EXISTS run_provenance (\n"
+                    "                    provenance_id TEXT "
+                    "PRIMARY KEY,\n"
+                    "                    run_id TEXT NOT NULL,\n"
+                    "                    artifact_ref_id TEXT "
+                    "NOT NULL DEFAULT '',\n"
+                    "                    input_fingerprint TEXT,\n"
+                    "                    provider_id TEXT,\n"
+                    "                    provider_version TEXT,\n"
+                    "                    software_version TEXT,\n"
+                    "                    unit_system TEXT,\n"
+                    "                    coordinate_system TEXT,\n"
+                    "                    metadata TEXT NOT NULL,\n"
+                    "                    created_at TEXT NOT "
+                    "NULL,\n"
+                    "                    updated_at TEXT NOT "
+                    "NULL,\n"
+                    "                    UNIQUE (run_id, "
+                    "artifact_ref_id),\n"
+                    "                    FOREIGN KEY (run_id) "
+                    "REFERENCES runs(run_id) ON DELETE CASCADE\n"
+                    "                )",
                 )
                 conn.execute(
-                """CREATE TABLE IF NOT EXISTS project_queue_policies (
+                    """CREATE TABLE IF NOT EXISTS project_queue_policies (
                     project_id TEXT PRIMARY KEY,
                     max_concurrency INTEGER,
                     weight REAL NOT NULL DEFAULT 1,
@@ -267,57 +319,73 @@ class RunRepository:
                 )""",
                 )
                 conn.execute(
-                """CREATE TABLE IF NOT EXISTS resource_leases (
-                    lease_id TEXT PRIMARY KEY,
-                    run_id TEXT NOT NULL,
-                    project_id TEXT,
-                    pool_id TEXT NOT NULL DEFAULT 'local',
-                    resources TEXT NOT NULL DEFAULT '{}',
-                    owner TEXT NOT NULL DEFAULT 'run-center',
-                    state TEXT NOT NULL DEFAULT 'active',
-                    acquired_at TEXT NOT NULL,
-                    expires_at TEXT,
-                    released_at TEXT,
-                    FOREIGN KEY (run_id) REFERENCES runs(run_id) ON DELETE CASCADE
-                )""",
+                    "CREATE TABLE IF NOT EXISTS resource_leases (\n"
+                    "                    lease_id TEXT "
+                    "PRIMARY KEY,\n"
+                    "                    run_id TEXT NOT NULL,\n"
+                    "                    project_id TEXT,\n"
+                    "                    pool_id TEXT NOT "
+                    "NULL DEFAULT 'local',\n"
+                    "                    resources TEXT NOT "
+                    "NULL DEFAULT '{}',\n"
+                    "                    owner TEXT NOT NULL "
+                    "DEFAULT 'run-center',\n"
+                    "                    state TEXT NOT NULL "
+                    "DEFAULT 'active',\n"
+                    "                    acquired_at TEXT NOT "
+                    "NULL,\n"
+                    "                    expires_at TEXT,\n"
+                    "                    released_at TEXT,\n"
+                    "                    FOREIGN KEY (run_id) "
+                    "REFERENCES runs(run_id) ON DELETE CASCADE\n"
+                    "                )",
                 )
                 # There may be any number of historical released leases, but
                 # a Run can own only one active lease at a time.  This also
                 # protects multi-threaded admission from duplicate inserts.
                 conn.execute(
-                    "CREATE UNIQUE INDEX IF NOT EXISTS idx_resource_leases_active_run "
-                    "ON resource_leases(run_id) WHERE state = 'active'"
+                    "CREATE UNIQUE INDEX IF NOT EXISTS "
+                    "idx_resource_leases_active_run "
+                    "ON resource_leases(run_id) WHERE state = 'active'",
                 )
                 self._migrate_schema(conn)
                 self._promote_embedded_components(conn)
                 conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_runs_updated_at ON runs(updated_at DESC)",
+                    "CREATE INDEX IF NOT EXISTS "
+                    "idx_runs_updated_at ON runs(updated_at DESC)",
                 )
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_status ON runs(status)")
-                conn.execute("CREATE INDEX IF NOT EXISTS idx_runs_project ON runs(project_id)")
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS "
+                    "idx_runs_status ON runs(status)",
+                )
+                conn.execute(
+                    "CREATE INDEX IF NOT EXISTS "
+                    "idx_runs_project ON runs(project_id)",
+                )
                 conn.execute(
                     "CREATE UNIQUE INDEX IF NOT EXISTS idx_runs_idempotency "
-                    "ON runs(idempotency_key) WHERE idempotency_key IS NOT NULL"
+                    "ON runs(idempotency_key) WHERE "
+                    "idempotency_key IS NOT NULL",
                 )
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_run_stages_order "
-                    "ON run_stages(run_id, ordinal, stage_id)"
+                    "ON run_stages(run_id, ordinal, stage_id)",
                 )
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_run_artifacts_run "
-                    "ON run_artifacts(run_id, stage_id, role)"
+                    "ON run_artifacts(run_id, stage_id, role)",
                 )
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_run_checkpoints_run "
-                    "ON run_checkpoints(run_id, stage_id, created_at DESC)"
+                    "ON run_checkpoints(run_id, stage_id, created_at DESC)",
                 )
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_resource_leases_run "
-                    "ON resource_leases(run_id, state)"
+                    "ON resource_leases(run_id, state)",
                 )
                 conn.execute(
                     "CREATE INDEX IF NOT EXISTS idx_resource_leases_project "
-                    "ON resource_leases(project_id, state)"
+                    "ON resource_leases(project_id, state)",
                 )
             self._initialized = True
 
@@ -333,7 +401,7 @@ class RunRepository:
         # fail to start during migration.
         seen_idempotency_keys: set[str] = set()
         for row in conn.execute(
-            "SELECT rowid, idempotency_key, payload FROM runs ORDER BY rowid"
+            "SELECT rowid, idempotency_key, payload FROM runs ORDER BY rowid",
         ):
             raw_key = row[1]
             if raw_key is None:
@@ -352,7 +420,9 @@ class RunRepository:
 
         # R0 used ``operation`` as the sole primary key.  Rebuild that table
         # once so two providers can implement the same business operation.
-        op_columns = list(conn.execute("PRAGMA table_info(operation_registry)"))
+        op_columns = list(
+            conn.execute("PRAGMA table_info(operation_registry)"),
+        )
         provider_not_null = any(
             row[1] == "provider_id" and int(row[3] or 0) == 1
             for row in op_columns
@@ -361,39 +431,54 @@ class RunRepository:
         if pk_columns != ["operation", "provider_id"] or not provider_not_null:
             conn.execute(
                 "CREATE TABLE operation_registry_v2 ("
-                "operation TEXT NOT NULL, provider_id TEXT NOT NULL DEFAULT '',"
+                "operation TEXT NOT NULL, provider_id TEXT "
+                "NOT NULL DEFAULT '',"
                 "descriptor TEXT NOT NULL, contract_version TEXT NOT NULL,"
-                "updated_at TEXT NOT NULL, PRIMARY KEY(operation, provider_id))"
+                "updated_at TEXT NOT NULL, PRIMARY "
+                "KEY(operation, provider_id))",
             )
             conn.execute(
                 "INSERT OR REPLACE INTO operation_registry_v2 "
-                "(operation, provider_id, descriptor, contract_version, updated_at) "
+                "(operation, provider_id, descriptor, "
+                "contract_version, updated_at) "
                 "SELECT operation, COALESCE(provider_id, ''), descriptor, "
-                "contract_version, updated_at FROM operation_registry"
+                "contract_version, updated_at FROM operation_registry",
             )
             conn.execute("DROP TABLE operation_registry")
-            conn.execute("ALTER TABLE operation_registry_v2 RENAME TO operation_registry")
+            conn.execute(
+                "ALTER TABLE operation_registry_v2 RENAME TO "
+                "operation_registry",
+            )
 
         conn.execute(
-            "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO schema_migrations(version, "
+            "applied_at) VALUES (?, ?)",
             (1, _now()),
         )
         conn.execute(
-            "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO schema_migrations(version, "
+            "applied_at) VALUES (?, ?)",
             (2, _now()),
         )
         conn.execute(
-            "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
+            "INSERT OR IGNORE INTO schema_migrations(version, "
+            "applied_at) VALUES (?, ?)",
             (4, _now()),
         )
 
     def _promote_embedded_components(self, conn: sqlite3.Connection) -> None:
-        """Promote component arrays from R0 payloads into normalized tables once."""
-        if conn.execute(
-            "SELECT 1 FROM schema_migrations WHERE version=3"
-        ).fetchone() is not None:
+        """Promote component arrays from R0 payloads into normalized \
+tables once."""
+        if (
+            conn.execute(
+                "SELECT 1 FROM schema_migrations WHERE version=3",
+            ).fetchone()
+            is not None
+        ):
             return
-        for row in conn.execute("SELECT run_id, payload FROM runs ORDER BY rowid"):
+        for row in conn.execute(
+            "SELECT run_id, payload FROM runs ORDER BY rowid",
+        ):
             run_id = row["run_id"]
             payload = _json(row["payload"])
             stages = payload.get("stages") or []
@@ -408,7 +493,10 @@ class RunRepository:
                         self._upsert_stage_tx(
                             conn,
                             run_id,
-                            {**stage, "ordinal": stage.get("ordinal", ordinal)},
+                            {
+                                **stage,
+                                "ordinal": stage.get("ordinal", ordinal),
+                            },
                             emit_event=False,
                         )
                     except (TypeError, ValueError) as exc:
@@ -424,7 +512,8 @@ class RunRepository:
                             self._upsert_artifact_tx(conn, run_id, artifact)
                         except (TypeError, ValueError) as exc:
                             logger.warning(
-                                "Skipping malformed embedded artifact for run %s: %s",
+                                "Skipping malformed embedded "
+                                "artifact for run %s: %s",
                                 run_id,
                                 exc,
                             )
@@ -433,47 +522,65 @@ class RunRepository:
                     self._upsert_provenance_tx(conn, run_id, provenance)
                 except (TypeError, ValueError) as exc:
                     logger.warning(
-                        "Skipping malformed embedded provenance for run %s: %s",
+                        "Skipping malformed embedded "
+                        "provenance for run %s: %s",
                         run_id,
                         exc,
                     )
-            if isinstance(checkpoints, list):
-                for checkpoint in checkpoints:
-                    if not isinstance(checkpoint, dict):
-                        continue
-                    checkpoint_id = str(
-                        checkpoint.get("checkpoint_id") or uuid.uuid4().hex
-                    )
-                    stage_id = str(checkpoint.get("stage_id") or "")
-                    artifact_ref = checkpoint.get("artifact_ref")
-                    conn.execute(
-                        "INSERT OR IGNORE INTO run_checkpoints "
-                        "(checkpoint_id, run_id, stage_id, artifact_ref, state, "
-                        "resume_token, metadata, created_at, updated_at) "
-                        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                        (
-                            checkpoint_id,
-                            run_id,
-                            stage_id,
-                            _encode_json(artifact_ref, field="checkpoint artifact_ref")
-                            if isinstance(artifact_ref, dict)
-                            else None,
-                            str(checkpoint.get("state") or "ready"),
-                            checkpoint.get("resume_token"),
-                            _encode_json(
-                                checkpoint.get("metadata")
-                                if isinstance(checkpoint.get("metadata"), dict)
-                                else {},
-                                field="checkpoint metadata",
-                            ),
-                            str(checkpoint.get("created_at") or _now()),
-                            str(checkpoint.get("updated_at") or _now()),
-                        ),
-                    )
+            self._promote_embedded_checkpoints(conn, run_id, checkpoints)
         conn.execute(
             "INSERT INTO schema_migrations(version, applied_at) VALUES (?, ?)",
             (3, _now()),
         )
+
+    @staticmethod
+    def _promote_embedded_checkpoints(
+        conn: sqlite3.Connection,
+        run_id: str,
+        checkpoints: Any,
+    ) -> None:
+        """Persist legacy checkpoints within their migration transaction."""
+        if isinstance(checkpoints, list):
+            for checkpoint in checkpoints:
+                if not isinstance(checkpoint, dict):
+                    continue
+                checkpoint_id = str(
+                    checkpoint.get("checkpoint_id") or uuid.uuid4().hex,
+                )
+                stage_id = str(checkpoint.get("stage_id") or "")
+                artifact_ref = checkpoint.get("artifact_ref")
+                conn.execute(
+                    "INSERT OR IGNORE INTO run_checkpoints "
+                    "(checkpoint_id, run_id, stage_id, "
+                    "artifact_ref, state, "
+                    "resume_token, metadata, created_at, updated_at) "
+                    "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                    (
+                        checkpoint_id,
+                        run_id,
+                        stage_id,
+                        _encode_json(
+                            artifact_ref,
+                            field="checkpoint artifact_ref",
+                        )
+                        if isinstance(artifact_ref, dict)
+                        else None,
+                        str(checkpoint.get("state") or "ready"),
+                        checkpoint.get("resume_token"),
+                        _encode_json(
+                            checkpoint.get("metadata")
+                            if isinstance(checkpoint.get("metadata"), dict)
+                            else {},
+                            field="checkpoint metadata",
+                        ),
+                        str(checkpoint.get("created_at") or _now()),
+                        str(checkpoint.get("updated_at") or _now()),
+                    ),
+                )
+
+
+class _OperationRegistry:
+    """Persisted operation descriptors supplied by providers."""
 
     def register_operation(
         self,
@@ -483,7 +590,8 @@ class RunRepository:
         provider_id: str | None = None,
         contract_version: str = "1.0",
     ) -> None:
-        """Persist a JSON-only Operation descriptor supplied by a domain plugin."""
+        """Persist a JSON-only Operation descriptor supplied by a domain \
+plugin."""
         normalized_operation = str(operation or "").strip()
         if not normalized_operation or not isinstance(descriptor, dict):
             raise ValueError("operation and descriptor are required")
@@ -493,19 +601,19 @@ class RunRepository:
         normalized_contract = str(contract_version or "").strip()
         if not normalized_contract:
             raise ValueError("contract_version is required")
-        try:
-            encoded_descriptor = _encode_json(descriptor, label="descriptor")
-        except ValueError:
-            raise
+        encoded_descriptor = _encode_json(descriptor, label="descriptor")
         self.initialize()
         now = _now()
         with self._connection(write=True) as conn:
             conn.execute(
                 "INSERT INTO operation_registry "
-                "(operation, provider_id, descriptor, contract_version, updated_at) "
+                "(operation, provider_id, descriptor, "
+                "contract_version, updated_at) "
                 "VALUES (?, ?, ?, ?, ?) "
-                "ON CONFLICT(operation, provider_id) DO UPDATE SET descriptor=excluded.descriptor, "
-                "contract_version=excluded.contract_version, provider_id=excluded.provider_id, "
+                "ON CONFLICT(operation, provider_id) DO "
+                "UPDATE SET descriptor=excluded.descriptor, "
+                "contract_version=excluded.contract_version, "
+                "provider_id=excluded.provider_id, "
                 "updated_at=excluded.updated_at",
                 (
                     normalized_operation,
@@ -533,9 +641,7 @@ class RunRepository:
             operation = str(item.get("operation") or "").strip()
             descriptor = item.get("descriptor")
             provider_id = item.get("provider_id")
-            contract_version = str(
-                item.get("contract_version") or ""
-            ).strip()
+            contract_version = str(item.get("contract_version") or "").strip()
             if not operation or not isinstance(descriptor, dict):
                 raise ValueError("operation and descriptor are required")
             if provider_id is not None and not isinstance(provider_id, str):
@@ -549,7 +655,7 @@ class RunRepository:
                     provider_id.strip() if provider_id else "",
                     encoded,
                     contract_version,
-                )
+                ),
             )
 
         self.initialize()
@@ -568,7 +674,8 @@ class RunRepository:
         self.initialize()
         with self._connection() as conn:
             rows = conn.execute(
-                "SELECT operation, descriptor, contract_version, provider_id, updated_at "
+                "SELECT operation, descriptor, "
+                "contract_version, provider_id, updated_at "
                 "FROM operation_registry ORDER BY operation, provider_id",
             ).fetchall()
         return [
@@ -603,15 +710,18 @@ class RunRepository:
         with self._connection() as conn:
             if normalized_provider is None:
                 row = conn.execute(
-                    "SELECT operation, descriptor, contract_version, provider_id, updated_at "
+                    "SELECT operation, descriptor, "
+                    "contract_version, provider_id, updated_at "
                     "FROM operation_registry WHERE operation = ? "
                     "ORDER BY provider_id LIMIT 1",
                     (normalized_operation,),
                 ).fetchone()
             else:
                 row = conn.execute(
-                    "SELECT operation, descriptor, contract_version, provider_id, updated_at "
-                    "FROM operation_registry WHERE operation = ? AND provider_id = ?",
+                    "SELECT operation, descriptor, "
+                    "contract_version, provider_id, updated_at "
+                    "FROM operation_registry WHERE operation "
+                    "= ? AND provider_id = ?",
                     (normalized_operation, normalized_provider),
                 ).fetchone()
         if row is None:
@@ -624,13 +734,9 @@ class RunRepository:
             "updated_at": row["updated_at"],
         }
 
-    # ------------------------------------------------------------------
-    # Queue policy and resource lease persistence
-    # ------------------------------------------------------------------
-    # These records deliberately live in the Run Center repository rather
-    # than in an executor's process memory.  A desktop executor can therefore
-    # enforce project limits today while a future remote scheduler can reuse
-    # the same contract without changing Run payloads or HTTP clients.
+
+class _ProjectResources:
+    """Project queue policies and transaction-scoped resource leases."""
 
     @staticmethod
     def _normalize_project_id(project_id: Any) -> str:
@@ -656,12 +762,21 @@ class RunRepository:
                 raise ValueError(f"resource_limits.{name} must be numeric")
             if isinstance(raw, (int, float)):
                 if not math.isfinite(float(raw)) or float(raw) < 0:
-                    raise ValueError(f"resource_limits.{name} must be finite and non-negative")
+                    raise ValueError(
+                        f"resource_limits."
+                        f"{name}"
+                        f" must be finite and non-negative",
+                    )
                 normalized[name] = raw
-            elif isinstance(raw, list) and all(isinstance(item, str) for item in raw):
+            elif isinstance(raw, list) and all(
+                isinstance(item, str) for item in raw
+            ):
                 normalized[name] = list(raw)
             else:
-                raise ValueError(f"resource_limits.{name} must be numeric or a string array")
+                raise ValueError(
+                    f"resource_limits.{name} must be numeric "
+                    "or a string array",
+                )
         _encode_json(normalized, field="resource_limits")
         return normalized
 
@@ -686,13 +801,17 @@ class RunRepository:
             try:
                 max_concurrency = int(max_concurrency)
             except (TypeError, ValueError) as exc:
-                raise ValueError("max_concurrency must be a positive integer") from exc
+                raise ValueError(
+                    "max_concurrency must be a positive integer",
+                ) from exc
             if max_concurrency < 1:
                 raise ValueError("max_concurrency must be a positive integer")
         try:
             weight = float(weight)
         except (TypeError, ValueError) as exc:
-            raise ValueError("weight must be a finite positive number") from exc
+            raise ValueError(
+                "weight must be a finite positive number",
+            ) from exc
         if not math.isfinite(weight) or weight <= 0:
             raise ValueError("weight must be a finite positive number")
         limits = self._normalize_resource_limits(resource_limits)
@@ -701,16 +820,27 @@ class RunRepository:
         with self._connection(write=True) as conn:
             conn.execute(
                 "INSERT INTO project_queue_policies "
-                "(project_id, max_concurrency, weight, resource_limits, enabled, updated_at) "
+                "(project_id, max_concurrency, weight, "
+                "resource_limits, enabled, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?) "
                 "ON CONFLICT(project_id) DO UPDATE SET "
-                "max_concurrency=excluded.max_concurrency, weight=excluded.weight, "
-                "resource_limits=excluded.resource_limits, enabled=excluded.enabled, "
+                "max_concurrency=excluded.max_concurrency, "
+                "weight=excluded.weight, "
+                "resource_limits=excluded.resource_limits, "
+                "enabled=excluded.enabled, "
                 "updated_at=excluded.updated_at",
-                (project, max_concurrency, weight, _encode_json(limits, field="resource_limits"), int(bool(enabled)), now),
+                (
+                    project,
+                    max_concurrency,
+                    weight,
+                    _encode_json(limits, field="resource_limits"),
+                    int(bool(enabled)),
+                    now,
+                ),
             )
             row = conn.execute(
-                "SELECT * FROM project_queue_policies WHERE project_id = ?", (project,)
+                "SELECT * FROM project_queue_policies WHERE project_id = ?",
+                (project,),
             ).fetchone()
         assert row is not None
         return self._project_policy_row(row)
@@ -719,19 +849,25 @@ class RunRepository:
     def _project_policy_row(row: sqlite3.Row) -> dict[str, Any]:
         return {
             "project_id": row["project_id"],
-            "max_concurrency": int(row["max_concurrency"]) if row["max_concurrency"] is not None else None,
+            "max_concurrency": int(row["max_concurrency"])
+            if row["max_concurrency"] is not None
+            else None,
             "weight": float(row["weight"]),
             "resource_limits": _json(row["resource_limits"]),
             "enabled": bool(row["enabled"]),
             "updated_at": row["updated_at"],
         }
 
-    def get_project_queue_policy(self, project_id: str) -> dict[str, Any] | None:
+    def get_project_queue_policy(
+        self,
+        project_id: str,
+    ) -> dict[str, Any] | None:
         project = self._normalize_project_id(project_id)
         self.initialize()
         with self._connection() as conn:
             row = conn.execute(
-                "SELECT * FROM project_queue_policies WHERE project_id = ?", (project,)
+                "SELECT * FROM project_queue_policies WHERE project_id = ?",
+                (project,),
             ).fetchone()
         return self._project_policy_row(row) if row is not None else None
 
@@ -739,7 +875,7 @@ class RunRepository:
         self.initialize()
         with self._connection() as conn:
             rows = conn.execute(
-                "SELECT * FROM project_queue_policies ORDER BY project_id"
+                "SELECT * FROM project_queue_policies ORDER BY project_id",
             ).fetchall()
         return [self._project_policy_row(row) for row in rows]
 
@@ -748,17 +884,21 @@ class RunRepository:
         self.initialize()
         with self._connection(write=True) as conn:
             cursor = conn.execute(
-                "DELETE FROM project_queue_policies WHERE project_id = ?", (project,)
+                "DELETE FROM project_queue_policies WHERE project_id = ?",
+                (project,),
             )
         return cursor.rowcount > 0
 
     def _project_active_lease_count_tx(
-        self, conn: sqlite3.Connection, project_id: str | None
+        self,
+        conn: sqlite3.Connection,
+        project_id: str | None,
     ) -> int:
         if not project_id:
             return 0
         row = conn.execute(
-            "SELECT COUNT(*) FROM resource_leases WHERE project_id = ? AND state = 'active'",
+            "SELECT COUNT(*) FROM resource_leases WHERE "
+            "project_id = ? AND state = 'active'",
             (project_id,),
         ).fetchone()
         return int(row[0] if row else 0)
@@ -778,6 +918,62 @@ class RunRepository:
             "released_at": row["released_at"],
         }
 
+    def _project_capacity_available_tx(
+        self,
+        conn: sqlite3.Connection,
+        project: str | None,
+        normalized_resources: dict[str, Any],
+    ) -> bool:
+        """Check concurrency and resource capacity in the lease transaction."""
+        if project:
+            policy_row = conn.execute(
+                "SELECT * FROM project_queue_policies WHERE project_id = ?",
+                (project,),
+            ).fetchone()
+            if policy_row is not None and bool(policy_row["enabled"]):
+                maximum = policy_row["max_concurrency"]
+                if maximum is not None and self._project_active_lease_count_tx(
+                    conn,
+                    project,
+                ) >= int(maximum):
+                    return False
+                limits = _json(policy_row["resource_limits"])
+                # Numeric limits (CPU, memory, GPU, disk, or provider
+                # defined counters) are summed across active leases.  A
+                # provider may use any stable key; unknown keys remain
+                # valid metadata and are only constrained when a policy
+                # declares a matching numeric limit.
+                for key, limit in limits.items():
+                    if not isinstance(limit, (int, float)) or isinstance(
+                        limit,
+                        bool,
+                    ):
+                        continue
+                    requested = normalized_resources.get(key, 0)
+                    if not isinstance(requested, (int, float)) or isinstance(
+                        requested,
+                        bool,
+                    ):
+                        continue
+                    active_rows = conn.execute(
+                        "SELECT resources FROM "
+                        "resource_leases WHERE "
+                        "project_id=? AND state='active'",
+                        (project,),
+                    ).fetchall()
+                    used = 0.0
+                    for active in active_rows:
+                        existing_resources = _json(active["resources"])
+                        value = existing_resources.get(key, 0)
+                        if isinstance(value, (int, float)) and not isinstance(
+                            value,
+                            bool,
+                        ):
+                            used += float(value)
+                    if used + float(requested) > float(limit):
+                        return False
+        return True
+
     def acquire_resource_lease(
         self,
         run_id: str,
@@ -796,7 +992,9 @@ class RunRepository:
         """
         if run_id.startswith("ugsci:"):
             raise ValueError("legacy runs are read-only")
-        project = self._normalize_project_id(project_id) if project_id else None
+        project = (
+            self._normalize_project_id(project_id) if project_id else None
+        )
         pool = str(pool_id or "local").strip() or "local"
         lease_owner = str(owner or "run-center").strip() or "run-center"
         normalized_resources = self._normalize_resource_limits(resources)
@@ -805,11 +1003,16 @@ class RunRepository:
             try:
                 ttl = float(ttl_seconds)
             except (TypeError, ValueError) as exc:
-                raise ValueError("ttl_seconds must be a positive finite number") from exc
+                raise ValueError(
+                    "ttl_seconds must be a positive finite number",
+                ) from exc
             if not math.isfinite(ttl) or ttl <= 0:
-                raise ValueError("ttl_seconds must be a positive finite number")
+                raise ValueError(
+                    "ttl_seconds must be a positive finite number",
+                )
             expires_at = datetime.fromtimestamp(
-                datetime.now(timezone.utc).timestamp() + ttl, timezone.utc
+                datetime.now(timezone.utc).timestamp() + ttl,
+                timezone.utc,
             ).isoformat()
         self.initialize()
         now = _now()
@@ -818,7 +1021,8 @@ class RunRepository:
             # same write transaction before counting project usage.
             conn.execute(
                 "UPDATE resource_leases SET state='released', released_at=? "
-                "WHERE state='active' AND expires_at IS NOT NULL AND expires_at <= ?",
+                "WHERE state='active' AND expires_at IS NOT "
+                "NULL AND expires_at <= ?",
                 (now, now),
             )
             run = self._own_row(conn, run_id)
@@ -827,53 +1031,41 @@ class RunRepository:
             if self._canonical_status(run["status"]) in TERMINAL_STATUSES:
                 raise ValueError("cannot acquire a lease for a terminal Run")
             existing = conn.execute(
-                "SELECT * FROM resource_leases WHERE run_id = ? AND state = 'active' "
-                "ORDER BY acquired_at DESC LIMIT 1", (run_id,)
+                "SELECT * FROM resource_leases WHERE run_id = "
+                "? AND state = 'active' "
+                "ORDER BY acquired_at DESC LIMIT 1",
+                (run_id,),
             ).fetchone()
             if existing is not None:
                 return self._lease_row(existing)
-            if project:
-                policy_row = conn.execute(
-                    "SELECT * FROM project_queue_policies WHERE project_id = ?", (project,)
-                ).fetchone()
-                if policy_row is not None and bool(policy_row["enabled"]):
-                    maximum = policy_row["max_concurrency"]
-                    if maximum is not None and self._project_active_lease_count_tx(conn, project) >= int(maximum):
-                        return None
-                    limits = _json(policy_row["resource_limits"])
-                    # Numeric limits (CPU, memory, GPU, disk, or provider
-                    # defined counters) are summed across active leases.  A
-                    # provider may use any stable key; unknown keys remain
-                    # valid metadata and are only constrained when a policy
-                    # declares a matching numeric limit.
-                    for key, limit in limits.items():
-                        if not isinstance(limit, (int, float)) or isinstance(limit, bool):
-                            continue
-                        requested = normalized_resources.get(key, 0)
-                        if not isinstance(requested, (int, float)) or isinstance(requested, bool):
-                            continue
-                        row = conn.execute(
-                            "SELECT resources FROM resource_leases WHERE project_id=? AND state='active'",
-                            (project,),
-                        ).fetchall()
-                        used = 0.0
-                        for active in row:
-                            existing_resources = _json(active["resources"])
-                            value = existing_resources.get(key, 0)
-                            if isinstance(value, (int, float)) and not isinstance(value, bool):
-                                used += float(value)
-                        if used + float(requested) > float(limit):
-                            return None
+            if not self._project_capacity_available_tx(
+                conn,
+                project,
+                normalized_resources,
+            ):
+                return None
             lease_id = uuid.uuid4().hex
             conn.execute(
                 "INSERT OR IGNORE INTO resource_leases "
-                "(lease_id, run_id, project_id, pool_id, resources, owner, state, acquired_at, expires_at) "
+                "(lease_id, run_id, project_id, pool_id, "
+                "resources, owner, state, acquired_at, expires_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, 'active', ?, ?)",
-                (lease_id, run_id, project, pool, _encode_json(normalized_resources, field="resources"), lease_owner, now, expires_at),
+                (
+                    lease_id,
+                    run_id,
+                    project,
+                    pool,
+                    _encode_json(normalized_resources, field="resources"),
+                    lease_owner,
+                    now,
+                    expires_at,
+                ),
             )
             row = conn.execute(
-                "SELECT * FROM resource_leases WHERE run_id = ? AND state = 'active' "
-                "ORDER BY acquired_at DESC LIMIT 1", (run_id,)
+                "SELECT * FROM resource_leases WHERE run_id = "
+                "? AND state = 'active' "
+                "ORDER BY acquired_at DESC LIMIT 1",
+                (run_id,),
             ).fetchone()
         assert row is not None
         return self._lease_row(row)
@@ -892,7 +1084,8 @@ class RunRepository:
         now = _now()
         with self._connection(write=True) as conn:
             row = conn.execute(
-                "SELECT * FROM resource_leases WHERE lease_id = ?", (lease,)
+                "SELECT * FROM resource_leases WHERE lease_id = ?",
+                (lease,),
             ).fetchone()
             if row is None:
                 return None
@@ -909,41 +1102,64 @@ class RunRepository:
                     and run is not None
                     and self._canonical_status(run["status"]) in volatile
                 ):
-                    raise ValueError("cannot release a lease while its Run is active")
+                    raise ValueError(
+                        "cannot release a lease while its Run is active",
+                    )
                 conn.execute(
-                    "UPDATE resource_leases SET state='released', released_at=? WHERE lease_id=?",
+                    "UPDATE resource_leases SET "
+                    "state='released', released_at=? WHERE "
+                    "lease_id=?",
                     (now, lease),
                 )
             updated = conn.execute(
-                "SELECT * FROM resource_leases WHERE lease_id = ?", (lease,)
+                "SELECT * FROM resource_leases WHERE lease_id = ?",
+                (lease,),
             ).fetchone()
             result = self._lease_row(updated) if updated is not None else None
             if result is not None and reason:
                 # Keep release reason in the event stream, while preserving a
                 # small stable lease row for SQL consumers.
                 try:
-                    self._append_event_tx(conn, row["run_id"], "resource.lease_released", {"lease_id": lease, "reason": str(reason)})
+                    self._append_event_tx(
+                        conn,
+                        row["run_id"],
+                        "resource.lease_released",
+                        {"lease_id": lease, "reason": str(reason)},
+                    )
                 except (KeyError, ValueError):
                     pass
             return result
 
-    def release_resource_leases_for_run(self, run_id: str, *, reason: str | None = None) -> int:
+    def release_resource_leases_for_run(
+        self,
+        run_id: str,
+        *,
+        reason: str | None = None,
+    ) -> int:
         if run_id.startswith("ugsci:"):
             return 0
         self.initialize()
         now = _now()
         with self._connection(write=True) as conn:
             rows = conn.execute(
-                "SELECT lease_id FROM resource_leases WHERE run_id=? AND state='active'", (run_id,)
+                "SELECT lease_id FROM resource_leases WHERE "
+                "run_id=? AND state='active'",
+                (run_id,),
             ).fetchall()
             if not rows:
                 return 0
             conn.execute(
-                "UPDATE resource_leases SET state='released', released_at=? WHERE run_id=? AND state='active'",
+                "UPDATE resource_leases SET state='released', "
+                "released_at=? WHERE run_id=? AND state='active'",
                 (now, run_id),
             )
             if reason:
-                self._append_event_tx(conn, run_id, "resource.lease_released", {"reason": str(reason), "count": len(rows)})
+                self._append_event_tx(
+                    conn,
+                    run_id,
+                    "resource.lease_released",
+                    {"reason": str(reason), "count": len(rows)},
+                )
             return len(rows)
 
     def list_resource_leases(
@@ -973,7 +1189,9 @@ class RunRepository:
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
         with self._connection() as conn:
             rows = conn.execute(
-                "SELECT * FROM resource_leases" + where + " ORDER BY acquired_at DESC LIMIT ?",
+                "SELECT * FROM resource_leases"
+                + where
+                + " ORDER BY acquired_at DESC LIMIT ?",
                 [*values, limit],
             ).fetchall()
         return [self._lease_row(row) for row in rows]
@@ -987,7 +1205,13 @@ class RunRepository:
                 "UPDATE resource_leases SET state='released', released_at=? "
                 "WHERE state='active' AND run_id IN ("
                 "SELECT run_id FROM runs WHERE status NOT IN (?, ?, ?, ?))",
-                (now, RunStatus.PREPARING, RunStatus.RUNNING, RunStatus.FINALIZING, RunStatus.CANCELLING),
+                (
+                    now,
+                    RunStatus.PREPARING,
+                    RunStatus.RUNNING,
+                    RunStatus.FINALIZING,
+                    RunStatus.CANCELLING,
+                ),
             )
         return int(cursor.rowcount)
 
@@ -1019,27 +1243,47 @@ class RunRepository:
             for row in rows:
                 payload = _json(row["payload"])
                 previous = self._canonical_status(row["status"])
-                policy = str(payload.get("recovery_policy") or "block").strip().lower()
+                policy = (
+                    str(payload.get("recovery_policy") or "block")
+                    .strip()
+                    .lower()
+                )
                 if previous == RunStatus.CANCELLING:
                     target = RunStatus.CANCELLED
                     reason = "cancel_completed_after_restart"
-                    recovery_data = {"from": previous, "to": target, "reason": reason}
+                    recovery_data = {
+                        "from": previous,
+                        "to": target,
+                        "reason": reason,
+                    }
                 elif policy == "resume":
-                    checkpoint = self._latest_checkpoint_tx(conn, row["run_id"])
+                    checkpoint = self._latest_checkpoint_tx(
+                        conn,
+                        row["run_id"],
+                    )
                     if checkpoint is None:
                         target = RunStatus.BLOCKED
                         reason = "resume_checkpoint_missing_after_restart"
-                        recovery_data = {"from": previous, "to": target, "reason": reason}
+                        recovery_data = {
+                            "from": previous,
+                            "to": target,
+                            "reason": reason,
+                        }
                         payload["error"] = {
                             "kind": "resume_checkpoint_missing",
-                            "message": "Run requested checkpoint resume but no usable checkpoint was found",
+                            "message": "Run requested checkpoint resume "
+                            "but no usable checkpoint was found",
                             "recoverable": False,
                         }
                     else:
                         target = RunStatus.QUEUED
                         reason = "resumed_from_checkpoint_after_restart"
-                        payload["resume_checkpoint_id"] = checkpoint["checkpoint_id"]
-                        payload["resume_checkpoint_state"] = checkpoint.get("state") or "ready"
+                        payload["resume_checkpoint_id"] = checkpoint[
+                            "checkpoint_id"
+                        ]
+                        payload["resume_checkpoint_state"] = (
+                            checkpoint.get("state") or "ready"
+                        )
                         recovery_data = {
                             "from": previous,
                             "to": target,
@@ -1049,14 +1293,23 @@ class RunRepository:
                 elif policy == "requeue":
                     target = RunStatus.QUEUED
                     reason = "requeued_after_restart"
-                    recovery_data = {"from": previous, "to": target, "reason": reason}
+                    recovery_data = {
+                        "from": previous,
+                        "to": target,
+                        "reason": reason,
+                    }
                 else:
                     target = RunStatus.BLOCKED
                     reason = "executor_interrupted_by_restart"
-                    recovery_data = {"from": previous, "to": target, "reason": reason}
+                    recovery_data = {
+                        "from": previous,
+                        "to": target,
+                        "reason": reason,
+                    }
                     payload["error"] = {
                         "kind": "executor_interrupted",
-                        "message": "Run execution was interrupted by a service restart",
+                        "message": "Run execution was interrupted by a "
+                        "service restart",
                         "recoverable": True,
                     }
                 now = _now()
@@ -1065,7 +1318,9 @@ class RunRepository:
                 if target in {RunStatus.CANCELLED, RunStatus.BLOCKED}:
                     payload["finished_at"] = now
                 conn.execute(
-                    "UPDATE runs SET status=?, phase=?, progress=?, payload=?, updated_at=? WHERE run_id=?",
+                    "UPDATE runs SET status=?, phase=?, "
+                    "progress=?, payload=?, updated_at=? "
+                    "WHERE run_id=?",
                     (
                         target,
                         payload.get("phase") or "",
@@ -1088,18 +1343,72 @@ class RunRepository:
                 recovered.append(item)
         return recovered
 
-    # The transition table is deliberately kept in the repository so every
-    # producer (HTTP, a future queue worker, or a domain provider) gets the
-    # same server-side lifecycle validation.  Terminal states are immutable.
+
+class _RunComponents:
+    """Stages, artifacts, checkpoints and provenance snapshots."""
+
     _ALLOWED_TRANSITIONS: dict[str, frozenset[str]] = {
         RunStatus.DRAFT: frozenset({RunStatus.QUEUED, RunStatus.CANCELLED}),
-        RunStatus.QUEUED: frozenset({RunStatus.PREPARING, RunStatus.RUNNING, RunStatus.PAUSED, RunStatus.CANCELLING, RunStatus.CANCELLED, RunStatus.FAILED, RunStatus.BLOCKED}),
-        RunStatus.PREPARING: frozenset({RunStatus.RUNNING, RunStatus.CANCELLING, RunStatus.CANCELLED, RunStatus.FAILED, RunStatus.BLOCKED}),
-        RunStatus.RUNNING: frozenset({RunStatus.FINALIZING, RunStatus.PAUSED, RunStatus.CANCELLING, RunStatus.RETRY_WAIT, RunStatus.SUCCEEDED, RunStatus.FAILED, RunStatus.BLOCKED}),
-        RunStatus.FINALIZING: frozenset({RunStatus.SUCCEEDED, RunStatus.CANCELLING, RunStatus.CANCELLED, RunStatus.FAILED, RunStatus.BLOCKED}),
-        RunStatus.PAUSED: frozenset({RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.CANCELLING, RunStatus.CANCELLED, RunStatus.FAILED}),
-        RunStatus.CANCELLING: frozenset({RunStatus.CANCELLED, RunStatus.FAILED}),
-        RunStatus.RETRY_WAIT: frozenset({RunStatus.QUEUED, RunStatus.RUNNING, RunStatus.CANCELLED, RunStatus.FAILED}),
+        RunStatus.QUEUED: frozenset(
+            {
+                RunStatus.PREPARING,
+                RunStatus.RUNNING,
+                RunStatus.PAUSED,
+                RunStatus.CANCELLING,
+                RunStatus.CANCELLED,
+                RunStatus.FAILED,
+                RunStatus.BLOCKED,
+            },
+        ),
+        RunStatus.PREPARING: frozenset(
+            {
+                RunStatus.RUNNING,
+                RunStatus.CANCELLING,
+                RunStatus.CANCELLED,
+                RunStatus.FAILED,
+                RunStatus.BLOCKED,
+            },
+        ),
+        RunStatus.RUNNING: frozenset(
+            {
+                RunStatus.FINALIZING,
+                RunStatus.PAUSED,
+                RunStatus.CANCELLING,
+                RunStatus.RETRY_WAIT,
+                RunStatus.SUCCEEDED,
+                RunStatus.FAILED,
+                RunStatus.BLOCKED,
+            },
+        ),
+        RunStatus.FINALIZING: frozenset(
+            {
+                RunStatus.SUCCEEDED,
+                RunStatus.CANCELLING,
+                RunStatus.CANCELLED,
+                RunStatus.FAILED,
+                RunStatus.BLOCKED,
+            },
+        ),
+        RunStatus.PAUSED: frozenset(
+            {
+                RunStatus.QUEUED,
+                RunStatus.RUNNING,
+                RunStatus.CANCELLING,
+                RunStatus.CANCELLED,
+                RunStatus.FAILED,
+            },
+        ),
+        RunStatus.CANCELLING: frozenset(
+            {RunStatus.CANCELLED, RunStatus.FAILED},
+        ),
+        RunStatus.RETRY_WAIT: frozenset(
+            {
+                RunStatus.QUEUED,
+                RunStatus.RUNNING,
+                RunStatus.CANCELLED,
+                RunStatus.FAILED,
+            },
+        ),
         RunStatus.SUCCEEDED: frozenset(),
         RunStatus.CANCELLED: frozenset(),
         RunStatus.FAILED: frozenset(),
@@ -1108,22 +1417,39 @@ class RunRepository:
 
     @staticmethod
     def _canonical_status(value: Any, *, default: str | None = None) -> str:
-        candidate = str(value if value is not None else (default or "")).strip().lower()
+        candidate = (
+            str(value if value is not None else (default or ""))
+            .strip()
+            .lower()
+        )
         try:
             return RunStatus(candidate).value
         except ValueError as exc:
-            raise ValueError(f"Unsupported run status: {candidate or '<empty>'}") from exc
+            raise ValueError(
+                f"Unsupported run status: {candidate or '<empty>'}",
+            ) from exc
 
-    def _own_row(self, conn: sqlite3.Connection, run_id: str) -> sqlite3.Row | None:
-        return conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+    def _own_row(
+        self,
+        conn: sqlite3.Connection,
+        run_id: str,
+    ) -> sqlite3.Row | None:
+        return conn.execute(
+            "SELECT * FROM runs WHERE run_id = ?",
+            (run_id,),
+        ).fetchone()
 
     @staticmethod
     def _ensure_native_run(conn: sqlite3.Connection, run_id: str) -> None:
         if run_id.startswith("ugsci:"):
             raise ValueError("legacy runs are read-only")
-        if conn.execute(
-            "SELECT 1 FROM runs WHERE run_id = ? LIMIT 1", (run_id,)
-        ).fetchone() is None:
+        if (
+            conn.execute(
+                "SELECT 1 FROM runs WHERE run_id = ? LIMIT 1",
+                (run_id,),
+            ).fetchone()
+            is None
+        ):
             raise KeyError(run_id)
 
     @staticmethod
@@ -1133,7 +1459,7 @@ class RunRepository:
             return StageStatus(candidate).value
         except ValueError as exc:
             raise ValueError(
-                f"Unsupported stage status: {candidate or '<empty>'}"
+                f"Unsupported stage status: {candidate or '<empty>'}",
             ) from exc
 
     @staticmethod
@@ -1143,7 +1469,9 @@ class RunRepository:
         if not isinstance(artifact, dict):
             raise ValueError("artifact must be a JSON object")
         value = dict(artifact)
-        ref_id = str(value.get("ref_id") or value.get("artifact_id") or "").strip()
+        ref_id = str(
+            value.get("ref_id") or value.get("artifact_id") or "",
+        ).strip()
         if not ref_id:
             raise ValueError("artifact ref_id is required")
         size_bytes = value.get("size_bytes")
@@ -1151,7 +1479,9 @@ class RunRepository:
             try:
                 size_bytes = int(size_bytes)
             except (TypeError, ValueError) as exc:
-                raise ValueError("artifact size_bytes must be an integer") from exc
+                raise ValueError(
+                    "artifact size_bytes must be an integer",
+                ) from exc
             if size_bytes < 0:
                 raise ValueError("artifact size_bytes cannot be negative")
         metadata = value.get("metadata") or {}
@@ -1168,6 +1498,22 @@ class RunRepository:
             "metadata": dict(metadata),
         }
 
+    @staticmethod
+    def _stage_progress(progress: Any) -> float | None:
+        """Validate optional stage progress without silently clipping it."""
+        if progress is not None:
+            try:
+                progress = float(progress)
+            except (TypeError, ValueError, OverflowError) as exc:
+                raise ValueError(
+                    "stage progress must be a finite number between 0 and 1",
+                ) from exc
+            if not math.isfinite(progress) or not 0 <= progress <= 1:
+                raise ValueError(
+                    "stage progress must be a finite number between 0 and 1",
+                )
+        return progress
+
     @classmethod
     def _normalize_stage(cls, stage: Any) -> dict[str, Any]:
         if hasattr(stage, "to_dict"):
@@ -1179,21 +1525,14 @@ class RunRepository:
         operation = str(value.get("operation") or "").strip()
         if not stage_id or not operation:
             raise ValueError("stage_id and operation are required")
-        progress = value.get("progress")
-        if progress is not None:
-            try:
-                progress = float(progress)
-            except (TypeError, ValueError, OverflowError) as exc:
-                raise ValueError(
-                    "stage progress must be a finite number between 0 and 1"
-                ) from exc
-            if not math.isfinite(progress) or not 0 <= progress <= 1:
-                raise ValueError("stage progress must be a finite number between 0 and 1")
+        progress = cls._stage_progress(value.get("progress"))
         try:
             attempt = int(value.get("attempt") or 0)
             ordinal = int(value.get("ordinal") or 0)
         except (TypeError, ValueError) as exc:
-            raise ValueError("stage attempt and ordinal must be integers") from exc
+            raise ValueError(
+                "stage attempt and ordinal must be integers",
+            ) from exc
         if attempt < 0 or ordinal < 0:
             raise ValueError("stage attempt and ordinal cannot be negative")
         for field_name in ("input_refs", "output_refs"):
@@ -1234,7 +1573,11 @@ class RunRepository:
             row["run_id"],
             operation=row["operation"],
             status=row["status"],
-            payload={**payload, "created_at": row["created_at"], "updated_at": row["updated_at"]},
+            payload={
+                **payload,
+                "created_at": row["created_at"],
+                "updated_at": row["updated_at"],
+            },
         )
         item["payload"] = payload
         if conn is None:
@@ -1257,7 +1600,11 @@ class RunRepository:
         item["stages"] = stages
         item["artifacts"] = artifacts
         item["provenance"] = next(
-            (entry for entry in provenance if entry["artifact_ref_id"] is None),
+            (
+                entry
+                for entry in provenance
+                if entry["artifact_ref_id"] is None
+            ),
             None,
         )
         item["provenance_records"] = provenance
@@ -1309,7 +1656,8 @@ class RunRepository:
             "size_bytes, metadata, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(run_id, ref_id, stage_id, role) DO UPDATE SET "
-            "kind=excluded.kind, uri=excluded.uri, media_type=excluded.media_type, "
+            "kind=excluded.kind, uri=excluded.uri, "
+            "media_type=excluded.media_type, "
             "sha256=excluded.sha256, size_bytes=excluded.size_bytes, "
             "metadata=excluded.metadata, updated_at=excluded.updated_at",
             (
@@ -1352,7 +1700,8 @@ class RunRepository:
             clauses.append("role = ?")
             values.append(str(role).strip())
         rows = conn.execute(
-            "SELECT * FROM run_artifacts WHERE " + " AND ".join(clauses)
+            "SELECT * FROM run_artifacts WHERE "
+            + " AND ".join(clauses)
             + " ORDER BY stage_id, role, ref_id",
             values,
         ).fetchall()
@@ -1375,10 +1724,13 @@ class RunRepository:
         }
 
     def _list_stages_tx(
-        self, conn: sqlite3.Connection, run_id: str
+        self,
+        conn: sqlite3.Connection,
+        run_id: str,
     ) -> list[dict[str, Any]]:
         rows = conn.execute(
-            "SELECT * FROM run_stages WHERE run_id=? ORDER BY ordinal, stage_id",
+            "SELECT * FROM run_stages WHERE run_id=? ORDER BY "
+            "ordinal, stage_id",
             (run_id,),
         ).fetchall()
         return [self._stage_row(row) for row in rows]
@@ -1399,9 +1751,12 @@ class RunRepository:
         now = _now()
         conn.execute(
             "INSERT INTO run_stages "
-            "(run_id, stage_id, ordinal, operation, status, progress, attempt, "
-            "payload, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(run_id, stage_id) DO UPDATE SET ordinal=excluded.ordinal, "
+            "(run_id, stage_id, ordinal, operation, status, "
+            "progress, attempt, "
+            "payload, created_at, updated_at) VALUES (?, ?, "
+            "?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(run_id, stage_id) DO UPDATE SET "
+            "ordinal=excluded.ordinal, "
             "operation=excluded.operation, status=excluded.status, "
             "progress=excluded.progress, attempt=excluded.attempt, "
             "payload=excluded.payload, updated_at=excluded.updated_at",
@@ -1425,11 +1780,21 @@ class RunRepository:
         )
         for artifact in value["input_refs"]:
             self._upsert_artifact_tx(
-                conn, run_id, artifact, stage_id=value["stage_id"], role="input", timestamp=now
+                conn,
+                run_id,
+                artifact,
+                stage_id=value["stage_id"],
+                role="input",
+                timestamp=now,
             )
         for artifact in value["output_refs"]:
             self._upsert_artifact_tx(
-                conn, run_id, artifact, stage_id=value["stage_id"], role="output", timestamp=now
+                conn,
+                run_id,
+                artifact,
+                stage_id=value["stage_id"],
+                role="output",
+                timestamp=now,
             )
         if value.get("checkpoint_ref"):
             self._upsert_artifact_tx(
@@ -1461,7 +1826,9 @@ class RunRepository:
 
     @staticmethod
     def _checkpoint_row(row: sqlite3.Row) -> dict[str, Any]:
-        artifact_ref = _json(row["artifact_ref"]) if row["artifact_ref"] else None
+        artifact_ref = (
+            _json(row["artifact_ref"]) if row["artifact_ref"] else None
+        )
         return {
             "checkpoint_id": row["checkpoint_id"],
             "run_id": row["run_id"],
@@ -1475,7 +1842,9 @@ class RunRepository:
         }
 
     def _list_checkpoints_tx(
-        self, conn: sqlite3.Connection, run_id: str
+        self,
+        conn: sqlite3.Connection,
+        run_id: str,
     ) -> list[dict[str, Any]]:
         rows = conn.execute(
             "SELECT * FROM run_checkpoints WHERE run_id=? "
@@ -1499,7 +1868,10 @@ class RunRepository:
         for row in rows:
             value = cls._checkpoint_row(row)
             if str(value.get("state") or "").strip().lower() in {
-                "invalid", "deleted", "failed", "aborted",
+                "invalid",
+                "deleted",
+                "failed",
+                "aborted",
             }:
                 continue
             return value
@@ -1523,7 +1895,9 @@ class RunRepository:
         }
 
     def _list_provenance_tx(
-        self, conn: sqlite3.Connection, run_id: str
+        self,
+        conn: sqlite3.Connection,
+        run_id: str,
     ) -> list[dict[str, Any]]:
         rows = conn.execute(
             "SELECT * FROM run_provenance WHERE run_id=? "
@@ -1548,13 +1922,20 @@ class RunRepository:
         artifact_id = str(
             artifact_ref_id
             if artifact_ref_id is not None
-            else value.get("artifact_ref_id") or ""
+            else value.get("artifact_ref_id") or "",
         ).strip()
-        if artifact_id and conn.execute(
-            "SELECT 1 FROM run_artifacts WHERE run_id=? AND ref_id=? LIMIT 1",
-            (run_id, artifact_id),
-        ).fetchone() is None:
-            raise ValueError(f"Artifact not found for provenance: {artifact_id}")
+        if (
+            artifact_id
+            and conn.execute(
+                "SELECT 1 FROM run_artifacts WHERE run_id=? "
+                "AND ref_id=? LIMIT 1",
+                (run_id, artifact_id),
+            ).fetchone()
+            is None
+        ):
+            raise ValueError(
+                f"Artifact not found for provenance: {artifact_id}",
+            )
         metadata = value.get("metadata") or {}
         if not isinstance(metadata, dict):
             raise ValueError("provenance metadata must be an object")
@@ -1566,18 +1947,30 @@ class RunRepository:
         ).fetchone()
         provenance_id = str(value.get("provenance_id") or "").strip()
         if not provenance_id:
-            provenance_id = existing["provenance_id"] if existing else uuid.uuid4().hex
+            provenance_id = (
+                existing["provenance_id"] if existing else uuid.uuid4().hex
+            )
         now = _now()
-        created_at = existing["created_at"] if existing else str(value.get("created_at") or now)
+        created_at = (
+            existing["created_at"]
+            if existing
+            else str(value.get("created_at") or now)
+        )
         conn.execute(
             "INSERT INTO run_provenance "
-            "(provenance_id, run_id, artifact_ref_id, input_fingerprint, provider_id, "
-            "provider_version, software_version, unit_system, coordinate_system, "
-            "metadata, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "(provenance_id, run_id, artifact_ref_id, "
+            "input_fingerprint, provider_id, "
+            "provider_version, software_version, unit_system, "
+            "coordinate_system, "
+            "metadata, created_at, updated_at) VALUES (?, ?, "
+            "?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
             "ON CONFLICT(run_id, artifact_ref_id) DO UPDATE SET "
-            "input_fingerprint=excluded.input_fingerprint, provider_id=excluded.provider_id, "
-            "provider_version=excluded.provider_version, software_version=excluded.software_version, "
-            "unit_system=excluded.unit_system, coordinate_system=excluded.coordinate_system, "
+            "input_fingerprint=excluded.input_fingerprint, "
+            "provider_id=excluded.provider_id, "
+            "provider_version=excluded.provider_version, "
+            "software_version=excluded.software_version, "
+            "unit_system=excluded.unit_system, "
+            "coordinate_system=excluded.coordinate_system, "
             "metadata=excluded.metadata, updated_at=excluded.updated_at",
             (
                 provenance_id,
@@ -1595,7 +1988,8 @@ class RunRepository:
             ),
         )
         row = conn.execute(
-            "SELECT * FROM run_provenance WHERE run_id=? AND artifact_ref_id=?",
+            "SELECT * FROM run_provenance WHERE run_id=? AND "
+            "artifact_ref_id=?",
             (run_id, artifact_id),
         ).fetchone()
         assert row is not None
@@ -1631,15 +2025,22 @@ class RunRepository:
             native = self._own_row(conn, run_id) is not None
             if native:
                 return self._list_artifacts_tx(
-                    conn, run_id, stage_id=stage_id, role=role
+                    conn,
+                    run_id,
+                    stage_id=stage_id,
+                    role=role,
                 )
         item = self.get_run(run_id)
         if item is None:
             raise KeyError(run_id)
         artifacts = item.get("artifacts") or []
-        result = [dict(entry) for entry in artifacts if isinstance(entry, dict)]
+        result = [
+            dict(entry) for entry in artifacts if isinstance(entry, dict)
+        ]
         if stage_id is not None:
-            result = [entry for entry in result if entry.get("stage_id") == stage_id]
+            result = [
+                entry for entry in result if entry.get("stage_id") == stage_id
+            ]
         if role is not None:
             result = [entry for entry in result if entry.get("role") == role]
         return result
@@ -1655,13 +2056,22 @@ class RunRepository:
         self.initialize()
         with self._connection(write=True) as conn:
             self._ensure_native_run(conn, run_id)
-            if stage_id and conn.execute(
-                "SELECT 1 FROM run_stages WHERE run_id=? AND stage_id=? LIMIT 1",
-                (run_id, stage_id),
-            ).fetchone() is None:
+            if (
+                stage_id
+                and conn.execute(
+                    "SELECT 1 FROM run_stages WHERE run_id=? "
+                    "AND stage_id=? LIMIT 1",
+                    (run_id, stage_id),
+                ).fetchone()
+                is None
+            ):
                 raise ValueError(f"Stage not found for artifact: {stage_id}")
             result = self._upsert_artifact_tx(
-                conn, run_id, artifact, stage_id=stage_id, role=role
+                conn,
+                run_id,
+                artifact,
+                stage_id=stage_id,
+                role=role,
             )
             self._append_event_tx(
                 conn,
@@ -1676,7 +2086,10 @@ class RunRepository:
         self.initialize()
         with self._connection() as conn:
             if self._own_row(conn, run_id) is None:
-                if run_id.startswith("ugsci:") or self.get_run(run_id) is not None:
+                if (
+                    run_id.startswith("ugsci:")
+                    or self.get_run(run_id) is not None
+                ):
                     return []
                 raise KeyError(run_id)
             return self._list_checkpoints_tx(conn, run_id)
@@ -1710,7 +2123,10 @@ class RunRepository:
         checkpoints = self.list_checkpoints(run_id)
         normalized_stage = str(stage_id or "").strip() or None
         for checkpoint in checkpoints:
-            if normalized_stage is not None and checkpoint.get("stage_id") != normalized_stage:
+            if (
+                normalized_stage is not None
+                and checkpoint.get("stage_id") != normalized_stage
+            ):
                 continue
             state = str(checkpoint.get("state") or "").strip().lower()
             # Invalid/deleted checkpoints must never be selected for an
@@ -1742,14 +2158,18 @@ class RunRepository:
             requested_id = str(checkpoint_id or "").strip()
             if requested_id:
                 row_checkpoint = conn.execute(
-                    "SELECT * FROM run_checkpoints WHERE checkpoint_id=? AND run_id=?",
+                    "SELECT * FROM run_checkpoints WHERE "
+                    "checkpoint_id=? AND run_id=?",
                     (requested_id, run_id),
                 ).fetchone()
                 if row_checkpoint is None:
                     raise ValueError("Checkpoint not found for Run")
                 checkpoint = self._checkpoint_row(row_checkpoint)
                 if str(checkpoint.get("state") or "").strip().lower() in {
-                    "invalid", "deleted", "failed", "aborted",
+                    "invalid",
+                    "deleted",
+                    "failed",
+                    "aborted",
                 }:
                     raise ValueError("Checkpoint is not usable for resume")
             else:
@@ -1759,7 +2179,9 @@ class RunRepository:
             payload = _json(row["payload"])
             payload["resume_requested"] = True
             payload["resume_checkpoint_id"] = checkpoint["checkpoint_id"]
-            payload["resume_checkpoint_state"] = checkpoint.get("state") or "ready"
+            payload["resume_checkpoint_state"] = (
+                checkpoint.get("state") or "ready"
+            )
             now = _now()
             payload["updated_at"] = now
             conn.execute(
@@ -1786,7 +2208,9 @@ class RunRepository:
         if not isinstance(checkpoint, dict):
             raise ValueError("checkpoint must be a JSON object")
         value = dict(checkpoint)
-        checkpoint_id = str(value.get("checkpoint_id") or "").strip() or uuid.uuid4().hex
+        checkpoint_id = (
+            str(value.get("checkpoint_id") or "").strip() or uuid.uuid4().hex
+        )
         stage_id = str(value.get("stage_id") or "").strip()
         state = str(value.get("state") or "ready").strip()
         if not state:
@@ -1801,15 +2225,23 @@ class RunRepository:
         self.initialize()
         with self._connection(write=True) as conn:
             self._ensure_native_run(conn, run_id)
-            if stage_id and conn.execute(
-                "SELECT 1 FROM run_stages WHERE run_id=? AND stage_id=? LIMIT 1",
-                (run_id, stage_id),
-            ).fetchone() is None:
+            if (
+                stage_id
+                and conn.execute(
+                    "SELECT 1 FROM run_stages WHERE run_id=? "
+                    "AND stage_id=? LIMIT 1",
+                    (run_id, stage_id),
+                ).fetchone()
+                is None
+            ):
                 raise ValueError(f"Stage not found for checkpoint: {stage_id}")
-            if conn.execute(
-                "SELECT 1 FROM run_checkpoints WHERE checkpoint_id=?",
-                (checkpoint_id,),
-            ).fetchone() is not None:
+            if (
+                conn.execute(
+                    "SELECT 1 FROM run_checkpoints WHERE checkpoint_id=?",
+                    (checkpoint_id,),
+                ).fetchone()
+                is not None
+            ):
                 raise ValueError(f"Checkpoint already exists: {checkpoint_id}")
             if artifact_ref is not None:
                 self._upsert_artifact_tx(
@@ -1822,8 +2254,10 @@ class RunRepository:
                 )
             conn.execute(
                 "INSERT INTO run_checkpoints "
-                "(checkpoint_id, run_id, stage_id, artifact_ref, state, resume_token, "
-                "metadata, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "(checkpoint_id, run_id, stage_id, "
+                "artifact_ref, state, resume_token, "
+                "metadata, created_at, updated_at) VALUES (?, "
+                "?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     checkpoint_id,
                     run_id,
@@ -1860,7 +2294,9 @@ class RunRepository:
                 if item is None:
                     raise KeyError(run_id)
                 provenance = item.get("provenance")
-                return [dict(provenance)] if isinstance(provenance, dict) else []
+                return (
+                    [dict(provenance)] if isinstance(provenance, dict) else []
+                )
             return self._list_provenance_tx(conn, run_id)
 
     def upsert_provenance(
@@ -1874,7 +2310,10 @@ class RunRepository:
         with self._connection(write=True) as conn:
             self._ensure_native_run(conn, run_id)
             result = self._upsert_provenance_tx(
-                conn, run_id, provenance, artifact_ref_id=artifact_ref_id
+                conn,
+                run_id,
+                provenance,
+                artifact_ref_id=artifact_ref_id,
             )
             self._append_event_tx(
                 conn,
@@ -1886,6 +2325,44 @@ class RunRepository:
                 },
             )
             return result
+
+
+class _RunLifecycle:
+    """Native run lifecycle, event stream and read-only legacy bridge."""
+
+    def _insert_initial_components_tx(
+        self,
+        conn: sqlite3.Connection,
+        run_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """Validate and store a new run's component snapshots atomically."""
+        stages = payload.get("stages") or []
+        artifacts = payload.get("artifacts") or []
+        provenance = payload.get("provenance")
+        if not isinstance(stages, (list, tuple)):
+            raise ValueError("stages must be an array")
+        if not isinstance(artifacts, (list, tuple)):
+            raise ValueError("artifacts must be an array")
+        for ordinal, stage in enumerate(stages):
+            stage_value = (
+                {**stage, "ordinal": stage.get("ordinal", ordinal)}
+                if isinstance(stage, dict)
+                else stage
+            )
+            self._upsert_stage_tx(conn, run_id, stage_value, emit_event=False)
+        for artifact in artifacts:
+            if not isinstance(artifact, dict):
+                raise ValueError("artifacts must contain objects")
+            self._upsert_artifact_tx(
+                conn,
+                run_id,
+                artifact,
+                stage_id=artifact.get("stage_id"),
+                role=str(artifact.get("role") or "output"),
+            )
+        if provenance is not None:
+            self._upsert_provenance_tx(conn, run_id, provenance)
 
     def create_run(
         self,
@@ -1911,14 +2388,21 @@ class RunRepository:
         run_id = str(payload.get("run_id") or "").strip() or uuid.uuid4().hex
         if run_id.startswith("ugsci:"):
             raise ValueError("native run_id cannot use the ugsci namespace")
-        idem = idempotency_key if idempotency_key is not None else payload.get("idempotency_key")
+        idem = (
+            idempotency_key
+            if idempotency_key is not None
+            else payload.get("idempotency_key")
+        )
         if idem is not None:
             idem = str(idem).strip() or None
         if idem is not None:
             payload["idempotency_key"] = idem
         else:
             payload.pop("idempotency_key", None)
-        status = self._canonical_status(payload.get("status"), default=RunStatus.DRAFT)
+        status = self._canonical_status(
+            payload.get("status"),
+            default=RunStatus.DRAFT,
+        )
         payload["progress"] = _bounded_progress(payload.get("progress"))
         payload["run_id"] = run_id
         payload["operation"] = operation
@@ -1940,7 +2424,10 @@ class RunRepository:
             if self._own_row(conn, run_id) is not None:
                 raise ValueError(f"Run already exists: {run_id}")
             conn.execute(
-                "INSERT INTO runs (run_id, operation, status, phase, progress, project_id, parent_run_id, model_version_id, study_id, idempotency_key, payload, created_at, updated_at) "
+                "INSERT INTO runs (run_id, operation, status, "
+                "phase, progress, project_id, parent_run_id, "
+                "model_version_id, study_id, idempotency_key, "
+                "payload, created_at, updated_at) "
                 "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
                     run_id,
@@ -1958,38 +2445,36 @@ class RunRepository:
                     updated_at,
                 ),
             )
-            stages = payload.get("stages") or []
-            artifacts = payload.get("artifacts") or []
-            provenance = payload.get("provenance")
-            if not isinstance(stages, (list, tuple)):
-                raise ValueError("stages must be an array")
-            if not isinstance(artifacts, (list, tuple)):
-                raise ValueError("artifacts must be an array")
-            for ordinal, stage in enumerate(stages):
-                stage_value = (
-                    {**stage, "ordinal": stage.get("ordinal", ordinal)}
-                    if isinstance(stage, dict)
-                    else stage
-                )
-                self._upsert_stage_tx(
-                    conn, run_id, stage_value, emit_event=False
-                )
-            for artifact in artifacts:
-                if not isinstance(artifact, dict):
-                    raise ValueError("artifacts must contain objects")
-                self._upsert_artifact_tx(
-                    conn,
-                    run_id,
-                    artifact,
-                    stage_id=artifact.get("stage_id"),
-                    role=str(artifact.get("role") or "output"),
-                )
-            if provenance is not None:
-                self._upsert_provenance_tx(conn, run_id, provenance)
-            self._append_event_tx(conn, run_id, "run.created", {"status": status})
+            self._insert_initial_components_tx(conn, run_id, payload)
+            self._append_event_tx(
+                conn,
+                run_id,
+                "run.created",
+                {"status": status},
+            )
             row = self._own_row(conn, run_id)
             assert row is not None
             return self._row_detail(row, conn)
+
+    def append_event_in_transaction(
+        self,
+        conn: sqlite3.Connection,
+        run_id: str,
+        event_type: str,
+        data: dict[str, Any] | None = None,
+        *,
+        stage_id: str | None = None,
+        created_at: str | None = None,
+    ) -> dict[str, Any]:
+        """Append within a collaborator's existing write transaction."""
+        return self._append_event_tx(
+            conn,
+            run_id,
+            event_type,
+            data,
+            stage_id=stage_id,
+            created_at=created_at,
+        )
 
     def _append_event_tx(
         self,
@@ -2004,14 +2489,28 @@ class RunRepository:
         if not isinstance(event_type, str) or not event_type.strip():
             raise ValueError("event_type is required")
         event_type = event_type.strip()
-        next_seq = int(conn.execute("SELECT COALESCE(MAX(sequence), 0) + 1 FROM run_events WHERE run_id = ?", (run_id,)).fetchone()[0])
+        next_seq = int(
+            conn.execute(
+                "SELECT COALESCE(MAX(sequence), 0) + 1 FROM "
+                "run_events WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()[0],
+        )
         event_data = dict(data or {})
         if stage_id is not None:
             event_data.setdefault("stage_id", stage_id)
         timestamp = created_at or _now()
         conn.execute(
-            "INSERT INTO run_events (run_id, sequence, event_type, payload, created_at) VALUES (?, ?, ?, ?, ?)",
-            (run_id, next_seq, event_type, _encode_json(event_data, label="event data"), timestamp),
+            "INSERT INTO run_events (run_id, sequence, "
+            "event_type, payload, created_at) VALUES (?, ?, "
+            "?, ?, ?)",
+            (
+                run_id,
+                next_seq,
+                event_type,
+                _encode_json(event_data, label="event data"),
+                timestamp,
+            ),
         )
         # Event activity is part of the run's observable freshness.  Updating
         # this in the same transaction keeps list ordering deterministic when
@@ -2020,11 +2519,20 @@ class RunRepository:
         # governed by sequence; run freshness must never move backwards.
         freshness = _now()
         conn.execute(
-            "UPDATE runs SET updated_at = CASE WHEN updated_at > ? THEN updated_at ELSE ? END "
+            "UPDATE runs SET updated_at = CASE WHEN "
+            "updated_at > ? THEN updated_at ELSE ? END "
             "WHERE run_id = ?",
             (freshness, freshness, run_id),
         )
-        return {"run_id": run_id, "sequence": next_seq, "seq": next_seq, "type": event_type, "event_type": event_type, "data": event_data, "created_at": timestamp}
+        return {
+            "run_id": run_id,
+            "sequence": next_seq,
+            "seq": next_seq,
+            "type": event_type,
+            "event_type": event_type,
+            "data": event_data,
+            "created_at": timestamp,
+        }
 
     def append_event(
         self,
@@ -2035,7 +2543,8 @@ class RunRepository:
         stage_id: str | None = None,
         created_at: str | None = None,
     ) -> dict[str, Any]:
-        """Append one event atomically and allocate its sequence server-side."""
+        """Append one event atomically and allocate its sequence \
+server-side."""
         if run_id.startswith("ugsci:"):
             raise ValueError("legacy runs are read-only")
         self.initialize()
@@ -2048,7 +2557,14 @@ class RunRepository:
                 # Terminal runs are immutable.  In particular, reject events
                 # emitted by a late worker after cancellation or completion.
                 raise ValueError(f"Terminal run is immutable: {current}")
-            return self._append_event_tx(conn, run_id, event_type, data, stage_id=stage_id, created_at=created_at)
+            return self._append_event_tx(
+                conn,
+                run_id,
+                event_type,
+                data,
+                stage_id=stage_id,
+                created_at=created_at,
+            )
 
     def transition(
         self,
@@ -2060,7 +2576,8 @@ class RunRepository:
         error: dict[str, Any] | None = None,
         data: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        """Apply a validated lifecycle transition and append its event atomically."""
+        """Apply a validated lifecycle transition and append its event \
+atomically."""
         if run_id.startswith("ugsci:"):
             raise ValueError("legacy runs are read-only")
         target = self._canonical_status(status)
@@ -2072,10 +2589,18 @@ class RunRepository:
             current = self._canonical_status(row["status"])
             if current in TERMINAL_STATUSES:
                 if target != current:
-                    raise ValueError(f"Invalid run transition: {current} -> {target}")
+                    raise ValueError(
+                        f"Invalid run transition: {current} -> {target}",
+                    )
                 raise ValueError(f"Terminal run is immutable: {current}")
-            if target != current and target not in self._ALLOWED_TRANSITIONS.get(current, frozenset()):
-                raise ValueError(f"Invalid run transition: {current} -> {target}")
+            if (
+                target != current
+                and target
+                not in self._ALLOWED_TRANSITIONS.get(current, frozenset())
+            ):
+                raise ValueError(
+                    f"Invalid run transition: {current} -> {target}",
+                )
             payload = _json(row["payload"])
             now = _now()
             payload["status"] = target
@@ -2086,13 +2611,29 @@ class RunRepository:
                 payload["progress"] = _bounded_progress(progress)
             if error is not None:
                 payload["error"] = dict(error)
-            if target in {RunStatus.RUNNING, RunStatus.PREPARING} and not payload.get("started_at"):
+            if target in {
+                RunStatus.RUNNING,
+                RunStatus.PREPARING,
+            } and not payload.get("started_at"):
                 payload["started_at"] = now
-            if target in {RunStatus.SUCCEEDED, RunStatus.CANCELLED, RunStatus.FAILED, RunStatus.BLOCKED}:
+            if target in {
+                RunStatus.SUCCEEDED,
+                RunStatus.CANCELLED,
+                RunStatus.FAILED,
+                RunStatus.BLOCKED,
+            }:
                 payload["finished_at"] = now
             conn.execute(
-                "UPDATE runs SET status=?, phase=?, progress=?, payload=?, updated_at=? WHERE run_id=?",
-                (target, payload.get("phase") or "", payload.get("progress"), _encode_json(payload, label="run"), now, run_id),
+                "UPDATE runs SET status=?, phase=?, "
+                "progress=?, payload=?, updated_at=? WHERE run_id=?",
+                (
+                    target,
+                    payload.get("phase") or "",
+                    payload.get("progress"),
+                    _encode_json(payload, label="run"),
+                    now,
+                    run_id,
+                ),
             )
             if target in TERMINAL_STATUSES:
                 # Resource ownership follows the durable Run lifecycle.  A
@@ -2101,11 +2642,17 @@ class RunRepository:
                 # block would leave an active lease behind after cancellation,
                 # failure, or an administrative transition.
                 conn.execute(
-                    "UPDATE resource_leases SET state='released', released_at=? "
+                    "UPDATE resource_leases SET "
+                    "state='released', released_at=? "
                     "WHERE run_id=? AND state='active'",
                     (now, run_id),
                 )
-            event = self._append_event_tx(conn, run_id, "run.status_changed", {"from": current, "to": target, **(data or {})})
+            event = self._append_event_tx(
+                conn,
+                run_id,
+                "run.status_changed",
+                {"from": current, "to": target, **(data or {})},
+            )
             updated = self._own_row(conn, run_id)
             assert updated is not None
             result = self._row_detail(updated, conn)
@@ -2124,14 +2671,25 @@ class RunRepository:
             if current is None:
                 raise KeyError(run_id)
             state = current["status"]
-            if state in {RunStatus.DRAFT, RunStatus.QUEUED, RunStatus.PAUSED, RunStatus.RETRY_WAIT}:
+            if state in {
+                RunStatus.DRAFT,
+                RunStatus.QUEUED,
+                RunStatus.PAUSED,
+                RunStatus.RETRY_WAIT,
+            }:
                 return self.transition(run_id, RunStatus.CANCELLED)
             if state == RunStatus.CANCELLING:
                 return self.transition(run_id, RunStatus.CANCELLED)
-            if state in {RunStatus.PREPARING, RunStatus.RUNNING, RunStatus.FINALIZING}:
+            if state in {
+                RunStatus.PREPARING,
+                RunStatus.RUNNING,
+                RunStatus.FINALIZING,
+            }:
                 return self.transition(run_id, RunStatus.CANCELLING)
             raise ValueError(f"Run cannot be cancelled from state: {state}")
-        raise ValueError(f"Unsupported run control action: {action or '<empty>'}")
+        raise ValueError(
+            f"Unsupported run control action: {action or '<empty>'}",
+        )
 
     def clone_run(
         self,
@@ -2186,12 +2744,24 @@ class RunRepository:
             raise KeyError(run_id)
         if source.get("source") == "ugsci-legacy":
             raise ValueError("legacy runs are read-only")
-        if source.get("status") not in {RunStatus.FAILED, RunStatus.BLOCKED, RunStatus.CANCELLED}:
-            raise ValueError("Only failed, blocked, or cancelled runs can be retried")
+        if source.get("status") not in {
+            RunStatus.FAILED,
+            RunStatus.BLOCKED,
+            RunStatus.CANCELLED,
+        }:
+            raise ValueError(
+                "Only failed, blocked, or cancelled runs can be retried",
+            )
         return self.clone_run(
             run_id,
             idempotency_key=idempotency_key,
-            overrides={"retry_of": run_id, "retry_attempt": int((source.get("payload") or {}).get("retry_attempt") or 0) + 1},
+            overrides={
+                "retry_of": run_id,
+                "retry_attempt": int(
+                    (source.get("payload") or {}).get("retry_attempt") or 0,
+                )
+                + 1,
+            },
         )
 
     def list_runs(
@@ -2213,23 +2783,45 @@ class RunRepository:
         merged = {item["run_id"]: item for item in [*legacy, *own]}
         return sorted(
             merged.values(),
-            key=lambda item: str(item.get("updated_at") or item.get("created_at") or ""),
+            key=lambda item: str(
+                item.get("updated_at") or item.get("created_at") or "",
+            ),
             reverse=True,
         )[:limit]
 
     @staticmethod
-    def _query_status(value: Any) -> str:
+    def normalize_query_status(value: Any) -> str:
         """Normalize a user supplied status, rejecting typos explicitly."""
         candidate = str(value or "").strip().lower()
-        legacy = {"completed", "success", "timeout", "error", "interrupted", "unknown"}
+        legacy = {
+            "completed",
+            "success",
+            "timeout",
+            "error",
+            "interrupted",
+            "unknown",
+        }
         if candidate in legacy:
             return normalize_legacy_status(candidate)
         try:
             return RunStatus(candidate).value
         except ValueError as exc:
-            raise ValueError(f"Unsupported run status: {candidate or '<empty>'}") from exc
+            raise ValueError(
+                f"Unsupported run status: {candidate or '<empty>'}",
+            ) from exc
 
-    def _list_own_runs(self, status, operation, project_id, limit) -> list[dict[str, Any]]:
+    @staticmethod
+    def _query_status(value: Any) -> str:
+        """Retain the historical static helper for existing integrations."""
+        return RunRepository.normalize_query_status(value)
+
+    def _list_own_runs(
+        self,
+        status,
+        operation,
+        project_id,
+        limit,
+    ) -> list[dict[str, Any]]:
         if limit <= 0:
             return []
         clauses: list[str] = []
@@ -2256,14 +2848,23 @@ class RunRepository:
                 result.append(item)
             return result
 
+    def legacy_job_database(self) -> Path:
+        """Return the fixed legacy store for trusted read-only bridges."""
+        return self._legacy_database()
+
     def _legacy_database(self) -> Path:
         return _working_dir() / "ugsci" / "jobs.sqlite3"
 
     def legacy_bridge_status(self) -> dict[str, Any]:
-        """Return a non-sensitive health snapshot for the optional UGSci bridge."""
+        """Return a non-sensitive health snapshot for the optional UGSci \
+bridge."""
         database = self._legacy_database()
         if not database.is_file():
-            return {"available": False, "database": "jobs.sqlite3", "last_error": None}
+            return {
+                "available": False,
+                "database": "jobs.sqlite3",
+                "last_error": None,
+            }
         try:
             with sqlite3.connect(database, timeout=2) as conn:
                 conn.execute("SELECT 1 FROM jobs LIMIT 1").fetchone()
@@ -2273,9 +2874,19 @@ class RunRepository:
                 "database": "jobs.sqlite3",
                 "last_error": str(exc),
             }
-        return {"available": True, "database": "jobs.sqlite3", "last_error": None}
+        return {
+            "available": True,
+            "database": "jobs.sqlite3",
+            "last_error": None,
+        }
 
-    def _list_legacy_runs(self, status, operation, project_id, limit) -> list[dict[str, Any]]:
+    def _list_legacy_runs(
+        self,
+        status,
+        operation,
+        project_id,
+        limit,
+    ) -> list[dict[str, Any]]:
         database = self._legacy_database()
         if limit <= 0 or not database.is_file():
             return []
@@ -2286,7 +2897,10 @@ class RunRepository:
                 # payload-level filter is present, scan all retained legacy
                 # rows so matching jobs are not hidden behind newer rows that
                 # fail the filter (the legacy store itself prunes history).
-                query = "SELECT job_id, payload, updated_at FROM jobs ORDER BY updated_at DESC"
+                query = (
+                    "SELECT job_id, payload, updated_at FROM jobs "
+                    "ORDER BY updated_at DESC"
+                )
                 params: tuple[Any, ...] = ()
                 if not any((status, operation, project_id)):
                     query += " LIMIT ?"
@@ -2305,7 +2919,8 @@ class RunRepository:
                 status=str(payload.get("status") or "blocked"),
                 payload={
                     **payload,
-                    "created_at": payload.get("created_at") or row["updated_at"],
+                    "created_at": payload.get("created_at")
+                    or row["updated_at"],
                     "updated_at": row["updated_at"],
                     "source_run_id": source_run_id,
                 },
@@ -2325,7 +2940,10 @@ class RunRepository:
     def get_run(self, run_id: str) -> dict[str, Any] | None:
         self.initialize()
         with self._connection() as conn:
-            row = conn.execute("SELECT * FROM runs WHERE run_id = ?", (run_id,)).fetchone()
+            row = conn.execute(
+                "SELECT * FROM runs WHERE run_id = ?",
+                (run_id,),
+            ).fetchone()
         if row:
             return self._row_detail(row)
         source_run_id = run_id.removeprefix("ugsci:")
@@ -2335,18 +2953,22 @@ class RunRepository:
                 with sqlite3.connect(database, timeout=2) as conn:
                     conn.row_factory = sqlite3.Row
                     legacy = conn.execute(
-                        "SELECT job_id, payload, updated_at FROM jobs WHERE job_id = ? LIMIT 1",
+                        "SELECT job_id, payload, updated_at "
+                        "FROM jobs WHERE job_id = ? LIMIT 1",
                         (source_run_id,),
                     ).fetchone()
                 if legacy is not None:
                     payload = _json(legacy["payload"])
                     return run_summary(
                         f"ugsci:{source_run_id}",
-                        operation=str(payload.get("operation") or "simulation.run"),
+                        operation=str(
+                            payload.get("operation") or "simulation.run",
+                        ),
                         status=str(payload.get("status") or "blocked"),
                         payload={
                             **payload,
-                            "created_at": payload.get("created_at") or legacy["updated_at"],
+                            "created_at": payload.get("created_at")
+                            or legacy["updated_at"],
                             "updated_at": legacy["updated_at"],
                             "source_run_id": source_run_id,
                         },
@@ -2356,13 +2978,18 @@ class RunRepository:
                 pass
         return None
 
-    def list_events(self, run_id: str, after_sequence: int = 0) -> list[dict[str, Any]]:
+    def list_events(
+        self,
+        run_id: str,
+        after_sequence: int = 0,
+    ) -> list[dict[str, Any]]:
         self.initialize()
         with self._connection() as conn:
             native_exists = self._own_row(conn, run_id) is not None
             rows = conn.execute(
                 "SELECT sequence, event_type, payload, created_at "
-                "FROM run_events WHERE run_id = ? AND sequence > ? ORDER BY sequence",
+                "FROM run_events WHERE run_id = ? AND "
+                "sequence > ? ORDER BY sequence",
                 (run_id, max(0, after_sequence)),
             ).fetchall()
         if rows:
@@ -2419,6 +3046,16 @@ class RunRepository:
                     "event_type": event_type,
                     "data": data,
                     "created_at": row["created_at"],
-                }
+                },
             )
         return result
+
+
+class RunRepository(
+    _RunStorage,
+    _OperationRegistry,
+    _ProjectResources,
+    _RunComponents,
+    _RunLifecycle,
+):
+    """Owns the Run Center database and reads legacy UGSci jobs read-only."""

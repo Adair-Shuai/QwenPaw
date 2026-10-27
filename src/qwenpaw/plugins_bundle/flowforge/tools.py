@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Agent-facing tools backed by the same service as the workflow editor."""
 
 from __future__ import annotations
@@ -18,8 +19,9 @@ def _reply(value: Any, *, error: bool = False) -> ToolChunk:
         state=ToolResultState.ERROR if error else ToolResultState.SUCCESS,
         content=[
             TextBlock(
-                type="text", text=json.dumps(value, ensure_ascii=False, default=str)
-            )
+                type=("text"),
+                text=json.dumps(value, ensure_ascii=False, default=str),
+            ),
         ],
     )
 
@@ -32,11 +34,11 @@ def build_tools(service: WorkflowService) -> list:
         return _reply({"workflows": service.list_flows()})
 
     async def flowforge_get_workflow(flow_id: str) -> ToolChunk:
-        """Inspect a workflow definition and its input contract before running it.
-
-        Args:
-            flow_id: Saved workflow ID.
-        """
+        (
+            "Inspect a workflow definition and its input contract"
+            " before running it.\n\n        Args:\n            flow_"
+            "id: Saved workflow ID.\n        "
+        )
         flow = service.get_flow(flow_id)
         return _reply(
             flow if flow is not None else {"error": "Workflow not found"},
@@ -48,14 +50,17 @@ def build_tools(service: WorkflowService) -> list:
         inputs: dict[str, Any] | None = None,
         wait_seconds: float = 0,
     ) -> ToolChunk:
-        """Start a saved workflow and return its run ID, status and available outputs.
-
-        Args:
-            flow_id: Saved workflow ID; inspect its input contract first.
-            inputs: Business inputs keyed by the workflow's input names.
-            wait_seconds: Wait up to 60 seconds for completion. Zero returns immediately.
-                Expiry leaves the run active; query its run ID instead of starting again.
-        """
+        (
+            "Start a saved workflow and return its run ID, status"
+            " and available outputs.\n\n        Args:\n            f"
+            "low_id: Saved workflow ID; inspect its input contrac"
+            "t first.\n            inputs: Business inputs keyed b"
+            "y the workflow's input names.\n            wait_secon"
+            "ds: Wait up to 60 seconds for completion. Zero retur"
+            "ns immediately.\n                Expiry leaves the ru"
+            "n active; query its run ID instead of starting again"
+            ".\n        "
+        )
         try:
             if not math.isfinite(wait_seconds) or not 0 <= wait_seconds <= 60:
                 raise ValueError("wait_seconds must be between 0 and 60")
@@ -63,9 +68,14 @@ def build_tools(service: WorkflowService) -> list:
         except (ValueError, FileNotFoundError) as exc:
             return _reply({"error": str(exc)}, error=True)
         deadline = asyncio.get_running_loop().time() + wait_seconds
-        while not handle.is_done and asyncio.get_running_loop().time() < deadline:
+        while (
+            not handle.is_done and asyncio.get_running_loop().time() < deadline
+        ):
             await asyncio.sleep(
-                min(0.05, max(0, deadline - asyncio.get_running_loop().time()))
+                min(
+                    0.05,
+                    max(0, deadline - asyncio.get_running_loop().time()),
+                ),
             )
         record = handle.to_dict()
         return _reply(record, error=record["status"] == "failed")
@@ -90,7 +100,11 @@ def build_tools(service: WorkflowService) -> list:
         """
         found = service.cancel_run(run_id)
         return _reply(
-            {"run_id": run_id, "found": found, "run": service.get_run_record(run_id)},
+            {
+                ("run_id"): run_id,
+                ("found"): found,
+                ("run"): service.get_run_record(run_id),
+            },
             error=not found,
         )
 

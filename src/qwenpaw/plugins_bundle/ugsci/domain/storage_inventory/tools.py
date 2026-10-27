@@ -1,8 +1,7 @@
 # -*- coding: utf-8 -*-
 """Agent-facing tools for deterministic storage-inventory evaluation."""
 
-import json
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, cast
 
 from pydantic import Field
 from typing_extensions import NotRequired, Required, TypedDict
@@ -44,12 +43,15 @@ InjectionStateId = Annotated[
 ]
 EvaluationStateId = Annotated[
     str,
-    Field(description="Later production/evaluation equilibrium-state identifier"),
+    Field(
+        description="Later production/evaluation equilibrium-state identifier",
+    ),
 ]
 GasVolumeUnit = Annotated[
     str,
     Field(
-        description="Common standard-gas volume unit for every inventory and gas-volume input"
+        description="Common standard-gas volume unit for every inventory "
+        "and gas-volume input",
     ),
 ]
 PressureUnit = Annotated[
@@ -60,7 +62,8 @@ PressureBasis = Literal["absolute", "apparent_formation", "report_defined"]
 GasRateUnit = Annotated[
     str,
     Field(
-        description="Standard-gas daily-rate unit shared by actual and design peak rate"
+        description="Standard-gas daily-rate unit shared by actual and "
+        "design peak rate",
     ),
 ]
 
@@ -68,37 +71,100 @@ GasRateUnit = Annotated[
 class StorageCapacityLayerInput(TypedDict):
     """Pressure-envelope inputs for one storage layer."""
 
-    name: Annotated[str, Field(description="Unique layer or reservoir-unit name")]
+    name: Annotated[
+        str,
+        Field(description="Unique layer or reservoir-unit name"),
+    ]
     pore_volume: Annotated[float, Field(description="Connected pore volume")]
-    maximum_pressure: Annotated[float, Field(description="Maximum operating pressure")]
-    maximum_z: Annotated[float, Field(description="Z factor at maximum pressure")]
-    minimum_pressure: Annotated[float, Field(description="Minimum operating pressure")]
-    minimum_z: Annotated[float, Field(description="Z factor at minimum pressure")]
-    temperature: Annotated[float, Field(description="Representative reservoir temperature")]
+    maximum_pressure: Annotated[
+        float,
+        Field(description="Maximum operating pressure"),
+    ]
+    maximum_z: Annotated[
+        float,
+        Field(description="Z factor at maximum pressure"),
+    ]
+    minimum_pressure: Annotated[
+        float,
+        Field(description="Minimum operating pressure"),
+    ]
+    minimum_z: Annotated[
+        float,
+        Field(description="Z factor at minimum pressure"),
+    ]
+    temperature: Annotated[
+        float,
+        Field(description="Representative reservoir temperature"),
+    ]
 
 
 class StorageAllocationWellInput(TypedDict):
     """Well bounds used by injection and production allocation tools."""
 
-    name: Required[Annotated[str, Field(description="Unique well or well-group name")]]
-    maximum_rate: Required[Annotated[float, Field(description="Maximum allowable standard-gas rate")]]
-    minimum_rate: NotRequired[Annotated[float, Field(description="Minimum operating rate; defaults to zero")]]
-    weight: NotRequired[Annotated[float, Field(description="Priority weight for residual allocation; defaults to one")]]
-    available: NotRequired[Annotated[bool, Field(description="Whether the well is available in this scenario")]]
+    name: Required[
+        Annotated[str, Field(description="Unique well or well-group name")]
+    ]
+    maximum_rate: Required[
+        Annotated[
+            float,
+            Field(description="Maximum allowable standard-gas rate"),
+        ]
+    ]
+    minimum_rate: NotRequired[
+        Annotated[
+            float,
+            Field(description="Minimum operating rate; defaults to zero"),
+        ]
+    ]
+    weight: NotRequired[
+        Annotated[
+            float,
+            Field(
+                description="Priority weight for residual allocation; "
+                "defaults to one",
+            ),
+        ]
+    ]
+    available: NotRequired[
+        Annotated[
+            bool,
+            Field(
+                description="Whether the well is available in this scenario",
+            ),
+        ]
+    ]
 
 
 class StorageScenarioInput(TypedDict):
-    """Candidate scenario metrics for transparent ranking and Pareto screening."""
+    (
+        "Candidate scenario metrics for transparent ranking and "
+        "Pareto screening."
+    )
 
     name: Required[Annotated[str, Field(description="Unique scenario name")]]
-    metrics: Required[Annotated[dict[str, float], Field(description="Scalar metric values keyed by objective/constraint name")]]
-    metadata: NotRequired[Annotated[dict[str, str], Field(description="Optional scenario metadata")]]
+    metrics: Required[
+        Annotated[
+            dict[str, float],
+            Field(
+                description="Scalar metric values keyed by "
+                "objective/constraint name",
+            ),
+        ]
+    ]
+    metadata: NotRequired[
+        Annotated[
+            dict[str, str],
+            Field(description="Optional scenario metadata"),
+        ]
+    ]
 
 
 class StorageScenarioObjectiveInput(TypedDict):
     key: Required[Annotated[str, Field(description="Metric key to optimize")]]
     direction: NotRequired[Literal["maximize", "minimize"]]
-    weight: NotRequired[Annotated[float, Field(description="Positive objective weight")]]
+    weight: NotRequired[
+        Annotated[float, Field(description="Positive objective weight")]
+    ]
 
 
 class StorageScenarioConstraintInput(TypedDict):
@@ -110,35 +176,47 @@ class StorageScenarioConstraintInput(TypedDict):
 class EffectiveInventoryLayerInput(TypedDict):
     """Public schema for one layer in the p/Z effective-inventory tools."""
 
-    name: Annotated[str, Field(description="Unique layer or reservoir-unit name")]
+    name: Annotated[
+        str,
+        Field(description="Unique layer or reservoir-unit name"),
+    ]
     produced_gas: Annotated[
-        float, Field(description="Gas produced from injection end to evaluation state")
+        float,
+        Field(
+            description="Gas produced from injection end to evaluation state",
+        ),
     ]
     injection_end_pressure: Annotated[
         float,
         Field(
             description=(
-                "Average equilibrium formation pressure at injection end; interpret "
-                "according to the explicit pressure_basis (for example, the report's "
-                "视地层压力); no implicit conversion is performed"
-            )
+                "Average equilibrium formation pressure at injection "
+                "end; interpret according to the explicit "
+                "pressure_basis (for example, the report's 视地层压力); no "
+                "implicit conversion is performed"
+            ),
         ),
     ]
     injection_end_z: Annotated[
-        float, Field(description="Z factor at injection-end pressure and temperature")
+        float,
+        Field(
+            description="Z factor at injection-end pressure and temperature",
+        ),
     ]
     evaluation_pressure: Annotated[
         float,
         Field(
             description=(
-                "Average equilibrium formation pressure at evaluation state; interpret "
-                "according to the explicit pressure_basis (for example, the report's "
-                "视地层压力); no implicit conversion is performed"
-            )
+                "Average equilibrium formation pressure at evaluation "
+                "state; interpret according to the explicit "
+                "pressure_basis (for example, the report's 视地层压力); no "
+                "implicit conversion is performed"
+            ),
         ),
     ]
     evaluation_z: Annotated[
-        float, Field(description="Z factor at evaluation pressure and temperature")
+        float,
+        Field(description="Z factor at evaluation pressure and temperature"),
     ]
 
 
@@ -151,7 +229,8 @@ def _error(exc: Exception) -> Any:
         domain_error = exc
     elif isinstance(exc, (TypeError, ValueError, KeyError)):
         domain_error = DomainError(
-            DomainErrorCode.INVALID_INPUT, f"Invalid storage inventory input: {exc}"
+            DomainErrorCode.INVALID_INPUT,
+            f"Invalid storage inventory input: {exc}",
         )
     else:
         domain_error = wrap_unknown_error(exc)
@@ -191,11 +270,17 @@ async def ugsci_storage_inventory_accounting(
     ],
     cumulative_injected: Annotated[
         float,
-        Field(description="Cumulative injected gas over the same accounting period"),
+        Field(
+            description="Cumulative injected gas over the same accounting "
+            "period",
+        ),
     ],
     cumulative_produced: Annotated[
         float,
-        Field(description="Cumulative produced gas over the same accounting period"),
+        Field(
+            description="Cumulative produced gas over the same accounting "
+            "period",
+        ),
     ],
     gas_volume_unit: GasVolumeUnit = "1e8_sm3",
 ) -> Any:
@@ -235,24 +320,37 @@ async def ugsci_storage_effective_inventory(
     pressure_basis: Annotated[
         PressureBasis,
         Field(
-            description="Explicit pressure basis shared by both states; use apparent_formation for 视地层压力; do not mix or silently convert"
+            description="Explicit pressure basis shared by both states; use "
+            "apparent_formation for 视地层压力; do not mix or "
+            "silently convert",
         ),
     ] = "absolute",
 ) -> Any:
-    """Calculate layer-first effective controlled inventory using the p/Z formula.
-
-    Every layer requires: name, produced_gas, injection_end_pressure,
-    injection_end_z, evaluation_pressure and evaluation_z.
-
-    Args:
-        layers: Layer-specific production, pressure and Z-factor data.
-        cycle_id: Evaluation-cycle identifier.
-        injection_end_state_id: Injection-end equilibrium-state identifier.
-        evaluation_state_id: Later evaluation equilibrium-state identifier.
-        gas_volume_unit: Common standard-gas volume unit for every gas volume.
-        pressure_unit: Pressure unit shared by every layer.
-        pressure_basis: Explicit basis shared by both states; use apparent_formation for 视地层压力.
-    """
+    (
+        "Calculate layer-first effective controlled inventory "
+        "using the p/Z formula.\n"
+        "\n"
+        "    Every layer requires: name, produced_gas, "
+        "injection_end_pressure,\n"
+        "    injection_end_z, evaluation_pressure and "
+        "evaluation_z.\n"
+        "\n"
+        "    Args:\n"
+        "        layers: Layer-specific production, pressure "
+        "and Z-factor data.\n"
+        "        cycle_id: Evaluation-cycle identifier.\n"
+        "        injection_end_state_id: Injection-end "
+        "equilibrium-state identifier.\n"
+        "        evaluation_state_id: Later evaluation "
+        "equilibrium-state identifier.\n"
+        "        gas_volume_unit: Common standard-gas volume "
+        "unit for every gas volume.\n"
+        "        pressure_unit: Pressure unit shared by every "
+        "layer.\n"
+        "        pressure_basis: Explicit basis shared by both "
+        "states; use apparent_formation for 视地层压力.\n"
+        "    "
+    )
     try:
         request = _effective_request(
             layers,
@@ -281,54 +379,64 @@ async def ugsci_storage_inventory_evaluate(
     evaluation_state_id: EvaluationStateId,
     design_capacity: Annotated[
         float,
-        Field(description="Approved design total capacity, in gas_volume_unit"),
+        Field(
+            description="Approved design total capacity, in gas_volume_unit",
+        ),
     ],
     book_inventory: Annotated[
         float | None,
         Field(
-            description="Known book inventory; omit when providing all three accounting inputs"
+            description="Known book inventory; omit when providing all three "
+            "accounting inputs",
         ),
     ] = None,
     initial_inventory: Annotated[
         float | None,
         Field(
-            description="Accounting-period initial inventory; provide with both cumulative totals"
+            description="Accounting-period initial inventory; provide with "
+            "both cumulative totals",
         ),
     ] = None,
     cumulative_injected: Annotated[
         float | None,
         Field(
-            description="Period cumulative injected gas; provide with the other accounting inputs"
+            description="Period cumulative injected gas; provide with the "
+            "other accounting inputs",
         ),
     ] = None,
     cumulative_produced: Annotated[
         float | None,
         Field(
-            description="Period cumulative produced gas; provide with the other accounting inputs"
+            description="Period cumulative produced gas; provide with the "
+            "other accounting inputs",
         ),
     ] = None,
     working_gas: Annotated[
         float | None,
         Field(
-            description="Actual cyclic working gas; provide together with design_working_gas"
+            description="Actual cyclic working gas; provide together with "
+            "design_working_gas",
         ),
     ] = None,
     design_working_gas: Annotated[
         float | None,
         Field(
-            description="Design cyclic working gas; provide together with working_gas"
+            description="Design cyclic working gas; provide together with "
+            "working_gas",
         ),
     ] = None,
     peak_daily_rate: Annotated[
         float | None,
         Field(
-            description="Actual standard-gas peak daily rate; provide with design peak rate"
+            description="Actual standard-gas peak daily rate; provide with "
+            "design peak rate",
         ),
     ] = None,
     design_peak_daily_rate: Annotated[
         float | None,
         Field(
-            description="Design standard-gas peak daily rate; provide with actual peak rate"
+            description="Design standard-gas peak daily rate; provide with "
+            "actual peak rate",
         ),
     ] = None,
     gas_volume_unit: GasVolumeUnit = "1e8_sm3",
@@ -336,40 +444,67 @@ async def ugsci_storage_inventory_evaluate(
     pressure_basis: Annotated[
         PressureBasis,
         Field(
-            description="Explicit pressure basis shared by both states; use apparent_formation for 视地层压力; do not mix or silently convert"
+            description="Explicit pressure basis shared by both states; use "
+            "apparent_formation for 视地层压力; do not mix or "
+            "silently convert",
         ),
     ] = "absolute",
     daily_rate_unit: GasRateUnit = "1e4_sm3/d",
 ) -> Any:
-    """Evaluate separated book, effective, working-gas and peak-capacity indicators.
-
-    Every layer requires: name, produced_gas, injection_end_pressure,
-    injection_end_z, evaluation_pressure and evaluation_z.  This composite
-    operation already returns per-layer values, so callers do not need a
-    separate effective-inventory call before it.  Provide either a known book
-    inventory or all three injection/production accounting inputs.  The
-    agent-facing calculation always returns a pending-review result; it cannot
-    declare a result reviewed or approved.
-
-    Args:
-        layers: Layer-specific production, pressure and Z-factor data.
-        cycle_id: Evaluation-cycle identifier.
-        injection_end_state_id: Injection-end equilibrium-state identifier.
-        evaluation_state_id: Later evaluation equilibrium-state identifier.
-        design_capacity: Approved design total capacity in gas_volume_unit.
-        book_inventory: Known book inventory; omit when using accounting inputs.
-        initial_inventory: Initial inventory; provide with both cumulative totals.
-        cumulative_injected: Cumulative injected gas for the accounting period.
-        cumulative_produced: Cumulative produced gas for the accounting period.
-        working_gas: Actual cyclic working gas; pair with design_working_gas.
-        design_working_gas: Design cyclic working gas; pair with working_gas.
-        peak_daily_rate: Actual standard-gas peak rate; pair with design peak rate.
-        design_peak_daily_rate: Design standard-gas peak daily rate.
-        gas_volume_unit: Common standard-gas volume unit for all gas volumes.
-        pressure_unit: Pressure unit shared by every layer.
-        pressure_basis: Explicit basis shared by both states; use apparent_formation for 视地层压力.
-        daily_rate_unit: Standard-gas daily-rate unit for both peak rates.
-    """
+    (
+        "Evaluate separated book, effective, working-gas and "
+        "peak-capacity indicators.\n"
+        "\n"
+        "    Every layer requires: name, produced_gas, "
+        "injection_end_pressure,\n"
+        "    injection_end_z, evaluation_pressure and "
+        "evaluation_z.  This composite\n"
+        "    operation already returns per-layer values, so "
+        "callers do not need a\n"
+        "    separate effective-inventory call before it.  "
+        "Provide either a known book\n"
+        "    inventory or all three injection/production "
+        "accounting inputs.  The\n"
+        "    agent-facing calculation always returns a "
+        "pending-review result; it cannot\n"
+        "    declare a result reviewed or approved.\n"
+        "\n"
+        "    Args:\n"
+        "        layers: Layer-specific production, pressure "
+        "and Z-factor data.\n"
+        "        cycle_id: Evaluation-cycle identifier.\n"
+        "        injection_end_state_id: Injection-end "
+        "equilibrium-state identifier.\n"
+        "        evaluation_state_id: Later evaluation "
+        "equilibrium-state identifier.\n"
+        "        design_capacity: Approved design total "
+        "capacity in gas_volume_unit.\n"
+        "        book_inventory: Known book inventory; omit "
+        "when using accounting inputs.\n"
+        "        initial_inventory: Initial inventory; provide "
+        "with both cumulative totals.\n"
+        "        cumulative_injected: Cumulative injected gas "
+        "for the accounting period.\n"
+        "        cumulative_produced: Cumulative produced gas "
+        "for the accounting period.\n"
+        "        working_gas: Actual cyclic working gas; pair "
+        "with design_working_gas.\n"
+        "        design_working_gas: Design cyclic working gas; "
+        "pair with working_gas.\n"
+        "        peak_daily_rate: Actual standard-gas peak "
+        "rate; pair with design peak rate.\n"
+        "        design_peak_daily_rate: Design standard-gas "
+        "peak daily rate.\n"
+        "        gas_volume_unit: Common standard-gas volume "
+        "unit for all gas volumes.\n"
+        "        pressure_unit: Pressure unit shared by every "
+        "layer.\n"
+        "        pressure_basis: Explicit basis shared by both "
+        "states; use apparent_formation for 视地层压力.\n"
+        "        daily_rate_unit: Standard-gas daily-rate unit "
+        "for both peak rates.\n"
+        "    "
+    )
     try:
         effective = _effective_request(
             layers,
@@ -406,9 +541,15 @@ async def ugsci_storage_inventory_evaluate(
 
 async def ugsci_storage_capacity_evaluate(
     layers: list[StorageCapacityLayerInput],
-    pore_volume_unit: Annotated[str, Field(description="Pore-volume unit, for example m3")]= "m3",
+    pore_volume_unit: Annotated[
+        str,
+        Field(description="Pore-volume unit, for example m3"),
+    ] = "m3",
     pressure_unit: PressureUnit = "MPa",
-    temperature_unit: Annotated[str, Field(description="Temperature unit, for example K")]= "K",
+    temperature_unit: Annotated[
+        str,
+        Field(description="Temperature unit, for example K"),
+    ] = "K",
     standard_pressure: Annotated[
         float,
         Field(description="Standard-state pressure in pressure_unit"),
@@ -429,7 +570,12 @@ async def ugsci_storage_capacity_evaluate(
     try:
         if not isinstance(layers, list):
             raise ValueError("layers must be an array")
-        requests = tuple(StorageCapacityLayerRequest(**dict(layer)) for layer in layers)
+        requests = tuple(
+            StorageCapacityLayerRequest(
+                **cast(StorageCapacityLayerInput, dict(layer)),
+            )
+            for layer in layers
+        )
         request = StorageCapacityEvaluationRequest(
             layers=requests,
             pore_volume_unit=pore_volume_unit,
@@ -450,7 +596,9 @@ async def ugsci_storage_capacity_evaluate(
         return _error(exc)
 
 
-def _allocation_wells(values: list[StorageAllocationWellInput]) -> tuple[StorageAllocationWellRequest, ...]:
+def _allocation_wells(
+    values: list[StorageAllocationWellInput],
+) -> tuple[StorageAllocationWellRequest, ...]:
     if not isinstance(values, list):
         raise ValueError("wells must be an array")
     return tuple(
@@ -467,16 +615,27 @@ def _allocation_wells(values: list[StorageAllocationWellInput]) -> tuple[Storage
 
 async def ugsci_storage_injection_allocation_optimize(
     wells: list[StorageAllocationWellInput],
-    target_rate: Annotated[float, Field(description="Requested total injection rate")],
+    target_rate: Annotated[
+        float,
+        Field(description="Requested total injection rate"),
+    ],
     rate_unit: GasRateUnit = "1e4_sm3/d",
-    require_feasible: Annotated[bool, Field(description="Fail when target is outside aggregate bounds")]=False,
+    require_feasible: Annotated[
+        bool,
+        Field(description="Fail when target is outside aggregate bounds"),
+    ] = False,
 ) -> Any:
-    """Allocate storage injection across available wells using bounded weighted filling.
-
-    This is a screening recommendation that exposes aggregate shortfall or
-    oversupply. It does not model pressure interference, network hydraulics or
-    transient well behavior.
-    """
+    (
+        "Allocate storage injection across available wells "
+        "using bounded weighted filling.\n"
+        "\n"
+        "    This is a screening recommendation that exposes "
+        "aggregate shortfall or\n"
+        "    oversupply. It does not model pressure "
+        "interference, network hydraulics or\n"
+        "    transient well behavior.\n"
+        "    "
+    )
     try:
         request = StorageInjectionAllocationRequest(
             wells=_allocation_wells(wells),
@@ -497,9 +656,15 @@ async def ugsci_storage_injection_allocation_optimize(
 
 async def ugsci_storage_production_allocation_optimize(
     wells: list[StorageAllocationWellInput],
-    demand_rate: Annotated[float, Field(description="Requested total production/deliverability rate")],
+    demand_rate: Annotated[
+        float,
+        Field(description="Requested total production/deliverability rate"),
+    ],
     rate_unit: GasRateUnit = "1e4_sm3/d",
-    require_feasible: Annotated[bool, Field(description="Fail when demand is outside aggregate bounds")]=False,
+    require_feasible: Annotated[
+        bool,
+        Field(description="Fail when demand is outside aggregate bounds"),
+    ] = False,
 ) -> Any:
     """Allocate storage production demand across available wells."""
     try:
@@ -524,17 +689,29 @@ async def ugsci_storage_scenario_optimize(
     scenarios: list[StorageScenarioInput],
     objectives: list[StorageScenarioObjectiveInput],
     constraints: list[StorageScenarioConstraintInput] | None = None,
-    metric_unit: Annotated[str, Field(description="Optional common metric unit label")]= "",
+    metric_unit: Annotated[
+        str,
+        Field(description="Optional common metric unit label"),
+    ] = "",
 ) -> Any:
-    """Rank storage scenarios with constraints, weighted scores and a Pareto front."""
+    (
+        "Rank storage scenarios with constraints, weighted "
+        "scores and a Pareto front."
+    )
     try:
         if not isinstance(scenarios, list) or not isinstance(objectives, list):
             raise ValueError("scenarios and objectives must be arrays")
         scenario_requests = tuple(
             StorageScenarioRequest(
                 name=str(item["name"]),
-                metrics={str(key): float(value) for key, value in dict(item["metrics"]).items()},
-                metadata={str(key): str(value) for key, value in dict(item.get("metadata") or {}).items()},
+                metrics={
+                    str(key): float(value)
+                    for key, value in dict(item["metrics"]).items()
+                },
+                metadata={
+                    str(key): str(value)
+                    for key, value in dict(item.get("metadata") or {}).items()
+                },
             )
             for item in scenarios
         )

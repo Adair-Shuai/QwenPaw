@@ -208,7 +208,11 @@ def identifier(value):
 
 
 def shared_fields(fields):
-    return [copy.deepcopy(f) for f in fields if f["key"].startswith(SHARED_PREFIXES)]
+    return [
+        copy.deepcopy(f)
+        for f in fields
+        if f["key"].startswith(SHARED_PREFIXES)
+    ]
 
 
 def values(fields):
@@ -364,14 +368,16 @@ def approval_from_pdf(content):
             sorted(
                 (item for item in body if low <= item[1] < high),
                 key=lambda item: (-item[0], item[1]),
-            )
+            ),
         )
         for key, (low, high) in columns.items()
     }
     extracted["project.executing_unit"] = unit_match.group(1).strip()
     # Keep numbered research items readable in the form and generated files.
     extracted["research.contents"] = re.sub(
-        r"(?<!^)\s*(?=\d+[.、])", "\n", extracted["research.contents"]
+        r"(?<!^)\s*(?=\d+[.、])",
+        "\n",
+        extracted["research.contents"],
     )
     extracted["funding.wbs"] = re.sub(r"\s+", "", extracted["funding.wbs"])
     labels = dict(APPROVAL_FIELDS)
@@ -401,8 +407,8 @@ def approval_from_pdf(content):
     }
 
 
-class ProjectStore:
-    """JSON metadata is committed atomically; attachments are immutable."""
+class _ProjectStorage:
+    """Atomic project metadata and shared stage/material addressing."""
 
     def __init__(self, host):
         self.host = host
@@ -420,12 +426,17 @@ class ProjectStore:
         current_stages = {stage["id"]: stage for stage in project["stages"]}
         if set(current_stages) != STAGE_IDS:
             project["stages"] = [
-                current_stages.get(stage["id"], stage) for stage in default_stages()
+                current_stages.get(stage["id"], stage)
+                for stage in default_stages()
             ]
             migrated = True
-        negotiation = next(s for s in project["stages"] if s["id"] == "negotiation")
+        negotiation = next(
+            s for s in project["stages"] if s["id"] == "negotiation"
+        )
         if not any(m["name"] == "服务选商实施方案" for m in negotiation["materials"]):
-            default = next(s for s in default_stages() if s["id"] == "negotiation")
+            default = next(
+                s for s in default_stages() if s["id"] == "negotiation"
+            )
             negotiation["materials"].insert(0, default["materials"][0])
             migrated = True
         for stage in project["stages"]:
@@ -438,9 +449,13 @@ class ProjectStore:
                         or file["approval"].get("parser_version") == 1
                     ):
                         continue
-                    source = self.path(root, project_id) / "files" / file["storage"]
+                    source = (
+                        self.path(root, project_id) / "files" / file["storage"]
+                    )
                     if source.is_file():
-                        file["approval"] = approval_from_pdf(source.read_bytes())
+                        file["approval"] = approval_from_pdf(
+                            source.read_bytes(),
+                        )
                         migrated = True
         existing = {f["key"] for f in project["fields"]}
         project["fields"].extend(
@@ -485,6 +500,23 @@ class ProjectStore:
             raise HTTPException(404, "材料不存在")
         return stage, result
 
+    def touch(self, project, stage, root):
+        if stage["acknowledged"] is None:
+            stage["acknowledged"] = self.dependencies(
+                project,
+                stage["id"],
+                root,
+            )
+        stage["content_revision"] += 1
+        if stage["status"] in {"pending", "completed"}:
+            stage["status"] = "in_progress"
+        stage["completed_at"] = None
+        project["revision"] += 1
+
+
+class _ProjectForms(_ProjectStorage):
+    """Form preparation, linked stage content and field synchronization."""
+
     def form_fingerprint(self, root, project, stage_id):
         states = []
         for link in project["forms"]:
@@ -496,7 +528,11 @@ class ProjectStore:
                         (
                             case["id"],
                             content_digest(
-                                (case if case.get("stage_id") == stage_id else context),
+                                (
+                                    case
+                                    if case.get("stage_id") == stage_id
+                                    else context
+                                ),
                             ),
                             [
                                 g["id"]
@@ -535,131 +571,6 @@ class ProjectStore:
             ]
         return prior
 
-    def touch(self, project, stage, root):
-        if stage["acknowledged"] is None:
-            stage["acknowledged"] = self.dependencies(
-                project,
-                stage["id"],
-                root,
-            )
-        stage["content_revision"] += 1
-        if stage["status"] in {"pending", "completed"}:
-            stage["status"] = "in_progress"
-        stage["completed_at"] = None
-        project["revision"] += 1
-
-    def create(self, root, body, fields=None, persist=True):
-        fields = shared_fields(fields or self.host.builtin.blank_fields())
-        existing = {f["key"] for f in fields}
-        fields.extend(
-            f
-            for f in self.host.builtin.additional_shared_fields()
-            if f["key"] not in existing
-        )
-        if not any(f["key"] == "project.code" for f in fields):
-            fields.append(
-                {
-                    "key": "project.code",
-                    "label": "项目编号",
-                    "group": "项目资料",
-                    "kind": "text",
-                    "required": False,
-                    "value": body.code.strip(),
-                },
-            )
-        for field in fields:
-            if field["key"] == "project.name":
-                field["value"] = body.name.strip()
-            if field["key"] == "project.code":
-                field["value"] = body.code.strip()
-        project = {
-            "id": uuid.uuid4().hex,
-            "name": body.name.strip(),
-            "code": body.code.strip(),
-            "owner": body.owner.strip(),
-            "fields": fields,
-            "shared_revision": 1,
-            "revision": 1,
-            "created_at": now(),
-            "stages": default_stages(),
-            "forms": [],
-        }
-        if persist:
-            self.save(root, project)
-        return project
-
-    def all_projects(self, root):
-        return [
-            json.loads(p.read_text(encoding="utf-8"))
-            for p in root.glob("projects/*/project.json")
-        ]
-
-    def migrate(self, root):
-        """Index legacy drafts without rewriting their bytes or outputs."""
-        projects = self.all_projects(root)
-        linked = {f["case_id"] for p in projects for f in p["forms"]}
-        drafts = [
-            json.loads(p.read_text(encoding="utf-8")) for p in root.glob("*/draft.json")
-        ]
-        for case in sorted(
-            drafts,
-            key=lambda c: c["updated_at"],
-            reverse=True,
-        ):
-            if case["id"] in linked:
-                continue
-            data = values(case["fields"])
-            name = data.get("project.name", "").strip() or case["name"]
-            code = data.get("project.code", "").strip()
-            identity = "code:" + code if code else "name:" + name
-            project = next(
-                (
-                    p
-                    for p in projects
-                    if p["id"] == case.get("project_id")
-                    or p.get("legacy_identity") == identity
-                ),
-                None,
-            )
-            if project is None:
-                project = self.create(
-                    root,
-                    ProjectBody(name=name, code=code),
-                    case["fields"],
-                    persist=False,
-                )
-                project["legacy_identity"] = identity
-                project["migrated"] = True
-                project["created_at"] = case["updated_at"]
-                project["updated_at"] = case["updated_at"]
-                projects.append(project)
-            stage_id = case.get("stage_id", "negotiation")
-            project["forms"].append(
-                {"case_id": case["id"], "stage_id": stage_id},
-            )
-            stage = self.stage(project, stage_id)
-            stage["status"] = "in_progress"
-            stage["content_revision"] += 1
-            stage["acknowledged"] = self.dependencies(project, stage_id, root)
-            project["updated_at"] = max(
-                project["updated_at"],
-                case["updated_at"],
-            )
-            self.save(root, project, update_time=False)
-            linked.add(case["id"])
-        for project in projects:
-            if project.get("migrated") and not project.get(
-                "legacy_order_version",
-            ):
-                if project["revision"] == 1:
-                    ids = {f["case_id"] for f in project["forms"]}
-                    dates = [c["updated_at"] for c in drafts if c["id"] in ids]
-                    if dates:
-                        project["updated_at"] = max(dates)
-                project["legacy_order_version"] = 1
-                self.save(root, project, update_time=False)
-        return projects
-
     def form_summary(self, root, project, link):
         case = self.host.load(root, link["case_id"])
         current = values(project["fields"])
@@ -670,7 +581,8 @@ class ProjectStore:
         changed = [
             f["key"]
             for f in case["fields"]
-            if f["key"] in current and snapshot.get(f["key"]) != current[f["key"]]
+            if f["key"] in current
+            and snapshot.get(f["key"]) != current[f["key"]]
         ]
         return {
             "case_id": case["id"],
@@ -693,200 +605,6 @@ class ProjectStore:
                 for g in case["generations"]
             ],
         }
-
-    def public(self, root, project):
-        result = copy.deepcopy(project)
-        result["single_form"] = True
-        result["forms"] = [
-            self.form_summary(root, project, f) for f in project["forms"]
-        ]
-        result["forms"].sort(key=lambda f: f["updated_at"], reverse=True)
-        for stage in result["stages"]:
-            expected = stage["acknowledged"]
-            current = self.dependencies(project, stage["id"], root)
-            stage["upstream_changed"] = [
-                s["title"]
-                for s in project["stages"]
-                if expected is not None
-                and s["id"] in expected
-                and current[s["id"]] != expected[s["id"]]
-            ]
-            stage["documents_changed"] = stage["status"] == "completed" and stage.get(
-                "confirmed_forms",
-            ) != self.form_fingerprint(
-                root,
-                project,
-                stage["id"],
-            )
-            stage["missing_required"] = [
-                m["name"]
-                for m in stage["materials"]
-                if m["required"] and m["status"] not in {"done", "na"}
-            ]
-            for material in stage["materials"]:
-                for file in material["files"]:
-                    approval = file.get("approval")
-                    if approval:
-                        file["approval_review"] = self.approval_review(
-                            root, project, approval
-                        )
-                        file.pop("approval", None)
-                    source = self.path(root, project["id"]) / "files" / file["storage"]
-                    file["preview_url"] = "/api/files/preview/" + quote(
-                        str(source),
-                        safe="",
-                    )
-                    file.pop("storage", None)
-        return result
-
-    def approval_review(self, root, project, approval):
-        review = copy.deepcopy(approval)
-        if review.get("status") != "ready":
-            return review
-        current = values(project["fields"])
-        case_id = project.get("form_id")
-        if case_id:
-            case = self.host.load(root, case_id)
-            context = (
-                case
-                if case.get("stage_id") == "plan"
-                else case.get("stage_contexts", {}).get("plan", {})
-            )
-            current.update(values(context.get("fields", [])))
-        for field in review["fields"]:
-            field["current"] = current.get(field["key"], "")
-            field["changed"] = field["current"].strip() != field["value"].strip()
-        review["change_count"] = sum(f["changed"] for f in review["fields"])
-        return review
-
-    def apply_approval(self, root, project, file_id, keys):
-        file = next(
-            (
-                file
-                for stage in project["stages"]
-                for material in stage["materials"]
-                for file in material["files"]
-                if file["id"] == file_id
-            ),
-            None,
-        )
-        if not file or file.get("approval", {}).get("status") != "ready":
-            raise HTTPException(404, "审批比对结果不存在")
-        approved = {
-            field["key"]: field["value"] for field in file["approval"]["fields"]
-        }
-        if set(keys) - set(approved):
-            raise HTTPException(422, "所选审批字段无效")
-        before = values(project["fields"])
-        for field in project["fields"]:
-            if field["key"] in keys:
-                field["value"] = approved[field["key"]]
-        if "project.name" in keys:
-            project["name"] = approved["project.name"]
-        shared_changed = before != values(project["fields"])
-        case_id = project.get("form_id")
-        if case_id:
-            case = self.host.load(root, case_id)
-            context = (
-                case
-                if case.get("stage_id") == "plan"
-                else case.get("stage_contexts", {}).get("plan")
-            )
-            if context:
-                snapshot = context.setdefault("project_snapshot", {})
-                for field in context.get("fields", []):
-                    if field["key"] in keys:
-                        field["value"] = approved[field["key"]]
-                        if field.get("scope") == "shared":
-                            snapshot[field["key"]] = approved[field["key"]]
-                context["review_token"] = None
-                context["revision"] = int(context.get("revision", case["revision"])) + 1
-                case["revision"] += 1
-                case["review_token"] = None
-                self.host.save(root, case)
-        if shared_changed:
-            project["shared_revision"] += 1
-        file["approval"]["applied_at"] = now()
-        file["approval"]["applied_keys"] = sorted(set(keys))
-        self.touch(project, self.stage(project, "plan"), root)
-        self.save(root, project)
-        return self.public(root, project)
-
-    def add_case(self, root, project, stage_id, workbook=None):
-        self.stage(project, stage_id)
-        if workbook:
-            try:
-                data = self.host.read_excel(
-                    self.host.upload(workbook, ".xlsx"),
-                )
-            except Exception as exc:
-                if isinstance(exc, HTTPException):
-                    raise
-                raise HTTPException(422, f"Excel 无法读取：{exc}") from exc
-        else:
-            data = {
-                "fields": (
-                    self.host.builtin.blank_fields()
-                    if stage_id == "negotiation"
-                    else (
-                        self.host.builtin.plan_fields(project["fields"])
-                        if stage_id == "plan"
-                        else (
-                            self.host.builtin.selection_fields(project["fields"])
-                            if stage_id == "selection"
-                            else (
-                                self.host.builtin.acceptance_fields(project["fields"])
-                                if stage_id == "acceptance"
-                                else copy.deepcopy(project["fields"])
-                            )
-                        )
-                    )
-                ),
-                "recipients": (
-                    [{"name": "", "start": "", "end": ""} for _ in range(3)]
-                    if stage_id == "negotiation"
-                    else []
-                ),
-                "rules": [],
-            }
-        common = values(project["fields"])
-        for field in data["fields"]:
-            if not field["value"] and field["key"] in common:
-                field["value"] = common[field["key"]]
-        title = self.stage(project, stage_id)["title"]
-        case = dict(
-            data,
-            id=uuid.uuid4().hex,
-            name=title + "材料",
-            revision=1,
-            templates=[],
-            generations=[],
-            review_token=None,
-            project_id=project["id"],
-            stage_id=stage_id,
-            project_snapshot={
-                k: common[k] for k in common if k in values(data["fields"])
-            },
-        )
-        try:
-            self.host.attach_default_templates(root, case)
-        except (ValueError, KeyError, OSError):
-            case["template_notice"] = "默认模板未能载入，请重新选择 Word 文件"
-        self.host.save(root, case)
-        project["forms"].append({"case_id": case["id"], "stage_id": stage_id})
-        self.touch(project, self.stage(project, stage_id), root)
-        self.save(root, project)
-        return self.host.public(case)
-
-    @staticmethod
-    def linked(project, case_id):
-        link = next(
-            (f for f in project["forms"] if f["case_id"] == case_id),
-            None,
-        )
-        if not link:
-            raise HTTPException(404, "该表单不属于此项目")
-        return link
 
     def open_form(self, root, project, stage_id, workbook=None):
         """One workbook per project; stages are pages, never new runs."""
@@ -912,7 +630,9 @@ class ProjectStore:
         )
         case_id = project.get("form_id")
         if not case_id:
-            candidates = [self.host.load(root, f["case_id"]) for f in project["forms"]]
+            candidates = [
+                self.host.load(root, f["case_id"]) for f in project["forms"]
+            ]
             candidates.sort(
                 key=lambda c: (
                     c.get("stage_id") == "negotiation",
@@ -921,14 +641,18 @@ class ProjectStore:
                 reverse=True,
             )
             created = (
-                candidates[0] if candidates else self.add_case(root, project, stage_id)
+                candidates[0]
+                if candidates
+                else self.add_case(root, project, stage_id)
             )
             case = self.host.load(root, created["id"])
             # Preserve the original bytes and old confirmations.
             backup = self.path(root, project["id"]) / "form-history"
             backup.mkdir(exist_ok=True)
             (backup / (case["id"] + "_original.json")).write_bytes(
-                (self.host.folder(root, case["id"]) / "draft.json").read_bytes(),
+                (
+                    self.host.folder(root, case["id"]) / "draft.json"
+                ).read_bytes(),
             )
             project["form_id"] = case["id"]
             project["revision"] += 1
@@ -954,10 +678,16 @@ class ProjectStore:
             self.prepare_acceptance(root, project, case)
         if current == "negotiation":
             self.prepare_implementation(root, project, case)
-        if current == stage_id and workbook is None and case.get("project_form"):
+        if (
+            current == stage_id
+            and workbook is None
+            and case.get("project_form")
+        ):
             return self.host.public(case)
         common = values(shared_fields(case["fields"]))
-        contexts[current] = {k: copy.deepcopy(case[k]) for k in keys if k in case}
+        contexts[current] = {
+            k: copy.deepcopy(case[k]) for k in keys if k in case
+        }
         contexts[current]["revision"] = case["revision"]
         if workbook:
             history = self.path(root, project["id"]) / "form-history"
@@ -979,10 +709,14 @@ class ProjectStore:
                         self.host.builtin.plan_fields(project["fields"])
                         if stage_id == "plan"
                         else (
-                            self.host.builtin.selection_fields(project["fields"])
+                            self.host.builtin.selection_fields(
+                                project["fields"],
+                            )
                             if stage_id == "selection"
                             else (
-                                self.host.builtin.acceptance_fields(project["fields"])
+                                self.host.builtin.acceptance_fields(
+                                    project["fields"],
+                                )
                                 if stage_id == "acceptance"
                                 else copy.deepcopy(project["fields"])
                             )
@@ -1046,7 +780,8 @@ class ProjectStore:
         return self.host.public(case)
 
     def prepare_contract(self, root, project, case):
-        """Contract review references upstream values rather than another copy."""
+        """Contract review references upstream values rather than \
+another copy."""
         references = {f["key"]: copy.deepcopy(f) for f in project["fields"]}
         contexts = case.get("stage_contexts", {})
         for stage_id in ("negotiation", "selection", "plan"):
@@ -1062,9 +797,11 @@ class ProjectStore:
         history.mkdir(exist_ok=True)
         source = self.host.folder(root, case["id"]) / "draft.json"
         if source.is_file():
-            backup = (
-                history
-                / f"{case['id']}_before_contract_references_r{case['revision']}.json"
+            backup = history / (
+                f"{case['id']}"
+                f"_before_contract_references_r"
+                f"{case['revision']}"
+                f".json"
             )
             if not backup.exists():
                 backup.write_bytes(source.read_bytes())
@@ -1076,7 +813,8 @@ class ProjectStore:
         self.host.save(root, case)
 
     def prepare_implementation(self, root, project, case):
-        """Extend bundled negotiation pages while retaining custom templates."""
+        """Extend bundled negotiation pages while retaining custom \
+templates."""
         if case.get("implementation_schema") == 1:
             return
         existing = {field["key"] for field in case["fields"]}
@@ -1096,7 +834,8 @@ class ProjectStore:
         history.mkdir(exist_ok=True)
         source = self.host.folder(root, case["id"]) / "draft.json"
         backup = (
-            history / f"{case['id']}_before_implementation_r{case['revision']}.json"
+            history
+            / f"{case['id']}_before_implementation_r{case['revision']}.json"
         )
         if source.is_file() and not backup.exists():
             backup.write_bytes(source.read_bytes())
@@ -1112,7 +851,9 @@ class ProjectStore:
             else:
                 content = self.host.builtin.load_templates()[name]
                 info = self.host.template_info(
-                    content, name, {field["key"] for field in case["fields"]}
+                    content,
+                    name,
+                    {field["key"] for field in case["fields"]},
                 )
                 info.update(
                     id=uuid.uuid4().hex,
@@ -1143,7 +884,9 @@ class ProjectStore:
         history = self.path(root, project["id"]) / "form-history"
         history.mkdir(exist_ok=True)
         source = self.host.folder(root, case["id"]) / "draft.json"
-        backup = history / f"{case['id']}_before_selection_r{case['revision']}.json"
+        backup = (
+            history / f"{case['id']}_before_selection_r{case['revision']}.json"
+        )
         if source.is_file() and not backup.exists():
             backup.write_bytes(source.read_bytes())
         for field in fixed:
@@ -1158,7 +901,8 @@ class ProjectStore:
         self.host.save(root, case)
 
     def prepare_acceptance(self, root, project, case):
-        """Upgrade pre-template acceptance pages to the focused opinion form."""
+        """Upgrade pre-template acceptance pages to the focused opinion \
+form."""
         if case.get("acceptance_schema") == 1:
             return
         if case["templates"] and not any(
@@ -1170,7 +914,10 @@ class ProjectStore:
         history = self.path(root, project["id"]) / "form-history"
         history.mkdir(exist_ok=True)
         source = self.host.folder(root, case["id"]) / "draft.json"
-        backup = history / f"{case['id']}_before_acceptance_r{case['revision']}.json"
+        backup = (
+            history
+            / f"{case['id']}_before_acceptance_r{case['revision']}.json"
+        )
         if source.is_file() and not backup.exists():
             backup.write_bytes(source.read_bytes())
         for field in fixed:
@@ -1188,7 +935,8 @@ class ProjectStore:
     def sync_selection_fields(self, root, project, case):
         """Refresh protected fields without touching historical generations."""
         definitions = {
-            f["key"]: f for f in self.host.builtin.selection_fields(project["fields"])
+            f["key"]: f
+            for f in self.host.builtin.selection_fields(project["fields"])
         }
         before = copy.deepcopy(case["fields"])
         for field in case["fields"]:
@@ -1197,15 +945,21 @@ class ProjectStore:
                 field["options"] = definition["options"]
             if definition.get("read_only"):
                 field.update(
-                    {key: definition[key] for key in ("read_only", "value", "help")}
+                    {
+                        key: definition[key]
+                        for key in ("read_only", "value", "help")
+                    },
                 )
         if before == case["fields"]:
             return
         history = self.path(root, project["id"]) / "form-history"
         history.mkdir(exist_ok=True)
         source = self.host.folder(root, case["id"]) / "draft.json"
-        backup = (
-            history / f"{case['id']}_before_selection_controls_r{case['revision']}.json"
+        backup = history / (
+            f"{case['id']}"
+            f"_before_selection_controls_r"
+            f"{case['revision']}"
+            f".json"
         )
         if source.is_file() and not backup.exists():
             backup.write_bytes(source.read_bytes())
@@ -1237,7 +991,9 @@ class ProjectStore:
         history.mkdir(exist_ok=True)
         source = self.host.folder(root, case["id"]) / "draft.json"
         if source.is_file():
-            backup = history / f"{case['id']}_before_plan_r{case['revision']}.json"
+            backup = (
+                history / f"{case['id']}_before_plan_r{case['revision']}.json"
+            )
             if not backup.exists():
                 backup.write_bytes(source.read_bytes())
         old = values(case["fields"])
@@ -1265,13 +1021,16 @@ class ProjectStore:
             return
         target = self.host.folder(root, case["id"])
         for template in old_templates:
-            content = (target / "templates" / (template["id"] + ".docx")).read_bytes()
+            content = (
+                target / "templates" / (template["id"] + ".docx")
+            ).read_bytes()
             if hashlib.sha256(content).hexdigest() != legacy:
                 raise HTTPException(422, "原必要性说明模板已改变，请重新核对模板")
         history = self.path(root, project["id"]) / "form-history"
         history.mkdir(exist_ok=True)
         backup = (
-            history / f"{case['id']}_before_full_necessity_r{case['revision']}.json"
+            history
+            / f"{case['id']}_before_full_necessity_r{case['revision']}.json"
         )
         if not backup.exists():
             backup.write_bytes((target / "draft.json").read_bytes())
@@ -1279,11 +1038,15 @@ class ProjectStore:
             self.host.builtin.PLAN_NAMES[0]
         ]
         for template in old_templates:
-            identifier = uuid.uuid4().hex
+            template_id = uuid.uuid4().hex
             info = self.host.template_info(content, template["name"])
-            (target / "templates" / (identifier + ".docx")).write_bytes(content)
+            (target / "templates" / (template_id + ".docx")).write_bytes(
+                content,
+            )
             template.update(
-                info, id=identifier, sha256=hashlib.sha256(content).hexdigest()
+                info,
+                id=template_id,
+                sha256=hashlib.sha256(content).hexdigest(),
             )
         fields = {f["key"]: f for f in case["fields"]}
         necessity = fields.get("plan.necessity")
@@ -1298,7 +1061,9 @@ class ProjectStore:
                 if f["key"] == "plan.necessity"
             )
             necessity["help"] = definition["help"]
-        if not any("project.background" in t["keys"] for t in case["templates"]):
+        if not any(
+            "project.background" in t["keys"] for t in case["templates"]
+        ):
             case["fields"] = [
                 f for f in case["fields"] if f["key"] != "project.background"
             ]
@@ -1341,10 +1106,16 @@ class ProjectStore:
         self.save(root, project)
         return self.host.public(case)
 
+
+class _ProjectArchive(_ProjectStorage):
+    """Immutable project archive inventory, attachments and rendered forms."""
+
     def _archive_manifest(self, root, project, stage_id):
         manifest = self.public(root, project)
         if stage_id:
-            manifest["stages"] = [s for s in manifest["stages"] if s["id"] == stage_id]
+            manifest["stages"] = [
+                s for s in manifest["stages"] if s["id"] == stage_id
+            ]
             manifest["forms"] = [
                 f for f in manifest["forms"] if f["stage_id"] == stage_id
             ]
@@ -1366,15 +1137,17 @@ class ProjectStore:
                 title = self.host.name_only(material["name"])[:60]
                 entry = f"{titles[stage['id']]}/{number:02d}_{title}"
                 for index, file in enumerate(material["files"], 1):
-                    source = self.path(root, project["id"]) / "files" / file["storage"]
+                    source = (
+                        self.path(root, project["id"])
+                        / "files"
+                        / file["storage"]
+                    )
                     if (
                         not source.is_file()
                         or hashlib.sha256(source.read_bytes()).hexdigest()
                         != file["sha256"]
                     ):
-                        raise HTTPException(
-                            422, "材料文件缺失或校验失败，请补充后再打包"
-                        )
+                        raise HTTPException(422, "材料文件缺失或校验失败，请补充后再打包")
                     archive.write(
                         source,
                         entry + f"/V{index:02d}_{file['name']}",
@@ -1483,14 +1256,13 @@ class ProjectStore:
                         valid = (
                             bundle.testzip() is None
                             and len(names) == len(set(names))
-                            and {f["name"] for f in generation["files"]} <= set(names)
+                            and {f["name"] for f in generation["files"]}
+                            <= set(names)
                         )
                         if not valid:
                             raise ValueError("Invalid generated archive")
                 except (OSError, BadZipFile, ValueError) as exc:
-                    raise HTTPException(
-                        422, "生成批次缺失或损坏，请检查后再打包"
-                    ) from exc
+                    raise HTTPException(422, "生成批次缺失或损坏，请检查后再打包") from exc
                 target = titles[output_stage] + "/生成文书/" + title
                 archive.write(source, target + f"_批次{index:02d}.zip")
 
@@ -1499,7 +1271,8 @@ class ProjectStore:
         # pylint: disable-next=consider-using-with
         stream = tempfile.SpooledTemporaryFile(max_size=16 * 1024 * 1024)
         titles = {
-            s["id"]: f"{i:02d}_{s['title']}" for i, s in enumerate(project["stages"], 1)
+            s["id"]: f"{i:02d}_{s['title']}"
+            for i, s in enumerate(project["stages"], 1)
         }
         try:
             with ZipFile(stream, "w", ZIP_DEFLATED) as archive:
@@ -1538,6 +1311,334 @@ class ProjectStore:
         return stream
 
 
+class ProjectStore(_ProjectForms, _ProjectArchive):
+    """JSON metadata is committed atomically; attachments are immutable."""
+
+    def create(self, root, body, fields=None, persist=True):
+        fields = shared_fields(fields or self.host.builtin.blank_fields())
+        existing = {f["key"] for f in fields}
+        fields.extend(
+            f
+            for f in self.host.builtin.additional_shared_fields()
+            if f["key"] not in existing
+        )
+        if not any(f["key"] == "project.code" for f in fields):
+            fields.append(
+                {
+                    "key": "project.code",
+                    "label": "项目编号",
+                    "group": "项目资料",
+                    "kind": "text",
+                    "required": False,
+                    "value": body.code.strip(),
+                },
+            )
+        for field in fields:
+            if field["key"] == "project.name":
+                field["value"] = body.name.strip()
+            if field["key"] == "project.code":
+                field["value"] = body.code.strip()
+        project = {
+            "id": uuid.uuid4().hex,
+            "name": body.name.strip(),
+            "code": body.code.strip(),
+            "owner": body.owner.strip(),
+            "fields": fields,
+            "shared_revision": 1,
+            "revision": 1,
+            "created_at": now(),
+            "stages": default_stages(),
+            "forms": [],
+        }
+        if persist:
+            self.save(root, project)
+        return project
+
+    def all_projects(self, root):
+        return [
+            json.loads(p.read_text(encoding="utf-8"))
+            for p in root.glob("projects/*/project.json")
+        ]
+
+    def migrate(self, root):
+        """Index legacy drafts without rewriting their bytes or outputs."""
+        projects = self.all_projects(root)
+        linked = {f["case_id"] for p in projects for f in p["forms"]}
+        drafts = [
+            json.loads(p.read_text(encoding="utf-8"))
+            for p in root.glob("*/draft.json")
+        ]
+        for case in sorted(
+            drafts,
+            key=lambda c: c["updated_at"],
+            reverse=True,
+        ):
+            if case["id"] in linked:
+                continue
+            data = values(case["fields"])
+            name = data.get("project.name", "").strip() or case["name"]
+            code = data.get("project.code", "").strip()
+            identity = "code:" + code if code else "name:" + name
+            project = next(
+                (
+                    p
+                    for p in projects
+                    if p["id"] == case.get("project_id")
+                    or p.get("legacy_identity") == identity
+                ),
+                None,
+            )
+            if project is None:
+                project = self.create(
+                    root,
+                    ProjectBody(name=name, code=code),
+                    case["fields"],
+                    persist=False,
+                )
+                project["legacy_identity"] = identity
+                project["migrated"] = True
+                project["created_at"] = case["updated_at"]
+                project["updated_at"] = case["updated_at"]
+                projects.append(project)
+            stage_id = case.get("stage_id", "negotiation")
+            project["forms"].append(
+                {"case_id": case["id"], "stage_id": stage_id},
+            )
+            stage = self.stage(project, stage_id)
+            stage["status"] = "in_progress"
+            stage["content_revision"] += 1
+            stage["acknowledged"] = self.dependencies(project, stage_id, root)
+            project["updated_at"] = max(
+                project["updated_at"],
+                case["updated_at"],
+            )
+            self.save(root, project, update_time=False)
+            linked.add(case["id"])
+        for project in projects:
+            if project.get("migrated") and not project.get(
+                "legacy_order_version",
+            ):
+                if project["revision"] == 1:
+                    ids = {f["case_id"] for f in project["forms"]}
+                    dates = [c["updated_at"] for c in drafts if c["id"] in ids]
+                    if dates:
+                        project["updated_at"] = max(dates)
+                project["legacy_order_version"] = 1
+                self.save(root, project, update_time=False)
+        return projects
+
+    def public(self, root, project):
+        result = copy.deepcopy(project)
+        result["single_form"] = True
+        result["forms"] = [
+            self.form_summary(root, project, f) for f in project["forms"]
+        ]
+        result["forms"].sort(key=lambda f: f["updated_at"], reverse=True)
+        for stage in result["stages"]:
+            expected = stage["acknowledged"]
+            current = self.dependencies(project, stage["id"], root)
+            stage["upstream_changed"] = [
+                s["title"]
+                for s in project["stages"]
+                if expected is not None
+                and s["id"] in expected
+                and current[s["id"]] != expected[s["id"]]
+            ]
+            stage["documents_changed"] = stage[
+                "status"
+            ] == "completed" and stage.get(
+                "confirmed_forms",
+            ) != self.form_fingerprint(
+                root,
+                project,
+                stage["id"],
+            )
+            stage["missing_required"] = [
+                m["name"]
+                for m in stage["materials"]
+                if m["required"] and m["status"] not in {"done", "na"}
+            ]
+            for material in stage["materials"]:
+                for file in material["files"]:
+                    approval = file.get("approval")
+                    if approval:
+                        file["approval_review"] = self.approval_review(
+                            root,
+                            project,
+                            approval,
+                        )
+                        file.pop("approval", None)
+                    source = (
+                        self.path(root, project["id"])
+                        / "files"
+                        / file["storage"]
+                    )
+                    file["preview_url"] = "/api/files/preview/" + quote(
+                        str(source),
+                        safe="",
+                    )
+                    file.pop("storage", None)
+        return result
+
+    def approval_review(self, root, project, approval):
+        review = copy.deepcopy(approval)
+        if review.get("status") != "ready":
+            return review
+        current = values(project["fields"])
+        case_id = project.get("form_id")
+        if case_id:
+            case = self.host.load(root, case_id)
+            context = (
+                case
+                if case.get("stage_id") == "plan"
+                else case.get("stage_contexts", {}).get("plan", {})
+            )
+            current.update(values(context.get("fields", [])))
+        for field in review["fields"]:
+            field["current"] = current.get(field["key"], "")
+            field["changed"] = (
+                field["current"].strip() != field["value"].strip()
+            )
+        review["change_count"] = sum(f["changed"] for f in review["fields"])
+        return review
+
+    def apply_approval(self, root, project, file_id, keys):
+        file = next(
+            (
+                file
+                for stage in project["stages"]
+                for material in stage["materials"]
+                for file in material["files"]
+                if file["id"] == file_id
+            ),
+            None,
+        )
+        if not file or file.get("approval", {}).get("status") != "ready":
+            raise HTTPException(404, "审批比对结果不存在")
+        approved = {
+            field["key"]: field["value"]
+            for field in file["approval"]["fields"]
+        }
+        if set(keys) - set(approved):
+            raise HTTPException(422, "所选审批字段无效")
+        before = values(project["fields"])
+        for field in project["fields"]:
+            if field["key"] in keys:
+                field["value"] = approved[field["key"]]
+        if "project.name" in keys:
+            project["name"] = approved["project.name"]
+        shared_changed = before != values(project["fields"])
+        case_id = project.get("form_id")
+        if case_id:
+            case = self.host.load(root, case_id)
+            context = (
+                case
+                if case.get("stage_id") == "plan"
+                else case.get("stage_contexts", {}).get("plan")
+            )
+            if context:
+                snapshot = context.setdefault("project_snapshot", {})
+                for field in context.get("fields", []):
+                    if field["key"] in keys:
+                        field["value"] = approved[field["key"]]
+                        if field.get("scope") == "shared":
+                            snapshot[field["key"]] = approved[field["key"]]
+                context["review_token"] = None
+                context["revision"] = (
+                    int(context.get("revision", case["revision"])) + 1
+                )
+                case["revision"] += 1
+                case["review_token"] = None
+                self.host.save(root, case)
+        if shared_changed:
+            project["shared_revision"] += 1
+        file["approval"]["applied_at"] = now()
+        file["approval"]["applied_keys"] = sorted(set(keys))
+        self.touch(project, self.stage(project, "plan"), root)
+        self.save(root, project)
+        return self.public(root, project)
+
+    def add_case(self, root, project, stage_id, workbook=None):
+        self.stage(project, stage_id)
+        if workbook:
+            try:
+                data = self.host.read_excel(
+                    self.host.upload(workbook, ".xlsx"),
+                )
+            except Exception as exc:
+                if isinstance(exc, HTTPException):
+                    raise
+                raise HTTPException(422, f"Excel 无法读取：{exc}") from exc
+        else:
+            data = {
+                "fields": (
+                    self.host.builtin.blank_fields()
+                    if stage_id == "negotiation"
+                    else (
+                        self.host.builtin.plan_fields(project["fields"])
+                        if stage_id == "plan"
+                        else (
+                            self.host.builtin.selection_fields(
+                                project["fields"],
+                            )
+                            if stage_id == "selection"
+                            else (
+                                self.host.builtin.acceptance_fields(
+                                    project["fields"],
+                                )
+                                if stage_id == "acceptance"
+                                else copy.deepcopy(project["fields"])
+                            )
+                        )
+                    )
+                ),
+                "recipients": (
+                    [{"name": "", "start": "", "end": ""} for _ in range(3)]
+                    if stage_id == "negotiation"
+                    else []
+                ),
+                "rules": [],
+            }
+        common = values(project["fields"])
+        for field in data["fields"]:
+            if not field["value"] and field["key"] in common:
+                field["value"] = common[field["key"]]
+        title = self.stage(project, stage_id)["title"]
+        case = dict(
+            data,
+            id=uuid.uuid4().hex,
+            name=title + "材料",
+            revision=1,
+            templates=[],
+            generations=[],
+            review_token=None,
+            project_id=project["id"],
+            stage_id=stage_id,
+            project_snapshot={
+                k: common[k] for k in common if k in values(data["fields"])
+            },
+        )
+        try:
+            self.host.attach_default_templates(root, case)
+        except (ValueError, KeyError, OSError):
+            case["template_notice"] = "默认模板未能载入，请重新选择 Word 文件"
+        self.host.save(root, case)
+        project["forms"].append({"case_id": case["id"], "stage_id": stage_id})
+        self.touch(project, self.stage(project, stage_id), root)
+        self.save(root, project)
+        return self.host.public(case)
+
+    @staticmethod
+    def linked(project, case_id):
+        link = next(
+            (f for f in project["forms"] if f["case_id"] == case_id),
+            None,
+        )
+        if not link:
+            raise HTTPException(404, "该表单不属于此项目")
+        return link
+
+
 def register_project_routes(router, scope, lock, store):
     @router.get("/projects")
     def list_projects(root=Depends(scope)):
@@ -1550,7 +1651,9 @@ def register_project_routes(router, scope, lock, store):
                     "code": p["code"],
                     "owner": p["owner"],
                     "updated_at": p["updated_at"],
-                    "completed": sum(s["status"] == "completed" for s in p["stages"]),
+                    "completed": sum(
+                        s["status"] == "completed" for s in p["stages"]
+                    ),
                     "forms": len(p["forms"]),
                 }
                 for p in sorted(
@@ -1649,7 +1752,9 @@ def register_stage_routes(router, scope, lock, store):
                 raise HTTPException(422, "请确认已完成的材料，或补充本阶段办结说明")
             store.touch(project, stage, root)
             stage.update(body.model_dump(exclude={"revision", "confirmed"}))
-            stage["completed_at"] = now() if body.status == "completed" else None
+            stage["completed_at"] = (
+                now() if body.status == "completed" else None
+            )
             if body.status == "completed":
                 stage["acknowledged"] = store.dependencies(
                     project,
@@ -1730,7 +1835,8 @@ def register_file_routes(router, scope, lock, store):
     host = store.host
 
     @router.post(
-        "/projects/{project_id}/stages/{stage_id}" "/materials/{material_id}/files",
+        "/projects/{project_id}/stages/{stage_id}"
+        "/materials/{material_id}/files",
     )
     def upload_file(
         project_id: str,
@@ -1742,9 +1848,7 @@ def register_file_routes(router, scope, lock, store):
     ):
         suffix = Path(file.filename or "").suffix.lower()
         if suffix not in EXTENSIONS:
-            raise HTTPException(
-                422, "支持 Office 文档、PDF、图片、ZIP、文本及 CSV 文件"
-            )
+            raise HTTPException(422, "支持 Office 文档、PDF、图片、ZIP、文本及 CSV 文件")
         content = host.upload(file, suffix)
         if not content:
             raise HTTPException(422, "不能上传空文件")
@@ -1762,7 +1866,8 @@ def register_file_routes(router, scope, lock, store):
             material["files"].append(
                 {
                     "id": file_id,
-                    "name": host.name_only(Path(file.filename).stem)[:85] + suffix,
+                    "name": host.name_only(Path(file.filename).stem)[:85]
+                    + suffix,
                     "storage": storage,
                     "size": len(content),
                     "sha256": hashlib.sha256(content).hexdigest(),
@@ -1804,7 +1909,9 @@ def register_file_routes(router, scope, lock, store):
                     for file in material["files"]:
                         if file["id"] == file_id:
                             source = (
-                                store.path(root, project_id) / "files" / file["storage"]
+                                store.path(root, project_id)
+                                / "files"
+                                / file["storage"]
                             )
                             if (
                                 not source.is_file()
@@ -1899,7 +2006,9 @@ def register_bundle_routes(router, scope, lock, store):
                 store.stage(project, stage_id)
             payload = store.archive(root, project, stage_id)
             suffix = (
-                store.stage(project, stage_id)["title"] if stage_id else "全流程材料"
+                store.stage(project, stage_id)["title"]
+                if stage_id
+                else "全流程材料"
             )
 
         def chunks():

@@ -59,12 +59,17 @@ class FileConversionRegistry:
         if not handler.format_id.strip():
             raise ValueError("format_id must not be empty")
         if not handler.extensions:
-            raise ValueError("a conversion handler needs at least one extension")
+            raise ValueError(
+                "a conversion handler needs at least one extension",
+            )
         self._handlers[handler.format_id] = handler
         for extension in handler.extensions:
             normalized = _normalize_extension(extension)
             previous = self._by_extension.get(normalized)
-            if previous is not None and previous.format_id != handler.format_id:
+            if (
+                previous is not None
+                and previous.format_id != handler.format_id
+            ):
                 raise ValueError(
                     f"extension {normalized!r} is already handled by "
                     f"{previous.format_id}",
@@ -146,4 +151,3 @@ def find_companion(
         ):
             return candidate
     return None
-

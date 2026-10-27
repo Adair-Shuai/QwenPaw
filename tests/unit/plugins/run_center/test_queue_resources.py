@@ -40,10 +40,10 @@ RunRepository = runtime.RunRepository
 def test_project_queue_policy_and_resource_lease_lifecycle(tmp_path) -> None:
     repository = RunRepository(tmp_path / "run-center")
     repository.create_run(
-        {"run_id": "r1", "operation": "test.calculate", "project_id": "p1"}
+        {"run_id": "r1", "operation": "test.calculate", "project_id": "p1"},
     )
     repository.create_run(
-        {"run_id": "r2", "operation": "test.calculate", "project_id": "p1"}
+        {"run_id": "r2", "operation": "test.calculate", "project_id": "p1"},
     )
     policy = repository.upsert_project_queue_policy(
         "p1",
@@ -59,7 +59,9 @@ def test_project_queue_policy_and_resource_lease_lifecycle(tmp_path) -> None:
     assert first and first["state"] == "active"
     assert (
         repository.acquire_resource_lease(
-            "r2", project_id="p1", resources={"cpu": 1}
+            "r2",
+            project_id="p1",
+            resources={"cpu": 1},
         )
         is None
     )
@@ -70,11 +72,14 @@ def test_project_queue_policy_and_resource_lease_lifecycle(tmp_path) -> None:
         == "r1"
     )
     released = repository.release_resource_lease(
-        first["lease_id"], reason="test"
+        first["lease_id"],
+        reason="test",
     )
     assert released and released["state"] == "released"
     second = repository.acquire_resource_lease(
-        "r2", project_id="p1", resources={"cpu": 1}
+        "r2",
+        project_id="p1",
+        resources={"cpu": 1},
     )
     assert second and second["run_id"] == "r2"
 
@@ -123,10 +128,10 @@ def test_local_executor_enforces_project_concurrency_and_releases_lease(
     service = RunExecutorService(repository, max_workers=2)
     service.register("test.policy", handler)
     repository.create_run(
-        {"run_id": "policy-1", "operation": "test.policy", "project_id": "p1"}
+        {"run_id": "policy-1", "operation": "test.policy", "project_id": "p1"},
     )
     repository.create_run(
-        {"run_id": "policy-2", "operation": "test.policy", "project_id": "p1"}
+        {"run_id": "policy-2", "operation": "test.policy", "project_id": "p1"},
     )
     service.submit("policy-1")
     service.submit("policy-2")
@@ -203,6 +208,6 @@ def test_fair_queue_order_round_robins_projects_and_respects_project_priority(
         },
     ]
     ordered = service._fair_queue_order(
-        runs
+        runs,
     )  # noqa: SLF001 - scheduler contract test
     assert [item["run_id"] for item in ordered] == ["a-high", "b-one", "a-low"]

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Shared geometry contracts for independently reusable domain converters.
 
 Positions use an explicit right-handed, Z-up frame. Scalars keep missing
@@ -15,6 +16,26 @@ from typing import Any
 from ..security import sanitize_identifier
 
 FLOAT32_MAX = 3.4028234663852886e38
+
+
+def active_cell_scalars(
+    source_values: Any,
+    active_mask: Any,
+    expected_count: int,
+    format_name: str,
+) -> list[float]:
+    """Keep source cell ordering and masked/non-finite measurements as NaN."""
+    import numpy as np
+
+    values = (
+        np.ma.asarray(source_values, dtype=float)
+        .filled(np.nan)
+        .flatten(order="F")
+    )
+    if len(values) != expected_count:
+        raise ValueError(f"{format_name} property/grid cell count mismatch")
+    values[~np.isfinite(values)] = np.nan
+    return values[active_mask].tolist()
 
 
 def finite_number(value: Any, field: str) -> float:
@@ -41,7 +62,9 @@ def optional_scalar(value: Any, field: str) -> float:
 
 
 def resource_name(name: str) -> str:
-    fallback = "dataset_" + hashlib.sha256(name.encode("utf-8")).hexdigest()[:12]
+    fallback = (
+        "dataset_" + hashlib.sha256(name.encode("utf-8")).hexdigest()[:12]
+    )
     return sanitize_identifier(name, fallback)
 
 
@@ -50,16 +73,24 @@ def geometry_metadata(primitive: str, association: str) -> dict[str, Any]:
         "geometry_primitive": primitive,
         "scalar_association": association,
         "coordinate_system": {
-            "axis_order": "x,y,z", "z_positive": "up",
-            "source_z_positive": "down", "length_unit": "m",
+            "axis_order": "x,y,z",
+            "z_positive": "up",
+            "source_z_positive": "down",
+            "length_unit": "m",
         },
     }
 
 
 def property_descriptor(
-    label: str, association: str, count: int, unit: str | None = None,
+    label: str,
+    association: str,
+    count: int,
+    unit: str | None = None,
 ) -> dict[str, Any]:
     return {
-        "label": label, "association": association, "count": count,
-        "unit": unit, "no_data": "nan",
+        "label": label,
+        "association": association,
+        "count": count,
+        "unit": unit,
+        "no_data": "nan",
     }

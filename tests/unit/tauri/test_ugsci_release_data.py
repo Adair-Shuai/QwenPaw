@@ -224,6 +224,26 @@ def test_python_wheel_and_sdist_exclude_visualization_test_data(tmp_path):
     (project / "plugins/hub").mkdir(parents=True)
     _plugin(project / "src/qwenpaw/plugins_bundle/ugsci")
     _plugin(project / "plugins/bundle/ugsci")
+    # Exercise the same manifest-filtered OpenUI staging as clean wheel jobs.
+    openui = project / "plugins/bundle/qwenpaw-openui"
+    manifest_bytes = (
+        ROOT / "plugins/bundle/qwenpaw-openui/plugin.json"
+    ).read_bytes()
+    _write(openui, "plugin.json", manifest_bytes)
+    _write(openui, "plugin.py", b"VALUE = 1\n")
+    runtime = b"window.__OPENUI_RELEASE_RUNTIME__ = true;\n"
+    prompt = b"OpenUI task layout prompt\n"
+    _write(openui, "dist/index.js", runtime)
+    _write(openui, "dist/system-prompt.txt", prompt)
+    _write(openui, "frontend/test/local-only.ts", b"not a runtime file")
+    for source in stage.iter_runtime_files(openui):
+        target = (
+            project
+            / "src/qwenpaw/plugins_bundle/qwenpaw-openui"
+            / source.relative_to(openui)
+        )
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
     output = tmp_path / "artifacts"
     # Build backends own process-global setuptools state; isolate the two
     # formats exactly as a frontend such as `python -m build` does.
@@ -248,6 +268,10 @@ def test_python_wheel_and_sdist_exclude_visualization_test_data(tmp_path):
         names = archive.namelist()
         assert any(p.endswith("ugsci/ui/dist/index.js") for p in names)
         assert not any("ugsci/visualization/data/" in p for p in names)
+        prefix = "qwenpaw/plugins_bundle/qwenpaw-openui/"
+        assert archive.read(prefix + "dist/index.js") == runtime
+        assert archive.read(prefix + "dist/system-prompt.txt") == prompt
+        assert not any("qwenpaw-openui/frontend/" in p for p in names)
     sdist = next(path for path in output.iterdir() if path.suffix != ".whl")
     if sdist.suffix == ".zip":
         with zipfile.ZipFile(sdist) as archive:
@@ -256,6 +280,11 @@ def test_python_wheel_and_sdist_exclude_visualization_test_data(tmp_path):
         with tarfile.open(sdist) as archive:
             names = archive.getnames()
     assert not any("ugsci/visualization/data/" in p for p in names)
+    assert any(p.endswith("qwenpaw-openui/dist/index.js") for p in names)
+    assert any(
+        p.endswith("qwenpaw-openui/dist/system-prompt.txt") for p in names
+    )
+    assert not any("qwenpaw-openui/frontend/" in p for p in names)
 
 
 def test_docker_context_excludes_both_visualization_fixture_trees():
@@ -303,7 +332,10 @@ def test_packaged_visualization_imports_user_data_without_shipped_examples(
     spec.loader.exec_module(package)
     api = importlib.import_module(f"{name}.backend.api")
     simulation = importlib.import_module(f"{name}.backend.simulation")
-    assert simulation.runtime_directory() == working_dir / "ugsci" / "visualization"
+    assert (
+        simulation.runtime_directory()
+        == working_dir / "ugsci" / "visualization"
+    )
     manager = importlib.import_module(f"{name}.backend.jobs.manager")
     monkeypatch.setattr(manager, "_job_store", lambda: None)
     app = FastAPI()

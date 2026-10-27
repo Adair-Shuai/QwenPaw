@@ -65,28 +65,23 @@ def _key(value) -> str:
 
 
 def _factor(header: str, kind: str) -> float:
-    if kind == "gas":
-        if any(
-            unit in header for unit in ("万方", "万m3", "万m³", "万立方米")
-        ):
-            return 1.0
-        if any(
-            unit in header for unit in ("亿方", "亿m3", "亿m³", "亿立方米")
-        ):
-            return 10000.0
-        if any(unit in header for unit in ("m3", "m³", "立方米")):
-            return 0.0001
-    if kind == "pressure":
-        if "兆帕" in header or "MPa" in header:
-            return 1.0
-        if "kPa" in header:
-            return 0.001
-        if "bar" in header:
-            return 0.1
-    if kind == "hours" and any(x in header for x in ("小时", "h)")):
-        return 1.0
-    if kind == "water" and any(x in header for x in ("吨", "t)")):
-        return 1.0
+    rules = {
+        "gas": (
+            (("万方", "万m3", "万m³", "万立方米"), 1.0),
+            (("亿方", "亿m3", "亿m³", "亿立方米"), 10000.0),
+            (("m3", "m³", "立方米"), 0.0001),
+        ),
+        "pressure": (
+            (("兆帕", "MPa"), 1.0),
+            (("kPa",), 0.001),
+            (("bar",), 0.1),
+        ),
+        "hours": ((("小时", "h)"), 1.0),),
+        "water": ((("吨", "t)"), 1.0),),
+    }
+    for units, factor in rules.get(kind, ()):
+        if any(unit in header for unit in units):
+            return factor
     raise ValueError(f"表头单位缺失或不支持：{header}；请在表头明确单位")
 
 
@@ -96,19 +91,23 @@ def _sheets(path: Path):
             import xlrd
         except ImportError as exc:
             raise ValueError(
-                "读取 XLS 需要 xlrd：在平台 Python 环境安装 xlrd>=2,<3"
+                "读取 XLS 需要 xlrd：在平台 Python 环境安装 xlrd>=2,<3",
             ) from exc
         book = xlrd.open_workbook(str(path), on_demand=True)
         try:
             for sheet in book.sheets():
 
-                def rows():
-                    for i in range(sheet.nrows):
-                        values = sheet.row_values(i)
-                        for j in range(len(values)):
-                            if sheet.cell_type(i, j) == xlrd.XL_CELL_DATE:
+                def rows(current_sheet=sheet):
+                    for i in range(current_sheet.nrows):
+                        values = current_sheet.row_values(i)
+                        for j, value in enumerate(values):
+                            if (
+                                current_sheet.cell_type(i, j)
+                                == xlrd.XL_CELL_DATE
+                            ):
                                 values[j] = xlrd.xldate_as_datetime(
-                                    values[j], book.datemode
+                                    value,
+                                    book.datemode,
                                 )
                         yield values
 
@@ -133,7 +132,9 @@ def _sheets(path: Path):
 
 
 def read_file(
-    path: Path, issues: list[dict], sources: list[dict]
+    path: Path,
+    issues: list[dict],
+    sources: list[dict],
 ) -> Iterator[Record]:
     """Recognize explicit Chinese headers and preserve row-level provenance."""
     for sheet, at_limit, rows in _sheets(path):
@@ -144,7 +145,7 @@ def read_file(
                     "file": path.name,
                     "sheet": sheet,
                     "message": "达到 XLS 65,536 行上限，疑似导出截断，不能认定历史完整",
-                }
+                },
             )
         mapping = None
         count = 0
@@ -155,58 +156,10 @@ def read_file(
                 if not all(x in headers for x in ("储气库", "井号", "日期")):
                     if row_number >= 20:
                         raise ValueError(
-                            f"{path.name}/{sheet}：前 20 行没有储气库、井号、日期表头"
+                            f"{path.name}/{sheet}：前 20 行没有储气库、井号、日期表头",
                         )
                     continue
-                injection = [
-                    i
-                    for i, x in enumerate(headers)
-                    if x.startswith("日注气量")
-                ]
-                production = [
-                    i
-                    for i, x in enumerate(headers)
-                    if x.startswith("日采气量")
-                ]
-                if len(injection) + len(production) != 1:
-                    raise ValueError(
-                        f"{path.name}/{sheet}：需唯一的日注气量或日采气量列（带单位）"
-                    )
-                mode = "injection" if injection else "withdrawal"
-                gas_col = (injection or production)[0]
-                mapping = {
-                    "facility": (headers.index("储气库"), 1),
-                    "well": (headers.index("井号"), 1),
-                    "day": (headers.index("日期"), 1),
-                    "gas": (gas_col, _factor(headers[gas_col], "gas")),
-                }
-                for name, prefix, kind in (
-                    ("hours", "生产时间", "hours"),
-                    ("pressure", "油压", "pressure"),
-                    ("casing", "套压", "pressure"),
-                    ("water", "日产水量", "water"),
-                    ("vent", "放空气量", "gas"),
-                    ("note", "备注", "text"),
-                ):
-                    columns = [
-                        i
-                        for i, x in enumerate(headers)
-                        if x.startswith(prefix)
-                    ]
-                    if len(columns) > 1:
-                        raise ValueError(
-                            f"{path.name}/{sheet}：重复列 {prefix}"
-                        )
-                    if columns:
-                        col = columns[0]
-                        mapping[name] = (
-                            col,
-                            (
-                                1
-                                if kind == "text"
-                                else _factor(headers[col], kind)
-                            ),
-                        )
+                mapping, mode = _recognize_columns(headers, path, sheet)
                 sources.append(
                     {
                         "file": path.name,
@@ -217,15 +170,15 @@ def read_file(
                             k: headers[v[0]] for k, v in mapping.items()
                         },
                         "xls_row_limit": at_limit,
-                    }
+                    },
                 )
                 continue
             if not any(str(x or "").strip() for x in values):
                 continue
 
-            def raw(name):
-                col = mapping.get(name, (-1, 1))[0]
-                return values[col] if 0 <= col < len(values) else None
+            def raw(name, row_mapping=mapping, row_values=values):
+                col = row_mapping.get(name, (-1, 1))[0]
+                return row_values[col] if 0 <= col < len(row_values) else None
 
             try:
                 facility, well = (
@@ -243,52 +196,17 @@ def read_file(
                         "sheet": sheet,
                         "row": row_number,
                         "message": str(exc),
-                    }
+                    },
                 )
                 continue
-            nums = {}
-            for name in (
-                "gas",
-                "hours",
-                "pressure",
-                "casing",
-                "water",
-                "vent",
-            ):
-                value = raw(name)
-                n = number(value)
-                if (
-                    n is None
-                    and value is not None
-                    and str(value).strip() not in ("", "--", "-", "无")
-                ):
-                    issues.append(
-                        {
-                            "code": "invalid_number",
-                            "file": path.name,
-                            "sheet": sheet,
-                            "row": row_number,
-                            "field": name,
-                            "message": f"非数值：{str(value)[:80]}",
-                        }
-                    )
-                if n is not None:
-                    n *= mapping.get(name, (-1, 1))[1]
-                    if (name == "hours" and not 0 <= n <= 24) or (
-                        name != "hours" and n < 0
-                    ):
-                        issues.append(
-                            {
-                                "code": "invalid_range",
-                                "file": path.name,
-                                "sheet": sheet,
-                                "row": row_number,
-                                "field": name,
-                                "message": f"无效取值：{n}",
-                            }
-                        )
-                        n = None
-                nums[name] = n
+            nums = _read_measurements(
+                raw,
+                mapping,
+                issues,
+                path,
+                sheet,
+                row_number,
+            )
             count += 1
             yield Record(
                 facility,
@@ -304,3 +222,87 @@ def read_file(
         if mapping is None:
             raise ValueError(f"{path.name}/{sheet}：没有可识别表头")
         sources[-1]["accepted_rows"] = count
+
+
+def _recognize_columns(headers, path, sheet):
+    """Read explicit column identities and physical units."""
+    injection = [i for i, x in enumerate(headers) if x.startswith("日注气量")]
+    production = [i for i, x in enumerate(headers) if x.startswith("日采气量")]
+    if len(injection) + len(production) != 1:
+        raise ValueError(
+            f"{path.name}/{sheet}：需唯一的日注气量或日采气量列（带单位）",
+        )
+    mode = "injection" if injection else "withdrawal"
+    gas_col = (injection or production)[0]
+    mapping = {
+        "facility": (headers.index("储气库"), 1),
+        "well": (headers.index("井号"), 1),
+        "day": (headers.index("日期"), 1),
+        "gas": (gas_col, _factor(headers[gas_col], "gas")),
+    }
+    for name, prefix, kind in (
+        ("hours", "生产时间", "hours"),
+        ("pressure", "油压", "pressure"),
+        ("casing", "套压", "pressure"),
+        ("water", "日产水量", "water"),
+        ("vent", "放空气量", "gas"),
+        ("note", "备注", "text"),
+    ):
+        columns = [i for i, x in enumerate(headers) if x.startswith(prefix)]
+        if len(columns) > 1:
+            raise ValueError(f"{path.name}/{sheet}：重复列 {prefix}")
+        if columns:
+            col = columns[0]
+            mapping[name] = (
+                col,
+                (1 if kind == "text" else _factor(headers[col], kind)),
+            )
+    return mapping, mode
+
+
+def _read_measurements(raw, mapping, issues, path, sheet, row_number):
+    """Read measurements while preserving missing values and provenance."""
+    nums = {}
+    for name in (
+        "gas",
+        "hours",
+        "pressure",
+        "casing",
+        "water",
+        "vent",
+    ):
+        value = raw(name)
+        n = number(value)
+        if (
+            n is None
+            and value is not None
+            and str(value).strip() not in ("", "--", "-", "无")
+        ):
+            issues.append(
+                {
+                    "code": "invalid_number",
+                    "file": path.name,
+                    "sheet": sheet,
+                    "row": row_number,
+                    "field": name,
+                    "message": f"非数值：{str(value)[:80]}",
+                },
+            )
+        if n is not None:
+            n *= mapping.get(name, (-1, 1))[1]
+            if (name == "hours" and not 0 <= n <= 24) or (
+                name != "hours" and n < 0
+            ):
+                issues.append(
+                    {
+                        "code": "invalid_range",
+                        "file": path.name,
+                        "sheet": sheet,
+                        "row": row_number,
+                        "field": name,
+                        "message": f"无效取值：{n}",
+                    },
+                )
+                n = None
+        nums[name] = n
+    return nums

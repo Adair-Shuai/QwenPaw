@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""read_simulation_results — read summary and field data from a completed (or running) simulation."""
+"""read_simulation_results — read summary and field data from a \
+completed (or running) simulation."""
 from __future__ import annotations
 
 import asyncio
@@ -8,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 import logging
+
 _logger = logging.getLogger("qwenpaw.plugin.ugsci.sim")
 
 
@@ -88,6 +90,7 @@ async def read_simulation_results(
 
     try:
         from ..adapters import get_adapter
+
         adapter = get_adapter(job.simulator)
     except Exception as exc:
         return ToolChunk(
@@ -96,7 +99,10 @@ async def read_simulation_results(
             content=[
                 TextBlock(
                     type="text",
-                    text=f"Error: Cannot find adapter for '{job.simulator}': {exc}",
+                    text=f"Error: Cannot find adapter for '"
+                    f"{job.simulator}"
+                    f"': "
+                    f"{exc}",
                 ),
             ],
         )
@@ -104,6 +110,7 @@ async def read_simulation_results(
     # A tool read is an explicit user/agent action. Historical jobs may start
     # their durable result collector here; HTTP GET remains side-effect free.
     from .result_service import safe_start_collection
+
     safe_start_collection(job_id)
 
     lines = [
@@ -118,7 +125,7 @@ async def read_simulation_results(
     if data_type == "report":
         log_file = adapter.find_log_file(job.working_dir)
         if log_file and log_file.is_file():
-            tail = adapter._read_log_tail(log_file, 80)
+            tail = adapter.read_log_tail(log_file, 80)
             lines.append("--- Report (last 80 lines of log) ---")
             lines.append(tail)
         else:
@@ -139,7 +146,12 @@ async def read_simulation_results(
     )
 
     if not any(
-        [summary.vectors, summary.well_vectors, summary.fields, summary.metadata]
+        [
+            summary.vectors,
+            summary.well_vectors,
+            summary.fields,
+            summary.metadata,
+        ],
     ):
         lines.append("No summary data could be extracted.")
         lines.append(
@@ -155,7 +167,12 @@ async def read_simulation_results(
 
     if summary.metadata:
         lines.append("--- Result metadata ---")
-        rendered = json.dumps(summary.metadata, ensure_ascii=False, default=str, indent=2)
+        rendered = json.dumps(
+            summary.metadata,
+            ensure_ascii=False,
+            default=str,
+            indent=2,
+        )
         if len(rendered) > 8000:
             rendered = rendered[:8000] + "\n... metadata preview truncated ..."
         lines.append(rendered)
@@ -171,14 +188,15 @@ async def read_simulation_results(
         lines.append("")
 
         for vec_name, data_points in sorted(summary.vectors.items()):
-            if variables and vec_name.upper() not in [v.upper() for v in variables]:
+            if variables and vec_name.upper() not in [
+                v.upper() for v in variables
+            ]:
                 continue
             # Downsample
             if len(data_points) > max_points:
                 step = len(data_points) / max_points
                 sampled = [
-                    data_points[int(i * step)]
-                    for i in range(max_points)
+                    data_points[int(i * step)] for i in range(max_points)
                 ]
             else:
                 sampled = data_points
@@ -193,7 +211,11 @@ async def read_simulation_results(
                     f"last={values[-1]:.4g}",
                 )
                 # Show first/last few points
-                preview = sampled[:5] + (["..."] if len(sampled) > 10 else []) + sampled[-5:]
+                preview = (
+                    sampled[:5]
+                    + (["..."] if len(sampled) > 10 else [])
+                    + sampled[-5:]
+                )
                 pts_parts: list[str] = []
                 for item in preview:
                     if isinstance(item, tuple):
@@ -218,7 +240,9 @@ async def read_simulation_results(
         for vec_name, data_points in sorted(summary.well_vectors.items()):
             if wells:
                 parts = vec_name.split(":")
-                if len(parts) < 2 or parts[1].upper() not in [w.upper() for w in wells]:
+                if len(parts) < 2 or parts[1].upper() not in [
+                    w.upper() for w in wells
+                ]:
                     continue
             values = [v for _, v in data_points]
             if values:
@@ -236,19 +260,23 @@ async def read_simulation_results(
         for index, table in enumerate(summary.fields, 1):
             lines.append(
                 f"  [{index}] {table.source_file}: kind={table.kind} "
-                f"shape={table.row_count}x{table.column_count}"
+                f"shape={table.row_count}x{table.column_count}",
             )
             if table.coordinates:
-                lines.append(f"      coordinates: {', '.join(table.coordinates)}")
+                lines.append(
+                    f"      coordinates: {', '.join(table.coordinates)}",
+                )
             if table.variables:
                 variable_preview = list(table.variables[:20])
                 suffix = " ..." if len(table.variables) > 20 else ""
                 lines.append(
                     f"      variables ({len(table.variables)}): "
-                    f"{', '.join(variable_preview)}{suffix}"
+                    f"{', '.join(variable_preview)}{suffix}",
                 )
             else:
-                lines.append("      variables: unnamed (explicit schema required)")
+                lines.append(
+                    "      variables: unnamed (explicit schema required)",
+                )
             if table.sample_rows:
                 lines.append("      bounded sample:")
                 for row in table.sample_rows[:5]:
@@ -265,5 +293,8 @@ async def read_simulation_results(
     return ToolChunk(
         is_last=True,
         state=ToolResultState.SUCCESS,
-        content=[TextBlock(type="text", text="\n".join(lines)), simulation_reference(job_id, job.simulator)],
+        content=[
+            TextBlock(type="text", text="\n".join(lines)),
+            simulation_reference(job_id, job.simulator),
+        ],
     )

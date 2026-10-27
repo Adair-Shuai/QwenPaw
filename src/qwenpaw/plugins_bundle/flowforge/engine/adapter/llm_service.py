@@ -1,19 +1,27 @@
 # -*- coding: utf-8 -*-
 """Adapter: LLM service bridging QwenPaw's ``ProviderManager``.
 
-LeAgent's workflow nodes call ``llm_service.complete(messages=..., model=..., temperature=..., max_tokens=...)``
+LeAgent's workflow nodes call \
+``llm_service.complete(messages=..., model=..., temperature=..., \
+max_tokens=...)``
 and expect a response object with ``.content`` (str).
 
-QwenPaw uses agentscope 2.0's ``ChatModelBase.__call__`` which takes
-``Msg`` objects and returns a ``ChatResponse`` or an async response stream.
-The final ``is_last=True`` response contains the complete text; earlier
-responses are deltas and must not be appended to that final response.
+QwenPaw uses agentscope 2.0's ``ChatModelBase.__call__`` which \
+takes
+``Msg`` objects and returns a ``ChatResponse`` or an async \
+response stream.
+The final ``is_last=True`` response contains the complete text; \
+earlier
+responses are deltas and must not be appended to that final \
+response.
 This adapter:
 
 1. Accepts ``ChatMessage`` objects (from :mod:`.chat_message`).
 2. Converts them to agentscope ``Msg``.
-3. Resolves the model via ``ProviderManager`` (active model or override).
-4. Calls the model and extracts the text content from the response.
+3. Resolves the model via ``ProviderManager`` (active model or \
+override).
+4. Calls the model and extracts the text content from the \
+response.
 """
 
 from __future__ import annotations
@@ -56,13 +64,17 @@ class LLMService:
     """
 
     def __init__(
-        self, provider_manager: Any | None = None, *, agent_id: str | None = None
+        self,
+        provider_manager: Any | None = None,
+        *,
+        agent_id: str | None = None,
     ) -> None:
         self._pm = provider_manager
         self.agent_id = agent_id
 
     def for_agent(self, agent_id: str) -> LLMService:
-        """Bind a request without changing the shared adapter or global model."""
+        """Bind a request without changing the shared adapter or global \
+model."""
         return LLMService(self._pm, agent_id=agent_id)
 
     def _get_provider_manager(self) -> Any:

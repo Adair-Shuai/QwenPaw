@@ -33,7 +33,11 @@ def _is_keyword_line(line: str) -> bool:
     stripped = line.strip()
     if not stripped or stripped.startswith("**"):
         return False
-    if _WELL_RE.match(stripped) or _TRAJ_RE.match(stripped) or _PERF_RE.match(stripped):
+    if (
+        _WELL_RE.match(stripped)
+        or _TRAJ_RE.match(stripped)
+        or _PERF_RE.match(stripped)
+    ):
         return True
     first = stripped.split()[0].lstrip("*")
     if first[:1].isdigit() or "*" in first[:1]:
@@ -54,7 +58,8 @@ def _tokens_to_floats(line: str) -> list[float]:
 
 
 def parse_cmg_wells(path: Path) -> dict[str, dict[str, Any]]:
-    """Return well_name -> {trajectory: [[md,tvd,x,y], ...], completions: [[i,j,k], ...]}."""
+    """Return well_name -> {trajectory: [[md,tvd,x,y], ...], completions: \
+[[i,j,k], ...]}."""
     wells: dict[str, dict[str, Any]] = {}
 
     def bucket(name: str) -> dict[str, Any]:
@@ -64,7 +69,12 @@ def parse_cmg_wells(path: Path) -> dict[str, dict[str, Any]]:
     current_perf: str | None = None
     current_traj: str | None = None
 
-    with path.open("r", encoding="utf-8", errors="replace", newline=None) as handle:
+    with path.open(
+        "r",
+        encoding="utf-8",
+        errors="replace",
+        newline=None,
+    ) as handle:
         for raw in handle:
             line = raw.strip()
             if not line or line.startswith("**"):
@@ -98,13 +108,21 @@ def parse_cmg_wells(path: Path) -> dict[str, dict[str, Any]]:
                     values = _tokens_to_floats(line)
                     if len(values) >= 4:
                         md, tvd, x, y = values[:4]
-                        bucket(current_traj)["trajectory"].append([md, tvd, x, y])
+                        bucket(current_traj)["trajectory"].append(
+                            [md, tvd, x, y],
+                        )
                     elif len(values) == 3:
                         x, y, tvd = values
                         stations = bucket(current_traj)["trajectory"]
-                        md = stations[-1][0] + math.dist(
-                            [tvd, x, y], stations[-1][1:4],
-                        ) if stations else 0.0
+                        md = (
+                            stations[-1][0]
+                            + math.dist(
+                                [tvd, x, y],
+                                stations[-1][1:4],
+                            )
+                            if stations
+                            else 0.0
+                        )
                         stations.append([md, tvd, x, y])
                     continue
 
@@ -114,9 +132,15 @@ def parse_cmg_wells(path: Path) -> dict[str, dict[str, Any]]:
                     continue
                 values = _tokens_to_floats(line)
                 if len(values) >= 3:
-                    i_index, j_index, k_index = (int(values[0]), int(values[1]), int(values[2]))
+                    i_index, j_index, k_index = (
+                        int(values[0]),
+                        int(values[1]),
+                        int(values[2]),
+                    )
                     if i_index > 0 and j_index > 0 and k_index > 0:
-                        bucket(current_perf)["completions"].append([i_index, j_index, k_index])
+                        bucket(current_perf)["completions"].append(
+                            [i_index, j_index, k_index],
+                        )
 
     return wells
 
@@ -129,7 +153,9 @@ def _completion_xyz(
     corner_points: Callable[[int], tuple[tuple[float, float, float], ...]],
 ) -> tuple[float, float, float] | None:
     i_index, j_index, k_index = (value - 1 for value in ijk)
-    if not (0 <= i_index < ncol and 0 <= j_index < nrow and 0 <= k_index < nlay):
+    if not (
+        0 <= i_index < ncol and 0 <= j_index < nrow and 0 <= k_index < nlay
+    ):
         return None
     cell_id = i_index + ncol * (j_index + nrow * k_index)
     points = corner_points(cell_id)
@@ -147,9 +173,11 @@ def convert_cmg_wells(
     ncol: int,
     nrow: int,
     nlay: int,
-    corner_points: Callable[[int], tuple[tuple[float, float, float], ...]] | None = None,
+    corner_points: Callable[[int], tuple[tuple[float, float, float], ...]]
+    | None = None,
 ) -> list[dict[str, Any]]:
-    """Write wellbore datasets for wells that have a trajectory or IJK completions."""
+    """Write wellbore datasets for wells that have a trajectory or IJK \
+completions."""
     related: list[dict[str, Any]] = []
     for well_name, payload in wells.items():
         stations = list(payload.get("trajectory") or [])
@@ -160,7 +188,11 @@ def convert_cmg_wells(
                     continue
                 x, y, z = xyz
                 tvd = abs(z)
-                distance = math.dist([tvd, x, y], stations[-1][1:4]) if stations else 0.0
+                distance = (
+                    math.dist([tvd, x, y], stations[-1][1:4])
+                    if stations
+                    else 0.0
+                )
                 if stations and distance == 0:
                     continue
                 md = stations[-1][0] + distance if stations else 0.0

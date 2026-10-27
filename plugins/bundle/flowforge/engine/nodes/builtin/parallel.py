@@ -24,27 +24,36 @@ class ParallelNode(WorkflowNode):
             node_id="ParallelNode",
             display_name="Parallel",
             category="workflow/control",
-            description=(
-                "Fan out to branches declared in control.branches. Each branch "
-                "may run a ``for_each`` expansion and select a merge strategy."
-            ),
+            description="Fan out to branches declared in control.branches. "
+            "Each branch may run a ``for_each`` expansion and "
+            "select a merge strategy.",
             inputs=[
                 IO.Combo.Input(
-                    id="merge_strategy", optional=True, default="collect",
+                    id="merge_strategy",
+                    optional=True,
+                    default="collect",
                     choices=["collect", "merge", "first", "last"],
                 ),
                 IO.String.Input(id="output", optional=True),
             ],
             outputs=[IO.Array.Output(id="results")],
             hidden=[
-                Hidden.UNIQUE_ID, Hidden.WORKFLOW_STATE, Hidden.TOOL_CONTEXT,
-                Hidden.LOGGER, Hidden.DYNPROMPT,
+                Hidden.UNIQUE_ID,
+                Hidden.WORKFLOW_STATE,
+                Hidden.TOOL_CONTEXT,
+                Hidden.LOGGER,
+                Hidden.DYNPROMPT,
             ],
             control_flow=True,
             not_idempotent=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         from .condition import _control_for  # local reuse
 
         state = hidden.workflow_state
@@ -53,25 +62,75 @@ class ParallelNode(WorkflowNode):
         if not branches:
             return NodeOutput(error="Parallel node has no branches defined")
 
-        strategy = inputs.get("merge_strategy") or control.get("merge_strategy") or "collect"
+        strategy = (
+            inputs.get("merge_strategy")
+            or control.get("merge_strategy")
+            or "collect"
+        )
 
-        executor = getattr(hidden.tool_context, "workflow_executor", None) if hidden.tool_context else None
-        if any(branch.get("nodes") for branch in branches) and not callable(getattr(executor, "execute_single_node_async", None)):
-            return NodeOutput(error="Embedded parallel branches require a branch executor; use independent canvas nodes for parallel execution")
+        executor = (
+            getattr(
+                hidden.tool_context,
+                "workflow_executor",
+                None,
+            )
+            if hidden.tool_context
+            else None
+        )
+        if any(branch.get("nodes") for branch in branches) and not callable(
+            getattr(
+                executor,
+                "execute_single_node_async",
+                None,
+            ),
+        ):
+            return NodeOutput(
+                error="Embedded parallel branches require a branch "
+                "executor; use independent canvas nodes for parallel "
+                "execution",
+            )
         start = time.monotonic()
         tasks: list[asyncio.Task[dict[str, Any]]] = []
-        executor = getattr(hidden.tool_context, "workflow_executor", None) if hidden.tool_context else None
+        executor = (
+            getattr(
+                hidden.tool_context,
+                "workflow_executor",
+                None,
+            )
+            if hidden.tool_context
+            else None
+        )
 
         for branch in branches:
             if branch.get("for_each"):
-                items = state.resolve_template(branch["for_each"]) if state is not None else branch["for_each"]
+                items = (
+                    state.resolve_template(
+                        branch["for_each"],
+                    )
+                    if state is not None
+                    else branch["for_each"]
+                )
                 if not isinstance(items, (list, tuple)):
                     items = [items]
                 for idx, item in enumerate(items):
-                    branch_state = state.fork({"item": item, "index": idx}) if state is not None else None
+                    branch_state = (
+                        state.fork(
+                            {
+                                "item": item,
+                                "index": idx,
+                            },
+                        )
+                        if state is not None
+                        else None
+                    )
                     tasks.append(
                         asyncio.create_task(
-                            _execute_branch(branch, branch_state, executor, hidden),
+                            _execute_branch(
+                                branch,
+                                branch_state,
+                                executor,
+                                hidden,
+                            ),
                             name=f"{branch.get('id', 'branch')}_{idx}",
                         ),
                     )
@@ -79,7 +138,12 @@ class ParallelNode(WorkflowNode):
                 branch_state = state.fork() if state is not None else None
                 tasks.append(
                     asyncio.create_task(
-                        _execute_branch(branch, branch_state, executor, hidden),
+                        _execute_branch(
+                            branch,
+                            branch_state,
+                            executor,
+                            hidden,
+                        ),
                         name=branch.get("id", "branch"),
                     ),
                 )
@@ -91,27 +155,40 @@ class ParallelNode(WorkflowNode):
         if state is not None and inputs.get("output"):
             state.set(inputs["output"], merged)
 
-        failed = [r for r in results if isinstance(r, Exception) or (isinstance(r, dict) and r.get("error"))]
+        failed = [
+            r
+            for r in results
+            if isinstance(r, Exception)
+            or (isinstance(r, dict) and r.get("error"))
+        ]
 
         return NodeOutput(
             values=(merged,),
             error="One or more parallel branches failed" if failed else None,
             metadata={
-                "branch_count": len(branches), "task_count": len(tasks),
-                "failed_count": len(failed), "duration_ms": duration_ms,
+                "branch_count": len(branches),
+                "task_count": len(tasks),
+                "failed_count": len(failed),
+                "duration_ms": duration_ms,
                 "strategy": strategy,
             },
         )
 
 
 async def _execute_branch(
-    branch: dict[str, Any], branch_state: Any, executor: Any,
+    branch: dict[str, Any],
+    branch_state: Any,
+    executor: Any,
     hidden: HiddenHolder,
 ) -> dict[str, Any]:
     try:
         if executor and branch.get("nodes"):
             for node_id in branch["nodes"]:
-                await executor.execute_single_node_async(node_id, branch_state, hidden)
+                await executor.execute_single_node_async(
+                    node_id,
+                    branch_state,
+                    hidden,
+                )
         return {
             "branch_id": branch.get("id", ""),
             "status": "completed",
@@ -119,8 +196,20 @@ async def _execute_branch(
             "variables": dict(getattr(branch_state, "variables", {}) or {}),
         }
     except Exception as exc:  # noqa: BLE001
-        logger.error("branch_execution_failed branch_id=%s error=%s", branch.get("id"), exc, exc_info=True)
-        return {"branch_id": branch.get("id", ""), "status": "failed", "error": str(exc)}
+        logger.error(
+            "branch_execution_failed branch_id=%s error=%s",
+            branch.get("id"),
+            exc,
+            exc_info=True,
+        )
+        return {
+            "branch_id": branch.get(
+                "id",
+                "",
+            ),
+            "status": "failed",
+            "error": str(exc),
+        }
 
 
 def _merge(results: list[Any], strategy: str) -> Any:

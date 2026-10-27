@@ -37,10 +37,15 @@ _load_plugin_package()
 
 @pytest.fixture(autouse=True)
 def isolate_simulation_runtime(tmp_path, monkeypatch):
-    """Keep API fixtures independent of the user's current simulation catalog."""
+    """Keep API fixtures independent of the user's current simulation \
+catalog."""
     from ugsci_visualization_test_plugin.backend import simulation
 
-    monkeypatch.setattr(simulation, "runtime_directory", lambda: tmp_path / "simulation-runtime")
+    monkeypatch.setattr(
+        simulation,
+        "runtime_directory",
+        lambda: tmp_path / "simulation-runtime",
+    )
 
 
 def test_las_fixture_is_depth_only(tmp_path):
@@ -145,16 +150,27 @@ def test_las_reader_uses_header_xy_as_spatial_stick(tmp_path, monkeypatch):
     assert values[2] == 0.0
 
 
-@pytest.mark.parametrize("md,tvd,x,y", [
-    ([], [], [], []),
-    ([0, 10], [0], [0, 1], [0, 1]),
-    ([0, 0], [0, 10], [0, 1], [0, 1]),
-    ([10, 0], [0, 10], [0, 1], [0, 1]),
-    ([0, 10], [0, float("nan")], [0, 1], [0, 1]),
-    ([0, 10], [0, 10], [0, float("inf")], [0, 1]),
-])
-def test_well_trajectory_rejects_invalid_samples_before_writing(tmp_path, md, tvd, x, y):
-    from ugsci_visualization_test_plugin.backend.converters.wellbore import convert_well_trajectory
+@pytest.mark.parametrize(
+    "md,tvd,x,y",
+    [
+        ([], [], [], []),
+        ([0, 10], [0], [0, 1], [0, 1]),
+        ([0, 0], [0, 10], [0, 1], [0, 1]),
+        ([10, 0], [0, 10], [0, 1], [0, 1]),
+        ([0, 10], [0, float("nan")], [0, 1], [0, 1]),
+        ([0, 10], [0, 10], [0, float("inf")], [0, 1]),
+    ],
+)
+def test_well_trajectory_rejects_invalid_samples_before_writing(
+    tmp_path,
+    md,
+    tvd,
+    x,
+    y,
+):
+    from ugsci_visualization_test_plugin.backend.converters.wellbore import (
+        convert_well_trajectory,
+    )
 
     with pytest.raises(ValueError):
         convert_well_trajectory(md, tvd, x, y, "invalid", tmp_path)
@@ -162,26 +178,45 @@ def test_well_trajectory_rejects_invalid_samples_before_writing(tmp_path, md, tv
 
 
 @pytest.mark.parametrize("builtin", [True, False])
-def test_las_missing_values_remain_unknown_and_point_resources_include_last_sample(tmp_path, monkeypatch, builtin):
+def test_las_missing_values_stay_unknown_and_points_include_last(
+    tmp_path,
+    monkeypatch,
+    builtin,
+):
     from ugsci_visualization_test_plugin.backend.readers.las import LasReader
     from ugsci_visualization_test_plugin.backend.api import build_router
 
     if builtin:
         monkeypatch.setitem(sys.modules, "lasio", None)
     bin_dir = tmp_path / "data" / "bin"
-    fixture = ROOT / "tests" / "unit" / "plugins" / "ugsci" / "fixtures" / "nulls_and_duplicates.las"
+    fixture = (
+        ROOT
+        / "tests"
+        / "unit"
+        / "plugins"
+        / "ugsci"
+        / "fixtures"
+        / "nulls_and_duplicates.las"
+    )
     dataset = LasReader().read(str(fixture), "nullable", bin_dir)
     raw = (bin_dir / dataset["files"]["scalars"]["gr"]).read_bytes()
     values = struct.unpack(f"<{len(raw) // 4}f", raw)
     assert values[0] == 85
     assert math.isnan(values[1]) and math.isnan(values[6])
     assert dataset["properties"]["gr"]["association"] == "point"
-    (bin_dir / "manifest.json").write_text(json.dumps({"version": 1, "datasets": [dataset]}), encoding="utf-8")
+    (bin_dir / "manifest.json").write_text(
+        json.dumps({"version": 1, "datasets": [dataset]}),
+        encoding="utf-8",
+    )
     app = FastAPI()
     app.include_router(build_router(tmp_path), prefix="/api")
     client = TestClient(app)
     manifest = client.get("/api/manifest").json()
-    resource = next(item for item in manifest["datasets"][0]["resources"] if item.get("propertyName") == "gr")
+    resource = next(
+        item
+        for item in manifest["datasets"][0]["resources"]
+        if item.get("propertyName") == "gr"
+    )
     assert resource["shape"] == [9]
     assert resource["association"] == "point"
     details = client.get("/api/datasets/las_nullable/cells/8")
@@ -194,35 +229,74 @@ def test_las_missing_values_remain_unknown_and_point_resources_include_last_samp
 
 
 def test_cmg_horizontal_completion_path_has_increasing_geometric_md(tmp_path):
-    from ugsci_visualization_test_plugin.backend.readers.cmg_wells import convert_cmg_wells
+    from ugsci_visualization_test_plugin.backend.readers.cmg_wells import (
+        convert_cmg_wells,
+    )
 
     def corners(cell):
-        return tuple((10.0 * cell + x, y, 100.0 + z) for x, y, z in (
-            (0, 0, 0), (1, 0, 0), (1, 1, 0), (0, 1, 0),
-            (0, 0, 1), (1, 0, 1), (1, 1, 1), (0, 1, 1),
-        ))
+        return tuple(
+            (10.0 * cell + x, y, 100.0 + z)
+            for x, y, z in (
+                (0, 0, 0),
+                (1, 0, 0),
+                (1, 1, 0),
+                (0, 1, 0),
+                (0, 0, 1),
+                (1, 0, 1),
+                (1, 1, 1),
+                (0, 1, 1),
+            )
+        )
 
     datasets = convert_cmg_wells(
-        {"H1": {"completions": [[1, 1, 1], [2, 1, 1]]}}, "horizontal", tmp_path,
-        ncol=2, nrow=1, nlay=1, corner_points=corners,
+        {"H1": {"completions": [[1, 1, 1], [2, 1, 1]]}},
+        "horizontal",
+        tmp_path,
+        ncol=2,
+        nrow=1,
+        nlay=1,
+        corner_points=corners,
     )
     raw = (tmp_path / datasets[0]["files"]["scalars"]["md"]).read_bytes()
     assert struct.unpack("<2f", raw) == (0.0, 10.0)
 
 
 @pytest.mark.parametrize("builtin", [True, False])
-def test_las_feet_are_normalized_to_metres_with_source_units_preserved(tmp_path, monkeypatch, builtin):
+def test_las_feet_are_normalized_to_metres_with_source_units_preserved(
+    tmp_path,
+    monkeypatch,
+    builtin,
+):
     from ugsci_visualization_test_plugin.backend.readers.las import LasReader
 
     if builtin:
         monkeypatch.setitem(sys.modules, "lasio", None)
     source = tmp_path / "feet.las"
-    source.write_text("\n".join([
-        "~Version Information", "VERS. 2.0 :", "WRAP. NO :",
-        "~Well Information", "STRT.FT 100 :", "STOP.FT 200 :", "STEP.FT 100 :",
-        "NULL. -999.25 :", "WELL. Feet Example :", "XWELL.FT 1000 :", "YWELL.M 500 :",
-        "~Curve Information", "DEPT.FT :", "GR.API :", "~A", "100 20", "200 30", "",
-    ]), encoding="utf-8")
+    source.write_text(
+        "\n".join(
+            [
+                "~Version Information",
+                "VERS. 2.0 :",
+                "WRAP. NO :",
+                "~Well Information",
+                "STRT.FT 100 :",
+                "STOP.FT 200 :",
+                "STEP.FT 100 :",
+                "NULL. -999.25 :",
+                "WELL. Feet Example :",
+                "XWELL.FT 1000 :",
+                "YWELL.M 500 :",
+                "~Curve Information",
+                "DEPT.FT :",
+                "GR.API :",
+                "~A",
+                "100 20",
+                "200 30",
+                "",
+            ],
+        ),
+        encoding="utf-8",
+    )
     dataset = LasReader().read(str(source), "feet", tmp_path)
     raw = (tmp_path / dataset["files"]["positions"]).read_bytes()
     positions = struct.unpack("<6f", raw)
@@ -236,12 +310,23 @@ def test_las_feet_are_normalized_to_metres_with_source_units_preserved(tmp_path,
     assert dataset["properties"]["gr"]["unit"] == "API"
 
 
-def test_las_unknown_length_units_are_not_labelled_metres_or_placed_spatially(tmp_path):
+def test_las_unknown_length_units_are_not_labelled_metres_or_placed_spatially(
+    tmp_path,
+):
     from ugsci_visualization_test_plugin.backend.readers.las import LasReader
 
     dataset = LasReader._build_dataset(
-        "unknown", tmp_path, [10, 20], [("GR", [20, 30])], "unknown", "test",
-        1000, 2000, depth_unit="", x_unit="M", y_unit="M",
+        "unknown",
+        tmp_path,
+        [10, 20],
+        [("GR", [20, 30])],
+        "unknown",
+        "test",
+        1000,
+        2000,
+        depth_unit="",
+        x_unit="M",
+        y_unit="M",
     )
     assert dataset["metadata"]["coordinate_system"]["length_unit"] is None
     assert dataset["metadata"]["depth_unit"] is None

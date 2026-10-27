@@ -17,14 +17,30 @@ registerEngineFactory("three-reservoir", (options) => {
   const command = (name: string, args: Record<string, unknown>) =>
     viewer.executeCommand(name, args);
   return {
-    get ready() { return viewer.ready; },
-    loadDataset: async (datasetId) => { await command("open", { datasetId }); },
-    setProperty: (name) => { void command("set-property", { property: name }); },
-    setColorMap: (name) => { void command("set-colormap", { colormap: name }); },
-    setOpacity: (value) => { void command("set-opacity", { opacity: value }); },
-    setWireframe: (enabled) => { void command("set-wireframe", { enabled }); },
-    setView: (view) => { void command("set-view", { view }); },
-    focusObject: (objectType, id) => { void command("focus", { objectType, objectId: id }); },
+    get ready() {
+      return viewer.ready;
+    },
+    loadDataset: async (datasetId) => {
+      await command("open", { datasetId });
+    },
+    setProperty: (name) => {
+      void command("set-property", { property: name });
+    },
+    setColorMap: (name) => {
+      void command("set-colormap", { colormap: name });
+    },
+    setOpacity: (value) => {
+      void command("set-opacity", { opacity: value });
+    },
+    setWireframe: (enabled) => {
+      void command("set-wireframe", { enabled });
+    },
+    setView: (view) => {
+      void command("set-view", { view });
+    },
+    focusObject: (objectType, id) => {
+      void command("focus", { objectType, objectId: id });
+    },
     captureScreenshot: () => viewer.captureScreenshot(false),
     runBenchmark: async () => command("benchmark", {}),
     executeCommand: command,

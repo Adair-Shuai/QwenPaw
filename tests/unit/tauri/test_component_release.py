@@ -92,7 +92,7 @@ def test_builds_signed_full_release_and_excludes_user_inventory(tmp_path):
             / "components"
             / "windows-x86_64"
             / "demo"
-        ).glob("*/full.zip")
+        ).glob("*/full.zip"),
     )
 
 
@@ -101,7 +101,8 @@ def test_archive_urls_identify_bytes_across_same_version_rebuilds(tmp_path):
     source = tmp_path / "staged" / "demo"
     source.mkdir(parents=True)
     (source / "plugin.json").write_text(
-        json.dumps({"id": "demo", "version": "1.0.0"}), encoding="utf-8"
+        json.dumps({"id": "demo", "version": "1.0.0"}),
+        encoding="utf-8",
     )
     private = Ed25519PrivateKey.generate()
     key = base64.b64encode(
@@ -109,7 +110,7 @@ def test_archive_urls_identify_bytes_across_same_version_rebuilds(tmp_path):
             serialization.Encoding.Raw,
             serialization.PrivateFormat.Raw,
             serialization.NoEncryption(),
-        )
+        ),
     ).decode()
     urls = []
     for index, body in enumerate(("old", "new", "new")):
@@ -183,7 +184,7 @@ def test_builds_delta_when_previous_base_is_supplied(tmp_path):
             / "components"
             / "windows-x86_64"
             / "demo"
-        ).glob("*/delta.zip")
+        ).glob("*/delta.zip"),
     )
 
 

@@ -582,6 +582,20 @@ class ComponentUpdater:
         self._directory_records: dict[str, dict[str, str]] | None = None
         self.release_version: str | None = None
 
+    @property
+    def candidate_directory_records(self) -> dict[str, dict[str, str]] | None:
+        """Snapshot unpublished runtime candidates without exposing mutation.
+
+        None means no directory transaction; an empty mapping means a
+        transaction has begun but has not staged a component yet.
+        """
+        if self._directory_records is None:
+            return None
+        return {
+            component: dict(record)
+            for component, record in self._directory_records.items()
+        }
+
     @contextlib.contextmanager
     def directory_transaction(self):
         """Publish the runtime set once, only after every candidate validates.

@@ -1,9 +1,12 @@
 # -*- coding: utf-8 -*-
 """The persisted workflow contract shared by the canvas and executor.
 
-Canvas edges project into typed node inputs/control targets. Documents predating
-canvas edges are upgraded from their references. Validation never executes tools
-and may use the selected agent's dynamic node registry for schema checks.
+Canvas edges project into typed node inputs/control targets. \
+Documents predating
+canvas edges are upgraded from their references. Validation never \
+executes tools
+and may use the selected agent's dynamic node registry for schema \
+checks.
 """
 from __future__ import annotations
 
@@ -15,7 +18,10 @@ from typing import Any, Iterable
 from pydantic import BaseModel, Field
 
 from .errors import ValidationError
-from .types import _resolve_template  # noqa: F401
+from .types import resolve_template
+
+# Retain the historical document helper as the same public resolver.
+_resolve_template = resolve_template
 
 CONTROL_TARGET_FIELDS = (
     "next",
@@ -75,9 +81,12 @@ def _links(value: Any, path: str = "") -> Iterable[tuple[str, Any, str]]:
 def canonicalize(data: dict[str, Any]) -> dict[str, Any]:
     """Return a non-mutating, idempotent executable projection of the canvas.
 
-    Explicit edges, including [], own top-level wired sockets and control
-    targets. Nested object bindings remain in their objects; ordering-only edges
-    never replace those objects. Invalid edges are retained for error reporting.
+    Explicit edges, including [], own top-level wired sockets and \
+control
+    targets. Nested object bindings remain in their objects; \
+ordering-only edges
+    never replace those objects. Invalid edges are retained for error \
+reporting.
     """
     result = copy.deepcopy(data)
     nodes = result.get("nodes")
@@ -105,7 +114,13 @@ def canonicalize(data: dict[str, Any]) -> dict[str, Any]:
         edges.append(edge)
 
     def add(
-        source, target, *, kind="data", source_handle=None, target_handle=None, slot=0
+        source,
+        target,
+        *,
+        kind="data",
+        source_handle=None,
+        target_handle=None,
+        slot=0,
     ):
         candidate = {
             "source": source,
@@ -136,7 +151,10 @@ def canonicalize(data: dict[str, Any]) -> dict[str, Any]:
     for nid, node in nodes.items():
         if not isinstance(node, dict):
             continue
-        inputs, control = node.setdefault("inputs", {}), node.setdefault("control", {})
+        inputs, control = node.setdefault("inputs", {}), node.setdefault(
+            "control",
+            {},
+        )
         if not isinstance(inputs, dict) or not isinstance(control, dict):
             continue
         if authoritative:
@@ -152,7 +170,8 @@ def canonicalize(data: dict[str, Any]) -> dict[str, Any]:
                     remaining = [
                         item
                         for item in value
-                        if item[0] not in nodes or survives(item[0], nid, key, item[1])
+                        if item[0] not in nodes
+                        or survives(item[0], nid, key, item[1])
                     ]
                     if remaining:
                         inputs[key] = remaining
@@ -188,7 +207,9 @@ def canonicalize(data: dict[str, Any]) -> dict[str, Any]:
             if isinstance(conditions, list):
                 for index, condition in enumerate(conditions):
                     if isinstance(condition, dict):
-                        target = condition.get("then_node") or condition.get("then")
+                        target = condition.get("then_node") or condition.get(
+                            "then",
+                        )
                         if target:
                             add(
                                 nid,
@@ -205,7 +226,10 @@ def canonicalize(data: dict[str, Any]) -> dict[str, Any]:
             continue
         if source not in nodes or target not in nodes:
             continue
-        if not isinstance(nodes[source], dict) or not isinstance(nodes[target], dict):
+        if not isinstance(nodes[source], dict) or not isinstance(
+            nodes[target],
+            dict,
+        ):
             continue
         if edge.get("kind") == "control":
             control = nodes[source].get("control")
@@ -286,15 +310,22 @@ def _cycle_errors(graph: dict[str, set[str]], kind: str) -> list[str]:
                 color[current] = 2
                 stack.pop()
             elif color.get(child) == 1:
-                errors.append(f"{kind} cycle detected: '{current}' -> '{child}'")
+                errors.append(
+                    f"{kind} cycle detected: '{current}' -> '{child}'",
+                )
             elif not color.get(child):
                 color[child] = 1
                 stack.append((child, iter(sorted(graph[child]))))
     return errors
 
 
-def validate(doc: WorkflowDocument, *, registry: Any = None) -> ValidationResult:
-    """Check structural invariants and, when supplied, current registry schemas."""
+def validate(
+    doc: WorkflowDocument,
+    *,
+    registry: Any = None,
+) -> ValidationResult:
+    """Check structural invariants and, when supplied, current registry \
+schemas."""
     from .io.types import types_compatible
     from .types import ConditionExpression
 
@@ -306,16 +337,22 @@ def validate(doc: WorkflowDocument, *, registry: Any = None) -> ValidationResult
     for spec in doc.inputs:
         name = spec.get("name")
         if isinstance(name, str) and name.startswith("__"):
-            errors.append(f"workflow input '{name}' uses a reserved internal name")
+            errors.append(
+                f"workflow input '{name}' uses a reserved internal name",
+            )
     schemas = {}
     for nid, node in nodes.items():
         class_type = node.get("class_type")
         if not isinstance(class_type, str) or not class_type:
-            errors.append(f"node '{nid}' class_type must be a non-empty string")
+            errors.append(
+                f"node '{nid}' class_type must be a non-empty string",
+            )
         elif registry is not None:
             cls = registry.get(class_type)
             if cls is None:
-                errors.append(f"node '{nid}' has unknown class_type '{class_type}'")
+                errors.append(
+                    f"node '{nid}' has unknown class_type '{class_type}'",
+                )
             else:
                 schemas[nid] = cls.get_schema()
     data_graph = {nid: set() for nid in nodes}
@@ -326,13 +363,19 @@ def validate(doc: WorkflowDocument, *, registry: Any = None) -> ValidationResult
         label = edge.get("id", index)
         for name, nid in (("source", source), ("target", target)):
             if not isinstance(nid, str) or nid not in nodes:
-                errors.append(f"edge '{label}' references unknown {name} '{nid}'")
+                errors.append(
+                    f"edge '{label}' references unknown {name} '{nid}'",
+                )
         kind = edge.get("kind", "data")
         if kind == "data":
-            slot, handle = edge.get("source_slot", 0), edge.get("target_handle")
+            slot, handle = edge.get("source_slot", 0), edge.get(
+                "target_handle",
+            )
             if isinstance(slot, bool) or not isinstance(slot, int) or slot < 0:
                 errors.append(
-                    f"edge '{label}' source_slot must be a non-negative integer"
+                    f"edge '"
+                    f"{label}"
+                    f"' source_slot must be a non-negative integer",
                 )
             source_handle = edge.get("source_handle")
             if isinstance(source, str) and source in schemas and source_handle:
@@ -342,22 +385,38 @@ def validate(doc: WorkflowDocument, *, registry: Any = None) -> ValidationResult
                 ]
                 if source_handle not in output_names:
                     errors.append(
-                        f"node '{source}' has no output socket '{source_handle}'"
+                        f"node '"
+                        f"{source}"
+                        f"' has no output socket '"
+                        f"{source_handle}"
+                        f"'",
                     )
-                elif type(slot) is int and output_names.index(source_handle) != slot:
+                elif (
+                    type(slot) is int
+                    and output_names.index(source_handle) != slot
+                ):
                     errors.append(
-                        f"edge '{label}' source_handle and source_slot do not match"
+                        f"edge '"
+                        f"{label}"
+                        f"' source_handle and source_slot do "
+                        f"not match",
                     )
             if isinstance(target, str) and isinstance(handle, str) and handle:
                 if (target, handle) in wired:
                     errors.append(
-                        f"node '{target}' input '{handle}' has multiple canvas bindings"
+                        f"node '"
+                        f"{target}"
+                        f"' input '"
+                        f"{handle}"
+                        f"' has multiple canvas bindings",
                     )
                 wired.add((target, handle))
                 if target in schemas and handle not in {
                     item.id for item in schemas[target].inputs
                 }:
-                    errors.append(f"node '{target}' has no input socket '{handle}'")
+                    errors.append(
+                        f"node '{target}' has no input socket '{handle}'",
+                    )
         elif kind == "control":
             handle = edge.get("source_handle")
             control = (
@@ -366,7 +425,9 @@ def validate(doc: WorkflowDocument, *, registry: Any = None) -> ValidationResult
                 else None
             )
             conditions = (
-                control.get("conditions", []) if isinstance(control, dict) else []
+                control.get("conditions", [])
+                if isinstance(control, dict)
+                else []
             )
             valid_condition = (
                 isinstance(handle, str)
@@ -376,7 +437,9 @@ def validate(doc: WorkflowDocument, *, registry: Any = None) -> ValidationResult
                 and int(handle[10:]) < len(conditions)
             )
             if handle not in CONTROL_TARGET_FIELDS and not valid_condition:
-                errors.append(f"edge '{label}' has invalid control handle '{handle}'")
+                errors.append(
+                    f"edge '{label}' has invalid control handle '{handle}'",
+                )
         else:
             errors.append(f"edge '{label}' has unknown kind '{kind}'")
     for nid, node in nodes.items():
@@ -390,13 +453,23 @@ def validate(doc: WorkflowDocument, *, registry: Any = None) -> ValidationResult
         for source, slot, path in _links(inputs):
             if source not in nodes:
                 errors.append(
-                    f"node '{nid}' input '{path}' references unknown node '{source}'"
+                    f"node '"
+                    f"{nid}"
+                    f"' input '"
+                    f"{path}"
+                    f"' references unknown node '"
+                    f"{source}"
+                    f"'",
                 )
                 continue
             data_graph[source].add(nid)
             if isinstance(slot, bool) or slot < 0:
                 errors.append(
-                    f"node '{nid}' input '{path}' output slot must be a non-negative integer"
+                    f"node '"
+                    f"{nid}"
+                    f"' input '"
+                    f"{path}"
+                    f"' output slot must be a non-negative integer",
                 )
             elif (
                 source in schemas
@@ -404,15 +477,30 @@ def validate(doc: WorkflowDocument, *, registry: Any = None) -> ValidationResult
                 and not path.startswith("__flow_dependencies")
             ):
                 errors.append(
-                    f"node '{nid}' input '{path}' output slot {slot} does not exist on '{source}'"
+                    f"node '"
+                    f"{nid}"
+                    f"' input '"
+                    f"{path}"
+                    f"' output slot "
+                    f"{slot}"
+                    f" does not exist on '"
+                    f"{source}"
+                    f"'",
                 )
         if nid in schemas:
             for inp in schemas[nid].inputs:
                 value = inputs.get(inp.id)
                 if value is None:
-                    if not inp.optional and getattr(inp, "default", None) is None:
+                    if (
+                        not inp.optional
+                        and getattr(inp, "default", None) is None
+                    ):
                         errors.append(
-                            f"node '{nid}' required input '{inp.id}' is missing"
+                            f"node '"
+                            f"{nid}"
+                            f"' required input '"
+                            f"{inp.id}"
+                            f"' is missing",
                         )
                     continue
                 if _is_link(value):
@@ -422,57 +510,95 @@ def validate(doc: WorkflowDocument, *, registry: Any = None) -> ValidationResult
                         and type(slot) is int
                         and 0 <= slot < len(schemas[source].outputs)
                     ):
-                        upstream_type = schemas[source].outputs[slot].get_io_type()
-                        if not types_compatible(upstream_type, inp.get_io_type()):
+                        upstream_type = (
+                            schemas[source].outputs[slot].get_io_type()
+                        )
+                        if not types_compatible(
+                            upstream_type,
+                            inp.get_io_type(),
+                        ):
                             errors.append(
-                                f"node '{nid}' input '{inp.id}' type mismatch: {upstream_type} -> {inp.get_io_type()}"
+                                f"node '"
+                                f"{nid}"
+                                f"' input '"
+                                f"{inp.id}"
+                                f"' type mismatch: "
+                                f"{upstream_type}"
+                                f" -> "
+                                f"{inp.get_io_type()}",
                             )
                     continue
                 if isinstance(value, str) and "${" in value:
                     continue
                 io_type = inp.get_io_type()
                 if io_type == "OBJECT" and not isinstance(value, dict):
-                    errors.append(f"node '{nid}' input '{inp.id}' must be an object")
+                    errors.append(
+                        f"node '{nid}' input '{inp.id}' must be an object",
+                    )
                 elif io_type == "ARRAY" and not isinstance(value, list):
-                    errors.append(f"node '{nid}' input '{inp.id}' must be an array")
+                    errors.append(
+                        f"node '{nid}' input '{inp.id}' must be an array",
+                    )
                 elif (
                     io_type in ("INT", "FLOAT")
                     and isinstance(value, (int, float))
                     and not math.isfinite(value)
                 ):
-                    errors.append(f"node '{nid}' input '{inp.id}' must be finite")
+                    errors.append(
+                        f"node '{nid}' input '{inp.id}' must be finite",
+                    )
                 else:
                     try:
                         ok, detail = inp.validate(value)
                     except (TypeError, ValueError) as exc:
                         ok, detail = False, str(exc)
                     if not ok:
-                        errors.append(f"node '{nid}' input '{inp.id}': {detail}")
+                        errors.append(
+                            f"node '{nid}' input '{inp.id}': {detail}",
+                        )
         bounded_refine = node.get("class_type") == "IterativeRefineNode"
         if bounded_refine:
             budget = inputs.get("max_iterations", 3)
             if type(budget) is not int or not 1 <= budget <= 20:
                 errors.append(
-                    f"node '{nid}' max_iterations must be a literal integer from 1 to 20"
+                    f"node '"
+                    f"{nid}"
+                    f"' max_iterations must be a literal "
+                    f"integer from 1 to 20",
                 )
             for key in ("retry_node", "exhausted_node"):
                 target = control.get(key)
                 if not isinstance(target, str) or target not in nodes:
                     errors.append(
-                        f"node '{nid}' requires an explicit control.{key} target"
+                        f"node '"
+                        f"{nid}"
+                        f"' requires an explicit control."
+                        f"{key}"
+                        f" target",
                     )
             if control.get("retry_node") == control.get("exhausted_node"):
-                errors.append(f"node '{nid}' retry and exhausted targets must differ")
+                errors.append(
+                    f"node '{nid}' retry and exhausted targets must differ",
+                )
             if any(control.get(key) for key in ("next", "else", "else_node")):
                 errors.append(
-                    f"node '{nid}' must use retry_node/exhausted_node instead of next/else aliases"
+                    f"node '"
+                    f"{nid}"
+                    f"' must use retry_node/exhausted_node "
+                    f"instead of next/else aliases",
                 )
         for key in CONTROL_TARGET_FIELDS:
             target = control.get(key)
             if target is not None:
                 if not isinstance(target, str) or target not in nodes:
                     errors.append(
-                        f"node '{nid}' control.{key} -> unknown node '{target}'"
+                        f"node '"
+                        f"{nid}"
+                        f"' control."
+                        f"{key}"
+                        f" -> unknown node '"
+                        f"{target}"
+                        f"'",
                     )
                 elif not (bounded_refine and key == "retry_node"):
                     control_graph[nid].add(target)
@@ -482,12 +608,20 @@ def validate(doc: WorkflowDocument, *, registry: Any = None) -> ValidationResult
         else:
             for index, condition in enumerate(conditions):
                 if not isinstance(condition, dict):
-                    errors.append(f"node '{nid}' condition {index} must be an object")
+                    errors.append(
+                        f"node '{nid}' condition {index} must be an object",
+                    )
                     continue
                 target = condition.get("then_node") or condition.get("then")
                 if not isinstance(target, str) or target not in nodes:
                     errors.append(
-                        f"node '{nid}' condition {index} -> unknown node '{target}'"
+                        f"node '"
+                        f"{nid}"
+                        f"' condition "
+                        f"{index}"
+                        f" -> unknown node '"
+                        f"{target}"
+                        f"'",
                     )
                 else:
                     control_graph[nid].add(target)
@@ -503,7 +637,11 @@ def validate(doc: WorkflowDocument, *, registry: Any = None) -> ValidationResult
                     ConditionExpression.model_validate(expression)
                 except Exception:
                     errors.append(
-                        f"node '{nid}' condition {index} has an invalid expression"
+                        f"node '"
+                        f"{nid}"
+                        f"' condition "
+                        f"{index}"
+                        f" has an invalid expression",
                     )
         branches = control.get("branches", [])
         if not isinstance(branches, list):
@@ -511,16 +649,27 @@ def validate(doc: WorkflowDocument, *, registry: Any = None) -> ValidationResult
         else:
             for index, branch in enumerate(branches):
                 if not isinstance(branch, dict) or not isinstance(
-                    branch.get("nodes", []), list
+                    branch.get("nodes", []),
+                    list,
                 ):
                     errors.append(
-                        f"node '{nid}' branch {index} must contain a nodes array"
+                        f"node '"
+                        f"{nid}"
+                        f"' branch "
+                        f"{index}"
+                        f" must contain a nodes array",
                     )
                     continue
                 for target in branch.get("nodes", []):
                     if not isinstance(target, str) or target not in nodes:
                         errors.append(
-                            f"node '{nid}' branch {index} -> unknown node '{target}'"
+                            f"node '"
+                            f"{nid}"
+                            f"' branch "
+                            f"{index}"
+                            f" -> unknown node '"
+                            f"{target}"
+                            f"'",
                         )
         for key, low, high, integer in (
             ("max_retries", 0, 10, True),
@@ -539,24 +688,36 @@ def validate(doc: WorkflowDocument, *, registry: Any = None) -> ValidationResult
                 )
                 if not valid:
                     errors.append(
-                        f"node '{nid}' control.{key} is outside its allowed range"
+                        f"node '"
+                        f"{nid}"
+                        f"' control."
+                        f"{key}"
+                        f" is outside its allowed range",
                     )
         if control.get("mode", "run") not in ("run", "mute", "bypass"):
-            errors.append(f"node '{nid}' control.mode must be run, mute or bypass")
+            errors.append(
+                f"node '{nid}' control.mode must be run, mute or bypass",
+            )
     errors.extend(_cycle_errors(data_graph, "data dependency"))
     combined = {nid: data_graph[nid] | control_graph[nid] for nid in nodes}
     errors.extend(_cycle_errors(combined, "workflow"))
     output_nodes = list(
         dict.fromkeys(
-            doc.outputs if isinstance(doc.outputs, list) else doc.outputs.keys()
-        )
+            doc.outputs
+            if isinstance(doc.outputs, list)
+            else doc.outputs.keys(),
+        ),
     )
     if not output_nodes:
         output_nodes = [nid for nid in nodes if not combined[nid]]
     for out in output_nodes:
         if out not in nodes:
             errors.append(f"output node '{out}' not in nodes")
-    return ValidationResult(not errors, output_nodes, list(dict.fromkeys(errors)))
+    return ValidationResult(
+        not errors,
+        output_nodes,
+        list(dict.fromkeys(errors)),
+    )
 
 
 def to_json(doc: WorkflowDocument) -> str:
@@ -568,7 +729,10 @@ def graph_hash(doc: WorkflowDocument) -> str:
     import json
 
     payload = json.dumps(
-        doc.model_dump(mode="json"), sort_keys=True, ensure_ascii=False, default=str
+        doc.model_dump(mode="json"),
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
     )
     return hashlib.md5(payload.encode("utf-8")).hexdigest()
 

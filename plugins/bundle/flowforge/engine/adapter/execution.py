@@ -14,7 +14,6 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any
 
 
 class ExecutionScope(str, Enum):
@@ -55,7 +54,13 @@ def begin_execution(
 
 def end_execution(run_id: str) -> None:
     """End an execution run (stub — no-op)."""
-    pass
+    # This adapter has no execution registry; the host owns run teardown.
+    del run_id
 
 
-__all__ = ["ExecutionRun", "ExecutionScope", "begin_execution", "end_execution"]
+__all__ = [
+    "ExecutionRun",
+    "ExecutionScope",
+    "begin_execution",
+    "end_execution",
+]

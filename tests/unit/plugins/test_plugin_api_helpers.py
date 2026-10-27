@@ -22,9 +22,18 @@ from qwenpaw.plugins.api import PluginApi
 
 
 @pytest.mark.parametrize("continuous_conflict", [False, True, "deleted"])
-def test_tool_projection_rebases_concurrent_config_edits(tmp_path, monkeypatch, continuous_conflict):
+def test_tool_projection_rebases_concurrent_config_edits(
+    tmp_path,
+    monkeypatch,
+    continuous_conflict,
+):
     from qwenpaw.config import config as config_module, utils
-    from qwenpaw.config.config import AgentProfileConfig, AgentProfileRef, AgentsConfig, Config
+    from qwenpaw.config.config import (
+        AgentProfileConfig,
+        AgentProfileRef,
+        AgentsConfig,
+        Config,
+    )
     from qwenpaw.exceptions import AgentConfigConflictError
     from qwenpaw.utils.io_utils import write_json_atomic
 
@@ -32,10 +41,23 @@ def test_tool_projection_rebases_concurrent_config_edits(tmp_path, monkeypatch, 
     workspace = tmp_path / "agent"
     workspace.mkdir()
     path = workspace / "agent.json"
-    write_json_atomic(path, AgentProfileConfig(id="agent", name="Agent").model_dump(exclude_none=True))
-    root = Config(agents=AgentsConfig(active_agent="agent", profiles={
-        "agent": AgentProfileRef(id="agent", workspace_dir=str(workspace))
-    }))
+    write_json_atomic(
+        path,
+        AgentProfileConfig(id="agent", name="Agent").model_dump(
+            exclude_none=True,
+        ),
+    )
+    root = Config(
+        agents=AgentsConfig(
+            active_agent="agent",
+            profiles={
+                "agent": AgentProfileRef(
+                    id="agent",
+                    workspace_dir=str(workspace),
+                ),
+            },
+        ),
+    )
     monkeypatch.setattr(utils, "load_config", lambda: root)
     monkeypatch.setattr(utils, "_agent_config_cache", {})
     monkeypatch.setattr(utils, "_agent_config_lock", threading.RLock())
@@ -49,8 +71,12 @@ def test_tool_projection_rebases_concurrent_config_edits(tmp_path, monkeypatch, 
         elif continuous_conflict or len(attempts) == 1:
             raw = json.loads(path.read_text(encoding="utf-8"))
             raw["description"] = f"concurrent edit {len(attempts)}"
-            raw.setdefault("tools", {}).setdefault("builtin_tools", {})["my_tool"] = {
-                "name": "my_tool", "enabled": False, "config": {"user_setting": "kept"}
+            raw.setdefault("tools", {}).setdefault("builtin_tools", {})[
+                "my_tool"
+            ] = {
+                "name": "my_tool",
+                "enabled": False,
+                "config": {"user_setting": "kept"},
             }
             write_json_atomic(path, raw)
         save(agent_id, candidate)
@@ -59,7 +85,14 @@ def test_tool_projection_rebases_concurrent_config_edits(tmp_path, monkeypatch, 
     snapshot = {}
 
     def project():
-        plugins_api._write_tool_config("my_tool", True, "new tool", "", "ugsci", snapshot)
+        plugins_api._write_tool_config(
+            "my_tool",
+            True,
+            "new tool",
+            "",
+            "ugsci",
+            snapshot,
+        )
 
     if continuous_conflict:
         with pytest.raises(AgentConfigConflictError):
@@ -74,8 +107,12 @@ def test_tool_projection_rebases_concurrent_config_edits(tmp_path, monkeypatch, 
         result = config_module.load_agent_config("agent")
         assert result.description == "concurrent edit 1"
         assert result.tools.builtin_tools["my_tool"].enabled is False
-        assert result.tools.builtin_tools["my_tool"].config == {"user_setting": "kept"}
-        assert snapshot["agent"]["my_tool"]["config"] == {"user_setting": "kept"}
+        assert result.tools.builtin_tools["my_tool"].config == {
+            "user_setting": "kept",
+        }
+        assert snapshot["agent"]["my_tool"]["config"] == {
+            "user_setting": "kept",
+        }
 
 
 # ---------------------------------------------------------------------------
@@ -195,7 +232,9 @@ class TestWriteToolConfig:
         ), patch(
             "qwenpaw.config.utils.load_config",
             return_value=root_config,
-        ), patch("qwenpaw.config.config.mutate_agent_config") as mutate:
+        ), patch(
+            "qwenpaw.config.config.mutate_agent_config",
+        ) as mutate:
             plugins_api._write_tool_config(
                 "my_tool",
                 enabled=True,

@@ -6,11 +6,11 @@ Usage: python3 build_html.py
 Run from the docs/ directory.
 """
 import json
-import os
 import re
 import shutil
-import markdown
 from pathlib import Path
+
+import markdown
 
 DOCS_DIR = Path(__file__).parent
 PLUGIN_DIR = DOCS_DIR.parent
@@ -18,8 +18,11 @@ RUNTIME_DOCS_DIR = PLUGIN_DIR / "static" / "docs"
 
 
 def _metadata() -> dict[str, object]:
-    """Read the canonical manifest so generated docs never carry old versions."""
-    manifest = json.loads((PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"))
+    """Read the canonical manifest so generated docs never carry old \
+versions."""
+    manifest = json.loads(
+        (PLUGIN_DIR / "plugin.json").read_text(encoding="utf-8"),
+    )
     skills = sorted((PLUGIN_DIR / "skills").glob("*/SKILL.md"))
     min_qwenpaw = manifest.get("qwenpaw_version", {}).get("min", "unknown")
     return {
@@ -34,15 +37,15 @@ METADATA = _metadata()
 # ── Page metadata ──────────────────────────────────────────────────────────
 
 PAGES = [
-    ("index",        "UGSci 文档",          ""),
-    ("user-manual",  "零基础使用手册（推荐）",  ""),
-    ("user-guide",   "使用指南",              ""),
-    ("architecture", "架构设计",              ""),
-    ("frontend",     "前端开发指南",           ""),
-    ("backend",      "后端开发指南",           ""),
-    ("skills",       "技能列表",              ""),
-    ("software-detection", "本地软件检测",      ""),
-    ("expert-teams", "专家团",                ""),
+    ("index", "UGSci 文档", ""),
+    ("user-manual", "零基础使用手册（推荐）", ""),
+    ("user-guide", "使用指南", ""),
+    ("architecture", "架构设计", ""),
+    ("frontend", "前端开发指南", ""),
+    ("backend", "后端开发指南", ""),
+    ("skills", "技能列表", ""),
+    ("software-detection", "本地软件检测", ""),
+    ("expert-teams", "专家团", ""),
 ]
 
 # ── Shared CSS ────────────────────────────────────────────────────────────
@@ -390,12 +393,13 @@ tbody tr:nth-child(even) {
 
 # ── Sidebar HTML ────────────────────────────────────────────────────────
 
+
 def sidebar_html(active_id: str = "") -> str:
     items = []
     for pid, label, icon in PAGES:
         href = f"{pid}.html" if pid != "index" else "index.html"
         cls = "active" if pid == active_id else ""
-        icon_html = f'<span class="icon">{icon}</span>' if icon else ''
+        icon_html = f'<span class="icon">{icon}</span>' if icon else ""
         items.append(f'<a href="{href}" class="{cls}">{icon_html}{label}</a>')
     return f"""
 <aside id="sidebar">
@@ -411,7 +415,11 @@ def sidebar_html(active_id: str = "") -> str:
 
 def page_html(title: str, active_id: str, body_html: str) -> str:
     if active_id == "user-manual":
-        headings = re.findall(r'<h([23])(?:\s+id="([^"]+)")?>(.*?)</h\1>', body_html, flags=re.S)
+        headings = re.findall(
+            r'<h([23])(?:\s+id="([^"]+)")?>(.*?)</h\1>',
+            body_html,
+            flags=re.S,
+        )
         toc_items = []
         for level, heading_id, raw_title in headings:
             if not heading_id:
@@ -420,12 +428,17 @@ def page_html(title: str, active_id: str, body_html: str) -> str:
             toc_items.append(
                 f'<a class="level-{level}" href="#{heading_id}">{label}</a>',
             )
-        toc_html = "".join(toc_items) or '<p class="manual-toc-empty">本页暂无章节目录</p>'
+        toc_html = (
+            "".join(toc_items) or '<p class="manual-toc-empty">本页暂无章节目录</p>'
+        )
         body_html = (
             '<div class="manual-shell">'
             f'<article class="manual-content">{body_html}</article>'
-            f'<aside class="manual-toc"><div class="manual-toc-title">本页内容</div>{toc_html}</aside>'
-            '</div>'
+            f'<aside class="manual-toc"><div '
+            f'class="manual-toc-title">本页内容</div>'
+            f"{toc_html}"
+            f"</aside>"
+            "</div>"
         )
     return f"""<!DOCTYPE html>
 <html lang="zh-CN">
@@ -445,6 +458,7 @@ def page_html(title: str, active_id: str, body_html: str) -> str:
 
 
 # ── Convert markdown to HTML ────────────────────────────────────────────
+
 
 def convert_md(md_text: str) -> str:
     """Convert markdown to HTML with extensions."""
@@ -477,92 +491,101 @@ def convert_md(md_text: str) -> str:
 
 # ── Index page ──────────────────────────────────────────────────────────
 
-INDEX_BODY = """
-<h1>UGSci 文档</h1>
-
-<blockquote>
-<p>面向石油领域的 QwenPaw 增强插件。将 Agent 转化为领域专家，以 <strong>能力</strong>、<strong>技能</strong>、<strong>专家</strong> 三大模块重新组织界面，降低使用门槛。</p>
-</blockquote>
-
-<h2>文档导航</h2>
-
-<div class="doc-grid">
-
-<a class="doc-card" href="user-manual.html">
-  <div class="card-icon">01</div>
-  <div class="card-title">零基础使用手册（推荐）</div>
-  <div class="card-desc">结合官方文档与真实界面截图，从第一次启动到专家团、技能、市场和专业示例一步一步学习。</div>
-</a>
-
-<a class="doc-card" href="user-guide.html">
-  <div class="card-icon">02</div>
-  <div class="card-title">使用指南</div>
-  <div class="card-desc">从安装到日常使用的完整指南，适合初次使用的用户快速上手。</div>
-</a>
-
-<a class="doc-card" href="architecture.html">
-  <div class="card-icon">03</div>
-  <div class="card-title">架构设计</div>
-  <div class="card-desc">插件整体架构、数据流、前端注册机制和构建系统。</div>
-</a>
-
-<a class="doc-card" href="frontend.html">
-  <div class="card-icon">04</div>
-  <div class="card-title">前端开发指南</div>
-  <div class="card-desc">页面组件、API 调用、构建流程和调试技巧。</div>
-</a>
-
-<a class="doc-card" href="backend.html">
-  <div class="card-icon">05</div>
-  <div class="card-title">后端开发指南</div>
-  <div class="card-desc">技能池同步、HTTP API、扩展指南和日志配置。</div>
-</a>
-
-<a class="doc-card" href="skills.html">
-  <div class="card-icon">06</div>
-  <div class="card-title">技能列表</div>
-<div class="card-desc">从源码自动统计并展示当前内置技能，避免文档与实际目录漂移。</div>
-</a>
-
-<a class="doc-card" href="software-detection.html">
-  <div class="card-icon">07</div>
-  <div class="card-title">本地软件检测</div>
-  <div class="card-desc">检测引擎工作原理、已知软件清单和扩展方法。</div>
-</a>
-
-<a class="doc-card" href="expert-teams.html">
-  <div class="card-icon">08</div>
-  <div class="card-title">专家团</div>
-  <div class="card-desc">多智能体协同模式、预设团队和自定义团队。</div>
-</a>
-
-</div>
-
-<h2>快速开始</h2>
-
-<ol>
-<li><p>安装插件：</p>
-<pre><code>cp -r plugins/bundle/ugsci ~/.qwenpaw/plugins/</code></pre></li>
-<li><p>重启 QwenPaw 后端</p></li>
-<li><p>切换到极简模式：</p>
-<pre><code>localStorage.setItem("qwenpaw_sidebar_mode", "simple");</code></pre></li>
-<li><p>刷新页面，开始使用专家中心、能力中心、技能中心和市场</p></li>
-</ol>
-
-<h2>核心模块</h2>
-
-<table>
-<thead>
-<tr><th>模块</th><th>路由</th><th>说明</th></tr>
-</thead>
-<tbody>
-<tr><td>专家中心</td><td>左侧“专家·协作”</td><td>Agent 转化为专家卡片，支持创建专家和专家团协同</td></tr>
-<tr><td>能力中心</td><td>“工具·技能 → 引擎”</td><td>MCP 客户端展示 + 本地油气软件检测</td></tr>
-<tr><td>技能中心</td><td>“工具·技能 → 技能”</td><td>技能池浏览、详情查看和安装状态</td></tr>
-<tr><td>市场</td><td>左侧“市场”</td><td>远程技能搜索安装 + 专家模板创建</td></tr>
-</tbody>
-</table>
-"""
+INDEX_BODY = (
+    "\n"
+    "<h1>UGSci 文档</h1>\n"
+    "\n"
+    "<blockquote>\n"
+    "<p>面向石油领域的 QwenPaw 增强插件。将 Agent 转化为领域专家，以 "
+    "<strong>能力</strong>、<strong>技能</strong>、<strong>专家</strong> "
+    "三大模块重新组织界面，降低使用门槛。</p>\n"
+    "</blockquote>\n"
+    "\n"
+    "<h2>文档导航</h2>\n"
+    "\n"
+    '<div class="doc-grid">\n'
+    "\n"
+    '<a class="doc-card" href="user-manual.html">\n'
+    '  <div class="card-icon">01</div>\n'
+    '  <div class="card-title">零基础使用手册（推荐）</div>\n'
+    '  <div class="card-desc">结合官方文档与真实界面截图，从第一次启动到专家团、技能、市场和专业示例'
+    "一步一步学习。</div>\n"
+    "</a>\n"
+    "\n"
+    '<a class="doc-card" href="user-guide.html">\n'
+    '  <div class="card-icon">02</div>\n'
+    '  <div class="card-title">使用指南</div>\n'
+    '  <div class="card-desc">从安装到日常使用的完整指南，适合初次使用的用户快速上手。</div>\n'
+    "</a>\n"
+    "\n"
+    '<a class="doc-card" href="architecture.html">\n'
+    '  <div class="card-icon">03</div>\n'
+    '  <div class="card-title">架构设计</div>\n'
+    '  <div class="card-desc">插件整体架构、数据流、前端注册机制和构建系统。</div>\n'
+    "</a>\n"
+    "\n"
+    '<a class="doc-card" href="frontend.html">\n'
+    '  <div class="card-icon">04</div>\n'
+    '  <div class="card-title">前端开发指南</div>\n'
+    '  <div class="card-desc">页面组件、API 调用、构建流程和调试技巧。</div>\n'
+    "</a>\n"
+    "\n"
+    '<a class="doc-card" href="backend.html">\n'
+    '  <div class="card-icon">05</div>\n'
+    '  <div class="card-title">后端开发指南</div>\n'
+    '  <div class="card-desc">技能池同步、HTTP API、扩展指南和日志配置。</div>\n'
+    "</a>\n"
+    "\n"
+    '<a class="doc-card" href="skills.html">\n'
+    '  <div class="card-icon">06</div>\n'
+    '  <div class="card-title">技能列表</div>\n'
+    '<div class="card-desc">从源码自动统计并展示当前内置技能，避免文档与实际目录漂移。</div>\n'
+    "</a>\n"
+    "\n"
+    '<a class="doc-card" href="software-detection.html">\n'
+    '  <div class="card-icon">07</div>\n'
+    '  <div class="card-title">本地软件检测</div>\n'
+    '  <div class="card-desc">检测引擎工作原理、已知软件清单和扩展方法。</div>\n'
+    "</a>\n"
+    "\n"
+    '<a class="doc-card" href="expert-teams.html">\n'
+    '  <div class="card-icon">08</div>\n'
+    '  <div class="card-title">专家团</div>\n'
+    '  <div class="card-desc">多智能体协同模式、预设团队和自定义团队。</div>\n'
+    "</a>\n"
+    "\n"
+    "</div>\n"
+    "\n"
+    "<h2>快速开始</h2>\n"
+    "\n"
+    "<ol>\n"
+    "<li><p>安装插件：</p>\n"
+    "<pre><code>cp -r plugins/bundle/ugsci "
+    "~/.qwenpaw/plugins/</code></pre></li>\n"
+    "<li><p>重启 QwenPaw 后端</p></li>\n"
+    "<li><p>切换到极简模式：</p>\n"
+    '<pre><code>localStorage.setItem("qwenpaw_sidebar_mode", '
+    '"simple");</code></pre></li>\n'
+    "<li><p>刷新页面，开始使用专家中心、能力中心、技能中心和市场</p></li>\n"
+    "</ol>\n"
+    "\n"
+    "<h2>核心模块</h2>\n"
+    "\n"
+    "<table>\n"
+    "<thead>\n"
+    "<tr><th>模块</th><th>路由</th><th>说明</th></tr>\n"
+    "</thead>\n"
+    "<tbody>\n"
+    "<tr><td>专家中心</td><td>左侧“专家·协作”</td><td>Agent "
+    "转化为专家卡片，支持创建专家和专家团协同</td></tr>\n"
+    "<tr><td>能力中心</td><td>“工具·技能 → 引擎”</td><td>MCP 客户端展示 + "
+    "本地油气软件检测</td></tr>\n"
+    "<tr><td>技能中心</td><td>“工具·技能 → 技能”</td><td>技能池浏览、详情查看和安装状态</t"
+    "d></tr>\n"
+    "<tr><td>市场</td><td>左侧“市场”</td><td>远程技能搜索安装 + 专家模板创建</td></tr>\n"
+    "</tbody>\n"
+    "</table>\n"
+)
 
 
 def main():
@@ -595,8 +618,14 @@ def main():
             md_text = md_file.read_text(encoding="utf-8")
             body = convert_md(md_text)
             body = body.replace("{{UGSCI_VERSION}}", str(METADATA["version"]))
-            body = body.replace("{{QWENPAW_MIN_VERSION}}", str(METADATA["min_qwenpaw"]))
-            body = body.replace("{{SKILL_COUNT}}", str(METADATA["skill_count"]))
+            body = body.replace(
+                "{{QWENPAW_MIN_VERSION}}",
+                str(METADATA["min_qwenpaw"]),
+            )
+            body = body.replace(
+                "{{SKILL_COUNT}}",
+                str(METADATA["skill_count"]),
+            )
 
         out_file = DOCS_DIR / f"{pid}.html"
         out_file.write_text(page_html(title, pid, body), encoding="utf-8")
@@ -617,13 +646,18 @@ def main():
         shutil.copy2(generated_page, RUNTIME_DOCS_DIR / generated_page.name)
     # The app entry point opens the approachable manual directly; the other
     # generated pages remain available from its sidebar for developers.
-    shutil.copy2(DOCS_DIR / "user-manual.html", RUNTIME_DOCS_DIR / "index.html")
+    shutil.copy2(
+        DOCS_DIR / "user-manual.html",
+        RUNTIME_DOCS_DIR / "index.html",
+    )
     runtime_css = RUNTIME_DOCS_DIR / "css"
     runtime_css.mkdir(parents=True, exist_ok=True)
     shutil.copy2(css_dir / "style.css", runtime_css / "style.css")
     runtime_assets = RUNTIME_DOCS_DIR / "assets" / "screenshots"
     runtime_assets.mkdir(parents=True, exist_ok=True)
-    for image_file in sorted((DOCS_DIR / "assets" / "screenshots").glob("*.png")):
+    for image_file in sorted(
+        (DOCS_DIR / "assets" / "screenshots").glob("*.png"),
+    ):
         shutil.copy2(image_file, runtime_assets / image_file.name)
     print(f"[3/3] runtime docs written → {RUNTIME_DOCS_DIR}")
     print("Done! Open index.html in a browser.")

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Fixed backend inventory for UGSci features retained across upstream merges."""
 
 import argparse
@@ -14,13 +15,15 @@ INVENTORY = Path(__file__).with_name("fork_backend_suites.json")
 def verify_inventory(root=ROOT, inventory=None):
     inventory = inventory or json.loads(INVENTORY.read_text(encoding="utf-8"))
     suites = list(
-        dict.fromkeys(name for group in inventory["groups"].values() for name in group)
+        dict.fromkeys(
+            name for group in inventory["groups"].values() for name in group
+        ),
     )
     if not suites:
         raise ValueError("Fork backend regression inventory is empty")
     if set(inventory.get("required_cases", {})) - set(suites):
         raise ValueError(
-            "A protected backend suite was removed from the execution inventory"
+            "A protected backend suite was removed from the execution inventory",
         )
     for name in suites:
         path = root / name
@@ -37,7 +40,9 @@ def verify_inventory(root=ROOT, inventory=None):
             raise ValueError(f"No executable fork backend tests: {name}")
         for case in inventory.get("required_cases", {}).get(name, []):
             if case not in cases:
-                raise ValueError(f"Required fork backend case missing: {name}: {case}")
+                raise ValueError(
+                    f"Required fork backend case missing: {name}: {case}",
+                )
             node = cases[case]
             # Decorators on a containing class/module also affect collection.
             affected = [
@@ -50,7 +55,9 @@ def verify_inventory(root=ROOT, inventory=None):
                 ],
             ]
             expressions = [
-                decorator for parent in affected for decorator in parent.decorator_list
+                decorator
+                for parent in affected
+                for decorator in parent.decorator_list
             ]
             expressions += [
                 item
@@ -65,7 +72,7 @@ def verify_inventory(root=ROOT, inventory=None):
                 for part in ast.walk(item)
             ):
                 raise ValueError(
-                    f"Protected fork backend case cannot be skipped: {case}"
+                    f"Protected fork backend case cannot be skipped: {case}",
                 )
             body = [
                 item
@@ -89,7 +96,7 @@ def verify_inventory(root=ROOT, inventory=None):
                 for item in ast.walk(node)
             ):
                 raise ValueError(
-                    f"Protected fork backend case cannot skip at runtime: {case}"
+                    f"Protected fork backend case cannot skip at runtime: {case}",
                 )
     return suites
 
@@ -99,11 +106,22 @@ def main():
     parser.add_argument("--check", action="store_true")
     args = parser.parse_args()
     suites = verify_inventory()
-    print(f"Fork backend inventory verified: {len(suites)} suites.", flush=True)
+    print(
+        f"Fork backend inventory verified: {len(suites)} suites.",
+        flush=True,
+    )
     if args.check:
         return 0
     return subprocess.call(
-        [sys.executable, "-m", "pytest", *suites, "-q", "-p", "no:cacheprovider"],
+        [
+            sys.executable,
+            "-m",
+            "pytest",
+            *suites,
+            "-q",
+            "-p",
+            "no:cacheprovider",
+        ],
         cwd=ROOT,
     )
 

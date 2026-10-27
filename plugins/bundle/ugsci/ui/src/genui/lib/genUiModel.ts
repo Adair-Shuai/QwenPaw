@@ -10,7 +10,15 @@ export const FORM_FIELD_KINDS = [
   "FileInput",
 ] as const;
 
-export const CHART_COLORS = ["#1677ff", "#52c41a", "#faad14", "#ff4d4f", "#722ed1", "#13c2c2", "#eb2f96"];
+export const CHART_COLORS = [
+  "#1677ff",
+  "#52c41a",
+  "#faad14",
+  "#ff4d4f",
+  "#722ed1",
+  "#13c2c2",
+  "#eb2f96",
+];
 
 export const ACTION_BUTTON_KINDS = new Set([
   "Button",
@@ -40,13 +48,18 @@ export function asBool(value: unknown): boolean {
   return Boolean(value);
 }
 
-export function fieldName(node: { nodeId?: string; props?: Record<string, unknown> }): string {
+export function fieldName(node: {
+  nodeId?: string;
+  props?: Record<string, unknown>;
+}): string {
   const props = node.props || {};
   const explicit = asText(props.name);
   if (explicit) return explicit;
   const label = asText(props.label);
   const coefficient = label.match(/^\s*([a-e])(?:\b|\s|（|\()/i);
-  return coefficient ? coefficient[1].toLowerCase() : label || asText(node.nodeId);
+  return coefficient
+    ? coefficient[1].toLowerCase()
+    : label || asText(node.nodeId);
 }
 
 export function isFieldKind(kind: string): boolean {
@@ -57,7 +70,11 @@ export function clampHeadingLevel(value: unknown): 1 | 2 | 3 | 4 {
   return Math.min(Math.max(asNumber(value) || 2, 1), 4) as 1 | 2 | 3 | 4;
 }
 
-export function clampColumns(value: unknown, fallback: number, max = 6): number {
+export function clampColumns(
+  value: unknown,
+  fallback: number,
+  max = 6,
+): number {
   const parsed = asNumber(value);
   return Math.min(Math.max(parsed > 0 ? parsed : fallback, 1), max);
 }
@@ -91,11 +108,27 @@ export function layoutBoxStyle(
     style.gap = gap;
     if (props.align) style.alignItems = asText(props.align);
     if (props.justify) style.justifyContent = asText(props.justify);
-  } else if (kind === "Grid" || kind === "FeatureGrid" || kind === "KpiBoard" || kind === "ImageGallery") {
-    const fallback = kind === "KpiBoard" ? 3 : kind === "FeatureGrid" ? 2 : kind === "ImageGallery" ? 3 : 2;
+  } else if (
+    kind === "Grid" ||
+    kind === "FeatureGrid" ||
+    kind === "KpiBoard" ||
+    kind === "ImageGallery"
+  ) {
+    const fallback =
+      kind === "KpiBoard"
+        ? 3
+        : kind === "FeatureGrid"
+        ? 2
+        : kind === "ImageGallery"
+        ? 3
+        : 2;
     const max = kind === "FeatureGrid" ? 4 : 6;
     style.display = "grid";
-    style.gridTemplateColumns = `repeat(${clampColumns(props.columns, fallback, max)}, minmax(0, 1fr))`;
+    style.gridTemplateColumns = `repeat(${clampColumns(
+      props.columns,
+      fallback,
+      max,
+    )}, minmax(0, 1fr))`;
     style.gap = kind === "ImageGallery" ? `${asNumber(props.gap) || 8}px` : gap;
   } else if (kind === "ScrollArea") {
     style.maxHeight = `${asNumber(props.maxHeight) || 300}px`;
@@ -131,7 +164,11 @@ export function resolveChartModel(
   values?: Record<string, unknown> | null,
 ): ChartModel {
   function text(value: unknown): string {
-    return typeof value === "string" ? value : value == null ? "" : String(value);
+    return typeof value === "string"
+      ? value
+      : value == null
+      ? ""
+      : String(value);
   }
   function number(value: unknown): number {
     if (typeof value === "number" && Number.isFinite(value)) return value;
@@ -144,30 +181,50 @@ export function resolveChartModel(
   function array(value: unknown): unknown[] {
     return Array.isArray(value) ? value : [];
   }
-  const generator = props.generator && typeof props.generator === "object"
-    ? props.generator as Record<string, unknown>
-    : {};
-  const coefficientNames = array(generator.coefficients).map(text).filter(Boolean);
-  const canGenerate = text(generator.type) === "polynomial" || coefficientNames.length > 0;
+  const generator =
+    props.generator && typeof props.generator === "object"
+      ? (props.generator as Record<string, unknown>)
+      : {};
+  const coefficientNames = array(generator.coefficients)
+    .map(text)
+    .filter(Boolean);
+  const canGenerate =
+    text(generator.type) === "polynomial" || coefficientNames.length > 0;
   let categories = array(props.categories).map(text);
   let seriesRaw = array(props.series);
   if (canGenerate && values) {
-    const names = coefficientNames.length > 0 ? coefficientNames : ["a", "b", "c", "d", "e"];
+    const names =
+      coefficientNames.length > 0
+        ? coefficientNames
+        : ["a", "b", "c", "d", "e"];
     const xMin = typeof generator.xMin === "number" ? generator.xMin : -3;
     const xMax = typeof generator.xMax === "number" ? generator.xMax : 3;
-    const samples = Math.min(Math.max(number(generator.samples) || 61, 10), 400);
-    const xs = Array.from({ length: samples }, (_, index) => xMin + (xMax - xMin) * index / Math.max(samples - 1, 1));
+    const samples = Math.min(
+      Math.max(number(generator.samples) || 61, 10),
+      400,
+    );
+    const xs = Array.from(
+      { length: samples },
+      (_, index) => xMin + ((xMax - xMin) * index) / Math.max(samples - 1, 1),
+    );
     const coefficients = names.map((name) => number(values[name]));
     categories = xs.map((x) => Number(x.toFixed(2)).toString());
-    seriesRaw = [{
-      name: text(generator.label) || "f(x)",
-      values: xs.map((x) => coefficients.reduce((sum, coefficient, index) => (
-        sum + coefficient * Math.pow(x, coefficients.length - index - 1)
-      ), 0)),
-    }];
+    seriesRaw = [
+      {
+        name: text(generator.label) || "f(x)",
+        values: xs.map((x) =>
+          coefficients.reduce(
+            (sum, coefficient, index) =>
+              sum + coefficient * Math.pow(x, coefficients.length - index - 1),
+            0,
+          ),
+        ),
+      },
+    ];
   }
   const series = seriesRaw.map((item, index) => {
-    const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
+    const row =
+      item && typeof item === "object" ? (item as Record<string, unknown>) : {};
     return {
       name: text(row.name) || `Series ${index + 1}`,
       values: array(row.values).map(number),
@@ -189,7 +246,15 @@ export function paintChartElement(
   model: ChartModel,
   width = 640,
 ): void {
-  const colors = ["#1677ff", "#52c41a", "#faad14", "#ff4d4f", "#722ed1", "#13c2c2", "#eb2f96"];
+  const colors = [
+    "#1677ff",
+    "#52c41a",
+    "#faad14",
+    "#ff4d4f",
+    "#722ed1",
+    "#13c2c2",
+    "#eb2f96",
+  ];
   target.replaceChildren();
   if (model.title) {
     const title = document.createElement("div");
@@ -217,13 +282,18 @@ export function paintChartElement(
     const radius = Math.min(width, height) / 2 - 20;
     let angle = -Math.PI / 2;
     pieValues.forEach((value, index) => {
-      const sweep = value / total * Math.PI * 2;
+      const sweep = (value / total) * Math.PI * 2;
       const x1 = cx + radius * Math.cos(angle);
       const y1 = cy + radius * Math.sin(angle);
       const x2 = cx + radius * Math.cos(angle + sweep);
       const y2 = cy + radius * Math.sin(angle + sweep);
       const path = document.createElementNS(svg.namespaceURI, "path");
-      path.setAttribute("d", `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${sweep > Math.PI ? 1 : 0} 1 ${x2} ${y2} Z`);
+      path.setAttribute(
+        "d",
+        `M ${cx} ${cy} L ${x1} ${y1} A ${radius} ${radius} 0 ${
+          sweep > Math.PI ? 1 : 0
+        } 1 ${x2} ${y2} Z`,
+      );
       path.setAttribute("fill", colors[index % colors.length]);
       svg.appendChild(path);
       angle += sweep;
@@ -236,7 +306,12 @@ export function paintChartElement(
         const entry = document.createElement("span");
         const dot = document.createElement("i");
         dot.style.background = colors[index % colors.length];
-        entry.append(dot, document.createTextNode(`${model.categories[index] || `#${index + 1}`}: ${value}`));
+        entry.append(
+          dot,
+          document.createTextNode(
+            `${model.categories[index] || `#${index + 1}`}: ${value}`,
+          ),
+        );
         legend.appendChild(entry);
       });
       target.appendChild(legend);
@@ -247,8 +322,10 @@ export function paintChartElement(
   const max = Math.max(...all, 0);
   const min = Math.min(...all, 0);
   const range = max - min || 1;
-  const y = (value: number) => height - 24 - ((value - min) / range) * (height - 44);
-  const x = (index: number) => 30 + index * (width - 50) / Math.max(model.categories.length - 1, 1);
+  const y = (value: number) =>
+    height - 24 - ((value - min) / range) * (height - 44);
+  const x = (index: number) =>
+    30 + (index * (width - 50)) / Math.max(model.categories.length - 1, 1);
   const axis = document.createElementNS(svg.namespaceURI, "line");
   axis.setAttribute("x1", "30");
   axis.setAttribute("x2", String(width - 15));
@@ -265,7 +342,10 @@ export function paintChartElement(
         const rect = document.createElementNS(svg.namespaceURI, "rect");
         const top = Math.min(y(value), y(0));
         const bottom = Math.max(y(value), y(0));
-        rect.setAttribute("x", String(30 + index * groupWidth + seriesIndex * (barWidth + 2)));
+        rect.setAttribute(
+          "x",
+          String(30 + index * groupWidth + seriesIndex * (barWidth + 2)),
+        );
         rect.setAttribute("y", String(top));
         rect.setAttribute("width", String(barWidth));
         rect.setAttribute("height", String(Math.max(1, bottom - top)));
@@ -274,10 +354,15 @@ export function paintChartElement(
       });
       return;
     }
-    const points = item.values.map((value, index) => `${x(index)},${y(value)}`).join(" ");
+    const points = item.values
+      .map((value, index) => `${x(index)},${y(value)}`)
+      .join(" ");
     const line = document.createElementNS(svg.namespaceURI, "polyline");
     line.setAttribute("points", points);
-    line.setAttribute("fill", model.chartType === "area" ? `${color}22` : "none");
+    line.setAttribute(
+      "fill",
+      model.chartType === "area" ? `${color}22` : "none",
+    );
     line.setAttribute("stroke", color);
     line.setAttribute("stroke-width", "2");
     svg.appendChild(line);
@@ -355,7 +440,9 @@ export function resolveGenUiIcon(name: unknown): ResolvedGenUiIcon {
   if (canonical) return { kind: "svg", paths: GENUI_ICON_PATHS[canonical] };
   // Lucide-style identifiers are not a font. Unknown names stay decorative-empty.
   if (/^[\w.-]+$/.test(raw)) return { kind: "empty" };
-  return raw.length <= 8 ? { kind: "emoji", text: raw.slice(0, 8) } : { kind: "empty" };
+  return raw.length <= 8
+    ? { kind: "emoji", text: raw.slice(0, 8) }
+    : { kind: "empty" };
 }
 
 export function paintGenUiIcon(

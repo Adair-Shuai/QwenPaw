@@ -41,7 +41,9 @@ function row(label: string, key: string): string {
   return [
     '<div style="display:flex;justify-content:space-between;gap:12px;margin:2px 0;">',
     '<span style="color:#8b949e;">' + label + "</span>",
-    '<span data-readout="' + key + '" style="color:#58a6ff;font-weight:600;">—</span>',
+    '<span data-readout="' +
+      key +
+      '" style="color:#58a6ff;font-weight:600;">—</span>',
     "</div>",
   ].join("");
 }
@@ -50,7 +52,9 @@ export function updateReadout(el: HTMLElement, state: ReadoutState) {
   const selected = el.querySelector('[data-readout="selected"]');
   const meta = el.querySelector('[data-readout="meta"]');
   if (selected) selected.textContent = state.selectedLabel || "—";
-  if (meta) meta.textContent = state.selectedMeta || (state.pickKind ? state.pickKind : "未选中对象");
+  if (meta)
+    meta.textContent =
+      state.selectedMeta || (state.pickKind ? state.pickKind : "未选中对象");
   const coords = state.hover;
   setValue(el, "easting", coords ? formatCoord(coords[0]) : "—");
   setValue(el, "northing", coords ? formatCoord(coords[1]) : "—");

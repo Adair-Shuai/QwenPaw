@@ -20,10 +20,11 @@ from pathlib import Path
 from typing import Any
 import logging
 import threading
-import httpx
 import zipfile
 import subprocess
 from urllib.parse import urlparse
+
+import httpx
 
 from ..__version__ import __version__
 from .. import distribution as _distribution
@@ -622,7 +623,7 @@ def queue_component_update(component: str) -> dict[str, Any]:
                 "reason": "up-to-date",
             }
         _write_pending_components(
-            {component} | (set(plans) & DIRECTORY_COMPONENT_IDS)
+            {component} | (set(plans) & DIRECTORY_COMPONENT_IDS),
         )
         return {
             "component": component,
@@ -687,7 +688,8 @@ def configured_service() -> "ComponentUpdateService | None":
     }
     directory_components = managed & set(DIRECTORY_COMPONENT_IDS)
     if os.environ.get("QWENPAW_COMPONENT_PROTOCOL") != "2":
-        # pip/docker and older desktop shells cannot restart/roll back a runtime set.
+        # pip/docker and older desktop shells cannot restart/roll back a
+        # runtime set.
         managed -= directory_components
         directory_components = set()
     # A packaged desktop can carry an older active.json whose runtime
@@ -726,6 +728,17 @@ def configured_service() -> "ComponentUpdateService | None":
             default_allowed_host=manifest_host or None,
         ),
         manifest_url,
+    )
+
+
+def _runtime_manifest_matches_host(manifest: dict[str, Any]) -> bool:
+    """Match the signed protocol and host before checking the core."""
+    return bool(
+        manifest.get("protocol_version") == 2
+        and os.environ.get("QWENPAW_COMPONENT_PROTOCOL") == "2"
+        and manifest.get("host_fingerprint")
+        and manifest.get("host_fingerprint")
+        == os.environ.get("QWENPAW_HOST_FINGERPRINT"),
     )
 
 
@@ -822,16 +835,13 @@ class ComponentUpdateService:
         if manifest is None:
             return []
         if (
-            manifest.get("protocol_version") == 2
-            and os.environ.get("QWENPAW_COMPONENT_PROTOCOL") == "2"
-            and manifest.get("host_fingerprint")
-            and manifest.get("host_fingerprint")
-            == os.environ.get("QWENPAW_HOST_FINGERPRINT")
+            _runtime_manifest_matches_host(manifest)
             and {"backend", "python-runtime", "python-packages"}
             <= self.updater.managed_components
             and "backend" in manifest.get("components", {})
             and _version(
-                manifest["components"]["backend"]["version"], "backend version"
+                manifest["components"]["backend"]["version"],
+                "backend version",
             )
             == _version(manifest.get("release_version"), "release_version")
         ):
@@ -896,6 +906,14 @@ class ComponentUpdateService:
 
     def install(self, component: str) -> dict[str, Any]:
         return self._install(component, manifest=None)
+
+    def install_from_manifest(
+        self,
+        component: str,
+        manifest: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Install a verified snapshot with the usual safeguards."""
+        return self._install_from_manifest(component, manifest)
 
     def _install_from_manifest(
         self,
@@ -1159,10 +1177,9 @@ class ComponentUpdateService:
 
 
 def _validate_runtime_set(updater: ComponentUpdater) -> None:
-    """Probe the exact Python/backend/dependency combination before publishing."""
-    records = (
-        updater._directory_records or {}
-    )  # pylint: disable=protected-access
+    """Probe the exact Python/backend/dependency combination before \
+publishing."""
+    records = updater.candidate_directory_records or {}
     if not set(records) & {"backend", "python-runtime", "python-packages"}:
         return
 
@@ -1181,7 +1198,7 @@ def _validate_runtime_set(updater: ComponentUpdater) -> None:
     )
     if runtime is None or backend is None or packages is None:
         raise ComponentUpdateError(
-            "runtime update requires a complete Python component set"
+            "runtime update requires a complete Python component set",
         )
     candidates = (
         [runtime / "python" / "python.exe"]
@@ -1194,7 +1211,7 @@ def _validate_runtime_set(updater: ComponentUpdater) -> None:
     executable = next((p for p in candidates if p.is_file()), None)
     if executable is None:
         raise ComponentUpdateError(
-            "candidate Python runtime executable is missing"
+            "candidate Python runtime executable is missing",
         )
     environment = dict(
         os.environ,
@@ -1219,8 +1236,53 @@ def _validate_runtime_set(updater: ComponentUpdater) -> None:
     if result.returncode:
         raise ComponentUpdateError(
             "candidate runtime import check failed: "
-            + result.stderr.decode("utf-8", "replace")[-2000:]
+            + result.stderr.decode("utf-8", "replace")[-2000:],
         )
+
+
+def _finalize_booted_runtime() -> None:
+    """Finalize a healthy runtime once per boot, retaining failure retries."""
+    if os.environ.get("QWENPAW_COMPONENT_PROTOCOL") == "2":
+        healthy_service = configured_service()
+        if healthy_service is not None:
+            try:
+                healthy_service.updater.finalize_runtime_activations()
+            except (OSError, ComponentUpdateError):
+                logger.warning(
+                    "Runtime activation cleanup will retry next startup",
+                    exc_info=True,
+                )
+            finally:
+                healthy_service.client.close()
+
+
+def _install_runtime_candidates(
+    service: ComponentUpdateService,
+    manifest: dict[str, Any],
+    runtime_selected: set[str],
+    remaining_pending: dict[str, Any],
+    updated: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Validate the complete runtime transaction before activation."""
+    with plugin_install_lock(
+        _COMPONENT_INSTALL_LOCKS / ".runtime-set.lock",
+        timeout=_COMPONENT_INSTALL_LOCK_TIMEOUT,
+    ) as acquired:
+        if not acquired:
+            raise ComponentUpdateError(
+                "runtime installation is already in progress",
+            )
+        runtime_results = []
+        with service.updater.directory_transaction():
+            for component in sorted(runtime_selected):
+                runtime_results.append(
+                    service.install_from_manifest(component, manifest),
+                )
+            _validate_runtime_set(service.updater)
+        for component in runtime_selected:
+            remaining_pending.pop(component, None)
+        updated.extend(runtime_results)
+    return runtime_results
 
 
 def run_startup_updates() -> dict[str, Any]:
@@ -1229,30 +1291,7 @@ def run_startup_updates() -> dict[str, Any]:
     Startup must never perform a fresh remote update on its own. The version
     icon owns discovery and consent; restart merely consumes its durable queue.
     """
-    if os.environ.get("QWENPAW_COMPONENT_PROTOCOL") == "2":
-        healthy_service = configured_service()
-        if healthy_service is not None:
-            try:
-                healthy_service.updater.finalize_runtime_activations()
-            except (OSError, ComponentUpdateError):
-                logger.warning(
-                    "Runtime activation cleanup will retry next startup",
-                    exc_info=True,
-                )
-            finally:
-                healthy_service.client.close()
-    if os.environ.get("QWENPAW_COMPONENT_PROTOCOL") == "2":
-        healthy_service = configured_service()
-        if healthy_service is not None:
-            try:
-                healthy_service.updater.finalize_runtime_activations()
-            except (OSError, ComponentUpdateError):
-                logger.warning(
-                    "Runtime activation cleanup will retry next startup",
-                    exc_info=True,
-                )
-            finally:
-                healthy_service.client.close()
+    _finalize_booted_runtime()
     pending_records = {
         component: record
         for component, record in _load_pending_records().items()
@@ -1304,24 +1343,13 @@ def run_startup_updates() -> dict[str, Any]:
             runtime_selected = available & DIRECTORY_COMPONENT_IDS
             for component in runtime_selected:
                 remaining_pending.setdefault(component, _new_pending_record())
-            with plugin_install_lock(
-                _COMPONENT_INSTALL_LOCKS / ".runtime-set.lock",
-                timeout=_COMPONENT_INSTALL_LOCK_TIMEOUT,
-            ) as acquired:
-                if not acquired:
-                    raise ComponentUpdateError(
-                        "runtime installation is already in progress"
-                    )
-                runtime_results = []
-                with service.updater.directory_transaction():
-                    for component in sorted(runtime_selected):
-                        runtime_results.append(
-                            service._install_from_manifest(component, manifest)
-                        )
-                    _validate_runtime_set(service.updater)
-                for component in runtime_selected:
-                    remaining_pending.pop(component, None)
-                updated.extend(runtime_results)
+            runtime_results = _install_runtime_candidates(
+                service,
+                manifest,
+                runtime_selected,
+                remaining_pending,
+                updated,
+            )
             if any(result.get("updated") for result in runtime_results):
                 # Plugins stay queued until the NEW backend starts. Never load
                 # new plugins against the interpreter that applied the update.
@@ -1336,10 +1364,9 @@ def run_startup_updates() -> dict[str, Any]:
             try:
                 if manifest is not None and hasattr(
                     service,
-                    "_install_from_manifest",
+                    "install_from_manifest",
                 ):
-                    # pylint: disable-next=protected-access
-                    result = service._install_from_manifest(
+                    result = service.install_from_manifest(
                         component,
                         manifest,
                     )

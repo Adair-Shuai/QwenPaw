@@ -8,7 +8,6 @@ normalized to the plugin's binary positions/indices/cell_ids contract.
 
 from __future__ import annotations
 
-import struct
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +18,18 @@ from ..security import sanitize_identifier
 _FACES = {
     "tetra": ((0, 1, 2), (0, 3, 1), (1, 3, 2), (2, 3, 0)),
     "hexahedron": (
-        (0, 1, 2), (0, 2, 3), (4, 6, 5), (4, 7, 6),
-        (0, 4, 5), (0, 5, 1), (1, 5, 6), (1, 6, 2),
-        (2, 6, 7), (2, 7, 3), (3, 7, 4), (3, 4, 0),
+        (0, 1, 2),
+        (0, 2, 3),
+        (4, 6, 5),
+        (4, 7, 6),
+        (0, 4, 5),
+        (0, 5, 1),
+        (1, 5, 6),
+        (1, 6, 2),
+        (2, 6, 7),
+        (2, 7, 3),
+        (3, 7, 4),
+        (3, 4, 0),
     ),
 }
 
@@ -52,7 +60,9 @@ class VtkReader(BaseReader):
         mesh = meshio.read(file_path)
         points = mesh.points
         if points.shape[1] < 3:
-            raise ValueError("VTK mesh must contain at least 3 coordinate columns")
+            raise ValueError(
+                "VTK mesh must contain at least 3 coordinate columns",
+            )
         positions = [float(value) for point in points for value in point[:3]]
         indices: list[int] = []
         primitive_cells: list[int] = []
@@ -78,15 +88,36 @@ class VtkReader(BaseReader):
                     if cell_type == "triangle":
                         indices.extend([int(row[0]), int(row[1]), int(row[2])])
                     else:
-                        indices.extend([int(row[0]), int(row[1]), int(row[2]), int(row[0]), int(row[2]), int(row[3])])
-                    primitive_types.extend([cell_type] * (1 if cell_type == "triangle" else 2))
-                    primitive_cells.extend([row_index] * (1 if cell_type == "triangle" else 2))
-                    block_primitive_cells.extend([row_index] * (1 if cell_type == "triangle" else 2))
+                        indices.extend(
+                            [
+                                int(row[0]),
+                                int(row[1]),
+                                int(row[2]),
+                                int(row[0]),
+                                int(row[2]),
+                                int(row[3]),
+                            ],
+                        )
+                    primitive_types.extend(
+                        [cell_type] * (1 if cell_type == "triangle" else 2),
+                    )
+                    primitive_cells.extend(
+                        [row_index] * (1 if cell_type == "triangle" else 2),
+                    )
+                    block_primitive_cells.extend(
+                        [row_index] * (1 if cell_type == "triangle" else 2),
+                    )
                 elif faces:
                     for face in faces:
                         if max(face) >= len(row):
                             continue
-                        indices.extend([int(row[face[0]]), int(row[face[1]]), int(row[face[2]])])
+                        indices.extend(
+                            [
+                                int(row[face[0]]),
+                                int(row[face[1]]),
+                                int(row[face[2]]),
+                            ],
+                        )
                         primitive_types.append(cell_type)
                         primitive_cells.append(row_index)
                         block_primitive_cells.append(row_index)
@@ -94,39 +125,75 @@ class VtkReader(BaseReader):
             # Cell data arrays are keyed by name and contain one array per
             # cell block. Replicate each source value across generated faces.
             for prop_name, arrays in cell_data.items():
-                values = np.asarray(arrays[block_index]) if block_index < len(arrays) else np.empty(0)
+                values = (
+                    np.asarray(arrays[block_index])
+                    if block_index < len(arrays)
+                    else np.empty(0)
+                )
                 if values.ndim > 1:
-                    # Vector/tensor postprocessing needs an explicit component choice.
+                    # Vector/tensor postprocessing needs an explicit
+                    # component choice.
                     # Never silently cast or take a misleading first component.
                     continue
                 key = sanitize_identifier(str(prop_name), "property")
                 output = scalar_values.setdefault(key, [])
                 for source_index in block_primitive_cells:
-                    value = float(values[source_index]) if source_index < len(values) else float("nan")
-                    output.append(value if np.isfinite(value) else float("nan"))
-                properties[key] = {"label": str(prop_name), "association": "cell", "unit": None}
+                    value = (
+                        float(values[source_index])
+                        if source_index < len(values)
+                        else float("nan")
+                    )
+                    output.append(
+                        value if np.isfinite(value) else float("nan"),
+                    )
+                properties[key] = {
+                    "label": str(prop_name),
+                    "association": "cell",
+                    "unit": None,
+                }
 
         if not indices:
-            raise ValueError("VTK file contains no supported line or surface cells")
-        if "line" in primitive_types and any(kind != "line" for kind in primitive_types):
-            raise ValueError("Mixed VTK line/surface topology requires separate datasets")
+            raise ValueError(
+                "VTK file contains no supported line or surface cells",
+            )
+        if "line" in primitive_types and any(
+            kind != "line" for kind in primitive_types
+        ):
+            raise ValueError(
+                "Mixed VTK line/surface topology requires separate datasets",
+            )
         cell_ids = list(range(len(primitive_types)))
         for prop_name, raw in point_data.items():
             values = np.asarray(raw)
             if values.ndim > 1:
                 continue
             if len(values) != len(points):
-                raise ValueError(f"VTK point property {prop_name} does not match point count")
+                raise ValueError(
+                    f"VTK point property "
+                    f"{prop_name}"
+                    f" does not match point count",
+                )
             key = sanitize_identifier(str(prop_name), "property")
             if key in scalar_values:
                 key += "_point"
-            scalar_values[key] = [float(v) if np.isfinite(v) else float("nan") for v in values]
-            properties[key] = {"label": str(prop_name), "association": "point", "count": len(points), "unit": None}
+            scalar_values[key] = [
+                float(v) if np.isfinite(v) else float("nan") for v in values
+            ]
+            properties[key] = {
+                "label": str(prop_name),
+                "association": "point",
+                "count": len(points),
+                "unit": None,
+            }
         for key, info in properties.items():
             if info["association"] == "cell":
                 info["count"] = len(cell_ids)
                 if len(scalar_values[key]) != len(cell_ids):
-                    raise ValueError(f"VTK cell property {key} does not match generated primitives")
+                    raise ValueError(
+                        f"VTK cell property "
+                        f"{key}"
+                        f" does not match generated primitives",
+                    )
         write_f32(bin_dir / f"{prefix}_positions.f32", positions)
         write_u32(bin_dir / f"{prefix}_indices.u32", indices)
         write_u32(bin_dir / f"{prefix}_cell_ids.u32", cell_ids)
@@ -150,8 +217,13 @@ class VtkReader(BaseReader):
                 "scalars": scalar_files,
             },
             "properties": properties,
-            "metadata": {"format": Path(file_path).suffix.lower(), "cell_types": sorted(set(primitive_types)),
-                         "geometry_primitive": "lines" if set(primitive_types) == {"line"} else "triangles"},
+            "metadata": {
+                "format": Path(file_path).suffix.lower(),
+                "cell_types": sorted(set(primitive_types)),
+                "geometry_primitive": "lines"
+                if set(primitive_types) == {"line"}
+                else "triangles",
+            },
         }
 
 

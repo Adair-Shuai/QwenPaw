@@ -18,7 +18,7 @@ import asyncio
 import json
 import logging
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 
 from fastapi import APIRouter
 from pydantic import BaseModel
@@ -32,6 +32,7 @@ PLUGIN_DIR = Path(__file__).parent
 # ---------------------------------------------------------------------------
 # Config helpers — read research_mode from agent.json (bypassing Pydantic)
 # ---------------------------------------------------------------------------
+
 
 def _read_research_mode_config(agent_id: str) -> Dict[str, Any]:
     """Read the ``research_mode`` section from an agent's ``agent.json``.
@@ -89,7 +90,10 @@ def _write_research_mode_config(
 
         # Invalidate the config cache so subsequent loads pick up the change.
         try:
-            from qwenpaw.config.utils import _agent_config_cache, _agent_config_lock
+            from qwenpaw.config.utils import (
+                _agent_config_cache,
+                _agent_config_lock,
+            )
 
             with _agent_config_lock:
                 _agent_config_cache.pop(agent_id, None)
@@ -102,6 +106,7 @@ def _write_research_mode_config(
 # ---------------------------------------------------------------------------
 # Prompt templates
 # ---------------------------------------------------------------------------
+
 
 def _load_prompt(name: str) -> str:
     """Load a prompt file from the plugin's ``prompts/`` directory."""
@@ -202,12 +207,17 @@ def _register_research_mode(api) -> None:
             return [ResearchContextHook(owner_mode=self)]
 
         def tools(self):
-            """Register research tools, gated by ``requires_modes=('research',)``.
+            """Register research tools, gated by \
+``requires_modes=('research',)``.
 
-            Tools registered here are automatically included in the
-            workspace ``ToolRegistry`` via ``AgentMode.setup()``.  The
-            ``requires_modes`` gate ensures they only appear when
-            research mode is active — no manual config toggling needed.
+            Tools registered here are automatically \
+included in the
+            workspace ``ToolRegistry`` via \
+``AgentMode.setup()``.  The
+            ``requires_modes`` gate ensures they only \
+appear when
+            research mode is active — no manual config \
+toggling needed.
             """
             return [
                 ToolDescriptor(
@@ -260,13 +270,13 @@ def _register_research_mode(api) -> None:
 # Tools
 # ---------------------------------------------------------------------------
 
+
 async def _web_search(query: str, max_results: int = 10) -> str:
     """Search the web for scientific information.
 
     Uses the agent's built-in shell to call web search utilities.
     Returns structured JSON with titles, URLs, and snippets.
     """
-    import json as _json
 
     results: list[dict] = []
 
@@ -274,47 +284,60 @@ async def _web_search(query: str, max_results: int = 10) -> str:
     # by delegating to the shell. This keeps the tool self-contained
     # without external API dependencies.
     try:
-        import asyncio
-
         proc = await asyncio.create_subprocess_exec(
             "python3",
             "-c",
-            f"""
-import json, urllib.request, urllib.parse
-q = {query!r}
-url = "https://api.duckduckgo.com/?q=" + urllib.parse.quote(q) + "&format=json&no_html=1"
-try:
-    req = urllib.request.Request(url, headers={{"User-Agent": "UGSci-Research/1.0"}})
-    with urllib.request.urlopen(req, timeout=10) as resp:
-        data = json.loads(resp.read().decode())
-        results = []
-        for topic in (data.get("RelatedTopics") or [])[:{max_results}]:
-            if isinstance(topic, dict) and "Text" in topic:
-                results.append({{
-                    "title": topic.get("Text", "")[:200],
-                    "url": topic.get("FirstURL", ""),
-                    "snippet": topic.get("Text", ""),
-                }})
-        # Also check abstract
-        if data.get("AbstractText"):
-            results.insert(0, {{
-                "title": data.get("Heading", ""),
-                "url": data.get("AbstractURL", ""),
-                "snippet": data.get("AbstractText", ""),
-            }})
-        print(json.dumps(results, ensure_ascii=False))
-except Exception as e:
-    print(json.dumps([{{"error": str(e)}}], ensure_ascii=False))
-""",
+            f"\n"
+            f"import json, urllib.request, urllib.parse\n"
+            f"q = "
+            f"{query!r}"
+            f"\n"
+            f'url = "https://api.duckduckgo.com/?q=" + '
+            f'urllib.parse.quote(q) + "&format=json&no_html=1"\n'
+            f"try:\n"
+            f"    req = urllib.request.Request(url, "
+            f'headers={{"User-Agent": "UGSci-Research/1.0"}})\n'
+            f"    with urllib.request.urlopen(req, "
+            f"timeout=10) as resp:\n"
+            f"        data = json.loads(resp.read().decode())\n"
+            f"        results = []\n"
+            f'        for topic in (data.get("RelatedTopics"'
+            f") or [])[:"
+            f"{max_results}"
+            f"]:\n"
+            f"            if isinstance(topic, dict) and "
+            f'"Text" in topic:\n'
+            f"                results.append({{\n"
+            f'                    "title": topic.get("Text", '
+            f'"")[:200],\n'
+            f'                    "url": '
+            f'topic.get("FirstURL", ""),\n'
+            f'                    "snippet": '
+            f'topic.get("Text", ""),\n'
+            f"                }})\n"
+            f"        # Also check abstract\n"
+            f'        if data.get("AbstractText"):\n'
+            f"            results.insert(0, {{\n"
+            f'                "title": data.get("Heading", ""),\n'
+            f'                "url": data.get("AbstractURL", '
+            f'""),\n'
+            f'                "snippet": '
+            f'data.get("AbstractText", ""),\n'
+            f"            }})\n"
+            f"        print(json.dumps(results, "
+            f"ensure_ascii=False))\n"
+            f"except Exception as e:\n"
+            f'    print(json.dumps([{{"error": str(e)}}], '
+            f"ensure_ascii=False))\n",
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
         stdout, _ = await proc.communicate()
-        results = _json.loads(stdout.decode().strip() or "[]")
+        results = json.loads(stdout.decode().strip() or "[]")
     except Exception as exc:
         results = [{"error": f"Web search failed: {exc}"}]
 
-    return _json.dumps(results, ensure_ascii=False, indent=2)
+    return json.dumps(results, ensure_ascii=False, indent=2)
 
 
 async def _literature_search(
@@ -331,21 +354,16 @@ async def _literature_search(
         source: Database to search — "openalex", "arxiv", "crossref", or "all".
         max_results: Maximum number of results to return.
     """
-    import asyncio
-    import json as _json
     import urllib.parse
     import urllib.request
 
     async def _search_openalex(q: str, limit: int) -> list[dict]:
-        url = (
-            "https://api.openalex.org/works?"
-            + urllib.parse.urlencode(
-                {
-                    "search": q,
-                    "per-page": str(limit),
-                    "mailto": "research@ugsci.local",
-                },
-            )
+        url = "https://api.openalex.org/works?" + urllib.parse.urlencode(
+            {
+                "search": q,
+                "per-page": str(limit),
+                "mailto": "research@ugsci.local",
+            },
         )
         try:
             req = urllib.request.Request(
@@ -353,7 +371,7 @@ async def _literature_search(
                 headers={"User-Agent": "UGSci-Research/1.0"},
             )
             with urllib.request.urlopen(req, timeout=15) as resp:
-                data = _json.loads(resp.read().decode())
+                data = json.loads(resp.read().decode())
             return [
                 {
                     "title": w.get("title", ""),
@@ -376,15 +394,12 @@ async def _literature_search(
             return [{"error": f"OpenAlex search failed: {exc}"}]
 
     async def _search_arxiv(q: str, limit: int) -> list[dict]:
-        url = (
-            "http://export.arxiv.org/api/query?"
-            + urllib.parse.urlencode(
-                {
-                    "search_query": f"all:{q}",
-                    "max_results": str(limit),
-                    "sortBy": "relevance",
-                },
-            )
+        url = "http://export.arxiv.org/api/query?" + urllib.parse.urlencode(
+            {
+                "search_query": f"all:{q}",
+                "max_results": str(limit),
+                "sortBy": "relevance",
+            },
         )
         try:
             req = urllib.request.Request(
@@ -409,9 +424,7 @@ async def _literature_search(
                             entry.find("atom:id", ns).text or ""
                         ).split("/")[-1],
                         "authors": [
-                            (
-                                a.find("atom:name", ns).text or ""
-                            )
+                            (a.find("atom:name", ns).text or "")
                             for a in entry.findall("atom:author", ns)
                         ],
                         "abstract": (
@@ -426,11 +439,8 @@ async def _literature_search(
             return [{"error": f"arXiv search failed: {exc}"}]
 
     async def _search_crossref(q: str, limit: int) -> list[dict]:
-        url = (
-            "https://api.crossref.org/works?"
-            + urllib.parse.urlencode(
-                {"query": q, "rows": str(limit)},
-            )
+        url = "https://api.crossref.org/works?" + urllib.parse.urlencode(
+            {"query": q, "rows": str(limit)},
         )
         try:
             req = urllib.request.Request(
@@ -438,7 +448,7 @@ async def _literature_search(
                 headers={"User-Agent": "UGSci-Research/1.0"},
             )
             with urllib.request.urlopen(req, timeout=15) as resp:
-                data = _json.loads(resp.read().decode())
+                data = json.loads(resp.read().decode())
             return [
                 {
                     "title": (item.get("title") or [""])[0],
@@ -486,13 +496,13 @@ async def _literature_search(
         all_results.extend(task_result)
 
     if not all_results:
-        return _json.dumps(
+        return json.dumps(
             {"message": "No results found", "query": query},
             ensure_ascii=False,
             indent=2,
         )
 
-    return _json.dumps(
+    return json.dumps(
         {
             "query": query,
             "source": source,
@@ -529,8 +539,6 @@ async def _data_analysis(
     if ext == ".las":
         return await _analyze_las(data_path, operation, **kwargs)
 
-    import json as _json
-
     try:
         if ext == ".csv":
             import csv
@@ -540,7 +548,7 @@ async def _data_analysis(
                 rows = list(reader)
         elif ext == ".json":
             with open(data_path, encoding="utf-8") as f:
-                data = _json.load(f)
+                data = json.load(f)
                 rows = data if isinstance(data, list) else [data]
         else:
             return f'{{"error": "Unsupported file type: {ext}"}}'
@@ -575,7 +583,7 @@ async def _data_analysis(
         else:
             result = {"error": f"Unknown operation: {operation}"}
 
-        return _json.dumps(result, ensure_ascii=False, indent=2)
+        return json.dumps(result, ensure_ascii=False, indent=2)
     except Exception as exc:
         return f'{{"error": "Analysis failed: {exc}"}}'
 
@@ -583,7 +591,7 @@ async def _data_analysis(
 async def _analyze_las(
     las_path: str,
     operation: str,
-    **kwargs,
+    **_kwargs,
 ) -> str:
     """Analyze a LAS (well log) file.
 
@@ -591,7 +599,6 @@ async def _analyze_las(
     - "las_curves": List available curves and their ranges.
     - "summary": Basic file info + curve statistics.
     """
-    import json as _json
     import re
 
     try:
@@ -643,16 +650,16 @@ async def _analyze_las(
         }
 
         if operation == "las_curves":
-            return _json.dumps(result, ensure_ascii=False, indent=2)
+            return json.dumps(result, ensure_ascii=False, indent=2)
         elif operation == "summary":
             result["note"] = (
                 "Use operation='las_curves' for detailed curve info. "
                 "Future versions will support curve plotting and "
                 "cross-plot analysis."
             )
-            return _json.dumps(result, ensure_ascii=False, indent=2)
+            return json.dumps(result, ensure_ascii=False, indent=2)
         else:
-            return _json.dumps(
+            return json.dumps(
                 {"error": f"Unknown LAS operation: {operation}"},
                 ensure_ascii=False,
                 indent=2,
@@ -668,6 +675,7 @@ async def _analyze_las(
 # ---------------------------------------------------------------------------
 # HTTP API — dedicated endpoints for research_mode (bypasses Pydantic)
 # ---------------------------------------------------------------------------
+
 
 class ResearchModeRequest(BaseModel):
     """Request body for setting research mode."""
@@ -711,7 +719,8 @@ class UGSciResearchPlugin:
     def register(self, api) -> None:
         """Register all plugin components."""
         logger.info(
-            "[%s] Plugin registering — Research Mode", PLUGIN_ID,
+            "[%s] Plugin registering — Research Mode",
+            PLUGIN_ID,
         )
 
         # 1. Register Research Mode (AgentMode + PromptContributor + Hooks)
@@ -825,7 +834,8 @@ class UGSciResearchPlugin:
             new_enabled = False
         elif action == "status":
             status_text = (
-                f"Research Mode: {'ENABLED' if currently_enabled else 'DISABLED'}"
+                f"Research Mode: "
+                f"{('ENABLED' if currently_enabled else 'DISABLED')}"
                 f"\nDomain: {current.get('domain', 'general')}"
             )
             return Msg(
@@ -838,7 +848,9 @@ class UGSciResearchPlugin:
 
         new_config = {
             "enabled": new_enabled,
-            "domain": domain if new_enabled else current.get("domain", "general"),
+            "domain": domain
+            if new_enabled
+            else current.get("domain", "general"),
         }
         _write_research_mode_config(agent_id, new_config)
 
@@ -867,7 +879,6 @@ class UGSciResearchPlugin:
             content=[TextBlock(type="text", text=text)],
         )
 
-
     async def _sync_skills_to_pool(self) -> None:
         """Copy plugin skills into the shared skill pool."""
         skills_dir = PLUGIN_DIR / "skills"
@@ -878,6 +889,7 @@ class UGSciResearchPlugin:
             from qwenpaw.plugins_bundle.ugsci.skill_pool import (
                 sync_plugin_skills_to_pool,
             )
+
             count = await asyncio.to_thread(
                 sync_plugin_skills_to_pool,
                 PLUGIN_ID,
@@ -898,7 +910,10 @@ class UGSciResearchPlugin:
             )
 
     @staticmethod
-    def _remove_pool_skills(plugin_id: str, delete_files: bool = False) -> None:
+    def _remove_pool_skills(
+        plugin_id: str,
+        delete_files: bool = False,
+    ) -> None:
         """Remove plugin-sourced skills from the pool on uninstall."""
         try:
             from qwenpaw.agents.skill_system.store import (

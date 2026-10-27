@@ -30,13 +30,16 @@ export interface DatasetInfo {
   files: DatasetFiles;
   time_steps?: TimeStepInfo[];
   metadata?: Record<string, unknown>;
-  properties?: Record<string, {
-    label: string;
-    association: "cell" | "point";
-    count: number;
-    unit: string | null;
-    no_data?: "nan";
-  }>;
+  properties?: Record<
+    string,
+    {
+      label: string;
+      association: "cell" | "point";
+      count: number;
+      unit: string | null;
+      no_data?: "nan";
+    }
+  >;
 }
 
 export interface TimeStepInfo {
@@ -159,7 +162,14 @@ export interface JobStage {
 // ─── SSE Events ────────────────────────────────────────────────────────────
 
 export interface SSEEvent {
-  type: "created" | "started" | "stage" | "completed" | "failed" | "cancelled" | "done";
+  type:
+    | "created"
+    | "started"
+    | "stage"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "done";
   data: Record<string, unknown>;
   ts: number;
 }
@@ -198,6 +208,9 @@ export interface ViewerMountOptions {
 export interface ViewerHandle {
   readonly ready?: Promise<void>;
   update(options: Partial<ViewerMountOptions>): void;
-  executeCommand?(command: string, args: Record<string, unknown>): Promise<unknown>;
+  executeCommand?(
+    command: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown>;
   dispose(): void | Promise<void>;
 }

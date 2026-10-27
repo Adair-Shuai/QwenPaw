@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import builtins
 import hashlib
 import json
 import re
@@ -10,11 +11,11 @@ import shutil
 import sqlite3
 import tempfile
 from contextlib import closing
-from dataclasses import fields
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import BinaryIO
 
-from .reader import Record, read_file
+from .reader import read_file
 
 VERSION = "1.0.0"
 
@@ -37,8 +38,8 @@ class DatasetStore:
     def manifest(self, dataset_id: str) -> dict:
         return json.loads(
             (self.path(dataset_id) / "manifest.json").read_text(
-                encoding="utf-8"
-            )
+                encoding="utf-8",
+            ),
         )
 
     def list(self) -> list[dict]:
@@ -62,34 +63,7 @@ class DatasetStore:
         source = Path(input_path).expanduser().resolve()
         if not source.exists():
             raise ValueError("数据路径不存在")
-        paths = sorted(
-            p
-            for p in (source.iterdir() if source.is_dir() else [source])
-            if p.is_file()
-            and p.suffix.lower() in (".xls", ".xlsx", ".csv")
-            and not p.name.startswith("~$")
-        )
-        if not paths:
-            raise ValueError("没有可导入的 XLS、XLSX 或 UTF-8 CSV 文件")
-        if len(paths) > 100 or sum(p.stat().st_size for p in paths) > 1024**3:
-            raise ValueError("单次导入限 100 个文件、1 GB")
-        fingerprints = []
-        digest = hashlib.sha256(VERSION.encode())
-        for path in paths:
-            h = hashlib.sha256()
-            with path.open("rb") as stream:
-                for block in iter(lambda: stream.read(1024 * 1024), b""):
-                    h.update(block)
-            sha = h.hexdigest()
-            digest.update(path.name.encode() + sha.encode())
-            fingerprints.append(
-                {
-                    "file": path.name,
-                    "sha256": sha,
-                    "bytes": path.stat().st_size,
-                }
-            )
-        dataset_id = digest.hexdigest()[:24]
+        paths, fingerprints, dataset_id = _source_inventory(source)
         destination = self.path(dataset_id)
         if (destination / "manifest.json").is_file():
             return {**self.manifest(dataset_id), "reused": True}
@@ -97,51 +71,16 @@ class DatasetStore:
         stage = Path(tempfile.mkdtemp(prefix="import-", dir=self.root))
         issues, sources = [], []
         try:
-            with closing(sqlite3.connect(stage / "records.sqlite")) as db, db:
-                columns = [f.name for f in fields(Record)]
-                db.execute(
-                    "CREATE TABLE records (facility TEXT, well TEXT, day TEXT, mode TEXT, gas REAL, "
-                    "hours REAL, pressure REAL, casing REAL, water REAL, vent REAL, note TEXT, "
-                    "file TEXT, sheet TEXT, row INTEGER, UNIQUE(facility,well,day,mode))"
-                )
-                batch = []
-                for path in paths:
-                    # Import from a stable private snapshot, then discard the bytes.
-                    snapshot = stage / path.name
-                    shutil.copy2(path, snapshot)
-                    if hashlib.sha256(
-                        snapshot.read_bytes()
-                    ).hexdigest() != next(
-                        x["sha256"]
-                        for x in fingerprints
-                        if x["file"] == path.name
-                    ):
-                        raise ValueError("源文件在导入过程中发生变化，请重试")
-                    for record in read_file(snapshot, issues, sources):
-                        batch.append(record.values())
-                        if len(batch) >= 2000:
-                            self._insert(db, batch, issues)
-                            batch.clear()
-                    self._insert(db, batch, issues)
-                    batch.clear()
-                    snapshot.unlink()
-                db.execute(
-                    "CREATE INDEX by_history ON records(facility,well,mode,day)"
-                )
-                db.execute("CREATE INDEX by_day ON records(facility,day)")
-                rows = db.execute("SELECT COUNT(*) FROM records").fetchone()[0]
-                if not rows:
-                    raise ValueError("没有有效的日记录")
-                facilities = [
-                    dict(
-                        zip(
-                            ("facility", "records", "wells", "start", "end"), r
-                        )
+            with closing(sqlite3.connect(stage / "records.sqlite")) as db:
+                with db:
+                    rows, facilities = self._ingest_records(
+                        db,
+                        stage,
+                        paths,
+                        fingerprints,
+                        issues,
+                        sources,
                     )
-                    for r in db.execute(
-                        "SELECT facility,COUNT(*),COUNT(DISTINCT well),MIN(day),MAX(day) FROM records GROUP BY facility"
-                    )
-                ]
             counts = {}
             for issue in issues:
                 counts[issue["code"]] = counts.get(issue["code"], 0) + 1
@@ -167,9 +106,11 @@ class DatasetStore:
                 json.dumps(manifest, ensure_ascii=False, indent=2),
                 encoding="utf-8",
             )
-            # Full audit is streamed from disk on demand; summaries remain bounded.
+            # Full audit is streamed from disk on demand; summaries remain
+            # bounded.
             with (stage / "quality.jsonl").open(
-                "w", encoding="utf-8"
+                "w",
+                encoding="utf-8",
             ) as stream:
                 for issue in issues:
                     stream.write(json.dumps(issue, ensure_ascii=False) + "\n")
@@ -198,14 +139,18 @@ class DatasetStore:
                 )
             except sqlite3.IntegrityError:
                 old = db.execute(
-                    "SELECT * FROM records WHERE facility=? AND well=? AND day=? AND mode=?",
+                    "SELECT * FROM records WHERE facility=? "
+                    "AND well=? AND day=? AND mode=?",
                     values[:4],
                 ).fetchone()
                 identical = tuple(old[4:11]) == tuple(values[4:11])
                 if not identical:
-                    # Ambiguous duplicates cannot contribute an arbitrary volume to totals.
+                    # Ambiguous duplicates cannot contribute an arbitrary
+                    # volume to totals.
                     db.execute(
-                        "UPDATE records SET gas=NULL,hours=NULL,pressure=NULL,casing=NULL,water=NULL,vent=NULL "
+                        "UPDATE records SET gas=NULL,hours=NU"
+                        "LL,pressure=NULL,casing=NULL,water=N"
+                        "ULL,vent=NULL "
                         "WHERE facility=? AND well=? AND day=? AND mode=?",
                         values[:4],
                     )
@@ -227,5 +172,104 @@ class DatasetStore:
                             if identical
                             else "同井同日同方向记录冲突；对应数值排除统计，需复核"
                         ),
-                    }
+                    },
                 )
+
+    def _ingest_records(
+        self,
+        db: sqlite3.Connection,
+        stage: Path,
+        paths: builtins.list[Path],
+        fingerprints: builtins.list[dict],
+        issues: builtins.list[dict],
+        sources: builtins.list[dict],
+    ) -> tuple[int, builtins.list[dict]]:
+        """Read stable snapshots inside the caller-owned SQL transaction."""
+        db.execute(
+            "CREATE TABLE records (facility TEXT, "
+            "well TEXT, day TEXT, mode TEXT, gas REAL, "
+            "hours REAL, pressure REAL, casing REAL, "
+            "water REAL, vent REAL, note TEXT, "
+            "file TEXT, sheet TEXT, row INTEGER, "
+            "UNIQUE(facility,well,day,mode))",
+        )
+        batch = []
+        for path in paths:
+            # Import from a stable private snapshot, then discard
+            # the bytes.
+            snapshot = stage / path.name
+            shutil.copy2(path, snapshot)
+            if hashlib.sha256(
+                snapshot.read_bytes(),
+            ).hexdigest() != next(
+                x["sha256"] for x in fingerprints if x["file"] == path.name
+            ):
+                raise ValueError("源文件在导入过程中发生变化，请重试")
+            for record in read_file(snapshot, issues, sources):
+                batch.append(record.values())
+                if len(batch) >= 2000:
+                    self._insert(db, batch, issues)
+                    batch.clear()
+            self._insert(db, batch, issues)
+            batch.clear()
+            snapshot.unlink()
+        db.execute(
+            "CREATE INDEX by_history ON records(facility,well,mode,day)",
+        )
+        db.execute("CREATE INDEX by_day ON records(facility,day)")
+        rows = db.execute("SELECT COUNT(*) FROM records").fetchone()[0]
+        if not rows:
+            raise ValueError("没有有效的日记录")
+        facilities = [
+            dict(
+                zip(
+                    ("facility", "records", "wells", "start", "end"),
+                    r,
+                ),
+            )
+            for r in db.execute(
+                "SELECT facility,COUNT(*),COUNT(DISTI"
+                "NCT well),MIN(day),MAX(day) FROM "
+                "records GROUP BY facility",
+            )
+        ]
+        return rows, facilities
+
+
+def _source_inventory(source: Path) -> tuple[list[Path], list[dict], str]:
+    """Validate source limits and fingerprint before copying any input."""
+    paths = sorted(
+        p
+        for p in (source.iterdir() if source.is_dir() else [source])
+        if p.is_file()
+        and p.suffix.lower() in (".xls", ".xlsx", ".csv")
+        and not p.name.startswith("~$")
+    )
+    if not paths:
+        raise ValueError("没有可导入的 XLS、XLSX 或 UTF-8 CSV 文件")
+    if len(paths) > 100 or sum(p.stat().st_size for p in paths) > 1024**3:
+        raise ValueError("单次导入限 100 个文件、1 GB")
+    fingerprints = []
+    digest = hashlib.sha256(VERSION.encode())
+    for path in paths:
+        h = hashlib.sha256()
+        with path.open("rb") as input_stream:
+
+            def read_block(
+                current_stream: BinaryIO = input_stream,
+            ) -> bytes:
+                return current_stream.read(1024 * 1024)
+
+            for block in iter(read_block, b""):
+                h.update(block)
+        sha = h.hexdigest()
+        digest.update(path.name.encode() + sha.encode())
+        fingerprints.append(
+            {
+                "file": path.name,
+                "sha256": sha,
+                "bytes": path.stat().st_size,
+            },
+        )
+    dataset_id = digest.hexdigest()[:24]
+    return paths, fingerprints, dataset_id

@@ -84,7 +84,10 @@ def _atomic_unit_spec(token: str) -> tuple[dict[str, Fraction], float]:
             {key: value * exponent for key, value in base_dims.items()},
             base_factor**exponent,
         )
-    raise DomainError(DomainErrorCode.INVALID_INPUT, f"Unsupported unit: {token}")
+    raise DomainError(
+        DomainErrorCode.INVALID_INPUT,
+        f"Unsupported unit: {token}",
+    )
 
 
 def _unit_spec(unit: str) -> tuple[dict[str, Fraction], float, str]:
@@ -108,22 +111,35 @@ def _unit_spec(unit: str) -> tuple[dict[str, Fraction], float, str]:
         atom_dims, atom_factor = _atomic_unit_spec(part)
         multiplier = Fraction(1) if operation == "*" else Fraction(-1)
         dims = _combine_dims(dims, atom_dims, multiplier)
-        factor = factor * atom_factor if operation == "*" else factor / atom_factor
+        factor = (
+            factor * atom_factor if operation == "*" else factor / atom_factor
+        )
     return dims, factor, normalized
 
 
-def _to_canonical(value: float, unit: str) -> tuple[float, dict[str, Fraction]]:
+def _to_canonical(
+    value: float,
+    unit: str,
+) -> tuple[float, dict[str, Fraction]]:
     dims, factor, normalized = _unit_spec(unit)
     if dims == _DIMENSIONS["temperature"]:
         return convert(value, normalized, "k"), dims
     return value * factor, dims
 
 
-def _from_canonical(value: float, dims: dict[str, Fraction], unit: str) -> float:
+def _from_canonical(
+    value: float,
+    dims: dict[str, Fraction],
+    unit: str,
+) -> float:
     expected_dims, factor, normalized = _unit_spec(unit)
     if _clean_dims(dims) != _clean_dims(expected_dims):
         raise _ff_errors.unit_mismatch(
-            f"result dimension {_dims_text(dims)} is incompatible with '{unit}' "
+            f"result dimension "
+            f"{_dims_text(dims)}"
+            f" is incompatible with '"
+            f"{unit}"
+            f"' "
             f"({_dims_text(expected_dims)})",
             details={
                 "actual_dimension": _dims_text(dims),
@@ -163,7 +179,11 @@ def _evaluate_node(
             )
         return values[name]
 
-    if not getattr(expr, "free_symbols", set()) and getattr(expr, "is_number", False):
+    if not getattr(expr, "free_symbols", set()) and getattr(
+        expr,
+        "is_number",
+        False,
+    ):
         try:
             return _checked(float(expr.evalf()), {}, str(expr))
         except (TypeError, ValueError) as exc:
@@ -173,7 +193,10 @@ def _evaluate_node(
             ) from exc
 
     if isinstance(expr, sp.Add):
-        items = [_evaluate_node(arg, values, tolerance=tolerance, sp=sp) for arg in expr.args]
+        items = [
+            _evaluate_node(arg, values, tolerance=tolerance, sp=sp)
+            for arg in expr.args
+        ]
         expected = items[0].dims
         for item in items[1:]:
             if item.dims != expected:
@@ -195,7 +218,12 @@ def _evaluate_node(
 
     if isinstance(expr, sp.Pow):
         base = _evaluate_node(expr.base, values, tolerance=tolerance, sp=sp)
-        exponent_q = _evaluate_node(expr.exp, values, tolerance=tolerance, sp=sp)
+        exponent_q = _evaluate_node(
+            expr.exp,
+            values,
+            tolerance=tolerance,
+            sp=sp,
+        )
         if exponent_q.dims:
             raise _ff_errors.unit_mismatch(
                 "a power exponent must be dimensionless",
@@ -209,7 +237,11 @@ def _evaluate_node(
         if exponent < 0 and abs(base.value) <= tolerance:
             raise DomainError(
                 DomainErrorCode.INVALID_INPUT,
-                f"Denominator is within tolerance ({base.value} <= {tolerance})",
+                f"Denominator is within tolerance ("
+                f"{base.value}"
+                f" <= "
+                f"{tolerance}"
+                f")",
                 details={"expression": str(expr), "tolerance": tolerance},
                 retryable=True,
             )
@@ -218,7 +250,10 @@ def _evaluate_node(
         return _checked(value, dims, str(expr))
 
     function_name = getattr(getattr(expr, "func", None), "__name__", "")
-    args = [_evaluate_node(arg, values, tolerance=tolerance, sp=sp) for arg in expr.args]
+    args = [
+        _evaluate_node(arg, values, tolerance=tolerance, sp=sp)
+        for arg in expr.args
+    ]
     if function_name == "Abs":
         return _checked(abs(args[0].value), args[0].dims, str(expr))
     if function_name in {"Min", "Max"}:
@@ -236,7 +271,11 @@ def _evaluate_node(
                 f"{function_name} requires a dimensionless argument",
                 details={"expression": str(expr)},
             )
-        return _checked(getattr(math, function_name)(args[0].value), {}, str(expr))
+        return _checked(
+            getattr(math, function_name)(args[0].value),
+            {},
+            str(expr),
+        )
     raise DomainError(
         DomainErrorCode.UNSUPPORTED_OPERATION,
         f"Unsupported numeric expression node: {type(expr).__name__}",
@@ -260,7 +299,8 @@ def _expression_for_output(
         else:
             raise DomainError(
                 DomainErrorCode.INVALID_INPUT,
-                "output_symbol is required when evaluating a non-isolated equation",
+                "output_symbol is required when evaluating a "
+                "non-isolated equation",
             )
     target = sp.Symbol(target_name)
     if expr.lhs == target:
@@ -273,7 +313,10 @@ def _expression_for_output(
     )
     if not solutions:
         raise _ff_errors.solve_no_real_root(target_name)
-    selected = min(solutions, key=lambda item: len(getattr(item, "free_symbols", ())))
+    selected = min(
+        solutions,
+        key=lambda item: len(getattr(item, "free_symbols", ())),
+    )
     recorder.solve(
         f"Solve for {target_name}",
         f"{expr}  →  {target_name} = {selected}",
@@ -321,7 +364,9 @@ def evaluate_expression(
         numeric = guards.check_finite(float(value), name)
         guards.check_magnitude(numeric, name)
         unit = units.get(name, "")
-        canonical, dims = _to_canonical(numeric, unit) if unit else (numeric, {})
+        canonical, dims = (
+            _to_canonical(numeric, unit) if unit else (numeric, {})
+        )
         quantities[name] = _checked(canonical, dims, name)
         rec.bind(
             name,
@@ -367,7 +412,12 @@ def evaluate_expression(
         note=f"Substituted {len(inputs)} value(s)",
     )
 
-    quantity = _evaluate_node(target_expr, quantities, tolerance=tolerance, sp=sp)
+    quantity = _evaluate_node(
+        target_expr,
+        quantities,
+        tolerance=tolerance,
+        sp=sp,
+    )
     output_unit = expected_output_unit or units.get(output_symbol, "")
     if not output_unit and quantity.dims:
         for name in inputs:

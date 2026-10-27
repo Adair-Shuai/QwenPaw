@@ -17,7 +17,10 @@ from .models import (
 )
 from .recorder import TraceRecorder
 from .tools import ugsci_list_derivation_formulas, ugsci_trace_calculation
-from .library.material_balance import GAS_PZ_FORMULA, FORMULA_ID as GAS_PZ_FORMULA_ID
+from .library.material_balance import (
+    GAS_PZ_FORMULA,
+    FORMULA_ID as GAS_PZ_FORMULA_ID,
+)
 from .freeform.tools import (
     ugsci_derive_formula,
     ugsci_evaluate_formula,

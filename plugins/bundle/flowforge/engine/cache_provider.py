@@ -18,18 +18,24 @@ from typing import Any
 
 class CacheProvider(ABC):
     @abstractmethod
-    async def on_prompt_start(self, prompt_id: str) -> None: ...
+    async def on_prompt_start(self, prompt_id: str) -> None:
+        ...
 
     @abstractmethod
-    async def on_prompt_end(self, prompt_id: str) -> None: ...
+    async def on_prompt_end(self, prompt_id: str) -> None:
+        ...
 
     @abstractmethod
-    async def on_lookup(self, key: str) -> Any | None: ...
+    async def on_lookup(self, key: str) -> Any | None:
+        ...
 
     @abstractmethod
-    async def on_store(self, key: str, value: Any) -> None: ...
+    async def on_store(self, key: str, value: Any) -> None:
+        ...
 
     def should_cache(self, key: str, node_def: dict[str, Any]) -> bool:
+        """Accept every key by default; specialized policies may filter."""
+        del key, node_def
         return True
 
 

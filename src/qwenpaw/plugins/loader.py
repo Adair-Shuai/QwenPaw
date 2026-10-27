@@ -105,6 +105,11 @@ def _desktop_python() -> Optional[str]:
     return path if path and Path(path).is_file() else None
 
 
+def has_dependency_install_runtime() -> bool:
+    """Return whether the host has an interpreter for dependency installs."""
+    return not _is_frozen() or _desktop_python() is not None
+
+
 def _plugin_runtime_dir() -> Path:
     """Root dir holding plugin runtime data (installed deps, locks)."""
     from ..constant import WORKING_DIR
@@ -693,6 +698,19 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 f"after install: {', '.join(recheck.missing)}"
             )
         return recheck
+
+    def install_runtime_requirements(
+        self,
+        requirements_file: Path,
+        plugin_id: str,
+    ) -> None:
+        """Install runtime dependencies through the host's guarded installer.
+
+        Retain per-plugin and shared-target locks, dependency rechecks and
+        loaded SDK conflict protection. This blocking entry point is intended
+        for runtime workers, not the event-loop thread.
+        """
+        self._install_requirements_locked(requirements_file, plugin_id)
 
     def _install_requirements_locked(
         self,

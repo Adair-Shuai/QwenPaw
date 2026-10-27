@@ -6,7 +6,10 @@ import { controlLabel } from "./labels";
 
 export type InspectorTabId = "controls" | "actions" | "addons";
 
-export const INSPECTOR_TABS: ReadonlyArray<{ id: InspectorTabId; label: string }> = [
+export const INSPECTOR_TABS: ReadonlyArray<{
+  id: InspectorTabId;
+  label: string;
+}> = [
   { id: "controls", label: "属性" },
   { id: "actions", label: "操作" },
   { id: "addons", label: "扩展" },
@@ -23,7 +26,9 @@ export interface InspectorTabs {
   active: () => InspectorTabId;
 }
 
-export function createInspectorTabs(onChange?: (id: InspectorTabId) => void): InspectorTabs {
+export function createInspectorTabs(
+  onChange?: (id: InspectorTabId) => void,
+): InspectorTabs {
   let active: InspectorTabId = "controls";
   const prefix = `oilgas-inspector-${++inspectorSequence}`;
   const tabBar = document.createElement("div");
@@ -85,9 +90,16 @@ export function createInspectorTabs(onChange?: (id: InspectorTabId) => void): In
     });
     btn.addEventListener("keydown", (event) => {
       const current = INSPECTOR_TABS.findIndex((item) => item.id === active);
-      const next = event.key === "ArrowRight" ? (current + 1) % INSPECTOR_TABS.length
-        : event.key === "ArrowLeft" ? (current + INSPECTOR_TABS.length - 1) % INSPECTOR_TABS.length
-        : event.key === "Home" ? 0 : event.key === "End" ? INSPECTOR_TABS.length - 1 : -1;
+      const next =
+        event.key === "ArrowRight"
+          ? (current + 1) % INSPECTOR_TABS.length
+          : event.key === "ArrowLeft"
+          ? (current + INSPECTOR_TABS.length - 1) % INSPECTOR_TABS.length
+          : event.key === "Home"
+          ? 0
+          : event.key === "End"
+          ? INSPECTOR_TABS.length - 1
+          : -1;
       if (next < 0) return;
       event.preventDefault();
       event.stopPropagation();
@@ -126,13 +138,19 @@ export function createInspectorTabs(onChange?: (id: InspectorTabId) => void): In
     },
     setBadge: (id, count) => {
       const badge = badges.get(id);
-      if (badge) badge.textContent = String(Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0);
+      if (badge)
+        badge.textContent = String(
+          Number.isFinite(count) ? Math.max(0, Math.floor(count)) : 0,
+        );
     },
     active: () => active,
   };
 }
 
-export function createControlTable(): { table: HTMLElement; body: HTMLElement } {
+export function createControlTable(): {
+  table: HTMLElement;
+  body: HTMLElement;
+} {
   const table = document.createElement("div");
   table.style.cssText = "display:flex;flex-direction:column;gap:0;";
   const head = document.createElement("div");
@@ -151,7 +169,11 @@ export function createControlTable(): { table: HTMLElement; body: HTMLElement } 
   return { table, body };
 }
 
-export function appendControlRow(body: HTMLElement, name: string, control: HTMLElement): HTMLElement {
+export function appendControlRow(
+  body: HTMLElement,
+  name: string,
+  control: HTMLElement,
+): HTMLElement {
   name = controlLabel(name);
   const row = document.createElement("div");
   row.style.cssText = [
@@ -163,11 +185,20 @@ export function appendControlRow(body: HTMLElement, name: string, control: HTMLE
   label.style.cssText = "color:#8b949e;font-size:11px;word-break:break-word;";
   const cell = document.createElement("div");
   cell.style.minWidth = "0";
-  const inputs = control.matches("input,select,textarea") ? [control] : Array.from(control.querySelectorAll<HTMLElement>("input,select,textarea"));
+  const inputs = control.matches("input,select,textarea")
+    ? [control]
+    : Array.from(
+        control.querySelectorAll<HTMLElement>("input,select,textarea"),
+      );
   for (const input of inputs) {
-    if (!input.hasAttribute("aria-label") && !input.hasAttribute("aria-labelledby")) input.setAttribute("aria-label", name);
+    if (
+      !input.hasAttribute("aria-label") &&
+      !input.hasAttribute("aria-labelledby")
+    )
+      input.setAttribute("aria-label", name);
   }
-  if (control.getAttribute("role") === "group") control.setAttribute("aria-label", name);
+  if (control.getAttribute("role") === "group")
+    control.setAttribute("aria-label", name);
   cell.appendChild(control);
   row.append(label, cell);
   body.appendChild(row);
@@ -181,7 +212,8 @@ export function createBoolSwitch(
 ): HTMLElement {
   const wrap = document.createElement("div");
   wrap.setAttribute("role", "group");
-  wrap.style.cssText = "display:flex;border:1px solid #30363d;border-radius:5px;overflow:hidden;height:24px;";
+  wrap.style.cssText =
+    "display:flex;border:1px solid #30363d;border-radius:5px;overflow:hidden;height:24px;";
   const input = document.createElement("input");
   input.type = "checkbox";
   input.id = id;
@@ -229,7 +261,10 @@ function pill(text: string): HTMLButtonElement {
   return btn;
 }
 
-export function inspectorActionButton(text: string, options?: { tone?: "default" | "primary" | "danger" }): HTMLButtonElement {
+export function inspectorActionButton(
+  text: string,
+  options?: { tone?: "default" | "primary" | "danger" },
+): HTMLButtonElement {
   const tone = options?.tone || "default";
   const btn = document.createElement("button");
   btn.type = "button";

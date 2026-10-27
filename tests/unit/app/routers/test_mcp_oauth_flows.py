@@ -1621,7 +1621,8 @@ class TestOauthRevokeEndpoint:
 
 
 class TestMarketplaceOAuthSessions:
-    """Real routes distinguish a saved account from this browser authorization."""
+    """Real routes distinguish a saved account from this browser \
+authorization."""
 
     def _start(self, client: TestClient) -> str:
         response = client.post(
@@ -1643,7 +1644,8 @@ class TestMarketplaceOAuthSessions:
         workspace,
     ):
         _seed_credential(
-            workspace, secrets={"access_token": "existing-secret"}
+            workspace,
+            secrets={"access_token": "existing-secret"},
         )
         session_id = self._start(client)
         response = client.get(
@@ -1693,7 +1695,8 @@ class TestMarketplaceOAuthSessions:
         monkeypatch,
     ):
         _seed_credential(
-            workspace, secrets={"access_token": "old-account-token"}
+            workspace,
+            secrets={"access_token": "old-account-token"},
         )
         session_id = self._start(client)
         response = client.delete(
@@ -1713,7 +1716,8 @@ class TestMarketplaceOAuthSessions:
         assert callback.status_code == 400
         exchange.assert_not_awaited()
         status = client.get(
-            "/api/mcp/oauth/status/k1", params={"session_id": session_id}
+            "/api/mcp/oauth/status/k1",
+            params={"session_id": session_id},
         )
         assert status.json()["phase"] == "cancelled"
         assert (
@@ -1732,22 +1736,26 @@ class TestMarketplaceOAuthSessions:
         assert first != second
         assert (
             client.get(
-                "/api/mcp/oauth/status/k1", params={"session_id": first}
+                "/api/mcp/oauth/status/k1",
+                params={"session_id": first},
             ).json()["phase"]
             == "cancelled"
         )
         patch_agent.return_value = WorkspaceStub(
-            workspace.workspace_dir, "different-agent"
+            workspace.workspace_dir,
+            "different-agent",
         )
         assert (
             client.get(
-                "/api/mcp/oauth/status/k1", params={"session_id": second}
+                "/api/mcp/oauth/status/k1",
+                params={"session_id": second},
             ).status_code
             == 404
         )
         assert (
             client.delete(
-                "/api/mcp/oauth/session/k1", params={"session_id": second}
+                "/api/mcp/oauth/session/k1",
+                params={"session_id": second},
             ).status_code
             == 404
         )
@@ -1765,7 +1773,8 @@ class TestMarketplaceOAuthSessions:
         dump_card(
             saved_card,
             DriverConfigService(workspace).card_path(
-                "k1", protocol=PROTOCOL_MCP
+                "k1",
+                protocol=PROTOCOL_MCP,
             ),
         )
         session_id = self._start(client)
@@ -1776,7 +1785,7 @@ class TestMarketplaceOAuthSessions:
                 return_value={
                     "access_token": "new-secret",
                     "expires_in": 3600,
-                }
+                },
             ),
         )
         callback = client.get(
@@ -1785,7 +1794,8 @@ class TestMarketplaceOAuthSessions:
         )
         assert callback.status_code == 200
         response = client.get(
-            "/api/mcp/oauth/status/k1", params={"session_id": session_id}
+            "/api/mcp/oauth/status/k1",
+            params={"session_id": session_id},
         )
         assert response.json()["phase"] == "authorized"
         assert response.json()["authorized"] is True
@@ -1793,8 +1803,9 @@ class TestMarketplaceOAuthSessions:
         assert (
             load_card(
                 DriverConfigService(workspace).card_path(
-                    "k1", protocol=PROTOCOL_MCP
-                )
+                    "k1",
+                    protocol=PROTOCOL_MCP,
+                ),
             ).enabled
             is False
         )
@@ -1808,7 +1819,8 @@ class TestMarketplaceOAuthSessions:
         session_id = self._start(client)
         mo._state_store[session_id].created_at -= mo._TTL_SECONDS + 1
         response = client.get(
-            "/api/mcp/oauth/status/k1", params={"session_id": session_id}
+            "/api/mcp/oauth/status/k1",
+            params={"session_id": session_id},
         )
         assert response.json()["phase"] == "expired"
         assert response.json()["authorized"] is False

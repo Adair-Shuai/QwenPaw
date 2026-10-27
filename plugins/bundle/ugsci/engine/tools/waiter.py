@@ -41,6 +41,7 @@ import time
 from typing import Any
 
 import logging
+
 _logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.sim")
 
 
@@ -103,16 +104,54 @@ async def wait_for_simulation(
     from agentscope.tool import ToolChunk
 
     if not isinstance(poll_interval, (int, float)) or poll_interval <= 0:
-        return ToolChunk(is_last=True, state=ToolResultState.ERROR, content=[TextBlock(type="text", text="Error: poll_interval must be positive.")])
+        return ToolChunk(
+            is_last=True,
+            state=ToolResultState.ERROR,
+            content=[
+                TextBlock(
+                    type="text",
+                    text="Error: poll_interval must be positive.",
+                ),
+            ],
+        )
     if not isinstance(max_wait_seconds, (int, float)) or max_wait_seconds < 0:
-        return ToolChunk(is_last=True, state=ToolResultState.ERROR, content=[TextBlock(type="text", text="Error: max_wait_seconds must be non-negative (0 means unlimited).")])
+        return ToolChunk(
+            is_last=True,
+            state=ToolResultState.ERROR,
+            content=[
+                TextBlock(
+                    type="text",
+                    text="Error: max_wait_seconds must be "
+                    "non-negative (0 means unlimited).",
+                ),
+            ],
+        )
     if not isinstance(stall_timeout, (int, float)) or stall_timeout < 0:
-        return ToolChunk(is_last=True, state=ToolResultState.ERROR, content=[TextBlock(type="text", text="Error: stall_timeout must be non-negative (0 disables stall detection).")])
+        return ToolChunk(
+            is_last=True,
+            state=ToolResultState.ERROR,
+            content=[
+                TextBlock(
+                    type="text",
+                    text="Error: stall_timeout must be "
+                    "non-negative (0 disables stall detection).",
+                ),
+            ],
+        )
     if detail_level not in {"summary", "convergence", "full"}:
-        return ToolChunk(is_last=True, state=ToolResultState.ERROR, content=[TextBlock(type="text", text="Error: detail_level must be summary, convergence, or full.")])
+        return ToolChunk(
+            is_last=True,
+            state=ToolResultState.ERROR,
+            content=[
+                TextBlock(
+                    type="text",
+                    text="Error: detail_level must be summary, "
+                    "convergence, or full.",
+                ),
+            ],
+        )
 
     from .launcher import _get_job
-    from .monitor import check_simulation_status
 
     job = _get_job(job_id)
     if not job:
@@ -128,7 +167,14 @@ async def wait_for_simulation(
         )
 
     # ── Fast path: already finished ─────────────────────────────────
-    terminal_states = {"completed", "failed", "timeout", "error", "interrupted", "cancelled"}
+    terminal_states = {
+        "completed",
+        "failed",
+        "timeout",
+        "error",
+        "interrupted",
+        "cancelled",
+    }
     if job.status in terminal_states:
         return ToolChunk(
             is_last=True,
@@ -140,7 +186,7 @@ async def wait_for_simulation(
                         f"Job {job_id} already finished: {job.status}\n"
                         f"  Return code: {job.returncode}\n"
                         f"  Error: {job.error or 'none'}\n\n"
-                        f"Use read_simulation_results(job_id=\"{job_id}\") "
+                        f'Use read_simulation_results(job_id="{job_id}") '
                         f"to view the output."
                     ),
                 ),
@@ -150,6 +196,7 @@ async def wait_for_simulation(
     # ── Poll loop ──────────────────────────────────────────────────
     start_wait = time.time()
     from .activity import capture_activity, has_progress
+
     last_activity = None
     last_progress_time = time.time()
     poll_count = 0
@@ -157,7 +204,9 @@ async def wait_for_simulation(
 
     _logger.info(
         "wait_for_simulation: job=%s polling every %ss, max_wait=%ss",
-        job_id, poll_interval, max_wait_seconds,
+        job_id,
+        poll_interval,
+        max_wait_seconds,
     )
 
     while True:
@@ -195,8 +244,14 @@ async def wait_for_simulation(
                 pass
 
         # Sleep (but check max_wait remaining)
-        remaining = max_wait_seconds - elapsed if max_wait_seconds > 0 else poll_interval
-        sleep_time = min(poll_interval, remaining) if remaining > 0 else poll_interval
+        remaining = (
+            max_wait_seconds - elapsed
+            if max_wait_seconds > 0
+            else poll_interval
+        )
+        sleep_time = (
+            min(poll_interval, remaining) if remaining > 0 else poll_interval
+        )
         await asyncio.sleep(max(1.0, sleep_time))
 
     # ── Build result ───────────────────────────────────────────────
@@ -222,7 +277,7 @@ async def wait_for_simulation(
     if finished:
         lines.append("✅ Simulation finished!")
         lines.append(
-            f"Use read_simulation_results(job_id=\"{job_id}\") "
+            f'Use read_simulation_results(job_id="{job_id}") '
             f"to view the output.",
         )
     else:
@@ -232,10 +287,13 @@ async def wait_for_simulation(
             lines.append("  The simulation may be frozen — consider checking")
             lines.append("  the log file or killing the job.")
         else:
-            lines.append("  Call wait_for_simulation again to continue waiting,")
+            lines.append(
+                "  Call wait_for_simulation again to continue waiting,",
+            )
             lines.append("  or set up a cron check for later:")
             lines.append(
-                f"  qwenpaw cron create --type agent --schedule-type scheduled "
+                f"  qwenpaw cron create --type agent "
+                f"--schedule-type scheduled "
                 f'--run-at "<10 minutes later>" '
                 f'--text "检查 job {job_id} 状态" '
                 f"--channel <channel> --agent-id <agent_id>",
@@ -245,6 +303,7 @@ async def wait_for_simulation(
     if detail_level in ("convergence", "full") and not stall_detected:
         try:
             from ..adapters import get_adapter
+
             adapter = get_adapter(job.simulator)
             progress = adapter.parse_progress(job.working_dir)
             if progress.current_time:
@@ -257,7 +316,8 @@ async def wait_for_simulation(
                 lines.append(f"  Newton iter:  {progress.newton_iterations}")
                 if progress.material_balance_error is not None:
                     lines.append(
-                        f"  Mat. balance: {progress.material_balance_error:.2e}",
+                        f"  Mat. balance: "
+                        f"{progress.material_balance_error:.2e}",
                     )
                 if progress.cfl_number is not None:
                     lines.append(f"  CFL number:   {progress.cfl_number:.2f}")
@@ -269,5 +329,8 @@ async def wait_for_simulation(
     return ToolChunk(
         is_last=True,
         state=ToolResultState.SUCCESS,
-        content=[TextBlock(type="text", text="\n".join(lines)), simulation_reference(job_id, job.simulator)],
+        content=[
+            TextBlock(type="text", text="\n".join(lines)),
+            simulation_reference(job_id, job.simulator),
+        ],
     )

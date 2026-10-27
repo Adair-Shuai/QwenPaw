@@ -144,4 +144,6 @@ export class ViewerStore {
 }
 
 /** Create one store per mounted engine; viewers never share mutable state. */
-export function createViewerStore(): ViewerStore { return new ViewerStore(); }
+export function createViewerStore(): ViewerStore {
+  return new ViewerStore();
+}

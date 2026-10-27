@@ -12,7 +12,10 @@ from pathlib import Path
 from typing import Any
 
 
-def _cell_xy_centers(grid_positions: list[float], n_cells: int) -> list[tuple[float, float]]:
+def _cell_xy_centers(
+    grid_positions: list[float],
+    n_cells: int,
+) -> list[tuple[float, float]]:
     if n_cells <= 0 or len(grid_positions) < n_cells * 24:
         return []
     verts_per_cell = len(grid_positions) // (3 * n_cells)
@@ -28,7 +31,11 @@ def _cell_xy_centers(grid_positions: list[float], n_cells: int) -> list[tuple[fl
     return centers
 
 
-def _nearest_cell(centers: list[tuple[float, float]], x: float, y: float) -> int:
+def _nearest_cell(
+    centers: list[tuple[float, float]],
+    x: float,
+    y: float,
+) -> int:
     best = 0
     best_dist = float("inf")
     for offset, (cx, cy) in enumerate(centers):
@@ -47,7 +54,8 @@ def _sample_scalars_on_triangles(
     grid_cell_ids: list[int],
     property_values: list[float],
 ) -> list[float]:
-    """Nearest-cell XY lookup so a curtain/well section inherits grid properties."""
+    """Nearest-cell XY lookup so a curtain/well section inherits grid
+    properties."""
     if not grid_cell_ids or not property_values or not grid_positions:
         return []
     centers = _cell_xy_centers(grid_positions, len(grid_cell_ids))
@@ -63,16 +71,22 @@ def _sample_scalars_on_triangles(
     return sampled
 
 
-def _write_geometry(prefix: str, bin_dir: Path, positions: list[float], indices: list[int], cell_ids: list[int]) -> None:
+def _write_geometry(
+    prefix: str,
+    bin_dir: Path,
+    positions: list[float],
+    indices: list[int],
+    cell_ids: list[int],
+) -> None:
     bin_dir.mkdir(parents=True, exist_ok=True)
     (bin_dir / f"{prefix}_positions.f32").write_bytes(
-        struct.pack(f"<{len(positions)}f", *positions)
+        struct.pack(f"<{len(positions)}f", *positions),
     )
     (bin_dir / f"{prefix}_indices.u32").write_bytes(
-        struct.pack(f"<{len(indices)}I", *indices)
+        struct.pack(f"<{len(indices)}I", *indices),
     )
     (bin_dir / f"{prefix}_cell_ids.u32").write_bytes(
-        struct.pack(f"<{len(cell_ids)}I", *cell_ids)
+        struct.pack(f"<{len(cell_ids)}I", *cell_ids),
     )
 
 
@@ -129,11 +143,16 @@ def create_intersection_along_polyline(
     scalar_files: dict[str, str] = {}
     if property_values and property_name:
         sampled = _sample_scalars_on_triangles(
-            triangle_xy, grid_positions, grid_cell_ids, property_values,
+            triangle_xy,
+            grid_positions,
+            grid_cell_ids,
+            property_values,
         )
         if sampled:
             filename = f"{prefix}_scalars_{property_name}.f32"
-            (bin_dir / filename).write_bytes(struct.pack(f"<{len(sampled)}f", *sampled))
+            (bin_dir / filename).write_bytes(
+                struct.pack(f"<{len(sampled)}f", *sampled),
+            )
             scalar_files[property_name] = filename
 
     return {
@@ -176,7 +195,10 @@ def create_well_intersection(
     """
     n = len(well_x)
     if n < 2 or n != len(well_y) or n != len(well_tvd):
-        raise ValueError("Well section requires matching x/y/tvd arrays with at least 2 stations")
+        raise ValueError(
+            "Well section requires matching x/y/tvd "
+            "arrays with at least 2 stations",
+        )
     positions: list[float] = []
     indices: list[int] = []
     triangle_xy: list[tuple[float, float]] = []
@@ -205,11 +227,16 @@ def create_well_intersection(
     scalar_files: dict[str, str] = {}
     if property_values and property_name and grid_positions and grid_cell_ids:
         sampled = _sample_scalars_on_triangles(
-            triangle_xy, list(grid_positions), list(grid_cell_ids), property_values,
+            triangle_xy,
+            list(grid_positions),
+            list(grid_cell_ids),
+            property_values,
         )
         if sampled:
             filename = f"{prefix}_scalars_{property_name}.f32"
-            (bin_dir / filename).write_bytes(struct.pack(f"<{len(sampled)}f", *sampled))
+            (bin_dir / filename).write_bytes(
+                struct.pack(f"<{len(sampled)}f", *sampled),
+            )
             scalar_files[property_name] = filename
 
     return {
@@ -225,5 +252,8 @@ def create_well_intersection(
             "cell_ids": f"{prefix}_cell_ids.u32",
             "scalars": scalar_files,
         },
-        "metadata": {"sampled_property": property_name or None, "offset": float(offset)},
+        "metadata": {
+            "sampled_property": property_name or None,
+            "offset": float(offset),
+        },
     }

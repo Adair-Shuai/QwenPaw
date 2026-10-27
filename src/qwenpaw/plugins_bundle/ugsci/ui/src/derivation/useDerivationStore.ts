@@ -51,8 +51,7 @@ function replayDerivation(value: any): any | null {
     reproducible: value.reproducible === true,
     elapsedMs:
       typeof value.elapsed_ms === "number" ? value.elapsed_ms : undefined,
-    diff:
-      value.diff && typeof value.diff === "object" ? value.diff : {},
+    diff: value.diff && typeof value.diff === "object" ? value.diff : {},
   };
   return { ...value.result, replay };
 }

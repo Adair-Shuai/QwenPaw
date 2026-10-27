@@ -107,25 +107,30 @@ class JobRunner:
 
         # Launch background task
         if ctx is not None:
-            task = asyncio.create_task(
-                _execute_job(job, ctx)
-            )
+            task = asyncio.create_task(_execute_job(job, ctx))
             _RUNNING[job["id"]] = task
         return job
 
     @staticmethod
-    async def update_progress(job_id: str, progress: float, stage: str = "", message: str = "") -> None:
+    async def update_progress(
+        job_id: str,
+        progress: float,
+        stage: str = "",
+        message: str = "",
+    ) -> None:
         """Update job progress and push SSE event."""
         repo.update_job(job_id, state="running", progress=progress)
         ch = _CHANNELS.get(job_id)
         if ch is not None:
-            await ch.send_event({
-                "type": "progress",
-                "job_id": job_id,
-                "stage": stage,
-                "progress": progress,
-                "message": message,
-            })
+            await ch.send_event(
+                {
+                    "type": "progress",
+                    "job_id": job_id,
+                    "stage": stage,
+                    "progress": progress,
+                    "message": message,
+                },
+            )
 
     @staticmethod
     async def send_event(job_id: str, event: dict) -> None:
@@ -148,14 +153,18 @@ class JobRunner:
             job = repo.get_job(job_id)
             if job:
                 # Replay final state
-                asyncio.create_task(ch.send_event({
-                    "type": "state",
-                    "job_id": job_id,
-                    "state": job["state"],
-                    "progress": job["progress"],
-                    "result": job.get("result", {}),
-                    "error": job.get("error", {}),
-                }))
+                asyncio.create_task(
+                    ch.send_event(
+                        {
+                            "type": "state",
+                            "job_id": job_id,
+                            "state": job["state"],
+                            "progress": job["progress"],
+                            "result": job.get("result", {}),
+                            "error": job.get("error", {}),
+                        },
+                    ),
+                )
                 asyncio.create_task(asyncio.sleep(0.1))
                 ch.close()
             _CHANNELS[job_id] = ch
@@ -225,7 +234,7 @@ class JobRunner:
     @staticmethod
     def shutdown() -> None:
         """Cancel all running tasks on shutdown."""
-        for job_id, task in list(_RUNNING.items()):
+        for task in list(_RUNNING.values()):
             if not task.done():
                 task.cancel()
         _RUNNING.clear()
@@ -255,7 +264,11 @@ async def _execute_job(job: dict, ctx: Any) -> None:
             await _handle_export(job_id, payload, ctx)
         else:
             logger.warning("[ulit] Unknown job type: %s", job_type)
-            repo.update_job(job_id, state="failed", error={"message": f"Unknown job type: {job_type}"})
+            repo.update_job(
+                job_id,
+                state="failed",
+                error={"message": f"Unknown job type: {job_type}"},
+            )
 
     except asyncio.CancelledError:
         repo.update_job(job_id, state="cancelled", progress=0.0)
@@ -263,12 +276,15 @@ async def _execute_job(job: dict, ctx: Any) -> None:
     except Exception as exc:
         logger.exception("[ulit] Job %s failed", job_id)
         repo.update_job(
-            job_id, state="failed",
+            job_id,
+            state="failed",
             error={"message": str(exc), "type": type(exc).__name__},
         )
         ch = _CHANNELS.get(job_id)
         if ch is not None:
-            await ch.send_event({"type": "error", "job_id": job_id, "message": str(exc)})
+            await ch.send_event(
+                {"type": "error", "job_id": job_id, "message": str(exc)},
+            )
     finally:
         ch = _CHANNELS.get(job_id)
         if ch is not None:
@@ -296,20 +312,33 @@ async def _handle_import_file(job_id: str, payload: dict, ctx: Any) -> None:
         raise ValueError("Invalid base64 file_data payload") from None
 
     await JobRunner.update_progress(job_id, 0.3, "hashing", "计算文件哈希")
-    paper = await IngestService.import_pdf_bytes(data, filename, project_id=project_id)
+    paper = await IngestService.import_pdf_bytes(
+        data,
+        filename,
+        project_id=project_id,
+    )
 
     await JobRunner.update_progress(job_id, 0.6, "metadata", "提取元数据")
     # If paper has a file, parse it
     if paper.get("file"):
         await JobRunner.update_progress(job_id, 0.7, "parsing", "解析 PDF 文本")
         try:
-            doc = await IngestService.parse_document(paper["file"]["id"])
+            await IngestService.parse_document(paper["file"]["id"])
             await JobRunner.update_progress(job_id, 0.9, "indexing", "建立全文索引")
         except Exception as exc:
-            logger.warning("[ulit] PDF parsing failed for %s: %s", paper.get("id"), exc)
+            logger.warning(
+                "[ulit] PDF parsing failed for %s: %s",
+                paper.get("id"),
+                exc,
+            )
 
     await JobRunner.update_progress(job_id, 1.0, "complete", "导入完成")
-    repo.update_job(job_id, state="succeeded", progress=1.0, result={"paper_id": paper["id"]})
+    repo.update_job(
+        job_id,
+        state="succeeded",
+        progress=1.0,
+        result={"paper_id": paper["id"]},
+    )
 
     ch = _CHANNELS.get(job_id)
     if ch is not None:
@@ -326,7 +355,12 @@ async def _handle_parse_document(job_id: str, payload: dict, ctx: Any) -> None:
     doc = await IngestService.parse_document(file_id)
     await JobRunner.update_progress(job_id, 0.8, "chunking", "切分检索块")
     await JobRunner.update_progress(job_id, 1.0, "complete", "解析完成")
-    repo.update_job(job_id, state="succeeded", progress=1.0, result={"document_id": doc["id"]})
+    repo.update_job(
+        job_id,
+        state="succeeded",
+        progress=1.0,
+        result={"document_id": doc["id"]},
+    )
 
 
 async def _handle_reading_card(job_id: str, payload: dict, ctx: Any) -> None:
@@ -345,7 +379,11 @@ async def _handle_reading_card(job_id: str, payload: dict, ctx: Any) -> None:
         await ch.send_event({"type": "result", "card": result})
 
 
-async def _handle_answer_question(job_id: str, payload: dict, ctx: Any) -> None:
+async def _handle_answer_question(
+    job_id: str,
+    payload: dict,
+    ctx: Any,
+) -> None:
     """Handle AI Q&A job."""
     paper_id = payload.get("paper_id")
     question = payload.get("question", "")
@@ -358,9 +396,12 @@ async def _handle_answer_question(job_id: str, payload: dict, ctx: Any) -> None:
 
     await JobRunner.update_progress(job_id, 0.3, "retrieving", "检索文献上下文")
     result = await AIService.ask(
-        ctx, question,
-        paper_id=paper_id, scope=scope,
-        selected_text=selected_text, page_index=page_index,
+        ctx,
+        question,
+        paper_id=paper_id,
+        scope=scope,
+        selected_text=selected_text,
+        page_index=page_index,
     )
     await JobRunner.update_progress(job_id, 1.0, "complete", "回答完成")
     repo.update_job(job_id, state="succeeded", progress=1.0, result=result)
@@ -381,15 +422,18 @@ async def _handle_export(job_id: str, payload: dict, ctx: Any) -> None:
     await JobRunner.update_progress(job_id, 0.3, "collecting", "收集数据")
     if fmt == "markdown":
         content = await ExportService.export_markdown(
-            project_id=project_id, paper_ids=paper_ids or None,
+            project_id=project_id,
+            paper_ids=paper_ids or None,
         )
     elif fmt == "bibtex":
         content = await ExportService.export_bibtex(
-            project_id=project_id, paper_ids=paper_ids or None,
+            project_id=project_id,
+            paper_ids=paper_ids or None,
         )
     elif fmt == "json":
         content = await ExportService.export_json(
-            project_id=project_id, paper_ids=paper_ids or None,
+            project_id=project_id,
+            paper_ids=paper_ids or None,
         )
     elif fmt == "csv":
         if not project_id:
@@ -397,27 +441,47 @@ async def _handle_export(job_id: str, payload: dict, ctx: Any) -> None:
         import csv as _csv
         import io as _io
         from . import repository as repo
+
         evidence = await asyncio.to_thread(repo.list_evidence, project_id)
         buf = _io.StringIO()
         writer = _csv.writer(buf)
-        writer.writerow(["id", "paper_id", "claim", "quote", "kind", "verification_status", "page_index"])
+        writer.writerow(
+            [
+                "id",
+                "paper_id",
+                "claim",
+                "quote",
+                "kind",
+                "verification_status",
+                "page_index",
+            ],
+        )
         for e in evidence:
-            writer.writerow([
-                e.get("id", ""),
-                e.get("paper_id", ""),
-                e.get("claim", ""),
-                e.get("quote", ""),
-                e.get("kind", ""),
-                e.get("verification_status", ""),
-                str(e.get("page_index", "")),
-            ])
+            writer.writerow(
+                [
+                    e.get("id", ""),
+                    e.get("paper_id", ""),
+                    e.get("claim", ""),
+                    e.get("quote", ""),
+                    e.get("kind", ""),
+                    e.get("verification_status", ""),
+                    str(e.get("page_index", "")),
+                ],
+            )
         content = buf.getvalue()
     else:
         raise ValueError(f"Unknown export format: {fmt}")
 
     await JobRunner.update_progress(job_id, 1.0, "complete", "导出完成")
-    repo.update_job(job_id, state="succeeded", progress=1.0, result={"format": fmt, "size": len(content)})
+    repo.update_job(
+        job_id,
+        state="succeeded",
+        progress=1.0,
+        result={"format": fmt, "size": len(content)},
+    )
     # Store export content in cache
     ch = _CHANNELS.get(job_id)
     if ch is not None:
-        await ch.send_event({"type": "result", "format": fmt, "content": content})
+        await ch.send_event(
+            {"type": "result", "format": fmt, "content": content},
+        )

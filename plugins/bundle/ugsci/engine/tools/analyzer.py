@@ -1,19 +1,23 @@
 # -*- coding: utf-8 -*-
-"""analyze_simulation — analyze simulation results for convergence, balance, and performance."""
+"""analyze_simulation — analyze simulation results for convergence, \
+balance, and performance."""
 from __future__ import annotations
 
 import asyncio
 import json
-import math
 import re
 from pathlib import Path
 from typing import Any
 
 import logging
+
 _logger = logging.getLogger("qwenpaw.plugin.ugsci.sim")
 
 
-def _parse_error_summary(adapter, working_dir: str | Path) -> dict[str, int] | None:
+def _parse_error_summary(
+    adapter,
+    working_dir: str | Path,
+) -> dict[str, int] | None:
     """Parse Eclipse's final ``Error summary`` table by numeric value."""
     if str(getattr(adapter, "simulator_id", "")).lower() not in {
         "eclipse",
@@ -23,7 +27,7 @@ def _parse_error_summary(adapter, working_dir: str | Path) -> dict[str, int] | N
     log_file = adapter.find_log_file(working_dir)
     if not log_file:
         return None
-    text = adapter._read_log_full(log_file)
+    text = adapter.read_log_full(log_file)
     final_cpu = list(re.finditer(r"(?im)^\s*Final cpu\b", text))
     end_marker = re.search(r"(?im)^\s*End of simulation\b", text)
     # A count table in the middle of a long-running PRT is diagnostic output,
@@ -100,6 +104,7 @@ async def analyze_simulation(
 
     try:
         from ..adapters import get_adapter
+
         adapter = get_adapter(job.simulator)
     except Exception as exc:
         return ToolChunk(
@@ -147,7 +152,10 @@ async def analyze_simulation(
         elif progress.status == "failed":
             lines.append("❌ Simulation failed.")
         elif progress.status == "running":
-            lines.append("⏳ Simulation is still running. Analysis based on partial data.")
+            lines.append(
+                "⏳ Simulation is still running. Analysis "
+                "based on partial data.",
+            )
         else:
             lines.append(f"⚠️ Status: {progress.status}")
 
@@ -157,23 +165,47 @@ async def analyze_simulation(
 
         if progress.newton_iterations > 0:
             if progress.newton_iterations <= 4:
-                lines.append(f"  Newton iterations (last): {progress.newton_iterations} — Good")
+                lines.append(
+                    f"  Newton iterations (last): "
+                    f"{progress.newton_iterations}"
+                    f" — Good",
+                )
             elif progress.newton_iterations <= 8:
-                lines.append(f"  Newton iterations (last): {progress.newton_iterations} — Acceptable")
+                lines.append(
+                    f"  Newton iterations (last): "
+                    f"{progress.newton_iterations}"
+                    f" — Acceptable",
+                )
             else:
-                lines.append(f"  Newton iterations (last): {progress.newton_iterations} — High (potential convergence issues)")
+                lines.append(
+                    f"  Newton iterations (last): "
+                    f"{progress.newton_iterations}"
+                    f" — High (potential convergence issues)",
+                )
 
         if progress.material_balance_error is not None:
             mbe = progress.material_balance_error
             if abs(mbe) < 1e-6:
-                lines.append(f"  Material balance error: {mbe:.2e} — Excellent")
+                lines.append(
+                    f"  Material balance error: {mbe:.2e} — Excellent",
+                )
             elif abs(mbe) < 1e-3:
-                lines.append(f"  Material balance error: {mbe:.2e} — Acceptable")
+                lines.append(
+                    f"  Material balance error: {mbe:.2e} — Acceptable",
+                )
             else:
-                lines.append(f"  Material balance error: {mbe:.2e} — High (check model consistency)")
+                lines.append(
+                    f"  Material balance error: "
+                    f"{mbe:.2e}"
+                    f" — High (check model consistency)",
+                )
 
         if progress.cfl_number is not None and progress.cfl_number > 1.0:
-            lines.append(f"  CFL number: {progress.cfl_number:.2f} — Exceeds 1.0 (time step may be too large)")
+            lines.append(
+                f"  CFL number: "
+                f"{progress.cfl_number:.2f}"
+                f" — Exceeds 1.0 (time step may be too large)",
+            )
 
         # Warnings summary
         if error_summary is None:
@@ -197,14 +229,25 @@ async def analyze_simulation(
         lines.append("")
         lines.append("--- Recommendations ---")
         if progress.newton_iterations > 8:
-            lines.append("  • Consider reducing time step size or improving initial guess")
-        if progress.material_balance_error and abs(progress.material_balance_error) > 1e-3:
+            lines.append(
+                "  • Consider reducing time step size or "
+                "improving initial guess",
+            )
+        if (
+            progress.material_balance_error
+            and abs(progress.material_balance_error) > 1e-3
+        ):
             lines.append("  • Check PVT table consistency and initialization")
-            lines.append("  • Verify boundary conditions and source/sink terms")
+            lines.append(
+                "  • Verify boundary conditions and source/sink terms",
+            )
         if progress.cfl_number and progress.cfl_number > 1.0:
             lines.append("  • Reduce time step to satisfy CFL condition")
         if error_count == 0 and warning_count <= 2:
-            lines.append("  • No major issues detected. Model appears well-conditioned.")
+            lines.append(
+                "  • No major issues detected. "
+                "Model appears well-conditioned.",
+            )
 
     # ── Material balance analysis ────────────────────────────────────
     elif analysis_type == "balance":
@@ -224,24 +267,37 @@ async def analyze_simulation(
 
         if fopt:
             final_fopt = fopt[-1][1]
-            lines.append(f"  Cumulative oil production (FOPT): {final_fopt:.2f}")
+            lines.append(
+                f"  Cumulative oil production (FOPT): {final_fopt:.2f}",
+            )
         if fwpt:
             final_fwpt = fwpt[-1][1]
-            lines.append(f"  Cumulative water production (FWPT): {final_fwpt:.2f}")
+            lines.append(
+                f"  Cumulative water production (FWPT): {final_fwpt:.2f}",
+            )
         if fwit:
             final_fwit = fwit[-1][1]
-            lines.append(f"  Cumulative water injection (FWIT): {final_fwit:.2f}")
+            lines.append(
+                f"  Cumulative water injection (FWIT): {final_fwit:.2f}",
+            )
         if fpr:
             initial_fpr = fpr[0][1]
             final_fpr = fpr[-1][1]
             pressure_decline = initial_fpr - final_fpr
             lines.append(f"  Initial reservoir pressure: {initial_fpr:.2f}")
             lines.append(f"  Final reservoir pressure:    {final_fpr:.2f}")
-            lines.append(f"  Pressure decline:            {pressure_decline:.2f}")
+            lines.append(
+                f"  Pressure decline:            {pressure_decline:.2f}",
+            )
 
         if not any([fopt, fwpt, fwit, fpr]):
-            lines.append("  (No summary vectors available for balance analysis.)")
-            lines.append("  Make sure the simulation has completed and result files exist.")
+            lines.append(
+                "  (No summary vectors available for balance analysis.)",
+            )
+            lines.append(
+                "  Make sure the simulation has completed and "
+                "result files exist.",
+            )
 
     # ── Performance analysis ─────────────────────────────────────────
     elif analysis_type == "performance":
@@ -266,14 +322,20 @@ async def analyze_simulation(
             lines.append(f"  Decline from peak:      {decline:.1f}%")
 
         if fwpr and fopr:
-            current_wcut = fwpr[-1][1] / (fopr[-1][1] + fwpr[-1][1]) * 100 if (fopr[-1][1] + fwpr[-1][1]) > 0 else 0
+            current_wcut = (
+                fwpr[-1][1] / (fopr[-1][1] + fwpr[-1][1]) * 100
+                if (fopr[-1][1] + fwpr[-1][1]) > 0
+                else 0
+            )
             lines.append(f"  Current water cut:      {current_wcut:.1f}%")
 
         if fopt and fopr:
             lines.append(f"  Cumulative oil (FOPT):  {fopt[-1][1]:.2f}")
 
         if not any([fopr, fwpr, fopt]):
-            lines.append("  (No production data available for performance analysis.)")
+            lines.append(
+                "  (No production data available for performance analysis.)",
+            )
 
     # ── Comparison analysis ──────────────────────────────────────────
     elif analysis_type == "comparison":
@@ -281,7 +343,13 @@ async def analyze_simulation(
             return ToolChunk(
                 is_last=True,
                 state=ToolResultState.ERROR,
-                content=[TextBlock(type="text", text="Error: comparison analysis requires reference_job_id.")],
+                content=[
+                    TextBlock(
+                        type="text",
+                        text="Error: comparison analysis requires "
+                        "reference_job_id.",
+                    ),
+                ],
             )
         else:
             ref_job = _get_job(reference_job_id)
@@ -289,10 +357,19 @@ async def analyze_simulation(
                 return ToolChunk(
                     is_last=True,
                     state=ToolResultState.ERROR,
-                    content=[TextBlock(type="text", text=f"Error: Reference job '{reference_job_id}' not found.")],
+                    content=[
+                        TextBlock(
+                            type="text",
+                            text=f"Error: Reference job '"
+                            f"{reference_job_id}"
+                            f"' not found.",
+                        ),
+                    ],
                 )
             else:
-                lines.append(f"=== Comparison: {job_id} vs {reference_job_id} ===")
+                lines.append(
+                    f"=== Comparison: {job_id} vs {reference_job_id} ===",
+                )
                 lines.append("")
 
                 # Read both summaries
@@ -312,11 +389,18 @@ async def analyze_simulation(
                     summary_b = summary_a.__class__()
 
                 # Compare common vectors
-                common_keys = set(summary_a.vectors.keys()) & set(summary_b.vectors.keys())
+                common_keys = set(summary_a.vectors.keys()) & set(
+                    summary_b.vectors.keys(),
+                )
                 if not common_keys:
-                    lines.append("  No common summary vectors found between the two jobs.")
+                    lines.append(
+                        "  No common summary vectors found "
+                        "between the two jobs.",
+                    )
                 else:
-                    lines.append(f"  Common vectors: {', '.join(sorted(common_keys))}")
+                    lines.append(
+                        f"  Common vectors: {', '.join(sorted(common_keys))}",
+                    )
                     lines.append("")
                     for key in sorted(common_keys):
                         vec_a = summary_a.vectors[key]
@@ -325,7 +409,9 @@ async def analyze_simulation(
                             last_a = vec_a[-1][1]
                             last_b = vec_b[-1][1]
                             diff = last_a - last_b
-                            rel_diff = (diff / last_b * 100) if last_b != 0 else 0
+                            rel_diff = (
+                                (diff / last_b * 100) if last_b != 0 else 0
+                            )
                             lines.append(
                                 f"  {key}: "
                                 f"job={last_a:.4g} "
@@ -336,13 +422,16 @@ async def analyze_simulation(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(
-                type="text",
-                text=(
-                    f"Error: Unknown analysis type: '{analysis_type}'. "
-                    "Supported: convergence, balance, performance, comparison"
+            content=[
+                TextBlock(
+                    type="text",
+                    text=(
+                        f"Error: Unknown analysis type: '{analysis_type}'. "
+                        "Supported: convergence, balance, "
+                        "performance, comparison"
+                    ),
                 ),
-            )],
+            ],
         )
 
     report_text = "\n".join(lines)
@@ -350,18 +439,25 @@ async def analyze_simulation(
     try:
         from ...genui.domain_cards import attach_genui
 
-        attached = attach_genui({
-            "kind": "simulation.analysis",
-            "operation": f"simulation.analyze.{analysis_type}",
-            "job_id": job_id,
-            "simulator": job.simulator,
-            "status": job.status,
-            "analysis_type": analysis_type,
-            "text": report_text,
-        })
+        attached = attach_genui(
+            {
+                "kind": "simulation.analysis",
+                "operation": f"simulation.analyze.{analysis_type}",
+                "job_id": job_id,
+                "simulator": job.simulator,
+                "status": job.status,
+                "analysis_type": analysis_type,
+                "text": report_text,
+            },
+        )
         envelope = attached.get("genui")
         if isinstance(envelope, dict) and envelope.get("ok"):
-            content.append(TextBlock(type="text", text=json.dumps(envelope, ensure_ascii=False)))
+            content.append(
+                TextBlock(
+                    type="text",
+                    text=json.dumps(envelope, ensure_ascii=False),
+                ),
+            )
     except Exception:
         pass
     return ToolChunk(

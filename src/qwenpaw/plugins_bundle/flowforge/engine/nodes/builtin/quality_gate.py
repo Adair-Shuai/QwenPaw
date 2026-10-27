@@ -14,7 +14,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import logging
 
 from ...io import IO, Hidden, HiddenHolder, MediaRef, NodeOutput, Schema
 from ...io.media import to_gen_ui_ui
@@ -36,30 +35,46 @@ class QualityGateNode(WorkflowNode):
             category="art/evaluate",
             description=(
                 "Score an upstream asset against a quality bar and route to "
-                "control.pass_node or control.fail_node (self-correction loop)."
+                "control.pass_node or control.fail_node "
+                "(self-correction loop)."
             ),
             inputs=[
                 IO.Any.Input(
-                    id="asset", optional=True,
+                    id="asset",
+                    optional=True,
                     tooltip="The asset (image/video/mesh) being evaluated.",
                 ),
                 IO.Float.Input(
-                    id="score", min=0.0, max=1.0,
-                    tooltip="Actual quality score from an evaluator or upstream tool.",
+                    id="score",
+                    min=0.0,
+                    max=1.0,
+                    tooltip=(
+                        "Actual quality score from an evaluator "
+                        "or upstream tool."
+                    ),
                 ),
                 IO.Float.Input(
-                    id="threshold", optional=True, default=0.7, min=0.0, max=1.0,
+                    id="threshold",
+                    optional=True,
+                    default=0.7,
+                    min=0.0,
+                    max=1.0,
                     tooltip="Minimum score required to pass.",
                 ),
                 IO.String.Input(
-                    id="criteria", optional=True, multiline=True,
+                    id="criteria",
+                    optional=True,
+                    multiline=True,
                     tooltip="Human-readable acceptance criteria.",
                 ),
                 IO.String.Input(
-                    id="iteration_var", optional=True, default="refine_iteration",
-                    tooltip="State variable holding the refine iteration count.",
+                    id="iteration_var",
+                    optional=True,
+                    default="refine_iteration",
+                    tooltip=(
+                        "State variable holding the refine iteration count."
+                    ),
                 ),
-
             ],
             outputs=[
                 IO.Float.Output(id="score"),
@@ -71,12 +86,18 @@ class QualityGateNode(WorkflowNode):
             not_idempotent=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         state = hidden.workflow_state
         node_id = hidden.unique_id
-        threshold = float(inputs.get("threshold") if inputs.get("threshold") is not None else 0.7)
+        raw_threshold = inputs.get("threshold")
+        threshold = float(raw_threshold if raw_threshold is not None else 0.7)
 
-        score = self._resolve_score(inputs, state)
+        score = self._resolve_score(inputs)
         passed = score >= threshold
 
         if state is not None:
@@ -85,16 +106,26 @@ class QualityGateNode(WorkflowNode):
 
         control = _control_for(hidden, node_id)
         pass_node = control.get("pass_node") or _first_then(control)
-        fail_node = control.get("fail_node") or control.get("else_node") or control.get("else")
+        fail_node = (
+            control.get("fail_node")
+            or control.get("else_node")
+            or control.get("else")
+        )
         target = pass_node if passed else fail_node
 
         logger.info(
-            "quality_gate", node_id=node_id, score=round(score, 4),
-            threshold=threshold, passed=passed, target=target,
+            "quality_gate",
+            node_id=node_id,
+            score=round(score, 4),
+            threshold=threshold,
+            passed=passed,
+            target=target,
         )
         asset = inputs.get("asset")
-        ref = MediaRef.from_dict(asset) if isinstance(asset, dict) else (
-            asset if isinstance(asset, MediaRef) else None
+        ref = (
+            MediaRef.from_dict(asset)
+            if isinstance(asset, dict)
+            else (asset if isinstance(asset, MediaRef) else None)
         )
         meta: dict[str, Any] = {
             "score": round(score, 4),
@@ -102,28 +133,37 @@ class QualityGateNode(WorkflowNode):
             "passed": passed,
         }
         if ref is not None and ref.src:
-            meta.update({
-                "kind": ref.kind,
-                "file_id": ref.file_id,
-                "src": ref.src,
-                "preview_url": ref.src,
-                "filename": ref.filename,
-                "width": ref.width,
-                "height": ref.height,
-            })
+            meta.update(
+                {
+                    "kind": ref.kind,
+                    "file_id": ref.file_id,
+                    "src": ref.src,
+                    "preview_url": ref.src,
+                    "filename": ref.filename,
+                    "width": ref.width,
+                    "height": ref.height,
+                },
+            )
         return NodeOutput(
             values=(round(score, 4), passed, inputs.get("asset")),
             next_node=target,
-            ui=to_gen_ui_ui([ref], title="Gated asset") if ref and ref.src else None,
+            ui=to_gen_ui_ui([ref], title="Gated asset")
+            if ref and ref.src
+            else None,
             metadata=meta,
         )
 
-    def _resolve_score(self, inputs: dict[str, Any], state: Any) -> float:
+    @staticmethod
+    def _resolve_score(inputs: dict[str, Any]) -> float:
         explicit = inputs.get("score")
-        if not isinstance(explicit, (float, int)) or isinstance(explicit, bool):
-            raise ValueError("QualityGateNode requires an explicit evaluator score")
+        if not isinstance(explicit, (float, int)) or isinstance(
+            explicit,
+            bool,
+        ):
+            raise ValueError(
+                "QualityGateNode requires an explicit evaluator score",
+            )
         return float(explicit)
-
 
 
 def _control_for(hidden: HiddenHolder, node_id: str | None) -> dict[str, Any]:
@@ -134,3 +174,12 @@ def _control_for(hidden: HiddenHolder, node_id: str | None) -> dict[str, Any]:
     if isinstance(node, dict):
         return node.get("control", {}) or {}
     return {}
+
+
+def _first_then(control: dict[str, Any]) -> str | None:
+    """Use the first declared condition target as the pass fallback."""
+    for condition in control.get("conditions", []) or []:
+        target = condition.get("then_node") or condition.get("then")
+        if target:
+            return target
+    return None

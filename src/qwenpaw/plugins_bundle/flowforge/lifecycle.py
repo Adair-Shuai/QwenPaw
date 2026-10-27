@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """One service entry point for root, nested and resumed workflow runs.
 
 The lifecycle lock serializes admission/resume/cancel in this service instance.
@@ -26,11 +27,25 @@ class ResumeInputError(ValueError):
 
 
 if TYPE_CHECKING:
+    from .engine import WorkflowDocument, WorkflowResult
     from .service import RunHandle
 
 
+def _snapshot_run(
+    payload: dict[str, Any],
+    inputs: dict[str, Any],
+) -> tuple[dict[str, Any], WorkflowDocument, dict[str, Any]]:
+    from .engine import canonicalize
+
+    payload = copy.deepcopy(canonicalize(payload))
+    return payload, load(payload), copy.deepcopy(inputs)
+
+
 class RunLifecycleMixin:
-    """Run management for WorkflowService; storage and executor are injected."""
+    (
+        "Run management for WorkflowService; "
+        "storage and executor are injected."
+    )
 
     def start_run(
         self,
@@ -42,13 +57,17 @@ class RunLifecycleMixin:
         agent_id: str | None = None,
     ) -> RunHandle:
         with self._lifecycle_lock:
+            self._assert_accepting_runs()
             ancestry = workflow_stack.get()
             if flow_id in ancestry:
                 raise ValueError(
-                    f"Recursive workflow invocation: {' -> '.join((*ancestry, flow_id))}"
+                    "Recursive workflow invocation: "
+                    f"{' -> '.join((*ancestry, flow_id))}",
                 )
             if len(ancestry) >= MAX_WORKFLOW_DEPTH:
-                raise ValueError(f"Workflow nesting exceeds {MAX_WORKFLOW_DEPTH}")
+                raise ValueError(
+                    f"Workflow nesting exceeds {MAX_WORKFLOW_DEPTH}",
+                )
             parent = current_run.get() or {}
             parent_id = parent.get("run_id")
             if parent_id:
@@ -59,7 +78,7 @@ class RunLifecycleMixin:
                     "timeout",
                 }:
                     raise ValueError(
-                        "Parent workflow is no longer accepting child runs"
+                        "Parent workflow is no longer accepting child runs",
                     )
             payload = self.get_flow(flow_id)
             if payload is None:
@@ -78,46 +97,64 @@ class RunLifecycleMixin:
             metadata = {
                 "parent_run_id": parent_id,
                 "root_run_id": parent.get("root_run_id") or run_id,
-                "trigger_type": trigger_type or ("agent" if parent_id else "manual"),
+                "trigger_type": trigger_type
+                or ("agent" if parent_id else "manual"),
                 "resumed_from_run_id": None,
                 "workflow_stack": [*ancestry, flow_id],
                 "user_id": parent.get("user_id") or get_current_user_id(),
-                "session_id": parent.get("session_id") or get_current_session_id(),
+                "session_id": parent.get("session_id")
+                or get_current_session_id(),
                 "agent_id": agent_id
                 or (
                     get_current_agent_id()
                     if trigger_type == "agent"
                     else parent.get("agent_id") or get_current_agent_id()
                 ),
-                "channel": parent.get("channel") or get_current_channel() or "console",
+                "channel": parent.get("channel")
+                or get_current_channel()
+                or "console",
                 "flow_revision": payload.get("revision", 0),
             }
             return self._submit_run(
-                run_id, flow_id, payload, inputs or {}, metadata, on_event=on_event
+                run_id,
+                flow_id,
+                payload,
+                inputs or {},
+                metadata,
+                on_event=on_event,
             )
 
     def resume_run(
-        self, run_id: str, inputs: dict[str, Any] | None = None
+        self,
+        run_id: str,
+        inputs: dict[str, Any] | None = None,
     ) -> RunHandle:
-        """Resume exactly one continuation of a paused run using its saved graph."""
+        (
+            "Resume exactly one continuation of a paused run "
+            "using its saved graph."
+        )
         with self._lifecycle_lock:
+            self._assert_accepting_runs()
             record = self.get_run_record(run_id)
             if record is None:
                 raise FileNotFoundError(f"run '{run_id}' not found")
             persisted = self._execution_repository.get(run_id) or {}
             if persisted.get("resumed_by_run_id"):
                 raise RevisionConflict(
-                    "Run already resumed; use resumed_by_run_id to follow its continuation"
+                    "Run already resumed; use resumed_by_run_id "
+                    "to follow its continuation",
                 )
             handle = self._runs.get(run_id)
             if record["status"] not in PAUSED or (
                 handle is not None and not handle.is_done
             ):
                 raise ValueError(
-                    "Only a finalized paused or waiting_human run can be resumed"
+                    "Only a finalized paused or waiting_human run "
+                    "can be resumed",
                 )
             flow_id = record["flow_id"]
-            # Legacy records predate graph snapshots. Preserve their old behavior.
+            # Legacy records predate graph snapshots. Preserve their old
+            # behavior.
             payload = persisted.get("flow_snapshot") or self.get_flow(flow_id)
             if payload is None:
                 raise FileNotFoundError(f"flow '{flow_id}' not found")
@@ -139,7 +176,10 @@ class RunLifecycleMixin:
                 workflow_stack=metadata.get("workflow_stack") or [flow_id],
                 trigger_type="resume",
                 resumed_from_run_id=run_id,
-                flow_revision=payload.get("revision", record.get("flow_revision", 0)),
+                flow_revision=payload.get(
+                    "revision",
+                    record.get("flow_revision", 0),
+                ),
             )
             active_parent = current_run.get()
             if active_parent:
@@ -148,18 +188,31 @@ class RunLifecycleMixin:
             if parent_id:
                 parent = self.get_run_record(parent_id)
                 if parent and parent["status"] == "cancelled":
-                    raise ValueError("Cannot resume a child of a cancelled run")
+                    raise ValueError(
+                        "Cannot resume a child of a cancelled run",
+                    )
             state_id = UUID(str(record["state_id"]))
             self._validate_resume_inputs(record, payload, inputs or {})
             self._flow_repository.claim_resume(run_id, new_id)
             try:
-                self._execution_repository.update(run_id, resumed_by_run_id=new_id)
+                self._execution_repository.update(
+                    run_id,
+                    resumed_by_run_id=new_id,
+                )
                 result = self._submit_run(
-                    new_id, flow_id, payload, inputs or {}, metadata, state_id=state_id
+                    new_id,
+                    flow_id,
+                    payload,
+                    inputs or {},
+                    metadata,
+                    state_id=state_id,
                 )
             except Exception:
                 self._flow_repository.release_resume(run_id, new_id)
-                self._execution_repository.update(run_id, resumed_by_run_id=None)
+                self._execution_repository.update(
+                    run_id,
+                    resumed_by_run_id=None,
+                )
                 raise
             return result
 
@@ -183,7 +236,8 @@ class RunLifecycleMixin:
         for node_id in [target] if target else blocked:
             kind = payload.get("nodes", {}).get(node_id, {}).get("class_type")
             if kind == "HumanReviewNode" and not isinstance(
-                inputs.get("approved"), bool
+                inputs.get("approved"),
+                bool,
             ):
                 raise ResumeInputError("人工审核必须提供布尔值 approved。")
             if kind == "SubworkflowNode" and depth < MAX_WORKFLOW_DEPTH:
@@ -200,7 +254,11 @@ class RunLifecycleMixin:
                     ),
                     None,
                 )
-                child = self._execution_repository.get(child_id) if child_id else None
+                child = (
+                    self._execution_repository.get(child_id)
+                    if child_id
+                    else None
+                )
                 followed = set()
                 while (
                     child
@@ -208,7 +266,9 @@ class RunLifecycleMixin:
                     and child["run_id"] not in followed
                 ):
                     followed.add(child["run_id"])
-                    child = self._execution_repository.get(child["resumed_by_run_id"])
+                    child = self._execution_repository.get(
+                        child["resumed_by_run_id"],
+                    )
                 if child and child.get("status") in PAUSED:
                     decision = inputs.get(
                         "child_inputs",
@@ -227,6 +287,65 @@ class RunLifecycleMixin:
                         depth=depth + 1,
                     )
 
+    async def _execute_run(
+        self,
+        handle: RunHandle,
+        payload: dict[str, Any],
+        doc: WorkflowDocument,
+        inputs: dict[str, Any],
+        metadata: dict[str, Any],
+        state_id: UUID | None,
+        progress: ProgressRegistry,
+        run_id: str,
+    ) -> WorkflowResult:
+        """Prepare the agent and execute under the captured run context."""
+        handle.task = asyncio.current_task()
+        if handle.cancel_requested or self._closing:
+            handle.cancel_requested = True
+            raise asyncio.CancelledError()
+        stack_token = workflow_stack.set(tuple(metadata["workflow_stack"]))
+        run_token = current_run.set({**metadata, "run_id": run_id})
+        try:
+            self._execution_repository.update(run_id, status="running")
+            executor = self._executor
+            if self.node_catalog is not None:
+                from qwenpaw.app.agent_context import get_current_agent_id
+
+                executor = await self.node_catalog.prepare(
+                    executor,
+                    metadata.get("agent_id") or get_current_agent_id(),
+                    {**metadata, "run_id": run_id},
+                )
+            validation = self.validate_flow(
+                payload,
+                executor=executor,
+                resuming=state_id is not None,
+            )
+            if not validation["ok"]:
+                raise ValueError(
+                    "工作流校验失败：" + "; ".join(validation["errors"]),
+                )
+            handle.execution_started = True
+            if state_id is not None:
+                return await executor.resume(
+                    doc,
+                    state_id,
+                    inputs,
+                    prompt_id=run_id,
+                    progress_registry=progress,
+                    extra_data=metadata,
+                )
+            return await executor.execute_async(
+                doc,
+                inputs,
+                prompt_id=run_id,
+                progress_registry=progress,
+                extra_data=metadata,
+            )
+        finally:
+            current_run.reset(run_token)
+            workflow_stack.reset(stack_token)
+
     def _submit_run(
         self,
         run_id: str,
@@ -239,12 +358,12 @@ class RunLifecycleMixin:
         on_event: Callable[[ProgressEvent], None] | None = None,
     ) -> RunHandle:
         from .service import RunHandle
-        from .engine import canonicalize
 
-        # Snapshot now: neither edits nor deletion of the saved flow may change a continuation.
-        payload = copy.deepcopy(canonicalize(payload))
-        doc = load(payload)
-        inputs = copy.deepcopy(inputs)
+        self._assert_accepting_runs()
+
+        # Snapshot now: neither edits nor deletion of the saved flow may
+        # change a continuation.
+        payload, doc, inputs = _snapshot_run(payload, inputs)
         progress = ProgressRegistry(prompt_id=run_id)
         self._execution_repository.create(
             run_id,
@@ -257,8 +376,9 @@ class RunLifecycleMixin:
         )
         progress.add_handler(
             lambda event: self._execution_repository.append_event(
-                run_id, event.to_dict()
-            )
+                run_id,
+                event.to_dict(),
+            ),
         )
         if on_event is not None:
             progress.add_handler(on_event)
@@ -271,46 +391,19 @@ class RunLifecycleMixin:
         )
         self._runs[run_id] = handle
 
-        async def execute():
-            stack_token = workflow_stack.set(tuple(metadata["workflow_stack"]))
-            run_token = current_run.set({**metadata, "run_id": run_id})
-            try:
-                self._execution_repository.update(run_id, status="running")
-                executor = self._executor
-                if self.node_catalog is not None:
-                    from qwenpaw.app.agent_context import get_current_agent_id
-
-                    executor = await self.node_catalog.prepare(
-                        executor,
-                        metadata.get("agent_id") or get_current_agent_id(),
-                        {**metadata, "run_id": run_id},
-                    )
-                validation = self.validate_flow(
-                    payload, executor=executor, resuming=state_id is not None
-                )
-                if not validation["ok"]:
-                    raise ValueError("工作流校验失败：" + "; ".join(validation["errors"]))
-                if state_id is not None:
-                    return await executor.resume(
-                        doc,
-                        state_id,
-                        inputs,
-                        prompt_id=run_id,
-                        progress_registry=progress,
-                        extra_data=metadata,
-                    )
-                return await executor.execute_async(
-                    doc,
-                    inputs,
-                    prompt_id=run_id,
-                    progress_registry=progress,
-                    extra_data=metadata,
-                )
-            finally:
-                current_run.reset(run_token)
-                workflow_stack.reset(stack_token)
-
-        handle.future = asyncio.run_coroutine_threadsafe(execute(), self._loop)
+        handle.future = asyncio.run_coroutine_threadsafe(
+            self._execute_run(
+                handle,
+                payload,
+                doc,
+                inputs,
+                metadata,
+                state_id,
+                progress,
+                run_id,
+            ),
+            self._loop,
+        )
 
         def done(future):
             with self._lifecycle_lock:
@@ -322,11 +415,20 @@ class RunLifecycleMixin:
                         handle.result.status = WorkflowStatus.CANCELLED
                         progress.finish_unfinished(NodeStatus.CANCELLED)
                         events = progress.history()
-                        if not events or events[-1].type != "execution_cancelled":
-                            progress.emit(ProgressEvent(
-                                type="execution_cancelled", prompt_id=run_id,
-                                data={"outputs": handle.result.outputs, "errors": handle.result.errors},
-                            ))
+                        if (
+                            not events
+                            or events[-1].type != "execution_cancelled"
+                        ):
+                            progress.emit(
+                                ProgressEvent(
+                                    type="execution_cancelled",
+                                    prompt_id=run_id,
+                                    data={
+                                        "outputs": handle.result.outputs,
+                                        "errors": handle.result.errors,
+                                    },
+                                ),
+                            )
                     self._execution_repository.update(
                         run_id,
                         state_id=str(handle.state_id),
@@ -343,14 +445,16 @@ class RunLifecycleMixin:
                     )
                 except Exception as exc:
                     handle.error = str(exc)
-                    status = "cancelled" if handle.cancel_requested else "failed"
+                    status = (
+                        "cancelled" if handle.cancel_requested else "failed"
+                    )
                     progress.finish_unfinished(NodeStatus(status))
                     progress.emit(
                         ProgressEvent(
                             type=f"execution_{status}",
                             prompt_id=run_id,
                             data={"errors": [str(exc)], "outputs": {}},
-                        )
+                        ),
                     )
                     self._execution_repository.update(
                         run_id,
@@ -365,14 +469,18 @@ class RunLifecycleMixin:
                     original = metadata.get("resumed_from_run_id")
                     if original and not progress.node_statuses():
                         self._flow_repository.release_resume(original, run_id)
-                        parent_record = self._execution_repository.get(original) or {}
+                        parent_record = (
+                            self._execution_repository.get(original) or {}
+                        )
                         if parent_record.get("resumed_by_run_id") == run_id:
                             self._execution_repository.update(
-                                original, resumed_by_run_id=None
+                                original,
+                                resumed_by_run_id=None,
                             )
                 finally:
                     handle.finalized = True
-                # Failed/cancelled parents must not leave unawaited agent-started children running.
+                # Failed/cancelled parents must not leave unawaited
+                # agent-started children running.
                 if handle.status.value in {"failed", "cancelled", "timeout"}:
                     self._cancel_children(run_id)
 
@@ -397,11 +505,15 @@ class RunLifecycleMixin:
     def list_runs(self) -> list[dict[str, Any]]:
         with self._lifecycle_lock:
             records = [
-                self.get_run_record(record["run_id"])
+                current
                 for record in self._execution_repository.list()
+                if (current := self.get_run_record(record["run_id"]))
+                is not None
             ]
             return sorted(
-                records, key=lambda record: record.get("started_at") or 0, reverse=True
+                records,
+                key=lambda record: record.get("started_at") or 0,
+                reverse=True,
             )
 
     def _cancel_children(self, run_id: str) -> None:
@@ -411,6 +523,29 @@ class RunLifecycleMixin:
                 or record.get("resumed_from_run_id") == run_id
             ):
                 self.cancel_run(record["run_id"])
+
+    def _finish_cancelled_run(self, run_id, record, handle) -> None:
+        # A paused run has no live executor to publish its final
+        # node states. Cancel it durably, including after restart.
+        progress = handle.progress if handle else ProgressRegistry(run_id)
+        if handle is None:
+            progress.add_handler(
+                lambda event: self._execution_repository.append_event(
+                    run_id,
+                    event.to_dict(),
+                ),
+            )
+            for node_id, status in record.get("node_statuses", {}).items():
+                progress.state(node_id).status = NodeStatus(status)
+        progress.finish_unfinished(NodeStatus.CANCELLED)
+        progress.emit(
+            ProgressEvent(type="execution_cancelled", prompt_id=run_id),
+        )
+        self._execution_repository.update(
+            run_id,
+            finished_at=time.time(),
+            node_statuses=progress.node_statuses(),
+        )
 
     def cancel_run(self, run_id: str) -> bool:
         with self._lifecycle_lock:
@@ -424,24 +559,10 @@ class RunLifecycleMixin:
                 self._execution_repository.update(run_id, status="cancelled")
                 if handle is not None and not handle.is_done:
                     self._loop.call_soon_threadsafe(
-                        self._executor.cancel_by_prompt_id, run_id
+                        self._executor.cancel_by_prompt_id,
+                        run_id,
                     )
                 else:
-                    # A paused run has no live executor to publish its final
-                    # node states. Cancel it durably, including after restart.
-                    progress = handle.progress if handle else ProgressRegistry(run_id)
-                    if handle is None:
-                        progress.add_handler(
-                            lambda event: self._execution_repository.append_event(
-                                run_id, event.to_dict()
-                            )
-                        )
-                        for node_id, status in record.get("node_statuses", {}).items():
-                            progress.state(node_id).status = NodeStatus(status)
-                    progress.finish_unfinished(NodeStatus.CANCELLED)
-                    progress.emit(ProgressEvent(type="execution_cancelled", prompt_id=run_id))
-                    self._execution_repository.update(
-                        run_id, finished_at=time.time(), node_statuses=progress.node_statuses()
-                    )
+                    self._finish_cancelled_run(run_id, record, handle)
             self._cancel_children(run_id)
             return True

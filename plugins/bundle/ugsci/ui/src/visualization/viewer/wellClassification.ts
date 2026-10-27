@@ -52,8 +52,10 @@ export function wellPlacement(dataset: DatasetInfo): WellPlacement | null {
   if (!isWellSource(dataset.source)) return null;
   const meta = dataset.metadata || {};
   if (meta.placement === "spatial" || meta.spatial === true) return "spatial";
-  if (meta.placement === "depth-only" || meta.spatial === false) return "depth-only";
-  if (dataset.source === "las" || dataset.source === "dlis") return "depth-only";
+  if (meta.placement === "depth-only" || meta.spatial === false)
+    return "depth-only";
+  if (dataset.source === "las" || dataset.source === "dlis")
+    return "depth-only";
   return "spatial";
 }
 
@@ -89,8 +91,12 @@ export function wellDisplayName(dataset: DatasetInfo): string {
   if (typeof meta.well_name === "string" && meta.well_name.trim()) {
     return meta.well_name.trim();
   }
-  return dataset.name.replace(/^Well:\s*/i, "").replace(/\s*\([^)]*\)\s*$/, "").trim()
-    || dataset.id;
+  return (
+    dataset.name
+      .replace(/^Well:\s*/i, "")
+      .replace(/\s*\([^)]*\)\s*$/, "")
+      .trim() || dataset.id
+  );
 }
 
 export function downsamplePolyline(
@@ -133,7 +139,9 @@ export function uniquePolyline(
   return points;
 }
 
-export function visualWellRadius(points: Array<[number, number, number]>): number {
+export function visualWellRadius(
+  points: Array<[number, number, number]>,
+): number {
   if (points.length < 2) return 2;
   let length = 0;
   let minX = points[0][0];

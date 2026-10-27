@@ -740,7 +740,7 @@ async def oauth_callback(
             or _state_store.get(state) is not session
         ):
             return _make_error_page(
-                "OAuth session cancelled. Please try again."
+                "OAuth session cancelled. Please try again.",
             )
         await _persist_tokens(request, session, tokens)
     except Exception as exc:
@@ -794,24 +794,31 @@ async def oauth_status(
     phase = None
     if session_id:
         session = _state_store.get(session_id) or _completed_sessions.get(
-            session_id
+            session_id,
         )
         if session is None:
             return OAuthStatusResponse(
-                authorized=False, expires_at=0, scope="", phase="expired"
+                authorized=False,
+                expires_at=0,
+                scope="",
+                phase="expired",
             )
         if (
             session.agent_id != agent.agent_id
             or session.client_key != client_key
         ):
             raise HTTPException(
-                status_code=404, detail="OAuth session not found"
+                status_code=404,
+                detail="OAuth session not found",
             )
         phase = session.phase
         if phase != "authorized":
             # An older token does not prove this browser flow succeeded.
             return OAuthStatusResponse(
-                authorized=False, expires_at=0, scope="", phase=phase
+                authorized=False,
+                expires_at=0,
+                scope="",
+                phase=phase,
             )
     oauth = await _load_optional_oauth_credential(agent, client_key)
     if oauth is None or not oauth.secrets.get("access_token"):
@@ -835,7 +842,9 @@ async def oauth_status(
 
 @router.delete("/oauth/session/{client_key:path}", response_model=dict)
 async def oauth_cancel_session(
-    client_key: str, request: Request, session_id: str
+    client_key: str,
+    request: Request,
+    session_id: str,
 ) -> dict:
     """Cancel only the selected browser flow; keep existing account tokens."""
     from ..agent_context import get_agent_for_request
@@ -849,7 +858,8 @@ async def oauth_cancel_session(
             or session.client_key != client_key
         ):
             raise HTTPException(
-                status_code=404, detail="OAuth session not found"
+                status_code=404,
+                detail="OAuth session not found",
             )
         session.phase = "cancelled"
     return {"message": "OAuth session cancelled"}

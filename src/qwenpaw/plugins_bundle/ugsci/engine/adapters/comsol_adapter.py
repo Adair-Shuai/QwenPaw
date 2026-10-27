@@ -25,12 +25,68 @@ _MAX_TIME_SERIES_POINTS = 100_000
 _DEFAULT_MAX_MPH_XML_BYTES = 64 * 1024 * 1024
 _MAX_AUTO_EXPORT_FILES = 32
 _ABSOLUTE_PATH_RE = re.compile(
-    r"(?:[A-Za-z]:[\\/][^<>\r\n\"']+|\\\\[^\\/\s]+\\[^<>\r\n\"']+)"
+    r"(?:[A-Za-z]:[\\/][^<>\r\n\"']+|\\\\[^\\/\s]+\\[^<>\r\n\"']+)",
 )
 
 
 def _local_name(tag: str) -> str:
     return tag.rsplit("}", 1)[-1]
+
+
+def _mph_duration_seconds(value: str) -> float | None:
+    match = re.search(r"([\d.]+)\s*s\b", value or "", re.IGNORECASE)
+    return float(match.group(1)) if match else None
+
+
+def _mph_external_reference(
+    value: str,
+    property_name: str,
+    model_directory: Path,
+    resource_names: set[str],
+    feature_context: list[str],
+) -> dict[str, Any]:
+    normalised = (
+        value.strip().strip("\"'").rstrip(" ,;)]}").replace("\\\\", "\\")
+    )
+    basename = normalised.replace("\\", "/").rsplit("/", 1)[-1]
+    is_absolute = bool(_ABSOLUTE_PATH_RE.match(normalised))
+    original_path = Path(normalised)
+    if not is_absolute:
+        original_path = model_directory / original_path
+    folded_property = property_name.casefold()
+    folded_context = "|".join(feature_context).casefold()
+    if "lastwritten" in folded_property:
+        role = "output"
+    elif "previous" in folded_property:
+        role = "historical"
+    elif "exportfeature" in folded_context or "results:" in folded_context:
+        role = "export_input"
+    elif "filename" in folded_property:
+        role = "input"
+    else:
+        role = "unknown"
+    origin = (
+        "active_property"
+        if folded_property
+        in {
+            "p:filename",
+            "p:coordfilename",
+            "p:lastwrittenfile",
+            "p:previousfilename",
+        }
+        else "embedded_property"
+    )
+    return {
+        "origin": origin,
+        "role": role,
+        "property": property_name[:128],
+        "feature": feature_context[0][:128] if feature_context else "",
+        "basename": basename[:255],
+        "is_absolute": is_absolute,
+        "sibling_exists": (model_directory / basename).is_file(),
+        "original_exists": original_path.is_file(),
+        "embedded_match": basename.casefold() in resource_names,
+    }
 
 
 def inspect_mph_metadata(
@@ -70,23 +126,30 @@ def inspect_mph_metadata(
                 "kind": "zip",
                 "entry_count": len(infos),
                 "has_modelinfo": "modelinfo.xml" in by_name,
-                "savepoint_count": len({
-                    info.filename.split("/", 1)[0].casefold()
-                    for info in infos
-                    if info.filename.casefold().startswith("savepoint")
-                }),
+                "savepoint_count": len(
+                    {
+                        info.filename.split("/", 1)[0].casefold()
+                        for info in infos
+                        if info.filename.casefold().startswith("savepoint")
+                    },
+                ),
                 "embedded_resource_count": len(resource_names),
             }
 
             version_info = by_name.get("fileversion")
             if version_info and version_info.file_size <= 4096:
-                raw_version = archive.read(version_info).decode("utf-8", errors="replace")
+                raw_version = archive.read(version_info).decode(
+                    "utf-8",
+                    errors="replace",
+                )
                 metadata["file_version"] = raw_version.strip()
                 if ":" in raw_version:
-                    metadata["comsol_version"] = raw_version.split(":", 1)[1].strip()
+                    metadata["comsol_version"] = raw_version.split(":", 1)[
+                        1
+                    ].strip()
 
             model_info = by_name.get("modelinfo.xml") or by_name.get(
-                "fileversion/modelinfo.xml"
+                "fileversion/modelinfo.xml",
             )
             if model_info and model_info.file_size <= max_xml_bytes:
                 raw_info = archive.read(model_info)
@@ -95,35 +158,54 @@ def inspect_mph_metadata(
                 except ElementTree.ParseError:
                     root = None
                 if root is not None:
-                    metadata.update({
-                        "comsol_version": root.attrib.get(
-                            "comsolVersion", metadata.get("comsol_version", "")
-                        ),
-                        "model_type": root.attrib.get("modelType", ""),
-                        "node_type": root.attrib.get("nodeType", ""),
-                        "is_runnable": root.attrib.get("isRunnable", ""),
-                        "protection": {
-                            "password": root.attrib.get("passwordProtection", ""),
-                            "runtime": root.attrib.get("runtimeProtection", ""),
-                        },
-                        "locale": root.attrib.get("locale", ""),
-                        "timing": {
-                            "expected_seconds": COMSOLAdapter._duration_seconds(
-                                root.attrib.get("expectedComputationTime", "")
+                    metadata.update(
+                        {
+                            "comsol_version": root.attrib.get(
+                                "comsolVersion",
+                                metadata.get("comsol_version", ""),
                             ),
-                            "last_seconds": COMSOLAdapter._duration_seconds(
-                                root.attrib.get("lastComputationTime", "")
-                            ),
+                            "model_type": root.attrib.get("modelType", ""),
+                            "node_type": root.attrib.get("nodeType", ""),
+                            "is_runnable": root.attrib.get("isRunnable", ""),
+                            "protection": {
+                                "password": root.attrib.get(
+                                    "passwordProtection",
+                                    "",
+                                ),
+                                "runtime": root.attrib.get(
+                                    "runtimeProtection",
+                                    "",
+                                ),
+                            },
+                            "locale": root.attrib.get("locale", ""),
+                            "timing": {
+                                "expected_seconds": _mph_duration_seconds(
+                                    root.attrib.get(
+                                        "expectedComputationTime",
+                                        "",
+                                    ),
+                                ),
+                                "last_seconds": _mph_duration_seconds(
+                                    root.attrib.get("lastComputationTime", ""),
+                                ),
+                            },
                         },
-                    })
+                    )
                     for child in root.iter():
                         name = _local_name(child.tag)
                         if name == "historyInfo":
                             metadata["timestamps"] = {
-                                "created_in": child.attrib.get("createdIn", ""),
-                                "created_date": child.attrib.get("createdDate", ""),
+                                "created_in": child.attrib.get(
+                                    "createdIn",
+                                    "",
+                                ),
+                                "created_date": child.attrib.get(
+                                    "createdDate",
+                                    "",
+                                ),
                                 "last_modified_date": child.attrib.get(
-                                    "lastModifiedDate", ""
+                                    "lastModifiedDate",
+                                    "",
                                 ),
                             }
                         elif name == "licenseInfo":
@@ -136,11 +218,16 @@ def inspect_mph_metadata(
                         elif name == "physicsInfo":
                             metadata["physics"] = [
                                 item
-                                for item in child.attrib.get("physics", "").split("##")
+                                for item in child.attrib.get(
+                                    "physics",
+                                    "",
+                                ).split("##")
                                 if item
                             ]
                         elif name == "geom":
-                            metadata.setdefault("geometries", []).append(dict(child.attrib))
+                            metadata.setdefault("geometries", []).append(
+                                dict(child.attrib),
+                            )
 
             solution_entries = [
                 info
@@ -148,27 +235,36 @@ def inspect_mph_metadata(
                 if Path(info.filename).name.casefold().startswith("solution")
                 and Path(info.filename).suffix.casefold() == ".mphbin"
             ]
-            metadata["container"].update({
-                "is_solved": metadata.get("node_type", "").casefold() == "solved",
-                "has_solution_entries": bool(solution_entries),
-                "solution_entry_count": len(solution_entries),
-                "solution_entry_bytes": sum(info.file_size for info in solution_entries),
-            })
+            metadata["container"].update(
+                {
+                    "is_solved": metadata.get("node_type", "").casefold()
+                    == "solved",
+                    "has_solution_entries": bool(solution_entries),
+                    "solution_entry_count": len(solution_entries),
+                    "solution_entry_bytes": sum(
+                        info.file_size for info in solution_entries
+                    ),
+                },
+            )
             metadata["external_references"] = []
             if deep:
                 dmodel = by_name.get("dmodel.xml")
                 if dmodel:
                     if dmodel.flag_bits & 0x1:
                         metadata.setdefault("warnings", []).append(
-                            "dmodel.xml is encrypted; external references were not inspected"
+                            "dmodel.xml is encrypted; "
+                            "external references were not inspected",
                         )
                     elif dmodel.file_size > max_xml_bytes:
                         metadata.setdefault("warnings", []).append(
-                            "dmodel.xml exceeds the bounded inspection limit"
+                            "dmodel.xml exceeds the bounded inspection limit",
                         )
-                    elif dmodel.compress_size and dmodel.file_size / dmodel.compress_size > 200:
+                    elif (
+                        dmodel.compress_size
+                        and dmodel.file_size / dmodel.compress_size > 200
+                    ):
                         metadata.setdefault("warnings", []).append(
-                            "dmodel.xml has an unsafe compression ratio"
+                            "dmodel.xml has an unsafe compression ratio",
                         )
                     else:
                         references: dict[tuple[str, ...], dict[str, Any]] = {}
@@ -181,19 +277,35 @@ def inspect_mph_metadata(
                                 ):
                                     if event == "start":
                                         tag = _local_name(element.tag)
-                                        operation = element.attrib.get("op", "")
+                                        operation = element.attrib.get(
+                                            "op",
+                                            "",
+                                        )
                                         context_stack.append(
-                                            f"{tag}:{operation}" if operation else tag
+                                            f"{tag}:{operation}"
+                                            if operation
+                                            else tag,
                                         )
                                         continue
-                                    if _local_name(element.tag) == "propertyValue":
-                                        property_name = element.attrib.get("name", "")
+                                    if (
+                                        _local_name(element.tag)
+                                        == "propertyValue"
+                                    ):
+                                        property_name = element.attrib.get(
+                                            "name",
+                                            "",
+                                        )
                                         value = element.attrib.get("value", "")
-                                        context = list(reversed(context_stack[:-1]))[:20]
-                                        references_in_value = _ABSOLUTE_PATH_RE.findall(value)
+                                        context = list(
+                                            reversed(context_stack[:-1]),
+                                        )[:20]
+                                        references_in_value = (
+                                            _ABSOLUTE_PATH_RE.findall(value)
+                                        )
                                         if (
                                             not references_in_value
-                                            and property_name.casefold() in {
+                                            and property_name.casefold()
+                                            in {
                                                 "p:filename",
                                                 "p:coordfilename",
                                                 "p:lastwrittenfile",
@@ -205,12 +317,14 @@ def inspect_mph_metadata(
                                         ):
                                             references_in_value = [value]
                                         for match in references_in_value:
-                                            reference = COMSOLAdapter._sanitise_external_reference(
-                                                match,
-                                                property_name,
-                                                mph_path.parent,
-                                                resource_names,
-                                                context,
+                                            reference = (
+                                                _mph_external_reference(
+                                                    match,
+                                                    property_name,
+                                                    mph_path.parent,
+                                                    resource_names,
+                                                    context,
+                                                )
                                             )
                                             key = (
                                                 reference["origin"],
@@ -225,9 +339,11 @@ def inspect_mph_metadata(
                                         context_stack.pop()
                         except ElementTree.ParseError:
                             metadata.setdefault("warnings", []).append(
-                                "dmodel.xml could not be parsed"
+                                "dmodel.xml could not be parsed",
                             )
-                        metadata["external_references"] = list(references.values())[:200]
+                        metadata["external_references"] = list(
+                            references.values(),
+                        )[:200]
                         metadata["metadata_scan_bytes"] = dmodel.file_size
     except (OSError, zipfile.BadZipFile, RuntimeError) as exc:
         metadata["container"] = {"kind": "unreadable"}
@@ -255,7 +371,10 @@ def _detect_delimiter(line: str) -> str:
     return delimiter if count else ","
 
 
-def _split_comsol_columns(line: str, delimiter: str | None = None) -> list[str]:
+def _split_comsol_columns(
+    line: str,
+    delimiter: str | None = None,
+) -> list[str]:
     """Split a COMSOL header without splitting commas inside expressions."""
     delimiter = delimiter or _detect_delimiter(line)
     values: list[str] = []
@@ -338,51 +457,9 @@ class COMSOLAdapter(BaseSimAdapter):
         metadata["warnings"] = warnings[:100]
         return metadata
 
-    @staticmethod
-    def _duration_seconds(value: str) -> float | None:
-        match = re.search(r"([\d.]+)\s*s\b", value or "", re.IGNORECASE)
-        return float(match.group(1)) if match else None
+    _duration_seconds = staticmethod(_mph_duration_seconds)
 
-    @staticmethod
-    def _sanitise_external_reference(
-        value: str,
-        property_name: str,
-        model_directory: Path,
-        resource_names: set[str],
-        feature_context: list[str],
-    ) -> dict[str, Any]:
-        normalised = value.strip().strip("\"'").rstrip(" ,;)]}").replace("\\\\", "\\")
-        basename = normalised.replace("\\", "/").rsplit("/", 1)[-1]
-        is_absolute = bool(_ABSOLUTE_PATH_RE.match(normalised))
-        original_path = Path(normalised)
-        if not is_absolute:
-            original_path = model_directory / original_path
-        folded_property = property_name.casefold()
-        folded_context = "|".join(feature_context).casefold()
-        if "lastwritten" in folded_property:
-            role = "output"
-        elif "previous" in folded_property:
-            role = "historical"
-        elif "exportfeature" in folded_context or "results:" in folded_context:
-            role = "export_input"
-        elif "filename" in folded_property:
-            role = "input"
-        else:
-            role = "unknown"
-        origin = "active_property" if folded_property in {
-            "p:filename", "p:coordfilename", "p:lastwrittenfile", "p:previousfilename"
-        } else "embedded_property"
-        return {
-            "origin": origin,
-            "role": role,
-            "property": property_name[:128],
-            "feature": feature_context[0][:128] if feature_context else "",
-            "basename": basename[:255],
-            "is_absolute": is_absolute,
-            "sibling_exists": (model_directory / basename).is_file(),
-            "original_exists": original_path.is_file(),
-            "embedded_match": basename.casefold() in resource_names,
-        }
+    _sanitise_external_reference = staticmethod(_mph_external_reference)
 
     def build_command(
         self,
@@ -392,10 +469,18 @@ class COMSOLAdapter(BaseSimAdapter):
     ) -> list[str]:
         executable_name = Path(executable).name.casefold()
         cmd = [executable]
-        if executable_name.startswith("comsol") and "batch" not in executable_name:
+        if (
+            executable_name.startswith("comsol")
+            and "batch" not in executable_name
+        ):
             cmd.append("batch")
         cmd.extend(["-inputfile", deck_file])
-        cmd.extend(["-outputfile", str(Path(deck_file).with_suffix("")) + "_result.mph"])
+        cmd.extend(
+            [
+                "-outputfile",
+                str(Path(deck_file).with_suffix("")) + "_result.mph",
+            ],
+        )
         cmd.extend(["-tmpdir", str(Path(deck_file).parent)])
         return cmd
 
@@ -404,7 +489,11 @@ class COMSOLAdapter(BaseSimAdapter):
         if not directory.is_dir():
             return None
         matches = list(directory.glob("*.log"))
-        return max(matches, key=lambda path: path.stat().st_mtime) if matches else None
+        return (
+            max(matches, key=lambda path: path.stat().st_mtime)
+            if matches
+            else None
+        )
 
     def parse_progress(self, working_dir: str | Path) -> SimProgress:
         progress = SimProgress()
@@ -441,7 +530,9 @@ class COMSOLAdapter(BaseSimAdapter):
         case_stem: str = "",
     ) -> tuple[str | None, int | None, str | None]:
         status, returncode, error = super().infer_terminal_status(
-            working_dir, start_ts=start_ts, case_stem=case_stem
+            working_dir,
+            start_ts=start_ts,
+            case_stem=case_stem,
         )
         if status is not None:
             return status, returncode, error
@@ -467,7 +558,10 @@ class COMSOLAdapter(BaseSimAdapter):
         log_file = self.find_log_file(working_dir)
         if not log_file:
             return warnings
-        for index, line in enumerate(self._read_log_tail(log_file, 5000).splitlines(), 1):
+        for index, line in enumerate(
+            self._read_log_tail(log_file, 5000).splitlines(),
+            1,
+        ):
             upper = line.upper()
             if "WARNING" in upper:
                 warnings.append(SimWarning("warning", index, line.strip()))
@@ -498,7 +592,11 @@ class COMSOLAdapter(BaseSimAdapter):
         if result_files:
             return max(result_files, key=lambda path: path.stat().st_mtime)
         mph_files = list(directory.glob("*.mph"))
-        return max(mph_files, key=lambda path: path.stat().st_mtime) if mph_files else None
+        return (
+            max(mph_files, key=lambda path: path.stat().st_mtime)
+            if mph_files
+            else None
+        )
 
     @staticmethod
     def _manifest_exports(directory: Path, case_stem: str) -> list[Path]:
@@ -534,7 +632,10 @@ class COMSOLAdapter(BaseSimAdapter):
                     candidate.relative_to(directory_resolved)
                 except ValueError:
                     continue
-                if candidate.is_file() and candidate.suffix.casefold() == ".csv":
+                if (
+                    candidate.is_file()
+                    and candidate.suffix.casefold() == ".csv"
+                ):
                     selected.append(candidate)
         return selected
 
@@ -544,13 +645,19 @@ class COMSOLAdapter(BaseSimAdapter):
         case_stem: str,
         mph_file: Path | None,
     ) -> tuple[list[Path], dict[str, Any] | None]:
-        csv_files = sorted(directory.glob("*.csv"), key=lambda path: path.name.casefold())
+        csv_files = sorted(
+            directory.glob("*.csv"),
+            key=lambda path: path.name.casefold(),
+        )
         if case_stem:
             selected = self._manifest_exports(directory, case_stem)
             if selected:
                 unique = {path.resolve(): path for path in selected}
                 return (
-                    sorted(unique.values(), key=lambda path: path.name.casefold()),
+                    sorted(
+                        unique.values(),
+                        key=lambda path: path.name.casefold(),
+                    ),
                     None,
                 )
 
@@ -563,7 +670,10 @@ class COMSOLAdapter(BaseSimAdapter):
                 if reference.get("role") != "output":
                     continue
                 basename = reference.get("basename")
-                if not isinstance(basename, str) or not basename.casefold().endswith(".csv"):
+                if not isinstance(
+                    basename,
+                    str,
+                ) or not basename.casefold().endswith(".csv"):
                     continue
                 candidate = (directory / basename).resolve()
                 try:
@@ -574,10 +684,13 @@ class COMSOLAdapter(BaseSimAdapter):
                     selected.append(candidate)
             if selected:
                 unique = {path.resolve(): path for path in selected}
-                ordered = sorted(unique.values(), key=lambda path: path.name.casefold())
+                ordered = sorted(
+                    unique.values(),
+                    key=lambda path: path.name.casefold(),
+                )
                 if len(ordered) > _MAX_AUTO_EXPORT_FILES:
                     mph_metadata.setdefault("warnings", []).append(
-                        "automatic COMSOL export discovery was truncated"
+                        "automatic COMSOL export discovery was truncated",
                     )
                     ordered = ordered[:_MAX_AUTO_EXPORT_FILES]
                 return ordered, mph_metadata
@@ -587,8 +700,10 @@ class COMSOLAdapter(BaseSimAdapter):
             folded = case_stem.casefold()
             for path in csv_files:
                 stem = path.stem.casefold()
-                if stem == folded or stem.startswith(folded + "_") or stem.startswith(
-                    folded + "-"
+                if (
+                    stem == folded
+                    or stem.startswith(folded + "_")
+                    or stem.startswith(folded + "-")
                 ):
                     selected.append(path)
             unique = {path.resolve(): path for path in selected}
@@ -624,7 +739,11 @@ class COMSOLAdapter(BaseSimAdapter):
             summary.metadata.setdefault("exports", []).append(parsed.metadata)
 
         if mph_file:
-            mph_summary = self._read_mph(mph_file, variables, metadata=mph_metadata)
+            mph_summary = self._read_mph(
+                mph_file,
+                variables,
+                metadata=mph_metadata,
+            )
             if mph_summary is not None:
                 summary.metadata["mph"] = mph_summary.metadata
                 for name, points in mph_summary.vectors.items():
@@ -646,7 +765,12 @@ class COMSOLAdapter(BaseSimAdapter):
         delimiter = ","
         first_data = ""
         try:
-            with path.open("r", encoding="utf-8-sig", errors="replace", newline="") as handle:
+            with path.open(
+                "r",
+                encoding="utf-8-sig",
+                errors="replace",
+                newline="",
+            ) as handle:
                 for raw_line in handle:
                     line = raw_line.strip()
                     if not line:
@@ -654,13 +778,26 @@ class COMSOLAdapter(BaseSimAdapter):
                     if line.startswith("%"):
                         payload = line[1:].strip()
                         line_delimiter = _detect_delimiter(payload)
-                        columns = _split_comsol_columns(payload, line_delimiter)
+                        columns = _split_comsol_columns(
+                            payload,
+                            line_delimiter,
+                        )
                         first = columns[0].strip().upper() if columns else ""
-                        if len(columns) > 1 and first in {"TIME", "T", "DATE", "X", "Y", "Z", "R"}:
+                        if len(columns) > 1 and first in {
+                            "TIME",
+                            "T",
+                            "DATE",
+                            "X",
+                            "Y",
+                            "Z",
+                            "R",
+                        }:
                             header = columns
                             delimiter = line_delimiter
                         elif len(columns) > 1:
-                            metadata[columns[0].strip()] = ",".join(columns[1:]).strip()
+                            metadata[columns[0].strip()] = ",".join(
+                                columns[1:],
+                            ).strip()
                         continue
                     line_delimiter = _detect_delimiter(line)
                     if _numeric_cells(line, line_delimiter) is None:
@@ -674,19 +811,40 @@ class COMSOLAdapter(BaseSimAdapter):
                 if not first_data:
                     summary.metadata = metadata
                     return summary
-                metadata["delimiter"] = "tab" if delimiter == "\t" else delimiter
+                metadata["delimiter"] = (
+                    "tab" if delimiter == "\t" else delimiter
+                )
                 rows = itertools.chain([first_data], handle)
-                if header and header[0].strip().upper() in {"TIME", "T", "DATE"}:
+                if header and header[0].strip().upper() in {
+                    "TIME",
+                    "T",
+                    "DATE",
+                }:
                     COMSOLAdapter._read_time_series_rows(
-                        rows, header, summary, variables, wells, metadata, delimiter
+                        rows,
+                        header,
+                        summary,
+                        variables,
+                        wells,
+                        metadata,
+                        delimiter,
                     )
                 elif header:
                     COMSOLAdapter._read_field_rows(
-                        rows, header, summary, variables, metadata, delimiter
+                        rows,
+                        header,
+                        summary,
+                        variables,
+                        metadata,
+                        delimiter,
                     )
                 else:
                     COMSOLAdapter._read_matrix_rows(
-                        rows, summary, metadata, path, delimiter
+                        rows,
+                        summary,
+                        metadata,
+                        path,
+                        delimiter,
                     )
         except (OSError, csv.Error, UnicodeError):
             summary.metadata = metadata
@@ -724,11 +882,18 @@ class COMSOLAdapter(BaseSimAdapter):
                 if allowed and upper not in allowed:
                     continue
                 if ":" in upper:
-                    if allowed_wells and upper.split(":", 1)[1] not in allowed_wells:
+                    if (
+                        allowed_wells
+                        and upper.split(":", 1)[1] not in allowed_wells
+                    ):
                         continue
-                    summary.well_vectors.setdefault(upper, []).append((raw_time, cells[index]))
+                    summary.well_vectors.setdefault(upper, []).append(
+                        (raw_time, cells[index]),
+                    )
                 else:
-                    summary.vectors.setdefault(upper, []).append((raw_time, cells[index]))
+                    summary.vectors.setdefault(upper, []).append(
+                        (raw_time, cells[index]),
+                    )
             stored += 1
         metadata.update(
             {
@@ -737,7 +902,7 @@ class COMSOLAdapter(BaseSimAdapter):
                 "row_count": row_count,
                 "stored_points": stored,
                 "truncated": row_count > stored,
-            }
+            },
         )
 
     @staticmethod
@@ -760,12 +925,17 @@ class COMSOLAdapter(BaseSimAdapter):
         selected_variables: list[str] = []
         variable_units: list[str] = []
         variable_columns: list[int] = []
-        for index, name in enumerate(header[coordinate_count:], coordinate_count):
+        for index, name in enumerate(
+            header[coordinate_count:],
+            coordinate_count,
+        ):
             if not allowed or name.strip().upper() in allowed:
                 selected_indices.append(index)
                 selected_variables.append(name.strip())
                 unit_match = re.search(r"\s+\(([^()]*)\)\s*$", name)
-                variable_units.append(unit_match.group(1) if unit_match else "")
+                variable_units.append(
+                    unit_match.group(1) if unit_match else "",
+                )
                 variable_columns.append(index)
         samples: list[list[Any]] = []
         row_count = 0
@@ -775,12 +945,19 @@ class COMSOLAdapter(BaseSimAdapter):
                 continue
             row_count += 1
             if len(samples) < _MAX_FIELD_SAMPLES:
-                samples.append([cells[index] if index < len(cells) else None for index in selected_indices])
+                samples.append(
+                    [
+                        cells[index] if index < len(cells) else None
+                        for index in selected_indices
+                    ],
+                )
         summary.fields.append(
             SimFieldTable(
                 source_file=str(metadata["source_file"]),
                 kind="spatial_point_cloud",
-                coordinates=tuple(name.strip() for name in header[:coordinate_count]),
+                coordinates=tuple(
+                    name.strip() for name in header[:coordinate_count]
+                ),
                 variables=tuple(selected_variables),
                 row_count=row_count,
                 column_count=len(selected_indices),
@@ -795,7 +972,7 @@ class COMSOLAdapter(BaseSimAdapter):
                     "sample_strategy": "first_rows",
                     "sample_truncated": row_count > len(samples),
                 },
-            )
+            ),
         )
         metadata.update(
             {
@@ -803,7 +980,7 @@ class COMSOLAdapter(BaseSimAdapter):
                 "row_count": row_count,
                 "column_count": len(header),
                 "sample_rows": len(samples),
-            }
+            },
         )
 
     @staticmethod
@@ -836,12 +1013,13 @@ class COMSOLAdapter(BaseSimAdapter):
                 metadata={
                     **metadata,
                     "warnings": [
-                        "schema_required: headerless table columns remain unnamed"
+                        "schema_required: headerless table "
+                        "columns remain unnamed",
                     ],
                     "sample_strategy": "first_rows",
                     "sample_truncated": row_count > len(samples),
                 },
-            )
+            ),
         )
         metadata.update(
             {
@@ -849,7 +1027,7 @@ class COMSOLAdapter(BaseSimAdapter):
                 "row_count": row_count,
                 "column_count": column_count,
                 "sample_rows": len(samples),
-            }
+            },
         )
 
     @staticmethod
@@ -860,7 +1038,8 @@ class COMSOLAdapter(BaseSimAdapter):
     ) -> Optional[SimSummary]:
         summary = SimSummary(metadata=metadata or inspect_mph_metadata(path))
         summary.metadata["native_value_reader"] = (
-            "COMSOL values require a separately managed, timeout-bounded JVM worker"
+            "COMSOL values require a separately managed, "
+            "timeout-bounded JVM worker"
         )
         if variables:
             summary.metadata["requested_native_variables"] = [

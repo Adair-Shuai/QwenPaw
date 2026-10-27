@@ -7,9 +7,20 @@
 
 import * as THREE from "three";
 
-export type NamedView = "top" | "bottom" | "north" | "south" | "east" | "west" | "iso";
+export type NamedView =
+  | "top"
+  | "bottom"
+  | "north"
+  | "south"
+  | "east"
+  | "west"
+  | "iso";
 
-export const NAMED_VIEWS: ReadonlyArray<{ id: NamedView; label: string; shortcut: string }> = [
+export const NAMED_VIEWS: ReadonlyArray<{
+  id: NamedView;
+  label: string;
+  shortcut: string;
+}> = [
   { id: "top", label: "顶视", shortcut: "Alt+T" },
   { id: "bottom", label: "底视", shortcut: "Alt+B" },
   { id: "north", label: "北视", shortcut: "Alt+N" },
@@ -24,37 +35,66 @@ export interface ViewPose {
   up: THREE.Vector3;
 }
 
-export function namedViewPose(name: NamedView, target: THREE.Vector3, distance: number): ViewPose {
+export function namedViewPose(
+  name: NamedView,
+  target: THREE.Vector3,
+  distance: number,
+): ViewPose {
   const d = Math.max(distance, 1);
   switch (name) {
     case "top":
-      return { position: target.clone().add(new THREE.Vector3(0, 0, d)), up: new THREE.Vector3(0, 1, 0) };
+      return {
+        position: target.clone().add(new THREE.Vector3(0, 0, d)),
+        up: new THREE.Vector3(0, 1, 0),
+      };
     case "bottom":
-      return { position: target.clone().add(new THREE.Vector3(0, 0, -d)), up: new THREE.Vector3(0, 1, 0) };
+      return {
+        position: target.clone().add(new THREE.Vector3(0, 0, -d)),
+        up: new THREE.Vector3(0, 1, 0),
+      };
     case "north":
-      return { position: target.clone().add(new THREE.Vector3(0, d, 0)), up: new THREE.Vector3(0, 0, 1) };
+      return {
+        position: target.clone().add(new THREE.Vector3(0, d, 0)),
+        up: new THREE.Vector3(0, 0, 1),
+      };
     case "south":
-      return { position: target.clone().add(new THREE.Vector3(0, -d, 0)), up: new THREE.Vector3(0, 0, 1) };
+      return {
+        position: target.clone().add(new THREE.Vector3(0, -d, 0)),
+        up: new THREE.Vector3(0, 0, 1),
+      };
     case "east":
-      return { position: target.clone().add(new THREE.Vector3(d, 0, 0)), up: new THREE.Vector3(0, 0, 1) };
+      return {
+        position: target.clone().add(new THREE.Vector3(d, 0, 0)),
+        up: new THREE.Vector3(0, 0, 1),
+      };
     case "west":
-      return { position: target.clone().add(new THREE.Vector3(-d, 0, 0)), up: new THREE.Vector3(0, 0, 1) };
+      return {
+        position: target.clone().add(new THREE.Vector3(-d, 0, 0)),
+        up: new THREE.Vector3(0, 0, 1),
+      };
     default:
       return {
-        position: target.clone().add(new THREE.Vector3(1, 1, 0.8).normalize().multiplyScalar(d)),
+        position: target
+          .clone()
+          .add(new THREE.Vector3(1, 1, 0.8).normalize().multiplyScalar(d)),
         up: new THREE.Vector3(0, 0, 1),
       };
   }
 }
 
-export function viewDistanceForBox(box: THREE.Box3, aspect: number, fovDeg: number): number {
+export function viewDistanceForBox(
+  box: THREE.Box3,
+  aspect: number,
+  fovDeg: number,
+): number {
   const size = box.getSize(new THREE.Vector3());
   const verticalFov = THREE.MathUtils.degToRad(fovDeg);
-  const horizontalFov = 2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(aspect, 0.2));
+  const horizontalFov =
+    2 * Math.atan(Math.tan(verticalFov / 2) * Math.max(aspect, 0.2));
   // Fit the enclosing sphere, including flat maps viewed from above and tall
   // wells. The earlier Z-based approximation clipped flat grids in top view.
   const radius = Math.max(size.length() / 2, 0.5);
-  return radius / Math.sin(Math.min(horizontalFov, verticalFov) / 2) * 1.1;
+  return (radius / Math.sin(Math.min(horizontalFov, verticalFov) / 2)) * 1.1;
 }
 
 export function applyOrthographicFrustum(
@@ -73,7 +113,10 @@ export function applyOrthographicFrustum(
   camera.updateProjectionMatrix();
 }
 
-export function cameraAzimuthRad(position: THREE.Vector3, target: THREE.Vector3): number {
+export function cameraAzimuthRad(
+  position: THREE.Vector3,
+  target: THREE.Vector3,
+): number {
   const dx = position.x - target.x;
   const dy = position.y - target.y;
   return Math.atan2(dx, dy);

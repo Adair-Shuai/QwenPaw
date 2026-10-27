@@ -1,37 +1,42 @@
 # -*- coding: utf-8 -*-
-"""Regression tests for independently reproduced incremental update failures."""
+"""Regression tests for independently reproduced incremental update \
+failures."""
 
 from pathlib import Path
 import base64
 import hashlib
+import importlib
 import json
 import random
 import sys
 from datetime import datetime, timezone
 
-ROOT = Path(__file__).resolve().parents[3]
-sys.path.insert(0, str(ROOT / "src"))
-sys.path.insert(0, str(ROOT / "scripts" / "pack-tauri"))
-
 import pytest
 import httpx
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
-from build_component_delta import write_delta
-from build_component_release import build_release, _full_zip
-import build_component_release as release_module
-from stage_desktop_components import stage
 from qwenpaw.components.update import (
     ComponentUpdater,
     ComponentUpdatePlan,
     ComponentUpdateError,
 )
 from qwenpaw.components.service import ComponentUpdateService
-from qwenpaw.components.client import ComponentClient
 import qwenpaw.components.service as service_module
-from renew_component_pointer import renew
-from check_component_pointer_promotion import _load_verified
-from component_host import host_fingerprint
+
+ROOT = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(ROOT / "src"))
+sys.path.insert(0, str(ROOT / "scripts" / "pack-tauri"))
+
+release_module = importlib.import_module("build_component_release")
+build_release = release_module.build_release
+_full_zip = release_module._full_zip
+write_delta = importlib.import_module("build_component_delta").write_delta
+stage = importlib.import_module("stage_desktop_components").stage
+renew = importlib.import_module("renew_component_pointer").renew
+_load_verified = importlib.import_module(
+    "check_component_pointer_promotion",
+)._load_verified
+host_fingerprint = importlib.import_module("component_host").host_fingerprint
 
 
 def test_windows_update_assistant_changes_require_a_host_upgrade(tmp_path):
@@ -42,7 +47,7 @@ def test_windows_update_assistant_changes_require_a_host_upgrade(tmp_path):
         "scripts/pack-tauri/build_windows_update_assistant.ps1",
     )
     rust_build = (ROOT / "console/src-tauri/build.rs").read_text(
-        encoding="utf-8"
+        encoding="utf-8",
     )
     for name in inputs:
         assert name in HOST_INPUTS
@@ -61,15 +66,16 @@ def keys():
     private = Ed25519PrivateKey.generate()
     public = base64.b64encode(
         private.public_key().public_bytes(
-            serialization.Encoding.Raw, serialization.PublicFormat.Raw
-        )
+            serialization.Encoding.Raw,
+            serialization.PublicFormat.Raw,
+        ),
     ).decode()
     raw = base64.b64encode(
         private.private_bytes(
             serialization.Encoding.Raw,
             serialization.PrivateFormat.Raw,
             serialization.NoEncryption(),
-        )
+        ),
     ).decode()
     return private, public, raw
 
@@ -77,7 +83,7 @@ def keys():
 def plugin(path, version, files):
     path.mkdir(parents=True)
     (path / "plugin.json").write_text(
-        json.dumps({"id": "demo", "version": version})
+        json.dumps({"id": "demo", "version": version}),
     )
     for name, content in files.items():
         dest = path / name
@@ -104,7 +110,7 @@ def test_hash_version_changed_content_is_offered(tmp_path):
         directory_components={"python-packages"},
         core_version="2.2.1",
         bundled_directory_records={
-            "python-packages": ("0+sha.ffffffffffffffff", installed)
+            "python-packages": ("0+sha.ffffffffffffffff", installed),
         },
     )
     manifest = {
@@ -116,8 +122,8 @@ def test_hash_version_changed_content_is_offered(tmp_path):
                     "url": "https://example.test/full.zip",
                     "sha256": "a" * 64,
                 },
-            }
-        }
+            },
+        },
     }
     assert (
         updater.plan(manifest, "python-packages", installed).target_version
@@ -142,8 +148,8 @@ def test_hash_version_delta_builds_in_either_lexical_direction(tmp_path):
                     "version": version,
                     "preserve": [],
                     "install_scope": "desktop-runtime",
-                }
-            )
+                },
+            ),
         )
         (path / "unchanged.bin").write_bytes(common)
     build_release(
@@ -176,10 +182,10 @@ def test_legacy_bundle_without_descriptor_accepts_verified_delta(tmp_path):
                             "version": version,
                             "path": "binaries/backend",
                             "kind": "python",
-                        }
+                        },
                     },
-                }
-            )
+                },
+            ),
         )
         stage(binaries, tmp_path / (label + "-staged"), version)
     archive = tmp_path / "delta.zip"
@@ -211,13 +217,18 @@ def test_legacy_bundle_without_descriptor_accepts_verified_delta(tmp_path):
         (),
     )
     updater.apply_delta(
-        plan, bundled, archive, tmp_path / "managed/backend/1.1.0"
+        plan,
+        bundled,
+        archive,
+        tmp_path / "managed/backend/1.1.0",
     )
 
 
 @pytest.mark.parametrize("fault", ["directory_to_file", "http_404"])
 def test_structural_delta_and_download_failure_recover(
-    tmp_path, monkeypatch, fault
+    tmp_path,
+    monkeypatch,
+    fault,
 ):
     private, public, _ = keys()
     plugins = tmp_path / "plugins"
@@ -228,7 +239,8 @@ def test_structural_delta_and_download_failure_recover(
     delta = write_delta(installed, target, delta_path)
     _full_zip(target, full_path)
     delta_entry, full_entry = artifact(delta_path, private), artifact(
-        full_path, private
+        full_path,
+        private,
     )
     manifest = {
         "components": {
@@ -237,25 +249,28 @@ def test_structural_delta_and_download_failure_recover(
                 "files": delta["final_files"],
                 "full": full_entry,
                 "deltas": [{"from": "1.0.0", **delta_entry}],
-            }
-        }
+            },
+        },
     }
     calls = []
 
     class Client:
-        def download_artifact(self, url, **kwargs):
+        def download_artifact(self, url, **_kwargs):
             calls.append(url)
             if url.endswith("delta.zip"):
                 if fault == "http_404":
                     httpx.Response(
-                        404, request=httpx.Request("GET", url)
+                        404,
+                        request=httpx.Request("GET", url),
                     ).raise_for_status()
                 return delta_path
             return full_path
 
     monkeypatch.setattr(service_module, "get_plugins_dir", lambda: plugins)
     monkeypatch.setattr(
-        service_module, "_ADOPTED_COMPONENTS_PATH", tmp_path / "adopted.json"
+        service_module,
+        "_ADOPTED_COMPONENTS_PATH",
+        tmp_path / "adopted.json",
     )
     updater = ComponentUpdater(
         public_key_b64=public,
@@ -280,7 +295,10 @@ def test_structural_delta_and_download_failure_recover(
         full_entry["signature"],
     )
     updater.apply_full(
-        full_plan, full_path, installed, expected_files=delta["final_files"]
+        full_plan,
+        full_path,
+        installed,
+        expected_files=delta["final_files"],
     )
     assert (installed / "module").read_bytes() == b"new"
 
@@ -297,10 +315,10 @@ def test_new_bundle_supersedes_old_managed_backend(tmp_path, monkeypatch):
                 "schema_version": 1,
                 "target": "windows-x86_64",
                 "components": {
-                    "backend": {"version": "2.1.0", "path": str(managed)}
+                    "backend": {"version": "2.1.0", "path": str(managed)},
                 },
-            }
-        )
+            },
+        ),
     )
     updater = ComponentUpdater(
         public_key_b64="",
@@ -312,7 +330,9 @@ def test_new_bundle_supersedes_old_managed_backend(tmp_path, monkeypatch):
         bundled_directory_records={"backend": ("2.2.0", bundled)},
     )
     monkeypatch.setattr(
-        service_module, "_MANAGED_COMPONENTS_ROOT", tmp_path / "managed"
+        service_module,
+        "_MANAGED_COMPONENTS_ROOT",
+        tmp_path / "managed",
     )
     assert (
         service_module._resolve_installed_directory(updater, "backend")
@@ -322,7 +342,8 @@ def test_new_bundle_supersedes_old_managed_backend(tmp_path, monkeypatch):
 
 @pytest.mark.parametrize("fail", [False, True])
 def test_runtime_transaction_publishes_once_and_preserves_plugins(
-    tmp_path, fail
+    tmp_path,
+    fail,
 ):
     pointer = tmp_path / "active.json"
     original = {
@@ -349,10 +370,12 @@ def test_runtime_transaction_publishes_once_and_preserves_plugins(
             assert json.loads(pointer.read_text()) == original
             if fail:
                 raise ComponentUpdateError(
-                    "second component failed verification"
+                    "second component failed verification",
                 )
             updater._commit_active(
-                "python-packages", "0+sha.aaaa", tmp_path / "packages"
+                "python-packages",
+                "0+sha.aaaa",
+                tmp_path / "packages",
             )
             assert json.loads(pointer.read_text()) == original
 
@@ -369,9 +392,9 @@ def test_runtime_transaction_publishes_once_and_preserves_plugins(
         )
         assert active["components"]["demo"] == original["components"]["demo"]
         assert active["previous_runtime_components"] == {
-            "backend": original["components"]["backend"]
+            "backend": original["components"]["backend"],
         }
-    assert updater._directory_records is None
+    assert updater.candidate_directory_records is None
 
 
 def test_pointer_renewal_preserves_release_and_rejects_tampered_artifacts(
@@ -444,22 +467,28 @@ def test_host_fingerprint_is_platform_independent_and_detects_native_changes(
 
 @pytest.mark.parametrize("valid", [True, False])
 def test_startup_validates_runtime_before_pointer_and_defers_plugins(
-    tmp_path, monkeypatch, valid
+    tmp_path,
+    monkeypatch,
+    valid,
 ):
     from types import SimpleNamespace
 
     monkeypatch.delenv("QWENPAW_COMPONENT_PROTOCOL", raising=False)
     monkeypatch.setattr(
-        service_module, "_PENDING_UPDATES_PATH", tmp_path / "pending.json"
+        service_module,
+        "_PENDING_UPDATES_PATH",
+        tmp_path / "pending.json",
     )
     monkeypatch.setattr(
-        service_module, "_COMPONENT_INSTALL_LOCKS", tmp_path / "locks"
+        service_module,
+        "_COMPONENT_INSTALL_LOCKS",
+        tmp_path / "locks",
     )
     service_module._store_pending_records(
         {
             key: service_module._new_pending_record()
             for key in ("backend", "demo")
-        }
+        },
     )
     pointer = tmp_path / "active.json"
     updater = ComponentUpdater(
@@ -475,12 +504,19 @@ def test_startup_validates_runtime_before_pointer_and_defers_plugins(
     def install(component, manifest):
         calls.append(component)
         updater._commit_active(component, "1.1.0", tmp_path / component)
+        snapshot = updater.candidate_directory_records
+        assert snapshot is not None
+        snapshot[component]["version"] = "9.9.9"
+        assert (
+            updater.candidate_directory_records[component]["version"]
+            == "1.1.0"
+        )
         assert not pointer.exists()
         return {"component": component, "updated": True}
 
     def validate(candidate):
         assert candidate is updater
-        assert set(candidate._directory_records) == {
+        assert set(candidate.candidate_directory_records) == {
             "backend",
             "python-packages",
         }
@@ -498,7 +534,7 @@ def test_startup_validates_runtime_before_pointer_and_defers_plugins(
                 for key in ("backend", "python-packages", "demo")
             ],
         ),
-        _install_from_manifest=install,
+        install_from_manifest=install,
     )
     monkeypatch.setattr(service_module, "configured_service", lambda: service)
     monkeypatch.setattr(service_module, "_validate_runtime_set", validate)
@@ -512,8 +548,9 @@ def test_startup_validates_runtime_before_pointer_and_defers_plugins(
     )
 
 
-def test_protocol_two_requires_matching_host_and_supports_separate_release_version(
-    tmp_path, monkeypatch
+def test_protocol_two_checks_host_and_separate_release_version(
+    tmp_path,
+    monkeypatch,
 ):
     _, public, key = keys()
     plugin(tmp_path / "source/demo", "1.1.0", {"plugin.py": b"# update"})
@@ -560,7 +597,7 @@ def test_regular_release_gates_and_renewal_share_safe_publication_order():
 
     workflows = ROOT / ".github/workflows"
     release = yaml.safe_load(
-        (workflows / "release.yml").read_text(encoding="utf-8")
+        (workflows / "release.yml").read_text(encoding="utf-8"),
     )["jobs"]
     assert "build-desktop" in release["build-components"]["needs"]
     assert (
@@ -573,8 +610,8 @@ def test_regular_release_gates_and_renewal_share_safe_publication_order():
     assert "promote-components" in release["promote-desktop"]["needs"]
     renewal = yaml.safe_load(
         (workflows / "component-pointer-renewal.yml").read_text(
-            encoding="utf-8"
-        )
+            encoding="utf-8",
+        ),
     )
     assert renewal["concurrency"]["group"] == "oss-production-metadata"
 
@@ -598,7 +635,7 @@ def test_descriptor_refresh_after_codesign_matches_installer_and_staging(
             "python-packages": {
                 "version": "0+sha.oldlock",
                 "path": "binaries/packages",
-            }
+            },
         },
     }
     before = refresh(binaries, "2.2.2b7", active)["components"][
@@ -612,7 +649,8 @@ def test_descriptor_refresh_after_codesign_matches_installer_and_staging(
     staging = tmp_path / "staging"
     assert stage(binaries, staging, "2.2.2b7")[0]["version"] == after
     assert file_inventory(packages, ()) == file_inventory(
-        staging / "python-packages", ()
+        staging / "python-packages",
+        (),
     )
     assert (
         refresh(binaries, "2.2.2b7")["components"]["python-packages"][

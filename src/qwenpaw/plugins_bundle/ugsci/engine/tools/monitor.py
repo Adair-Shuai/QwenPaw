@@ -35,7 +35,13 @@ async def check_simulation_status(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(type="text", text="Error: detail_level must be summary, convergence, or full.")],
+            content=[
+                TextBlock(
+                    type="text",
+                    text="Error: detail_level must be summary, "
+                    "convergence, or full.",
+                ),
+            ],
         )
 
     from .launcher import (
@@ -60,6 +66,7 @@ async def check_simulation_status(
 
     if job.status == "running" and job.process is None:
         from . import job_store
+
         if not job_store.is_pid_alive(job.pid):
             _apply_dead_process_terminal_status(
                 job,
@@ -79,12 +86,16 @@ async def check_simulation_status(
             if not job_store.is_pid_alive(job.pid):
                 _apply_dead_process_terminal_status(
                     job,
-                    "recovered process exited during identity verification and "
+                    "recovered process exited during identity "
+                    "verification and "
                     "credible terminal artifacts are unavailable",
                 )
             else:
                 job.status = "interrupted"
-                job.error = "recovered process no longer matches the recorded simulation"
+                job.error = (
+                    "recovered process no longer matches the "
+                    "recorded simulation"
+                )
             job.end_ts = time.time()
             job_store.update_job_status(
                 job.job_id,
@@ -118,7 +129,9 @@ async def check_simulation_status(
             lines.append("Remaining:   unlimited")
         else:
             remaining = max(0.0, job.timeout - elapsed)
-            lines.append(f"Remaining:   {remaining:.0f}s ({remaining/3600:.1f}h)")
+            lines.append(
+                f"Remaining:   {remaining:.0f}s ({remaining/3600:.1f}h)",
+            )
     elif job.end_ts and job.start_ts:
         duration = job.end_ts - job.start_ts
         lines.append(
@@ -177,12 +190,19 @@ async def check_simulation_status(
                 lines.append("")
                 lines.append("--- No warnings detected ---")
         except Exception as exc:
-            _logger.debug("Failed to parse warnings for job %s: %s", job_id, exc)
+            _logger.debug(
+                "Failed to parse warnings for job %s: %s",
+                job_id,
+                exc,
+            )
 
     from .presentation import simulation_reference
 
     return ToolChunk(
         is_last=True,
         state=ToolResultState.SUCCESS,
-        content=[TextBlock(type="text", text="\n".join(lines)), simulation_reference(job_id, job.simulator)],
+        content=[
+            TextBlock(type="text", text="\n".join(lines)),
+            simulation_reference(job_id, job.simulator),
+        ],
     )

@@ -82,14 +82,24 @@ export interface GenUiActionResult {
   message: string;
 }
 
-function interpolate(template: string, values: Record<string, unknown>): string {
+function interpolate(
+  template: string,
+  values: Record<string, unknown>,
+): string {
   return template.replace(/\{\{\s*([\w.-]+)\s*\}\}/g, (_match, key: string) => {
     const value = values[key];
-    return value == null ? "" : typeof value === "string" ? value : JSON.stringify(value);
+    return value == null
+      ? ""
+      : typeof value === "string"
+      ? value
+      : JSON.stringify(value);
   });
 }
 
-export function dispatchGenUiAction(action: unknown, context: GenUiActionContext = {}): GenUiActionResult {
+export function dispatchGenUiAction(
+  action: unknown,
+  context: GenUiActionContext = {},
+): GenUiActionResult {
   let act: GenUiAction;
   if (typeof action === "string") act = { type: action };
   else if (action && typeof action === "object") act = action as GenUiAction;
@@ -102,44 +112,77 @@ export function dispatchGenUiAction(action: unknown, context: GenUiActionContext
   const allowed = getAllowedActions();
   if (!allowed.has(effectiveType)) {
     console.warn(
-      "[ugsci.genui] Action '" + act.type + "' not allowed " +
-        "(allowed: " + Array.from(allowed).join(", ") + ")",
+      "[ugsci.genui] Action '" +
+        act.type +
+        "' not allowed " +
+        "(allowed: " +
+        Array.from(allowed).join(", ") +
+        ")",
     );
     return { ok: false, message: "此操作未获允许" };
   }
 
-  if (isThrottled(effectiveType)) return { ok: false, message: "操作过于频繁，请稍后重试" };
+  if (isThrottled(effectiveType))
+    return { ok: false, message: "操作过于频繁，请稍后重试" };
 
   if (effectiveType === "send_message") {
     const values = context.formValues || {};
-    let content = (act.payload?.content as string) || (act.payload?.message as string) || "";
+    let content =
+      (act.payload?.content as string) ||
+      (act.payload?.message as string) ||
+      "";
     const hasTemplate = /\{\{\s*[\w.-]+\s*\}\}/.test(content);
     content = interpolate(content, values).trim();
     if (content && !hasTemplate && Object.keys(values).length > 0) {
-      content += `\n${Object.entries(values).map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`).join("\n")}`;
+      content += `\n${Object.entries(values)
+        .map(
+          ([key, value]) =>
+            `${key}: ${
+              typeof value === "string" ? value : JSON.stringify(value)
+            }`,
+        )
+        .join("\n")}`;
     }
     if (!content && Object.keys(values).length > 0) {
-      const heading = context.formId ? `提交表单 ${context.formId}` : "提交表单";
-      content = `${heading}\n${Object.entries(values).map(([key, value]) => `${key}: ${typeof value === "string" ? value : JSON.stringify(value)}`).join("\n")}`;
+      const heading = context.formId
+        ? `提交表单 ${context.formId}`
+        : "提交表单";
+      content = `${heading}\n${Object.entries(values)
+        .map(
+          ([key, value]) =>
+            `${key}: ${
+              typeof value === "string" ? value : JSON.stringify(value)
+            }`,
+        )
+        .join("\n")}`;
     }
     if (!content || !content.trim()) {
       console.warn("[ugsci.genui] send_message: content is empty");
       return { ok: false, message: "消息内容为空" };
     }
     if (content.length > MAX_CONTENT_LENGTH) {
-      console.warn("[ugsci.genui] send_message: content length " + content.length + " exceeds max " + MAX_CONTENT_LENGTH);
+      console.warn(
+        "[ugsci.genui] send_message: content length " +
+          content.length +
+          " exceeds max " +
+          MAX_CONTENT_LENGTH,
+      );
       return { ok: false, message: "消息内容过长" };
     }
     const sent = Boolean((window as any).QwenPaw?.chat?.sendMessage?.(content));
     if (!sent) {
-      console.info("[ugsci.genui] send_message: could not find chat sender, content:", content);
+      console.info(
+        "[ugsci.genui] send_message: could not find chat sender, content:",
+        content,
+      );
       return { ok: false, message: "当前无法发送消息" };
     }
     return { ok: true, message: "已提交" };
   }
 
   if (effectiveType === "open_url") {
-    const raw = (act.payload?.url as string) || (act.payload?.href as string) || "";
+    const raw =
+      (act.payload?.url as string) || (act.payload?.href as string) || "";
     const href = typeof raw === "string" ? raw.trim() : "";
     if (!/^https?:\/\//i.test(href)) {
       console.warn("[ugsci.genui] open_url: only http(s) URLs are allowed");

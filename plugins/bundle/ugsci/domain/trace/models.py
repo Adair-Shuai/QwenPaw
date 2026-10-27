@@ -74,7 +74,9 @@ class VariableBinding:
             "description": self.description,
             "editable": self.editable,
             "display_name": self.display_name,
-            "input_bounds": list(self.input_bounds) if self.input_bounds else None,
+            "input_bounds": list(self.input_bounds)
+            if self.input_bounds
+            else None,
         }
 
 
@@ -90,7 +92,9 @@ class TraceStep:
     latex: str = ""
     unicode: str = ""
     operation: str = ""
-    group: str = ""  # workflow stage label (e.g. 'assemble', 'substitute', 'solve')
+    group: str = (
+        ""  # workflow stage label (e.g. 'assemble', 'substitute', 'solve')
+    )
     # Variable names this step reads and the single one it produces.
     reads: tuple[str, ...] = ()
     writes: str = ""
@@ -140,7 +144,9 @@ class DerivationTrace:
     variables: dict[str, VariableBinding] = field(default_factory=dict)
     # Live-edit input hints for the rendered worksheet: name -> (min, max).
     # Bounds are optional; a control still renders without them.
-    input_bounds: dict[str, tuple[float | None, float | None]] = field(default_factory=dict)
+    input_bounds: dict[str, tuple[float | None, float | None]] = field(
+        default_factory=dict,
+    )
     input_units: dict[str, str] = field(default_factory=dict)
     parameter_sources: dict[str, dict[str, Any]] = field(default_factory=dict)
 
@@ -170,9 +176,12 @@ class DerivationTrace:
             "source": self.source,
             "symbols": self.symbols,
             "steps": [step.to_dict() for step in self.steps],
-            "variables": [binding.to_dict() for binding in self.variables.values()],
+            "variables": [
+                binding.to_dict() for binding in self.variables.values()
+            ],
             "input_bounds": {
-                name: [bounds[0], bounds[1]] for name, bounds in self.input_bounds.items()
+                name: [bounds[0], bounds[1]]
+                for name, bounds in self.input_bounds.items()
             },
             "input_units": dict(self.input_units),
             "parameter_sources": dict(self.parameter_sources),

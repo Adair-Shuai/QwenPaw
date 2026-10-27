@@ -58,7 +58,12 @@ class DomainEngineDefinition:
     operations: tuple[DomainOperation, ...]
     dependencies: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
-    execution_class: Literal["deterministic", "stochastic", "external", "visualization"] = "deterministic"
+    execution_class: Literal[
+        "deterministic",
+        "stochastic",
+        "external",
+        "visualization",
+    ] = "deterministic"
     engine_version: str = "1.0.0"
 
     def to_dict(self) -> dict:

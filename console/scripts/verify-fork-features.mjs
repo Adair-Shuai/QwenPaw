@@ -58,6 +58,7 @@ const suites = {
   ],
   workspaceAndPlugins: [
     "src/plugins/pluginRuntimeCleanup.test.ts",
+    "src/plugins/pawapp-sdk/sessionRouting.test.ts",
     "src/plugins/runCenterAdaptive.test.tsx",
     "src/plugins/openuiRunCenterIntegration.test.tsx",
     "src/plugins/simulationChat.test.tsx",
@@ -436,6 +437,12 @@ for (const title of [
   )
     throw new Error(`Required workspace integration case missing: ${title}`);
 }
+requireCases("src/plugins/pawapp-sdk/sessionRouting.test.ts", [
+  "preserves the current dialogue in the request body",
+  "respects an explicit session instead of the active dialogue",
+  "resolves a normal chat route to its backend session",
+  "infers the active PawApp from the browser path",
+]);
 console.log(`Fork feature inventory verified: ${files.length} suites.`);
 if (!process.argv.includes("--check")) {
   const result = spawnSync(

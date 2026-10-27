@@ -48,7 +48,8 @@ class ScriptNode(WorkflowNode):
                 IO.String.Input(
                     id="source",
                     multiline=True,
-                    tooltip="Python source. Assign to 'result' to emit a value.",
+                    tooltip="Python source. Assign to 'result' to "
+                    "emit a value.",
                 ),
                 IO.Object.Input(
                     id="inputs",
@@ -98,7 +99,12 @@ class ScriptNode(WorkflowNode):
             not_idempotent=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         source = inputs.get("source")
         if not isinstance(source, str) or not source.strip():
             return NodeOutput(
@@ -123,7 +129,7 @@ class ScriptNode(WorkflowNode):
                 error="'allow_modules' must be an array of module names",
                 metadata={"node_id": hidden.unique_id},
             )
-        emit_locals = bool(inputs.get("emit_locals") or False)
+        emit_locals = bool(inputs.get("emit_locals"))
         output_var = inputs.get("output")
 
         try:
@@ -134,7 +140,11 @@ class ScriptNode(WorkflowNode):
                 allow_modules=[str(m) for m in allow_modules],
             )
         except ScriptTimeoutError as exc:
-            logger.warning("script_node_timeout node=%s error=%s", hidden.unique_id, exc)
+            logger.warning(
+                "script_node_timeout node=%s error=%s",
+                hidden.unique_id,
+                exc,
+            )
             return NodeOutput(
                 error=str(exc),
                 metadata={
@@ -144,10 +154,17 @@ class ScriptNode(WorkflowNode):
                 },
             )
         except ScriptExecutionError as exc:
-            logger.warning("script_node_error node=%s error=%s", hidden.unique_id, exc)
+            logger.warning(
+                "script_node_error node=%s error=%s",
+                hidden.unique_id,
+                exc,
+            )
             return NodeOutput(
                 error=str(exc),
-                metadata={"node_id": hidden.unique_id, "reason": "script_error"},
+                metadata={
+                    "node_id": hidden.unique_id,
+                    "reason": "script_error",
+                },
             )
 
         emitted = script_result.locals if emit_locals else script_result.result
@@ -160,6 +177,7 @@ class ScriptNode(WorkflowNode):
                 "duration_ms": script_result.duration_ms,
                 "truncated_stdout": script_result.truncated_stdout,
                 "emit_locals": emit_locals,
-                "execution_isolation": "process", "trusted_code_only": True,
+                "execution_isolation": "process",
+                "trusted_code_only": True,
             },
         )

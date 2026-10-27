@@ -26,7 +26,9 @@ SELECTION_NAMES = (
 )
 ACCEPTANCE_NAMES = ("01_项目验收意见_模板.docx",)
 ALL_NAMES = NAMES + PLAN_NAMES + SELECTION_NAMES + ACCEPTANCE_NAMES
-LEGACY_PLAN_WORD = "64492548958b8ae57d825be95d6a5ae6469b0adbd26a89e0efa64c1d8f8e3e0a"
+LEGACY_PLAN_WORD = (
+    "64492548958b8ae57d825be95d6a5ae6469b0adbd26a89e0efa64c1d8f8e3e0a"
+)
 
 
 SELECTION_CHOICES = {
@@ -47,7 +49,8 @@ SELECTION_CHOICES = {
 def selection_budget(common):
     """Use exact decimal yuan-to-wan conversion from the shared profile."""
     value = next(
-        (f["value"] for f in common if f["key"] == "budget.ceiling_number"), ""
+        (f["value"] for f in common if f["key"] == "budget.ceiling_number"),
+        "",
     )
     try:
         amount = Decimal(str(value).replace(",", "").replace("，", "").strip())
@@ -313,7 +316,7 @@ def selection_fields(common=()):
                     "textarea",
                     "直接填写说明内容，文书在段首自动带入单位名称。",
                 ),
-            ]
+            ],
         )
     for index in range(1, 6):
         definitions.extend(
@@ -326,22 +329,20 @@ def selection_fields(common=()):
             ]
         )
     fields.extend(
-        dict(
-            key="selection." + key,
-            label=label,
-            group=group,
-            kind=kind,
-            help=help_text,
-            required=True,
-            value=current.get("selection." + key, {}).get(
+        {
+            "key": "selection." + key,
+            "label": label,
+            "group": group,
+            "kind": kind,
+            "help": help_text,
+            "required": True,
+            "value": current.get("selection." + key, {}).get(
                 "value",
-                (
-                    current.get("funding.source", {}).get("value", "")
-                    if key == "funding_source"
-                    else ""
-                ),
+                current.get("funding.source", {}).get("value", "")
+                if key == "funding_source"
+                else "",
             ),
-        )
+        }
         for key, label, group, kind, help_text in definitions
     )
     for field in fields:
@@ -361,7 +362,7 @@ def acceptance_fields(common=()):
             value=current.get("project.name", {}).get("value", ""),
             required=True,
             scope="shared",
-        )
+        ),
     ]
     definitions = (
         ("date", "验收日期", "验收安排", "date", ""),
@@ -458,11 +459,19 @@ def verify_public_template(content):
             for node in root.iter():
                 tag = node.tag.rsplit("}", 1)[-1]
                 if tag in {"fldData", "docVars"} or (
-                    tag == "instrText" and (node.text or "").strip().startswith("ADDIN")
+                    tag == "instrText"
+                    and (node.text or "").strip().startswith("ADDIN")
                 ):
                     raise ValueError("应用自带模板仍含旧插件数据")
-                if tag == "Relationship" and node.get("TargetMode") == "External":
-                    if node.get("Target", "").lower().startswith(("file:", "mailto:")):
+                if (
+                    tag == "Relationship"
+                    and node.get("TargetMode") == "External"
+                ):
+                    if (
+                        node.get("Target", "")
+                        .lower()
+                        .startswith(("file:", "mailto:"))
+                    ):
                         raise ValueError("应用自带模板含本机或个人链接")
                 if name == "docProps/core.xml" and tag in {
                     "creator",
@@ -498,21 +507,23 @@ def blank_fields():
     )
     if not fields or any("value" in field for field in fields):
         raise ValueError("配套 Excel 的字段配置不应包含项目填写值")
-    return [dict(field, value="") for field in fields] + implementation_fields()
+    return [
+        dict(field, value="") for field in fields
+    ] + implementation_fields()
 
 
 def implementation_fields():
     """Details specific to the negotiation implementation scheme."""
     return [
-        dict(
-            key="implementation." + key,
-            label=label,
-            group="服务选商实施方案",
-            kind=kind,
-            required=True,
-            value="",
-            help=help_text,
-        )
+        {
+            "key": "implementation." + key,
+            "label": label,
+            "group": "服务选商实施方案",
+            "kind": kind,
+            "required": True,
+            "value": "",
+            "help": help_text,
+        }
         for key, label, kind, help_text in (
             ("year", "实施方案年度", "text", "填写四位年份。"),
             (
@@ -552,7 +563,7 @@ def starter_files():
         {
             "选商论证/" + name: content
             for name, content in load_templates("selection").items()
-        }
+        },
     )
     files["选商论证/选商论证_变量管理表.xlsx"] = export_excel(
         {
@@ -560,13 +571,13 @@ def starter_files():
             "recipients": [],
             "rules": [],
             "templates": [],
-        }
+        },
     )
     files.update(
         {
             "结题验收/" + name: content
             for name, content in load_templates("acceptance").items()
-        }
+        },
     )
     files["结题验收/结题验收_变量管理表.xlsx"] = export_excel(
         {
@@ -574,7 +585,7 @@ def starter_files():
             "recipients": [],
             "rules": [],
             "templates": [],
-        }
+        },
     )
     files["变量管理表.xlsx"] = export_excel(
         {

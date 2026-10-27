@@ -45,7 +45,10 @@ class DeriveFormulaRequest:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "DeriveFormulaRequest":
         if not isinstance(data, dict):
-            raise DomainError(DomainErrorCode.INVALID_INPUT, "request must be a dict")
+            raise DomainError(
+                DomainErrorCode.INVALID_INPUT,
+                "request must be a dict",
+            )
         return cls(
             expression=str(data.get("expression", "")),
             solve_for=str(data.get("solve_for", "")),
@@ -87,7 +90,7 @@ class EvaluateFormulaRequest:
                     DomainErrorCode.INVALID_INPUT,
                     f"input '{key}' must be numeric",
                 )
-            if isinstance(val, float) and not (val == val and val != float("inf") and val != float("-inf")):
+            if isinstance(val, float) and not math.isfinite(val):
                 raise DomainError(
                     DomainErrorCode.INVALID_INPUT,
                     f"input '{key}' must be finite",
@@ -107,7 +110,10 @@ class EvaluateFormulaRequest:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "EvaluateFormulaRequest":
         if not isinstance(data, dict):
-            raise DomainError(DomainErrorCode.INVALID_INPUT, "request must be a dict")
+            raise DomainError(
+                DomainErrorCode.INVALID_INPUT,
+                "request must be a dict",
+            )
         return cls(
             expression=str(data.get("expression", "")),
             inputs=dict(data.get("inputs") or {}),
@@ -126,16 +132,24 @@ class TransformFormulaRequest:
     """``ugsci_transform_formula`` — rename / rearrange a given equation."""
 
     expression: str
-    operation: str = "rearrange"  # rearrange | substitute | simplify | expand | collect | solve_for
+    # rearrange | substitute | simplify | expand | collect | solve_for
+    operation: str = "rearrange"
     solve_for: str = ""
     substitution: dict[str, str] = field(default_factory=dict)
     symbols: dict[str, str] = field(default_factory=dict)
     max_steps: int = 25
     idempotent: bool = False
 
-    _VALID_OPS = frozenset({
-        "rearrange", "substitute", "simplify", "expand", "collect", "solve_for",
-    })
+    _VALID_OPS = frozenset(
+        {
+            "rearrange",
+            "substitute",
+            "simplify",
+            "expand",
+            "collect",
+            "solve_for",
+        },
+    )
 
     def validate(self) -> "TransformFormulaRequest":
         if not self.expression or not self.expression.strip():
@@ -146,7 +160,11 @@ class TransformFormulaRequest:
         if self.operation not in self._VALID_OPS:
             raise DomainError(
                 DomainErrorCode.INVALID_INPUT,
-                f"operation must be one of {sorted(self._VALID_OPS)}, got '{self.operation}'",
+                f"operation must be one of "
+                f"{sorted(self._VALID_OPS)}"
+                f", got '"
+                f"{self.operation}"
+                f"'",
             )
         if self.operation in ("rearrange", "solve_for") and not self.solve_for:
             raise DomainError(
@@ -168,7 +186,10 @@ class TransformFormulaRequest:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "TransformFormulaRequest":
         if not isinstance(data, dict):
-            raise DomainError(DomainErrorCode.INVALID_INPUT, "request must be a dict")
+            raise DomainError(
+                DomainErrorCode.INVALID_INPUT,
+                "request must be a dict",
+            )
         return cls(
             expression=str(data.get("expression", "")),
             operation=str(data.get("operation", "rearrange")),
@@ -201,7 +222,10 @@ class FormulaPreviewRequest:
     @classmethod
     def from_dict(cls, data: dict[str, Any]) -> "FormulaPreviewRequest":
         if not isinstance(data, dict):
-            raise DomainError(DomainErrorCode.INVALID_INPUT, "request must be a dict")
+            raise DomainError(
+                DomainErrorCode.INVALID_INPUT,
+                "request must be a dict",
+            )
         return cls(
             expression=str(data.get("expression", "")),
             symbols=dict(data.get("symbols") or {}),

@@ -28,7 +28,6 @@ import sys
 from pathlib import Path
 from typing import Any, Iterable
 
-import logging
 from ..adapter.log_compat import get_logger
 
 try:  # importlib.metadata is stdlib; older interpreters fall back
@@ -49,6 +48,7 @@ async def load_builtins(registry: NodeRegistry | None = None) -> list[str]:
     """Register all built-in node classes. Idempotent."""
     reg = registry or get_registry()
     from . import builtin  # local import to avoid circularity
+
     registered: list[str] = []
     for cls in builtin.BUILTIN_NODES:
         reg.register(cls, module_path=f"builtin:{cls.__module__}")
@@ -106,7 +106,11 @@ async def load_entrypoints(registry: NodeRegistry | None = None) -> list[str]:
             try:
                 await extension.on_load({"registry": reg})
             except Exception:  # noqa: BLE001
-                logger.warning("extension_on_load_failed", name=ep.name, exc_info=True)
+                logger.warning(
+                    "extension_on_load_failed",
+                    name=ep.name,
+                    exc_info=True,
+                )
         except Exception:  # noqa: BLE001
             logger.error("entrypoint_load_failed", name=str(ep), exc_info=True)
     return registered
@@ -128,13 +132,19 @@ async def load_directory(
         if child.name.startswith("_"):
             continue
         if run_prestartup:
-            prestart = child / "prestartup_script.py" if child.is_dir() else None
+            prestart = (
+                child / "prestartup_script.py" if child.is_dir() else None
+            )
             if prestart and prestart.exists():
                 _run_file(prestart)
         try:
             registered.extend(await _load_module(child, reg))
         except Exception:  # noqa: BLE001
-            logger.error("node_module_load_failed", path=str(child), exc_info=True)
+            logger.error(
+                "node_module_load_failed",
+                path=str(child),
+                exc_info=True,
+            )
     return registered
 
 
@@ -144,9 +154,15 @@ async def _load_module(path: Path, registry: NodeRegistry) -> list[str]:
         init_py = path / "__init__.py"
         if not init_py.exists():
             return []
-        spec = importlib.util.spec_from_file_location(f"flowforge_custom.{path.name}", init_py)
+        spec = importlib.util.spec_from_file_location(
+            f"flowforge_custom.{path.name}",
+            init_py,
+        )
     elif path.suffix == ".py":
-        spec = importlib.util.spec_from_file_location(f"flowforge_custom.{path.stem}", path)
+        spec = importlib.util.spec_from_file_location(
+            f"flowforge_custom.{path.stem}",
+            path,
+        )
     else:
         return []
 
@@ -160,26 +176,50 @@ async def _load_module(path: Path, registry: NodeRegistry) -> list[str]:
     sys.modules[spec.name] = module
     spec.loader.exec_module(module)  # type: ignore[attr-defined]
 
-    node_classes: list[type[WorkflowNode]] = []
-    candidate_attr = getattr(module, "NODE_CLASSES", None)
-    if isinstance(candidate_attr, Iterable):
-        for cls in candidate_attr:
-            if isinstance(cls, type) and issubclass(cls, WorkflowNode):
-                node_classes.append(cls)
-
-    ep = getattr(module, "leagent_entrypoint", None)
-    if callable(ep):
-        ext = await _resolve_extension(ep() if not inspect.iscoroutinefunction(ep) else await ep())
-        if ext is not None:
-            node_classes.extend(await ext.get_node_list())
+    node_classes = _declared_node_classes(
+        getattr(module, "NODE_CLASSES", None),
+    )
+    node_classes.extend(
+        await _entrypoint_node_classes(
+            getattr(module, "leagent_entrypoint", None),
+        ),
+    )
 
     registered: list[str] = []
     for cls in node_classes:
         registry.register(cls, module_path=module_path)
         registered.append(cls.NODE_ID or cls.__name__)
     if registered:
-        logger.info("custom_nodes_loaded", path=str(path), count=len(registered))
+        logger.info(
+            "custom_nodes_loaded",
+            path=str(path),
+            count=len(registered),
+        )
     return registered
+
+
+def _declared_node_classes(candidate: Any) -> list[type[WorkflowNode]]:
+    """Filter explicitly exported nodes while retaining declaration order."""
+    nodes: list[type[WorkflowNode]] = []
+    if isinstance(candidate, Iterable):
+        for cls in candidate:
+            if isinstance(cls, type) and issubclass(cls, WorkflowNode):
+                nodes.append(cls)
+    return nodes
+
+
+async def _entrypoint_node_classes(
+    entrypoint: Any,
+) -> list[type[WorkflowNode]]:
+    """Resolve an optional sync/async extension and enumerate its nodes."""
+    if not callable(entrypoint):
+        return []
+    extension = await _resolve_extension(
+        entrypoint()
+        if not inspect.iscoroutinefunction(entrypoint)
+        else await entrypoint(),
+    )
+    return await extension.get_node_list() if extension is not None else []
 
 
 async def _resolve_extension(target: Any) -> NodeExtension | None:
@@ -203,7 +243,10 @@ async def _resolve_extension(target: Any) -> NodeExtension | None:
 
 
 def _run_file(path: Path) -> None:
-    spec = importlib.util.spec_from_file_location(f"flowforge_prestart.{path.stem}", path)
+    spec = importlib.util.spec_from_file_location(
+        f"flowforge_prestart.{path.stem}",
+        path,
+    )
     if spec is None or spec.loader is None:
         return
     module = importlib.util.module_from_spec(spec)
@@ -220,14 +263,16 @@ async def bootstrap(
     tool_registry: Any | None = None,
     agent_registry: Any | None = None,
 ) -> dict[str, list[str]]:
-    """One-shot bootstrap: built-ins + entrypoints + custom dirs + tool/agent nodes.
+    """One-shot bootstrap: built-ins + entrypoints + custom dirs + \
+tool/agent nodes.
 
     If ``tool_registry`` is provided, every tool it contains is lifted
     into a dedicated ``Tool.<name>`` workflow node via
     :func:`.tool_factory.register_tool_nodes`.
 
     If ``agent_registry`` is provided (or omitted, in which case the
-    process-wide registry is used), every agent definition is lifted into a
+    process-wide registry is used), every agent definition is lifted \
+into a
     dedicated ``Agent.<name>`` node via
     :func:`.agent_node_factory.register_agent_nodes`.
     """
@@ -244,6 +289,7 @@ async def bootstrap(
         summary.setdefault("fs", []).extend(await load_directory(d, reg))
     if tool_registry is not None:
         from .tool_factory import register_tool_nodes
+
         summary["tools"] = register_tool_nodes(reg, tool_registry)
     try:
         from .agent_node_factory import register_agent_nodes
@@ -260,15 +306,22 @@ async def bootstrap(
         from .domain_model_factory import register_domain_model_nodes
 
         summary["domain_models"] = register_domain_model_nodes(reg)
-    except Exception:  # noqa: BLE001 - domain-model nodes are optional palette extras
+    except (
+        Exception
+    ):  # noqa: BLE001 - domain-model nodes are optional palette extras
         logger.warning("domain_model_node_bootstrap_failed", exc_info=True)
 
     try:
         from ..adapter import bootstrap_capabilities
 
         caps = bootstrap_capabilities()
-        summary["capabilities"] = [*caps.get("generation", []), *caps.get("domain", [])]
-    except Exception:  # noqa: BLE001 - capability registry is optional discovery surface
+        summary["capabilities"] = [
+            *caps.get("generation", []),
+            *caps.get("domain", []),
+        ]
+    except (
+        Exception
+    ):  # noqa: BLE001 - capability registry is optional discovery surface
         logger.warning("capability_bootstrap_failed", exc_info=True)
     return summary
 

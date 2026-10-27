@@ -1,12 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Adapter: ``AgentRuntime`` facade bridging QwenPaw's agent execution system.
+"""Adapter: ``AgentRuntime`` facade bridging QwenPaw's agent execution \
+system.
 
 LeAgent's ``agent_exec.py`` expects an ``AgentRuntime`` with:
 
 * ``runtime.resolve(agent_name)`` → ``AgentDefinition``
-* ``runtime.stream(definition, prompt, ...)`` → ``AsyncIterator[AgentEvent]``
-* ``runtime.delegate(parent, definition, prompt, ...)`` → dict envelope
-* ``runtime.resume(agent_name, checkpoint_id, answer, ...)`` → ``AsyncIterator[AgentEvent]``
+* ``runtime.stream(definition, prompt, ...)`` → \
+``AsyncIterator[AgentEvent]``
+* ``runtime.delegate(parent, definition, prompt, ...)`` → dict \
+envelope
+* ``runtime.resume(agent_name, checkpoint_id, answer, ...)`` → \
+``AsyncIterator[AgentEvent]``
 
 QwenPaw builds agents per-request via ``AgentBuilder`` and runs them
 through the ``Runtime`` pipeline.  This adapter provides the same
@@ -29,9 +33,11 @@ logger = logging.getLogger(__name__)
 
 
 class AgentRuntime:
-    """Facade that dispatches workflow agent-node execution to QwenPaw's runtime.
+    """Facade that dispatches workflow agent-node execution to QwenPaw's \
+runtime.
 
-    The runtime is wired by the plugin's ``_wire_services`` hook, which
+    The runtime is wired by the plugin's ``_wire_services`` hook, \
+which
     passes the host's ``MultiAgentManager`` (or equivalent workspace
     manager) as the ``workspace_manager`` attribute.
     """
@@ -41,10 +47,13 @@ class AgentRuntime:
         self._registry = None
 
     async def run_agent_turn(self, agent_id: str, query: str) -> str:
-        """Dispatch the basic AgentNode through the same adapter as agent nodes."""
+        """Dispatch the basic AgentNode through the same adapter as \
+agent nodes."""
         result = await self.delegate(None, self.resolve(agent_id), query)
         if not result["success"]:
-            raise RuntimeError(result["error"] or "Agent turn did not complete")
+            raise RuntimeError(
+                result["error"] or "Agent turn did not complete",
+            )
         return result["text"]
 
     def resolve(self, agent_name: str) -> AgentDefinition:
@@ -75,6 +84,8 @@ class AgentRuntime:
         cwd: str = ".",
         tool_extra: dict[str, Any] | None = None,
         abort_event: asyncio.Event | None = None,
+        allowed_tools: list[str] | None = None,
+        max_turns: int | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Stream an agent turn, yielding :class:`AgentEvent` objects.
 
@@ -96,12 +107,24 @@ class AgentRuntime:
             yield AgentEvent(AgentEventType.RESULT, {"reason": "failed"})
             return
         if ws is None:
-            yield AgentEvent(AgentEventType.ERROR, {"error": f"Agent '{agent_name}' not found"})
+            yield AgentEvent(
+                AgentEventType.ERROR,
+                {"error": f"Agent '{agent_name}' not found"},
+            )
             yield AgentEvent(AgentEventType.RESULT, {"reason": "failed"})
             return
 
         # Dispatch to QwenPaw's agent runtime
-        async for event in self._run_qwenpaw_agent(ws, prompt, definition, cwd, abort_event, user_id=user_id):
+        async for event in self._run_qwenpaw_agent(
+            ws,
+            prompt,
+            definition,
+            cwd,
+            abort_event,
+            user_id=user_id,
+            allowed_tools=allowed_tools,
+            max_turns=max_turns,
+        ):
             yield event
 
     async def delegate(
@@ -130,7 +153,11 @@ class AgentRuntime:
             prompt,
             cwd=cwd or ".",
             tool_extra=tool_extra,
-            abort_event=getattr(parent, "abort_event", None) if inherit_abort else None,
+            allowed_tools=allowed_tools,
+            max_turns=max_turns,
+            abort_event=getattr(parent, "abort_event", None)
+            if inherit_abort
+            else None,
         )
 
         text_parts: list[str] = []
@@ -149,11 +176,15 @@ class AgentRuntime:
                 if delta:
                     text_parts.append(str(delta))
                     if nested_preview_emit:
-                        nested_preview_emit({"type": "delta", "content": str(delta)})
+                        nested_preview_emit(
+                            {"type": "delta", "content": str(delta)},
+                        )
             elif etype == AgentEventType.ASSISTANT:
                 final_text = str(data.get("content") or "")
                 if nested_preview_emit:
-                    nested_preview_emit({"type": "assistant", "content": final_text})
+                    nested_preview_emit(
+                        {"type": "assistant", "content": final_text},
+                    )
             elif etype == AgentEventType.TOOL_USE:
                 steps += 1
                 name = str(data.get("name") or "tool")
@@ -201,9 +232,19 @@ class AgentRuntime:
         Workflow checkpoints are supported separately by WorkflowService.
         The host adapter has no verified agent checkpoint restoration API.
         """
-        error = "Agent checkpoint resume is not supported by this adapter; no new turn was started"
+        # Every legacy resume option must produce the same rejection. Looking
+        # up an agent or using its answer here would risk replaying a new turn.
+        del agent_name, checkpoint_id, answer, user_id, cwd, tool_extra
+        del abort_event
+        error = (
+            "Agent checkpoint resume is not supported by this "
+            "adapter; no new turn was started"
+        )
         yield AgentEvent(AgentEventType.ERROR, {"error": error})
-        yield AgentEvent(AgentEventType.RESULT, {"reason": "failed", "error": error})
+        yield AgentEvent(
+            AgentEventType.RESULT,
+            {"reason": "failed", "error": error},
+        )
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -231,6 +272,8 @@ class AgentRuntime:
         abort_event: asyncio.Event | None,
         *,
         user_id: UUID | None = None,
+        allowed_tools: list[str] | None = None,
+        max_turns: int | None = None,
     ) -> AsyncIterator[AgentEvent]:
         """Run a QwenPaw agent turn and yield events.
 
@@ -250,18 +293,32 @@ class AgentRuntime:
                 invocation = current_run.get() or {}
 
                 request = {
-                    "input": [{"role": "user", "content": [{"type": "text", "text": prompt}]}],
+                    "input": [
+                        {
+                            "role": "user",
+                            "content": [{"type": "text", "text": prompt}],
+                        },
+                    ],
                     "session_id": f"flowforge:{uuid4().hex}",
-                    "user_id": str(user_id or invocation.get("user_id") or get_current_user_id() or "flowforge"),
+                    "user_id": str(
+                        user_id
+                        or invocation.get("user_id")
+                        or get_current_user_id()
+                        or "flowforge",
+                    ),
                     "channel": "console",
                     "request_context": {
-                        "source": "flowforge", "agent_id": definition.name,
+                        "source": "flowforge",
+                        "agent_id": definition.name,
                         "workflow_stack": list(workflow_stack.get()),
                         "workflow_run_id": invocation.get("run_id"),
                         "root_workflow_run_id": invocation.get("root_run_id"),
                         "parent_session_id": invocation.get("session_id"),
                     },
                 }
+                request["request_context"].update(
+                    _execution_controls(definition, allowed_tools, max_turns),
+                )
                 async for event in workspace.stream_query(request):
                     if abort_event is not None and abort_event.is_set():
                         raise asyncio.CancelledError()
@@ -269,20 +326,36 @@ class AgentRuntime:
                     status = getattr(status, "value", status)
                     error = _field(event, "error")
                     if error or status in ("failed", "cancelled"):
-                        raise RuntimeError(str(error or f"Agent turn {status}"))
+                        raise RuntimeError(
+                            str(error or f"Agent turn {status}"),
+                        )
                     role = _field(event, "role")
                     role = getattr(role, "value", role)
-                    if (_field(event, "object") == "message"
-                            and status == "completed" and role == "assistant"):
+                    if (
+                        _field(event, "object") == "message"
+                        and status == "completed"
+                        and role == "assistant"
+                    ):
                         text = "".join(
                             str(_field(block, "text") or "")
                             for block in (_field(event, "content") or [])
                             if _field(block, "type") == "text"
                         )
                         if text:
-                            yield AgentEvent(AgentEventType.ASSISTANT, {"content": text})
-                yield AgentEvent(AgentEventType.RESULT, {"reason": "completed"})
+                            yield AgentEvent(
+                                AgentEventType.ASSISTANT,
+                                {"content": text},
+                            )
+                yield AgentEvent(
+                    AgentEventType.RESULT,
+                    {"reason": "completed"},
+                )
                 return
+
+            if allowed_tools is not None or max_turns is not None:
+                raise RuntimeError(
+                    "Agent runtime cannot enforce workflow execution controls",
+                )
 
             # Try workspace.process (single-agent workspace)
             process = getattr(workspace, "process", None)
@@ -292,7 +365,10 @@ class AgentRuntime:
                     result = await result
                 text = _extract_text(result)
                 yield AgentEvent(AgentEventType.ASSISTANT, {"content": text})
-                yield AgentEvent(AgentEventType.RESULT, {"reason": "completed"})
+                yield AgentEvent(
+                    AgentEventType.RESULT,
+                    {"reason": "completed"},
+                )
                 return
 
             # Try process_agent_message (multi-agent workspace)
@@ -304,19 +380,54 @@ class AgentRuntime:
                     result = await result
                 text = _extract_text(result)
                 yield AgentEvent(AgentEventType.ASSISTANT, {"content": text})
-                yield AgentEvent(AgentEventType.RESULT, {"reason": "completed"})
+                yield AgentEvent(
+                    AgentEventType.RESULT,
+                    {"reason": "completed"},
+                )
                 return
 
-            raise RuntimeError(f"Agent '{definition.name}' has no supported runtime")
+            raise RuntimeError(
+                f"Agent '{definition.name}' has no supported runtime",
+            )
 
         except Exception as exc:  # noqa: BLE001
             logger.exception("Agent %s failed: %s", definition.name, exc)
             yield AgentEvent(AgentEventType.ERROR, {"error": str(exc)})
-            yield AgentEvent(AgentEventType.RESULT, {"reason": "failed", "error": str(exc)})
+            yield AgentEvent(
+                AgentEventType.RESULT,
+                {"reason": "failed", "error": str(exc)},
+            )
+
+
+def _execution_controls(
+    definition: AgentDefinition,
+    allowed_tools: list[str] | None,
+    max_turns: int | None,
+) -> dict[str, Any]:
+    """Translate node restrictions into the host's guarded request context."""
+    context: dict[str, Any] = {}
+    if allowed_tools is not None:
+        if not isinstance(allowed_tools, list) or any(
+            not isinstance(name, str) for name in allowed_tools
+        ):
+            raise ValueError("allowed_tools must be a list of tool names")
+        context["subagent_allowed_tools"] = list(allowed_tools)
+    elif definition.tools.allow:
+        context["subagent_allowed_tools"] = list(definition.tools.allow)
+    limit = max_turns if max_turns is not None else definition.max_turns
+    if max_turns is not None or limit:
+        if isinstance(limit, bool) or not isinstance(limit, int) or limit < 1:
+            raise ValueError("max_turns must be a positive integer")
+        context["max_react_iterations"] = limit
+    return context
 
 
 def _field(value: Any, name: str) -> Any:
-    return value.get(name) if isinstance(value, dict) else getattr(value, name, None)
+    return (
+        value.get(name)
+        if isinstance(value, dict)
+        else getattr(value, name, None)
+    )
 
 
 def _extract_text(result: Any) -> str:

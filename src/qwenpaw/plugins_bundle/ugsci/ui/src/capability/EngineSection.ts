@@ -47,7 +47,14 @@ export const CATEGORY_ICONS: Record<string, string> = {
 };
 
 // Engine IDs that have custom PNG icons in engine/icons/
-export const ENGINE_ICON_IDS = new Set(["cmg", "comsol", "tnavigator", "eclipse", "intersect","visage"]);
+export const ENGINE_ICON_IDS = new Set([
+  "cmg",
+  "comsol",
+  "tnavigator",
+  "eclipse",
+  "intersect",
+  "visage",
+]);
 
 export function getEngineIconUrl(engineId: string): string {
   return apiUrl(`/ugsci/engines/icon/${encodeURIComponent(engineId)}`);
@@ -61,7 +68,9 @@ export async function fetchEngine(engineId: string): Promise<EngineInfo> {
   return apiFetch<EngineInfo>(`/ugsci/engines/${encodeURIComponent(engineId)}`);
 }
 
-export async function addEngine(data: Partial<EngineInfo>): Promise<EngineInfo> {
+export async function addEngine(
+  data: Partial<EngineInfo>,
+): Promise<EngineInfo> {
   return apiFetch<EngineInfo>("/ugsci/engines/", {
     method: "POST",
     body: JSON.stringify(data),
@@ -72,13 +81,18 @@ export async function updateEngine(
   engineId: string,
   data: Partial<EngineInfo>,
 ): Promise<EngineInfo> {
-  return apiFetch<EngineInfo>(`/ugsci/engines/${encodeURIComponent(engineId)}`, {
-    method: "PUT",
-    body: JSON.stringify(data),
-  });
+  return apiFetch<EngineInfo>(
+    `/ugsci/engines/${encodeURIComponent(engineId)}`,
+    {
+      method: "PUT",
+      body: JSON.stringify(data),
+    },
+  );
 }
 
-export async function deleteEngine(engineId: string): Promise<{ success: boolean }> {
+export async function deleteEngine(
+  engineId: string,
+): Promise<{ success: boolean }> {
   return apiFetch<{ success: boolean }>(
     `/ugsci/engines/${encodeURIComponent(engineId)}`,
     { method: "DELETE" },
@@ -123,7 +137,9 @@ export function EngineCard({
       size: "small",
       style: {
         cursor: "pointer",
-        borderColor: isDetected ? undefined : "var(--ant-color-border, #d9d9d9)",
+        borderColor: isDetected
+          ? undefined
+          : "var(--ant-color-border, #d9d9d9)",
         height: "100%",
         width: "100%",
         display: "flex",
@@ -170,7 +186,14 @@ export function EngineCard({
       ),
       React.createElement(
         "div",
-        { style: { display: "flex", flexDirection: "column", gap: 4, alignItems: "flex-end" } },
+        {
+          style: {
+            display: "flex",
+            flexDirection: "column",
+            gap: 4,
+            alignItems: "flex-end",
+          },
+        },
         isDetected
           ? React.createElement(
               Tag,
@@ -178,16 +201,12 @@ export function EngineCard({
               "✅ 已检测",
             )
           : engine.executable_path
-            ? React.createElement(
-                Tag,
-                { color: "warning", style: { fontSize: 11 } },
-                "⚠ 路径无效",
-              )
-            : React.createElement(
-                Tag,
-                { style: { fontSize: 11 } },
-                "🔧 待配置",
-              ),
+          ? React.createElement(
+              Tag,
+              { color: "warning", style: { fontSize: 11 } },
+              "⚠ 路径无效",
+            )
+          : React.createElement(Tag, { style: { fontSize: 11 } }, "🔧 待配置"),
         engine.is_default
           ? React.createElement(
               Tag,
@@ -195,12 +214,12 @@ export function EngineCard({
               "默认",
             )
           : engine.is_custom
-            ? React.createElement(
-                Tag,
-                { color: "purple", style: { fontSize: 10 } },
-                "自定义",
-              )
-            : null,
+          ? React.createElement(
+              Tag,
+              { color: "purple", style: { fontSize: 10 } },
+              "自定义",
+            )
+          : null,
       ),
     ),
     React.createElement(
@@ -402,7 +421,14 @@ export function EngineSection() {
 
   // Form field helper
   const formField = useCallback(
-    (label: string, key: keyof EngineInfo, opts?: { textarea?: boolean; select?: { options: { label: string; value: string }[] } }) => {
+    (
+      label: string,
+      key: keyof EngineInfo,
+      opts?: {
+        textarea?: boolean;
+        select?: { options: { label: string; value: string }[] };
+      },
+    ) => {
       const value = (formData[key] as string) || "";
       return React.createElement(
         "div",
@@ -423,19 +449,25 @@ export function EngineSection() {
               placeholder: `选择${label}`,
             })
           : opts?.textarea
-            ? React.createElement(Input.TextArea, {
-                value,
-                onChange: (e: any) =>
-                  setFormData((prev: any) => ({ ...prev, [key]: e.target.value })),
-                rows: 3,
-                placeholder: `输入${label}`,
-              })
-            : React.createElement(Input, {
-                value,
-                onChange: (e: any) =>
-                  setFormData((prev: any) => ({ ...prev, [key]: e.target.value })),
-                placeholder: `输入${label}`,
-              }),
+          ? React.createElement(Input.TextArea, {
+              value,
+              onChange: (e: any) =>
+                setFormData((prev: any) => ({
+                  ...prev,
+                  [key]: e.target.value,
+                })),
+              rows: 3,
+              placeholder: `输入${label}`,
+            })
+          : React.createElement(Input, {
+              value,
+              onChange: (e: any) =>
+                setFormData((prev: any) => ({
+                  ...prev,
+                  [key]: e.target.value,
+                })),
+              placeholder: `输入${label}`,
+            }),
       );
     },
     [formData],
@@ -481,9 +513,7 @@ export function EngineSection() {
         Button,
         {
           type: "primary",
-          icon: PlusOutlined
-            ? React.createElement(PlusOutlined)
-            : undefined,
+          icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
           onClick: openAddModal,
           style: PRIMARY_BTN_STYLE,
         },
@@ -501,33 +531,35 @@ export function EngineSection() {
           }),
         )
       : filteredEngines.length === 0
-        ? React.createElement(Empty, {
-            description: searchText ? "无匹配引擎" : "暂无引擎，点击「添加引擎」开始",
-          })
-        : React.createElement(
-            Row,
-            { gutter: [12, 12], align: "stretch" },
-            ...filteredEngines.map((engine) =>
-              React.createElement(
-                Col,
-                {
-                  key: engine.id,
-                  xs: 24,
-                  sm: 12,
-                  md: 8,
-                  lg: 6,
-                  style: { display: "flex" },
+      ? React.createElement(Empty, {
+          description: searchText
+            ? "无匹配引擎"
+            : "暂无引擎，点击「添加引擎」开始",
+        })
+      : React.createElement(
+          Row,
+          { gutter: [12, 12], align: "stretch" },
+          ...filteredEngines.map((engine) =>
+            React.createElement(
+              Col,
+              {
+                key: engine.id,
+                xs: 24,
+                sm: 12,
+                md: 8,
+                lg: 6,
+                style: { display: "flex" },
+              },
+              React.createElement(EngineCard, {
+                engine,
+                onClick: () => {
+                  setActiveEngine(engine);
+                  setDrawerOpen(true);
                 },
-                React.createElement(EngineCard, {
-                  engine,
-                  onClick: () => {
-                    setActiveEngine(engine);
-                    setDrawerOpen(true);
-                  },
-                }),
-              ),
+              }),
             ),
           ),
+        ),
     // Detail drawer
     activeEngine
       ? React.createElement(
@@ -613,7 +645,8 @@ export function EngineSection() {
               Descriptions.Item,
               { label: "分类" },
               activeEngine.category
-                ? CATEGORY_LABELS[activeEngine.category] || activeEngine.category
+                ? CATEGORY_LABELS[activeEngine.category] ||
+                    activeEngine.category
                 : "—",
             ),
             React.createElement(
@@ -626,14 +659,14 @@ export function EngineSection() {
                     activeEngine.status === "detected"
                       ? "success"
                       : activeEngine.status === "not_found"
-                        ? "error"
-                        : "default",
+                      ? "error"
+                      : "default",
                 },
                 activeEngine.status === "detected"
                   ? "✅ 已检测"
                   : activeEngine.status === "not_found"
-                    ? "❌ 路径无效"
-                    : "🔧 待配置",
+                  ? "❌ 路径无效"
+                  : "🔧 待配置",
               ),
             ),
             React.createElement(
@@ -664,18 +697,15 @@ export function EngineSection() {
                       },
                       activeEngine.executable_path,
                     ),
-                    React.createElement(
-                      Button,
-                      {
-                        size: "small",
-                        type: "text",
-                        icon: CopyOutlined
-                          ? React.createElement(CopyOutlined)
-                          : undefined,
-                        onClick: () =>
-                          handleCopyPath(activeEngine.executable_path),
-                      },
-                    ),
+                    React.createElement(Button, {
+                      size: "small",
+                      type: "text",
+                      icon: CopyOutlined
+                        ? React.createElement(CopyOutlined)
+                        : undefined,
+                      onClick: () =>
+                        handleCopyPath(activeEngine.executable_path),
+                    }),
                   ),
                 )
               : null,
@@ -697,23 +727,36 @@ export function EngineSection() {
                   { label: "已检测模块" },
                   React.createElement(
                     "div",
-                    { style: { display: "flex", flexDirection: "column", gap: 4 } },
+                    {
+                      style: {
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 4,
+                      },
+                    },
                     ...activeEngine.modules.map((mod) =>
                       React.createElement(
                         "div",
                         {
                           key: mod,
-                          style: { display: "flex", alignItems: "center", gap: 8 },
+                          style: {
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 8,
+                          },
                         },
                         React.createElement(
                           Tag,
                           { color: "cyan", style: { fontSize: 11 } },
                           mod,
                         ),
-                        activeEngine.module_paths && activeEngine.module_paths[mod]
+                        activeEngine.module_paths &&
+                          activeEngine.module_paths[mod]
                           ? React.createElement(
                               "code",
-                              { style: { fontSize: 11, wordBreak: "break-all" } },
+                              {
+                                style: { fontSize: 11, wordBreak: "break-all" },
+                              },
                               activeEngine.module_paths[mod],
                             )
                           : null,
@@ -764,18 +807,10 @@ export function EngineSection() {
             "div",
             { style: { marginTop: 12 } },
             activeEngine.is_default
-              ? React.createElement(
-                  Tag,
-                  { color: "blue" },
-                  "默认引擎",
-                )
+              ? React.createElement(Tag, { color: "blue" }, "默认引擎")
               : activeEngine.is_custom
-                ? React.createElement(
-                    Tag,
-                    { color: "purple" },
-                    "自定义引擎",
-                  )
-                : null,
+              ? React.createElement(Tag, { color: "purple" }, "自定义引擎")
+              : null,
           ),
         )
       : null,

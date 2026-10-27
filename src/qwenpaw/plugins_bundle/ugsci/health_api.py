@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Unified health snapshot for UGSci routes, tools, dependencies, and engines."""
+"""Unified health snapshot for UGSci routes, tools, dependencies, and \
+engines."""
 
 from __future__ import annotations
 
@@ -68,7 +69,7 @@ def _dependency_snapshot(
 def build_health_snapshot(plugin_dir: Path) -> dict[str, Any]:
     """Build one read-only health response without exposing local paths."""
     manifest = json.loads(
-        (plugin_dir / "plugin.json").read_text(encoding="utf-8")
+        (plugin_dir / "plugin.json").read_text(encoding="utf-8"),
     )
     tool_specs = load_tool_manifest(plugin_dir)
     domain_engines = list_engines_with_probes()
@@ -100,7 +101,7 @@ def build_health_snapshot(plugin_dir: Path) -> dict[str, Any]:
             _ROUTE_REGISTRATION.get(
                 path,
                 {"path": path, "status": "unknown", "error": None},
-            )
+            ),
         )
         for path in _ROUTES
     ]

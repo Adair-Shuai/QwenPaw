@@ -8,7 +8,6 @@ All output is written as raw binary for efficient frontend fetching.
 
 from __future__ import annotations
 
-import json
 import math
 import struct
 import time
@@ -18,12 +17,15 @@ from pathlib import Path
 def _write_f32(path: Path, values: list[float]) -> None:
     path.write_bytes(struct.pack(f"<{len(values)}f", *values))
 
+
 def _write_u32(path: Path, values: list[int]) -> None:
     path.write_bytes(struct.pack(f"<{len(values)}I", *values))
 
 
 def generate_synthetic_grid(
-    nx: int, ny: int, nz: int,
+    nx: int,
+    ny: int,
+    nz: int,
     name: str,
     bin_dir: Path,
 ) -> dict:
@@ -59,7 +61,10 @@ def generate_synthetic_grid(
     # Generate indices (top face quads)
     indices: list[int] = []
     cell_ids: list[int] = []
-    def vidx(i, j, k): return k * nvx * nvy + j * nvx + i
+
+    def vidx(i, j, k):
+        return k * nvx * nvy + j * nvx + i
+
     for k in range(nz):
         for j in range(ny):
             for i in range(nx):
@@ -84,8 +89,14 @@ def generate_synthetic_grid(
     _write_u32(bin_dir / f"{prefix}_indices.u32", indices)
     _write_u32(bin_dir / f"{prefix}_cell_ids.u32", cell_ids)
     _write_f32(bin_dir / f"{prefix}_scalars_porosity.f32", scalars)
-    _write_f32(bin_dir / f"{prefix}_scalars_permeability.f32", [p**3 * 1000 for p in scalars])
-    _write_u32(bin_dir / f"{prefix}_scalars_facies.u32", [int(p > 0.2) + int(p > 0.3) for p in scalars])
+    _write_f32(
+        bin_dir / f"{prefix}_scalars_permeability.f32",
+        [p**3 * 1000 for p in scalars],
+    )
+    _write_u32(
+        bin_dir / f"{prefix}_scalars_facies.u32",
+        [int(p > 0.2) + int(p > 0.3) for p in scalars],
+    )
 
     elapsed = time.time() - t0
     print(f"    synthetic_{name}: {n_cells} cells, {elapsed:.2f}s")
@@ -118,4 +129,7 @@ def generate_all_synthetic(bin_dir: Path) -> list[dict]:
         (80, 80, 80, "500k"),
         (101, 101, 100, "1m"),
     ]
-    return [generate_synthetic_grid(nx, ny, nz, name, bin_dir) for nx, ny, nz, name in configs]
+    return [
+        generate_synthetic_grid(nx, ny, nz, name, bin_dir)
+        for nx, ny, nz, name in configs
+    ]

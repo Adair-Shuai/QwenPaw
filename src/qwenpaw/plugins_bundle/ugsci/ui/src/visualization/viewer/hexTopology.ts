@@ -14,7 +14,9 @@ show the fan.
 
 export const XTGEO_TO_VTK = [0, 1, 3, 2, 4, 5, 7, 6] as const;
 
-export const VTK_HEX_FACES: ReadonlyArray<readonly [number, number, number, number]> = [
+export const VTK_HEX_FACES: ReadonlyArray<
+  readonly [number, number, number, number]
+> = [
   [0, 1, 2, 3],
   [4, 7, 6, 5],
   [0, 1, 5, 4],
@@ -24,9 +26,18 @@ export const VTK_HEX_FACES: ReadonlyArray<readonly [number, number, number, numb
 ];
 
 export const VTK_HEX_EDGES: ReadonlyArray<readonly [number, number]> = [
-  [0, 1], [1, 2], [2, 3], [3, 0],
-  [4, 5], [5, 6], [6, 7], [7, 4],
-  [0, 4], [1, 5], [2, 6], [3, 7],
+  [0, 1],
+  [1, 2],
+  [2, 3],
+  [3, 0],
+  [4, 5],
+  [5, 6],
+  [6, 7],
+  [7, 4],
+  [0, 4],
+  [1, 5],
+  [2, 6],
+  [3, 7],
 ];
 
 export const HEX_CORNERS_PER_CELL = 8;
@@ -69,26 +80,38 @@ function normalAgreement(
   return (n1[0] * n2[0] + n1[1] * n2[1] + n1[2] * n2[2]) / (len1 * len2);
 }
 
-export function hexVertsPerCell(vertexCount: number, cellCount: number): number {
+export function hexVertsPerCell(
+  vertexCount: number,
+  cellCount: number,
+): number {
   if (cellCount <= 0 || vertexCount % cellCount !== 0) return 0;
   return vertexCount / cellCount;
 }
 
-export function isHexCornerMesh(vertexCount: number, cellCount: number): boolean {
+export function isHexCornerMesh(
+  vertexCount: number,
+  cellCount: number,
+): boolean {
   const vertsPerCell = hexVertsPerCell(vertexCount, cellCount);
-  return vertsPerCell === HEX_CORNERS_PER_CELL || vertsPerCell === HEX_COMPACT_VERTS_PER_CELL;
+  return (
+    vertsPerCell === HEX_CORNERS_PER_CELL ||
+    vertsPerCell === HEX_COMPACT_VERTS_PER_CELL
+  );
 }
 
 export function isHexCellMesh(vertexCount: number, cellCount: number): boolean {
   const vertsPerCell = hexVertsPerCell(vertexCount, cellCount);
   return (
-    vertsPerCell === HEX_CORNERS_PER_CELL
-    || vertsPerCell === HEX_COMPACT_VERTS_PER_CELL
-    || vertsPerCell === HEX_FILL_VERTS_PER_CELL
+    vertsPerCell === HEX_CORNERS_PER_CELL ||
+    vertsPerCell === HEX_COMPACT_VERTS_PER_CELL ||
+    vertsPerCell === HEX_FILL_VERTS_PER_CELL
   );
 }
 
-export function extractHexCorners(positions: Float32Array, cellCount: number): Float32Array {
+export function extractHexCorners(
+  positions: Float32Array,
+  cellCount: number,
+): Float32Array {
   const vertsPerCell = hexVertsPerCell(positions.length / 3, cellCount);
   if (vertsPerCell === HEX_CORNERS_PER_CELL) {
     return new Float32Array(positions.subarray(0, cellCount * 24));
@@ -107,18 +130,26 @@ export function extractHexCorners(positions: Float32Array, cellCount: number): F
 export function prepareHexView(
   positions: Float32Array,
   cellCount: number,
-): { corners: Float32Array; fill: ReturnType<typeof tessellateHexOpmFan>; remapped: boolean } | null {
+): {
+  corners: Float32Array;
+  fill: ReturnType<typeof tessellateHexOpmFan>;
+  remapped: boolean;
+} | null {
   if (!isHexCornerMesh(positions.length / 3, cellCount)) return null;
   const corners = extractHexCorners(positions, cellCount);
   const remapped = maybeRemapHexPositions(corners, cellCount);
   return { corners, fill: tessellateHexOpmFan(corners, cellCount), remapped };
 }
 
-export function usesEclipsePairing(positions: Float32Array, cellCount: number): boolean {
+export function usesEclipsePairing(
+  positions: Float32Array,
+  cellCount: number,
+): boolean {
   if (!isHexCornerMesh(positions.length / 3, cellCount)) return false;
-  const corners = hexVertsPerCell(positions.length / 3, cellCount) === HEX_CORNERS_PER_CELL
-    ? positions
-    : extractHexCorners(positions, cellCount);
+  const corners =
+    hexVertsPerCell(positions.length / 3, cellCount) === HEX_CORNERS_PER_CELL
+      ? positions
+      : extractHexCorners(positions, cellCount);
   const sample = Math.min(cellCount, 32);
   let vtkScore = 0;
   let eclipseScore = 0;
@@ -130,7 +161,10 @@ export function usesEclipsePairing(positions: Float32Array, cellCount: number): 
 }
 
 /** Reorder pairing-order corners in place to VTK hexahedron winding. */
-export function remapEclipsePairingInPlace(positions: Float32Array, cellCount: number): void {
+export function remapEclipsePairingInPlace(
+  positions: Float32Array,
+  cellCount: number,
+): void {
   const tmp = new Float32Array(24);
   for (let cell = 0; cell < cellCount; cell++) {
     const base = cell * 24;
@@ -145,7 +179,10 @@ export function remapEclipsePairingInPlace(positions: Float32Array, cellCount: n
   }
 }
 
-export function maybeRemapHexPositions(positions: Float32Array, cellCount: number): boolean {
+export function maybeRemapHexPositions(
+  positions: Float32Array,
+  cellCount: number,
+): boolean {
   if (!usesEclipsePairing(positions, cellCount)) return false;
   const vertsPerCell = hexVertsPerCell(positions.length / 3, cellCount);
   if (vertsPerCell === HEX_CORNERS_PER_CELL) {

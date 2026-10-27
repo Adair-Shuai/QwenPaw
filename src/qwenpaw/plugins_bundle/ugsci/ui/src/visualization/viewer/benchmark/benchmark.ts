@@ -97,13 +97,26 @@ export async function runLeakTest(
  */
 export function exportCSV(results: BenchmarkResult[]): string {
   const headers = [
-    "datasetId", "p50", "p95", "p99", "fps",
-    "drawCalls", "triangles", "jsHeapMB", "duration",
+    "datasetId",
+    "p50",
+    "p95",
+    "p99",
+    "fps",
+    "drawCalls",
+    "triangles",
+    "jsHeapMB",
+    "duration",
   ];
   const rows = results.map((r) => [
-    r.datasetId, r.p50.toFixed(2), r.p95.toFixed(2), r.p99.toFixed(2),
-    r.fps.toFixed(1), r.drawCalls, r.triangles,
-    r.jsHeapMB.toFixed(0), r.duration,
+    r.datasetId,
+    r.p50.toFixed(2),
+    r.p95.toFixed(2),
+    r.p99.toFixed(2),
+    r.fps.toFixed(1),
+    r.drawCalls,
+    r.triangles,
+    r.jsHeapMB.toFixed(0),
+    r.duration,
   ]);
   return [headers, ...rows].map((r) => r.join(",")).join("\n");
 }
@@ -117,16 +130,16 @@ export function exportJSON(results: BenchmarkResult[]): string {
 
 // Acceptance thresholds from Section 9.5
 export const ACCEPTANCE_THRESHOLDS = {
-  synthetic_s_first_frame: 3000,   // ≤ 3s
-  synthetic_m_first_frame: 8000,   // ≤ 8s
-  synthetic_l_first_frame: 15000,  // ≤ 15s
-  synthetic_m_p50_fps: 30,         // ≥ 30 FPS
-  synthetic_m_p95_frame: 50,       // ≤ 50ms
-  property_switch: 1000,           // ≤ 1s
-  cached_timestep_switch: 500,    // ≤ 500ms
-  cell_pick: 200,                 // ≤ 200ms
-  synthetic_m_rss: 1024,           // ≤ 1 GiB
-  leak_retained: 100,             // ≤ 100 MiB
-  bootstrap_size: 150 * 1024,     // ≤ 150 KiB
-  no_viewer_load: 0,              // 0 requests before page open
+  synthetic_s_first_frame: 3000, // ≤ 3s
+  synthetic_m_first_frame: 8000, // ≤ 8s
+  synthetic_l_first_frame: 15000, // ≤ 15s
+  synthetic_m_p50_fps: 30, // ≥ 30 FPS
+  synthetic_m_p95_frame: 50, // ≤ 50ms
+  property_switch: 1000, // ≤ 1s
+  cached_timestep_switch: 500, // ≤ 500ms
+  cell_pick: 200, // ≤ 200ms
+  synthetic_m_rss: 1024, // ≤ 1 GiB
+  leak_retained: 100, // ≤ 100 MiB
+  bootstrap_size: 150 * 1024, // ≤ 150 KiB
+  no_viewer_load: 0, // 0 requests before page open
 };

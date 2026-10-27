@@ -584,6 +584,11 @@ jobs:
         with:
           node-version-file: .nvmrc
 
+      - name: Build OpenUI task layout runtime
+        run: |
+          npm --prefix plugins/bundle/qwenpaw-openui/frontend ci
+          npm --prefix plugins/bundle/qwenpaw-openui/frontend test
+
       - name: Build memory plugin frontends
         shell: bash
         run: |

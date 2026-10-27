@@ -3,7 +3,6 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 from ..common.errors import DomainError, DomainErrorCode, wrap_unknown_error
@@ -32,7 +31,12 @@ def _run(capability_id: str, request: Any, method: str) -> Any:
     try:
         adapter = default_registry.resolve(capability_id)
         return _chunk(
-            _service.execute(capability_id, adapter, request, method=method).to_dict()
+            _service.execute(
+                capability_id,
+                adapter,
+                request,
+                method=method,
+            ).to_dict(),
         )
     except DomainError as exc:
         return _chunk(exc.to_dict(), error=True)
@@ -43,13 +47,18 @@ def _run(capability_id: str, request: Any, method: str) -> Any:
 def _invalid(exc: Exception) -> Any:
     return _chunk(
         DomainError(
-            DomainErrorCode.INVALID_INPUT, f"Invalid deterministic input: {exc}"
+            DomainErrorCode.INVALID_INPUT,
+            f"Invalid deterministic input: {exc}",
         ).to_dict(),
         error=True,
     )
 
 
-async def ugsci_convert_units(value: float, from_unit: str, to_unit: str) -> Any:
+async def ugsci_convert_units(
+    value: float,
+    from_unit: str,
+    to_unit: str,
+) -> Any:
     """Convert a scalar using the explicit UGSci unit system."""
     try:
         request = UnitConversionRequest(float(value), from_unit, to_unit)
@@ -82,7 +91,11 @@ async def ugsci_volumetric_oil_in_place(
         )
     except (TypeError, ValueError) as exc:
         return _invalid(exc)
-    return _run("reservoir.volumetrics.oil_in_place", request, "volumetric_ooip")
+    return _run(
+        "reservoir.volumetrics.oil_in_place",
+        request,
+        "volumetric_ooip",
+    )
 
 
 async def ugsci_oil_material_balance(
@@ -249,11 +262,20 @@ async def ugsci_conservation_check(
     """Check a scalar conservation/material-balance equation."""
     try:
         request = ConservationCheckRequest(
-            initial_inventory, inflows, outflows, final_inventory, tolerance, unit
+            initial_inventory,
+            inflows,
+            outflows,
+            final_inventory,
+            tolerance,
+            unit,
         )
     except (TypeError, ValueError) as exc:
         return _invalid(exc)
-    return _run("validation.conservation_check", request, "scalar_conservation")
+    return _run(
+        "validation.conservation_check",
+        request,
+        "scalar_conservation",
+    )
 
 
 __all__ = [

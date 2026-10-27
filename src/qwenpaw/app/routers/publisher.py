@@ -61,7 +61,8 @@ class InstalledPublishRequest(BaseModel):
 
 
 def inspect_expert(value: Any) -> dict[str, Any]:
-    """Accept only an explicitly composed public template, never runtime state."""
+    """Accept only an explicitly composed public template, never runtime \
+state."""
     if not isinstance(value, dict):
         raise ValueError("专家模板必须是 JSON 对象")
     allowed = {
@@ -75,9 +76,7 @@ def inspect_expert(value: Any) -> dict[str, Any]:
         "recommended_skills",
     }
     if set(value) - allowed:
-        raise ValueError(
-            "专家模板只接受公开元数据、提示词与技能名称；不能包含模型凭证、记忆、知识文件或本机配置"
-        )
+        raise ValueError("专家模板只接受公开元数据、提示词与技能名称；不能包含模型凭证、记忆、知识文件或本机配置")
     for key, maximum in {
         "id": 128,
         "version": 128,
@@ -86,16 +85,24 @@ def inspect_expert(value: Any) -> dict[str, Any]:
         "author": 160,
         "system_prompt": 100000,
     }.items():
-        if not isinstance(value.get(key, ""), str) or len(value.get(key, "")) > maximum:
+        if (
+            not isinstance(value.get(key, ""), str)
+            or len(value.get(key, "")) > maximum
+        ):
             raise ValueError(f"专家字段 {key} 格式或长度无效")
-    if not value.get("name", "").strip() or not value.get("system_prompt", "").strip():
+    if (
+        not value.get("name", "").strip()
+        or not value.get("system_prompt", "").strip()
+    ):
         raise ValueError("请填写专家名称和公开提示词")
     for key in ("tags", "recommended_skills"):
         items = value.get(key, [])
         if (
             not isinstance(items, list)
             or len(items) > 100
-            or any(not isinstance(item, str) or len(item) > 160 for item in items)
+            or any(
+                not isinstance(item, str) or len(item) > 160 for item in items
+            )
         ):
             raise ValueError(f"专家字段 {key} 必须为文本列表")
     data = json.dumps(value, ensure_ascii=False, sort_keys=True).encode()
@@ -115,7 +122,14 @@ def _private_path(relative: str) -> bool:
     return (
         bool(
             set(parts)
-            & {".git", ".ssh", ".aws", ".codex", "__pycache__", "node_modules"}
+            & {
+                ".git",
+                ".ssh",
+                ".aws",
+                ".codex",
+                "__pycache__",
+                "node_modules",
+            },
         )
         or any(
             part == ".env"
@@ -131,7 +145,7 @@ def _private_path(relative: str) -> bool:
                 "sessions/",
                 "memory/",
                 "logs/",
-            )
+            ),
         )
     )
 
@@ -185,7 +199,7 @@ def _validate_public_manifest(manifest: dict[str, Any]) -> None:
         raise ValueError("此应用已在 plugin.json 禁止公开发布")
     if manifest.get("id") == "document-forms":
         raise ValueError(
-            "外协助手包含受保护的标准文书模板；请使用现有专用发布流程执行模板清单、摘要与隐私校验，通用发布器不能绕过该检查"
+            "外协助手包含受保护的标准文书模板；请使用现有专用发布流程执行模板清单、摘要与隐私校验，通用发布器不能绕过该检查",
         )
 
 
@@ -236,7 +250,7 @@ def _collect_publish_files(
             if _private_path(relative + ("/" if entry.is_dir() else "")):
                 if relative in protected:
                     raise ValueError(
-                        f"Private data cannot be a plugin entry: {relative}"
+                        f"Private data cannot be a plugin entry: {relative}",
                     )
                 excluded += 1
                 continue
@@ -382,11 +396,13 @@ def _inspect_archive(  # pylint: disable=too-many-branches
                 file_type = stat.S_IFMT(unix_mode)
                 if file_type not in (0, stat.S_IFREG, stat.S_IFDIR):
                     raise ValueError(
-                        "Plugin archive links and special files are not " "allowed",
+                        "Plugin archive links and special files are not "
+                        "allowed",
                     )
                 if name.parts[: len(root_parts)] != root_parts:
                     raise ValueError(
-                        "Plugin archive contains files outside the plugin " "root",
+                        "Plugin archive contains files outside the plugin "
+                        "root",
                     )
                 relative_parts = name.parts[len(root_parts) :]
                 if not relative_parts:
@@ -396,7 +412,9 @@ def _inspect_archive(  # pylint: disable=too-many-branches
                 relative = PurePosixPath(*relative_parts).as_posix()
                 if _private_path(relative):
                     raise ValueError(
-                        f"Archive contains private or generated data: {relative}"
+                        f"Archive contains private or "
+                        f"generated data: "
+                        f"{relative}",
                     )
                 if relative in relative_files:
                     raise ValueError("Plugin archive contains duplicate paths")
@@ -462,7 +480,11 @@ def _inspection(
 
 
 def _endpoint(mode: PublishMode) -> str:
-    key = "UGSCI_PUBLISH_ENDPOINT" if mode == "release" else "UGSCI_SUBMISSION_ENDPOINT"
+    key = (
+        "UGSCI_PUBLISH_ENDPOINT"
+        if mode == "release"
+        else "UGSCI_SUBMISSION_ENDPOINT"
+    )
     return os.environ.get(key, "").strip()
 
 
@@ -480,14 +502,19 @@ def _display_endpoint(endpoint: str) -> str | None:
 
 
 async def _forward(
-    mode: PublishMode, payload: dict[str, Any], token: str = "", *, inspect=False
+    mode: PublishMode,
+    payload: dict[str, Any],
+    token: str = "",
+    *,
+    inspect=False,
 ) -> Any | None:
     endpoint = _endpoint(mode)
     if not endpoint:
         return None
     parsed = urlsplit(endpoint)
     if parsed.scheme != "https" and not (
-        parsed.scheme == "http" and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
+        parsed.scheme == "http"
+        and parsed.hostname in {"localhost", "127.0.0.1", "::1"}
     ):
         raise ValueError("发布服务必须使用 HTTPS")
     if parsed.username or parsed.password or parsed.query or parsed.fragment:
@@ -497,7 +524,10 @@ async def _forward(
     token = (
         token.strip()
         or os.environ.get(
-            "UGSCI_PUBLISH_TOKEN" if mode == "release" else "UGSCI_SUBMISSION_TOKEN", ""
+            "UGSCI_PUBLISH_TOKEN"
+            if mode == "release"
+            else "UGSCI_SUBMISSION_TOKEN",
+            "",
         ).strip()
     )
     if not token:
@@ -524,14 +554,22 @@ async def _forward(
             str(detail or f"Publish service failed ({response.status_code})"),
         )
     expected = (
-        "checked" if inspect else "published" if mode == "release" else "submitted"
+        "checked"
+        if inspect
+        else "published"
+        if mode == "release"
+        else "submitted"
     )
     if (
         not isinstance(body, dict)
         or body.get("status") != expected
         or not body.get("receipt_id")
         or body.get("sha256") != payload["sha256"]
-        or (mode == "release" and not inspect and body.get("verified") is not True)
+        or (
+            mode == "release"
+            and not inspect
+            and body.get("verified") is not True
+        )
     ):
         raise ValueError("发布服务未返回可验证回执，未确认提交或发布成功")
     return body
@@ -599,7 +637,8 @@ async def _publish(
         raise ValueError("尚未配置正式发布服务；可先生成本地发布包")
     if (kind == "app") != (inspected["catalog_kind"] == "apps"):
         raise ValueError(
-            "Package type does not match the selected " f"{kind} publishing channel",
+            "Package type does not match the selected "
+            f"{kind} publishing channel",
         )
     sha256 = hashlib.sha256(archive).hexdigest()
     archive_path, metadata_path = await asyncio.to_thread(
@@ -628,7 +667,9 @@ async def _publish(
         "status": (
             "published"
             if remote is not None and mode == "release"
-            else "submitted" if remote is not None else "prepared"
+            else "submitted"
+            if remote is not None
+            else "prepared"
         ),
         "sha256": sha256,
         "archive_size_bytes": len(archive),
@@ -659,10 +700,13 @@ async def inspect_installed_asset(
 ) -> dict[str, Any]:
     try:
         inspected = await asyncio.to_thread(
-            _inspect_directory, _asset_root(request.plugin_id)
+            _inspect_directory,
+            _asset_root(request.plugin_id),
         )
         if (request.kind == "app") != (inspected["catalog_kind"] == "apps"):
-            raise ValueError("Package type does not match selected publishing channel")
+            raise ValueError(
+                "Package type does not match selected publishing channel",
+            )
         return _inspection(inspected, request.kind)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -675,7 +719,8 @@ async def publish_installed_asset(
 ) -> dict[str, Any]:
     try:
         archive, inspected = await asyncio.to_thread(
-            _package_directory, _asset_root(request.plugin_id)
+            _package_directory,
+            _asset_root(request.plugin_id),
         )
         return await _publish(
             archive,
@@ -718,7 +763,7 @@ async def upload_publish_archive(request: Request) -> dict[str, Any]:
         if request.headers.get("X-UGSci-Inspect-Only") == "true":
             if (kind == "app") != (inspected["catalog_kind"] == "apps"):
                 raise ValueError(
-                    "Package type does not match selected publishing channel"
+                    "Package type does not match selected publishing channel",
                 )
             return _inspection(inspected, kind)
         return await _publish(
@@ -755,8 +800,10 @@ async def publish_expert(action: str, request: Request):
             "expert": inspected["manifest"],
             "sha256": hashlib.sha256(
                 json.dumps(
-                    inspected["manifest"], ensure_ascii=False, sort_keys=True
-                ).encode()
+                    inspected["manifest"],
+                    ensure_ascii=False,
+                    sort_keys=True,
+                ).encode(),
             ).hexdigest(),
         }
         remote = await _forward(
@@ -765,6 +812,8 @@ async def publish_expert(action: str, request: Request):
             request.headers.get("X-UGSci-Publisher-Token", ""),
             inspect=action == "inspect",
         )
+        if remote is None:
+            raise ValueError("发布服务未返回有效回执")
         return {**_inspection(inspected, "expert"), **remote}
     except (ValueError, httpx.HTTPError) as exc:
         raise HTTPException(400, str(exc)) from exc

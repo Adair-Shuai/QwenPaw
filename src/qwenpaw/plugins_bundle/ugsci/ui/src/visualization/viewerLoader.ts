@@ -8,17 +8,20 @@
  * This keeps the bootstrap entry point under 150 KiB.
  */
 
-import type { ViewerHandle, ViewerMountOptions } from "./viewer/contracts/types";
+import type {
+  ViewerHandle,
+  ViewerMountOptions,
+} from "./viewer/contracts/types";
 import type { EngineFactory } from "./viewer/engines/registry";
 
-export type { ViewerHandle, ViewerMountOptions } from "./viewer/contracts/types";
+export type {
+  ViewerHandle,
+  ViewerMountOptions,
+} from "./viewer/contracts/types";
 
 export interface ViewerRuntime {
   registerEngine(id: string, factory: EngineFactory): void;
-  mount(
-    element: HTMLElement,
-    options: ViewerMountOptions,
-  ): ViewerHandle;
+  mount(element: HTMLElement, options: ViewerMountOptions): ViewerHandle;
   version: string;
 }
 
@@ -55,12 +58,18 @@ export function loadViewerRuntime(): Promise<ViewerRuntime> {
         clearTimeout(timer);
         script.onload = null;
         script.onerror = null;
-        if (error) { script.remove(); reject(error); }
-        else resolve();
+        if (error) {
+          script.remove();
+          reject(error);
+        } else resolve();
       };
-      const timer = setTimeout(() => finish(new Error("可视化引擎加载超时，请重试")), 30_000);
+      const timer = setTimeout(
+        () => finish(new Error("可视化引擎加载超时，请重试")),
+        30_000,
+      );
       script.onload = () => finish();
-      script.onerror = () => finish(new Error("可视化引擎脚本加载失败，请检查服务连接"));
+      script.onerror = () =>
+        finish(new Error("可视化引擎脚本加载失败，请检查服务连接"));
       document.head.appendChild(script);
     });
 

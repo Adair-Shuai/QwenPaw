@@ -12,7 +12,15 @@ from pathlib import Path
 from typing import Any
 
 from ...adapter.tool_output import register_tool_artifact
-from ...io import IO, Hidden, HiddenHolder, MediaRef, NodeOutput, Schema, to_gen_ui_ui
+from ...io import (
+    IO,
+    Hidden,
+    HiddenHolder,
+    MediaRef,
+    NodeOutput,
+    Schema,
+    to_gen_ui_ui,
+)
 from ..base import WorkflowNode
 
 
@@ -22,10 +30,13 @@ async def _resolve_session_attachment(
     user_id: str | None,
     ref: str,
 ) -> dict[str, Any] | None:
-    """Resolve a user-provided ref (id / filename / basename) against session attachments.
+    """Resolve a user-provided ref (id / filename / basename) against \
+session attachments.
 
-    ComfyUI's LoadImage works from an input directory picker. In LeAgent the
-    closest equivalent is session attachments (already-uploaded files).
+    ComfyUI's LoadImage works from an input directory picker. In \
+LeAgent the
+    closest equivalent is session attachments (already-uploaded \
+files).
     """
     if not session_id:
         return None
@@ -47,7 +58,10 @@ async def _resolve_session_attachment(
         session_manager = getattr(sm, "session_manager", None)
         if session_manager is None:
             return None
-        attachments = await session_manager.list_attachments(sid, user_id=user_id)
+        attachments = await session_manager.list_attachments(
+            sid,
+            user_id=user_id,
+        )
     except Exception:  # noqa: BLE001
         return None
 
@@ -70,7 +84,11 @@ async def _resolve_session_attachment(
             by_name[filename.casefold()] = att
             by_base[Path(filename).name.casefold()] = att
 
-    hit = by_id.get(ref) or by_name.get(ref.casefold()) or by_base.get(Path(ref).name.casefold())
+    hit = (
+        by_id.get(ref)
+        or by_name.get(ref.casefold())
+        or by_base.get(Path(ref).name.casefold())
+    )
     if hit is None:
         return None
     return {
@@ -98,7 +116,8 @@ class LoadImageNode(WorkflowNode):
                 IO.File.Input(
                     id="file",
                     accept="image/*",
-                    tooltip="Managed file id or a local path to an image file.",
+                    tooltip="Managed file id or a local path to an "
+                    "image file.",
                 ),
             ],
             outputs=[
@@ -112,11 +131,19 @@ class LoadImageNode(WorkflowNode):
             ],
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         raw = inputs.get("file")
         value = str(raw or "").strip()
         if not value:
-            return NodeOutput(values=(None, "", False), error="LoadImage: missing 'file'")
+            return NodeOutput(
+                values=(None, "", False),
+                error="LoadImage: missing 'file'",
+            )
 
         # 1) Prefer session attachment resolution (id / filename / basename).
         resolved = await _resolve_session_attachment(
@@ -136,10 +163,15 @@ class LoadImageNode(WorkflowNode):
             return NodeOutput(
                 values=(ref.to_dict(), ref.src or "", True),
                 ui=to_gen_ui_ui([ref], title="Loaded image"),
-                metadata={"kind": "image", "file_id": ref.file_id, "source": "session_attachment"},
+                metadata={
+                    "kind": "image",
+                    "file_id": ref.file_id,
+                    "source": "session_attachment",
+                },
             )
 
-        # When the value is an existing local path, register it as a managed artifact.
+        # When the value is an existing local path, register it as a managed
+        # artifact.
         path = Path(value)
         if path.exists() and path.is_file():
             data = path.read_bytes()
@@ -151,11 +183,19 @@ class LoadImageNode(WorkflowNode):
                 session_id=hidden.session_id,
                 user_id=hidden.user_id,
             )
-            ref = MediaRef.from_artifact(attachment, kind="image", mime=guessed or "")
+            ref = MediaRef.from_artifact(
+                attachment,
+                kind="image",
+                mime=guessed or "",
+            )
             if ref is None:
-                return NodeOutput(values=(None, "", False), error="LoadImage: failed to register file")
+                return NodeOutput(
+                    values=(None, "", False),
+                    error="LoadImage: failed to register file",
+                )
         else:
-            # Treat as managed file id (preferred in the UI): build a tolerant ref.
+            # Treat as managed file id (preferred in the UI): build a
+            # tolerant ref.
             ref = MediaRef(kind="image", file_id=value)
 
         return NodeOutput(
@@ -166,4 +206,3 @@ class LoadImageNode(WorkflowNode):
 
 
 __all__ = ["LoadImageNode"]
-

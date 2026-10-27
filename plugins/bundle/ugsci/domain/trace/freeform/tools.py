@@ -34,7 +34,14 @@ from .request import (
     TransformFormulaRequest,
 )
 from .symbols import build_symbol_table, inferred_symbols, unit_unknown_symbols
-from .transform import do_collect, do_expand, do_rearrange, do_simplify, do_solve, do_substitute
+from .transform import (
+    do_collect,
+    do_expand,
+    do_rearrange,
+    do_simplify,
+    do_solve,
+    do_substitute,
+)
 
 ENGINE_ID = "ugsci-freeform"
 PROVIDER_ID = "ugsci-freeform-engine"
@@ -67,13 +74,17 @@ def _freeform_settings() -> dict[str, Any]:
 def _resolved_max_steps(value: int | None) -> int:
     if value is not None:
         return int(value)
-    return int(_freeform_settings().get("freeform_max_steps", guards.MAX_TRACE_STEPS))
+    return int(
+        _freeform_settings().get("freeform_max_steps", guards.MAX_TRACE_STEPS),
+    )
 
 
 def _resolved_simplify(value: bool | None) -> bool:
     if value is not None:
         return bool(value)
-    return bool(_freeform_settings().get("freeform_simplify", guards.ALLOW_SIMPLIFY))
+    return bool(
+        _freeform_settings().get("freeform_simplify", guards.ALLOW_SIMPLIFY),
+    )
 
 
 def _feature_unavailable() -> Any:
@@ -83,7 +94,8 @@ def _feature_unavailable() -> Any:
             "ok": False,
             "kind": "error",
             "code": "feature_unavailable",
-            "message": "Freeform mode is disabled. Set ugsci.trace.freeform_enabled=true to enable.",
+            "message": "Freeform mode is disabled. Set "
+            "ugsci.trace.freeform_enabled=true to enable.",
         },
         error=True,
     )
@@ -119,14 +131,19 @@ def _build_provenance(
         "expression": expression,
         "operation": operation,
         "output_symbol": output_symbol,
-        "formula_fingerprint": hashlib.sha256(identity.encode("utf-8")).hexdigest(),
+        "formula_fingerprint": hashlib.sha256(
+            identity.encode("utf-8"),
+        ).hexdigest(),
         "units": {name: info["unit"] for name, info in symbol_table.items()},
         "unit_unknown": unit_unknown_symbols(symbol_table),
         "inferred_units": inferred_symbols(symbol_table),
     }
 
 
-def _error_payload(exc: DomainError, recorder: TraceRecorder | None = None) -> dict[str, Any]:
+def _error_payload(
+    exc: DomainError,
+    recorder: TraceRecorder | None = None,
+) -> dict[str, Any]:
     payload = exc.to_dict()
     if recorder is not None:
         payload["trace"] = recorder.trace.to_dict()
@@ -155,20 +172,25 @@ async def ugsci_derive_formula(
         return _feature_unavailable()
 
     if not is_sympy_available():
-        return _chunk(_ff_errors.dependency_unavailable().to_dict(), error=True)
+        return _chunk(
+            _ff_errors.dependency_unavailable().to_dict(),
+            error=True,
+        )
 
     recorder: TraceRecorder | None = None
     try:
         resolved_max_steps = _resolved_max_steps(max_steps)
         resolved_simplify = _resolved_simplify(idempotent)
-        req = DeriveFormulaRequest.from_dict({
-            "expression": expression,
-            "solve_for": solve_for,
-            "symbols": symbols or {},
-            "assumptions": assumptions or [],
-            "max_steps": resolved_max_steps,
-            "idempotent": resolved_simplify,
-        })
+        req = DeriveFormulaRequest.from_dict(
+            {
+                "expression": expression,
+                "solve_for": solve_for,
+                "symbols": symbols or {},
+                "assumptions": assumptions or [],
+                "max_steps": resolved_max_steps,
+                "idempotent": resolved_simplify,
+            },
+        )
 
         # Parse the expression (Layer 2)
         allowed_symbols = set(req.symbols.keys())
@@ -178,11 +200,17 @@ async def ugsci_derive_formula(
         if not req.symbols:
             allowed_symbols = None
 
-        expr = parse_expression(req.expression, allowed_symbols=allowed_symbols)
+        expr = parse_expression(
+            req.expression,
+            allowed_symbols=allowed_symbols,
+        )
 
         # Build symbol table
         expr_sym_names = {str(s) for s in expr.free_symbols}
-        sym_table = build_symbol_table(req.symbols, expr_symbols=expr_sym_names)
+        sym_table = build_symbol_table(
+            req.symbols,
+            expr_symbols=expr_sym_names,
+        )
 
         # Create recorder with freeform provenance
         recorder = TraceRecorder(
@@ -197,7 +225,9 @@ async def ugsci_derive_formula(
         # If solve_for is specified, solve for it
         if req.solve_for:
             result_expr = do_solve(
-                expr, req.solve_for, recorder,
+                expr,
+                req.solve_for,
+                recorder,
                 group="solve",
                 reads=tuple(expr_sym_names),
                 max_steps=req.max_steps,
@@ -205,7 +235,8 @@ async def ugsci_derive_formula(
             # Optionally simplify
             if req.idempotent:
                 result_expr = do_simplify(
-                    result_expr, recorder,
+                    result_expr,
+                    recorder,
                     idempotent=True,
                     group="reduce",
                     reads=tuple(expr_sym_names),
@@ -226,7 +257,9 @@ async def ugsci_derive_formula(
         # Build the domain result
         result = {
             "derived_expression": str(result_expr),
-            "symbols": {name: info["unit"] for name, info in sym_table.items()},
+            "symbols": {
+                name: info["unit"] for name, info in sym_table.items()
+            },
         }
         provenance = _build_provenance(
             symbol_table=sym_table,
@@ -256,7 +289,10 @@ async def ugsci_derive_formula(
     except DomainError as exc:
         return _chunk(_error_payload(exc, recorder), error=True)
     except Exception as exc:  # noqa: BLE001
-        return _chunk(_error_payload(wrap_unknown_error(exc), recorder), error=True)
+        return _chunk(
+            _error_payload(wrap_unknown_error(exc), recorder),
+            error=True,
+        )
 
 
 # ── ugsci_evaluate_formula ──────────────────────────────────────────────────
@@ -279,30 +315,40 @@ async def ugsci_evaluate_formula(
         return _feature_unavailable()
 
     if not is_sympy_available():
-        return _chunk(_ff_errors.dependency_unavailable().to_dict(), error=True)
+        return _chunk(
+            _ff_errors.dependency_unavailable().to_dict(),
+            error=True,
+        )
 
     recorder: TraceRecorder | None = None
     try:
         resolved_max_steps = _resolved_max_steps(max_steps)
-        req = EvaluateFormulaRequest.from_dict({
-            "expression": expression,
-            "inputs": inputs,
-            "units": units or {},
-            "output_symbol": output_symbol,
-            "tolerance": tolerance,
-            "max_steps": resolved_max_steps,
-        })
+        req = EvaluateFormulaRequest.from_dict(
+            {
+                "expression": expression,
+                "inputs": inputs,
+                "units": units or {},
+                "output_symbol": output_symbol,
+                "tolerance": tolerance,
+                "max_steps": resolved_max_steps,
+            },
+        )
 
         # Parse the expression
         allowed_symbols = set(req.inputs.keys())
         if req.output_symbol:
             allowed_symbols.add(req.output_symbol)
-        expr = parse_expression(req.expression, allowed_symbols=allowed_symbols)
+        expr = parse_expression(
+            req.expression,
+            allowed_symbols=allowed_symbols,
+        )
 
         # Build symbol table
         expr_sym_names = {str(s) for s in expr.free_symbols}
         sym_table = build_symbol_table(req.units, expr_symbols=expr_sym_names)
-        effective_units = {name: info["unit"] for name, info in sym_table.items()}
+        effective_units = {
+            name: info["unit"] for name, info in sym_table.items()
+        }
 
         recorder = TraceRecorder(
             title=f"Freeform evaluation: {req.expression}",
@@ -359,7 +405,10 @@ async def ugsci_evaluate_formula(
     except DomainError as exc:
         return _chunk(_error_payload(exc, recorder), error=True)
     except Exception as exc:  # noqa: BLE001
-        return _chunk(_error_payload(wrap_unknown_error(exc), recorder), error=True)
+        return _chunk(
+            _error_payload(wrap_unknown_error(exc), recorder),
+            error=True,
+        )
 
 
 # ── ugsci_transform_formula ─────────────────────────────────────────────────
@@ -374,29 +423,36 @@ async def ugsci_transform_formula(
     max_steps: int | None = None,
     idempotent: bool | None = None,
 ) -> Any:
-    """Rename / rearrange a given equation, returning the transformed form as a trace.
+    """Rename / rearrange a given equation, returning the transformed form \
+as a trace.
 
-    Operations: rearrange, substitute, simplify, expand, collect, solve_for.
+    Operations: rearrange, substitute, simplify, expand, collect, \
+solve_for.
     """
     if not _is_freeform_enabled():
         return _feature_unavailable()
 
     if not is_sympy_available():
-        return _chunk(_ff_errors.dependency_unavailable().to_dict(), error=True)
+        return _chunk(
+            _ff_errors.dependency_unavailable().to_dict(),
+            error=True,
+        )
 
     recorder: TraceRecorder | None = None
     try:
         resolved_max_steps = _resolved_max_steps(max_steps)
         resolved_simplify = _resolved_simplify(idempotent)
-        req = TransformFormulaRequest.from_dict({
-            "expression": expression,
-            "operation": operation,
-            "solve_for": solve_for,
-            "substitution": substitution or {},
-            "symbols": symbols or {},
-            "max_steps": resolved_max_steps,
-            "idempotent": resolved_simplify,
-        })
+        req = TransformFormulaRequest.from_dict(
+            {
+                "expression": expression,
+                "operation": operation,
+                "solve_for": solve_for,
+                "substitution": substitution or {},
+                "symbols": symbols or {},
+                "max_steps": resolved_max_steps,
+                "idempotent": resolved_simplify,
+            },
+        )
 
         # Parse the expression
         allowed_symbols = set(req.symbols.keys())
@@ -406,11 +462,17 @@ async def ugsci_transform_formula(
         if not req.symbols:
             allowed_symbols = None
 
-        expr = parse_expression(req.expression, allowed_symbols=allowed_symbols)
+        expr = parse_expression(
+            req.expression,
+            allowed_symbols=allowed_symbols,
+        )
 
         # Build symbol table
         expr_sym_names = {str(s) for s in expr.free_symbols}
-        sym_table = build_symbol_table(req.symbols, expr_symbols=expr_sym_names)
+        sym_table = build_symbol_table(
+            req.symbols,
+            expr_symbols=expr_sym_names,
+        )
 
         recorder = TraceRecorder(
             title=f"Freeform transform ({req.operation}): {req.expression}",
@@ -435,19 +497,24 @@ async def ugsci_transform_formula(
         reads = tuple(expr_sym_names)
         if req.operation in ("rearrange", "solve_for"):
             result_expr = do_rearrange(
-                expr, req.solve_for, recorder,
+                expr,
+                req.solve_for,
+                recorder,
                 group="solve",
                 reads=reads,
                 max_steps=req.max_steps,
             )
         elif req.operation == "substitute":
             replacement_allowed = (
-                set(req.symbols) | ({req.solve_for} if req.solve_for else set())
+                set(req.symbols)
+                | ({req.solve_for} if req.solve_for else set())
                 if req.symbols
                 else None
             )
             result_expr = do_substitute(
-                expr, req.substitution, recorder,
+                expr,
+                req.substitution,
+                recorder,
                 group="substitute",
                 reads=reads,
                 writes="result",
@@ -455,7 +522,8 @@ async def ugsci_transform_formula(
             )
         elif req.operation == "simplify":
             result_expr = do_simplify(
-                expr, recorder,
+                expr,
+                recorder,
                 idempotent=req.idempotent,
                 group="reduce",
                 reads=reads,
@@ -463,14 +531,18 @@ async def ugsci_transform_formula(
             )
         elif req.operation == "expand":
             result_expr = do_expand(
-                expr, recorder,
+                expr,
+                recorder,
                 group="reduce",
                 reads=reads,
                 writes="result",
             )
         elif req.operation == "collect":
             result_expr = do_collect(
-                expr, req.solve_for or list(expr_sym_names)[0] if expr_sym_names else "x",
+                expr,
+                req.solve_for or list(expr_sym_names)[0]
+                if expr_sym_names
+                else "x",
                 recorder,
                 group="reduce",
                 reads=reads,
@@ -485,7 +557,8 @@ async def ugsci_transform_formula(
         # Optional simplify after transform
         if req.idempotent and req.operation != "simplify":
             result_expr = do_simplify(
-                result_expr, recorder,
+                result_expr,
+                recorder,
                 idempotent=True,
                 group="reduce",
                 reads=reads,
@@ -526,7 +599,10 @@ async def ugsci_transform_formula(
     except DomainError as exc:
         return _chunk(_error_payload(exc, recorder), error=True)
     except Exception as exc:  # noqa: BLE001
-        return _chunk(_error_payload(wrap_unknown_error(exc), recorder), error=True)
+        return _chunk(
+            _error_payload(wrap_unknown_error(exc), recorder),
+            error=True,
+        )
 
 
 # ── ugsci_formula_preview ────────────────────────────────────────────────────
@@ -545,28 +621,39 @@ async def ugsci_formula_preview(
         return _feature_unavailable()
 
     if not is_sympy_available():
-        return _chunk(_ff_errors.dependency_unavailable().to_dict(), error=True)
+        return _chunk(
+            _ff_errors.dependency_unavailable().to_dict(),
+            error=True,
+        )
 
     try:
-        req = FormulaPreviewRequest.from_dict({
-            "expression": expression,
-            "symbols": symbols or {},
-        })
+        req = FormulaPreviewRequest.from_dict(
+            {
+                "expression": expression,
+                "symbols": symbols or {},
+            },
+        )
 
         # Parse the expression
         allowed_symbols = set(req.symbols.keys()) if req.symbols else None
-        expr = parse_expression(req.expression, allowed_symbols=allowed_symbols)
+        expr = parse_expression(
+            req.expression,
+            allowed_symbols=allowed_symbols,
+        )
 
         # Build symbol table
         expr_sym_names = {str(s) for s in expr.free_symbols}
-        sym_table = build_symbol_table(req.symbols, expr_symbols=expr_sym_names)
+        sym_table = build_symbol_table(
+            req.symbols,
+            expr_symbols=expr_sym_names,
+        )
 
         # Return the preview
         result = {
             "parseable": True,
             "expression": str(expr),
             "free_symbols": sorted(expr_sym_names),
-            "symbols": {name: info for name, info in sym_table.items()},
+            "symbols": sym_table.copy(),
             "ops": int(expr.count_ops()) if hasattr(expr, "count_ops") else 0,
         }
         provenance = _build_provenance(

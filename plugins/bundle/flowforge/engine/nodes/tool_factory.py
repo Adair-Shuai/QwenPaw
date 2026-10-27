@@ -39,7 +39,6 @@ import asyncio
 import time
 from typing import Any, ClassVar, Iterable
 
-import logging
 
 from ..adapter import BaseTool, ToolCategory, ToolRegistry
 from ..adapter.log_compat import get_logger
@@ -113,17 +112,28 @@ def _build_schema(tool: BaseTool) -> Schema:
         inputs=[
             *typed_inputs,
             IO.Int.Input(
-                id=controls["retry_count"], optional=True, default=0, min=0, max=10,
-                tooltip="Retry attempts on transient failure (exponential backoff).",
+                id=controls["retry_count"],
+                optional=True,
+                default=0,
+                min=0,
+                max=10,
+                tooltip="Retry attempts on transient failure "
+                "(exponential backoff).",
             ),
             IO.Float.Input(
-                id=controls["retry_delay_sec"], optional=True, default=1.0,
-                min=0.0, max=60.0, step=0.5,
+                id=controls["retry_delay_sec"],
+                optional=True,
+                default=1.0,
+                min=0.0,
+                max=60.0,
+                step=0.5,
                 tooltip="Base delay between retries, doubled each attempt.",
             ),
             IO.String.Input(
-                id=controls["output"], optional=True,
-                tooltip="Optional workflow-state variable to store the result in.",
+                id=controls["output"],
+                optional=True,
+                tooltip="Optional workflow-state variable to store "
+                "the result in.",
             ),
         ],
         outputs=[IO.Any.Output(id="result")],
@@ -176,7 +186,12 @@ class _GeneratedToolNodeBase(WorkflowNode):
     def define_schema(cls) -> Schema:  # pragma: no cover - overridden per tool
         raise NotImplementedError
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         ctx = hidden.tool_context
         if ctx is None or getattr(ctx, "tool_executor", None) is None:
             return NodeOutput(
@@ -191,11 +206,21 @@ class _GeneratedToolNodeBase(WorkflowNode):
             params = state.resolve_template(params)
 
         controls = schema.metadata["control_inputs"]
-        retry_count = max(0, min(10, int(inputs.get(controls["retry_count"]) or 0)))
-        retry_delay_sec = max(0.0, min(60.0, float(inputs.get(controls["retry_delay_sec"], 1.0))))
+        retry_count = max(
+            0,
+            min(10, int(inputs.get(controls["retry_count"]) or 0)),
+        )
+        retry_delay_sec = max(
+            0.0,
+            min(60.0, float(inputs.get(controls["retry_delay_sec"], 1.0))),
+        )
         output_var = inputs.get(controls["output"])
 
-        tool_context = ctx.get_tool_context(state) if hasattr(ctx, "get_tool_context") else None
+        tool_context = (
+            ctx.get_tool_context(state)
+            if hasattr(ctx, "get_tool_context")
+            else None
+        )
 
         start = time.monotonic()
         last_error: str | None = None
@@ -204,7 +229,11 @@ class _GeneratedToolNodeBase(WorkflowNode):
 
         for attempt in range(retry_count + 1):
             try:
-                exec_result = await ctx.tool_executor.execute(tool_name, params, tool_context)
+                exec_result = await ctx.tool_executor.execute(
+                    tool_name,
+                    params,
+                    tool_context,
+                )
                 tool_result = exec_result.result
                 if tool_result.success:
                     duration_ms = int((time.monotonic() - start) * 1000)
@@ -225,18 +254,22 @@ class _GeneratedToolNodeBase(WorkflowNode):
                     break
                 logger.warning(
                     "tool_node_failed",
-                    tool=tool_name, attempt=attempt + 1, error=last_error,
+                    tool=tool_name,
+                    attempt=attempt + 1,
+                    error=last_error,
                 )
             except Exception as exc:  # noqa: BLE001
                 last_error = str(exc)
                 logger.error(
                     "tool_node_exception",
-                    tool=tool_name, attempt=attempt + 1,
-                    error=last_error, exc_info=True,
+                    tool=tool_name,
+                    attempt=attempt + 1,
+                    error=last_error,
+                    exc_info=True,
                 )
 
             if attempt < retry_count:
-                await asyncio.sleep(retry_delay_sec * (2 ** attempt))
+                await asyncio.sleep(retry_delay_sec * (2**attempt))
 
         duration_ms = int((time.monotonic() - start) * 1000)
         return NodeOutput(
@@ -261,10 +294,14 @@ def build_node_class(tool: BaseTool) -> type[WorkflowNode]:
     node_id = f"{_NODE_ID_PREFIX}{tool.name}"
     schema = _build_schema(tool)
     cached = _FACTORY_CACHE.get(tool.name)
-    if cached is not None and cached.NODE_ID == node_id and cached.get_schema().get_info_dict() == schema.get_info_dict():
+    if (
+        cached is not None
+        and cached.NODE_ID == node_id
+        and cached.get_schema().get_info_dict() == schema.get_info_dict()
+    ):
         return cached
 
-    def define_schema(cls, _schema=schema) -> Schema:
+    def define_schema(_cls, _schema=schema) -> Schema:
         return _schema
 
     cls_name = _safe_class_name(tool.name)
@@ -303,14 +340,17 @@ def register_tool_nodes(
         try:
             cls = build_node_class(tool)
             node_registry.register(
-                cls, module_path=f"tool_factory:{tool.name}",
+                cls,
+                module_path=f"tool_factory:{tool.name}",
             )
             registered.append(cls.NODE_ID)
         except Exception as exc:  # noqa: BLE001
             skipped.append((tool.name, str(exc)))
             logger.error(
                 "tool_node_factory_failed",
-                tool=tool.name, error=str(exc), exc_info=True,
+                tool=tool.name,
+                error=str(exc),
+                exc_info=True,
             )
 
     logger.info(

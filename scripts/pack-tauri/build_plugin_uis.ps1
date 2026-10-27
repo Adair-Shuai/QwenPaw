@@ -20,6 +20,20 @@ if (-not (Test-Path $PLUGIN_STAGE_SCRIPT)) {
 
 Write-Host "[build_plugin_uis] Building plugin frontend bundles..."
 
+# OpenUI emits plugin-root dist/ from frontend/, rather than ui/dist/.
+$openuiFrontend = Join-Path $REPO_ROOT "plugins/bundle/qwenpaw-openui/frontend"
+npm ci --prefix $openuiFrontend
+if ($LASTEXITCODE -ne 0) { throw "OpenUI dependency installation failed" }
+npm run build --prefix $openuiFrontend
+if ($LASTEXITCODE -ne 0) { throw "OpenUI frontend build failed" }
+foreach ($asset in @("index.js", "system-prompt.txt")) {
+    $assetPath = Join-Path $REPO_ROOT "plugins/bundle/qwenpaw-openui/dist/$asset"
+    if (-not (Test-Path -LiteralPath $assetPath -PathType Leaf) -or
+        (Get-Item -LiteralPath $assetPath).Length -eq 0) {
+        throw "OpenUI build output missing or empty: $asset"
+    }
+}
+
 function Sync-ChangedFiles {
     param(
         [Parameter(Mandatory = $true)][string]$Source,

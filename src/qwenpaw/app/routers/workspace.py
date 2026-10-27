@@ -1452,7 +1452,7 @@ def _is_officecli_available() -> bool:
     Successful checks are cached. Failed checks expire so installation or
     a transient startup failure can recover without restarting the host.
     """
-    global _officecli_checked, _officecli_ok, _officecli_probe_at  # noqa: PLW0603
+    global _officecli_checked, _officecli_ok, _officecli_probe_at
     now = time.monotonic()
     if _officecli_checked and (
         _officecli_ok or now - _officecli_probe_at < _OFFICECLI_RETRY_AFTER
@@ -1564,9 +1564,7 @@ def _get_officecli_page_count(file_path: str) -> int:
     invocations on every screenshot request.
     Returns 0 if the count cannot be determined (best-effort).
     """
-    import time as _time
-
-    now = _time.time()
+    now = time.time()
 
     # Evict expired entries to prevent unbounded growth.
     expired = [

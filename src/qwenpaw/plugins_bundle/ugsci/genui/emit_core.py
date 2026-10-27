@@ -68,7 +68,8 @@ def store_validated_tree(
     allow_actions: list[str] | None = None,
     allow_file_input: bool | None = None,
 ) -> dict[str, Any]:
-    """Validate ``tree``, persist it, and return the standard GenUI envelope."""
+    """Validate ``tree``, persist it, and return the standard GenUI
+    envelope."""
     if not load_settings().get("enabled", True):
         raise RuntimeError("feature_disabled")
     session_id = get_session_id()
@@ -76,8 +77,12 @@ def store_validated_tree(
         raise RuntimeError("missing_session_context")
     normalized = validate_ui_tree(
         tree,
-        allow_actions=allow_actions if allow_actions is not None else resolve_allow_actions(),
-        allow_file_input=resolve_allow_file_input() if allow_file_input is None else allow_file_input,
+        allow_actions=allow_actions
+        if allow_actions is not None
+        else resolve_allow_actions(),
+        allow_file_input=resolve_allow_file_input()
+        if allow_file_input is None
+        else allow_file_input,
     )
     snapshot = get_state_store().create(
         session_id=session_id,

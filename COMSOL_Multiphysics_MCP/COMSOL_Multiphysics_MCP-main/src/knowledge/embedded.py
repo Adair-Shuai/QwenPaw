@@ -1,59 +1,125 @@
+# -*- coding: utf-8 -*-
 """Knowledge base tools for COMSOL MCP Server."""
 
 from pathlib import Path
-from typing import Optional
+from typing import Optional, TypedDict
 from mcp.server.fastmcp import FastMCP
 
 KNOWLEDGE_DIR = Path(__file__).parent / "prompts"
 
-KNOWLEDGE_FILES = {
+
+class _KnowledgeFile(TypedDict):
+    file: str
+    title: str
+    description: str
+    keywords: list[str]
+
+
+KNOWLEDGE_FILES: dict[str, _KnowledgeFile] = {
     "mph_api": {
         "file": "mph_api.md",
         "title": "MPh API Reference",
         "description": "Python API for controlling COMSOL via MPh library",
-        "keywords": ["api", "python", "client", "model", "mph", "function", "method"],
+        "keywords": [
+            "api",
+            "python",
+            "client",
+            "model",
+            "mph",
+            "function",
+            "method",
+        ],
     },
     "physics_guide": {
         "file": "physics_guide.md",
         "description": "Guide to physics interfaces and boundary conditions",
         "title": "Physics Interfaces Guide",
-        "keywords": ["physics", "electrostatics", "heat", "solid", "fluid", "boundary", "condition"],
+        "keywords": [
+            "physics",
+            "electrostatics",
+            "heat",
+            "solid",
+            "fluid",
+            "boundary",
+            "condition",
+        ],
     },
     "workflow": {
         "file": "workflow.md",
         "title": "Modeling Workflow Guide",
         "description": "Step-by-step workflows for common simulation tasks",
-        "keywords": ["workflow", "example", "tutorial", "step", "process", "howto"],
+        "keywords": [
+            "workflow",
+            "example",
+            "tutorial",
+            "step",
+            "process",
+            "howto",
+        ],
     },
 }
 
 TOPIC_GUIDES = {
     "electrostatics": {
         "physics": "electrostatic",
-        "boundary_conditions": ["Ground", "ElectricPotential", "SurfaceChargeDensity", "Terminal"],
+        "boundary_conditions": [
+            "Ground",
+            "ElectricPotential",
+            "SurfaceChargeDensity",
+            "Terminal",
+        ],
         "common_expressions": ["es.normE", "es.V", "es.intWe"],
         "tips": [
             "Use Terminal boundary condition for capacitance calculations",
-            "Ground and ElectricPotential are the most common boundary conditions",
+            (
+                "Ground and ElectricPotential are the most "
+                "common boundary "
+                "conditions"
+            ),
             "Capacitance can be calculated as C = 2*es.intWe/U^2",
         ],
     },
     "heat_transfer": {
         "physics": "heat_transfer",
-        "boundary_conditions": ["Temperature", "HeatFlux", "ConvectiveHeatFlux", "Radiation"],
+        "boundary_conditions": [
+            "Temperature",
+            "HeatFlux",
+            "ConvectiveHeatFlux",
+            "Radiation",
+        ],
         "common_expressions": ["T", "ht.qx", "ht.gradT", "ht.Tmax"],
         "tips": [
-            "ConvectiveHeatFlux requires convection coefficient and ambient temperature",
+            (
+                "ConvectiveHeatFlux requires convection "
+                "coefficient and ambient "
+                "temperature"
+            ),
             "Use Symmetry boundary for adiabatic conditions",
             "Time-dependent studies are common for transient heat transfer",
         ],
     },
     "solid_mechanics": {
         "physics": "solid_mechanics",
-        "boundary_conditions": ["Fixed", "Roller", "Symmetry", "BoundaryLoad", "Displacement"],
-        "common_expressions": ["solid.mises", "solid.disp", "solid.u", "solid.v", "solid.w"],
+        "boundary_conditions": [
+            "Fixed",
+            "Roller",
+            "Symmetry",
+            "BoundaryLoad",
+            "Displacement",
+        ],
+        "common_expressions": [
+            "solid.mises",
+            "solid.disp",
+            "solid.u",
+            "solid.v",
+            "solid.w",
+        ],
         "tips": [
-            "Von Mises stress (solid.mises) is commonly used for failure analysis",
+            (
+                "Von Mises stress (solid.mises) is commonly used "
+                "for failure "
+                "analysis"
+            ),
             "Fixed constraint fully constrains all displacement components",
             "Use symmetry boundary to reduce model size",
         ],
@@ -227,11 +293,11 @@ def _load_knowledge_file(name: str) -> str:
     """Load content from a knowledge file."""
     if name not in KNOWLEDGE_FILES:
         return ""
-    
+
     file_path = KNOWLEDGE_DIR / KNOWLEDGE_FILES[name]["file"]
     if not file_path.exists():
         return ""
-    
+
     return file_path.read_text(encoding="utf-8")
 
 
@@ -245,14 +311,14 @@ def get_docs(topic: str) -> dict:
             "error": f"Unknown topic: {topic}",
             "available_topics": available,
         }
-    
+
     content = _load_knowledge_file(topic)
     if not content:
         return {
             "success": False,
             "error": f"Could not load documentation for: {topic}",
         }
-    
+
     info = KNOWLEDGE_FILES[topic]
     return {
         "success": True,
@@ -267,13 +333,15 @@ def list_docs() -> dict:
     """List all available documentation topics."""
     topics = []
     for name, info in KNOWLEDGE_FILES.items():
-        topics.append({
-            "name": name,
-            "title": info["title"],
-            "description": info["description"],
-            "keywords": info["keywords"],
-        })
-    
+        topics.append(
+            {
+                "name": name,
+                "title": info["title"],
+                "description": info["description"],
+                "keywords": info["keywords"],
+            },
+        )
+
     return {
         "success": True,
         "topics": topics,
@@ -290,9 +358,9 @@ def get_physics_guide(physics_type: str) -> dict:
             "error": f"Unknown physics type: {physics_type}",
             "available_types": available,
         }
-    
+
     guide = TOPIC_GUIDES[physics_type]
-    
+
     return {
         "success": True,
         "physics_type": physics_type,
@@ -314,9 +382,9 @@ def get_troubleshoot(error_type: str, context: Optional[str] = None) -> dict:
             "error": f"Unknown error type: {error_type}",
             "available_types": available,
         }
-    
+
     info = TROUBLESHOOTING[error_type]
-    
+
     return {
         "success": True,
         "error_type": error_type,
@@ -335,7 +403,7 @@ def get_best_practices(category: str) -> dict:
             "error": f"Unknown category: {category}",
             "available_categories": available,
         }
-    
+
     return {
         "success": True,
         "category": category,
@@ -344,33 +412,43 @@ def get_best_practices(category: str) -> dict:
 
 
 # Module-level PDF search functions for direct import and testing
-def get_pdf_search(query: str, n_results: int = 5, module: Optional[str] = None) -> dict:
+def get_pdf_search(
+    query: str,
+    n_results: int = 5,
+    module: Optional[str] = None,
+) -> dict:
     """Search COMSOL PDF documentation using semantic search."""
     from .retriever import get_retriever, check_pdf_dependencies
-    
+
     deps = check_pdf_dependencies()
     if not deps.get("chromadb") or not deps.get("pymupdf"):
         return {
             "success": False,
-            "error": "PDF search requires additional dependencies. Install with: pip install chromadb pymupdf sentence-transformers",
+            ("error"): (
+                "PDF search requires additional dependencies. "
+                "Install with: pip install chromadb pymupdf "
+                "sentence-transformers"
+            ),
             "missing_deps": [k for k, v in deps.items() if not v],
         }
-    
+
     retriever = get_retriever()
     if not retriever.is_initialized:
         retriever.initialize()
     stats = retriever.get_stats()
-    
+
     if not stats.get("initialized") or stats.get("count", 0) == 0:
         return {
             "success": False,
-            "error": "PDF knowledge base not built. Run the build script first.",
+            ("error"): (
+                "PDF knowledge base not built. Run the build " "script first."
+            ),
             "hint": "Run: python scripts/build_knowledge_base.py",
         }
-    
+
     n_results = min(n_results, 20)
     results = retriever.search(query, n_results, module)
-    
+
     return {
         "success": True,
         "query": query,
@@ -385,26 +463,28 @@ def get_pdf_search_status() -> dict:
     """Get the status of the PDF documentation search system."""
     from .retriever import get_retriever, check_pdf_dependencies
     from .pdf_processor import PDFProcessor, DEFAULT_PDF_DIR
-    
+
     deps = check_pdf_dependencies()
-    
+
     result = {
         "success": True,
         "dependencies": deps,
         "all_deps_installed": all(deps.values()),
     }
-    
+
     if not deps.get("chromadb"):
         result["status"] = "Dependencies not installed"
-        result["hint"] = "Run: pip install chromadb pymupdf sentence-transformers"
+        result[
+            "hint"
+        ] = "Run: pip install chromadb pymupdf sentence-transformers"
         return result
-    
+
     retriever = get_retriever()
     if not retriever.is_initialized:
         retriever.initialize()
     stats = retriever.get_stats()
     result["vector_store"] = stats
-    
+
     try:
         processor = PDFProcessor(DEFAULT_PDF_DIR)
         modules = processor.get_available_modules()
@@ -414,24 +494,24 @@ def get_pdf_search_status() -> dict:
             result["modules"].append(f"... and {len(modules) - 20} more")
     except Exception as e:
         result["pdf_error"] = str(e)
-    
+
     if stats.get("count", 0) == 0:
         result["status"] = "Knowledge base not built"
         result["hint"] = "Run: python scripts/build_knowledge_base.py"
     else:
         result["status"] = "Ready"
-    
+
     return result
 
 
 def get_pdf_list_modules() -> dict:
     """List all available COMSOL documentation modules."""
     from .pdf_processor import PDFProcessor, DEFAULT_PDF_DIR
-    
+
     try:
         processor = PDFProcessor(DEFAULT_PDF_DIR)
         modules = processor.get_available_modules()
-        
+
         return {
             "success": True,
             "modules": modules,
@@ -446,130 +526,120 @@ def get_pdf_list_modules() -> dict:
 
 def register_knowledge_tools(mcp: FastMCP) -> None:
     """Register knowledge base tools with the MCP server."""
-    
+
     @mcp.tool()
     def docs_get(topic: str) -> dict:
-        """
-        Get documentation on a specific topic.
-        
-        Available topics:
-        - "mph_api": MPh Python API reference
-        - "physics_guide": Physics interfaces and boundary conditions
-        - "workflow": Step-by-step modeling workflows
-        
-        Args:
-            topic: Documentation topic to retrieve
-        
-        Returns:
-            Documentation content for the topic
-        """
+        (
+            "\n        Get documentation on a specific topic.\n    "
+            '    \n        Available topics:\n        - "mph_api": '
+            'MPh Python API reference\n        - "physics_guide": '
+            "Physics interfaces and boundary conditions\n        "
+            '- "workflow": Step-by-step modeling workflows\n      '
+            "  \n        Args:\n            topic: Documentation "
+            "topic to retrieve\n        \n        Returns:\n        "
+            "    Documentation content for the topic\n        "
+        )
         return get_docs(topic)
-    
+
     @mcp.tool()
     def docs_list() -> dict:
-        """
-        List all available documentation topics.
-        
-        Returns:
-            List of available documentation topics with descriptions
-        """
+        (
+            "\n        List all available documentation topics.\n  "
+            "      \n        Returns:\n            List of "
+            "available documentation topics with descriptions\n   "
+            "     "
+        )
         return list_docs()
-    
+
     @mcp.tool()
     def physics_get_guide(physics_type: str) -> dict:
-        """
-        Get a quick guide for a specific physics type.
-        
-        Available physics types:
-        - "electrostatics": Electric field and capacitance
-        - "heat_transfer": Thermal analysis
-        - "solid_mechanics": Stress and deformation
-        - "fluid_flow": CFD analysis
-        
-        Args:
-            physics_type: Type of physics to get guide for
-        
-        Returns:
-            Quick reference guide for the physics type
-        """
+        (
+            "\n        Get a quick guide for a specific physics "
+            "type.\n        \n        Available physics types:\n    "
+            '    - "electrostatics": Electric field and '
+            'capacitance\n        - "heat_transfer": Thermal '
+            'analysis\n        - "solid_mechanics": Stress and '
+            'deformation\n        - "fluid_flow": CFD analysis\n   '
+            "     \n        Args:\n            physics_type: Type "
+            "of physics to get guide for\n        \n        "
+            "Returns:\n            Quick reference guide for the "
+            "physics type\n        "
+        )
         return get_physics_guide(physics_type)
-    
+
     @mcp.tool()
     def troubleshoot(error_type: str, context: Optional[str] = None) -> dict:
-        """
-        Get troubleshooting suggestions for common issues.
-        
-        Common error types:
-        - "geometry_build_failed": Geometry sequence failed to build
-        - "mesh_failed": Mesh generation failed
-        - "solver_no_convergence": Solver did not converge
-        - "memory_error": Out of memory
-        - "license_error": COMSOL license issues
-        
-        Args:
-            error_type: Type of error encountered
-            context: Additional context about the error
-        
-        Returns:
-            Troubleshooting suggestions
-        """
+        (
+            "\n        Get troubleshooting suggestions for common "
+            "issues.\n        \n        Common error types:\n       "
+            ' - "geometry_build_failed": Geometry sequence '
+            'failed to build\n        - "mesh_failed": Mesh '
+            "generation failed\n        - "
+            '"solver_no_convergence": Solver did not converge\n   '
+            '     - "memory_error": Out of memory\n        - '
+            '"license_error": COMSOL license issues\n        \n    '
+            "    Args:\n            error_type: Type of error "
+            "encountered\n            context: Additional context "
+            "about the error\n        \n        Returns:\n          "
+            "  Troubleshooting suggestions\n        "
+        )
         return get_troubleshoot(error_type, context)
-    
+
     @mcp.tool()
     def modeling_best_practices(category: str) -> dict:
-        """
-        Get best practices for different modeling categories.
-        
-        Categories:
-        - "geometry": Geometry creation and import
-        - "mesh": Mesh generation strategies
-        - "physics": Physics interface configuration
-        - "solver": Solver configuration and optimization
-        - "results": Results evaluation and visualization
-        
-        Args:
-            category: Category to get best practices for
-        
-        Returns:
-            Best practices for the specified category
-        """
+        (
+            "\n        Get best practices for different modeling "
+            "categories.\n        \n        Categories:\n        - "
+            '"geometry": Geometry creation and import\n        - '
+            '"mesh": Mesh generation strategies\n        - '
+            '"physics": Physics interface configuration\n        '
+            '- "solver": Solver configuration and optimization\n  '
+            '      - "results": Results evaluation and '
+            "visualization\n        \n        Args:\n            "
+            "category: Category to get best practices for\n       "
+            " \n        Returns:\n            Best practices for "
+            "the specified category\n        "
+        )
         return get_best_practices(category)
-    
+
     @mcp.tool()
-    def pdf_search(query: str, n_results: int = 5, module: Optional[str] = None) -> dict:
-        """
-        Search COMSOL PDF documentation using semantic search.
-        
-        This searches through the indexed COMSOL documentation (60+ modules)
-        to find relevant information about physics, modeling, and API usage.
-        
-        Args:
-            query: Search query describing what you're looking for
-            n_results: Number of results to return (default: 5, max: 20)
-            module: Optional module filter (e.g., "CFD_Module", "Heat_Transfer_Module")
-        
-        Returns:
-            Search results with relevant documentation snippets
-        """
+    def pdf_search(
+        query: str,
+        n_results: int = 5,
+        module: Optional[str] = None,
+    ) -> dict:
+        (
+            "\n        Search COMSOL PDF documentation using "
+            "semantic search.\n        \n        This searches "
+            "through the indexed COMSOL documentation (60+ "
+            "modules)\n        to find relevant information about "
+            "physics, modeling, and API usage.\n        \n        "
+            "Args:\n            query: Search query describing "
+            "what you're looking for\n            n_results: "
+            "Number of results to return (default: 5, max: 20)\n  "
+            "          module: Optional module filter (e.g., "
+            '"CFD_Module", "Heat_Transfer_Module")\n        \n     '
+            "   Returns:\n            Search results with "
+            "relevant documentation snippets\n        "
+        )
         return get_pdf_search(query, n_results, module)
-    
+
     @mcp.tool()
     def pdf_search_status() -> dict:
-        """
-        Get the status of the PDF documentation search system.
-        
-        Returns:
-            Status information including whether the knowledge base is built,
-            number of indexed documents, and available modules.
-        """
+        (
+            "\n        Get the status of the PDF documentation "
+            "search system.\n        \n        Returns:\n           "
+            " Status information including whether the knowledge "
+            "base is built,\n            number of indexed "
+            "documents, and available modules.\n        "
+        )
         return get_pdf_search_status()
-    
+
     @mcp.tool()
     def pdf_list_modules() -> dict:
-        """
-        List all available COMSOL documentation modules.
-        
-        Returns:
-            List of module names with file counts
-        """
+        (
+            "\n        List all available COMSOL documentation "
+            "modules.\n        \n        Returns:\n            List "
+            "of module names with file counts\n        "
+        )
         return get_pdf_list_modules()

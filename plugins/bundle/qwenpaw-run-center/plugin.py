@@ -71,6 +71,7 @@ class RunCenterPlugin:
             callback=self._on_uninstall,
         )
         from .runtime.presentation import register_presentation_tools
+
         register_presentation_tools(api, self.repository)
         logger.info("[%s] Run Center registered at /api/run-center", PLUGIN_ID)
 
@@ -100,7 +101,10 @@ class RunCenterPlugin:
             provider_id=provider_id,
             executor=executor,
         )
-        key = (str(operation).strip(), str(provider_id).strip() if provider_id else None)
+        key = (
+            str(operation).strip(),
+            str(provider_id).strip() if provider_id else None,
+        )
         self._internal_executors[key] = SimpleNamespace(
             operation=key[0],
             provider_id=key[1],
@@ -110,14 +114,23 @@ class RunCenterPlugin:
 
     def _sync_operations(self) -> None:
         """Persist the current host registry, including runtime reloads."""
-        api = self._api
+        self._sync_operations_from_host(self._api)
+
+    def _sync_operations_from_host(self, api: Any) -> None:
+        """Persist the current host registry, including runtime reloads."""
         get_operations = getattr(api, "get_operations", None)
         if not callable(get_operations):
             return
         try:
             registrations = get_operations()
-        except Exception as exc:  # pragma: no cover - defensive plugin boundary
-            logger.warning("[%s] Operation metadata sync unavailable: %s", PLUGIN_ID, exc)
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - defensive plugin boundary
+            logger.warning(
+                "[%s] Operation metadata sync unavailable: %s",
+                PLUGIN_ID,
+                exc,
+            )
             return
         snapshot = [
             {
@@ -130,28 +143,46 @@ class RunCenterPlugin:
         ]
         try:
             self.repository.replace_operations(snapshot)
-        except Exception as exc:  # pragma: no cover - defensive plugin boundary
-            logger.warning("[%s] Failed to persist Operation registry: %s", PLUGIN_ID, exc)
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - defensive plugin boundary
+            logger.warning(
+                "[%s] Failed to persist Operation registry: %s",
+                PLUGIN_ID,
+                exc,
+            )
         self._sync_executors()
 
     def _sync_executors(self) -> None:
         """Attach runtime handlers contributed through the host PluginApi."""
-        api = self._api
+        self._sync_executors_from_host(self._api)
+
+    def _sync_executors_from_host(self, api: Any) -> None:
+        """Attach runtime handlers contributed through the host PluginApi."""
         get_executors = getattr(api, "get_run_executors", None)
         if not callable(get_executors):
             return
         try:
             registrations = list(get_executors())
-        except Exception as exc:  # pragma: no cover - defensive plugin boundary
-            logger.warning("[%s] Run executor discovery unavailable: %s", PLUGIN_ID, exc)
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - defensive plugin boundary
+            logger.warning(
+                "[%s] Run executor discovery unavailable: %s",
+                PLUGIN_ID,
+                exc,
+            )
             return
         try:
             # Preserve direct Run Center integrations while replacing the
             # host-owned snapshot so unloaded plugin handlers cannot survive.
             host_keys = {
-                (str(getattr(item, "operation", "")).strip(),
-                 str(getattr(item, "provider_id", "")).strip()
-                 if getattr(item, "provider_id", None) else None)
+                (
+                    str(getattr(item, "operation", "")).strip(),
+                    str(getattr(item, "provider_id", "")).strip()
+                    if getattr(item, "provider_id", None)
+                    else None,
+                )
                 for item in registrations
             }
             registrations.extend(
@@ -160,13 +191,22 @@ class RunCenterPlugin:
                 if key not in host_keys
             )
             self.executor_service.replace_registrations(registrations)
-        except Exception as exc:  # pragma: no cover - isolate provider failures
-            logger.warning("[%s] Failed to refresh run executors: %s", PLUGIN_ID, exc)
+        except (
+            Exception
+        ) as exc:  # pragma: no cover - isolate provider failures
+            logger.warning(
+                "[%s] Failed to refresh run executors: %s",
+                PLUGIN_ID,
+                exc,
+            )
 
     def _on_uninstall(self, **_kwargs) -> None:
         # Run data is user-owned and must survive plugin removal.
         self.executor_service.stop(wait=False)
-        logger.info("[%s] Run Center unloaded; durable run data preserved", PLUGIN_ID)
+        logger.info(
+            "[%s] Run Center unloaded; durable run data preserved",
+            PLUGIN_ID,
+        )
 
 
 plugin = RunCenterPlugin()

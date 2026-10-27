@@ -1,8 +1,8 @@
 # UGSci 领域计算薄封装实施方案
 
-> 状态：Ready for implementation  
-> 面向读者：实现 Agent、评审 Agent、测试 Agent、发布 Agent  
-> 依赖设计：`domain-compute-engine-architecture.md`  
+> 状态：Ready for implementation
+> 面向读者：实现 Agent、评审 Agent、测试 Agent、发布 Agent
+> 依赖设计：`domain-compute-engine-architecture.md`
 > 更新日期：2026-08-09
 
 ## 1. 文档用途
@@ -911,7 +911,7 @@ export interface DomainEngineView { ... }
 
 ### G1：公共模型与错误
 
-**依赖**：无。  
+**依赖**：无。
 **可并行**：不可与修改相同公共文件的任务并行。
 
 **新增文件**：
@@ -933,7 +933,7 @@ export interface DomainEngineView { ... }
 
 ### G2：测井薄封装
 
-**依赖**：G0、G1。  
+**依赖**：G0、G1。
 **可与 G3 并行**：是。
 
 **新增文件**：`domain/well_log/**`、测井 fixture 和测试。
@@ -960,7 +960,7 @@ export interface DomainEngineView { ... }
 
 ### G3：递减分析薄封装
 
-**依赖**：G0、G1。  
+**依赖**：G0、G1。
 **可与 G2 并行**：是。
 
 **新增文件**：`domain/decline/**`、合成数据 fixture 和测试。
@@ -988,7 +988,7 @@ export interface DomainEngineView { ... }
 
 ### G4：Catalog 与 API
 
-**依赖**：G1；G2/G3 的工具名已经冻结。  
+**依赖**：G1；G2/G3 的工具名已经冻结。
 **可并行**：可在工具实现期间编写，但合并前必须用真实名称校验。
 
 **新增文件**：`domain_engine/**`、Catalog/API 测试。
@@ -1005,7 +1005,7 @@ export interface DomainEngineView { ... }
 
 ### G5：Plugin 注册
 
-**依赖**：G2、G3、G4。  
+**依赖**：G2、G3、G4。
 **修改文件**：`plugin.py` 和插件注册测试。
 
 **要求**：
@@ -1018,10 +1018,10 @@ export interface DomainEngineView { ... }
 
 ### G6：领域计算 UI
 
-**依赖**：G4 API 契约。  
+**依赖**：G4 API 契约。
 **可并行**：可使用固定 fixture 开发。
 
-**新增文件**：`ui/src/domain-engine/**`。  
+**新增文件**：`ui/src/domain-engine/**`。
 **修改文件**：`ToolsSkillsCenterPage.ts`。
 
 **要求**：
@@ -1034,7 +1034,7 @@ export interface DomainEngineView { ... }
 
 ### G7：技能迁移
 
-**依赖**：公共工具签名冻结。  
+**依赖**：公共工具签名冻结。
 **修改文件**：两个技能文件。
 
 **要求**：

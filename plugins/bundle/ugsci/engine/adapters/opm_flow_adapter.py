@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Explicitly configured OPM Flow, using Eclipse-compatible result formats."""
 from __future__ import annotations
 
@@ -18,7 +19,12 @@ class OPMFlowAdapter(EclipseAdapter):
         supports_auto_tune=False,
     )
 
-    def build_command(self, executable: str, deck_file: str, output_file: str = "") -> list[str]:
+    def build_command(
+        self,
+        executable: str,
+        deck_file: str,
+        output_file: str = "",
+    ) -> list[str]:
         deck = Path(deck_file).expanduser().resolve()
         return [executable, str(deck), f"--output-dir={deck.parent}"]
 

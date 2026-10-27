@@ -15,24 +15,22 @@ from io import BytesIO
 from typing import Any, Dict, Iterable, List
 
 try:  # Installed desktop / wheel layout.
-    from qwenpaw.plugins_bundle.ugsci.domain.storage_inventory.adapters import (
-        StorageInventoryEvaluationAdapter,
-    )
+    from qwenpaw.plugins_bundle.ugsci.domain.storage_inventory import adapters
     from qwenpaw.plugins_bundle.ugsci.domain.storage_inventory.models import (
         EffectiveInventoryLayerRequest,
         EffectiveInventoryRequest,
         StorageInventoryEvaluationRequest,
     )
 except ImportError:  # Source-tree tests and developer checkout.
-    from plugins.bundle.ugsci.domain.storage_inventory.adapters import (
-        StorageInventoryEvaluationAdapter,
-    )
+    from plugins.bundle.ugsci.domain.storage_inventory import adapters
     from plugins.bundle.ugsci.domain.storage_inventory.models import (
         EffectiveInventoryLayerRequest,
         EffectiveInventoryRequest,
         StorageInventoryEvaluationRequest,
     )
 
+
+StorageInventoryEvaluationAdapter = adapters.StorageInventoryEvaluationAdapter
 
 EXPERT = {
     "id": "reservoir-engineer",
@@ -48,10 +46,25 @@ EXPERT = {
 }
 
 WARNING_TRANSLATIONS = {
-    "Pressure basis is report-defined/apparent formation pressure; this is an empirical engineering p/Z estimate. Do not reinterpret it as thermodynamic absolute pressure without independent calibration.": "当前采用报告定义/视地层压力口径，属于经验工程 p/Z 估算；未经独立标定，不得改称热力学绝对压力。",
-    "Effective inventory exceeds book inventory. Review layer pressure/Z inputs and metering boundaries before interpreting the book/effective difference.": "有效控制库存高于账面库存；解释差值前，应复核分层压力/Z 输入与计量边界。",
-    "Working gas exceeds effective controlled inventory; verify quantity definitions and time boundaries.": "工作气量高于有效控制库存；请复核数量定义与时间边界。",
-    "The effective-inventory value is a calculation/review candidate, not an approved capacity.": "有效库存结果是计算/复核候选值，不是已批准库容。",
+    (
+        "Pressure basis is report-defined/apparent formation "
+        "pressure; this is an empirical engineering p/Z estimate. "
+        "Do not reinterpret it as thermodynamic absolute pressure "
+        "without independent calibration."
+    ): ("当前采用报告定义/视地层压力口径，属于经验工程 p/Z 估算；未经独立标定，不得改称热力学绝对压力。"),
+    (
+        "Effective inventory exceeds book inventory. Review layer "
+        "pressure/Z inputs and metering boundaries before "
+        "interpreting the book/effective difference."
+    ): ("有效控制库存高于账面库存；解释差值前，应复核分层压力/Z 输入与计量边界。"),
+    (
+        "Working gas exceeds effective controlled inventory; "
+        "verify quantity definitions and time boundaries."
+    ): ("工作气量高于有效控制库存；请复核数量定义与时间边界。"),
+    (
+        "The effective-inventory value is a calculation/review "
+        "candidate, not an approved capacity."
+    ): ("有效库存结果是计算/复核候选值，不是已批准库容。"),
 }
 
 
@@ -148,7 +161,12 @@ CORE_FIELDS = (
 FIELD_ALIASES = {
     "case_name": ("case_name", "库名", "储气库名称", "项目名称", "评估名称"),
     "cycle_id": ("cycle_id", "评价周期", "运行周期", "周期"),
-    "injection_end_state_id": ("injection_end_state_id", "注气末状态", "注气末日期", "注气末"),
+    "injection_end_state_id": (
+        "injection_end_state_id",
+        "注气末状态",
+        "注气末日期",
+        "注气末",
+    ),
     "evaluation_state_id": ("evaluation_state_id", "评价期状态", "评价期日期", "评价期"),
     "design_capacity": ("design_capacity", "设计库容", "设计容量", "设计库容亿方"),
     "book_inventory": ("book_inventory", "账面库存", "库存量", "账面气量"),
@@ -162,7 +180,12 @@ FIELD_ALIASES = {
 LAYER_ALIASES = {
     "name": ("name", "layer", "layer_name", "层系", "层名"),
     "produced_gas": ("produced_gas", "qp", "q_p", "阶段采气量", "采气量"),
-    "injection_end_pressure": ("injection_end_pressure", "pin", "p_in", "注气末压力"),
+    "injection_end_pressure": (
+        "injection_end_pressure",
+        "pin",
+        "p_in",
+        "注气末压力",
+    ),
     "injection_end_z": ("injection_end_z", "zin", "z_in", "注气末z", "注气末z因子"),
     "evaluation_pressure": ("evaluation_pressure", "p", "评价期压力", "评价压力"),
     "evaluation_z": ("evaluation_z", "z", "评价期z", "评价期z因子"),
@@ -227,12 +250,24 @@ def _kind_for_filename(filename: str) -> str:
 
 def _extract_text_values(text: str) -> Dict[str, Any]:
     values: Dict[str, Any] = {}
-    lines = [line.strip() for line in text.replace("\r", "").split("\n") if line.strip()]
+    lines = [
+        line.strip()
+        for line in text.replace("\r", "").split("\n")
+        if line.strip()
+    ]
     for key, aliases in FIELD_ALIASES.items():
         for line in lines:
-            if not any(alias.casefold() in line.casefold() for alias in aliases):
+            if not any(
+                alias.casefold() in line.casefold() for alias in aliases
+            ):
                 continue
-            if key in {"case_name", "cycle_id", "injection_end_state_id", "evaluation_state_id", "pressure_basis"}:
+            if key in {
+                "case_name",
+                "cycle_id",
+                "injection_end_state_id",
+                "evaluation_state_id",
+                "pressure_basis",
+            }:
                 value = re.split(r"[:：=,，\\t]", line, maxsplit=1)
                 if len(value) == 2 and value[1].strip():
                     values[key] = value[1].strip()
@@ -268,8 +303,13 @@ def _document_text(filename: str, raw: bytes) -> str:
         try:
             from pypdf import PdfReader
 
-            return "\n".join(page.extract_text() or "" for page in PdfReader(BytesIO(raw)).pages)
-        except Exception:  # Optional parser; the binary remains available as evidence.
+            return "\n".join(
+                page.extract_text() or ""
+                for page in PdfReader(BytesIO(raw)).pages
+            )
+        except (
+            Exception
+        ):  # Optional parser; the binary remains available as evidence.
             return ""
     if suffix == "docx":
         try:
@@ -277,7 +317,11 @@ def _document_text(filename: str, raw: bytes) -> str:
 
             document = Document(BytesIO(raw))
             paragraphs = [p.text for p in document.paragraphs]
-            paragraphs.extend("\t".join(cell.text for cell in row.cells) for table in document.tables for row in table.rows)
+            paragraphs.extend(
+                "\t".join(cell.text for cell in row.cells)
+                for table in document.tables
+                for row in table.rows
+            )
             return "\n".join(paragraphs)
         except Exception:
             return ""
@@ -285,11 +329,19 @@ def _document_text(filename: str, raw: bytes) -> str:
         try:
             from openpyxl import load_workbook
 
-            workbook = load_workbook(BytesIO(raw), read_only=True, data_only=True)
+            workbook = load_workbook(
+                BytesIO(raw),
+                read_only=True,
+                data_only=True,
+            )
             rows: List[str] = []
             for sheet in workbook.worksheets:
                 for values in sheet.iter_rows(values_only=True):
-                    cells = [str(value).strip() for value in values if value not in (None, "")]
+                    cells = [
+                        str(value).strip()
+                        for value in values
+                        if value not in (None, "")
+                    ]
                     if cells:
                         rows.append("\t".join(cells))
             return "\n".join(rows)
@@ -298,7 +350,9 @@ def _document_text(filename: str, raw: bytes) -> str:
     return ""
 
 
-def _extract_layers_from_rows(rows: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+def _extract_layers_from_rows(
+    rows: Iterable[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
     layers: List[Dict[str, Any]] = []
     for row in rows:
         name = _lookup(row, LAYER_ALIASES["name"])
@@ -321,7 +375,17 @@ def _extract_layers_from_rows(rows: Iterable[Dict[str, Any]]) -> List[Dict[str, 
 
 def _merge_candidate(case: Dict[str, Any], candidate: Dict[str, Any]) -> int:
     extracted = 0
-    for key in (*CORE_FIELDS, "case_name", "cycle_id", "injection_end_state_id", "evaluation_state_id", "pressure_basis", "gas_volume_unit", "pressure_unit", "daily_rate_unit"):
+    for key in (
+        *CORE_FIELDS,
+        "case_name",
+        "cycle_id",
+        "injection_end_state_id",
+        "evaluation_state_id",
+        "pressure_basis",
+        "gas_volume_unit",
+        "pressure_unit",
+        "daily_rate_unit",
+    ):
         value = candidate.get(key)
         if value not in (None, ""):
             if key in CORE_FIELDS:
@@ -336,11 +400,20 @@ def _merge_candidate(case: Dict[str, Any], candidate: Dict[str, Any]) -> int:
     return extracted
 
 
-def ingest_uploaded_documents(files: List[Dict[str, Any]], case_id: str = "", case_name: str = "") -> Dict[str, Any]:
-    """Build a generic case draft from uploaded JSON/CSV/text and file evidence."""
+def ingest_uploaded_documents(
+    files: List[Dict[str, Any]],
+    case_id: str = "",
+    case_name: str = "",
+) -> Dict[str, Any]:
+    """Build a generic case draft from uploaded JSON/CSV/text and file \
+evidence."""
     case = blank_case(case_id, case_name)
     if not case_id and files:
-        stem = re.sub(r"[^0-9A-Za-z一-龥]+", "-", str(files[0].get("filename") or "storage"))
+        stem = re.sub(
+            r"[^0-9A-Za-z一-龥]+",
+            "-",
+            str(files[0].get("filename") or "storage"),
+        )
         case["case_id"] = f"storage-{stem.strip('-').casefold()[:48]}"
     documents: List[Dict[str, Any]] = []
     parsed_files = 0
@@ -359,24 +432,45 @@ def ingest_uploaded_documents(files: List[Dict[str, Any]], case_id: str = "", ca
             "items": 0,
             "size_bytes": int(item.get("size_bytes") or len(raw)),
         }
-        suffix = filename.casefold().rsplit(".", 1)[-1] if "." in filename else ""
+        suffix = (
+            filename.casefold().rsplit(".", 1)[-1] if "." in filename else ""
+        )
         text = _document_text(filename, raw)
         candidate: Dict[str, Any] = {}
         rows: List[Dict[str, Any]] = []
         if suffix == "json" and text:
             try:
                 parsed = json.loads(text)
-                candidate = parsed.get("case", parsed) if isinstance(parsed, dict) else {}
+                candidate = (
+                    parsed.get("case", parsed)
+                    if isinstance(parsed, dict)
+                    else {}
+                )
             except json.JSONDecodeError:
                 warnings.append(f"{filename} 不是有效 JSON，已保留为资料证据")
         elif suffix in {"csv", "tsv"} and text:
             try:
                 delimiter = "\t" if suffix == "tsv" else ","
-                rows = list(csv.DictReader(io.StringIO(text), delimiter=delimiter))
+                rows = list(
+                    csv.DictReader(io.StringIO(text), delimiter=delimiter),
+                )
                 if rows:
-                    candidate = _extract_text_values("\n".join(
-                        f"{row.get('parameter') or row.get('参数') or ''}: {row.get('value') or row.get('值') or ''}" for row in rows
-                    ))
+                    candidate = _extract_text_values(
+                        "\n".join(
+                            (
+                                f"""{(
+                                    (
+                                        row.get("parameter")
+                                        or row.get("参数")
+                                        or ""
+                                    )
+                                )}"""
+                                f": "
+                                f"{row.get('value') or row.get('值') or ''}"
+                            )
+                            for row in rows
+                        ),
+                    )
                     candidate["layers"] = _extract_layers_from_rows(rows)
             except (csv.Error, TypeError):
                 warnings.append(f"{filename} 表格结构无法自动识别，请在参数面板补充")
@@ -391,7 +485,11 @@ def ingest_uploaded_documents(files: List[Dict[str, Any]], case_id: str = "", ca
         documents.append(document)
 
     if not case_name and documents and case["case_name"].startswith("待识别"):
-        stem = re.sub(r"[_\\-]+", " ", documents[0]["name"].rsplit(".", 1)[0]).strip()
+        stem = re.sub(
+            r"[_\\-]+",
+            " ",
+            documents[0]["name"].rsplit(".", 1)[0],
+        ).strip()
         if stem:
             case["case_name"] = f"{stem} · 库容评估"
     case["documents"] = documents
@@ -409,15 +507,26 @@ def ingest_uploaded_documents(files: List[Dict[str, Any]], case_id: str = "", ca
     }
     for key, label in labels.items():
         value = case.get(key)
-        if value in (None, "") or (isinstance(value, (int, float)) and value <= 0):
+        if value in (None, "") or (
+            isinstance(value, (int, float)) and value <= 0
+        ):
             missing.append(label)
-    required_layers = ("produced_gas", "injection_end_pressure", "injection_end_z", "evaluation_pressure", "evaluation_z")
+    required_layers = (
+        "produced_gas",
+        "injection_end_pressure",
+        "injection_end_z",
+        "evaluation_pressure",
+        "evaluation_z",
+    )
     if not case["layers"]:
         missing.append("至少一个层系")
     else:
         for layer in case["layers"]:
             for key in required_layers:
-                if layer.get(key) in (None, "") or float(layer.get(key) or 0) <= 0:
+                if (
+                    layer.get(key) in (None, "")
+                    or float(layer.get(key) or 0) <= 0
+                ):
                     missing.append(f"{layer.get('name', '层系')} · {key}")
     return {
         "case": case,
@@ -452,7 +561,10 @@ def _parameter_rows(case: Dict[str, Any]) -> List[Dict[str, Any]]:
         for document in documents:
             kind = str(document.get("kind") or "").casefold()
             name = str(document.get("name") or "").casefold()
-            if any(token.casefold() in kind or token.casefold() in name for token in kind_tokens):
+            if any(
+                token.casefold() in kind or token.casefold() in name
+                for token in kind_tokens
+            ):
                 return str(document.get("name") or fallback)
         return fallback
 
@@ -477,7 +589,7 @@ def _parameter_rows(case: Dict[str, Any]) -> List[Dict[str, Any]]:
                 "source": source,
                 "confidence": 0.98 if key.startswith("design") else 0.95,
                 "gate": "passed",
-            }
+            },
         )
     for layer in case["layers"]:
         for key, label, unit in (
@@ -496,21 +608,36 @@ def _parameter_rows(case: Dict[str, Any]) -> List[Dict[str, Any]]:
                     "source": layer.get("source", "用户输入"),
                     "confidence": float(layer.get("confidence", 0.9)),
                     "gate": "passed",
-                }
+                },
             )
     return parameters
 
 
 def _fingerprint(payload: Dict[str, Any]) -> str:
-    canonical = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    canonical = json.dumps(
+        payload,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    )
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()[:16]
 
 
-def _source_score(documents: Iterable[Dict[str, Any]], parameters: Iterable[Dict[str, Any]]) -> float:
+def _source_score(
+    documents: Iterable[Dict[str, Any]],
+    parameters: Iterable[Dict[str, Any]],
+) -> float:
     docs = list(documents)
     params = list(parameters)
-    coverage = sum(float(d.get("coverage", 0)) for d in docs) / max(len(docs), 1)
-    confidence = sum(float(p.get("confidence", 0)) for p in params) / max(len(params), 1) * 100
+    coverage = sum(float(d.get("coverage", 0)) for d in docs) / max(
+        len(docs),
+        1,
+    )
+    confidence = (
+        sum(float(p.get("confidence", 0)) for p in params)
+        / max(len(params), 1)
+        * 100
+    )
     return round(coverage * 0.55 + confidence * 0.45, 1)
 
 
@@ -548,13 +675,40 @@ def evaluate_case(case: Dict[str, Any]) -> Dict[str, Any]:
     fingerprint = _fingerprint(fingerprint_payload)
     now = datetime.now(timezone.utc).isoformat()
     trace = [
-        {"id": "inputs", "actor": "参数校验", "action": "校验周期、状态、层系及输入单位", "status": "completed"},
-        {"id": "request", "actor": "计算适配器", "action": "构造类型化计算请求", "status": "completed"},
-        {"id": "tool", "actor": "UGSci 确定性计算内核", "action": "逐层 p/Z 与综合指标计算", "status": "completed"},
-        {"id": "warnings", "actor": "结果校验", "action": "保留内核告警与待复核状态", "status": "completed"},
-        {"id": "fingerprint", "actor": "计算记录", "action": "记录输入指纹", "status": "completed"},
+        {
+            "id": "inputs",
+            "actor": "参数校验",
+            "action": "校验周期、状态、层系及输入单位",
+            "status": "completed",
+        },
+        {
+            "id": "request",
+            "actor": "计算适配器",
+            "action": "构造类型化计算请求",
+            "status": "completed",
+        },
+        {
+            "id": "tool",
+            "actor": "UGSci 确定性计算内核",
+            "action": "逐层 p/Z 与综合指标计算",
+            "status": "completed",
+        },
+        {
+            "id": "warnings",
+            "actor": "结果校验",
+            "action": "保留内核告警与待复核状态",
+            "status": "completed",
+        },
+        {
+            "id": "fingerprint",
+            "actor": "计算记录",
+            "action": "记录输入指纹",
+            "status": "completed",
+        },
     ]
-    translated_warnings = [WARNING_TRANSLATIONS.get(item, item) for item in output.warnings]
+    translated_warnings = [
+        WARNING_TRANSLATIONS.get(item, item) for item in output.warnings
+    ]
     return {
         "case": case,
         "expert": EXPERT,
@@ -576,13 +730,14 @@ def evaluate_case(case: Dict[str, Any]) -> Dict[str, Any]:
             "provider_version": "1.3.0",
             "operation": "storage.inventory.evaluate",
             "deterministic": True,
-            "duration_ms": round((time.perf_counter()-started)*1000, 3),
+            "duration_ms": round((time.perf_counter() - started) * 1000, 3),
         },
     }
 
 
 def build_expert_prompt(evaluation: Dict[str, Any]) -> str:
-    """Build a bounded expert-summary prompt; deterministic values stay authoritative."""
+    """Build a bounded expert-summary prompt; deterministic values stay \
+authoritative."""
     result = evaluation["result"]
     return (
         "你是 UGSci 油藏工程师。请只基于下面已经完成的确定性计算写 4 条中文审查意见，"
@@ -598,8 +753,26 @@ def build_expert_prompt(evaluation: Dict[str, Any]) -> str:
 def fallback_expert_summary(evaluation: Dict[str, Any]) -> List[str]:
     result = evaluation["result"]
     return [
-        f"有效控制库存建议值为 {result['effective_inventory']:.2f} 亿方，设计库容符合率 {result['effective_inventory_design_compliance_percent']:.1f}%。",
-        f"账面库存为 {result['book_inventory']:.2f} 亿方，达设计库容 {result['book_inventory_fill_percent']:.1f}%；与有效库存差值需结合计量边界复核。",
-        f"综合工作气量符合率 {result['working_gas_compliance_percent']:.1f}%，冲峰能力符合率 {result['peak_daily_compliance_percent']:.1f}%。",
+        (
+            f"有效控制库存建议值为 "
+            f"{result['effective_inventory']:.2f}"
+            f" 亿方，设计库容符合率 "
+            f"{result['effective_inventory_design_compliance_percent']:.1f}"
+            f"%。"
+        ),
+        (
+            f"账面库存为 "
+            f"{result['book_inventory']:.2f}"
+            f" 亿方，达设计库容 "
+            f"{result['book_inventory_fill_percent']:.1f}"
+            f"%；与有效库存差值需结合计量边界复核。"
+        ),
+        (
+            f"综合工作气量符合率 "
+            f"{result['working_gas_compliance_percent']:.1f}"
+            f"%，冲峰能力符合率 "
+            f"{result['peak_daily_compliance_percent']:.1f}"
+            f"%。"
+        ),
         "当前结论是确定性计算建议值，建议由油藏、PVT 与计量专业完成联合复核后进入批准流程。",
     ]

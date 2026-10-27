@@ -42,8 +42,10 @@ class DlisReader(BaseReader):
             import dlisio
         except ImportError as exc:
             raise RuntimeError(
-                "DLIS support is unavailable because 'dlisio' is not installed. "
-                "Install the UGSci optional visualization dependencies and retry."
+                "DLIS support is unavailable because 'dlisio' "
+                "is not installed. "
+                "Install the UGSci optional visualization "
+                "dependencies and retry.",
             ) from exc
 
         with dlisio.load(file_path) as files:
@@ -52,7 +54,6 @@ class DlisReader(BaseReader):
 
             # Find depth channel
             depth_channel = None
-            depth_mnemonic = (options or {}).get("depth_mnemonic", "TVD")
 
             for channel in lf.channels:
                 if channel.name.upper() in ("TVD", "MD", "DEPT"):
@@ -96,13 +97,22 @@ class DlisReader(BaseReader):
                 try:
                     values = list(channel.curves())
                     from ..security import sanitize_identifier
-                    safe_name = sanitize_identifier(channel.name.lower(), "curve")
+
+                    safe_name = sanitize_identifier(
+                        channel.name.lower(),
+                        "curve",
+                    )
                     float_values = [
                         float(v) if isinstance(v, (int, float)) else 0.0
                         for v in values
                     ]
-                    write_f32(bin_dir / f"{prefix}_scalars_{safe_name}.f32", float_values)
-                    scalars_files[safe_name] = f"{prefix}_scalars_{safe_name}.f32"
+                    write_f32(
+                        bin_dir / f"{prefix}_scalars_{safe_name}.f32",
+                        float_values,
+                    )
+                    scalars_files[
+                        safe_name
+                    ] = f"{prefix}_scalars_{safe_name}.f32"
                 except Exception:
                     continue  # Skip problematic channels
 

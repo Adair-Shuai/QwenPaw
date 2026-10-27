@@ -97,7 +97,9 @@ class ComputationService:
         return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
     @staticmethod
-    def _support_library_versions(adapter: ComputationAdapter) -> dict[str, str]:
+    def _support_library_versions(
+        adapter: ComputationAdapter,
+    ) -> dict[str, str]:
         versions: dict[str, str] = {}
         for package in getattr(adapter, "support_dependencies", ()):
             try:
@@ -132,5 +134,8 @@ def validate_matrix(matrix: list[list[float]], name: str) -> int:
     require(bool(matrix), f"{name} must not be empty")
     width = len(matrix[0])
     require(width > 0, f"{name} rows must not be empty")
-    require(all(len(row) == width for row in matrix), f"{name} must be rectangular")
+    require(
+        all(len(row) == width for row in matrix),
+        f"{name} must be rectangular",
+    )
     return width

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Real FlowForge HTTP + execution acceptance host, with explicit LLM fixture.
 
 No UI/HTTP/executor methods are mocked. This fixture tests integration behavior,
@@ -35,7 +36,7 @@ def seeded_workflow():
                 "type": "number",
                 "required": True,
                 "default": 2,
-            }
+            },
         ],
         "start_id": "input",
         "outputs": ["normal", "approved", "rejected"],
@@ -58,7 +59,7 @@ def seeded_workflow():
                                 "right": 3,
                             },
                             "then_node": "review",
-                        }
+                        },
                     ],
                     "else_node": "normal",
                 },
@@ -96,7 +97,7 @@ def seeded_workflow():
                 "review": {"x": 600, "y": 20},
                 "approved": {"x": 900, "y": 0},
                 "rejected": {"x": 900, "y": 150},
-            }
+            },
         },
     }
 
@@ -104,20 +105,27 @@ def seeded_workflow():
 class ExplicitFixtureModel:
     async def complete(self, *, messages, **_kwargs):
         request = json.loads(messages[-1].content)
-        if "离线" in request["instruction"] or "offline" in request["instruction"]:
-            raise ConnectionError("Explicit browser acceptance offline fixture")
+        if (
+            "离线" in request["instruction"]
+            or "offline" in request["instruction"]
+        ):
+            raise ConnectionError(
+                "Explicit browser acceptance offline fixture",
+            )
         flow = copy.deepcopy(request.get("current_flow"))
         if not flow or not flow.get("nodes"):
             flow = seeded_workflow()
             flow["id"] = request["flow_id"]
             flow["name"] = request.get("name") or "自然语言新建库存复核"
         else:
-            flow["nodes"]["gate"]["control"]["conditions"][0]["if"]["right"] = 5
+            flow["nodes"]["gate"]["control"]["conditions"][0]["if"][
+                "right"
+            ] = 5
         return SimpleNamespace(
             content=json.dumps(
                 {"flow": flow, "warnings": ["验收使用固定模型响应，未测试在线模型能力。"]},
                 ensure_ascii=False,
-            )
+            ),
         )
 
 
@@ -130,7 +138,10 @@ app.include_router(build_router(service), prefix="/api/flowforge")
 
 @app.get("/host.js")
 def host_js():
-    return FileResponse(ARTIFACTS / "host.js", media_type="application/javascript")
+    return FileResponse(
+        ARTIFACTS / "host.js",
+        media_type="application/javascript",
+    )
 
 
 @app.get("/host.css")
@@ -150,5 +161,5 @@ def plugin_js():
 @app.get("/{path:path}")
 def host(path: str):
     return HTMLResponse(
-        """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FlowForge 浏览器验收</title><link rel="stylesheet" href="/host.css"><style>html,body,#root,.ant-app{margin:0;height:100%;width:100%;font-family:system-ui,sans-serif}*{box-sizing:border-box}</style></head><body><div id="root"></div><script src="/host.js"></script></body></html>"""
+        """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>FlowForge 浏览器验收</title><link rel="stylesheet" href="/host.css"><style>html,body,#root,.ant-app{margin:0;height:100%;width:100%;font-family:system-ui,sans-serif}*{box-sizing:border-box}</style></head><body><div id="root"></div><script src="/host.js"></script></body></html>""",
     )

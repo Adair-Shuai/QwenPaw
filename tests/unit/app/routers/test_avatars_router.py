@@ -90,9 +90,13 @@ def test_builtin_selection_persists_without_upload_or_history(tmp_path):
     database = tmp_path / "avatars.sqlite3"
     store = AvatarStore(database)
     assert store.select("alice", "builtin:ugsci-cute") == {
-        "selected": "builtin:ugsci-cute", "history": [],
+        "selected": "builtin:ugsci-cute",
+        "history": [],
     }
-    assert AvatarStore(database).profile("alice")["selected"] == "builtin:ugsci-cute"
+    assert (
+        AvatarStore(database).profile("alice")["selected"]
+        == "builtin:ugsci-cute"
+    )
     assert store.profile("bob")["selected"] is None
     with pytest.raises(KeyError):
         store.select("alice", "builtin:unknown")

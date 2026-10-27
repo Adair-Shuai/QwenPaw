@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Adapter: ``BaseTool`` / ``ToolCategory`` bridging QwenPaw ``ToolDescriptor``.
+"""Bridge ``BaseTool`` / ``ToolCategory`` to QwenPaw ``ToolDescriptor``.
 
 LeAgent's workflow engine expects every tool to be a ``BaseTool`` instance
 with attributes like ``name``, ``description``, ``parameters`` (JSON Schema),
@@ -101,6 +101,47 @@ _PY_TYPE_MAP: dict[type, str] = {
 }
 
 
+def _annotation_json_type(annotation: Any) -> str:
+    """Infer one parameter type, retaining the legacy generic fallbacks."""
+    if annotation is inspect.Parameter.empty or annotation in _PY_TYPE_MAP:
+        return _PY_TYPE_MAP.get(annotation, "string")
+
+    origin = getattr(annotation, "__origin__", None)
+    if origin is type(None):
+        return "string"
+    if hasattr(annotation, "__origin__") and origin is not None:
+        type_name = getattr(origin, "__name__", "") or getattr(
+            origin,
+            "_name",
+            "",
+        )
+        collection_type = {
+            "list": "array",
+            "List": "array",
+            "dict": "object",
+            "Dict": "object",
+            "set": "array",
+            "Set": "array",
+            "tuple": "array",
+            "Tuple": "array",
+        }.get(type_name)
+        if collection_type:
+            return collection_type
+        non_none = [
+            arg
+            for arg in getattr(annotation, "__args__", ())
+            if arg is not type(None)
+        ]
+        if len(non_none) == 1 and non_none[0] in _PY_TYPE_MAP:
+            return _PY_TYPE_MAP[non_none[0]]
+        return "string"
+    return (
+        "object"
+        if isinstance(annotation, type) and issubclass(annotation, BaseModel)
+        else "string"
+    )
+
+
 def _build_json_schema(func: Callable[..., Any]) -> dict[str, Any]:
     """Infer a JSON Schema ``object`` from ``func``'s type-annotated signature.
 
@@ -124,45 +165,14 @@ def _build_json_schema(func: Callable[..., Any]) -> dict[str, Any]:
     for param_name, param in sig.parameters.items():
         if param_name in ("self", "cls"):
             continue
-        if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+        if param.kind in (
+            inspect.Parameter.VAR_POSITIONAL,
+            inspect.Parameter.VAR_KEYWORD,
+        ):
             continue
 
         annotation = hints.get(param_name, param.annotation)
-        if annotation is inspect.Parameter.empty:
-            # No annotation — treat as string fallback
-            prop: dict[str, Any] = {"type": "string"}
-        elif annotation in _PY_TYPE_MAP:
-            prop = {"type": _PY_TYPE_MAP[annotation]}
-        else:
-            # Handle Optional[X], Union[X, None], etc.
-            origin = getattr(annotation, "__origin__", None)
-            args = getattr(annotation, "__args__", ())
-            if origin is type(None):  # noqa: E721
-                prop = {"type": "string"}
-            elif hasattr(annotation, "__origin__") and origin is not None:
-                # typing.List, typing.Dict, etc.
-                type_name = getattr(origin, "__name__", "") or getattr(origin, "_name", "")
-                if type_name in ("list", "List"):
-                    prop = {"type": "array"}
-                elif type_name in ("dict", "Dict"):
-                    prop = {"type": "object"}
-                elif type_name in ("set", "Set"):
-                    prop = {"type": "array"}
-                elif type_name in ("tuple", "Tuple"):
-                    prop = {"type": "array"}
-                else:
-                    # Could be Optional — extract non-None type
-                    non_none = [a for a in args if a is not type(None)]  # noqa: E721
-                    if len(non_none) == 1 and non_none[0] in _PY_TYPE_MAP:
-                        prop = {"type": _PY_TYPE_MAP[non_none[0]]}
-                    else:
-                        prop = {"type": "string"}
-            else:
-                # Pydantic model or other complex type → object
-                if isinstance(annotation, type) and issubclass(annotation, BaseModel):
-                    prop = {"type": "object"}
-                else:
-                    prop = {"type": "string"}
+        prop: dict[str, Any] = {"type": _annotation_json_type(annotation)}
 
         # Description from docstring or param default
         doc = getattr(func, "__doc__", None) or ""
@@ -185,18 +195,18 @@ def _build_json_schema(func: Callable[..., Any]) -> dict[str, Any]:
 
 
 class BaseTool:
-    """LeAgent-compatible ``BaseTool`` facade wrapping a QwenPaw ``ToolDescriptor``.
+    """LeAgent-compatible ``BaseTool`` facade for a QwenPaw descriptor.
 
     Exposes the attributes the workflow ``tool_factory`` and ``schema_bridge``
     expect, without requiring the ``leagent`` package:
 
     * ``name``            — tool name (from descriptor)
     * ``description``     — human-readable summary
-    * ``parameters``      — JSON Schema ``object`` inferred from the func signature
+    * ``parameters``      — JSON Schema inferred from the func signature
     * ``category``        — :class:`ToolCategory`
     * ``aliases``         — empty list (QwenPaw has no alias system)
     * ``version``         — ``"1.0.0"``
-    * ``is_read_only``    — True if no ``file_write`` / ``shell_exec`` sandbox needed
+    * ``is_read_only``    — True if no sandbox capabilities are needed
     * ``is_destructive``  — False by default
     """
 
@@ -210,15 +220,18 @@ class BaseTool:
 
         sandbox = set(getattr(descriptor, "requires_sandbox", None) or ())
         self.is_read_only: bool = not sandbox
-        self.is_destructive: bool = "file_write" in sandbox and "shell_exec" in sandbox
+        self.is_destructive: bool = (
+            "file_write" in sandbox and "shell_exec" in sandbox
+        )
 
         # Build JSON Schema from the function signature
         func = getattr(descriptor, "func", None)
         native_schema = getattr(descriptor, "input_schema", None)
+        self.parameters: dict[str, Any]
         if isinstance(native_schema, dict):
             self.parameters = native_schema
         elif func is not None:
-            self.parameters: dict[str, Any] = _build_json_schema(func)
+            self.parameters = _build_json_schema(func)
         else:
             self.parameters = {"type": "object", "properties": {}}
 

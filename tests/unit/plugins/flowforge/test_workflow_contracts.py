@@ -43,7 +43,8 @@ def test_compat_node_runner_reports_unknown_node_with_stable_error() -> None:
 
     runner = NodeRunner(registry=NodeRegistry())
     with pytest.raises(
-        NodeExecutionError, match="node-1: unknown node"
+        NodeExecutionError,
+        match="node-1: unknown node",
     ) as exc:
         asyncio.run(
             runner.run(
@@ -655,3 +656,113 @@ def test_packaged_flowforge_has_no_source_drift() -> None:
     )
 
     assert completed.returncode == 0, completed.stdout + completed.stderr
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "qwenpaw.plugins_bundle.flowforge.engine.types",
+        "plugins.bundle.flowforge.engine.types",
+    ],
+)
+@pytest.mark.parametrize(
+    "operator,left,right,expected",
+    [
+        ("eq", "2", 2, True),
+        ("ne", "not-numeric", 2, True),
+        ("gt", 3, 2, True),
+        ("gt", None, 2, False),
+        ("ge", "2", 2, True),
+        ("lt", 1, "2", True),
+        ("lt", None, 2, False),
+        ("le", 2, "2", True),
+        ("in", "x", ["x"], True),
+        ("in", "x", None, False),
+        ("not_in", "x", None, True),
+        ("not_in", "x", ["x"], False),
+        ("contains", ["x"], "x", True),
+        ("contains", [], "x", False),
+        ("starts_with", "abc", "a", True),
+        ("starts_with", 0, "0", False),
+        ("ends_with", "abc", "c", True),
+        ("matches", "abc", "^ab", True),
+        ("matches", "", "[", False),
+        ("is_null", None, None, True),
+        ("is_null", 0, None, False),
+        ("is_not_null", 0, None, True),
+        ("is_not_null", None, None, False),
+        ("eq", "2", "${other}", True),
+    ],
+)
+def test_condition_comparisons_preserve_coercion_and_nulls(
+    module_name,
+    operator,
+    left,
+    right,
+    expected,
+):
+    import importlib
+
+    runtime = importlib.import_module(module_name)
+    expression = runtime.ConditionExpression(
+        left="${value}",
+        operator=operator,
+        right=right,
+    )
+    assert expression.evaluate({"value": left, "other": 2}) is expected
+
+
+@pytest.mark.parametrize(
+    "module_name",
+    [
+        "qwenpaw.plugins_bundle.flowforge.engine.types",
+        "plugins.bundle.flowforge.engine.types",
+    ],
+)
+def test_condition_groups_short_circuit_and_propagate_invalid_comparisons(
+    module_name,
+):
+    import importlib
+    import re
+
+    runtime = importlib.import_module(module_name)
+    condition = runtime.ConditionExpression
+    invalid = condition(left="${text}", operator="matches", right="[")
+    context = {"text": "abc", "value": 2}
+    truth = condition(left="${value}", operator="eq", right=2)
+    falsehood = condition(left="${value}", operator="eq", right=0)
+    for operator in ("and", "or", "not"):
+        assert (
+            condition(left="", operator=operator, conditions=[]).evaluate(
+                context,
+            )
+            is False
+        )
+    assert (
+        condition(
+            left="",
+            operator="and",
+            conditions=[falsehood, invalid],
+        ).evaluate(context)
+        is False
+    )
+    assert (
+        condition(
+            left="",
+            operator="or",
+            conditions=[truth, invalid],
+        ).evaluate(context)
+        is True
+    )
+    assert (
+        condition(
+            left="",
+            operator="not",
+            conditions=[truth, invalid],
+        ).evaluate(context)
+        is False
+    )
+    with pytest.raises(re.error):
+        invalid.evaluate(context)
+    with pytest.raises(TypeError):
+        condition(left="${text}", operator="gt", right=2).evaluate(context)

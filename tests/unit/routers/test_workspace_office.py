@@ -27,7 +27,8 @@ class TestIsOfficecliAvailable:
     """Tests for _is_officecli_available."""
 
     def test_failed_probe_retries_after_officecli_is_installed(
-        self, monkeypatch
+        self,
+        monkeypatch,
     ):
         import qwenpaw.app.routers.workspace as ws
 

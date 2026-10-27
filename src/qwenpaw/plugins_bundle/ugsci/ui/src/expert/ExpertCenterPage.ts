@@ -120,10 +120,13 @@ export function ExpertCenterPage() {
   const React = getHost().React;
   const { useState, useEffect, useCallback, useMemo } = React;
   const routerNavigate = getHost().useNavigate?.();
-  const navigateToExpert = useCallback((path: string) => {
-    if (routerNavigate) routerNavigate(path);
-    else window.location.assign(path);
-  }, [routerNavigate]);
+  const navigateToExpert = useCallback(
+    (path: string) => {
+      if (routerNavigate) routerNavigate(path);
+      else window.location.assign(path);
+    },
+    [routerNavigate],
+  );
   const {
     Spin,
     Empty,
@@ -324,14 +327,17 @@ export function ExpertCenterPage() {
       }
       try {
         if (expert.agent.managed_by_app) {
-          navigateToExpert(`/apps/${encodeURIComponent(expert.agent.managed_by_app)}`);
+          navigateToExpert(
+            `/apps/${encodeURIComponent(expert.agent.managed_by_app)}`,
+          );
           return;
         }
         if (expert.agent.available_in_chat === false) {
           throw new Error("此专家不支持通用聊天，请从所属应用打开");
         }
         const host = getHost();
-        if (!host.setSelectedAgent) throw new Error("当前版本不支持切换专家，请更新软件后重试");
+        if (!host.setSelectedAgent)
+          throw new Error("当前版本不支持切换专家，请更新软件后重试");
         host.setSelectedAgent(expert.agent.id);
         // Follow the host's New Chat contract rather than restoring an old session.
         sessionStorage.setItem("qwenpaw_pending_new_chat", "1");
@@ -340,7 +346,9 @@ export function ExpertCenterPage() {
       } catch (err) {
         sessionStorage.removeItem("qwenpaw_pending_new_chat");
         console.warn("[ugsci] Failed to set selected agent:", err);
-        antdMsg.error(err instanceof Error ? err.message : "召唤专家失败，请重试");
+        antdMsg.error(
+          err instanceof Error ? err.message : "召唤专家失败，请重试",
+        );
       }
     },
     [antdMsg, navigateToExpert],

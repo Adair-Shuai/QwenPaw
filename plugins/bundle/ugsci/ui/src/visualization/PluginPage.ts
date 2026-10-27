@@ -3,7 +3,10 @@ import { getHost } from "../core/runtime";
 import { loadViewerRuntime, type ViewerHandle } from "./viewerLoader";
 import { hostViewerOptions, type WorkspaceFileRef } from "./hostAdapter";
 import { ApiClient } from "./viewer/api/client";
-import { waitForWorkspaceImport, WorkspaceImportFailedError } from "./workspaceImport";
+import {
+  waitForWorkspaceImport,
+  WorkspaceImportFailedError,
+} from "./workspaceImport";
 
 export function OilGasPluginPage() {
   const host = getHost();
@@ -17,7 +20,8 @@ export function OilGasPluginPage() {
   const [error, setError] = useState<string | null>(null);
   const [retry, setRetry] = useState(0);
   const [loadingText, setLoadingText] = useState("正在加载三维可视化引擎…");
-  const selectedAgent = host.useSelectedAgent?.().id || host.getSelectedAgentId?.();
+  const selectedAgent =
+    host.useSelectedAgent?.().id || host.getSelectedAgentId?.();
   const locationSearch = host.useLocation?.().search ?? window.location.search;
 
   useEffect(() => {
@@ -38,23 +42,47 @@ export function OilGasPluginPage() {
         const options = hostViewerOptions(host, file);
         let datasetId = search.get("datasetId") || undefined;
         if (path && !datasetId) {
-          const client = new ApiClient(options.apiBase, options.authToken, options);
-          const name = search.get("name") || path.replace(/\\/g, "/").split("/").pop() || path;
+          const client = new ApiClient(
+            options.apiBase,
+            options.authToken,
+            options,
+          );
+          const name =
+            search.get("name") ||
+            path.replace(/\\/g, "/").split("/").pop() ||
+            path;
           setLoadingText(`正在导入 ${name}…`);
-          const root = search.get("root") === "workspace" ? "workspace" : "project";
-          const scope = JSON.stringify([options.apiBase, options.headers, path, root]);
+          const root =
+            search.get("root") === "workspace" ? "workspace" : "project";
+          const scope = JSON.stringify([
+            options.apiBase,
+            options.headers,
+            path,
+            root,
+          ]);
           if (jobRef.current?.scope !== scope) {
             jobRef.current = null;
-            const submitted = await client.createWorkspaceImport(path, root, name.replace(/\.[^.]+$/, ""), controller.signal);
+            const submitted = await client.createWorkspaceImport(
+              path,
+              root,
+              name.replace(/\.[^.]+$/, ""),
+              controller.signal,
+            );
             controller.signal.throwIfAborted();
             jobRef.current = { scope, id: submitted.job_id };
           }
-          datasetId = await waitForWorkspaceImport(client, jobRef.current.id, { signal: controller.signal });
+          datasetId = await waitForWorkspaceImport(client, jobRef.current.id, {
+            signal: controller.signal,
+          });
         }
         const runtime = await loadViewerRuntime();
         if (controller.signal.aborted || !mountRef.current) return;
         setLoadingText("正在加载场景…");
-        handle = runtime.mount(mountRef.current, { ...options, initialDatasetId: datasetId, enableCommands: true });
+        handle = runtime.mount(mountRef.current, {
+          ...options,
+          initialDatasetId: datasetId,
+          enableCommands: true,
+        });
         handleRef.current = handle;
         await handle.ready;
         if (!controller.signal.aborted) setLoading(false);
@@ -76,13 +104,66 @@ export function OilGasPluginPage() {
     };
   }, [retry, selectedAgent, locationSearch]);
 
-  return React.createElement("div", { style: { width: "100%", height: "100%", minHeight: 300, position: "relative", overflow: "hidden" } },
-    React.createElement("div", { ref: mountRef, style: { width: "100%", height: "100%" } }),
-    loading && React.createElement("div", {
-      role: "status", style: { position: "absolute", inset: 0, display: "grid", placeContent: "center", textAlign: "center", background: "#0d1117e8", color: "#dce5ef", zIndex: 100 },
-    }, React.createElement(Spin, { size: "large" }), React.createElement("div", { style: { marginTop: 16 } }, loadingText)),
-    error && React.createElement("div", { style: { position: "absolute", inset: 0, display: "grid", placeContent: "center", padding: 24, gap: 16, background: "#0d1117", zIndex: 100 } },
-      React.createElement(Alert, { type: "error", message: "可视化引擎加载失败", description: error, showIcon: true }),
-      React.createElement(Button, { type: "primary", onClick: () => setRetry((value) => value + 1) }, "重试")),
+  return React.createElement(
+    "div",
+    {
+      style: {
+        width: "100%",
+        height: "100%",
+        minHeight: 300,
+        position: "relative",
+        overflow: "hidden",
+      },
+    },
+    React.createElement("div", {
+      ref: mountRef,
+      style: { width: "100%", height: "100%" },
+    }),
+    loading &&
+      React.createElement(
+        "div",
+        {
+          role: "status",
+          style: {
+            position: "absolute",
+            inset: 0,
+            display: "grid",
+            placeContent: "center",
+            textAlign: "center",
+            background: "#0d1117e8",
+            color: "#dce5ef",
+            zIndex: 100,
+          },
+        },
+        React.createElement(Spin, { size: "large" }),
+        React.createElement("div", { style: { marginTop: 16 } }, loadingText),
+      ),
+    error &&
+      React.createElement(
+        "div",
+        {
+          style: {
+            position: "absolute",
+            inset: 0,
+            display: "grid",
+            placeContent: "center",
+            padding: 24,
+            gap: 16,
+            background: "#0d1117",
+            zIndex: 100,
+          },
+        },
+        React.createElement(Alert, {
+          type: "error",
+          message: "可视化引擎加载失败",
+          description: error,
+          showIcon: true,
+        }),
+        React.createElement(
+          Button,
+          { type: "primary", onClick: () => setRetry((value) => value + 1) },
+          "重试",
+        ),
+      ),
   );
 }

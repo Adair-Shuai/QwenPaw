@@ -260,7 +260,9 @@ def test_spawn_subagent_with_fork_worktree(
                     {
                         "role": "user",
                         "type": "message",
-                        "content": [{"type": "text", "text": f"{marker} fork it"}],
+                        "content": [
+                            {"type": "text", "text": f"{marker} fork it"},
+                        ],
                     },
                 ],
                 "request_context": {"approval_level": "off"},

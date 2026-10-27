@@ -67,10 +67,13 @@ def _legacy_store(
     path.parent.mkdir(parents=True)
     conn = sqlite3.connect(path)
     conn.execute(
-        "CREATE TABLE jobs (job_id TEXT PRIMARY KEY, payload TEXT NOT NULL, updated_at TEXT NOT NULL)",
+        "CREATE TABLE jobs (job_id TEXT PRIMARY KEY, payload "
+        "TEXT NOT NULL, updated_at TEXT NOT NULL)",
     )
     conn.execute(
-        "CREATE TABLE job_events (job_id TEXT NOT NULL, sequence INTEGER NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY(job_id, sequence))",
+        "CREATE TABLE job_events (job_id TEXT NOT NULL, "
+        "sequence INTEGER NOT NULL, payload TEXT NOT NULL, "
+        "created_at TEXT NOT NULL, PRIMARY KEY(job_id, sequence))",
     )
     payload = payload or {
         "status": "completed",
@@ -139,7 +142,8 @@ def test_run_center_api_has_r0_contract(tmp_path, monkeypatch) -> None:
 
 
 def test_health_distinguishes_contracts_from_optional_runtime_services(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     app = FastAPI()
@@ -159,7 +163,8 @@ def test_health_distinguishes_contracts_from_optional_runtime_services(
 
 
 def test_health_executor_runtime_reflects_actual_worker_lifecycle(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
@@ -181,7 +186,8 @@ def test_health_executor_runtime_reflects_actual_worker_lifecycle(
 
 
 def test_resource_pool_and_queue_snapshot_report_local_capacity(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
@@ -196,7 +202,7 @@ def test_resource_pool_and_queue_snapshot_report_local_capacity(
             "run_id": "queued-1",
             "operation": "test.calculate",
             "status": "queued",
-        }
+        },
     )
     with TestClient(app) as client:
         pools = client.get("/api/run-center/resource-pools")
@@ -214,7 +220,8 @@ def test_resource_pool_and_queue_snapshot_report_local_capacity(
 
 
 def test_executor_snapshot_separates_pending_from_active_workers(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
@@ -222,6 +229,7 @@ def test_executor_snapshot_separates_pending_from_active_workers(
     release = threading.Event()
 
     def handler(context, _payload):
+        assert context.run_id.startswith("snapshot-")
         entered.set()
         release.wait(2)
         return {"ok": True}
@@ -229,10 +237,10 @@ def test_executor_snapshot_separates_pending_from_active_workers(
     service = RunExecutorService(repository, max_workers=1)
     service.register("test.snapshot", handler)
     repository.create_run(
-        {"run_id": "snapshot-1", "operation": "test.snapshot"}
+        {"run_id": "snapshot-1", "operation": "test.snapshot"},
     )
     repository.create_run(
-        {"run_id": "snapshot-2", "operation": "test.snapshot"}
+        {"run_id": "snapshot-2", "operation": "test.snapshot"},
     )
     service.submit("snapshot-1")
     assert entered.wait(2)
@@ -260,7 +268,8 @@ def test_legacy_status_mapping() -> None:
 
 
 def test_operation_registry_is_json_only_and_queryable(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
@@ -277,7 +286,8 @@ def test_operation_registry_is_json_only_and_queryable(
 def test_operation_descriptor_boundary_adds_stable_contract_defaults() -> None:
     normalize = descriptor_module.normalize_operation_descriptor
     value = normalize(
-        {"title": "库存评价"}, operation="storage.inventory.evaluate"
+        {"title": "库存评价"},
+        operation="storage.inventory.evaluate",
     )
     assert value["operation"] == "storage.inventory.evaluate"
     assert value["descriptor_contract_version"] == "1.0"
@@ -292,7 +302,8 @@ def test_operation_descriptor_boundary_adds_stable_contract_defaults() -> None:
 
 
 def test_operation_descriptor_input_validation_endpoint(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
@@ -304,7 +315,7 @@ def test_operation_descriptor_input_validation_endpoint(
                 "type": "object",
                 "required": ["project_id"],
                 "properties": {
-                    "project_id": {"type": "string", "minLength": 1}
+                    "project_id": {"type": "string", "minLength": 1},
                 },
             },
         },
@@ -319,27 +330,31 @@ def test_operation_descriptor_input_validation_endpoint(
         assert listed_descriptor["input_schema"]["type"] == "object"
         assert listed_descriptor["supports_cancel"] is True
         descriptor = client.get(
-            "/api/run-center/operations/storage.inventory.evaluate?provider_id=ugsci",
+            "/api/run-center/operations/storage.inventory.eva"
+            "luate?provider_id=ugsci",
         )
         assert descriptor.status_code == 200
         body = descriptor.json()["descriptor"]
         assert body["input_schema"]["required"] == ["project_id"]
         assert "resources" in body and "risk" in body and "estimate" in body
         valid = client.post(
-            "/api/run-center/operations/storage.inventory.evaluate/validate?provider_id=ugsci",
+            "/api/run-center/operations/storage.inventory.eva"
+            "luate/validate?provider_id=ugsci",
             json={"project_id": "p1"},
         )
         assert valid.status_code == 200
         assert valid.json()["valid"] is True
         invalid = client.post(
-            "/api/run-center/operations/storage.inventory.evaluate/validate?provider_id=ugsci",
+            "/api/run-center/operations/storage.inventory.eva"
+            "luate/validate?provider_id=ugsci",
             json={},
         )
         assert invalid.status_code == 200
         assert invalid.json()["valid"] is False
         assert "project_id" in invalid.json()["errors"][0]
         wrong_type = client.post(
-            "/api/run-center/operations/storage.inventory.evaluate/validate?provider_id=ugsci",
+            "/api/run-center/operations/storage.inventory.eva"
+            "luate/validate?provider_id=ugsci",
             json=["p1"],
         )
         assert wrong_type.status_code == 200
@@ -390,10 +405,14 @@ def test_operation_registry_snapshot_removes_unloaded_providers(
 
 def test_public_contracts_are_json_safe() -> None:
     artifact = ArtifactRef(
-        ref_id="a1", uri="workspace://result.csv", sha256="abc"
+        ref_id="a1",
+        uri="workspace://result.csv",
+        sha256="abc",
     )
     stage = Stage(
-        stage_id="validate", operation="data.validate", output_refs=(artifact,)
+        stage_id="validate",
+        operation="data.validate",
+        output_refs=(artifact,),
     )
     run = Run(
         run_id="r1",
@@ -408,7 +427,9 @@ def test_public_contracts_are_json_safe() -> None:
         stage_id="validate",
     )
     checkpoint = Checkpoint(
-        checkpoint_id="c1", run_id="r1", artifact_ref=artifact
+        checkpoint_id="c1",
+        run_id="r1",
+        artifact_ref=artifact,
     )
 
     assert run.to_dict()["stages"][0]["output_refs"][0]["ref_id"] == "a1"
@@ -418,17 +439,19 @@ def test_public_contracts_are_json_safe() -> None:
 
 
 def test_native_timestamps_and_legacy_bridge_are_globally_sorted(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     _legacy_store(tmp_path, job_id="same-id")
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
     repository.initialize()
-    with repository._connection(
-        write=True
+    with repository.connection(
+        write=True,
     ) as conn:  # noqa: SLF001 - contract fixture
         conn.execute(
-            "INSERT INTO runs (run_id, operation, status, payload, created_at, updated_at) "
+            "INSERT INTO runs (run_id, operation, status, "
+            "payload, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 "native-id",
@@ -454,9 +477,10 @@ def test_native_empty_event_stream_never_borrows_legacy_events(
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
     repository.initialize()
-    with repository._connection(write=True) as conn:  # noqa: SLF001
+    with repository.connection(write=True) as conn:
         conn.execute(
-            "INSERT INTO runs (run_id, operation, status, payload, created_at, updated_at) "
+            "INSERT INTO runs (run_id, operation, status, "
+            "payload, created_at, updated_at) "
             "VALUES (?, ?, ?, ?, ?, ?)",
             (
                 "same-id",
@@ -499,7 +523,8 @@ def test_visualization_legacy_events_keep_their_event_type(
 
 
 def test_project_filter_excludes_unscoped_legacy_jobs(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     _legacy_store(tmp_path, job_id="legacy-projectless")
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
@@ -511,7 +536,7 @@ def test_native_run_create_event_and_transition(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
     created = repository.create_run(
-        {"run_id": "m1", "operation": "simulation.run", "project_id": "p1"}
+        {"run_id": "m1", "operation": "simulation.run", "project_id": "p1"},
     )
     assert created["run_id"] == "m1"
     assert created["status"] == "draft"
@@ -524,7 +549,8 @@ def test_native_run_create_event_and_transition(tmp_path, monkeypatch) -> None:
 
 
 def test_native_run_state_machine_rejects_terminal_and_legacy_writes(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
@@ -532,7 +558,6 @@ def test_native_run_state_machine_rejects_terminal_and_legacy_writes(
     repository.transition("m1", "queued")
     repository.transition("m1", "running")
     repository.transition("m1", "succeeded")
-    import pytest
 
     with pytest.raises(ValueError, match="Invalid run transition"):
         repository.transition("m1", "running")
@@ -548,7 +573,7 @@ def test_queued_run_can_be_paused_and_resumed(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
     repository.create_run(
-        {"run_id": "queued-pause", "operation": "simulation.run"}
+        {"run_id": "queued-pause", "operation": "simulation.run"},
     )
     repository.transition("queued-pause", "queued")
 
@@ -562,10 +587,10 @@ def test_create_run_idempotency_key_is_stable(tmp_path, monkeypatch) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
     first = repository.create_run(
-        {"operation": "simulation.run", "idempotency_key": "same"}
+        {"operation": "simulation.run", "idempotency_key": "same"},
     )
     second = repository.create_run(
-        {"operation": "simulation.run", "idempotency_key": "same"}
+        {"operation": "simulation.run", "idempotency_key": "same"},
     )
     assert first["run_id"] == second["run_id"]
     assert len(repository.list_runs()) == 1
@@ -599,10 +624,12 @@ def test_old_database_migration_tolerates_bad_json_and_duplicate_keys(
     with sqlite3.connect(database) as conn:
         conn.execute(
             "CREATE TABLE runs ("
-            "run_id TEXT PRIMARY KEY, operation TEXT NOT NULL, status TEXT NOT NULL, "
+            "run_id TEXT PRIMARY KEY, operation TEXT NOT "
+            "NULL, status TEXT NOT NULL, "
             "phase TEXT NOT NULL DEFAULT '', progress REAL, project_id TEXT, "
             "parent_run_id TEXT, model_version_id TEXT, study_id TEXT, "
-            "payload TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+            "payload TEXT NOT NULL, created_at TEXT NOT NULL, "
+            "updated_at TEXT NOT NULL)",
         )
         rows = [
             ("bad", "{not-json"),
@@ -650,19 +677,22 @@ def test_native_write_api(tmp_path, monkeypatch) -> None:
         )
         assert event.status_code == 201
         transition = client.post(
-            "/api/run-center/runs/api-1/transition", json={"status": "queued"}
+            "/api/run-center/runs/api-1/transition",
+            json={"status": "queued"},
         )
         assert transition.status_code == 200
         assert (
             client.post(
-                "/api/run-center/runs/missing/events", json={"type": "x"}
+                "/api/run-center/runs/missing/events",
+                json={"type": "x"},
             ).status_code
             == 404
         )
 
 
 def test_public_run_creation_rejects_terminal_and_execution_fields(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     app = FastAPI()
@@ -711,7 +741,8 @@ def test_api_rejects_unknown_query_status(tmp_path, monkeypatch) -> None:
 
 
 def test_existing_r0_database_is_migrated_and_idempotency_is_indexed(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     root = tmp_path / "run-center"
@@ -719,13 +750,24 @@ def test_existing_r0_database_is_migrated_and_idempotency_is_indexed(
     db = root / "runs.sqlite3"
     conn = sqlite3.connect(db)
     conn.execute(
-        "CREATE TABLE runs (run_id TEXT PRIMARY KEY, operation TEXT NOT NULL, status TEXT NOT NULL, phase TEXT NOT NULL DEFAULT '', progress REAL, project_id TEXT, parent_run_id TEXT, model_version_id TEXT, study_id TEXT, payload TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)"
+        "CREATE TABLE runs (run_id TEXT PRIMARY KEY, "
+        "operation TEXT NOT NULL, status TEXT NOT NULL, phase "
+        "TEXT NOT NULL DEFAULT '', progress REAL, project_id "
+        "TEXT, parent_run_id TEXT, model_version_id TEXT, "
+        "study_id TEXT, payload TEXT NOT NULL, created_at "
+        "TEXT NOT NULL, updated_at TEXT NOT NULL)",
     )
     conn.execute(
-        "CREATE TABLE run_events (run_id TEXT NOT NULL, sequence INTEGER NOT NULL, event_type TEXT NOT NULL, payload TEXT NOT NULL, created_at TEXT NOT NULL, PRIMARY KEY (run_id, sequence))"
+        "CREATE TABLE run_events (run_id TEXT NOT NULL, "
+        "sequence INTEGER NOT NULL, event_type TEXT NOT NULL, "
+        "payload TEXT NOT NULL, created_at TEXT NOT NULL, "
+        "PRIMARY KEY (run_id, sequence))",
     )
     conn.execute(
-        "CREATE TABLE operation_registry (operation TEXT PRIMARY KEY, descriptor TEXT NOT NULL, contract_version TEXT NOT NULL, provider_id TEXT, updated_at TEXT NOT NULL)"
+        "CREATE TABLE operation_registry (operation TEXT "
+        "PRIMARY KEY, descriptor TEXT NOT NULL, "
+        "contract_version TEXT NOT NULL, provider_id TEXT, "
+        "updated_at TEXT NOT NULL)",
     )
     conn.execute(
         "INSERT INTO runs VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
@@ -753,12 +795,14 @@ def test_existing_r0_database_is_migrated_and_idempotency_is_indexed(
     repository = RunRepository(root)
     assert (
         repository.create_run(
-            {"operation": "simulation.run", "idempotency_key": "legacy-key"}
+            {"operation": "simulation.run", "idempotency_key": "legacy-key"},
         )["run_id"]
         == "old"
     )
     repository.register_operation(
-        "simulation.run", {"title": "remote"}, provider_id="remote"
+        "simulation.run",
+        {"title": "remote"},
+        provider_id="remote",
     )
     assert {item["provider_id"] for item in repository.list_operations()} == {
         None,
@@ -767,12 +811,13 @@ def test_existing_r0_database_is_migrated_and_idempotency_is_indexed(
 
 
 def test_control_and_clone_actions_share_state_machine(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
     repository.create_run(
-        {"run_id": "control-1", "operation": "simulation.run"}
+        {"run_id": "control-1", "operation": "simulation.run"},
     )
     assert repository.control("control-1", "cancel")["status"] == "cancelled"
     clone = repository.clone_run("control-1", overrides={"priority": 4})
@@ -781,7 +826,8 @@ def test_control_and_clone_actions_share_state_machine(
 
 
 def test_retry_clones_terminal_run_with_audit_link(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
@@ -794,7 +840,8 @@ def test_retry_clones_terminal_run_with_audit_link(
 
 
 def test_clone_does_not_reuse_source_idempotency_key(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
@@ -814,20 +861,20 @@ def test_clone_does_not_reuse_source_idempotency_key(
 
 
 def test_native_json_boundaries_reject_non_finite_values(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
     import math
-    import pytest
 
     with pytest.raises(ValueError, match="finite"):
         repository.create_run(
-            {"operation": "simulation.run", "progress": math.nan}
+            {"operation": "simulation.run", "progress": math.nan},
         )
 
     repository.create_run(
-        {"run_id": "finite-1", "operation": "simulation.run"}
+        {"run_id": "finite-1", "operation": "simulation.run"},
     )
     with pytest.raises(ValueError, match="JSON-safe"):
         repository.append_event("finite-1", "metric", {"value": math.inf})
@@ -843,12 +890,13 @@ def test_native_json_boundaries_reject_non_finite_values(
 
 
 def test_restart_recovery_keeps_top_level_state_columns_in_sync(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
     repository.create_run(
-        {"run_id": "recover-sync", "operation": "simulation.run"}
+        {"run_id": "recover-sync", "operation": "simulation.run"},
     )
     repository.transition("recover-sync", "queued")
     repository.transition("recover-sync", "running")
@@ -871,7 +919,7 @@ def test_stage_artifact_checkpoint_and_provenance_are_durable(
     root = tmp_path / "run-center"
     repository = RunRepository(root)
     repository.create_run(
-        {"run_id": "components-1", "operation": "simulation.run"}
+        {"run_id": "components-1", "operation": "simulation.run"},
     )
 
     stage = repository.upsert_stage(
@@ -927,7 +975,7 @@ def test_stage_artifact_checkpoint_and_provenance_are_durable(
 
     restarted = RunRepository(root)
     assert restarted.list_stages("components-1")[0]["metrics"] == {
-        "iterations": 4
+        "iterations": 4,
     }
     assert {
         item["ref_id"] for item in restarted.list_artifacts("components-1")
@@ -979,20 +1027,25 @@ def test_embedded_components_are_promoted_during_schema_migration(
             },
         ],
         "artifacts": [
-            {"ref_id": "legacy-report", "uri": "workspace://report"}
+            {"ref_id": "legacy-report", "uri": "workspace://report"},
         ],
         "provenance": {"input_fingerprint": "legacy-input"},
     }
     with sqlite3.connect(database) as conn:
         conn.execute(
-            "CREATE TABLE runs (run_id TEXT PRIMARY KEY, operation TEXT NOT NULL, "
-            "status TEXT NOT NULL, phase TEXT NOT NULL DEFAULT '', progress REAL, "
-            "project_id TEXT, parent_run_id TEXT, model_version_id TEXT, study_id TEXT, "
-            "payload TEXT NOT NULL, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)",
+            "CREATE TABLE runs (run_id TEXT PRIMARY KEY, "
+            "operation TEXT NOT NULL, "
+            "status TEXT NOT NULL, phase TEXT NOT NULL "
+            "DEFAULT '', progress REAL, "
+            "project_id TEXT, parent_run_id TEXT, "
+            "model_version_id TEXT, study_id TEXT, "
+            "payload TEXT NOT NULL, created_at TEXT NOT NULL, "
+            "updated_at TEXT NOT NULL)",
         )
         conn.execute(
             "INSERT INTO runs VALUES "
-            "('legacy-components', 'simulation.run', 'succeeded', '', NULL, NULL, "
+            "('legacy-components', 'simulation.run', "
+            "'succeeded', '', NULL, NULL, "
             "NULL, NULL, NULL, ?, '2026', '2026')",
             (json.dumps(payload),),
         )
@@ -1070,32 +1123,32 @@ def test_component_api_validates_relationships_and_exposes_records(
         assert (
             len(
                 client.get(
-                    "/api/run-center/runs/api-components/stages"
-                ).json()["stages"]
+                    "/api/run-center/runs/api-components/stages",
+                ).json()["stages"],
             )
             == 1
         )
         assert (
             len(
                 client.get(
-                    "/api/run-center/runs/api-components/artifacts"
-                ).json()["artifacts"]
+                    "/api/run-center/runs/api-components/artifacts",
+                ).json()["artifacts"],
             )
             == 1
         )
         assert (
             len(
                 client.get(
-                    "/api/run-center/runs/api-components/checkpoints"
-                ).json()["checkpoints"]
+                    "/api/run-center/runs/api-components/checkpoints",
+                ).json()["checkpoints"],
             )
             == 1
         )
         assert (
             len(
                 client.get(
-                    "/api/run-center/runs/api-components/provenance"
-                ).json()["provenance"]
+                    "/api/run-center/runs/api-components/provenance",
+                ).json()["provenance"],
             )
             == 1
         )
@@ -1107,12 +1160,13 @@ def test_component_api_validates_relationships_and_exposes_records(
 
 
 def test_sse_stream_replays_events_after_last_event_id(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
     repository.create_run(
-        {"run_id": "stream-1", "operation": "simulation.run"}
+        {"run_id": "stream-1", "operation": "simulation.run"},
     )
     repository.append_event("stream-1", "log.line", {"message": "first"})
     repository.transition("stream-1", "cancelled")
@@ -1140,7 +1194,7 @@ def test_restart_recovery_blocks_unknown_work_and_requeues_opted_in_run(
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
     repository.create_run(
-        {"run_id": "block-me", "operation": "simulation.run"}
+        {"run_id": "block-me", "operation": "simulation.run"},
     )
     repository.transition("block-me", "queued")
     repository.transition("block-me", "running")
@@ -1205,7 +1259,8 @@ def test_restart_recovery_resume_requires_checkpoint_and_marks_selected_point(
 
 
 def test_restart_recovery_resume_without_checkpoint_blocks_run(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
@@ -1240,10 +1295,11 @@ def test_in_process_executor_uses_handler_resume_hook_for_checkpoint(
 
         def __call__(self, _context, _payload):
             raise AssertionError(
-                "fresh handler should not run for a resumed attempt"
+                "fresh handler should not run for a resumed attempt",
             )
 
         def resume(self, context, payload, checkpoint):
+            assert context.resume_checkpoint == checkpoint
             self.checkpoint = checkpoint
             finished.set()
             return {
@@ -1337,7 +1393,7 @@ def test_descriptor_risk_gate_blocks_high_risk_run_without_approval(
                 "contract_version": "1.0",
                 "descriptor": {"risk": {"requires_review": True}},
             },
-        ]
+        ],
     )
     service = RunExecutorService(repository, review_checker=lambda _run: False)
     service.register(
@@ -1350,7 +1406,7 @@ def test_descriptor_risk_gate_blocks_high_risk_run_without_approval(
             "run_id": "high-risk-1",
             "operation": "test.high-risk",
             "provider_id": "provider-a",
-        }
+        },
     )
     with pytest.raises(ValueError, match="approved review"):
         service.submit("high-risk-1")
@@ -1366,7 +1422,7 @@ def test_start_keeps_review_blocked_run_queued(tmp_path) -> None:
                 "contract_version": "1.0",
                 "descriptor": {"risk": {"requires_review": True}},
             },
-        ]
+        ],
     )
     repository.create_run(
         {
@@ -1393,7 +1449,8 @@ def test_start_keeps_review_blocked_run_queued(tmp_path) -> None:
 
 
 def test_executor_heartbeat_and_resource_sample_events(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
@@ -1405,11 +1462,13 @@ def test_executor_heartbeat_and_resource_sample_events(
         return {"ok": True}
 
     service = RunExecutorService(
-        repository, max_workers=1, heartbeat_interval=1
+        repository,
+        max_workers=1,
+        heartbeat_interval=1,
     )
     service.register("test.telemetry", handler)
     repository.create_run(
-        {"run_id": "telemetry-1", "operation": "test.telemetry"}
+        {"run_id": "telemetry-1", "operation": "test.telemetry"},
     )
     service.submit("telemetry-1")
     assert finished.wait(2)
@@ -1427,7 +1486,8 @@ def test_executor_heartbeat_and_resource_sample_events(
 
 
 def test_executor_control_signal_prevents_late_success(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
@@ -1457,7 +1517,8 @@ def test_executor_control_signal_prevents_late_success(
 
 
 def test_resume_of_queued_paused_future_keeps_it_runnable(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")
@@ -1476,10 +1537,10 @@ def test_resume_of_queued_paused_future_keeps_it_runnable(
     service = RunExecutorService(repository, max_workers=1)
     service.register("test.queue-pause", handler)
     repository.create_run(
-        {"run_id": "queued-first", "operation": "test.queue-pause"}
+        {"run_id": "queued-first", "operation": "test.queue-pause"},
     )
     repository.create_run(
-        {"run_id": "queued-second", "operation": "test.queue-pause"}
+        {"run_id": "queued-second", "operation": "test.queue-pause"},
     )
     service.submit("queued-first")
     assert first_entered.wait(2)
@@ -1500,7 +1561,8 @@ def test_resume_of_queued_paused_future_keeps_it_runnable(
 
 
 def test_executor_stop_persists_cancellation_before_worker_exits(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     monkeypatch.setattr(repository_module, "_working_dir", lambda: tmp_path)
     repository = RunRepository(tmp_path / "run-center")

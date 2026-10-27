@@ -17,7 +17,9 @@ from .models import DomainEngineDefinition
 
 def _utc_now_iso() -> str:
     """Return current UTC time in ISO 8601 format."""
-    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.datetime.now(datetime.timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ",
+    )
 
 
 def serialize_engine_with_probe(
@@ -49,12 +51,17 @@ def list_engines_with_probes() -> list[dict[str, Any]]:
             results.append(serialize_engine_with_probe(engine))
         except Exception:
             # A single engine failure should not block others
-            results.append({
-                "schema_version": 1,
-                "engine": engine.to_dict(),
-                "dependency_status": {"overall": "unknown", "dependencies": []},
-                "checked_at": _utc_now_iso(),
-            })
+            results.append(
+                {
+                    "schema_version": 1,
+                    "engine": engine.to_dict(),
+                    "dependency_status": {
+                        "overall": "unknown",
+                        "dependencies": [],
+                    },
+                    "checked_at": _utc_now_iso(),
+                },
+            )
     return results
 
 

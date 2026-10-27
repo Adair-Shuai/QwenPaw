@@ -19,7 +19,9 @@ import hashlib
 import logging
 from pathlib import Path
 
-logger = logging.getLogger("qwenpaw").getChild("plugin.oilgas_vis.cache.layout")
+logger = logging.getLogger("qwenpaw").getChild(
+    "plugin.oilgas_vis.cache.layout",
+)
 
 
 class CacheLayout:
@@ -64,7 +66,6 @@ class CacheLayout:
 
         Includes file size, modification time, and content SHA-256.
         """
-        import os
         stat = file_path.stat()
         h = hashlib.sha256()
         h.update(f"{stat.st_size}:{stat.st_mtime}:".encode())
@@ -91,6 +92,7 @@ class CacheLayout:
             return False
         try:
             import json
+
             data = json.loads(manifest.read_text(encoding="utf-8"))
             return bool(data.get("files"))
         except Exception:
@@ -103,6 +105,7 @@ class CacheLayout:
             for d in self.datasets.iterdir():
                 if d.is_dir():
                     import shutil
+
                     shutil.rmtree(d)
                     count += 1
         return count
@@ -112,6 +115,7 @@ class CacheLayout:
         d = self.dataset_dir(fingerprint)
         if d.exists():
             import shutil
+
             shutil.rmtree(d)
             return True
         return False

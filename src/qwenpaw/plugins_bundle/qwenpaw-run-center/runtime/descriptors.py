@@ -40,7 +40,10 @@ def normalize_operation_descriptor(
         raise ValueError("descriptor must be a dictionary")
     value = copy.deepcopy(descriptor)
 
-    value.setdefault("descriptor_contract_version", DESCRIPTOR_CONTRACT_VERSION)
+    value.setdefault(
+        "descriptor_contract_version",
+        DESCRIPTOR_CONTRACT_VERSION,
+    )
     if operation and not value.get("operation"):
         value["operation"] = str(operation)
 
@@ -97,10 +100,14 @@ def normalize_operation_descriptor(
     # not coerce arbitrary truthy values: malformed metadata should be visible
     # to a provider rather than silently changing scheduling semantics.
     value["supports_pause"] = (
-        value["supports_pause"] if isinstance(value.get("supports_pause"), bool) else False
+        value["supports_pause"]
+        if isinstance(value.get("supports_pause"), bool)
+        else False
     )
     value["supports_cancel"] = (
-        value["supports_cancel"] if isinstance(value.get("supports_cancel"), bool) else True
+        value["supports_cancel"]
+        if isinstance(value.get("supports_cancel"), bool)
+        else True
     )
     value["supports_resume"] = (
         value["supports_resume"]
@@ -108,7 +115,9 @@ def normalize_operation_descriptor(
         else True
     )
     value["deterministic"] = (
-        value["deterministic"] if isinstance(value.get("deterministic"), bool) else False
+        value["deterministic"]
+        if isinstance(value.get("deterministic"), bool)
+        else False
     )
     value.setdefault("execution_class", "in_process")
     value.setdefault("dependencies", [])
@@ -134,10 +143,15 @@ def validate_json_schema(value: Any, schema: dict[str, Any]) -> list[str]:
         "string": isinstance(value, str),
         "boolean": isinstance(value, bool),
         "integer": isinstance(value, int) and not isinstance(value, bool),
-        "number": isinstance(value, (int, float)) and not isinstance(value, bool),
+        "number": isinstance(value, (int, float))
+        and not isinstance(value, bool),
         "null": value is None,
     }
-    if isinstance(expected, str) and expected in type_ok and not type_ok[expected]:
+    if (
+        isinstance(expected, str)
+        and expected in type_ok
+        and not type_ok[expected]
+    ):
         return [f"value must be {expected}"]
     if "enum" in schema and value not in schema.get("enum", []):
         errors.append("value is not one of the allowed enum values")
@@ -153,7 +167,10 @@ def validate_json_schema(value: Any, schema: dict[str, Any]) -> list[str]:
                 if key in value and isinstance(child_schema, dict):
                     errors.extend(
                         f"{key}.{item}" if item != "value" else key
-                        for item in validate_json_schema(value[key], child_schema)
+                        for item in validate_json_schema(
+                            value[key],
+                            child_schema,
+                        )
                     )
     elif isinstance(value, list):
         item_schema = schema.get("items")

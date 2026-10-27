@@ -23,4 +23,3 @@ def get_visualization_tool_bindings() -> dict[str, Any]:
 
     configure_tools(VISUALIZATION_DIR)
     return {name: func for name, func, *_ in get_tool_bindings()}
-

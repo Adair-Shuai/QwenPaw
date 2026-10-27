@@ -8,7 +8,9 @@ export interface OpenUITaskApi {
 }
 type TaskHost = QwenPawWindowNamespace & { openui?: OpenUITaskApi };
 
-export function registerTaskLayout(host: QwenPawWindowNamespace): OpenUITaskApi {
+export function registerTaskLayout(
+  host: QwenPawWindowNamespace,
+): OpenUITaskApi {
   const apiHost = host as TaskHost;
   apiHost.openui?.dispose();
   const api: OpenUITaskApi = {

@@ -37,7 +37,6 @@ def convert_to_boundary_surface(
     # Each cell has 6 faces, each face is 2 triangles (6 indices)
     # Face vertex signatures are sorted for comparison
     n_cells = len(cell_ids)
-    faces_per_cell = 6
     verts_per_cell = 8
 
     face_signature_map: dict[tuple[int, ...], list[int]] = {}
@@ -89,14 +88,21 @@ def convert_to_boundary_surface(
             # Output the 4 face vertices
             for v in face_def:
                 vi = base + v
-                boundary_positions.extend([
-                    positions[vi * 3],
-                    positions[vi * 3 + 1],
-                    positions[vi * 3 + 2],
-                ])
+                boundary_positions.extend(
+                    [
+                        positions[vi * 3],
+                        positions[vi * 3 + 1],
+                        positions[vi * 3 + 2],
+                    ],
+                )
 
             # Two triangles per quad
-            a, b, c, d = (vert_offset, vert_offset + 1, vert_offset + 2, vert_offset + 3)
+            a, b, c, d = (
+                vert_offset,
+                vert_offset + 1,
+                vert_offset + 2,
+                vert_offset + 3,
+            )
             boundary_indices.extend([a, b, c, a, c, d])
             boundary_cell_ids.append(cell_ids[cell_i])
             vert_offset += 4
@@ -122,13 +128,13 @@ def write_boundary_surface(
     bin_dir.mkdir(parents=True, exist_ok=True)
 
     (bin_dir / f"{prefix}_positions.f32").write_bytes(
-        struct.pack(f"<{len(positions)}f", *positions)
+        struct.pack(f"<{len(positions)}f", *positions),
     )
     (bin_dir / f"{prefix}_indices.u32").write_bytes(
-        struct.pack(f"<{len(indices)}I", *indices)
+        struct.pack(f"<{len(indices)}I", *indices),
     )
     (bin_dir / f"{prefix}_cell_ids.u32").write_bytes(
-        struct.pack(f"<{len(cell_ids)}I", *cell_ids)
+        struct.pack(f"<{len(cell_ids)}I", *cell_ids),
     )
 
     return {

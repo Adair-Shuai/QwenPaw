@@ -10,14 +10,20 @@ from __future__ import annotations
 
 import math
 import logging
-from typing import Any
 
 from ...common.errors import DomainError, DomainErrorCode
 from ...common.serialization import safe_float, to_python_float
 from ...well_log.ports import DependencyStatus
-from ..models import DeclineFit, DeclineFitRequest, DeclineModel, ProductionPoint
+from ..models import (
+    DeclineFit,
+    DeclineFitRequest,
+    DeclineModel,
+    ProductionPoint,
+)
 
-logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.domain.decline.scipy")
+logger = logging.getLogger("qwenpaw").getChild(
+    "plugin.ugsci.domain.decline.scipy",
+)
 
 PROVIDER_ID = "ugsci-decline-scipy"
 
@@ -60,7 +66,10 @@ class ScipyArpsAdapter:
         if len(points) < MIN_POINTS:
             raise DomainError(
                 DomainErrorCode.INVALID_INPUT,
-                f"At least {MIN_POINTS} data points required, got {len(points)}",
+                f"At least "
+                f"{MIN_POINTS}"
+                f" data points required, got "
+                f"{len(points)}",
             )
 
         # Validate and sort points
@@ -146,7 +155,8 @@ class ScipyArpsAdapter:
             di = fit.di
             qi = fit.qi
             # ∫ qi / (1 + b*di*t)^(1/b) dt
-            # = qi / (di * (1 - b)) * [(1 + b*di*start)^(1 - 1/b) - (1 + b*di*end)^(1 - 1/b)]
+            # = qi / (di * (1 - b)) * [(1 + b*di*start)^(1 - 1/b) - (1 +
+            # b*di*end)^(1 - 1/b)]
             # Wait, let me redo this properly.
             # q(t) = qi / (1 + b*di*t)^(1/b)
             # ∫ q(t) dt = qi * ∫ (1 + b*di*t)^(-1/b) dt
@@ -159,14 +169,16 @@ class ScipyArpsAdapter:
             # = qi/(b*di) * b/(b-1) * [u_end^((b-1)/b) - u_start^((b-1)/b)]
             # = qi/(di*(b-1)) * [u_end^((b-1)/b) - u_start^((b-1)/b)]
             # Since b < 1, (b-1) < 0, and we need to be careful with signs.
-            # Actually: qi/(di*(b-1)) * [...] — but di*(b-1) is negative when b<1.
+            # Actually: qi/(di*(b-1)) * [...] — but di*(b-1) is negative
+            # when b<1.
             # Let's just compute it directly:
             exponent = (b - 1) / b  # This is negative when 0 < b < 1
             u_start = 1 + b * di * start
             u_end = 1 + b * di * end
             # ∫ = qi / (di * (b - 1)) * (u_end^exponent - u_start^exponent)
             # But (b-1) < 0, and u_end > u_start, and exponent < 0,
-            # so u_end^exponent < u_start^exponent, making the bracket negative.
+            # so u_end^exponent < u_start^exponent, making the bracket
+            # negative.
             # Negative / negative = positive. Good.
             if di <= 0 or b <= 0:
                 return self._numerical_cumulative(fit, start, end)
@@ -177,7 +189,7 @@ class ScipyArpsAdapter:
                 # → u_end^exp < u_start^exp → bracket negative
                 # → 1/(di*(b-1)) negative → negative * negative = positive ✓
                 result = (qi / (di * (b - 1))) * (
-                    u_end ** exponent - u_start ** exponent
+                    u_end**exponent - u_start**exponent
                 )
                 return safe_float(result)
             except (ValueError, OverflowError):
@@ -188,7 +200,9 @@ class ScipyArpsAdapter:
     # ── Private helpers ───────────────────────────────────────────────
 
     @staticmethod
-    def _sort_and_validate(points: list[ProductionPoint]) -> list[ProductionPoint]:
+    def _sort_and_validate(
+        points: list[ProductionPoint],
+    ) -> list[ProductionPoint]:
         """Sort by time and validate constraints."""
         # Check for negative rates
         for p in points:
@@ -252,11 +266,16 @@ class ScipyArpsAdapter:
         if len(rates) >= 2 and rates[0] > 0:
             # Estimate decline from first and last point
             ratio = rates[-1] / rates[0] if rates[0] > 0 else 0.5
-            if ratio > 0 and ratio < 1:
-                di_guess = -math.log(ratio) / (times[-1] - times[0]) if times[-1] > times[0] else 0.1
+            if 0 < ratio < 1:
+                di_guess = (
+                    -math.log(ratio) / (times[-1] - times[0])
+                    if times[-1] > times[0]
+                    else 0.1
+                )
                 di_guess = max(di_guess, 1e-6)
 
         if model == DeclineModel.EXPONENTIAL:
+
             def exp_func(t, qi, di):
                 return qi * np.exp(-di * t)
 
@@ -279,6 +298,7 @@ class ScipyArpsAdapter:
             b = None
 
         elif model == DeclineModel.HARMONIC:
+
             def harm_func(t, qi, di):
                 return qi / (1 + di * t)
 
@@ -301,6 +321,7 @@ class ScipyArpsAdapter:
             b = 1.0
 
         elif model == DeclineModel.HYPERBOLIC:
+
             def hyp_func(t, qi, di, b):
                 return qi / (1 + b * di * t) ** (1 / b)
 
@@ -349,17 +370,15 @@ class ScipyArpsAdapter:
             fit_start=times[0],
             fit_end=times[-1],
         )
-        predicted = np.array([
-            self._compute_rate(temp_fit, t) for t in times
-        ])
+        predicted = np.array([self._compute_rate(temp_fit, t) for t in times])
 
         residuals = r_arr - predicted
         n = len(times)
 
-        rmse = float(np.sqrt(np.mean(residuals ** 2)))
+        rmse = float(np.sqrt(np.mean(residuals**2)))
         mae = float(np.mean(np.abs(residuals)))
 
-        ss_res = float(np.sum(residuals ** 2))
+        ss_res = float(np.sum(residuals**2))
         ss_tot = float(np.sum((r_arr - np.mean(r_arr)) ** 2))
         r_squared = 1 - ss_res / ss_tot if ss_tot > 0 else 0.0
 
@@ -371,7 +390,10 @@ class ScipyArpsAdapter:
             # because log(0) is undefined.  Clamp the mean squared residual to
             # the smallest positive normal float so AIC stays finite and
             # JSON-safe while preserving the correct ordering.
-            mean_squared_residual = max(ss_res / n, float(np.finfo(float).tiny))
+            mean_squared_residual = max(
+                ss_res / n,
+                float(np.finfo(float).tiny),
+            )
             aic = float(n * math.log(mean_squared_residual) + 2 * k)
         else:
             aic = None
@@ -390,7 +412,11 @@ class ScipyArpsAdapter:
         )
 
     @staticmethod
-    def _numerical_cumulative(fit: DeclineFit, start: float, end: float) -> float:
+    def _numerical_cumulative(
+        fit: DeclineFit,
+        start: float,
+        end: float,
+    ) -> float:
         """Compute cumulative production via trapezoidal rule."""
         n_steps = 1000
         dt = (end - start) / n_steps

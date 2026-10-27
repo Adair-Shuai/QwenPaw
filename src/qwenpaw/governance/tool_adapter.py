@@ -138,6 +138,7 @@ class PolicyGuardedTool:
                     "__init__": _policy_tool_init,
                     "_build_tc_spec": _build_tc_spec,
                     "check_permissions": _policy_tool_check_permissions,
+                    "source_function": property(_policy_source_function),
                     "__call__": _policy_tool_call,
                     "__doc__": cls.__doc__,
                     **sdk_methods,
@@ -170,6 +171,11 @@ def _policy_tool_init(
     self._qp_policy_decision = None  # Pre-evaluation result
     self._qp_sandbox_mode = False  # Whether to execute in sandbox
     self._qp_raw_params = {}  # Set per-call by check_permissions
+
+
+def _policy_source_function(self: Any) -> Any:
+    """Expose the source callable for rebinding into a guarded context."""
+    return self._qp_tool_func
 
 
 def _relative_path_base(governor: Any) -> str:

@@ -1,7 +1,9 @@
 # -*- coding: utf-8 -*-
-"""DeclineAnalysisService — domain rules, candidate comparison, and forecasting.
+"""DeclineAnalysisService — domain rules, candidate comparison, and \
+forecasting.
 
-The service layer owns input validation, candidate model comparison (for
+The service layer owns input validation, candidate model comparison \
+(for
 ``model=auto``), forecasting, and EUR computation.  It depends on the
 ``DeclineEngine`` protocol, not on any concrete adapter.
 """
@@ -15,10 +17,17 @@ from typing import Any
 from ..common.errors import DomainError, DomainErrorCode
 from ..common.result import DomainResult
 from ..common.serialization import sanitize_json, safe_float
-from .models import DeclineFit, DeclineFitRequest, DeclineModel, ProductionPoint
+from .models import (
+    DeclineFit,
+    DeclineFitRequest,
+    DeclineModel,
+    ProductionPoint,
+)
 from .ports import DeclineEngine
 
-logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.domain.decline.service")
+logger = logging.getLogger("qwenpaw").getChild(
+    "plugin.ugsci.domain.decline.service",
+)
 
 ENGINE_ID = "decline-analysis"
 OPERATION_FIT = "production.decline.fit"
@@ -52,7 +61,10 @@ _SECONDS_PER_TIME_UNIT = {
 }
 
 
-def _cumulative_unit_factor(time_unit: str, rate_unit: str) -> tuple[float, str]:
+def _cumulative_unit_factor(
+    time_unit: str,
+    rate_unit: str,
+) -> tuple[float, str]:
     """Return multiplier and physical cumulative unit for rate integration."""
     normalized_time = time_unit.strip().lower()
     if normalized_time not in _SECONDS_PER_TIME_UNIT:
@@ -116,7 +128,9 @@ class DeclineAnalysisService:
         except ValueError:
             raise DomainError(
                 DomainErrorCode.INVALID_INPUT,
-                f"Unknown model: {model}. Valid: auto, exponential, harmonic, hyperbolic",
+                f"Unknown model: "
+                f"{model}"
+                f". Valid: auto, exponential, harmonic, hyperbolic",
             )
 
         request = DeclineFitRequest(
@@ -151,7 +165,9 @@ class DeclineAnalysisService:
 
         # Build result
         fits_list = [self._fit_to_dict(f) for f in fits]
-        recommended_dict = self._fit_to_dict(recommended) if recommended else None
+        recommended_dict = (
+            self._fit_to_dict(recommended) if recommended else None
+        )
 
         assumptions = [
             f"Time unit: {time_unit}",
@@ -162,14 +178,15 @@ class DeclineAnalysisService:
         if model_enum == DeclineModel.AUTO:
             assumptions.append(
                 "Recommended model is based on AIC/RMSE comparison; "
-                "all successful candidates are retained"
+                "all successful candidates are retained",
             )
 
         warnings: list[str] = []
         if model_enum == DeclineModel.AUTO and recommended:
             warnings.append(
                 f"Recommended model: {recommended.model.value}. "
-                "This is a statistical recommendation, not the only valid model."
+                "This is a statistical recommendation, not "
+                "the only valid model.",
             )
 
         result_dict: dict[str, Any] = {
@@ -208,7 +225,12 @@ class DeclineAnalysisService:
         rate_unit: str,
     ) -> DomainResult:
         """Forecast production rates at specified times."""
-        fit = self._build_fit_from_params(model, qi, di, b, time_unit, rate_unit)
+        fit = self._build_fit_from_params(
+            model,
+            qi,
+            di,
+            b,
+        )
 
         # Validate forecast times
         if not forecast_time:
@@ -244,8 +266,7 @@ class DeclineAnalysisService:
         warnings: list[str] = []
         # Check if forecast rates are monotonically non-increasing
         is_decreasing = all(
-            rates[i] >= rates[i + 1] - 1e-10
-            for i in range(len(rates) - 1)
+            rates[i] >= rates[i + 1] - 1e-10 for i in range(len(rates) - 1)
         )
         if not is_decreasing:
             warnings.append("Forecast rates are not monotonically decreasing")
@@ -283,7 +304,12 @@ class DeclineAnalysisService:
                 "Either forecast_end or economic_limit must be provided",
             )
 
-        fit = self._build_fit_from_params(model, qi, di, b, time_unit, rate_unit)
+        fit = self._build_fit_from_params(
+            model,
+            qi,
+            di,
+            b,
+        )
 
         # Validate economic limit
         if economic_limit is not None:
@@ -320,7 +346,8 @@ class DeclineAnalysisService:
             # but kept for safety
             raise DomainError(
                 DomainErrorCode.INVALID_INPUT,
-                "Either forecast_end or a positive economic_limit must be provided",
+                "Either forecast_end or a positive "
+                "economic_limit must be provided",
             )
 
         if effective_end <= 0:
@@ -381,7 +408,9 @@ class DeclineAnalysisService:
 
         warnings: list[str] = []
         if cumulative < 0:
-            warnings.append("Cumulative production is negative — check parameters")
+            warnings.append(
+                "Cumulative production is negative — check parameters",
+            )
 
         return DomainResult(
             engine_id=ENGINE_ID,
@@ -403,7 +432,6 @@ class DeclineAnalysisService:
             artifacts=[],
         )
 
-
     # ── Private helpers ───────────────────────────────────────────────
 
     @staticmethod
@@ -422,7 +450,11 @@ class DeclineAnalysisService:
         if len(time) != len(rate):
             raise DomainError(
                 DomainErrorCode.INVALID_INPUT,
-                f"time ({len(time)}) and rate ({len(rate)}) must have equal length",
+                f"time ("
+                f"{len(time)}"
+                f") and rate ("
+                f"{len(rate)}"
+                f") must have equal length",
             )
         if not time_unit:
             raise DomainError(
@@ -452,7 +484,10 @@ class DeclineAnalysisService:
         if len(points) < MIN_POINTS:
             raise DomainError(
                 DomainErrorCode.INVALID_INPUT,
-                f"At least {MIN_POINTS} data points required, got {len(points)}",
+                f"At least "
+                f"{MIN_POINTS}"
+                f" data points required, got "
+                f"{len(points)}",
             )
 
         return points
@@ -463,8 +498,6 @@ class DeclineAnalysisService:
         qi: float,
         di: float,
         b: float | None,
-        time_unit: str,
-        rate_unit: str,
     ) -> DeclineFit:
         """Build a DeclineFit from user-provided parameters."""
         try:
@@ -524,18 +557,20 @@ class DeclineAnalysisService:
     @staticmethod
     def _fit_to_dict(fit: DeclineFit) -> dict[str, Any]:
         """Convert a DeclineFit to JSON-safe dict."""
-        return sanitize_json({
-            "model": fit.model.value,
-            "qi": fit.qi,
-            "di": fit.di,
-            "b": fit.b,
-            "rmse": fit.rmse,
-            "mae": fit.mae,
-            "r_squared": fit.r_squared,
-            "aic": fit.aic,
-            "fit_start": fit.fit_start,
-            "fit_end": fit.fit_end,
-        })
+        return sanitize_json(
+            {
+                "model": fit.model.value,
+                "qi": fit.qi,
+                "di": fit.di,
+                "b": fit.b,
+                "rmse": fit.rmse,
+                "mae": fit.mae,
+                "r_squared": fit.r_squared,
+                "aic": fit.aic,
+                "fit_start": fit.fit_start,
+                "fit_end": fit.fit_end,
+            },
+        )
 
     @staticmethod
     def _solve_economic_limit(fit: DeclineFit, economic_limit: float) -> float:

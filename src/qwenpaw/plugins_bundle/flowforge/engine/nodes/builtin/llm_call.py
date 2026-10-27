@@ -6,12 +6,12 @@ from __future__ import annotations
 import time
 from typing import Any
 
-import logging
+from ...adapter.log_compat import get_logger
 
 from ...io import IO, Hidden, HiddenHolder, NodeOutput, Schema
 from ..base import WorkflowNode
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 
 class LLMCallNode(WorkflowNode):
@@ -23,26 +23,44 @@ class LLMCallNode(WorkflowNode):
             node_id="LLMCallNode",
             display_name="LLM Call",
             category="workflow/ai",
-            description="Call the configured LLM service with a templated prompt.",
+            description=(
+                "Call the configured LLM service with a templated prompt."
+            ),
             inputs=[
                 IO.String.Input(id="prompt", multiline=True),
                 IO.String.Input(id="model", optional=True, default=""),
                 IO.Float.Input(
-                    id="temperature", optional=True, default=0.1,
-                    min=0.0, max=2.0, step=0.1,
+                    id="temperature",
+                    optional=True,
+                    default=0.1,
+                    min=0.0,
+                    max=2.0,
+                    step=0.1,
                 ),
                 IO.Int.Input(
-                    id="max_tokens", optional=True, default=4096,
-                    min=1, max=32768,
+                    id="max_tokens",
+                    optional=True,
+                    default=4096,
+                    min=1,
+                    max=32768,
                 ),
                 IO.String.Input(id="output", optional=True),
             ],
             outputs=[IO.String.Output(id="content")],
-            hidden=[Hidden.UNIQUE_ID, Hidden.TOOL_CONTEXT, Hidden.WORKFLOW_STATE],
+            hidden=[
+                Hidden.UNIQUE_ID,
+                Hidden.TOOL_CONTEXT,
+                Hidden.WORKFLOW_STATE,
+            ],
             not_idempotent=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         ctx = hidden.tool_context
         llm = getattr(ctx, "llm_service", None) if ctx else None
         if llm is None:
@@ -58,6 +76,7 @@ class LLMCallNode(WorkflowNode):
         start = time.monotonic()
         try:
             from ...adapter import ChatMessage
+
             messages = [ChatMessage.user(prompt)]
             response = await llm.complete(
                 messages=messages,
@@ -72,11 +91,20 @@ class LLMCallNode(WorkflowNode):
             return NodeOutput(
                 values=(content,),
                 metadata={
-                    "model": inputs.get("model"), "duration_ms": duration_ms,
+                    "model": inputs.get("model"),
+                    "duration_ms": duration_ms,
                     "response_length": len(content),
                 },
             )
         except Exception as exc:  # noqa: BLE001
             duration_ms = int((time.monotonic() - start) * 1000)
-            logger.error("llm_call_failed", error=str(exc), duration_ms=duration_ms, exc_info=True)
-            return NodeOutput(error=str(exc), metadata={"duration_ms": duration_ms})
+            logger.error(
+                "llm_call_failed",
+                error=str(exc),
+                duration_ms=duration_ms,
+                exc_info=True,
+            )
+            return NodeOutput(
+                error=str(exc),
+                metadata={"duration_ms": duration_ms},
+            )

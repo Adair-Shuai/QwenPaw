@@ -28,7 +28,13 @@ def create_ijk_slice(
     ncol, nrow, nlay = (int(value) for value in grid_dims)
     limits = {"i": ncol, "j": nrow, "k": nlay}
     if index < 1 or index > limits[axis_name]:
-        raise ValueError(f"{axis_name.upper()} index {index} is outside 1..{limits[axis_name]}")
+        raise ValueError(
+            f"{axis_name.upper()}"
+            f" index "
+            f"{index}"
+            f" is outside 1.."
+            f"{limits[axis_name]}",
+        )
 
     n_cells = len(cell_ids)
     if n_cells == 0:
@@ -56,32 +62,43 @@ def create_ijk_slice(
     out_cell_ids: list[int] = []
     for new_offset, source_offset in enumerate(selected):
         start = source_offset * verts_per_cell * 3
-        out_positions.extend(float(value) for value in positions[start:start + verts_per_cell * 3])
+        out_positions.extend(
+            float(value)
+            for value in positions[start : start + verts_per_cell * 3]
+        )
         base = new_offset * verts_per_cell
         src_index_start = source_offset * indices_per_cell
         first_vertex = source_offset * verts_per_cell
-        for value in indices[src_index_start:src_index_start + indices_per_cell]:
+        for value in indices[
+            src_index_start : src_index_start + indices_per_cell
+        ]:
             out_indices.append(int(value) - first_vertex + base)
         out_cell_ids.append(int(cell_ids[source_offset]))
 
     prefix = f"slice_{name}"
     bin_dir.mkdir(parents=True, exist_ok=True)
     (bin_dir / f"{prefix}_positions.f32").write_bytes(
-        struct.pack(f"<{len(out_positions)}f", *out_positions)
+        struct.pack(f"<{len(out_positions)}f", *out_positions),
     )
     (bin_dir / f"{prefix}_indices.u32").write_bytes(
-        struct.pack(f"<{len(out_indices)}I", *out_indices)
+        struct.pack(f"<{len(out_indices)}I", *out_indices),
     )
     (bin_dir / f"{prefix}_cell_ids.u32").write_bytes(
-        struct.pack(f"<{len(out_cell_ids)}I", *out_cell_ids)
+        struct.pack(f"<{len(out_cell_ids)}I", *out_cell_ids),
     )
     scalar_files: dict[str, str] = {}
     for key, values in (scalars or {}).items():
-        sampled = [float(values[offset]) for offset in selected if offset < len(values)]
+        sampled = [
+            float(values[offset])
+            for offset in selected
+            if offset < len(values)
+        ]
         if len(sampled) != len(selected):
             continue
         filename = f"{prefix}_scalars_{key}.f32"
-        (bin_dir / filename).write_bytes(struct.pack(f"<{len(sampled)}f", *sampled))
+        (bin_dir / filename).write_bytes(
+            struct.pack(f"<{len(sampled)}f", *sampled),
+        )
         scalar_files[key] = filename
 
     return {

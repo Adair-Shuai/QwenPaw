@@ -84,18 +84,24 @@ class Schema:
                 errors.append(f"input without id in {self.node_id}")
                 continue
             if inp.id in seen_ids:
-                errors.append(f"duplicate input id '{inp.id}' in {self.node_id}")
+                errors.append(
+                    f"duplicate input id '{inp.id}' in {self.node_id}",
+                )
             seen_ids.add(inp.id)
         if self.input_order:
             known = {inp.id for inp in self.inputs}
             for iid in self.input_order:
                 if iid not in known:
                     errors.append(
-                        f"input_order references unknown input '{iid}' in {self.node_id}",
+                        f"input_order references unknown input '{iid}' "
+                        f"in {self.node_id}",
                     )
-        if self.output_tooltips and len(self.output_tooltips) > len(self.outputs):
+        if self.output_tooltips and len(self.output_tooltips) > len(
+            self.outputs,
+        ):
             errors.append(
-                f"output_tooltips has more entries than outputs in {self.node_id}",
+                "output_tooltips has more entries than outputs "
+                f"in {self.node_id}",
             )
         return errors
 
@@ -161,12 +167,18 @@ class Schema:
             "output_node": self.is_output_node,
             "deprecated": self.is_deprecated,
             "experimental": self.is_experimental,
-            "input": {"required": required, "optional": optional, "hidden": hidden_dict},
+            "input": {
+                "required": required,
+                "optional": optional,
+                "hidden": hidden_dict,
+            },
             "input_order": self.ordered_input_ids(),
             "output": [o.get_io_type() for o in self.outputs],
             "output_name": list(self.return_names()),
             "output_is_list": [bool(o.is_list) for o in self.outputs],
-            "output_colors": [socket_color(o.get_io_type()) for o in self.outputs],
+            "output_colors": [
+                socket_color(o.get_io_type()) for o in self.outputs
+            ],
             "output_tooltips": list(self.output_tooltips),
             "output_matchtypes": list(self.output_matchtypes),
             "control_flow": self.control_flow,

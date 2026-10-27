@@ -12,10 +12,15 @@ export const LAYOUT = {
   slicePlayerHeight: 32,
 } as const;
 
-export function chromeInsets(treeCollapsed: boolean, inspectorCollapsed: boolean) {
+export function chromeInsets(
+  treeCollapsed: boolean,
+  inspectorCollapsed: boolean,
+) {
   return {
     left: treeCollapsed ? LAYOUT.treeCollapsed : LAYOUT.treeWidth,
-    right: inspectorCollapsed ? LAYOUT.inspectorCollapsed : LAYOUT.inspectorWidth,
+    right: inspectorCollapsed
+      ? LAYOUT.inspectorCollapsed
+      : LAYOUT.inspectorWidth,
   };
 }
 
@@ -49,26 +54,39 @@ export function applyChromeOffsets(elements: {
   containerWidth?: number;
   containerHeight?: number;
 }) {
-  const { left, right } = chromeInsets(elements.treeCollapsed, elements.inspectorCollapsed);
+  const { left, right } = chromeInsets(
+    elements.treeCollapsed,
+    elements.inspectorCollapsed,
+  );
   const gutter = 8;
   const viewportLeft = `${left + gutter}px`;
   const viewportRight = `${right + gutter}px`;
   const sliceBottom = 8;
   const sliceHeight = LAYOUT.slicePlayerHeight;
-  const width = elements.containerWidth || elements.tree.parentElement?.clientWidth || Infinity;
-  const height = elements.containerHeight || elements.tree.parentElement?.clientHeight || Infinity;
+  const width =
+    elements.containerWidth ||
+    elements.tree.parentElement?.clientWidth ||
+    Infinity;
+  const height =
+    elements.containerHeight ||
+    elements.tree.parentElement?.clientHeight ||
+    Infinity;
   const available = Math.max(0, width - left - right - gutter * 2);
   const compact = available < 640 || height < 540;
   const narrow = available < 420;
 
   elements.tree.style.left = "0";
   elements.tree.style.right = "auto";
-  elements.tree.style.width = `${elements.treeCollapsed ? LAYOUT.treeCollapsed : LAYOUT.treeWidth}px`;
+  elements.tree.style.width = `${
+    elements.treeCollapsed ? LAYOUT.treeCollapsed : LAYOUT.treeWidth
+  }px`;
 
   elements.inspector.style.left = "auto";
   elements.inspector.style.right = "0";
   elements.inspector.style.width = `${
-    elements.inspectorCollapsed ? LAYOUT.inspectorCollapsed : LAYOUT.inspectorWidth
+    elements.inspectorCollapsed
+      ? LAYOUT.inspectorCollapsed
+      : LAYOUT.inspectorWidth
   }px`;
 
   elements.toolbar?.style.setProperty("left", viewportLeft);
@@ -90,17 +108,25 @@ export function applyChromeOffsets(elements: {
   }
   // Preserve each widget's functional display state; only suppress secondary
   // overlays when they would cover the model or the selection details.
-  for (const widget of [elements.wellMap, elements.readout, elements.hud, elements.histogram]) {
+  for (const widget of [
+    elements.wellMap,
+    elements.readout,
+    elements.hud,
+    elements.histogram,
+  ]) {
     if (widget) widget.style.visibility = compact ? "hidden" : "";
   }
-  if (elements.compass) elements.compass.style.visibility = narrow ? "hidden" : "";
+  if (elements.compass)
+    elements.compass.style.visibility = narrow ? "hidden" : "";
 
   if (elements.slicePlayer) {
     elements.slicePlayer.style.left = viewportLeft;
     elements.slicePlayer.style.right = viewportRight;
     elements.slicePlayer.style.bottom = `${sliceBottom}px`;
     elements.slicePlayer.style.overflowX = "auto";
-    const slider = elements.slicePlayer.querySelector<HTMLInputElement>('input[type="range"]');
+    const slider = elements.slicePlayer.querySelector<HTMLInputElement>(
+      'input[type="range"]',
+    );
     if (slider) slider.style.minWidth = "24px";
   }
   if (elements.info) {
@@ -138,7 +164,9 @@ export function applyChromeOffsets(elements: {
   if (elements.legend) {
     elements.legend.style.right = viewportRight;
     elements.legend.style.left = "auto";
-    elements.legend.style.maxWidth = `max(0px, calc(100% - ${left + right + gutter * 2}px))`;
+    elements.legend.style.maxWidth = `max(0px, calc(100% - ${
+      left + right + gutter * 2
+    }px))`;
     elements.legend.style.bottom = `${sliceBottom + sliceHeight + 114}px`;
   }
   if (elements.histogram) {
@@ -150,17 +178,25 @@ export function applyChromeOffsets(elements: {
     elements.details.style.right = viewportRight;
     elements.details.style.left = "auto";
     elements.details.style.width = "270px";
-    elements.details.style.maxWidth = `max(0px, calc(100% - ${left + right + gutter * 2}px))`;
+    elements.details.style.maxWidth = `max(0px, calc(100% - ${
+      left + right + gutter * 2
+    }px))`;
     elements.details.style.boxSizing = "border-box";
-    elements.details.style.maxHeight = compact ? "40%" : "min(260px, calc(100% - 370px))";
+    elements.details.style.maxHeight = compact
+      ? "40%"
+      : "min(260px, calc(100% - 370px))";
     elements.details.style.overflowY = "auto";
-    elements.details.style.bottom = `${sliceBottom + sliceHeight + (compact ? 186 : 246)}px`;
+    elements.details.style.bottom = `${
+      sliceBottom + sliceHeight + (compact ? 186 : 246)
+    }px`;
   }
   if (elements.wellLog) {
     elements.wellLog.style.right = viewportRight;
     elements.wellLog.style.top = "88px";
     elements.wellLog.style.bottom = "16px";
-    elements.wellLog.style.maxWidth = `max(0px, calc(100% - ${left + right + gutter * 2}px))`;
+    elements.wellLog.style.maxWidth = `max(0px, calc(100% - ${
+      left + right + gutter * 2
+    }px))`;
   }
   if (elements.shortcuts) {
     elements.shortcuts.style.left = viewportLeft;

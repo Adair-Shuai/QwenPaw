@@ -319,10 +319,7 @@ def _qoder_project_cwds(qoder_home: Path) -> dict[str, str]:
 def _encode_qoder_cwd(cwd: str) -> str:
     """Encode a CWD as a portable Qoder project directory name."""
     return (
-        cwd.lstrip("/\\")
-        .replace(":", "")
-        .replace("/", "-")
-        .replace("\\", "-")
+        cwd.lstrip("/\\").replace(":", "").replace("/", "-").replace("\\", "-")
     )
 
 

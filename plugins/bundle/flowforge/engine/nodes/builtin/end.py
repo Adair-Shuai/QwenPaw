@@ -19,7 +19,7 @@ class EndNode(WorkflowNode):
             display_name="End",
             category="workflow/control",
             description="Workflow terminator. Returns value when provided; "
-                        "otherwise collects preceding node outputs.",
+            "otherwise collects preceding node outputs.",
             inputs=[IO.Any.Input(id="value", optional=True)],
             outputs=[IO.Any.Output(id="outputs")],
             hidden=[Hidden.UNIQUE_ID, Hidden.WORKFLOW_STATE],
@@ -27,7 +27,12 @@ class EndNode(WorkflowNode):
             control_flow=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         if "value" in inputs:
             return NodeOutput(values=(inputs["value"],), next_node=None)
         state = hidden.workflow_state

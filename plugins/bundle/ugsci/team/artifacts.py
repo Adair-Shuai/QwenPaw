@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Controller publications and reviews bound to immutable result versions.
 
 Uses the existing per-instance state lock and revision check. Files are written
@@ -11,13 +12,14 @@ import hashlib
 import json
 import uuid
 from pathlib import Path
+from typing import NoReturn
 
 from .state import TeamStateConflictError, TeamWorkflowState
 
 LIMIT = 8 * 1024 * 1024
 
 
-def _fail(message: str):
+def _fail(message: str) -> NoReturn:
     raise TeamStateConflictError(message)
 
 
@@ -72,7 +74,10 @@ def _snapshot(wf: TeamWorkflowState, relative: str, raw: bytes) -> dict:
         # A crash after snapshot creation but before state commit is safe
         # to retry only when the original bytes are identical.
         if _read(wf, relative) != raw:
-            _fail("An immutable artifact version already exists with other bytes")
+            _fail(
+                "An immutable artifact version already exists "
+                "with other bytes",
+            )
     return {"path": relative, "sha256": _hash(raw)}
 
 
@@ -108,12 +113,15 @@ def freeze_plan(wf: TeamWorkflowState, data: dict) -> dict:
         _fail("Plan must contain 1 to 100 steps")
     numbers = [s.get("step") if isinstance(s, dict) else None for s in steps]
     if any(type(n) is not int or n < 1 or n > 100 for n in numbers) or len(
-        set(numbers)
+        set(numbers),
     ) != len(numbers):
         _fail("Plan step numbers must be unique integers from 1 to 100")
     old = data.get("artifact_plan")
     if old and old["sha256"] != _hash(raw):
-        _fail("The frozen plan changed; start a new workflow for a different plan")
+        _fail(
+            "The frozen plan changed; "
+            "start a new workflow for a different plan",
+        )
     dependencies = {}
     for step in steps:
         deps = step.get("depends_on", [])
@@ -150,7 +158,9 @@ def freeze_plan(wf: TeamWorkflowState, data: dict) -> dict:
 
 
 def results_snapshot(
-    wf: TeamWorkflowState, data: dict, only: list[int] | None = None
+    wf: TeamWorkflowState,
+    data: dict,
+    only: list[int] | None = None,
 ) -> dict:
     plan = data.get("artifact_plan")
     if not plan or _hash(_read(wf, "handoffs/plan.json")) != plan["sha256"]:
@@ -173,7 +183,10 @@ def results_snapshot(
             for dep in plan.get("dependencies", {}).get(key, [])
         }
         if item.get("input_versions", {}) != dependencies:
-            _fail(f"{key} depends on superseded input versions; dispatch it again")
+            _fail(
+                f"{key} depends on superseded input versions; "
+                "dispatch it again",
+            )
         result[key] = published
         return published
 
@@ -208,7 +221,9 @@ def validate_phase(wf: TeamWorkflowState, data: dict):
         if phase == "completed":
             report = data.get("artifact_report", {})
             if report.get("review_id") != review["review_id"]:
-                _fail("A final report bound to the accepted review is required")
+                _fail(
+                    "A final report bound to the accepted review is required",
+                )
             for relative in [report["path"], "handoffs/final-report.md"]:
                 if _hash(_read(wf, relative)) != report["sha256"]:
                     _fail("The final report changed after publication")
@@ -221,8 +236,12 @@ class TeamArtifacts:
     def prepare_result(self, step: int, task_id: str, revision: int) -> dict:
         with self.wf.locked():
             data = _checked(self.wf, revision, "dispatch")
-            if type(step) is not int or step not in data.get("artifact_plan", {}).get(
-                "steps", []
+            if type(step) is not int or step not in data.get(
+                "artifact_plan",
+                {},
+            ).get(
+                "steps",
+                [],
             ):
                 _fail("Step is not in the frozen plan")
             if (
@@ -232,7 +251,9 @@ class TeamArtifacts:
             ):
                 _fail("A task or dispatch identifier is required")
             key = f"step-{step}"
-            dependencies = data["artifact_plan"].get("dependencies", {}).get(key, [])
+            dependencies = (
+                data["artifact_plan"].get("dependencies", {}).get(key, [])
+            )
             inputs = results_snapshot(self.wf, data, only=dependencies)
             attempt = uuid.uuid4().hex
             candidate = f"candidates/{key}/{attempt}.json"
@@ -260,7 +281,12 @@ class TeamArtifacts:
                 "absolute_candidate_path": str(_path(self.wf, candidate)),
             }
 
-    def publish_result(self, step: int, attempt_id: str, revision: int) -> dict:
+    def publish_result(
+        self,
+        step: int,
+        attempt_id: str,
+        revision: int,
+    ) -> dict:
         with self.wf.locked():
             data = _checked(self.wf, revision, "dispatch")
             key = f"step-{step}"
@@ -272,22 +298,37 @@ class TeamArtifacts:
                 or item.get("published")
             ):
                 _fail(
-                    "This attempt was superseded, is unknown, or is already published"
+                    "This attempt was superseded, is unknown, "
+                    "or is already published",
                 )
             raw = _read(self.wf, item["candidate_path"])
             _json(raw)
-            dependencies = data["artifact_plan"].get("dependencies", {}).get(key, [])
+            dependencies = (
+                data["artifact_plan"].get("dependencies", {}).get(key, [])
+            )
             if item.get("input_versions", {}) != results_snapshot(
-                self.wf, data, only=dependencies
+                self.wf,
+                data,
+                only=dependencies,
             ):
-                _fail("Candidate input versions changed; prepare and dispatch again")
-            published = _snapshot(self.wf, f"artifacts/{key}/{attempt_id}.json", raw)
-            published.update({"attempt_id": attempt_id, "task_id": item["task_id"]})
+                _fail(
+                    "Candidate input versions changed; "
+                    "prepare and dispatch again",
+                )
+            published = _snapshot(
+                self.wf,
+                f"artifacts/{key}/{attempt_id}.json",
+                raw,
+            )
+            published.update(
+                {"attempt_id": attempt_id, "task_id": item["task_id"]},
+            )
             _alias(self.wf, f"results/{key}.json", raw)
             item["published"] = published
             results[key] = item
             state = self.wf.update_state(
-                {"artifact_results": results}, expected_revision=revision
+                {"artifact_results": results},
+                expected_revision=revision,
             )
             return {**published, "revision": state["revision"]}
 
@@ -333,14 +374,20 @@ class TeamArtifacts:
                 or not isinstance(report.get("verdict"), str)
                 or report.get("verdict") not in {"PASS", "FAIL", "PARTIAL"}
             ):
-                _fail("Review identity, result versions or verdict do not match")
-            accepted = _snapshot(self.wf, f"artifacts/reviews/{review_id}.json", raw)
+                _fail(
+                    "Review identity, result versions or verdict do not match",
+                )
+            accepted = _snapshot(
+                self.wf,
+                f"artifacts/reviews/{review_id}.json",
+                raw,
+            )
             accepted.update(
                 {
                     "review_id": review_id,
                     "snapshot": snapshot,
                     "verdict": report["verdict"],
-                }
+                },
             )
             _alias(self.wf, "reviews/verify-report.json", raw)
             state = self.wf.update_state(
@@ -360,10 +407,15 @@ class TeamArtifacts:
             ):
                 _fail("Final report must be nonempty and at most 8 MiB")
             raw = content.encode("utf-8")
-            report = _snapshot(self.wf, f"artifacts/reports/{uuid.uuid4().hex}.md", raw)
+            report = _snapshot(
+                self.wf,
+                f"artifacts/reports/{uuid.uuid4().hex}.md",
+                raw,
+            )
             report["review_id"] = review["review_id"]
             _alias(self.wf, "handoffs/final-report.md", raw)
             state = self.wf.update_state(
-                {"artifact_report": report}, expected_revision=revision
+                {"artifact_report": report},
+                expected_revision=revision,
             )
             return {**report, "revision": state["revision"]}

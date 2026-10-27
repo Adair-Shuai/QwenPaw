@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Executable workflow regressions with deterministic tool fixtures."""
 from __future__ import annotations
 
@@ -27,26 +28,43 @@ def run(executor, definition, inputs=None):
     return asyncio.run(executor.execute(load(definition), inputs or {}))
 
 
-@pytest.mark.parametrize("value", ["AI搭建修复验收通过", 0, False, None, {"answer": 42}])
+@pytest.mark.parametrize(
+    "value",
+    ["AI搭建修复验收通过", 0, False, None, {"answer": 42}],
+)
 def test_end_node_returns_its_declared_value(value):
-    result = run(WorkflowExecutor(), {
-        "id": "end-value",
-        "nodes": {"end": {"class_type": "EndNode", "inputs": {"value": value}}},
-        "outputs": ["end"],
-    })
+    result = run(
+        WorkflowExecutor(),
+        {
+            "id": "end-value",
+            "nodes": {
+                "end": {"class_type": "EndNode", "inputs": {"value": value}},
+            },
+            "outputs": ["end"],
+        },
+    )
     assert result.status == WorkflowStatus.COMPLETED
     assert result.outputs == {"end": value}
 
 
 def test_end_node_without_value_preserves_collected_outputs():
-    result = run(WorkflowExecutor(), {
-        "id": "end-collect",
-        "nodes": {
-            "before": {"class_type": "OutputNode", "inputs": {"value": "kept"}},
-            "end": {"class_type": "EndNode", "inputs": {"__flow_dependencies": [["before", 0]]}},
+    result = run(
+        WorkflowExecutor(),
+        {
+            "id": "end-collect",
+            "nodes": {
+                "before": {
+                    "class_type": "OutputNode",
+                    "inputs": {"value": "kept"},
+                },
+                "end": {
+                    "class_type": "EndNode",
+                    "inputs": {"__flow_dependencies": [["before", 0]]},
+                },
+            },
+            "outputs": ["end"],
         },
-        "outputs": ["end"],
-    })
+    )
     assert result.status == WorkflowStatus.COMPLETED
     # Preserve the existing collector's output-slot representation.
     assert result.outputs == {"end": {"before": ("kept",)}}
@@ -67,7 +85,7 @@ def review_flow():
             "review": {
                 "class_type": "HumanReviewNode",
                 "inputs": {"reviewer": "operator"},
-            }
+            },
         },
         "outputs": ["review"],
     }
@@ -79,7 +97,7 @@ def test_control_only_branches_gate_side_effects_and_join_once():
         tool_registry={
             name: lambda name=name: calls.append(name) or name
             for name in ("yes", "no", "join")
-        }
+        },
     )
     definition = {
         "id": "diamond",
@@ -93,7 +111,7 @@ def test_control_only_branches_gate_side_effects_and_join_once():
                             "operator": "eq",
                             "right": True,
                             "then_node": "yes",
-                        }
+                        },
                     ],
                     "else_node": "no",
                 },
@@ -131,7 +149,7 @@ def test_true_parallel_dag_rendezvous_and_recursive_argument_join():
                 "left": lambda: produce("left"),
                 "right": lambda: produce("right"),
                 "join": lambda data: data,
-            }
+            },
         )
         definition = {
             "id": "parallel-dag",
@@ -146,7 +164,7 @@ def test_true_parallel_dag_rendezvous_and_recursive_argument_join():
                             "data": {
                                 "values": [["left", 0], ["right", 0]],
                                 "literal": ["a", "b"],
-                            }
+                            },
                         },
                     },
                 },
@@ -178,7 +196,7 @@ def test_failed_dependency_never_executes_downstream_tool():
         definition,
     )
     assert result.status == WorkflowStatus.FAILED
-    assert calls == []
+    assert not calls
 
 
 def test_structured_tool_error_retries_with_configured_budget():
@@ -194,13 +212,15 @@ def test_structured_tool_error_retries_with_configured_budget():
         "id": "retry",
         "nodes": {
             "job": tool(
-                "unstable", control={"max_retries": 2, "retry_delay_sec": 0}
-            )
+                "unstable",
+                control={"max_retries": 2, "retry_delay_sec": 0},
+            ),
         },
         "outputs": ["job"],
     }
     result = run(
-        WorkflowExecutor(tool_registry={"unstable": unstable}), definition
+        WorkflowExecutor(tool_registry={"unstable": unstable}),
+        definition,
     )
     assert result.status == WorkflowStatus.COMPLETED
     assert result.outputs["job"] == "recovered"
@@ -222,7 +242,7 @@ def test_node_timeout_stops_awaiting_tool():
     result = run(WorkflowExecutor(tool_registry={"slow": slow}), definition)
     assert result.status == WorkflowStatus.FAILED
     assert "TimeoutError" in result.errors[0]
-    assert completed == []
+    assert not completed
 
 
 def test_existing_cancellation_contract_stops_inflight_tools():
@@ -241,16 +261,16 @@ def test_existing_cancellation_contract_stops_inflight_tools():
                 "id": "cancel",
                 "nodes": {"slow": tool("slow")},
                 "outputs": ["slow"],
-            }
+            },
         )
         task = asyncio.create_task(
-            executor.execute_async(definition, {}, prompt_id="run-cancel")
+            executor.execute_async(definition, {}, prompt_id="run-cancel"),
         )
         await started.wait()
         assert executor.cancel_by_prompt_id("run-cancel")
         result = await asyncio.wait_for(task, 0.5)
         assert result.status == WorkflowStatus.CANCELLED
-        assert completed == []
+        assert not completed
 
     asyncio.run(scenario())
 
@@ -283,7 +303,7 @@ def test_checkpoint_preserves_completed_parallel_sibling_across_restart(
                 },
             },
             "outputs": ["out"],
-        }
+        },
     )
 
     async def scenario():
@@ -298,13 +318,17 @@ def test_checkpoint_preserves_completed_parallel_sibling_across_restart(
             state_store=JsonWorkflowStateStore(tmp_path),
         )
         result = await restarted.resume(
-            definition, paused.state_id, {"approved": True}
+            definition,
+            paused.state_id,
+            {"approved": True},
         )
         assert result.status == WorkflowStatus.COMPLETED
         assert calls == [True]
         with pytest.raises(ValueError, match="only paused"):
             await restarted.resume(
-                definition, paused.state_id, {"approved": True}
+                definition,
+                paused.state_id,
+                {"approved": True},
             )
 
     asyncio.run(scenario())
@@ -314,13 +338,15 @@ def test_checkpoint_preserves_completed_parallel_sibling_across_restart(
 def test_review_requires_boolean_decision(tmp_path: Path, decision):
     async def scenario():
         executor = WorkflowExecutor(
-            state_store=JsonWorkflowStateStore(tmp_path)
+            state_store=JsonWorkflowStateStore(tmp_path),
         )
         definition = load(review_flow())
         paused = await executor.execute(definition)
         with pytest.raises(ValueError, match="boolean approved"):
             await executor.resume(
-                definition, paused.state_id, {"approved": decision}
+                definition,
+                paused.state_id,
+                {"approved": decision},
             )
 
     asyncio.run(scenario())
@@ -339,10 +365,12 @@ def test_rejected_review_cannot_execute_approval_side_effect(tmp_path: Path):
         )
         paused = await executor.execute(load(definition))
         result = await executor.resume(
-            definition, paused.state_id, {"approved": False}
+            definition,
+            paused.state_id,
+            {"approved": False},
         )
         assert result.status == WorkflowStatus.FAILED
-        assert calls == []
+        assert not calls
 
     asyncio.run(scenario())
 
@@ -350,7 +378,7 @@ def test_rejected_review_cannot_execute_approval_side_effect(tmp_path: Path):
 def test_workflow_input_schema_is_enforced_before_side_effects():
     calls = []
     executor = WorkflowExecutor(
-        tool_registry={"effect": lambda: calls.append(True)}
+        tool_registry={"effect": lambda: calls.append(True)},
     )
     definition = {
         "id": "input-contract",
@@ -361,7 +389,7 @@ def test_workflow_input_schema_is_enforced_before_side_effects():
                 "required": True,
                 "minimum": 0,
                 "maximum": 34,
-            }
+            },
         ],
         "nodes": {"job": tool("effect")},
         "outputs": ["job"],
@@ -369,7 +397,7 @@ def test_workflow_input_schema_is_enforced_before_side_effects():
     for inputs in ({}, {"pressure": "32"}, {"pressure": -1}, {"pressure": 40}):
         with pytest.raises(ValidationError, match="inputs are invalid"):
             run(executor, definition, inputs)
-    assert calls == []
+    assert not calls
     assert (
         run(executor, definition, {"pressure": 32}).status
         == WorkflowStatus.COMPLETED
@@ -389,22 +417,28 @@ def test_multiple_reviews_resolve_only_the_selected_request(tmp_path: Path):
                     for name in ("alice", "bob")
                 },
                 "outputs": ["alice", "bob"],
-            }
+            },
         )
         executor = WorkflowExecutor(
-            state_store=JsonWorkflowStateStore(tmp_path)
+            state_store=JsonWorkflowStateStore(tmp_path),
         )
         paused = await executor.execute(definition)
         with pytest.raises(ValueError, match="node_id is required"):
             await executor.resume(
-                definition, paused.state_id, {"approved": True}
+                definition,
+                paused.state_id,
+                {"approved": True},
             )
         partial = await executor.resume(
-            definition, paused.state_id, {"node_id": "alice", "approved": True}
+            definition,
+            paused.state_id,
+            {"node_id": "alice", "approved": True},
         )
         assert partial.status == WorkflowStatus.WAITING_HUMAN
         final = await executor.resume(
-            definition, paused.state_id, {"node_id": "bob", "approved": True}
+            definition,
+            paused.state_id,
+            {"node_id": "bob", "approved": True},
         )
         assert final.status == WorkflowStatus.COMPLETED
         assert final.outputs["alice"]["approved"] is True
@@ -416,7 +450,7 @@ def test_multiple_reviews_resolve_only_the_selected_request(tmp_path: Path):
                     for entry in final.execution_history
                     if entry.node_id == "alice"
                     and entry.status == WorkflowStatus.COMPLETED
-                ]
+                ],
             )
             == 1
         )
@@ -436,12 +470,14 @@ def test_expired_review_cannot_be_approved(tmp_path: Path, monkeypatch):
         definition = review_flow()
         definition["nodes"]["review"]["inputs"]["timeout_sec"] = 1
         executor = WorkflowExecutor(
-            state_store=JsonWorkflowStateStore(tmp_path)
+            state_store=JsonWorkflowStateStore(tmp_path),
         )
         paused = await executor.execute(load(definition))
         clock[0] = 1002.0
         result = await executor.resume(
-            definition, paused.state_id, {"approved": True}
+            definition,
+            paused.state_id,
+            {"approved": True},
         )
         assert result.status == WorkflowStatus.FAILED
         assert "expired" in result.errors[0]
@@ -456,7 +492,7 @@ def test_script_timeout_kills_worker_without_blocking_event_loop():
             await execute_script("while True: pass", timeout_sec=0.05)
         assert time.monotonic() - start < 1
         result = await execute_script(
-            "def twice(x):\n    return x * 2\nresult = twice(3)"
+            "def twice(x):\n    return x * 2\nresult = twice(3)",
         )
         assert result.result == 6
 
@@ -471,7 +507,7 @@ def test_script_cancellation_and_json_argument_contract():
         )
         assert result.result == 5
         task = asyncio.create_task(
-            execute_script("while True: pass", timeout_sec=30)
+            execute_script("while True: pass", timeout_sec=30),
         )
         await asyncio.sleep(0.03)
         task.cancel()
@@ -488,10 +524,11 @@ def test_checkpoint_write_failure_does_not_claim_resumable_success():
 
     async def scenario():
         with pytest.raises(
-            RuntimeError, match="checkpoint could not be persisted"
+            RuntimeError,
+            match="checkpoint could not be persisted",
         ):
             await WorkflowExecutor(state_store=BrokenStore()).execute(
-                load(review_flow())
+                load(review_flow()),
             )
 
     asyncio.run(scenario())
@@ -539,7 +576,8 @@ def test_bounded_refinement_reexecutes_with_actual_quality_score():
         return value
 
     result = run(
-        WorkflowExecutor(tool_registry={"score": evaluate}), refine_flow()
+        WorkflowExecutor(tool_registry={"score": evaluate}),
+        refine_flow(),
     )
     assert result.status == WorkflowStatus.COMPLETED
     assert calls == [0.2, 0.8]
@@ -558,7 +596,7 @@ def test_refinement_exhausts_after_initial_attempt_plus_retry_budget():
     calls = []
     result = run(
         WorkflowExecutor(
-            tool_registry={"score": lambda: calls.append(0.1) or 0.1}
+            tool_registry={"score": lambda: calls.append(0.1) or 0.1},
         ),
         refine_flow(),
     )
@@ -583,7 +621,7 @@ def test_quality_gate_requires_explicit_score_and_parallel_never_fakes_work():
             "parallel": {
                 "class_type": "ParallelNode",
                 "control": {
-                    "branches": [{"id": "branch", "nodes": ["effect"]}]
+                    "branches": [{"id": "branch", "nodes": ["effect"]}],
                 },
             },
             "effect": tool("effect"),
@@ -596,7 +634,7 @@ def test_quality_gate_requires_explicit_score_and_parallel_never_fakes_work():
         definition,
     )
     assert result.status == WorkflowStatus.FAILED
-    assert calls == []
+    assert not calls
 
 
 def test_checkpoint_inside_second_iteration_preserves_scheduler_state(
@@ -625,7 +663,9 @@ def test_checkpoint_inside_second_iteration_preserves_scheduler_state(
         first = await executor.execute(load(definition))
         assert first.status == WorkflowStatus.WAITING_HUMAN
         second = await executor.resume(
-            definition, first.state_id, {"approved": True}
+            definition,
+            first.state_id,
+            {"approved": True},
         )
         assert second.status == WorkflowStatus.WAITING_HUMAN
         assert calls == [0.2, 0.8]
@@ -634,7 +674,9 @@ def test_checkpoint_inside_second_iteration_preserves_scheduler_state(
             state_store=JsonWorkflowStateStore(tmp_path),
         )
         final = await restarted.resume(
-            definition, first.state_id, {"approved": True}
+            definition,
+            first.state_id,
+            {"approved": True},
         )
         assert final.status == WorkflowStatus.COMPLETED
         assert final.outputs == {"accepted": 0.8}
@@ -670,7 +712,7 @@ def test_error_handler_runs_only_on_failure_and_keeps_failure_visible(fails):
             "process": process,
             "normal": lambda: calls.append("normal"),
             "fallback": lambda: calls.append("fallback"),
-        }
+        },
     )
     result = run(executor, definition)
     assert result.status == (
@@ -696,7 +738,7 @@ def test_document_metadata_cannot_expand_refinement_budget():
     definition["metadata"]["refine_counters"] = {"refine": -999}
     result = run(
         WorkflowExecutor(
-            tool_registry={"score": lambda: calls.append(True) or 0.1}
+            tool_registry={"score": lambda: calls.append(True) or 0.1},
         ),
         definition,
     )
@@ -705,7 +747,8 @@ def test_document_metadata_cannot_expand_refinement_budget():
 
 
 @pytest.mark.parametrize(
-    "class_type", ["ToolNode", "ToolCallNode", "Tool.guarded"]
+    "class_type",
+    ["ToolNode", "ToolCallNode", "Tool.guarded"],
 )
 def test_governance_nonretryable_error_never_retries(class_type):
     from qwenpaw.plugins_bundle.flowforge.engine.adapter.tool_registry import (
@@ -725,13 +768,16 @@ def test_governance_nonretryable_error_never_retries(class_type):
             self.calls = 0
 
         async def execute(self, name, params, context):
+            assert name == "guarded"
+            assert params == {}
+            assert context.workflow_id == "no-retry"
             self.calls += 1
             return ToolExecResult(
                 ToolResult(
                     success=False,
                     error="approval service unavailable",
                     retryable=False,
-                )
+                ),
             )
 
     guarded = GuardedExecutor()
@@ -744,9 +790,9 @@ def test_governance_nonretryable_error_never_retries(class_type):
                         name="guarded",
                         description="guarded",
                         input_schema={"type": "object", "properties": {}},
-                    )
-                )
-            )
+                    ),
+                ),
+            ),
         )
     inputs = (
         {"tool_name": "guarded"}
@@ -762,7 +808,7 @@ def test_governance_nonretryable_error_never_retries(class_type):
                 "class_type": class_type,
                 "inputs": inputs,
                 "control": {"max_retries": 2, "retry_delay_sec": 0},
-            }
+            },
         },
         "outputs": ["guarded"],
     }
@@ -793,9 +839,12 @@ def test_dynamic_readonly_tools_reenter_governance_each_loop_attempt():
             self.calls = 0
 
         async def execute(self, name, params, context):
+            assert name == "live_score"
+            assert params == {}
+            assert context.workflow_id == "refine"
             self.calls += 1
             return ToolExecResult(
-                ToolResult(data=0.2 if self.calls == 1 else 0.8)
+                ToolResult(data=0.2 if self.calls == 1 else 0.8),
             )
 
     governed = LiveExecutor()
@@ -807,9 +856,9 @@ def test_dynamic_readonly_tools_reenter_governance_each_loop_attempt():
                     name="live_score",
                     description="live read",
                     input_schema={"type": "object", "properties": {}},
-                )
-            )
-        )
+                ),
+            ),
+        ),
     )
     definition = refine_flow()
     definition["nodes"]["generate"] = {
@@ -842,9 +891,11 @@ def test_dynamic_tool_output_parameter_and_renamed_control_remain_separate():
 
     class GovernedExecutor:
         async def execute(self, name, params, context):
+            assert name == "runtime_collision"
+            assert context.workflow_id == "control-collision"
             seen.append(params)
             return ToolExecResult(
-                ToolResult(data={"answer": params["output"]})
+                ToolResult(data={"answer": params["output"]}),
             )
 
     registry = bootstrap()
@@ -859,9 +910,9 @@ def test_dynamic_tool_output_parameter_and_renamed_control_remain_separate():
                         "properties": {"output": {"type": "string"}},
                         "required": ["output"],
                     },
-                )
-            )
-        )
+                ),
+            ),
+        ),
     )
     definition = {
         "id": "control-collision",
@@ -882,7 +933,8 @@ def test_dynamic_tool_output_parameter_and_renamed_control_remain_separate():
     }
     result = run(
         WorkflowExecutor(
-            node_registry=registry, tool_executor=GovernedExecutor()
+            node_registry=registry,
+            tool_executor=GovernedExecutor(),
         ),
         definition,
     )

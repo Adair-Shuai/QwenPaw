@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """MCP Tools for COMSOL operations."""
 
 from .session import register_session_tools

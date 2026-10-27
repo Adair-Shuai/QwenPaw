@@ -1,18 +1,24 @@
 # -*- coding: utf-8 -*-
-"""Adapter: ``AgentDefinition`` / ``ModelPolicy`` for QwenPaw agent config.
+"""Adapter: ``AgentDefinition`` / ``ModelPolicy`` for QwenPaw agent \
+config.
 
-LeAgent's workflow agent nodes expect an ``AgentDefinition`` with attributes
-like ``name``, ``description``, ``max_turns``, ``tools.allow``, ``model.provider``,
-``model.model``, ``prompt_variant``, and a ``with_overrides(...)`` method.
+LeAgent's workflow agent nodes expect an ``AgentDefinition`` with \
+attributes
+like ``name``, ``description``, ``max_turns``, ``tools.allow``, \
+``model.provider``,
+``model.model``, ``prompt_variant``, and a ``with_overrides(...)`` \
+method.
 
-QwenPaw agents are configured via :class:`~qwenpaw.config.config.AgentConfig`.
-This adapter wraps an ``AgentConfig`` (or constructs one from scratch) into
+QwenPaw agents are configured via \
+:class:`~qwenpaw.config.config.AgentConfig`.
+This adapter wraps an ``AgentConfig`` (or constructs one from \
+scratch) into
 the ``AgentDefinition`` interface the workflow nodes use.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Any
 
 
@@ -23,7 +29,11 @@ class ModelPolicy:
     provider: str = ""
     model: str = ""
 
-    def model_copy(self, *, update: dict[str, Any] | None = None) -> "ModelPolicy":
+    def model_copy(
+        self,
+        *,
+        update: dict[str, Any] | None = None,
+    ) -> "ModelPolicy":
         """Pydantic-like ``model_copy`` for compatibility."""
         new = ModelPolicy(provider=self.provider, model=self.model)
         if update:
@@ -41,7 +51,11 @@ class ToolsPolicy:
     allow: tuple[str, ...] = ()
     deny: tuple[str, ...] = ()
 
-    def model_copy(self, *, update: dict[str, Any] | None = None) -> "ToolsPolicy":
+    def model_copy(
+        self,
+        *,
+        update: dict[str, Any] | None = None,
+    ) -> "ToolsPolicy":
         new = ToolsPolicy(allow=self.allow, deny=self.deny)
         if update:
             if "allow" in update:
@@ -105,14 +119,20 @@ class AgentDefinition:
 
         # Extract model info
         active_model = getattr(agent_config, "active_model", None)
-        provider = getattr(active_model, "provider_id", "") if active_model else ""
+        provider = (
+            getattr(active_model, "provider_id", "") if active_model else ""
+        )
         model_name = getattr(active_model, "model", "") if active_model else ""
 
         # Extract tool allow list
         tool_config = getattr(agent_config, "tools", None)
         allow: tuple[str, ...] = ()
         if tool_config is not None:
-            allow_list = getattr(tool_config, "allow", None) or getattr(tool_config, "enabled", None)
+            allow_list = getattr(tool_config, "allow", None) or getattr(
+                tool_config,
+                "enabled",
+                None,
+            )
             if isinstance(allow_list, (list, tuple)):
                 allow = tuple(str(t) for t in allow_list)
 

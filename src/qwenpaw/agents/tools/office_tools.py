@@ -1056,7 +1056,9 @@ async def office_merge_template(
     # Write data to a temp JSON file for officecli --data
     workspace_dir = get_current_workspace_dir() or WORKING_DIR
     temp_fd, data_file = tempfile.mkstemp(
-        prefix="office-merge_data-", suffix=".json", dir=workspace_dir,
+        prefix="office-merge_data-",
+        suffix=".json",
+        dir=workspace_dir,
     )
     os.close(temp_fd)
     try:
@@ -1153,7 +1155,9 @@ async def office_batch_operations(
     # Write commands to a temp JSON file
     workspace_dir = get_current_workspace_dir() or WORKING_DIR
     temp_fd, cmd_file = tempfile.mkstemp(
-        prefix="office-batch_cmds-", suffix=".json", dir=workspace_dir,
+        prefix="office-batch_cmds-",
+        suffix=".json",
+        dir=workspace_dir,
     )
     os.close(temp_fd)
     try:

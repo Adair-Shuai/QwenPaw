@@ -16,7 +16,9 @@ from typing import Any, Optional
 
 from .database import get_db
 
-_DT = lambda: datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")  # noqa: E731
+_DT = lambda: datetime.now(timezone.utc).strftime(
+    "%Y-%m-%dT%H:%M:%SZ",
+)  # noqa: E731
 
 
 def _uid() -> str:
@@ -37,10 +39,16 @@ def _rows_to_dicts(rows: list[sqlite3.Row]) -> list[dict[str, Any]]:
 #  Projects
 # ════════════════════════════════════════════════════════════════════
 
-def create_project(name: str, question: str = "", description: str = "") -> dict:
+
+def create_project(
+    name: str,
+    question: str = "",
+    description: str = "",
+) -> dict:
     pid = _uid()
     get_db().execute(
-        "INSERT INTO projects (id, name, question, description) VALUES (?,?,?,?)",
+        "INSERT INTO projects (id, name, question, "
+        "description) VALUES (?,?,?,?)",
         (pid, name, question, description),
     )
     return get_project(pid)  # type: ignore[return-value]
@@ -56,7 +64,8 @@ def get_project(project_id: str) -> dict | None:
 
 def list_projects() -> list[dict]:
     rows = get_db().query(
-        "SELECT * FROM projects WHERE deleted_at IS NULL ORDER BY updated_at DESC"
+        "SELECT * FROM projects WHERE deleted_at IS NULL "
+        "ORDER BY updated_at DESC",
     )
     return _rows_to_dicts(rows)
 
@@ -89,6 +98,7 @@ def soft_delete_project(project_id: str) -> bool:
 #  Papers
 # ════════════════════════════════════════════════════════════════════
 
+
 def create_paper(
     *,
     title: str = "",
@@ -102,9 +112,21 @@ def create_paper(
 ) -> dict:
     pid = _uid()
     get_db().execute(
-        """INSERT INTO papers (id, type, title, abstract, year, venue, language, doi, status, inbox)
-           VALUES (?,?,?,?,?,?,?,?,?,?)""",
-        (pid, paper_type, title, abstract, year, venue, language, doi, "unread", 1 if inbox else 0),
+        "INSERT INTO papers (id, type, title, abstract, year, "
+        "venue, language, doi, status, inbox)\n"
+        "           VALUES (?,?,?,?,?,?,?,?,?,?)",
+        (
+            pid,
+            paper_type,
+            title,
+            abstract,
+            year,
+            venue,
+            language,
+            doi,
+            "unread",
+            1 if inbox else 0,
+        ),
     )
     if doi:
         add_paper_identifier(pid, "doi", doi.lower())
@@ -147,7 +169,16 @@ def list_papers(
 
 
 def update_paper(paper_id: str, **fields: Any) -> dict | None:
-    allowed = {"title", "abstract", "year", "venue", "language", "doi", "type", "status"}
+    allowed = {
+        "title",
+        "abstract",
+        "year",
+        "venue",
+        "language",
+        "doi",
+        "type",
+        "status",
+    }
     sets = [f"{k}=?" for k in fields if k in allowed]
     vals = [v for k, v in fields.items() if k in allowed]
     if not sets:
@@ -182,7 +213,8 @@ def restore_paper(paper_id: str) -> dict | None:
 
 def find_paper_by_doi(doi: str) -> dict | None:
     row = get_db().query_one(
-        "SELECT p.* FROM papers p JOIN paper_identifiers pi ON pi.paper_id = p.id "
+        "SELECT p.* FROM papers p JOIN paper_identifiers pi "
+        "ON pi.paper_id = p.id "
         "WHERE pi.scheme='doi' AND pi.value=? AND p.deleted_at IS NULL",
         (doi.lower(),),
     )
@@ -199,10 +231,14 @@ def find_paper_by_sha256(sha256: str) -> dict | None:
 
 
 def merge_papers(source_id: str, target_id: str) -> dict | None:
-    """Merge source paper into target: move files, annotations, project links."""
+    """Merge source paper into target: move files, annotations, project \
+links."""
     db = get_db()
     # Move files
-    db.execute("UPDATE files SET paper_id=? WHERE paper_id=?", (target_id, source_id))
+    db.execute(
+        "UPDATE files SET paper_id=? WHERE paper_id=?",
+        (target_id, source_id),
+    )
     # Move project links (avoid duplicates)
     existing = {
         r["project_id"]
@@ -218,7 +254,8 @@ def merge_papers(source_id: str, target_id: str) -> dict | None:
     for link in links:
         if link["project_id"] not in existing:
             db.execute(
-                "UPDATE project_papers SET paper_id=? WHERE paper_id=? AND project_id=?",
+                "UPDATE project_papers SET paper_id=? WHERE "
+                "paper_id=? AND project_id=?",
                 (target_id, source_id, link["project_id"]),
             )
     # Delete remaining source links
@@ -229,7 +266,10 @@ def merge_papers(source_id: str, target_id: str) -> dict | None:
         (target_id, source_id),
     )
     # Move notes
-    db.execute("UPDATE notes SET paper_id=? WHERE paper_id=?", (target_id, source_id))
+    db.execute(
+        "UPDATE notes SET paper_id=? WHERE paper_id=?",
+        (target_id, source_id),
+    )
     # Move identifiers
     db.execute(
         "INSERT OR IGNORE INTO paper_identifiers (paper_id, scheme, value) "
@@ -243,9 +283,11 @@ def merge_papers(source_id: str, target_id: str) -> dict | None:
 
 # ── Paper identifiers ───────────────────────────────────────────────
 
+
 def add_paper_identifier(paper_id: str, scheme: str, value: str) -> None:
     get_db().execute(
-        "INSERT OR IGNORE INTO paper_identifiers (paper_id, scheme, value) VALUES (?,?,?)",
+        "INSERT OR IGNORE INTO paper_identifiers (paper_id, "
+        "scheme, value) VALUES (?,?,?)",
         (paper_id, scheme, value),
     )
 
@@ -260,10 +302,9 @@ def get_paper_identifiers(paper_id: str) -> list[dict]:
 
 # ── Authors ─────────────────────────────────────────────────────────
 
+
 def set_paper_authors(paper_id: str, authors: list[str]) -> None:
-    get_db().execute(
-        "DELETE FROM paper_authors WHERE paper_id=?", (paper_id,)
-    )
+    get_db().execute("DELETE FROM paper_authors WHERE paper_id=?", (paper_id,))
     for i, name in enumerate(authors):
         aid = _uid()
         get_db().execute(
@@ -272,12 +313,14 @@ def set_paper_authors(paper_id: str, authors: list[str]) -> None:
         )
         # Find existing author by name
         row = get_db().query_one(
-            "SELECT id FROM authors WHERE canonical_name=?", (name,)
+            "SELECT id FROM authors WHERE canonical_name=?",
+            (name,),
         )
         if row:
             aid = row["id"]
         get_db().execute(
-            "INSERT OR IGNORE INTO paper_authors (paper_id, author_id, position) VALUES (?,?,?)",
+            "INSERT OR IGNORE INTO paper_authors (paper_id, "
+            "author_id, position) VALUES (?,?,?)",
             (paper_id, aid, i),
         )
 
@@ -293,9 +336,15 @@ def get_paper_authors(paper_id: str) -> list[dict]:
 
 # ── Project ↔ Paper ─────────────────────────────────────────────────
 
-def add_paper_to_project(project_id: str, paper_id: str, priority: int = 0) -> None:
+
+def add_paper_to_project(
+    project_id: str,
+    paper_id: str,
+    priority: int = 0,
+) -> None:
     get_db().execute(
-        "INSERT OR IGNORE INTO project_papers (project_id, paper_id, priority) VALUES (?,?,?)",
+        "INSERT OR IGNORE INTO project_papers (project_id, "
+        "paper_id, priority) VALUES (?,?,?)",
         (project_id, paper_id, priority),
     )
     # Remove from inbox
@@ -311,9 +360,11 @@ def remove_paper_from_project(project_id: str, paper_id: str) -> None:
 
 def get_project_papers(project_id: str) -> list[dict]:
     rows = get_db().query(
-        "SELECT p.*, pp.reading_status, pp.priority, pp.added_at FROM papers p "
+        "SELECT p.*, pp.reading_status, pp.priority, "
+        "pp.added_at FROM papers p "
         "JOIN project_papers pp ON pp.paper_id = p.id "
-        "WHERE pp.project_id=? AND p.deleted_at IS NULL ORDER BY pp.added_at DESC",
+        "WHERE pp.project_id=? AND p.deleted_at IS NULL ORDER "
+        "BY pp.added_at DESC",
         (project_id,),
     )
     return _rows_to_dicts(rows)
@@ -321,13 +372,18 @@ def get_project_papers(project_id: str) -> list[dict]:
 
 def set_reading_status(project_id: str, paper_id: str, status: str) -> None:
     get_db().execute(
-        "UPDATE project_papers SET reading_status=? WHERE project_id=? AND paper_id=?",
+        "UPDATE project_papers SET reading_status=? WHERE "
+        "project_id=? AND paper_id=?",
         (status, project_id, paper_id),
     )
-    get_db().execute("UPDATE papers SET status=? WHERE id=?", (status, paper_id))
+    get_db().execute(
+        "UPDATE papers SET status=? WHERE id=?",
+        (status, paper_id),
+    )
 
 
 # ── Tags ────────────────────────────────────────────────────────────
+
 
 def get_or_create_tag(name: str, color: str = "#8b5cf6") -> str:
     row = get_db().query_one("SELECT id FROM tags WHERE name=?", (name,))
@@ -351,7 +407,8 @@ def add_tag_to_paper(paper_id: str, tag_name: str) -> None:
 
 def get_paper_tags(paper_id: str) -> list[dict]:
     rows = get_db().query(
-        "SELECT t.* FROM tags t JOIN paper_tags pt ON pt.tag_id=t.id WHERE pt.paper_id=?",
+        "SELECT t.* FROM tags t JOIN paper_tags pt ON "
+        "pt.tag_id=t.id WHERE pt.paper_id=?",
         (paper_id,),
     )
     return _rows_to_dicts(rows)
@@ -360,6 +417,7 @@ def get_paper_tags(paper_id: str) -> list[dict]:
 # ════════════════════════════════════════════════════════════════════
 #  Files
 # ════════════════════════════════════════════════════════════════════
+
 
 def create_file(
     *,
@@ -397,10 +455,12 @@ def get_paper_files(paper_id: str) -> list[dict]:
 #  Documents (parsed PDFs)
 # ════════════════════════════════════════════════════════════════════
 
+
 def create_document(file_id: str, parser: str = "basic") -> dict:
     did = _uid()
     get_db().execute(
-        "INSERT INTO documents (id, file_id, parser, status) VALUES (?,?,?,'pending')",
+        "INSERT INTO documents (id, file_id, parser, status) "
+        "VALUES (?,?,?,'pending')",
         (did, file_id, parser),
     )
     row = get_db().query_one("SELECT * FROM documents WHERE id=?", (did,))
@@ -409,7 +469,8 @@ def create_document(file_id: str, parser: str = "basic") -> dict:
 
 def get_document_by_file(file_id: str) -> dict | None:
     row = get_db().query_one(
-        "SELECT * FROM documents WHERE file_id=? ORDER BY created_at DESC LIMIT 1",
+        "SELECT * FROM documents WHERE file_id=? ORDER BY "
+        "created_at DESC LIMIT 1",
         (file_id,),
     )
     return _row_to_dict(row)
@@ -427,9 +488,15 @@ def update_document(doc_id: str, **fields: Any) -> None:
     )
 
 
-def add_page_text(doc_id: str, page_index: int, text: str, text_hash: str = "") -> None:
+def add_page_text(
+    doc_id: str,
+    page_index: int,
+    text: str,
+    text_hash: str = "",
+) -> None:
     get_db().execute(
-        "INSERT OR REPLACE INTO page_texts (document_id, page_index, text, text_hash) "
+        "INSERT OR REPLACE INTO page_texts (document_id, "
+        "page_index, text, text_hash) "
         "VALUES (?,?,?,?)",
         (doc_id, page_index, text, text_hash),
     )
@@ -444,7 +511,8 @@ def clear_document_content(doc_id: str) -> None:
     """
     db = get_db()
     db.execute(
-        "DELETE FROM chunks_fts WHERE chunk_id IN (SELECT id FROM chunks WHERE document_id=?)",
+        "DELETE FROM chunks_fts WHERE chunk_id IN (SELECT id "
+        "FROM chunks WHERE document_id=?)",
         (doc_id,),
     )
     db.execute("DELETE FROM chunks WHERE document_id=?", (doc_id,))
@@ -481,19 +549,33 @@ def add_chunk(
     token_count = len(text) // 4  # rough estimate
     db = get_db()
     db.execute(
-        "INSERT INTO chunks (id, document_id, section_id, page_start, page_end, text, token_count, char_start, char_end) "
+        "INSERT INTO chunks (id, document_id, section_id, "
+        "page_start, page_end, text, token_count, char_start, "
+        "char_end) "
         "VALUES (?,?,?,?,?,?,?,?,?)",
-        (cid, doc_id, section_id, page_start, page_end, text, token_count, char_start, char_end),
+        (
+            cid,
+            doc_id,
+            section_id,
+            page_start,
+            page_end,
+            text,
+            token_count,
+            char_start,
+            char_end,
+        ),
     )
     # Keep parsed content searchable by paper and page.  FTS5 stores the
     # searchable text and the identifiers are returned as UNINDEXED fields.
     row = db.query_one(
-        "SELECT f.paper_id FROM documents d JOIN files f ON f.id=d.file_id WHERE d.id=?",
+        "SELECT f.paper_id FROM documents d JOIN files f ON "
+        "f.id=d.file_id WHERE d.id=?",
         (doc_id,),
     )
     if row and row["paper_id"]:
         db.execute(
-            "INSERT INTO chunks_fts(chunk_id, paper_id, page_start, text) VALUES (?,?,?,?)",
+            "INSERT INTO chunks_fts(chunk_id, paper_id, "
+            "page_start, text) VALUES (?,?,?,?)",
             (cid, row["paper_id"], page_start, text),
         )
     return cid
@@ -510,7 +592,12 @@ def get_chunks_for_paper(paper_id: str) -> list[dict]:
     return _rows_to_dicts(rows)
 
 
-def search_chunks(query: str, *, paper_id: str | None = None, limit: int = 50) -> list[dict]:
+def search_chunks(
+    query: str,
+    *,
+    paper_id: str | None = None,
+    limit: int = 50,
+) -> list[dict]:
     """Search parsed full text and return source-ready chunk records."""
     if not query.strip():
         return []
@@ -537,6 +624,7 @@ def search_chunks(query: str, *, paper_id: str | None = None, limit: int = 50) -
 #  Annotations
 # ════════════════════════════════════════════════════════════════════
 
+
 def create_annotation(
     *,
     file_id: str,
@@ -550,22 +638,38 @@ def create_annotation(
 ) -> dict:
     aid = _uid()
     get_db().execute(
-        "INSERT INTO annotations (id, file_id, page_index, type, color, selected_text, comment, anchor_json, created_by) "
+        "INSERT INTO annotations (id, file_id, page_index, "
+        "type, color, selected_text, comment, anchor_json, "
+        "created_by) "
         "VALUES (?,?,?,?,?,?,?,?,?)",
-        (aid, file_id, page_index, type, color, selected_text, comment, anchor_json, created_by),
+        (
+            aid,
+            file_id,
+            page_index,
+            type,
+            color,
+            selected_text,
+            comment,
+            anchor_json,
+            created_by,
+        ),
     )
     row = get_db().query_one("SELECT * FROM annotations WHERE id=?", (aid,))
     return _row_to_dict(row)  # type: ignore[return-value]
 
 
 def get_annotation(annotation_id: str) -> dict | None:
-    row = get_db().query_one("SELECT * FROM annotations WHERE id=?", (annotation_id,))
+    row = get_db().query_one(
+        "SELECT * FROM annotations WHERE id=?",
+        (annotation_id,),
+    )
     return _row_to_dict(row)
 
 
 def list_annotations(file_id: str) -> list[dict]:
     rows = get_db().query(
-        "SELECT * FROM annotations WHERE file_id=? ORDER BY page_index, created_at",
+        "SELECT * FROM annotations WHERE file_id=? ORDER BY "
+        "page_index, created_at",
         (file_id,),
     )
     return _rows_to_dicts(rows)
@@ -596,6 +700,7 @@ def delete_annotation(annotation_id: str) -> bool:
 #  Notes
 # ════════════════════════════════════════════════════════════════════
 
+
 def create_note(
     *,
     project_id: Optional[str] = None,
@@ -606,7 +711,8 @@ def create_note(
 ) -> dict:
     nid = _uid()
     get_db().execute(
-        "INSERT INTO notes (id, project_id, paper_id, title, content_markdown, created_by) "
+        "INSERT INTO notes (id, project_id, paper_id, title, "
+        "content_markdown, created_by) "
         "VALUES (?,?,?,?,?,?)",
         (nid, project_id, paper_id, title, content_markdown, created_by),
     )
@@ -665,6 +771,7 @@ def delete_note(note_id: str) -> bool:
 #  Evidence cards
 # ════════════════════════════════════════════════════════════════════
 
+
 def create_evidence(
     *,
     project_id: str,
@@ -680,29 +787,54 @@ def create_evidence(
 ) -> dict:
     eid = _uid()
     get_db().execute(
-        "INSERT INTO evidence_cards (id, project_id, paper_id, claim, quote, source_ref, page_index, kind, verification_status, created_by, ai_run_id) "
+        "INSERT INTO evidence_cards (id, project_id, "
+        "paper_id, claim, quote, source_ref, page_index, "
+        "kind, verification_status, created_by, ai_run_id) "
         "VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        (eid, project_id, paper_id, claim, quote, source_ref, page_index, kind, verification_status, created_by, ai_run_id),
+        (
+            eid,
+            project_id,
+            paper_id,
+            claim,
+            quote,
+            source_ref,
+            page_index,
+            kind,
+            verification_status,
+            created_by,
+            ai_run_id,
+        ),
     )
     row = get_db().query_one("SELECT * FROM evidence_cards WHERE id=?", (eid,))
     return _row_to_dict(row)  # type: ignore[return-value]
 
 
 def get_evidence(evidence_id: str) -> dict | None:
-    row = get_db().query_one("SELECT * FROM evidence_cards WHERE id=?", (evidence_id,))
+    row = get_db().query_one(
+        "SELECT * FROM evidence_cards WHERE id=?",
+        (evidence_id,),
+    )
     return _row_to_dict(row)
 
 
 def list_evidence(project_id: str) -> list[dict]:
     rows = get_db().query(
-        "SELECT * FROM evidence_cards WHERE project_id=? ORDER BY created_at DESC",
+        "SELECT * FROM evidence_cards WHERE project_id=? "
+        "ORDER BY created_at DESC",
         (project_id,),
     )
     return _rows_to_dicts(rows)
 
 
 def update_evidence(evidence_id: str, **fields: Any) -> dict | None:
-    allowed = {"claim", "quote", "source_ref", "kind", "verification_status", "page_index"}
+    allowed = {
+        "claim",
+        "quote",
+        "source_ref",
+        "kind",
+        "verification_status",
+        "page_index",
+    }
     sets = [f"{k}=?" for k in fields if k in allowed]
     vals = [v for k, v in fields.items() if k in allowed]
     if not sets:
@@ -721,10 +853,17 @@ def update_evidence(evidence_id: str, **fields: Any) -> dict | None:
 #  AI sessions & runs
 # ════════════════════════════════════════════════════════════════════
 
-def create_ai_session(scope_type: str, scope_id: str, qwen_session_id: str, title: str = "") -> dict:
+
+def create_ai_session(
+    scope_type: str,
+    scope_id: str,
+    qwen_session_id: str,
+    title: str = "",
+) -> dict:
     sid = _uid()
     get_db().execute(
-        "INSERT INTO ai_sessions (id, scope_type, scope_id, qwen_session_id, title) VALUES (?,?,?,?,?)",
+        "INSERT INTO ai_sessions (id, scope_type, scope_id, "
+        "qwen_session_id, title) VALUES (?,?,?,?,?)",
         (sid, scope_type, scope_id, qwen_session_id, title),
     )
     row = get_db().query_one("SELECT * FROM ai_sessions WHERE id=?", (sid,))
@@ -732,13 +871,17 @@ def create_ai_session(scope_type: str, scope_id: str, qwen_session_id: str, titl
 
 
 def get_ai_session(session_id: str) -> dict | None:
-    row = get_db().query_one("SELECT * FROM ai_sessions WHERE id=?", (session_id,))
+    row = get_db().query_one(
+        "SELECT * FROM ai_sessions WHERE id=?",
+        (session_id,),
+    )
     return _row_to_dict(row)
 
 
 def find_ai_session(scope_type: str, scope_id: str) -> dict | None:
     row = get_db().query_one(
-        "SELECT * FROM ai_sessions WHERE scope_type=? AND scope_id=? ORDER BY created_at DESC LIMIT 1",
+        "SELECT * FROM ai_sessions WHERE scope_type=? AND "
+        "scope_id=? ORDER BY created_at DESC LIMIT 1",
         (scope_type, scope_id),
     )
     return _row_to_dict(row)
@@ -764,10 +907,17 @@ def update_ai_session(session_id: str, **fields: Any) -> dict | None:
     return get_ai_session(session_id)
 
 
-def create_ai_run(session_id: str, model: str = "", prompt_version: str = "", input_refs: list = None) -> dict:
+def create_ai_run(
+    session_id: str,
+    model: str = "",
+    prompt_version: str = "",
+    input_refs: list = None,
+) -> dict:
     rid = _uid()
     get_db().execute(
-        "INSERT INTO ai_runs (id, session_id, model, prompt_version, input_refs_json, status) VALUES (?,?,?,?,?,'running')",
+        "INSERT INTO ai_runs (id, session_id, model, "
+        "prompt_version, input_refs_json, status) VALUES "
+        "(?,?,?,?,?,'running')",
         (rid, session_id, model, prompt_version, json.dumps(input_refs or [])),
     )
     row = get_db().query_one("SELECT * FROM ai_runs WHERE id=?", (rid,))
@@ -813,6 +963,7 @@ def list_ai_session_runs(session_id: str) -> list[dict]:
 #  Jobs
 # ════════════════════════════════════════════════════════════════════
 
+
 def create_job(
     job_type: str,
     payload: dict | None = None,
@@ -822,9 +973,16 @@ def create_job(
 ) -> dict:
     jid = _uid()
     get_db().execute(
-        "INSERT INTO jobs (id, type, state, payload_json, paper_id, project_id) "
+        "INSERT INTO jobs (id, type, state, payload_json, "
+        "paper_id, project_id) "
         "VALUES (?,?, 'queued', ?, ?, ?)",
-        (jid, job_type, json.dumps(payload or {}, ensure_ascii=False), paper_id, project_id),
+        (
+            jid,
+            job_type,
+            json.dumps(payload or {}, ensure_ascii=False),
+            paper_id,
+            project_id,
+        ),
     )
     row = get_db().query_one("SELECT * FROM jobs WHERE id=?", (jid,))
     d = _row_to_dict(row)
@@ -900,7 +1058,7 @@ def update_job(job_id: str, **fields: Any) -> dict | None:
 def recover_interrupted_jobs() -> list[dict]:
     """Mark interrupted jobs as requires_attention."""
     rows = get_db().query(
-        "SELECT * FROM jobs WHERE state IN ('running','queued')"
+        "SELECT * FROM jobs WHERE state IN ('running','queued')",
     )
     recovered = []
     for r in rows:

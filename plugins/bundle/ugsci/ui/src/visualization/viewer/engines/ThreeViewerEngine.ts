@@ -22,17 +22,33 @@
 
 import * as THREE from "three";
 import { OrbitControls } from "three/addons/controls/OrbitControls.js";
-import { CSS2DObject, CSS2DRenderer } from "three/addons/renderers/CSS2DRenderer.js";
+import {
+  CSS2DObject,
+  CSS2DRenderer,
+} from "three/addons/renderers/CSS2DRenderer.js";
 import { ViewRouter } from "../app/view-router";
 import { ViewerStore } from "../stores/viewerState";
 import { viewerPersistenceKey } from "../stores/persistence";
 import { ApiClient } from "../api/client";
-import { decodeGeometry, geometryPrimitive, scalarAssociation } from "../rendering/datasetGeometry";
+import {
+  decodeGeometry,
+  geometryPrimitive,
+  scalarAssociation,
+} from "../rendering/datasetGeometry";
 import { computeScalarColors } from "../rendering/scalarColors";
 import type { BenchmarkResult } from "../engines/base";
-import { colormapCssGradient, COLORMAP_NAMES, sampleColormap as colormap } from "../rendering/colormaps";
+import {
+  colormapCssGradient,
+  COLORMAP_NAMES,
+  sampleColormap as colormap,
+} from "../rendering/colormaps";
 import { propertyLabel, colorMapLabel } from "../ui/labels";
-import { applyChromeOffsets, chromeInsets, responsiveChromeState, LAYOUT } from "../ui/layout";
+import {
+  applyChromeOffsets,
+  chromeInsets,
+  responsiveChromeState,
+  LAYOUT,
+} from "../ui/layout";
 import {
   type ComponentGroupId,
   renderComponentTree,
@@ -68,8 +84,16 @@ import {
   viewDistanceForBox,
   type NamedView,
 } from "../ui/standardViews";
-import { closeContextMenu, objectContextItems, showContextMenu } from "../ui/contextMenu";
-import { createSlicePlayer, sliceRangeText, type SlicePlayer } from "../ui/slicePlayer";
+import {
+  closeContextMenu,
+  objectContextItems,
+  showContextMenu,
+} from "../ui/contextMenu";
+import {
+  createSlicePlayer,
+  sliceRangeText,
+  type SlicePlayer,
+} from "../ui/slicePlayer";
 import { createCompassHud, type CompassHud } from "../ui/compass";
 import { createViewCluster } from "../ui/viewCluster";
 import {
@@ -163,7 +187,9 @@ export class ThreeViewerEngine {
   private currentTimeStep = 0;
   private apiBase: string;
   private authToken: string | undefined;
-  private readonly viewerId = `viewer-${globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)}`;
+  private readonly viewerId = `viewer-${
+    globalThis.crypto?.randomUUID?.() || Math.random().toString(36).slice(2)
+  }`;
   private origin: [number, number, number] = [0, 0, 0];
 
   // Filters
@@ -172,7 +198,9 @@ export class ThreeViewerEngine {
   private filterK: [number, number] = [0, Infinity];
   private filterPropertyRange: [number, number] = [-Infinity, Infinity];
   private filterPropertyExclude = false;
-  private filterBounds: [number, number, number, number, number, number] | null = null;
+  private filterBounds:
+    | [number, number, number, number, number, number]
+    | null = null;
   private zScale = 1;
   private useOrtho = false;
   private wellLabelsVisible = true;
@@ -225,7 +253,13 @@ export class ThreeViewerEngine {
   private scalarMax = 1;
 
   // Selection sync callback (for cross-view sync)
-  private onSelectionCallback: ((sel: { type: string; id: string; coords?: [number, number, number] }) => void) | null = null;
+  private onSelectionCallback:
+    | ((sel: {
+        type: string;
+        id: string;
+        coords?: [number, number, number];
+      }) => void)
+    | null = null;
 
   constructor(container: HTMLElement, options: ViewerMountOptions) {
     this.container = container;
@@ -237,7 +271,10 @@ export class ThreeViewerEngine {
     const w = Math.max(container.clientWidth, 1);
     const h = Math.max(container.clientHeight, 1);
 
-    this.renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+    this.renderer = new THREE.WebGLRenderer({
+      antialias: true,
+      powerPreference: "high-performance",
+    });
     this.renderer.setSize(w, h);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     this.renderer.localClippingEnabled = true;
@@ -263,7 +300,14 @@ export class ThreeViewerEngine {
 
     this.perspectiveCamera = new THREE.PerspectiveCamera(50, w / h, 1, 20000);
     this.perspectiveCamera.position.set(3000, 3000, 3000);
-    this.orthoCamera = new THREE.OrthographicCamera(-w / 2, w / 2, h / 2, -h / 2, 0.1, 20000);
+    this.orthoCamera = new THREE.OrthographicCamera(
+      -w / 2,
+      w / 2,
+      h / 2,
+      -h / 2,
+      0.1,
+      20000,
+    );
     this.orthoCamera.position.copy(this.perspectiveCamera.position);
     this.camera = this.perspectiveCamera;
 
@@ -287,10 +331,22 @@ export class ThreeViewerEngine {
     this.raycaster.params.Line = { threshold: 12 };
 
     this.renderer.domElement.addEventListener("click", this.onCanvasClick);
-    this.renderer.domElement.addEventListener("pointermove", this.onCanvasPointerMove);
-    this.renderer.domElement.addEventListener("pointerleave", this.onCanvasPointerLeave);
-    this.renderer.domElement.addEventListener("dblclick", this.onCanvasDblClick);
-    this.renderer.domElement.addEventListener("contextmenu", this.onCanvasContextMenu);
+    this.renderer.domElement.addEventListener(
+      "pointermove",
+      this.onCanvasPointerMove,
+    );
+    this.renderer.domElement.addEventListener(
+      "pointerleave",
+      this.onCanvasPointerLeave,
+    );
+    this.renderer.domElement.addEventListener(
+      "dblclick",
+      this.onCanvasDblClick,
+    );
+    this.renderer.domElement.addEventListener(
+      "contextmenu",
+      this.onCanvasContextMenu,
+    );
     window.addEventListener("resize", this.onResize);
     if (typeof ResizeObserver !== "undefined") {
       this.resizeObserver = new ResizeObserver(this.onResize);
@@ -324,14 +380,27 @@ export class ThreeViewerEngine {
     this.container.appendChild(this.viewClusterEl);
     this.shortcutsEl = createShortcutsOverlay();
     this.container.appendChild(this.shortcutsEl);
-    this.viewRouter = new ViewRouter(this.container, (view) => {
-      void this.applyActiveView(view).catch((error) => this.reportError(error));
-    }, this.store);
+    this.viewRouter = new ViewRouter(
+      this.container,
+      (view) => {
+        void this.applyActiveView(view).catch((error) =>
+          this.reportError(error),
+        );
+      },
+      this.store,
+    );
     const viewTabs = this.viewRouter.createTabs();
     viewTabs.className = "oilgas-view-tabs";
-    Object.assign(viewTabs.style, { top: "48px", left: "276px", right: "288px", overflowX: "auto" });
+    Object.assign(viewTabs.style, {
+      top: "48px",
+      left: "276px",
+      right: "288px",
+      overflowX: "auto",
+    });
     this.container.appendChild(viewTabs);
-    this.storeUnsubscribe = this.store.subscribe(() => this.syncChromeFromStore());
+    this.storeUnsubscribe = this.store.subscribe(() =>
+      this.syncChromeFromStore(),
+    );
     this.applyResponsiveChrome();
     this.updatePanelOffsets();
 
@@ -365,27 +434,45 @@ export class ThreeViewerEngine {
 
   // ─── Auth helpers ──────────────────────────────────────────────────
   private authHeaders(): Record<string, string> {
-    return { ...this.options.headers, ...(this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {}) };
+    return {
+      ...this.options.headers,
+      ...(this.authToken ? { Authorization: `Bearer ${this.authToken}` } : {}),
+    };
   }
 
   private request(path: string, init: RequestInit = {}): Promise<Response> {
     if (this.disposed) return Promise.reject(new Error("可视化引擎已关闭"));
-    return this.api.request(path, { ...init, signal: init.signal || this.lifetimeController.signal });
+    return this.api.request(path, {
+      ...init,
+      signal: init.signal || this.lifetimeController.signal,
+    });
   }
 
   private async fetchJson(path: string, signal?: AbortSignal): Promise<any> {
     return this.api.fetchJson(path, signal || this.lifetimeController.signal);
   }
 
-  private async fetchBinary(filename: string, signal?: AbortSignal): Promise<ArrayBuffer> {
+  private async fetchBinary(
+    filename: string,
+    signal?: AbortSignal,
+  ): Promise<ArrayBuffer> {
     // Keep all I/O on the injected, scoped transport. Workers perform CPU work
     // only; worker-local fetch loses host headers and cannot share cancellation.
-    return this.api.fetchBinary(filename, signal || this.lifetimeController.signal);
+    return this.api.fetchBinary(
+      filename,
+      signal || this.lifetimeController.signal,
+    );
   }
 
   private reportError(error: unknown): void {
-    if (this.disposed || (error instanceof Error && error.name === "AbortError")) return;
-    this.infoEl.textContent = `加载失败：${error instanceof Error ? error.message : String(error)}`;
+    if (
+      this.disposed ||
+      (error instanceof Error && error.name === "AbortError")
+    )
+      return;
+    this.infoEl.textContent = `加载失败：${
+      error instanceof Error ? error.message : String(error)
+    }`;
   }
 
   // ─── UI Construction ────────────────────────────────────────────────
@@ -393,12 +480,24 @@ export class ThreeViewerEngine {
   private buildSidebar(): HTMLElement {
     const sidebar = document.createElement("div");
     Object.assign(sidebar.style, {
-      position: "absolute", top: "0", right: "0", bottom: "0", left: "auto",
-      width: String(LAYOUT.inspectorWidth) + "px", background: "rgba(13,17,23,0.96)",
-      borderLeft: "1px solid #30363d", borderRight: "0", overflow: "hidden",
-      padding: "0", boxSizing: "border-box", zIndex: "100",
-      fontFamily: "-apple-system, sans-serif", color: "#c9d1d9", fontSize: "13px",
-      display: "flex", flexDirection: "column",
+      position: "absolute",
+      top: "0",
+      right: "0",
+      bottom: "0",
+      left: "auto",
+      width: String(LAYOUT.inspectorWidth) + "px",
+      background: "rgba(13,17,23,0.96)",
+      borderLeft: "1px solid #30363d",
+      borderRight: "0",
+      overflow: "hidden",
+      padding: "0",
+      boxSizing: "border-box",
+      zIndex: "100",
+      fontFamily: "-apple-system, sans-serif",
+      color: "#c9d1d9",
+      fontSize: "13px",
+      display: "flex",
+      flexDirection: "column",
     } as CSSStyleDeclaration);
     sidebar.className = "oilgas-panel oilgas-inspector-panel";
 
@@ -413,17 +512,23 @@ export class ThreeViewerEngine {
     collapseBtn.style.left = "6px";
     collapseBtn.style.right = "auto";
     collapseBtn.style.zIndex = "2";
-    collapseBtn.addEventListener("click", () => this.toggleSidebar(collapseBtn));
+    collapseBtn.addEventListener("click", () =>
+      this.toggleSidebar(collapseBtn),
+    );
     sidebar.appendChild(collapseBtn);
 
     const body = document.createElement("div");
     body.id = "vis-inspector-body";
-    body.style.cssText = "flex:1;min-height:0;display:flex;flex-direction:column;padding:12px 10px 8px;overflow:hidden;";
+    body.style.cssText =
+      "flex:1;min-height:0;display:flex;flex-direction:column;padding:12px 10px 8px;overflow:hidden;";
 
     const title = document.createElement("div");
     Object.assign(title.style, {
-      fontSize: "15px", fontWeight: "600", marginBottom: "10px",
-      color: "#58a6ff", padding: "0 0 8px 28px",
+      fontSize: "15px",
+      fontWeight: "600",
+      marginBottom: "10px",
+      color: "#58a6ff",
+      padding: "0 0 8px 28px",
       borderBottom: "1px solid #30363d",
     });
     title.textContent = "属性";
@@ -431,21 +536,31 @@ export class ThreeViewerEngine {
 
     const objectCard = document.createElement("div");
     objectCard.id = "vis-inspector-object";
-    objectCard.style.cssText = "margin:0 0 10px;padding:8px;background:#161b22;border:1px solid #30363d;border-radius:7px;flex:0 0 auto;";
+    objectCard.style.cssText =
+      "margin:0 0 10px;padding:8px;background:#161b22;border:1px solid #30363d;border-radius:7px;flex:0 0 auto;";
     const objectName = document.createElement("div");
     objectName.dataset.objectName = "true";
-    objectName.style.cssText = "font-weight:600;color:#e6edf3;margin-bottom:4px;";
+    objectName.style.cssText =
+      "font-weight:600;color:#e6edf3;margin-bottom:4px;";
     objectName.textContent = "未选中对象";
     const objectMeta = document.createElement("div");
     objectMeta.dataset.objectMeta = "true";
-    objectMeta.style.cssText = "font-size:11px;color:#8b949e;margin-bottom:6px;";
+    objectMeta.style.cssText =
+      "font-size:11px;color:#8b949e;margin-bottom:6px;";
     objectMeta.textContent = "在组件树或三维视图中点选";
-    const visibleSwitch = createBoolSwitch("vis-inspector-visible", true, (value) => {
-      const dataset = this.datasetById(this.selectedObjectId || this.currentDataset?.id || "");
-      if (dataset) void this.toggleDatasetVisibility(dataset, value);
-    });
+    const visibleSwitch = createBoolSwitch(
+      "vis-inspector-visible",
+      true,
+      (value) => {
+        const dataset = this.datasetById(
+          this.selectedObjectId || this.currentDataset?.id || "",
+        );
+        if (dataset) void this.toggleDatasetVisibility(dataset, value);
+      },
+    );
     const visibleRow = document.createElement("div");
-    visibleRow.style.cssText = "display:grid;grid-template-columns:42% 1fr;gap:8px;align-items:center;";
+    visibleRow.style.cssText =
+      "display:grid;grid-template-columns:42% 1fr;gap:8px;align-items:center;";
     const visibleName = document.createElement("div");
     visibleName.textContent = "显示对象";
     visibleName.style.cssText = "color:#8b949e;font-size:11px;";
@@ -466,7 +581,9 @@ export class ThreeViewerEngine {
     body.appendChild(panes);
 
     const compact = (el: HTMLElement) => {
-      Object.assign(el.style, this.selectStyle, { marginBottom: "0" } as CSSStyleDeclaration);
+      Object.assign(el.style, this.selectStyle, {
+        marginBottom: "0",
+      } as CSSStyleDeclaration);
       return el;
     };
 
@@ -474,7 +591,11 @@ export class ThreeViewerEngine {
     compact(dsSelect);
     dsSelect.id = "vis-dataset";
     dsSelect.setAttribute("aria-label", "数据集");
-    dsSelect.addEventListener("change", () => { void this.loadDataset(dsSelect.value).catch((error) => this.reportError(error)); });
+    dsSelect.addEventListener("change", () => {
+      void this.loadDataset(dsSelect.value).catch((error) =>
+        this.reportError(error),
+      );
+    });
     appendControlRow(controlsTable.body, "dataset", dsSelect);
 
     const propSelect = document.createElement("select");
@@ -483,7 +604,8 @@ export class ThreeViewerEngine {
     propSelect.setAttribute("aria-label", "属性");
     for (const p of ["porosity", "permeability", "facies"]) {
       const opt = document.createElement("option");
-      opt.value = p; opt.textContent = propertyLabel(p);
+      opt.value = p;
+      opt.textContent = propertyLabel(p);
       propSelect.appendChild(opt);
     }
     propSelect.addEventListener("change", () => {
@@ -493,7 +615,9 @@ export class ThreeViewerEngine {
         displayName: propertyLabel(this.currentProperty, this.currentDataset),
         range: [this.scalarMin, this.scalarMax],
       });
-      void this.reloadPropertyColors().catch((error) => this.reportError(error));
+      void this.reloadPropertyColors().catch((error) =>
+        this.reportError(error),
+      );
     });
     appendControlRow(controlsTable.body, "property", propSelect);
 
@@ -505,7 +629,9 @@ export class ThreeViewerEngine {
     tsSelect.addEventListener("change", () => {
       this.currentTimeStep = parseInt(tsSelect.value);
       this.store.setTimeStep(this.currentTimeStep);
-      void this.reloadPropertyColors().catch((error) => this.reportError(error));
+      void this.reloadPropertyColors().catch((error) =>
+        this.reportError(error),
+      );
     });
     appendControlRow(controlsTable.body, "timeStep", tsSelect);
 
@@ -520,14 +646,17 @@ export class ThreeViewerEngine {
         this.infoEl.textContent = "已暂停时间步播放";
         return;
       }
-      const options = Array.from(tsSelect.options).filter((option) => option.value !== "0");
+      const options = Array.from(tsSelect.options).filter(
+        (option) => option.value !== "0",
+      );
       if (options.length < 1) {
         this.infoEl.textContent = "当前数据集没有可播放的时间步";
         return;
       }
       playBtn.textContent = "暂停时间步";
       this.timestepTimer = window.setInterval(() => {
-        const next = this.currentTimeStep >= options.length ? 1 : this.currentTimeStep + 1;
+        const next =
+          this.currentTimeStep >= options.length ? 1 : this.currentTimeStep + 1;
         void this.executeCommand("set-timestep", { timeStep: next });
       }, 700);
     });
@@ -539,24 +668,31 @@ export class ThreeViewerEngine {
     cmSelect.setAttribute("aria-label", "色图");
     for (const cm of COLORMAP_NAMES) {
       const opt = document.createElement("option");
-      opt.value = cm; opt.textContent = colorMapLabel(cm);
+      opt.value = cm;
+      opt.textContent = colorMapLabel(cm);
       cmSelect.appendChild(opt);
     }
     cmSelect.addEventListener("change", () => {
       this.currentColormap = cmSelect.value;
       this.store.setColorMap({ name: this.currentColormap });
-      void this.reloadPropertyColors().catch((error) => this.reportError(error));
+      void this.reloadPropertyColors().catch((error) =>
+        this.reportError(error),
+      );
     });
     appendControlRow(controlsTable.body, "colorRamp", cmSelect);
 
     const opacityWrap = document.createElement("div");
     const opacitySlider = document.createElement("input");
-    opacitySlider.type = "range"; opacitySlider.min = "10"; opacitySlider.max = "100"; opacitySlider.value = "85";
+    opacitySlider.type = "range";
+    opacitySlider.min = "10";
+    opacitySlider.max = "100";
+    opacitySlider.value = "85";
     opacitySlider.id = "vis-opacity";
     Object.assign(opacitySlider.style, { width: "100%", margin: "0" });
     const opacityValue = document.createElement("div");
     opacityValue.id = "vis-opacity-value";
-    opacityValue.style.cssText = "font-size:11px;color:#8b949e;font-family:monospace;text-align:right;";
+    opacityValue.style.cssText =
+      "font-size:11px;color:#8b949e;font-family:monospace;text-align:right;";
     opacityValue.textContent = "0.85";
     opacitySlider.addEventListener("input", () => {
       this.applyOpacity(parseInt(opacitySlider.value, 10) / 100);
@@ -574,12 +710,15 @@ export class ThreeViewerEngine {
     );
 
     const filterDiv = document.createElement("div");
-    filterDiv.style.cssText = "display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;";
+    filterDiv.style.cssText =
+      "display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;";
     for (const axis of ["I", "J", "K"]) {
       const input = document.createElement("input");
-      input.type = "text"; input.placeholder = axis;
+      input.type = "text";
+      input.placeholder = axis;
       input.id = "vis-filter-" + axis.toLowerCase();
-      input.style.cssText = "width:100%;padding:4px;background:#161b22;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;font-size:11px;text-align:center;box-sizing:border-box;";
+      input.style.cssText =
+        "width:100%;padding:4px;background:#161b22;border:1px solid #30363d;border-radius:4px;color:#c9d1d9;font-size:11px;text-align:center;box-sizing:border-box;";
       input.addEventListener("input", () => this.applyFilters());
       input.addEventListener("change", () => this.applyFilters());
       filterDiv.appendChild(input);
@@ -589,13 +728,17 @@ export class ThreeViewerEngine {
     const propRangeDiv = document.createElement("div");
     propRangeDiv.style.cssText = "display:flex;gap:4px;";
     const minInput = document.createElement("input");
-    minInput.type = "number"; minInput.placeholder = "min"; minInput.step = "0.01";
+    minInput.type = "number";
+    minInput.placeholder = "min";
+    minInput.step = "0.01";
     minInput.id = "vis-filter-prop-min";
     compact(minInput);
     minInput.addEventListener("input", () => this.applyFilters());
     minInput.addEventListener("change", () => this.applyFilters());
     const maxInput = document.createElement("input");
-    maxInput.type = "number"; maxInput.placeholder = "max"; maxInput.step = "0.01";
+    maxInput.type = "number";
+    maxInput.placeholder = "max";
+    maxInput.step = "0.01";
     maxInput.id = "vis-filter-prop-max";
     compact(maxInput);
     maxInput.addEventListener("input", () => this.applyFilters());
@@ -612,12 +755,21 @@ export class ThreeViewerEngine {
     );
 
     const isolateK = document.createElement("input");
-    isolateK.type = "range"; isolateK.min = "1"; isolateK.max = "1"; isolateK.value = "1";
+    isolateK.type = "range";
+    isolateK.min = "1";
+    isolateK.max = "1";
+    isolateK.value = "1";
     isolateK.id = "vis-k-layer";
     Object.assign(isolateK.style, { width: "100%", margin: "0" });
     isolateK.addEventListener("input", () => {
-      const kFilter = this.sidebar.querySelector('[id="vis-filter-k"]') as HTMLInputElement | null;
-      const isolate = (this.sidebar.querySelector('[id="vis-isolate-k"]') as HTMLInputElement | null)?.checked;
+      const kFilter = this.sidebar.querySelector(
+        '[id="vis-filter-k"]',
+      ) as HTMLInputElement | null;
+      const isolate = (
+        this.sidebar.querySelector(
+          '[id="vis-isolate-k"]',
+        ) as HTMLInputElement | null
+      )?.checked;
       if (kFilter && isolate) {
         kFilter.value = isolateK.value + ":" + isolateK.value;
         this.applyFilters();
@@ -627,7 +779,9 @@ export class ThreeViewerEngine {
       controlsTable.body,
       "isolateK",
       createBoolSwitch("vis-isolate-k", false, (checked) => {
-        const kFilter = this.sidebar.querySelector('[id="vis-filter-k"]') as HTMLInputElement | null;
+        const kFilter = this.sidebar.querySelector(
+          '[id="vis-filter-k"]',
+        ) as HTMLInputElement | null;
         if (!kFilter) return;
         kFilter.value = checked ? isolateK.value + ":" + isolateK.value : "";
         this.applyFilters();
@@ -645,7 +799,8 @@ export class ThreeViewerEngine {
     Object.assign(zScaleSlider.style, { width: "100%", margin: "0" });
     const zScaleValue = document.createElement("div");
     zScaleValue.id = "vis-z-scale-value";
-    zScaleValue.style.cssText = "font-size:11px;color:#8b949e;font-family:monospace;text-align:right;";
+    zScaleValue.style.cssText =
+      "font-size:11px;color:#8b949e;font-family:monospace;text-align:right;";
     zScaleValue.textContent = "1.00x";
     zScaleSlider.addEventListener("input", () => {
       this.setZScale(parseInt(zScaleSlider.value, 10) / 100);
@@ -655,16 +810,26 @@ export class ThreeViewerEngine {
     appendControlRow(
       controlsTable.body,
       "orthographic",
-      createBoolSwitch("vis-ortho", false, (checked) => this.setOrthographic(checked)),
+      createBoolSwitch("vis-ortho", false, (checked) =>
+        this.setOrthographic(checked),
+      ),
     );
 
     const clipSlider = document.createElement("input");
-    clipSlider.type = "range"; clipSlider.min = "0"; clipSlider.max = "100"; clipSlider.value = "50";
+    clipSlider.type = "range";
+    clipSlider.min = "0";
+    clipSlider.max = "100";
+    clipSlider.value = "50";
     clipSlider.id = "vis-clip-depth";
     Object.assign(clipSlider.style, { width: "100%", margin: "0" });
     const applyClip = () => {
-      const clipCheck = this.sidebar.querySelector('[id="vis-clip"]') as HTMLInputElement | null;
-      this.applyClipPlane(Boolean(clipCheck?.checked), Number(clipSlider.value) / 100);
+      const clipCheck = this.sidebar.querySelector(
+        '[id="vis-clip"]',
+      ) as HTMLInputElement | null;
+      this.applyClipPlane(
+        Boolean(clipCheck?.checked),
+        Number(clipSlider.value) / 100,
+      );
     };
     clipSlider.addEventListener("input", applyClip);
     appendControlRow(
@@ -684,11 +849,15 @@ export class ThreeViewerEngine {
     const zRangeDiv = document.createElement("div");
     zRangeDiv.style.cssText = "display:flex;gap:4px;";
     const zMinInput = document.createElement("input");
-    zMinInput.type = "number"; zMinInput.placeholder = "z min"; zMinInput.value = "0";
+    zMinInput.type = "number";
+    zMinInput.placeholder = "z min";
+    zMinInput.value = "0";
     zMinInput.id = "vis-section-z-min";
     compact(zMinInput);
     const zMaxInput = document.createElement("input");
-    zMaxInput.type = "number"; zMaxInput.placeholder = "z max"; zMaxInput.value = "5000";
+    zMaxInput.type = "number";
+    zMaxInput.placeholder = "z max";
+    zMaxInput.value = "5000";
     zMaxInput.id = "vis-section-z-max";
     compact(zMaxInput);
     zRangeDiv.append(zMinInput, zMaxInput);
@@ -701,7 +870,9 @@ export class ThreeViewerEngine {
 
     const wellSecBtn = inspectorActionButton("沿井生成剖面");
     wellSecBtn.style.marginBottom = "0";
-    wellSecBtn.addEventListener("click", () => { void this.createWellSectionFromUI(); });
+    wellSecBtn.addEventListener("click", () => {
+      void this.createWellSectionFromUI();
+    });
     appendControlRow(actionsTable.body, "wellSection", wellSecBtn);
 
     const sliceRow = document.createElement("div");
@@ -716,7 +887,9 @@ export class ThreeViewerEngine {
       axisSelect.appendChild(opt);
     }
     const sliceIndex = document.createElement("input");
-    sliceIndex.type = "number"; sliceIndex.min = "1"; sliceIndex.value = "1";
+    sliceIndex.type = "number";
+    sliceIndex.min = "1";
+    sliceIndex.value = "1";
     sliceIndex.id = "vis-slice-index";
     compact(sliceIndex);
     sliceRow.append(axisSelect, sliceIndex);
@@ -724,7 +897,9 @@ export class ThreeViewerEngine {
 
     const sliceBtn = inspectorActionButton("提取切片");
     sliceBtn.style.marginBottom = "0";
-    sliceBtn.addEventListener("click", () => { void this.createSliceFromUI(); });
+    sliceBtn.addEventListener("click", () => {
+      void this.createSliceFromUI();
+    });
     appendControlRow(actionsTable.body, "extractSlice", sliceBtn);
 
     const ssBtn = inspectorActionButton("截图", { tone: "primary" });
@@ -747,7 +922,9 @@ export class ThreeViewerEngine {
     sceneExportBtn.addEventListener("click", () => this.exportSceneState());
     appendControlRow(actionsTable.body, "exportScene", sceneExportBtn);
 
-    const importFileBtn = inspectorActionButton("导入本地文件", { tone: "primary" });
+    const importFileBtn = inspectorActionButton("导入本地文件", {
+      tone: "primary",
+    });
     importFileBtn.addEventListener("click", () => this.fileInput?.click());
     appendControlRow(actionsTable.body, "importFile", importFileBtn);
     const importWsBtn = inspectorActionButton("从工作区导入");
@@ -755,54 +932,96 @@ export class ThreeViewerEngine {
     appendControlRow(actionsTable.body, "importWorkspace", importWsBtn);
     const deleteBtn = inspectorActionButton("删除当前对象", { tone: "danger" });
     deleteBtn.addEventListener("click", () => {
-      const dataset = this.datasetById(this.selectedObjectId || this.currentDataset?.id || "");
+      const dataset = this.datasetById(
+        this.selectedObjectId || this.currentDataset?.id || "",
+      );
       if (dataset) void this.deleteCatalogDataset(dataset);
     });
     appendControlRow(actionsTable.body, "deleteObject", deleteBtn);
 
     const benchBtn = inspectorActionButton("运行基准测试", { tone: "primary" });
-    benchBtn.addEventListener("click", () => { void this.runBenchmark().catch((error) => this.reportError(error)); });
+    benchBtn.addEventListener("click", () => {
+      void this.runBenchmark().catch((error) => this.reportError(error));
+    });
     tabs.panes.addons.appendChild(this.createLabel("性能测试"));
     tabs.panes.addons.appendChild(benchBtn);
-    const dispBtn = inspectorActionButton("内存泄漏测试 (10x)", { tone: "danger" });
+    const dispBtn = inspectorActionButton("内存泄漏测试 (10x)", {
+      tone: "danger",
+    });
     dispBtn.addEventListener("click", () => this.runLeakTest());
     tabs.panes.addons.appendChild(dispBtn);
     const restoreBtn = inspectorActionButton("恢复内置示例");
-    restoreBtn.addEventListener("click", () => { void this.restoreBuiltinExamples(); });
+    restoreBtn.addEventListener("click", () => {
+      void this.restoreBuiltinExamples();
+    });
     tabs.panes.addons.appendChild(this.createLabel("\u76ee\u5f55"));
     tabs.panes.addons.appendChild(restoreBtn);
 
     const displayTable = createControlTable();
     tabs.panes.addons.appendChild(this.createLabel("\u663e\u793a"));
     tabs.panes.addons.appendChild(displayTable.table);
-    appendControlRow(displayTable.body, "axes", createBoolSwitch("vis-show-axes", true, (on) => {
-      this.axesHelper.visible = on;
-    }));
-    appendControlRow(displayTable.body, "floorGrid", createBoolSwitch("vis-show-grid", true, (on) => {
-      this.gridHelper.visible = on;
-    }));
-    appendControlRow(displayTable.body, "wellLabels", createBoolSwitch("vis-show-well-labels", true, (on) => {
-      this.wellLabelsVisible = on;
-      this.setWellLabelsVisible(on);
-    }));
-    appendControlRow(displayTable.body, "legend", createBoolSwitch("vis-show-legend", true, (on) => {
-      this.legendEl.style.display = on && this.currentProperty ? "block" : "none";
-    }));
-    appendControlRow(displayTable.body, "histogram", createBoolSwitch("vis-show-histogram", true, (on) => {
-      if (this.histogramEl) this.histogramEl.style.display = on && this.currentScalarValues ? "block" : "none";
-    }));
-    appendControlRow(displayTable.body, "wellMap", createBoolSwitch("vis-show-wellmap", true, (on) => {
-      this.wellMapRoot.style.display = on ? "block" : "none";
-    }));
-    appendControlRow(displayTable.body, "compass", createBoolSwitch("vis-show-compass", true, (on) => {
-      this.compassHud.root.style.display = on ? "flex" : "none";
-    }));
+    appendControlRow(
+      displayTable.body,
+      "axes",
+      createBoolSwitch("vis-show-axes", true, (on) => {
+        this.axesHelper.visible = on;
+      }),
+    );
+    appendControlRow(
+      displayTable.body,
+      "floorGrid",
+      createBoolSwitch("vis-show-grid", true, (on) => {
+        this.gridHelper.visible = on;
+      }),
+    );
+    appendControlRow(
+      displayTable.body,
+      "wellLabels",
+      createBoolSwitch("vis-show-well-labels", true, (on) => {
+        this.wellLabelsVisible = on;
+        this.setWellLabelsVisible(on);
+      }),
+    );
+    appendControlRow(
+      displayTable.body,
+      "legend",
+      createBoolSwitch("vis-show-legend", true, (on) => {
+        this.legendEl.style.display =
+          on && this.currentProperty ? "block" : "none";
+      }),
+    );
+    appendControlRow(
+      displayTable.body,
+      "histogram",
+      createBoolSwitch("vis-show-histogram", true, (on) => {
+        if (this.histogramEl)
+          this.histogramEl.style.display =
+            on && this.currentScalarValues ? "block" : "none";
+      }),
+    );
+    appendControlRow(
+      displayTable.body,
+      "wellMap",
+      createBoolSwitch("vis-show-wellmap", true, (on) => {
+        this.wellMapRoot.style.display = on ? "block" : "none";
+      }),
+    );
+    appendControlRow(
+      displayTable.body,
+      "compass",
+      createBoolSwitch("vis-show-compass", true, (on) => {
+        this.compassHud.root.style.display = on ? "flex" : "none";
+      }),
+    );
     const bgInput = document.createElement("input");
     bgInput.type = "color";
     bgInput.id = "vis-bg-color";
     bgInput.value = "#0d1117";
-    bgInput.style.cssText = "width:100%;height:24px;padding:0;border:1px solid #30363d;background:#161b22;";
-    bgInput.addEventListener("input", () => this.setBackgroundColor(bgInput.value));
+    bgInput.style.cssText =
+      "width:100%;height:24px;padding:0;border:1px solid #30363d;background:#161b22;";
+    bgInput.addEventListener("input", () =>
+      this.setBackgroundColor(bgInput.value),
+    );
     appendControlRow(displayTable.body, "background", bgInput);
 
     tabs.setBadge("controls", controlsTable.body.childElementCount);
@@ -816,7 +1035,8 @@ export class ThreeViewerEngine {
     resetBtn.style.cssText += "flex:1;margin:0;width:auto;";
     resetBtn.addEventListener("click", () => this.resetInspectorControls());
     const footerHint = document.createElement("div");
-    footerHint.style.cssText = "color:#6e7681;font-size:10px;white-space:nowrap;";
+    footerHint.style.cssText =
+      "color:#6e7681;font-size:10px;white-space:nowrap;";
     footerHint.textContent = "场景";
     tabs.footer.append(saveBtn, resetBtn, footerHint);
     body.appendChild(tabs.footer);
@@ -829,11 +1049,20 @@ export class ThreeViewerEngine {
   private buildObjectTree(): HTMLElement {
     const tree = document.createElement("div");
     Object.assign(tree.style, {
-      position: "absolute", top: "0", left: "0", bottom: "0",
-      width: String(LAYOUT.treeWidth) + "px", background: "rgba(13,17,23,0.96)",
-      borderRight: "1px solid #30363d", overflowY: "auto",
-      padding: "8px", zIndex: "90", boxSizing: "border-box",
-      fontFamily: "-apple-system, sans-serif", color: "#8b949e", fontSize: "12px",
+      position: "absolute",
+      top: "0",
+      left: "0",
+      bottom: "0",
+      width: String(LAYOUT.treeWidth) + "px",
+      background: "rgba(13,17,23,0.96)",
+      borderRight: "1px solid #30363d",
+      overflowY: "auto",
+      padding: "8px",
+      zIndex: "90",
+      boxSizing: "border-box",
+      fontFamily: "-apple-system, sans-serif",
+      color: "#8b949e",
+      fontSize: "12px",
     } as CSSStyleDeclaration);
     tree.className = "oilgas-panel oilgas-object-panel";
 
@@ -846,11 +1075,14 @@ export class ThreeViewerEngine {
     collapseBtn.style.position = "absolute";
     collapseBtn.style.top = "8px";
     collapseBtn.style.right = "6px";
-    collapseBtn.addEventListener("click", () => this.toggleObjectTree(collapseBtn));
+    collapseBtn.addEventListener("click", () =>
+      this.toggleObjectTree(collapseBtn),
+    );
     tree.appendChild(collapseBtn);
 
     const title = document.createElement("div");
-    title.style.cssText = "font-weight:600; color:#58a6ff; margin:2px 28px 8px 2px; font-size:13px; letter-spacing:.04em;";
+    title.style.cssText =
+      "font-weight:600; color:#58a6ff; margin:2px 28px 8px 2px; font-size:13px; letter-spacing:.04em;";
     title.textContent = "场景组件";
     tree.appendChild(title);
 
@@ -859,7 +1091,8 @@ export class ThreeViewerEngine {
     search.id = "vis-object-search";
     search.placeholder = "查找组件...";
     search.setAttribute("aria-label", "查找组件");
-    search.style.cssText = "width:100%;box-sizing:border-box;margin-bottom:8px;padding:6px 8px;background:#161b22;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:12px;";
+    search.style.cssText =
+      "width:100%;box-sizing:border-box;margin-bottom:8px;padding:6px 8px;background:#161b22;border:1px solid #30363d;border-radius:6px;color:#c9d1d9;font-size:12px;";
     search.addEventListener("input", () => {
       this.treeQuery = search.value;
       this.updateObjectTree();
@@ -873,13 +1106,18 @@ export class ThreeViewerEngine {
       btn.type = "button";
       btn.textContent = label;
       btn.title = title;
-      btn.style.cssText = "flex:1;padding:4px 6px;background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;cursor:pointer;font-size:11px;";
+      btn.style.cssText =
+        "flex:1;padding:4px 6px;background:#21262d;color:#c9d1d9;border:1px solid #30363d;border-radius:5px;cursor:pointer;font-size:11px;";
       btn.addEventListener("click", action);
       treeActions.appendChild(btn);
     };
     addTreeBtn("文件", "导入本地文件", () => this.fileInput?.click());
-    addTreeBtn("工作区", "从工作区文件树导入", () => this.openWorkspaceImport());
-    addTreeBtn("恢复", "恢复已隐藏的内置示例", () => { void this.restoreBuiltinExamples(); });
+    addTreeBtn("工作区", "从工作区文件树导入", () =>
+      this.openWorkspaceImport(),
+    );
+    addTreeBtn("恢复", "恢复已隐藏的内置示例", () => {
+      void this.restoreBuiltinExamples();
+    });
     tree.appendChild(treeActions);
 
     const list = document.createElement("div");
@@ -894,21 +1132,33 @@ export class ThreeViewerEngine {
   private createLabel(text: string): HTMLElement {
     const el = document.createElement("div");
     el.textContent = text;
-    el.style.cssText = "margin: 14px 0 5px; padding-top: 8px; border-top: 1px solid rgba(48,54,61,.55); font-size: 11px; letter-spacing: .04em; color: #8b949e;";
+    el.style.cssText =
+      "margin: 14px 0 5px; padding-top: 8px; border-top: 1px solid rgba(48,54,61,.55); font-size: 11px; letter-spacing: .04em; color: #8b949e;";
     return el;
   }
 
   private iconButtonStyle: Partial<CSSStyleDeclaration> = {
-    width: "24px", height: "24px", padding: "0", background: "#21262d",
-    color: "#c9d1d9", border: "1px solid #484f58", borderRadius: "5px",
-    cursor: "pointer", fontSize: "16px", lineHeight: "20px",
+    width: "24px",
+    height: "24px",
+    padding: "0",
+    background: "#21262d",
+    color: "#c9d1d9",
+    border: "1px solid #484f58",
+    borderRadius: "5px",
+    cursor: "pointer",
+    fontSize: "16px",
+    lineHeight: "20px",
   };
 
   private toggleSidebar(button: HTMLButtonElement) {
     this.sidebarCollapsed = !this.sidebarCollapsed;
-    const width = this.sidebarCollapsed ? String(LAYOUT.inspectorCollapsed) + "px" : String(LAYOUT.inspectorWidth) + "px";
+    const width = this.sidebarCollapsed
+      ? String(LAYOUT.inspectorCollapsed) + "px"
+      : String(LAYOUT.inspectorWidth) + "px";
     this.sidebar.style.width = width;
-    const body = this.sidebar.querySelector('[id="vis-inspector-body"]') as HTMLElement | null;
+    const body = this.sidebar.querySelector(
+      '[id="vis-inspector-body"]',
+    ) as HTMLElement | null;
     if (body) body.style.display = this.sidebarCollapsed ? "none" : "flex";
     button.style.display = "block";
     button.textContent = this.sidebarCollapsed ? "<" : ">";
@@ -919,11 +1169,16 @@ export class ThreeViewerEngine {
 
   private toggleObjectTree(button: HTMLButtonElement) {
     this.objectTreeCollapsed = !this.objectTreeCollapsed;
-    const width = this.objectTreeCollapsed ? String(LAYOUT.treeCollapsed) + "px" : String(LAYOUT.treeWidth) + "px";
+    const width = this.objectTreeCollapsed
+      ? String(LAYOUT.treeCollapsed) + "px"
+      : String(LAYOUT.treeWidth) + "px";
     this.objectTree.style.width = width;
     this.objectTree.style.padding = this.objectTreeCollapsed ? "0" : "8px";
     for (const child of Array.from(this.objectTree.children)) {
-      if (child !== button) (child as HTMLElement).style.display = this.objectTreeCollapsed ? "none" : "";
+      if (child !== button)
+        (child as HTMLElement).style.display = this.objectTreeCollapsed
+          ? "none"
+          : "";
     }
     button.style.display = "block";
     button.style.right = this.objectTreeCollapsed ? "5px" : "6px";
@@ -959,10 +1214,21 @@ export class ThreeViewerEngine {
   private buildToolbar(): HTMLElement {
     const toolbar = document.createElement("div");
     Object.assign(toolbar.style, {
-      position: "absolute", top: "8px", left: "276px", right: "288px", height: "34px",
-      display: "flex", alignItems: "center", gap: "6px", padding: "4px 8px",
-      background: "rgba(13,17,23,.78)", border: "1px solid #30363d", borderRadius: "7px",
-      zIndex: "20", pointerEvents: "none", boxSizing: "border-box",
+      position: "absolute",
+      top: "8px",
+      left: "276px",
+      right: "288px",
+      height: "34px",
+      display: "flex",
+      alignItems: "center",
+      gap: "6px",
+      padding: "4px 8px",
+      background: "rgba(13,17,23,.78)",
+      border: "1px solid #30363d",
+      borderRadius: "7px",
+      zIndex: "20",
+      pointerEvents: "none",
+      boxSizing: "border-box",
     } as CSSStyleDeclaration);
     toolbar.className = "oilgas-toolbar";
     const label = document.createElement("span");
@@ -971,12 +1237,24 @@ export class ThreeViewerEngine {
     toolbar.appendChild(label);
     const addButton = (text: string, title: string, action: () => void) => {
       const btn = document.createElement("button");
-      btn.type = "button"; btn.textContent = text; btn.title = title; btn.setAttribute("aria-label", title);
-      Object.assign(btn.style, { ...this.iconButtonStyle, width: "auto", padding: "0 8px", fontSize: "11px", pointerEvents: "auto" });
-      btn.addEventListener("click", action); toolbar.appendChild(btn);
+      btn.type = "button";
+      btn.textContent = text;
+      btn.title = title;
+      btn.setAttribute("aria-label", title);
+      Object.assign(btn.style, {
+        ...this.iconButtonStyle,
+        width: "auto",
+        padding: "0 8px",
+        fontSize: "11px",
+        pointerEvents: "auto",
+      });
+      btn.addEventListener("click", action);
+      toolbar.appendChild(btn);
     };
     addButton("导入", "导入本地油气文件", () => this.fileInput?.click());
-    addButton("工作区", "从项目或 Agent 工作区导入", () => this.openWorkspaceImport());
+    addButton("工作区", "从项目或 Agent 工作区导入", () =>
+      this.openWorkspaceImport(),
+    );
     addButton("适配", "适配当前数据", () => this.fitView());
     addButton("顶视", "顶视 (Alt+T)", () => this.applyNamedView("top"));
     addButton("重置", "重置视图", () => this.resetView());
@@ -985,21 +1263,35 @@ export class ThreeViewerEngine {
     addButton("撤销", "撤销上一次筛选", () => this.undoFilter());
     addButton("重做", "重做筛选", () => this.redoFilter());
     addButton("保存", "保存当前场景", () => this.saveScene());
-    addButton("恢复", "恢复已保存场景", () => { void this.restoreScene(); });
-    addButton("隐藏", "隐藏当前对象", () => { if (this.mesh) this.mesh.visible = false; });
-    addButton("显示", "显示当前对象", () => { if (this.mesh) this.mesh.visible = true; });
+    addButton("恢复", "恢复已保存场景", () => {
+      void this.restoreScene();
+    });
+    addButton("隐藏", "隐藏当前对象", () => {
+      if (this.mesh) this.mesh.visible = false;
+    });
+    addButton("显示", "显示当前对象", () => {
+      if (this.mesh) this.mesh.visible = true;
+    });
     addButton("测距", "测量两点之间的三维距离", () => {
       this.measureMode = !this.measureMode;
       this.measurePoints = [];
-      this.infoEl.textContent = this.measureMode ? "测距模式：依次点击两个点" : "已退出测距模式";
+      this.infoEl.textContent = this.measureMode
+        ? "测距模式：依次点击两个点"
+        : "已退出测距模式";
     });
     addButton("对象", "切换组件树", () => {
-      const btn = this.objectTree.querySelector("button") as HTMLButtonElement | null;
+      const btn = this.objectTree.querySelector(
+        "button",
+      ) as HTMLButtonElement | null;
       if (btn) this.toggleObjectTree(btn);
     });
-    const spacer = document.createElement("span"); spacer.style.flex = "1"; toolbar.appendChild(spacer);
-    const hint = document.createElement("span"); hint.textContent = "拖拽旋转 · 滚轮缩放 · 点击拾取 · 悬停读数";
-    hint.style.cssText = "font-size:11px;color:#8b949e;white-space:nowrap;"; toolbar.appendChild(hint);
+    const spacer = document.createElement("span");
+    spacer.style.flex = "1";
+    toolbar.appendChild(spacer);
+    const hint = document.createElement("span");
+    hint.textContent = "拖拽旋转 · 滚轮缩放 · 点击拾取 · 悬停读数";
+    hint.style.cssText = "font-size:11px;color:#8b949e;white-space:nowrap;";
+    toolbar.appendChild(hint);
     this.container.appendChild(toolbar);
     return toolbar;
   }
@@ -1033,7 +1325,10 @@ export class ThreeViewerEngine {
   }
 
   private viewportAspect(): number {
-    return Math.max(this.container.clientWidth / Math.max(this.container.clientHeight, 1), 0.2);
+    return Math.max(
+      this.container.clientWidth / Math.max(this.container.clientHeight, 1),
+      0.2,
+    );
   }
 
   private applyCameraProjection() {
@@ -1052,11 +1347,21 @@ export class ThreeViewerEngine {
 
   private frameBox(box: THREE.Box3, view: NamedView = "iso") {
     const center = box.getCenter(new THREE.Vector3());
-    const insets = chromeInsets(this.objectTreeCollapsed, this.sidebarCollapsed);
-    const availableWidth = Math.max(80, this.container.clientWidth - insets.left - insets.right - 16);
+    const insets = chromeInsets(
+      this.objectTreeCollapsed,
+      this.sidebarCollapsed,
+    );
+    const availableWidth = Math.max(
+      80,
+      this.container.clientWidth - insets.left - insets.right - 16,
+    );
     const availableHeight = Math.max(80, this.container.clientHeight - 140);
-    const distance = viewDistanceForBox(box, availableWidth / availableHeight, this.perspectiveCamera.fov)
-      * Math.max(1, this.container.clientHeight / availableHeight);
+    const distance =
+      viewDistanceForBox(
+        box,
+        availableWidth / availableHeight,
+        this.perspectiveCamera.fov,
+      ) * Math.max(1, this.container.clientHeight / availableHeight);
     const pose = namedViewPose(view, center, distance);
     this.camera.up.copy(pose.up);
     this.camera.position.copy(pose.position);
@@ -1073,33 +1378,46 @@ export class ThreeViewerEngine {
   private resetInspectorControls() {
     this.resetFilters();
     this.applyOpacity(0.85);
-    const wireframe = this.sidebar.querySelector('[id="vis-wireframe"]') as HTMLInputElement | null;
+    const wireframe = this.sidebar.querySelector(
+      '[id="vis-wireframe"]',
+    ) as HTMLInputElement | null;
     if (wireframe) {
       wireframe.checked = false;
       wireframe.dispatchEvent(new Event("change"));
     }
-    const clip = this.sidebar.querySelector('[id="vis-clip"]') as HTMLInputElement | null;
+    const clip = this.sidebar.querySelector(
+      '[id="vis-clip"]',
+    ) as HTMLInputElement | null;
     if (clip) {
       clip.checked = false;
       clip.dispatchEvent(new Event("change"));
     }
-    const isolate = this.sidebar.querySelector('[id="vis-isolate-k"]') as HTMLInputElement | null;
+    const isolate = this.sidebar.querySelector(
+      '[id="vis-isolate-k"]',
+    ) as HTMLInputElement | null;
     if (isolate) {
       isolate.checked = false;
       isolate.dispatchEvent(new Event("change"));
     }
     this.currentColormap = "viridis";
-    const select = this.sidebar.querySelector('[id="vis-colormap"]') as HTMLSelectElement | null;
+    const select = this.sidebar.querySelector(
+      '[id="vis-colormap"]',
+    ) as HTMLSelectElement | null;
     if (select) select.value = this.currentColormap;
     void this.reloadPropertyColors().catch((error) => this.reportError(error));
     this.infoEl.textContent = "已重置显示与过滤";
   }
 
   private filterStateSnapshot(): string {
-    const value = (selector: string) => (this.sidebar.querySelector(selector) as HTMLInputElement | null)?.value || "";
+    const value = (selector: string) =>
+      (this.sidebar.querySelector(selector) as HTMLInputElement | null)
+        ?.value || "";
     return JSON.stringify({
-      i: value("#vis-filter-i"), j: value("#vis-filter-j"), k: value("#vis-filter-k"),
-      min: value("#vis-filter-prop-min"), max: value("#vis-filter-prop-max"),
+      i: value("#vis-filter-i"),
+      j: value("#vis-filter-j"),
+      k: value("#vis-filter-k"),
+      min: value("#vis-filter-prop-min"),
+      max: value("#vis-filter-prop-max"),
       exclude: this.filterPropertyExclude,
       bounds: this.filterBounds,
     });
@@ -1107,26 +1425,39 @@ export class ThreeViewerEngine {
 
   private restoreFilterSnapshot(snapshot: string) {
     const state = JSON.parse(snapshot) as {
-      i?: string; j?: string; k?: string; min?: string; max?: string;
-      exclude?: boolean; bounds?: number[] | null;
+      i?: string;
+      j?: string;
+      k?: string;
+      min?: string;
+      max?: string;
+      exclude?: boolean;
+      bounds?: number[] | null;
     };
     const fields: Record<string, string> = {
-      "#vis-filter-i": state.i || "", "#vis-filter-j": state.j || "", "#vis-filter-k": state.k || "",
-      "#vis-filter-prop-min": state.min || "", "#vis-filter-prop-max": state.max || "",
+      "#vis-filter-i": state.i || "",
+      "#vis-filter-j": state.j || "",
+      "#vis-filter-k": state.k || "",
+      "#vis-filter-prop-min": state.min || "",
+      "#vis-filter-prop-max": state.max || "",
     };
     for (const [selector, value] of Object.entries(fields)) {
-      const input = this.sidebar.querySelector(selector) as HTMLInputElement | null;
+      const input = this.sidebar.querySelector(
+        selector,
+      ) as HTMLInputElement | null;
       if (input) input.value = value;
     }
     this.filterPropertyExclude = Boolean(state.exclude);
-    const exclude = this.sidebar.querySelector('[id="vis-filter-prop-exclude"]') as HTMLInputElement | null;
+    const exclude = this.sidebar.querySelector(
+      '[id="vis-filter-prop-exclude"]',
+    ) as HTMLInputElement | null;
     if (exclude) {
       exclude.checked = this.filterPropertyExclude;
       exclude.dispatchEvent(new Event("ugsci-sync"));
     }
-    this.filterBounds = Array.isArray(state.bounds) && state.bounds.length === 6
-      ? state.bounds as [number, number, number, number, number, number]
-      : null;
+    this.filterBounds =
+      Array.isArray(state.bounds) && state.bounds.length === 6
+        ? (state.bounds as [number, number, number, number, number, number])
+        : null;
   }
 
   private undoFilter() {
@@ -1172,18 +1503,24 @@ export class ThreeViewerEngine {
         up: this.camera.up.toArray(),
       },
     };
-    localStorage.setItem(viewerPersistenceKey(this.options, "scene"), JSON.stringify(scene));
+    localStorage.setItem(
+      viewerPersistenceKey(this.options, "scene"),
+      JSON.stringify(scene),
+    );
     this.infoEl.textContent = "场景已保存";
   }
 
   private async restoreScene() {
     const scope = this.lifetimeController;
     const storageKey = viewerPersistenceKey(this.options, "scene");
-    const isCurrent = () => !this.disposed && !scope.signal.aborted
-      && scope === this.lifetimeController
-      && storageKey === viewerPersistenceKey(this.options, "scene");
+    const isCurrent = () =>
+      !this.disposed &&
+      !scope.signal.aborted &&
+      scope === this.lifetimeController &&
+      storageKey === viewerPersistenceKey(this.options, "scene");
     const assertCurrent = () => {
-      if (!isCurrent()) throw new DOMException("场景恢复作用域已变化", "AbortError");
+      if (!isCurrent())
+        throw new DOMException("场景恢复作用域已变化", "AbortError");
     };
     const inCurrentScope = async (operation: () => Promise<unknown>) => {
       assertCurrent();
@@ -1199,12 +1536,28 @@ export class ThreeViewerEngine {
     try {
       const scene = JSON.parse(raw);
       this.restoringScene = true;
-      if (scene.datasetId) await inCurrentScope(() => this.loadDataset(String(scene.datasetId)));
-      if (scene.property) await inCurrentScope(() => this.executeCommand("set-property", { property: scene.property }));
-      if (scene.colormap) await inCurrentScope(() => this.executeCommand("set-colormap", { colormap: scene.colormap }));
-      if (Number.isFinite(scene.opacity)) await inCurrentScope(() => this.executeCommand("set-opacity", { opacity: scene.opacity }));
-      if (typeof scene.wireframe === "boolean") await inCurrentScope(() => this.executeCommand("set-wireframe", { enabled: scene.wireframe }));
-      if (Number.isInteger(scene.timeStep)) await inCurrentScope(() => this.executeCommand("set-timestep", { timeStep: scene.timeStep }));
+      if (scene.datasetId)
+        await inCurrentScope(() => this.loadDataset(String(scene.datasetId)));
+      if (scene.property)
+        await inCurrentScope(() =>
+          this.executeCommand("set-property", { property: scene.property }),
+        );
+      if (scene.colormap)
+        await inCurrentScope(() =>
+          this.executeCommand("set-colormap", { colormap: scene.colormap }),
+        );
+      if (Number.isFinite(scene.opacity))
+        await inCurrentScope(() =>
+          this.executeCommand("set-opacity", { opacity: scene.opacity }),
+        );
+      if (typeof scene.wireframe === "boolean")
+        await inCurrentScope(() =>
+          this.executeCommand("set-wireframe", { enabled: scene.wireframe }),
+        );
+      if (Number.isInteger(scene.timeStep))
+        await inCurrentScope(() =>
+          this.executeCommand("set-timestep", { timeStep: scene.timeStep }),
+        );
       assertCurrent();
       if (scene.filters) {
         this.restoreFilterSnapshot(scene.filters);
@@ -1213,21 +1566,37 @@ export class ThreeViewerEngine {
       }
       if (Array.isArray(scene.overlays) && this.manifest) {
         for (const datasetId of scene.overlays) {
-          const dataset = this.manifest.datasets.find((item) => item.id === datasetId);
-          if (dataset && dataset.id !== this.currentDataset?.id) await inCurrentScope(() => this.toggleDatasetVisibility(dataset, true));
+          const dataset = this.manifest.datasets.find(
+            (item) => item.id === datasetId,
+          );
+          if (dataset && dataset.id !== this.currentDataset?.id)
+            await inCurrentScope(() =>
+              this.toggleDatasetVisibility(dataset, true),
+            );
         }
       }
       assertCurrent();
       if (Number.isFinite(scene.zScale)) this.setZScale(Number(scene.zScale));
       if (typeof scene.ortho === "boolean") this.setOrthographic(scene.ortho);
-      if (Array.isArray(scene.camera?.position) && scene.camera.position.length === 3) this.camera.position.fromArray(scene.camera.position);
-      if (Array.isArray(scene.camera?.target) && scene.camera.target.length === 3) this.controls.target.fromArray(scene.camera.target);
-      if (Array.isArray(scene.camera?.up) && scene.camera.up.length === 3) this.camera.up.fromArray(scene.camera.up);
+      if (
+        Array.isArray(scene.camera?.position) &&
+        scene.camera.position.length === 3
+      )
+        this.camera.position.fromArray(scene.camera.position);
+      if (
+        Array.isArray(scene.camera?.target) &&
+        scene.camera.target.length === 3
+      )
+        this.controls.target.fromArray(scene.camera.target);
+      if (Array.isArray(scene.camera?.up) && scene.camera.up.length === 3)
+        this.camera.up.fromArray(scene.camera.up);
       this.controls.update();
       this.infoEl.textContent = "场景已恢复";
     } catch (err) {
       if (isCurrent() && !(err instanceof Error && err.name === "AbortError")) {
-        this.showDetails(`场景恢复失败: ${err instanceof Error ? err.message : String(err)}`);
+        this.showDetails(
+          `场景恢复失败: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     } finally {
       if (isCurrent()) this.restoringScene = false;
@@ -1257,7 +1626,9 @@ export class ThreeViewerEngine {
         up: this.camera.up.toArray(),
       },
     };
-    const url = URL.createObjectURL(new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }));
+    const url = URL.createObjectURL(
+      new Blob([JSON.stringify(state, null, 2)], { type: "application/json" }),
+    );
     const link = document.createElement("a");
     link.href = url;
     link.download = `${this.currentDataset.id}.oilgas-scene.json`;
@@ -1267,28 +1638,61 @@ export class ThreeViewerEngine {
   }
 
   private selectStyle: Partial<CSSStyleDeclaration> = {
-    width: "100%", padding: "6px 8px", background: "#161b22",
-    border: "1px solid #30363d", borderRadius: "6px", color: "#c9d1d9",
-    fontSize: "13px", marginBottom: "4px", cursor: "pointer",
+    width: "100%",
+    padding: "6px 8px",
+    background: "#161b22",
+    border: "1px solid #30363d",
+    borderRadius: "6px",
+    color: "#c9d1d9",
+    fontSize: "13px",
+    marginBottom: "4px",
+    cursor: "pointer",
   };
 
   private buildHud(): HTMLElement {
     const hud = document.createElement("div");
     Object.assign(hud.style, {
-      position: "absolute", top: "88px", right: "288px",
-      background: "rgba(22,27,34,0.85)", border: "1px solid #30363d",
-      borderRadius: "8px", padding: "8px 12px", fontSize: "11px",
-      fontFamily: "monospace", pointerEvents: "none", zIndex: "10", minWidth: "148px",
+      position: "absolute",
+      top: "88px",
+      right: "288px",
+      background: "rgba(22,27,34,0.85)",
+      border: "1px solid #30363d",
+      borderRadius: "8px",
+      padding: "8px 12px",
+      fontSize: "11px",
+      fontFamily: "monospace",
+      pointerEvents: "none",
+      zIndex: "10",
+      minWidth: "148px",
     });
-    for (const label of ["FPS", "Frame", "Draw Calls", "Triangles", "JS Heap"]) {
+    for (const label of [
+      "FPS",
+      "Frame",
+      "Draw Calls",
+      "Triangles",
+      "JS Heap",
+    ]) {
       const row = document.createElement("div");
-      row.style.cssText = "display: flex; justify-content: space-between; gap: 16px; margin: 2px 0;";
+      row.style.cssText =
+        "display: flex; justify-content: space-between; gap: 16px; margin: 2px 0;";
       const lbl = document.createElement("span");
-      lbl.textContent = ({ FPS: "帧率", Frame: "每帧耗时", "Draw Calls": "绘制调用", Triangles: "三角面", "JS Heap": "内存" } as Record<string, string>)[label]; lbl.style.color = "#8b949e";
+      lbl.textContent = (
+        {
+          FPS: "帧率",
+          Frame: "每帧耗时",
+          "Draw Calls": "绘制调用",
+          Triangles: "三角面",
+          "JS Heap": "内存",
+        } as Record<string, string>
+      )[label];
+      lbl.style.color = "#8b949e";
       const val = document.createElement("span");
-      val.textContent = "—"; val.style.color = "#58a6ff"; val.style.fontWeight = "600";
+      val.textContent = "—";
+      val.style.color = "#58a6ff";
+      val.style.fontWeight = "600";
       val.dataset.metric = label;
-      row.appendChild(lbl); row.appendChild(val);
+      row.appendChild(lbl);
+      row.appendChild(val);
       hud.appendChild(row);
     }
     this.container.appendChild(hud);
@@ -1304,11 +1708,19 @@ export class ThreeViewerEngine {
   private buildInfoBar(): HTMLElement {
     const el = document.createElement("div");
     Object.assign(el.style, {
-      position: "absolute", bottom: "8px", left: "8px",
-      background: "rgba(22,27,34,0.85)", border: "1px solid #30363d",
-      borderRadius: "8px", padding: "8px 12px", fontSize: "12px",
-      fontFamily: "monospace", color: "#8b949e", pointerEvents: "none",
-      maxWidth: "500px", zIndex: "10",
+      position: "absolute",
+      bottom: "8px",
+      left: "8px",
+      background: "rgba(22,27,34,0.85)",
+      border: "1px solid #30363d",
+      borderRadius: "8px",
+      padding: "8px 12px",
+      fontSize: "12px",
+      fontFamily: "monospace",
+      color: "#8b949e",
+      pointerEvents: "none",
+      maxWidth: "500px",
+      zIndex: "10",
     });
     el.textContent = "加载中...";
     this.container.appendChild(el);
@@ -1318,11 +1730,22 @@ export class ThreeViewerEngine {
   private buildDetailsPanel(): HTMLElement {
     const el = document.createElement("div");
     Object.assign(el.style, {
-      position: "absolute", right: "8px", bottom: "8px", width: "270px",
-      maxHeight: "260px", overflowY: "auto", display: "none",
-      background: "rgba(13,17,23,0.94)", border: "1px solid #30363d",
-      borderRadius: "8px", padding: "10px", fontSize: "12px", lineHeight: "1.5",
-      color: "#c9d1d9", zIndex: "12", whiteSpace: "pre-wrap",
+      position: "absolute",
+      right: "8px",
+      bottom: "8px",
+      width: "270px",
+      maxHeight: "260px",
+      overflowY: "auto",
+      display: "none",
+      background: "rgba(13,17,23,0.94)",
+      border: "1px solid #30363d",
+      borderRadius: "8px",
+      padding: "10px",
+      fontSize: "12px",
+      lineHeight: "1.5",
+      color: "#c9d1d9",
+      zIndex: "12",
+      whiteSpace: "pre-wrap",
     } as CSSStyleDeclaration);
     this.container.appendChild(el);
     return el;
@@ -1331,27 +1754,42 @@ export class ThreeViewerEngine {
   private buildLegend(): HTMLElement {
     const el = document.createElement("div");
     Object.assign(el.style, {
-      position: "absolute", right: "8px", bottom: "278px", width: "178px",
-      padding: "9px 10px", background: "rgba(13,17,23,.88)", border: "1px solid #30363d",
-      borderRadius: "7px", zIndex: "11", color: "#c9d1d9", fontSize: "11px",
-      pointerEvents: "auto", cursor: "pointer", boxSizing: "border-box",
+      position: "absolute",
+      right: "8px",
+      bottom: "278px",
+      width: "178px",
+      padding: "9px 10px",
+      background: "rgba(13,17,23,.88)",
+      border: "1px solid #30363d",
+      borderRadius: "7px",
+      zIndex: "11",
+      color: "#c9d1d9",
+      fontSize: "11px",
+      pointerEvents: "auto",
+      cursor: "pointer",
+      boxSizing: "border-box",
     } as CSSStyleDeclaration);
     el.title = "\u70b9\u51fb\u7f16\u8f91\u5c5e\u6027\u8303\u56f4";
     el.addEventListener("click", () => {
-      const minInput = this.sidebar.querySelector('[id="vis-filter-prop-min"]') as HTMLInputElement | null;
+      const minInput = this.sidebar.querySelector(
+        '[id="vis-filter-prop-min"]',
+      ) as HTMLInputElement | null;
       minInput?.focus();
     });
     const title = document.createElement("div");
     title.dataset.legendTitle = "true";
-    title.style.cssText = "display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;color:#c9d1d9;font-weight:600;";
+    title.style.cssText =
+      "display:flex;justify-content:space-between;gap:8px;margin-bottom:6px;color:#c9d1d9;font-weight:600;";
     el.appendChild(title);
     const gradient = document.createElement("div");
     gradient.dataset.legendGradient = "true";
-    gradient.style.cssText = "height:8px;border-radius:4px;background:linear-gradient(90deg,#440154,#31688e,#35b779,#fde725);";
+    gradient.style.cssText =
+      "height:8px;border-radius:4px;background:linear-gradient(90deg,#440154,#31688e,#35b779,#fde725);";
     el.appendChild(gradient);
     const range = document.createElement("div");
     range.dataset.legendRange = "true";
-    range.style.cssText = "display:flex;justify-content:space-between;margin-top:4px;color:#8b949e;font-family:monospace;";
+    range.style.cssText =
+      "display:flex;justify-content:space-between;margin-top:4px;color:#8b949e;font-family:monospace;";
     el.appendChild(range);
     this.container.appendChild(el);
     this.updateLegend();
@@ -1362,20 +1800,46 @@ export class ThreeViewerEngine {
     if (!this.legendEl) return;
     const title = this.legendEl.querySelector("[data-legend-title]");
     const range = this.legendEl.querySelector("[data-legend-range]");
-    if (title) title.textContent = `${propertyLabel(this.currentProperty, this.currentDataset) || "统一颜色"} · ${colorMapLabel(this.currentColormap)}`;
-    if (range) range.textContent = this.scalarValidCount ? `${this.scalarMin.toPrecision(4)}  —  ${this.scalarMax.toPrecision(4)}` : "全部缺测";
-    const gradient = this.legendEl.querySelector("[data-legend-gradient]") as HTMLElement | null;
-    if (gradient) gradient.style.background = this.scalarValidCount ? colormapCssGradient(this.currentColormap) : "#737373";
-    this.legendEl.style.display = this.currentProperty && this.legendVisible() ? "block" : "none";
+    if (title)
+      title.textContent = `${
+        propertyLabel(this.currentProperty, this.currentDataset) || "统一颜色"
+      } · ${colorMapLabel(this.currentColormap)}`;
+    if (range)
+      range.textContent = this.scalarValidCount
+        ? `${this.scalarMin.toPrecision(4)}  —  ${this.scalarMax.toPrecision(
+            4,
+          )}`
+        : "全部缺测";
+    const gradient = this.legendEl.querySelector(
+      "[data-legend-gradient]",
+    ) as HTMLElement | null;
+    if (gradient)
+      gradient.style.background = this.scalarValidCount
+        ? colormapCssGradient(this.currentColormap)
+        : "#737373";
+    this.legendEl.style.display =
+      this.currentProperty && this.legendVisible() ? "block" : "none";
     this.renderHistogram();
   }
 
   private legendVisible(): boolean {
-    return (this.sidebar.querySelector('[id="vis-show-legend"]') as HTMLInputElement | null)?.checked !== false;
+    return (
+      (
+        this.sidebar.querySelector(
+          '[id="vis-show-legend"]',
+        ) as HTMLInputElement | null
+      )?.checked !== false
+    );
   }
 
   private histogramVisible(): boolean {
-    return (this.sidebar.querySelector('[id="vis-show-histogram"]') as HTMLInputElement | null)?.checked !== false;
+    return (
+      (
+        this.sidebar.querySelector(
+          '[id="vis-show-histogram"]',
+        ) as HTMLInputElement | null
+      )?.checked !== false
+    );
   }
 
   private buildHistogram(): HTMLCanvasElement {
@@ -1383,14 +1847,26 @@ export class ThreeViewerEngine {
     canvas.width = 220;
     canvas.height = 72;
     Object.assign(canvas.style, {
-      position: "absolute", right: "12px", bottom: "92px", width: "160px", height: "56px",
-      background: "rgba(13,17,23,.82)", border: "1px solid #30363d", borderRadius: "6px", zIndex: "12",
+      position: "absolute",
+      right: "12px",
+      bottom: "92px",
+      width: "160px",
+      height: "56px",
+      background: "rgba(13,17,23,.82)",
+      border: "1px solid #30363d",
+      borderRadius: "6px",
+      zIndex: "12",
     } as CSSStyleDeclaration);
-    canvas.title = "\u70b9\u51fb\u8bbe\u6700\u5c0f\u503c\uff0cShift+\u70b9\u51fb\u8bbe\u6700\u5927\u503c\uff0c\u53cc\u51fb\u6e05\u9664";
+    canvas.title =
+      "\u70b9\u51fb\u8bbe\u6700\u5c0f\u503c\uff0cShift+\u70b9\u51fb\u8bbe\u6700\u5927\u503c\uff0c\u53cc\u51fb\u6e05\u9664";
     canvas.addEventListener("click", (event) => this.onHistogramClick(event));
     canvas.addEventListener("dblclick", () => {
-      const minInput = this.sidebar.querySelector('[id="vis-filter-prop-min"]') as HTMLInputElement | null;
-      const maxInput = this.sidebar.querySelector('[id="vis-filter-prop-max"]') as HTMLInputElement | null;
+      const minInput = this.sidebar.querySelector(
+        '[id="vis-filter-prop-min"]',
+      ) as HTMLInputElement | null;
+      const maxInput = this.sidebar.querySelector(
+        '[id="vis-filter-prop-max"]',
+      ) as HTMLInputElement | null;
       if (minInput) minInput.value = "";
       if (maxInput) maxInput.value = "";
       this.applyFilters();
@@ -1404,9 +1880,16 @@ export class ThreeViewerEngine {
     canvas.width = 360;
     canvas.height = 720;
     Object.assign(canvas.style, {
-      position: "absolute", top: "88px", right: "12px", bottom: "16px", width: "280px",
-      background: "rgba(13,17,23,.94)", border: "1px solid #30363d", borderRadius: "8px",
-      zIndex: "25", display: "none",
+      position: "absolute",
+      top: "88px",
+      right: "12px",
+      bottom: "16px",
+      width: "280px",
+      background: "rgba(13,17,23,.94)",
+      border: "1px solid #30363d",
+      borderRadius: "8px",
+      zIndex: "25",
+      display: "none",
     } as CSSStyleDeclaration);
     canvas.title = "测井曲线";
     this.container.appendChild(canvas);
@@ -1433,15 +1916,25 @@ export class ThreeViewerEngine {
     const span = max - min || 1;
     for (const value of values) {
       if (!Number.isFinite(value)) continue;
-      const slot = Math.min(bins - 1, Math.max(0, Math.floor(((value - min) / span) * bins)));
+      const slot = Math.min(
+        bins - 1,
+        Math.max(0, Math.floor(((value - min) / span) * bins)),
+      );
       counts[slot] += 1;
     }
     const peak = Math.max(...counts, 1);
     for (let index = 0; index < bins; index++) {
       const [r, g, b] = colormap(this.currentColormap, (index + 0.5) / bins);
-      ctx.fillStyle = `rgb(${Math.round(r * 255)},${Math.round(g * 255)},${Math.round(b * 255)})`;
+      ctx.fillStyle = `rgb(${Math.round(r * 255)},${Math.round(
+        g * 255,
+      )},${Math.round(b * 255)})`;
       const height = (counts[index] / peak) * (canvas.height - 8);
-      ctx.fillRect(index * (canvas.width / bins), canvas.height - height, canvas.width / bins - 1, height);
+      ctx.fillRect(
+        index * (canvas.width / bins),
+        canvas.height - height,
+        canvas.width / bins - 1,
+        height,
+      );
     }
   }
 
@@ -1459,7 +1952,12 @@ export class ThreeViewerEngine {
     ctx.fillText(this.currentDataset.name, 12, 22);
     // Only the selected curve has been fetched. Do not display empty tracks
     // under unrelated property names or plot the selected values as another log.
-    const names = this.currentProperty ? [this.currentDataset.properties?.[this.currentProperty]?.label || this.currentProperty] : [];
+    const names = this.currentProperty
+      ? [
+          this.currentDataset.properties?.[this.currentProperty]?.label ||
+            this.currentProperty,
+        ]
+      : [];
     if (!this.currentScalarValues || names.length === 0) {
       ctx.fillStyle = "#8b949e";
       ctx.fillText("当前数据集没有测井曲线", 12, 48);
@@ -1480,7 +1978,7 @@ export class ThreeViewerEngine {
       ctx.fillText(names[track], x0 + 4, padTop - 8);
     }
     const min = this.scalarMin;
-    const span = (this.scalarMax - this.scalarMin) || 1;
+    const span = this.scalarMax - this.scalarMin || 1;
     ctx.strokeStyle = "#58a6ff";
     ctx.beginPath();
     let penDown = false;
@@ -1488,10 +1986,16 @@ export class ThreeViewerEngine {
     const depthSpan = depths ? depths.getZ(depths.count - 1) - firstDepth : 0;
     for (let index = 0; index < n; index++) {
       const value = this.currentScalarValues[index];
-      if (!Number.isFinite(value)) { penDown = false; continue; }
-      const t = depths && depthSpan !== 0 && index < depths.count
-        ? (depths.getZ(index) - firstDepth) / depthSpan
-        : n <= 1 ? 0 : index / (n - 1);
+      if (!Number.isFinite(value)) {
+        penDown = false;
+        continue;
+      }
+      const t =
+        depths && depthSpan !== 0 && index < depths.count
+          ? (depths.getZ(index) - firstDepth) / depthSpan
+          : n <= 1
+          ? 0
+          : index / (n - 1);
       const y = padTop + t * trackHeight;
       const x = 14 + ((value - min) / span) * (trackWidth - 16);
       if (!penDown) ctx.moveTo(x, y);
@@ -1503,7 +2007,9 @@ export class ThreeViewerEngine {
       ctx.fillStyle = "#8b949e";
       ctx.font = "10px monospace";
       const top = Math.abs(depths.getZ(0) + this.origin[2]);
-      const bottom = Math.abs(depths.getZ(Math.max(0, depths.count - 1)) + this.origin[2]);
+      const bottom = Math.abs(
+        depths.getZ(Math.max(0, depths.count - 1)) + this.origin[2],
+      );
       ctx.fillText(`${top.toFixed(1)}`, 12, padTop + 10);
       ctx.fillText(`${bottom.toFixed(1)}`, 12, height - 8);
     }
@@ -1512,13 +2018,17 @@ export class ThreeViewerEngine {
   private applyClipPlane(enabled: boolean, fraction: number) {
     if (!this.geometry?.boundingBox || !this.mesh) return;
     const box = this.geometry.boundingBox;
-    const z = box.min.z + (box.max.z - box.min.z) * (1 - Math.min(1, Math.max(0, fraction)));
+    const z =
+      box.min.z +
+      (box.max.z - box.min.z) * (1 - Math.min(1, Math.max(0, fraction)));
     this.clipPlane.setFromNormalAndCoplanarPoint(
       new THREE.Vector3(0, 0, -1),
       new THREE.Vector3(0, 0, z),
     );
     this.renderer.localClippingEnabled = enabled;
-    const material = (this.mesh as THREE.Mesh).material as THREE.MeshPhongMaterial | undefined;
+    const material = (this.mesh as THREE.Mesh).material as
+      | THREE.MeshPhongMaterial
+      | undefined;
     if (material && "clippingPlanes" in material) {
       material.clippingPlanes = enabled ? [this.clipPlane] : [];
       material.needsUpdate = true;
@@ -1526,8 +2036,10 @@ export class ThreeViewerEngine {
   }
 
   private overlaySources(view: string): string[] {
-    if (view === "wellbore" || view === "welllog") return ["wellbore", "las", "dlis"];
-    if (view === "intersection") return ["intersection", "well-intersection", "slice", "surface"];
+    if (view === "wellbore" || view === "welllog")
+      return ["wellbore", "las", "dlis"];
+    if (view === "intersection")
+      return ["intersection", "well-intersection", "slice", "surface"];
     if (view === "network") return ["network", "network-tube"];
     return [];
   }
@@ -1535,33 +2047,50 @@ export class ThreeViewerEngine {
   private async applyActiveView(view: ReturnType<ViewRouter["getActiveView"]>) {
     this.store.setActiveView(view);
     this.infoEl.textContent = `当前视图: ${ViewRouter.VIEW_LABELS[view]}`;
-    if (this.wellLogEl) this.wellLogEl.style.display = view === "welllog" ? "block" : "none";
-    if (this.wellMapRoot) this.wellMapRoot.style.display = view === "welllog" ? "none" : "block";
+    if (this.wellLogEl)
+      this.wellLogEl.style.display = view === "welllog" ? "block" : "none";
+    if (this.wellMapRoot)
+      this.wellMapRoot.style.display = view === "welllog" ? "none" : "block";
     if (!this.manifest) return;
     const sourceOf = (dataset: DatasetInfo) => dataset.source || "";
-    const pickFirst = (sources: string[]) => this.manifest!.datasets.find((item) => sources.includes(sourceOf(item)));
+    const pickFirst = (sources: string[]) =>
+      this.manifest!.datasets.find((item) => sources.includes(sourceOf(item)));
     const current = this.currentDataset?.source || "";
     if (view === "reservoir") {
-      const grid = this.currentDataset && isGridDataset(this.currentDataset) ? this.currentDataset : this.manifest.datasets.find(isGridDataset);
-      if (grid && grid.id !== this.currentDataset?.id) await this.loadDataset(grid.id);
+      const grid =
+        this.currentDataset && isGridDataset(this.currentDataset)
+          ? this.currentDataset
+          : this.manifest.datasets.find(isGridDataset);
+      if (grid && grid.id !== this.currentDataset?.id)
+        await this.loadDataset(grid.id);
     } else if (view === "wellbore") {
       if (!(this.currentDataset && isSpatialWell(this.currentDataset))) {
         const well = this.manifest.datasets.find(isSpatialWell);
         if (well) await this.loadDataset(well.id);
-        else this.infoEl.textContent = "没有空间井轨迹。测井曲线请用「测井」页签；LAS 不会画在原点。";
+        else
+          this.infoEl.textContent =
+            "没有空间井轨迹。测井曲线请用「测井」页签；LAS 不会画在原点。";
       }
     } else if (view === "intersection") {
       if (!this.overlaySources("intersection").includes(current)) {
         const section = pickFirst(this.overlaySources("intersection"));
         if (section) await this.loadDataset(section.id);
-        else this.infoEl.textContent = "没有剖面。请生成垂直剖面、井剖面或 IJK 切片。";
+        else
+          this.infoEl.textContent =
+            "没有剖面。请生成垂直剖面、井剖面或 IJK 切片。";
       }
     } else if (view === "welllog") {
-      const isLog = (dataset: DatasetInfo) => isDepthOnlyWell(dataset) || ["las", "dlis"].includes(sourceOf(dataset));
-      const log = this.currentDataset && isLog(this.currentDataset) ? this.currentDataset : this.manifest.datasets.find(isLog);
-      if (log && log.id !== this.currentDataset?.id) await this.loadDataset(log.id);
+      const isLog = (dataset: DatasetInfo) =>
+        isDepthOnlyWell(dataset) || ["las", "dlis"].includes(sourceOf(dataset));
+      const log =
+        this.currentDataset && isLog(this.currentDataset)
+          ? this.currentDataset
+          : this.manifest.datasets.find(isLog);
+      if (log && log.id !== this.currentDataset?.id)
+        await this.loadDataset(log.id);
       this.renderWellLog();
-      if (!log) this.infoEl.textContent = "没有测井曲线。请导入 LAS/DLIS 文件。";
+      if (!log)
+        this.infoEl.textContent = "没有测井曲线。请导入 LAS/DLIS 文件。";
     } else if (view === "network") {
       if (!["network", "network-tube"].includes(current)) {
         const net = pickFirst(["network", "network-tube"]);
@@ -1581,17 +2110,26 @@ export class ThreeViewerEngine {
       ? this.currentDataset
       : this.firstWellDataset();
     if (!well) {
-      this.showDetails("没有空间井轨迹，无法生成井剖面。仅深度测井不能用来切三维剖面。");
+      this.showDetails(
+        "没有空间井轨迹，无法生成井剖面。仅深度测井不能用来切三维剖面。",
+      );
       return;
     }
-    const grid = this.manifest?.datasets.find((item) => ["cmg", "egrid", "roff", "eclipse"].includes(item.source || "") || item.grid_dims)
-      || this.currentDataset;
+    const grid =
+      this.manifest?.datasets.find(
+        (item) =>
+          ["cmg", "egrid", "roff", "eclipse"].includes(item.source || "") ||
+          item.grid_dims,
+      ) || this.currentDataset;
     try {
       const response = await this.request(
         `${this.apiBase}/datasets/${encodeURIComponent(grid.id)}/well-sections`,
         {
           method: "POST",
-          headers: { ...this.authHeaders(), "Content-Type": "application/json" },
+          headers: {
+            ...this.authHeaders(),
+            "Content-Type": "application/json",
+          },
           body: JSON.stringify({
             well_dataset_id: well.id,
             offset: 50,
@@ -1611,22 +2149,37 @@ export class ThreeViewerEngine {
       this.viewRouter.switchTo("intersection");
       this.showDetails(`井剖面已生成：${result.name}`);
     } catch (err) {
-      this.showDetails(`井剖面生成失败：${err instanceof Error ? err.message : String(err)}`);
+      this.showDetails(
+        `井剖面生成失败：${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
   private async createSliceFromUI() {
     if (!this.currentDataset) return;
-    const axis = (this.sidebar.querySelector('[id="vis-slice-axis"]') as HTMLSelectElement)?.value || "k";
-    const index = Number((this.sidebar.querySelector('[id="vis-slice-index"]') as HTMLInputElement)?.value || 1);
+    const axis =
+      (this.sidebar.querySelector('[id="vis-slice-axis"]') as HTMLSelectElement)
+        ?.value || "k";
+    const index = Number(
+      (this.sidebar.querySelector('[id="vis-slice-index"]') as HTMLInputElement)
+        ?.value || 1,
+    );
     try {
       const response = await this.request(
-        `${this.apiBase}/datasets/${encodeURIComponent(this.currentDataset.id)}/slices`,
+        `${this.apiBase}/datasets/${encodeURIComponent(
+          this.currentDataset.id,
+        )}/slices`,
         {
           method: "POST",
-          headers: { ...this.authHeaders(), "Content-Type": "application/json" },
+          headers: {
+            ...this.authHeaders(),
+            "Content-Type": "application/json",
+          },
           body: JSON.stringify({
-            axis, index, property: this.currentProperty, name: `slice_${axis}${index}_${Date.now()}`,
+            axis,
+            index,
+            property: this.currentProperty,
+            name: `slice_${axis}${index}_${Date.now()}`,
           }),
         },
       );
@@ -1641,7 +2194,9 @@ export class ThreeViewerEngine {
       this.viewRouter.switchTo("intersection");
       this.showDetails(`切片已生成：${result.name}`);
     } catch (err) {
-      this.showDetails(`切片生成失败：${err instanceof Error ? err.message : String(err)}`);
+      this.showDetails(
+        `切片生成失败：${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
@@ -1657,26 +2212,36 @@ export class ThreeViewerEngine {
     }
     try {
       const stats = await this.fetchJson(
-        `/datasets/${encodeURIComponent(this.currentDataset.id)}/stats?property=${encodeURIComponent(this.currentProperty)}&time_step=${this.currentTimeStep}`,
+        `/datasets/${encodeURIComponent(
+          this.currentDataset.id,
+        )}/stats?property=${encodeURIComponent(
+          this.currentProperty,
+        )}&time_step=${this.currentTimeStep}`,
       );
-      this.showDetails([
-        `属性统计 · ${propertyLabel(stats.property, this.currentDataset)}`,
-        `样本数: ${Number(stats.count).toLocaleString()}`,
-        `最小值: ${Number(stats.min).toPrecision(6)}`,
-        `P10: ${Number(stats.p10).toPrecision(6)}`,
-        `中位数: ${Number(stats.p50).toPrecision(6)}`,
-        `平均值: ${Number(stats.mean).toPrecision(6)}`,
-        `P90: ${Number(stats.p90).toPrecision(6)}`,
-        `最大值: ${Number(stats.max).toPrecision(6)}`,
-      ].join("\n"));
+      this.showDetails(
+        [
+          `属性统计 · ${propertyLabel(stats.property, this.currentDataset)}`,
+          `样本数: ${Number(stats.count).toLocaleString()}`,
+          `最小值: ${Number(stats.min).toPrecision(6)}`,
+          `P10: ${Number(stats.p10).toPrecision(6)}`,
+          `中位数: ${Number(stats.p50).toPrecision(6)}`,
+          `平均值: ${Number(stats.mean).toPrecision(6)}`,
+          `P90: ${Number(stats.p90).toPrecision(6)}`,
+          `最大值: ${Number(stats.max).toPrecision(6)}`,
+        ].join("\n"),
+      );
     } catch (err) {
-      this.showDetails(`统计失败: ${err instanceof Error ? err.message : String(err)}`);
+      this.showDetails(
+        `统计失败: ${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
   private async exportDataset() {
     if (!this.currentDataset) return;
-    const url = `${this.apiBase}/datasets/${encodeURIComponent(this.currentDataset.id)}/export?format=csv&time_step=${this.currentTimeStep}`;
+    const url = `${this.apiBase}/datasets/${encodeURIComponent(
+      this.currentDataset.id,
+    )}/export?format=csv&time_step=${this.currentTimeStep}`;
     const response = await this.request(url, { headers: this.authHeaders() });
     if (!response.ok) {
       this.showDetails(`导出失败: HTTP ${response.status}`);
@@ -1694,25 +2259,58 @@ export class ThreeViewerEngine {
 
   private async createIntersectionFromUI() {
     if (!this.currentDataset) return;
-    const input = this.sidebar.querySelector('[id="vis-polyline"]') as HTMLInputElement;
-    const zMin = Number((this.sidebar.querySelector('[id="vis-section-z-min"]') as HTMLInputElement)?.value || 0);
-    const zMax = Number((this.sidebar.querySelector('[id="vis-section-z-max"]') as HTMLInputElement)?.value || 5000);
-    const points = (input?.value || "").split(";").map((part) => part.trim()).filter(Boolean).map((part) => {
-      const [x, y] = part.split(",").map(Number);
-      return [x, y] as [number, number];
-    });
-    if (points.length < 2 || points.some(([x, y]) => !Number.isFinite(x) || !Number.isFinite(y)) || !Number.isFinite(zMin) || !Number.isFinite(zMax) || zMax <= zMin) {
+    const input = this.sidebar.querySelector(
+      '[id="vis-polyline"]',
+    ) as HTMLInputElement;
+    const zMin = Number(
+      (
+        this.sidebar.querySelector(
+          '[id="vis-section-z-min"]',
+        ) as HTMLInputElement
+      )?.value || 0,
+    );
+    const zMax = Number(
+      (
+        this.sidebar.querySelector(
+          '[id="vis-section-z-max"]',
+        ) as HTMLInputElement
+      )?.value || 5000,
+    );
+    const points = (input?.value || "")
+      .split(";")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => {
+        const [x, y] = part.split(",").map(Number);
+        return [x, y] as [number, number];
+      });
+    if (
+      points.length < 2 ||
+      points.some(([x, y]) => !Number.isFinite(x) || !Number.isFinite(y)) ||
+      !Number.isFinite(zMin) ||
+      !Number.isFinite(zMax) ||
+      zMax <= zMin
+    ) {
       this.showDetails("剖面参数无效：至少需要两个 x,y 点，且 z max > z min");
       return;
     }
     try {
       const response = await this.request(
-        `${this.apiBase}/datasets/${encodeURIComponent(this.currentDataset.id)}/intersections`,
+        `${this.apiBase}/datasets/${encodeURIComponent(
+          this.currentDataset.id,
+        )}/intersections`,
         {
-          method: "POST", headers: { ...this.authHeaders(), "Content-Type": "application/json" },
+          method: "POST",
+          headers: {
+            ...this.authHeaders(),
+            "Content-Type": "application/json",
+          },
           body: JSON.stringify({
-            polyline_x: points.map(([x]) => x), polyline_y: points.map(([, y]) => y),
-            z_min: zMin, z_max: zMax, name: `section_${Date.now()}`,
+            polyline_x: points.map(([x]) => x),
+            polyline_y: points.map(([, y]) => y),
+            z_min: zMin,
+            z_max: zMax,
+            name: `section_${Date.now()}`,
             property: this.currentProperty,
           }),
         },
@@ -1728,18 +2326,25 @@ export class ThreeViewerEngine {
       await this.loadDataset(result.id);
       this.viewRouter.switchTo("intersection");
     } catch (err) {
-      this.showDetails(`剖面生成失败：${err instanceof Error ? err.message : String(err)}`);
+      this.showDetails(
+        `剖面生成失败：${err instanceof Error ? err.message : String(err)}`,
+      );
     }
   }
 
   // ─── Data loading ──────────────────────────────────────────────────
 
   private async init() {
-    await this.refreshCatalog(this.options.initialDatasetId, this.options.autoLoad !== false);
+    await this.refreshCatalog(
+      this.options.initialDatasetId,
+      this.options.autoLoad !== false,
+    );
   }
 
   private syncDatasetSelect() {
-    const dsSelect = this.sidebar.querySelector('[id="vis-dataset"]') as HTMLSelectElement;
+    const dsSelect = this.sidebar.querySelector(
+      '[id="vis-dataset"]',
+    ) as HTMLSelectElement;
     if (!dsSelect || !this.manifest) return;
     const previous = dsSelect.value;
     dsSelect.innerHTML = "";
@@ -1756,42 +2361,55 @@ export class ThreeViewerEngine {
 
   private preferredDatasetId(): string | null {
     if (!this.manifest || this.manifest.datasets.length === 0) return null;
-    const preferred = this.manifest.datasets.find((item) =>
-      isGridDataset(item) && Object.keys(item.files.scalars || {}).length > 0,
-    ) || this.manifest.datasets.find(isGridDataset) || this.manifest.datasets.find((item) =>
-      !["intersection", "well-intersection"].includes(item.source || "") &&
-      !isDepthOnlyWell(item) &&
-      Object.keys(item.files.scalars || {}).length > 0,
-    ) || this.manifest.datasets[0];
+    const preferred =
+      this.manifest.datasets.find(
+        (item) =>
+          isGridDataset(item) &&
+          Object.keys(item.files.scalars || {}).length > 0,
+      ) ||
+      this.manifest.datasets.find(isGridDataset) ||
+      this.manifest.datasets.find(
+        (item) =>
+          !["intersection", "well-intersection"].includes(item.source || "") &&
+          !isDepthOnlyWell(item) &&
+          Object.keys(item.files.scalars || {}).length > 0,
+      ) ||
+      this.manifest.datasets[0];
     return preferred.id;
   }
 
   private async refreshCatalog(preferredId?: string, autoLoad = true) {
     const catalogGeneration = ++this.catalogGeneration;
-    const manifest = await this.fetchJson("/manifest") as DatasetManifest;
+    const manifest = (await this.fetchJson("/manifest")) as DatasetManifest;
     if (this.disposed || catalogGeneration !== this.catalogGeneration) return;
-    if (!manifest || !Array.isArray(manifest.datasets)) throw new Error("数据目录格式无效");
+    if (!manifest || !Array.isArray(manifest.datasets))
+      throw new Error("数据目录格式无效");
     this.manifest = manifest;
     this.syncDatasetSelect();
     this.updateObjectTree();
     const datasets = this.manifest?.datasets || [];
     if (datasets.length === 0) {
       this.clearSceneForEmptyCatalog();
-      this.infoEl.textContent = "场景为空。可用工具栏「导入」或从工作区选择文件。";
+      this.infoEl.textContent =
+        "场景为空。可用工具栏「导入」或从工作区选择文件。";
       return;
     }
     if (preferredId && !datasets.some((item) => item.id === preferredId)) {
       throw new Error(`数据集不存在：${preferredId}`);
     }
     if (!autoLoad && !preferredId) return;
-    const requested = preferredId && datasets.some((item) => item.id === preferredId)
-      ? preferredId
-      : null;
+    const requested =
+      preferredId && datasets.some((item) => item.id === preferredId)
+        ? preferredId
+        : null;
     if (requested) {
       await this.loadDataset(requested);
       return;
     }
-    if (this.currentDataset && datasets.some((item) => item.id === this.currentDataset?.id)) {
+    if (
+      this.currentDataset &&
+      datasets.some((item) => item.id === this.currentDataset?.id)
+    ) {
       return;
     }
     const next = this.preferredDatasetId();
@@ -1840,7 +2458,8 @@ export class ThreeViewerEngine {
     try {
       await importLocalFiles(this.importDialogHost(), files);
     } catch (error) {
-      this.infoEl.textContent = error instanceof Error ? error.message : String(error);
+      this.infoEl.textContent =
+        error instanceof Error ? error.message : String(error);
     } finally {
       this.importBusy = false;
     }
@@ -1861,9 +2480,10 @@ export class ThreeViewerEngine {
       );
       if (!response.ok) throw new Error(`删除失败: HTTP ${response.status}`);
       const result = await response.json();
-      this.infoEl.textContent = result.status === "removed"
-        ? `已删除 ${dataset.name}`
-        : `已从场景移除 ${dataset.name}（示例文件仍保留，可恢复）`;
+      this.infoEl.textContent =
+        result.status === "removed"
+          ? `已删除 ${dataset.name}`
+          : `已从场景移除 ${dataset.name}（示例文件仍保留，可恢复）`;
       if (this.currentDataset?.id === dataset.id) this.currentDataset = null;
       if (this.selectedObjectId === dataset.id) this.selectedObjectId = null;
       const overlay = this.overlayMeshes.get(dataset.id);
@@ -1873,16 +2493,20 @@ export class ThreeViewerEngine {
       }
       await this.refreshCatalog();
     } catch (error) {
-      this.infoEl.textContent = error instanceof Error ? error.message : String(error);
+      this.infoEl.textContent =
+        error instanceof Error ? error.message : String(error);
     }
   }
 
   private async restoreBuiltinExamples() {
     try {
-      const response = await this.request(`${this.apiBase}/catalog/restore-examples`, {
-        method: "POST",
-        headers: this.authHeaders(),
-      });
+      const response = await this.request(
+        `${this.apiBase}/catalog/restore-examples`,
+        {
+          method: "POST",
+          headers: this.authHeaders(),
+        },
+      );
       if (!response.ok) throw new Error(`恢复失败: HTTP ${response.status}`);
       const result = await response.json();
       await this.refreshCatalog();
@@ -1890,13 +2514,15 @@ export class ThreeViewerEngine {
         ? `已恢复 ${result.count} 个内置示例`
         : "没有已隐藏的内置示例";
     } catch (error) {
-      this.infoEl.textContent = error instanceof Error ? error.message : String(error);
+      this.infoEl.textContent =
+        error instanceof Error ? error.message : String(error);
     }
   }
 
   private onViewerKeyDown = (event: KeyboardEvent) => {
     const target = event.target as HTMLElement | null;
-    if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName)) return;
+    if (target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName))
+      return;
     if (event.key === "Escape") {
       hideShortcutsOverlay(this.shortcutsEl);
       closeContextMenu(this.container);
@@ -1908,7 +2534,9 @@ export class ThreeViewerEngine {
       return;
     }
     if (event.key === "Delete" || event.key === "Backspace") {
-      const dataset = this.datasetById(this.selectedObjectId || this.currentDataset?.id || "");
+      const dataset = this.datasetById(
+        this.selectedObjectId || this.currentDataset?.id || "",
+      );
       if (!dataset) return;
       event.preventDefault();
       void this.deleteCatalogDataset(dataset);
@@ -1917,7 +2545,13 @@ export class ThreeViewerEngine {
     const key = event.key.toLowerCase();
     if (event.altKey) {
       const named: Record<string, NamedView> = {
-        t: "top", b: "bottom", n: "north", s: "south", e: "east", w: "west", i: "iso",
+        t: "top",
+        b: "bottom",
+        n: "north",
+        s: "south",
+        e: "east",
+        w: "west",
+        i: "iso",
       };
       if (named[key]) {
         event.preventDefault();
@@ -1926,23 +2560,33 @@ export class ThreeViewerEngine {
       return;
     }
     if (event.ctrlKey || event.metaKey) return;
-    if (key === "f") { event.preventDefault(); this.fitView(); }
-    else if (key === "o") { event.preventDefault(); this.setOrthographic(!this.useOrtho); }
-    else if (key === "g") {
+    if (key === "f") {
+      event.preventDefault();
+      this.fitView();
+    } else if (key === "o") {
+      event.preventDefault();
+      this.setOrthographic(!this.useOrtho);
+    } else if (key === "g") {
       event.preventDefault();
       this.gridHelper.visible = !this.gridHelper.visible;
-      const input = this.sidebar.querySelector('[id="vis-show-grid"]') as HTMLInputElement | null;
+      const input = this.sidebar.querySelector(
+        '[id="vis-show-grid"]',
+      ) as HTMLInputElement | null;
       if (input) {
         input.checked = this.gridHelper.visible;
         input.dispatchEvent(new Event("ugsci-sync"));
       }
     } else if (key === "i") {
       event.preventDefault();
-      const dataset = this.datasetById(this.selectedObjectId || this.currentDataset?.id || "");
+      const dataset = this.datasetById(
+        this.selectedObjectId || this.currentDataset?.id || "",
+      );
       if (dataset) void this.isolateDataset(dataset);
     } else if (key === "h") {
       event.preventDefault();
-      const dataset = this.datasetById(this.selectedObjectId || this.currentDataset?.id || "");
+      const dataset = this.datasetById(
+        this.selectedObjectId || this.currentDataset?.id || "",
+      );
       if (dataset) void this.toggleDatasetVisibility(dataset, false);
     } else if (key === "a") {
       event.preventDefault();
@@ -1961,7 +2605,8 @@ export class ThreeViewerEngine {
       visibleIds,
       collapsedGroups: this.collapsedGroups,
       onToggleGroup: (groupId: ComponentGroupId) => {
-        if (this.collapsedGroups.has(groupId)) this.collapsedGroups.delete(groupId);
+        if (this.collapsedGroups.has(groupId))
+          this.collapsedGroups.delete(groupId);
         else this.collapsedGroups.add(groupId);
         this.updateObjectTree();
       },
@@ -1969,10 +2614,14 @@ export class ThreeViewerEngine {
         void this.toggleDatasetVisibility(dataset, visible);
       },
       onSelect: (dataset) => {
-        void this.selectDatasetFromTree(dataset).catch((error) => this.reportError(error));
+        void this.selectDatasetFromTree(dataset).catch((error) =>
+          this.reportError(error),
+        );
       },
       onFocus: (dataset) => {
-        void this.focusDataset(dataset).catch((error) => this.reportError(error));
+        void this.focusDataset(dataset).catch((error) =>
+          this.reportError(error),
+        );
       },
       onDelete: (dataset) => {
         void this.deleteCatalogDataset(dataset);
@@ -2006,7 +2655,9 @@ export class ThreeViewerEngine {
     this.modelRoot.scale.set(1, 1, this.zScale);
     const label = this.sidebar.querySelector('[id="vis-z-scale-value"]');
     if (label) label.textContent = this.zScale.toFixed(2) + "x";
-    const slider = this.sidebar.querySelector('[id="vis-z-scale"]') as HTMLInputElement | null;
+    const slider = this.sidebar.querySelector(
+      '[id="vis-z-scale"]',
+    ) as HTMLInputElement | null;
     if (slider) slider.value = String(Math.round(this.zScale * 100));
   }
 
@@ -2021,12 +2672,16 @@ export class ThreeViewerEngine {
     this.controls.object = next;
     this.applyCameraProjection();
     this.controls.update();
-    const input = this.sidebar.querySelector('[id="vis-ortho"]') as HTMLInputElement | null;
+    const input = this.sidebar.querySelector(
+      '[id="vis-ortho"]',
+    ) as HTMLInputElement | null;
     if (input && input.checked !== enabled) {
       input.checked = enabled;
       input.dispatchEvent(new Event("ugsci-sync"));
     }
-    this.infoEl.textContent = enabled ? "\u6b63\u4ea4\u6295\u5f71" : "\u900f\u89c6\u6295\u5f71";
+    this.infoEl.textContent = enabled
+      ? "\u6b63\u4ea4\u6295\u5f71"
+      : "\u900f\u89c6\u6295\u5f71";
   }
 
   private setBackgroundColor(hex: string) {
@@ -2047,9 +2702,15 @@ export class ThreeViewerEngine {
   }
 
   private applySliceAxis(axis: "i" | "j" | "k" | null) {
-    const i = this.sidebar.querySelector('[id="vis-filter-i"]') as HTMLInputElement | null;
-    const j = this.sidebar.querySelector('[id="vis-filter-j"]') as HTMLInputElement | null;
-    const k = this.sidebar.querySelector('[id="vis-filter-k"]') as HTMLInputElement | null;
+    const i = this.sidebar.querySelector(
+      '[id="vis-filter-i"]',
+    ) as HTMLInputElement | null;
+    const j = this.sidebar.querySelector(
+      '[id="vis-filter-j"]',
+    ) as HTMLInputElement | null;
+    const k = this.sidebar.querySelector(
+      '[id="vis-filter-k"]',
+    ) as HTMLInputElement | null;
     if (!axis) {
       if (i) i.value = "";
       if (j) j.value = "";
@@ -2061,9 +2722,15 @@ export class ThreeViewerEngine {
   }
 
   private applySliceIndex(axis: "i" | "j" | "k", index: number) {
-    const i = this.sidebar.querySelector('[id="vis-filter-i"]') as HTMLInputElement | null;
-    const j = this.sidebar.querySelector('[id="vis-filter-j"]') as HTMLInputElement | null;
-    const k = this.sidebar.querySelector('[id="vis-filter-k"]') as HTMLInputElement | null;
+    const i = this.sidebar.querySelector(
+      '[id="vis-filter-i"]',
+    ) as HTMLInputElement | null;
+    const j = this.sidebar.querySelector(
+      '[id="vis-filter-j"]',
+    ) as HTMLInputElement | null;
+    const k = this.sidebar.querySelector(
+      '[id="vis-filter-k"]',
+    ) as HTMLInputElement | null;
     if (i) i.value = axis === "i" ? sliceRangeText(index) : "";
     if (j) j.value = axis === "j" ? sliceRangeText(index) : "";
     if (k) k.value = axis === "k" ? sliceRangeText(index) : "";
@@ -2084,7 +2751,8 @@ export class ThreeViewerEngine {
         return;
       }
       const dims = this.currentDataset?.grid_dims;
-      const max = axis === "i" ? dims?.[0] : axis === "j" ? dims?.[1] : dims?.[2];
+      const max =
+        axis === "i" ? dims?.[0] : axis === "j" ? dims?.[1] : dims?.[2];
       const limit = Math.max(1, Number(max) || 1);
       const next = (this.slicePlayer.index() % limit) + 1;
       this.slicePlayer.setIndex(next);
@@ -2099,12 +2767,17 @@ export class ThreeViewerEngine {
       zScale: this.zScale,
       ortho: this.useOrtho,
     };
-    localStorage.setItem(viewerPersistenceKey(this.options, "userView"), JSON.stringify(payload));
+    localStorage.setItem(
+      viewerPersistenceKey(this.options, "userView"),
+      JSON.stringify(payload),
+    );
     this.infoEl.textContent = "\u7528\u6237\u89c6\u89d2\u5df2\u4fdd\u5b58";
   }
 
   private recallUserView() {
-    const raw = localStorage.getItem(viewerPersistenceKey(this.options, "userView"));
+    const raw = localStorage.getItem(
+      viewerPersistenceKey(this.options, "userView"),
+    );
     if (!raw) {
       this.infoEl.textContent = "\u6ca1\u6709\u5df2\u4fdd\u5b58\u89c6\u89d2";
       return;
@@ -2113,8 +2786,10 @@ export class ThreeViewerEngine {
       const view = JSON.parse(raw);
       if (Number.isFinite(view.zScale)) this.setZScale(Number(view.zScale));
       if (typeof view.ortho === "boolean") this.setOrthographic(view.ortho);
-      if (Array.isArray(view.position)) this.camera.position.fromArray(view.position);
-      if (Array.isArray(view.target)) this.controls.target.fromArray(view.target);
+      if (Array.isArray(view.position))
+        this.camera.position.fromArray(view.position);
+      if (Array.isArray(view.target))
+        this.controls.target.fromArray(view.target);
       if (Array.isArray(view.up)) this.camera.up.fromArray(view.up);
       this.applyCameraProjection();
       this.controls.update();
@@ -2124,13 +2799,26 @@ export class ThreeViewerEngine {
     }
   }
 
-  private openObjectContextMenu(dataset: DatasetInfo | null, clientX: number, clientY: number) {
-    showContextMenu(this.container, clientX, clientY, objectContextItems(Boolean(dataset)), (id) => {
-      void this.handleObjectContext(dataset, id);
-    });
+  private openObjectContextMenu(
+    dataset: DatasetInfo | null,
+    clientX: number,
+    clientY: number,
+  ) {
+    showContextMenu(
+      this.container,
+      clientX,
+      clientY,
+      objectContextItems(Boolean(dataset)),
+      (id) => {
+        void this.handleObjectContext(dataset, id);
+      },
+    );
   }
 
-  private async handleObjectContext(dataset: DatasetInfo | null, action: string) {
+  private async handleObjectContext(
+    dataset: DatasetInfo | null,
+    action: string,
+  ) {
     if (action === "show-all") {
       this.showAllVisible();
       return;
@@ -2138,13 +2826,16 @@ export class ThreeViewerEngine {
     if (!dataset) return;
     if (action === "focus") await this.focusDataset(dataset);
     else if (action === "isolate") await this.isolateDataset(dataset);
-    else if (action === "hide") await this.toggleDatasetVisibility(dataset, false);
+    else if (action === "hide")
+      await this.toggleDatasetVisibility(dataset, false);
     else if (action === "delete") await this.deleteCatalogDataset(dataset);
   }
 
   private async isolateDataset(dataset: DatasetInfo) {
-    if (this.mesh && this.currentDataset) this.mesh.visible = this.currentDataset.id === dataset.id;
-    for (const [id, overlay] of this.overlayMeshes) overlay.visible = id === dataset.id;
+    if (this.mesh && this.currentDataset)
+      this.mesh.visible = this.currentDataset.id === dataset.id;
+    for (const [id, overlay] of this.overlayMeshes)
+      overlay.visible = id === dataset.id;
     if (dataset.id !== this.currentDataset?.id) {
       await this.toggleDatasetVisibility(dataset, true, { quiet: true });
       const overlay = this.overlayMeshes.get(dataset.id);
@@ -2159,7 +2850,8 @@ export class ThreeViewerEngine {
     if (this.mesh) this.mesh.visible = true;
     for (const overlay of this.overlayMeshes.values()) overlay.visible = true;
     this.updateObjectTree();
-    this.infoEl.textContent = "\u5df2\u663e\u793a\u5168\u90e8\u5df2\u52a0\u8f7d\u5bf9\u8c61";
+    this.infoEl.textContent =
+      "\u5df2\u663e\u793a\u5168\u90e8\u5df2\u52a0\u8f7d\u5bf9\u8c61";
   }
 
   private hitToModelPoint(world: THREE.Vector3): THREE.Vector3 {
@@ -2171,10 +2863,17 @@ export class ThreeViewerEngine {
     const span = this.scalarMax - this.scalarMin;
     if (!Number.isFinite(span) || span === 0) return;
     const rect = this.histogramEl.getBoundingClientRect();
-    const t = Math.min(1, Math.max(0, (event.clientX - rect.left) / Math.max(rect.width, 1)));
+    const t = Math.min(
+      1,
+      Math.max(0, (event.clientX - rect.left) / Math.max(rect.width, 1)),
+    );
     const value = this.scalarMin + t * span;
-    const minInput = this.sidebar.querySelector('[id="vis-filter-prop-min"]') as HTMLInputElement | null;
-    const maxInput = this.sidebar.querySelector('[id="vis-filter-prop-max"]') as HTMLInputElement | null;
+    const minInput = this.sidebar.querySelector(
+      '[id="vis-filter-prop-min"]',
+    ) as HTMLInputElement | null;
+    const maxInput = this.sidebar.querySelector(
+      '[id="vis-filter-prop-max"]',
+    ) as HTMLInputElement | null;
     if (event.shiftKey) {
       if (maxInput) maxInput.value = String(value);
     } else if (minInput) {
@@ -2188,20 +2887,31 @@ export class ThreeViewerEngine {
     this.canvasNdc(event);
     this.raycaster.setFromCamera(this.mouse, this.camera);
     const hit = this.raycaster.intersectObjects(this.pickables(), true)[0];
-    const dataset = hit ? this.datasetFromHit(hit.object) : this.datasetById(this.selectedObjectId || this.currentDataset?.id || "") || null;
+    const dataset = hit
+      ? this.datasetFromHit(hit.object)
+      : this.datasetById(
+          this.selectedObjectId || this.currentDataset?.id || "",
+        ) || null;
     this.openObjectContextMenu(dataset, event.clientX, event.clientY);
   };
 
   private updateCompassHud() {
-    this.compassHud.setAzimuth(cameraAzimuthRad(this.camera.position, this.controls.target));
+    this.compassHud.setAzimuth(
+      cameraAzimuthRad(this.camera.position, this.controls.target),
+    );
     this.compassHud.setMetersPerPixel(
-      metersPerPixel(this.camera, this.controls.target, this.container.clientHeight),
+      metersPerPixel(
+        this.camera,
+        this.controls.target,
+        this.container.clientHeight,
+      ),
     );
   }
 
   private collectVisibleIds(): Set<string> {
     const ids = new Set<string>();
-    if (this.mesh?.visible && this.currentDataset) ids.add(this.currentDataset.id);
+    if (this.mesh?.visible && this.currentDataset)
+      ids.add(this.currentDataset.id);
     for (const [id, overlay] of this.overlayMeshes) {
       if (overlay.visible) ids.add(id);
     }
@@ -2210,7 +2920,8 @@ export class ThreeViewerEngine {
 
   private selectionTypeFor(dataset: DatasetInfo): DomainSelection["type"] {
     if (isSpatialWell(dataset) || isDepthOnlyWell(dataset)) return "well";
-    if (["network", "network-tube"].includes(dataset.source || "")) return "segment";
+    if (["network", "network-tube"].includes(dataset.source || ""))
+      return "segment";
     if (this.isLineDataset(dataset)) return "segment";
     if (isGridDataset(dataset)) return "surface";
     return "surface";
@@ -2225,9 +2936,12 @@ export class ThreeViewerEngine {
     this.opacity = value;
     const label = this.sidebar.querySelector('[id="vis-opacity-value"]');
     if (label) label.textContent = value.toFixed(2);
-    const slider = this.sidebar.querySelector('[id="vis-opacity"]') as HTMLInputElement | null;
+    const slider = this.sidebar.querySelector(
+      '[id="vis-opacity"]',
+    ) as HTMLInputElement | null;
     if (slider) slider.value = String(Math.round(value * 100));
-    const selected = this.overlayMeshes.get(this.selectedObjectId || "") || this.mesh;
+    const selected =
+      this.overlayMeshes.get(this.selectedObjectId || "") || this.mesh;
     this.visitObjectMaterials(selected, (material) => {
       (material as THREE.Material & { opacity: number }).opacity = value;
       material.transparent = value < 0.999;
@@ -2257,8 +2971,11 @@ export class ThreeViewerEngine {
       this.selectedObjectId = selection?.id || null;
     }
     this.store.setSelection(selection);
-    try { this.options.onSelection?.(selection); }
-    catch (error) { console.error("[oilgas-vis] Selection listener failed", error); }
+    try {
+      this.options.onSelection?.(selection);
+    } catch (error) {
+      console.error("[oilgas-vis] Selection listener failed", error);
+    }
     if (selection && this.onSelectionCallback) {
       this.onSelectionCallback({
         type: selection.type,
@@ -2276,25 +2993,35 @@ export class ThreeViewerEngine {
   private updateInspectorObject() {
     const nameEl = this.sidebar.querySelector("[data-object-name]");
     const metaEl = this.sidebar.querySelector("[data-object-meta]");
-    const visible = this.sidebar.querySelector('[id="vis-inspector-visible"]') as HTMLInputElement | null;
+    const visible = this.sidebar.querySelector(
+      '[id="vis-inspector-visible"]',
+    ) as HTMLInputElement | null;
     const selected = this.store.getState().selected;
-    const dataset = this.datasetById(this.selectedObjectId || this.currentDataset?.id || "");
+    const dataset = this.datasetById(
+      this.selectedObjectId || this.currentDataset?.id || "",
+    );
     if (!dataset) {
       if (nameEl) nameEl.textContent = "未选中对象";
       if (metaEl) metaEl.textContent = "在组件树或三维视图中点选";
       return;
     }
     if (nameEl) {
-      nameEl.textContent = isSpatialWell(dataset) || isDepthOnlyWell(dataset)
-        ? wellDisplayName(dataset)
-        : dataset.name;
+      nameEl.textContent =
+        isSpatialWell(dataset) || isDepthOnlyWell(dataset)
+          ? wellDisplayName(dataset)
+          : dataset.name;
     }
     if (metaEl) {
       const bits = [
-        selected?.type === "cell" ? "cell " + selected.id : (dataset.source || "object"),
+        selected?.type === "cell"
+          ? "cell " + selected.id
+          : dataset.source || "object",
         dataset.n_cells ? dataset.n_cells.toLocaleString() + " 单元" : "",
         selected?.coordinates
-          ? "E " + selected.coordinates[0].toFixed(1) + "  N " + selected.coordinates[1].toFixed(1)
+          ? "E " +
+            selected.coordinates[0].toFixed(1) +
+            "  N " +
+            selected.coordinates[1].toFixed(1)
           : "",
       ].filter(Boolean);
       metaEl.textContent = bits.join(" · ");
@@ -2309,15 +3036,20 @@ export class ThreeViewerEngine {
   private updateReadoutHud() {
     if (!this.readoutEl) return;
     const selected = this.store.getState().selected;
-    const dataset = this.datasetById(this.selectedObjectId || this.currentDataset?.id || "");
+    const dataset = this.datasetById(
+      this.selectedObjectId || this.currentDataset?.id || "",
+    );
     updateReadout(this.readoutEl, {
       hover: this.hoverCoords,
       selectedLabel: dataset
-        ? (isSpatialWell(dataset) || isDepthOnlyWell(dataset) ? wellDisplayName(dataset) : dataset.name)
+        ? isSpatialWell(dataset) || isDepthOnlyWell(dataset)
+          ? wellDisplayName(dataset)
+          : dataset.name
         : "—",
-      selectedMeta: selected?.type === "cell"
-        ? "Cell " + selected.id
-        : (dataset?.source || ""),
+      selectedMeta:
+        selected?.type === "cell"
+          ? "Cell " + selected.id
+          : dataset?.source || "",
       pickKind: selected?.type || "",
     });
   }
@@ -2353,7 +3085,8 @@ export class ThreeViewerEngine {
         return;
       }
       if (on) {
-        if (colored.userData._baseColor == null) colored.userData._baseColor = colored.color.getHex();
+        if (colored.userData._baseColor == null)
+          colored.userData._baseColor = colored.color.getHex();
         colored.color.setHex(0xffd166);
         if (colored.emissive) colored.emissive.setHex(0x3a2a00);
       } else if (colored.userData._baseColor != null) {
@@ -2373,8 +3106,15 @@ export class ThreeViewerEngine {
       path.push([points[index][0] + origin[0], points[index][1] + origin[1]]);
     }
     const last = points[points.length - 1];
-    const lastWorld: [number, number] = [last[0] + origin[0], last[1] + origin[1]];
-    if (!path.length || path[path.length - 1][0] !== lastWorld[0] || path[path.length - 1][1] !== lastWorld[1]) {
+    const lastWorld: [number, number] = [
+      last[0] + origin[0],
+      last[1] + origin[1],
+    ];
+    if (
+      !path.length ||
+      path[path.length - 1][0] !== lastWorld[0] ||
+      path[path.length - 1][1] !== lastWorld[1]
+    ) {
       path.push(lastWorld);
     }
     const head = points[0];
@@ -2459,23 +3199,34 @@ export class ThreeViewerEngine {
     );
     if (!id) return;
     const dataset = this.datasetById(id);
-    if (dataset) void this.focusDataset(dataset).catch((error) => this.reportError(error));
+    if (dataset)
+      void this.focusDataset(dataset).catch((error) => this.reportError(error));
   };
 
   private makeWellLabel(name: string): CSS2DObject {
     const el = document.createElement("div");
     el.textContent = name;
-    el.style.cssText = "color:#f0c14b;font:600 11px/1.2 sans-serif;white-space:nowrap;text-shadow:0 1px 2px #000;pointer-events:none;user-select:none;";
+    el.style.cssText =
+      "color:#f0c14b;font:600 11px/1.2 sans-serif;white-space:nowrap;text-shadow:0 1px 2px #000;pointer-events:none;user-select:none;";
     const obj = new CSS2DObject(el);
     obj.name = "oilgas-well-label";
     obj.visible = this.wellLabelsVisible;
     return obj;
   }
 
-  private buildWellObject(dataset: DatasetInfo, localPositions: Float32Array, colors?: THREE.BufferAttribute): THREE.Group | null {
+  private buildWellObject(
+    dataset: DatasetInfo,
+    localPositions: Float32Array,
+    colors?: THREE.BufferAttribute,
+  ): THREE.Group | null {
     const tube = buildWellTubeMesh(localPositions);
     if (!tube) return null;
-    if (colors) applyWellTubeColors(tube, new THREE.BufferAttribute(localPositions, 3), colors);
+    if (colors)
+      applyWellTubeColors(
+        tube,
+        new THREE.BufferAttribute(localPositions, 3),
+        colors,
+      );
     const group = new THREE.Group();
     group.name = `oilgas-well-${dataset.id}`;
     group.add(tube);
@@ -2489,13 +3240,15 @@ export class ThreeViewerEngine {
   private disposeObject3D(object: THREE.Object3D) {
     object.traverse((node) => {
       const css = node as CSS2DObject;
-      if ("element" in node && css.element instanceof HTMLElement) css.element.remove();
+      if ("element" in node && css.element instanceof HTMLElement)
+        css.element.remove();
       const renderable = node as THREE.Object3D & {
         geometry?: THREE.BufferGeometry;
         material?: THREE.Material | THREE.Material[];
       };
       renderable.geometry?.dispose();
-      if (Array.isArray(renderable.material)) renderable.material.forEach((material) => material.dispose());
+      if (Array.isArray(renderable.material))
+        renderable.material.forEach((material) => material.dispose());
       else renderable.material?.dispose();
     });
     object.parent?.remove(object);
@@ -2521,7 +3274,11 @@ export class ThreeViewerEngine {
       this.publishSelection({ type: "well", id: dataset.id });
       return;
     }
-    if (isSpatialWell(dataset) && this.currentDataset && isGridDataset(this.currentDataset)) {
+    if (
+      isSpatialWell(dataset) &&
+      this.currentDataset &&
+      isGridDataset(this.currentDataset)
+    ) {
       await this.toggleDatasetVisibility(dataset, true, { quiet: true });
       const overlay = this.overlayMeshes.get(dataset.id);
       if (overlay) this.frameObject(overlay);
@@ -2531,14 +3288,31 @@ export class ThreeViewerEngine {
       return;
     }
     await this.loadDataset(dataset.id);
-    this.publishSelection({ type: this.selectionTypeFor(dataset), id: dataset.id });
+    this.publishSelection({
+      type: this.selectionTypeFor(dataset),
+      id: dataset.id,
+    });
   }
 
-  private lineRenderIndices(dataset: DatasetInfo, indices: Uint32Array, vertexCount: number): Uint32Array {
+  private lineRenderIndices(
+    dataset: DatasetInfo,
+    indices: Uint32Array,
+    vertexCount: number,
+  ): Uint32Array {
     if (dataset.metadata?.geometry_primitive === "lines") return indices;
-    if (dataset.source === "network" && indices.length % 3 === 0 && indices.every((value, index) => index % 3 !== 2 || value === indices[index - 2])) {
+    if (
+      dataset.source === "network" &&
+      indices.length % 3 === 0 &&
+      indices.every(
+        (value, index) => index % 3 !== 2 || value === indices[index - 2],
+      )
+    ) {
       const pairs = new Uint32Array((indices.length / 3) * 2);
-      for (let source = 0, target = 0; source < indices.length; source += 3, target += 2) {
+      for (
+        let source = 0, target = 0;
+        source < indices.length;
+        source += 3, target += 2
+      ) {
         pairs[target] = indices[source];
         pairs[target + 1] = indices[source + 1];
       }
@@ -2560,16 +3334,24 @@ export class ThreeViewerEngine {
     this.overlayVisibility.clear();
     this.wellPlanPoints.clear();
     this.highlightedOverlayId = null;
-    for (const item of Array.from(this.objectTree.querySelectorAll<HTMLElement>("[data-dataset-id]"))) {
-      const checkbox = item.querySelector<HTMLInputElement>('input[type="checkbox"]');
-      if (checkbox) checkbox.checked = item.dataset.datasetId === this.currentDataset?.id;
+    for (const item of Array.from(
+      this.objectTree.querySelectorAll<HTMLElement>("[data-dataset-id]"),
+    )) {
+      const checkbox = item.querySelector<HTMLInputElement>(
+        'input[type="checkbox"]',
+      );
+      if (checkbox)
+        checkbox.checked = item.dataset.datasetId === this.currentDataset?.id;
     }
   }
 
   private setTreeVisibility(datasetId: string, visible: boolean) {
-    const item = Array.from(this.objectTree.querySelectorAll<HTMLElement>("[data-dataset-id]"))
-      .find((candidate) => candidate.dataset.datasetId === datasetId);
-    const checkbox = item?.querySelector<HTMLInputElement>('input[type="checkbox"]');
+    const item = Array.from(
+      this.objectTree.querySelectorAll<HTMLElement>("[data-dataset-id]"),
+    ).find((candidate) => candidate.dataset.datasetId === datasetId);
+    const checkbox = item?.querySelector<HTMLInputElement>(
+      'input[type="checkbox"]',
+    );
     if (checkbox) checkbox.checked = visible;
   }
 
@@ -2583,7 +3365,9 @@ export class ThreeViewerEngine {
     if (isDepthOnlyWell(dataset)) {
       this.setTreeVisibility(dataset.id, false);
       if (!options?.quiet) {
-        this.showDetails(`${dataset.name} 是仅深度测井，不在三维场图显示。请打开「测井」页签。`);
+        this.showDetails(
+          `${dataset.name} 是仅深度测井，不在三维场图显示。请打开「测井」页签。`,
+        );
       }
       return;
     }
@@ -2606,9 +3390,16 @@ export class ThreeViewerEngine {
         this.fetchBinary(dataset.files.positions, this.abortController?.signal),
         this.fetchBinary(dataset.files.indices, this.abortController?.signal),
       ]);
-      if (this.disposed || generation !== this.loadGeneration || !this.overlayVisibility.get(dataset.id)) return;
+      if (
+        this.disposed ||
+        generation !== this.loadGeneration ||
+        !this.overlayVisibility.get(dataset.id)
+      )
+        return;
       const { positions, indices } = decodeGeometry(dataset, posBuf, idxBuf);
-      const hexCells = isGridDataset(dataset) && isHexCornerMesh(positions.length / 3, dataset.n_cells);
+      const hexCells =
+        isGridDataset(dataset) &&
+        isHexCornerMesh(positions.length / 3, dataset.n_cells);
       if (hexCells) maybeRemapHexPositions(positions, dataset.n_cells);
       const origin = this.origin;
       const hexCorners = hexCells
@@ -2629,8 +3420,14 @@ export class ThreeViewerEngine {
       } else if (hexCorners) {
         const fan = tessellateHexOpmFan(localPositions, dataset.n_cells);
         const fillGeometry = new THREE.BufferGeometry();
-        fillGeometry.setAttribute("position", new THREE.BufferAttribute(fan.positions, 3));
-        fillGeometry.setAttribute("normal", new THREE.BufferAttribute(fan.normals, 3));
+        fillGeometry.setAttribute(
+          "position",
+          new THREE.BufferAttribute(fan.positions, 3),
+        );
+        fillGeometry.setAttribute(
+          "normal",
+          new THREE.BufferAttribute(fan.normals, 3),
+        );
         fillGeometry.setIndex(new THREE.BufferAttribute(fan.indices, 1));
         const fillMaterial = new THREE.MeshPhongMaterial({
           color: 0x8b949e,
@@ -2641,23 +3438,35 @@ export class ThreeViewerEngine {
         fillMaterial.forceSinglePass = true;
         const fill = new THREE.Mesh(fillGeometry, fillMaterial);
         const edgeGeometry = new THREE.BufferGeometry();
-        edgeGeometry.setAttribute("position", new THREE.BufferAttribute(localPositions, 3));
+        edgeGeometry.setAttribute(
+          "position",
+          new THREE.BufferAttribute(localPositions, 3),
+        );
         edgeGeometry.setIndex(
           new THREE.BufferAttribute(
-            buildHexEdgeIndex(Array.from({ length: dataset.n_cells }, (_, cell) => cell)),
+            buildHexEdgeIndex(
+              Array.from({ length: dataset.n_cells }, (_, cell) => cell),
+            ),
             1,
           ),
         );
         const edges = new THREE.LineSegments(
           edgeGeometry,
-          new THREE.LineBasicMaterial({ color: 0xd0d7de, transparent: true, opacity: 0.7 }),
+          new THREE.LineBasicMaterial({
+            color: 0xd0d7de,
+            transparent: true,
+            opacity: 0.7,
+          }),
         );
         overlay = new THREE.Group();
         overlay.add(fill);
         overlay.add(edges);
       } else {
         const geometry = new THREE.BufferGeometry();
-        geometry.setAttribute("position", new THREE.BufferAttribute(localPositions, 3));
+        geometry.setAttribute(
+          "position",
+          new THREE.BufferAttribute(localPositions, 3),
+        );
         const lineOverlay = this.isLineDataset(dataset);
         const renderIndices = lineOverlay
           ? this.lineRenderIndices(dataset, indices, localPositions.length / 3)
@@ -2665,12 +3474,29 @@ export class ThreeViewerEngine {
         geometry.setIndex(new THREE.BufferAttribute(renderIndices, 1));
         if (!lineOverlay) geometry.computeVertexNormals();
         const material = lineOverlay
-          ? new THREE.LineBasicMaterial({ color: dataset.source === "network" || dataset.source === "network-tube" ? 0xffb86c : 0xff6b9d, transparent: true, opacity: 0.95 })
-          : new THREE.MeshPhongMaterial({ color: 0x8b949e, transparent: true, opacity: 0.45, side: THREE.DoubleSide, wireframe: true });
+          ? new THREE.LineBasicMaterial({
+              color:
+                dataset.source === "network" ||
+                dataset.source === "network-tube"
+                  ? 0xffb86c
+                  : 0xff6b9d,
+              transparent: true,
+              opacity: 0.95,
+            })
+          : new THREE.MeshPhongMaterial({
+              color: 0x8b949e,
+              transparent: true,
+              opacity: 0.45,
+              side: THREE.DoubleSide,
+              wireframe: true,
+            });
         overlay = lineOverlay
-          ? (dataset.source === "network" || dataset.source === "network-tube"
-            ? new THREE.LineSegments(geometry, material as THREE.LineBasicMaterial)
-            : new THREE.Line(geometry, material as THREE.LineBasicMaterial))
+          ? dataset.source === "network" || dataset.source === "network-tube"
+            ? new THREE.LineSegments(
+                geometry,
+                material as THREE.LineBasicMaterial,
+              )
+            : new THREE.Line(geometry, material as THREE.LineBasicMaterial)
           : new THREE.Mesh(geometry, material as THREE.MeshPhongMaterial);
       }
       overlay.name = `oilgas-overlay-${dataset.id}`;
@@ -2681,15 +3507,28 @@ export class ThreeViewerEngine {
       this.overlayMeshes.set(dataset.id, overlay);
       this.setTreeVisibility(dataset.id, visible);
       if (!options?.quiet) {
-        this.showDetails(`已加入场景：${dataset.name}\n对象类型：${dataset.source || "unknown"}`);
+        this.showDetails(
+          `已加入场景：${dataset.name}\n对象类型：${
+            dataset.source || "unknown"
+          }`,
+        );
       }
     } catch (error) {
-      if (!this.disposed && generation === this.loadGeneration && !(error instanceof Error && error.name === "AbortError")) {
-        this.showDetails(`对象加载失败：${error instanceof Error ? error.message : String(error)}`);
+      if (
+        !this.disposed &&
+        generation === this.loadGeneration &&
+        !(error instanceof Error && error.name === "AbortError")
+      ) {
+        this.showDetails(
+          `对象加载失败：${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
         this.setTreeVisibility(dataset.id, false);
       }
     } finally {
-      if (generation === this.loadGeneration) this.overlayLoading.delete(dataset.id);
+      if (generation === this.loadGeneration)
+        this.overlayLoading.delete(dataset.id);
     }
   }
 
@@ -2700,19 +3539,29 @@ export class ThreeViewerEngine {
     this.disposeCurrentMesh();
     this.currentDataset = ds;
     this.store.setDataset(ds);
-    this.store.setLoading({ stage: "loading-dataset", progress: 0.1, error: null });
+    this.store.setLoading({
+      stage: "loading-dataset",
+      progress: 0.1,
+      error: null,
+    });
     this.clearOverlays();
     // Filters are dataset-specific.  Clear them on a manual or Agent-driven
     // dataset switch so stale I/J/K/property values cannot appear active
     // while the newly loaded mesh is actually unfiltered.
     this.resetFilters();
     this.detailsEl.style.display = "none";
-    const datasetSelect = this.sidebar.querySelector('[id="vis-dataset"]') as HTMLSelectElement;
+    const datasetSelect = this.sidebar.querySelector(
+      '[id="vis-dataset"]',
+    ) as HTMLSelectElement;
     if (datasetSelect) datasetSelect.value = datasetId;
-    for (const item of Array.from(this.objectTree.querySelectorAll<HTMLElement>("[data-dataset-id]"))) {
+    for (const item of Array.from(
+      this.objectTree.querySelectorAll<HTMLElement>("[data-dataset-id]"),
+    )) {
       const selected = item.dataset.datasetId === datasetId;
       item.dataset.selected = String(selected);
-      const visibility = item.querySelector<HTMLInputElement>('input[type="checkbox"]');
+      const visibility = item.querySelector<HTMLInputElement>(
+        'input[type="checkbox"]',
+      );
       if (visibility) visibility.checked = selected;
       item.style.color = selected ? "#e6edf3" : "#8b949e";
       item.style.background = selected ? "rgba(31,111,235,.24)" : "transparent";
@@ -2722,10 +3571,14 @@ export class ThreeViewerEngine {
     // Only expose properties that actually exist for this dataset.  Keeping
     // unavailable properties selected made Three.js enable vertex colors
     // without a color buffer, rendering otherwise valid grids nearly black.
-    const propSelect = this.sidebar.querySelector('[id="vis-property"]') as HTMLSelectElement;
+    const propSelect = this.sidebar.querySelector(
+      '[id="vis-property"]',
+    ) as HTMLSelectElement;
     const propertyNames = new Set(Object.keys(ds.files.scalars || {}));
     for (const step of ds.time_steps || []) {
-      Object.keys(step.scalars || {}).forEach((name) => propertyNames.add(name));
+      Object.keys(step.scalars || {}).forEach((name) =>
+        propertyNames.add(name),
+      );
     }
     if (propSelect) {
       propSelect.innerHTML = "";
@@ -2752,7 +3605,9 @@ export class ThreeViewerEngine {
     }
 
     // Update time step selector
-    const tsSelect = this.sidebar.querySelector('[id="vis-timestep"]') as HTMLSelectElement;
+    const tsSelect = this.sidebar.querySelector(
+      '[id="vis-timestep"]',
+    ) as HTMLSelectElement;
     if (tsSelect) {
       tsSelect.innerHTML = '<option value="0">静态</option>';
       if (ds.time_steps) {
@@ -2787,8 +3642,14 @@ export class ThreeViewerEngine {
     } catch (err) {
       if (generation === this.loadGeneration) {
         this.datasetLoading = false;
-        this.store.setLoading({ stage: "failed", progress: 0, error: err instanceof Error ? err.message : String(err) });
-        this.infoEl.textContent = `加载失败：${err instanceof Error ? err.message : String(err)}`;
+        this.store.setLoading({
+          stage: "failed",
+          progress: 0,
+          error: err instanceof Error ? err.message : String(err),
+        });
+        this.infoEl.textContent = `加载失败：${
+          err instanceof Error ? err.message : String(err)
+        }`;
       }
       if (generation === this.loadGeneration) throw err;
       return;
@@ -2800,31 +3661,51 @@ export class ThreeViewerEngine {
       decoded = decodeGeometry(ds, posBuf, idxBuf, cellIdBuf);
     } catch (error) {
       this.datasetLoading = false;
-      this.store.setLoading({ stage: "failed", progress: 0, error: String(error) });
+      this.store.setLoading({
+        stage: "failed",
+        progress: 0,
+        error: String(error),
+      });
       throw error;
     }
     const { positions, indices } = decoded;
     const nextCellIds = decoded.cellIds!;
-    if (isGridDataset(ds)) maybeRemapHexPositions(positions, nextCellIds.length);
-    const hexCorners = isGridDataset(ds) && isHexCornerMesh(positions.length / 3, nextCellIds.length);
-    this.isHexMesh = hexCorners || (isGridDataset(ds) && isHexCellMesh(positions.length / 3, nextCellIds.length));
+    if (isGridDataset(ds))
+      maybeRemapHexPositions(positions, nextCellIds.length);
+    const hexCorners =
+      isGridDataset(ds) &&
+      isHexCornerMesh(positions.length / 3, nextCellIds.length);
+    this.isHexMesh =
+      hexCorners ||
+      (isGridDataset(ds) &&
+        isHexCellMesh(positions.length / 3, nextCellIds.length));
     const hexCornerSource = hexCorners
       ? extractHexCorners(positions, nextCellIds.length)
       : null;
 
     // Coordinate origin rebase
     const originSource = hexCornerSource || positions;
-    let cx = 0, cy = 0, cz = 0;
+    let cx = 0,
+      cy = 0,
+      cz = 0;
     const nVerts = originSource.length / 3;
     for (let i = 0; i < originSource.length; i += 3) {
-      if (!Number.isFinite(originSource[i]) || !Number.isFinite(originSource[i + 1]) || !Number.isFinite(originSource[i + 2])) {
+      if (
+        !Number.isFinite(originSource[i]) ||
+        !Number.isFinite(originSource[i + 1]) ||
+        !Number.isFinite(originSource[i + 2])
+      ) {
         this.datasetLoading = false;
         this.infoEl.textContent = "加载失败：坐标数据包含非有限值";
         return;
       }
-      cx += originSource[i]; cy += originSource[i + 1]; cz += originSource[i + 2];
+      cx += originSource[i];
+      cy += originSource[i + 1];
+      cz += originSource[i + 2];
     }
-    cx /= nVerts; cy /= nVerts; cz /= nVerts;
+    cx /= nVerts;
+    cy /= nVerts;
+    cz /= nVerts;
     const depthOnly = isDepthOnlyWell(ds);
     if (depthOnly) {
       cx = 0;
@@ -2852,13 +3733,19 @@ export class ThreeViewerEngine {
     }
 
     const nextGeometry = new THREE.BufferGeometry();
-    nextGeometry.setAttribute("position", new THREE.BufferAttribute(fillPositions, 3));
+    nextGeometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(fillPositions, 3),
+    );
     const renderIndices = isLineDataset
       ? this.lineRenderIndices(ds, fillIndices, fillPositions.length / 3)
       : fillIndices;
     nextGeometry.setIndex(new THREE.BufferAttribute(renderIndices, 1));
     if (fillNormals) {
-      nextGeometry.setAttribute("normal", new THREE.BufferAttribute(fillNormals, 3));
+      nextGeometry.setAttribute(
+        "normal",
+        new THREE.BufferAttribute(fillNormals, 3),
+      );
     }
     nextGeometry.computeBoundingBox();
     nextGeometry.computeBoundingSphere();
@@ -2866,7 +3753,12 @@ export class ThreeViewerEngine {
 
     let hasVertexColors = false;
     try {
-      const colorResult = await this.applyPropertyColors(nextGeometry, ds, renderIndices, generation);
+      const colorResult = await this.applyPropertyColors(
+        nextGeometry,
+        ds,
+        renderIndices,
+        generation,
+      );
       if (colorResult === null) {
         if (generation !== this.loadGeneration) {
           nextGeometry.dispose();
@@ -2881,7 +3773,9 @@ export class ThreeViewerEngine {
       }
     } catch (err) {
       if (generation === this.loadGeneration) {
-        this.showDetails(`属性加载失败：${err instanceof Error ? err.message : String(err)}`);
+        this.showDetails(
+          `属性加载失败：${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     }
     if (generation !== this.loadGeneration) {
@@ -2894,7 +3788,10 @@ export class ThreeViewerEngine {
     this.hexCornerPositions = hexCornerBuffer;
     this.isHexMesh = Boolean(hexCornerBuffer);
     this.cellCenters = null;
-    this.visibleCellOffsets = Array.from({ length: nextCellIds.length }, (_, index) => index);
+    this.visibleCellOffsets = Array.from(
+      { length: nextCellIds.length },
+      (_, index) => index,
+    );
     this.origin = [cx, cy, cz];
     this.geometry = nextGeometry;
     this.datasetLoading = false;
@@ -2910,7 +3807,13 @@ export class ThreeViewerEngine {
     if (depthOnly) {
       this.mesh = null;
     } else if (isSpatialWell(ds)) {
-      const wellObject = this.buildWellObject(ds, localPositions, this.geometry.getAttribute("color") as THREE.BufferAttribute | undefined);
+      const wellObject = this.buildWellObject(
+        ds,
+        localPositions,
+        this.geometry.getAttribute("color") as
+          | THREE.BufferAttribute
+          | undefined,
+      );
       this.mesh = wellObject;
       if (wellObject) this.modelRoot.add(wellObject);
     } else if (isLineDataset) {
@@ -2925,8 +3828,10 @@ export class ThreeViewerEngine {
     } else {
       const material = new THREE.MeshPhongMaterial({
         vertexColors: hasVertexColors,
-        side: THREE.DoubleSide, transparent: true,
-        opacity: this.opacity, wireframe: this.isHexMesh ? false : this.wireframe,
+        side: THREE.DoubleSide,
+        transparent: true,
+        opacity: this.opacity,
+        wireframe: this.isHexMesh ? false : this.wireframe,
         clippingPlanes: [],
       });
       // Three.js renders transparent DoubleSide materials in two passes by
@@ -2939,7 +3844,8 @@ export class ThreeViewerEngine {
     }
 
     if (this.mesh) this.tagSceneObject(this.mesh, ds);
-    if (isSpatialWell(ds) && !depthOnly) this.recordWellPlan(ds, localPositions);
+    if (isSpatialWell(ds) && !depthOnly)
+      this.recordWellPlan(ds, localPositions);
     this.updateGridMapBounds();
 
     const bbox = this.geometry.boundingSphere!;
@@ -2952,10 +3858,14 @@ export class ThreeViewerEngine {
       this.orthoCamera.near = near;
       this.orthoCamera.far = far;
       this.applyCameraProjection();
-      const bg = this.scene.background instanceof THREE.Color ? this.scene.background.clone() : new THREE.Color(0x0d1117);
+      const bg =
+        this.scene.background instanceof THREE.Color
+          ? this.scene.background.clone()
+          : new THREE.Color(0x0d1117);
       this.scene.fog = new THREE.Fog(bg, radius * 4, radius * 10);
       if (this.mesh && isSpatialWell(ds)) this.frameObject(this.mesh);
-      else if (this.geometry.boundingBox) this.frameBox(this.geometry.boundingBox);
+      else if (this.geometry.boundingBox)
+        this.frameBox(this.geometry.boundingBox);
       this.controls.minDistance = radius * 0.01;
       this.controls.maxDistance = radius * 20;
       this.controls.update();
@@ -2965,14 +3875,21 @@ export class ThreeViewerEngine {
 
     this.infoEl.textContent = depthOnly
       ? `${ds.name} — 仅深度测井，不在三维场图显示`
-      : `${ds.name} — ${ds.n_cells.toLocaleString()} 单元 | 原点：(${cx.toFixed(0)}, ${cy.toFixed(0)}, ${cz.toFixed(0)})`;
-    const kSlider = this.sidebar.querySelector('[id="vis-k-layer"]') as HTMLInputElement | null;
+      : `${ds.name} — ${ds.n_cells.toLocaleString()} 单元 | 原点：(${cx.toFixed(
+          0,
+        )}, ${cy.toFixed(0)}, ${cz.toFixed(0)})`;
+    const kSlider = this.sidebar.querySelector(
+      '[id="vis-k-layer"]',
+    ) as HTMLInputElement | null;
     if (kSlider && ds.grid_dims?.[2]) {
       kSlider.max = String(ds.grid_dims[2]);
       kSlider.value = kSlider.value || "1";
     }
-    const sliceIndex = this.sidebar.querySelector('[id="vis-slice-index"]') as HTMLInputElement | null;
-    if (sliceIndex && ds.grid_dims?.[2]) sliceIndex.max = String(ds.grid_dims[2]);
+    const sliceIndex = this.sidebar.querySelector(
+      '[id="vis-slice-index"]',
+    ) as HTMLInputElement | null;
+    if (sliceIndex && ds.grid_dims?.[2])
+      sliceIndex.max = String(ds.grid_dims[2]);
     if (isGridDataset(ds)) {
       await this.attachSpatialWellOverlays(generation);
     }
@@ -2984,14 +3901,23 @@ export class ThreeViewerEngine {
       // Synchronize the actual loaded dataset without asking the tab handler to
       // choose another dataset (which would recurse and lose the user's choice).
       const source = ds.source || "";
-      const view = isDepthOnlyWell(ds) ? "welllog"
-        : isSpatialWell(ds) ? (this.viewRouter.getActiveView() === "welllog" && ["las", "dlis"].includes(source) ? "welllog" : "wellbore")
-        : this.overlaySources("network").includes(source) ? "network"
-        : this.overlaySources("intersection").includes(source) ? "intersection"
+      const view = isDepthOnlyWell(ds)
+        ? "welllog"
+        : isSpatialWell(ds)
+        ? this.viewRouter.getActiveView() === "welllog" &&
+          ["las", "dlis"].includes(source)
+          ? "welllog"
+          : "wellbore"
+        : this.overlaySources("network").includes(source)
+        ? "network"
+        : this.overlaySources("intersection").includes(source)
+        ? "intersection"
         : "reservoir";
       this.viewRouter.switchTo(view, false);
-      if (this.wellLogEl) this.wellLogEl.style.display = view === "welllog" ? "block" : "none";
-      if (this.wellMapRoot) this.wellMapRoot.style.display = view === "welllog" ? "none" : "block";
+      if (this.wellLogEl)
+        this.wellLogEl.style.display = view === "welllog" ? "block" : "none";
+      if (this.wellMapRoot)
+        this.wellMapRoot.style.display = view === "welllog" ? "none" : "block";
       this.publishSelection({ type: this.selectionTypeFor(ds), id: ds.id });
       if (view === "welllog") this.renderWellLog();
     }
@@ -3012,8 +3938,11 @@ export class ThreeViewerEngine {
 
   private resetFilters() {
     for (const id of [
-      "#vis-filter-i", "#vis-filter-j", "#vis-filter-k",
-      "#vis-filter-prop-min", "#vis-filter-prop-max",
+      "#vis-filter-i",
+      "#vis-filter-j",
+      "#vis-filter-k",
+      "#vis-filter-prop-min",
+      "#vis-filter-prop-max",
     ]) {
       const input = this.sidebar.querySelector(id) as HTMLInputElement | null;
       if (input) input.value = "";
@@ -3023,7 +3952,9 @@ export class ThreeViewerEngine {
     this.filterK = [0, Infinity];
     this.filterPropertyRange = [-Infinity, Infinity];
     this.filterPropertyExclude = false;
-    const exclude = this.sidebar.querySelector('[id="vis-filter-prop-exclude"]') as HTMLInputElement | null;
+    const exclude = this.sidebar.querySelector(
+      '[id="vis-filter-prop-exclude"]',
+    ) as HTMLInputElement | null;
     if (exclude) {
       exclude.checked = false;
       exclude.dispatchEvent(new Event("ugsci-sync"));
@@ -3050,7 +3981,7 @@ export class ThreeViewerEngine {
     let propFile: string | undefined;
     const ts = timeStep;
     if (ts > 0 && dataset.time_steps) {
-      const stepInfo = dataset.time_steps.find(s => s.index === ts - 1);
+      const stepInfo = dataset.time_steps.find((s) => s.index === ts - 1);
       if (stepInfo) {
         propFile = stepInfo.scalars[property];
       }
@@ -3068,27 +3999,69 @@ export class ThreeViewerEngine {
       return false;
     }
 
-    const propBuf = await this.fetchBinary(propFile, this.abortController?.signal);
-    if (this.disposed || generation !== this.loadGeneration || requestId !== this.colorRequest) return null;
-    if (!propBuf.byteLength || propBuf.byteLength % 4 !== 0) throw new Error("属性缓冲区字节长度无效");
+    const propBuf = await this.fetchBinary(
+      propFile,
+      this.abortController?.signal,
+    );
+    if (
+      this.disposed ||
+      generation !== this.loadGeneration ||
+      requestId !== this.colorRequest
+    )
+      return null;
+    if (!propBuf.byteLength || propBuf.byteLength % 4 !== 0)
+      throw new Error("属性缓冲区字节长度无效");
     const isFloat = propFile.endsWith(".f32");
-    if (!isFloat && !propFile.endsWith(".u32")) throw new Error("不支持的属性数据类型");
-    const scalars = isFloat ? new Float32Array(propBuf) : new Uint32Array(propBuf);
+    if (!isFloat && !propFile.endsWith(".u32"))
+      throw new Error("不支持的属性数据类型");
+    const scalars = isFloat
+      ? new Float32Array(propBuf)
+      : new Uint32Array(propBuf);
     const vertexCount = geometry.getAttribute("position").count;
-    const association = scalarAssociation(dataset, property, scalars.length, vertexCount);
-    const expectedCount = association === "point" ? vertexCount : dataset.n_cells;
-    if (scalars.length !== expectedCount) throw new Error("属性数量与点／单元数量不一致");
+    const association = scalarAssociation(
+      dataset,
+      property,
+      scalars.length,
+      vertexCount,
+    );
+    const expectedCount =
+      association === "point" ? vertexCount : dataset.n_cells;
+    if (scalars.length !== expectedCount)
+      throw new Error("属性数量与点／单元数量不一致");
 
     let result = this.workerManager.isAvailable()
-      ? await this.workerManager.computeColors(propBuf.slice(0), indices.slice().buffer, colormapName, vertexCount, isFloat, association)
+      ? await this.workerManager.computeColors(
+          propBuf.slice(0),
+          indices.slice().buffer,
+          colormapName,
+          vertexCount,
+          isFloat,
+          association,
+        )
       : null;
-    if (this.disposed || generation !== this.loadGeneration || requestId !== this.colorRequest) return null;
-    if (!result) result = computeScalarColors(scalars, indices, colormapName, vertexCount, association);
+    if (
+      this.disposed ||
+      generation !== this.loadGeneration ||
+      requestId !== this.colorRequest
+    )
+      return null;
+    if (!result)
+      result = computeScalarColors(
+        scalars,
+        indices,
+        colormapName,
+        vertexCount,
+        association,
+      );
     this.currentScalarValues = scalars;
     this.scalarValidCount = result.validCount;
     this.scalarMin = result.smin;
     this.scalarMax = result.smax;
-    this.store.setProperty({ name: property, displayName: propertyLabel(property, dataset), range: [result.smin, result.smax] });
+    this.store.setProperty({
+      name: property,
+      displayName: propertyLabel(property, dataset),
+      range: [result.smin, result.smax],
+    });
     geometry.setAttribute("color", new THREE.BufferAttribute(result.colors, 3));
     this.updateLegend();
     return true;
@@ -3099,20 +4072,36 @@ export class ThreeViewerEngine {
     // Re-color against the unfiltered topology.  The visible index buffer may
     // contain only a subset of cells after I/J/K or property filtering, which
     // would otherwise make the cell-to-vertex ratio incorrect.
-    const indices = this.baseIndices || (this.geometry.getIndex() as THREE.BufferAttribute).array as Uint32Array;
+    const indices =
+      this.baseIndices ||
+      ((this.geometry.getIndex() as THREE.BufferAttribute)
+        .array as Uint32Array);
     let hasVertexColors = false;
     try {
-      const colorResult = await this.applyPropertyColors(this.geometry, this.currentDataset, indices);
+      const colorResult = await this.applyPropertyColors(
+        this.geometry,
+        this.currentDataset,
+        indices,
+      );
       if (colorResult === null) return;
       hasVertexColors = colorResult;
     } catch (err) {
-      this.showDetails(`属性加载失败：${err instanceof Error ? err.message : String(err)}`);
+      this.showDetails(
+        `属性加载失败：${err instanceof Error ? err.message : String(err)}`,
+      );
       throw err;
     }
     if (isSpatialWell(this.currentDataset)) {
-      const position = this.geometry.getAttribute("position") as THREE.BufferAttribute;
-      const colors = this.geometry.getAttribute("color") as THREE.BufferAttribute | undefined;
-      this.mesh?.traverse((node) => { if (node instanceof THREE.Mesh && node.name === "oilgas-well-tube") applyWellTubeColors(node, position, colors); });
+      const position = this.geometry.getAttribute(
+        "position",
+      ) as THREE.BufferAttribute;
+      const colors = this.geometry.getAttribute("color") as
+        | THREE.BufferAttribute
+        | undefined;
+      this.mesh?.traverse((node) => {
+        if (node instanceof THREE.Mesh && node.name === "oilgas-well-tube")
+          applyWellTubeColors(node, position, colors);
+      });
     }
     this.visitMaterials((material) => {
       const mat = material as THREE.MeshPhongMaterial | THREE.LineBasicMaterial;
@@ -3130,10 +4119,18 @@ export class ThreeViewerEngine {
 
   private getCellCenters(indicesPerCell: number): Float32Array | null {
     if (this.cellCenters) return this.cellCenters;
-    if (!this.geometry || !this.baseIndices || !this.cellIds || !Number.isInteger(indicesPerCell) || indicesPerCell <= 0) {
+    if (
+      !this.geometry ||
+      !this.baseIndices ||
+      !this.cellIds ||
+      !Number.isInteger(indicesPerCell) ||
+      indicesPerCell <= 0
+    ) {
       return null;
     }
-    const position = this.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const position = this.geometry.getAttribute(
+      "position",
+    ) as THREE.BufferAttribute;
     const centers = new Float32Array(this.cellIds.length * 3);
     for (let offset = 0; offset < this.cellIds.length; offset++) {
       const start = offset * indicesPerCell;
@@ -3160,19 +4157,44 @@ export class ThreeViewerEngine {
   }
 
   private applyFilters() {
-    if (this.datasetLoading || !this.geometry || !this.currentDataset || !this.cellIds || !this.baseIndices) return;
+    if (
+      this.datasetLoading ||
+      !this.geometry ||
+      !this.currentDataset ||
+      !this.cellIds ||
+      !this.baseIndices
+    )
+      return;
     const nextFilterState = this.filterStateSnapshot();
-    if (!this.restoringScene && this.lastFilterState && nextFilterState !== this.lastFilterState) {
+    if (
+      !this.restoringScene &&
+      this.lastFilterState &&
+      nextFilterState !== this.lastFilterState
+    ) {
       this.filterUndoStack.push(this.lastFilterState);
       if (this.filterUndoStack.length > 50) this.filterUndoStack.shift();
       this.filterRedoStack = [];
     }
     this.lastFilterState = nextFilterState;
-    const iVal = (this.sidebar.querySelector('[id="vis-filter-i"]') as HTMLInputElement)?.value;
-    const jVal = (this.sidebar.querySelector('[id="vis-filter-j"]') as HTMLInputElement)?.value;
-    const kVal = (this.sidebar.querySelector('[id="vis-filter-k"]') as HTMLInputElement)?.value;
-    const minVal = (this.sidebar.querySelector('[id="vis-filter-prop-min"]') as HTMLInputElement)?.value;
-    const maxVal = (this.sidebar.querySelector('[id="vis-filter-prop-max"]') as HTMLInputElement)?.value;
+    const iVal = (
+      this.sidebar.querySelector('[id="vis-filter-i"]') as HTMLInputElement
+    )?.value;
+    const jVal = (
+      this.sidebar.querySelector('[id="vis-filter-j"]') as HTMLInputElement
+    )?.value;
+    const kVal = (
+      this.sidebar.querySelector('[id="vis-filter-k"]') as HTMLInputElement
+    )?.value;
+    const minVal = (
+      this.sidebar.querySelector(
+        '[id="vis-filter-prop-min"]',
+      ) as HTMLInputElement
+    )?.value;
+    const maxVal = (
+      this.sidebar.querySelector(
+        '[id="vis-filter-prop-max"]',
+      ) as HTMLInputElement
+    )?.value;
 
     // Parse I/J/K ranges (e.g., "1:10" means 1 to 10)
     this.filterI = this.parseRange(iVal);
@@ -3183,7 +4205,11 @@ export class ThreeViewerEngine {
       maxVal ? parseFloat(maxVal) : Infinity,
     ];
     this.store.setFilters([
-      { type: "ijk", enabled: true, values: [iVal || "", jVal || "", kVal || ""] },
+      {
+        type: "ijk",
+        enabled: true,
+        values: [iVal || "", jVal || "", kVal || ""],
+      },
       {
         type: "property-range",
         enabled: Boolean(minVal || maxVal),
@@ -3204,7 +4230,9 @@ export class ThreeViewerEngine {
       this.infoEl.textContent = "当前数据结构不支持单元过滤";
       return;
     }
-    const centers = this.filterBounds ? this.getCellCenters(indicesPerCell) : null;
+    const centers = this.filterBounds
+      ? this.getCellCenters(indicesPerCell)
+      : null;
 
     const visible: number[] = [];
     const filteredIndices: number[] = [];
@@ -3217,23 +4245,37 @@ export class ThreeViewerEngine {
         const j = (Math.floor(cellId / nI) % nJ) + 1;
         const k = Math.floor(cellId / (nI * nJ)) + 1;
         passesIJK =
-          i >= this.filterI[0] && i <= this.filterI[1] &&
-          j >= this.filterJ[0] && j <= this.filterJ[1] &&
-          k >= this.filterK[0] && k <= this.filterK[1];
+          i >= this.filterI[0] &&
+          i <= this.filterI[1] &&
+          j >= this.filterJ[0] &&
+          j <= this.filterJ[1] &&
+          k >= this.filterK[0] &&
+          k <= this.filterK[1];
       }
       const scalar = this.currentScalarValues?.[offset];
-      const propertyFilterActive = Number.isFinite(this.filterPropertyRange[0]) || Number.isFinite(this.filterPropertyRange[1]);
-      const passesProperty = !propertyFilterActive || (scalar !== undefined && Number.isFinite(scalar) && (
-        scalar >= this.filterPropertyRange[0] &&
-        scalar <= this.filterPropertyRange[1]
-      ) !== this.filterPropertyExclude);
+      const propertyFilterActive =
+        Number.isFinite(this.filterPropertyRange[0]) ||
+        Number.isFinite(this.filterPropertyRange[1]);
+      const passesProperty =
+        !propertyFilterActive ||
+        (scalar !== undefined &&
+          Number.isFinite(scalar) &&
+          (scalar >= this.filterPropertyRange[0] &&
+            scalar <= this.filterPropertyRange[1]) !==
+            this.filterPropertyExclude);
       let passesBounds = true;
       if (this.filterBounds && centers) {
         const cx = centers[offset * 3];
         const cy = centers[offset * 3 + 1];
         const cz = centers[offset * 3 + 2];
         const [xmin, xmax, ymin, ymax, zmin, zmax] = this.filterBounds;
-        passesBounds = cx >= xmin && cx <= xmax && cy >= ymin && cy <= ymax && cz >= zmin && cz <= zmax;
+        passesBounds =
+          cx >= xmin &&
+          cx <= xmax &&
+          cy >= ymin &&
+          cy <= ymax &&
+          cz >= zmin &&
+          cz <= zmax;
       }
       if (!passesIJK || !passesProperty || !passesBounds) continue;
       visible.push(offset);
@@ -3256,8 +4298,14 @@ export class ThreeViewerEngine {
       const parsedStart = Number.parseInt(parts[0], 10);
       const parsedEnd = Number.parseInt(parts[1], 10);
       return [
-        Math.min(Number.isFinite(parsedStart) ? parsedStart : 0, Number.isFinite(parsedEnd) ? parsedEnd : Infinity),
-        Math.max(Number.isFinite(parsedStart) ? parsedStart : 0, Number.isFinite(parsedEnd) ? parsedEnd : Infinity),
+        Math.min(
+          Number.isFinite(parsedStart) ? parsedStart : 0,
+          Number.isFinite(parsedEnd) ? parsedEnd : Infinity,
+        ),
+        Math.max(
+          Number.isFinite(parsedStart) ? parsedStart : 0,
+          Number.isFinite(parsedEnd) ? parsedEnd : Infinity,
+        ),
       ];
     }
     const n = parseInt(parts[0]);
@@ -3276,13 +4324,17 @@ export class ThreeViewerEngine {
     let previous = 0;
     return new Promise((resolve, reject) => {
       this.cancelBenchmark = () => {
-        if (this.benchmarkAnimation !== null) cancelAnimationFrame(this.benchmarkAnimation);
+        if (this.benchmarkAnimation !== null)
+          cancelAnimationFrame(this.benchmarkAnimation);
         this.benchmarkAnimation = null;
         this.cancelBenchmark = null;
         reject(new DOMException("基准测试已取消", "AbortError"));
       };
       const measure = () => {
-        if (this.disposed) { this.cancelBenchmark?.(); return; }
+        if (this.disposed) {
+          this.cancelBenchmark?.();
+          return;
+        }
         const now = performance.now();
         if (previous > 0) times.push(now - previous);
         previous = now;
@@ -3293,7 +4345,9 @@ export class ThreeViewerEngine {
         this.benchmarkAnimation = null;
         this.cancelBenchmark = null;
         times.sort((a, b) => a - b);
-        const average = times.length ? times.reduce((a, b) => a + b, 0) / times.length : Infinity;
+        const average = times.length
+          ? times.reduce((a, b) => a + b, 0) / times.length
+          : Infinity;
         const result: BenchmarkResult = {
           datasetId,
           p50: times[Math.floor(times.length * 0.5)] || 0,
@@ -3302,12 +4356,17 @@ export class ThreeViewerEngine {
           fps: Number.isFinite(average) && average > 0 ? 1000 / average : 0,
           drawCalls: this.renderer.info.render.calls,
           triangles: this.renderer.info.render.triangles,
-          jsHeapMB: ((performance as any).memory?.usedJSHeapSize || 0) / 1024 / 1024,
+          jsHeapMB:
+            ((performance as any).memory?.usedJSHeapSize || 0) / 1024 / 1024,
           duration: now - start,
         };
-        this.infoEl.textContent = `基准: P50=${result.p50.toFixed(1)}ms P95=${result.p95.toFixed(1)}ms FPS=${result.fps.toFixed(0)}`;
+        this.infoEl.textContent = `基准: P50=${result.p50.toFixed(
+          1,
+        )}ms P95=${result.p95.toFixed(1)}ms FPS=${result.fps.toFixed(0)}`;
         void this.request("/benchmarks", {
-          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(result),
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(result),
         }).catch(() => {});
         resolve(result);
       };
@@ -3338,10 +4397,16 @@ export class ThreeViewerEngine {
       if (this.disposed) return;
       samples.push((performance as any).memory?.usedJSHeapSize || 0);
     }
-    const after = samples.filter(Boolean).length ? Math.min(...samples.filter(Boolean)) : 0;
+    const after = samples.filter(Boolean).length
+      ? Math.min(...samples.filter(Boolean))
+      : 0;
     const delta = (after - before) / 1024 / 1024;
     const gpuDelta = this.renderer.info.memory.geometries - beforeGpu;
-    this.infoEl.textContent = `泄漏测试: retained ${delta.toFixed(1)} MiB · GPU geometry ${gpuDelta >= 0 ? "+" : ""}${gpuDelta} (阈值 ≤100 MiB / +1)`;
+    this.infoEl.textContent = `泄漏测试: retained ${delta.toFixed(
+      1,
+    )} MiB · GPU geometry ${
+      gpuDelta >= 0 ? "+" : ""
+    }${gpuDelta} (阈值 ≤100 MiB / +1)`;
   }
 
   captureScreenshot(download = true): string {
@@ -3355,8 +4420,11 @@ export class ThreeViewerEngine {
     // unlike large data: URLs which may be opened instead of downloaded.
     const binary = atob(dataURL.split(",", 2)[1]);
     const bytes = new Uint8Array(binary.length);
-    for (let index = 0; index < binary.length; index++) bytes[index] = binary.charCodeAt(index);
-    const objectUrl = URL.createObjectURL(new Blob([bytes], { type: "image/png" }));
+    for (let index = 0; index < binary.length; index++)
+      bytes[index] = binary.charCodeAt(index);
+    const objectUrl = URL.createObjectURL(
+      new Blob([bytes], { type: "image/png" }),
+    );
     link.href = objectUrl;
     link.click();
     window.setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
@@ -3405,8 +4473,12 @@ export class ThreeViewerEngine {
     const heap = (performance as any).memory?.usedJSHeapSize;
     if (heap) setMetric("JS Heap", (heap / 1024 / 1024).toFixed(0) + " MB");
     this.store.setMetrics({
-      fps: times.length > 0 ? 1000 / (times.reduce((a, b) => a + b, 0) / times.length) : 0,
-      frameTime: times.length > 0 ? times.reduce((a, b) => a + b, 0) / times.length : 0,
+      fps:
+        times.length > 0
+          ? 1000 / (times.reduce((a, b) => a + b, 0) / times.length)
+          : 0,
+      frameTime:
+        times.length > 0 ? times.reduce((a, b) => a + b, 0) / times.length : 0,
       drawCalls: info.render.calls,
       triangles: info.render.triangles,
       jsHeapMB: heap ? heap / 1024 / 1024 : 0,
@@ -3417,8 +4489,10 @@ export class ThreeViewerEngine {
 
   private canvasNdc(event: MouseEvent) {
     const rect = this.renderer.domElement.getBoundingClientRect();
-    this.mouse.x = ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1;
-    this.mouse.y = -((event.clientY - rect.top) / Math.max(rect.height, 1)) * 2 + 1;
+    this.mouse.x =
+      ((event.clientX - rect.left) / Math.max(rect.width, 1)) * 2 - 1;
+    this.mouse.y =
+      -((event.clientY - rect.top) / Math.max(rect.height, 1)) * 2 + 1;
   }
 
   private pickables(): THREE.Object3D[] {
@@ -3472,7 +4546,8 @@ export class ThreeViewerEngine {
     const hit = this.raycaster.intersectObjects(this.pickables(), true)[0];
     if (!hit) return;
     const dataset = this.datasetFromHit(hit.object);
-    if (dataset) void this.focusDataset(dataset).catch((error) => this.reportError(error));
+    if (dataset)
+      void this.focusDataset(dataset).catch((error) => this.reportError(error));
   };
 
   private onCanvasClick = async (event: MouseEvent) => {
@@ -3491,8 +4566,12 @@ export class ThreeViewerEngine {
     if (this.measureMode) {
       this.measurePoints.push(local.clone());
       if (this.measurePoints.length === 2) {
-        const distance = this.measurePoints[0].distanceTo(this.measurePoints[1]);
-        this.infoEl.textContent = `测距结果: ${distance.toFixed(3)} | 再点击可重新测量`;
+        const distance = this.measurePoints[0].distanceTo(
+          this.measurePoints[1],
+        );
+        this.infoEl.textContent = `测距结果: ${distance.toFixed(
+          3,
+        )} | 再点击可重新测量`;
         this.measurePoints = [];
       } else {
         this.infoEl.textContent = "已选择第一个点，请选择第二个点";
@@ -3501,8 +4580,13 @@ export class ThreeViewerEngine {
       return;
     }
 
-    if (dataset && (isSpatialWell(dataset) || dataset.id !== this.currentDataset?.id)) {
-      this.infoEl.textContent = `${dataset.name} | 真实坐标: (${realX.toFixed(0)}, ${realY.toFixed(0)}, ${realZ.toFixed(0)})`;
+    if (
+      dataset &&
+      (isSpatialWell(dataset) || dataset.id !== this.currentDataset?.id)
+    ) {
+      this.infoEl.textContent = `${dataset.name} | 真实坐标: (${realX.toFixed(
+        0,
+      )}, ${realY.toFixed(0)}, ${realZ.toFixed(0)})`;
       this.publishSelection({
         type: this.selectionTypeFor(dataset),
         id: dataset.id,
@@ -3515,38 +4599,66 @@ export class ThreeViewerEngine {
     const primitiveIndex = hit.faceIndex ?? hit.index ?? 0;
     const primitivesPerCell = Math.max(
       1,
-      (this.geometry.getIndex()?.count || 0) / Math.max(this.visibleCellOffsets.length, 1) /
+      (this.geometry.getIndex()?.count || 0) /
+        Math.max(this.visibleCellOffsets.length, 1) /
         (this.mesh instanceof THREE.Mesh ? 3 : 1),
     );
     const visibleOffset = Math.floor(primitiveIndex / primitivesPerCell);
     const cellOffset = this.visibleCellOffsets[visibleOffset] ?? visibleOffset;
     const cellId = this.cellIds?.[cellOffset] ?? cellOffset;
-    this.infoEl.textContent = `Cell ID: ${cellId} | 真实坐标: (${realX.toFixed(0)}, ${realY.toFixed(0)}, ${realZ.toFixed(0)})`;
+    this.infoEl.textContent = `Cell ID: ${cellId} | 真实坐标: (${realX.toFixed(
+      0,
+    )}, ${realY.toFixed(0)}, ${realZ.toFixed(0)})`;
     if (this.currentDataset) {
       try {
         const details = await this.fetchJson(
-          `/datasets/${encodeURIComponent(this.currentDataset.id)}/cells/${cellId}?time_step=${this.currentTimeStep}`,
+          `/datasets/${encodeURIComponent(
+            this.currentDataset.id,
+          )}/cells/${cellId}?time_step=${this.currentTimeStep}`,
         );
-        this.showDetails([
-          `Cell ${details.cell_id}`,
-          details.ijk ? `I/J/K: ${details.ijk.join(" / ")}` : "I/J/K: —",
-          details.center ? `中心: ${details.center.map((v: number) => Number(v).toFixed(2)).join(", ")}` : "中心: —",
-          ...Object.entries(details.properties || {}).map(([name, value]) => `${propertyLabel(name, this.currentDataset)}: ${value == null || !Number.isFinite(Number(value)) ? "缺测" : Number(value).toPrecision(6)}`),
-        ].join("\n"));
+        this.showDetails(
+          [
+            `Cell ${details.cell_id}`,
+            details.ijk ? `I/J/K: ${details.ijk.join(" / ")}` : "I/J/K: —",
+            details.center
+              ? `中心: ${details.center
+                  .map((v: number) => Number(v).toFixed(2))
+                  .join(", ")}`
+              : "中心: —",
+            ...Object.entries(details.properties || {}).map(
+              ([name, value]) =>
+                `${propertyLabel(name, this.currentDataset)}: ${
+                  value == null || !Number.isFinite(Number(value))
+                    ? "缺测"
+                    : Number(value).toPrecision(6)
+                }`,
+            ),
+          ].join("\n"),
+        );
       } catch {
         // Picking remains useful even if the detail request is unavailable.
       }
     }
 
     this.publishSelection({
-      type: ["network", "network-tube"].includes(this.currentDataset?.source || "") ? "segment" : "cell",
+      type: ["network", "network-tube"].includes(
+        this.currentDataset?.source || "",
+      )
+        ? "segment"
+        : "cell",
       datasetId: this.currentDataset?.id,
       id: String(cellId),
       coordinates: [realX, realY, realZ],
     });
   };
 
-  setOnSelection(cb: (sel: { type: string; id: string; coords?: [number, number, number] }) => void) {
+  setOnSelection(
+    cb: (sel: {
+      type: string;
+      id: string;
+      coords?: [number, number, number];
+    }) => void,
+  ) {
     this.onSelectionCallback = cb;
   }
 
@@ -3558,7 +4670,9 @@ export class ThreeViewerEngine {
     if (!Number.isInteger(requested)) return false;
     const cellOffset = this.cellIds.indexOf(requested);
     if (cellOffset < 0) return false;
-    const positions = this.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const positions = this.geometry.getAttribute(
+      "position",
+    ) as THREE.BufferAttribute;
     const corners = this.hexCornerPositions;
     if (corners && corners.length >= (cellOffset + 1) * 24) {
       const center = new THREE.Vector3();
@@ -3576,7 +4690,9 @@ export class ThreeViewerEngine {
       this.infoEl.textContent = `已聚焦 Cell ID: ${requested}`;
       return true;
     }
-    const vertsPerCell = this.cellIds.length ? Math.floor(positions.count / this.cellIds.length) : 0;
+    const vertsPerCell = this.cellIds.length
+      ? Math.floor(positions.count / this.cellIds.length)
+      : 0;
     const firstVertex = cellOffset * Math.min(8, Math.max(1, vertsPerCell));
     if (firstVertex + 7 >= positions.count) return false;
     const center = new THREE.Vector3();
@@ -3594,17 +4710,26 @@ export class ThreeViewerEngine {
     return true;
   }
 
-  private async focusDatasetObject(objectType: "well" | "segment", objectId: string): Promise<boolean> {
+  private async focusDatasetObject(
+    objectType: "well" | "segment",
+    objectId: string,
+  ): Promise<boolean> {
     if (!this.manifest) return false;
     const needle = objectId.trim().toLowerCase();
-    const sources = objectType === "well"
-      ? new Set(["wellbore", "las", "dlis"])
-      : new Set(["network", "network-tube"]);
+    const sources =
+      objectType === "well"
+        ? new Set(["wellbore", "las", "dlis"])
+        : new Set(["network", "network-tube"]);
     const candidates = this.manifest.datasets.filter((dataset) => {
       if (!sources.has(dataset.source || "")) return false;
       if (!needle) return true;
-      const wellName = typeof dataset.metadata?.well_name === "string" ? dataset.metadata.well_name : "";
-      return [dataset.id, dataset.name, wellName].some((value) => value.toLowerCase() === needle);
+      const wellName =
+        typeof dataset.metadata?.well_name === "string"
+          ? dataset.metadata.well_name
+          : "";
+      return [dataset.id, dataset.name, wellName].some(
+        (value) => value.toLowerCase() === needle,
+      );
     });
     if (candidates.length > 1) return false;
     const dataset = candidates[0];
@@ -3612,12 +4737,18 @@ export class ThreeViewerEngine {
 
     if (objectType === "well" && isDepthOnlyWell(dataset)) {
       this.viewRouter.switchTo("welllog");
-      if (dataset.id !== this.currentDataset?.id) await this.loadDataset(dataset.id);
+      if (dataset.id !== this.currentDataset?.id)
+        await this.loadDataset(dataset.id);
       this.infoEl.textContent = `已打开测井: ${wellDisplayName(dataset)}`;
       return true;
     }
 
-    if (objectType === "well" && isSpatialWell(dataset) && this.currentDataset && isGridDataset(this.currentDataset)) {
+    if (
+      objectType === "well" &&
+      isSpatialWell(dataset) &&
+      this.currentDataset &&
+      isGridDataset(this.currentDataset)
+    ) {
       await this.toggleDatasetVisibility(dataset, true, { quiet: true });
       const overlay = this.overlayMeshes.get(dataset.id);
       if (!overlay) return false;
@@ -3630,21 +4761,35 @@ export class ThreeViewerEngine {
     if (dataset.id !== this.currentDataset?.id) {
       await this.loadDataset(dataset.id);
     }
-    if (objectType === "well" && this.mesh && isSpatialWell(this.currentDataset || dataset)) {
+    if (
+      objectType === "well" &&
+      this.mesh &&
+      isSpatialWell(this.currentDataset || dataset)
+    ) {
       this.frameObject(this.mesh);
       this.infoEl.textContent = `已聚焦井: ${objectId}`;
       return true;
     }
-    if (!this.currentDataset || !sources.has(this.currentDataset.source || "") || !this.geometry || !this.cellIds || !this.baseIndices) return false;
+    if (
+      !this.currentDataset ||
+      !sources.has(this.currentDataset.source || "") ||
+      !this.geometry ||
+      !this.cellIds ||
+      !this.baseIndices
+    )
+      return false;
 
-    const positions = this.geometry.getAttribute("position") as THREE.BufferAttribute;
+    const positions = this.geometry.getAttribute(
+      "position",
+    ) as THREE.BufferAttribute;
     const points = new Set<number>();
     const requested = Number(objectId);
     if (!Number.isFinite(requested) && dataset) {
       for (let index = 0; index < positions.count; index++) points.add(index);
     } else {
       const perCell = this.baseIndices.length / this.cellIds.length;
-      if (!Number.isInteger(perCell) || !Number.isFinite(requested)) return false;
+      if (!Number.isInteger(perCell) || !Number.isFinite(requested))
+        return false;
       for (let offset = 0; offset < this.cellIds.length; offset++) {
         if (this.cellIds[offset] !== requested) continue;
         const start = offset * perCell;
@@ -3666,20 +4811,28 @@ export class ThreeViewerEngine {
     this.controls.target.copy(center);
     this.camera.position.copy(center).addScalar(radius * 0.08);
     this.controls.update();
-    this.infoEl.textContent = `已聚焦 ${objectType === "well" ? "井" : "管段"}: ${objectId}`;
+    this.infoEl.textContent = `已聚焦 ${
+      objectType === "well" ? "井" : "管段"
+    }: ${objectId}`;
     return true;
   }
 
   private simulationRefreshGeneration = 0;
 
-  private async refreshSimulationDataset(datasetId: string, followLatest: boolean) {
+  private async refreshSimulationDataset(
+    datasetId: string,
+    followLatest: boolean,
+  ) {
     const scope = this.lifetimeController;
     const generation = (this.simulationRefreshGeneration || 0) + 1;
     this.simulationRefreshGeneration = generation;
     const selectedId = this.currentDataset?.id;
-    const isCurrent = () => !this.disposed && scope === this.lifetimeController
-      && !scope.signal.aborted && generation === this.simulationRefreshGeneration;
-    const manifest = await this.fetchJson("/manifest") as DatasetManifest;
+    const isCurrent = () =>
+      !this.disposed &&
+      scope === this.lifetimeController &&
+      !scope.signal.aborted &&
+      generation === this.simulationRefreshGeneration;
+    const manifest = (await this.fetchJson("/manifest")) as DatasetManifest;
     if (!isCurrent() || this.currentDataset?.id !== selectedId) return;
     const next = manifest.datasets.find((item) => item.id === datasetId);
     if (!next) throw new Error(`数据集不存在: ${datasetId}`);
@@ -3689,20 +4842,30 @@ export class ThreeViewerEngine {
     const previous = this.currentDataset;
     // An update for another run must not replace the model the user selected.
     if (previous && previous.id !== datasetId) return;
-    const oldStep = previous?.time_steps?.find((item) => item.index + 1 === this.currentTimeStep);
+    const oldStep = previous?.time_steps?.find(
+      (item) => item.index + 1 === this.currentTimeStep,
+    );
     const targetStep = followLatest
       ? (next.time_steps?.[(next.time_steps?.length || 0) - 1]?.index ?? -1) + 1
       : oldStep
-        ? (next.time_steps?.find((item) => item.step_number === oldStep.step_number)?.index ?? -1) + 1
-        : 0;
-    const sameRevision = previous?.metadata?.revision != null
-      && previous.metadata.revision === next.metadata?.revision;
+      ? (next.time_steps?.find(
+          (item) => item.step_number === oldStep.step_number,
+        )?.index ?? -1) + 1
+      : 0;
+    const sameRevision =
+      previous?.metadata?.revision != null &&
+      previous.metadata.revision === next.metadata?.revision;
     if (sameRevision) {
-      if (targetStep !== this.currentTimeStep) await this.executeCommand("set-timestep", { timeStep: targetStep });
+      if (targetStep !== this.currentTimeStep)
+        await this.executeCommand("set-timestep", { timeStep: targetStep });
       return;
     }
-    const camera = { position: this.camera.position.clone(), up: this.camera.up.clone(),
-      target: this.controls.target.clone(), zoom: this.camera.zoom };
+    const camera = {
+      position: this.camera.position.clone(),
+      up: this.camera.up.clone(),
+      target: this.controls.target.clone(),
+      zoom: this.camera.zoom,
+    };
     const property = this.currentProperty;
     const colormap = this.currentColormap;
     const filters = previous ? this.filterStateSnapshot() : null;
@@ -3710,10 +4873,16 @@ export class ThreeViewerEngine {
     await this.loadDataset(datasetId);
     if (!isCurrent() || this.currentDataset?.id !== datasetId) return;
     this.currentColormap = colormap;
-    const available = new Set([...Object.keys(next.files.scalars || {}),
-      ...(next.time_steps || []).flatMap((item) => Object.keys(item.scalars || {}))]);
+    const available = new Set([
+      ...Object.keys(next.files.scalars || {}),
+      ...(next.time_steps || []).flatMap((item) =>
+        Object.keys(item.scalars || {}),
+      ),
+    ]);
     if (available.has(property)) this.currentProperty = property;
-    const select = this.sidebar.querySelector('[id="vis-property"]') as HTMLSelectElement | null;
+    const select = this.sidebar.querySelector(
+      '[id="vis-property"]',
+    ) as HTMLSelectElement | null;
     if (select) select.value = this.currentProperty;
     await this.executeCommand("set-timestep", { timeStep: targetStep });
     if (!isCurrent() || this.currentDataset?.id !== datasetId) return;
@@ -3731,20 +4900,35 @@ export class ThreeViewerEngine {
       this.controls.update();
       this.store.setSelection(selection);
     }
-    return { datasetId, revision: next.metadata?.revision, timeStep: targetStep };
+    return {
+      datasetId,
+      revision: next.metadata?.revision,
+      timeStep: targetStep,
+    };
   }
 
-  async executeCommand(command: string, args: Record<string, any>): Promise<any> {
+  async executeCommand(
+    command: string,
+    args: Record<string, any>,
+  ): Promise<any> {
     const scope = this.lifetimeController;
     await this.ready;
-    if (scope !== this.lifetimeController) throw new DOMException("可视化作用域已变化", "AbortError");
+    if (scope !== this.lifetimeController)
+      throw new DOMException("可视化作用域已变化", "AbortError");
     if (this.disposed) throw new Error("可视化引擎已关闭");
     switch (command) {
       case "refresh-dataset":
-        return this.refreshSimulationDataset(String(args.datasetId || this.currentDataset?.id || ""), args.followLatest === true);
+        return this.refreshSimulationDataset(
+          String(args.datasetId || this.currentDataset?.id || ""),
+          args.followLatest === true,
+        );
       case "open":
         if (args.datasetId) {
-          if (!this.manifest?.datasets.some((dataset) => dataset.id === args.datasetId)) {
+          if (
+            !this.manifest?.datasets.some(
+              (dataset) => dataset.id === args.datasetId,
+            )
+          ) {
             throw new Error(`数据集不存在: ${args.datasetId}`);
           }
           await this.loadDataset(args.datasetId);
@@ -3755,9 +4939,13 @@ export class ThreeViewerEngine {
           await this.loadDataset(args.datasetId);
         }
         if (args.property) {
-          const propSelect = this.sidebar.querySelector('[id="vis-property"]') as HTMLSelectElement;
+          const propSelect = this.sidebar.querySelector(
+            '[id="vis-property"]',
+          ) as HTMLSelectElement;
           const exists = propSelect
-            ? Array.from(propSelect.options).some((option) => option.value === args.property)
+            ? Array.from(propSelect.options).some(
+                (option) => option.value === args.property,
+              )
             : false;
           if (!exists) {
             this.infoEl.textContent = `属性不存在: ${args.property}`;
@@ -3770,9 +4958,16 @@ export class ThreeViewerEngine {
         break;
       case "set-timestep":
         if (args.timeStep !== undefined) {
-          const tsSelect = this.sidebar.querySelector('[id="vis-timestep"]') as HTMLSelectElement;
+          const tsSelect = this.sidebar.querySelector(
+            '[id="vis-timestep"]',
+          ) as HTMLSelectElement;
           const value = String(args.timeStep);
-          if (!tsSelect || !Array.from(tsSelect.options).some((option) => option.value === value)) {
+          if (
+            !tsSelect ||
+            !Array.from(tsSelect.options).some(
+              (option) => option.value === value,
+            )
+          ) {
             this.infoEl.textContent = `时间步不存在: ${args.timeStep}`;
             throw new Error(`时间步不存在: ${args.timeStep}`);
           }
@@ -3783,9 +4978,16 @@ export class ThreeViewerEngine {
         }
         break;
       case "set-colormap": {
-        const colormapSelect = this.sidebar.querySelector('[id="vis-colormap"]') as HTMLSelectElement | null;
+        const colormapSelect = this.sidebar.querySelector(
+          '[id="vis-colormap"]',
+        ) as HTMLSelectElement | null;
         const name = String(args.colormap || "");
-        if (!colormapSelect || !Array.from(colormapSelect.options).some((option) => option.value === name)) {
+        if (
+          !colormapSelect ||
+          !Array.from(colormapSelect.options).some(
+            (option) => option.value === name,
+          )
+        ) {
           this.infoEl.textContent = `色图不存在: ${name}`;
           throw new Error(`色图不存在: ${name}`);
         }
@@ -3797,7 +4999,9 @@ export class ThreeViewerEngine {
       case "set-opacity": {
         const opacity = Number(args.opacity);
         if (!Number.isFinite(opacity)) break;
-        this.applyOpacity(Math.max(0.1, Math.min(1, opacity > 1 ? opacity / 100 : opacity)));
+        this.applyOpacity(
+          Math.max(0.1, Math.min(1, opacity > 1 ? opacity / 100 : opacity)),
+        );
         break;
       }
       case "set-wireframe": {
@@ -3806,7 +5010,9 @@ export class ThreeViewerEngine {
         break;
       }
       case "set-view":
-        if (ViewRouter.VIEWS.includes(String(args.view || "reservoir") as any)) {
+        if (
+          ViewRouter.VIEWS.includes(String(args.view || "reservoir") as any)
+        ) {
           this.viewRouter.switchTo(String(args.view || "reservoir") as any);
         } else {
           throw new Error(`视图不存在: ${String(args.view || "")}`);
@@ -3816,53 +5022,92 @@ export class ThreeViewerEngine {
         if (args.datasetId && args.datasetId !== this.currentDataset?.id) {
           await this.loadDataset(args.datasetId);
         }
-        const propSelect = this.sidebar.querySelector('[id="vis-property"]') as HTMLSelectElement;
-        if (args.property && propSelect && Array.from(propSelect.options).some((option) => option.value === args.property)) {
+        const propSelect = this.sidebar.querySelector(
+          '[id="vis-property"]',
+        ) as HTMLSelectElement;
+        if (
+          args.property &&
+          propSelect &&
+          Array.from(propSelect.options).some(
+            (option) => option.value === args.property,
+          )
+        ) {
           this.currentProperty = args.property;
           propSelect.value = args.property;
           await this.reloadPropertyColors();
         }
         const values: Record<string, string | undefined> = {
-          "#vis-filter-i": args.i, "#vis-filter-j": args.j, "#vis-filter-k": args.k,
-          "#vis-filter-prop-min": args.propertyMin == null ? "" : String(args.propertyMin),
-          "#vis-filter-prop-max": args.propertyMax == null ? "" : String(args.propertyMax),
+          "#vis-filter-i": args.i,
+          "#vis-filter-j": args.j,
+          "#vis-filter-k": args.k,
+          "#vis-filter-prop-min":
+            args.propertyMin == null ? "" : String(args.propertyMin),
+          "#vis-filter-prop-max":
+            args.propertyMax == null ? "" : String(args.propertyMax),
         };
         for (const [selector, value] of Object.entries(values)) {
-          const input = this.sidebar.querySelector(selector) as HTMLInputElement;
+          const input = this.sidebar.querySelector(
+            selector,
+          ) as HTMLInputElement;
           if (input && value !== undefined) input.value = value;
         }
-        this.filterBounds = Array.isArray(args.bounds) && args.bounds.length === 6 ? args.bounds as [number, number, number, number, number, number] : null;
+        this.filterBounds =
+          Array.isArray(args.bounds) && args.bounds.length === 6
+            ? (args.bounds as [number, number, number, number, number, number])
+            : null;
         this.applyFilters();
         break;
       }
       case "show-report":
-        this.showDetails([
-          args.title || "油气可视化分析报告",
-          `数据集: ${args.dataset || args.dataset_id || "—"}`,
-          `属性: ${args.property || "—"}`,
-          ...Object.entries(args.stats || {}).map(([name, value]) => `${name}: ${value == null ? "—" : Number(value).toPrecision(6)}`),
-        ].join("\n"));
+        this.showDetails(
+          [
+            args.title || "油气可视化分析报告",
+            `数据集: ${args.dataset || args.dataset_id || "—"}`,
+            `属性: ${args.property || "—"}`,
+            ...Object.entries(args.stats || {}).map(
+              ([name, value]) =>
+                `${name}: ${
+                  value == null ? "—" : Number(value).toPrecision(6)
+                }`,
+            ),
+          ].join("\n"),
+        );
         break;
       case "focus":
         let focused = false;
         if (args.objectType === "cell") {
           focused = this.focusCell(String(args.objectId));
-        } else if (args.objectType === "well" || args.objectType === "segment") {
-          focused = await this.focusDatasetObject(args.objectType, String(args.objectId));
+        } else if (
+          args.objectType === "well" ||
+          args.objectType === "segment"
+        ) {
+          focused = await this.focusDatasetObject(
+            args.objectType,
+            String(args.objectId),
+          );
         }
         if (!focused) {
-          this.infoEl.textContent = `无法聚焦 ${args.objectType || "object"}: ${args.objectId || ""}`;
-          throw new Error(`无法聚焦 ${args.objectType || "object"}: ${args.objectId || ""}`);
+          this.infoEl.textContent = `无法聚焦 ${args.objectType || "object"}: ${
+            args.objectId || ""
+          }`;
+          throw new Error(
+            `无法聚焦 ${args.objectType || "object"}: ${args.objectId || ""}`,
+          );
         }
         break;
       case "create-intersection": {
         const datasetId = args.datasetId || this.currentDataset?.id;
         if (!datasetId) break;
         const response = await this.request(
-          `${this.apiBase}/datasets/${encodeURIComponent(datasetId)}/intersections`,
+          `${this.apiBase}/datasets/${encodeURIComponent(
+            datasetId,
+          )}/intersections`,
           {
             method: "POST",
-            headers: { ...this.authHeaders(), "Content-Type": "application/json" },
+            headers: {
+              ...this.authHeaders(),
+              "Content-Type": "application/json",
+            },
             body: JSON.stringify({
               polyline_x: args.polyline_x,
               polyline_y: args.polyline_y,
@@ -3881,7 +5126,9 @@ export class ThreeViewerEngine {
         const result = await response.json();
         this.manifest = await this.fetchJson("/manifest");
         this.updateObjectTree();
-        this.infoEl.textContent = `剖面已生成: ${result.name || args.name || "section"}`;
+        this.infoEl.textContent = `剖面已生成: ${
+          result.name || args.name || "section"
+        }`;
         if (result.id) await this.loadDataset(result.id);
         this.viewRouter.switchTo("intersection");
         break;
@@ -3890,10 +5137,15 @@ export class ThreeViewerEngine {
         const datasetId = args.datasetId || this.currentDataset?.id;
         if (!datasetId) break;
         const response = await this.request(
-          `${this.apiBase}/datasets/${encodeURIComponent(datasetId)}/well-sections`,
+          `${this.apiBase}/datasets/${encodeURIComponent(
+            datasetId,
+          )}/well-sections`,
           {
             method: "POST",
-            headers: { ...this.authHeaders(), "Content-Type": "application/json" },
+            headers: {
+              ...this.authHeaders(),
+              "Content-Type": "application/json",
+            },
             body: JSON.stringify({
               well_dataset_id: args.wellDatasetId,
               offset: args.offset ?? 50,
@@ -3903,7 +5155,8 @@ export class ThreeViewerEngine {
             }),
           },
         );
-        if (!response.ok) throw new Error(`井剖面生成失败: HTTP ${response.status}`);
+        if (!response.ok)
+          throw new Error(`井剖面生成失败: HTTP ${response.status}`);
         const wellResult = await response.json();
         this.manifest = await this.fetchJson("/manifest");
         this.updateObjectTree();
@@ -3918,7 +5171,10 @@ export class ThreeViewerEngine {
           `${this.apiBase}/datasets/${encodeURIComponent(datasetId)}/slices`,
           {
             method: "POST",
-            headers: { ...this.authHeaders(), "Content-Type": "application/json" },
+            headers: {
+              ...this.authHeaders(),
+              "Content-Type": "application/json",
+            },
             body: JSON.stringify({
               axis: args.axis || "k",
               index: args.index,
@@ -3928,7 +5184,8 @@ export class ThreeViewerEngine {
             }),
           },
         );
-        if (!response.ok) throw new Error(`切片生成失败: HTTP ${response.status}`);
+        if (!response.ok)
+          throw new Error(`切片生成失败: HTTP ${response.status}`);
         const sliceResult = await response.json();
         this.manifest = await this.fetchJson("/manifest");
         this.updateObjectTree();
@@ -3949,14 +5206,26 @@ export class ThreeViewerEngine {
   private applyResponsiveChrome() {
     const width = this.container.clientWidth;
     if (width <= 0) return;
-    const tier = this.options.compact || width < 760 ? "small" : width < 1100 ? "medium" : "large";
+    const tier =
+      this.options.compact || width < 760
+        ? "small"
+        : width < 1100
+        ? "medium"
+        : "large";
     if (tier === this.responsiveTier) return;
     this.responsiveTier = tier;
     const defaults = responsiveChromeState(this.options.compact ? 600 : width);
-    const treeButton = this.objectTree.querySelector<HTMLButtonElement>("button");
-    const inspectorButton = this.sidebar.querySelector<HTMLButtonElement>("button");
-    if (treeButton && this.objectTreeCollapsed !== defaults.treeCollapsed) this.toggleObjectTree(treeButton);
-    if (inspectorButton && this.sidebarCollapsed !== defaults.inspectorCollapsed) this.toggleSidebar(inspectorButton);
+    const treeButton =
+      this.objectTree.querySelector<HTMLButtonElement>("button");
+    const inspectorButton =
+      this.sidebar.querySelector<HTMLButtonElement>("button");
+    if (treeButton && this.objectTreeCollapsed !== defaults.treeCollapsed)
+      this.toggleObjectTree(treeButton);
+    if (
+      inspectorButton &&
+      this.sidebarCollapsed !== defaults.inspectorCollapsed
+    )
+      this.toggleSidebar(inspectorButton);
   }
 
   private onResize = () => {
@@ -3999,14 +5268,23 @@ export class ThreeViewerEngine {
     }
     this.isHexMesh = true;
     const edgeGeometry = new THREE.BufferGeometry();
-    edgeGeometry.setAttribute("position", new THREE.BufferAttribute(corners, 3));
+    edgeGeometry.setAttribute(
+      "position",
+      new THREE.BufferAttribute(corners, 3),
+    );
     const offsets = this.visibleCellOffsets.length
       ? this.visibleCellOffsets
       : Array.from({ length: cellCount }, (_, cell) => cell);
-    edgeGeometry.setIndex(new THREE.BufferAttribute(buildHexEdgeIndex(offsets), 1));
+    edgeGeometry.setIndex(
+      new THREE.BufferAttribute(buildHexEdgeIndex(offsets), 1),
+    );
     this.hexEdgeLines = new THREE.LineSegments(
       edgeGeometry,
-      new THREE.LineBasicMaterial({ color: 0xd0d7de, transparent: true, opacity: 0.85 }),
+      new THREE.LineBasicMaterial({
+        color: 0xd0d7de,
+        transparent: true,
+        opacity: 0.85,
+      }),
     );
     this.hexEdgeLines.name = "oilgas-hex-edges";
     this.hexEdgeLines.visible = this.wireframe;
@@ -4053,9 +5331,12 @@ export class ThreeViewerEngine {
     const mesh = this.mesh;
     const geometry = this.geometry;
     if (mesh) this.disposeObject3D(mesh);
-    const meshGeometry = mesh instanceof THREE.Mesh || mesh instanceof THREE.Line || mesh instanceof THREE.LineSegments
-      ? mesh.geometry
-      : null;
+    const meshGeometry =
+      mesh instanceof THREE.Mesh ||
+      mesh instanceof THREE.Line ||
+      mesh instanceof THREE.LineSegments
+        ? mesh.geometry
+        : null;
     if (geometry && geometry !== meshGeometry) geometry.dispose();
     this.mesh = null;
     this.geometry = null;
@@ -4089,10 +5370,22 @@ export class ThreeViewerEngine {
     if (this.animationId !== null) cancelAnimationFrame(this.animationId);
     if (this.abortController) this.abortController.abort();
     this.renderer.domElement.removeEventListener("click", this.onCanvasClick);
-    this.renderer.domElement.removeEventListener("pointermove", this.onCanvasPointerMove);
-    this.renderer.domElement.removeEventListener("pointerleave", this.onCanvasPointerLeave);
-    this.renderer.domElement.removeEventListener("dblclick", this.onCanvasDblClick);
-    this.renderer.domElement.removeEventListener("contextmenu", this.onCanvasContextMenu);
+    this.renderer.domElement.removeEventListener(
+      "pointermove",
+      this.onCanvasPointerMove,
+    );
+    this.renderer.domElement.removeEventListener(
+      "pointerleave",
+      this.onCanvasPointerLeave,
+    );
+    this.renderer.domElement.removeEventListener(
+      "dblclick",
+      this.onCanvasDblClick,
+    );
+    this.renderer.domElement.removeEventListener(
+      "contextmenu",
+      this.onCanvasContextMenu,
+    );
     this.wellMapCanvas?.removeEventListener("click", this.onWellMapClick);
     this.container.removeEventListener("keydown", this.onViewerKeyDown);
     this.dropUnbind?.();
@@ -4117,12 +5410,20 @@ export class ThreeViewerEngine {
   update(options: Partial<ViewerMountOptions>) {
     if (this.disposed) return;
     const previousPersistenceKey = viewerPersistenceKey(this.options, "scene");
-    const scopeChanged = (options.apiBase !== undefined && options.apiBase !== this.apiBase)
-      || (Object.prototype.hasOwnProperty.call(options, "authToken") && options.authToken !== this.authToken)
-      || (options.headers !== undefined && JSON.stringify(options.headers) !== JSON.stringify(this.options.headers))
-      || (options.request !== undefined && options.request !== this.options.request);
+    const scopeChanged =
+      (options.apiBase !== undefined && options.apiBase !== this.apiBase) ||
+      (Object.prototype.hasOwnProperty.call(options, "authToken") &&
+        options.authToken !== this.authToken) ||
+      (options.headers !== undefined &&
+        JSON.stringify(options.headers) !==
+          JSON.stringify(this.options.headers)) ||
+      (options.request !== undefined &&
+        options.request !== this.options.request);
     this.options = { ...this.options, ...options };
-    if (scopeChanged || previousPersistenceKey !== viewerPersistenceKey(this.options, "scene")) {
+    if (
+      scopeChanged ||
+      previousPersistenceKey !== viewerPersistenceKey(this.options, "scene")
+    ) {
       this.restoringScene = false;
     }
     this.authToken = this.options.authToken;
@@ -4144,9 +5445,13 @@ export class ThreeViewerEngine {
       this.store.reset();
       this.ready = this.init();
       void this.ready.catch((error) => this.reportError(error));
-    } else if (options.initialDatasetId && options.initialDatasetId !== this.currentDataset?.id) {
-      void this.executeCommand("open", { datasetId: options.initialDatasetId }).catch((error) => this.reportError(error));
+    } else if (
+      options.initialDatasetId &&
+      options.initialDatasetId !== this.currentDataset?.id
+    ) {
+      void this.executeCommand("open", {
+        datasetId: options.initialDatasetId,
+      }).catch((error) => this.reportError(error));
     }
   }
 }
-

@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Invocation ancestry shared across workflow tasks and agent tool calls."""
 
 from contextvars import ContextVar
@@ -8,4 +9,7 @@ workflow_stack: ContextVar[tuple[str, ...]] = ContextVar(
 )
 MAX_WORKFLOW_DEPTH = 8
 
-current_run: ContextVar[dict | None] = ContextVar("flowforge_current_run", default=None)
+current_run: ContextVar[dict | None] = ContextVar(
+    "flowforge_current_run",
+    default=None,
+)

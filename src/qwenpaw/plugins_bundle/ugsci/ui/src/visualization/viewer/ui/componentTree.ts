@@ -10,9 +10,18 @@ import {
   wellDisplayName,
 } from "../wellClassification";
 
-export type ComponentGroupId = "grids" | "wells" | "logs" | "surfaces" | "networks" | "other";
+export type ComponentGroupId =
+  | "grids"
+  | "wells"
+  | "logs"
+  | "surfaces"
+  | "networks"
+  | "other";
 
-export const COMPONENT_GROUPS: ReadonlyArray<{ id: ComponentGroupId; title: string }> = [
+export const COMPONENT_GROUPS: ReadonlyArray<{
+  id: ComponentGroupId;
+  title: string;
+}> = [
   { id: "grids", title: "\u7f51\u683c" },
   { id: "wells", title: "\u4e95" },
   { id: "logs", title: "\u6d4b\u4e95" },
@@ -25,25 +34,40 @@ export function classifyDatasetGroup(dataset: DatasetInfo): ComponentGroupId {
   if (isSpatialWell(dataset)) return "wells";
   if (isDepthOnlyWell(dataset)) return "logs";
   const source = dataset.source || "";
-  if (["surface", "intersection", "well-intersection", "slice"].includes(source)) {
+  if (
+    ["surface", "intersection", "well-intersection", "slice"].includes(source)
+  ) {
     return "surfaces";
   }
   if (["network", "network-tube"].includes(source)) return "networks";
   return "other";
 }
 
-export function datasetMatchesQuery(dataset: DatasetInfo, query: string): boolean {
+export function datasetMatchesQuery(
+  dataset: DatasetInfo,
+  query: string,
+): boolean {
   const needle = query.trim().toLowerCase();
   if (!needle) return true;
-  const wellName = typeof dataset.metadata?.well_name === "string" ? dataset.metadata.well_name : "";
-  return [dataset.id, dataset.name, wellName, dataset.source || "", wellDisplayName(dataset)]
+  const wellName =
+    typeof dataset.metadata?.well_name === "string"
+      ? dataset.metadata.well_name
+      : "";
+  return [
+    dataset.id,
+    dataset.name,
+    wellName,
+    dataset.source || "",
+    wellDisplayName(dataset),
+  ]
     .join(" ")
     .toLowerCase()
     .includes(needle);
 }
 
 export function datasetListLabel(dataset: DatasetInfo): string {
-  if (isSpatialWell(dataset) || isDepthOnlyWell(dataset)) return wellDisplayName(dataset);
+  if (isSpatialWell(dataset) || isDepthOnlyWell(dataset))
+    return wellDisplayName(dataset);
   return dataset.name;
 }
 
@@ -67,7 +91,9 @@ export function renderComponentTree(
   options: ComponentTreeRenderOptions,
 ) {
   list.innerHTML = "";
-  const filtered = datasets.filter((dataset) => datasetMatchesQuery(dataset, options.query));
+  const filtered = datasets.filter((dataset) =>
+    datasetMatchesQuery(dataset, options.query),
+  );
   const grouped = new Map<ComponentGroupId, DatasetInfo[]>();
   for (const group of COMPONENT_GROUPS) grouped.set(group.id, []);
   grouped.set("other", []);
@@ -90,7 +116,9 @@ export function renderComponentTree(
   }
   if (rendered === 0) {
     const empty = document.createElement("div");
-    empty.textContent = options.query.trim() ? "\u6ca1\u6709\u5339\u914d\u7684\u5bf9\u8c61" : "\u6682\u65e0\u5bf9\u8c61";
+    empty.textContent = options.query.trim()
+      ? "\u6ca1\u6709\u5339\u914d\u7684\u5bf9\u8c61"
+      : "\u6682\u65e0\u5bf9\u8c61";
     empty.style.cssText = "padding:10px 8px;color:#484f58;";
     list.appendChild(empty);
   }
@@ -103,7 +131,8 @@ function buildGroup(
   options: ComponentTreeRenderOptions,
 ): HTMLElement {
   // Search results must remain visible without changing the user's saved folds.
-  const collapsed = !options.query.trim() && options.collapsedGroups.has(groupId);
+  const collapsed =
+    !options.query.trim() && options.collapsedGroups.has(groupId);
   const group = document.createElement("div");
   group.dataset.groupId = groupId;
   group.style.cssText = "margin-bottom:6px;";
@@ -134,7 +163,8 @@ function buildGroup(
   if (datasets.length === 0) {
     const empty = document.createElement("div");
     empty.textContent = "\u7a7a";
-    empty.style.cssText = "padding:2px 8px 8px 22px;color:#484f58;font-size:11px;";
+    empty.style.cssText =
+      "padding:2px 8px 8px 22px;color:#484f58;font-size:11px;";
     group.appendChild(empty);
     return group;
   }
@@ -145,7 +175,10 @@ function buildGroup(
   return group;
 }
 
-function buildItem(dataset: DatasetInfo, options: ComponentTreeRenderOptions): HTMLElement {
+function buildItem(
+  dataset: DatasetInfo,
+  options: ComponentTreeRenderOptions,
+): HTMLElement {
   const item = document.createElement("div");
   item.setAttribute("role", "group");
   item.setAttribute("aria-label", datasetListLabel(dataset));
@@ -157,7 +190,9 @@ function buildItem(dataset: DatasetInfo, options: ComponentTreeRenderOptions): H
   item.style.cssText = [
     "display:flex;align-items:flex-start;gap:6px;",
     "padding:5px 6px 5px 8px;margin:1px 0;border-radius:5px;cursor:pointer;",
-    selected || active ? "background:rgba(31,111,235,.22);color:#e6edf3;" : "background:transparent;color:#8b949e;",
+    selected || active
+      ? "background:rgba(31,111,235,.22);color:#e6edf3;"
+      : "background:transparent;color:#8b949e;",
     selected || active ? "box-shadow:inset 2px 0 #58a6ff;" : "box-shadow:none;",
   ].join("");
 
@@ -168,22 +203,32 @@ function buildItem(dataset: DatasetInfo, options: ComponentTreeRenderOptions): H
   if (depthOnly) {
     check.checked = false;
     check.disabled = true;
-    check.title = "\u7eaf\u6df1\u5ea6\u6d4b\u4e95\u65e0\u6cd5\u5728\u4e09\u7ef4\u89c6\u56fe\u663e\u793a";
+    check.title =
+      "\u7eaf\u6df1\u5ea6\u6d4b\u4e95\u65e0\u6cd5\u5728\u4e09\u7ef4\u89c6\u56fe\u663e\u793a";
   } else {
     check.title = "\u663e\u793a/\u9690\u85cf " + datasetListLabel(dataset);
   }
-  check.setAttribute("aria-label", "\u663e\u793a/\u9690\u85cf " + datasetListLabel(dataset));
+  check.setAttribute(
+    "aria-label",
+    "\u663e\u793a/\u9690\u85cf " + datasetListLabel(dataset),
+  );
   check.addEventListener("click", (event) => event.stopPropagation());
-  check.addEventListener("change", () => options.onToggleVisible(dataset, check.checked));
+  check.addEventListener("change", () =>
+    options.onToggleVisible(dataset, check.checked),
+  );
 
   const text = document.createElement("button");
   text.type = "button";
   text.setAttribute("aria-label", "选择 " + datasetListLabel(dataset));
   text.setAttribute("aria-pressed", String(selected || active));
-  text.style.cssText = "min-width:0;flex:1;border:0;padding:0;background:transparent;text-align:left;color:inherit;cursor:pointer;";
+  text.style.cssText =
+    "min-width:0;flex:1;border:0;padding:0;background:transparent;text-align:left;color:inherit;cursor:pointer;";
   const name = document.createElement("div");
-  name.textContent = depthOnly ? datasetListLabel(dataset) + "\uff08\u4ec5\u6df1\u5ea6\uff09" : datasetListLabel(dataset);
-  name.style.cssText = "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;line-height:1.3;";
+  name.textContent = depthOnly
+    ? datasetListLabel(dataset) + "\uff08\u4ec5\u6df1\u5ea6\uff09"
+    : datasetListLabel(dataset);
+  name.style.cssText =
+    "white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;line-height:1.3;";
   const meta = document.createElement("div");
   meta.textContent = datasetMeta(dataset);
   meta.style.cssText = "color:#6e7681;font-size:10px;margin-top:1px;";
@@ -196,17 +241,23 @@ function buildItem(dataset: DatasetInfo, options: ComponentTreeRenderOptions): H
     del.textContent = "\u00d7";
     del.title = "\u79fb\u9664 " + datasetListLabel(dataset);
     del.setAttribute("aria-label", "\u79fb\u9664 " + datasetListLabel(dataset));
-    del.style.cssText = "flex:0 0 auto;width:18px;height:18px;margin-top:2px;padding:0;border:0;background:transparent;color:#6e7681;cursor:pointer;font-size:14px;line-height:18px;";
+    del.style.cssText =
+      "flex:0 0 auto;width:18px;height:18px;margin-top:2px;padding:0;border:0;background:transparent;color:#6e7681;cursor:pointer;font-size:14px;line-height:18px;";
     del.addEventListener("click", (event) => {
       event.stopPropagation();
       options.onDelete!(dataset);
     });
-    del.addEventListener("mouseenter", () => { del.style.color = "#f85149"; });
-    del.addEventListener("mouseleave", () => { del.style.color = "#6e7681"; });
+    del.addEventListener("mouseenter", () => {
+      del.style.color = "#f85149";
+    });
+    del.addEventListener("mouseleave", () => {
+      del.style.color = "#6e7681";
+    });
     item.appendChild(del);
   }
   item.title = depthOnly
-    ? dataset.name + " \u00b7 \u4ec5\u6df1\u5ea6\uff0c\u6253\u5f00\u300c\u6d4b\u4e95\u300d\u9875\u7b7e"
+    ? dataset.name +
+      " \u00b7 \u4ec5\u6df1\u5ea6\uff0c\u6253\u5f00\u300c\u6d4b\u4e95\u300d\u9875\u7b7e"
     : dataset.name + " \u00b7 " + dataset.n_cells.toLocaleString() + " 单元";
   item.addEventListener("click", () => options.onSelect(dataset));
   item.addEventListener("dblclick", (event) => {
@@ -231,7 +282,13 @@ function datasetMeta(dataset: DatasetInfo): string {
   if (isDepthOnlyWell(dataset)) return "\u6d4b\u4e95\u66f2\u7ebf";
   if (isSpatialWell(dataset)) return "\u4e95\u8f68\u8ff9";
   if (dataset.grid_dims && dataset.grid_dims.length >= 3) {
-    return dataset.grid_dims[0] + " x " + dataset.grid_dims[1] + " x " + dataset.grid_dims[2];
+    return (
+      dataset.grid_dims[0] +
+      " x " +
+      dataset.grid_dims[1] +
+      " x " +
+      dataset.grid_dims[2]
+    );
   }
   if (dataset.n_cells > 0) return dataset.n_cells.toLocaleString() + " 单元";
   return dataset.source || "\u5bf9\u8c61";

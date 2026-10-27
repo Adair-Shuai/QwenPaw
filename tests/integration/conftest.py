@@ -101,7 +101,8 @@ def _integration_coverage_requested() -> bool:
 
 
 def pytest_collection_modifyitems(
-    config: pytest.Config, items: list[pytest.Item]
+    config: pytest.Config,
+    items: list[pytest.Item],
 ) -> None:
     """Split large Windows integration groups across independent runners."""
     index_text = os.environ.get("QWENPAW_INTEGRATION_SHARD_INDEX") or None
@@ -109,11 +110,15 @@ def pytest_collection_modifyitems(
     if index_text is None and count_text is None:
         return
     if index_text is None or count_text is None:
-        raise pytest.UsageError("Both integration shard variables are required")
+        raise pytest.UsageError(
+            "Both integration shard variables are required",
+        )
     try:
         index, count = int(index_text), int(count_text)
     except ValueError as exc:
-        raise pytest.UsageError("Integration shard values must be integers") from exc
+        raise pytest.UsageError(
+            "Integration shard values must be integers",
+        ) from exc
     if count < 1 or index < 0 or index >= count:
         raise pytest.UsageError("Integration shard index must be within count")
     selected = []
@@ -121,7 +126,8 @@ def pytest_collection_modifyitems(
     for item in items:
         bucket = (
             int.from_bytes(
-                hashlib.sha256(item.nodeid.encode("utf-8")).digest()[:8], "big"
+                hashlib.sha256(item.nodeid.encode("utf-8")).digest()[:8],
+                "big",
             )
             % count
         )
@@ -259,8 +265,8 @@ def _tee_stream(stream, buffer: list[str]) -> None:
                 try:
                     print(f"[app server] {line}", end="", flush=True)
                 except (OSError, ValueError):
-                    # pytest may close captured stdout before this daemon thread
-                    # finishes draining; keep the raw copy in `buffer` regardless.
+                    # Captured stdout may close before this daemon finishes.
+                    # Keep the raw copy in `buffer` regardless.
                     pass
     finally:
         stream.close()

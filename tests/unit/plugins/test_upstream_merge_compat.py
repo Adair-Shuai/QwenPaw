@@ -70,6 +70,33 @@ def test_explicit_legacy_minimum_keeps_derived_upper_bound():
     assert check_plugin_version_compat(manifest)[0] is False
 
 
+@pytest.mark.parametrize(
+    "host, compatible",
+    [
+        ("2.3.0b1", False),
+        ("2.3.0b2", True),
+        ("2.3.0rc1", True),
+        ("2.3.0", True),
+        ("2.4.0b1", False),
+    ],
+)
+def test_explicit_beta_minimum_preserves_required_api_boundary(
+    monkeypatch,
+    host,
+    compatible,
+):
+    monkeypatch.setattr("qwenpaw.__version__.__version__", host)
+    manifest = PluginManifest.from_dict(
+        json.loads(
+            (ROOT / "plugins/bundle/flowforge/plugin.json").read_text(
+                encoding="utf-8",
+            ),
+        ),
+    )
+    assert manifest.qwenpaw_version.min == "2.3.0b2"
+    assert check_plugin_version_compat(manifest)[0] is compatible
+
+
 @pytest.mark.asyncio
 async def test_native_uninstall_preserves_intent_and_reinstall_clears_it(
     tmp_path,

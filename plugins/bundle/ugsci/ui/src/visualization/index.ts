@@ -21,7 +21,10 @@ export function registerVisualizationFrontend(QP: any, React: any): void {
   globalWindow[registrationKey] = true;
   // A lazy, container-based API: applications reuse the engine without
   // duplicating Three.js, a route shell, or private workspace import logic.
-  QP.ugsci = { ...QP.ugsci, visualization: { version: 1, mount: mountVisualization } };
+  QP.ugsci = {
+    ...QP.ugsci,
+    visualization: { version: 1, mount: mountVisualization },
+  };
 
   const antdIcons = getHost().antdIcons || {};
   const GlobalOutlined = antdIcons.GlobalOutlined || antdIcons.AppstoreOutlined;
@@ -59,10 +62,35 @@ export function registerVisualizationFrontend(QP: any, React: any): void {
       name: "UGSci 油气可视化",
       component: OilGasWorkspaceRenderer,
       extensions: [
-        "egrid", "grid", "grdecl", "init", "unrst", "roff", "roffbin",
-        "dat", "sr3", "irf", "data", "model", "tnav", "tpr", "las", "las3", "dlis",
-        "vtk", "vtu", "pvtu", "vti", "xdmf", "csv", "arrow", "parquet",
-        "well.json", "surface.json", "network.json", "json",
+        "egrid",
+        "grid",
+        "grdecl",
+        "init",
+        "unrst",
+        "roff",
+        "roffbin",
+        "dat",
+        "sr3",
+        "irf",
+        "data",
+        "model",
+        "tnav",
+        "tpr",
+        "las",
+        "las3",
+        "dlis",
+        "vtk",
+        "vtu",
+        "pvtu",
+        "vti",
+        "xdmf",
+        "csv",
+        "arrow",
+        "parquet",
+        "well.json",
+        "surface.json",
+        "network.json",
+        "json",
       ],
       mimeTypes: [
         "application/x-eclipse-grid",
@@ -85,6 +113,9 @@ export function registerVisualizationFrontend(QP: any, React: any): void {
       description: "UGSci 油气三维网格、井、剖面和测井可视化",
     });
   } catch (error) {
-    console.warn("[ugsci] Visualization workspace renderer registration failed:", error);
+    console.warn(
+      "[ugsci] Visualization workspace renderer registration failed:",
+      error,
+    );
   }
 }

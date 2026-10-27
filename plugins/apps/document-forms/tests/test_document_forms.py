@@ -185,7 +185,9 @@ def test_plan_templates_split_shared_information_and_generate_word_and_excel(
         main.builtin.PLAN_NAMES,
     )
     assert case["recipients"] == [] and "dates.issue" not in values_for(case)
-    assert {f["key"] for f in case["fields"] if f.get("scope") == "shared"} <= set(
+    assert {
+        f["key"] for f in case["fields"] if f.get("scope") == "shared"
+    } <= set(
         common,
     )
     values = values_for(case)
@@ -248,7 +250,10 @@ def test_plan_templates_split_shared_information_and_generate_word_and_excel(
     assert sheet["D3"].value == values["research.contents"]
     assert sheet["F3"].value == values["plan.partners"]
     assert sheet["K3"].value == "180/0" and sheet["L3"].value == "0000123"
-    assert sheet["N3"].value == values["plan.notes"] and sheet["N3"].data_type == "s"
+    assert (
+        sheet["N3"].value == values["plan.notes"]
+        and sheet["N3"].data_type == "s"
+    )
     template = main.builtin.load_templates("plan")[main.builtin.PLAN_NAMES[1]]
     original = load_workbook(io.BytesIO(template))
     assert book.sheetnames == original.sheetnames and len(book.sheetnames) == 6
@@ -274,7 +279,9 @@ def test_plan_templates_split_shared_information_and_generate_word_and_excel(
     assert bundle.status_code == 200, bundle.text[:100]
     with ZipFile(io.BytesIO(bundle.content)) as archive:
         assert archive.testzip() is None
-        assert any(n.endswith(main.builtin.PLAN_NAMES[1]) for n in archive.namelist())
+        assert any(
+            n.endswith(main.builtin.PLAN_NAMES[1]) for n in archive.namelist()
+        )
     client.post(
         route + "/defaults",
         json={"revision": generated.json()["revision"]},
@@ -297,7 +304,9 @@ def test_plan_templates_split_shared_information_and_generate_word_and_excel(
         base + "/form",
         json={"revision": project["revision"], "stage_id": "negotiation"},
     ).json()
-    assert negotiation["id"] == case["id"] and len(negotiation["templates"]) == 6
+    assert (
+        negotiation["id"] == case["id"] and len(negotiation["templates"]) == 6
+    )
     assert values_for(negotiation)["budget.ceiling_number"] == "490000"
     assert "plan.budget_wan" not in values_for(negotiation)
     project = client.get(base).json()
@@ -329,7 +338,8 @@ def test_plan_full_necessity_upgrades_legacy_builtin_once_and_keeps_backups(
     # Exercise real legacy Office bytes, defaults and project routes.
     # pylint: disable=too-many-statements
     project = client.post(
-        "/api/document-forms/projects", json={"name": "整段说明测试"}
+        "/api/document-forms/projects",
+        json={"name": "整段说明测试"},
     ).json()
     base = "/api/document-forms/projects/" + project["id"]
     case = client.post(
@@ -355,7 +365,8 @@ def test_plan_full_necessity_upgrades_legacy_builtin_once_and_keeps_backups(
     digest = hashlib.sha256(output.getvalue()).hexdigest()
     monkeypatch.setattr(main.builtin, "LEGACY_PLAN_WORD", digest)
     template.update(
-        main.template_info(output.getvalue(), template["name"]), sha256=digest
+        main.template_info(output.getvalue(), template["name"]),
+        sha256=digest,
     )
     raw["fields"].append(
         {
@@ -366,7 +377,7 @@ def test_plan_full_necessity_upgrades_legacy_builtin_once_and_keeps_backups(
             "group": "项目资料",
             "scope": "shared",
             "required": True,
-        }
+        },
     )
     next(f for f in raw["fields"] if f["key"] == "plan.necessity")[
         "value"
@@ -390,8 +401,8 @@ def test_plan_full_necessity_upgrades_legacy_builtin_once_and_keeps_backups(
     assert source.read_bytes() == output.getvalue()
     backups = list(
         (root / "projects" / project["id"] / "form-history").glob(
-            "*_before_full_necessity_*.json"
-        )
+            "*_before_full_necessity_*.json",
+        ),
     )
     assert len(backups) == 1 and backups[0].read_bytes() == before
     reopened = client.post(
@@ -401,7 +412,8 @@ def test_plan_full_necessity_upgrades_legacy_builtin_once_and_keeps_backups(
     assert reopened["revision"] == upgraded["revision"]
     assert values_for(reopened)["plan.necessity"] == "原背景。外协理由。"
     second = client.post(
-        "/api/document-forms/projects", json={"name": "后续项目"}
+        "/api/document-forms/projects",
+        json={"name": "后续项目"},
     ).json()
     other = client.post(
         "/api/document-forms/projects/" + second["id"] + "/form",
@@ -482,7 +494,9 @@ def test_project_single_form_reuses_stage_pages_and_preserves_old_materials(
         base + "/form",
         json={"revision": project["revision"], "stage_id": "negotiation"},
     ).json()
-    assert same["id"] == opened["id"] and same["revision"] == opened["revision"]
+    assert (
+        same["id"] == opened["id"] and same["revision"] == opened["revision"]
+    )
     plan = client.post(
         base + "/form",
         json={"revision": project["revision"], "stage_id": "plan"},
@@ -547,7 +561,9 @@ def test_project_single_form_reuses_stage_pages_and_preserves_old_materials(
     assert imported["id"] == opened["id"] and imported["templates"] == []
     current = client.get(base).json()
     assert len(current["forms"]) == 2 and current["form_id"] == opened["id"]
-    assert (main.folder(root, old["id"]) / "draft.json").read_bytes() == old_bytes
+    assert (
+        main.folder(root, old["id"]) / "draft.json"
+    ).read_bytes() == old_bytes
     archive = client.get(base + "/bundle")
     assert archive.status_code == 200, archive.text
     with ZipFile(io.BytesIO(archive.content)) as z:
@@ -567,10 +583,13 @@ def test_contract_references_upstream_fields_and_rejects_direct_edits(client):
     project, _ = project_case(client)
     base = f"/api/document-forms/projects/{project['id']}"
     contract = client.post(
-        base + "/form", json={"revision": project["revision"], "stage_id": "contract"}
+        base + "/form",
+        json={"revision": project["revision"], "stage_id": "contract"},
     ).json()
     assert contract["contract_schema"] == 1
-    assert all(f["read_only"] and f["scope"] == "shared" for f in contract["fields"])
+    assert all(
+        f["read_only"] and f["scope"] == "shared" for f in contract["fields"]
+    )
     assert "implementation.service_period" in values_for(contract)
     changed = values_for(contract)
     changed["project.name"] = "不应独立改写的合同项目名"
@@ -590,13 +609,17 @@ def test_contract_references_upstream_fields_and_rejects_direct_edits(client):
     current = client.put(
         base,
         json={
-            **{key: current[key] for key in ("revision", "name", "code", "owner")},
+            **{
+                key: current[key]
+                for key in ("revision", "name", "code", "owner")
+            },
             "name": "基础信息已更正",
             "values": fields,
         },
     ).json()
     reopened = client.post(
-        base + "/form", json={"revision": current["revision"], "stage_id": "contract"}
+        base + "/form",
+        json={"revision": current["revision"], "stage_id": "contract"},
     ).json()
     assert values_for(reopened)["project.name"] == "基础信息已更正"
 
@@ -629,7 +652,8 @@ def test_project_assistant_keeps_project_conversation_and_file_scope(
         assert client.get(base + "/assistant").json() == {"messages": []}
         assert not calls
         assert (
-            client.post(base + "/assistant", json={"message": " "}).status_code == 422
+            client.post(base + "/assistant", json={"message": " "}).status_code
+            == 422
         )
         started = client.post(
             base + "/assistant",
@@ -643,7 +667,10 @@ def test_project_assistant_keeps_project_conversation_and_file_scope(
             time.sleep(0.01)
         assert history[0]["status"] == "completed"
         assert "核对材料" in history[0]["reply"]
-        assert calls[0][0] == "ugsci-response-review" and project["id"] in calls[0][2]
+        assert (
+            calls[0][0] == "ugsci-response-review"
+            and project["id"] in calls[0][2]
+        )
         assert (
             client.get(
                 base + "/assistant",
@@ -706,7 +733,7 @@ def test_response_review_uses_scoped_agent_and_archives_immutable_inputs(
             for file in listing["文件清单"]:
                 assert Path(file["只读路径"]).read_bytes() == word
             yield {
-                "text": "## 核查记录\n\n甲单位：报价口径需要澄清，见响应文件第 2 节。"
+                "text": "## 核查记录\n\n甲单位：报价口径需要澄清，见响应文件第 2 节。",
             }
 
     client.app.dependency_overrides[get_scoped_ctx] = Context
@@ -724,7 +751,9 @@ def test_response_review_uses_scoped_agent_and_archives_immutable_inputs(
         assert started.status_code == 200, started.text
         assert "session_id" not in started.json()
         for _ in range(100):
-            record = client.get(base + "/response-reviews").json()["records"][0]
+            record = client.get(base + "/response-reviews").json()["records"][
+                0
+            ]
             if record["status"] != "running":
                 break
             time.sleep(0.01)
@@ -737,7 +766,8 @@ def test_response_review_uses_scoped_agent_and_archives_immutable_inputs(
         report_url = base + f"/response-reviews/{record['id']}/report"
         assert "报价口径" in client.get(report_url).text
         assert (
-            client.get(report_url, headers={"X-Agent-Id": "other"}).status_code == 404
+            client.get(report_url, headers={"X-Agent-Id": "other"}).status_code
+            == 404
         )
         archive = client.get(base + "/bundle")
         assert archive.status_code == 200, archive.text
@@ -745,8 +775,10 @@ def test_response_review_uses_scoped_agent_and_archives_immutable_inputs(
             names = z.namelist()
             assert any(n.endswith("核查依据快照.json") for n in names)
             assert any(n.endswith("核查记录.md") for n in names)
-            assert [z.read(n) for n in names if n.endswith("甲单位响应文件.docx")] == [
-                word
+            assert [
+                z.read(n) for n in names if n.endswith("甲单位响应文件.docx")
+            ] == [
+                word,
             ]
         source = next(
             main.ROOT.glob("*/projects/*/response-reviews/*/02.docx"),
@@ -878,7 +910,9 @@ def test_project_migration_groups_legacy_forms_without_rewriting_files(
 ):
     first = create(client, sources)
     second = create(client, sources)
-    before = {str(p): p.read_bytes() for p in main.ROOT.glob("*/**/*") if p.is_file()}
+    before = {
+        str(p): p.read_bytes() for p in main.ROOT.glob("*/**/*") if p.is_file()
+    }
     projects = client.get("/api/document-forms/projects").json()
     assert len(projects) == 1 and projects[0]["forms"] == 2
     assert projects[0]["updated_at"] == max(
@@ -906,14 +940,18 @@ def test_project_migration_groups_legacy_forms_without_rewriting_files(
         "acceptance",
         "payment",
     ]
-    contract = next(stage for stage in project["stages"] if stage["id"] == "contract")
+    contract = next(
+        stage for stage in project["stages"] if stage["id"] == "contract"
+    )
     assert [material["name"] for material in contract["materials"]] == [
         "技术服务合同及附件",
         "合同审查意见及修改记录",
         "合同审批或系统回执",
         "双方签署版合同",
     ]
-    assert {s["status"] for s in project["stages"] if s["id"] != "negotiation"} == {
+    assert {
+        s["status"] for s in project["stages"] if s["id"] != "negotiation"
+    } == {
         "pending",
     }
     other = client.get(
@@ -933,7 +971,7 @@ def test_acceptance_stage_uses_bundled_opinion_template(client):
         json={"revision": project["revision"], "stage_id": "acceptance"},
     ).json()
     assert [template["name"] for template in case["templates"]] == list(
-        main.builtin.ACCEPTANCE_NAMES
+        main.builtin.ACCEPTANCE_NAMES,
     )
     fields = {field["key"]: field for field in case["fields"]}
     assert set(fields) == {
@@ -1043,7 +1081,10 @@ def test_project_stage_defaults_do_not_replace_negotiation_defaults(client):
         json={"revision": project["revision"], "stage_id": "kickoff"},
     ).json()
     assert len(next_kickoff["templates"]) == 1
-    assert next_kickoff["templates"][0]["sha256"] == kickoff["templates"][0]["sha256"]
+    assert (
+        next_kickoff["templates"][0]["sha256"]
+        == kickoff["templates"][0]["sha256"]
+    )
     project = client.get(base).json()
     next_negotiation = client.post(
         base + "/cases",
@@ -1053,7 +1094,9 @@ def test_project_stage_defaults_do_not_replace_negotiation_defaults(client):
         t["sha256"] for t in negotiation["templates"]
     ]
     assert not list(main.ROOT.glob("*/default-templates/index.json"))
-    assert len(list(main.ROOT.glob("*/stage-defaults/kickoff/index.json"))) == 1
+    assert (
+        len(list(main.ROOT.glob("*/stage-defaults/kickoff/index.json"))) == 1
+    )
 
 
 def test_project_sync_rejects_stale_confirmation_and_missing_archive_files(
@@ -1141,11 +1184,14 @@ def test_project_stage_imports_own_templates_and_inherits_only_blank_fields(
     assert values_for(new_case)["project.name"] == project["name"]
     assert values_for(new_case)["project.code"] == project["code"]
     assert [template["name"] for template in new_case["templates"]] == list(
-        main.builtin.ACCEPTANCE_NAMES
+        main.builtin.ACCEPTANCE_NAMES,
     )
     root = next(main.ROOT.iterdir())
     stored = main.load(root, new_case["id"])
-    assert stored["stage_id"] == "acceptance" and stored["project_id"] == project["id"]
+    assert (
+        stored["stage_id"] == "acceptance"
+        and stored["project_id"] == project["id"]
+    )
 
 
 def test_stage_completion_requires_confirmation_and_tracks_upstream_rework(
@@ -1172,7 +1218,9 @@ def test_stage_completion_requires_confirmation_and_tracks_upstream_rework(
     }
     assert client.put(base + "/stages/plan", json=body).status_code == 422
     body["confirmed"] = True
-    assert "必备" in client.put(base + "/stages/plan", json=body).json()["detail"]
+    assert (
+        "必备" in client.put(base + "/stages/plan", json=body).json()["detail"]
+    )
     project = client.put(
         path,
         json={
@@ -1291,10 +1339,15 @@ def test_project_attachments_retain_versions_scope_and_real_archive(client):
         assert set(
             archive.read(n) for n in archive.namelist() if n.endswith(".pdf")
         ) == set(payloads)
-    assert len(client.get(base).json()["stages"][0]["materials"][0]["files"]) == 2
+    assert (
+        len(client.get(base).json()["stages"][0]["materials"][0]["files"]) == 2
+    )
 
 
-def test_plan_approval_pdf_compares_and_applies_selected_changes(client, monkeypatch):
+def test_plan_approval_pdf_compares_and_applies_selected_changes(
+    client,
+    monkeypatch,
+):
     project, case = project_case(client)
     base = f"/api/document-forms/projects/{project['id']}"
     case = client.post(
@@ -1368,7 +1421,10 @@ def test_plan_approval_pdf_compares_and_applies_selected_changes(client, monkeyp
     assert not fields["project.name"]["changed"]
     assert not fields["plan.budget_wan"]["changed"]
     assert fields["research.contents"]["changed"]
-    assert client.get(f"/api/document-forms/cases/{case['id']}").status_code == 200
+    assert (
+        client.get(f"/api/document-forms/cases/{case['id']}").status_code
+        == 200
+    )
 
 
 def test_project_generated_batch_changes_prompt_downstream_review(
@@ -1410,7 +1466,8 @@ def test_project_generated_batch_changes_prompt_downstream_review(
     ).json()
     batch_id = generated["generations"][0]["id"]
     original = client.get(
-        f"/api/document-forms/cases/{case['id']}" f"/outputs/{batch_id}/全部文书.zip",
+        f"/api/document-forms/cases/{case['id']}"
+        f"/outputs/{batch_id}/全部文书.zip",
     ).content
     bundle = client.get(base + "/bundle")
     with ZipFile(io.BytesIO(bundle.content)) as archive:
@@ -1454,11 +1511,17 @@ def test_bundled_templates_are_portable_blank_and_generate_nine_documents(
 ):
     blank = bundled_workbook(client)
     data = engine.read_excel(blank)
-    assert len(data["fields"]) == 28 and all(not f["value"] for f in data["fields"])
-    assert all(
-        not r["name"] and not r["start"] and not r["end"] for r in data["recipients"]
+    assert len(data["fields"]) == 28 and all(
+        not f["value"] for f in data["fields"]
     )
-    assert data["recipients"][1]["follow_start"] and data["recipients"][2]["follow_end"]
+    assert all(
+        not r["name"] and not r["start"] and not r["end"]
+        for r in data["recipients"]
+    )
+    assert (
+        data["recipients"][1]["follow_start"]
+        and data["recipients"][2]["follow_end"]
+    )
     response = client.post(
         "/api/document-forms/cases",
         files={"workbook": ("配套.xlsx", bundled_workbook(client, True))},
@@ -1548,7 +1611,10 @@ def test_corrupt_bundled_assets_are_rejected_without_partial_templates(
         files={"workbook": ("配套.xlsx", workbook)},
     )
     assert response.status_code == 200
-    assert response.json()["templates"] == [] and response.json()["template_notice"]
+    assert (
+        response.json()["templates"] == []
+        and response.json()["template_notice"]
+    )
     with pytest.raises(ValueError, match="校验失败"):
         main.builtin.load_templates()
 
@@ -1668,7 +1734,9 @@ def test_shared_score_tables_and_separate_quotes_follow_current_units(
             ),
         )
         if file["name"].startswith("03_"):
-            assert file["recipient"] in "\n".join(p.text for p in doc.paragraphs)
+            assert file["recipient"] in "\n".join(
+                p.text for p in doc.paragraphs
+            )
             assert all(
                 not cell.text
                 for row in doc.tables[0].rows[1:]
@@ -1677,14 +1745,18 @@ def test_shared_score_tables_and_separate_quotes_follow_current_units(
         elif file["name"].startswith("04_"):
             assert file["print_copies"] == 7
             assert len(doc.tables) == (unit_count + 2) // 3
-            names = [c.text for t in doc.tables for c in t.rows[0].cells if c.text]
+            names = [
+                c.text for t in doc.tables for c in t.rows[0].cells if c.text
+            ]
             assert names == [r["name"] for r in recipients]
         elif file["name"].startswith("05_"):
             assert len(doc.tables[0].rows) == unit_count + 1
             assert [r.cells[1].text for r in doc.tables[0].rows[1:]] == [
                 r["name"] for r in recipients
             ]
-            assert all(not c.text for r in doc.tables[0].rows[1:] for c in r.cells[2:])
+            assert all(
+                not c.text for r in doc.tables[0].rows[1:] for c in r.cells[2:]
+            )
     # Reopening or renaming templates must not rewrite prior batch names/bytes.
     reopened = client.get(base).json()
     assert reopened["generations"][0] == generation
@@ -1767,11 +1839,14 @@ def test_office_print_preview_all_pages_scope_cache_and_failure(
         "office_cli",
         lambda: (_ for _ in ()).throw(ValueError("unavailable")),
     )
-    assert client.get(path).content == png  # Already rendered pages stay usable.
+    assert (
+        client.get(path).content == png
+    )  # Already rendered pages stay usable.
     assert len(calls) == 2
     assert client.get(path, headers={"X-Agent-Id": "other"}).status_code == 404
     assert (
-        client.get(base + f"/print/{generation['id']}/填写数据.xlsx").status_code == 404
+        client.get(base + f"/print/{generation['id']}/填写数据.xlsx").status_code
+        == 404
     )
     second = generation["files"][1]
     failure = client.get(base + f"/print/{generation['id']}/{second['name']}")
@@ -1809,7 +1884,10 @@ def test_print_preview_per_page_cache_and_bounds(client, sources, monkeypatch):
         if "stats" in args:
             return types.SimpleNamespace(returncode=0, stdout=b'{"pages":2}')
         assert args[args.index("--page") + 1] in ("1", "2")
-        assert args[args.index("--render") + 1] == "native" and "--grid" not in args
+        assert (
+            args[args.index("--render") + 1] == "native"
+            and "--grid" not in args
+        )
         Path(args[-1]).write_bytes(png)
         return types.SimpleNamespace(returncode=0)
 
@@ -1847,7 +1925,8 @@ def test_real_excel_form_review_three_invitations_and_office_output(
     case = create(client, sources)
     base = f"/api/document-forms/cases/{case['id']}"
     assert (
-        next(f["value"] for f in case["fields"] if f["key"] == "project.code") == "0012"
+        next(f["value"] for f in case["fields"] if f["key"] == "project.code")
+        == "0012"
     )
     assert len(case["recipients"]) == 3
     result = client.post(base + "/review", json={"revision": case["revision"]})
@@ -1955,7 +2034,8 @@ def test_missing_dates_conflicts_and_review_invalidation(client, sources):
     assert not checked["can_generate"]
     assert any(r["status"] == "error" for r in checked["checks"])
     assert any(
-        r["label"] == "联系人" and r["status"] == "missing" for r in checked["checks"]
+        r["label"] == "联系人" and r["status"] == "missing"
+        for r in checked["checks"]
     )
     assert (
         client.put(
@@ -1974,7 +2054,10 @@ def test_missing_dates_conflicts_and_review_invalidation(client, sources):
 def test_scope_isolation_and_paths(client, sources):
     case = create(client, sources)
     base = f"/api/document-forms/cases/{case['id']}"
-    assert client.get(base, headers={"X-Agent-Id": "other-agent"}).status_code == 404
+    assert (
+        client.get(base, headers={"X-Agent-Id": "other-agent"}).status_code
+        == 404
+    )
     assert (
         client.get(
             "/api/document-forms/cases",
@@ -1982,7 +2065,9 @@ def test_scope_isolation_and_paths(client, sources):
         ).json()
         == []
     )
-    assert client.get("/api/document-forms/cases/not-a-case").status_code == 404
+    assert (
+        client.get("/api/document-forms/cases/not-a-case").status_code == 404
+    )
     assert client.get(base + "/outputs/invalid/draft.json").status_code == 404
 
 
@@ -2028,7 +2113,8 @@ def test_duplicate_variables_formulas_custom_rules_and_excel_roundtrip(
         ],
     )
     assert any(
-        r["label"] == "严格顺序" and r["status"] == "error" for r in engine.checks(case)
+        r["label"] == "严格顺序" and r["status"] == "error"
+        for r in engine.checks(case)
     )
 
 
@@ -2104,7 +2190,9 @@ def test_multiline_values_keep_each_paragraph_indent_font_and_spacing():
         ]
         for p in paragraphs:
             assert p.paragraph_format.first_line_indent == Pt(24)
-            assert p._p.pPr.find(qn("w:ind")).get(qn("w:firstLineChars")) == "200"
+            assert (
+                p._p.pPr.find(qn("w:ind")).get(qn("w:firstLineChars")) == "200"
+            )
             assert p.paragraph_format.line_spacing == 1.5
             assert p.paragraph_format.space_after == Pt(6)
             assert p.runs[0].font.name == "Times New Roman"
@@ -2147,7 +2235,11 @@ def test_chinese_dates_and_excel_date_controls_round_trip(sources):
         == "2026-11-01"
     )
     assert (
-        next(f["value"] for f in data["fields"] if f["key"] == "events.qa_deadline")
+        next(
+            f["value"]
+            for f in data["fields"]
+            if f["key"] == "events.qa_deadline"
+        )
         == "2026-11-05T12:00"
     )
     assert data["recipients"][0]["start"] == "2026-11-02T09:00"
@@ -2181,7 +2273,9 @@ def test_corrupt_workbook_and_unknown_date_values_preserve_existing_case(
     )
     assert response.status_code == 422
     assert (
-        client.get(f"/api/document-forms/cases/{case['id']}").json()["revision"]
+        client.get(f"/api/document-forms/cases/{case['id']}").json()[
+            "revision"
+        ]
         == case["revision"]
     )
     book = load_workbook(io.BytesIO(sources["变量管理表.xlsx"]))
@@ -2373,7 +2467,8 @@ def test_reported_workbook_layout_review_edit_generate_and_roundtrip(client):
     for name, paragraph in [
         (
             "谈判文件.docx",
-            "{{ project.name }} {{ events.invitation_time }} " "{{ dates.issue }}",
+            "{{ project.name }} {{ events.invitation_time }} "
+            "{{ dates.issue }}",
         ),
         (
             "邀请函.docx",
@@ -2447,7 +2542,9 @@ def test_reported_workbook_layout_review_edit_generate_and_roundtrip(client):
         if item["recipient"] == "共用文件":
             assert "2026年7月2日上午09:00至下午17:00" in paragraph
         else:
-            recipient = next(r for r in recipients if r["name"] == item["recipient"])
+            recipient = next(
+                r for r in recipients if r["name"] == item["recipient"]
+            )
             assert engine.document_date(recipient["start"]) in paragraph
         assert "2026年7月1日" in paragraph
     exported = engine.read_excel(client.get(base + "/excel").content)
@@ -2532,7 +2629,9 @@ def test_recipients_stay_in_overall_window_and_response_precedes_negotiation():
             field["value"] = "2026-07-05T09:00"
     results = engine.checks(dict(data, templates=[]))
     assert (
-        sum(r["status"] == "error" and "处于总体发放期" in r["label"] for r in results)
+        sum(
+            r["status"] == "error" and "处于总体发放期" in r["label"] for r in results
+        )
         == 2
     )
     assert any(
@@ -2767,7 +2866,9 @@ def test_chinese_dates_reach_body_tables_headers_footers_and_keep_run_format():
         0,
     ).text = "{{ submission.deadline }}"
     document.sections[0].header.paragraphs[0].text = "{{ dates.issue }}"
-    document.sections[0].footer.paragraphs[0].text = "{{ events.negotiation_time }}"
+    document.sections[0].footer.paragraphs[
+        0
+    ].text = "{{ events.negotiation_time }}"
     stream = io.BytesIO()
     document.save(stream)
     fields = [
@@ -2787,11 +2888,15 @@ def test_chinese_dates_reach_body_tables_headers_footers_and_keep_run_format():
         io.BytesIO(engine.render_template(stream.getvalue(), fields)),
     )
     assert output.paragraphs[0].text == "2026年9月30日"
-    assert output.paragraphs[0].runs[0].bold and output.paragraphs[0].runs[0].underline
+    assert (
+        output.paragraphs[0].runs[0].bold
+        and output.paragraphs[0].runs[0].underline
+    )
     assert output.tables[0].cell(0, 0).text == "2026年10月16日下午17:30"
     assert output.sections[0].header.paragraphs[0].text == "2026年9月30日"
     assert (
-        output.sections[0].footer.paragraphs[0].text == "2026年10月22日下午14:30至17:30"
+        output.sections[0].footer.paragraphs[0].text
+        == "2026年10月22日下午14:30至17:30"
     )
 
 
@@ -2815,8 +2920,55 @@ def test_review_and_excel_share_chinese_dates_and_preserve_source(
     exported = client.get(base + "/excel").content
     workbook = load_workbook(io.BytesIO(exported))
     assert workbook["变量配置"].cell(1, 7).value == "文书显示"
-    assert workbook["受邀单位"].cell(2, 6).value == case["recipient_document_times"][0]
+    assert (
+        workbook["受邀单位"].cell(2, 6).value
+        == case["recipient_document_times"][0]
+    )
     assert engine.read_excel(exported)["fields"] == case["fields"]
+
+
+def _assert_selection_outputs(client, route, batch, vals):
+    """Inspect actual generated Word/Excel fields and layout contracts."""
+    outputs = {
+        f["extension"]: client.get(
+            route + "/outputs/" + batch["id"] + "/" + f["name"],
+        ).content
+        for f in batch["files"]
+    }
+    word = Document(io.BytesIO(outputs["docx"]))
+    assert word.paragraphs[3].text == "时间：2026年8月31日"
+    assert word.paragraphs[9].text == vals["selection.reliability"]
+    assert word.paragraphs[11].text == vals["selection.overview"]
+    for i in range(1, 6):
+        assert (
+            word.tables[0].cell(i, 0).text == vals[f"selection.member{i}_name"]
+        )
+        assert word.tables[0].cell(i, 4).text == ""
+    sheet = load_workbook(io.BytesIO(outputs["xlsx"])).worksheets[0]
+    assert sheet["C6"].value == 200 and sheet["C8"].value == 45
+    assert sheet["C3"].value == 2026 and sheet["C12"].value == "010-12345678"
+    assert sheet["C13"].value == "候选单位1、候选单位2、候选单位3"
+    assert sheet["C15"].value == vals["selection.overview"]
+    assert sheet["C9"].value == vals["selection.funding_source"]
+    assert (
+        next(
+            d.formula1
+            for d in sheet.data_validations.dataValidation
+            if str(d.sqref) == "C9"
+        )
+        == '"股份,集团"'
+    )
+    assert sheet.max_column == 3
+    assert sheet["C5"].alignment.wrap_text
+    original = load_workbook(
+        io.BytesIO(
+            main.builtin.load_templates("selection")[
+                main.builtin.SELECTION_NAMES[1]
+            ],
+        ),
+    ).worksheets[0]
+    assert str(sheet.merged_cells) == str(original.merged_cells)
+    assert sheet.print_area == original.print_area
 
 
 def test_selection_templates_generate_opinion_signature_sheet_and_upload_form(
@@ -2838,7 +2990,7 @@ def test_selection_templates_generate_opinion_signature_sheet_and_upload_form(
             "contact.name": "张工",
             "contact.office_phone": "010-12345678",
             "funding.wbs": "00123",
-        }
+        },
     )
     project = client.put(
         base,
@@ -2855,7 +3007,9 @@ def test_selection_templates_generate_opinion_signature_sheet_and_upload_form(
         json={"revision": project["revision"], "stage_id": "selection"},
     ).json()
     assert case["selection_schema"] == 1 and not case["recipients"]
-    assert [t["name"] for t in case["templates"]] == list(main.builtin.SELECTION_NAMES)
+    assert [t["name"] for t in case["templates"]] == list(
+        main.builtin.SELECTION_NAMES,
+    )
     vals = values_for(case)
     for field in case["fields"]:
         if field["key"].startswith("selection."):
@@ -2870,7 +3024,7 @@ def test_selection_templates_generate_opinion_signature_sheet_and_upload_form(
             "selection.relationship": "否",
             "selection.plan_type": "委托研发/技术服务计划",
             "selection.funding_source": "股份",
-        }
+        },
     )
     for i in range(1, 4):
         vals[f"selection.partner{i}_name"] = f"候选单位{i}"
@@ -2888,7 +3042,10 @@ def test_selection_templates_generate_opinion_signature_sheet_and_upload_form(
         ).json()
 
     case = save(vals)
-    review = client.post(route + "/review", json={"revision": case["revision"]}).json()
+    review = client.post(
+        route + "/review",
+        json={"revision": case["revision"]},
+    ).json()
     assert review["can_generate"], review
     assert (
         client.post(
@@ -2917,42 +3074,7 @@ def test_selection_templates_generate_opinion_signature_sheet_and_upload_form(
         "01_论证意见及签字表_论证测试项目.docx",
         "02_非招标方案填报_论证测试项目.xlsx",
     ]
-    outputs = {
-        f["extension"]: client.get(
-            route + "/outputs/" + batch["id"] + "/" + f["name"]
-        ).content
-        for f in batch["files"]
-    }
-    word = Document(io.BytesIO(outputs["docx"]))
-    assert word.paragraphs[3].text == "时间：2026年8月31日"
-    assert word.paragraphs[9].text == vals["selection.reliability"]
-    assert word.paragraphs[11].text == vals["selection.overview"]
-    for i in range(1, 6):
-        assert word.tables[0].cell(i, 0).text == vals[f"selection.member{i}_name"]
-        assert word.tables[0].cell(i, 4).text == ""
-    sheet = load_workbook(io.BytesIO(outputs["xlsx"])).worksheets[0]
-    assert sheet["C6"].value == 200 and sheet["C8"].value == 45
-    assert sheet["C3"].value == 2026 and sheet["C12"].value == "010-12345678"
-    assert sheet["C13"].value == "候选单位1、候选单位2、候选单位3"
-    assert sheet["C15"].value == vals["selection.overview"]
-    assert sheet["C9"].value == vals["selection.funding_source"]
-    assert (
-        next(
-            d.formula1
-            for d in sheet.data_validations.dataValidation
-            if str(d.sqref) == "C9"
-        )
-        == '"股份,集团"'
-    )
-    assert sheet.max_column == 3
-    assert sheet["C5"].alignment.wrap_text
-    original = load_workbook(
-        io.BytesIO(
-            main.builtin.load_templates("selection")[main.builtin.SELECTION_NAMES[1]]
-        )
-    ).worksheets[0]
-    assert str(sheet.merged_cells) == str(original.merged_cells)
-    assert sheet.print_area == original.print_area
+    _assert_selection_outputs(client, route, batch, vals)
     project = client.get(base).json()
     plan = client.post(
         base + "/form",
@@ -2972,10 +3094,13 @@ def test_selection_templates_generate_opinion_signature_sheet_and_upload_form(
         {
             "selection.overview": "长" * 501,
             "selection.year": "26",
-        }
+        },
     )
     case = save(invalid)
-    blocked = client.post(route + "/review", json={"revision": case["revision"]}).json()
+    blocked = client.post(
+        route + "/review",
+        json={"revision": case["revision"]},
+    ).json()
     assert not blocked["can_generate"]
     assert {
         "selection.overview",
@@ -2996,7 +3121,9 @@ def test_selection_controls_bind_budget_to_profile_and_reject_invalid_choices(
     profile["budget.ceiling_number"] = "450,123.45"
     project = client.put(
         base,
-        json={key: project[key] for key in ("revision", "name", "code", "owner")}
+        json={
+            key: project[key] for key in ("revision", "name", "code", "owner")
+        }
         | {"values": profile},
     ).json()
     case = client.post(
@@ -3012,7 +3139,8 @@ def test_selection_controls_bind_budget_to_profile_and_reject_invalid_choices(
         fields["selection.plan_type"]["options"]
         == main.builtin.SELECTION_CHOICES["selection.plan_type"]
     )
-    # Migrated legacy singleton forms may only be linked from the project index.
+    # Migrated legacy singleton forms may only be linked from the project
+    # index.
     draft_path = next(tmp_path.rglob("draft.json"))
     legacy = json.loads(draft_path.read_text(encoding="utf-8"))
     legacy.pop("project_id")
@@ -3021,13 +3149,16 @@ def test_selection_controls_bind_budget_to_profile_and_reject_invalid_choices(
         field.pop("read_only", None)
         if field["key"] == "selection.budget_wan":
             field["value"] = "999"
-    draft_path.write_text(json.dumps(legacy, ensure_ascii=False), encoding="utf-8")
+    draft_path.write_text(
+        json.dumps(legacy, ensure_ascii=False),
+        encoding="utf-8",
+    )
     case = client.get(route).json()
     assert case["project_id"] == project["id"]
     assert values_for(case)["selection.budget_wan"] == "45.012345"
-    assert next(f for f in case["fields"] if f["key"] == "selection.budget_wan")[
-        "read_only"
-    ]
+    assert next(
+        f for f in case["fields"] if f["key"] == "selection.budget_wan"
+    )["read_only"]
     assert list(tmp_path.rglob("*_before_selection_controls_*.json"))
     values = values_for(case)
     values["selection.budget_wan"] = "1"
@@ -3041,10 +3172,13 @@ def test_selection_controls_bind_budget_to_profile_and_reject_invalid_choices(
         },
     )
     assert rejected.status_code == 422
-    assert values_for(client.get(route).json())["selection.budget_wan"] == "45.012345"
+    assert (
+        values_for(client.get(route).json())["selection.budget_wan"]
+        == "45.012345"
+    )
     values = values_for(case)
     values.update(
-        {"selection.plan_type": "任意计划", "selection.funding_source": "瑞德"}
+        {"selection.plan_type": "任意计划", "selection.funding_source": "瑞德"},
     )
     case = client.put(
         route,
@@ -3055,7 +3189,10 @@ def test_selection_controls_bind_budget_to_profile_and_reject_invalid_choices(
             "recipients": [],
         },
     ).json()
-    review = client.post(route + "/review", json={"revision": case["revision"]}).json()
+    review = client.post(
+        route + "/review",
+        json={"revision": case["revision"]},
+    ).json()
     assert {"selection.plan_type", "selection.funding_source"} <= {
         row["field"] for row in review["checks"] if row["status"] == "error"
     }
@@ -3063,7 +3200,9 @@ def test_selection_controls_bind_budget_to_profile_and_reject_invalid_choices(
     profile["budget.ceiling_number"] = "460000"
     client.put(
         base,
-        json={key: project[key] for key in ("revision", "name", "code", "owner")}
+        json={
+            key: project[key] for key in ("revision", "name", "code", "owner")
+        }
         | {"values": profile},
     ).raise_for_status()
     refreshed = client.get(route).json()

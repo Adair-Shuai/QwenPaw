@@ -33,9 +33,10 @@ export function extractPromptFromSkills(skills: SkillSpec[]): PromptItem[] {
     if (!desc) continue;
 
     // Use skill name as the short label (fall back to truncated description)
-    const label = (skill.name || desc).length > 20
-      ? (skill.name || desc).substring(0, 18) + "…"
-      : (skill.name || desc);
+    const label =
+      (skill.name || desc).length > 20
+        ? (skill.name || desc).substring(0, 18) + "…"
+        : skill.name || desc;
 
     // Transform description into a user-facing prompt
     let prompt = desc;
@@ -203,9 +204,12 @@ export async function deleteSkillForAgent(
   agentId: string,
   skillName: string,
 ): Promise<void> {
-  await apiFetch(agentSkillsPath(agentId, `/${encodeURIComponent(skillName)}`), {
-    method: "DELETE",
-  });
+  await apiFetch(
+    agentSkillsPath(agentId, `/${encodeURIComponent(skillName)}`),
+    {
+      method: "DELETE",
+    },
+  );
 }
 
 // ─── Batch Skill Management Helpers ──────────────────────────────────────────
@@ -229,11 +233,14 @@ export async function batchDisableSkillsForAgent(
   agentId: string,
   skillNames: string[],
 ): Promise<BatchSkillResult> {
-  return apiFetch<BatchSkillResult>(agentSkillsPath(agentId, "/batch-disable"), {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(skillNames),
-  });
+  return apiFetch<BatchSkillResult>(
+    agentSkillsPath(agentId, "/batch-disable"),
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(skillNames),
+    },
+  );
 }
 
 export async function batchDeleteSkillsForAgent(
@@ -250,7 +257,9 @@ export async function batchDeleteSkillsForAgent(
 // ─── MCP Management Helpers ──────────────────────────────────────────────────
 
 /** List all MCP clients for a specific agent. */
-export async function fetchAgentMCPClients(agentId: string): Promise<MCPClientInfo[]> {
+export async function fetchAgentMCPClients(
+  agentId: string,
+): Promise<MCPClientInfo[]> {
   const data = await apiFetch<MCPClientInfo[]>("/mcp", {
     headers: { "X-Agent-Id": agentId },
   });
@@ -452,9 +461,7 @@ export async function updateRunningConfig(
 
 // ─── Language / Timezone Helpers (agent-scoped) ───────────────────────────────
 
-export async function fetchAgentLanguage(
-  agentId: string,
-): Promise<string> {
+export async function fetchAgentLanguage(agentId: string): Promise<string> {
   const data = await apiFetch<{ language: string }>("/workspace/language", {
     headers: { "X-Agent-Id": agentId },
   });
@@ -485,7 +492,9 @@ export async function updateUserTimezone(timezone: string): Promise<void> {
   });
 }
 
-export async function fetchSystemPromptFiles(agentId: string): Promise<string[]> {
+export async function fetchSystemPromptFiles(
+  agentId: string,
+): Promise<string[]> {
   const data = await apiFetch<string[]>("/workspace/system-prompt-files", {
     headers: { "X-Agent-Id": agentId },
   });

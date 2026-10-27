@@ -67,9 +67,7 @@ export function CurrentAgentSkillsTab({
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeSkill, setActiveSkill] = useState<SkillSpec | null>(null);
   const [batchMode, setBatchMode] = useState(false);
-  const [selectedSkills, setSelectedSkills] = useState<Set<string>>(
-    new Set(),
-  );
+  const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set());
   const [batchLoading, setBatchLoading] = useState(false);
   const [hoveredSkill, setHoveredSkill] = useState<string | null>(null);
   const [actionLoading, setActionLoading] = useState(false);
@@ -104,8 +102,7 @@ export function CurrentAgentSkillsTab({
 
   const clearSelection = () => setSelectedSkills(new Set());
 
-  const selectAll = () =>
-    setSelectedSkills(new Set(skills.map((s) => s.name)));
+  const selectAll = () => setSelectedSkills(new Set(skills.map((s) => s.name)));
 
   const toggleBatchMode = () => {
     if (batchMode) {
@@ -270,7 +267,14 @@ export function CurrentAgentSkillsTab({
       ),
       React.createElement(
         "div",
-        { style: { display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" } },
+        {
+          style: {
+            display: "flex",
+            gap: 8,
+            alignItems: "center",
+            flexWrap: "wrap",
+          },
+        },
         batchMode
           ? React.createElement(
               React.Fragment,
@@ -364,7 +368,10 @@ export function CurrentAgentSkillsTab({
                   icon: ReloadOutlined
                     ? React.createElement(ReloadOutlined)
                     : undefined,
-                  onClick: () => { clearApiCache(); loadSkills(); },
+                  onClick: () => {
+                    clearApiCache();
+                    loadSkills();
+                  },
                 },
                 "刷新",
               ),
@@ -378,209 +385,207 @@ export function CurrentAgentSkillsTab({
           React.createElement(Spin, { size: "large" }),
         )
       : skills.length === 0
-        ? React.createElement(Empty, {
-            description: "当前智能体未加载任何技能",
-          })
-        : React.createElement(
-            Row,
-            { gutter: [12, 12] },
-            ...skills.map((skill) =>
+      ? React.createElement(Empty, {
+          description: "当前智能体未加载任何技能",
+        })
+      : React.createElement(
+          Row,
+          { gutter: [12, 12] },
+          ...skills.map((skill) =>
+            React.createElement(
+              Col,
+              { key: skill.name, xs: 24, sm: 12, md: 8, lg: 6 },
               React.createElement(
-                Col,
-                { key: skill.name, xs: 24, sm: 12, md: 8, lg: 6 },
-                React.createElement(
-                  Card,
-                  {
-                    hoverable: true,
-                    size: "small",
-                    style: {
-                      cursor: batchMode ? "default" : "pointer",
-                      height: "100%",
-                      position: "relative",
-                      borderColor:
-                        batchMode && selectedSkills.has(skill.name)
-                          ? "#0072f5"
-                          : undefined,
-                      borderWidth:
-                        batchMode && selectedSkills.has(skill.name)
-                          ? 2
-                          : 1,
-                    },
-                    onClick: () => {
-                      if (batchMode) {
-                        toggleSelect(skill.name);
-                      } else {
-                        setActiveSkill(skill);
-                        setDrawerOpen(true);
-                      }
-                    },
-                    onMouseEnter: () => {
-                      if (!batchMode) setHoveredSkill(skill.name);
-                    },
-                    onMouseLeave: () => setHoveredSkill(null),
+                Card,
+                {
+                  hoverable: true,
+                  size: "small",
+                  style: {
+                    cursor: batchMode ? "default" : "pointer",
+                    height: "100%",
+                    position: "relative",
+                    borderColor:
+                      batchMode && selectedSkills.has(skill.name)
+                        ? "#0072f5"
+                        : undefined,
+                    borderWidth:
+                      batchMode && selectedSkills.has(skill.name) ? 2 : 1,
                   },
-                  batchMode
+                  onClick: () => {
+                    if (batchMode) {
+                      toggleSelect(skill.name);
+                    } else {
+                      setActiveSkill(skill);
+                      setDrawerOpen(true);
+                    }
+                  },
+                  onMouseEnter: () => {
+                    if (!batchMode) setHoveredSkill(skill.name);
+                  },
+                  onMouseLeave: () => setHoveredSkill(null),
+                },
+                batchMode
+                  ? React.createElement(
+                      "div",
+                      {
+                        style: {
+                          position: "absolute",
+                          top: 8,
+                          right: 8,
+                          zIndex: 1,
+                        },
+                        onClick: (e: any) => {
+                          e.stopPropagation();
+                          toggleSelect(skill.name);
+                        },
+                      },
+                      React.createElement(Checkbox, {
+                        checked: selectedSkills.has(skill.name),
+                      }),
+                    )
+                  : null,
+                React.createElement(
+                  "div",
+                  {
+                    style: {
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                      marginBottom: 8,
+                    },
+                  },
+                  skill.emoji
                     ? React.createElement(
-                        "div",
+                        "span",
+                        { style: { fontSize: 18 } },
+                        skill.emoji,
+                      )
+                    : React.createElement(
+                        "span",
+                        { style: { fontSize: 18 } },
+                        "⚡",
+                      ),
+                  React.createElement(
+                    Text,
+                    {
+                      strong: true,
+                      style: {
+                        fontSize: 13,
+                        flex: 1,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      },
+                    },
+                    skill.name,
+                  ),
+                  skill.enabled === false
+                    ? React.createElement(
+                        Tag,
+                        { color: "default", style: { fontSize: 10 } },
+                        "已禁用",
+                      )
+                    : React.createElement(
+                        Tag,
+                        { color: "green", style: { fontSize: 10 } },
+                        "已启用",
+                      ),
+                ),
+                skill.description
+                  ? React.createElement(
+                      Paragraph,
+                      {
+                        type: "secondary",
+                        style: { fontSize: 11, margin: 0, lineHeight: 1.4 },
+                        ellipsis: { rows: 2 },
+                      },
+                      skill.description,
+                    )
+                  : null,
+                React.createElement(
+                  "div",
+                  {
+                    style: {
+                      marginTop: 8,
+                      display: "flex",
+                      gap: 4,
+                      flexWrap: "wrap",
+                    },
+                  },
+                  skill.version_text
+                    ? React.createElement(
+                        Tag,
+                        { style: { fontSize: 10 } },
+                        `v${skill.version_text}`,
+                      )
+                    : null,
+                  ...(skill.tags || [])
+                    .slice(0, 3)
+                    .map((tag, i) =>
+                      React.createElement(
+                        Tag,
+                        { key: i, color: "blue", style: { fontSize: 10 } },
+                        tag,
+                      ),
+                    ),
+                ),
+                // Hover action footer (not in batch mode)
+                !batchMode && hoveredSkill === skill.name
+                  ? React.createElement(
+                      "div",
+                      {
+                        style: {
+                          marginTop: 8,
+                          paddingTop: 8,
+                          borderTop: "1px solid #f0f0f0",
+                          display: "flex",
+                          gap: 8,
+                          justifyContent: "flex-end",
+                        },
+                      },
+                      React.createElement(
+                        Button,
                         {
-                          style: {
-                            position: "absolute",
-                            top: 8,
-                            right: 8,
-                            zIndex: 1,
-                          },
+                          size: "small",
+                          type: "default",
+                          icon:
+                            skill.enabled === false
+                              ? EyeOutlined
+                                ? React.createElement(EyeOutlined)
+                                : undefined
+                              : EyeInvisibleOutlined
+                              ? React.createElement(EyeInvisibleOutlined)
+                              : undefined,
+                          disabled: actionLoading,
                           onClick: (e: any) => {
                             e.stopPropagation();
-                            toggleSelect(skill.name);
+                            handleToggleEnabled(skill);
                           },
                         },
-                        React.createElement(Checkbox, {
-                          checked: selectedSkills.has(skill.name),
-                        }),
-                      )
-                    : null,
-                  React.createElement(
-                    "div",
-                    {
-                      style: {
-                        display: "flex",
-                        alignItems: "center",
-                        gap: 8,
-                        marginBottom: 8,
-                      },
-                    },
-                    skill.emoji
-                      ? React.createElement(
-                          "span",
-                          { style: { fontSize: 18 } },
-                          skill.emoji,
-                        )
-                      : React.createElement(
-                          "span",
-                          { style: { fontSize: 18 } },
-                          "⚡",
-                        ),
-                    React.createElement(
-                      Text,
-                      {
-                        strong: true,
-                        style: {
-                          fontSize: 13,
-                          flex: 1,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        },
-                      },
-                      skill.name,
-                    ),
-                    skill.enabled === false
-                      ? React.createElement(
-                          Tag,
-                          { color: "default", style: { fontSize: 10 } },
-                          "已禁用",
-                        )
-                      : React.createElement(
-                          Tag,
-                          { color: "green", style: { fontSize: 10 } },
-                          "已启用",
-                        ),
-                  ),
-                  skill.description
-                    ? React.createElement(
-                        Paragraph,
-                        {
-                          type: "secondary",
-                          style: { fontSize: 11, margin: 0, lineHeight: 1.4 },
-                          ellipsis: { rows: 2 },
-                        },
-                        skill.description,
-                      )
-                    : null,
-                  React.createElement(
-                    "div",
-                    {
-                      style: {
-                        marginTop: 8,
-                        display: "flex",
-                        gap: 4,
-                        flexWrap: "wrap",
-                      },
-                    },
-                    skill.version_text
-                      ? React.createElement(
-                          Tag,
-                          { style: { fontSize: 10 } },
-                          `v${skill.version_text}`,
-                        )
-                      : null,
-                    ...(skill.tags || [])
-                      .slice(0, 3)
-                      .map((tag, i) =>
-                        React.createElement(
-                          Tag,
-                          { key: i, color: "blue", style: { fontSize: 10 } },
-                          tag,
-                        ),
+                        skill.enabled === false ? "启用" : "禁用",
                       ),
-                  ),
-                  // Hover action footer (not in batch mode)
-                  !batchMode && hoveredSkill === skill.name
-                    ? React.createElement(
-                        "div",
+                      React.createElement(
+                        Button,
                         {
-                          style: {
-                            marginTop: 8,
-                            paddingTop: 8,
-                            borderTop: "1px solid #f0f0f0",
-                            display: "flex",
-                            gap: 8,
-                            justifyContent: "flex-end",
+                          size: "small",
+                          danger: true,
+                          icon: DeleteOutlined
+                            ? React.createElement(DeleteOutlined)
+                            : undefined,
+                          disabled: actionLoading,
+                          onClick: (e: any) => {
+                            e.stopPropagation();
+                            handleDelete(skill);
                           },
                         },
-                        React.createElement(
-                          Button,
-                          {
-                            size: "small",
-                            type: "default",
-                            icon:
-                              skill.enabled === false
-                                ? EyeOutlined
-                                  ? React.createElement(EyeOutlined)
-                                  : undefined
-                                : EyeInvisibleOutlined
-                                  ? React.createElement(EyeInvisibleOutlined)
-                                  : undefined,
-                            disabled: actionLoading,
-                            onClick: (e: any) => {
-                              e.stopPropagation();
-                              handleToggleEnabled(skill);
-                            },
-                          },
-                          skill.enabled === false ? "启用" : "禁用",
-                        ),
-                        React.createElement(
-                          Button,
-                          {
-                            size: "small",
-                            danger: true,
-                            icon: DeleteOutlined
-                              ? React.createElement(DeleteOutlined)
-                              : undefined,
-                            disabled: actionLoading,
-                            onClick: (e: any) => {
-                              e.stopPropagation();
-                              handleDelete(skill);
-                            },
-                          },
-                          "删除",
-                        ),
-                      )
-                    : null,
-                ),
+                        "删除",
+                      ),
+                    )
+                  : null,
               ),
             ),
           ),
+        ),
     // Skill detail drawer
     activeSkill
       ? React.createElement(

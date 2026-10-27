@@ -15,11 +15,11 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-from typing import Any, Dict, List, Optional
-
-logger = logging.getLogger(__name__)
+from typing import Any, Dict, List
 
 from qwenpaw.pawapp.task import SSEChannel
+
+logger = logging.getLogger(__name__)
 
 # 活跃订阅者（每个前端连接一个 channel）
 _subscribers: List[SSEChannel] = []
@@ -63,6 +63,7 @@ async def subscribe() -> SSEChannel:
 
 def unsubscribe(ch: SSEChannel) -> None:
     """移除订阅通道。"""
+
     # 调用方在 loop 中，直接操作（广播端已加锁，这里用 loop.call_soon 提交）
     async def _do():
         async with _subscribers_lock:

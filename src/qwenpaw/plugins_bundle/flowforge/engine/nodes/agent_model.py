@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from ..adapter import AgentDefinition, ModelPolicy
+from ..adapter import AgentDefinition
 
 
 def parse_agent_model_override(raw: Any) -> tuple[str, str] | None:
@@ -29,8 +29,14 @@ def parse_agent_model_override(raw: Any) -> tuple[str, str] | None:
     return provider, model
 
 
-def apply_model_override(definition: AgentDefinition, raw: Any) -> AgentDefinition:
-    """Return ``definition`` with an optional per-node model routing override."""
+def apply_model_override(
+    definition: AgentDefinition,
+    raw: Any,
+) -> AgentDefinition:
+    (
+        "Return ``definition`` with an optional per-node model "
+        "routing override."
+    )
     parsed = parse_agent_model_override(raw)
     if parsed is None:
         return definition

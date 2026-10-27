@@ -94,27 +94,38 @@ def load(root, case_id):
     case = json.loads(path.read_text(encoding="utf-8"))
     case["recipients"] = recipient_defaults(case["recipients"])
     normalize_templates(case)
-    if case.get("selection_schema") == 1 and case.get("stage_id") == "selection":
+    if (
+        case.get("selection_schema") == 1
+        and case.get("stage_id") == "selection"
+    ):
         project_id = case.get("project_id")
         if not project_id:
             linked = [
                 project
                 for project in project_store.all_projects(root)
                 if project.get("form_id") == case["id"]
-                or any(form["case_id"] == case["id"] for form in project["forms"])
+                or any(
+                    form["case_id"] == case["id"] for form in project["forms"]
+                )
             ]
             if len(linked) == 1:
                 project_id = linked[0]["id"]
                 case["project_id"] = project_id
         if project_id:
             project_store.prepare_selection(
-                root, project_store.load(root, project_id), case
+                root,
+                project_store.load(root, project_id),
+                case,
             )
     return case
 
 
 def template_extension(template):
-    return ".xlsx" if template.get("name", "").lower().endswith(".xlsx") else ".docx"
+    return (
+        ".xlsx"
+        if template.get("name", "").lower().endswith(".xlsx")
+        else ".docx"
+    )
 
 
 def normalize_templates(case):
@@ -136,7 +147,9 @@ def project_name(case):
 
 
 def output_name(case, template, index, recipient, recipient_index):
-    name = f"{index:02d}_{name_only(template['title'])[:28]}_{project_name(case)}"
+    name = (
+        f"{index:02d}_{name_only(template['title'])[:28]}_{project_name(case)}"
+    )
     if recipient:
         name += f"_{recipient_index:02d}_{name_only(recipient['name'])[:40]}"
     return name + template_extension(template)
@@ -159,7 +172,8 @@ def public(case):
         f["key"]: document_field_value(f) for f in case["fields"]
     }
     result["recipient_document_times"] = [
-        document_date(r["start"] + " 至 " + r["end"]) for r in case["recipients"]
+        document_date(r["start"] + " 至 " + r["end"])
+        for r in case["recipients"]
     ]
     return result
 
@@ -179,7 +193,9 @@ def upload(file, extension):
 
 
 def name_only(name):
-    return re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip(" .")[:100] or "文书"
+    return (
+        re.sub(r'[<>:"/\\|?*\x00-\x1f]', "_", name).strip(" .")[:100] or "文书"
+    )
 
 
 def office_cli():
@@ -297,9 +313,7 @@ def attach_default_templates(root, case):
             "selection",
             "acceptance",
         }:
-            case["template_notice"] = (
-                "本阶段尚未设置默认 文书模板，可添加统一模板后设为本阶段默认。"
-            )
+            case["template_notice"] = "本阶段尚未设置默认 文书模板，可添加统一模板后设为本阶段默认。"
             return 0
         field_keys = {field["key"] for field in case["fields"]}
         if (
@@ -312,9 +326,9 @@ def attach_default_templates(root, case):
             }
             <= field_keys
         ):
-            case["template_notice"] = (
-                "这份 Excel 字段不同，请添加对应的 文书模板，或使用应用配套 Excel。"
-            )
+            case[
+                "template_notice"
+            ] = "这份 Excel 字段不同，请添加对应的 文书模板，或使用应用配套 Excel。"
             return 0
         if case.get("stage_id", "negotiation") == "negotiation":
             case["fields"].extend(
@@ -343,7 +357,10 @@ def attach_default_templates(root, case):
         )
         if hashlib.sha256(content).hexdigest() != digest:
             raise ValueError("默认模板内容已改变，请重新选择原文件")
-        if case.get("stage_id") == "plan" and digest == builtin.LEGACY_PLAN_WORD:
+        if (
+            case.get("stage_id") == "plan"
+            and digest == builtin.LEGACY_PLAN_WORD
+        ):
             content = builtin.load_templates("plan")[builtin.PLAN_NAMES[0]]
             digest = hashlib.sha256(content).hexdigest()
         info = template_info(
@@ -431,7 +448,8 @@ class GenerateBody(ReviewBody):
 def list_cases(root=Depends(scope)):
     with _lock:
         records = [
-            json.loads(p.read_text(encoding="utf-8")) for p in root.glob("*/draft.json")
+            json.loads(p.read_text(encoding="utf-8"))
+            for p in root.glob("*/draft.json")
         ]
     return [
         {
@@ -532,11 +550,13 @@ def update_case(case_id: str, body: DraftBody, root=Depends(scope)):
         ):
             raise HTTPException(422, "填写字段与 Excel 配置不一致或内容过长")
         if any(
-            field.get("read_only") and body.values[field["key"]] != field["value"]
+            field.get("read_only")
+            and body.values[field["key"]] != field["value"]
             for field in case["fields"]
         ):
             raise HTTPException(
-                422, "引用资料不能在本阶段修改，请返回基础信息填报或对应的前序阶段修改"
+                422,
+                "引用资料不能在本阶段修改，请返回基础信息填报或对应的前序阶段修改",
             )
         case["name"] = body.name
         for field in case["fields"]:
@@ -619,7 +639,9 @@ def remove_template(
     with _lock:
         case = load(root, case_id)
         version(case, revision)
-        case["templates"] = [t for t in case["templates"] if t["id"] != template_id]
+        case["templates"] = [
+            t for t in case["templates"] if t["id"] != template_id
+        ]
         case["revision"] += 1
         case["review_token"] = None
         save(root, case)
@@ -754,7 +776,9 @@ def generate(case_id: str, body: GenerateBody, root=Depends(scope)):
                 + "_"
                 + bundle_label
                 + "材料_"
-                + datetime.now(timezone.utc).astimezone().strftime("%Y%m%d_%H%M%S")
+                + datetime.now(timezone.utc)
+                .astimezone()
+                .strftime("%Y%m%d_%H%M%S")
                 + "_"
                 + generation_id[:6]
                 + ".zip"
@@ -807,7 +831,9 @@ def print_preview(
             (g for g in case["generations"] if g["id"] == generation_id),
             None,
         )
-        if not generation or filename not in {f["name"] for f in generation["files"]}:
+        if not generation or filename not in {
+            f["name"] for f in generation["files"]
+        }:
             raise HTTPException(404, "文件不存在")
         source = folder(root, case_id) / "outputs" / generation_id / filename
         digest = hashlib.sha256(source.read_bytes()).hexdigest()
@@ -819,7 +845,8 @@ def print_preview(
     except (OSError, ValueError, KeyError, subprocess.TimeoutExpired) as exc:
         logger.warning("Office print preview unavailable: %s", exc)
         raise HTTPException(
-            503, "打印预览暂不可用，可切换文字预览或下载 Word 查看"
+            503,
+            "打印预览暂不可用，可切换文字预览或下载 Word 查看",
         ) from exc
     if pages:
         return JSONResponse(
@@ -844,7 +871,8 @@ def excel(case_id: str, root=Depends(scope)):
         return Response(
             export_excel(case),
             media_type=(
-                "application/vnd.openxmlformats-officedocument." "spreadsheetml.sheet"
+                "application/vnd.openxmlformats-officedocument."
+                "spreadsheetml.sheet"
             ),
             headers={
                 "Content-Disposition": "attachment; filename*=UTF-8''"
@@ -863,7 +891,9 @@ def starter():
         stream.getvalue(),
         media_type="application/zip",
         headers={
-            "Content-Disposition": ("attachment; filename=document-forms-starter.zip"),
+            "Content-Disposition": (
+                "attachment; filename=document-forms-starter.zip"
+            ),
         },
     )
 

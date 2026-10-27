@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Run the shipped FlowForge plugin against its real service in Chromium.
 
 Only the model is a declared deterministic fixture (see server.py). Screenshots,
@@ -87,10 +88,13 @@ def main():
                 deadline = time.monotonic() + 30
                 while time.monotonic() < deadline:
                     if server.poll() is not None:
-                        raise RuntimeError((ARTIFACTS / "server.log").read_text())
+                        raise RuntimeError(
+                            (ARTIFACTS / "server.log").read_text(),
+                        )
                     try:
                         with urllib.request.urlopen(
-                            base + "/api/flowforge/health", timeout=1
+                            base + "/api/flowforge/health",
+                            timeout=1,
                         ) as response:
                             if response.status == 200:
                                 break
@@ -100,7 +104,8 @@ def main():
                     raise RuntimeError("Acceptance HTTP host did not start")
                 with sync_playwright() as playwright:
                     browser = playwright.chromium.launch(
-                        headless=True, args=["--no-sandbox"]
+                        headless=True,
+                        args=["--no-sandbox"],
                     )
                     page = browser.new_page(
                         viewport={"width": 1440, "height": 1000},
@@ -113,34 +118,49 @@ def main():
                     page.set_default_timeout(12000)
                     try:
                         page.goto(base + "/flowforge?flow=inventory-review")
-                        page.wait_for_function("window.__flowforgeMounted === true")
-                        expect(page.locator(".react-flow__node")).to_have_count(6)
-                        expect(page.locator(".react-flow__edge")).to_have_count(5)
-                        ledger.append({"case": "真实插件加载六节点及数据/控制边", "status": "passed"})
+                        page.wait_for_function(
+                            "window.__flowforgeMounted === true",
+                        )
+                        expect(
+                            page.locator(".react-flow__node"),
+                        ).to_have_count(6)
+                        expect(
+                            page.locator(".react-flow__edge"),
+                        ).to_have_count(5)
+                        ledger.append(
+                            {"case": "真实插件加载六节点及数据/控制边", "status": "passed"},
+                        )
                         page.screenshot(
-                            path=str(ARTIFACTS / "desktop.png"), full_page=True
+                            path=str(ARTIFACTS / "desktop.png"),
+                            full_page=True,
                         )
                         if args.smoke:
                             (ARTIFACTS / "smoke-body.txt").write_text(
-                                page.locator("body").inner_text()
+                                page.locator("body").inner_text(),
                             )
                         else:
                             acceptance(page, base, ledger)
                         page.goto(base + "/flowforge?flow=inventory-review")
-                        expect(page.locator(".react-flow__node")).to_have_count(6)
+                        expect(
+                            page.locator(".react-flow__node"),
+                        ).to_have_count(6)
                         page.screenshot(
-                            path=str(ARTIFACTS / "desktop.png"), full_page=True
+                            path=str(ARTIFACTS / "desktop.png"),
+                            full_page=True,
                         )
                         page.set_viewport_size({"width": 390, "height": 844})
                         page.reload()
-                        expect(page.locator(".react-flow__node")).to_have_count(6)
+                        expect(
+                            page.locator(".react-flow__node"),
+                        ).to_have_count(6)
                         page.locator(".react-flow__controls-fitview").click()
                         page.wait_for_timeout(350)
                         page.screenshot(
-                            path=str(ARTIFACTS / "mobile.png"), full_page=True
+                            path=str(ARTIFACTS / "mobile.png"),
+                            full_page=True,
                         )
                         sizes = page.evaluate(
-                            "({width:innerWidth,body:document.body.scrollWidth,root:document.documentElement.scrollWidth})"
+                            "({width:innerWidth,body:document.body.scrollWidth,root:document.documentElement.scrollWidth})",
                         )
                         assert (
                             sizes["body"] <= sizes["width"] + 1
@@ -151,14 +171,22 @@ def main():
                                 "case": "390px窗口无页面水平溢出",
                                 "status": "passed",
                                 "sizes": sizes,
-                            }
+                            },
                         )
-                        page.get_by_role("button", name="✦ AI 搭建", exact=True).click()
+                        page.get_by_role(
+                            "button",
+                            name="✦ AI 搭建",
+                            exact=True,
+                        ).click()
                         prompt = page.get_by_label("业务目标与修改要求")
                         expect(prompt).to_be_visible()
                         prompt.fill("在窄窗口检查业务要求输入和预览按钮。")
                         expect(
-                            page.get_by_role("button", name="生成变更预览", exact=True)
+                            page.get_by_role(
+                                "button",
+                                name="生成变更预览",
+                                exact=True,
+                            ),
                         ).to_be_visible()
                         drawer = page.locator(".ant-drawer-content:visible")
                         assert drawer.bounding_box()["width"] <= 390
@@ -168,32 +196,41 @@ def main():
                             if (!panel) return false;
                             const bounds = panel.getBoundingClientRect();
                             return bounds.x >= 0 && bounds.right <= innerWidth + 1;
-                        }"""
+                        }""",
                         )
-                        expect(drawer.locator(".ant-drawer-close")).to_be_in_viewport()
                         expect(
-                            drawer.locator(".ant-drawer-footer").get_by_role("button")
+                            drawer.locator(".ant-drawer-close"),
+                        ).to_be_in_viewport()
+                        expect(
+                            drawer.locator(".ant-drawer-footer").get_by_role(
+                                "button",
+                            ),
                         ).to_be_in_viewport()
                         page.screenshot(
-                            path=str(ARTIFACTS / "mobile-authoring.png"), full_page=True
+                            path=str(ARTIFACTS / "mobile-authoring.png"),
+                            full_page=True,
                         )
                         ledger.append(
-                            {"case": "390px自然语言面板输入、预览及关闭按钮可达", "status": "passed"}
+                            {
+                                "case": "390px自然语言面板输入、预览及关闭按钮可达",
+                                "status": "passed",
+                            },
                         )
                         assert not browser_errors, browser_errors
                     except Exception as exc:
                         page.screenshot(
-                            path=str(ARTIFACTS / "failure.png"), full_page=True
+                            path=str(ARTIFACTS / "failure.png"),
+                            full_page=True,
                         )
                         (ARTIFACTS / "failure-body.txt").write_text(
-                            page.locator("body").inner_text()
+                            page.locator("body").inner_text(),
                         )
                         ledger.append(
                             {
                                 "case": "browser acceptance",
                                 "status": "failed",
                                 "error": str(exc),
-                            }
+                            },
                         )
                         raise
                     finally:
@@ -203,14 +240,14 @@ def main():
                                     "model": "explicit deterministic fixture; live model not exercised",
                                     "browser": browser.version,
                                     "plugin_sha256": hashlib.sha256(
-                                        (ARTIFACTS / "plugin.js").read_bytes()
+                                        (ARTIFACTS / "plugin.js").read_bytes(),
                                     ).hexdigest(),
                                     "cases": ledger,
                                     "browser_errors": browser_errors,
                                 },
                                 ensure_ascii=False,
                                 indent=2,
-                            )
+                            ),
                         )
                         browser.close()
             finally:
@@ -223,7 +260,7 @@ def main():
         json.dumps(
             {"passed": len(ledger), "artifact_directory": str(ARTIFACTS)},
             ensure_ascii=False,
-        )
+        ),
     )
 
 
@@ -242,7 +279,9 @@ def acceptance(page, base, ledger):
         return flow["nodes"]["gate"]["control"]["conditions"][0]["if"]["right"]
 
     def close_drawer():
-        page.locator(".ant-drawer-content:visible .ant-drawer-close").last.click()
+        page.locator(
+            ".ant-drawer-content:visible .ant-drawer-close",
+        ).last.click()
         expect(page.locator(".ant-drawer-content:visible")).to_have_count(0)
 
     def visible_threshold(expected):
@@ -275,12 +314,14 @@ def acceptance(page, base, ledger):
         dialog.get_by_role("spinbutton").fill(str(value))
         with page.expect_response(
             lambda response: response.request.method == "POST"
-            and response.url.endswith("/inventory-review/run")
+            and response.url.endswith("/inventory-review/run"),
         ) as pending:
             dialog.get_by_role("button", name="开始运行", exact=True).click()
         response = pending.value
         assert response.ok, response.text()
-        assert response.request.post_data_json == {"inputs": {"deviation": value}}
+        assert response.request.post_data_json == {
+            "inputs": {"deviation": value},
+        }
         return response.json()["run_id"]
 
     before = get_flow()
@@ -288,7 +329,7 @@ def acceptance(page, base, ledger):
     assert {edge["kind"] for edge in before["edges"]} == {"data", "control"}
     with page.expect_response(
         lambda response: response.request.method == "POST"
-        and response.url.endswith("/node-types/refresh")
+        and response.url.endswith("/node-types/refresh"),
     ) as refreshed:
         page.get_by_role("button", name="刷新节点", exact=True).click()
     assert refreshed.value.ok
@@ -297,7 +338,7 @@ def acceptance(page, base, ledger):
 
     with page.expect_response(
         lambda response: response.request.method == "POST"
-        and response.url.endswith("/flows/validate")
+        and response.url.endswith("/flows/validate"),
     ) as validated:
         page.get_by_role("button", name="验证", exact=True).click()
     assert validated.value.json()["ok"], validated.value.text()
@@ -309,21 +350,25 @@ def acceptance(page, base, ledger):
     prompt.fill("把库存偏差阈值从 3 改为 5，保留人工审核和其他节点。")
     with page.expect_response(
         lambda response: response.request.method == "POST"
-        and response.url.endswith("/authoring/proposals")
+        and response.url.endswith("/authoring/proposals"),
     ) as proposed:
         page.get_by_role("button", name="生成变更预览", exact=True).click()
     proposal = proposed.value.json()
     assert proposed.value.ok and proposal["validation"]["ok"], proposal
     assert threshold(proposal["flow"]) == 5
-    assert get_flow() == before, "Preview must never persist the proposed workflow"
+    assert (
+        get_flow() == before
+    ), "Preview must never persist the proposed workflow"
     expect(page.get_by_text("结构验证通过，请检查业务逻辑", exact=True)).to_be_visible()
-    expect(page.locator(".ff-diff-table").filter(has_text="right")).to_have_count(1)
+    expect(
+        page.locator(".ff-diff-table").filter(has_text="right"),
+    ).to_have_count(1)
     page.screenshot(path=str(ARTIFACTS / "proposal.png"), full_page=True)
     passed("自然语言预览列出3到5变更且不保存", proposal_id=proposal["proposal_id"])
 
     with page.expect_response(
         lambda response: response.request.method == "POST"
-        and response.url.endswith("/apply")
+        and response.url.endswith("/apply"),
     ) as applied:
         page.get_by_role("button", name="应用并保存", exact=True).click()
     assert applied.value.ok, applied.value.text()
@@ -346,11 +391,14 @@ def acceptance(page, base, ledger):
     normal = wait_run(normal_id, "completed")
     assert normal["node_statuses"]["normal"] == "success", normal
     assert normal["node_statuses"]["review"] == "skipped", normal
-    assert "正常，无需复核" in json.dumps(normal["outputs"], ensure_ascii=False), normal
+    assert "正常，无需复核" in json.dumps(
+        normal["outputs"],
+        ensure_ascii=False,
+    ), normal
     page.get_by_role("tab", name="输出", exact=True).click()
-    expect(page.locator(".ant-drawer-content:visible .ff-code")).to_contain_text(
-        "正常，无需复核"
-    )
+    expect(
+        page.locator(".ant-drawer-content:visible .ff-code"),
+    ).to_contain_text("正常，无需复核")
     close_drawer()
     passed("数字输入保持number并正确走正常分支", run_id=normal_id)
 
@@ -365,7 +413,7 @@ def acceptance(page, base, ledger):
     page.screenshot(path=str(ARTIFACTS / "human-review.png"), full_page=True)
     with page.expect_response(
         lambda response: response.request.method == "POST"
-        and response.url.endswith(f"/runs/{review_id}/resume")
+        and response.url.endswith(f"/runs/{review_id}/resume"),
     ) as resumed:
         page.get_by_role("button", name="通过并继续", exact=True).click()
     assert resumed.value.ok, resumed.value.text()
@@ -373,11 +421,14 @@ def acceptance(page, base, ledger):
     continued = wait_run(continued_id, "completed")
     assert continued["node_statuses"]["approved"] == "success", continued
     assert continued["node_statuses"]["rejected"] == "skipped", continued
-    assert "人工复核通过" in json.dumps(continued["outputs"], ensure_ascii=False), continued
+    assert "人工复核通过" in json.dumps(
+        continued["outputs"],
+        ensure_ascii=False,
+    ), continued
     page.get_by_role("tab", name="输出", exact=True).click()
-    expect(page.locator(".ant-drawer-content:visible .ff-code")).to_contain_text(
-        "人工复核通过"
-    )
+    expect(
+        page.locator(".ant-drawer-content:visible .ff-code"),
+    ).to_contain_text("人工复核通过")
     close_drawer()
     passed(
         "人工审核暂停、意见提交、恢复及通过分支真实执行",
@@ -387,25 +438,27 @@ def acceptance(page, base, ledger):
 
     page.get_by_role("button", name="运行记录", exact=True).click()
     expect(page.get_by_text("当前工作流运行记录", exact=True)).to_be_visible()
-    expect(page.locator(".ant-drawer-content:visible tbody tr")).to_have_count(3)
+    expect(page.locator(".ant-drawer-content:visible tbody tr")).to_have_count(
+        3,
+    )
     expect(page.locator(".ant-drawer-content:visible")).to_contain_text("已恢复")
     close_drawer()
     passed("运行历史保存原运行、审核恢复运行及状态")
 
     page.get_by_role("button", name=re.compile(r"^版\s*本$")).click()
     page.locator(".ff-version").filter(
-        has=page.get_by_text("版本 1", exact=True)
+        has=page.get_by_text("版本 1", exact=True),
     ).get_by_role("button", name=re.compile(r"恢\s*复")).click()
     with page.expect_response(
         lambda response: response.request.method == "POST"
-        and response.url.endswith("/versions/1/restore")
+        and response.url.endswith("/versions/1/restore"),
     ) as restored:
         page.get_by_role("button", name="恢复版本", exact=True).click()
     assert restored.value.ok, restored.value.text()
     restored_flow = get_flow()
     assert threshold(restored_flow) == 3 and restored_flow["revision"] == 3
     versions = page.request.get(
-        f"{base}/api/flowforge/flows/inventory-review/versions"
+        f"{base}/api/flowforge/flows/inventory-review/versions",
     ).json()
     assert len(versions) == 3
     visible_threshold(3)
@@ -417,7 +470,7 @@ def acceptance(page, base, ledger):
     prompt.fill(offline_prompt)
     with page.expect_response(
         lambda response: response.request.method == "POST"
-        and response.url.endswith("/authoring/proposals")
+        and response.url.endswith("/authoring/proposals"),
     ) as unavailable:
         page.get_by_role("button", name="生成变更预览", exact=True).click()
     assert unavailable.value.status >= 500, unavailable.value.text()
@@ -433,20 +486,23 @@ def acceptance(page, base, ledger):
     page.get_by_placeholder("输入工作流名称（如：库存日评估）").fill("自然语言搭建验收")
     with page.expect_response(
         lambda response: response.request.method == "POST"
-        and response.url.endswith("/flowforge/flows")
+        and response.url.endswith("/flowforge/flows"),
     ) as created:
         page.get_by_role("dialog").get_by_role(
-            "button", name=re.compile(r"^创\s*建$")
+            "button",
+            name=re.compile(r"^创\s*建$"),
         ).click()
     assert created.value.ok, created.value.text()
     new_id = created.value.json()["id"]
     expect(page.locator(".react-flow__node")).to_have_count(0)
     expect(page.get_by_text("从业务目标开始", exact=True)).to_be_visible()
     page.get_by_role("button", name="描述我的工作流", exact=True).click()
-    page.get_by_label("业务目标与修改要求").fill("创建库存偏差复核流程：输入偏差数字，大于3交工程师审核，否则输出正常；审核分通过和退回。")
+    page.get_by_label("业务目标与修改要求").fill(
+        "创建库存偏差复核流程：输入偏差数字，大于3交工程师审核，否则输出正常；审核分通过和退回。",
+    )
     with page.expect_response(
         lambda response: response.request.method == "POST"
-        and response.url.endswith("/authoring/proposals")
+        and response.url.endswith("/authoring/proposals"),
     ) as new_proposed:
         page.get_by_role("button", name="生成变更预览", exact=True).click()
     assert (
@@ -455,7 +511,7 @@ def acceptance(page, base, ledger):
     assert get_flow(new_id)["nodes"] == {}
     with page.expect_response(
         lambda response: response.request.method == "POST"
-        and response.url.endswith("/apply")
+        and response.url.endswith("/apply"),
     ) as new_applied:
         page.get_by_role("button", name="应用并保存", exact=True).click()
     assert new_applied.value.ok, new_applied.value.text()
@@ -466,7 +522,7 @@ def acceptance(page, base, ledger):
     passed("空白工作流自然语言创建、预览与应用", flow_id=new_id)
 
     (ARTIFACTS / "run-records.json").write_text(
-        json.dumps([normal, review, continued], ensure_ascii=False, indent=2)
+        json.dumps([normal, review, continued], ensure_ascii=False, indent=2),
     )
 
 

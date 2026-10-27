@@ -29,7 +29,12 @@ _PROPERTY_KEYWORDS = {
 
 def _tokens(path: Path) -> Iterator[str]:
     """Yield GRDECL tokens with ``--`` comments stripped."""
-    with path.open("r", encoding="utf-8", errors="replace", newline=None) as handle:
+    with path.open(
+        "r",
+        encoding="utf-8",
+        errors="replace",
+        newline=None,
+    ) as handle:
         for line in handle:
             comment = line.find("--")
             if comment >= 0:
@@ -51,10 +56,18 @@ def _read_values(tokens: Iterator[str], expected: int, keyword: str) -> array:
         else:
             values.append(float(token))
         if len(values) > expected:
-            raise ValueError(f"GRDECL {keyword} has more than {expected:,} values")
+            raise ValueError(
+                f"GRDECL {keyword} has more than {expected:,} values",
+            )
     if len(values) != expected:
         raise ValueError(
-            f"GRDECL {keyword} ended after {len(values):,} of {expected:,} values"
+            f"GRDECL "
+            f"{keyword}"
+            f" ended after "
+            f"{len(values):,}"
+            f" of "
+            f"{expected:,}"
+            f" values",
         )
     return values
 
@@ -83,15 +96,21 @@ def parse_grdecl(path: Path) -> dict[str, Any]:
             nlay = int(next(tokens))
             dims = (ncol, nrow, nlay)
             _skip_section(tokens)
-        elif keyword in ("COORD", "ZCORN", "ACTNUM") or keyword in _PROPERTY_KEYWORDS:
+        elif (
+            keyword in ("COORD", "ZCORN", "ACTNUM")
+            or keyword in _PROPERTY_KEYWORDS
+        ):
             if dims is None:
                 pending.append(keyword)
                 _skip_section(tokens)
                 continue
-            ncol, nrow, nlay = dims
             n_total = ncol * nrow * nlay
             if keyword == "COORD":
-                coord = _read_values(tokens, 6 * (ncol + 1) * (nrow + 1), keyword)
+                coord = _read_values(
+                    tokens,
+                    6 * (ncol + 1) * (nrow + 1),
+                    keyword,
+                )
             elif keyword == "ZCORN":
                 zcorn = _read_values(tokens, 8 * n_total, keyword)
             elif keyword == "ACTNUM":
@@ -109,7 +128,10 @@ def parse_grdecl(path: Path) -> dict[str, Any]:
         missing = "COORD" if coord is None else "ZCORN"
         if pending:
             raise ValueError(
-                f"GRDECL {missing} appears before SPECGRID/DIMENS; reorder the deck"
+                f"GRDECL "
+                f"{missing}"
+                f" appears before SPECGRID/DIMENS; reorder "
+                f"the deck",
             )
         raise ValueError(f"GRDECL deck has no {missing}")
     return {
@@ -139,14 +161,22 @@ def _cell_corner(
     z = zcorn[zcorn_index]
     pillar = ((j + dj) * (ncol + 1) + (i + di)) * 6
     x_top, y_top, z_top = coord[pillar], coord[pillar + 1], coord[pillar + 2]
-    x_bot, y_bot, z_bot = coord[pillar + 3], coord[pillar + 4], coord[pillar + 5]
+    x_bot, y_bot, z_bot = (
+        coord[pillar + 3],
+        coord[pillar + 4],
+        coord[pillar + 5],
+    )
     if z_bot == z_top:
         return (x_top, y_top, z)
     t = (z - z_top) / (z_bot - z_top)
     return (x_top + t * (x_bot - x_top), y_top + t * (y_bot - y_top), z)
 
 
-def read_grdecl_dataset(file_path: str, name: str, bin_dir: Path) -> dict[str, Any]:
+def read_grdecl_dataset(
+    file_path: str,
+    name: str,
+    bin_dir: Path,
+) -> dict[str, Any]:
     """Convert a GRDECL deck to the shared binary manifest contract."""
     started = time.time()
     source = Path(file_path)
@@ -156,7 +186,9 @@ def read_grdecl_dataset(file_path: str, name: str, bin_dir: Path) -> dict[str, A
 
     actnum = parsed["actnum"]
     active_ids = [
-        index for index in range(n_total) if actnum is None or actnum[index] != 0.0
+        index
+        for index in range(n_total)
+        if actnum is None or actnum[index] != 0.0
     ]
 
     coord, zcorn = parsed["coord"], parsed["zcorn"]
@@ -181,12 +213,25 @@ def read_grdecl_dataset(file_path: str, name: str, bin_dir: Path) -> dict[str, A
     scalar_files: dict[str, str] = {}
     for prop_name, values in parsed["properties"].items():
         filename = f"{prefix}_scalars_{prop_name}.f32"
-        write_f32(bin_dir / filename, [float(values[index]) for index in active_ids])
+        write_f32(
+            bin_dir / filename,
+            [float(values[index]) for index in active_ids],
+        )
         scalar_files[prop_name] = filename
 
     return {
         "id": prefix,
-        "name": f"Eclipse: {prefix} ({ncol}x{nrow}x{nlay}, {n_active:,} active)",
+        "name": f"Eclipse: "
+        f"{prefix}"
+        f" ("
+        f"{ncol}"
+        f"x"
+        f"{nrow}"
+        f"x"
+        f"{nlay}"
+        f", "
+        f"{n_active:,}"
+        f" active)",
         "n_vertices": len(positions) // 3,
         "n_cells": n_active,
         "n_indices": len(indices),

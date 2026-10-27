@@ -628,7 +628,10 @@ def test_post_api_console_chat_27(app_server) -> None:
     # Chat may return an open SSE stream. Check the response headers without
     # waiting for the body to finish, which can emit heartbeats indefinitely.
     with app_server.client.stream(
-        "POST", f"{app_server.base_url}/api/console/chat", json={}, timeout=_T
+        "POST",
+        f"{app_server.base_url}/api/console/chat",
+        json={},
+        timeout=_T,
     ) as resp:
         assert resp.status_code in (
             200,

@@ -435,25 +435,34 @@ def _write_tool_config(
             # A failed attempt wrote nothing. Rollback must restore the
             # successful attempt's input, including intervening user edits.
             if agent_before is not None:
-                agent_before.setdefault(agent_id, {}).setdefault(tool_name, current)
+                agent_before.setdefault(agent_id, {}).setdefault(
+                    tool_name,
+                    current,
+                )
             return True
 
     for agent_id in agent_ids:
         for attempt in range(3):
             try:
                 if write_agent(agent_id):
-                    logger.info("Wrote tool '%s' into agent '%s' config", tool_name, agent_id)
+                    logger.info(
+                        "Wrote tool '%s' into agent '%s' config",
+                        tool_name,
+                        agent_id,
+                    )
                 break
             except AgentConfigConflictError:
                 if attempt == 2:
                     raise
-                from pathlib import Path
                 from ..config.utils import load_config
 
                 profile = load_config().agents.profiles.get(agent_id)
-                if profile is None or not (
-                    Path(profile.workspace_dir).expanduser() / "agent.json"
-                ).is_file():
+                if (
+                    profile is None
+                    or not (
+                        Path(profile.workspace_dir).expanduser() / "agent.json"
+                    ).is_file()
+                ):
                     # Deletion is not a transient edit. Do not let the next
                     # load recreate a profile that a user just removed.
                     raise
@@ -1940,8 +1949,16 @@ class PluginApi:  # pylint: disable=too-many-public-methods
                 existing = getattr(current_tools, tool_name, None)
                 with _TOOL_PLUGIN_OWNERS_LOCK:
                     current_owner = _TOOL_PLUGIN_OWNERS.get(tool_name)
-                existing_owner = getattr(getattr(existing, "_tool_descriptor", None), "owner_plugin_id", "")
-                if existing is not None and current_owner is None and not existing_owner:
+                existing_owner = getattr(
+                    getattr(existing, "_tool_descriptor", None),
+                    "owner_plugin_id",
+                    "",
+                )
+                if (
+                    existing is not None
+                    and current_owner is None
+                    and not existing_owner
+                ):
                     logger.info(
                         "Skipping plugin tool '%s': upstream/native "
                         "callable already exists",
