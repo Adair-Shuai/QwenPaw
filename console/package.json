@@ -4,6 +4,7 @@
   "version": "0.0.0",
   "type": "module",
   "scripts": {
+    "postinstall": "node scripts/prepare-ugsci-ui.mjs",
     "dev": "vite --host",
     "build": "tsc -b && node --max-old-space-size=8192 ./node_modules/vite/bin/vite.js build && npm run verify:monaco-css && npm run precompress && npm run verify:initial-bundle",
     "build:prod": "tsc -b && node --max-old-space-size=8192 ./node_modules/vite/bin/vite.js build --mode production && npm run verify:monaco-css && npm run precompress && npm run verify:initial-bundle",
