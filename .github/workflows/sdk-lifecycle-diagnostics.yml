@@ -73,3 +73,15 @@ jobs:
             tests/unit/plugins/test_sdk_context_lifecycle.py \
             tests/unit/plugins/test_sdk_workspace_contract.py \
             tests/unit/utils/test_io_utils.py
+      - name: Verify document forms application contracts
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          python -m pip install -r plugins/apps/document-forms/requirements.txt
+          python -m pytest plugins/apps/document-forms/tests -v
+      - name: Verify real OfficeCLI engine contracts
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          python scripts/pack-tauri/stage_officecli.py --dest console/src-tauri/binaries/officecli
+          python -m pytest tests/system/test_officecli_engine.py -v

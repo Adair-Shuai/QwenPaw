@@ -523,7 +523,10 @@ def parsed_interval(value):
             if period and re.match(r"\d{1,2}[:：时]", end_text):
                 if int(re.match(r"\d{1,2}", end_text)[0]) < 12:
                     end_text = period[0] + end_text
-            end = parsed_date(start.strftime("%Y年%m月%d日") + end_text)
+            # Windows strftime encodes its format through the C locale, which
+            # may not support Chinese literals. Keep date assembly in Unicode.
+            day = f"{start.year:04d}年{start.month:02d}月{start.day:02d}日"
+            end = parsed_date(day + end_text)
         if start and end:
             return start, end
     return None
