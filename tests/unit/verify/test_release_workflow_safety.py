@@ -29,6 +29,17 @@ def test_clean_release_and_frontend_checks_build_openui_runtime() -> None:
         assert workflow.index(
             "npm --prefix plugins/bundle/qwenpaw-openui/frontend test",
         ) < workflow.index(gate)
+        if name in {"frontend-tests.yml", "full-tests-nightly.yml"}:
+            # Mounted Run Center tests consume the generated charts module.
+            assert "npm --prefix plugins/bundle/qwenpaw-run-center/ui ci" in (
+                workflow
+            )
+            assert workflow.index(
+                "npm --prefix plugins/bundle/qwenpaw-run-center/ui run build",
+            ) < workflow.index(gate)
+            assert workflow.index(
+                "scripts/sync_run_center_bundle.py --sync",
+            ) < workflow.index(gate)
 
     for suffix in ("sh", "ps1"):
         helper = (

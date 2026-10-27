@@ -90,6 +90,13 @@ jobs:
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
 
+      - name: Build bundled Run Center frontend
+        working-directory: ${{ github.workspace }}
+        run: |
+          npm --prefix plugins/bundle/qwenpaw-run-center/ui ci
+          npm --prefix plugins/bundle/qwenpaw-run-center/ui run build
+          python3 scripts/sync_run_center_bundle.py --sync
+
       - name: Build OpenUI task layout runtime
         working-directory: ${{ github.workspace }}
         run: |
