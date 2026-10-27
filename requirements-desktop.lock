@@ -4,9 +4,9 @@ agent-client-protocol==0.10.1 \
     --hash=sha256:355c65ca19f0568344aafc2c1552b7066a8fc491df23ab28e7e253c6c9a85a25 \
     --hash=sha256:a03d3198f4d772f2e0ec012c00ac1cce131b4710220a3dc9fae3c991d047c750
     # via qwenpaw
-agentscope==2.0.8 \
-    --hash=sha256:4381a88ad63269284c19cdbad1eda07d8fddf9b672d9c929f49d0194b82819f7 \
-    --hash=sha256:bba52a9a40747f4a6d0351cde6b46a652cd8b324c56fe76acf17ccf7b8467f76
+agentscope==2.0.10 \
+    --hash=sha256:49abdf3f14ce83c37166431bc9984772a057f2ea6b854b565b83cde438063975 \
+    --hash=sha256:91e5e73f463fac31dd075c3479b41928de281a56270567ae8429fa27fe1ac920
     # via qwenpaw
 aiofile==3.12.3 \
     --hash=sha256:5c1bcc9e929c50834608e8cc1a4cc1d7503eb60c15a535b779fd39e2f372c017 \
@@ -246,6 +246,7 @@ anyio==4.12.1 \
     #   anthropic
     #   google-genai
     #   httpx
+    #   httpx2
     #   mcp
     #   openai
     #   py-key-value-aio
@@ -253,6 +254,7 @@ anyio==4.12.1 \
     #   qwenpaw
     #   sse-starlette
     #   starlette
+    #   typesafe-sdk
     #   watchfiles
 apscheduler==3.11.3 \
     --hash=sha256:bbeb2ec02d23d3c06a6c07ed7f0f3939ada6680eb121fae809a69bb42c537a30 \
@@ -434,13 +436,14 @@ caio==0.12.2 \
     --hash=sha256:eee9376d0e2af25b6defc5bce39f6efa90521c803aaf12eba931bd898a397cfc \
     --hash=sha256:f2355db8917f5a0f3638bf332fe0d87549c80e978fca01db84a8a14b9df56a05
     # via aiofile
-certifi==2026.7.22 \
-    --hash=sha256:62f22742b58a1a33014a2b6b706588a8d7e2a88ae7bd1a6ebe8c992928483775 \
-    --hash=sha256:741e2c3b351ddf169a738da9f2c048608ff7f2c5cc02f1ebc6b118bb090d5d55
+certifi==2026.10.23 \
+    --hash=sha256:a9895e6e2758b371e0545e321a3a8fd1fcfd9829ada8824a936dfb16aaaf36cd \
+    --hash=sha256:e9b54de76e530bb6cf0ccd036787103acb58fd42ba930ea8bf948ddbaa2f61d1
     # via
     #   dashscope
     #   httpcore
     #   httpx
+    #   qwenpaw
     #   requests
     #   wecom-aibot-python-sdk
 cffi==2.1.1 ; platform_python_implementation != 'PyPy' or sys_platform == 'win32' \
@@ -1540,6 +1543,7 @@ h11==0.16.0 \
     --hash=sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86
     # via
     #   httpcore
+    #   httpcore2
     #   matrix-nio
     #   uvicorn
     #   wsproto
@@ -1635,16 +1639,16 @@ hpack==4.2.0 \
     --hash=sha256:0895cfa3b5531fc65fe439c05eb65144f123bf7a394fcaa56aa423548d8e45c0 \
     --hash=sha256:858ac0b02280fa582b5080d68db0899c62a80375e0e5413a74970c5e518b6986
     # via h2
-html2text==2025.4.15 \
-    --hash=sha256:00569167ffdab3d7767a4cdf589b7f57e777a5ed28d12907d8c58769ec734acc \
-    --hash=sha256:948a645f8f0bc3abe7fd587019a2197a12436cd73d0d4908af95bfc8da337588
-    # via qwenpaw
 httpcore==1.0.9 \
     --hash=sha256:2d400746a40668fc9dec9810239072b40b4484b640a8c38fd654a024c7a1bf55 \
     --hash=sha256:6e34463af53fd2ab5d807f399a9b45ea31c3dfa2276f15a2c3f00afff6e176e8
     # via
     #   httpx
     #   python-telegram-bot
+httpcore2==2.16.0 ; sys_platform != 'emscripten' \
+    --hash=sha256:5c4358319f2602d984ad93182c9fee5160f22e9da7babdda870a5e7c4e2dc34f \
+    --hash=sha256:c72cd0413563b17e1cd8354677dff887466f8ec2551679759e93126534428643
+    # via httpx2
 httpx==0.28.1 \
     --hash=sha256:75e98c5f16b0f35b567856f597f06ff2270a374470a5c2392242528e3e3e42fc \
     --hash=sha256:d909fcccc110f8c7faf814ca82a9a4d816bc5a6dbfea25d6591d6985b8ba59ad
@@ -1668,6 +1672,14 @@ httpx-sse==0.4.3 \
     # via
     #   dashscope
     #   mcp
+httpx2==2.16.0 \
+    --hash=sha256:0d54c98128e8f2ff7fbbde0fca8c359e5f032edeaaaac443cdb7f31f685bcd7f \
+    --hash=sha256:fd2c5d7909e8d86fe92d53020c310ca0e4e431b838c207c5754b9bbf0308d49a
+    # via typesafe-sdk
+httpx2-jsfetch==1.0 ; python_full_version >= '3.12' and sys_platform == 'emscripten' \
+    --hash=sha256:70a0e3eabfef7cce5ad9c629f7d01ca05e418f586646f4ddf14782e4c1454c60 \
+    --hash=sha256:cb916b707601e69a07721aabc8f3f6659be3a6893bc1ff5c6f9e02241df2da32
+    # via httpx2
 huggingface-hub==1.27.0 \
     --hash=sha256:7df6827c2f956c60fbaa64646e979e566db76f619dd0a9729dfb8c5a3eb4f68d \
     --hash=sha256:c1fed40ea82a6b41b477f5243546549b792ae0a93abcea608cff66089bf8f8df
@@ -1690,6 +1702,7 @@ idna==3.18 \
     #   anyio
     #   email-validator
     #   httpx
+    #   httpx2
     #   requests
     #   yarl
 imap-tools==1.15.0 \
@@ -2823,6 +2836,7 @@ packaging==26.3 \
     #   qtpy
     #   qwenpaw
     #   transformers
+    #   typesafe-sdk
 paho-mqtt==2.1.0 \
     --hash=sha256:12d6e7511d4137555a3f6ea167ae846af2c7357b10bc6fa4f7c3968fc1723834 \
     --hash=sha256:6db9ba9b34ed5bc6b6e3812718c7e06e2fd7444540df2455d2c51bd58808feee
@@ -3326,6 +3340,7 @@ pydantic==2.13.4 \
     #   openapi-pydantic
     #   pydantic-settings
     #   reme-ai
+    #   typesafe-sdk
 pydantic-core==2.46.4 \
     --hash=sha256:00c603d540afdd6b80eb39f078f33ebd46211f02f33e34a32d9f053bba711de0 \
     --hash=sha256:0186750b482eefa11d7f435892b09c5c606193ef3375bcf94aa00ae6bfb66262 \
@@ -3447,7 +3462,9 @@ pydantic-core==2.46.4 \
     --hash=sha256:fc010ab034c8c7452522748bf937df58020d256ccae0874463d1f4d01758af8e \
     --hash=sha256:fc3e9034a63de20e15e8ade85358bc6efc614008cab72898b4b4952bea0509ff \
     --hash=sha256:fd8b3d9fd264be37976686c7f65cd52a83f5e84f4bfd2adf9c1d469676bbb6ae
-    # via pydantic
+    # via
+    #   pydantic
+    #   typesafe-sdk
 pydantic-settings==2.15.0 \
     --hash=sha256:0ba092c291c94baceb5eff768aa0d56400a457585bc0175925a5a5510303da42 \
     --hash=sha256:694b793e84f766ba76a90ebdefc01d0a9a045dab0382bee70393da93712ad117
@@ -3733,6 +3750,15 @@ pywin32-ctypes==0.2.3 ; sys_platform == 'win32' \
     --hash=sha256:8a1513379d709975552d202d942d9837758905c8d01eb82b8bcc30918929e7b8 \
     --hash=sha256:d162dc04946d704503b2edc4d55f3dba5c1d539ead017afa00142c38b9885755
     # via keyring
+pywinpty==2.0.15 ; sys_platform == 'win32' \
+    --hash=sha256:312cf39153a8736c617d45ce8b6ad6cd2107de121df91c455b10ce6bba7a39b2 \
+    --hash=sha256:83a8f20b430bbc5d8957249f875341a60219a4e971580f2ba694fbfb54a45ebc \
+    --hash=sha256:8e7f5de756a615a38b96cd86fa3cd65f901ce54ce147a3179c45907fa11b4c4e \
+    --hash=sha256:9a6bcec2df2707aaa9d08b86071970ee32c5026e10bcc3cc5f6f391d85baf7ca \
+    --hash=sha256:a4560ad8c01e537708d2790dbe7da7d986791de805d89dd0d3697ca59e9e4901 \
+    --hash=sha256:ab5920877dd632c124b4ed17bc6dd6ef3b9f86cd492b963ffdb1a67b85b0f408 \
+    --hash=sha256:d261cd88fcd358cfb48a7ca0700db3e1c088c9c10403c9ebc0d8a8b57aa6a117
+    # via qwenpaw
 pyyaml==6.0.3 \
     --hash=sha256:00c4bdeba853cc34e7dd471f16b4114f4162dc03e6b7afcc2128711f0eca823c \
     --hash=sha256:0150219816b6a1fa26fb4699fb7daa9caf09eb1999f3b70fb6e786805e80375a \
@@ -4421,7 +4447,9 @@ sympy==1.14.0 \
 tenacity==9.1.4 \
     --hash=sha256:6095a360c919085f28c6527de529e76a06ad89b23659fa881ae0649b867a9d55 \
     --hash=sha256:adb31d4c263f2bd041081ab33b498309a57c77f9acf2db65aadf0898179cf93a
-    # via google-genai
+    # via
+    #   google-genai
+    #   typesafe-sdk
 textual==8.2.8 \
     --hash=sha256:267375fd402dc8d981457212efa71f0e3365fd17bba144ba9bb3ed7563cb374a \
     --hash=sha256:3f106a9fbc73e39dd266c9712432087de78a6d644084c7c241d6a25c3169115b
@@ -4520,6 +4548,13 @@ tree-sitter-bash==0.25.1 \
     --hash=sha256:e76c4cfb20b076552406782b7f8c2a3946835993df0a44df006de54b7030c7dc \
     --hash=sha256:f4a34a6504c7c5b2a9b8c5c4065531dea19ca2c35026e706cf2eeeebe2c92512
     # via agentscope
+truststore==0.10.5 ; sys_platform != 'emscripten' \
+    --hash=sha256:30d36967ccaded5cbb38d602c433f53600036c79d502f4533a49b60a03bbefcd \
+    --hash=sha256:9aaaedaefaf06d8b206278cf8b5012bc897f485a874503501e12d776df78951c
+    # via
+    #   httpcore2
+    #   httpx2
+    #   typesafe-sdk
 twilio==9.11.0 \
     --hash=sha256:226a02b813851c21c8b2a2ce7bcb063b61edd76b31a11e0546a47e9ce4b7cc7c \
     --hash=sha256:3de712da429d73955fa36210c2884cae077076985368094aec0d6743fb03dc2f
@@ -4530,6 +4565,10 @@ typer==0.27.1 \
     # via
     #   dashscope
     #   transformers
+typesafe-sdk==0.7.5 \
+    --hash=sha256:1eeeb0dc80a7161d84896db42a5016dc0a7c8872fa16540b70163e5357b6d398 \
+    --hash=sha256:967a8b61494d536abb55ee3f3a2b10e81685cb6baad6ccdcab588bdc6c9b86d2
+    # via agentscope
 typing-extensions==4.16.0 \
     --hash=sha256:481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8 \
     --hash=sha256:dc983d19a509c94dba722ee6abd33940f7c05a89e243c47e907eb4db6f1a43e5
@@ -4544,6 +4583,7 @@ typing-extensions==4.16.0 \
     #   fastmcp-slim
     #   google-genai
     #   grpcio
+    #   httpx2
     #   huggingface-hub
     #   mcp
     #   openai
@@ -4565,6 +4605,7 @@ typing-extensions==4.16.0 \
     #   simpeg
     #   starlette
     #   textual
+    #   typesafe-sdk
     #   typing-inspection
     #   xtgeo
 typing-inspection==0.4.4 \

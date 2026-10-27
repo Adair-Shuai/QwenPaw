@@ -3,14 +3,36 @@
 
 from importlib.util import module_from_spec, spec_from_file_location
 import json
+import re
 from pathlib import Path
 import sys
+import tomllib
 
+from packaging.requirements import Requirement
 from packaging.version import Version
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HELPER = REPO_ROOT / "scripts" / "pack-tauri" / "assemble_desktop_layout.py"
 PYTHON_LAYERS = REPO_ROOT / "scripts" / "pack-tauri" / "build_python_layers.py"
+
+
+def test_desktop_lock_tracks_the_declared_classifier_sdk():
+    project = tomllib.loads(
+        (REPO_ROOT / "pyproject.toml").read_text(encoding="utf-8"),
+    )
+    sdk = next(
+        requirement
+        for value in project["project"]["dependencies"]
+        if (requirement := Requirement(value)).name == "agentscope"
+    )
+    lock = (REPO_ROOT / "requirements-desktop.lock").read_text(
+        encoding="utf-8",
+    )
+    pinned = re.search(r"(?m)^agentscope==([^\s;\\]+)", lock)
+    assert pinned, "Desktop dependency lock omits the required AgentScope SDK"
+    assert Version(pinned.group(1)) in sdk.specifier
+    assert "classifier-jev" in sdk.extras
+    assert re.search(r"(?m)^typesafe-sdk==", lock)
 
 
 def _load():
