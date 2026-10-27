@@ -878,8 +878,8 @@ class TestToolApproval:
     """Session-level tool approval toggle in the chat composer.
 
     Covers the ApprovalLevelToggle shipped in upstream #5685:
-    - APPROVAL-001: the toggle renders, offers exactly 4 levels, and the Tag
-      text follows the selection.
+    - APPROVAL-001: the toggle offers four standard levels and gated JEV;
+      the Tag follows selectable levels and rejects unavailable JEV.
     - APPROVAL-002: the chosen level is persisted in localStorage and survives
       a page reload.
     - APPROVAL-003: deleting a session clears its ``approval_level-<id>`` key.
@@ -893,7 +893,7 @@ class TestToolApproval:
     def test_approval_toggle_renders_and_switches(
         self, clean_chat_page: ChatPage, request: pytest.FixtureRequest
     ):
-        """Toggle renders, exposes 4 levels, and the Tag follows the choice."""
+        """Verify all five levels and decision-model availability gating."""
         test_name = request.node.name
 
         log_test_step("1. Open the Chat page")
@@ -903,10 +903,24 @@ class TestToolApproval:
         toggle = chat.get_approval_toggle()
         expect(toggle).to_be_visible(timeout=10000)
 
-        log_test_step("3. Open the menu and assert exactly 4 levels")
+        log_test_step("3. Verify all five levels and unavailable JEV")
         chat.open_approval_menu()
         items = chat.get_approval_menu_items()
-        assert len(items) == 4, f"expected 4 approval levels, got {len(items)}"
+        assert len(items) == 5, f"expected 5 approval levels, got {len(items)}"
+        for en_label, _zh in ChatPage.APPROVAL_LEVELS.values():
+            expect(chat.page.locator(chat.APPROVAL_MENU_ITEM).filter(
+                has_text=en_label
+            )).to_be_visible()
+        decision_item = chat.page.locator(chat.APPROVAL_MENU_ITEM).filter(
+            has_text=ChatPage.DECISION_APPROVAL_LABEL
+        )
+        expect(decision_item).to_be_visible()
+        expect(decision_item.locator('[aria-disabled="true"]')).to_be_visible()
+        before_label = toggle.inner_text()
+        before_storage = chat.get_approval_storage_entries()
+        decision_item.click()
+        expect(toggle).to_have_text(before_label)
+        assert chat.get_approval_storage_entries() == before_storage
         chat.page.keyboard.press("Escape")
         chat.wait(300)
 
