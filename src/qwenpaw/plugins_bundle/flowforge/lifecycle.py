@@ -11,10 +11,17 @@ import asyncio
 import copy
 import os
 import time
+from concurrent.futures import CancelledError as FutureCancelledError
 from typing import Any, Callable, TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from .engine import ProgressEvent, ProgressRegistry, WorkflowStatus, load
+from .engine import (
+    ProgressEvent,
+    ProgressRegistry,
+    WorkflowResult,
+    WorkflowStatus,
+    load,
+)
 from .engine.progress import NodeStatus
 from .invocation import MAX_WORKFLOW_DEPTH, current_run, workflow_stack
 from .flow_repository import RevisionConflict
@@ -27,7 +34,7 @@ class ResumeInputError(ValueError):
 
 
 if TYPE_CHECKING:
-    from .engine import WorkflowDocument, WorkflowResult
+    from .engine import WorkflowDocument
     from .service import RunHandle
 
 
@@ -409,7 +416,20 @@ class RunLifecycleMixin:
             with self._lifecycle_lock:
                 handle.finished_at = time.time()
                 try:
-                    handle.result = future.result()
+                    try:
+                        handle.result = future.result()
+                    except FutureCancelledError:
+                        if not handle.cancel_requested:
+                            raise
+                        # Cancellation before executor admission has no engine
+                        # result. Publish the same durable terminal contract as
+                        # a cancellation after node execution has started.
+                        handle.result = WorkflowResult(
+                            workflow_id=doc.id or run_id,
+                            state_id=handle.state_id,
+                            status=WorkflowStatus.CANCELLED,
+                            metadata={"prompt_id": run_id},
+                        )
                     handle.state_id = handle.result.state_id
                     if handle.cancel_requested:
                         handle.result.status = WorkflowStatus.CANCELLED

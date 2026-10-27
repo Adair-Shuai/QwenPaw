@@ -120,7 +120,7 @@ async def test_other_uninstall_bypasses_installed_cloudpaw_wrapper(
 ):
     loader, root, work = legacy_cloudpaw
     await loader.load_plugin(
-        PluginManifest.model_validate_json((root / "plugin.json").read_text()),
+        PluginManifest.model_validate_json((root / "plugin.json").read_text(encoding="utf-8")),
         root,
     )
     other = root.parent / "other"
@@ -143,7 +143,7 @@ async def test_other_uninstall_bypasses_installed_cloudpaw_wrapper(
     )
     await loader.load_plugin(
         PluginManifest.model_validate_json(
-            (other / "plugin.json").read_text(),
+            (other / "plugin.json").read_text(encoding="utf-8"),
         ),
         other,
     )
@@ -248,7 +248,7 @@ async def test_legacy_uninstall_stops_all_agents_preserves_history(
     if loaded:
         await loader.load_plugin(
             PluginManifest.model_validate_json(
-                (root / "plugin.json").read_text(),
+                (root / "plugin.json").read_text(encoding="utf-8"),
             ),
             root,
         )
@@ -266,14 +266,14 @@ async def test_legacy_uninstall_stops_all_agents_preserves_history(
     ).exists()
     assert (
         work / "workspaces" / "cloud-executor" / "AGENTS.md"
-    ).read_text() == "user persona"
+    ).read_text(encoding="utf-8") == "user persona"
     assert not set(profiles).intersection(load_config().agents.profiles)
     assert load_config().agents.active_agent == "default"
     assert not (provisions_dir() / "compat" / "cloudpaw.json").exists()
     for agent_id in profiles:
         assert (
             work / "workspaces" / agent_id / "history.txt"
-        ).read_text() == "user history"
+        ).read_text(encoding="utf-8") == "user history"
 
 
 @pytest.mark.asyncio
@@ -288,7 +288,7 @@ async def test_legacy_non_uninstall_keeps_agents(legacy_cloudpaw, mode):
     profiles = _seed_cloud_agents(work)
     await loader.load_plugin(
         PluginManifest.model_validate_json(
-            (root / "plugin.json").read_text(),
+            (root / "plugin.json").read_text(encoding="utf-8"),
         ),
         root,
     )
@@ -327,7 +327,7 @@ async def test_legacy_cleanup_failure_keeps_retry_marker(
     loader.registry.set_workspace_manager(manager)
     await loader.load_plugin(
         PluginManifest.model_validate_json(
-            (root / "plugin.json").read_text(),
+            (root / "plugin.json").read_text(encoding="utf-8"),
         ),
         root,
     )
@@ -348,8 +348,8 @@ async def test_legacy_cleanup_failure_keeps_retry_marker(
     assert report.errors
     assert root.exists()
     marker = provisions_dir() / "compat" / "cloudpaw.json"
-    assert set(json.loads(marker.read_text())["agents"]) == set(profiles)
-    disk_config = json.loads((work / "config.json").read_text())
+    assert set(json.loads(marker.read_text(encoding="utf-8"))["agents"]) == set(profiles)
+    disk_config = json.loads((work / "config.json").read_text(encoding="utf-8"))
     assert set(profiles).issubset(disk_config["agents"]["profiles"])
     for agent_id in profiles:
         assert (work / "workspaces" / agent_id / "history.txt").exists()
@@ -429,7 +429,7 @@ async def test_legacy_same_id_foreign_workspace_is_not_claimed(
     assert report.clean and report.quiescent, report.errors
     manager.stop_agent.assert_not_awaited()
     assert "cloud-orchestrator" in load_config().agents.profiles
-    assert user_file.read_text() == "private"
+    assert user_file.read_text(encoding="utf-8") == "private"
 
 
 @pytest.mark.asyncio
