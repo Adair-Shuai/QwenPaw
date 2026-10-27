@@ -479,7 +479,7 @@ class Services:  # pylint: disable=protected-access
                 # This producer has entered teardown. Lifecycle retries must
                 # wake its cleanup retry, not cancel an in-flight resource
                 # close and strand the run between those two states.
-                self.plugin._instance.activity.retain_cleanup(
+                self.plugin._instance.activity.protect_cleanup(
                     asyncio.current_task(),
                 )
                 owned.closing = True
@@ -558,7 +558,7 @@ class Services:  # pylint: disable=protected-access
                     # TaskTracker may continue with host-only bookkeeping;
                     # the plugin owns this producer only through its final
                     # resource release and durable terminal status write.
-                    self.plugin._instance.activity.release_cleanup(
+                    self.plugin._instance.activity.release_cleanup_protection(
                         asyncio.current_task(),
                     )
             yield event

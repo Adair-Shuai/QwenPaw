@@ -1305,7 +1305,7 @@ plugin = Plugin()
                 )
                 assert producers
                 assert all(
-                    task in instance.activity.cleanup_tasks
+                    task in instance.activity.protected_cleanup_tasks
                     for task in producers.values()
                 ), "App teardown must be protected from repeated cancellation"
             provider.storage.write_json("release.json", True)

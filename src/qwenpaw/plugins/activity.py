@@ -35,6 +35,7 @@ class PluginActivity:
         self.blocked = False
         self.mutator = None
         self.cleanup_tasks = set()
+        self.protected_cleanup_tasks = set()
         self.cleanup_retries = {}
         self._cleanup_changed = asyncio.Event()
 
@@ -67,6 +68,19 @@ class PluginActivity:
         self.cleanup_tasks.discard(task)
         self._cleanup_changed.set()
 
+    def protect_cleanup(self, task):
+        """Shield an admitted producer's teardown from repeated cancellation.
+
+        The producer remains an active invocation, not a terminal callback:
+        ordinary reload must still refuse while it owns a live resource.
+        """
+        self.protected_cleanup_tasks.add(task)
+        task.add_done_callback(self.protected_cleanup_tasks.discard)
+
+    def release_cleanup_protection(self, task):
+        """End protection before the producer returns to host bookkeeping."""
+        self.protected_cleanup_tasks.discard(task)
+
     async def retry_cleanup(self):
         """Wait for lifecycle retry without cancelling live work."""
         task = asyncio.current_task()
@@ -95,7 +109,11 @@ class PluginActivity:
                 if task not in retried:
                     retry.set()
                     retried.add(task)
-            elif task not in self.cleanup_tasks and not task.cancelling():
+            elif (
+                task not in self.cleanup_tasks
+                and task not in self.protected_cleanup_tasks
+                and not task.cancelling()
+            ):
                 task.cancel()
 
     async def _wait_pending(self, pending, deadline):
