@@ -24,6 +24,7 @@ import stat
 import tempfile
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 import zipfile
 from pathlib import Path
@@ -77,7 +78,10 @@ def _java_exe(dest: Path) -> Path:
 def _http_get(url: str) -> bytes:
     request = urllib.request.Request(url)
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    if token:
+    if token and urllib.parse.urlsplit(url).hostname in {
+        "api.github.com",
+        "github.com",
+    }:
         request.add_header("Authorization", f"Bearer {token}")
     request.add_header("User-Agent", "qwenpaw-build")
     for attempt in range(1, HTTP_ATTEMPTS + 1):
@@ -129,26 +133,26 @@ def _resolve_download_url(
     java_version: str,
     expected_release: str = "",
 ) -> tuple[str, str, str]:
-    """Query the Adoptium API for the latest JRE download URL.
+    """Resolve a pinned release, or discover a development JRE release.
 
-    Returns (download_url, version_label).
+    Returns (download_url, version_label, checksum) from one metadata record.
     """
     os_name, arch = _target()
-    url = (
-        f"{ADOPTIUM_API_BASE}/binary/latest/{java_version}/ga/"
-        f"{os_name}/{arch}/jre/hotspot/normal/eclipse"
-        f"?project=jdk"
-    )
-    print(f"Querying Adoptium API: {url}")
-    # The binary endpoint redirects to the actual download, so we follow
-    # redirects via urlopen.  But first query the assets API to get the
-    # version label for the marker file.
+    if expected_release:
+        release = urllib.parse.quote(expected_release, safe="")
+        endpoint = f"assets/release_name/eclipse/{release}"
+    else:
+        endpoint = f"assets/feature_releases/{java_version}/ga"
     meta_url = (
-        f"{ADOPTIUM_API_BASE}/assets/feature_releases/{java_version}/ga"
-        f"?architecture={arch}&heap_size=normal&image_type=jre"
+        f"{ADOPTIUM_API_BASE}/{endpoint}"
+        f"?architecture={arch}&heap_size=normal&image_type=jre&jvm_impl=hotspot"
         f"&os={os_name}&project=jdk&vendor=eclipse"
     )
+    print(f"Querying Adoptium API: {meta_url}")
     meta = json.loads(_http_get(meta_url).decode("utf-8"))
+    # The exact-release endpoint returns one object; discovery returns a list.
+    if expected_release and isinstance(meta, dict):
+        meta = [meta]
     if not isinstance(meta, list) or not meta or not isinstance(meta[0], dict):
         raise SystemExit("Adoptium release metadata is empty or invalid")
     release_name = str(meta[0].get("release_name") or "")
@@ -160,6 +164,9 @@ def _resolve_download_url(
         )
     binaries = meta[0].get("binaries") or []
     package = (binaries[0].get("package") or {}) if binaries else {}
+    url = str(package.get("link") or "")
+    if not url:
+        raise SystemExit("Adoptium release metadata has no package download link")
     checksum = str(package.get("checksum") or "")
     return url, release_name, checksum
 

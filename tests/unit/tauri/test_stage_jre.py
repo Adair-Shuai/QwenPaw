@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import importlib.util
+import json
 import sys
 from pathlib import Path
+
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HELPER_PATH = REPO_ROOT / "scripts" / "pack-tauri" / "stage_jre.py"
@@ -50,6 +53,54 @@ def test_keep_jre_caches_on_non_windows_platforms(tmp_path):
     helper._prune_regenerable_runtime_files(tmp_path, "mac")
 
     assert cache.read_bytes() == b"cache"
+
+
+@pytest.mark.parametrize("target", [("windows", "x64"), ("mac", "aarch64")])
+def test_pinned_jre_resolves_exact_release_without_querying_latest(
+    monkeypatch,
+    target,
+):
+    helper = _load_helper()
+    monkeypatch.setattr(helper, "_target", lambda: target)
+    release = "jdk-21.0.12.1+1"
+    package_url = (
+        "https://github.com/adoptium/temurin21-binaries/pinned.tar.gz"
+    )
+    digest = "a" * 64
+
+    def fetch(url):
+        assert "/assets/release_name/eclipse/jdk-21.0.12.1%2B1?" in url
+        assert f"architecture={target[1]}" in url
+        assert f"&os={target[0]}&" in url
+        assert "jvm_impl=hotspot" in url
+        assert "latest" not in url
+        return json.dumps(
+            {
+                "release_name": release,
+                "binaries": [
+                    {"package": {"link": package_url, "checksum": digest}},
+                ],
+            },
+        ).encode("utf-8")
+
+    monkeypatch.setattr(helper, "_http_get", fetch)
+    assert helper._resolve_download_url("21", release) == (
+        package_url,
+        release,
+        digest,
+    )
+
+
+def test_pinned_jre_rejects_mismatched_release_metadata(monkeypatch):
+    helper = _load_helper()
+    monkeypatch.setattr(helper, "_target", lambda: ("mac", "aarch64"))
+    monkeypatch.setattr(
+        helper,
+        "_http_get",
+        lambda _url: json.dumps({"release_name": "jdk-21.0.13+9"}).encode(),
+    )
+    with pytest.raises(SystemExit, match="Adoptium release drifted"):
+        helper._resolve_download_url("21", "jdk-21.0.12.1+1")
 
 
 def test_local_verified_jre_marker_skips_metadata_lookup(
