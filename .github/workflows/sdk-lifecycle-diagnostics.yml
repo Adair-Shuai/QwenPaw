@@ -61,6 +61,8 @@ jobs:
               tests/unit/plugins/test_sdk_context_lifecycle.py::test_bound_model_uses_earliest_deadline_and_closes_provider \
               tests/unit/plugins/test_sdk_workspace_contract.py::test_request_cancellation_finishes_delegated_resources \
               tests/unit/plugins/test_sdk_storage_contract.py::test_storage_retries_transient_windows_replace_without_partial_publication \
+              tests/unit/plugins/test_sdk_storage_contract.py::test_storage_read_retries_windows_crt_access_error_without_losing_state \
+              tests/unit/plugins/test_sdk_storage_contract.py::test_storage_mutation_waits_for_other_instances_open_reader \
               tests/unit/utils/test_io_utils.py::test_write_text_atomic_retries_transient_windows_lock
           done
       - name: Verify SDK run custody and filesystem behavior
