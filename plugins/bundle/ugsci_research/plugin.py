@@ -221,8 +221,9 @@ toggling needed.
             """
             return [
                 ToolDescriptor(
-                    name="web_search",
+                    name="research_web_search",
                     func=_web_search,
+                    owner_plugin_id=PLUGIN_ID,
                     enabled_by_default=True,
                     requires_modes=("research",),
                     async_execution=True,
@@ -232,6 +233,7 @@ toggling needed.
                 ToolDescriptor(
                     name="literature_search",
                     func=_literature_search,
+                    owner_plugin_id=PLUGIN_ID,
                     enabled_by_default=True,
                     requires_modes=("research",),
                     async_execution=True,
@@ -244,6 +246,7 @@ toggling needed.
                 ToolDescriptor(
                     name="data_analysis",
                     func=_data_analysis,
+                    owner_plugin_id=PLUGIN_ID,
                     enabled_by_default=True,
                     requires_modes=("research",),
                     async_execution=True,

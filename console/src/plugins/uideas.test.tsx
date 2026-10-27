@@ -300,13 +300,17 @@ describe("UIdeas shipped workspace", () => {
     ).toEqual(["实验3"]);
   });
 
-  it("paginates and sorts the real library while keyboard navigation retains filters", async () => {
+  function seedPaginatedLibrary() {
     ideas = Array.from({ length: 14 }, (_, i) =>
       makeIdea(String(i).padStart(2, "0"), {
         tags: [i === 13 ? "专属标签" : "普通标签"],
         updated_at: `2026-10-${String(i + 1).padStart(2, "0")}T00:00:00Z`,
       }),
     );
+  }
+
+  it("paginates the real library in descending update order", async () => {
+    seedPaginatedLibrary();
     await open();
     expect(panel().getAllByRole("button", { name: /^灵感 \d/ })).toHaveLength(
       12,
@@ -318,6 +322,12 @@ describe("UIdeas shipped workspace", () => {
     expect(panel().getAllByRole("button", { name: /^灵感 \d/ })).toHaveLength(
       2,
     );
+  });
+
+  it("retains filters across keyboard navigation and restores the first page when cleared", async () => {
+    seedPaginatedLibrary();
+    await open();
+    await userEvent.click(panel().getByRole("button", { name: "下一页" }));
     fireEvent.change(screen.getByLabelText("搜索灵感"), {
       target: { value: "专属标签" },
     });
@@ -335,6 +345,14 @@ describe("UIdeas shipped workspace", () => {
     await userEvent.click(
       panel().getAllByRole("button", { name: "清除筛选" })[0],
     );
+    expect(panel().getAllByRole("button", { name: /^灵感 \d/ })).toHaveLength(
+      12,
+    );
+  });
+
+  it("sorts the real library by title and filters by tags", async () => {
+    seedPaginatedLibrary();
+    await open();
     await userEvent.click(screen.getByRole("combobox", { name: "灵感排序" }));
     await userEvent.click(screen.getByText("标题顺序"));
     expect(

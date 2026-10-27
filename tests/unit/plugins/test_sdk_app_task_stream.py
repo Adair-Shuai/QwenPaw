@@ -536,7 +536,11 @@ plugin = Plugin()
             await asyncio.sleep(5.5)
             assert ctx.storage.read_json("handler-stopped.json") is True
             before = ctx.storage.read_json("ticks.json")
-            await asyncio.sleep(0.06)
+            # Observe actual progress without assuming fsync and thread
+            # scheduling complete within three nominal 20ms tick periods.
+            async with asyncio.timeout(3):
+                while ctx.storage.read_json("ticks.json") <= before:
+                    await asyncio.sleep(0.01)
             assert ctx.storage.read_json("ticks.json") > before
             assert ctx.storage.read_json("thread-stopped.json", False) is False
             assert (await host.request("POST", stop, user_id="alice")).json()[

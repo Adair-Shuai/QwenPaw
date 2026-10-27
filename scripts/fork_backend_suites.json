@@ -142,6 +142,9 @@
     "run_center": [
       "tests/unit/plugins/run_center/test_research_router_contract.py",
       "tests/unit/plugins/run_center/test_research.py"
+    ],
+    "research_mode": [
+      "tests/unit/plugins/test_research_mode_registration.py"
     ]
   },
   "required_cases": {
@@ -554,6 +557,11 @@
       "test_invalid_shutdown_budget_does_not_close_service",
       "test_real_loader_drains_running_work_before_removing_routes",
       "test_critical_ledger_retains_timed_out_cleanup_until_retry"
+    ],
+    "tests/unit/plugins/test_research_mode_registration.py": [
+      "test_research_mode_preserves_native_search_through_setup_and_teardown",
+      "test_research_mode_still_rejects_another_plugins_tool_occupancy",
+      "test_research_prompts_reference_the_distinct_search_tool"
     ]
   }
 }

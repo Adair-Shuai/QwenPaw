@@ -99,7 +99,7 @@ Produce the final deliverable (report, paper, summary).
 ## Available Tools
 
 - `literature_search` — Search OpenAlex, arXiv, Crossref for papers
-- `web_search` — Search the web for scientific information
+- `research_web_search` — Search the web for scientific information
 - `data_analysis` — Analyze CSV, JSON, LAS (well log) files
 - All standard QwenPaw tools (shell, file operations, etc.)
 

@@ -1,5 +1,8 @@
 .[local,qoder]
 
+# Required readers used by the default bundled UGSci plugin.
+-r plugins/bundle/ugsci/requirements.txt
+
 # Offline desktop document/data/petroleum toolchain. These packages live in
 # the independently versioned python-packages component, never in CPython.
 numpy

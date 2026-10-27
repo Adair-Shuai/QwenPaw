@@ -310,6 +310,7 @@ def build_layers(
                     "import importlib, qwenpaw, qwenpaw.tauri.entry; "
                     "importlib.import_module('qwenpaw.cli.init_cmd'); "
                     "importlib.import_module('qwenpaw.app._app'); "
+                    "importlib.import_module('xlrd'); "
                     "importlib.import_module('modelscope.hub.api'); "
                     "print(qwenpaw.__file__)"
                 ),

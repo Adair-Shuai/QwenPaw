@@ -45,7 +45,7 @@ METHODOLOGY → COMPUTE → ANALYZE → SYNTHESIZE → WRITE).
 ## Available Tools
 
 - `literature_search` — Search OpenAlex, arXiv, Crossref for papers
-- `web_search` — Search for methods and databases
+- `research_web_search` — Search for methods and databases
 - `data_analysis` — Analyze CSV/JSON data files
 - All standard QwenPaw tools
 
