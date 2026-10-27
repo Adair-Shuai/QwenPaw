@@ -1295,6 +1295,19 @@ plugin = Plugin()
                 > 0
             )
             attempts = provider.storage.read_json("attempts.json")
+            if entry == "app":
+                instance = host._loader.lifecycle.get_instance(
+                    "runtime-cleanup-caller",
+                )
+                workspace = host._workspaces["bound"]
+                producers = await workspace.task_tracker.snapshot_active_tasks(
+                    owner=instance,
+                )
+                assert producers
+                assert all(
+                    task in instance.activity.cleanup_tasks
+                    for task in producers.values()
+                ), "App teardown must be protected from repeated cancellation"
             provider.storage.write_json("release.json", True)
             with _describe_cleanup_failure(
                 host,

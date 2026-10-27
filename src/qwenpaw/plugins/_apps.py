@@ -476,6 +476,12 @@ class Services:  # pylint: disable=protected-access
             finally:
                 from ..utils.io_utils import run_async_to_completion
 
+                # This producer has entered teardown. Lifecycle retries must
+                # wake its cleanup retry, not cancel an in-flight resource
+                # close and strand the run between those two states.
+                self.plugin._instance.activity.retain_cleanup(
+                    asyncio.current_task(),
+                )
                 owned.closing = True
                 try:
                     await stream.aclose()
@@ -549,6 +555,12 @@ class Services:  # pylint: disable=protected-access
                     owned.closing = True
                     _stream_observer.reset(observer_token)
                     _stream_tasks.reset(token)
+                    # TaskTracker may continue with host-only bookkeeping;
+                    # the plugin owns this producer only through its final
+                    # resource release and durable terminal status write.
+                    self.plugin._instance.activity.release_cleanup(
+                        asyncio.current_task(),
+                    )
             yield event
 
         from .custody import stop_task
