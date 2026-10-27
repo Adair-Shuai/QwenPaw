@@ -146,9 +146,24 @@ class Plugin:
                                 },
                             )
 
-                    plugin.resources.task(
+                    recovery = plugin.resources.task(
                         resume(), "explicit recovery delegation"
                     )
+
+                    def recovery_finished(task):
+                        error = None if task.cancelled() else task.exception()
+                        plugin.storage.write_json(
+                            "cancel-recovery-finished.json",
+                            {
+                                "cancelled": task.cancelled(),
+                                "error": str(error) if error else "",
+                            },
+                        )
+
+                    # Result persistence occurs inside the delegated scope.
+                    # Observe the real owned task's completion, after scope
+                    # exit and ResourceScope's registered ledger callback.
+                    recovery.add_done_callback(recovery_finished)
                     raise
                 finally:
                     plugin.storage.write_json(
@@ -369,6 +384,15 @@ async def test_request_cancellation_finishes_delegated_resources(tmp_path):
                 "closed": False,
                 "text": "scoped-reply",
             }
+            async with asyncio.timeout(3):
+                while (
+                    finished := ctx.storage.read_json(
+                        "cancel-recovery-finished.json",
+                        None,
+                    )
+                ) is None:
+                    await asyncio.sleep(0.01)
+            assert finished == {"cancelled": False, "error": ""}
             host.assert_quiescent("extension-contract")
         finally:
             if not pending.done():

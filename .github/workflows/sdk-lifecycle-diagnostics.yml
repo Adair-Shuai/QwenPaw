@@ -8,10 +8,21 @@ permissions:
   contents: read
 
 jobs:
-  windows-sdk:
-    runs-on: windows-latest
+  sdk:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            python: '3.11'
+          - os: ubuntu-latest
+            python: '3.13'
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+      - name: Install Linux isolation dependency
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
       - uses: actions/setup-node@v4
         with:
           node-version-file: .nvmrc
@@ -30,7 +41,7 @@ jobs:
           cp -R console/dist/* src/qwenpaw/console/
       - uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: ${{ matrix.python }}
           cache: pip
       - name: Install production test dependencies
         shell: bash
@@ -47,6 +58,7 @@ jobs:
               tests/unit/plugins/test_sdk_context_bridge.py::test_runtime_owner_retries_failed_provider_scope_via_public_reload \
               tests/unit/plugins/test_sdk_app_task_stream.py::test_cancel_keeps_run_owned_until_failed_thread_scope_really_stops \
               tests/unit/plugins/test_sdk_context_lifecycle.py::test_bound_model_uses_earliest_deadline_and_closes_provider \
+              tests/unit/plugins/test_sdk_workspace_contract.py::test_request_cancellation_finishes_delegated_resources \
               tests/unit/utils/test_io_utils.py::test_write_text_atomic_retries_transient_windows_lock
           done
       - name: Verify SDK run custody and filesystem behavior
@@ -59,4 +71,5 @@ jobs:
             tests/unit/plugins/test_sdk_app_task_stream.py \
             tests/unit/plugins/test_sdk_app_task_storage.py \
             tests/unit/plugins/test_sdk_context_lifecycle.py \
+            tests/unit/plugins/test_sdk_workspace_contract.py \
             tests/unit/utils/test_io_utils.py
