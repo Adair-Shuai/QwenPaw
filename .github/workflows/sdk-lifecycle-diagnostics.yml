@@ -38,19 +38,23 @@ jobs:
           python -m pip install --upgrade 'pip>=26.2.2' 'certifi>=2026.10.19'
           python -m pip install -e '.[dev,test,full]' 'setuptools<82'
       - name: Repeat actual public reload and atomic writer regressions
+        timeout-minutes: 20
         shell: bash
         run: |
           for attempt in 1 2 3; do
-            python -m pytest -v \
+            python -m pytest -v --timeout=90 --timeout-method=thread \
+              -o faulthandler_timeout=60 \
               tests/unit/plugins/test_sdk_context_bridge.py::test_runtime_owner_retries_failed_provider_scope_via_public_reload \
               tests/unit/plugins/test_sdk_app_task_stream.py::test_cancel_keeps_run_owned_until_failed_thread_scope_really_stops \
               tests/unit/plugins/test_sdk_context_lifecycle.py::test_bound_model_uses_earliest_deadline_and_closes_provider \
               tests/unit/utils/test_io_utils.py::test_write_text_atomic_retries_transient_windows_lock
           done
       - name: Verify SDK run custody and filesystem behavior
+        timeout-minutes: 20
         shell: bash
         run: |
-          python -m pytest -v \
+          python -m pytest -v --timeout=90 --timeout-method=thread \
+            -o faulthandler_timeout=60 \
             tests/unit/plugins/test_sdk_context_bridge.py \
             tests/unit/plugins/test_sdk_app_task_stream.py \
             tests/unit/plugins/test_sdk_app_task_storage.py \
