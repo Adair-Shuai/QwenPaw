@@ -210,7 +210,11 @@ for (const [file, titles] of [
       "searches full content and expansion, clears filters, reads full ideas and navigates cluster sources",
       "preserves edited text during realtime refresh and retains explicit experiment links",
       "archives and restores original status from the mounted idea board",
-      "paginates and sorts the real library while keyboard navigation retains filters",
+      // The combined case was split under the same timeout; all three
+      // behavioral paths remain mandatory, including first-page restoration.
+      "paginates the real library in descending update order",
+      "retains filters across keyboard navigation and restores the first page when cleared",
+      "sorts the real library by title and filters by tags",
       "adopts a suggestion then completes and reopens its action without SSE",
       "keeps queued jobs busy across tabs and polls completion without realtime events",
       "shows recoverable task failures and retries from the real page",
