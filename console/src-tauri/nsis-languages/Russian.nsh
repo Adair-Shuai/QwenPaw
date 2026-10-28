@@ -34,3 +34,6 @@ LangString qwenpawCliPathSkipped ${LANG_RUSSIAN} "Skipped adding qwenpaw to user
 LangString qwenpawCliPathMissing ${LANG_RUSSIAN} "qwenpaw.exe was not found; skipped PATH update"
 LangString qwenpawCliPathUpdateFailed ${LANG_RUSSIAN} "Failed to update user PATH"
 LangString qwenpawStopBackendPrompt ${LANG_RUSSIAN} "UGSci всё ещё запущен и использует файлы, которые установщику нужно заменить.$\n$\nЗакройте UGSci (проверьте системный трей), затем нажмите «Повторить», чтобы продолжить. Нажмите «Отмена», чтобы прервать установку."
+LangString qwenpawPrepareInstallFailed ${LANG_RUSSIAN} "Не удалось подготовить установку или удаление QwenPaw.$\n$\nПроверьте сведения ниже. Закройте перечисленные процессы и нажмите «Повторить» после устранения проблемы. Нажмите «Отмена», чтобы прервать операцию.$\n$\nРезультат: $0"
+LangString qwenpawPowerShellStartFailed ${LANG_RUSSIAN} "Не удалось запустить Windows PowerShell. Сценарий подготовки не был выполнен."
+LangString qwenpawRestoreInstallStateFailed ${LANG_RUSSIAN} "Не удалось восстановить средство запуска Native Messaging; QwenPaw повторит попытку при запуске"

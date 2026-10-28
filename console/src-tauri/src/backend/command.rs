@@ -4,9 +4,9 @@ use std::path::{Path, PathBuf};
 #[cfg(debug_assertions)]
 use std::process::{Command as StdCommand, Stdio};
 
+use std::process::Command;
 #[cfg(not(debug_assertions))]
 use tauri::Manager;
-use tauri_plugin_shell::{process::Command, ShellExt};
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub(super) struct LauncherSelection {
@@ -27,19 +27,17 @@ impl LauncherSelection {
 pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelection), String> {
     let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
     let source_path = repo_root.join("src");
-    let command = if command_exists("uv") {
+    let mut command = if command_exists("uv") {
         log::info!(
             "[backend] dev command: uv run python -m qwenpaw.tauri.entry cwd={}",
             repo_root.display(),
         );
-        app.shell()
-            .command("uv")
+        let mut command = Command::new("uv");
+        command
             .args(["run", "python", "-m", "qwenpaw.tauri.entry"])
             .current_dir(repo_root)
-            .env("PYTHONPATH", source_path.display().to_string())
-            // [PROXY-BYPASS] Ensure loopback traffic never goes through proxy.
-            // See: src/qwenpaw/docs/proxy-bypass-design.md
-            .env("NO_PROXY", "localhost,127.0.0.1,::1,0.0.0.0")
+            .env("PYTHONPATH", source_path.display().to_string());
+        command
     } else {
         let (python, prefix_args) = python_command(&repo_root);
         let mut args = prefix_args;
@@ -50,15 +48,19 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
             args.join(" "),
             repo_root.display(),
         );
-        app.shell()
-            .command(python)
+        let mut command = Command::new(python);
+        command
             .args(args)
             .current_dir(repo_root)
-            .env("PYTHONPATH", source_path.display().to_string())
-            // [PROXY-BYPASS] Ensure loopback traffic never goes through proxy.
-            // See: src/qwenpaw/docs/proxy-bypass-design.md
-            .env("NO_PROXY", "localhost,127.0.0.1,::1,0.0.0.0")
+            .env("PYTHONPATH", source_path.display().to_string());
+        command
     };
+    let origins = std::env::var("QWENPAW_CORS_ORIGINS").unwrap_or_default();
+    command.env(
+        "QWENPAW_CORS_ORIGINS",
+        format!("{origins},http://localhost:5173,http://127.0.0.1:5173"),
+    );
+    command.env("NO_PROXY", "localhost,127.0.0.1,::1,0.0.0.0");
     Ok((
         apply_contributed_environment(app, command),
         LauncherSelection {
@@ -70,6 +72,23 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
     ))
 }
 
+#[cfg(not(debug_assertions))]
+pub(super) fn expected_backend_version(app: &tauri::AppHandle) -> Result<String, String> {
+    let resource_dir = app.path().resource_dir().map_err(|err| err.to_string())?;
+    Ok(
+        crate::runtime_layout::resolve_component(&resource_dir, "backend")
+            .map(|component| component.version)
+            .unwrap_or_else(|| app.package_info().version.to_string()),
+    )
+}
+
+#[cfg(not(debug_assertions))]
+pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelection), String> {
+    let resource_dir = app.path().resource_dir().map_err(|err| err.to_string())?;
+    let (command, selection) = create_packaged(&resource_dir)?;
+    Ok((apply_contributed_environment(app, command), selection))
+}
+
 /// Builds the command used to start the packaged Python backend sidecar.
 ///
 /// b5/b6 launch the frozen PyInstaller executable. b7 can atomically select a
@@ -77,12 +96,9 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
 /// `state/active.json`. An invalid or incomplete selection falls back to the
 /// frozen executable so a failed migration cannot brick startup.
 #[cfg(not(debug_assertions))]
-pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelection), String> {
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|err| format!("failed to resolve resource directory: {err}"))?;
-    let launch = packaged_backend_launch(app)?;
+pub(super) fn create_packaged(resource_dir: &Path) -> Result<(Command, LauncherSelection), String> {
+    let resource_dir = resource_dir.to_path_buf();
+    let launch = packaged_backend_launch(&resource_dir)?;
     let backend = launch.executable;
     let backend_args = launch.args;
     let backend_dir = launch.working_directory;
@@ -95,20 +111,19 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
     // Resolve the bundled officecli directory (if present) so it can be
     // prepended to PATH — this makes `shutil.which("officecli")` find
     // the bundled binary inside the desktop app.
-    let officecli_dir = packaged_officecli_dir(app);
+    let officecli_dir = packaged_officecli_dir(&resource_dir);
     if let Some(ref dir) = officecli_dir {
         log::info!("[backend] bundled officecli: {}", dir.display());
     } else {
         log::warn!("[backend] bundled officecli not found");
     }
-    let mut command = app
-        .shell()
-        .command(backend)
+    let mut command = Command::new(backend);
+    command
         .args(backend_args)
         .current_dir(&backend_dir)
         .env(
             path_env_key(),
-            packaged_path(app, &backend_dir, officecli_dir.as_deref())?,
+            packaged_path(&resource_dir, &backend_dir, officecli_dir.as_deref())?,
         )
         .env(
             "QWENPAW_TAURI_RESOURCE_DIR",
@@ -122,13 +137,13 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
             .map_err(|err| format!("failed to join packaged PYTHONPATH entries: {err}"))?
             .into_string()
             .map_err(|_| "packaged PYTHONPATH contains non-Unicode data".to_string())?;
-        command = command.env("PYTHONPATH", python_path);
+        command.env("PYTHONPATH", python_path);
     }
     if cfg!(windows) {
         // Mark this as a desktop backend regardless of frozen vs python mode.
         // PYTHONNOUSERSITE keeps the python.exe path reproducible; harmless
         // for the frozen executable which has its own import system.
-        command = command
+        command
             .env("QWENPAW_DESKTOP_APP", "1")
             .env("PYTHONNOUSERSITE", "1");
     }
@@ -137,24 +152,23 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
     // build_pyinstaller.ps1).  Only set when the user has not already
     // configured their own mirror or proxy.
     if std::env::var_os("PIP_INDEX_URL").is_none() {
-        command = command.env("PIP_INDEX_URL", "https://pypi.tuna.tsinghua.edu.cn/simple/");
+        command.env("PIP_INDEX_URL", "https://pypi.tuna.tsinghua.edu.cn/simple/");
     }
     if std::env::var_os("PIP_EXTRA_INDEX_URL").is_none() {
-        command = command.env("PIP_EXTRA_INDEX_URL", "https://pypi.org/simple/");
+        command.env("PIP_EXTRA_INDEX_URL", "https://pypi.org/simple/");
     }
 
-    let mut command = apply_contributed_environment(app, command);
     // A complete Playwright Chromium payload exceeds the practical NSIS
     // installer mapping limit on Windows. The sidecar downloads the exact
     // driver-matched revision into the user's QwenPaw data directory instead.
     if cfg!(windows) {
-        command = command.env("QWENPAW_DESKTOP_MANAGED_PLAYWRIGHT", "1");
+        command.env("QWENPAW_DESKTOP_MANAGED_PLAYWRIGHT", "1");
     }
     // Bundled standalone Python used by the backend to install third-party
     // plugin dependencies (sys.executable is the frozen backend, not Python).
-    if let Some(python) = packaged_python_runtime(app) {
+    if let Some(python) = packaged_python_runtime(&resource_dir) {
         log::info!("[backend] bundled python runtime: {}", python.display());
-        command = command.env(
+        command.env(
             "QWENPAW_DESKTOP_PY_RUNTIME",
             python.to_string_lossy().to_string(),
         );
@@ -164,9 +178,9 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
              installation will be unavailable"
         );
     }
-    if let Some(node_runtime) = packaged_node_runtime(app) {
+    if let Some(node_runtime) = packaged_node_runtime(&resource_dir) {
         log::info!("[backend] bundled node runtime: {}", node_runtime.display());
-        command = command.env(
+        command.env(
             "QWENPAW_DESKTOP_NODE_RUNTIME",
             node_runtime.to_string_lossy().to_string(),
         );
@@ -176,7 +190,7 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
     // Also expose the officecli directory as an env var so the Python
     // backend can locate the binary directly (not just via PATH).
     if let Some(ref dir) = officecli_dir {
-        command = command.env(
+        command.env(
             "QWENPAW_DESKTOP_OFFICECLI_DIR",
             dir.to_string_lossy().to_string(),
         );
@@ -185,18 +199,18 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
     // launch the NeqSim MCP Server as a stdio subprocess.  When the JRE
     // or JAR is absent (non-desktop or stripped build), the backend
     // simply skips NeqSim auto-registration.
-    if let Some(java_home) = packaged_java_runtime(app) {
+    if let Some(java_home) = packaged_java_runtime(&resource_dir) {
         log::info!("[backend] bundled java runtime: {}", java_home.display());
-        command = command.env(
+        command.env(
             "QWENPAW_DESKTOP_JAVA_HOME",
             java_home.to_string_lossy().to_string(),
         );
     } else {
         log::debug!("[backend] bundled java runtime not found");
     }
-    if let Some(jar) = packaged_neqsim_jar(app) {
+    if let Some(jar) = packaged_neqsim_jar(&resource_dir) {
         log::info!("[backend] bundled neqsim jar: {}", jar.display());
-        command = command.env(
+        command.env(
             "QWENPAW_DESKTOP_NEQSIM_JAR",
             jar.to_string_lossy().to_string(),
         );
@@ -215,13 +229,13 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
 }
 
 #[cfg(not(debug_assertions))]
-fn packaged_python_runtime(app: &tauri::AppHandle) -> Option<PathBuf> {
-    packaged_python_runtime_selection(app).map(|(path, _managed)| path)
+fn packaged_python_runtime(resource_dir: &Path) -> Option<PathBuf> {
+    packaged_python_runtime_selection(&resource_dir).map(|(path, _managed)| path)
 }
 
 #[cfg(not(debug_assertions))]
-fn packaged_python_runtime_selection(app: &tauri::AppHandle) -> Option<(PathBuf, bool)> {
-    let resource_dir = app.path().resource_dir().ok()?;
+fn packaged_python_runtime_selection(resource_dir: &Path) -> Option<(PathBuf, bool)> {
+    let resource_dir = resource_dir.to_path_buf();
     let selected = crate::runtime_layout::resolve_component(&resource_dir, "python-runtime");
     let (base, managed) = selected
         .as_ref()
@@ -250,20 +264,20 @@ fn packaged_python_runtime_selection(app: &tauri::AppHandle) -> Option<(PathBuf,
     if found.is_none() && managed {
         log::error!("[backend] managed Python runtime is incomplete; disabling it before launch");
         if crate::runtime_layout::disable_managed_component("python-runtime").is_ok() {
-            return packaged_python_runtime_selection(app);
+            return packaged_python_runtime_selection(&resource_dir);
         }
     }
     found
 }
 
 #[cfg(not(debug_assertions))]
-fn packaged_java_runtime(app: &tauri::AppHandle) -> Option<PathBuf> {
+fn packaged_java_runtime(resource_dir: &Path) -> Option<PathBuf> {
     // The JRE root is <resource_dir>/binaries/java-runtime.  The Python
     // side (_bundled_java_exe in neqsim.py) handles both the flat layout
     // (bin/java) and the macOS bundle layout (Contents/Home/bin/java),
     // so we always return the root directory when a java binary can be
     // found in either location.
-    let resource_dir = app.path().resource_dir().ok()?;
+    let resource_dir = resource_dir.to_path_buf();
     let root = crate::runtime_layout::resolve_component(&resource_dir, "java-runtime")
         .map(|selected| selected.root)
         .unwrap_or_else(|| resource_dir.join("binaries").join("java-runtime"));
@@ -288,8 +302,8 @@ fn packaged_java_runtime(app: &tauri::AppHandle) -> Option<PathBuf> {
 }
 
 #[cfg(not(debug_assertions))]
-fn packaged_neqsim_jar(app: &tauri::AppHandle) -> Option<PathBuf> {
-    let resource_dir = app.path().resource_dir().ok()?;
+fn packaged_neqsim_jar(resource_dir: &Path) -> Option<PathBuf> {
+    let resource_dir = resource_dir.to_path_buf();
     let root = crate::runtime_layout::resolve_component(&resource_dir, "neqsim")
         .map(|selected| selected.root)
         .unwrap_or_else(|| resource_dir.join("binaries").join("neqsim"));
@@ -303,14 +317,14 @@ fn packaged_neqsim_jar(app: &tauri::AppHandle) -> Option<PathBuf> {
 /// feature needs what.
 fn apply_contributed_environment(app: &tauri::AppHandle, mut command: Command) -> Command {
     for (key, value) in crate::runtime_env::collect(app) {
-        command = command.env(key, value);
+        command.env(key, value);
     }
     command
 }
 
 #[cfg(not(debug_assertions))]
-fn packaged_node_runtime(app: &tauri::AppHandle) -> Option<PathBuf> {
-    let resource_dir = app.path().resource_dir().ok()?;
+fn packaged_node_runtime(resource_dir: &Path) -> Option<PathBuf> {
+    let resource_dir = resource_dir.to_path_buf();
     let root = crate::runtime_layout::resolve_component(&resource_dir, "node-runtime")
         .map(|selected| selected.root)
         .unwrap_or_else(|| resource_dir.join("binaries").join("node-runtime"));
@@ -323,8 +337,8 @@ fn packaged_node_runtime(app: &tauri::AppHandle) -> Option<PathBuf> {
 }
 
 #[cfg(not(debug_assertions))]
-fn packaged_officecli_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
-    let resource_dir = app.path().resource_dir().ok()?;
+fn packaged_officecli_dir(resource_dir: &Path) -> Option<PathBuf> {
+    let resource_dir = resource_dir.to_path_buf();
     let dir = crate::runtime_layout::resolve_component(&resource_dir, "officecli")
         .map(|selected| selected.root)
         .unwrap_or_else(|| resource_dir.join("binaries").join("officecli"));
@@ -337,16 +351,13 @@ fn packaged_officecli_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
 }
 
 #[cfg(not(debug_assertions))]
-fn packaged_backend_executable(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+fn packaged_backend_executable(resource_dir: &Path) -> Result<PathBuf, String> {
     let executable_name = if cfg!(windows) {
         "qwenpaw-backend.exe"
     } else {
         "qwenpaw-backend"
     };
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|err| format!("failed to resolve resource directory: {err}"))?;
+    let resource_dir = resource_dir.to_path_buf();
     let root = crate::runtime_layout::resolve_component(&resource_dir, "backend")
         .filter(|selected| selected.kind.as_deref() != Some("python"))
         .map(|selected| {
@@ -383,17 +394,14 @@ struct PackagedBackendLaunch {
 }
 
 #[cfg(not(debug_assertions))]
-fn packaged_backend_launch(app: &tauri::AppHandle) -> Result<PackagedBackendLaunch, String> {
-    let resource_dir = app
-        .path()
-        .resource_dir()
-        .map_err(|err| format!("failed to resolve resource directory: {err}"))?;
+fn packaged_backend_launch(resource_dir: &Path) -> Result<PackagedBackendLaunch, String> {
+    let resource_dir = resource_dir.to_path_buf();
     if let Some(backend) = crate::runtime_layout::resolve_component(&resource_dir, "backend") {
         if backend.kind.as_deref() == Some("python") {
             let package = backend.root.join("qwenpaw");
             if package.is_dir() {
-                let (python, managed_python_runtime) = packaged_python_runtime_selection(app)
-                    .ok_or_else(|| {
+                let (python, managed_python_runtime) =
+                    packaged_python_runtime_selection(&resource_dir).ok_or_else(|| {
                         "active Python backend requires an active or bundled Python runtime"
                             .to_string()
                     })?;
@@ -426,11 +434,11 @@ fn packaged_backend_launch(app: &tauri::AppHandle) -> Result<PackagedBackendLaun
             );
             if backend.managed {
                 crate::runtime_layout::disable_managed_component("backend")?;
-                return packaged_backend_launch(app);
+                return packaged_backend_launch(&resource_dir);
             }
         }
     }
-    let executable = packaged_backend_executable(app)?;
+    let executable = packaged_backend_executable(&resource_dir)?;
     let working_directory = executable
         .parent()
         .ok_or_else(|| format!("backend executable has no parent: {}", executable.display()))?
@@ -448,13 +456,13 @@ fn packaged_backend_launch(app: &tauri::AppHandle) -> Result<PackagedBackendLaun
 
 #[cfg(not(debug_assertions))]
 fn packaged_path(
-    app: &tauri::AppHandle,
+    resource_dir: &Path,
     backend_dir: &Path,
     officecli_dir: Option<&Path>,
 ) -> Result<String, String> {
     let mut paths = Vec::new();
     if cfg!(windows) {
-        if let Some(python) = packaged_python_runtime(app) {
+        if let Some(python) = packaged_python_runtime(&resource_dir) {
             if let Some(dir) = python.parent() {
                 paths.push(dir.to_path_buf());
                 paths.push(dir.join("Scripts"));
@@ -529,5 +537,30 @@ fn python_command(repo_root: &Path) -> (String, Vec<&'static str>) {
         ("python3".to_string(), vec![])
     } else {
         ("python".to_string(), vec![])
+    }
+}
+
+pub(super) fn rollback_managed_launcher(launcher: LauncherSelection) -> Result<(), String> {
+    if crate::runtime_layout::restore_previous_runtime_set()? {
+        return Ok(());
+    }
+    let selected = [
+        ("backend", launcher.managed_backend),
+        ("python-packages", launcher.managed_python_packages),
+        ("python-runtime", launcher.managed_python_runtime),
+    ];
+    let mut failures = Vec::new();
+    for (component, managed) in selected {
+        if !managed {
+            continue;
+        }
+        if let Err(err) = crate::runtime_layout::disable_managed_component(component) {
+            failures.push(format!("{component}: {err}"));
+        }
+    }
+    if failures.is_empty() {
+        Ok(())
+    } else {
+        Err(failures.join("; "))
     }
 }

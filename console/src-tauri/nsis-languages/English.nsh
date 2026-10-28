@@ -53,3 +53,6 @@ LangString qwenpawExecutionExternalRadio ${LANG_ENGLISH} "Use my Python environm
 LangString qwenpawExecutionExternalDescription ${LANG_ENGLISH} "Skills, scripts and pip use the selected environment without changing the QwenPaw core runtime."
 LangString qwenpawExecutionBrowse ${LANG_ENGLISH} "Browse..."
 LangString qwenpawExecutionInvalid ${LANG_ENGLISH} "Select an existing Python executable. QwenPaw will verify that it is 64-bit Python 3.11, 3.12 or 3.13 when the app starts."
+LangString qwenpawPrepareInstallFailed ${LANG_ENGLISH} "QwenPaw could not prepare for installation or removal.$\n$\nReview the details below. Close any listed processes, then click Retry after resolving the problem. Click Cancel to abort.$\n$\nResult: $0"
+LangString qwenpawPowerShellStartFailed ${LANG_ENGLISH} "Windows PowerShell could not start. The preparation script did not run."
+LangString qwenpawRestoreInstallStateFailed ${LANG_ENGLISH} "Could not restore the Native Messaging launcher; QwenPaw will retry recovery at startup"

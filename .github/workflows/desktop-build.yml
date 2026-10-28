@@ -314,7 +314,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: desktop-verify-logs-tauri-windows-${{ steps.version.outputs.version }}
-          path: ${{ runner.temp }}/desktop-verify-logs
+          path: |
+            ${{ runner.temp }}/desktop-verify-logs
+            ${{ runner.temp }}/qwenpaw-desktop-stdout.log
+            ${{ runner.temp }}/qwenpaw-desktop-stderr.log
+            ${{ runner.temp }}/qwenpaw-desktop-logs/
           if-no-files-found: ignore
           retention-days: 7
 

@@ -48,10 +48,11 @@ def bundled_environment(tmp_path):
     owner = distribution(host, "sdk-owner-tool", "1.0")
     vendor = host / "sdk_owner_tool" / "_vendor"
     bundled = distribution(vendor, "sdk-audit-probe", "0.9")
+    public_path = (vendor / "sdk_audit_probe.py").relative_to(host).as_posix()
     with (owner / "RECORD").open("a", encoding="utf-8") as record:
         record.write(f"{bundled.relative_to(host).as_posix()}/METADATA,,\n")
         record.write(
-            f"{(vendor / 'sdk_audit_probe.py').relative_to(host).as_posix()},,\n",
+            f"{public_path},,\n",
         )
     return host, vendor
 

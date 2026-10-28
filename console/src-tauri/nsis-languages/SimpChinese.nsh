@@ -53,3 +53,6 @@ LangString qwenpawExecutionExternalRadio ${LANG_SIMPCHINESE} "使用我自己的
 LangString qwenpawExecutionExternalDescription ${LANG_SIMPCHINESE} "Skill、脚本和 pip 使用所选环境；不会改变 QwenPaw 核心运行时。"
 LangString qwenpawExecutionBrowse ${LANG_SIMPCHINESE} "浏览..."
 LangString qwenpawExecutionInvalid ${LANG_SIMPCHINESE} "请选择已存在的 Python 可执行文件。QwenPaw 启动后会在普通用户权限下校验其是否为 64 位 Python 3.11、3.12 或 3.13。"
+LangString qwenpawPrepareInstallFailed ${LANG_SIMPCHINESE} "QwenPaw 无法完成安装或卸载前的准备。$\n$\n请查看下方详情；如列出了进程，请关闭它们。解决问题后点击“重试”，点击“取消”将中止操作。$\n$\n返回结果：$0"
+LangString qwenpawPowerShellStartFailed ${LANG_SIMPCHINESE} "无法启动 Windows PowerShell，准备脚本未运行。"
+LangString qwenpawRestoreInstallStateFailed ${LANG_SIMPCHINESE} "无法恢复 Native Messaging 启动器；QwenPaw 将在下次启动时重试恢复"

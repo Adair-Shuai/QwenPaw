@@ -7,6 +7,7 @@ helpers, pool automation read/write/copy round trips, requirements and
 emoji extraction, conflict-name suggestion, zip extraction and import,
 and the skill-content validation/render helpers.
 """
+
 # pylint: disable=protected-access,redefined-outer-name,unused-argument,use-implicit-booleaness-not-comparison  # noqa: E501
 from __future__ import annotations
 
@@ -50,7 +51,6 @@ from qwenpaw.agents.skill_system.store import (
     write_pool_skill_automation,
 )
 from qwenpaw.exceptions import SkillsError
-
 
 SKILL_MD = """---
 name: demo
@@ -585,13 +585,48 @@ class TestDirectoryTreeRoundTrip:
         assert (tmp_path / "a.txt").read_text(encoding="utf-8") == "hello"
         assert (tmp_path / "sub" / "b.md").read_text(encoding="utf-8") == ""
 
+    def test_create_files_from_tree_preserves_binary(self, tmp_path):
+        payload = b"\x89PNG\x00\xff"
+        _create_files_from_tree(tmp_path, {"assets": {"image.png": payload}})
+        assert (tmp_path / "assets" / "image.png").read_bytes() == payload
+
     def test_create_files_rejects_invalid_value(self, tmp_path):
         with pytest.raises(SkillsError):
             _create_files_from_tree(tmp_path, {"bad": 123})
 
-    def test_create_files_rejects_traversal_name(self, tmp_path):
-        with pytest.raises(SkillsError):
-            _create_files_from_tree(tmp_path, {"../escape.txt": "x"})
+    @pytest.mark.parametrize("content", ["x", b"\x00\xff"])
+    @pytest.mark.parametrize("name", ["../escape.txt", "..\\escape.txt"])
+    def test_create_files_rejects_traversal_name(
+        self,
+        tmp_path,
+        name,
+        content,
+    ):
+        skill_dir = tmp_path / "skill"
+        skill_dir.mkdir()
+        with pytest.raises(SkillsError, match="outside skill directory"):
+            _create_files_from_tree(skill_dir, {name: content})
+        assert not (tmp_path / "escape.txt").exists()
+
+    @pytest.mark.parametrize("content", ["x", b"\x00\xff"])
+    def test_create_files_rejects_symlink_escape(self, tmp_path, content):
+        skill_dir = tmp_path / "skill"
+        skill_dir.mkdir()
+        outside = tmp_path / "outside.bin"
+        outside.write_bytes(b"original")
+        if os.name == "nt":
+            # Directory junctions exercise the real escape without requiring
+            # Windows Developer Mode / the file-symlink privilege.
+            import _winapi
+
+            _winapi.CreateJunction(str(tmp_path), str(skill_dir / "link"))
+            name = "link/outside.bin"
+        else:
+            (skill_dir / "link.bin").symlink_to(outside)
+            name = "link.bin"
+        with pytest.raises(SkillsError, match="outside skill directory"):
+            _create_files_from_tree(skill_dir, {name: content})
+        assert outside.read_bytes() == b"original"
 
 
 # ---------------------------------------------------------------------------

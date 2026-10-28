@@ -27,8 +27,14 @@ SUITES = (
     "tests/unit/tauri/test_stage_officecli.py",
     "tests/unit/tauri/test_ugsci_release_data.py",
     "tests/unit/tauri/test_storage_capacity_publication.py",
+    "tests/unit/tauri/test_backend_guard.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/tauri/test_backend_guard.py": {
+        "test_runtime_lock_rejects_a_second_owner",
+        "test_runtime_lock_is_released_after_process_death",
+        "test_runtime_discovery_binds_component_host_identity",
+    },
     "tests/unit/tauri/test_stage_officecli.py": {
         "test_reviewed_pin_does_not_query_latest",
         "test_matching_marker_cannot_bypass_cached_binary_validation",

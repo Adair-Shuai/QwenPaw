@@ -25,6 +25,7 @@ import {
   useEffect,
   useId,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -191,6 +192,12 @@ export default function SidebarSettingsPanel({
   onLogout,
 }: SidebarSettingsPanelProps) {
   const { t, i18n } = useTranslation();
+  const panelRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    panelRef.current
+      ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
+      ?.focus({ preventScroll: true });
+  }, []);
   const { themeMode, setThemeMode } = useTheme();
   const [wideMode, setWideMode] = useState(getChatWideModePreference);
   const [showThinking, setShowThinking] = useState(getShowThinkingPreference);
@@ -406,7 +413,7 @@ export default function SidebarSettingsPanel({
   );
 
   return (
-    <div className={styles.panel}>
+    <div ref={panelRef} className={styles.panel}>
       <LocalAvatarPicker />
       <FlyoutItem
         icon={<Palette size={16} />}

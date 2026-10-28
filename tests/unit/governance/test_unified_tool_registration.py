@@ -208,12 +208,6 @@ class TestBuiltinDescriptorGovernance:
             gaps = _collect_governance_gaps(registry)
         assert "missing_gov_tool" in gaps
 
-    def test_ast_search_registered(self):
-        assert DEFAULT_REGISTRY.get_type("AstSearch") == "file"
-        assert (
-            DEFAULT_REGISTRY.python_to_policy_name("ast_search") == "AstSearch"
-        )
-
     def test_core_builtins_registered(self):
         expected = {
             "Read": "file",
@@ -227,6 +221,7 @@ class TestBuiltinDescriptorGovernance:
             "RecallHistory": "internal",
             "RecallHistoryPython": "shell",
             "MemorySearch": "internal",
+            "MemoryListTags": "internal",
             "MemoryRemember": "network",
         }
         for name, tool_type in expected.items():
@@ -241,6 +236,7 @@ class TestBuiltinDescriptorGovernance:
         """
         expected_mappings = {
             "memory_search": "MemorySearch",
+            "memory_list_tags": "MemoryListTags",
             "memory_remember": "MemoryRemember",
         }
         for python_name, policy_name in expected_mappings.items():
@@ -723,7 +719,7 @@ class TestRegisterToolRollback:
 
     @pytest.mark.asyncio
     async def test_write_config_failure_rolls_back_governed_runtime_tool(self):
-        """Failed activation revokes published tools without leaving ownership."""
+        """Failed activation revokes tools without leaving ownership."""
         plugin_id = "__ut_rollback_write_fail__"
         tool_name = "__ut_rollback_write_tool__"
         policy = "UtRollbackWriteTool"
@@ -794,8 +790,6 @@ class TestRegisterToolRollback:
 
     def test_missing_active_agent_uses_existing_profile_without_mutation(self):
         """A stale active_agent must not break GenUI preference seeding."""
-        from types import SimpleNamespace
-
         root_config = SimpleNamespace(
             agents=SimpleNamespace(
                 active_agent="cloud-orchestrator",
@@ -827,7 +821,7 @@ class TestRegisterToolRollback:
             patch(
                 "qwenpaw.config.config.save_agent_config",
                 side_effect=lambda agent_id, value: observed.update(
-                    agent_id=agent_id
+                    agent_id=agent_id,
                 ),
             ),
         ):

@@ -106,9 +106,9 @@ async def test_satisfied_and_marker_excluded_manifest_does_not_install(
     assert installer == []
 
 
-@pytest.mark.parametrize("dependency", ["httpx==0.0.1", "Pillow==0.0.1"])
+@pytest.mark.parametrize("dependency", ["httpx==0.0.1", "uvicorn==0.0.1"])
 @pytest.mark.parametrize("origin", ["manifest", "requirements"])
-async def test_manifest_cannot_replace_host_or_sdk_distribution(
+async def test_manifest_cannot_replace_protected_host_distribution(
     tmp_path,
     installer,
     dependency,
@@ -120,7 +120,10 @@ async def test_manifest_cannot_replace_host_or_sdk_distribution(
         dependency if origin == "requirements" else None,
     )
     async with PluginTestHost(tmp_path / "host") as host:
-        with pytest.raises(SDKRestartRequiredError):
+        with pytest.raises(
+            SDKRestartRequiredError,
+            match="Restart the backend",
+        ):
             await host.install(source)
         corrected = tmp_path / "corrected"
         corrected.mkdir()
@@ -149,19 +152,28 @@ async def test_manifest_unsupported_syntax_is_not_silently_ignored(
     assert installer == []
 
 
+@pytest.mark.parametrize("sdk", [False, True])
 async def test_both_constraints_apply_when_same_package_is_declared_twice(
     tmp_path,
     installer,
+    sdk,
 ):
     source = package(
         tmp_path,
-        ["packaging==0.0.1"],
-        f"packaging=={version('packaging')}\n",
+        ["b01-probe-conflict==1.0"],
+        "b01-probe-conflict==2.0\n",
+        sdk=sdk,
     )
     async with PluginTestHost(tmp_path / "host") as host:
-        with pytest.raises(SDKRestartRequiredError):
+        # The fixture installs 1.0; the second constraint must still fail
+        # post-install verification, before the plugin can register.
+        with pytest.raises(SDKError, match="b01-probe-conflict==2.0"):
             await host.install(source)
-    assert installer == []
+    assert len(installer) == 1
+    assert set(installer[0].split()) == {
+        "b01-probe-conflict==1.0",
+        "b01-probe-conflict==2.0",
+    }
 
 
 async def test_boot_checks_manifest_without_installing_or_mutating_source(
@@ -189,7 +201,7 @@ async def test_upgrade_rejection_keeps_old_tool_callable(tmp_path, installer):
     two = tool_package(tmp_path, "2.0.0")
     path = two / "plugin.json"
     manifest = json.loads(path.read_text())
-    manifest["dependencies"] = ["Pillow==0.0.1"]
+    manifest["dependencies"] = ["uvicorn==0.0.1"]
     path.write_text(json.dumps(manifest))
     async with PluginTestHost(tmp_path / "host") as host:
         assert (await host.install(one)).ok
@@ -272,7 +284,11 @@ plugin = Plugin()
     shutil.copytree(
         Path(qwenpaw.__file__).resolve().parent,
         host_source / "qwenpaw",
-        ignore=shutil.ignore_patterns("__pycache__", "node_modules", "console"),
+        ignore=shutil.ignore_patterns(
+            "__pycache__",
+            "node_modules",
+            "console",
+        ),
     )
     code = r"""
 import asyncio, importlib.metadata, json, subprocess, sys

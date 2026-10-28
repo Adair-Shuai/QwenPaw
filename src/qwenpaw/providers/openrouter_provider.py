@@ -488,9 +488,12 @@ class OpenRouterProvider(Provider):
                     **build_httpx_proxy_kwargs(self.base_url),
                 ),
             }
+        disable_kwargs = self.get_agent_thinking_kwargs(model_id, "off")
+        disable_kwargs.pop("disable_thinking", None)
         return OpenAIChatModelCompat(
             credential=credential,
             provider_id=self.id,
+            disable_thinking_kwargs=disable_kwargs,
             usage_guard=lambda: self.check_model_billing(model_id),
             request_policy=self.prepare_request,
             model=model_id,

@@ -27,6 +27,7 @@ export default defineConfig(({ command, mode }) => {
   // while `vite build --mode test` is a real build that needs real CSS.
   const isVitest = command === "serve" && mode === "test";
   const env = loadEnv(mode, process.cwd(), "");
+  const desktop = mode === "tauri";
   // Empty = same-origin; frontend and backend served together, no hardcoded host.
   // Use a dedicated Vite-prefixed key so unrelated shell BASE_URL values don't leak into the build.
   const apiBaseUrl = env.VITE_API_BASE_URL ?? "";
@@ -34,17 +35,36 @@ export default defineConfig(({ command, mode }) => {
 
   return {
     // Preserve root asset URLs for existing root and /console deployments.
-    base: consoleBasename
-      ? `${normalizeConsoleBasename(consoleBasename)}/`
-      : "/",
+    base:
+      !desktop && consoleBasename
+        ? `${normalizeConsoleBasename(consoleBasename)}/`
+        : "/",
     define: {
-      VITE_API_BASE_URL: JSON.stringify(apiBaseUrl),
+      VITE_API_BASE_URL: JSON.stringify(desktop ? "" : apiBaseUrl),
       TOKEN: JSON.stringify(env.TOKEN || ""),
       MOBILE: false,
     },
     plugins: [
       react(),
       startupMonitorPlugin(),
+      ...(desktop
+        ? [
+            {
+              name: "desktop-document",
+              configureServer(server) {
+                server.middlewares.use((req, _res, next) => {
+                  // Keep reloads and login redirects in the desktop client in dev.
+                  if (
+                    req.headers.accept?.includes("text/html") &&
+                    !req.url?.startsWith("/api/")
+                  )
+                    req.url = "/tauri.html";
+                  next();
+                });
+              },
+            } satisfies Plugin,
+          ]
+        : []),
       ...(isVitest ? [cssStubPlugin] : []),
     ],
     css: {
@@ -166,21 +186,21 @@ export default defineConfig(({ command, mode }) => {
       include: ["diff"],
     },
     build: {
+      ...(desktop ? { outDir: "dist-tauri" } : {}),
       // Output to QwenPaw's console directory,
       // so we don't need to copy files manually after build.
       // outDir: path.resolve(__dirname, "../src/qwenpaw/console"),
       // emptyOutDir: true,
       cssCodeSplit: true,
-      sourcemap: mode !== "production",
+      sourcemap: mode !== "production" && !desktop,
       chunkSizeWarningLimit: 1000,
       rollupOptions: {
+        ...(desktop ? { input: path.resolve(__dirname, "tauri.html") } : {}),
         output: {
           manualChunks(id) {
-            if (id.includes("vite/preload-helper")) {
-              return "ui-vendor";
-            }
-            // Let Rollup place the chart graph with its lazy consumers.
-            // Forcing it into a vendor chunk creates a cycle with UI helpers.
+            if (desktop) return;
+            if (id.includes("vite/preload-helper")) return "ui-vendor";
+            // Keep chart dependencies with their lazy consumers.
             if (
               id.includes("node_modules/d3-") ||
               id.includes("node_modules/d3/") ||

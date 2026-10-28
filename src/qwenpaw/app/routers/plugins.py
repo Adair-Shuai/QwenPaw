@@ -4,15 +4,9 @@
 static files.  Also provides runtime install / uninstall endpoints."""
 
 import asyncio
-from ..utils import schedule_agent_reload
-from ...plugins.runtime import invoke_plugin_callback
 import hashlib
 from urllib.parse import urlsplit
-from ...distribution import (
-    EXTERNAL_PLUGIN_UPGRADE_HOSTS,
-    upgrade_source_requires_digest,
-)
-from ...utils.windows_paths import copy_tree, extract_zip, io_path, remove_tree
+import http.client
 import json
 import logging
 import mimetypes
@@ -20,7 +14,9 @@ import os
 import re
 import shutil
 import stat
+import ssl
 import tempfile
+import urllib.error
 import urllib.request
 import uuid
 import zipfile
@@ -31,6 +27,14 @@ from typing import Any, Optional
 from fastapi import APIRouter, HTTPException, Request, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
+
+from ...distribution import (
+    EXTERNAL_PLUGIN_UPGRADE_HOSTS,
+    upgrade_source_requires_digest,
+)
+from ...utils.windows_paths import copy_tree, extract_zip, io_path, remove_tree
+from ..utils import schedule_agent_reload
+from ...plugins.runtime import invoke_plugin_callback
 
 from ...market.registry import MarketProviderBusyError
 from ...plugins.activity import PluginBusyError
@@ -588,10 +592,14 @@ async def uninstall_plugin_source(
             if root is not None:
                 if was_adopted:
                     await asyncio.to_thread(
-                        set_component_update_adoption, plugin_id, False
+                        set_component_update_adoption,
+                        plugin_id,
+                        False,
                     )
                 await asyncio.to_thread(
-                    mark_plugin_uninstalled, plugin_id, plugins_dir=root
+                    mark_plugin_uninstalled,
+                    plugin_id,
+                    plugins_dir=root,
                 )
             report = await loader.lifecycle.unload(
                 plugin_id,
@@ -610,11 +618,15 @@ async def uninstall_plugin_source(
             if root is not None:
                 if was_adopted:
                     await asyncio.to_thread(
-                        set_component_update_adoption, plugin_id, True
+                        set_component_update_adoption,
+                        plugin_id,
+                        True,
                     )
                 if not was_marked:
                     await asyncio.to_thread(
-                        clear_uninstalled_marker, plugin_id, plugins_dir=root
+                        clear_uninstalled_marker,
+                        plugin_id,
+                        plugins_dir=root,
                     )
             raise
 
@@ -793,26 +805,24 @@ def _sync_plugin_tools_to_agents(loader, plugin_id: str) -> None:
                     raw_enabled = declaration.get("enabled_by_default")
                     raw_description = declaration.get("description")
                     raw_icon = declaration.get("icon")
-                    agent_cfg.tools.builtin_tools[tool_name] = (
-                        BuiltinToolConfig(
-                            name=tool_name,
-                            enabled=(
-                                raw_enabled
-                                if isinstance(raw_enabled, bool)
-                                else False
-                            ),
-                            description=(
-                                raw_description
-                                if isinstance(raw_description, str)
-                                else ""
-                            ),
-                            display_to_user=True,
-                            async_execution=False,
-                            icon=(
-                                raw_icon if isinstance(raw_icon, str) else None
-                            ),
-                            config={},
-                        )
+                    agent_cfg.tools.builtin_tools[
+                        tool_name
+                    ] = BuiltinToolConfig(
+                        name=tool_name,
+                        enabled=(
+                            raw_enabled
+                            if isinstance(raw_enabled, bool)
+                            else False
+                        ),
+                        description=(
+                            raw_description
+                            if isinstance(raw_description, str)
+                            else ""
+                        ),
+                        display_to_user=True,
+                        async_execution=False,
+                        icon=(raw_icon if isinstance(raw_icon, str) else None),
+                        config={},
                     )
                     changed = True
                 if changed:
@@ -1019,7 +1029,7 @@ async def _finish_plugin_install_after_load(
         await _schedule_all_agents_reload(request)
 
 
-async def _rollback_failed_remote_install(loader, request: Request, record):
+async def _rollback_failed_remote_install(loader, _request: Request, record):
     """Revoke a URL install whose signed updater enrollment failed."""
     from ...plugins.lifecycle import UnloadMode
 
@@ -1558,7 +1568,7 @@ async def get_plugin_status(plugin_id: str, request: Request):
                 "enabled": enabled,
                 "status": getattr(record, "status", "active"),
                 "diagnostics": list(
-                    getattr(record, "diagnostics", None) or []
+                    getattr(record, "diagnostics", None) or [],
                 ),
                 "version": record.manifest.version,
             }
@@ -1973,7 +1983,7 @@ async def oss_proxy(path: str, refresh: bool = False):
         ) from exc
 
 
-_DOWNLOAD_TIMEOUT = 60  # seconds per read chunk; total limit is implicit
+_DOWNLOAD_TIMEOUT = 60  # seconds per socket operation; no total limit
 
 _MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024  # 500 MB safety cap
 
@@ -1981,15 +1991,16 @@ _MAX_DOWNLOAD_BYTES = 500 * 1024 * 1024  # 500 MB safety cap
 async def _async_download(url: str, dest: Path) -> None:
     """Download a URL to a file using a thread pool.
 
-    Streams the response in chunks with a per-operation socket timeout
-    so a stalled server cannot hang the request indefinitely.
+    Streams the response in chunks with a per-operation socket timeout.
+    This does not impose a total download time limit.
 
     Args:
         url: HTTP(S) URL to download
         dest: Destination file path
 
     Raises:
-        RuntimeError: If the download exceeds the size cap or times out.
+        RuntimeError: If the download exceeds the size cap, times out,
+            or fails with a network or HTTP protocol error.
     """
 
     def _download() -> None:
@@ -2011,7 +2022,16 @@ async def _async_download(url: str, dest: Path) -> None:
                         )
                     fh.write(chunk)
 
-    await asyncio.to_thread(_download)
+    try:
+        await asyncio.to_thread(_download)
+    except (
+        urllib.error.URLError,
+        TimeoutError,
+        ConnectionError,
+        ssl.SSLError,
+        http.client.HTTPException,
+    ) as exc:
+        raise RuntimeError(f"Plugin download failed: {exc}") from exc
 
 
 # Keep the catch-all lookup after every literal GET route (market, oss-proxy).

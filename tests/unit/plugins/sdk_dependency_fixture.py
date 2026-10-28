@@ -52,6 +52,7 @@ def dependency_python(root, *, installer="pip"):
         if Path(directory).resolve() == Path(sys.prefix).resolve():
             continue
         for entry in Path(directory).iterdir():
+            # pywin32's bootstrap exposes win32/lib and its DLLs on Windows.
             if (
                 entry.suffix == ".pth" and entry.name != "pywin32.pth"
             ) or entry.name == "__pycache__":

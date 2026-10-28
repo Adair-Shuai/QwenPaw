@@ -34,3 +34,6 @@ LangString qwenpawCliPathSkipped ${LANG_INDONESIAN} "Skipped adding qwenpaw to u
 LangString qwenpawCliPathMissing ${LANG_INDONESIAN} "qwenpaw.exe was not found; skipped PATH update"
 LangString qwenpawCliPathUpdateFailed ${LANG_INDONESIAN} "Failed to update user PATH"
 LangString qwenpawStopBackendPrompt ${LANG_INDONESIAN} "UGSci masih berjalan dan menggunakan berkas yang perlu diganti oleh penginstal.$\n$\nSilakan tutup UGSci (periksa system tray), lalu klik Coba Lagi untuk melanjutkan. Klik Batal untuk membatalkan instalasi."
+LangString qwenpawPrepareInstallFailed ${LANG_INDONESIAN} "QwenPaw tidak dapat menyiapkan instalasi atau penghapusan.$\n$\nPeriksa detail di bawah. Tutup proses yang tercantum, lalu klik Coba Lagi setelah masalah teratasi. Klik Batal untuk membatalkan.$\n$\nHasil: $0"
+LangString qwenpawPowerShellStartFailed ${LANG_INDONESIAN} "Windows PowerShell tidak dapat dimulai. Skrip persiapan tidak dijalankan."
+LangString qwenpawRestoreInstallStateFailed ${LANG_INDONESIAN} "Peluncur Native Messaging tidak dapat dipulihkan; QwenPaw akan mencoba lagi saat dimulai"

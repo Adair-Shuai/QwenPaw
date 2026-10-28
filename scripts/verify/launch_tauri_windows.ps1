@@ -201,15 +201,53 @@ $portFile = Join-Path $env:USERPROFILE ".qwenpaw\desktop_port"
 if (Test-Path -LiteralPath $portFile) {
   Remove-Item -LiteralPath $portFile -Force
 }
-Start-Process -FilePath $tauriExe
+$stdoutLog = Join-Path $env:RUNNER_TEMP "qwenpaw-desktop-stdout.log"
+$stderrLog = Join-Path $env:RUNNER_TEMP "qwenpaw-desktop-stderr.log"
+$workingDir = Join-Path $env:USERPROFILE ".qwenpaw"
+$env:QWENPAW_WORKING_DIR = $workingDir
+$desktop = Start-Process -FilePath $tauriExe -WindowStyle Hidden -PassThru `
+  -RedirectStandardOutput $stdoutLog -RedirectStandardError $stderrLog
+
+function Write-DesktopDiagnostics {
+  $logDir = Join-Path $env:RUNNER_TEMP "qwenpaw-desktop-logs"
+  New-Item -ItemType Directory -Force -Path $logDir | Out-Null
+  $config = Get-Content console/src-tauri/tauri.conf.json -Raw | ConvertFrom-Json
+  $nativeLogs = Join-Path $env:LOCALAPPDATA "$($config.identifier)\logs"
+  $logs = @(
+    $stdoutLog,
+    $stderrLog,
+    (Join-Path $workingDir "desktop.log"),
+    (Join-Path $workingDir "runtime\shared\launcher.log")
+  )
+  $logs += @(Get-ChildItem $nativeLogs -Filter "*.log*" `
+    -ErrorAction SilentlyContinue | Select-Object -ExpandProperty FullName)
+  foreach ($log in $logs) {
+    if (Test-Path $log -PathType Leaf) {
+      Copy-Item $log $logDir -Force -ErrorAction Continue
+      Write-Host "=== $log ==="
+      Get-Content $log -Tail 80 -ErrorAction Continue | ForEach-Object { Write-Host $_ }
+    }
+  }
+  Write-Host "=== Desktop process snapshot ==="
+  Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -in @("qwenpaw-desktop.exe", "qwenpaw-backend.exe") } |
+    Select-Object -Property @("Name", "ProcessId", "ParentProcessId", "CommandLine") |
+    Format-List | Out-String | Write-Host
+}
 
 # 4. Wait for the sidecar to write the port file and respond.
 #    The sidecar writes desktop_port at WORKING_DIR root (~/.qwenpaw),
 #    not inside the workspace dir.
+$portFile = Join-Path $workingDir "desktop_port"
 $port = $null
 $backendReady = $false
 $deadline = (Get-Date).AddSeconds(120)
 while ((Get-Date) -lt $deadline) {
+  $desktop.Refresh()
+  if ($desktop.HasExited) {
+    Write-DesktopDiagnostics
+    throw "Tauri shell exited before readiness (exit $($desktop.ExitCode))"
+  }
   if (Test-Path $portFile) {
     $port = (Get-Content $portFile -ErrorAction SilentlyContinue).Trim()
     if ($port) {
@@ -227,13 +265,13 @@ while ((Get-Date) -lt $deadline) {
   Start-Sleep -Seconds 2
 }
 if (-not $backendReady) {
-  Write-Host "::error::Tauri app did not start within 120s"
-  exit 1
+  Write-DesktopDiagnostics
+  throw "Tauri backend did not become ready within 120s (shell PID $($desktop.Id))"
 }
 
 # 5. Auto-init creates BOOTSTRAP.md during startup. Remove it afterwards so
 #    the verifier can drive the agent in normal QA mode.
-$bootstrapMd = Join-Path $env:USERPROFILE ".qwenpaw\workspaces\default\BOOTSTRAP.md"
+$bootstrapMd = Join-Path $workingDir "workspaces\default\BOOTSTRAP.md"
 if (Test-Path $bootstrapMd) { Remove-Item -Force $bootstrapMd }
 
 # 6. Wait for CDP endpoint to become available.

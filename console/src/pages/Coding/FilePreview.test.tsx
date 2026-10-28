@@ -21,6 +21,24 @@ vi.mock("@/hooks/useAuthenticatedWorkspaceBlob", () => ({
 }));
 
 describe("FilePreview", () => {
+  it("shows memory tags written as a YAML block list", async () => {
+    render(
+      <FilePreview
+        filePath="memory.md"
+        content={
+          "---\nmemory_tags:\n- 赵六\n- 上海示例科技有限公司\n---\n# Memory"
+        }
+      />,
+    );
+    const frontmatter = await screen.findByLabelText(
+      "Front matter",
+      {},
+      { timeout: LAZY_RENDER_TIMEOUT },
+    );
+    expect(frontmatter).toHaveTextContent("赵六");
+    expect(frontmatter).toHaveTextContent("上海示例科技有限公司");
+  });
+
   it("renders math code blocks in the markdown preview", async () => {
     render(
       <FilePreview

@@ -27,6 +27,11 @@ fn open_devtools(window: WebviewWindow) {
 }
 
 fn build_desktop() -> tauri::Result<tauri::App> {
+    let context = tauri::generate_context!();
+    let registration = updates::coordination::register_desktop(&context.config().identifier)
+        .map_err(|error| tauri::Error::Io(std::io::Error::other(error)))?;
+    let registration = registration
+        .ok_or_else(|| tauri::Error::Io(std::io::Error::other("Installation is being updated")))?;
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
@@ -39,12 +44,14 @@ fn build_desktop() -> tauri::Result<tauri::App> {
             open_devtools,
             backend_download::download_backend_file,
             backend_download::read_workspace_binary_file,
+            backend::agent_host_state,
             backend::backend_port,
             backend::backend_startup_error,
             backend::restart_backend,
             external_link::open_external_link,
             reveal::reveal_in_file_manager,
             external_link::open_workspace_html,
+            updates::coordination::confirm_desktop_update,
             updates::check_desktop_update,
             updates::install_desktop_update,
             updates::download_desktop_update,
@@ -53,14 +60,20 @@ fn build_desktop() -> tauri::Result<tauri::App> {
             updates::restart_for_component_updates,
             tray::minimize_to_tray,
             tray::quit_app,
+            tray::stop_service,
+            tray::set_close_action,
+            tray::get_close_action,
             tray::set_tray_labels,
             tray::ack_close,
             ui_verification::report_ui_verification,
         ])
+        .manage(registration)
+        .manage(updates::coordination::Confirmation::default())
         .manage(backend::BackendState::default())
         .manage(computer_use_runtime::ComputerUseRuntimeState::default())
         .manage(tray::TrayState::default())
         .setup(|app| {
+            updates::coordination::setup(app.handle())?;
             backend::setup(app)?;
             tray::setup(app)?;
             #[cfg(windows)]
@@ -77,7 +90,7 @@ fn build_desktop() -> tauri::Result<tauri::App> {
                 tray::request_close(window.app_handle());
             }
         })
-        .build(tauri::generate_context!())
+        .build(context)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
@@ -113,7 +126,7 @@ pub fn run() {
                         return;
                     }
                     #[cfg(target_os = "macos")]
-                    if code.is_none() {
+                    if code.is_none() && !tray::is_quitting(app_handle) {
                         api.prevent_exit();
                         // The window may be hidden in the tray; bring it back so
                         // the close prompt is actually visible before asking.
@@ -123,11 +136,7 @@ pub fn run() {
                     }
                     #[cfg(not(target_os = "macos"))]
                     let _ = (&api, &code);
-                    if let Err(err) =
-                        tauri::async_runtime::block_on(backend::stop_and_wait(app_handle))
-                    {
-                        log::warn!("[backend] graceful shutdown did not complete: {err}");
-                    }
+                    backend::detach(app_handle);
                     computer_use_runtime::stop(app_handle);
                 }
                 // macOS emits this when the user clicks the Dock icon. Without
@@ -222,4 +231,9 @@ fn show_windows_message(title: &str, text: &str) {
     unsafe {
         let _ = MessageBoxW(None, &text, &title, MB_OK | MB_ICONWARNING);
     }
+}
+
+/// Run the detached desktop supervisor without constructing a WebView.
+pub fn run_agent_host() -> Result<(), String> {
+    backend::daemon::run()
 }

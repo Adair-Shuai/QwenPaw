@@ -9,6 +9,7 @@ ARG UV_IMAGE=agentscope-registry.ap-southeast-1.cr.aliyuncs.com/agentscope/uv:0.
 FROM ${NODE_IMAGE} AS console-builder
 WORKDIR /app
 COPY console /app/console
+COPY src/qwenpaw/plugins/frontend /app/src/qwenpaw/plugins/frontend
 COPY plugins/bundle/qwenpaw-run-center/ui /app/run-center-ui
 # The console tests/build resolve shared UGSci sources through aliases and
 # relative imports outside the console directory. Keep those sources in the

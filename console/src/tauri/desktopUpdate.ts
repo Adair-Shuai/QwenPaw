@@ -53,7 +53,14 @@ export async function restartForComponentUpdates(): Promise<void> {
   await invoke<void>("restart_for_component_updates");
 }
 
+export interface UpdateConfirmationRequest {
+  requestId: string;
+  otherWindows: number;
+}
+
 export interface UpdateEventHandlers {
+  onConfirmation?: (request: UpdateConfirmationRequest) => void;
+  onCancelled?: () => void;
   onCheckStart?: () => void;
   onDownloadProgress?: (progress: UpdateProgress) => void;
   onInstallStart?: () => void;
@@ -82,6 +89,8 @@ export async function onUpdateEvent(
     handler ? () => handler() : undefined;
 
   await Promise.all([
+    addListener("update:confirmation", handlers.onConfirmation),
+    addListener("update:cancelled", withoutPayload(handlers.onCancelled)),
     addListener("update:check-start", withoutPayload(handlers.onCheckStart)),
     addListener("update:download-progress", handlers.onDownloadProgress),
     addListener(

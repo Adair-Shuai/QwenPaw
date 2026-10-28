@@ -16,7 +16,7 @@ import * as antd from "antd";
 import * as antdIcons from "@ant-design/icons";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { getApiUrl, getApiToken } from "../api/config";
+import { getApiUrl, getApiToken, getApiBaseUrl } from "../api/config";
 import { useAgentStore } from "../stores/agentStore";
 import {
   buildAuditNamespace,
@@ -48,8 +48,6 @@ import {
   memoryBackendNamespace,
   type MemoryBackendNamespace,
 } from "./memoryBackends";
-
-declare const VITE_API_BASE_URL: string;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -320,9 +318,6 @@ function ensurePluginsGroup(): void {
 }
 
 export function installHostExternals(): void {
-  const apiBaseUrl =
-    typeof VITE_API_BASE_URL !== "undefined" ? VITE_API_BASE_URL : "";
-
   // ── Global `process` polyfill ──────────────────────────────────────────
   // Some plugins bundle Node.js-aware libraries (e.g. @xyflow/react) that
   // reference `process` at runtime.  Without this polyfill those plugins
@@ -350,7 +345,9 @@ export function installHostExternals(): void {
       ReactDOM,
       antd,
       antdIcons,
-      apiBaseUrl,
+      get apiBaseUrl() {
+        return getApiBaseUrl();
+      },
       getApiUrl,
       getApiToken,
       setSelectedAgent: (agentId: string) =>

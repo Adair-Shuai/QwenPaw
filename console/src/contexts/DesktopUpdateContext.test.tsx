@@ -659,7 +659,7 @@ describe("DesktopUpdateContext", () => {
 
   // ── startInstall / retry ────────────────────────────────────────────────
 
-  it("takes over the UI when starting an immediate install", async () => {
+  it("keeps the workspace usable until installation is confirmed", async () => {
     const { result } = renderUpdate();
 
     await flush();
@@ -668,6 +668,9 @@ describe("DesktopUpdateContext", () => {
     });
 
     expect(mocks.installDesktopUpdate).toHaveBeenCalledTimes(1);
+    expect(result.current.isBackground).toBe(true);
+    act(() => handlers.onInstallStart?.());
+    expect(result.current.phase).toBe("installing");
     expect(result.current.isBackground).toBe(false);
     expect(result.current.error).toBeNull();
   });
@@ -797,7 +800,7 @@ describe("DesktopUpdateContext", () => {
 
   // ── installDownloaded ───────────────────────────────────────────────────
 
-  it("installs a previously downloaded bundle in the foreground", async () => {
+  it("keeps the workspace usable while checking a downloaded bundle", async () => {
     mocks.checkCachedUpdate.mockResolvedValue("2.3.0");
     const { result } = renderUpdate();
 
@@ -809,7 +812,9 @@ describe("DesktopUpdateContext", () => {
     });
 
     expect(mocks.installDownloadedUpdate).toHaveBeenCalledTimes(1);
-    expect(result.current.isBackground).toBe(false);
+    expect(result.current.isBackground).toBe(true);
+    act(() => handlers.onCancelled?.());
+    expect(result.current.phase).toBe("downloaded");
     expect(result.current.error).toBeNull();
   });
 
