@@ -55,9 +55,7 @@ def template_keys(content, validate_key):
                 if "{%" in value or (
                     "{{" in value and cell.find(M + "f") is not None
                 ):
-                    raise ValueError(
-                        "Excel 模板仅支持单元格文字中的变量占位符"
-                    )
+                    raise ValueError("Excel 模板仅支持单元格文字中的变量占位符")
                 for match in SLOT.finditer(value):
                     keys.add(validate_key(match[1].strip()))
                 if "{{" in SLOT.sub("", value) or "}}" in SLOT.sub("", value):
@@ -155,6 +153,16 @@ def cell_height(sheet, cell, rendered):
     return min(409, lines * 15 + 8)
 
 
+def _fill_dropdown_validation(sheet, cell, field):
+    """Update matching Excel dropdowns while preserving other validations."""
+    if field and field.get("options"):
+        for validation in sheet.findall(".//" + M + "dataValidation"):
+            if cell.get("r") in validation.get("sqref", "").split():
+                formula = validation.find(M + "formula1")
+                if formula is not None:
+                    formula.text = '"' + ",".join(field["options"]) + '"'
+
+
 def fill(content, fields):
     values = {f["key"]: str(f["value"]) for f in fields}
     numeric = {f["key"] for f in fields if f["kind"] == "number"}
@@ -179,19 +187,7 @@ def fill(content, fields):
                         ),
                         None,
                     )
-                    if field and field.get("options"):
-                        for validation in sheet.findall(
-                            ".//" + M + "dataValidation"
-                        ):
-                            if (
-                                cell.get("r")
-                                in validation.get("sqref", "").split()
-                            ):
-                                formula = validation.find(M + "formula1")
-                                if formula is not None:
-                                    formula.text = (
-                                        '"' + ",".join(field["options"]) + '"'
-                                    )
+                    _fill_dropdown_validation(sheet, cell, field)
                     # Grow data rows; retain column widths and print settings.
                     if row.get("r") != "1":
                         heights.append(cell_height(sheet, cell, rendered))

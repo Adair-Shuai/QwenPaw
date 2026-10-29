@@ -58,9 +58,7 @@ def template_metadata(name, index=1):
         "name": f"{index:02d}_{title}_模板{extension}",
         "extension": extension,
         "print_copies": 7 if title == "综合评分表" else 1,
-        "print_note": (
-            "每位专家一份，得分及签字现场填写" if title == "综合评分表" else ""
-        ),
+        "print_note": ("每位专家一份，得分及签字现场填写" if title == "综合评分表" else ""),
     }
 
 
@@ -525,7 +523,10 @@ def parsed_interval(value):
             if period and re.match(r"\d{1,2}[:：时]", end_text):
                 if int(re.match(r"\d{1,2}", end_text)[0]) < 12:
                     end_text = period[0] + end_text
-            end = parsed_date(start.strftime("%Y年%m月%d日") + end_text)
+            # Windows strftime encodes its format through the C locale, which
+            # may not support Chinese literals. Keep date assembly in Unicode.
+            day = f"{start.year:04d}年{start.month:02d}月{start.day:02d}日"
+            end = parsed_date(day + end_text)
         if start and end:
             return start, end
     return None
@@ -587,9 +588,7 @@ def document_field_value(field):
             r"(^dates\.|deadline$|_time$|\.start$|\.end$)",
             field["key"],
         )
-        or any(
-            word in field.get("label", "") for word in ("日期", "时间", "截止")
-        )
+        or any(word in field.get("label", "") for word in ("日期", "时间", "截止"))
     ):
         return document_date(value)
     if field["key"].startswith("milestones.") or "进度安排" in field.get(
@@ -729,7 +728,9 @@ def checks(case):
     )
     if (per_recipient or needs_participants) and not recipients:
         add(
-            "受邀单位", "missing", "按单位生成或汇总的文书需要至少一家受邀单位"
+            "受邀单位",
+            "missing",
+            "按单位生成或汇总的文书需要至少一家受邀单位",
         )
     roles = date_roles(fields)
     rules = list(case["rules"])
@@ -1018,9 +1019,7 @@ def export_excel(case):
         check.append(
             [
                 r["label"],
-                {"ok": "通过", "missing": "待补充", "error": "冲突"}[
-                    r["status"]
-                ],
+                {"ok": "通过", "missing": "待补充", "error": "冲突"}[r["status"]],
                 r["detail"],
             ],
         )

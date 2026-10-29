@@ -28,7 +28,6 @@ from .constants import (
     PHASE_COMPLETED,
     PHASE_DISPATCH,
     PHASE_PLAN,
-    PHASE_SYNTHESIZE,
     PHASE_VERIFY,
     POST_DISPATCH_PHASES,
     UGSCI_TEAM_MAX_DISPATCH_RETRIES,
@@ -93,6 +92,14 @@ class _TeamState:
 
 class UGSciTeamGate(LoopGate):
     """Stop gate for the UGSci expert-team pipeline."""
+
+    def current_state(self) -> _TeamState | None:
+        """Return this controller session's live workflow state."""
+        return self._state()
+
+    def current_session_id(self) -> str:
+        """Resolve the session through the same host gate context."""
+        return self._session_id()
 
     @property
     def name(self) -> str:
@@ -219,7 +226,8 @@ class UGSciTeamGate(LoopGate):
         )
 
     def terminate_current(self, reason: str) -> None:
-        """Terminate the active session while preserving a queryable snapshot."""
+        """Terminate the active session while preserving a queryable \
+snapshot."""
         st: _TeamState | None = self._state()
         if st is None:
             return
@@ -326,14 +334,18 @@ class UGSciTeamGate(LoopGate):
             # Skip terminal workflows — they should never be revived.
             # Legacy ownerless instances remain readable in history, but are
             # never silently claimed by an unrelated or child conversation.
-            if not data.get("owner_session_id") or data["owner_session_id"] != (
-                owner_session_id or self._session_id()
-            ):
+            if not data.get("owner_session_id") or data[
+                "owner_session_id"
+            ] != (owner_session_id or self._session_id()):
                 continue
             # Match agent before deciding whether this owner's latest run
             # is terminal. Never fall back to an older abandoned active run.
             persisted_agent_id = data.get("agent_id", "")
-            if agent_id and persisted_agent_id and agent_id != persisted_agent_id:
+            if (
+                agent_id
+                and persisted_agent_id
+                and agent_id != persisted_agent_id
+            ):
                 continue
             workflow_status = data.get(
                 "workflow_status",
@@ -460,7 +472,10 @@ class UGSciTeamGate(LoopGate):
         try:
             await asyncio.to_thread(validate_phase, wf, data)
         except (TeamStateConflictError, OSError, KeyError, TypeError):
-            logger.error("UGSci team artifact validation failed", exc_info=True)
+            logger.error(
+                "UGSci team artifact validation failed",
+                exc_info=True,
+            )
             return await self._finish(
                 wf,
                 st,

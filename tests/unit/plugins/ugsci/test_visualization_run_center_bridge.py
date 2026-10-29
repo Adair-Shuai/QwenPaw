@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 import importlib
 import importlib.util
 import json
@@ -10,6 +11,8 @@ import sys
 import threading
 import time
 from pathlib import Path
+
+import pytest
 
 
 ROOT = Path(__file__).parents[4]
@@ -45,7 +48,7 @@ class _MemoryJobStore:
             return stream[-1]["sequence"], False
         sequence = len(stream) + 1
         stream.append(
-            {"sequence": sequence, "data": json.loads(json.dumps(event))}
+            {"sequence": sequence, "data": json.loads(json.dumps(event))},
         )
         return sequence, True
 
@@ -80,7 +83,10 @@ def test_import_job_can_be_rehydrated_after_restart(monkeypatch):
     monkeypatch.setattr(manager, "_job_store", lambda: store)
 
     original = manager.ImportJob(
-        job_id="import-2", name="grid", status="completed", progress=1.0
+        job_id="import-2",
+        name="grid",
+        status="completed",
+        progress=1.0,
     )
     original.add_event("completed", {"dataset_id": "dataset-1"})
 
@@ -135,7 +141,8 @@ def test_cancelled_import_does_not_emit_late_worker_events(monkeypatch):
 
 
 def test_manifest_commit_and_cancellation_are_serialized(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ):
     manager = _manager_module()
     package = manager.__package__.split(".backend", 1)[0]
@@ -183,3 +190,122 @@ def test_manifest_commit_and_cancellation_are_serialized(
     assert result == [False]
     assert job.status == "completed"
     assert store.jobs[job.job_id]["status"] == "completed"
+
+
+@pytest.mark.parametrize("conversion_raises", [False, True])
+def test_cancelled_converter_never_publishes_manifest(
+    tmp_path,
+    monkeypatch,
+    conversion_raises,
+):
+    manager = _manager_module()
+    package = manager.__package__.split(".backend", 1)[0]
+    formats = importlib.import_module(f"{package}.backend.formats")
+    api = importlib.import_module(f"{package}.backend.api")
+    store = _MemoryJobStore()
+    monkeypatch.setattr(manager, "_job_store", lambda: store)
+    entered = threading.Event()
+    release = threading.Event()
+    published = []
+
+    def convert(*_args, **_kwargs):
+        entered.set()
+        assert release.wait(timeout=5)
+        if conversion_raises:
+            raise ValueError("converter interrupted after cancellation")
+        return {"id": "cancelled-dataset", "metadata": {}}
+
+    monkeypatch.setattr(formats, "convert_source", convert)
+    monkeypatch.setattr(
+        api,
+        "_update_manifest",
+        lambda _bin_dir, dataset: published.append(dataset),
+    )
+    upload = tmp_path / ".upload_cancel.grdecl"
+    upload.write_text("GRID", encoding="utf-8")
+    companion = tmp_path / "retained.INIT"
+    companion.write_text("LOCAL INPUT", encoding="utf-8")
+    job_manager = manager.JobManager()
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        monkeypatch.setattr(manager, "_executor", executor)
+        job = job_manager.submit_import(
+            "grid",
+            upload,
+            companion,
+            tmp_path,
+            _force_legacy=True,
+        )
+        try:
+            assert entered.wait(timeout=5)
+            assert job_manager.cancel_job(job.job_id) is True
+        finally:
+            release.set()
+
+    assert job.status == "cancelled"
+    assert job.result is None
+    assert job.error is None
+    assert not published
+    assert store.jobs[job.job_id]["status"] == "cancelled"
+    events = [item["data"]["type"] for item in store.events[job.job_id]]
+    assert events[-1] == "cancelled"
+    assert "failed" not in events
+    assert "completed" not in events
+    assert not upload.exists()
+    assert companion.read_text(encoding="utf-8") == "LOCAL INPUT"
+
+
+def test_concurrent_restore_records_one_interruption(monkeypatch):
+    manager = _manager_module()
+    store = _MemoryJobStore()
+    monkeypatch.setattr(manager, "_job_store", lambda: store)
+    original = manager.ImportJob(
+        job_id="restore-once",
+        name="grid",
+        status="running",
+    )
+    original.add_event("stage", {"stage": "reading-source"})
+    restarted = manager.JobManager()
+    with ThreadPoolExecutor(max_workers=8) as executor:
+        restored = list(
+            executor.map(
+                restarted.get_job,
+                [original.job_id] * 8,
+            ),
+        )
+    assert restored[0] is not None
+    assert all(job is restored[0] for job in restored)
+    assert restored[0].status == "failed"
+    assert [event["type"] for event in restored[0].drain_events()] == [
+        "stage",
+        "failed",
+    ]
+    assert restored[0].drain_events() == []
+    assert len(store.events[original.job_id]) == 2
+    assert store.events[original.job_id][-1]["data"]["data"] == {
+        "error": "Import interrupted by backend restart",
+        "reason": "backend_restart",
+    }
+
+
+def test_restore_preserves_native_lifecycle_and_durable_events(monkeypatch):
+    manager = _manager_module()
+    store = _MemoryJobStore()
+    monkeypatch.setattr(manager, "_job_store", lambda: store)
+    original = manager.ImportJob(
+        job_id="native-running",
+        name="grid",
+        status="running",
+        native_run_id="native-running",
+    )
+    original.add_event("stage", {"stage": "extracting-geometry"})
+    restarted = manager.JobManager()
+    restored = restarted.get_job(original.job_id)
+    assert restored is not None
+    assert restored.status == "running"
+    assert restored.native_run_id == original.native_run_id
+    assert restored.error is None
+    assert restarted.get_job(original.job_id) is restored
+    assert len(restored.drain_events()) == 1
+    assert restored.drain_events() == []
+    assert len(store.events[original.job_id]) == 1
+    assert store.jobs[original.job_id]["status"] == "running"

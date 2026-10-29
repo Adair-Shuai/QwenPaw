@@ -63,7 +63,7 @@ def verify(root: Path) -> None:
             for path in (plugin_root / "visualization" / "data").rglob("*")
         ):
             raise ValueError(
-                "UGSci visualization test data must not be published"
+                "UGSci visualization test data must not be published",
             )
         entry = manifest.get("entry")
         if not isinstance(entry, dict):
@@ -219,7 +219,7 @@ def _verify_archive_files(
             for name in payload_files
         ):
             raise ValueError(
-                "UGSci visualization test data must not be published"
+                "UGSci visualization test data must not be published",
             )
         entry = manifest.get("entry")
         if not isinstance(entry, dict):

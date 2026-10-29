@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Resolve workflow node ``prompt`` fields from widgets, templates, or Start bags."""
+"""Resolve workflow node ``prompt`` fields from widgets, templates, or \
+Start bags."""
 
 from __future__ import annotations
 
@@ -11,10 +12,13 @@ _PROMPT_KEYS = ("prompt", "task", "query", "message", "text", "input")
 
 
 def resolve_node_prompt(raw: Any, state: Any | None) -> str:
-    """Turn a prompt widget, template string, or Start ``inputs`` bag into text.
+    """Turn a prompt widget, template string, or Start ``inputs`` bag into \
+text.
 
-    When ``StartNode`` is linked into ``prompt``, ``raw`` is the workflow input
-    mapping (``state.inputs``). We prefer an explicit ``prompt`` (or similar)
+    When ``StartNode`` is linked into ``prompt``, ``raw`` is the \
+workflow input
+    mapping (``state.inputs``). We prefer an explicit ``prompt`` (or \
+similar)
     field, then fall back to workflow-level inputs on ``state``.
     """
     value = raw

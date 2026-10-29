@@ -25,6 +25,7 @@ from .execution_repository import ExecutionRepository
 from .flow_repository import FlowRepository, RevisionConflict
 from .engine.errors import ValidationError as WorkflowValidationError
 from .lifecycle import RunLifecycleMixin
+from .service_lifetime import WorkflowLifetimeMixin, run_background_loop
 from .engine import (
     ProgressRegistry,
     WorkflowExecutor,
@@ -58,10 +59,13 @@ class RunHandle:
     state_id: UUID
     progress: ProgressRegistry
     task: asyncio.Task | None = None
-    future: Future | None = None  # concurrent.futures.Future from background loop
+    future: Future | None = (
+        None  # concurrent.futures.Future from background loop
+    )
     result: WorkflowResult | None = None
     error: str | None = None
     cancel_requested: bool = False
+    execution_started: bool = False
     started_at: float = field(default_factory=time.time)
     finished_at: float | None = None
     # A future can become done just before its callback persists the terminal
@@ -100,11 +104,13 @@ class RunHandle:
             "outputs": self.result.outputs if self.result else {},
             "errors": self.result.errors if self.result else [],
             "duration_ms": self.result.duration_ms if self.result else 0,
-            "events": [event.to_dict() for event in history[-RUN_SUMMARY_EVENT_LIMIT:]],
+            "events": [
+                event.to_dict() for event in history[-RUN_SUMMARY_EVENT_LIMIT:]
+            ],
         }
 
 
-class WorkflowService(RunLifecycleMixin):
+class WorkflowService(RunLifecycleMixin, WorkflowLifetimeMixin):
     """Top-level service: flow CRUD + run lifecycle + progress routing.
 
     Runs workflows on a dedicated background event-loop thread so that
@@ -127,18 +133,24 @@ class WorkflowService(RunLifecycleMixin):
             active_owner_pid=os.getpid(),
         )
         if recovered:
-            logger.warning("recovered %d interrupted FlowForge run(s)", recovered)
+            logger.warning(
+                "recovered %d interrupted FlowForge run(s)",
+                recovered,
+            )
         self._executor = executor or WorkflowExecutor(
             state_store=build_workflow_state_store(self._flows_dir),
         )
         self._runs: dict[str, RunHandle] = {}
         self._lifecycle_lock = threading.RLock()
+        self._closing = False
+        self._shutdown_future: Future[None] | None = None
         self._executor.workflow_service = self
         self.node_catalog = None
         # Background event loop so runs outlive any single HTTP request.
         self._loop = asyncio.new_event_loop()
         self._loop_thread = threading.Thread(
-            target=self._loop.run_forever,
+            target=run_background_loop,
+            args=(self._loop,),
             name="flowforge-loop",
             daemon=True,
         )
@@ -202,7 +214,10 @@ class WorkflowService(RunLifecycleMixin):
         # and proposal application use the selected agent's current catalogue.
         normalized = load(payload).model_dump(mode="json")
         return self._flow_repository.save(
-            flow_id, normalized, expected_revision, proposal_id=proposal_id
+            flow_id,
+            normalized,
+            expected_revision,
+            proposal_id=proposal_id,
         )
 
     def delete_flow(self, flow_id: str) -> bool:
@@ -235,7 +250,10 @@ class WorkflowService(RunLifecycleMixin):
         executor = executor or self._executor
         try:
             doc = load(_materialize_edge_dependencies(payload))
-            result = validate(doc, registry=node_registry or executor.node_registry)
+            result = validate(
+                doc,
+                registry=node_registry or executor.node_registry,
+            )
             unavailable = {
                 item["class_type"]: item["unavailable_reason"]
                 for item in self.node_types(executor=executor)
@@ -245,7 +263,9 @@ class WorkflowService(RunLifecycleMixin):
             for node_id, node in doc.nodes.items():
                 kind = node.get("class_type")
                 if kind in unavailable:
-                    result.errors.append(f"节点 {node_id} 当前不可用：{unavailable[kind]}")
+                    result.errors.append(
+                        f"节点 {node_id} 当前不可用：{unavailable[kind]}",
+                    )
                 values = node.get("inputs") or {}
                 if not isinstance(values, dict):
                     continue
@@ -256,11 +276,15 @@ class WorkflowService(RunLifecycleMixin):
                         else values.get("tool")
                     )
                     if not isinstance(tool, str) or tool not in tools:
-                        result.errors.append(f"节点 {node_id} 引用了当前专家未启用的工具：{tool}")
+                        result.errors.append(
+                            f"节点 {node_id} 引用了当前专家未启用的工具：{tool}",
+                        )
                 if kind == "SubworkflowNode" and not resuming:
                     target = values.get("subworkflow_id")
                     if isinstance(target, str) and not self.get_flow(target):
-                        result.errors.append(f"节点 {node_id} 引用了不存在的子工作流：{target}")
+                        result.errors.append(
+                            f"节点 {node_id} 引用了不存在的子工作流：{target}",
+                        )
             return {
                 "ok": not result.errors,
                 "errors": result.errors,
@@ -282,7 +306,11 @@ class WorkflowService(RunLifecycleMixin):
         if self.node_catalog is None:
             return scope, self._executor
         try:
-            return scope, await self.node_catalog.prepare(self._executor, scope, {})
+            return scope, await self.node_catalog.prepare(
+                self._executor,
+                scope,
+                {},
+            )
         except RuntimeError as exc:
             from .authoring import AuthoringUnavailable
 
@@ -302,21 +330,23 @@ class WorkflowService(RunLifecycleMixin):
             try:
                 settings = await asyncio.to_thread(load_agent_config, agent_id)
                 if str(getattr(settings, "template_id", "") or "").startswith(
-                    "pawapp:"
+                    "pawapp:",
                 ):
                     continue
-                if getattr(settings, "available_in_chat", True) is False or getattr(
-                    settings, "managed_by_app", None
-                ):
+                if getattr(
+                    settings,
+                    "available_in_chat",
+                    True,
+                ) is False or getattr(settings, "managed_by_app", None):
                     continue
                 result.append(
                     {
                         "id": agent_id,
                         "name": str(getattr(settings, "name", agent_id)),
-                        "description": str(getattr(settings, "description", "") or "")[
-                            :500
-                        ],
-                    }
+                        "description": str(
+                            getattr(settings, "description", "") or "",
+                        )[:500],
+                    },
                 )
             except Exception:
                 # Missing agent configuration is not evidence of availability.
@@ -324,7 +354,9 @@ class WorkflowService(RunLifecycleMixin):
         return result
 
     async def validate_flow_for_agent(
-        self, payload: dict[str, Any], agent_id: str | None = None
+        self,
+        payload: dict[str, Any],
+        agent_id: str | None = None,
     ) -> dict[str, Any]:
         _, executor = await self.authoring_executor(agent_id)
         return self.validate_flow(payload, executor=executor)
@@ -349,6 +381,10 @@ class WorkflowService(RunLifecycleMixin):
             scope_agent_id=scope_agent_id,
         )
 
+    def store_proposal(self, proposal: dict[str, Any]) -> None:
+        """Persist a validated authoring proposal for later revision checks."""
+        self._flow_repository.put_proposal(proposal)
+
     def _proposal_to_apply(self, proposal_id, expected_revision):
         proposal = self._flow_repository.proposal(proposal_id)
         if proposal is None:
@@ -364,7 +400,9 @@ class WorkflowService(RunLifecycleMixin):
             raise ValueError("动态专家目录需通过异步apply_proposal_for_agent复核。")
         proposal = self._proposal_to_apply(proposal_id, expected_revision)
         return self._apply_validated_proposal(
-            proposal, expected_revision, self._executor
+            proposal,
+            expected_revision,
+            self._executor,
         )
 
     def _apply_validated_proposal(self, proposal, expected_revision, executor):
@@ -380,7 +418,10 @@ class WorkflowService(RunLifecycleMixin):
         )
 
     async def apply_proposal_for_agent(
-        self, proposal_id: str, expected_revision: int, agent_id: str | None = None
+        self,
+        proposal_id: str,
+        expected_revision: int,
+        agent_id: str | None = None,
     ):
         proposal = self._proposal_to_apply(proposal_id, expected_revision)
         scope = proposal["scope_agent_id"]
@@ -391,19 +432,33 @@ class WorkflowService(RunLifecycleMixin):
         for node in proposal["flow"]["nodes"].values():
             if (
                 node.get("class_type") == "AgentNode"
-                and node.get("inputs", {}).get("agent_id", "default") not in agents
+                and node.get("inputs", {}).get("agent_id", "default")
+                not in agents
             ):
                 raise ValueError("修改建议中的专家已禁用或不允许通用调用。")
-        return self._apply_validated_proposal(proposal, expected_revision, executor)
+        return self._apply_validated_proposal(
+            proposal,
+            expected_revision,
+            executor,
+        )
 
     def flow_versions(self, flow_id: str):
         return self._flow_repository.versions(flow_id)
 
-    def restore_version(self, flow_id: str, revision: int, expected_revision: int):
+    def restore_version(
+        self,
+        flow_id: str,
+        revision: int,
+        expected_revision: int,
+    ):
         flow = self._flow_repository.version(flow_id, revision)
         if flow is None:
             raise FileNotFoundError("工作流历史版本不存在。")
-        return self.save_flow(flow_id, flow, expected_revision=expected_revision)
+        return self.save_flow(
+            flow_id,
+            flow,
+            expected_revision=expected_revision,
+        )
 
     def generate_flow(
         self,
@@ -420,7 +475,9 @@ class WorkflowService(RunLifecycleMixin):
         steps = []
         for item in raw_steps:
             item = re.sub(
-                r"^\s*(?:第?[一二三四五六七八九十\d]+[步、.：:]?|\d+[.)、])\s*", "", item
+                r"^\s*(?:第?[一二三四五六七八九十\d]+[步、.：:]?|\d+[.)、])\s*",
+                "",
+                item,
             ).strip()
             if item and item not in steps:
                 steps.append(item)
@@ -430,7 +487,9 @@ class WorkflowService(RunLifecycleMixin):
         steps = steps[:12] or [prompt]
 
         flow_id = (
-            re.sub(r"[^a-zA-Z0-9_-]+", "-", name or steps[0])[:40].strip("-").lower()
+            re.sub(r"[^a-zA-Z0-9_-]+", "-", name or steps[0])[:40]
+            .strip("-")
+            .lower()
         )
         flow_id = flow_id or f"sop-{int(time.time())}"
         nodes: dict[str, dict[str, Any]] = {
@@ -466,7 +525,11 @@ class WorkflowService(RunLifecycleMixin):
             }
             positions[node_id] = {"x": 360 + (index - 1) * 300, "y": 180}
             edges.append(
-                {"id": f"e-{previous}-{node_id}", "source": previous, "target": node_id}
+                {
+                    "id": f"e-{previous}-{node_id}",
+                    "source": previous,
+                    "target": node_id,
+                },
             )
             previous = node_id
         nodes["output"] = {
@@ -478,7 +541,11 @@ class WorkflowService(RunLifecycleMixin):
         }
         positions["output"] = {"x": 360 + len(steps) * 300, "y": 180}
         edges.append(
-            {"id": f"e-{previous}-output", "source": previous, "target": "output"}
+            {
+                "id": f"e-{previous}-output",
+                "source": previous,
+                "target": "output",
+            },
         )
         return {
             "id": flow_id,
@@ -493,7 +560,7 @@ class WorkflowService(RunLifecycleMixin):
                     "required": False,
                     "default": "",
                     "label": "业务输入",
-                }
+                },
             ],
             "outputs": ["output"],
             "start_id": "input",
@@ -526,7 +593,8 @@ class WorkflowService(RunLifecycleMixin):
         return catalog
 
     async def refresh_node_types(
-        self, agent_id: str | None = None
+        self,
+        agent_id: str | None = None,
     ) -> list[dict[str, Any]]:
         _, executor = await self.authoring_executor(agent_id)
         return self.node_types(executor=executor)
@@ -535,7 +603,9 @@ class WorkflowService(RunLifecycleMixin):
     # Internal helpers
     # ------------------------------------------------------------------
     def _flow_path(self, flow_id: str) -> Path:
-        safe = "".join(c if c.isalnum() or c in "-_." else "_" for c in flow_id)
+        safe = "".join(
+            c if c.isalnum() or c in "-_." else "_" for c in flow_id
+        )
         return self._flows_dir / f"{safe}.json"
 
 

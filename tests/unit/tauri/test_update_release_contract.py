@@ -3,6 +3,7 @@
 
 import base64
 import hashlib
+import importlib
 import json
 import random
 import shutil
@@ -18,51 +19,58 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
 from packaging.version import Version
 
+from qwenpaw.components.client import ComponentClient
+from qwenpaw.components.service import ComponentUpdateService
+from qwenpaw.components.update import ComponentUpdateError, ComponentUpdater
+
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(ROOT / "scripts" / "pack-tauri"))
 # Release helpers intentionally live outside the installed runtime package.
-from build_component_release import build_release  # noqa: E402
-from component_common import canonical_json  # noqa: E402
-from verify_component_release import verify_release  # noqa: E402
-from qwenpaw.components.client import ComponentClient  # noqa: E402
-from qwenpaw.components.service import ComponentUpdateService  # noqa: E402
-from qwenpaw.components.update import (  # noqa: E402
-    ComponentUpdateError,
-    ComponentUpdater,
-)
-import qwenpaw.components.service as service_module  # noqa: E402
+build_release = importlib.import_module(
+    "build_component_release",
+).build_release
+canonical_json = importlib.import_module("component_common").canonical_json
+verify_release = importlib.import_module(
+    "verify_component_release",
+).verify_release
+service_module = importlib.import_module("qwenpaw.components.service")
 
 BASE_URL = "https://example.test/updates"
 
 
-@pytest.fixture(params=["windows-x86_64", "macos-aarch64"])
-def release(tmp_path, request):
+@pytest.fixture(params=["windows-x86_64", "macos-aarch64"], name="release")
+def _release_fixture(tmp_path, request):
     private = Ed25519PrivateKey.generate()
     public = base64.b64encode(
         private.public_key().public_bytes(
             serialization.Encoding.Raw,
             serialization.PublicFormat.Raw,
-        )
+        ),
     ).decode()
     raw_key = base64.b64encode(
         private.private_bytes(
             serialization.Encoding.Raw,
             serialization.PrivateFormat.Raw,
             serialization.NoEncryption(),
-        )
+        ),
     ).decode()
     stable = random.Random(123).randbytes(100_000)
 
     def plugin(path, version):
         path.mkdir(parents=True)
         (path / "plugin.json").write_text(
-            json.dumps({"id": "demo", "version": version}), encoding="utf-8"
+            json.dumps({"id": "demo", "version": version}),
+            encoding="utf-8",
         )
         (path / "stable.bin").write_bytes(stable)
-        (path / "main.py").write_text(f"VERSION = {version!r}\n", encoding="utf-8")
+        (path / "main.py").write_text(
+            f"VERSION = {version!r}\n",
+            encoding="utf-8",
+        )
         (path / "engines").mkdir()
         (path / "engines/default.json").write_text(
-            '"factory default"', encoding="utf-8"
+            '"factory default"',
+            encoding="utf-8",
         )
 
     for index in range(3):
@@ -78,7 +86,7 @@ def release(tmp_path, request):
                 "version": "3.11.9",
                 "install_scope": "desktop-runtime",
                 "preserve": [],
-            }
+            },
         ),
         encoding="utf-8",
     )
@@ -86,7 +94,7 @@ def release(tmp_path, request):
     (runtime / "python").chmod(0o755)
     output = tmp_path / "release"
     policy = json.loads(
-        (ROOT / "scripts/pack-tauri/component_compatibility.json").read_text()
+        (ROOT / "scripts/pack-tauri/component_compatibility.json").read_text(),
     )
     minimum = Version(policy["core_min_version"])
     candidate_version = f"{minimum.major}.{minimum.minor}.{minimum.micro + 1}"
@@ -110,7 +118,8 @@ def release(tmp_path, request):
 def resign_manifest(path, document, private):
     path.write_bytes(canonical_json(document))
     path.with_suffix(".json.sig").write_text(
-        base64.b64encode(private.sign(path.read_bytes())).decode(), encoding="utf-8"
+        base64.b64encode(private.sign(path.read_bytes())).decode(),
+        encoding="utf-8",
     )
 
 
@@ -184,7 +193,11 @@ def test_publication_gate_blocks_broken_but_present_artifacts(release, fault):
             delta = json.loads(members["delta.json"])
             delta["target_version"] = "99.0.0"
             members["delta.json"] = canonical_json(delta)
-        with zipfile.ZipFile(path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+        with zipfile.ZipFile(
+            path,
+            "w",
+            compression=zipfile.ZIP_DEFLATED,
+        ) as archive:
             for name, data in members.items():
                 archive.writestr(name, data)
         raw = path.read_bytes()
@@ -218,7 +231,9 @@ def test_publication_gate_blocks_broken_but_present_artifacts(release, fault):
     ],
 )
 def test_current_updater_preserves_data_across_future_release_routes(
-    release, monkeypatch, route
+    release,
+    monkeypatch,
+    route,
 ):
     tmp_path, output, manifest_path, _, public = release
     manifest = json.loads(manifest_path.read_text())
@@ -230,10 +245,14 @@ def test_current_updater_preserves_data_across_future_release_routes(
     (installed / "workspace").mkdir()
     (installed / "workspace/chat.json").write_bytes(b"saved conversation")
     if route == "modified_base":
-        (installed / "main.py").write_text("local code modification", encoding="utf-8")
+        (installed / "main.py").write_text(
+            "local code modification",
+            encoding="utf-8",
+        )
     if route == "no_delta_base":
         (installed / "plugin.json").write_text(
-            json.dumps({"id": "demo", "version": "0.5.0"}), encoding="utf-8"
+            json.dumps({"id": "demo", "version": "0.5.0"}),
+            encoding="utf-8",
         )
     original = (installed / "main.py").read_bytes()
     requests = []
@@ -248,42 +267,56 @@ def test_current_updater_preserves_data_across_future_release_routes(
             return httpx.Response(404, content=b"unavailable")
         if url.endswith("/full.zip") and route == "corrupt_fallback":
             return httpx.Response(200, content=b"corrupted")
-        return httpx.Response(200, content=local_artifact(output, url).read_bytes())
+        return httpx.Response(
+            200,
+            content=local_artifact(output, url).read_bytes(),
+        )
 
     monkeypatch.setattr(service_module, "get_plugins_dir", lambda: plugins)
     monkeypatch.setattr(
-        service_module, "_ADOPTED_COMPONENTS_PATH", tmp_path / "adopted.json"
+        service_module,
+        "_ADOPTED_COMPONENTS_PATH",
+        tmp_path / "adopted.json",
     )
     monkeypatch.setenv(
         "QWENPAW_COMPONENT_PROTOCOL",
         str(
             manifest["protocol_version"] - 1
             if route == "old_protocol"
-            else manifest["protocol_version"]
+            else manifest["protocol_version"],
         ),
     )
     monkeypatch.setenv(
-        "QWENPAW_TAURI_RESOURCE_DIR", str(tmp_path / "desktop-resources")
+        "QWENPAW_TAURI_RESOURCE_DIR",
+        str(tmp_path / "desktop-resources"),
     )
     monkeypatch.setenv(
         "QWENPAW_HOST_FINGERPRINT",
-        "different" if route == "changed_host" else manifest["host_fingerprint"],
+        "different"
+        if route == "changed_host"
+        else manifest["host_fingerprint"],
     )
     updater = ComponentUpdater(
         public_key_b64=public,
         managed_components={"demo", "python-runtime"},
-        core_version="0.0.0" if route == "old_core" else manifest["release_version"],
+        core_version="0.0.0"
+        if route == "old_core"
+        else manifest["release_version"],
         target=manifest["target"],
         directory_components={"python-runtime"},
     )
     http = httpx.Client(transport=httpx.MockTransport(respond))
     client = ComponentClient(
-        updater, tmp_path / "cache", client=http, default_allowed_host="example.test"
+        updater,
+        tmp_path / "cache",
+        client=http,
+        default_allowed_host="example.test",
     )
     service = ComponentUpdateService(
         updater,
         client,
-        BASE_URL + f"/metadata/components/stable/{manifest['target']}.current.json",
+        BASE_URL
+        + f"/metadata/components/stable/{manifest['target']}.current.json",
     )
     try:
         errors = {
@@ -306,7 +339,9 @@ def test_current_updater_preserves_data_across_future_release_routes(
             )
             assert service._install_component("demo")["reason"] == "up-to-date"
         assert (installed / "engines/default.json").read_bytes() == user_config
-        assert (installed / "workspace/chat.json").read_bytes() == b"saved conversation"
+        assert (
+            installed / "workspace/chat.json"
+        ).read_bytes() == b"saved conversation"
         if route in {"old_protocol", "old_core", "changed_host"}:
             assert not any(url.endswith(".zip") for url in requests)
     finally:
@@ -322,7 +357,7 @@ def test_update_release_gates_cannot_be_bypassed_by_publication():
         ("component-publish.yml", "publish"),
     ]:
         workflow = yaml.safe_load(
-            (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+            (ROOT / ".github/workflows" / name).read_text(encoding="utf-8"),
         )
         steps = workflow["jobs"][job]["steps"]
         gate = next(
@@ -346,13 +381,13 @@ def test_update_release_gates_cannot_be_bypassed_by_publication():
         )
     for name in ["tests.yml", "full-tests-nightly.yml"]:
         workflow = yaml.safe_load(
-            (ROOT / ".github/workflows" / name).read_text(encoding="utf-8")
+            (ROOT / ".github/workflows" / name).read_text(encoding="utf-8"),
         )
         run = next(
             step["run"]
             for step in workflow["jobs"]["unit-tests"]["steps"]
             if step.get("name") == "Run unit tests"
         )
-        assert run.index("scripts/verify_update_regressions.py --check") < run.index(
-            "pytest tests/unit"
-        )
+        assert run.index(
+            "scripts/verify_update_regressions.py --check",
+        ) < run.index("pytest tests/unit")

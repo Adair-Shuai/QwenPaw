@@ -12,7 +12,6 @@ the curated library runnable in a default install.
 
 from __future__ import annotations
 
-from typing import Any
 
 from ..common.errors import DomainError, DomainErrorCode
 from ..common.result import DomainResult
@@ -72,10 +71,14 @@ class TraceRecorder:
         self._max_steps = max_steps
 
     def _ensure_capacity(self) -> None:
-        if self._max_steps is not None and len(self._trace.steps) >= self._max_steps:
+        if (
+            self._max_steps is not None
+            and len(self._trace.steps) >= self._max_steps
+        ):
             raise DomainError(
                 DomainErrorCode.NON_CONVERGENT,
-                f"Trace step limit exceeded: {len(self._trace.steps)} >= {self._max_steps}",
+                f"Trace step limit exceeded: {len(self._trace.steps)} "
+                f">= {self._max_steps}",
                 details={
                     "guard": "MAX_TRACE_STEPS",
                     "actual": len(self._trace.steps),
@@ -124,7 +127,10 @@ class TraceRecorder:
             "value": value,
             "unit": unit,
         }
-        if source in {VariableSource.PRIOR_STEP.value, VariableSource.DERIVED.value}:
+        if source in {
+            VariableSource.PRIOR_STEP.value,
+            VariableSource.DERIVED.value,
+        }:
             for step in reversed(self._trace.steps):
                 if step.writes == name:
                     self._trace.parameter_sources[name]["step_id"] = step.id
@@ -154,7 +160,10 @@ class TraceRecorder:
         reads: tuple[str, ...] = (),
         writes: str = "",
     ) -> TraceStep:
-        """Log an algebraic rearrangement (e.g. solve an equation for a variable)."""
+        (
+            "Log an algebraic rearrangement (e.g. solve an equation "
+            "for a variable)."
+        )
         return self._add(
             kind=TraceStepKind.SYMBOLIC,
             operation="rearrange",
@@ -178,7 +187,10 @@ class TraceRecorder:
         writes: str = "",
         note: str = "",
     ) -> TraceStep:
-        """Log a substitution (an expression is replaced by an equivalent form)."""
+        (
+            "Log a substitution (an expression is replaced by an "
+            "equivalent form)."
+        )
         return self._add(
             kind=TraceStepKind.SYMBOLIC,
             operation="substitute",
@@ -303,7 +315,8 @@ class TraceRecorder:
         return [
             binding
             for binding in self._trace.variables.values()
-            if binding.editable and binding.source == VariableSource.INPUT.value
+            if binding.editable
+            and binding.source == VariableSource.INPUT.value
         ]
 
     def finish(
@@ -339,7 +352,9 @@ class TraceRecorder:
         if group and group not in {item.value for item in TraceStepGroup}:
             raise ValueError(f"unsupported trace step group: {group}")
         if not unicode:
-            unicode = latex_fragment(latex) if latex else to_unicode(expression)
+            unicode = (
+                latex_fragment(latex) if latex else to_unicode(expression)
+            )
         step = TraceStep(
             id=self._next_id("step"),
             kind=kind,
@@ -353,10 +368,14 @@ class TraceRecorder:
             reads=reads,
             writes=writes,
             substitutions=substitutions,
-            value=value if isinstance(value, (int, float, bool, str)) else None,
+            value=value
+            if isinstance(value, (int, float, bool, str))
+            else None,
             unit=unit,
             display_value=(
-                display_value if isinstance(display_value, (int, float, bool, str)) else None
+                display_value
+                if isinstance(display_value, (int, float, bool, str))
+                else None
             ),
             display_unit=display_unit,
             note=note,

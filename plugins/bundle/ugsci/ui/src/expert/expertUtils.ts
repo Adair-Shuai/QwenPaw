@@ -24,7 +24,12 @@ export function TagList({
   if (!items || items.length === 0) {
     return React.createElement(
       "span",
-      { style: { fontSize: 12, color: "var(--ant-color-text-quaternary, #bfbfbf)" } },
+      {
+        style: {
+          fontSize: 12,
+          color: "var(--ant-color-text-quaternary, #bfbfbf)",
+        },
+      },
       emptyText,
     );
   }
@@ -197,164 +202,167 @@ export function SkillPickerModal({
           React.createElement(Spin, { size: "large" }),
         )
       : filteredSkills.length === 0
-        ? React.createElement(Empty, {
-            description: searchText ? "未找到匹配的技能" : "技能池暂无可用技能",
-            image: Empty.PRESENTED_IMAGE_SIMPLE,
-          })
-        : React.createElement(
-            "div",
-            {
-              style: {
-                display: "grid",
-                gridTemplateColumns: "repeat(auto-fill, minmax(145px, 1fr))",
-                gap: 8,
-                maxHeight: 360,
-                overflowY: "auto",
-                padding: 2,
-              },
+      ? React.createElement(Empty, {
+          description: searchText ? "未找到匹配的技能" : "技能池暂无可用技能",
+          image: Empty.PRESENTED_IMAGE_SIMPLE,
+        })
+      : React.createElement(
+          "div",
+          {
+            style: {
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fill, minmax(145px, 1fr))",
+              gap: 8,
+              maxHeight: 360,
+              overflowY: "auto",
+              padding: 2,
             },
-            ...filteredSkills.map((skill: PoolSkillSpec) => {
-              const isSelected = selectedNames.includes(skill.name);
-              const isInstalled = installedSkillNames.includes(skill.name);
-              return React.createElement(
+          },
+          ...filteredSkills.map((skill: PoolSkillSpec) => {
+            const isSelected = selectedNames.includes(skill.name);
+            const isInstalled = installedSkillNames.includes(skill.name);
+            return React.createElement(
+              "div",
+              {
+                key: skill.name,
+                onClick: () => !isInstalled && toggleSkill(skill.name),
+                style: {
+                  position: "relative",
+                  padding: "10px 12px",
+                  border: `1px solid ${
+                    isSelected
+                      ? "#0072f5"
+                      : "var(--ant-color-border-secondary, #e8e8e8)"
+                  }`,
+                  borderRadius: 6,
+                  cursor: isInstalled ? "not-allowed" : "pointer",
+                  transition: "all 0.15s ease",
+                  background: isSelected
+                    ? "rgba(0, 114, 245, 0.06)"
+                    : isInstalled
+                    ? "var(--ant-color-fill-quaternary, #fafafa)"
+                    : "var(--ant-color-bg-container, #fff)",
+                  opacity: isInstalled ? 0.5 : 1,
+                  minHeight: 64,
+                },
+              },
+              isSelected
+                ? React.createElement(
+                    "span",
+                    {
+                      style: {
+                        position: "absolute",
+                        top: 6,
+                        right: 6,
+                        width: 18,
+                        height: 18,
+                        borderRadius: "50%",
+                        background: "#0072f5",
+                        color: "#fff",
+                        display: "flex",
+                        alignItems: "center",
+                        justifyContent: "center",
+                        fontSize: 10,
+                      },
+                    },
+                    CheckOutlined
+                      ? React.createElement(CheckOutlined)
+                      : "\u2713",
+                  )
+                : null,
+              isInstalled
+                ? React.createElement(
+                    "span",
+                    {
+                      style: {
+                        position: "absolute",
+                        top: 6,
+                        right: 8,
+                        fontSize: 10,
+                        color: "var(--ant-color-text-quaternary, #bbb)",
+                      },
+                    },
+                    "已安装",
+                  )
+                : null,
+              React.createElement(
                 "div",
                 {
-                  key: skill.name,
-                  onClick: () => !isInstalled && toggleSkill(skill.name),
                   style: {
-                    position: "relative",
-                    padding: "10px 12px",
-                    border: `1px solid ${isSelected ? "#0072f5" : "var(--ant-color-border-secondary, #e8e8e8)"}`,
-                    borderRadius: 6,
-                    cursor: isInstalled ? "not-allowed" : "pointer",
-                    transition: "all 0.15s ease",
-                    background: isSelected
-                      ? "rgba(0, 114, 245, 0.06)"
-                      : isInstalled
-                        ? "var(--ant-color-fill-quaternary, #fafafa)"
-                        : "var(--ant-color-bg-container, #fff)",
-                    opacity: isInstalled ? 0.5 : 1,
-                    minHeight: 64,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    marginBottom: 4,
+                    paddingRight: isInstalled || isSelected ? 24 : 0,
                   },
                 },
-                isSelected
-                  ? React.createElement(
-                      "span",
-                      {
-                        style: {
-                          position: "absolute",
-                          top: 6,
-                          right: 6,
-                          width: 18,
-                          height: 18,
-                          borderRadius: "50%",
-                          background: "#0072f5",
-                          color: "#fff",
-                          display: "flex",
-                          alignItems: "center",
-                          justifyContent: "center",
-                          fontSize: 10,
-                        },
-                      },
-                      CheckOutlined
-                        ? React.createElement(CheckOutlined)
-                        : "\u2713",
-                    )
-                  : null,
-                isInstalled
-                  ? React.createElement(
-                      "span",
-                      {
-                        style: {
-                          position: "absolute",
-                          top: 6,
-                          right: 8,
-                          fontSize: 10,
-                          color: "var(--ant-color-text-quaternary, #bbb)",
-                        },
-                      },
-                      "已安装",
-                    )
-                  : null,
                 React.createElement(
-                  "div",
-                  {
-                    style: {
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      marginBottom: 4,
-                      paddingRight: isInstalled || isSelected ? 24 : 0,
-                    },
-                  },
+                  "span",
+                  { style: { fontSize: 16 } },
+                  skill.emoji || "\u26a1",
+                ),
+                React.createElement(
+                  Tooltip,
+                  { title: skill.name },
                   React.createElement(
-                    "span",
-                    { style: { fontSize: 16 } },
-                    skill.emoji || "\u26a1",
-                  ),
-                  React.createElement(
-                    Tooltip,
-                    { title: skill.name },
-                    React.createElement(
-                      Text,
-                      {
-                        strong: true,
-                        style: {
-                          fontSize: 13,
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          whiteSpace: "nowrap",
-                        },
+                    Text,
+                    {
+                      strong: true,
+                      style: {
+                        fontSize: 13,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
                       },
-                      skill.name,
-                    ),
+                    },
+                    skill.name,
                   ),
                 ),
-                skill.description
-                  ? React.createElement(
-                      "div",
-                      {
-                        style: {
-                          fontSize: 11,
-                          color: "var(--ant-color-text-tertiary, #8c8c8c)",
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          display: "-webkit-box",
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical",
-                          lineHeight: "1.4",
-                        },
+              ),
+              skill.description
+                ? React.createElement(
+                    "div",
+                    {
+                      style: {
+                        fontSize: 11,
+                        color: "var(--ant-color-text-tertiary, #8c8c8c)",
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        display: "-webkit-box",
+                        WebkitLineClamp: 2,
+                        WebkitBoxOrient: "vertical",
+                        lineHeight: "1.4",
                       },
-                      skill.description,
-                    )
-                  : null,
-                skill.tags && skill.tags.length > 0
-                  ? React.createElement(
-                      "div",
-                      {
-                        style: {
-                          marginTop: 4,
-                          display: "flex",
-                          gap: 2,
-                          flexWrap: "wrap",
-                        },
+                    },
+                    skill.description,
+                  )
+                : null,
+              skill.tags && skill.tags.length > 0
+                ? React.createElement(
+                    "div",
+                    {
+                      style: {
+                        marginTop: 4,
+                        display: "flex",
+                        gap: 2,
+                        flexWrap: "wrap",
                       },
-                      ...skill.tags.slice(0, 2).map((tag: string, i: number) =>
-                        React.createElement(
-                          Tag,
-                          {
-                            key: i,
-                            color: "cyan",
-                            style: { fontSize: 10, marginRight: 0 },
-                          },
-                          tag,
-                        ),
+                    },
+                    ...skill.tags.slice(0, 2).map((tag: string, i: number) =>
+                      React.createElement(
+                        Tag,
+                        {
+                          key: i,
+                          color: "cyan",
+                          style: { fontSize: 10, marginRight: 0 },
+                        },
+                        tag,
                       ),
-                    )
-                  : null,
-              );
-            }),
-          ),
+                    ),
+                  )
+                : null,
+            );
+          }),
+        ),
   );
 }
-

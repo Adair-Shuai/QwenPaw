@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Asynchronous operation handlers for COMSOL MCP Server."""
 
 from .solver import AsyncSolver, SolverStatus, SolverProgress, async_solver

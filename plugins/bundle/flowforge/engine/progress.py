@@ -14,6 +14,7 @@ import copy
 import contextvars
 import inspect
 import threading
+import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass, field
 from enum import Enum
@@ -28,6 +29,8 @@ class NodeStatus(str, Enum):
     BLOCKED = "blocked"
     CACHED = "cached"
     SKIPPED = "skipped"
+    CANCELLED = "cancelled"
+    TIMEOUT = "timeout"
     # Compat members for old flowforge code (independent values)
     COMPLETED = "completed"
     FAILED = "failed"
@@ -82,7 +85,10 @@ class ProgressEvent:
         }
 
 
-_current_node: contextvars.ContextVar[str | None] = contextvars.ContextVar("current_node", default=None)
+_current_node: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "current_node",
+    default=None,
+)
 
 
 class CurrentNodeContext:
@@ -128,7 +134,9 @@ class ProgressRegistry:
         """Return {node_id: status_value} for all tracked nodes (compat)."""
         with self._lock:
             return {
-                nid: str(s.status.value if hasattr(s.status, 'value') else s.status)
+                nid: str(
+                    s.status.value if hasattr(s.status, "value") else s.status,
+                )
                 for nid, s in self._states.items()
             }
 
@@ -173,6 +181,7 @@ class ProgressRegistry:
         self,
         *,
         value: float | None = None,
+        # pylint: disable-next=redefined-builtin
         max: float | None = None,
         preview: Any | None = None,
         message: str | None = None,
@@ -190,7 +199,14 @@ class ProgressRegistry:
             st.preview = preview
         if message is not None:
             st.message = message
-        self.emit(ProgressEvent(type="progress", prompt_id=self.prompt_id, node_id=nid, state=st))
+        self.emit(
+            ProgressEvent(
+                type="progress",
+                prompt_id=self.prompt_id,
+                node_id=nid,
+                state=st,
+            ),
+        )
 
     def set_status(
         self,
@@ -211,9 +227,25 @@ class ProgressRegistry:
             st.metadata["duration_ms"] = duration_ms
         self.emit(
             ProgressEvent(
-                type="executing" if status == NodeStatus.RUNNING else f"node_{status.value}",
+                type=(
+                    "executing"
+                    if status == NodeStatus.RUNNING
+                    else f"node_{status.value}"
+                ),
                 prompt_id=self.prompt_id,
                 node_id=node_id,
                 state=st,
             ),
         )
+
+    def finish_unfinished(self, status: NodeStatus) -> None:
+        """Close interrupted nodes after their tasks have drained."""
+        with self._lock:
+            for node_id, state in list(self._states.items()):
+                if state.status in {
+                    NodeStatus.PENDING,
+                    NodeStatus.RUNNING,
+                    NodeStatus.BLOCKED,
+                }:
+                    state.finished_at_ms = int(time.time() * 1000)
+                    self.set_status(node_id, status)

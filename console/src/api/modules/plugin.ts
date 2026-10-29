@@ -33,6 +33,7 @@ export interface PluginInfo {
   /** Whether the plugin is currently loaded in memory. */
   loaded: boolean;
   status?: string;
+  diagnostics?: string[];
   /** Primary capability type declared in plugin.json. */
   plugin_type: PluginType;
   /** Frontend JS entry-point path (if any). */
@@ -96,6 +97,8 @@ export interface PluginUpdateInfo {
   version: string;
   source: string;
   name: string;
+  channel?: string;
+  sha256?: string;
 }
 
 export interface OfficialPluginCatalog {
@@ -169,9 +172,17 @@ function localizedValue(
 
 function isCompatible(entry: RemoteCatalogFile, appVersion: string): boolean {
   if (!appVersion || !entry.qwenpaw_version) return true;
+  // Match the backend: prerelease hosts use their base release for bounds.
+  const hostVersion = appVersion
+    .trim()
+    .replace(/^v/i, "")
+    .replace(
+      /^(\d+\.\d+\.\d+)[.-]?(?:alpha|beta|rc|a|b)\.?\d+(?:\+.*)?$/i,
+      "$1",
+    );
   const { min, max } = entry.qwenpaw_version;
-  if (min && comparePluginVersions(appVersion, min) < 0) return false;
-  if (max && comparePluginVersions(appVersion, max) > 0) return false;
+  if (min && comparePluginVersions(hostVersion, min) < 0) return false;
+  if (max && comparePluginVersions(hostVersion, max) >= 0) return false;
   return true;
 }
 
@@ -448,6 +459,29 @@ export async function upgradeInstalledUGSciPlugin(
     pluginId: entry.plugin_id,
     version: entry.version,
     sha256: requireUGSciUpgradeDigest(entry.sha256),
+  });
+  return { method: "replaced", version: replaced.version };
+}
+
+/** Keep every catalog upgrade on the verified update path. */
+export async function upgradeInstalledPlugin(
+  pluginId: string,
+  update: PluginUpdateInfo,
+): Promise<UGSciUpgradeResult> {
+  if (update.channel === "ugsci") {
+    return upgradeInstalledUGSciPlugin({
+      plugin_id: pluginId,
+      version: update.version,
+      install_url: update.source,
+      sha256: update.sha256,
+      upgrade_available: true,
+    });
+  }
+  const replaced = await replaceInstalledPlugin({
+    pluginId,
+    source: update.source,
+    version: update.version,
+    sha256: update.sha256,
   });
   return { method: "replaced", version: replaced.version };
 }

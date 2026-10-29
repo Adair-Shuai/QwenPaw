@@ -31,6 +31,7 @@ def test_registry_contains_all_managed_simulators() -> None:
         "comsol",
         "eclipse",
         "intersect",
+        "opm_flow",
         "tnavigator",
     ]
 
@@ -300,7 +301,8 @@ def test_eclipse_final_cpu_is_terminal_and_decorated_errors_fail(
     assert EclipseAdapter().parse_progress(tmp_path).status == "failed"
 
     log.write_text(
-        "**** ERROR 1 **** Newton convergence failed\n", encoding="utf-8"
+        "**** ERROR 1 **** Newton convergence failed\n",
+        encoding="utf-8",
     )
     assert EclipseAdapter().parse_progress(tmp_path).status == "failed"
 

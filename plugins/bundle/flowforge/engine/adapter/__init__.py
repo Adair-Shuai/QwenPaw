@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""FlowForge adapter layer — QwenPaw-native replacement for ``leagent.*`` imports.
+"""FlowForge adapter layer — QwenPaw-native replacement for ``leagent.*``
+imports.
 
 This package provides drop-in replacements for every ``leagent.*`` symbol
 the workflow engine nodes import.  By routing through this adapter, the
@@ -9,8 +10,10 @@ agent runtime.
 
 Modules:
 
-* :mod:`tool_base`        — ``BaseTool`` / ``ToolCategory`` wrapping ``ToolDescriptor``
-* :mod:`tool_registry`    — ``ToolRegistry`` / ``ToolExecutor`` bridging QwenPaw tools
+* :mod:`tool_base`        — ``BaseTool`` / ``ToolCategory`` wrapping
+``ToolDescriptor``
+* :mod:`tool_registry`    — ``ToolRegistry`` / ``ToolExecutor`` bridging
+QwenPaw tools
 * :mod:`chat_message`     — ``ChatMessage`` using agentscope ``Msg``
 * :mod:`llm_service`      — ``LLMService`` using ``ProviderManager``
 * :mod:`agent_definition` — ``AgentDefinition`` / ``ModelPolicy``
@@ -21,7 +24,8 @@ Modules:
 * :mod:`sandbox`          — in-process script sandbox
 * :mod:`tool_output`      — ``register_tool_artifact``
 * :mod:`service_manager`  — ``get_service_manager``
-* :mod:`execution`        — ``begin_execution`` / ``end_execution`` / ``ExecutionScope``
+* :mod:`execution`        — ``begin_execution`` / ``end_execution`` /
+``ExecutionScope``
 * :mod:`domain_registry`  — domain model registry stubs
 """
 
@@ -29,7 +33,12 @@ from __future__ import annotations
 
 # Tool layer
 from .tool_base import BaseTool, ToolCategory, wrap_descriptor
-from .tool_registry import ToolExecutor, ToolExecResult, ToolRegistry, ToolResult
+from .tool_registry import (
+    ToolExecutor,
+    ToolExecResult,
+    ToolRegistry,
+    ToolResult,
+)
 
 # LLM layer
 from .chat_message import ChatMessage, messages_to_agentscope
@@ -62,7 +71,12 @@ from .tool_output import register_tool_artifact
 from .service_manager import ServiceManagerFacade, get_service_manager
 
 # Execution scope stubs
-from .execution import ExecutionRun, ExecutionScope, begin_execution, end_execution
+from .execution import (
+    ExecutionRun,
+    ExecutionScope,
+    begin_execution,
+    end_execution,
+)
 
 # Domain model stubs
 from .domain_registry import (
@@ -92,6 +106,7 @@ DEFAULT_SCRIPT_AGENT_TOOLS = (
     "write_file",
 )
 
+
 # Capability bootstrap stub (no-op)
 def bootstrap_capabilities() -> dict[str, list[str]]:
     """Return empty capability registry (no domain models in QwenPaw)."""
@@ -100,33 +115,57 @@ def bootstrap_capabilities() -> dict[str, list[str]]:
 
 __all__ = [
     # Tool layer
-    "BaseTool", "ToolCategory", "wrap_descriptor",
-    "ToolExecutor", "ToolExecResult", "ToolRegistry", "ToolResult",
+    "BaseTool",
+    "ToolCategory",
+    "wrap_descriptor",
+    "ToolExecutor",
+    "ToolExecResult",
+    "ToolRegistry",
+    "ToolResult",
     # LLM layer
-    "ChatMessage", "messages_to_agentscope",
-    "LLMResponse", "LLMService",
+    "ChatMessage",
+    "messages_to_agentscope",
+    "LLMResponse",
+    "LLMService",
     # Agent layer
-    "AgentDefinition", "ModelPolicy", "ToolsPolicy",
-    "AgentRegistry", "get_agent_registry",
-    "AgentEvent", "AgentEventType",
+    "AgentDefinition",
+    "ModelPolicy",
+    "ToolsPolicy",
+    "AgentRegistry",
+    "get_agent_registry",
+    "AgentEvent",
+    "AgentEventType",
     "AgentRuntime",
     # Prompts
-    "compose_control_messages", "mode_choices",
-    "playbook_ids_from_context", "try_parse_json_payload",
+    "compose_control_messages",
+    "mode_choices",
+    "playbook_ids_from_context",
+    "try_parse_json_payload",
     # Sandbox
-    "ScriptExecutionError", "ScriptResult", "ScriptTimeoutError",
+    "ScriptExecutionError",
+    "ScriptResult",
+    "ScriptTimeoutError",
     "execute_script",
     # File / service
     "register_tool_artifact",
-    "ServiceManagerFacade", "get_service_manager",
+    "ServiceManagerFacade",
+    "get_service_manager",
     # Execution
-    "ExecutionRun", "ExecutionScope", "begin_execution", "end_execution",
+    "ExecutionRun",
+    "ExecutionScope",
+    "begin_execution",
+    "end_execution",
     # Domain models
-    "DomainModelAdapter", "DomainModelRegistry", "DomainModelSpec",
-    "DomainParam", "get_domain_registry",
-    "load_domain_model_plugins", "register_builtin_domain_models",
+    "DomainModelAdapter",
+    "DomainModelRegistry",
+    "DomainModelSpec",
+    "DomainParam",
+    "get_domain_registry",
+    "load_domain_model_plugins",
+    "register_builtin_domain_models",
     # Tool sets
-    "DEFAULT_CODING_AGENT_TOOLS", "DEFAULT_SCRIPT_AGENT_TOOLS",
+    "DEFAULT_CODING_AGENT_TOOLS",
+    "DEFAULT_SCRIPT_AGENT_TOOLS",
     # Capabilities
     "bootstrap_capabilities",
 ]

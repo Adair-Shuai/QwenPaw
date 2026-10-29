@@ -15,7 +15,12 @@ class WorkflowEngineError(Exception):
 class ValidationError(WorkflowEngineError):
     """Raised when a :class:`WorkflowDocument` fails validation."""
 
-    def __init__(self, message: str, *, errors: list[str] | None = None) -> None:
+    def __init__(
+        self,
+        message: str,
+        *,
+        errors: list[str] | None = None,
+    ) -> None:
         super().__init__(message)
         self.errors = list(errors or [])
 
@@ -27,7 +32,13 @@ class DependencyCycleError(WorkflowEngineError):
 class NodeExecutionError(WorkflowEngineError):
     """Raised when a single node fails during execution."""
 
-    def __init__(self, node_id: str, message: str, *, retryable: bool | None = None) -> None:
+    def __init__(
+        self,
+        node_id: str,
+        message: str,
+        *,
+        retryable: bool | None = None,
+    ) -> None:
         super().__init__(f"{node_id}: {message}")
         self.node_id = node_id
         self.message = message

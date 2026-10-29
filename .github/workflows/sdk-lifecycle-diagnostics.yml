@@ -1,0 +1,94 @@
+name: Plugin SDK lifecycle diagnostics
+
+# A focused manual diagnosis, never a substitute for the production full gate.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sdk:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            python: '3.11'
+          - os: ubuntu-latest
+            python: '3.13'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Linux isolation dependency
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+      - name: Build the actual console
+        shell: bash
+        env:
+          NODE_OPTIONS: --max-old-space-size=8192
+        run: |
+          cd console
+          npm ci
+          npm run build
+          cd ..
+          mkdir -p src/qwenpaw/console
+          cp -R console/dist/* src/qwenpaw/console/
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install production test dependencies
+        id: dependencies
+        shell: bash
+        run: |
+          python -m pip install --upgrade 'pip>=26.2.2' 'certifi>=2026.10.19'
+          python -m pip install -e '.[dev,test,full]' 'setuptools<82'
+      - name: Repeat actual public reload and atomic writer regressions
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          for attempt in 1 2 3; do
+            python -m pytest -v --timeout=90 --timeout-method=thread \
+              -o faulthandler_timeout=60 \
+              tests/unit/plugins/test_sdk_context_bridge.py::test_runtime_owner_retries_failed_provider_scope_via_public_reload \
+              tests/unit/plugins/test_sdk_app_task_stream.py::test_cancel_keeps_run_owned_until_failed_thread_scope_really_stops \
+              tests/unit/plugins/test_sdk_context_lifecycle.py::test_bound_model_uses_earliest_deadline_and_closes_provider \
+              tests/unit/plugins/test_sdk_workspace_contract.py::test_request_cancellation_finishes_delegated_resources \
+              tests/unit/plugins/test_sdk_storage_contract.py::test_storage_retries_transient_windows_replace_without_partial_publication \
+              tests/unit/plugins/test_sdk_storage_contract.py::test_storage_read_retries_windows_crt_access_error_without_losing_state \
+              tests/unit/plugins/test_sdk_storage_contract.py::test_storage_mutation_waits_for_other_instances_open_reader \
+              tests/unit/utils/test_io_utils.py::test_write_text_atomic_retries_transient_windows_lock
+          done
+      - name: Verify SDK run custody and filesystem behavior
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          python -m pytest -v --timeout=90 --timeout-method=thread \
+            -o faulthandler_timeout=60 \
+            tests/unit/plugins/test_sdk_context_bridge.py \
+            tests/unit/plugins/test_sdk_app_task_stream.py \
+            tests/unit/plugins/test_sdk_app_task_storage.py \
+            tests/unit/plugins/test_sdk_context_lifecycle.py \
+            tests/unit/plugins/test_sdk_workspace_contract.py \
+            tests/unit/plugins/test_sdk_storage_contract.py \
+            tests/unit/utils/test_io_utils.py
+      - name: Verify document forms application contracts
+        if: ${{ always() && steps.dependencies.outcome == 'success' }}
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          python -m pip install -r plugins/apps/document-forms/requirements.txt
+          python -m pytest plugins/apps/document-forms/tests -v
+      - name: Verify real OfficeCLI engine contracts
+        if: ${{ always() && steps.dependencies.outcome == 'success' }}
+        timeout-minutes: 20
+        shell: bash
+        run: |
+          python scripts/pack-tauri/stage_officecli.py --dest console/src-tauri/binaries/officecli
+          python -m pytest tests/system/test_officecli_engine.py -v

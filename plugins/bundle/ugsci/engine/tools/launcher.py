@@ -9,6 +9,7 @@ The simulator executable path is resolved from the UGSci engine
 registry (``engine_manager.py``), so the user must have configured the
 engine in the Capabilities Center before using this tool.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -49,9 +50,13 @@ def _ensure_path_in_workspace(
     Returns the resolved absolute path on success.
     Raises ``PermissionError`` if the path escapes the workspace.
     """
+    # The caller cannot widen the trusted workspace boundary with this
+    # historical keyword; authority comes exclusively from the host context.
+    del working_dir
     resolved = path.expanduser().resolve()
     try:
         from qwenpaw.config.context import get_current_workspace_dir
+
         ws_root = get_current_workspace_dir().resolve()
     except Exception:
         ws_root = Path(os.getcwd()).resolve()
@@ -64,9 +69,11 @@ def _ensure_path_in_workspace(
         ) from exc
     return resolved
 
+
 # ---------------------------------------------------------------------------
 # Shared job state (imported by monitor / result_reader / analyzer)
 # ---------------------------------------------------------------------------
+
 
 @dataclass
 class SimJob:
@@ -77,7 +84,8 @@ class SimJob:
     deck_file: str
     working_dir: str
     pid: int
-    status: str = "running"  # running | completed | failed | timeout | error | interrupted
+    # running | completed | failed | timeout | error | interrupted
+    status: str = "running"
     start_time: float = 0.0  # loop.time() — for in-process elapsed calc
     start_ts: float = 0.0  # time.time() — wall clock, survives restart
     end_time: float | None = None  # loop.time()
@@ -94,6 +102,15 @@ class SimJob:
     def unlimited(self) -> bool:
         return self.timeout <= 0
 
+    def close_log(self) -> None:
+        """Release redirected output after any subprocess exit outcome."""
+        if self._log_file is not None:
+            try:
+                self._log_file.close()
+            except Exception:
+                pass
+            self._log_file = None
+
 
 # Global job table — keyed by job_id
 _sim_jobs: dict[str, SimJob] = {}
@@ -105,7 +122,11 @@ _ARTIFACT_MTIME_TOLERANCE_SECONDS = 2.0
 _CLEANUP_RETRY_DELAYS = (30.0, 60.0, 300.0)
 
 
-def _output_dir_for(deck_file: str, working_dir: str = "", output_dir: str = "") -> Path:
+def _output_dir_for(
+    deck_file: str,
+    working_dir: str = "",
+    output_dir: str = "",
+) -> Path:
     """Return the directory where simulator artifacts are expected."""
     if output_dir:
         return Path(output_dir).expanduser().resolve()
@@ -114,7 +135,9 @@ def _output_dir_for(deck_file: str, working_dir: str = "", output_dir: str = "")
         if deck_path.is_absolute():
             return deck_path.resolve().parent
         if working_dir:
-            return (Path(working_dir).expanduser().resolve() / deck_path).parent
+            return (
+                Path(working_dir).expanduser().resolve() / deck_path
+            ).parent
     if working_dir:
         return Path(working_dir).expanduser().resolve()
     return Path.cwd().resolve()
@@ -127,13 +150,19 @@ def _artifact_is_current(path: Path, job: SimJob) -> bool:
     if job.start_ts <= 0:
         return False
     try:
-        return path.stat().st_mtime + _ARTIFACT_MTIME_TOLERANCE_SECONDS >= job.start_ts
+        return (
+            path.stat().st_mtime + _ARTIFACT_MTIME_TOLERANCE_SECONDS
+            >= job.start_ts
+        )
     except OSError:
         return False
 
 
-def _terminal_status_from_artifacts(job: SimJob) -> tuple[str | None, int | None, str | None]:
-    """Infer a credible terminal state after the original process handle is lost."""
+def _terminal_status_from_artifacts(
+    job: SimJob,
+) -> tuple[str | None, int | None, str | None]:
+    """Infer a credible terminal state after the original process handle is \
+lost."""
     output_dir = _output_dir_for(
         job.deck_file,
         job.working_dir,
@@ -153,8 +182,16 @@ def _terminal_status_from_artifacts(job: SimJob) -> tuple[str | None, int | None
                     tail = handle.read().decode("utf-8", errors="replace")
         except OSError:
             tail = ""
-        errors = re.search(r"^\s*Errors\s*:?\s*(\d+)", tail, re.MULTILINE | re.IGNORECASE)
-        problems = re.search(r"^\s*Problems\s*:?\s*(\d+)", tail, re.MULTILINE | re.IGNORECASE)
+        errors = re.search(
+            r"^\s*Errors\s*:?\s*(\d+)",
+            tail,
+            re.MULTILINE | re.IGNORECASE,
+        )
+        problems = re.search(
+            r"^\s*Problems\s*:?\s*(\d+)",
+            tail,
+            re.MULTILINE | re.IGNORECASE,
+        )
         has_final_summary = "FINAL CPU" in tail.upper() and errors is not None
         if current_eclend or has_final_summary:
             error_count = int(errors.group(1)) if errors else 0
@@ -164,7 +201,10 @@ def _terminal_status_from_artifacts(job: SimJob) -> tuple[str | None, int | None
             return (
                 "failed",
                 None,
-                f"Eclipse final summary reports errors={error_count}, problems={problem_count}",
+                f"Eclipse final summary reports errors="
+                f"{error_count}"
+                f", problems="
+                f"{problem_count}",
             )
         return None, None, None
 
@@ -182,11 +222,17 @@ def _terminal_status_from_artifacts(job: SimJob) -> tuple[str | None, int | None
     return None, None, None
 
 
-def _apply_dead_process_terminal_status(job: SimJob, fallback_error: str) -> None:
-    """Apply artifact-backed terminal state, failing closed when unavailable."""
-    inferred_status, inferred_returncode, inferred_error = (
-        _terminal_status_from_artifacts(job)
-    )
+def _apply_dead_process_terminal_status(
+    job: SimJob,
+    fallback_error: str,
+) -> None:
+    """Apply artifact-backed terminal state, failing closed when \
+unavailable."""
+    (
+        inferred_status,
+        inferred_returncode,
+        inferred_error,
+    ) = _terminal_status_from_artifacts(job)
     if inferred_status is not None:
         job.status = inferred_status
         job.returncode = inferred_returncode
@@ -201,6 +247,8 @@ def _apply_dead_process_terminal_status(job: SimJob, fallback_error: str) -> Non
 # Tool function
 # ---------------------------------------------------------------------------
 
+
+# pylint: disable-next=R0912,R0911,R0915
 async def launch_simulation(
     simulator: str,
     deck_file: str,
@@ -209,22 +257,24 @@ async def launch_simulation(
 ) -> Any:
     """Start a numerical simulation and return a job_id for monitoring.
 
-    The simulation runs as a background subprocess — this function returns
+    The simulation runs as a background subprocess — this function \
+returns
     immediately.  Use ``check_simulation_status`` to query progress.
 
     For long-running simulations (hours/days), consider setting up a
     scheduled check via the cron system so the Agent is automatically
     notified when the simulation finishes::
 
-        qwenpaw cron create --type agent --schedule-type scheduled \
-          --run-at "<10 minutes later>" --text "检查 job <job_id> 状态" \
-          --channel <channel> --agent-id <agent_id>
+        qwenpaw cron create --type agent --schedule-type scheduled    \
+       --run-at \"<10 minutes later>\" --text \"检查 job <job_id> 状态\"  \
+         --channel <channel> --agent-id <agent_id>
 
     Args:
         simulator (`str`):
-            Simulator type. One of: ``"eclipse"``, ``"cmg_imex"``,
-            ``"cmg_stars"``, ``"cmg_gem"``, ``"comsol"``,
-            ``"intersect"``, ``"tnavigator"``.
+            Simulator type. One of: ``\"eclipse\"``, ``\"cmg_imex\"``,
+            ``\"cmg_stars\"``, ``\"cmg_gem\"``, ``\"comsol\"``,
+            ``\"intersect\"``, ``\"tnavigator\"``, ``\"opm_flow\"`` \
+(explicitly configured OPM Flow).
         deck_file (`str`):
             Path to the input/deck file (e.g. ``model.DATA``,
             ``case.dat``, ``study.mph``).  Relative paths resolve from
@@ -235,7 +285,7 @@ async def launch_simulation(
         timeout (`float`):
             Maximum runtime in seconds.  Default 86400 (24 hours).
             When the timeout is reached, the process is killed and the
-            job status becomes ``"timeout"``.
+            job status becomes ``\"timeout\"``.
 
     Returns:
         ``ToolChunk``: Contains the job_id and launch information.
@@ -243,11 +293,21 @@ async def launch_simulation(
     from agentscope.message import TextBlock, ToolResultState
     from agentscope.tool import ToolChunk
 
-    if not isinstance(timeout, (int, float)) or not math.isfinite(float(timeout)) or float(timeout) < 0:
+    if (
+        not isinstance(timeout, (int, float))
+        or not math.isfinite(float(timeout))
+        or float(timeout) < 0
+    ):
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(type="text", text="Error: timeout must be a non-negative finite number of seconds (0 means unlimited).")],
+            content=[
+                TextBlock(
+                    type="text",
+                    text="Error: timeout must be a non-negative "
+                    "finite number of seconds (0 means unlimited).",
+                ),
+            ],
         )
     timeout = float(timeout)
 
@@ -255,6 +315,7 @@ async def launch_simulation(
     if not working_dir:
         try:
             from qwenpaw.config.context import get_current_workspace_dir
+
             working_dir = str(get_current_workspace_dir())
         except Exception:
             working_dir = os.getcwd()
@@ -311,12 +372,13 @@ async def launch_simulation(
         "comsol": "comsol",
         "intersect": "intersect",
         "tnavigator": "tnavigator",
+        "opm_flow": "opm_flow",
     }
     engine_id = engine_id_map.get(simulator.lower().strip(), simulator)
 
     executable = ""
     license_env = ""
-    if get_engine:
+    if callable(get_engine):
         engine = get_engine(engine_id)
         if engine:
             executable = adapter.resolve_executable(engine)
@@ -330,7 +392,11 @@ async def launch_simulation(
                 TextBlock(
                     type="text",
                     text=(
-                        f"Error: Simulator '{simulator}' (engine '{engine_id}') "
+                        f"Error: Simulator '"
+                        f"{simulator}"
+                        f"' (engine '"
+                        f"{engine_id}"
+                        f"') "
                         f"has no executable path configured.\n"
                         f"Please configure it in Capabilities → Engines."
                     ),
@@ -346,8 +412,8 @@ async def launch_simulation(
         except Exception as exc:
             input_inspection = {
                 "warnings": [
-                    f"input preflight inspection failed: {type(exc).__name__}"
-                ]
+                    f"input preflight inspection failed: {type(exc).__name__}",
+                ],
             }
 
     output_file = str(deck_path.with_suffix(adapter.log_extension))
@@ -364,6 +430,7 @@ async def launch_simulation(
             get_current_session_id,
             get_current_user_id,
         )
+
         agent_id = get_current_agent_id()
         session_id = get_current_session_id() or ""
         user_id = get_current_user_id() or ""
@@ -396,6 +463,8 @@ async def launch_simulation(
             },
         )
         if native is not None:
+            from .presentation import simulation_reference
+
             return ToolChunk(
                 is_last=True,
                 state=ToolResultState.SUCCESS,
@@ -410,16 +479,31 @@ async def launch_simulation(
                             f"  Input file:  {deck_path}\n"
                             f"  Output dir:  {output_path}\n"
                             f"  Process cwd: {work_path}\n"
-                            f"  Timeout:     {timeout:.0f}s ({timeout/3600:.1f}h)\n\n"
-                            f"Use check_simulation_status(job_id=\"{native_run_id}\") "
+                            f"  Timeout:     "
+                            f"{timeout:.0f}"
+                            f"s ("
+                            f"{timeout / 3600:.1f}"
+                            f"h)\n"
+                            f"\n"
+                            f'Use check_simulation_status(job_id="'
+                            f"{native_run_id}"
+                            f'") '
                             "to monitor progress."
                             + (
                                 "\n\nPreflight warnings:\n  - "
-                                + "\n  - ".join(input_inspection.get("warnings", [])[:20])
+                                + "\n  - ".join(
+                                    input_inspection.get("warnings", [])[:20],
+                                )
                                 if input_inspection.get("warnings")
                                 else ""
                             )
                         ),
+                    ),
+                    simulation_reference(
+                        native_run_id,
+                        simulator,
+                        agent_id=agent_id,
+                        session_id=session_id,
                     ),
                 ],
             )
@@ -433,7 +517,13 @@ async def launch_simulation(
     # simulator output.  Redirect to log files in the working directory
     # instead so the OS handles buffering and we can read them later.
     log_path = output_path / f"{deck_path.stem}.sim.log"
-    log_file = open(log_path, "w", encoding="utf-8", errors="replace")  # noqa: SIM115
+    # pylint: disable-next=consider-using-with
+    log_file = open(
+        log_path,
+        "w",
+        encoding="utf-8",
+        errors="replace",
+    )  # noqa: SIM115
 
     # ── Start subprocess ─────────────────────────────────────────────
     env = {**os.environ}
@@ -507,33 +597,36 @@ async def launch_simulation(
     try:
         from . import job_store
 
-        job_store.save_job(job_id, {
-            "job_id": job_id,
-            "simulator": job.simulator,
-            "deck_file": job.deck_file,
-            "working_dir": job.working_dir,
-            "execution_dir": str(work_path),
-            "output_dir": str(output_path),
-            "pid": job.pid,
-            "status": job.status,
-            "start_ts": job.start_ts,
-            "timeout": job.timeout,
-            "returncode": None,
-            "error": None,
-            "log_path": str(log_path),
-            "command": command,
-            "case_stem": deck_path.stem,
-            "input_inspection": input_inspection,
-            "agent_id": agent_id,
-            "session_id": session_id,
-            "user_id": user_id,
-            "channel": channel,
-            "wake_status": "pending",
-            "wake_attempts": 0,
-            "diagnosis_rounds": 0,
-            "cron_cleanup_status": "pending",
-            "cron_cleanup_attempts": 0,
-        })
+        job_store.save_job(
+            job_id,
+            {
+                "job_id": job_id,
+                "simulator": job.simulator,
+                "deck_file": job.deck_file,
+                "working_dir": job.working_dir,
+                "execution_dir": str(work_path),
+                "output_dir": str(output_path),
+                "pid": job.pid,
+                "status": job.status,
+                "start_ts": job.start_ts,
+                "timeout": job.timeout,
+                "returncode": None,
+                "error": None,
+                "log_path": str(log_path),
+                "command": command,
+                "case_stem": deck_path.stem,
+                "input_inspection": input_inspection,
+                "agent_id": agent_id,
+                "session_id": session_id,
+                "user_id": user_id,
+                "channel": channel,
+                "wake_status": "pending",
+                "wake_attempts": 0,
+                "diagnosis_rounds": 0,
+                "cron_cleanup_status": "pending",
+                "cron_cleanup_attempts": 0,
+            },
+        )
     except Exception as exc:
         logger.error("Failed to persist job %s: %s", job_id, exc)
         try:
@@ -545,16 +638,31 @@ async def launch_simulation(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(type="text", text=f"Error: Simulation started but durable job registration failed: {exc}")],
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: Simulation started but durable "
+                    f"job registration failed: "
+                    f"{exc}",
+                ),
+            ],
         )
 
     # ── Start background monitor ─────────────────────────────────────
     _ensure_monitor_task(job_id)
+    from .result_service import safe_start_collection
+
+    safe_start_collection(job_id)
 
     logger.info(
         "Simulation started: job=%s simulator=%s pid=%d deck=%s",
-        job_id, simulator, proc.pid, deck_path,
+        job_id,
+        simulator,
+        proc.pid,
+        deck_path,
     )
+
+    from .presentation import simulation_reference
 
     return ToolChunk(
         is_last=True,
@@ -570,16 +678,25 @@ async def launch_simulation(
                     f"  Output dir:  {output_path}\n"
                     f"  Process cwd: {work_path}\n"
                     f"  PID:         {proc.pid}\n"
-                    f"  Timeout:     {timeout:.0f}s ({timeout/3600:.1f}h)\n\n"
-                    f"Use check_simulation_status(job_id=\"{job_id}\") "
+                    f"  Timeout:     {timeout:.0f}s "
+                    f"({timeout / 3600:.1f}h)\n\n"
+                    f'Use check_simulation_status(job_id="{job_id}") '
                     f"to monitor progress."
                     + (
                         "\n\nPreflight warnings:\n  - "
-                        + "\n  - ".join(input_inspection.get("warnings", [])[:20])
+                        + "\n  - ".join(
+                            input_inspection.get("warnings", [])[:20],
+                        )
                         if input_inspection.get("warnings")
                         else ""
                     )
                 ),
+            ),
+            simulation_reference(
+                job_id,
+                simulator,
+                agent_id=agent_id,
+                session_id=session_id,
             ),
         ],
     )
@@ -591,6 +708,7 @@ async def launch_simulation(
 # ---------------------------------------------------------------------------
 
 
+# pylint: disable-next=R0912,R0915
 def _recover_job(job_id: str) -> SimJob | None:
     """Try to recover a job from persistent storage.
 
@@ -677,16 +795,24 @@ def _recover_job(job_id: str) -> SimJob | None:
         },
     )
     job.extra["output_dir"] = str(output_dir)
-    if stored_working_dir != str(output_dir) or meta.get("output_dir") != str(output_dir):
+    if stored_working_dir != str(output_dir) or meta.get("output_dir") != str(
+        output_dir,
+    ):
         try:
             job_store.update_job_fields(
                 job_id,
                 working_dir=str(output_dir),
                 output_dir=str(output_dir),
-                execution_dir=str(meta.get("execution_dir") or stored_working_dir),
+                execution_dir=str(
+                    meta.get("execution_dir") or stored_working_dir,
+                ),
             )
         except Exception as exc:
-            logger.warning("Failed to persist output directory migration for %s: %s", job_id, exc)
+            logger.warning(
+                "Failed to persist output directory migration for %s: %s",
+                job_id,
+                exc,
+            )
 
     # If status was "running", inspect dead-process artifacts first. A
     # successful run may have finished while the service was offline, even
@@ -705,14 +831,13 @@ def _recover_job(job_id: str) -> SimJob | None:
             # crash, OOM, user-kill, or non-zero exit — all of which
             # would be falsely presented as success.
             if job.returncode is not None:
-                job.status = (
-                    "completed" if job.returncode == 0 else "failed"
-                )
+                job.status = "completed" if job.returncode == 0 else "failed"
             else:
                 _apply_dead_process_terminal_status(
                     job,
                     "process exited while the service was disconnected; "
-                    "return code and credible terminal artifacts are unavailable",
+                    "return code and credible terminal "
+                    "artifacts are unavailable",
                 )
             job.end_ts = time.time()
             job_store.update_job_status(
@@ -725,7 +850,9 @@ def _recover_job(job_id: str) -> SimJob | None:
             logger.info(
                 "Recovered job %s: process dead, marked as %s "
                 "(returncode=%s)",
-                job_id, job.status, job.returncode,
+                job_id,
+                job.status,
+                job.returncode,
             )
         elif (
             job.start_ts > 0
@@ -740,12 +867,15 @@ def _recover_job(job_id: str) -> SimJob | None:
             # PID is alive — verify it's the same process to detect
             # PID reuse (BUG-007). If we can't confirm identity, be
             # safe and mark as 'interrupted'.
-            if job_store.is_pid_ours(job.pid, job.start_ts,
-                                     job.deck_file):
+            if job_store.is_pid_ours(
+                job.pid,
+                job.start_ts,
+                job.deck_file,
+            ):
                 logger.info(
-                    "Recovered job %s: process still running "
-                    "(pid=%d)",
-                    job_id, job.pid,
+                    "Recovered job %s: process still running (pid=%d)",
+                    job_id,
+                    job.pid,
                 )
                 # Attach after inserting into the in-memory table below.
             else:
@@ -760,17 +890,20 @@ def _recover_job(job_id: str) -> SimJob | None:
                     "Recovered job %s: pid=%d is alive but does not "
                     "match original process (PID reuse suspected), "
                     "marked as interrupted",
-                    job_id, job.pid,
+                    job_id,
+                    job.pid,
                 )
         else:
             logger.info(
                 "Recovered job %s: status=%s (no PID)",
-                job_id, job.status,
+                job_id,
+                job.status,
             )
     else:
         logger.info(
             "Recovered job %s: status=%s",
-            job_id, job.status,
+            job_id,
+            job.status,
         )
 
     _sim_jobs[job_id] = job
@@ -795,6 +928,7 @@ def _get_job(job_id: str) -> SimJob | None:
     unknown (neither in memory nor in the persistent store).
     """
     job = _sim_jobs.get(job_id)
+    # pylint: disable-next=too-many-nested-blocks
     if job is not None:
         # Native Run Center jobs keep a compatibility projection in the old
         # store. Refresh the lightweight SimJob snapshot so callers that keep
@@ -814,9 +948,10 @@ def _get_job(job_id: str) -> SimJob | None:
                         job.returncode = latest.get("returncode")
                     if latest.get("error") is not None:
                         job.error = str(latest.get("error"))
-                    if latest.get("end_ts") is not None:
+                    end_timestamp = latest.get("end_ts")
+                    if end_timestamp is not None:
                         try:
-                            job.end_ts = float(latest.get("end_ts"))
+                            job.end_ts = float(end_timestamp)
                         except (TypeError, ValueError):
                             pass
             except Exception:
@@ -874,6 +1009,7 @@ def recover_persisted_jobs() -> int:
     """Recover monitors and pending terminal orchestration after startup."""
     try:
         from . import job_store
+
         stored = job_store.list_jobs()
     except Exception:
         return 0
@@ -882,6 +1018,13 @@ def recover_persisted_jobs() -> int:
         job = _recover_job(job_id)
         if job is None:
             continue
+        from .result_service import safe_start_collection, load_snapshot
+
+        snapshot = load_snapshot(job_id)
+        if job.status == "running" or (
+            snapshot and not snapshot.get("archived")
+        ):
+            safe_start_collection(job_id)
         if job.status == "running":
             recovered += 1
         elif (
@@ -914,7 +1057,11 @@ async def _terminate_process_tree(job: SimJob) -> None:
                 pass
         return
     except Exception as exc:
-        logger.warning("Process-tree termination fallback for %s: %s", job.job_id, exc)
+        logger.warning(
+            "Process-tree termination fallback for %s: %s",
+            job.job_id,
+            exc,
+        )
     if job.process is not None:
         job.process.kill()
         await job.process.wait()
@@ -933,19 +1080,28 @@ async def _terminate_recovered_process(job: SimJob) -> bool:
         for process in reversed(children):
             process.terminate()
         parent.terminate()
-        _, alive = await asyncio.to_thread(psutil.wait_procs, targets, timeout=10)
+        _, alive = await asyncio.to_thread(
+            psutil.wait_procs,
+            targets,
+            timeout=10,
+        )
         for process in alive:
             process.kill()
         if alive:
             await asyncio.to_thread(psutil.wait_procs, alive, timeout=10)
     except Exception as exc:
-        logger.warning("Recovered process-tree termination failed for %s: %s", job.job_id, exc)
+        logger.warning(
+            "Recovered process-tree termination failed for %s: %s",
+            job.job_id,
+            exc,
+        )
     return not job_store.is_pid_alive(job.pid)
 
 
 # ---------------------------------------------------------------------------
 # Background monitor coroutine
 # ---------------------------------------------------------------------------
+
 
 async def _monitor_job(job_id: str) -> None:
     """Wait for a simulation process to finish and update its status."""
@@ -988,13 +1144,7 @@ async def _monitor_job(job_id: str) -> None:
         # done, whether it exited normally, timed out, or errored.
         # The handle is stored on SimJob so _monitor_job can access
         # it even though it runs as a separate asyncio task.
-        lf = getattr(job, "_log_file", None)
-        if lf is not None:
-            try:
-                lf.close()
-            except Exception:
-                pass
-            job._log_file = None  # type: ignore[union-assign]
+        job.close_log()
 
     # Record the monotonic end time *after* the process has finished so
     # that duration calculations (end_time - start_time) are correct.
@@ -1019,11 +1169,16 @@ async def _monitor_job(job_id: str) -> None:
     except Exception as exc:
         logger.warning("Failed to update job status %s: %s", job_id, exc)
 
+    from .result_service import safe_finish_collection
+
+    safe_finish_collection(job_id, job.status)
     await _notify_terminal_job(job)
 
     logger.info(
         "Simulation ended: job=%s status=%s rc=%s",
-        job_id, job.status, job.returncode,
+        job_id,
+        job.status,
+        job.returncode,
     )
 
 
@@ -1048,9 +1203,14 @@ async def _monitor_recovered_job(job: SimJob) -> None:
                 )
             else:
                 job.status = "interrupted"
-                job.error = "process identity no longer matches the recorded simulation"
+                job.error = (
+                    "process identity no longer matches the "
+                    "recorded simulation"
+                )
             break
-        elapsed = max(0.0, time.time() - job.start_ts) if job.start_ts > 0 else 0.0
+        elapsed = (
+            max(0.0, time.time() - job.start_ts) if job.start_ts > 0 else 0.0
+        )
         if job.start_ts > 0 and not job.unlimited and elapsed >= job.timeout:
             if await _terminate_recovered_process(job):
                 job.status = "timeout"
@@ -1069,6 +1229,9 @@ async def _monitor_recovered_job(job: SimJob) -> None:
         error=job.error,
         end_ts=job.end_ts,
     )
+    from .result_service import safe_finish_collection
+
+    safe_finish_collection(job.job_id, job.status)
     await _notify_terminal_job(job)
 
 
@@ -1090,12 +1253,16 @@ def _is_simulation_monitor_cron(spec: Any, job_id: str) -> bool:
             continue
         if str(source.get("simulation_job_id") or "") == job_id:
             structured_job_match = True
-        role = str(
-            source.get("simulation_role")
-            or source.get("automation_role")
-            or source.get("role")
-            or ""
-        ).strip().casefold()
+        role = (
+            str(
+                source.get("simulation_role")
+                or source.get("automation_role")
+                or source.get("role")
+                or "",
+            )
+            .strip()
+            .casefold()
+        )
         if role in {"simulation_monitor", "monitor", "monitoring"}:
             explicit_monitor_role = True
 
@@ -1104,7 +1271,11 @@ def _is_simulation_monitor_cron(spec: Any, job_id: str) -> bool:
         request_text = request_input
     else:
         try:
-            request_text = json.dumps(request_input, ensure_ascii=False, default=str)
+            request_text = json.dumps(
+                request_input,
+                ensure_ascii=False,
+                default=str,
+            )
         except Exception:
             request_text = str(request_input or "")
     haystack = "\n".join(
@@ -1126,11 +1297,14 @@ def _is_simulation_monitor_cron(spec: Any, job_id: str) -> bool:
         haystack,
         re.IGNORECASE,
     )
-    return bool(exact_job_id) and (explicit_monitor_role or monitor_semantics is not None)
+    return bool(exact_job_id) and (
+        explicit_monitor_role or monitor_semantics is not None
+    )
 
 
 async def _cleanup_simulation_monitor_crons(job: SimJob) -> list[str]:
-    """Delete recurring monitors once their simulation reaches a terminal state."""
+    """Delete recurring monitors once their simulation reaches a terminal \
+state."""
     from qwenpaw.plugins.registry import PluginRegistry
 
     manager = PluginRegistry().get_workspace_manager()
@@ -1159,7 +1333,10 @@ async def _cleanup_simulation_monitor_crons(job: SimJob) -> list[str]:
             ", ".join(deleted),
         )
     if failures:
-        raise RuntimeError("failed to delete simulation monitor cron(s): " + "; ".join(failures))
+        raise RuntimeError(
+            "failed to delete simulation monitor cron(s): "
+            + "; ".join(failures),
+        )
     return deleted
 
 
@@ -1186,13 +1363,18 @@ async def _retry_simulation_monitor_cleanup(job_id: str) -> None:
 
     retry_index = 0
     while True:
-        delay = _CLEANUP_RETRY_DELAYS[min(retry_index, len(_CLEANUP_RETRY_DELAYS) - 1)]
+        delay = _CLEANUP_RETRY_DELAYS[
+            min(retry_index, len(_CLEANUP_RETRY_DELAYS) - 1)
+        ]
         await asyncio.sleep(delay)
         job = _sim_jobs.get(job_id)
         if job is None:
             return
         stored = job_store.load_job(job_id)
-        if not stored or str(stored.get("cron_cleanup_status") or "") == "completed":
+        if (
+            not stored
+            or str(stored.get("cron_cleanup_status") or "") == "completed"
+        ):
             return
         try:
             attempts = int(stored.get("cron_cleanup_attempts") or 0) + 1
@@ -1209,7 +1391,10 @@ async def _retry_simulation_monitor_cleanup(job_id: str) -> None:
                     cron_cleanup_error=repr(exc),
                 )
             except Exception:
-                logger.exception("Failed to persist cron cleanup failure for %s", job_id)
+                logger.exception(
+                    "Failed to persist cron cleanup failure for %s",
+                    job_id,
+                )
             retry_index += 1
             continue
         try:
@@ -1220,11 +1405,15 @@ async def _retry_simulation_monitor_cleanup(job_id: str) -> None:
                 cron_cleanup_error=None,
             )
         except Exception:
-            logger.exception("Failed to persist cron cleanup success for %s", job_id)
+            logger.exception(
+                "Failed to persist cron cleanup success for %s",
+                job_id,
+            )
         job.extra["cron_cleanup_status"] = "completed"
         return
 
 
+# pylint: disable-next=R0912,R0915
 async def _notify_terminal_job(job: SimJob) -> None:
     """Publish the terminal event, diagnose safely, and resume the agent."""
     from . import job_store
@@ -1236,7 +1425,11 @@ async def _notify_terminal_job(job: SimJob) -> None:
     except Exception as exc:
         # Unit callers and legacy in-memory jobs may not have a durable record;
         # do not turn a completed process into a failed monitor task.
-        logger.warning("Skipping terminal orchestration for %s: %s", job.job_id, exc)
+        logger.warning(
+            "Skipping terminal orchestration for %s: %s",
+            job.job_id,
+            exc,
+        )
         return
     if not stored:
         return
@@ -1291,13 +1484,17 @@ async def _notify_terminal_job(job: SimJob) -> None:
                 status=job.status,
                 severity="info" if job.status == "completed" else "warning",
                 title=f"Simulation {job.status}: {Path(job.deck_file).name}",
-                body=job.error or f"Job {job.job_id} reached terminal state {job.status}.",
+                body=job.error
+                or f"Job {job.job_id} reached terminal state {job.status}.",
                 payload={
                     "job_id": job.job_id,
                     "pid": job.pid,
                     "status": job.status,
                     "session_id": str(job.extra.get("session_id") or ""),
-                    "resume_prompt": f"Inspect simulation job {job.job_id}, diagnose its terminal state, and continue the workflow.",
+                    "resume_prompt": f"Inspect simulation job "
+                    f"{job.job_id}"
+                    f", diagnose its terminal state, and "
+                    f"continue the workflow.",
                 },
             )
             job.extra["terminal_notified"] = True
@@ -1306,7 +1503,10 @@ async def _notify_terminal_job(job: SimJob) -> None:
             job_store.update_job_fields(job.job_id, terminal_notified=False)
         except Exception:
             pass
-        logger.exception("Failed to publish simulation terminal event: %s", job.job_id)
+        logger.exception(
+            "Failed to publish simulation terminal event: %s",
+            job.job_id,
+        )
 
     # Cleanup retries are deliberately independent from model orchestration.
     # A restart after a transient cron-manager failure must not consume another
@@ -1356,7 +1556,10 @@ async def _notify_terminal_job(job: SimJob) -> None:
             "evidence": [str(exc)],
             "recommendations": ["Inspect the simulator log manually."],
         }
-        logger.exception("Automatic simulation diagnosis failed: %s", job.job_id)
+        logger.exception(
+            "Automatic simulation diagnosis failed: %s",
+            job.job_id,
+        )
 
     await _resume_agent_with_retries(job, diagnosis, tuning_candidate)
 
@@ -1388,7 +1591,8 @@ async def _resume_agent_with_retries(
             )
             if result.get("delivery_status") not in {"success", "suppressed"}:
                 raise RuntimeError(
-                    f"agent resume delivery was not successful: {result.get('delivery_status')}"
+                    f"agent resume delivery was not successful: "
+                    f"{result.get('delivery_status')}",
                 )
             try:
                 finished = job_store.finish_wake_attempt(
@@ -1398,7 +1602,10 @@ async def _resume_agent_with_retries(
                     attempt=attempt,
                 )
             except Exception as exc:
-                logger.exception("Failed to persist successful wake for %s", job.job_id)
+                logger.exception(
+                    "Failed to persist successful wake for %s",
+                    job.job_id,
+                )
                 await _publish_resume_failure(job, exc)
                 return
             if finished is False:
@@ -1417,7 +1624,10 @@ async def _resume_agent_with_retries(
                     attempt=attempt,
                 )
             except Exception:
-                logger.exception("Failed to persist wake failure for %s", job.job_id)
+                logger.exception(
+                    "Failed to persist wake failure for %s",
+                    job.job_id,
+                )
             logger.exception(
                 "Agent resume attempt %d failed for simulation %s",
                 attempt,
@@ -1460,25 +1670,38 @@ async def _run_agent_resume(
     workspace = await manager.get_agent(agent_id)
     channel_manager = workspace.channel_manager
     if channel_manager is None:
-        raise RuntimeError(f"channel manager is unavailable for agent {agent_id}")
+        raise RuntimeError(
+            f"channel manager is unavailable for agent {agent_id}",
+        )
 
     candidate_text = "No automatic parameter candidate was produced."
     if tuning_candidate:
-        candidate_text = json.dumps(tuning_candidate, ensure_ascii=False, indent=2)
+        candidate_text = json.dumps(
+            tuning_candidate,
+            ensure_ascii=False,
+            indent=2,
+        )
     prompt = (
         "A long-running numerical simulation reached a terminal state. "
-        "Resume the original workflow automatically and act conservatively.\n\n"
+        "Resume the original workflow automatically and act "
+        "conservatively.\n"
+        "\n"
         f"Job: {job.job_id}\nStatus: {job.status}\nDeck: {job.deck_file}\n"
         f"Idempotency key: {run_key}\nWake attempt: {attempt}\n\n"
         "Structured diagnosis:\n"
         f"{json.dumps(diagnosis, ensure_ascii=False, indent=2)}\n\n"
         "Bounded tuning candidate (the original deck was not modified):\n"
         f"{candidate_text}\n\n"
-        "Check the job status and logs, validate the diagnosis, and explain the result. "
-        "If a candidate exists, verify its manifest and parameter bounds. Relaunch it only "
-        "when approval_required is false or the user has already approved; otherwise ask for "
-        "approval. Never overwrite the original deck, stop after the configured diagnosis "
-        "rounds, compare convergence before/after when re-running, and fail closed on ambiguity."
+        "Check the job status and logs, validate the "
+        "diagnosis, and explain the result. "
+        "If a candidate exists, verify its manifest and "
+        "parameter bounds. Relaunch it only "
+        "when approval_required is false or the user has "
+        "already approved; otherwise ask for "
+        "approval. Never overwrite the original deck, stop "
+        "after the configured diagnosis "
+        "rounds, compare convergence before/after when "
+        "re-running, and fail closed on ambiguity."
     )
     spec = CronJobSpec(
         id=f"ugsci-resume-{job.job_id}",
@@ -1526,8 +1749,16 @@ async def _publish_resume_failure(job: SimJob, error: Exception) -> None:
             status="failed",
             severity="error",
             title=f"Automatic resume failed: {Path(job.deck_file).name}",
-            body=f"The model could not be resumed after bounded retries: {error}",
-            payload={"job_id": job.job_id, "session_id": job.extra.get("session_id")},
+            body=f"The model could not be resumed after bounded "
+            f"retries: "
+            f"{error}",
+            payload={
+                "job_id": job.job_id,
+                "session_id": job.extra.get("session_id"),
+            },
         )
     except Exception:
-        logger.exception("Failed to publish resume failure fallback: %s", job.job_id)
+        logger.exception(
+            "Failed to publish resume failure fallback: %s",
+            job.job_id,
+        )

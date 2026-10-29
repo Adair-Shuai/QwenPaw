@@ -1941,3 +1941,23 @@ def test_directory_recovery_never_deletes_live_tree(tmp_path):
     # Live tree and its marker are left untouched.
     assert (live / "runtime.dat").read_bytes() == b"edited"
     assert marker.exists()
+
+
+def test_directory_candidate_snapshot_is_isolated(tmp_path):
+    updater = ComponentUpdater(
+        public_key_b64="",
+        managed_components=set(),
+        core_version="2.3.0b2",
+        active_path=tmp_path / "active.json",
+    )
+    assert updater.candidate_directory_records is None
+    with updater.directory_transaction():
+        snapshot = updater.candidate_directory_records
+        assert snapshot == {}
+        snapshot["forged"] = {"version": "9.9.9", "path": "untrusted"}
+        assert updater.candidate_directory_records == {}
+        with pytest.raises(ComponentUpdateError, match="nested directory"):
+            with updater.directory_transaction():
+                pytest.fail("nested transaction must not start")
+    assert updater.candidate_directory_records is None
+    assert not updater.active_path.exists()

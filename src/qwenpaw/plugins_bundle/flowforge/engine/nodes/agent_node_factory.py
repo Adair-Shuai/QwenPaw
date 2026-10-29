@@ -31,7 +31,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, ClassVar
 from uuid import UUID
 
-import logging
 
 from ..adapter.log_compat import get_logger
 from ..io import (
@@ -168,15 +167,25 @@ class _GeneratedAgentNodeBase(WorkflowNode):
     AGENT_NAME: ClassVar[str] = ""
 
     @classmethod
-    def define_schema(cls) -> Schema:  # pragma: no cover - overridden per agent
+    def define_schema(
+        cls,
+    ) -> Schema:  # pragma: no cover - overridden per agent
         raise NotImplementedError
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         runtime = hidden.agent_runtime
         if runtime is None:
             return NodeOutput(
                 error="Agent runtime not available on the workflow executor",
-                metadata={"node_id": hidden.unique_id, "agent": self.AGENT_NAME},
+                metadata={
+                    "node_id": hidden.unique_id,
+                    "agent": self.AGENT_NAME,
+                },
             )
 
         state = hidden.workflow_state
@@ -184,7 +193,10 @@ class _GeneratedAgentNodeBase(WorkflowNode):
         if not prompt:
             return NodeOutput(
                 error="Missing required 'prompt' input",
-                metadata={"node_id": hidden.unique_id, "agent": self.AGENT_NAME},
+                metadata={
+                    "node_id": hidden.unique_id,
+                    "agent": self.AGENT_NAME,
+                },
             )
 
         max_turns = int(inputs.get("max_turns") or 0) or None
@@ -194,7 +206,7 @@ class _GeneratedAgentNodeBase(WorkflowNode):
             if isinstance(allowed_raw, list) and allowed_raw
             else None
         )
-        read_only = bool(inputs.get("read_only") or False)
+        read_only = bool(inputs.get("read_only"))
         output_var = inputs.get("output")
 
         tool_extra: dict[str, Any] | None = None
@@ -206,20 +218,30 @@ class _GeneratedAgentNodeBase(WorkflowNode):
             path = Path(str(project_path)).expanduser()
             if not path.is_absolute():
                 return NodeOutput(
-                    error=f"project_path must be absolute, got {project_path!r}",
-                    metadata={"node_id": hidden.unique_id, "agent": self.AGENT_NAME},
+                    error=f"project_path must be absolute, got "
+                    f"{project_path!r}",
+                    metadata={
+                        "node_id": hidden.unique_id,
+                        "agent": self.AGENT_NAME,
+                    },
                 )
             try:
                 path = path.resolve()
             except OSError as exc:
                 return NodeOutput(
                     error=f"Cannot resolve project_path: {exc}",
-                    metadata={"node_id": hidden.unique_id, "agent": self.AGENT_NAME},
+                    metadata={
+                        "node_id": hidden.unique_id,
+                        "agent": self.AGENT_NAME,
+                    },
                 )
             if not path.is_dir():
                 return NodeOutput(
                     error=f"project_path {project_path!r} is not a directory",
-                    metadata={"node_id": hidden.unique_id, "agent": self.AGENT_NAME},
+                    metadata={
+                        "node_id": hidden.unique_id,
+                        "agent": self.AGENT_NAME,
+                    },
                 )
             tool_extra = {"project_roots": [str(path)]}
             cwd = str(path)
@@ -244,13 +266,15 @@ class _GeneratedAgentNodeBase(WorkflowNode):
             },
         )
         result.metadata.setdefault(
-            "duration_ms", int((time.monotonic() - started) * 1000),
+            "duration_ms",
+            int((time.monotonic() - started) * 1000),
         )
         return result
 
 
 def build_agent_node_class(definition: AgentDefinition) -> type[WorkflowNode]:
-    """Return the generated :class:`WorkflowNode` subclass for ``definition``."""
+    """Return the generated :class:`WorkflowNode` subclass for \
+``definition``."""
     node_id = f"{_NODE_ID_PREFIX}{definition.name}"
     cached = _FACTORY_CACHE.get(definition.name)
     if cached is not None and node_id == cached.NODE_ID:
@@ -258,7 +282,7 @@ def build_agent_node_class(definition: AgentDefinition) -> type[WorkflowNode]:
 
     schema = _build_schema(definition)
 
-    def define_schema(cls, _schema=schema) -> Schema:
+    def define_schema(_cls, _schema=schema) -> Schema:
         return _schema
 
     cls: type[WorkflowNode] = type(
@@ -268,7 +292,9 @@ def build_agent_node_class(definition: AgentDefinition) -> type[WorkflowNode]:
             "NODE_ID": node_id,
             "AGENT_NAME": definition.name,
             "define_schema": classmethod(define_schema),
-            "__doc__": f"Auto-generated workflow node for agent '{definition.name}'.",
+            "__doc__": f"Auto-generated workflow node for agent '"
+            f"{definition.name}"
+            f"'.",
         },
     )
 
@@ -288,14 +314,17 @@ def register_agent_nodes(
         try:
             cls = build_agent_node_class(definition)
             node_registry.register(
-                cls, module_path=f"agent_factory:{definition.name}",
+                cls,
+                module_path=f"agent_factory:{definition.name}",
             )
             registered.append(cls.NODE_ID)
         except Exception as exc:  # noqa: BLE001
             skipped.append((definition.name, str(exc)))
             logger.error(
                 "agent_node_factory_failed",
-                agent=definition.name, error=str(exc), exc_info=True,
+                agent=definition.name,
+                error=str(exc),
+                exc_info=True,
             )
 
     logger.info(

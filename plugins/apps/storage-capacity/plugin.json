@@ -1,7 +1,7 @@
 {
   "id": "storage-capacity",
   "name": "库容评估工作台",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "type": "app",
   "description": "面向地下储气库的可审计库容评估应用：资料基础、参数提取、专家调用、确定性计算与量化结果一体化展示。",
   "description_i18n": {
@@ -9,15 +9,22 @@
     "en-US": "Auditable underground-gas-storage capacity evaluation workspace with evidence, extraction, expert trace, deterministic calculation, and quantified results."
   },
   "author": "UGSci Team",
-  "dependencies": ["openpyxl>=3.1", "pypdf>=4", "python-docx>=1"],
-  "pack_exclude": ["src", "build.mjs"],
+  "dependencies": [
+    "openpyxl>=3.1",
+    "pypdf>=4",
+    "python-docx>=1"
+  ],
+  "pack_exclude": [
+    "src",
+    "build.mjs"
+  ],
   "entry": {
     "backend": "backend/main.py",
     "frontend": "ui/index.js"
   },
   "qwenpaw_version": {
     "min": "2.2.2b9",
-    "max": "2.4.0"
+    "max": "3.0.0"
   },
   "meta": {
     "pawapp": {

@@ -80,7 +80,9 @@ def _build_input(
             id=prop_id,
             tooltip=description,
             optional=optional,
-            default=default if isinstance(default, str) else (default if default is None else str(default)),
+            default=default
+            if isinstance(default, str)
+            else (default if default is None else str(default)),
             multiline=multiline,
             pattern=prop_schema.get("pattern"),
             min_length=prop_schema.get("minLength"),
@@ -88,12 +90,18 @@ def _build_input(
         )
 
     if jstype == "integer":
-        step = int(prop_schema.get("multipleOf", 1)) if isinstance(prop_schema.get("multipleOf"), (int, float)) else 1
+        step = (
+            int(prop_schema.get("multipleOf", 1))
+            if isinstance(prop_schema.get("multipleOf"), (int, float))
+            else 1
+        )
         return IO.Int.Input(
             id=prop_id,
             tooltip=description,
             optional=optional,
-            default=default if isinstance(default, int) and not isinstance(default, bool) else default,
+            default=default
+            if isinstance(default, int) and not isinstance(default, bool)
+            else default,
             min=prop_schema.get("minimum"),
             max=prop_schema.get("maximum"),
             step=max(1, step),
@@ -106,7 +114,10 @@ def _build_input(
             id=prop_id,
             tooltip=description,
             optional=optional,
-            default=default if isinstance(default, (int, float)) and not isinstance(default, bool) else default,
+            default=default
+            if isinstance(default, (int, float))
+            and not isinstance(default, bool)
+            else default,
             min=prop_schema.get("minimum"),
             max=prop_schema.get("maximum"),
             step=step,

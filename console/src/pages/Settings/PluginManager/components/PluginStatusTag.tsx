@@ -8,7 +8,7 @@ export function PluginStatusTag({
   plugin,
   style,
 }: {
-  plugin: Pick<PluginInfo, "loaded" | "status">;
+  plugin: Pick<PluginInfo, "loaded" | "status" | "diagnostics">;
   style?: CSSProperties;
 }) {
   const { t } = useTranslation();
@@ -24,6 +24,7 @@ export function PluginStatusTag({
     <Tag
       icon={<Icon size={12} />}
       color={failed ? "error" : plugin.loaded ? "success" : "default"}
+      title={failed ? plugin.diagnostics?.join("\n") : undefined}
       style={{ display: "inline-flex", alignItems: "center", gap: 4, ...style }}
     >
       {t(`pluginManager.${label}`)}

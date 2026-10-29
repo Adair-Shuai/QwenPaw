@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Build EC-NDT COMSOL model using MPh."""
 import mph
 import numpy as np

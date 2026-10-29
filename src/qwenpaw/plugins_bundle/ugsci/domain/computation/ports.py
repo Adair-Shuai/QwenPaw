@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Protocol
+from dataclasses import Field, dataclass, field
+from typing import Any, ClassVar, Protocol
 
 from .models import (
     BayesianNormalRequest,
@@ -38,16 +38,31 @@ class ComputationAdapter(Protocol):
     operation: str
     deterministic: bool
 
-    def compute(self, request: Any) -> ComputationOutput | dict[str, Any]: ...
+    def compute(self, request: Any) -> ComputationOutput | dict[str, Any]:
+        ...
 
 
-Request = (
-    PolynomialRootsRequest
-    | BayesianNormalRequest
-    | MultiObjectiveQuadraticRequest
-    | QueueSimulationRequest
-    | GraphAnalysisRequest
-    | GeospatialPointsRequest
-    | MachineLearningRegressionRequest
-    | StatisticalRegressionRequest
-)
+class Request(Protocol):
+    """A dataclass request whose fields are validated by its adapter.
+
+    This structural contract includes scientific and storage-inventory
+    models without importing the adapter packages back into their ports.
+    """
+
+    __dataclass_fields__: ClassVar[dict[str, Field[Any]]]
+
+
+# Retain the request model exports provided by earlier versions of this port.
+__all__ = [
+    "BayesianNormalRequest",
+    "ComputationAdapter",
+    "ComputationOutput",
+    "GeospatialPointsRequest",
+    "GraphAnalysisRequest",
+    "MachineLearningRegressionRequest",
+    "MultiObjectiveQuadraticRequest",
+    "PolynomialRootsRequest",
+    "QueueSimulationRequest",
+    "Request",
+    "StatisticalRegressionRequest",
+]

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import importlib
 import asyncio
 import logging
 from pathlib import Path
@@ -33,17 +34,20 @@ router = APIRouter()
 
 # ── Health & capabilities ───────────────────────────────────────────
 
+
 @router.get("/health")
 async def health() -> dict:
     """Check database and parser availability."""
     from ..database import get_db
+
     try:
         await asyncio.to_thread(get_db().execute, "SELECT 1")
         db_ok = True
     except Exception:
         db_ok = False
     try:
-        import fitz  # noqa: F401
+        importlib.import_module("fitz")
+
         parser_ok = True
     except ImportError:
         parser_ok = False
@@ -58,13 +62,16 @@ async def health() -> dict:
 async def capabilities() -> dict:
     """Return available capabilities."""
     try:
-        import fitz  # noqa: F401
+        importlib.import_module("fitz")
+
         pdf_text = True
     except ImportError:
         pdf_text = False
     return {
         "pdf_text_extraction": pdf_text,
-        "grobid": bool(__import__("os").environ.get("ULIT_GROBID_URL", "").strip()),
+        "grobid": bool(
+            __import__("os").environ.get("ULIT_GROBID_URL", "").strip(),
+        ),
         "ocr": False,
         "vector_search": False,
         "fulltext_search": True,
@@ -74,6 +81,7 @@ async def capabilities() -> dict:
 
 
 # ── Projects ────────────────────────────────────────────────────────
+
 
 @router.get("/projects")
 async def list_projects() -> dict:
@@ -88,7 +96,9 @@ async def list_projects() -> dict:
 @router.post("/projects")
 async def create_project(body: ProjectCreate) -> dict:
     return await LibraryService.create_project(
-        body.name, body.question, body.description
+        body.name,
+        body.question,
+        body.description,
     )
 
 
@@ -138,7 +148,11 @@ async def remove_paper_from_project(project_id: str, paper_id: str) -> dict:
 
 
 @router.patch("/projects/{project_id}/papers/{paper_id}/status")
-async def update_reading_status(project_id: str, paper_id: str, body: dict) -> dict:
+async def update_reading_status(
+    project_id: str,
+    paper_id: str,
+    body: dict,
+) -> dict:
     """Update the per-project reading state and mirror the paper status."""
     status = str(body.get("status", "")).strip().lower()
     allowed = {item.value for item in ReadingStatus}
@@ -147,11 +161,17 @@ async def update_reading_status(project_id: str, paper_id: str, body: dict) -> d
     linked = await asyncio.to_thread(repo.get_project_papers, project_id)
     if not any(p["id"] == paper_id for p in linked):
         raise HTTPException(404, "Paper is not in this project")
-    await asyncio.to_thread(repo.set_reading_status, project_id, paper_id, status)
+    await asyncio.to_thread(
+        repo.set_reading_status,
+        project_id,
+        paper_id,
+        status,
+    )
     return {"project_id": project_id, "paper_id": paper_id, "status": status}
 
 
 # ── Papers ──────────────────────────────────────────────────────────
+
 
 @router.get("/papers")
 async def list_papers(
@@ -162,8 +182,11 @@ async def list_papers(
     offset: int = 0,
 ) -> dict:
     papers = await LibraryService.list_papers(
-        project_id=project_id, status=status, inbox_only=inbox,
-        limit=limit, offset=offset,
+        project_id=project_id,
+        status=status,
+        inbox_only=inbox,
+        limit=limit,
+        offset=offset,
     )
     return {"papers": papers}
 
@@ -209,16 +232,20 @@ async def merge_papers(body: PaperMerge) -> dict:
 
 # ── Search ──────────────────────────────────────────────────────────
 
+
 @router.post("/search")
 async def search(body: SearchQuery) -> dict:
     """Full-text search over papers using FTS5."""
     results = await LibraryService.search(
-        body.query, project_id=body.project_id, limit=body.limit
+        body.query,
+        project_id=body.project_id,
+        limit=body.limit,
     )
     return {"papers": results}
 
 
 # ── Import ──────────────────────────────────────────────────────────
+
 
 @router.post("/imports/files")
 async def import_files(
@@ -232,33 +259,49 @@ async def import_files(
         filename = upload.filename or "upload.pdf"
         # Validate file type — record per-file failure instead of aborting
         # the whole batch so the remaining files still get imported.
-        ext = "." + filename.rsplit(".", 1)[-1].lower() if "." in filename else ""
+        ext = (
+            "." + filename.rsplit(".", 1)[-1].lower()
+            if "." in filename
+            else ""
+        )
         if ext not in ALLOWED_EXTENSIONS:
-            results.append({
-                "filename": filename,
-                "status": "failed",
-                "error": f"File type {ext} not allowed. Allowed: {sorted(ALLOWED_EXTENSIONS)}",
-            })
+            results.append(
+                {
+                    "filename": filename,
+                    "status": "failed",
+                    "error": f"File type "
+                    f"{ext}"
+                    f" not allowed. Allowed: "
+                    f"{sorted(ALLOWED_EXTENSIONS)}",
+                },
+            )
             continue
 
         data = await upload.read()
         if len(data) > MAX_UPLOAD_SIZE:
-            results.append({
-                "filename": filename,
-                "status": "failed",
-                "error": f"File too large (max {MAX_UPLOAD_SIZE // (1024*1024)}MB)",
-            })
+            results.append(
+                {
+                    "filename": filename,
+                    "status": "failed",
+                    "error": f"File too large (max "
+                    f"{MAX_UPLOAD_SIZE // (1024 * 1024)}"
+                    f"MB)",
+                },
+            )
             continue
 
         try:
             paper = await IngestService.import_pdf_bytes(
-                data, filename, project_id=project_id
+                data,
+                filename,
+                project_id=project_id,
             )
             # Parsing is a durable background job.  The upload request stays
             # responsive and the task center can expose failures/retries.
             parse_job = None
             if paper.get("file"):
                 from ..job_runner import JobRunner
+
                 parse_job = JobRunner.enqueue(
                     "parse_document",
                     payload={"file_id": paper["file"]["id"]},
@@ -267,19 +310,23 @@ async def import_files(
                     project_id=project_id,
                 )
 
-            results.append({
-                "paper": paper,
-                "filename": filename,
-                "status": "imported",
-                "parse_job": parse_job,
-            })
+            results.append(
+                {
+                    "paper": paper,
+                    "filename": filename,
+                    "status": "imported",
+                    "parse_job": parse_job,
+                },
+            )
         except Exception as exc:
             logger.exception("[ulit] Import failed for %s", filename)
-            results.append({
-                "filename": filename,
-                "status": "failed",
-                "error": str(exc),
-            })
+            results.append(
+                {
+                    "filename": filename,
+                    "status": "failed",
+                    "error": str(exc),
+                },
+            )
 
     return {"results": results}
 
@@ -287,7 +334,8 @@ async def import_files(
 @router.post("/imports/identifiers")
 async def import_identifiers(body: IdentifierImport) -> dict:
     papers = await IngestService.import_identifiers(
-        body.identifiers, project_id=body.project_id
+        body.identifiers,
+        project_id=body.project_id,
     )
     return {"papers": papers}
 
@@ -295,12 +343,15 @@ async def import_identifiers(body: IdentifierImport) -> dict:
 @router.post("/imports/bibliography")
 async def import_bibliography(body: BibliographyImport) -> dict:
     papers = await IngestService.import_bibliography(
-        body.content, body.format, project_id=body.project_id
+        body.content,
+        body.format,
+        project_id=body.project_id,
     )
     return {"papers": papers}
 
 
 # ── Files ───────────────────────────────────────────────────────────
+
 
 @router.get("/papers/{paper_id}/files")
 async def get_paper_files(paper_id: str) -> dict:
@@ -333,7 +384,10 @@ async def get_file_document(file_id: str) -> dict:
         # Parsing is normally scheduled at import time.  Do not block a UI
         # request on a potentially large PDF; the caller can explicitly
         # reparse or poll the task center.
-        raise HTTPException(409, "Document is not parsed yet; wait for the parse job")
+        raise HTTPException(
+            409,
+            "Document is not parsed yet; wait for the parse job",
+        )
 
     page_texts = await asyncio.to_thread(repo.get_page_texts, doc["id"])
     return {

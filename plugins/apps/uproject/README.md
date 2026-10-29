@@ -1,18 +1,40 @@
-# UProject
+# UProject 科研项目
 
-PawApp for enterprise research projects with a client (Jia Fang) and a vendor (Yi Fang).
+面向甲乙方协作的科研项目工作台。保留项目范围、双方接口人、对齐事项、会议与 AI 议程／周报，将日常推进放在同一处管理。
 
-## Open
+## 工作方式
 
-1. Restart `qwenpaw app` so the bundled app is installed.
-2. App Center -> UProject.
-3. Two demo projects are created on first open.
+- **项目总览**：搜索项目名称、编号及参与单位，按阶段或需关注事项筛选，切换卡片和列表，查看进度与逾期情况。
+- **事项管理**：在看板与列表间切换，记录优先级、具体负责人、截止日期、所属里程碑和前置事项。保留未对齐、已提议、阻塞、已对齐、暂缓五种状态。
+- **依赖校验**：前置事项必须属于同一项目，不能形成循环；前置事项未对齐时不能将下游事项标为已对齐。
+- **里程碑与会议**：按时间查看阶段计划，管理完成状态，记录双方参会人、议程、纪要和决议。
+- **AI 简报**：生成议程与周报，从纪要提取事项，并查看已有简报。模型不可用时保留本地模板降级，并明确标注来源。AI 生成结果需要业务人员核对。
+- **活动与导出**：查看项目变更记录，将项目资料导出为 JSON，或导出事项 CSV。导出不受当前筛选影响。活动记录用于回溯操作，不是带有用户身份鉴证的审计系统。
 
-## First version
+界面使用宿主 `--app-*` 设计令牌，跟随软件的配色、字号和明暗主题。所有业务数据继续使用原有 `pawapp:uproject` 存储空间；旧事项缺失的新字段按普通优先级、未指派、无截止日期和无依赖展示，不重置历史项目。
 
-- Project desk: client / vendor / SOW / next alignment
-- Alignment board: open / proposed / blocked / agreed
-- Meetings and milestones
-- AI buttons: agenda, weekly brief, extract items from minutes
-- Offline templates if the Agent is unavailable
-- Restore demo scenes anytime
+## 启动与数据
+
+从应用中心打开 **UProject 科研项目**，页面地址 `/apps/uproject`。前端发布入口为 `ui/index.js`，使用宿主 React／Ant Design，无独立前端构建步骤。更新已经安装的应用后，需要重新加载插件／重启后端及刷新页面，才能同时启用新接口和新界面。
+
+首次使用沿用两个科研演示项目。**恢复演示会替换全部 UProject 项目数据**，界面会要求确认；已有项目请先导出备份。删除项目会同时删除它的事项、里程碑、会议和简报。
+
+进度表示已对齐事项占全部事项的比例，不等同于合同验收率。逾期提醒依据事项截止日期计算，已对齐及暂缓事项不计入。负责人是项目台账中的文本字段，不会自动创建账户、授予权限或通知他人。
+
+## 设计参考
+
+参考 [Linear 项目里程碑](https://linear.app/docs/project-milestones)的阶段拆解与事项关联，以及 [Asana 项目管理](https://asana.com/uses/project-management)的多视图和依赖管理，保留 UGSci 科研场景中的甲乙方范围对齐与会议闭环。
+
+## 回归验证
+
+```powershell
+cd console
+npx vitest run src/plugins/uproject.test.tsx
+npm run test:fork-features
+npx tsc -b --noEmit
+cd ..
+.venv/Scripts/python.exe -m pytest tests/unit/plugins/test_uproject_app.py -q
+.venv/Scripts/python.exe scripts/verify_fork_regressions.py
+```
+
+前端测试挂载实际发布入口；后端测试覆盖真实存储与 HTTP 路由。测试使用隔离数据，不调用真实模型或对外发布。实际安装目录的插件加载、窄窗口视觉效果和桌面安装包仍需独立验收。

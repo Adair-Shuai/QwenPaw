@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Node replacement registry — deprecation/rename mapping applied at prompt-submit.
+"""Node replacement registry — deprecation/rename mapping applied at
+prompt-submit.
 
 Each entry maps ``(old_class_type, optional_scope) -> new_class_type`` and
 an optional ``input_transform`` callable that rewrites the node's ``inputs``
@@ -40,7 +41,9 @@ class NodeReplaceRegistry:
 
     def register(self, replacement: NodeReplacement) -> None:
         with self._lock:
-            self._by_old.setdefault(replacement.old_class, []).append(replacement)
+            self._by_old.setdefault(replacement.old_class, []).append(
+                replacement,
+            )
 
     def unregister(self, old_class: str, new_class: str | None = None) -> int:
         removed = 0
@@ -85,7 +88,9 @@ class NodeReplaceRegistry:
                         continue
                     node_def["class_type"] = entry.new_class
                     if entry.input_transform is not None:
-                        node_def["inputs"] = entry.input_transform(node_def.get("inputs", {}) or {})
+                        node_def["inputs"] = entry.input_transform(
+                            node_def.get("inputs", {}) or {},
+                        )
                     changes.append((node_id, old_class, entry.new_class))
                     break
         return doc, changes

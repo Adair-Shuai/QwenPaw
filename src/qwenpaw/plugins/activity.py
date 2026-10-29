@@ -35,7 +35,9 @@ class PluginActivity:
         self.blocked = False
         self.mutator = None
         self.cleanup_tasks = set()
+        self.protected_cleanup_tasks = set()
         self.cleanup_retries = {}
+        self._cleanup_changed = asyncio.Event()
 
     @contextmanager
     def invocation(self, *, cleanup=False):
@@ -53,17 +55,38 @@ class PluginActivity:
             self.tasks[task] -= 1
             if not self.tasks[task]:
                 del self.tasks[task]
+                self._cleanup_changed.set()
 
     def retain_cleanup(self, task):
         """Reserve only an already-admitted SDK request's terminal callback."""
         self.cleanup_tasks.add(task)
         task.add_done_callback(self.cleanup_tasks.discard)
+        self._cleanup_changed.set()
+
+    def release_cleanup(self, task):
+        """Release a terminal callback before its host task continues."""
+        self.cleanup_tasks.discard(task)
+        self._cleanup_changed.set()
+
+    def protect_cleanup(self, task):
+        """Shield an admitted producer's teardown from repeated cancellation.
+
+        The producer remains an active invocation, not a terminal callback:
+        ordinary reload must still refuse while it owns a live resource.
+        """
+        self.protected_cleanup_tasks.add(task)
+        task.add_done_callback(self.protected_cleanup_tasks.discard)
+
+    def release_cleanup_protection(self, task):
+        """End protection before the producer returns to host bookkeeping."""
+        self.protected_cleanup_tasks.discard(task)
 
     async def retry_cleanup(self):
         """Wait for lifecycle retry without cancelling live work."""
         task = asyncio.current_task()
         retry = asyncio.Event()
         self.cleanup_retries[task] = retry
+        self._cleanup_changed.set()
         try:
             await retry.wait()
         except asyncio.CancelledError:
@@ -78,6 +101,39 @@ class PluginActivity:
             for task in self.tasks.keys() | self.cleanup_tasks
             if not task.done()
         }
+
+    def _interrupt_pending(self, pending, retried):
+        for task in pending:
+            retry = self.cleanup_retries.get(task)
+            if retry is not None:
+                if task not in retried:
+                    retry.set()
+                    retried.add(task)
+            elif (
+                task not in self.cleanup_tasks
+                and task not in self.protected_cleanup_tasks
+                and not task.cancelling()
+            ):
+                task.cancel()
+
+    async def _wait_pending(self, pending, deadline):
+        changed = asyncio.create_task(self._cleanup_changed.wait())
+        try:
+            await asyncio.wait(
+                pending | {changed},
+                return_when=asyncio.FIRST_COMPLETED,
+                timeout=max(
+                    0,
+                    deadline - asyncio.get_running_loop().time(),
+                ),
+            )
+        finally:
+            changed.cancel()
+            await asyncio.gather(changed, return_exceptions=True)
+        # Waiter teardown yields too: an invocation may exit or a terminal
+        # callback may be retained before it finishes. Read ownership after
+        # that final await, even when the interruption deadline has elapsed.
+        return self._pending()
 
     @asynccontextmanager
     async def mutation(self, *, interrupt_tasks=False):
@@ -109,26 +165,13 @@ class PluginActivity:
                     asyncio.get_running_loop().time()
                     + INTERRUPT_TIMEOUT_SECONDS
                 )
-                for task in pending:
-                    retry = self.cleanup_retries.get(task)
-                    if retry is not None:
-                        retry.set()
-                    elif (
-                        task not in self.cleanup_tasks
-                        and not task.cancelling()
-                    ):
-                        task.cancel()
+                retried = set()
                 # A cancelled request may enqueue its terminal callback while
                 # draining. Keep the gate closed until those new owners finish.
                 while pending:
-                    _, remaining = await asyncio.wait(
-                        pending,
-                        timeout=max(
-                            0,
-                            deadline - asyncio.get_running_loop().time(),
-                        ),
-                    )
-                    pending = remaining | self._pending()
+                    self._cleanup_changed.clear()
+                    self._interrupt_pending(pending, retried)
+                    pending = await self._wait_pending(pending, deadline)
                     if (
                         pending
                         and asyncio.get_running_loop().time() >= deadline

@@ -40,7 +40,6 @@ from plugins.bundle.ugsci.domain.storage_inventory.tools import (
     ugsci_storage_capacity_evaluate,
     ugsci_storage_effective_inventory,
     ugsci_storage_injection_allocation_optimize,
-    ugsci_storage_production_allocation_optimize,
     ugsci_storage_scenario_optimize,
     ugsci_storage_inventory_evaluate,
 )
@@ -636,15 +635,10 @@ def test_catalog_exposes_storage_inventory_engine() -> None:
         "storage.injection_allocation.optimize",
         "storage.production_allocation.optimize",
         "storage.scenario.optimize",
-        "storage.injection_allocation.optimize",
-        "storage.production_allocation.optimize",
-        "storage.scenario.optimize",
     }
 
 
-def test_capacity_pressure_envelope_returns_layered_working_and_cushion_gas() -> (
-    None
-):
+def test_capacity_envelope_layers_working_and_cushion_gas() -> None:
     result = ComputationService().execute(
         "storage-capacity-evaluation",
         StorageCapacityEvaluationAdapter(),
@@ -692,9 +686,7 @@ def test_capacity_rejects_non_depleting_pressure_z_window() -> None:
         )
 
 
-def test_injection_allocation_weighted_filling_is_bounded_and_deterministic() -> (
-    None
-):
+def test_injection_weighted_filling_is_bounded_and_deterministic() -> None:
     request = StorageInjectionAllocationRequest(
         wells=(
             StorageAllocationWellRequest("W1", maximum_rate=10.0, weight=1.0),
@@ -711,7 +703,7 @@ def test_injection_allocation_weighted_filling_is_bounded_and_deterministic() ->
     assert first.result["allocated_rate"] == pytest.approx(15.0)
     rows = first.result["wells"]
     assert [row["allocated_rate"] for row in rows] == pytest.approx(
-        [3.75, 11.25]
+        [3.75, 11.25],
     )
     assert all(
         0.0 <= row["allocated_rate"] <= row["maximum_rate"] for row in rows
@@ -742,9 +734,7 @@ def test_injection_allocation_reports_shortfall_or_raises_in_strict_mode() -> (
         )
 
 
-def test_injection_allocation_rejects_duplicate_and_non_boolean_availability() -> (
-    None
-):
+def test_injection_rejects_duplicate_and_non_boolean_availability() -> None:
     with pytest.raises(DomainError, match="well names must be unique"):
         StorageInjectionAllocationAdapter().compute(
             StorageInjectionAllocationRequest(
@@ -757,16 +747,16 @@ def test_injection_allocation_rejects_duplicate_and_non_boolean_availability() -
         )
 
 
-def test_injection_allocation_unit_aliases_share_reproducibility_fingerprint() -> (
-    None
-):
+def test_injection_units_share_reproducibility_fingerprint() -> None:
     service = ComputationService()
     wells = (StorageAllocationWellRequest("W1", maximum_rate=10.0),)
     first = service.execute(
         "storage-injection-allocation",
         StorageInjectionAllocationAdapter(),
         StorageInjectionAllocationRequest(
-            wells=wells, target_rate=4.0, rate_unit="1e4_sm3/d"
+            wells=wells,
+            target_rate=4.0,
+            rate_unit="1e4_sm3/d",
         ),
         method="bounded_weighted_water_filling",
     ).to_dict()
@@ -774,7 +764,9 @@ def test_injection_allocation_unit_aliases_share_reproducibility_fingerprint() -
         "storage-injection-allocation",
         StorageInjectionAllocationAdapter(),
         StorageInjectionAllocationRequest(
-            wells=wells, target_rate=4.0, rate_unit="万方/日"
+            wells=wells,
+            target_rate=4.0,
+            rate_unit="万方/日",
         ),
         method="bounded_weighted_water_filling",
     ).to_dict()
@@ -785,15 +777,19 @@ def test_injection_allocation_unit_aliases_share_reproducibility_fingerprint() -
     with pytest.raises(DomainError, match="available must be a boolean"):
         StorageInjectionAllocationAdapter().compute(
             StorageInjectionAllocationRequest(
-                wells=(StorageAllocationWellRequest("W1", maximum_rate=10.0, available="false"),),  # type: ignore[arg-type]
+                wells=(
+                    StorageAllocationWellRequest(
+                        "W1",
+                        maximum_rate=10.0,
+                        available="false",  # type: ignore[arg-type]
+                    ),
+                ),
                 target_rate=1.0,
             ),
         )
 
 
-def test_injection_allocation_tool_schema_requires_well_name_and_capacity() -> (
-    None
-):
+def test_injection_tool_requires_well_name_and_capacity() -> None:
     hints = get_type_hints(ugsci_storage_injection_allocation_optimize)
     well_schema = get_args(hints["wells"])[0]
     assert well_schema.__required_keys__ == {"name", "maximum_rate"}
@@ -810,10 +806,14 @@ def test_production_allocation_reports_demand_and_unavailable_wells() -> None:
         StorageProductionAllocationRequest(
             wells=(
                 StorageAllocationWellRequest(
-                    "W1", maximum_rate=10.0, weight=1.0
+                    "W1",
+                    maximum_rate=10.0,
+                    weight=1.0,
                 ),
                 StorageAllocationWellRequest(
-                    "W2", maximum_rate=30.0, available=False
+                    "W2",
+                    maximum_rate=30.0,
+                    available=False,
                 ),
             ),
             demand_rate=15.0,
@@ -832,10 +832,12 @@ def test_scenario_optimizer_applies_constraints_and_pareto_order() -> None:
     request = StorageScenarioOptimizationRequest(
         scenarios=(
             StorageScenarioRequest(
-                "base", {"working_gas": 80.0, "risk": 2.0, "pressure": 18.0}
+                "base",
+                {"working_gas": 80.0, "risk": 2.0, "pressure": 18.0},
             ),
             StorageScenarioRequest(
-                "high", {"working_gas": 100.0, "risk": 4.0, "pressure": 21.0}
+                "high",
+                {"working_gas": 100.0, "risk": 4.0, "pressure": 21.0},
             ),
             StorageScenarioRequest(
                 "balanced",
@@ -879,7 +881,12 @@ def test_scenario_optimizer_rejects_missing_metric_and_invalid_direction() -> (
                 scenarios=(
                     StorageScenarioRequest("base", {"working_gas": 80.0}),
                 ),
-                objectives=(StorageScenarioObjective("working_gas", "sideways"),),  # type: ignore[arg-type]
+                objectives=(
+                    StorageScenarioObjective(
+                        "working_gas",
+                        "sideways",  # type: ignore[arg-type]
+                    ),
+                ),
             ),
         )
 

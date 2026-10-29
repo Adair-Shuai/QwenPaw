@@ -24,6 +24,7 @@ router = APIRouter()
 
 # ── Annotations ─────────────────────────────────────────────────────
 
+
 @router.get("/files/{file_id}/annotations")
 async def list_annotations(file_id: str) -> dict:
     annos = await AnnotationService.list_annotations(file_id)
@@ -62,12 +63,17 @@ async def delete_annotation(annotation_id: str) -> dict:
 
 # ── Notes ───────────────────────────────────────────────────────────
 
+
 @router.get("/notes")
 async def list_notes(
     project_id: str | None = None,
     paper_id: str | None = None,
 ) -> dict:
-    notes = await asyncio.to_thread(repo.list_notes, project_id=project_id, paper_id=paper_id)
+    notes = await asyncio.to_thread(
+        repo.list_notes,
+        project_id=project_id,
+        paper_id=paper_id,
+    )
     return {"notes": notes}
 
 
@@ -118,6 +124,7 @@ async def create_note_from_annotations(body: NoteFromAnnotations) -> dict:
 
 # ── Evidence cards ──────────────────────────────────────────────────
 
+
 @router.get("/projects/{project_id}/evidence")
 async def list_evidence(project_id: str) -> dict:
     evidence = await asyncio.to_thread(repo.list_evidence, project_id)
@@ -147,7 +154,11 @@ async def verify_evidence(evidence_id: str, body: EvidenceVerify) -> dict:
         fields["claim"] = body.claim
     if body.quote is not None:
         fields["quote"] = body.quote
-    evidence = await asyncio.to_thread(repo.update_evidence, evidence_id, **fields)
+    evidence = await asyncio.to_thread(
+        repo.update_evidence,
+        evidence_id,
+        **fields,
+    )
     if evidence is None:
         raise HTTPException(404, "Evidence card not found")
     return evidence

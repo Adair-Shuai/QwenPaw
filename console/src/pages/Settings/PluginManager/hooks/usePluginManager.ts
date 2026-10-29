@@ -6,7 +6,7 @@ import { useAppMessage } from "@/hooks/useAppMessage";
 import {
   fetchPluginCatalog,
   fetchPlugins,
-  installPlugin,
+  upgradeInstalledPlugin,
   type PluginInfo,
   type PluginUpdateInfo,
   uninstallPlugin,
@@ -21,6 +21,7 @@ import { marketPluginMatches } from "@/utils/marketPluginIdentity";
 import { reloadFrontendPlugin, reloadPawApp } from "@/plugins/usePluginLoader";
 import { removePluginRuntime } from "@/plugins/pluginRuntimeCleanup";
 import { removePluginAppState } from "@/os/osCleanup";
+import { isUGSciCatalogPlugin } from "@/distribution";
 
 const MARKET_PAGE_SIZE = 50;
 const MARKET_MAX_PAGES = 20;
@@ -65,6 +66,8 @@ export function usePluginManager() {
   const [updatesLoading, setUpdatesLoading] = useState(false);
   const [updatingId, setUpdatingId] = useState<string | null>(null);
   const [updatingAll, setUpdatingAll] = useState(false);
+  const [queuedIds, setQueuedIds] = useState<ReadonlySet<string>>(new Set());
+  const queuedVersions = useRef(new Map<string, string>());
   const updateRequestRef = useRef<AbortController | null>(null);
   const marketEntriesRef = useRef<MarketPluginEntry[] | null>(null);
 
@@ -105,6 +108,8 @@ export function usePluginManager() {
           version: entry.version,
           source: entry.install_url,
           name: entry.name,
+          channel: isUGSciCatalogPlugin(entry) ? "ugsci" : entry.channel,
+          sha256: entry.sha256,
         });
       }
 
@@ -153,6 +158,9 @@ export function usePluginManager() {
           addMarketUpdate(nextUpdates, plugin, entry);
         }
       }
+      for (const [id, version] of queuedVersions.current) {
+        if (nextUpdates.get(id)?.version === version) nextUpdates.delete(id);
+      }
       setUpdates(nextUpdates);
     } finally {
       if (updateRequestRef.current === controller) {
@@ -178,9 +186,26 @@ export function usePluginManager() {
       if (!update || updatingId !== null || updatingAll) return;
       setUpdatingId(plugin.id);
       try {
-        await installPlugin(update.source, { force: true });
-        await reloadInstalledPluginRuntime(plugin);
-        message.success(t("pluginManager.updateSuccess"));
+        const result = await upgradeInstalledPlugin(plugin.id, update);
+        if (result.method === "core-update-required") {
+          message.warning(t("pluginManager.coreUpdateRequired"));
+          return;
+        }
+        if (result.method === "queued") {
+          queuedVersions.current.set(plugin.id, update.version);
+          setQueuedIds(new Set(queuedVersions.current.keys()));
+          message.success(t("pluginManager.ugsciUpgradeQueued"));
+        } else if (result.method === "replaced") {
+          await reloadInstalledPluginRuntime(plugin);
+          message.success(t("pluginManager.updateSuccess"));
+        } else {
+          message.info(t("pluginManager.catalogLatest"));
+        }
+        setUpdates((current) => {
+          const next = new Map(current);
+          next.delete(plugin.id);
+          return next;
+        });
       } catch (err) {
         message.error(
           err instanceof Error ? err.message : t("pluginManager.updateFailed"),
@@ -204,8 +229,16 @@ export function usePluginManager() {
         if (!update) continue;
         setUpdatingId(plugin.id);
         try {
-          await installPlugin(update.source, { force: true });
-          await reloadInstalledPluginRuntime(plugin);
+          const result = await upgradeInstalledPlugin(plugin.id, update);
+          if (result.method === "core-update-required") {
+            throw new Error(t("pluginManager.coreUpdateRequired"));
+          }
+          if (result.method === "queued") {
+            queuedVersions.current.set(plugin.id, update.version);
+            setQueuedIds(new Set(queuedVersions.current.keys()));
+          } else if (result.method === "replaced") {
+            await reloadInstalledPluginRuntime(plugin);
+          }
           completedIds.add(plugin.id);
           setUpdates((current) => {
             const next = new Map(current);
@@ -217,7 +250,13 @@ export function usePluginManager() {
         }
       }
       if (failedPluginNames.length === 0) {
-        message.success(t("pluginManager.updateAllSuccess"));
+        message.success(
+          t(
+            queuedVersions.current.size > 0
+              ? "pluginManager.ugsciUpgradeQueued"
+              : "pluginManager.updateAllSuccess",
+          ),
+        );
       } else {
         message.error(
           t("pluginManager.updateAllResult", {
@@ -289,6 +328,7 @@ export function usePluginManager() {
     updatesLoading,
     updatingId,
     updatingAll,
+    queuedIds,
     updateOne,
     updateAll,
   };

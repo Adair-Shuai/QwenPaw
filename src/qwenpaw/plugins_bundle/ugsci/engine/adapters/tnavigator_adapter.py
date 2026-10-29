@@ -44,7 +44,11 @@ class TNavigatorAdapter(EclipseAdapter):
         candidates: list[Path] = []
         for pattern in ("*.log", "*.LOG", "*.out", "*.OUT", "*.PRT", "*.prt"):
             candidates.extend(directory.glob(pattern))
-        return max(candidates, key=lambda path: path.stat().st_mtime) if candidates else None
+        return (
+            max(candidates, key=lambda path: path.stat().st_mtime)
+            if candidates
+            else None
+        )
 
     def parse_progress(self, working_dir: str | Path) -> SimProgress:
         progress = super().parse_progress(working_dir)
@@ -53,9 +57,16 @@ class TNavigatorAdapter(EclipseAdapter):
             return progress
         tail = self._read_log_tail(log_file, 1000)
         upper = tail.upper()
-        if re.search(r"(?:SIMULATION\s+COMPLETED|END\s+OF\s+SIMULATION|NORMAL\s+TERMINATION)", upper):
+        if re.search(
+            "(?:SIMULATION\\s+COMPLETED|END\\s+OF\\s+SIMULAT"
+            "ION|NORMAL\\s+TERMINATION)",
+            upper,
+        ):
             progress.status = "completed"
-        elif re.search(r"(?:ABNORMAL\s+TERMINATION|FATAL\s+ERROR|\bFATAL\b|\bABORTED\b)", upper):
+        elif re.search(
+            r"(?:ABNORMAL\s+TERMINATION|FATAL\s+ERROR|\bFATAL\b|\bABORTED\b)",
+            upper,
+        ):
             progress.status = "failed"
         return progress
 

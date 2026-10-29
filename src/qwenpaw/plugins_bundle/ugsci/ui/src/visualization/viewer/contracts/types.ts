@@ -30,6 +30,16 @@ export interface DatasetInfo {
   files: DatasetFiles;
   time_steps?: TimeStepInfo[];
   metadata?: Record<string, unknown>;
+  properties?: Record<
+    string,
+    {
+      label: string;
+      association: "cell" | "point";
+      count: number;
+      unit: string | null;
+      no_data?: "nan";
+    }
+  >;
 }
 
 export interface TimeStepInfo {
@@ -89,6 +99,7 @@ export interface ViewerState {
 }
 
 export interface DomainSelection {
+  datasetId?: string;
   type: "cell" | "well" | "segment" | "surface";
   id: string;
   ijk?: [number, number, number];
@@ -151,7 +162,14 @@ export interface JobStage {
 // ─── SSE Events ────────────────────────────────────────────────────────────
 
 export interface SSEEvent {
-  type: "created" | "started" | "stage" | "completed" | "failed" | "cancelled" | "done";
+  type:
+    | "created"
+    | "started"
+    | "stage"
+    | "completed"
+    | "failed"
+    | "cancelled"
+    | "done";
   data: Record<string, unknown>;
   ts: number;
 }
@@ -172,10 +190,27 @@ export interface Capabilities {
 export interface ViewerMountOptions {
   apiBase: string;
   authToken?: string;
+  /** Scope headers supplied by the embedding host (for example X-Agent-ID). */
+  headers?: Record<string, string>;
+  /** Host transport, including deployment path and authentication. */
+  request?: typeof fetch;
+  initialDatasetId?: string;
+  autoLoad?: boolean;
+  compact?: boolean;
+  engineId?: string;
+  /** Stable local save namespace to distinguish cards within the same host scope. */
+  persistenceKey?: string;
+  onSelection?: (selection: DomainSelection | null) => void;
+  /** Opt-in for the dedicated workbench; embedded previews stay independent. */
+  enableCommands?: boolean;
 }
 
 export interface ViewerHandle {
+  readonly ready?: Promise<void>;
   update(options: Partial<ViewerMountOptions>): void;
-  executeCommand?(command: string, args: Record<string, unknown>): Promise<unknown>;
+  executeCommand?(
+    command: string,
+    args: Record<string, unknown>,
+  ): Promise<unknown>;
   dispose(): void | Promise<void>;
 }

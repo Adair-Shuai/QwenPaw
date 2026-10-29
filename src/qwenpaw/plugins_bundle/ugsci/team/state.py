@@ -98,7 +98,9 @@ def parse_state_document(data: Any) -> TeamStateDocument:
     try:
         return TeamStateDocument.model_validate(data)
     except ValidationError as exc:
-        raise TeamStateInvalidError("state document fields are invalid") from exc
+        raise TeamStateInvalidError(
+            "state document fields are invalid",
+        ) from exc
 
 
 def validate_state_document(data: Any) -> dict[str, Any]:
@@ -114,7 +116,11 @@ def validate_state_document(data: Any) -> dict[str, Any]:
 class TeamWorkflowState:
     """Manage per-instance state directory and files for UGSci teams."""
 
-    def __init__(self, workspace_dir: Path, team_id: str = "ugsci-team") -> None:
+    def __init__(
+        self,
+        workspace_dir: Path,
+        team_id: str = "ugsci-team",
+    ) -> None:
         self.workspace_dir = workspace_dir
         self.team_id = team_id
         self._instance_dir: Path | None = None
@@ -191,7 +197,11 @@ class TeamWorkflowState:
                     old = json.loads(path.read_text(encoding="utf-8"))
                 except (ValueError, UnicodeDecodeError):
                     old = {}
-                owner = old.get("owner_session_id") if isinstance(old, dict) else None
+                owner = (
+                    old.get("owner_session_id")
+                    if isinstance(old, dict)
+                    else None
+                )
                 if owner and data.get("owner_session_id") != owner:
                     raise TeamStateConflictError("Workflow owner is immutable")
                 if owner:
@@ -219,7 +229,7 @@ class TeamWorkflowState:
             revision = data.get("revision", 0)
             if expected_revision is not None and expected_revision != revision:
                 raise TeamStateConflictError(
-                    "State changed; read state again before updating"
+                    "State changed; read state again before updating",
                 )
             data.update(patch)
             if data.get("owner_session_id"):
@@ -260,7 +270,9 @@ class TeamWorkflowState:
                 from .artifacts import validate_phase
 
                 if data["current_phase"] != PHASE_COMPLETED:
-                    raise TeamStateConflictError("Workflow has not reached completion")
+                    raise TeamStateConflictError(
+                        "Workflow has not reached completion",
+                    )
                 validate_phase(self, data)
             data["current_phase"] = PHASE_COMPLETED
         data.update(

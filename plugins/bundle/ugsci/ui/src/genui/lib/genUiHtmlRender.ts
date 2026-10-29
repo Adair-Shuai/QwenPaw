@@ -91,21 +91,39 @@ function applyStyle(node: HTMLElement, style: Record<string, string>): void {
   Object.assign(node.style, style);
 }
 
-function appendNodes(target: HTMLElement, children: GenUiNode[] | undefined, ctx: RenderCtx): HTMLElement {
-  for (const child of children || []) target.appendChild(renderExportNode(child, ctx));
+function appendNodes(
+  target: HTMLElement,
+  children: GenUiNode[] | undefined,
+  ctx: RenderCtx,
+): HTMLElement {
+  for (const child of children || [])
+    target.appendChild(renderExportNode(child, ctx));
   return target;
 }
 
-function labelValue(target: HTMLElement, label: unknown, value: unknown): HTMLElement {
+function labelValue(
+  target: HTMLElement,
+  label: unknown,
+  value: unknown,
+): HTMLElement {
   if (label) target.appendChild(el("div", "muted small", label));
   target.appendChild(el("div", "display-value", value));
   return target;
 }
 
-function mediaImage(source: unknown, alt: unknown, className: string, ctx: RenderCtx): HTMLElement {
+function mediaImage(
+  source: unknown,
+  alt: unknown,
+  className: string,
+  ctx: RenderCtx,
+): HTMLElement {
   const src = asText(source);
   if (ctx.missing.has(src)) {
-    const fallback = el("div", `media-unavailable ${className}`.trim(), "此媒体未能离线嵌入");
+    const fallback = el(
+      "div",
+      `media-unavailable ${className}`.trim(),
+      "此媒体未能离线嵌入",
+    );
     fallback.setAttribute("role", "img");
     fallback.setAttribute("aria-label", asText(alt));
     return fallback;
@@ -118,7 +136,11 @@ function mediaImage(source: unknown, alt: unknown, className: string, ctx: Rende
 
 function avatar(src: unknown, name: unknown, ctx: RenderCtx): HTMLElement {
   if (src) return mediaImage(src, name, "avatar", ctx);
-  return el("span", "avatar avatar-fallback", asText(name).charAt(0).toUpperCase());
+  return el(
+    "span",
+    "avatar avatar-fallback",
+    asText(name).charAt(0).toUpperCase(),
+  );
 }
 
 function renderMarkdown(value: unknown): HTMLElement {
@@ -153,7 +175,13 @@ function renderField(node: GenUiNode, ctx: RenderCtx): HTMLElement {
   const name = fieldName(node);
   const shell = el("label", "field");
   if (props.label && kind !== "Switch") {
-    shell.appendChild(el("span", "field-label", `${asText(props.label)}${props.required ? " *" : ""}`));
+    shell.appendChild(
+      el(
+        "span",
+        "field-label",
+        `${asText(props.label)}${props.required ? " *" : ""}`,
+      ),
+    );
   }
   let control: HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement;
   if (kind === "Textarea") {
@@ -165,7 +193,10 @@ function renderField(node: GenUiNode, ctx: RenderCtx): HTMLElement {
     const select = el("select") as HTMLSelectElement;
     for (const option of asArray(props.options)) {
       const item = el("option") as HTMLOptionElement;
-      const record = option && typeof option === "object" ? option as Record<string, unknown> : null;
+      const record =
+        option && typeof option === "object"
+          ? (option as Record<string, unknown>)
+          : null;
       item.value = record ? asText(record.value) : asText(option);
       item.textContent = record ? asText(record.label) : asText(option);
       select.appendChild(item);
@@ -173,7 +204,16 @@ function renderField(node: GenUiNode, ctx: RenderCtx): HTMLElement {
     control = select;
   } else {
     const input = el("input") as HTMLInputElement;
-    input.type = kind === "Slider" ? "range" : kind === "Switch" ? "checkbox" : kind === "NumberInput" ? "number" : kind === "FileInput" ? "file" : "text";
+    input.type =
+      kind === "Slider"
+        ? "range"
+        : kind === "Switch"
+        ? "checkbox"
+        : kind === "NumberInput"
+        ? "number"
+        : kind === "FileInput"
+        ? "file"
+        : "text";
     if (props.min != null) input.min = asText(props.min);
     if (props.max != null) input.max = asText(props.max);
     if (props.step != null) input.step = asText(props.step);
@@ -187,7 +227,11 @@ function renderField(node: GenUiNode, ctx: RenderCtx): HTMLElement {
   }
   const initial = Object.prototype.hasOwnProperty.call(ctx.values, name)
     ? ctx.values[name]
-    : (props.value != null ? props.value : props.checked != null ? props.checked : "");
+    : props.value != null
+    ? props.value
+    : props.checked != null
+    ? props.checked
+    : "";
   if (kind === "Switch") {
     const input = control as HTMLInputElement;
     input.checked = asBool(initial);
@@ -220,7 +264,8 @@ function renderField(node: GenUiNode, ctx: RenderCtx): HTMLElement {
   } else {
     shell.appendChild(control);
   }
-  if (props.description) shell.appendChild(el("small", "description", props.description));
+  if (props.description)
+    shell.appendChild(el("small", "description", props.description));
   return shell;
 }
 
@@ -237,23 +282,30 @@ function renderExportNode(node: GenUiNode, ctx: RenderCtx): HTMLElement {
     paintChartElement(holder, resolveChartModel(props, ctx.values));
     return holder;
   }
-  if (node.kind === "Heading") return el(`h${clampHeadingLevel(props.level)}`, "", props.value);
-  if (node.kind === "Text") return el("div", asBool(props.bold) ? "text bold" : "text", props.value);
-  if (node.kind === "Markdown") return renderMarkdown(props.content || props.value);
+  if (node.kind === "Heading")
+    return el(`h${clampHeadingLevel(props.level)}`, "", props.value);
+  if (node.kind === "Text")
+    return el("div", asBool(props.bold) ? "text bold" : "text", props.value);
+  if (node.kind === "Markdown")
+    return renderMarkdown(props.content || props.value);
   if (node.kind === "CodeBlock") return el("pre", "code", props.code);
   if (node.kind === "SectionHeader") {
     const result = el("div", "section-header");
     if (props.icon) result.appendChild(el("span", "section-icon", props.icon));
     const body = el("div");
     body.appendChild(el("strong", "", props.title));
-    if (props.subtitle) body.appendChild(el("div", "muted small", props.subtitle));
+    if (props.subtitle)
+      body.appendChild(el("div", "muted small", props.subtitle));
     result.appendChild(body);
     return result;
   }
   if (node.kind === "KeyValueList") {
     const result = el("dl", "key-values");
     for (const item of asArray(props.items)) {
-      const row = item && typeof item === "object" ? item as Record<string, unknown> : {};
+      const row =
+        item && typeof item === "object"
+          ? (item as Record<string, unknown>)
+          : {};
       result.append(el("dt", "", row.key), el("dd", "", row.value));
     }
     return result;
@@ -276,16 +328,27 @@ function renderExportNode(node: GenUiNode, ctx: RenderCtx): HTMLElement {
     const tabs = children.filter((child) => child.kind === "TabItem");
     tabs.forEach((tab, index) => {
       buttons.appendChild(el("button", index ? "" : "active", tab.props?.tab));
-      panels.appendChild(appendNodes(el("div", index ? "tab-panel hidden" : "tab-panel"), tab.children, ctx));
+      panels.appendChild(
+        appendNodes(
+          el("div", index ? "tab-panel hidden" : "tab-panel"),
+          tab.children,
+          ctx,
+        ),
+      );
     });
     result.append(buttons, panels);
     return result;
   }
   if (node.kind === "Accordion") {
     const result = el("div");
-    for (const item of children.filter((child) => child.kind === "AccordionItem")) {
+    for (const item of children.filter(
+      (child) => child.kind === "AccordionItem",
+    )) {
       const details = el("details");
-      details.append(el("summary", "", item.props?.header), appendNodes(el("div", "accordion-body"), item.children, ctx));
+      details.append(
+        el("summary", "", item.props?.header),
+        appendNodes(el("div", "accordion-body"), item.children, ctx),
+      );
       result.appendChild(details);
     }
     return result;
@@ -300,7 +363,11 @@ function renderExportNode(node: GenUiNode, ctx: RenderCtx): HTMLElement {
     return result;
   }
   if (ACTION_BUTTON_KINDS.has(node.kind)) {
-    const result = el("button", node.kind === "LinkButton" ? "link-button" : "button", asText(props.label) || "Action");
+    const result = el(
+      "button",
+      node.kind === "LinkButton" ? "link-button" : "button",
+      asText(props.label) || "Action",
+    );
     if (asBool(props.disabled)) (result as HTMLButtonElement).disabled = true;
     result.setAttribute("data-genui-action", node.kind);
     if (node.kind === "LinkButton" && isHttpUrl(props.href)) {
@@ -334,15 +401,29 @@ function renderExportNode(node: GenUiNode, ctx: RenderCtx): HTMLElement {
   }
   if (node.kind === "Stat") {
     const result = el("div", "stat");
-    result.append(el("span", "muted small", props.label), el("strong", "stat-value", props.value));
-    if (props.delta) result.appendChild(el("span", `small trend-${asText(props.trend)}`, props.delta));
+    result.append(
+      el("span", "muted small", props.label),
+      el("strong", "stat-value", props.value),
+    );
+    if (props.delta)
+      result.appendChild(
+        el("span", `small trend-${asText(props.trend)}`, props.delta),
+      );
     return result;
   }
   if (node.kind === "DataCard" || node.kind === "MetricCard") {
     const result = el("div", "card metric-card");
     const text = labelValue(el("div"), props.title, props.value);
     if (props.delta) {
-      text.appendChild(el("div", `small trend-${asText(props.trend)}`, `${asText(props.delta)}${props.period ? ` ${asText(props.period)}` : ""}`));
+      text.appendChild(
+        el(
+          "div",
+          `small trend-${asText(props.trend)}`,
+          `${asText(props.delta)}${
+            props.period ? ` ${asText(props.period)}` : ""
+          }`,
+        ),
+      );
     }
     result.appendChild(text);
     if (props.icon) result.appendChild(el("span", "metric-icon", props.icon));
@@ -350,14 +431,20 @@ function renderExportNode(node: GenUiNode, ctx: RenderCtx): HTMLElement {
   }
   if (node.kind === "TimelineCard") {
     const result = el("div", "card timeline");
-    result.append(el("i", `timeline-dot status-${asText(props.status)}`), labelValue(el("div"), props.title, props.date));
-    if (props.description) result.appendChild(el("div", "small", props.description));
+    result.append(
+      el("i", `timeline-dot status-${asText(props.status)}`),
+      labelValue(el("div"), props.title, props.date),
+    );
+    if (props.description)
+      result.appendChild(el("div", "small", props.description));
     return result;
   }
   if (node.kind === "Stepper") {
     const result = el("ol", "stepper");
     asArray(props.steps).forEach((step, index) => {
-      result.appendChild(el("li", index <= asNumber(props.current) ? "active" : "", step));
+      result.appendChild(
+        el("li", index <= asNumber(props.current) ? "active" : "", step),
+      );
     });
     return result;
   }
@@ -365,12 +452,15 @@ function renderExportNode(node: GenUiNode, ctx: RenderCtx): HTMLElement {
     const result = el("table", "data-table");
     const head = el("thead");
     const headRow = el("tr");
-    for (const header of asArray(props.headers)) headRow.appendChild(el("th", "", header));
+    for (const header of asArray(props.headers))
+      headRow.appendChild(el("th", "", header));
     head.appendChild(headRow);
     const body = el("tbody");
     for (const row of children.filter((child) => child.kind === "TableRow")) {
       const tr = el("tr", row.props?.highlight ? "highlight" : "");
-      for (const cell of (row.children || []).filter((item) => item.kind === "TableCell")) {
+      for (const cell of (row.children || []).filter(
+        (item) => item.kind === "TableCell",
+      )) {
         const td = el("td", cell.props?.bold ? "bold" : "", cell.props?.value);
         if (cell.props?.align) td.style.textAlign = asText(cell.props.align);
         tr.appendChild(td);
@@ -383,18 +473,28 @@ function renderExportNode(node: GenUiNode, ctx: RenderCtx): HTMLElement {
   if (node.kind === "List") {
     const result = el(asBool(props.ordered) ? "ol" : "ul", "data-list");
     for (const item of children.filter((child) => child.kind === "ListItem")) {
-      result.appendChild(el("li", "", `${item.props?.icon ? `${asText(item.props.icon)} ` : ""}${asText(item.props?.value)}`));
+      result.appendChild(
+        el(
+          "li",
+          "",
+          `${item.props?.icon ? `${asText(item.props.icon)} ` : ""}${asText(
+            item.props?.value,
+          )}`,
+        ),
+      );
     }
     return result;
   }
   if (node.kind === "ChipGroup") {
     const result = el("div", "chips");
-    for (const item of asArray(props.items)) result.appendChild(el("span", "tag", item));
+    for (const item of asArray(props.items))
+      result.appendChild(el("span", "tag", item));
     return result;
   }
   if (node.kind === "Skeleton") {
     const result = el("div", "skeletons");
-    for (let index = 0; index < (asNumber(props.rows) || 3); index += 1) result.appendChild(el("i", "skeleton"));
+    for (let index = 0; index < (asNumber(props.rows) || 3); index += 1)
+      result.appendChild(el("i", "skeleton"));
     return result;
   }
   if (node.kind === "Icon") {
@@ -406,7 +506,11 @@ function renderExportNode(node: GenUiNode, ctx: RenderCtx): HTMLElement {
     const result = el("details");
     result.append(
       el("summary", "", asText(props.label) || "Debug JSON"),
-      el("pre", "code", JSON.stringify(props.data == null ? props : props.data, null, 2)),
+      el(
+        "pre",
+        "code",
+        JSON.stringify(props.data == null ? props : props.data, null, 2),
+      ),
     );
     return result;
   }
@@ -420,13 +524,24 @@ function renderExportNode(node: GenUiNode, ctx: RenderCtx): HTMLElement {
     return result;
   }
   if (!Object.prototype.hasOwnProperty.call(LAYOUT_CLASS, node.kind)) {
-    return el("div", "unknown-component", `Unknown component: ${asText(node.kind)}`);
+    return el(
+      "div",
+      "unknown-component",
+      `Unknown component: ${asText(node.kind)}`,
+    );
   }
   const result = el("div", LAYOUT_CLASS[node.kind]);
   applyStyle(result, layoutBoxStyle(node.kind, props));
-  if (node.kind === "Card" && props.title) result.appendChild(el("div", "card-title", props.title));
-  if (node.kind === "Card" && props.subtitle) result.appendChild(el("div", "muted small card-subtitle", props.subtitle));
-  if ((node.kind === "Alert" || node.kind === "AlertCard" || node.kind === "Callout") && (props.title || props.message)) {
+  if (node.kind === "Card" && props.title)
+    result.appendChild(el("div", "card-title", props.title));
+  if (node.kind === "Card" && props.subtitle)
+    result.appendChild(el("div", "muted small card-subtitle", props.subtitle));
+  if (
+    (node.kind === "Alert" ||
+      node.kind === "AlertCard" ||
+      node.kind === "Callout") &&
+    (props.title || props.message)
+  ) {
     if (props.title) result.appendChild(el("strong", "", props.title));
     if (props.message) result.appendChild(el("div", "", props.message));
   } else {
@@ -436,7 +551,10 @@ function renderExportNode(node: GenUiNode, ctx: RenderCtx): HTMLElement {
 }
 
 function functionSource(fn: Function, name: string): string {
-  const raw = Function.prototype.toString.call(fn).replace(/^export\s+/, "").trim();
+  const raw = Function.prototype.toString
+    .call(fn)
+    .replace(/^export\s+/, "")
+    .trim();
   if (!raw.includes("{")) throw new Error(`cannot serialize ${name}`);
   return `var ${name} = (${raw});`;
 }
@@ -526,11 +644,13 @@ export function renderExportTree(
 ): HTMLElement {
   const root = el("main");
   root.id = "genui-root";
-  root.appendChild(renderExportNode(tree, {
-    values,
-    media: media.sources || {},
-    missing: new Set(media.missing || []),
-  }));
+  root.appendChild(
+    renderExportNode(tree, {
+      values,
+      media: media.sources || {},
+      missing: new Set(media.missing || []),
+    }),
+  );
   return root;
 }
 
@@ -556,7 +676,9 @@ export function buildGenUiHtmlDocument(
   </style>
 </head>
 <body>${root.outerHTML}
-<script id="genui-values-data" type="application/json">${scriptJson(values)}</script>
+<script id="genui-values-data" type="application/json">${scriptJson(
+    values,
+  )}</script>
 <script>${standaloneRuntime()}</script></body>
 </html>`;
 }

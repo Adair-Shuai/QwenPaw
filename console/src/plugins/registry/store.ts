@@ -357,6 +357,7 @@ interface RouteWrapEntry {
 interface ResolvedRoute {
   id: string;
   path: string;
+  label?: Route["label"];
   caseSensitive?: boolean;
   source: string;
   meta?: RouteMeta;
@@ -595,6 +596,7 @@ class RouteRegistryImpl {
       out.push({
         id: entry.route.id,
         path: entry.route.path,
+        label: entry.route.label,
         caseSensitive: entry.route.caseSensitive,
         source: overrideTop?.source ?? entry.source,
         meta: entry.route.meta,

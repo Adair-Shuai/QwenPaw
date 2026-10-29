@@ -1,5 +1,10 @@
 # QwenPaw OpenUI
 
+Run Center can also reuse OpenUI to arrange live task summaries, metrics, curves,
+fields, stages and artifacts. Task presentation plans select stack, tabs or
+dashboard layouts and bind host-owned results. Tab changes and data refreshes
+preserve mounted viewers; Run Center retains a native layout when OpenUI is off.
+
 English | [中文](README_zh.md)
 
 Interact with QwenPaw's answers directly. OpenUI brings tables, charts, forms, and sliders into Chat, so you can adjust inputs, compare results, and continue the conversation with your choices.

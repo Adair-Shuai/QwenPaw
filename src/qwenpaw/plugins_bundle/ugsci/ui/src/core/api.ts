@@ -25,14 +25,10 @@ export async function fetchAgents(): Promise<AgentSummary[]> {
 export async function fetchAgentConfig(
   agentId: string,
 ): Promise<AgentProfileConfig> {
-  return apiFetch<AgentProfileConfig>(
-    `/agents/${encodeURIComponent(agentId)}`,
-  );
+  return apiFetch<AgentProfileConfig>(`/agents/${encodeURIComponent(agentId)}`);
 }
 
-export async function fetchAgentSkills(
-  agentId: string,
-): Promise<SkillSpec[]> {
+export async function fetchAgentSkills(agentId: string): Promise<SkillSpec[]> {
   const data = await apiFetch<SkillSpec[]>(
     `/agents/${encodeURIComponent(agentId)}/skills`,
   );
@@ -56,16 +52,12 @@ export async function fetchPoolSkillContent(
   return data?.content || "";
 }
 
-export async function fetchWorkspaceSkills(): Promise<
-  WorkspaceSkillSummary[]
-> {
+export async function fetchWorkspaceSkills(): Promise<WorkspaceSkillSummary[]> {
   type WorkspaceSkillWire = Partial<WorkspaceSkillSummary> & {
     agent_id: string;
     skills?: SkillSpec[];
   };
-  const data = await apiFetch<WorkspaceSkillWire[]>(
-    "/skills/workspaces",
-  );
+  const data = await apiFetch<WorkspaceSkillWire[]>("/skills/workspaces");
   return (data || []).map((workspace) => ({
     agent_id: workspace.agent_id,
     agent_name: workspace.agent_name || "",
@@ -74,7 +66,7 @@ export async function fetchWorkspaceSkills(): Promise<
     skill_names: Array.isArray(workspace.skill_names)
       ? workspace.skill_names
       : Array.isArray(workspace.skills)
-        ? workspace.skills.map((skill) => skill.name)
-        : [],
+      ? workspace.skills.map((skill) => skill.name)
+      : [],
   }));
 }

@@ -22,6 +22,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useOsWindows } from "./osWindowStore";
 import { useOsNotify } from "./osNotifyStore";
 import { resolveAppDef } from "./osAppRegistry";
+import { getAppLabel } from "./osApps";
 import { useOsStyles } from "./useOsStyles";
 import { getConsoleRootHref } from "../utils/navigationMode";
 import LanguageSwitcher from "../components/LanguageSwitcher";
@@ -37,7 +38,8 @@ function useClock() {
 
 export default function MenuBar({ hidden = false }: { hidden?: boolean }) {
   const { styles, cx } = useOsStyles();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const language = i18n?.resolvedLanguage ?? i18n?.language;
   const { agents } = useAgentStore();
   // Narrow subscription: geometry updates never re-render the menu bar.
   const { spaceId, activeId, missionControlOpen, setMissionControl } =
@@ -61,7 +63,7 @@ export default function MenuBar({ hidden = false }: { hidden?: boolean }) {
   const spaceName = agents.find((a) => a.id === spaceId)?.name ?? spaceId;
   const activeApp = activeId ? resolveAppDef(activeId) : undefined;
   const activeTitle = activeApp
-    ? t(activeApp.labelKey, activeApp.fallback)
+    ? getAppLabel(activeApp, t, language)
     : t("os.finder", "Desktop");
 
   const time = now.toLocaleTimeString(undefined, {

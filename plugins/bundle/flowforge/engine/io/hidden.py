@@ -16,13 +16,15 @@ from typing import Any
 class Hidden(str, Enum):
     """Well-known hidden input identifiers."""
 
-    UNIQUE_ID = "unique_id"        # current node_id
-    PROMPT = "prompt"              # full prompt dict
-    DYNPROMPT = "dynprompt"        # DynamicPrompt instance
+    UNIQUE_ID = "unique_id"  # current node_id
+    PROMPT = "prompt"  # full prompt dict
+    DYNPROMPT = "dynprompt"  # DynamicPrompt instance
     EXECUTION_ID = "execution_id"  # workflow execution id (prompt_id)
     USER_ID = "user_id"
     SESSION_ID = "session_id"
-    TOOL_CONTEXT = "tool_context"  # integration container w/ tool_executor/llm_service
+    TOOL_CONTEXT = (
+        "tool_context"  # integration container w/ tool_executor/llm_service
+    )
     LLM_SERVICE = "llm_service"
     REVIEW_SERVICE = "review_service"
     AGENT_RUNTIME = "agent_runtime"  # leagent.runtime.AgentRuntime facade

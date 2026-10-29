@@ -1,26 +1,48 @@
-"""Lifecycle integration tests with the real scheduler and durable repository."""
+# -*- coding: utf-8 -*-
+# pylint: disable=no-name-in-module
+# pylint: disable=protected-access
+# pylint: disable=redefined-outer-name
+"""Lifecycle integration tests with the real scheduler and durable \
+repository."""
 
 import asyncio
 import time
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import contextmanager
 from types import SimpleNamespace
 
 import pytest
 
-from qwenpaw.plugins_bundle.flowforge.engine.adapter.agent_runtime import AgentRuntime
-from qwenpaw.plugins_bundle.flowforge.engine.adapter.agent_events import AgentEventType
+from qwenpaw.plugins_bundle.flowforge.engine.adapter.agent_runtime import (
+    AgentRuntime,
+)
+from qwenpaw.plugins_bundle.flowforge.engine.adapter.agent_events import (
+    AgentEventType,
+)
 from qwenpaw.plugins_bundle.flowforge.service import WorkflowService
+from qwenpaw.plugins_bundle.flowforge.execution_repository import (
+    ExecutionRepository,
+)
 from qwenpaw.plugins_bundle.flowforge.invocation import current_run
 
 
-@pytest.fixture
-def service(tmp_path):
+@pytest.fixture(name="service")
+def _service_fixture(tmp_path):
     instance = WorkflowService(flows_dir=tmp_path)
     yield instance
     for record in instance.list_runs():
         instance.cancel_run(record["run_id"])
-    instance._loop.call_soon_threadsafe(instance._loop.stop)
-    instance._loop_thread.join(timeout=3)
+    instance.close(timeout=3)
+
+
+@contextmanager
+def _restarted_service(service):
+    service.close(timeout=3)
+    restarted = WorkflowService(flows_dir=service.flows_dir)
+    try:
+        yield restarted
+    finally:
+        restarted.close(timeout=3)
 
 
 def wait(handle):
@@ -39,7 +61,97 @@ def flow(service, flow_id, nodes):
 
 
 def child_node(child):
-    return {"class_type": "SubworkflowNode", "inputs": {"subworkflow_id": child}}
+    return {
+        "class_type": "SubworkflowNode",
+        "inputs": {"subworkflow_id": child},
+    }
+
+
+def test_cancel_finalizes_node_events_live_and_persisted_records(service):
+    flow(
+        service,
+        "cancel-status",
+        {
+            "before": {
+                "class_type": "OutputNode",
+                "inputs": {"value": "kept"},
+            },
+            "wait": {
+                "class_type": "WaitNode",
+                "inputs": {
+                    "seconds": 60,
+                    "__flow_dependencies": [["before", 0]],
+                },
+            },
+            "after": {
+                "class_type": "OutputNode",
+                "inputs": {"value": ["wait", 0]},
+            },
+        },
+    )
+    handle = service.start_run("cancel-status")
+    deadline = time.monotonic() + 3
+    while (
+        handle.progress.node_statuses().get("wait") != "running"
+        and time.monotonic() < deadline
+    ):
+        time.sleep(0.01)
+    assert handle.progress.node_statuses()["wait"] == "running"
+    assert service.cancel_run(handle.run_id)
+    result = wait(handle)
+    assert result["status"] == "cancelled"
+    assert result["node_statuses"] == {
+        "before": "success",
+        "wait": "cancelled",
+    }
+    events = ExecutionRepository(service.flows_dir).get(handle.run_id)[
+        "events"
+    ]
+    cancelled = next(
+        event for event in events if event["type"] == "node_cancelled"
+    )
+    assert (
+        cancelled["node_id"] == "wait" and cancelled["state"]["finished_at_ms"]
+    )
+    assert events[-1]["type"] == "execution_cancelled"
+    with _restarted_service(service) as restarted:
+        assert (
+            restarted.get_run_record(handle.run_id)["node_statuses"]
+            == result["node_statuses"]
+        )
+
+
+def test_cancel_paused_and_legacy_records_closes_only_unfinished_nodes(
+    service,
+):
+    ExecutionRepository(service.flows_dir).create(
+        "legacy",
+        "review",
+        status="waiting_human",
+        node_statuses={
+            "before": "success",
+            "review": "blocked",
+            "skip": "skipped",
+        },
+    )
+    assert service.cancel_run("legacy")
+    result = service.get_run_record("legacy")
+    assert result["status"] == "cancelled"
+    assert result["node_statuses"] == {
+        "before": "success",
+        "review": "cancelled",
+        "skip": "skipped",
+    }
+    assert result["finished_at"]
+    ExecutionRepository(service.flows_dir).create(
+        "old",
+        "cancel",
+        status="cancelled",
+        node_statuses={"wait": "running"},
+    )
+    assert service.get_run_record("old")["node_statuses"] == {
+        "wait": "cancelled",
+    }
 
 
 def review_flow(service, flow_id="review"):
@@ -53,9 +165,15 @@ def review_flow(service, flow_id="review"):
             },
             "review": {
                 "class_type": "HumanReviewNode",
-                "inputs": {"reviewer": "owner", "__flow_dependencies": [["work", 0]]},
+                "inputs": {
+                    "reviewer": "owner",
+                    "__flow_dependencies": [["work", 0]],
+                },
             },
-            "out": {"class_type": "OutputNode", "inputs": {"value": ["review", 0]}},
+            "out": {
+                "class_type": "OutputNode",
+                "inputs": {"value": ["review", 0]},
+            },
         },
     )
 
@@ -81,7 +199,7 @@ def test_nested_runs_share_service_identity_and_durable_lineage(service):
     assert child["root_run_id"] == parent.run_id
     assert child["trigger_type"] == "subworkflow"
     assert child["workflow_stack"] == ["parent", "child"]
-    persisted = service._execution_repository.get(child["run_id"])
+    persisted = ExecutionRepository(service.flows_dir).get(child["run_id"])
     assert persisted["parent_run_id"] == parent.run_id
     assert "flow_snapshot" not in child
 
@@ -101,6 +219,8 @@ def test_cancel_interrupts_inflight_agent_and_descendants(service):
 
     class Runtime:
         async def run_agent_turn(self, agent_id, query):
+            assert agent_id == "worker"
+            assert query == "wait"
             started.append(True)
             try:
                 await asyncio.sleep(60)
@@ -115,7 +235,7 @@ def test_cancel_interrupts_inflight_agent_and_descendants(service):
             "agent": {
                 "class_type": "AgentNode",
                 "inputs": {"agent_id": "worker", "query": "wait"},
-            }
+            },
         },
     )
     flow(service, "parent", {"child": child_node("child")})
@@ -131,11 +251,14 @@ def test_cancel_interrupts_inflight_agent_and_descendants(service):
     assert stopped == [True]
 
 
-def test_paused_child_resumes_original_graph_without_repeating_effects(service):
+def test_paused_child_resumes_original_graph_without_repeating_effects(
+    service,
+):
     calls = []
 
     class Runtime:
         async def run_agent_turn(self, agent_id, query):
+            assert agent_id == "worker"
             calls.append(query)
             return "effect committed"
 
@@ -175,7 +298,12 @@ def test_resume_is_single_use_and_rejects_completed_runs(service):
     flow(
         service,
         "review",
-        {"review": {"class_type": "HumanReviewNode", "inputs": {"reviewer": "owner"}}},
+        {
+            "review": {
+                "class_type": "HumanReviewNode",
+                "inputs": {"reviewer": "owner"},
+            },
+        },
     )
     original = service.start_run("review")
     wait(original)
@@ -203,7 +331,12 @@ def test_cancel_paused_tree_prevents_later_resume(service):
     flow(
         service,
         "review",
-        {"review": {"class_type": "HumanReviewNode", "inputs": {"reviewer": "owner"}}},
+        {
+            "review": {
+                "class_type": "HumanReviewNode",
+                "inputs": {"reviewer": "owner"},
+            },
+        },
     )
     flow(service, "parent", {"child": child_node("review")})
     parent = service.start_run("parent")
@@ -225,38 +358,47 @@ def test_agent_resume_explicitly_rejects_fake_checkpoint_replay():
     runtime = AgentRuntime(SimpleNamespace(agents={"worker": Workspace()}))
 
     async def collect():
-        return [event async for event in runtime.resume("worker", "checkpoint", "yes")]
+        return [
+            event
+            async for event in runtime.resume("worker", "checkpoint", "yes")
+        ]
 
     events = asyncio.run(collect())
     assert events[0].type == AgentEventType.ERROR
     assert events[-1].data["reason"] == "failed"
-    assert called == []
+    assert not called
 
 
 def test_paused_tree_survives_restart_and_flow_deletion(service):
     flow(
         service,
         "review",
-        {"review": {"class_type": "HumanReviewNode", "inputs": {"reviewer": "owner"}}},
+        {
+            "review": {
+                "class_type": "HumanReviewNode",
+                "inputs": {"reviewer": "owner"},
+            },
+        },
     )
     flow(service, "parent", {"child": child_node("review")})
     original = service.start_run("parent")
     assert wait(original)["status"] == "waiting_human"
-    service._loop.call_soon_threadsafe(service._loop.stop)
-    service._loop_thread.join(timeout=3)
+    service.close(timeout=3)
     service.delete_flow("parent")
     service.delete_flow("review")
     restarted = WorkflowService(flows_dir=service.flows_dir)
     try:
-        continuation = restarted.resume_run(original.run_id, {"approved": True})
+        continuation = restarted.resume_run(
+            original.run_id,
+            {"approved": True},
+        )
         result = wait(continuation)
         assert result["status"] == "completed", result
         assert result["outputs"]["child"]["review"]["approved"] is True
         with pytest.raises(ValueError, match="already resumed"):
             restarted.resume_run(original.run_id)
     finally:
-        restarted._loop.call_soon_threadsafe(restarted._loop.stop)
-        restarted._loop_thread.join(timeout=3)
+        restarted.close(timeout=3)
 
 
 def test_agent_started_child_gets_lineage_and_identity(service):
@@ -280,8 +422,13 @@ def test_agent_started_child_gets_lineage_and_identity(service):
     class Workspace:
         async def stream_query(self, request):
             requests.append(request)
-            response = await tools["flowforge_run_workflow"]("child", wait_seconds=2)
-            assert json.loads(response.content[0].text)["status"] == "completed"
+            response = await tools["flowforge_run_workflow"](
+                "child",
+                wait_seconds=2,
+            )
+            assert (
+                json.loads(response.content[0].text)["status"] == "completed"
+            )
             yield {
                 "object": "message",
                 "role": "assistant",
@@ -290,7 +437,7 @@ def test_agent_started_child_gets_lineage_and_identity(service):
             }
 
     service.executor.agent_runtime = AgentRuntime(
-        SimpleNamespace(agents={"worker": Workspace()})
+        SimpleNamespace(agents={"worker": Workspace()}),
     )
     flow(
         service,
@@ -299,7 +446,7 @@ def test_agent_started_child_gets_lineage_and_identity(service):
             "agent": {
                 "class_type": "AgentNode",
                 "inputs": {"agent_id": "worker", "query": "call child"},
-            }
+            },
         },
     )
     old_user, old_session = get_current_user_id(), get_current_session_id()
@@ -312,7 +459,9 @@ def test_agent_started_child_gets_lineage_and_identity(service):
         set_current_session_id(old_session)
     assert wait(parent)["status"] == "completed"
     child = next(
-        record for record in service.list_runs() if record["flow_id"] == "child"
+        record
+        for record in service.list_runs()
+        if record["flow_id"] == "child"
     )
     assert child["parent_run_id"] == parent.run_id
     assert child["user_id"] == "alice"
@@ -320,7 +469,9 @@ def test_agent_started_child_gets_lineage_and_identity(service):
     assert child["trigger_type"] == "agent"
     assert requests[0]["user_id"] == "alice"
     assert requests[0]["request_context"]["workflow_run_id"] == parent.run_id
-    assert requests[0]["request_context"]["parent_session_id"] == "business-chat"
+    assert (
+        requests[0]["request_context"]["parent_session_id"] == "business-chat"
+    )
 
 
 def test_resume_endpoint_conflict_and_persisted_cancel(service):
@@ -331,22 +482,31 @@ def test_resume_endpoint_conflict_and_persisted_cancel(service):
     flow(
         service,
         "review",
-        {"review": {"class_type": "HumanReviewNode", "inputs": {"reviewer": "owner"}}},
+        {
+            "review": {
+                "class_type": "HumanReviewNode",
+                "inputs": {"reviewer": "owner"},
+            },
+        },
     )
     original = service.start_run("review")
     wait(original)
     # Exercise the durable-record path used after process restart.
-    service._runs.pop(original.run_id)
-    app = FastAPI()
-    app.include_router(build_router(service))
-    with TestClient(app) as client:
-        assert client.post(f"/runs/{original.run_id}/cancel").status_code == 200
-        assert (
-            client.post(
-                f"/runs/{original.run_id}/resume", json={"inputs": {"approved": True}}
-            ).status_code
-            == 409
-        )
+    with _restarted_service(service) as restarted:
+        app = FastAPI()
+        app.include_router(build_router(restarted))
+        with TestClient(app) as client:
+            assert (
+                client.post(f"/runs/{original.run_id}/cancel").status_code
+                == 200
+            )
+            assert (
+                client.post(
+                    f"/runs/{original.run_id}/resume",
+                    json={"inputs": {"approved": True}},
+                ).status_code
+                == 409
+            )
 
 
 def test_parent_timeout_cancels_child_and_cleans_waiters(service):
@@ -354,6 +514,8 @@ def test_parent_timeout_cancels_child_and_cleans_waiters(service):
 
     class Runtime:
         async def run_agent_turn(self, agent_id, query):
+            assert agent_id == "worker"
+            assert query == "wait"
             try:
                 await asyncio.sleep(60)
             finally:
@@ -367,7 +529,7 @@ def test_parent_timeout_cancels_child_and_cleans_waiters(service):
             "agent": {
                 "class_type": "AgentNode",
                 "inputs": {"agent_id": "worker", "query": "wait"},
-            }
+            },
         },
     )
     payload = flow(service, "parent", {"child": child_node("child")})
@@ -376,25 +538,34 @@ def test_parent_timeout_cancels_child_and_cleans_waiters(service):
     parent = service.start_run("parent")
     assert wait(parent)["status"] == "timeout"
     child = next(
-        record for record in service.list_runs() if record["flow_id"] == "child"
+        record
+        for record in service.list_runs()
+        if record["flow_id"] == "child"
     )
     assert wait(service.get_run(child["run_id"]))["status"] == "cancelled"
     assert stopped == [True]
-    assert service.executor._active_lists == {}
-    assert service.executor._abort_events == {}
+    assert service.executor.resource_snapshot()["active_runs"] == 0
+    assert service.executor.resource_snapshot()["abort_waiters"] == 0
 
 
 def test_parent_follows_child_already_resumed_by_reviewer(service):
     flow(
         service,
         "review",
-        {"review": {"class_type": "HumanReviewNode", "inputs": {"reviewer": "owner"}}},
+        {
+            "review": {
+                "class_type": "HumanReviewNode",
+                "inputs": {"reviewer": "owner"},
+            },
+        },
     )
     flow(service, "parent", {"child": child_node("review")})
     parent = service.start_run("parent")
     assert wait(parent)["status"] == "waiting_human"
     child = next(
-        record for record in service.list_runs() if record["flow_id"] == "review"
+        record
+        for record in service.list_runs()
+        if record["flow_id"] == "review"
     )
     assert (
         wait(service.resume_run(child["run_id"], {"approved": True}))["status"]
@@ -410,12 +581,19 @@ def test_cancelled_parent_cannot_spawn_late_child(service):
     flow(
         service,
         "review",
-        {"review": {"class_type": "HumanReviewNode", "inputs": {"reviewer": "owner"}}},
+        {
+            "review": {
+                "class_type": "HumanReviewNode",
+                "inputs": {"reviewer": "owner"},
+            },
+        },
     )
     parent = service.start_run("review")
     wait(parent)
     service.cancel_run(parent.run_id)
-    token = current_run.set({"run_id": parent.run_id, "root_run_id": parent.run_id})
+    token = current_run.set(
+        {"run_id": parent.run_id, "root_run_id": parent.run_id},
+    )
     try:
         with pytest.raises(ValueError, match="no longer accepting"):
             service.start_run("another")

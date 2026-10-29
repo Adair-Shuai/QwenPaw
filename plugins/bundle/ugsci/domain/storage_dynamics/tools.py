@@ -5,7 +5,6 @@ from __future__ import annotations
 
 import json
 import uuid
-from pathlib import Path
 from typing import Any
 
 from ..common.tool_chunk import emit_tool_chunk
@@ -40,7 +39,8 @@ async def ugsci_storage_history_import(input_path: str) -> Any:
 
     try:
         manifest = await asyncio.to_thread(
-            DatasetStore().import_path, input_path
+            DatasetStore().import_path,
+            input_path,
         )
         return emit_tool_chunk(
             {
@@ -52,7 +52,7 @@ async def ugsci_storage_history_import(input_path: str) -> Any:
                 "quality_examples": manifest["quality_examples"][:20],
                 "source_columns": manifest["sources"],
                 "reused": manifest["reused"],
-            }
+            },
         )
     except (ValueError, OSError) as exc:
         return emit_tool_chunk({"ok": False, "error": str(exc)}, error=True)
@@ -93,13 +93,15 @@ async def ugsci_storage_dynamics_analyze(
             drop_threshold_pct,
         )
         files = save_report(store, result)
-        # Keep model context bounded; complete results are persisted as artifacts.
+        # Keep model context bounded; complete results are persisted
+        # as artifacts.
         return {
             "ok": True,
             "summary": result["summary"],
             "coverage": result["coverage"],
             "cycles_recent": sorted(
-                result["cycles"], key=lambda c: (c["gas_year"], c["facility"])
+                result["cycles"],
+                key=lambda c: (c["gas_year"], c["facility"]),
             )[-20:],
             "anomalies": result["anomalies"][:20],
             "forecast_wells": [r for r in result["wells"] if r["forecast"]][
@@ -145,5 +147,5 @@ async def ugsci_storage_history_list() -> Any:
                 "invalid_identity": "无效日期或库井标识",
                 "xls_row_limit": "达到 XLS 行上限，疑似导出截断",
             },
-        }
+        },
     )

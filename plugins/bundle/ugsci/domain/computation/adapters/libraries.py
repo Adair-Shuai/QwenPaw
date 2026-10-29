@@ -20,7 +20,7 @@ from ..models import (
 )
 
 
-def _missing(provider: str, exc: ImportError) -> DomainError:
+def _missing(provider: str) -> DomainError:
     return DomainError(
         DomainErrorCode.DEPENDENCY_UNAVAILABLE,
         f"{provider} is not installed",
@@ -40,20 +40,22 @@ class SymPyAdapter:
         try:
             import sympy as sp
         except ImportError as exc:
-            raise _missing("sympy", exc) from exc
+            raise _missing("sympy") from exc
         x = sp.Symbol("x")
         polynomial = sum(
             sp.Float(value) * x ** (len(request.coefficients) - index - 1)
             for index, value in enumerate(request.coefficients)
         )
         roots = sp.nroots(polynomial)
-        return sanitize_json({
-            "degree": len(request.coefficients) - 1,
-            "roots": [
-                {"real": float(sp.re(root)), "imag": float(sp.im(root))}
-                for root in roots
-            ],
-        })
+        return sanitize_json(
+            {
+                "degree": len(request.coefficients) - 1,
+                "roots": [
+                    {"real": float(sp.re(root)), "imag": float(sp.im(root))}
+                    for root in roots
+                ],
+            },
+        )
 
 
 class PyMCAdapter:
@@ -69,10 +71,14 @@ class PyMCAdapter:
             import numpy as np
             import pymc as pm
         except ImportError as exc:
-            raise _missing("pymc", exc) from exc
+            raise _missing("pymc") from exc
         try:
             with pm.Model():
-                mean = pm.Normal("mean", mu=request.prior_mean, sigma=request.prior_std)
+                mean = pm.Normal(
+                    "mean",
+                    mu=request.prior_mean,
+                    sigma=request.prior_std,
+                )
                 pm.Normal(
                     "observed",
                     mu=mean,
@@ -89,15 +95,17 @@ class PyMCAdapter:
                     compute_convergence_checks=False,
                 )
             samples = trace.posterior["mean"].values.reshape(-1)
-            return sanitize_json({
-                "posterior_mean": float(samples.mean()),
-                "posterior_std": float(samples.std()),
-                "credible_interval_95": [
-                    float(np.quantile(samples, 0.025)),
-                    float(np.quantile(samples, 0.975)),
-                ],
-                "sample_count": int(samples.size),
-            })
+            return sanitize_json(
+                {
+                    "posterior_mean": float(samples.mean()),
+                    "posterior_std": float(samples.std()),
+                    "credible_interval_95": [
+                        float(np.quantile(samples, 0.025)),
+                        float(np.quantile(samples, 0.975)),
+                    ],
+                    "sample_count": int(samples.size),
+                },
+            )
         except DomainError:
             raise
         except Exception as exc:
@@ -115,14 +123,17 @@ class PymooAdapter:
     deterministic = False
     operation = "optimization.quadratic.pareto"
 
-    def compute(self, request: MultiObjectiveQuadraticRequest) -> dict[str, Any]:
+    def compute(
+        self,
+        request: MultiObjectiveQuadraticRequest,
+    ) -> dict[str, Any]:
         try:
             import numpy as np
             from pymoo.algorithms.moo.nsga2 import NSGA2
             from pymoo.core.problem import ElementwiseProblem
             from pymoo.optimize import minimize
         except ImportError as exc:
-            raise _missing("pymoo", exc) from exc
+            raise _missing("pymoo") from exc
 
         centers = np.asarray(request.centers, dtype=float)
         bounds = np.asarray(request.bounds, dtype=float)
@@ -136,7 +147,13 @@ class PymooAdapter:
                     xu=bounds[:, 1],
                 )
 
-            def _evaluate(self, x: Any, out: dict[str, Any], *args: Any, **kwargs: Any) -> None:
+            def _evaluate(
+                self,
+                x: Any,
+                out: dict[str, Any],
+                *args: Any,
+                **kwargs: Any,
+            ) -> None:
                 del args, kwargs
                 out["F"] = np.sum((centers - x) ** 2, axis=1)
 
@@ -151,7 +168,9 @@ class PymooAdapter:
             {"variables": x.tolist(), "objectives": f.tolist()}
             for x, f in zip(result.X, result.F)
         ]
-        return sanitize_json({"solutions": solutions, "solution_count": len(solutions)})
+        return sanitize_json(
+            {"solutions": solutions, "solution_count": len(solutions)},
+        )
 
 
 class SimPyAdapter:
@@ -166,7 +185,7 @@ class SimPyAdapter:
         try:
             import simpy
         except ImportError as exc:
-            raise _missing("simpy", exc) from exc
+            raise _missing("simpy") from exc
         env = simpy.Environment()
         resource = simpy.Resource(env, capacity=request.servers)
         waits: list[float] = []
@@ -210,7 +229,7 @@ class NetworkXAdapter:
         try:
             import networkx as nx
         except ImportError as exc:
-            raise _missing("networkx", exc) from exc
+            raise _missing("networkx") from exc
         graph = nx.DiGraph() if request.directed else nx.Graph()
         graph.add_nodes_from(request.nodes)
         graph.add_edges_from((edge[0], edge[1]) for edge in request.edges)
@@ -226,14 +245,16 @@ class NetworkXAdapter:
                 if nx.has_path(graph, request.source, request.target)
                 else None
             )
-        return sanitize_json({
-            "node_count": graph.number_of_nodes(),
-            "edge_count": graph.number_of_edges(),
-            "component_count": len(components),
-            "density": float(nx.density(graph)),
-            "degree_centrality": nx.degree_centrality(graph),
-            "shortest_path": shortest_path,
-        })
+        return sanitize_json(
+            {
+                "node_count": graph.number_of_nodes(),
+                "edge_count": graph.number_of_edges(),
+                "component_count": len(components),
+                "density": float(nx.density(graph)),
+                "degree_centrality": nx.degree_centrality(graph),
+                "shortest_path": shortest_path,
+            },
+        )
 
 
 class GeoPandasAdapter:
@@ -248,7 +269,7 @@ class GeoPandasAdapter:
         try:
             import geopandas as gpd
         except ImportError as exc:
-            raise _missing("geopandas", exc) from exc
+            raise _missing("geopandas") from exc
         frame = gpd.GeoDataFrame(
             geometry=gpd.points_from_xy(
                 [point[0] for point in request.points],
@@ -258,12 +279,14 @@ class GeoPandasAdapter:
         )
         centroid = frame.unary_union.centroid
         bounds = frame.total_bounds.tolist()
-        return sanitize_json({
-            "point_count": len(frame),
-            "crs": str(frame.crs),
-            "bounds": bounds,
-            "centroid": [float(centroid.x), float(centroid.y)],
-        })
+        return sanitize_json(
+            {
+                "point_count": len(frame),
+                "crs": str(frame.crs),
+                "bounds": bounds,
+                "centroid": [float(centroid.x), float(centroid.y)],
+            },
+        )
 
 
 class ScikitLearnAdapter:
@@ -274,22 +297,29 @@ class ScikitLearnAdapter:
     deterministic = True
     operation = "machine_learning.linear_regression"
 
-    def compute(self, request: MachineLearningRegressionRequest) -> dict[str, Any]:
+    def compute(
+        self,
+        request: MachineLearningRegressionRequest,
+    ) -> dict[str, Any]:
         try:
             from sklearn.linear_model import LinearRegression
             from sklearn.metrics import mean_squared_error, r2_score
         except ImportError as exc:
-            raise _missing("scikit-learn", exc) from exc
+            raise _missing("scikit-learn") from exc
         model = LinearRegression().fit(request.features, request.targets)
         fitted = model.predict(request.features)
         predicted = model.predict(request.predict_features)
-        return sanitize_json({
-            "coefficients": model.coef_.tolist(),
-            "intercept": float(model.intercept_),
-            "training_r_squared": float(r2_score(request.targets, fitted)),
-            "training_rmse": float(math.sqrt(mean_squared_error(request.targets, fitted))),
-            "predictions": predicted.tolist(),
-        })
+        return sanitize_json(
+            {
+                "coefficients": model.coef_.tolist(),
+                "intercept": float(model.intercept_),
+                "training_r_squared": float(r2_score(request.targets, fitted)),
+                "training_rmse": float(
+                    math.sqrt(mean_squared_error(request.targets, fitted)),
+                ),
+                "predictions": predicted.tolist(),
+            },
+        )
 
 
 class StatsmodelsAdapter:
@@ -304,15 +334,17 @@ class StatsmodelsAdapter:
         try:
             import statsmodels.api as sm
         except ImportError as exc:
-            raise _missing("statsmodels", exc) from exc
+            raise _missing("statsmodels") from exc
         design = sm.add_constant(request.features, has_constant="add")
         fit = sm.OLS(request.targets, design).fit()
         names = ["intercept", *request.feature_names]
-        return sanitize_json({
-            "coefficients": dict(zip(names, fit.params.tolist())),
-            "standard_errors": dict(zip(names, fit.bse.tolist())),
-            "p_values": dict(zip(names, fit.pvalues.tolist())),
-            "r_squared": float(fit.rsquared),
-            "adjusted_r_squared": float(fit.rsquared_adj),
-            "observation_count": int(fit.nobs),
-        })
+        return sanitize_json(
+            {
+                "coefficients": dict(zip(names, fit.params.tolist())),
+                "standard_errors": dict(zip(names, fit.bse.tolist())),
+                "p_values": dict(zip(names, fit.pvalues.tolist())),
+                "r_squared": float(fit.rsquared),
+                "adjusted_r_squared": float(fit.rsquared_adj),
+                "observation_count": int(fit.nobs),
+            },
+        )

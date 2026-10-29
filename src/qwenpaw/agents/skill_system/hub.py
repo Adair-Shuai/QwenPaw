@@ -17,7 +17,7 @@ from collections import OrderedDict
 from contextlib import asynccontextmanager, nullcontext
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, TypedDict
 from urllib.parse import quote, urljoin, urlparse, unquote
 
 import frontmatter
@@ -2770,6 +2770,23 @@ class _InstallPayload:
     installed_from: InstallOrigin
 
 
+class _InstallPayloadOptions(TypedDict, total=False):
+    access_token: str
+    provider: Any
+
+
+def _install_payload_options(
+    access_token: str,
+    provider: Any | None,
+) -> _InstallPayloadOptions:
+    options: _InstallPayloadOptions = {}
+    if access_token:
+        options["access_token"] = access_token
+    if provider is not None:
+        options["provider"] = provider
+    return options
+
+
 async def _prepare_install_payload(
     bundle_url: str,
     version: str,
@@ -2855,8 +2872,7 @@ async def install_skill_from_hub(
             bundle_url,
             version,
             target_name,
-            **({"access_token": access_token} if access_token else {}),
-            **({"provider": provider} if provider is not None else {}),
+            **_install_payload_options(access_token, provider),
         )
         _ensure_not_cancelled()
         skill_service = SkillService(workspace_dir)
@@ -2917,8 +2933,7 @@ async def import_pool_skill_from_hub(
             bundle_url,
             version,
             target_name,
-            **({"access_token": access_token} if access_token else {}),
-            **({"provider": provider} if provider is not None else {}),
+            **_install_payload_options(access_token, provider),
         )
         _ensure_not_cancelled()
         pool_service = SkillPoolService()

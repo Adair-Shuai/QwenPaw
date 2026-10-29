@@ -4,7 +4,11 @@
 
 import { getHost } from "../core/runtime";
 import { PRIMARY_BTN_STYLE, renderMarkdown } from "../core/shared";
-import type { PoolSkillSpec, WorkspaceSkillSummary, AgentSummary } from "../core/types";
+import type {
+  PoolSkillSpec,
+  WorkspaceSkillSummary,
+  AgentSummary,
+} from "../core/types";
 import { fetchPoolSkillContent } from "../core/api";
 import { deletePoolSkill, installSkillFromPool } from "../expert/expertApi";
 import { ExpertAvatar } from "../components/avatars";
@@ -70,8 +74,7 @@ export function SkillPoolTab({
   const installedForCurrentAgent = useMemo(
     () =>
       new Set(
-        workspaceSkills
-          .find((workspace) => workspace.agent_id === agentId)
+        workspaceSkills.find((workspace) => workspace.agent_id === agentId)
           ?.skill_names || [],
       ),
     [workspaceSkills, agentId],
@@ -305,29 +308,29 @@ export function SkillPoolTab({
           React.createElement(Spin, { size: "large" }),
         )
       : filteredSkills.length === 0
-        ? React.createElement(Empty, {
-            description: searchText ? "未找到匹配的技能" : "技能池为空",
-          })
-        : React.createElement(
-            React.Fragment,
-            null,
-            React.createElement(
-              Row,
-              { gutter: [12, 12] },
-              ...visibleSkills.map((skill) =>
+      ? React.createElement(Empty, {
+          description: searchText ? "未找到匹配的技能" : "技能池为空",
+        })
+      : React.createElement(
+          React.Fragment,
+          null,
+          React.createElement(
+            Row,
+            { gutter: [12, 12] },
+            ...visibleSkills.map((skill) =>
+              React.createElement(
+                Col,
+                { key: skill.name, xs: 24, sm: 12, md: 8, lg: 6 },
                 React.createElement(
-                  Col,
-                  { key: skill.name, xs: 24, sm: 12, md: 8, lg: 6 },
-                  React.createElement(
-                    Card,
-                    {
-                      hoverable: true,
-                      size: "small",
-                      style: { cursor: "pointer", height: "100%" },
-                      onClick: () => handleCardClick(skill),
-                      onMouseEnter: () => setHoveredSkill(skill.name),
-                      onMouseLeave: () => setHoveredSkill(null),
-                    },
+                  Card,
+                  {
+                    hoverable: true,
+                    size: "small",
+                    style: { cursor: "pointer", height: "100%" },
+                    onClick: () => handleCardClick(skill),
+                    onMouseEnter: () => setHoveredSkill(skill.name),
+                    onMouseLeave: () => setHoveredSkill(null),
+                  },
                   React.createElement(
                     "div",
                     {
@@ -432,7 +435,8 @@ export function SkillPoolTab({
                               ? React.createElement(PlusOutlined)
                               : undefined,
                             disabled:
-                              actionLoading || installedForCurrentAgent.has(skill.name),
+                              actionLoading ||
+                              installedForCurrentAgent.has(skill.name),
                             onClick: (e: any) => {
                               e.stopPropagation();
                               handleInstallToAgent(skill);
@@ -480,7 +484,9 @@ export function SkillPoolTab({
                   React.createElement(
                     Text,
                     { type: "secondary", style: { fontSize: 12 } },
-                    `继续下滑自动加载 · 还剩 ${filteredSkills.length - visibleSkills.length} 个`,
+                    `继续下滑自动加载 · 还剩 ${
+                      filteredSkills.length - visibleSkills.length
+                    } 个`,
                   ),
                 )
               : null,
@@ -610,7 +616,10 @@ export function SkillPoolTab({
                             gap: 6,
                           },
                         },
-                        React.createElement(ExpertAvatar, { name: agentName, size: 20 }),
+                        React.createElement(ExpertAvatar, {
+                          name: agentName,
+                          size: 20,
+                        }),
                         React.createElement(
                           Text,
                           { style: { fontSize: 13 } },
@@ -633,37 +642,37 @@ export function SkillPoolTab({
                 React.createElement(Spin, { size: "small" }),
               )
             : activeSkill.content
-              ? React.createElement(
+            ? React.createElement(
+                "div",
+                { style: { marginTop: 16 } },
+                React.createElement(
+                  Text,
+                  {
+                    strong: true,
+                    style: { display: "block", marginBottom: 8 },
+                  },
+                  "技能内容",
+                ),
+                React.createElement(
                   "div",
-                  { style: { marginTop: 16 } },
-                  React.createElement(
-                    Text,
-                    {
-                      strong: true,
-                      style: { display: "block", marginBottom: 8 },
+                  {
+                    style: {
+                      maxHeight: 300,
+                      overflow: "auto",
+                      padding: 12,
+                      background: "var(--ant-color-fill-secondary, #f5f5f5)",
+                      borderRadius: 6,
+                      fontSize: 12,
+                      whiteSpace: "pre-wrap",
                     },
-                    "技能内容",
-                  ),
-                  React.createElement(
-                    "div",
-                    {
-                      style: {
-                        maxHeight: 300,
-                        overflow: "auto",
-                        padding: 12,
-                        background: "var(--ant-color-fill-secondary, #f5f5f5)",
-                        borderRadius: 6,
-                        fontSize: 12,
-                        whiteSpace: "pre-wrap",
-                      },
-                    },
-                    activeSkill.content.slice(0, 2000) +
-                      (activeSkill.content.length > 2000
-                        ? "\n\n... (内容已截断)"
-                        : ""),
-                  ),
-                )
-              : null,
+                  },
+                  activeSkill.content.slice(0, 2000) +
+                    (activeSkill.content.length > 2000
+                      ? "\n\n... (内容已截断)"
+                      : ""),
+                ),
+              )
+            : null,
         )
       : null,
   );

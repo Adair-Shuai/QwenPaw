@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Keep MCP URL query credentials out of driver cards and API responses."""
 
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -43,4 +44,6 @@ def merge_query_credentials(url: str, values: dict[str, str]) -> str:
         for key, value in parse_qsl(parts.query, keep_blank_values=True)
         if key not in values
     ]
-    return urlunsplit(parts._replace(query=urlencode([*public, *values.items()])))
+    return urlunsplit(
+        parts._replace(query=urlencode([*public, *values.items()])),
+    )

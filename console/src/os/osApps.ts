@@ -26,7 +26,13 @@ import {
   BarChart3,
   type LucideIcon,
 } from "lucide-react";
-import type { MenuItem } from "../plugins/registry/types";
+import { isValidElement, type ReactNode } from "react";
+import type { TFunction } from "i18next";
+import {
+  resolveLocalized,
+  type Localized,
+  type MenuItem,
+} from "../plugins/registry/types";
 
 export interface OsAppDef {
   /** Must match a route id in routeRegistry (e.g. "core.skills"). */
@@ -35,6 +41,8 @@ export interface OsAppDef {
   labelKey: string;
   /** Fallback English name. */
   fallback: string;
+  /** Plugin-owned name, resolved when displayed so locale changes stay live. */
+  label?: Localized<ReactNode>;
   /** Lucide icon component. */
   Icon: LucideIcon;
   /** Accent colour (CSS value). */
@@ -53,6 +61,25 @@ export interface OsAppDef {
    * backend (DELETE /plugins/{source}) vs. the local osPluginStore.
    */
   source?: string;
+}
+
+function labelText(node: ReactNode): string {
+  if (typeof node === "string" || typeof node === "number") return String(node);
+  if (Array.isArray(node)) return node.map(labelText).join("");
+  if (isValidElement<{ children?: ReactNode }>(node)) {
+    return labelText(node.props.children);
+  }
+  return "";
+}
+
+/** One name for desktop icons, search, Dock, window chrome and sorting. */
+export function getAppLabel(
+  app: OsAppDef,
+  t: TFunction,
+  language = "en",
+): string {
+  const label = labelText(resolveLocalized(app.label, language));
+  return label.trim() ? label : t(app.labelKey, app.fallback);
 }
 
 /**
@@ -259,8 +286,8 @@ export const SETTINGS_APP: OsAppDef = {
 // bundle: it may contribute several "/apps/" routes (plus a mirror route), but
 // it surfaces as ONE app keyed by its source (plugin id). All plugin apps
 // share a unified Puzzle icon with a hash-derived accent so they read as one
-// family; the display name comes from a matching menu item's static label,
-// falling back to a title derived from the path slug, then the source id.
+// family; the display name comes from the route declaration or a matching
+// menu item (including live labels), falling back to the path slug.
 // ───────────────────────────────────────────────────────────────────────────
 
 /** Route path prefix that marks a plugin as a desktop app (PawApp). */
@@ -301,6 +328,7 @@ interface RouteLike {
   id: string;
   path: string;
   source: string;
+  label?: Localized<string>;
 }
 
 /**
@@ -313,9 +341,9 @@ export function buildPluginApps(
   routes: RouteLike[],
   menuItems: MenuItem[],
 ): OsAppDef[] {
-  const labelByRoute = new Map<string, string>();
+  const labelByRoute = new Map<string, MenuItem["label"]>();
   for (const m of menuItems) {
-    if (m.route && typeof m.label === "string") {
+    if (m.route) {
       labelByRoute.set(m.route, m.label);
     }
   }
@@ -327,11 +355,13 @@ export function buildPluginApps(
     if (!bundleRoute.has(r.source)) bundleRoute.set(r.source, r);
   }
   return [...bundleRoute.entries()].map(([source, r]) => {
-    const name = labelByRoute.get(r.id) ?? slugToTitle(r.path) ?? source;
+    const label = r.label ?? labelByRoute.get(r.id);
+    const name = typeof label === "string" ? label : slugToTitle(r.path);
     return {
       routeId: r.id,
       labelKey: name,
       fallback: name,
+      label,
       Icon: Puzzle,
       accent: hashAccent(source),
       defaultW: 960,

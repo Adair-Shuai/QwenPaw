@@ -640,7 +640,7 @@ class TestRegisterSkillProvider:
 
 
 class TestRegisterOperation:
-    """Operation descriptors extend the host Run Center."""
+    """Operation descriptors expose host extensions for Run Center."""
 
     def test_register_operation_is_visible_and_json_safe(
         self,

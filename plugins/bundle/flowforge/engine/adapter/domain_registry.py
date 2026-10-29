@@ -56,8 +56,10 @@ class DomainModelAdapter:
 
     spec: DomainModelSpec = field(default_factory=DomainModelSpec)
 
-    async def invoke(self, **kwargs: Any) -> Any:
-        raise NotImplementedError("Domain model adapters are not available in QwenPaw")
+    async def invoke(self, **_kwargs: Any) -> Any:
+        raise NotImplementedError(
+            "Domain model adapters are not available in QwenPaw",
+        )
 
 
 class DomainModelRegistry:
@@ -80,7 +82,8 @@ def get_domain_registry() -> DomainModelRegistry:
 
 def register_builtin_domain_models(registry: Any = None) -> None:
     """No-op — QwenPaw doesn't have built-in domain models yet."""
-    pass
+    # Keep the reference keyword contract until a provider exists.
+    del registry
 
 
 def load_domain_model_plugins() -> None:

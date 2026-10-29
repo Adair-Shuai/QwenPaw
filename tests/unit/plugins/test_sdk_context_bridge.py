@@ -7,6 +7,8 @@
 import json
 import socket
 import threading
+from contextlib import contextmanager
+from types import AsyncGeneratorType
 
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -15,6 +17,75 @@ import pytest
 from .test_sdk_context_services import package
 
 from .timing import WAIT_TIMEOUT
+
+
+@contextmanager
+def _describe_cleanup_failure(host, plugin_ids):
+    from qwenpaw.plugins import PluginBusyError
+
+    try:
+        yield
+    except PluginBusyError as exc:
+        exc.add_note(
+            "Cleanup owners at public reload failure:\n"
+            + _cleanup_snapshot(host, plugin_ids),
+        )
+        raise
+
+
+def _cleanup_snapshot(host, plugin_ids):
+    """Describe retained owners on failure without reading request contents."""
+    snapshots = {}
+    for plugin_id in plugin_ids:
+        instance = host._loader.lifecycle.get_instance(plugin_id)
+        if instance is None:
+            continue
+        activity = instance.activity
+        snapshots[plugin_id] = [
+            _cleanup_task_snapshot(activity, task)
+            for task in activity._pending()
+        ]
+    return json.dumps(snapshots, ensure_ascii=False, indent=2)
+
+
+def _cleanup_task_snapshot(activity, task):
+    pending = [task.get_coro()]
+    seen = set()
+    frames = []
+    while pending and len(seen) < 64:
+        current = pending.pop()
+        if current is None or id(current) in seen:
+            continue
+        seen.add(id(current))
+        frame = getattr(current, "cr_frame", None) or getattr(
+            current,
+            "ag_frame",
+            None,
+        )
+        if frame is not None:
+            frames.append(
+                f"{frame.f_code.co_filename}:{frame.f_lineno}:"
+                f"{frame.f_code.co_name}",
+            )
+            # Native async-generator send objects hide their await chain.
+            # Follow only generators in the frame, never request values.
+            pending.extend(
+                value
+                for value in frame.f_locals.values()
+                if isinstance(value, AsyncGeneratorType)
+            )
+        pending.append(
+            getattr(current, "cr_await", None)
+            or getattr(current, "ag_await", None),
+        )
+    return {
+        "task": task.get_name(),
+        "cancelling": task.cancelling(),
+        "invocations": activity.tasks.get(task, 0),
+        "terminal": task in activity.cleanup_tasks,
+        "retry": task in activity.cleanup_retries,
+        "frames": frames,
+    }
 
 
 async def configure_loopback(host, base_url):
@@ -1118,9 +1189,11 @@ async def test_open_model_stream_closes_after_profile_directory_changes(
 
 @pytest.mark.parametrize("entry", ["app", "channel"])
 @pytest.mark.usefixtures("short_interrupt_timeout")
+# pylint: disable-next=too-many-statements
 async def test_runtime_owner_retries_failed_provider_scope_via_public_reload(
     tmp_path,
     entry,
+    monkeypatch,
 ):
     import asyncio
     from qwenpaw.plugins import PluginBusyError
@@ -1128,6 +1201,20 @@ async def test_runtime_owner_retries_failed_provider_scope_via_public_reload(
     from qwenpaw.plugins.channels import ChannelMessage
     from qwenpaw.plugins.messages import ContentBlock
     from .test_sdk_context_lifecycle import until
+    from qwenpaw.app.chats.manager import ChatManager
+
+    host_finish = asyncio.Event()
+    completion_started = asyncio.Event()
+    original_finish = ChatManager.mark_chat_finished
+
+    async def finish_chat(manager, *args, **kwargs):
+        await original_finish(manager, *args, **kwargs)
+        completion_started.set()
+        await host_finish.wait()
+
+    # Host persistence may outlive all plugin callbacks. Keep it pending
+    # deterministically rather than depending on a fast CI filesystem.
+    monkeypatch.setattr(ChatManager, "mark_chat_finished", finish_chat)
 
     source = """
 from qwenpaw.plugins.apps import PawApp
@@ -1221,13 +1308,30 @@ plugin = Plugin()
                 > 0
             )
             attempts = provider.storage.read_json("attempts.json")
-            provider.storage.write_json("release.json", True)
-            assert (
-                await host.reload(
+            if entry == "app":
+                instance = host._loader.lifecycle.get_instance(
                     "runtime-cleanup-caller",
-                    interrupt_tasks=True,
                 )
-            ).ok
+                workspace = host._workspaces["bound"]
+                producers = await workspace.task_tracker.snapshot_active_tasks(
+                    owner=instance,
+                )
+                assert producers
+                assert all(
+                    task in instance.activity.protected_cleanup_tasks
+                    for task in producers.values()
+                ), "App teardown must be protected from repeated cancellation"
+            provider.storage.write_json("release.json", True)
+            with _describe_cleanup_failure(
+                host,
+                ("runtime-cleanup-caller", "runtime-cleanup-provider"),
+            ):
+                assert (
+                    await host.reload(
+                        "runtime-cleanup-caller",
+                        interrupt_tasks=True,
+                    )
+                ).ok
             assert provider.storage.read_json("closed.json") is True
             assert provider.storage.read_json("attempts.json") > attempts
             assert (
@@ -1237,7 +1341,11 @@ plugin = Plugin()
                 == 0
             )
             assert (await host.reload("runtime-cleanup-provider")).ok
+            if entry == "channel":
+                assert completion_started.is_set()
+                assert not host_finish.is_set()
         finally:
+            host_finish.set()
             host.context("runtime-cleanup-provider").storage.write_json(
                 "release.json",
                 True,

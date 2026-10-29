@@ -7,10 +7,7 @@ through an event queue that the SSE endpoint consumes.
 
 from __future__ import annotations
 
-import asyncio
-import hashlib
 import logging
-import os
 import threading
 import time
 import uuid
@@ -24,12 +21,16 @@ logger = logging.getLogger("qwenpaw").getChild("plugin.oilgas_vis.jobs")
 _ECLIPSE_GRID_EXTENSIONS = {".egrid", ".grid", ".grdecl"}
 
 # Single shared executor for all import jobs
-_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="oilgas-import")
+_executor = ThreadPoolExecutor(
+    max_workers=2,
+    thread_name_prefix="oilgas-import",
+)
 
 
 @dataclass
 class JobStage:
     """A single stage in an import job."""
+
     name: str
     started_at: float = 0.0
     finished_at: float = 0.0
@@ -39,6 +40,7 @@ class JobStage:
 @dataclass
 class ImportJob:
     """State of a single import job."""
+
     job_id: str
     name: str
     status: str = "queued"  # queued, running, completed, failed, cancelled
@@ -96,7 +98,9 @@ class ImportJob:
                     "status": s.status,
                     "started_at": s.started_at,
                     "finished_at": s.finished_at,
-                    "duration": (s.finished_at - s.started_at) if s.finished_at else 0,
+                    "duration": (s.finished_at - s.started_at)
+                    if s.finished_at
+                    else 0,
                 }
                 for s in self.stages
             ],
@@ -108,11 +112,13 @@ class ImportJob:
     def _store_payload_locked(self) -> dict[str, Any]:
         """Build the JSON-only payload written to the shared job store."""
         value = self.to_dict()
-        value.update({
-            "operation": "visualization.import",
-            "provider_id": "ugsci.visualization",
-            "job_type": "visualization_import",
-        })
+        value.update(
+            {
+                "operation": "visualization.import",
+                "provider_id": "ugsci.visualization",
+                "job_type": "visualization_import",
+            },
+        )
         if self.native_run_id:
             value["native_run_id"] = self.native_run_id
         return value
@@ -120,6 +126,7 @@ class ImportJob:
     @classmethod
     def from_dict(cls, payload: dict[str, Any]) -> "ImportJob":
         """Rehydrate an import job persisted by a previous worker process."""
+
         def _number(value: Any, default: float = 0.0) -> float:
             try:
                 return float(value)
@@ -130,12 +137,14 @@ class ImportJob:
         for raw in payload.get("stages") or []:
             if not isinstance(raw, dict):
                 continue
-            stages.append(JobStage(
-                name=str(raw.get("name") or ""),
-                started_at=_number(raw.get("started_at")),
-                finished_at=_number(raw.get("finished_at")),
-                status=str(raw.get("status") or "pending"),
-            ))
+            stages.append(
+                JobStage(
+                    name=str(raw.get("name") or ""),
+                    started_at=_number(raw.get("started_at")),
+                    finished_at=_number(raw.get("finished_at")),
+                    status=str(raw.get("status") or "pending"),
+                ),
+            )
         return cls(
             job_id=str(payload.get("job_id") or ""),
             name=str(payload.get("name") or "import"),
@@ -144,17 +153,272 @@ class ImportJob:
             current_stage=str(payload.get("current_stage") or ""),
             progress=_number(payload.get("progress")),
             error=payload.get("error"),
-            result=payload.get("result") if isinstance(payload.get("result"), dict) else None,
+            result=payload.get("result")
+            if isinstance(payload.get("result"), dict)
+            else None,
             created_at=_number(payload.get("created_at"), time.time()),
             finished_at=_number(payload.get("finished_at")),
-            native_run_id=(str(payload.get("native_run_id")) if payload.get("native_run_id") else None),
+            native_run_id=(
+                str(payload.get("native_run_id"))
+                if payload.get("native_run_id")
+                else None
+            ),
         )
+
+    def restore_events(self, records) -> None:
+        """Restore stored events without persisting them a second time."""
+        with self._lock:
+            for item in records:
+                event = item.get("data") if isinstance(item, dict) else None
+                if isinstance(event, dict):
+                    self._events.append(event)
+
+    def interrupt_after_restart(self) -> None:
+        """Finish an abandoned legacy worker while retaining native runs."""
+        with self._lock:
+            if self.status not in {"queued", "running"} or self.native_run_id:
+                return
+            self.status = "failed"
+            self.error = "Import interrupted by backend restart"
+            self.finished_at = time.time()
+            event = {
+                "type": "failed",
+                "data": {"error": self.error, "reason": "backend_restart"},
+                "ts": self.finished_at,
+            }
+            self._events.append(event)
+            _persist_import_job(
+                self.job_id,
+                self._store_payload_locked(),
+                event,
+            )
+
+    def cancel(self) -> bool:
+        """Cancel under the lock shared with manifest publication."""
+        with self._lock:
+            if self.status not in ("queued", "running"):
+                return False
+            self.status = "cancelled"
+            self.finished_at = time.time()
+            event = {
+                "type": "cancelled",
+                "data": {"job_id": self.job_id},
+                "ts": time.time(),
+            }
+            self._events.append(event)
+            snapshot = self._store_payload_locked()
+            _persist_import_job(self.job_id, snapshot, event)
+        return True
+
+    def attach_native_run(self) -> None:
+        """Bind this compatibility projection to its Run Center lifecycle."""
+        with self._lock:
+            self.native_run_id = self.job_id
+        self.add_event(
+            "submitted",
+            {"run_id": self.job_id, "operation": "visualization.import"},
+        )
+
+    def _start_import(self, name: str):
+        """Start the worker and initialize the original import stages."""
+        with self._lock:
+            if self.status == "cancelled":
+                return False
+            self.status = "running"
+        self.add_event("started", {"name": name})
+
+        stages = [
+            "validating",
+            "reading-source",
+            "normalizing-coordinates",
+            "extracting-geometry",
+            "writing-properties",
+            "writing-manifest",
+        ]
+        with self._lock:
+            if self.status == "cancelled":
+                return False
+            for stage_name in stages:
+                self.stages.append(JobStage(name=stage_name))
+            self.stages[0].status = "running"
+            self.stages[0].started_at = time.time()
+            self.current_stage = stages[0]
+            self.progress = 0.0
+        self.add_event("stage", {"stage": stages[0]})
+        return True
+
+    def _prepare_conversion(self, upload_path: Path):
+        """Validate the upload and publish the reading progress."""
+        # Stage 1: validating
+        if not upload_path.exists():
+            raise FileNotFoundError(f"Grid file not found: {upload_path}")
+        with self._lock:
+            if self.status == "cancelled":
+                return False
+            self.stages[0].finished_at = time.time()
+            self.stages[0].status = "completed"
+            self.stages[1].started_at = time.time()
+            self.current_stage = "reading-source"
+            self.progress = 0.15
+        self.add_event("stage", {"stage": "reading-source"})
+
+        # Stage 2: reading-source + conversion
+        with self._lock:
+            if self.status == "cancelled":
+                return False
+            self.progress = 0.25
+        self.add_event("stage", {"stage": "extracting-geometry"})
+        return True
+
+    def _finish_conversion(self):
+        """Close conversion stages before manifest publication."""
+        with self._lock:
+            if self.status == "cancelled":
+                self.finished_at = self.finished_at or time.time()
+                return False
+            conversion_finished_at = time.time()
+            self.stages[1].finished_at = conversion_finished_at
+            self.stages[1].status = "completed"
+            for stage in self.stages[2:5]:
+                stage.status = "completed"
+                stage.started_at = self.stages[1].started_at
+                stage.finished_at = conversion_finished_at
+            self.stages[5].started_at = time.time()
+            self.current_stage = "writing-manifest"
+            self.progress = 0.85
+        self.add_event("stage", {"stage": "writing-manifest"})
+        return True
+
+    def _commit_manifest(self, bin_dir: Path, ds_info: dict):
+        """Publish manifests and durable completion under one lock."""
+        from ..api import _update_manifest
+
+        related = list(ds_info.get("related_datasets") or [])
+        primary = {
+            key: value
+            for key, value in ds_info.items()
+            if key != "related_datasets"
+        }
+        with self._lock:
+            if self.status == "cancelled":
+                self.finished_at = self.finished_at or time.time()
+                return
+            _update_manifest(bin_dir, primary)
+            for extra in related:
+                extra.setdefault("metadata", {})["managed"] = True
+                extra.setdefault("metadata", {})[
+                    "parent_dataset"
+                ] = primary.get("id")
+                _update_manifest(bin_dir, extra)
+            self.stages[5].finished_at = time.time()
+            self.stages[5].status = "completed"
+            self.progress = 1.0
+            self.finished_at = time.time()
+            self.result = {**primary, "related_datasets": related}
+            # Publish durable completion before exposing a terminal
+            # in-memory status to cancellation and polling callers.
+            snapshot = self._store_payload_locked()
+            snapshot["status"] = "completed"
+            _persist_import_job(self.job_id, snapshot)
+            self.status = "completed"
+        self.add_event(
+            "completed",
+            {
+                "dataset_id": primary["id"],
+                "related_ids": [item.get("id") for item in related],
+            },
+        )
+
+    def execute_import(
+        self,
+        name: str,
+        upload_path: Path,
+        prop_path: Path | None,
+        bin_dir: Path,
+        companion_paths: list[Path],
+    ):
+        """Run a legacy import with cancellation and upload cleanup."""
+        try:
+            if not self._start_import(name):
+                return
+
+            if not self._prepare_conversion(upload_path):
+                return
+
+            with self._lock:
+                if self.status == "cancelled":
+                    self.finished_at = self.finished_at or time.time()
+                    return
+
+            from ..formats import convert_source
+
+            ds_info = convert_source(
+                upload_path,
+                name,
+                bin_dir,
+                companions=[
+                    candidate
+                    for candidate in [prop_path, *companion_paths]
+                    if candidate is not None
+                ],
+                options={
+                    "property_path": str(prop_path) if prop_path else None,
+                },
+            )
+
+            with self._lock:
+                if self.status == "cancelled":
+                    self.finished_at = self.finished_at or time.time()
+                    return
+
+            ds_info.setdefault("metadata", {})["managed"] = True
+
+            if not self._finish_conversion():
+                return
+
+            # Stage 6: writing-manifest
+            # Treat manifest publication and the terminal state update as
+            # one commit section.  If cancellation wins the lock first,
+            # no manifest is written.  Once publication starts, a
+            # concurrent cancel waits and then observes ``completed``
+            # instead of reporting a cancellation that did not take
+            # effect.
+            self._commit_manifest(bin_dir, ds_info)
+
+        except Exception as exc:
+            with self._lock:
+                # Preserve an explicit cancellation if the converter
+                # raises after cancel_job() has already marked the job.
+                if self.status == "cancelled":
+                    self.finished_at = self.finished_at or time.time()
+                    return
+                self.status = "failed"
+                self.error = str(exc)
+                self.finished_at = time.time()
+            self.add_event("failed", {"error": str(exc)})
+            logger.error(
+                "Import job %s failed: %s",
+                self.job_id,
+                exc,
+                exc_info=True,
+            )
+        finally:
+            for candidate in (upload_path, prop_path, *companion_paths):
+                if candidate and candidate.name.startswith(".upload_"):
+                    try:
+                        candidate.unlink(missing_ok=True)
+                    except OSError:
+                        logger.warning(
+                            "Failed to remove upload temp file %s",
+                            candidate,
+                        )
 
 
 def _job_store():
     """Load the simulation job store lazily (and tolerate standalone tests)."""
     try:
         from ....engine.tools import job_store
+
         return job_store
     except Exception:  # pragma: no cover - optional host integration
         return None
@@ -173,7 +437,11 @@ def _persist_import_job(
         if event is not None:
             store.append_job_event_if_changed(job_id, event)
     except Exception:  # pragma: no cover - persistence must not break imports
-        logger.warning("Failed to persist visualization import job %s", job_id, exc_info=True)
+        logger.warning(
+            "Failed to persist visualization import job %s",
+            job_id,
+            exc_info=True,
+        )
 
 
 class JobManager:
@@ -187,17 +455,22 @@ class JobManager:
         """Bound the in-memory job registry during long-running sessions."""
         cutoff = time.time() - 3600
         stale = [
-            job_id for job_id, job in self._jobs.items()
+            job_id
+            for job_id, job in self._jobs.items()
             if job.status in ("completed", "failed", "cancelled")
-            and job.finished_at and job.finished_at < cutoff
+            and job.finished_at
+            and job.finished_at < cutoff
         ]
         for job_id in stale:
             self._jobs.pop(job_id, None)
         if len(self._jobs) <= 1000:
             return
         finished = sorted(
-            (job for job in self._jobs.values()
-             if job.status in ("completed", "failed", "cancelled")),
+            (
+                job
+                for job in self._jobs.values()
+                if job.status in ("completed", "failed", "cancelled")
+            ),
             key=lambda item: item.finished_at or item.created_at,
         )
         for job in finished[: max(0, len(self._jobs) - 1000)]:
@@ -220,7 +493,8 @@ class JobManager:
                 return job
             # Rehydrate durable visualization imports after a process restart.
             # Keep this under the manager lock so concurrent GET/SSE requests
-            # cannot create two objects or append duplicate interruption events.
+            # cannot create two objects or append duplicate interruption
+            # events.
             store = _job_store()
             if store is None:
                 return None
@@ -235,31 +509,14 @@ class JobManager:
                 return None
             job = ImportJob.from_dict(payload)
             try:
-                for item in store.list_job_events(job_id):
-                    event = item.get("data") if isinstance(item, dict) else None
-                    if isinstance(event, dict):
-                        job._events.append(event)
+                job.restore_events(store.list_job_events(job_id))
             except Exception:
                 logger.debug(
                     "Failed to restore events for visualization import %s",
                     job_id,
                     exc_info=True,
                 )
-            if job.status in {"queued", "running"} and not job.native_run_id:
-                job.status = "failed"
-                job.error = "Import interrupted by backend restart"
-                job.finished_at = time.time()
-                event = {
-                    "type": "failed",
-                    "data": {"error": job.error, "reason": "backend_restart"},
-                    "ts": job.finished_at,
-                }
-                job._events.append(event)
-                _persist_import_job(
-                    job.job_id,
-                    job._store_payload_locked(),
-                    event,
-                )
+            job.interrupt_after_restart()
             self._jobs[job_id] = job
         return job
 
@@ -268,18 +525,7 @@ class JobManager:
             job = self._jobs.get(job_id)
         if not job:
             return False
-        with job._lock:
-            if job.status not in ("queued", "running"):
-                return False
-            job.status = "cancelled"
-            job.finished_at = time.time()
-            event = {
-                "type": "cancelled", "data": {"job_id": job_id}, "ts": time.time(),
-            }
-            job._events.append(event)
-            snapshot = job._store_payload_locked()
-            _persist_import_job(job.job_id, snapshot, event)
-        return True
+        return job.cancel()
 
     def submit_import(
         self,
@@ -302,7 +548,9 @@ class JobManager:
         # the existing visualization API and SSE endpoint.
         if not _force_legacy and _existing_job is None:
             try:
-                from ....engine.tools.run_center_bridge import create_import_run
+                from ....engine.tools.run_center_bridge import (
+                    create_import_run,
+                )
 
                 native = create_import_run(
                     run_id=job.job_id,
@@ -313,163 +561,31 @@ class JobManager:
                     companion_paths=companion_paths,
                 )
                 if native is not None:
-                    with job._lock:
-                        job.native_run_id = job.job_id
-                    job.add_event("submitted", {"run_id": job.job_id, "operation": "visualization.import"})
+                    job.attach_native_run()
                     return job
             except Exception as exc:
-                logger.warning("Falling back to legacy visualization import: %s", exc)
-
-        def _run():
-            try:
-                with job._lock:
-                    if job.status == "cancelled":
-                        return
-                    job.status = "running"
-                job.add_event("started", {"name": name})
-
-                stages = [
-                    "validating",
-                    "reading-source",
-                    "normalizing-coordinates",
-                    "extracting-geometry",
-                    "writing-properties",
-                    "writing-manifest",
-                ]
-                with job._lock:
-                    if job.status == "cancelled":
-                        return
-                    for stage_name in stages:
-                        job.stages.append(JobStage(name=stage_name))
-                    job.stages[0].status = "running"
-                    job.stages[0].started_at = time.time()
-                    job.current_stage = stages[0]
-                    job.progress = 0.0
-                job.add_event("stage", {"stage": stages[0]})
-
-                # Stage 1: validating
-                if not upload_path.exists():
-                    raise FileNotFoundError(f"Grid file not found: {upload_path}")
-                with job._lock:
-                    if job.status == "cancelled":
-                        return
-                    job.stages[0].finished_at = time.time()
-                    job.stages[0].status = "completed"
-                    job.stages[1].started_at = time.time()
-                    job.current_stage = stages[1]
-                    job.progress = 0.15
-                job.add_event("stage", {"stage": stages[1]})
-
-                # Stage 2: reading-source + conversion
-                with job._lock:
-                    if job.status == "cancelled":
-                        return
-                    job.progress = 0.25
-                job.add_event("stage", {"stage": "extracting-geometry"})
-
-                with job._lock:
-                    if job.status == "cancelled":
-                        job.finished_at = job.finished_at or time.time()
-                        return
-
-                from ..formats import convert_source
-
-                ds_info = convert_source(
-                    upload_path,
-                    name,
-                    bin_dir,
-                    companions=[
-                        candidate
-                        for candidate in [prop_path, *companion_paths]
-                        if candidate is not None
-                    ],
-                    options={
-                        "property_path": str(prop_path) if prop_path else None,
-                    },
+                logger.warning(
+                    "Falling back to legacy visualization import: %s",
+                    exc,
                 )
 
-                with job._lock:
-                    if job.status == "cancelled":
-                        job.finished_at = job.finished_at or time.time()
-                        return
-
-                ds_info.setdefault("metadata", {})["managed"] = True
-
-                with job._lock:
-                    if job.status == "cancelled":
-                        job.finished_at = job.finished_at or time.time()
-                        return
-                    conversion_finished_at = time.time()
-                    job.stages[1].finished_at = conversion_finished_at
-                    job.stages[1].status = "completed"
-                    for stage in job.stages[2:5]:
-                        stage.status = "completed"
-                        stage.started_at = job.stages[1].started_at
-                        stage.finished_at = conversion_finished_at
-                    job.stages[5].started_at = time.time()
-                    job.current_stage = "writing-manifest"
-                    job.progress = 0.85
-                job.add_event("stage", {"stage": "writing-manifest"})
-
-                # Stage 6: writing-manifest
-                # Treat manifest publication and the terminal state update as
-                # one commit section.  If cancellation wins the lock first,
-                # no manifest is written.  Once publication starts, a
-                # concurrent cancel waits and then observes ``completed``
-                # instead of reporting a cancellation that did not take
-                # effect.
-                from ..api import _update_manifest
-                related = list(ds_info.get("related_datasets") or [])
-                primary = {key: value for key, value in ds_info.items() if key != "related_datasets"}
-                with job._lock:
-                    if job.status == "cancelled":
-                        job.finished_at = job.finished_at or time.time()
-                        return
-                    _update_manifest(bin_dir, primary)
-                    for extra in related:
-                        extra.setdefault("metadata", {})["managed"] = True
-                        extra.setdefault("metadata", {})["parent_dataset"] = primary.get("id")
-                        _update_manifest(bin_dir, extra)
-                    job.stages[5].finished_at = time.time()
-                    job.stages[5].status = "completed"
-                    job.progress = 1.0
-                    job.finished_at = time.time()
-                    job.result = {**primary, "related_datasets": related}
-                    # Publish durable completion before exposing a terminal
-                    # in-memory status to cancellation and polling callers.
-                    snapshot = job._store_payload_locked()
-                    snapshot["status"] = "completed"
-                    _persist_import_job(job.job_id, snapshot)
-                    job.status = "completed"
-                job.add_event("completed", {
-                    "dataset_id": primary["id"],
-                    "related_ids": [item.get("id") for item in related],
-                })
-
-            except Exception as exc:
-                with job._lock:
-                    # Preserve an explicit cancellation if the converter
-                    # raises after cancel_job() has already marked the job.
-                    if job.status == "cancelled":
-                        job.finished_at = job.finished_at or time.time()
-                        return
-                    job.status = "failed"
-                    job.error = str(exc)
-                    job.finished_at = time.time()
-                job.add_event("failed", {"error": str(exc)})
-                logger.error("Import job %s failed: %s", job.job_id, exc, exc_info=True)
-            finally:
-                for candidate in (upload_path, prop_path, *companion_paths):
-                    if candidate and candidate.name.startswith(".upload_"):
-                        try:
-                            candidate.unlink(missing_ok=True)
-                        except OSError:
-                            logger.warning("Failed to remove upload temp file %s", candidate)
-
         if _execute_sync:
-            _run()
+            job.execute_import(
+                name,
+                upload_path,
+                prop_path,
+                bin_dir,
+                companion_paths,
+            )
         else:
-            _executor.submit(_run)
+            _executor.submit(
+                job.execute_import,
+                name,
+                upload_path,
+                prop_path,
+                bin_dir,
+                companion_paths,
+            )
         return job
 
 

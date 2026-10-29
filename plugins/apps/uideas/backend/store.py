@@ -51,9 +51,13 @@ def parse_inline_metadata(text: str) -> tuple[List[str], List[str]]:
     """Extract ``#tags`` and ``@experiment`` markers from free-form text."""
     if not text:
         return [], []
-    tags = list(dict.fromkeys(m.group(1).strip() for m in _HASHTAG_RE.finditer(text)))
+    tags = list(
+        dict.fromkeys(m.group(1).strip() for m in _HASHTAG_RE.finditer(text)),
+    )
     experiments = list(
-        dict.fromkeys(m.group(1).strip() for m in _EXPERIMENT_RE.finditer(text))
+        dict.fromkeys(
+            m.group(1).strip() for m in _EXPERIMENT_RE.finditer(text)
+        ),
     )
     return tags, experiments
 
@@ -67,6 +71,7 @@ def _new_id(prefix: str) -> str:
 
 
 # ─── 基础读写 ───────────────────────────────────────────────────────
+
 
 async def get_ideas(ctx: Any) -> List[Dict[str, Any]]:
     return await ctx.storage.get("ideas", default=[])
@@ -88,7 +93,10 @@ async def get_suggestions(ctx: Any) -> List[Dict[str, Any]]:
     return await ctx.storage.get("suggestions", default=[])
 
 
-async def save_suggestions(ctx: Any, suggestions: List[Dict[str, Any]]) -> None:
+async def save_suggestions(
+    ctx: Any,
+    suggestions: List[Dict[str, Any]],
+) -> None:
     await ctx.storage.set("suggestions", suggestions)
 
 
@@ -109,6 +117,7 @@ async def save_meta(ctx: Any, meta: Dict[str, Any]) -> None:
 
 # ─── 灵感记录操作 ───────────────────────────────────────────────────
 
+
 async def create_idea(
     ctx: Any,
     *,
@@ -118,16 +127,20 @@ async def create_idea(
     related_experiments: Optional[List[str]] = None,
     source: str = "user",
 ) -> Dict[str, Any]:
+    if not title.strip() and not content.strip():
+        raise ValueError("请填写灵感标题或内容")
     async with transaction():
         ideas = await get_ideas(ctx)
         now = now_iso()
         title = title.strip()
         content = content.strip()
         if not title:
-            first_line = content.splitlines()[0] if content.splitlines() else content
+            first_line = (
+                content.splitlines()[0] if content.splitlines() else content
+            )
             title = (first_line[:40] or "未命名灵感").strip()
         parsed_tags, parsed_experiments = parse_inline_metadata(
-            f"{title}\n{content}"
+            f"{title}\n{content}",
         )
         idea: Dict[str, Any] = {
             "id": _new_id("idea"),
@@ -135,14 +148,19 @@ async def create_idea(
             "content": content,
             "tags": list(
                 dict.fromkeys(
-                    [t.strip() for t in (tags or []) if t.strip()] + parsed_tags
-                )
+                    [t.strip() for t in (tags or []) if t.strip()]
+                    + parsed_tags,
+                ),
             ),
             "related_experiments": list(
                 dict.fromkeys(
-                    [e.strip() for e in (related_experiments or []) if e.strip()]
-                    + parsed_experiments
-                )
+                    [
+                        e.strip()
+                        for e in (related_experiments or [])
+                        if e.strip()
+                    ]
+                    + parsed_experiments,
+                ),
             ),
             "status": "raw",
             "source": source,
@@ -163,6 +181,34 @@ async def get_idea(ctx: Any, idea_id: str) -> Optional[Dict[str, Any]]:
     return None
 
 
+def _update_inline_metadata(
+    target,
+    title,
+    content,
+    tags,
+    related_experiments,
+) -> None:
+    """Apply the original validated analysis metadata in input order."""
+    if content is not None or title is not None:
+        parsed_tags, parsed_experiments = parse_inline_metadata(
+            f"{target.get('title', '')}\n{target.get('content', '')}",
+        )
+        if tags is None:
+            tags = target.get("tags") or []
+        if related_experiments is None:
+            related_experiments = target.get("related_experiments") or []
+        tags = list(dict.fromkeys(list(tags) + parsed_tags))
+        related_experiments = list(
+            dict.fromkeys(list(related_experiments) + parsed_experiments),
+        )
+    if tags is not None:
+        target["tags"] = [t.strip() for t in tags if t.strip()]
+    if related_experiments is not None:
+        target["related_experiments"] = [
+            e.strip() for e in related_experiments if e.strip()
+        ]
+
+
 async def update_idea(
     ctx: Any,
     idea_id: str,
@@ -174,32 +220,32 @@ async def update_idea(
     status: Optional[str] = None,
     cluster_id: Optional[str] = None,
 ) -> Optional[Dict[str, Any]]:
+    if status is not None and status not in IDEA_STATUSES:
+        raise ValueError(f"invalid idea status: {status}")
     async with transaction():
         ideas = await get_ideas(ctx)
         target = next((i for i in ideas if i.get("id") == idea_id), None)
         if target is None:
             return None
+        next_title = (
+            target.get("title", "") if title is None else title.strip()
+        )
+        next_content = (
+            target.get("content", "") if content is None else content.strip()
+        )
+        if not next_title and not next_content:
+            raise ValueError("请保留灵感标题或内容")
         if title is not None:
             target["title"] = title.strip()
         if content is not None:
             target["content"] = content.strip()
-            parsed_tags, parsed_experiments = parse_inline_metadata(
-                f"{target.get('title', '')}\n{target['content']}"
-            )
-            if tags is None:
-                tags = target.get("tags") or []
-            if related_experiments is None:
-                related_experiments = target.get("related_experiments") or []
-            tags = list(dict.fromkeys(list(tags) + parsed_tags))
-            related_experiments = list(
-                dict.fromkeys(list(related_experiments) + parsed_experiments)
-            )
-        if tags is not None:
-            target["tags"] = [t.strip() for t in tags if t.strip()]
-        if related_experiments is not None:
-            target["related_experiments"] = [
-                e.strip() for e in related_experiments if e.strip()
-            ]
+        _update_inline_metadata(
+            target,
+            title,
+            content,
+            tags,
+            related_experiments,
+        )
         if status is not None:
             if status not in IDEA_STATUSES:
                 raise ValueError(f"invalid idea status: {status}")
@@ -212,7 +258,7 @@ async def update_idea(
             target["cluster_id"] = cluster_id or None
         if not target.get("title"):
             first_line = (target.get("content") or "").splitlines()
-            target["title"] = (first_line[0][:40] if first_line else "未命名灵感")
+            target["title"] = first_line[0][:40] if first_line else "未命名灵感"
         target["updated_at"] = now_iso()
         await save_ideas(ctx, ideas)
         return target
@@ -265,12 +311,14 @@ async def save_expansion(
         target["tags"] = list(
             dict.fromkeys(
                 (target.get("tags") or [])
-                + [t.strip() for t in (related_tags or []) if t.strip()]
-            )
+                + [t.strip() for t in (related_tags or []) if t.strip()],
+            ),
         )
         target["status"] = "expanded"
         target["expansion"] = expansion.strip()
-        target["expansion_version"] = int(target.get("expansion_version", 0)) + 1
+        target["expansion_version"] = (
+            int(target.get("expansion_version", 0)) + 1
+        )
         target["expanded_at"] = now_iso()
         target["updated_at"] = now_iso()
         await save_ideas(ctx, ideas)
@@ -278,6 +326,7 @@ async def save_expansion(
 
 
 # ─── 建议操作 ───────────────────────────────────────────────────────
+
 
 def _suggestion_hash(title: str, body: str) -> str:
     return hashlib.sha256(f"{title}|{body}".encode("utf-8")).hexdigest()[:16]
@@ -309,7 +358,9 @@ async def create_suggestion(
 
 
 async def update_suggestion_status(
-    ctx: Any, suggestion_id: str, status: str
+    ctx: Any,
+    suggestion_id: str,
+    status: str,
 ) -> Optional[Dict[str, Any]]:
     if status not in SUGGESTION_STATUSES:
         raise ValueError(f"invalid suggestion status: {status}")
@@ -321,7 +372,10 @@ async def update_suggestion_status(
                     s["accepted_at"] = now_iso()
                     meta = await get_meta(ctx)
                     queue = list(meta.get("todo_queue") or [])
-                    if not any(item.get("suggestion_id") == suggestion_id for item in queue):
+                    if not any(
+                        item.get("suggestion_id") == suggestion_id
+                        for item in queue
+                    ):
                         queue.append(
                             {
                                 "id": _new_id("todo"),
@@ -331,7 +385,7 @@ async def update_suggestion_status(
                                 "idea_ids": s.get("source_idea_ids") or [],
                                 "status": "todo",
                                 "created_at": now_iso(),
-                            }
+                            },
                         )
                     meta["todo_queue"] = queue
                     await save_meta(ctx, meta)
@@ -343,6 +397,38 @@ async def update_suggestion_status(
 
 
 # ─── 元数据工具 ─────────────────────────────────────────────────────
+
+
+async def update_todo_status(
+    ctx: Any,
+    todo_id: str,
+    status: str,
+) -> Optional[Dict[str, Any]]:
+    """Complete/reopen one existing action without replacing the queue.
+
+    Keep the original suggestion and source IDs, and preserve concurrent
+    suggestion adoption/settings changes under the same transaction lock.
+    Repeating a completion is idempotent, including its completion time.
+    """
+    if status not in ("todo", "done"):
+        raise ValueError("行动状态必须是 todo 或 done")
+    async with transaction():
+        meta = await get_meta(ctx)
+        queue = list(meta.get("todo_queue") or [])
+        item = next((t for t in queue if t.get("id") == todo_id), None)
+        if item is None:
+            return None
+        if item.get("status") != status:
+            item["status"] = status
+            item["updated_at"] = now_iso()
+            if status == "done":
+                item["completed_at"] = item["updated_at"]
+            else:
+                item.pop("completed_at", None)
+            meta["todo_queue"] = queue
+            await save_meta(ctx, meta)
+        return item
+
 
 async def record_think(
     ctx: Any,
@@ -360,13 +446,14 @@ async def record_think(
 
 
 async def is_thinking_available(ctx: Any, *, manual: bool = False) -> bool:
-    """Check whether thinking can run; manual actions bypass switch/cooldown."""
+    """Check whether thinking can run; manual actions bypass \
+switch/cooldown."""
     meta = await get_meta(ctx)
     if not manual and not meta.get("proactive_enabled", True):
         return False
     ideas = await get_ideas(ctx)
     if sum(1 for idea in ideas if idea.get("status") != "archived") < int(
-        meta.get("min_ideas", 3)
+        meta.get("min_ideas", 3),
     ):
         return False
     cooldown = None if manual else meta.get("cooldown_until")

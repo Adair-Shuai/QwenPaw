@@ -23,11 +23,17 @@ def _records(path: Path) -> Iterable[bytes]:
     offset = 0
     while offset + 8 <= len(data):
         size = struct.unpack(">i", data[offset : offset + 4])[0]
-        if size < 0 or size > 64 * 1024 * 1024 or offset + size + 8 > len(data):
+        if (
+            size < 0
+            or size > 64 * 1024 * 1024
+            or offset + size + 8 > len(data)
+        ):
             raise ValueError(f"invalid fortio record at offset {offset}")
         end = offset + 4 + size
         if data[end : end + 4] != data[offset : offset + 4]:
-            raise ValueError(f"fortio record marker mismatch at offset {offset}")
+            raise ValueError(
+                f"fortio record marker mismatch at offset {offset}",
+            )
         yield data[offset + 4 : end]
         offset = end + 4
     if offset != len(data):
@@ -54,7 +60,9 @@ def _header(payload: bytes) -> tuple[str, str, int, bytes] | None:
     keyword = payload[:8].decode("ascii", "ignore").strip().upper()
     count = struct.unpack(">i", payload[8:12])[0]
     kind = payload[12:16].decode("ascii", "ignore").strip().upper()
-    if not keyword or any(ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_ :+-" for ch in keyword):
+    if not keyword or any(
+        ch not in "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_ :+-" for ch in keyword
+    ):
         return None
     if _element_width(kind) is None:
         return None
@@ -117,7 +125,12 @@ def _series_name(keyword: str, wgname: str, number: int | None) -> str:
     return keyword
 
 
-def _fallback_read(spec: Path, unsmry: Path, variables=None, wells=None) -> SimSummary:
+def _fallback_read(
+    spec: Path,
+    unsmry: Path,
+    variables=None,
+    wells=None,
+) -> SimSummary:
     summary = SimSummary()
     keywords: list[str] = []
     wgnames: list[str] = []
@@ -165,7 +178,11 @@ def _fallback_read(spec: Path, unsmry: Path, variables=None, wells=None) -> SimS
         None,
     )
     year_index = next(
-        (index for index, keyword in enumerate(keywords) if keyword == "YEARS"),
+        (
+            index
+            for index, keyword in enumerate(keywords)
+            if keyword == "YEARS"
+        ),
         None,
     )
     if time_index is not None:
@@ -211,24 +228,36 @@ def _fallback_read(spec: Path, unsmry: Path, variables=None, wells=None) -> SimS
             summary.vectors[name] = points
         if idx < len(units):
             summary.metadata.setdefault("units", {})[name] = units[idx]
-    summary.metadata.update({"format": "Eclipse SMSPEC/UNSMRY", "parser": "builtin"})
+    summary.metadata.update(
+        {"format": "Eclipse SMSPEC/UNSMRY", "parser": "builtin"},
+    )
     return summary
 
 
-def read_binary_summary(working_dir: str | Path, case_stem: str = "", variables=None, wells=None) -> SimSummary:
+def read_binary_summary(
+    working_dir: str | Path,
+    case_stem: str = "",
+    variables=None,
+    wells=None,
+) -> SimSummary:
     directory = Path(working_dir)
-    stem = case_stem or (next(iter(directory.glob("*.SMSPEC")), Path("case.SMSPEC")).stem)
+    stem = case_stem or (
+        next(iter(directory.glob("*.SMSPEC")), Path("case.SMSPEC")).stem
+    )
     spec = directory / f"{stem}.SMSPEC"
     unsmry = directory / f"{stem}.UNSMRY"
     if not spec.exists() or not unsmry.exists():
         return SimSummary()
     try:
         from resdata.summary import Summary  # type: ignore
+
         loaded = Summary(str(directory / stem), lazy_load=False)
         result = SimSummary()
         dates = list(getattr(loaded, "dates", []) or [])
         days = list(getattr(loaded, "days", []) or [])
-        result.dates = [d.isoformat() if isinstance(d, datetime) else str(d) for d in dates]
+        result.dates = [
+            d.isoformat() if isinstance(d, datetime) else str(d) for d in dates
+        ]
         wanted = {v.upper() for v in variables or ()}
         wanted_wells = {w.upper() for w in wells or ()}
         key_source = getattr(loaded, "keys", [])
@@ -238,21 +267,39 @@ def read_binary_summary(working_dir: str | Path, case_stem: str = "", variables=
             base = name.split(":", 1)[0]
             if wanted and name not in wanted and base not in wanted:
                 continue
-            if ":" in name and wanted_wells and name.split(":", 1)[1] not in wanted_wells:
+            if (
+                ":" in name
+                and wanted_wells
+                and name.split(":", 1)[1] not in wanted_wells
+            ):
                 continue
             reader = getattr(loaded, "numpy_vector", None)
-            vals = [float(v) for v in (reader(name) if callable(reader) else loaded.get_values(name))]
-            points = [(float(days[i]) if i < len(days) else float(i + 1), v)
-                      for i, v in enumerate(vals) if math.isfinite(v)]
+            vals = [
+                float(v)
+                for v in (
+                    reader(name)
+                    if callable(reader)
+                    else loaded.get_values(name)
+                )
+            ]
+            points = [
+                (float(days[i]) if i < len(days) else float(i + 1), v)
+                for i, v in enumerate(vals)
+                if math.isfinite(v)
+            ]
             if ":" in name:
                 result.well_vectors[name] = points
             else:
                 result.vectors[name] = points
             try:
-                result.metadata.setdefault("units", {})[name] = str(loaded.unit(name))
+                result.metadata.setdefault("units", {})[name] = str(
+                    loaded.unit(name),
+                )
             except Exception:
                 pass
-        result.metadata.update({"format": "Eclipse SMSPEC/UNSMRY", "parser": "resdata"})
+        result.metadata.update(
+            {"format": "Eclipse SMSPEC/UNSMRY", "parser": "resdata"},
+        )
         return result
     except Exception:
         try:

@@ -6,7 +6,12 @@
 
 import { getHost, apiUrl, apiFetch, hostFetch } from "../core/runtime";
 import { PRIMARY_BTN_STYLE } from "../core/shared";
-import { connectionVariables, normalizeMcpTransport, type CatalogInputHint } from "./mcpConnection";
+import {
+  connectionVariables,
+  normalizeMcpTransport,
+  type CatalogInputHint,
+} from "./mcpConnection";
+import { createMarketManifestCache } from "./marketCache";
 export { resolveMcpConnection } from "./mcpConnection";
 
 export interface MCPTemplate {
@@ -31,9 +36,9 @@ export interface MCPTemplate {
   limitations?: string[];
   source?: string;
   authType?: string;
+  setupUrl?: string;
   availability?: string;
 }
-
 
 // ─── MCP Env Hints ──────────────────────────────────────────────────────────
 // Provides helpful labels and links for well-known env keys so users know
@@ -95,7 +100,10 @@ export function mcpTemplateNeedsConfig(template: MCPTemplate): boolean {
   const entries = Object.entries(template.env);
   if (entries.length === 0) return false;
   // Prompt for declared inputs and unresolved placeholders; preserve fixed values.
-  return entries.some(([, v]) => typeof v === "string" && (v.startsWith("your-") || v.includes("${")));
+  return entries.some(
+    ([, v]) =>
+      typeof v === "string" && (v.startsWith("your-") || v.includes("${")),
+  );
 }
 
 // ─── Marketplace Page ────────────────────────────────────────────────────────
@@ -146,7 +154,8 @@ export const UGSCI_GITHUB_SOURCES_KEY = "ugsci.market.githubSources";
 export const DEFAULT_GITHUB_SOURCE_URL =
   "https://github.com/anthropics/skills/tree/main/skills";
 // UGSci official OSS base URL — serves skills, mcp, and agents manifests
-export const UGSCI_OSS_BASE = "https://ugsci-awesome-tools.oss-cn-beijing.aliyuncs.com";
+export const UGSCI_OSS_BASE =
+  "https://ugsci-awesome-tools.oss-cn-beijing.aliyuncs.com";
 
 // Default OSS source – Alibaba Cloud OSS bucket (skills path)
 export const DEFAULT_OSS_SOURCE_URL = `${UGSCI_OSS_BASE}/skills`;
@@ -162,17 +171,36 @@ export function ossProxyUrl(ossPath: string): string {
 }
 
 /** Fetch one OSS resource through QwenPaw's auth-aware proxy transport. */
-export function fetchOssResponse(ossPath: string, refresh = false): Promise<Response> {
+export function fetchOssResponse(
+  ossPath: string,
+  refresh = false,
+): Promise<Response> {
   const cleanPath = ossPath.replace(/^\/+/, "");
-  return hostFetch(`/plugins/oss-proxy?path=${encodeURIComponent(cleanPath)}${refresh ? "&refresh=true" : ""}`, { cache: "no-store" });
+  return hostFetch(
+    `/plugins/oss-proxy?path=${encodeURIComponent(cleanPath)}${
+      refresh ? "&refresh=true" : ""
+    }`,
+    { cache: refresh ? "no-store" : "no-cache" },
+  );
 }
+
+const officialManifestCache = createMarketManifestCache(fetchOssResponse);
+
+/** Notify mounted markets when a stale catalog finishes refreshing. */
+export const subscribeOssManifestUpdates = officialManifestCache.subscribe;
 
 /**
  * Fetch JSON from the official OSS bucket through QwenPaw's backend proxy.
  * Skills, MCP, and Expert templates all use this CORS-safe data path.
  */
-export async function fetchOssJson(ossPath: string, refresh = false): Promise<any> {
+export async function fetchOssJson(
+  ossPath: string,
+  refresh = false,
+): Promise<any> {
   const cleanPath = ossPath.replace(/^\/+/, "");
+  if (/^(skills|mcp|agents)\/manifest\.json$/.test(cleanPath)) {
+    return officialManifestCache.get(cleanPath, refresh);
+  }
   const resp = await fetchOssResponse(cleanPath, refresh);
   if (!resp.ok) {
     throw new Error(`OSS fetch failed (${resp.status}): ${cleanPath}`);
@@ -197,7 +225,16 @@ export interface OssMcpServer {
   description: string;
   tags: string[];
   transport: string;
-  config?: { command?: string; args?: string[]; url?: string; headers?: Record<string, string>; env?: Record<string, string>; cwd?: string; type?: string; transport?: string };
+  config?: {
+    command?: string;
+    args?: string[];
+    url?: string;
+    headers?: Record<string, string>;
+    env?: Record<string, string>;
+    cwd?: string;
+    type?: string;
+    transport?: string;
+  };
   input_hints?: Record<string, CatalogInputHint>;
   requirements?: string[];
   limitations?: string[];
@@ -246,7 +283,10 @@ export function _tagGroupLabel(key: string): string {
 export function ossMcpToTemplate(server: OssMcpServer): MCPTemplate {
   const envObj: Record<string, string> = {};
   const config = server.config || {};
-  for (const envKey of new Set([...(server.env || []), ...connectionVariables(config)])) {
+  for (const envKey of new Set([
+    ...(server.env || []),
+    ...connectionVariables(config),
+  ])) {
     envObj[envKey] = `your-${envKey.toLowerCase().replace(/_/g, "-")}`;
   }
   for (const [key, value] of Object.entries(config.env || {})) {
@@ -258,33 +298,46 @@ export function ossMcpToTemplate(server: OssMcpServer): MCPTemplate {
   if (iconLower.includes("folder")) emoji = "📁";
   else if (iconLower.includes("git")) emoji = "🌿";
   else if (iconLower.includes("github")) emoji = "🐙";
-  else if (iconLower.includes("database") || iconLower.includes("postgres") || iconLower.includes("sqlite")) emoji = "🗄️";
-  else if (iconLower.includes("search") || iconLower.includes("brave")) emoji = "🔍";
-  else if (iconLower.includes("browser") || iconLower.includes("puppeteer")) emoji = "🎭";
-  else if (iconLower.includes("memory") || iconLower.includes("brain")) emoji = "🧠";
-  else if (iconLower.includes("file") || iconLower.includes("fetch")) emoji = "🌐";
+  else if (
+    iconLower.includes("database") ||
+    iconLower.includes("postgres") ||
+    iconLower.includes("sqlite")
+  )
+    emoji = "🗄️";
+  else if (iconLower.includes("search") || iconLower.includes("brave"))
+    emoji = "🔍";
+  else if (iconLower.includes("browser") || iconLower.includes("puppeteer"))
+    emoji = "🎭";
+  else if (iconLower.includes("memory") || iconLower.includes("brain"))
+    emoji = "🧠";
+  else if (iconLower.includes("file") || iconLower.includes("fetch"))
+    emoji = "🌐";
   else if (iconLower.includes("slack")) emoji = "💬";
   else if (iconLower.includes("google")) emoji = "📁";
   else if (iconLower.includes("notion")) emoji = "📝";
   else if (iconLower.includes("jupyter")) emoji = "📊";
-  else if (iconLower.includes("science") || iconLower.includes("flask")) emoji = "🔬";
-  else if (iconLower.includes("book") || iconLower.includes("arxiv")) emoji = "📚";
+  else if (iconLower.includes("science") || iconLower.includes("flask"))
+    emoji = "🔬";
+  else if (iconLower.includes("book") || iconLower.includes("arxiv"))
+    emoji = "📚";
   else if (iconLower.includes("patent")) emoji = "📜";
   return {
     id: server.id,
     name: server.name,
     emoji,
-    iconUrl: server.icon_url
-      ? ossProxyUrl(server.icon_url)
-      : undefined,
+    iconUrl: server.icon_url ? ossProxyUrl(server.icon_url) : undefined,
     category: server.category ? _tagGroupLabel(server.category) : "",
     description: server.description,
-    transport: normalizeMcpTransport(server.transport || config.transport || config.type, !!config.url),
+    transport: normalizeMcpTransport(
+      server.transport || config.transport || config.type,
+      !!config.url,
+    ),
     url: config.url,
     headers: config.headers,
     cwd: config.cwd,
     source: server.source,
     authType: server.auth?.type,
+    setupUrl: server.auth?.setup_url,
     availability: server.availability,
     requirements: server.requirements,
     limitations: server.limitations,
@@ -315,19 +368,21 @@ export function loadGenericSources(
     if (!raw) return [];
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    return parsed.filter(
-      (s: any) =>
-        s &&
-        typeof s.id === "string" &&
-        typeof s.label === "string" &&
-        typeof s.url === "string",
-    ).map((s: any) => ({
-      id: s.id,
-      label: s.label,
-      url: s.url,
-      enabled: s.enabled !== false,
-      type,
-    }));
+    return parsed
+      .filter(
+        (s: any) =>
+          s &&
+          typeof s.id === "string" &&
+          typeof s.label === "string" &&
+          typeof s.url === "string",
+      )
+      .map((s: any) => ({
+        id: s.id,
+        label: s.label,
+        url: s.url,
+        enabled: s.enabled !== false,
+        type,
+      }));
   } catch {
     return [];
   }
@@ -358,9 +413,7 @@ export function saveExpertSources(sources: GenericSource[]): void {
   saveGenericSources(UGSCI_EXPERT_SOURCES_KEY, sources);
 }
 
-export function _parseGitHubSkillSourceUrl(
-  raw: string,
-): {
+export function _parseGitHubSkillSourceUrl(raw: string): {
   owner: string;
   repo: string;
   ref: string;
@@ -419,9 +472,7 @@ export function _githubSourceId(
   return `${platform}:${owner}/${repo}:${skillsPath || "/"}`;
 }
 
-export function _parseOSSSkillSourceUrl(
-  raw: string,
-): {
+export function _parseOSSSkillSourceUrl(raw: string): {
   endpoint: string;
   prefix: string;
   label: string;
@@ -436,7 +487,9 @@ export function _parseOSSSkillSourceUrl(
     if (!ossMatch) return null;
     const bucket = ossMatch[1];
     const endpoint = `${url.protocol}//${host}`;
-    const path = decodeURIComponent(url.pathname).replace(/^\/+/, "").replace(/\/+$/, "");
+    const path = decodeURIComponent(url.pathname)
+      .replace(/^\/+/, "")
+      .replace(/\/+$/, "");
     if (!path) return null;
     return {
       endpoint,
@@ -483,25 +536,24 @@ export function loadGithubSources(): GitHubSkillSource[] {
     }
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
-    const migrated = parsed.filter(
-      (s: any) =>
-        s &&
-        typeof s.id === "string" &&
-        (typeof s.owner === "string" || s.platform === "oss") &&
-        !(s.platform === "oss" && s.url === DEFAULT_OSS_SOURCE_URL),
-    ).map((s: any) => ({
-      ...s,
-      platform: s.platform || "github",
-      owner: s.owner || "",
-      repo: s.repo || "",
-      ref: s.ref || "",
-      skillsPath: s.skillsPath || "",
-    }));
+    const migrated = parsed
+      .filter(
+        (s: any) =>
+          s &&
+          typeof s.id === "string" &&
+          (typeof s.owner === "string" || s.platform === "oss") &&
+          !(s.platform === "oss" && s.url === DEFAULT_OSS_SOURCE_URL),
+      )
+      .map((s: any) => ({
+        ...s,
+        platform: s.platform || "github",
+        owner: s.owner || "",
+        repo: s.repo || "",
+        ref: s.ref || "",
+        skillsPath: s.skillsPath || "",
+      }));
     if (migrated.length !== parsed.length) {
-      localStorage.setItem(
-        UGSCI_GITHUB_SOURCES_KEY,
-        JSON.stringify(migrated),
-      );
+      localStorage.setItem(UGSCI_GITHUB_SOURCES_KEY, JSON.stringify(migrated));
     }
     return migrated;
   } catch {
@@ -511,10 +563,7 @@ export function loadGithubSources(): GitHubSkillSource[] {
 
 export function saveGithubSources(sources: GitHubSkillSource[]): void {
   try {
-    localStorage.setItem(
-      UGSCI_GITHUB_SOURCES_KEY,
-      JSON.stringify(sources),
-    );
+    localStorage.setItem(UGSCI_GITHUB_SOURCES_KEY, JSON.stringify(sources));
   } catch {
     /* ignore */
   }
@@ -569,12 +618,14 @@ export async function fetchGitHubSourceSkills(
 
   // 1. List directory contents via API
   const listUrl = isGitee
-    ? `https://gitee.com/api/v5/repos/${source.owner}/${source.repo}/contents/${encodedPath}?ref=${encodeURIComponent(source.ref)}`
-    : `https://api.github.com/repos/${source.owner}/${source.repo}/contents/${encodedPath}?ref=${encodeURIComponent(source.ref)}`;
+    ? `https://gitee.com/api/v5/repos/${source.owner}/${
+        source.repo
+      }/contents/${encodedPath}?ref=${encodeURIComponent(source.ref)}`
+    : `https://api.github.com/repos/${source.owner}/${
+        source.repo
+      }/contents/${encodedPath}?ref=${encodeURIComponent(source.ref)}`;
   const reqHeaders: Record<string, string> = {
-    Accept: isGitee
-      ? "application/json"
-      : "application/vnd.github+json",
+    Accept: isGitee ? "application/json" : "application/vnd.github+json",
   };
   if (isGitee && source.accessToken) {
     reqHeaders["Authorization"] = `token ${source.accessToken}`;
@@ -584,15 +635,15 @@ export async function fetchGitHubSourceSkills(
   });
   if (!listResp.ok) {
     throw new Error(
-      `${isGitee ? "Gitee" : "GitHub"} API ${listResp.status}: ${source.label} (${source.skillsPath || "/"})`,
+      `${isGitee ? "Gitee" : "GitHub"} API ${listResp.status}: ${
+        source.label
+      } (${source.skillsPath || "/"})`,
     );
   }
   const items = (await listResp.json()) as any[];
   if (!Array.isArray(items)) return [];
   // Filter directories (skill folders)
-  const dirs = items.filter(
-    (item) => item.type === "dir" && item.name,
-  );
+  const dirs = items.filter((item) => item.type === "dir" && item.name);
 
   // 2. Fetch SKILL.md for each dir in parallel (raw URLs, CORS-safe)
   const skills = await Promise.all(
@@ -651,13 +702,9 @@ export async function fetchOSSSourceSkills(
   const encodedPrefix = prefix.split("/").map(encodeURIComponent).join("/");
 
   // Fetch manifest.json — the authoritative source for skill metadata + tags
-  const manifestResp = await fetchOssResponse(
-    `${encodedPrefix}/manifest.json`,
-  );
+  const manifestResp = await fetchOssResponse(`${encodedPrefix}/manifest.json`);
   if (!manifestResp.ok) {
-    throw new Error(
-      `无法获取技能列表: manifest.json (${manifestResp.status})`,
-    );
+    throw new Error(`无法获取技能列表: manifest.json (${manifestResp.status})`);
   }
   const manifest = await manifestResp.json();
 
@@ -666,7 +713,11 @@ export async function fetchOSSSourceSkills(
   // we fall back to extracting unique tag values from individual skills.
   const manifestCategories: DynamicCategory[] = [];
   const tagGroups: Record<string, string[]> = {};
-  if (manifest && manifest.tag_groups && typeof manifest.tag_groups === "object") {
+  if (
+    manifest &&
+    manifest.tag_groups &&
+    typeof manifest.tag_groups === "object"
+  ) {
     for (const [groupKey, tags] of Object.entries(manifest.tag_groups)) {
       if (Array.isArray(tags)) {
         tagGroups[groupKey] = tags as string[];
@@ -681,47 +732,47 @@ export async function fetchOSSSourceSkills(
 
   const skills: GitHubSkill[] = [];
 
-/** Recursively process manifest items, flattening collections. */
-function processItems(items: any[], parentCollection?: string) {
-for (const item of items) {
-if (item.type === "collection" && Array.isArray(item.children)) {
-// Recurse into collection children, passing the collection name
-processItems(item.children, item.name);
-continue;
-}
-// Individual skill
-const skillPath: string = item.path || item.name || "";
-if (!skillPath) continue;
-const encodedPath = skillPath
-.split("/")
-.map(encodeURIComponent)
-.join("/");
-const skillUrl = `${endpoint}/${encodedPrefix}/${encodedPath}`;
-// Try to extract version from metadata string like 'version: "1.2.0"'
-let version: string | null = null;
-if (item.metadata) {
-const vm = item.metadata.match(/version:\s*"?([\d.]+)"?/);
-if (vm) version = vm[1];
-}
-// Build sourcePath: "UGSci/<collection>" or just "UGSci" for top-level
-const sourcePath = parentCollection
-? `${source.label}/${parentCollection}`
-: source.label;
-skills.push({
-sourceId: source.id,
-sourceLabel: source.label,
-sourcePath,
-name: item.name || skillPath.split("/").pop() || skillPath,
-description: item.description || "",
-source_url: skillUrl,
-html_url: skillUrl,
-version,
-author: null,
-tag: item.tag || undefined,
-isOfficial: true,
-});
-}
-}
+  /** Recursively process manifest items, flattening collections. */
+  function processItems(items: any[], parentCollection?: string) {
+    for (const item of items) {
+      if (item.type === "collection" && Array.isArray(item.children)) {
+        // Recurse into collection children, passing the collection name
+        processItems(item.children, item.name);
+        continue;
+      }
+      // Individual skill
+      const skillPath: string = item.path || item.name || "";
+      if (!skillPath) continue;
+      const encodedPath = skillPath
+        .split("/")
+        .map(encodeURIComponent)
+        .join("/");
+      const skillUrl = `${endpoint}/${encodedPrefix}/${encodedPath}`;
+      // Try to extract version from metadata string like 'version: "1.2.0"'
+      let version: string | null = null;
+      if (item.metadata) {
+        const vm = item.metadata.match(/version:\s*"?([\d.]+)"?/);
+        if (vm) version = vm[1];
+      }
+      // Build sourcePath: "UGSci/<collection>" or just "UGSci" for top-level
+      const sourcePath = parentCollection
+        ? `${source.label}/${parentCollection}`
+        : source.label;
+      skills.push({
+        sourceId: source.id,
+        sourceLabel: source.label,
+        sourcePath,
+        name: item.name || skillPath.split("/").pop() || skillPath,
+        description: item.description || "",
+        source_url: skillUrl,
+        html_url: skillUrl,
+        version,
+        author: null,
+        tag: item.tag || undefined,
+        isOfficial: true,
+      });
+    }
+  }
 
   if (Array.isArray(manifest)) {
     // Legacy: manifest is a plain array of strings or objects
@@ -781,7 +832,11 @@ export async function fetchOSSMcpManifest(refresh = false): Promise<{
       name: s.name || s.id,
       description: s.description || "",
       tags: serverTags,
-      transport: s.transport || s.config?.transport || s.config?.type || (s.config?.url ? "streamable_http" : "stdio"),
+      transport:
+        s.transport ||
+        s.config?.transport ||
+        s.config?.type ||
+        (s.config?.url ? "streamable_http" : "stdio"),
       input_hints: s.input_hints,
       requirements: s.requirements,
       limitations: s.limitations,
@@ -803,11 +858,11 @@ export async function fetchOSSMcpManifest(refresh = false): Promise<{
  * Fetch the official skill registry independently of browser source settings.
  * This mirrors the permanent official-source behavior of MCP and Experts.
  */
-export async function fetchOSSSkillsManifest(): Promise<{
+export async function fetchOSSSkillsManifest(refresh = false): Promise<{
   skills: GitHubSkill[];
   categories: DynamicCategory[];
 }> {
-  const manifest = await fetchOssJson("skills/manifest.json");
+  const manifest = await fetchOssJson("skills/manifest.json", refresh);
   const skills: GitHubSkill[] = [];
   const tags = new Set<string>();
 
@@ -840,9 +895,7 @@ export async function fetchOSSSkillsManifest(): Promise<{
       skills.push({
         sourceId: "oss:ugsci-official",
         sourceLabel: "UGSci",
-        sourcePath: parentCollection
-          ? `UGSci/${parentCollection}`
-          : "UGSci",
+        sourcePath: parentCollection ? `UGSci/${parentCollection}` : "UGSci",
         name: item.name || skillPath.split("/").pop() || skillPath,
         description: item.description || "",
         source_url: skillUrl,
@@ -879,11 +932,11 @@ export async function fetchOSSSkillsManifest(): Promise<{
 }
 
 /** Fetch agents from the UGSci official OSS manifest. */
-export async function fetchOSSAgentsManifest(): Promise<{
+export async function fetchOSSAgentsManifest(refresh = false): Promise<{
   agents: OssAgent[];
   categories: DynamicCategory[];
 }> {
-  const manifest = await fetchOssJson("agents/manifest.json");
+  const manifest = await fetchOssJson("agents/manifest.json", refresh);
 
   // Extract dynamic categories from tag_groups
   const categories: DynamicCategory[] = [];
@@ -929,7 +982,9 @@ export async function fetchOSSAgentsManifest(): Promise<{
 }
 
 /** Extract dynamic skill categories from loaded OSS skills. */
-export function _extractSkillCategories(skills: GitHubSkill[]): DynamicCategory[] {
+export function _extractSkillCategories(
+  skills: GitHubSkill[],
+): DynamicCategory[] {
   const tagSet = new Set<string>();
   for (const s of skills) {
     if (s.tag) tagSet.add(s.tag);
@@ -939,17 +994,31 @@ export function _extractSkillCategories(skills: GitHubSkill[]): DynamicCategory[
 
 export async function fetchAllGitHubSkills(
   sources: GitHubSkillSource[],
-): Promise<{ skills: GitHubSkill[]; errors: { label: string; message: string }[]; categories: DynamicCategory[] }> {
+): Promise<{
+  skills: GitHubSkill[];
+  errors: { label: string; message: string }[];
+  categories: DynamicCategory[];
+}> {
   const enabled = sources.filter((s) => s.enabled);
   const results = await Promise.all(
     enabled.map(async (s) => {
       try {
         if (s.platform === "oss") {
           const { skills, categories } = await fetchOSSSourceSkills(s);
-          return { skills, categories, error: null as string | null, label: s.label };
+          return {
+            skills,
+            categories,
+            error: null as string | null,
+            label: s.label,
+          };
         } else {
           const skills = await fetchGitHubSourceSkills(s);
-          return { skills, categories: [] as DynamicCategory[], error: null as string | null, label: s.label };
+          return {
+            skills,
+            categories: [] as DynamicCategory[],
+            error: null as string | null,
+            label: s.label,
+          };
         }
       } catch (e: any) {
         return {
@@ -971,7 +1040,6 @@ export async function fetchAllGitHubSkills(
   }
   return { skills: allSkills, errors, categories: allCategories };
 }
-
 
 // ─── Source Config Modal: manage GitHub skill sources ─────────────────────────
 
@@ -999,12 +1067,8 @@ export function SourceConfigModal({
     Tooltip,
     message: antdMsg,
   } = getHost().antd;
-  const {
-    PlusOutlined,
-    DeleteOutlined,
-    LinkOutlined,
-    GithubOutlined,
-  } = getHost().antdIcons || {};
+  const { PlusOutlined, DeleteOutlined, LinkOutlined, GithubOutlined } =
+    getHost().antdIcons || {};
   const { Text } = Typography;
 
   const [newUrl, setNewUrl] = useState("");
@@ -1015,10 +1079,17 @@ export function SourceConfigModal({
     if (!trimmed) return;
     const parsed = _parseGitHubSkillSourceUrl(trimmed);
     if (!parsed) {
-      antdMsg.error("无效的仓库 URL，请输入类似 https://github.com/owner/repo/tree/main/skills 或 https://gitee.com/owner/repo/tree/master/skills 的链接");
+      antdMsg.error(
+        "无效的仓库 URL，请输入类似 https://github.com/owner/repo/tree/main/skills 或 https://gitee.com/owner/repo/tree/master/skills 的链接",
+      );
       return;
     }
-    const id = _githubSourceId(parsed.owner, parsed.repo, parsed.skillsPath, parsed.platform);
+    const id = _githubSourceId(
+      parsed.owner,
+      parsed.repo,
+      parsed.skillsPath,
+      parsed.platform,
+    );
     if (sources.some((s) => s.id === id)) {
       antdMsg.warning("该源已存在");
       return;
@@ -1044,9 +1115,7 @@ export function SourceConfigModal({
   };
 
   const handleToggle = (id: string, enabled: boolean) => {
-    const next = sources.map((s) =>
-      s.id === id ? { ...s, enabled } : s,
-    );
+    const next = sources.map((s) => (s.id === id ? { ...s, enabled } : s));
     saveGithubSources(next);
     onChange(next);
   };
@@ -1079,11 +1148,7 @@ export function SourceConfigModal({
           : null,
         React.createElement("span", null, "配置技能源"),
       ),
-      footer: React.createElement(
-        Button,
-        { onClick: onClose },
-        "关闭",
-      ),
+      footer: React.createElement(Button, { onClick: onClose }, "关闭"),
       width: 640,
     },
     React.createElement(
@@ -1091,14 +1156,18 @@ export function SourceConfigModal({
       { style: { marginBottom: 16 } },
       React.createElement(
         Text,
-        { type: "secondary", style: { fontSize: 12, display: "block", marginBottom: 8 } },
+        {
+          type: "secondary",
+          style: { fontSize: 12, display: "block", marginBottom: 8 },
+        },
         "添加 GitHub 或 Gitee 仓库作为技能源，系统将从该仓库的指定目录获取技能列表。支持格式：",
       ),
       React.createElement(
         "div",
         { style: { display: "flex", gap: 8, alignItems: "center" } },
         React.createElement(Input, {
-          placeholder: "https://github.com/owner/repo/tree/main/skills 或 https://gitee.com/owner/repo/tree/master/skills",
+          placeholder:
+            "https://github.com/owner/repo/tree/main/skills 或 https://gitee.com/owner/repo/tree/master/skills",
           value: newUrl,
           onChange: (e: any) => setNewUrl(e.target.value),
           onPressEnter: handleAdd,
@@ -1119,10 +1188,20 @@ export function SourceConfigModal({
       newUrl.trim() && newUrl.trim().toLowerCase().includes("gitee.com")
         ? React.createElement(
             "div",
-            { style: { marginTop: 8, display: "flex", gap: 8, alignItems: "center" } },
+            {
+              style: {
+                marginTop: 8,
+                display: "flex",
+                gap: 8,
+                alignItems: "center",
+              },
+            },
             React.createElement(
               Text,
-              { type: "secondary", style: { fontSize: 12, whiteSpace: "nowrap" } },
+              {
+                type: "secondary",
+                style: { fontSize: 12, whiteSpace: "nowrap" },
+              },
               "Gitee Token:",
             ),
             React.createElement(Input.Password, {
@@ -1136,8 +1215,19 @@ export function SourceConfigModal({
     ),
     React.createElement(
       "div",
-      { style: { marginBottom: 8, display: "flex", alignItems: "center", justifyContent: "space-between" } },
-      React.createElement(Text, { strong: true }, `已配置源 (${sources.length})`),
+      {
+        style: {
+          marginBottom: 8,
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+        },
+      },
+      React.createElement(
+        Text,
+        { strong: true },
+        `已配置源 (${sources.length})`,
+      ),
     ),
     React.createElement(List, {
       size: "small",
@@ -1160,18 +1250,15 @@ export function SourceConfigModal({
               React.createElement(
                 Tooltip,
                 { title: "移除此源" },
-                React.createElement(
-                  Button,
-                  {
-                    size: "small",
-                    type: "text",
-                    danger: true,
-                    icon: DeleteOutlined
-                      ? React.createElement(DeleteOutlined)
-                      : undefined,
-                    onClick: () => handleDelete(source.id),
-                  },
-                ),
+                React.createElement(Button, {
+                  size: "small",
+                  type: "text",
+                  danger: true,
+                  icon: DeleteOutlined
+                    ? React.createElement(DeleteOutlined)
+                    : undefined,
+                  onClick: () => handleDelete(source.id),
+                }),
               ),
             ],
           },
@@ -1180,11 +1267,30 @@ export function SourceConfigModal({
             { style: { flex: 1, minWidth: 0 } },
             React.createElement(
               "div",
-              { style: { display: "flex", alignItems: "center", gap: 6, marginBottom: 4 } },
+              {
+                style: {
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 6,
+                  marginBottom: 4,
+                },
+              },
               React.createElement(
                 Tag,
-                { color: source.platform === "gitee" ? "orange" : source.platform === "oss" ? "green" : "blue", style: { fontSize: 11 } },
-                source.platform === "gitee" ? "Gitee" : source.platform === "oss" ? "OSS" : "GitHub",
+                {
+                  color:
+                    source.platform === "gitee"
+                      ? "orange"
+                      : source.platform === "oss"
+                      ? "green"
+                      : "blue",
+                  style: { fontSize: 11 },
+                },
+                source.platform === "gitee"
+                  ? "Gitee"
+                  : source.platform === "oss"
+                  ? "OSS"
+                  : "GitHub",
               ),
               React.createElement(
                 Tag,
@@ -1218,17 +1324,28 @@ export function SourceConfigModal({
             source.platform === "gitee"
               ? React.createElement(
                   "div",
-                  { style: { marginTop: 6, display: "flex", gap: 6, alignItems: "center" } },
+                  {
+                    style: {
+                      marginTop: 6,
+                      display: "flex",
+                      gap: 6,
+                      alignItems: "center",
+                    },
+                  },
                   React.createElement(
                     Text,
-                    { type: "secondary", style: { fontSize: 11, whiteSpace: "nowrap" } },
+                    {
+                      type: "secondary",
+                      style: { fontSize: 11, whiteSpace: "nowrap" },
+                    },
                     "Token:",
                   ),
                   React.createElement(Input.Password, {
                     size: "small",
                     placeholder: "Gitee 私人令牌（可选，用于私有仓库）",
                     value: source.accessToken || "",
-                    onChange: (e: any) => handleTokenChange(source.id, e.target.value),
+                    onChange: (e: any) =>
+                      handleTokenChange(source.id, e.target.value),
                     style: { flex: 1 },
                   }),
                 )
@@ -1291,8 +1408,8 @@ export function GenericSourceConfigModal({
         ? React.createElement(ApiOutlined, { style: { fontSize: 18 } })
         : null
       : UserOutlined
-        ? React.createElement(UserOutlined, { style: { fontSize: 18 } })
-        : null;
+      ? React.createElement(UserOutlined, { style: { fontSize: 18 } })
+      : null;
 
   const handleAdd = () => {
     const trimmedUrl = newUrl.trim();
@@ -1321,9 +1438,7 @@ export function GenericSourceConfigModal({
   };
 
   const handleToggle = (id: string, enabled: boolean) => {
-    const next = sources.map((s) =>
-      s.id === id ? { ...s, enabled } : s,
-    );
+    const next = sources.map((s) => (s.id === id ? { ...s, enabled } : s));
     if (type === "mcp") saveMcpSources(next);
     else saveExpertSources(next);
     onChange(next);
@@ -1338,11 +1453,7 @@ export function GenericSourceConfigModal({
   };
 
   const handleExport = () => {
-    const exportData = JSON.stringify(
-      { type, sources },
-      null,
-      2,
-    );
+    const exportData = JSON.stringify({ type, sources }, null, 2);
     try {
       navigator.clipboard.writeText(exportData);
       antdMsg.success(`${typeLabel}源已复制到剪贴板（${sources.length} 个源）`);
@@ -1382,9 +1493,7 @@ export function GenericSourceConfigModal({
 
       const valid = importedSources.filter(
         (s: any) =>
-          s &&
-          typeof s.url === "string" &&
-          typeof s.label === "string",
+          s && typeof s.url === "string" && typeof s.label === "string",
       );
 
       if (valid.length === 0) {
@@ -1466,18 +1575,17 @@ export function GenericSourceConfigModal({
             showImport ? "隐藏导入" : "导入JSON",
           ),
         ),
-        React.createElement(
-          Button,
-          { onClick: onClose },
-          "关闭",
-        ),
+        React.createElement(Button, { onClick: onClose }, "关闭"),
       ),
       width: 680,
     },
     // Description
     React.createElement(
       Text,
-      { type: "secondary", style: { fontSize: 12, display: "block", marginBottom: 12 } },
+      {
+        type: "secondary",
+        style: { fontSize: 12, display: "block", marginBottom: 12 },
+      },
       `配置${typeLabel}源地址，支持从远程仓库或团队共享的 JSON 导入${typeLabel}配置。`,
     ),
     // Import section (collapsible)
@@ -1495,7 +1603,10 @@ export function GenericSourceConfigModal({
           },
           React.createElement(
             Text,
-            { strong: true, style: { fontSize: 12, display: "block", marginBottom: 8 } },
+            {
+              strong: true,
+              style: { fontSize: 12, display: "block", marginBottom: 8 },
+            },
             `粘贴${typeLabel}源 JSON（支持从导出的剪贴板内容粘贴）`,
           ),
           React.createElement(Input.TextArea, {
@@ -1534,7 +1645,14 @@ export function GenericSourceConfigModal({
     // Add new source
     React.createElement(
       "div",
-      { style: { marginBottom: 16, display: "flex", gap: 8, alignItems: "center" } },
+      {
+        style: {
+          marginBottom: 16,
+          display: "flex",
+          gap: 8,
+          alignItems: "center",
+        },
+      },
       React.createElement(Input, {
         placeholder: "源名称（可选，如：团队MCP仓库）",
         value: newLabel,
@@ -1600,18 +1718,15 @@ export function GenericSourceConfigModal({
               React.createElement(
                 Tooltip,
                 { title: "移除此源" },
-                React.createElement(
-                  Button,
-                  {
-                    size: "small",
-                    type: "text",
-                    danger: true,
-                    icon: DeleteOutlined
-                      ? React.createElement(DeleteOutlined)
-                      : undefined,
-                    onClick: () => handleDelete(source.id),
-                  },
-                ),
+                React.createElement(Button, {
+                  size: "small",
+                  type: "text",
+                  danger: true,
+                  icon: DeleteOutlined
+                    ? React.createElement(DeleteOutlined)
+                    : undefined,
+                  onClick: () => handleDelete(source.id),
+                }),
               ),
             ],
           },

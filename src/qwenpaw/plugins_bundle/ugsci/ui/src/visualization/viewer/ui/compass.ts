@@ -70,8 +70,13 @@ export function createCompassHud(): CompassHud {
   const niceLength = (meters: number): { meters: number; label: string } => {
     const mag = Math.pow(10, Math.floor(Math.log10(Math.max(meters, 1e-6))));
     const candidates = [1, 2, 5, 10].map((n) => n * mag);
-    const picked = candidates.find((n) => n >= meters) || candidates[candidates.length - 1] * 10;
-    const label = picked >= 1000 ? (picked / 1000).toFixed(picked % 1000 === 0 ? 0 : 1) + " km" : Math.round(picked) + " m";
+    const picked =
+      candidates.find((n) => n >= meters) ||
+      candidates[candidates.length - 1] * 10;
+    const label =
+      picked >= 1000
+        ? (picked / 1000).toFixed(picked % 1000 === 0 ? 0 : 1) + " km"
+        : Math.round(picked) + " m";
     return { meters: picked, label };
   };
 

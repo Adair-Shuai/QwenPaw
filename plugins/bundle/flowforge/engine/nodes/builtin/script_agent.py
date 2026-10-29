@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""``ScriptAgentNode`` — delegate a workflow step to the Script (compute) Agent.
+"""``ScriptAgentNode`` — delegate a workflow step to the Script (compute)
+Agent.
 
 Runs the same restricted ReAct loop as :class:`ScriptAgentTool`: iterative
 ``code_execution`` in the subprocess sandbox. Use :class:`CodingAgentNode`
@@ -98,11 +99,17 @@ class ScriptAgentNode(WorkflowNode):
             not_idempotent=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         runtime = hidden.agent_runtime
         if runtime is None:
             return NodeOutput(
-                error="ScriptAgentNode requires an agent runtime on the workflow executor",
+                error="ScriptAgentNode requires an agent runtime on"
+                " the workflow executor",
                 metadata={"node_id": hidden.unique_id},
             )
 
@@ -129,9 +136,13 @@ class ScriptAgentNode(WorkflowNode):
             model=inputs.get("model"),
             output_var=output_var,
             log_event="script_agent_node",
-            extra_metadata={"node_id": hidden.unique_id, "sandbox": "subprocess"},
+            extra_metadata={
+                "node_id": hidden.unique_id,
+                "sandbox": "subprocess",
+            },
         )
         result.metadata.setdefault(
-            "duration_ms", int((time.monotonic() - started) * 1000),
+            "duration_ms",
+            int((time.monotonic() - started) * 1000),
         )
         return result

@@ -8,8 +8,8 @@
  * The mount module is called by the IIFE entry (viewer/index.tsx).
  */
 
-import { viewerStore } from "./stores/viewerState";
 import { threeEngineAdapter } from "./engines/three-engine";
+import { createEngine } from "./engines/registry";
 import type { ViewerMountOptions, ViewerHandle } from "./contracts/types";
 
 export type MountResult = ViewerHandle;
@@ -22,20 +22,29 @@ export function mountViewer(
   // implementation still owns its legacy DOM panels for now, but it is now
   // reached through the RenderingEngine contract rather than a global mount
   // call.  This is the compatibility seam for future panel extraction.
-  const engine = threeEngineAdapter.create({ container, ...options });
+  const engine = options.engineId
+    ? createEngine(options.engineId, { container, ...options })
+    : threeEngineAdapter.create({ container, ...options });
+  let disposed = false;
 
   return {
+    get ready() {
+      return engine.ready;
+    },
     executeCommand: (command, args) => {
+      if (disposed) return Promise.reject(new Error("查看器已关闭"));
       if (!engine.executeCommand) {
-        return Promise.reject(new Error("Viewer command execution unavailable"));
+        return Promise.reject(new Error("查看器暂不支持命令执行"));
       }
       return engine.executeCommand(command, args);
     },
     dispose() {
+      if (disposed) return;
+      disposed = true;
       engine.dispose();
-      viewerStore.reset();
     },
     update(newOptions) {
+      if (disposed) return;
       engine.update?.(newOptions);
     },
   };

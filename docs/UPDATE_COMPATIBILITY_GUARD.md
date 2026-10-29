@@ -31,6 +31,8 @@ python scripts/verify_update_regressions.py
 
 ## 维护约束与边界
 
+- 仓库自有应用和插件的宿主兼容上限统一为 `<3.0.0`，保留各自最低版本及 SDK／组件协议约束；源码与内置打包副本保持一致。`test_shipped_plugins_keep_major_version_compatibility_boundary` 验证后续 2.x 不因过窄上限被禁用，同时拒绝 3.0 正式版与预发行版。这是发布兼容声明，不替代对实际宿主接口的行为回归。
+
 - UGSci 的 `visualization/data` 仅是本地可视化测试数据。插件清单、桌面／组件暂存、Python 包、源码包和 Docker 上下文均排除它；打包镜像同步也不得复制该目录。组件签名发布检查、桌面产物检查和插件市场打包检查遇到这类数据必须失败。`test_ugsci_release_data.py` 验证实际产物，以及无预置数据时的可视化导入能力。
 
 - 最低兼容版本和组件协议维护在 `scripts/pack-tauri/component_compatibility.json`，不要跟随每次发布版本机械递增，也不能为了通过检查而降低协议门槛。

@@ -12,7 +12,8 @@ import pytest
 
 @pytest.mark.asyncio
 async def test_loader_mounts_run_center_and_runs_startup_sync(
-    tmp_path, monkeypatch
+    tmp_path,
+    monkeypatch,
 ) -> None:
     from qwenpaw.plugins.loader import PluginLoader
     from qwenpaw.plugins.registry import PluginRegistry
@@ -36,7 +37,8 @@ async def test_loader_mounts_run_center_and_runs_startup_sync(
         )
         source = source.resolve()
         record = await loader.load_plugin_from_path(
-            source, install_dir=tmp_path / "plugins"
+            source,
+            install_dir=tmp_path / "plugins",
         )
         assert record.manifest.id == "qwenpaw-run-center"
 

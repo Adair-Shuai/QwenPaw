@@ -28,7 +28,9 @@ ALL_PHASES = (
 )
 
 # Phases that occur after expert dispatch (fork-sensitive).
-POST_DISPATCH_PHASES = frozenset({PHASE_VERIFY, PHASE_SYNTHESIZE, PHASE_COMPLETED})
+POST_DISPATCH_PHASES = frozenset(
+    {PHASE_VERIFY, PHASE_SYNTHESIZE, PHASE_COMPLETED},
+)
 
 # ── Limits ───────────────────────────────────────────────────────────
 UGSCI_TEAM_MAX_ITERATIONS = 40
@@ -113,18 +115,24 @@ _TOOLS_SIM_READ_ONLY = (
 # ``None`` means inherit the parent agent's full tool set.
 UGSCI_ROLE_ALLOWED_TOOLS: dict[str, list[str] | None] = {
     # Domain experts
-    "log-analyst": list(_TOOLS_READ_AST),           # 测井分析师: read-only + AST
-    "geophysicist": list(_TOOLS_READ_AST_SHELL),     # 地球物理专家: read + AST + shell
-    "reservoir-engineer": None,                      # 油藏工程师: full access (incl. simulation)
-    "drilling-engineer": list(_TOOLS_READ_WRITE_SHELL),  # 钻井工程师: read + write + shell
-    "production-engineer": list(_TOOLS_READ_SHELL + _TOOLS_SIM_READ_ONLY),  # 采油工程师
-    "pvt-analyst": list(_TOOLS_READ_SHELL),          # PVT 分析师: read + shell
-    "data-quality": list(_TOOLS_READ_SHELL),        # 资料审核与数据诊断
+    "log-analyst": list(_TOOLS_READ_AST),  # 测井分析师: read-only + AST
+    "geophysicist": list(_TOOLS_READ_AST_SHELL),  # 地球物理专家: read + AST + shell
+    "reservoir-engineer": None,  # 油藏工程师: full access (incl. simulation)
+    "drilling-engineer": list(
+        _TOOLS_READ_WRITE_SHELL,
+    ),  # 钻井工程师: read + write + shell
+    "production-engineer": list(
+        _TOOLS_READ_SHELL + _TOOLS_SIM_READ_ONLY,
+    ),  # 采油工程师
+    "pvt-analyst": list(_TOOLS_READ_SHELL),  # PVT 分析师: read + shell
+    "data-quality": list(_TOOLS_READ_SHELL),  # 资料审核与数据诊断
     "geology-diagnostician": list(_TOOLS_READ_AST_SHELL),  # 地质与库型诊断
     "simulation-analyst": list(_TOOLS_READ_SHELL + _TOOLS_SIM_FULL),  # 数值模拟
-    "result-reviewer": list(_TOOLS_READ_AST_SHELL), # 结果复核
+    "result-reviewer": list(_TOOLS_READ_AST_SHELL),  # 结果复核
     # Reviewer / verification
-    "domain-reviewer": list(_TOOLS_READ_AST_SHELL),  # 领域审核: read-only + AST + shell
+    "domain-reviewer": list(
+        _TOOLS_READ_AST_SHELL,
+    ),  # 领域审核: read-only + AST + shell
     # Generic OMP roles (for interop)
     "executor": None,
     "planner": list(_TOOLS_READ + (TOOL_WRITE_FILE, TOOL_AST_SEARCH)),
@@ -137,7 +145,7 @@ UGSCI_ROLE_ALLOWED_TOOLS: dict[str, list[str] | None] = {
 UGSCI_ROLE_SKILLS: dict[str, list[str] | None] = {
     "log-analyst": [],
     "geophysicist": [],
-    "reservoir-engineer": None,   # keep all skills (needs simulation skills)
+    "reservoir-engineer": None,  # keep all skills (needs simulation skills)
     "drilling-engineer": [],
     "production-engineer": [],
     "pvt-analyst": [],

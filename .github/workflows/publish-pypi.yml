@@ -61,6 +61,16 @@ jobs:
           mkdir -p src/qwenpaw/console
           cp -R console/dist/* src/qwenpaw/console/
 
+      - name: Build and stage bundled OpenUI runtime
+        shell: bash
+        run: |
+          npm --prefix plugins/bundle/qwenpaw-openui/frontend ci
+          npm --prefix plugins/bundle/qwenpaw-openui/frontend test
+          python scripts/pack-tauri/stage_bundled_plugins.py --repo . --dest .codex-tmp/wheel-plugin-stage
+          cp -R .codex-tmp/wheel-plugin-stage/qwenpaw-openui src/qwenpaw/plugins_bundle/
+          test -s src/qwenpaw/plugins_bundle/qwenpaw-openui/dist/index.js
+          test -s src/qwenpaw/plugins_bundle/qwenpaw-openui/dist/system-prompt.txt
+
       - name: Build bundled Run Center frontend
         run: |
           npm --prefix plugins/bundle/qwenpaw-run-center/ui ci

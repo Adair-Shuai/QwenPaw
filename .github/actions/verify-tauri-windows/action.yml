@@ -39,6 +39,10 @@ runs:
         ALLOW_FLAKY_LLM: ${{ inputs.allow-flaky-llm }}
       run: |
         . scripts/verify/launch_tauri_windows.ps1
+        if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+        if ([string]::IsNullOrWhiteSpace($env:BASE_URL)) {
+          throw "Desktop launch did not produce a verified backend URL"
+        }
         $verifyArgs = @(
           "scripts/verify/desktop_verify.py",
           "--base-url", $env:BASE_URL,

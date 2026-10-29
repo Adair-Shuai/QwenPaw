@@ -12,9 +12,7 @@ This script calls the actual tool functions registered by the UGSci plugin.
 """
 
 import asyncio
-import json
 import sys
-import os
 from pathlib import Path
 
 # Add src/ to path so we can import qwenpaw + plugin tools
@@ -39,7 +37,9 @@ async def main():
     print(f"   deck_file: {deck_file}")
     print(f"   working_dir: {working_dir}")
 
-    from qwenpaw.plugins_bundle.ugsci.engine.tools.launcher import launch_simulation
+    from qwenpaw.plugins_bundle.ugsci.engine.tools.launcher import (
+        launch_simulation,
+    )
 
     result = await launch_simulation(
         simulator="eclipse",
@@ -61,6 +61,7 @@ async def main():
 
     # Extract job_id from the text
     import re
+
     m = re.search(r"Job ID:\s+(\S+)", text)
     if not m:
         print("❌ Could not extract job_id from response.")
@@ -99,7 +100,7 @@ async def main():
         for block in result.content:
             if hasattr(block, "text"):
                 text += block.text
-        status_line = [l for l in text.splitlines() if "Status:" in l]
+        status_line = [line for line in text.splitlines() if "Status:" in line]
         if status_line:
             print(f"   [{(i+1)*5}s] {status_line[0].strip()}")
 

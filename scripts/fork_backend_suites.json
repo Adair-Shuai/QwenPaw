@@ -34,6 +34,8 @@
       "tests/unit/plugins/ugsci/test_plugin_registration.py",
       "tests/unit/plugins/ugsci/test_quality_script.py",
       "tests/unit/plugins/ugsci/test_simulator_adapters.py",
+      "tests/unit/plugins/ugsci/test_simulation_results.py",
+      "tests/unit/plugins/ugsci/test_simulation_fields.py",
       "tests/unit/plugins/ugsci/test_skill_pool_ownership.py",
       "tests/unit/plugins/ugsci/test_storage_dynamics.py",
       "tests/unit/plugins/ugsci/test_storage_inventory.py",
@@ -49,9 +51,20 @@
       "tests/unit/plugins/ugsci/test_visualization_well_placement.py",
       "tests/unit/plugins/test_storage_capacity_app.py",
       "tests/unit/plugins/test_storage_capacity_workbench.py",
-      "tests/unit/plugins/test_storage_capacity_flow.py"
+      "tests/unit/plugins/test_storage_capacity_flow.py",
+      "tests/unit/plugins/ugsci/test_native_storage_executors.py",
+      "tests/unit/plugins/ugsci/test_manifest_guard_contracts.py",
+      "tests/unit/plugins/ugsci/test_las_conversion_contract.py",
+      "tests/unit/plugins/ugsci/test_eclipse_conversion_contract.py",
+      "tests/unit/plugins/ugsci/test_genui_card_stage_contract.py",
+      "tests/unit/plugins/ugsci/test_visualization_http_contract.py",
+      "tests/unit/plugins/ugsci/test_runtime_host_contract.py",
+      "tests/unit/plugins/ugsci/test_visualization_tool_contract.py",
+      "tests/unit/plugins/ugsci/test_storage_inventory_stage_contract.py",
+      "tests/unit/plugins/ugsci/test_roff_conversion_contract.py"
     ],
     "flowforge": [
+      "tests/unit/plugins/test_plugin_api_helpers.py",
       "tests/unit/plugins/flowforge/test_bidirectional_calls.py",
       "tests/unit/plugins/flowforge/test_media_genui.py",
       "tests/unit/plugins/flowforge/test_node_catalog.py",
@@ -61,7 +74,17 @@
       "tests/unit/plugins/flowforge/test_definition_validation.py",
       "tests/unit/plugins/flowforge/test_runtime_reliability.py",
       "tests/unit/plugins/flowforge/test_business_acceptance.py",
-      "tests/unit/plugins/flowforge/test_llm_adapter.py"
+      "tests/unit/plugins/flowforge/test_llm_adapter.py",
+      "tests/unit/plugins/flowforge/test_quality_gate_routing.py",
+      "tests/unit/plugins/flowforge/test_node_failure_logging.py",
+      "tests/unit/plugins/flowforge/test_public_adapter_contract.py",
+      "tests/unit/plugins/flowforge/test_agent_registry_config.py",
+      "tests/unit/plugins/flowforge/test_runner_pipeline_contract.py",
+      "tests/unit/plugins/flowforge/test_authoring_conversion_contract.py",
+      "tests/unit/plugins/flowforge/test_lifecycle_listing_contract.py",
+      "tests/unit/plugins/flowforge/test_router_stream_contract.py",
+      "tests/unit/plugins/flowforge/test_executor_stage_contract.py",
+      "tests/unit/plugins/flowforge/test_service_lifetime.py"
     ],
     "office": [
       "tests/unit/agents/tools/test_office_tools.py",
@@ -70,7 +93,22 @@
     ],
     "mcp": [
       "tests/unit/drivers/adapters/test_mcp_url_credentials.py",
+      "tests/unit/app/routers/test_mcp_oauth_flows.py",
       "tests/unit/plugins/test_oss_cache.py"
+    ],
+    "market_publication": [
+      "tests/unit/app/routers/test_publisher_router.py",
+      "tests/unit/app/routers/test_publisher_service.py"
+    ],
+    "run_center_presentation": [
+      "tests/unit/plugins/run_center/test_presentation.py",
+      "tests/unit/plugins/run_center/test_run_center.py",
+      "tests/unit/plugins/run_center/test_research.py",
+      "tests/unit/plugins/run_center/test_queue_resources.py",
+      "tests/unit/plugins/run_center/test_plugin_registration.py",
+      "tests/unit/plugins/run_center/test_plugin_loader_integration.py",
+      "tests/unit/plugins/run_center/test_bundle_sync.py",
+      "tests/unit/plugins/test_openui.py"
     ],
     "avatars": [
       "tests/unit/app/routers/test_avatars_router.py"
@@ -79,18 +117,111 @@
       "plugins/apps/document-forms/tests/test_document_forms.py",
       "plugins/apps/document-forms/tests/test_publication.py"
     ],
+    "uideas": [
+      "tests/unit/plugins/test_uideas_workbench.py"
+    ],
     "inventory": [
-      "tests/unit/verify/test_fork_regression_inventory.py"
+      "tests/unit/verify/test_fork_regression_inventory.py",
+      "tests/unit/verify/test_pylint_namespace.py"
     ],
     "upstream_merge": [
       "tests/unit/plugins/test_upstream_merge_compat.py",
       "tests/unit/plugins/test_plugin_uninstall_tombstones.py",
       "tests/unit/plugins/test_plugin_startup_perf.py",
       "tests/unit/app/routers/test_plugins_router.py",
-      "tests/unit/app/routers/test_plugins_router_lifecycle.py"
+      "tests/unit/app/routers/test_plugins_router_lifecycle.py",
+      "tests/unit/plugins/test_activity_retry_handoff.py",
+      "tests/unit/plugins/test_tracker_stream_cleanup.py",
+      "tests/unit/plugins/test_channel_tracker_custody.py",
+      "tests/unit/plugins/test_channel_cleanup_retry_race.py",
+      "tests/unit/plugins/test_sdk_channel_routing_contract.py",
+      "tests/unit/market/test_search_deadline.py",
+      "tests/unit/channels/test_base_core.py",
+      "tests/unit/plugins/test_sdk_context_lifecycle.py"
+    ],
+    "run_center": [
+      "tests/unit/plugins/run_center/test_research_router_contract.py",
+      "tests/unit/plugins/run_center/test_research.py"
+    ],
+    "research_mode": [
+      "tests/unit/plugins/test_research_mode_registration.py"
+    ],
+    "uproject": [
+      "tests/unit/plugins/test_uproject_app.py"
     ]
   },
   "required_cases": {
+    "tests/unit/plugins/run_center/test_presentation.py": [
+      "test_http_plan_persists_without_changing_run_and_projects_true_binding_ids",
+      "test_terminal_legacy_plans_keep_events_and_execution",
+      "test_http_ownership_checks_host_agent_and_legacy_owner",
+      "test_native_simulation_scope_maps_source_and_allows_new_chat",
+      "test_native_simulator_legacy_alias_shares_one_presentation_identity",
+      "test_invalid_plans_fail_before_any_write",
+      "test_real_concurrent_expected_revision_is_atomic",
+      "test_literal_binding_names_allow_spaces_and_slashes",
+      "test_result_stage_bindings_exclude_values_and_private_paths",
+      "test_result_ready_preserves_outer_bindings_with_nested_result",
+      "test_generic_metadata_limits_skip_oversized_and_deep_results",
+      "test_agent_tools_register_real_sdk_schemas_and_persist_through_calls",
+      "test_terminal_and_legacy_plans_have_independent_events_and_leave_execution_immutable",
+      "test_http_ownership_validates_real_host_agent_and_conservative_legacy_owner",
+      "test_native_simulation_scope_uses_explicit_source_mapping_and_allows_new_chat",
+      "test_generic_result_and_stage_binding_inventory_has_no_values_or_private_paths"
+    ],
+    "tests/unit/plugins/ugsci/test_simulation_results.py": [
+      "test_real_csv_incremental_half_write_preserves_snapshot_and_restart",
+      "test_case_scope_isolates_output_and_full_export_is_unsampled",
+      "test_text_eclipse_uses_physical_time_not_row_index",
+      "test_http_get_is_read_only_scoped_and_csv_uses_persisted_full_data",
+      "test_parser_failure_never_changes_solver_status",
+      "test_unchanged_valid_final_curve_is_complete_not_error",
+      "test_real_multiple_rsm_blocks_preserve_distinct_columns_and_physical_time",
+      "test_standard_rsm_separate_well_and_unit_rows_are_not_merged",
+      "test_rsm_bar_unit_is_not_reinterpreted_as_header",
+      "test_rsm_duplicate_columns_without_well_names_keep_previous_snapshot",
+      "test_metrics_require_log_evidence_and_report_step_is_not_tail_count",
+      "test_refresh_reparses_source_and_replaces_wrong_snapshot",
+      "test_finalizing_is_not_overwritten_by_inflight_collection",
+      "test_real_result_tool_includes_persistent_simulation_reference",
+      "test_opm_flow_registration_command_and_real_summary",
+      "test_case_scoping_does_not_read_other_output_and_full_export_is_not_sampled",
+      "test_manual_refresh_reparses_unchanged_source_and_replaces_old_wrong_snapshot"
+    ],
+    "tests/unit/plugins/ugsci/test_simulation_fields.py": [
+      "test_real_eclipse_fields_publish_resources_and_preserve_missing_values",
+      "test_complete_frames_only_immutable_revisions_and_no_unchanged_conversion",
+      "test_half_written_and_wrong_case_preserve_last_result",
+      "test_sampling_requires_stability_and_api_serves_runtime_with_local_catalog",
+      "test_new_run_excludes_old_restart_but_can_reuse_static_grid",
+      "test_cmg_terminal_sr3_snapshot_has_all_real_frames_and_no_live_claim",
+      "test_opm_flow_reuses_real_eclipse_field_format",
+      "test_runtime_and_local_catalog_delete_restore_are_independent"
+    ],
+    "tests/unit/plugins/test_uideas_workbench.py": [
+      "test_http_action_adoption_completion_reopen_and_missing_ids",
+      "test_idea_validation_metadata_archive_and_restore_through_http",
+      "test_concurrent_action_updates_preserve_queue_and_settings",
+      "test_stream_connects_immediately_and_releases_subscription"
+    ],
+    "tests/unit/plugins/flowforge/test_runtime_reliability.py": [
+      "test_end_node_returns_its_declared_value",
+      "test_end_node_without_value_preserves_collected_outputs"
+    ],
+    "tests/unit/plugins/test_plugin_api_helpers.py": [
+      "test_tool_projection_rebases_concurrent_config_edits"
+    ],
+    "tests/unit/plugins/flowforge/test_llm_adapter.py": [
+      "test_agent_models_isolate_refresh_and_honor_overrides",
+      "test_agent_model_selection_is_isolated_refreshes_and_honors_overrides"
+    ],
+    "tests/unit/plugins/flowforge/test_node_catalog.py": [
+      "test_authoring_and_execution_bind_the_selected_agent_model"
+    ],
+    "tests/unit/plugins/flowforge/test_run_lifecycle.py": [
+      "test_cancel_finalizes_node_events_live_and_persisted_records",
+      "test_cancel_paused_and_legacy_records_closes_only_unfinished_nodes"
+    ],
     "tests/unit/plugins/ugsci/test_team_artifacts.py": [
       "test_system_host_sdk_workflow_rework_restart_and_history",
       "test_late_old_attempt_cannot_overwrite_new_published_result"
@@ -101,14 +232,39 @@
     ],
     "tests/unit/plugins/ugsci/test_domain_runtime_install.py": [
       "test_requirements_are_allowlisted_and_unsupported_engines_rejected",
-      "test_worker_uses_host_installer_and_probes_after_success"
+      "test_worker_uses_host_installer_and_probes_after_success",
+      "test_one_global_task_and_same_engine_deduplication",
+      "test_worker_failure_is_sanitized_and_persisted",
+      "test_recovery_marks_interrupted_tasks_failed",
+      "test_api_status_task_404_and_runtime_path_order",
+      "test_neqsim_install_keeps_its_dedicated_route"
     ],
     "tests/unit/drivers/adapters/test_mcp_url_credentials.py": [
       "test_query_tokens_are_masked_and_survive_console_roundtrip",
       "test_query_credentials_do_not_follow_changed_endpoint"
     ],
     "tests/unit/plugins/test_oss_cache.py": [
-      "test_market_manifest_revalidates_after_one_minute_and_keeps_offline_copy"
+      "test_market_manifest_revalidates_after_one_minute_and_keeps_offline_copy",
+      "test_stale_market_returns_before_network_and_refreshes_share_one_download",
+      "test_cold_market_requests_share_one_download",
+      "test_invalid_upstream_manifest_does_not_replace_offline_catalog"
+    ],
+    "tests/unit/app/routers/test_mcp_oauth_flows.py": [
+      "test_session_status_does_not_mistake_old_tokens_for_new_authorization",
+      "test_cancelling_session_blocks_late_callback_without_revoking_account",
+      "test_retry_supersedes_previous_session_and_enforces_agent_scope",
+      "test_success_reports_current_session_and_keeps_disabled_until_connect"
+    ],
+    "tests/unit/app/routers/test_publisher_service.py": [
+      "test_contributor_upload_approve_and_update_preserve_catalog",
+      "test_expert_publication_matches_market_import_contract",
+      "test_publication_auth_namespace_version_and_privacy_guards",
+      "test_lock_and_failed_readback_never_report_success",
+      "test_admin_can_update_legacy_official_asset_without_namespace",
+      "test_local_runtime_forwards_temporary_token_and_checks_receipt",
+      "test_generic_publisher_cannot_bypass_protected_document_template_gate",
+      "test_app_and_expert_publications_use_their_market_buckets",
+      "test_retried_publication_repairs_private_object_acl_before_success"
     ],
     "tests/unit/verify/test_fork_regression_inventory.py": [
       "test_missing_disabled_or_empty_critical_cases_block_merge",
@@ -119,7 +275,11 @@
       "test_explicit_range_still_rejects_incompatible_core",
       "test_unspecified_range_does_not_invent_a_legacy_upper_bound",
       "test_explicit_legacy_minimum_keeps_derived_upper_bound",
-      "test_native_uninstall_preserves_intent_and_reinstall_clears_it"
+      "test_native_uninstall_preserves_intent_and_reinstall_clears_it",
+      "test_explicit_beta_minimum_preserves_required_api_boundary",
+      "test_shipped_plugins_keep_major_version_compatibility_boundary",
+      "test_repaired_market_archives_cover_b2_and_advance_versions",
+      "test_memory_market_release_advances_incompatible_published_version"
     ],
     "tests/unit/plugins/test_plugin_uninstall_tombstones.py": [
       "test_api_uninstall_persists_tombstone_before_deleting",
@@ -168,11 +328,23 @@
       "test_capacity_dependency_gate_does_not_install_plugin_id_as_pypi_package"
     ],
     "tests/unit/plugins/test_storage_capacity_workbench.py": [
-      "test_multimethod_engine_keeps_inventory_capacity_and_deliverability_distinct",
+      "test_engine_keeps_inventory_capacity_deliverability_distinct",
       "test_inapplicable_methods_and_partial_units_never_form_full_inventory",
       "test_external_simulation_is_referenced_not_falsely_executed",
       "test_http_persistence_scope_revision_report_and_original_evidence",
+      "test_evidence_mapping_preserves_location_and_rejects_bad_numbers",
+      "test_multimethod_engine_keeps_inventory_capacity_and_deliverability_distinct",
       "test_evidence_xlsx_csv_pptx_mapping_preserves_location_and_rejects_bad_numbers"
+    ],
+    "tests/unit/plugins/ugsci/test_visualization_core.py": [
+      "test_network_readers_share_topology_missing_values_and_geometry_contract",
+      "test_network_tubes_preserve_segment_ids_properties_and_z_direction",
+      "test_network_http_details_keep_unknown_values_and_export_them_blank",
+      "test_geojson_import_keeps_all_trajectories_and_signed_elevation",
+      "test_geojson_geographic_coordinates_are_not_silently_treated_as_metres",
+      "test_viewer_command_http_isolates_agent_delivery_ack_and_status",
+      "test_viewer_command_http_repeats_after_terminal_ack",
+      "test_viewer_command_http_uses_validated_host_agent_scope"
     ],
     "tests/unit/plugins/test_storage_capacity_flow.py": [
       "test_nodes_run_independently_and_fingerprint_only_affected_unit_inputs",
@@ -181,6 +353,242 @@
       "test_document_agent_proposals_validate_evidence_conflicts_and_judgement",
       "test_late_agent_reply_cannot_overwrite_a_new_revision",
       "test_chart_context_keeps_original_unit_data_bound_to_immutable_node_result"
+    ],
+    "tests/unit/plugins/flowforge/test_router_stream_contract.py": [
+      "test_socket_live_handle_replays_history_and_finishes",
+      "test_socket_forwards_thread_progress_and_detaches",
+      "test_socket_resubscription_releases_each_handler",
+      "test_socket_missing_run_keeps_ping_available",
+      "test_socket_persisted_replay_retains_all_events",
+      "test_socket_history_boundary_delivers_each_event_once",
+      "test_socket_cancel_drains_events_before_terminal",
+      "test_router_sse_and_missing_run_http_contract"
+    ],
+    "tests/unit/plugins/run_center/test_research.py": [
+      "test_sobol_design_uses_seed_for_reproducible_scrambling",
+      "test_design_ids_are_stable_and_duplicate_metrics_are_rejected",
+      "test_model_version_and_model_soft_delete_restore_and_reference_protection"
+    ],
+    "tests/unit/plugins/ugsci/test_native_storage_executors.py": [
+      "test_public_storage_executor_runs_and_persists_results",
+      "test_storage_executor_preserves_envelope_priority_and_zero",
+      "test_storage_executor_keeps_cancellation_and_persistence_order",
+      "test_storage_executor_keeps_input_shape_errors"
+    ],
+    "tests/unit/plugins/run_center/test_research_router_contract.py": [
+      "test_metrics_http_retains_missing_null_and_non_array_errors",
+      "test_metrics_http_retains_element_value_and_duplicate_errors",
+      "test_metrics_http_preserves_zero_and_existing_metric_identity",
+      "test_review_http_preserves_status_alias_and_durable_transition",
+      "test_report_http_preserves_persisted_markdown_artifact",
+      "test_research_http_retains_missing_record_errors",
+      "test_research_http_retains_openapi_and_route_order",
+      "test_connection_scope_commits_rolls_back_and_closes",
+      "test_listing_keeps_order_when_a_record_is_deleted"
+    ],
+    "tests/unit/verify/test_pylint_namespace.py": [
+      "test_namespace_plugin_modules_keep_distinct_qualified_names",
+      "test_module_resolution_never_executes_package_initializers",
+      "test_non_module_inputs_are_forwarded_as_original_files",
+      "test_shadowed_namespace_is_forwarded_without_dropping_file",
+      "test_cli_preserves_all_arguments_files_and_exit_bits",
+      "test_cli_requires_explicit_option_boundary",
+      "test_initializer_does_not_select_package_or_unrequested_children",
+      "test_mixed_projects_use_fresh_processes_and_preserve_exit_bits",
+      "test_child_context_resolves_selected_files_relative_to_repository",
+      "test_standalone_project_keeps_own_src_and_scripts_names"
+    ],
+    "tests/unit/plugins/flowforge/test_authoring_conversion_contract.py": [
+      "test_editor_shell_priority_survives_canonical_loader",
+      "test_authoring_type_precedence_is_preserved",
+      "test_editor_tool_alias_and_empty_params_are_preserved",
+      "test_canonical_input_aliases_and_boundaries_remain_intact",
+      "test_invalid_authoring_root_keeps_original_error"
+    ],
+    "tests/unit/plugins/flowforge/test_quality_gate_routing.py": [
+      "test_quality_gate_uses_declared_routes_without_missing_helpers",
+      "test_quality_gate_fallback_executes_only_the_selected_workflow_branch",
+      "test_quality_gate_default_preserves_an_explicit_zero",
+      "test_refine_default_preserves_an_explicit_zero",
+      "test_node_schema_cache_is_local_to_each_class_and_can_be_invalidated"
+    ],
+    "tests/unit/plugins/test_activity_retry_handoff.py": [
+      "test_mutation_wakes_cleanup_registered_after_interruption_starts",
+      "test_one_mutation_retries_a_refusing_cleanup_only_once",
+      "test_mutation_releases_invocation_before_host_task_finishes",
+      "test_mutation_observes_release_during_waiter_teardown"
+    ],
+    "tests/unit/plugins/test_channel_tracker_custody.py": [
+      "test_unload_keeps_tracker_generation_live_through_terminal_delivery"
+    ],
+    "tests/unit/plugins/test_channel_cleanup_retry_race.py": [
+      "test_channel_reload_does_not_recancel_draining_producer",
+      "test_observing_draining_task_retains_stop_deadline",
+      "test_observing_draining_task_propagates_parent_cancellation"
+    ],
+    "tests/unit/plugins/test_sdk_channel_routing_contract.py": [
+      "test_lifecycle_interrupt_closes_started_stream_once",
+      "test_interrupt_reload_retains_blocked_terminal_until_public_retry"
+    ],
+    "tests/unit/plugins/ugsci/test_manifest_guard_contracts.py": [
+      "test_team_plan_guard_returns_boolean_without_changing_protected_paths",
+      "test_tool_manifest_checks_duplicate_names_before_filtering",
+      "test_tool_manifest_keeps_callable_and_target_binding_validation"
+    ],
+    "tests/unit/plugins/flowforge/test_node_failure_logging.py": [
+      "test_llm_failure_returns_provider_error_and_traceback",
+      "test_domain_failure_returns_adapter_error_and_traceback",
+      "test_agent_failure_returns_original_error_in_both_paths",
+      "test_hot_reload_delivers_change_and_logs_result"
+    ],
+    "tests/unit/plugins/flowforge/test_public_adapter_contract.py": [
+      "test_public_tool_schema_preserves_parameter_contract",
+      "test_native_tool_schema_keeps_identity_and_empty_fallback",
+      "test_public_registry_entry_points_share_native_singleton",
+      "test_public_registry_retains_legacy_getter_fallback"
+    ],
+    "tests/unit/plugins/flowforge/test_runner_pipeline_contract.py": [
+      "test_runner_preserves_resolution_retry_lazy_cache_and_progress",
+      "test_runner_keeps_cache_bypass_and_legacy_output_normalization",
+      "test_runner_keeps_expansion_guard_and_blocked_cache_rules",
+      "test_runner_cancellation_propagates_without_retry_or_cache_write"
+    ],
+    "tests/unit/market/test_search_deadline.py": [
+      "test_search_deadline_keeps_fast_results_and_reports_slow_source",
+      "test_search_deadline_retains_owner_until_cancelled_source_cleans_up",
+      "test_search_external_cancellation_propagates_and_releases_owner"
+    ],
+    "tests/unit/plugins/test_tracker_stream_cleanup.py": [
+      "test_tracker_closes_suspended_source_before_host_completion",
+      "test_tracker_accepts_async_iterator_without_aclose"
+    ],
+    "tests/unit/plugins/flowforge/test_agent_registry_config.py": [
+      "test_registry_discovers_configured_workspace_profiles",
+      "test_registry_retains_lazy_snapshot_until_a_new_instance",
+      "test_registry_continues_after_an_invalid_agent_file"
+    ],
+    "tests/unit/plugins/ugsci/test_las_conversion_contract.py": [
+      "test_las_file_preserves_depth_curves_nulls_and_placement",
+      "test_las_file_retains_invalid_input_errors"
+    ],
+    "tests/unit/channels/test_base_core.py": [
+      "test_tracker_stream_closes_nested_process_before_browser_cleanup",
+      "test_tracker_closes_nested_channel_process_before_host_completion"
+    ],
+    "tests/unit/plugins/ugsci/test_eclipse_conversion_contract.py": [
+      "test_eclipse_reader_preserves_companions_geometry_and_properties"
+    ],
+    "tests/unit/plugins/flowforge/test_lifecycle_listing_contract.py": [
+      "test_listing_omits_record_lost_between_durable_reads",
+      "test_listing_preserves_order_metadata_and_independent_snapshots"
+    ],
+    "tests/unit/plugins/ugsci/test_genui_card_stage_contract.py": [
+      "test_domain_card_keeps_chart_priority_stats_and_validated_storage",
+      "test_trace_form_preserves_delivery_content_groups_and_revision",
+      "test_card_storage_failure_preserves_original_payload",
+      "test_card_admission_guards_preserve_original_payload"
+    ],
+    "tests/unit/plugins/ugsci/test_visualization_http_contract.py": [
+      "test_scalar_queries_and_exports_keep_public_parameters",
+      "test_resource_ranges_preserve_real_bytes_and_headers",
+      "test_resource_invalid_ranges_remain_unsatisfiable",
+      "test_slice_persists_selected_geometry_ids_and_zero_scalars",
+      "test_slice_and_property_failures_keep_http_details",
+      "test_catalog_cascade_hides_examples_and_removes_managed_files"
+    ],
+    "tests/unit/plugins/ugsci/test_visualization_tool_contract.py": [
+      "test_dispatch_posts_original_paths_and_payloads",
+      "test_dispatch_retains_queue_payload_and_acknowledgement",
+      "test_dispatch_view_configuration_keeps_order_and_zero",
+      "test_reports_retain_finite_statistics_and_real_json",
+      "test_dispatch_errors_preserve_details_without_queue",
+      "test_corrupt_scalar_report_keeps_original_error",
+      "test_well_filter_retains_actual_trajectory_and_path_guards"
+    ],
+    "tests/unit/plugins/ugsci/test_runtime_host_contract.py": [
+      "test_public_runtime_probe_retains_desktop_interpreter_rules",
+      "test_public_runtime_installer_uses_both_actual_host_locks",
+      "test_runtime_task_uuid_matches_executor_and_retained_disk_records",
+      "test_runtime_submit_failure_persists_the_same_sanitized_task",
+      "test_runtime_ready_result_does_not_submit_or_persist_a_worker",
+      "test_runtime_admission_retains_managed_and_desktop_guards"
+    ],
+    "tests/unit/plugins/ugsci/test_storage_inventory_stage_contract.py": [
+      "test_book_inventory_retains_missing_zero_and_source_precedence",
+      "test_allocation_retains_weighted_filling_bounds_and_row_order",
+      "test_inactive_allocation_retains_zero_and_feasibility_gate",
+      "test_scenario_ranking_retains_feasible_ranges_ties_and_pareto",
+      "test_scenario_validation_retains_original_error_precedence"
+    ],
+    "tests/unit/plugins/flowforge/test_executor_stage_contract.py": [
+      "test_executor_retains_passthrough_without_tool_side_effect",
+      "test_executor_retains_input_defaults_and_metadata",
+      "test_executor_rejects_invalid_input_before_execution",
+      "test_executor_restart_retains_siblings_and_review_guards",
+      "test_graph_snapshot_and_reopen_keep_visible_nodes_and_branches"
+    ],
+    "tests/unit/plugins/flowforge/test_workflow_contracts.py": [
+      "test_condition_comparisons_preserve_coercion_and_nulls",
+      "test_condition_groups_short_circuit_and_propagate_invalid_comparisons"
+    ],
+    "tests/unit/plugins/ugsci/test_visualization_run_center_bridge.py": [
+      "test_cancelled_converter_never_publishes_manifest",
+      "test_concurrent_restore_records_one_interruption",
+      "test_restore_preserves_native_lifecycle_and_durable_events"
+    ],
+    "tests/unit/plugins/ugsci/test_engine_detector_portability.py": [
+      "test_engine_search_preserves_priority_and_depth_bound",
+      "test_vendor_registry_keeps_order_and_skips_inaccessible_keys",
+      "test_legacy_cmg_prefers_existing_subdirectory_and_manifest",
+      "test_comsol_registry_keeps_version_priority_and_parent_fallback",
+      "test_smoke_probe_keeps_file_evidence_and_license_outcomes"
+    ],
+    "tests/unit/plugins/test_sdk_context_lifecycle.py": [
+      "test_bound_model_uses_earliest_deadline_and_closes_provider",
+      "test_deadline_during_model_build_releases_without_provider_call"
+    ],
+    "tests/unit/plugins/flowforge/test_bidirectional_calls.py": [
+      "test_native_agent_enforces_node_tools_and_iteration_cap",
+      "test_invalid_agent_iteration_cap_starts_no_native_turn",
+      "test_agent_definition_restrictions_reach_native_context",
+      "test_legacy_runtime_rejects_unenforceable_agent_restrictions"
+    ],
+    "tests/unit/plugins/ugsci/test_long_running_reliability.py": [
+      "test_job_releases_log_file_even_when_close_reports_error"
+    ],
+    "tests/unit/plugins/ugsci/test_storage_dynamics.py": [
+      "test_explicit_gas_units_are_converted_before_aggregation"
+    ],
+    "tests/unit/plugins/ugsci/test_roff_conversion_contract.py": [
+      "test_real_roff_missing_values_remain_unknown_without_invented_properties",
+      "test_real_roff_rejects_property_grid_dimension_mismatch"
+    ],
+    "tests/unit/plugins/flowforge/test_service_lifetime.py": [
+      "test_close_drains_cancelled_run_and_preserves_durable_data",
+      "test_shutdown_timeout_retries_without_cancelling_cleanup_again",
+      "test_async_close_keeps_host_available_for_callback_cleanup",
+      "test_close_interrupts_preparation_before_any_agent_effect",
+      "test_close_preserves_paused_checkpoint_for_restart",
+      "test_invalid_shutdown_budget_does_not_close_service",
+      "test_real_loader_drains_running_work_before_removing_routes",
+      "test_critical_ledger_retains_timed_out_cleanup_until_retry"
+    ],
+    "tests/unit/plugins/test_research_mode_registration.py": [
+      "test_research_mode_preserves_native_search_through_setup_and_teardown",
+      "test_research_mode_still_rejects_another_plugins_tool_occupancy",
+      "test_research_prompts_reference_the_distinct_search_tool"
+    ],
+    "tests/unit/plugins/test_uproject_app.py": [
+      "test_http_work_planning_fields_statistics_activity_and_disk_roundtrip",
+      "test_http_dependency_integrity_and_completion_gate",
+      "test_http_rejects_invalid_fields_without_partial_writes",
+      "test_http_deletion_cleans_dependencies_and_milestone_links",
+      "test_store_legacy_defaults_atomic_validation_and_failed_save",
+      "test_real_storage_concurrent_mutations_preserve_all_items_and_history",
+      "test_http_minutes_agenda_weekly_preserve_planning_context",
+      "test_http_pending_ai_cannot_write_after_demo_reset",
+      "test_http_minutes_commit_is_atomic_on_storage_failure",
+      "test_legacy_generation_is_stable_and_last_project_deletion_stays_empty"
     ]
   }
 }

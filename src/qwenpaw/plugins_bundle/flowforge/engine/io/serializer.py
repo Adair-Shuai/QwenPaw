@@ -14,7 +14,12 @@ from .loader import WorkflowDocument
 
 
 def to_json(doc: WorkflowDocument, *, indent: int | None = 2) -> str:
-    return json.dumps(doc.to_dict(), indent=indent, ensure_ascii=False, sort_keys=True)
+    return json.dumps(
+        doc.to_dict(),
+        indent=indent,
+        ensure_ascii=False,
+        sort_keys=True,
+    )
 
 
 def to_yaml(doc: WorkflowDocument) -> str:

@@ -14,7 +14,6 @@ configs and wraps them into :class:`AgentDefinition` instances.
 from __future__ import annotations
 
 import logging
-from typing import Any
 
 from .agent_definition import AgentDefinition
 
@@ -37,18 +36,26 @@ class AgentRegistry:
             return
         self._loaded = True
         try:
-            from qwenpaw.config.config import list_agent_ids, load_agent_config
+            from qwenpaw.config.config import load_agent_config
+            from qwenpaw.config.utils import load_config
 
-            for agent_id in list_agent_ids():
+            for agent_id in load_config().agents.profiles:
                 try:
                     cfg = load_agent_config(agent_id)
                     definition = AgentDefinition.from_qwenpaw_config(cfg)
                     if definition.name:
                         self._defs[definition.name] = definition
                 except Exception:  # noqa: BLE001
-                    logger.debug("Failed to load agent %r", agent_id, exc_info=True)
+                    logger.debug(
+                        "Failed to load agent %r",
+                        agent_id,
+                        exc_info=True,
+                    )
         except Exception:  # noqa: BLE001
-            logger.debug("AgentRegistry: failed to list agent configs", exc_info=True)
+            logger.debug(
+                "AgentRegistry: failed to list agent configs",
+                exc_info=True,
+            )
 
     def all(self) -> list[AgentDefinition]:
         """Return all registered agent definitions."""

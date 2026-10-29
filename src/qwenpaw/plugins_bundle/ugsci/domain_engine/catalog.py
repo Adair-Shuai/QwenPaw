@@ -8,13 +8,15 @@ it is queried from QwenPaw's Driver and Tool systems.
 
 from __future__ import annotations
 
+from typing import Literal
+
 from .models import (
     DomainEngineDefinition,
     DomainOperation,
     ProviderRef,
 )
 
-# ─── Well Log Processing ──────────────────────────────────────────────────────
+# ─── Well Log Processing
 
 _WELL_LOG_ENGINE = DomainEngineDefinition(
     schema_version=1,
@@ -48,7 +50,7 @@ _WELL_LOG_ENGINE = DomainEngineDefinition(
     tags=("well-log", "las", "petrophysics"),
 )
 
-# ─── Decline Analysis ─────────────────────────────────────────────────────────
+# ─── Decline Analysis
 
 _DECLINE_ENGINE = DomainEngineDefinition(
     schema_version=1,
@@ -82,7 +84,7 @@ _DECLINE_ENGINE = DomainEngineDefinition(
     tags=("decline", "arps", "production", "forecast"),
 )
 
-# ─── NeqSim PVT & Fluid Thermodynamics ────────────────────────────────────────
+# ─── NeqSim PVT & Fluid Thermodynamics
 
 _NEQSIM_ENGINE = DomainEngineDefinition(
     schema_version=1,
@@ -147,7 +149,12 @@ def _library_engine(
     tool_name: str,
     provider_id: str,
     tags: tuple[str, ...],
-    execution_class: str = "deterministic",
+    execution_class: Literal[
+        "deterministic",
+        "stochastic",
+        "external",
+        "visualization",
+    ] = "deterministic",
 ) -> DomainEngineDefinition:
     """Build a UGSci capability backed by a replaceable scientific library."""
     return DomainEngineDefinition(
@@ -273,7 +280,7 @@ _SCIENTIFIC_LIBRARY_ENGINES = (
     ),
 )
 
-# ─── Reservoir Visualization (UGSci built-in capability) ─────────────────────
+# ─── Reservoir Visualization (UGSci built-in capability)
 
 _PETROLEUM_CORE_ENGINE = DomainEngineDefinition(
     schema_version=1,
@@ -441,7 +448,7 @@ _VISUALIZATION_ENGINE = DomainEngineDefinition(
 )
 
 
-# ─── Catalog registry ─────────────────────────────────────────────────────────
+# ─── Catalog registry
 
 _STORAGE_DYNAMICS_ENGINE = DomainEngineDefinition(
     schema_version=1,

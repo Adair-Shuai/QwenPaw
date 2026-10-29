@@ -25,6 +25,7 @@ from qwenpaw.governance import PolicyGuardedTool
 from qwenpaw.governance.policy import GovernanceAction, GovernancePolicy
 from qwenpaw.governance.tool_registry import DEFAULT_REGISTRY
 from qwenpaw.runtime.builder import AgentBuilder
+from qwenpaw.config.config import CodingModeConfig
 
 
 def _manager(
@@ -78,7 +79,7 @@ async def test_adbpg_search_finds_nested_imported_memory(tmp_path):
 
     result = await _manager(tmp_path).memory_search("cats")
 
-    assert "memory/imports/codex/project/fact.md" in result.content[0].text
+    assert str(memory.relative_to(tmp_path)) in result.content[0].text
     assert "User prefers cats" in result.content[0].text
 
 
@@ -168,7 +169,7 @@ async def test_remote_search_uses_network_policy_in_runtime_toolkit(tmp_path):
     manager._client = object()
 
     toolkit = await AgentBuilder().build_toolkit(
-        SimpleNamespace(),
+        SimpleNamespace(coding_mode=CodingModeConfig()),
         memory_tools=manager.list_memory_tools(),
     )
     search_tool = next(

@@ -24,7 +24,13 @@ import { useSyncCodingMode } from "../stores/useSyncCodingMode";
 import { useShallow } from "zustand/react/shallow";
 import { useOsWindows } from "./osWindowStore";
 import { useOsPlugins } from "./osPluginStore";
-import { OS_APPS, STORE_APP, SETTINGS_APP, type OsAppDef } from "./osApps";
+import {
+  OS_APPS,
+  STORE_APP,
+  SETTINGS_APP,
+  getAppLabel,
+  type OsAppDef,
+} from "./osApps";
 import { useOsApps, resolveAppDef } from "./osAppRegistry";
 import { useOsStyles, MENUBAR_H } from "./useOsStyles";
 import { isAgentAvailableInChat } from "../utils/agentVisibility";
@@ -73,6 +79,7 @@ function shouldPlayBoot(): boolean {
 export default function DesktopOS() {
   const { styles, cx } = useOsStyles();
   const { t, i18n } = useTranslation();
+  const language = i18n.resolvedLanguage ?? i18n.language;
   const { message } = App.useApp();
   const launchApp = useOsAppLauncher();
   const isMobile = useIsMobile();
@@ -317,7 +324,7 @@ export default function DesktopOS() {
   // Plugin apps are removed from the backend and live frontend state. Built-in
   // catalog apps are toggled locally; system apps are not uninstallable.
   const handleUninstall = async (a: OsAppDef) => {
-    const name = t(a.labelKey, a.fallback);
+    const name = getAppLabel(a, t, language);
     if (a.source) {
       const source = a.source;
       try {
@@ -360,13 +367,13 @@ export default function DesktopOS() {
           if (isMobile) activate();
         }}
         onFocus={() => setSelectedIconId(a.routeId)}
-        title={t(a.labelKey, a.fallback)}
-        {...buttonRoleProps(activate, t(a.labelKey, a.fallback))}
+        title={getAppLabel(a, t, language)}
+        {...buttonRoleProps(activate, getAppLabel(a, t, language))}
       >
         <div className={styles.iconTile} style={{ background: a.accent }}>
           <Icon size={26} />
         </div>
-        <span>{t(a.labelKey, a.fallback)}</span>
+        <span>{getAppLabel(a, t, language)}</span>
       </div>
     );
     if (!uninstallable) return iconEl;
@@ -468,7 +475,7 @@ export default function DesktopOS() {
             <WindowFrame
               key={win.id}
               win={win}
-              title={t(def.labelKey, def.fallback)}
+              title={getAppLabel(def, t, language)}
               Icon={def.Icon}
               accent={def.accent}
               isMobile={isMobile}

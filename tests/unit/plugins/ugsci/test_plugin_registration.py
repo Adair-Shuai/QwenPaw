@@ -548,7 +548,7 @@ def test_manifest_declares_supported_qwenpaw_range() -> None:
     assert manifest["qwenpaw_version"] == {
         # Earlier cores cannot preserve historical visualization/data imports.
         "min": "2.2.2b9",
-        "max": "2.4.0",
+        "max": "3.0.0",
     }
 
 

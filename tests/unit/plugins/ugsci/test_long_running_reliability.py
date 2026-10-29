@@ -18,6 +18,34 @@ from plugins.bundle.ugsci.engine.tools.autotune import (
     create_tuning_candidate,
     diagnose_terminal_job,
 )
+from plugins.bundle.ugsci.engine.tools.launcher import SimJob
+
+
+@pytest.mark.parametrize("close_error", [False, True])
+def test_job_releases_log_file_even_when_close_reports_error(
+    tmp_path: Path,
+    close_error: bool,
+) -> None:
+    handle = (tmp_path / "simulation.log").open("w", encoding="utf-8")
+
+    class OutputLog:
+        def close(self):
+            handle.close()
+            if close_error:
+                raise OSError("close failed after releasing the descriptor")
+
+    job = SimJob(
+        job_id="release-log",
+        simulator="eclipse",
+        deck_file="synthetic.DATA",
+        working_dir=str(tmp_path),
+        pid=0,
+        _log_file=OutputLog(),
+    )
+    job.close_log()
+    assert handle.closed
+    assert job._log_file is None
+    job.close_log()
 
 
 def _use_tmp_store(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

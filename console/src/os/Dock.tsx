@@ -15,7 +15,7 @@ import { useShallow } from "zustand/react/shallow";
 import { useOsWindows } from "./osWindowStore";
 import { useOsNotify } from "./osNotifyStore";
 import { useOsApps } from "./osAppRegistry";
-import type { OsAppDef } from "./osApps";
+import { getAppLabel, type OsAppDef } from "./osApps";
 import { useOsDock } from "./osDockStore";
 import { buttonRoleProps } from "./a11y";
 import { useOsStyles } from "./useOsStyles";
@@ -25,7 +25,8 @@ const DRAG_SLOP = 4;
 
 export default function Dock({ revealed = true }: { revealed?: boolean }) {
   const { styles, cx } = useOsStyles();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const language = i18n?.resolvedLanguage ?? i18n?.language;
   const launchApp = useOsAppLauncher();
   const { setLauncher, close, focus } = useOsWindows(
     useShallow((s) => ({
@@ -249,7 +250,7 @@ export default function Dock({ revealed = true }: { revealed?: boolean }) {
         }}
         {...buttonRoleProps(
           () => activate(a.routeId),
-          t(a.labelKey, a.fallback),
+          getAppLabel(a, t, language),
         )}
       >
         {dropBeforeId === a.routeId && (
@@ -269,7 +270,7 @@ export default function Dock({ revealed = true }: { revealed?: boolean }) {
     return (
       <Tooltip
         key={a.routeId}
-        title={t(a.labelKey, a.fallback)}
+        title={getAppLabel(a, t, language)}
         placement="top"
       >
         <Dropdown trigger={["contextMenu"]} menu={menuFor(a)}>

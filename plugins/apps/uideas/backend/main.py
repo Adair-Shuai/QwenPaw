@@ -21,32 +21,33 @@ API（前缀 /api/uideas）：
 
 from __future__ import annotations
 
+import importlib
 import json
 import logging
-import os
 import sys
 import asyncio
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, List, Optional
+from typing import Any, Awaitable, Callable, Dict, List, Literal, Optional
 
-# PluginLoader 将 backend/main.py 以插件根目录为包的搜索路径加载，
-# 相对导入不可靠。这里把 backend 目录加入 sys.path，统一使用绝对导入。
-BACKEND_DIR = Path(__file__).resolve().parent
-if str(BACKEND_DIR) not in sys.path:
-    sys.path.insert(0, str(BACKEND_DIR))
-
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
 from qwenpaw.pawapp import PawApp
 from qwenpaw.pawapp.deps import get_ctx
 
-import proactive
-from sse import recent_events, subscribe, unsubscribe
-
+# PluginLoader searches from the plugin root. Resolve the backend siblings
+# only after installing the legacy absolute-import search path.
+BACKEND_DIR = Path(__file__).resolve().parent
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+proactive = importlib.import_module("proactive")
+_sse = importlib.import_module("sse")
+recent_events = _sse.recent_events
+subscribe = _sse.subscribe
+unsubscribe = _sse.unsubscribe
 logger = logging.getLogger(__name__)
 
 app = PawApp(name="UIdeas", app_id="uideas")
@@ -55,6 +56,7 @@ app.include_router(router)
 
 
 # ─── 请求/响应模型 ───────────────────────────────────────────────────
+
 
 class IdeaCreate(BaseModel):
     # 允许空标题：前端支持只写内容，store 会从内容自动提炼标题
@@ -76,6 +78,10 @@ class IdeaUpdate(BaseModel):
 
 class SuggestionStatusUpdate(BaseModel):
     status: str
+
+
+class TodoStatusUpdate(BaseModel):
+    status: Literal["todo", "done"]
 
 
 class MetaUpdate(BaseModel):
@@ -108,7 +114,9 @@ async def _run_job(
     job = _JOBS[job_id]
     job["status"] = "running"
     job["started_at"] = _job_now()
-    await broadcast({"type": "job:started", "job_id": job_id, "job_type": job_type})
+    await broadcast(
+        {"type": "job:started", "job_id": job_id, "job_type": job_type},
+    )
     try:
         result = await handler()
         job["status"] = "done"
@@ -126,7 +134,7 @@ async def _run_job(
                     "idea_id": result.get("idea", {}).get("id"),
                     "warning": result.get("warning"),
                 },
-            }
+            },
         )
     except asyncio.CancelledError:
         job["status"] = "cancelled"
@@ -143,7 +151,7 @@ async def _run_job(
                 "job_id": job_id,
                 "job_type": job_type,
                 "message": str(exc),
-            }
+            },
         )
     finally:
         _JOB_TASKS.pop(job_id, None)
@@ -155,7 +163,8 @@ async def _enqueue_job(
 ) -> str:
     if len(_JOBS) >= 100:
         completed = [
-            key for key, value in _JOBS.items()
+            key
+            for key, value in _JOBS.items()
             if value.get("status") in ("done", "error", "cancelled")
         ]
         for key in completed[: max(1, len(completed) - 80)]:
@@ -167,11 +176,14 @@ async def _enqueue_job(
         "status": "queued",
         "created_at": _job_now(),
     }
-    _JOB_TASKS[job_id] = asyncio.create_task(_run_job(job_id, job_type, handler))
+    _JOB_TASKS[job_id] = asyncio.create_task(
+        _run_job(job_id, job_type, handler),
+    )
     return job_id
 
 
 # ─── 灵感 ───────────────────────────────────────────────────────────
+
 
 @router.get("/ideas")
 async def list_ideas(
@@ -195,9 +207,11 @@ async def list_ideas(
 @router.post("/ideas")
 async def create_idea(body: IdeaCreate, ctx=Depends(get_ctx)):
     proactive.cache_ctx(ctx)
-    from store import create_idea
+    from store import create_idea as store_create_idea
 
-    idea = await create_idea(
+    if not body.title.strip() and not body.content.strip():
+        raise HTTPException(status_code=400, detail="请填写灵感标题或内容")
+    idea = await store_create_idea(
         ctx,
         title=body.title,
         content=body.content,
@@ -225,10 +239,10 @@ async def get_idea_detail(idea_id: str, ctx=Depends(get_ctx)):
 @router.patch("/ideas/{idea_id}")
 async def update_idea(idea_id: str, body: IdeaUpdate, ctx=Depends(get_ctx)):
     proactive.cache_ctx(ctx)
-    from store import update_idea
+    from store import update_idea as store_update_idea
 
     try:
-        idea = await update_idea(
+        idea = await store_update_idea(
             ctx,
             idea_id,
             title=body.title,
@@ -251,9 +265,9 @@ async def update_idea(idea_id: str, body: IdeaUpdate, ctx=Depends(get_ctx)):
 @router.delete("/ideas/{idea_id}")
 async def delete_idea(idea_id: str, ctx=Depends(get_ctx)):
     proactive.cache_ctx(ctx)
-    from store import delete_idea
+    from store import delete_idea as store_delete_idea
 
-    ok = await delete_idea(ctx, idea_id)
+    ok = await store_delete_idea(ctx, idea_id)
     if not ok:
         raise HTTPException(status_code=404, detail="not found")
     from sse import broadcast
@@ -263,6 +277,7 @@ async def delete_idea(idea_id: str, ctx=Depends(get_ctx)):
 
 
 # ─── L1 整理 / L2 扩充 / L3 思考 ────────────────────────────────────
+
 
 @router.post("/analyze")
 async def analyze(ctx=Depends(get_ctx)):
@@ -302,9 +317,9 @@ async def think(ctx=Depends(get_ctx)):
     # Manual thinking is an explicit user action: it may bypass the global
     # proactive switch and cooldown, but still requires enough active ideas.
     if not await is_thinking_available(ctx, manual=True):
-        from store import get_meta
+        from store import get_meta as store_get_meta
 
-        meta = await get_meta(ctx)
+        meta = await store_get_meta(ctx)
         return {
             "skipped": True,
             "reason": "min_ideas",
@@ -324,6 +339,7 @@ async def get_job(job_id: str):
 
 # ─── 建议 ───────────────────────────────────────────────────────────
 
+
 @router.get("/suggestions")
 async def list_suggestions(
     status: Optional[str] = None,
@@ -341,13 +357,19 @@ async def list_suggestions(
 
 @router.patch("/suggestions/{suggestion_id}")
 async def update_suggestion(
-    suggestion_id: str, body: SuggestionStatusUpdate, ctx=Depends(get_ctx)
+    suggestion_id: str,
+    body: SuggestionStatusUpdate,
+    ctx=Depends(get_ctx),
 ):
     proactive.cache_ctx(ctx)
     from store import update_suggestion_status
 
     try:
-        suggestion = await update_suggestion_status(ctx, suggestion_id, body.status)
+        suggestion = await update_suggestion_status(
+            ctx,
+            suggestion_id,
+            body.status,
+        )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     if suggestion is None:
@@ -358,7 +380,28 @@ async def update_suggestion(
     return {"suggestion": suggestion}
 
 
+# ─── 行动 ───────────────────────────────────────────────────────────
+
+
+@router.patch("/todos/{todo_id}")
+async def update_todo(
+    todo_id: str,
+    body: TodoStatusUpdate,
+    ctx=Depends(get_ctx),
+):
+    proactive.cache_ctx(ctx)
+    from store import update_todo_status
+    from sse import broadcast
+
+    todo = await update_todo_status(ctx, todo_id, body.status)
+    if todo is None:
+        raise HTTPException(status_code=404, detail="行动不存在")
+    await broadcast({"type": "todo:updated", "todo": todo})
+    return {"todo": todo}
+
+
 # ─── 聚类 ───────────────────────────────────────────────────────────
+
 
 @router.get("/clusters")
 async def list_clusters(ctx=Depends(get_ctx)):
@@ -371,29 +414,36 @@ async def list_clusters(ctx=Depends(get_ctx)):
 
 # ─── 元数据/设置 ────────────────────────────────────────────────────
 
+
 @router.get("/meta")
 async def get_meta(ctx=Depends(get_ctx)):
     proactive.cache_ctx(ctx)
-    from store import get_ideas, get_meta, get_suggestions
+    from store import get_ideas, get_meta as store_get_meta, get_suggestions
 
-    meta = await get_meta(ctx)
+    meta = await store_get_meta(ctx)
     ideas = await get_ideas(ctx)
     suggestions = await get_suggestions(ctx)
     meta["idea_count"] = len(ideas)
     meta["suggestion_count"] = len(suggestions)
     meta["raw_count"] = sum(1 for i in ideas if i.get("status") == "raw")
-    meta["active_suggestion_count"] = sum(1 for s in suggestions if s.get("status") == "new")
-    meta["todo_count"] = sum(1 for item in meta.get("todo_queue", []) if item.get("status") == "todo")
+    meta["active_suggestion_count"] = sum(
+        1 for s in suggestions if s.get("status") == "new"
+    )
+    meta["todo_count"] = sum(
+        1
+        for item in meta.get("todo_queue", [])
+        if item.get("status") == "todo"
+    )
     return {"meta": meta}
 
 
 @router.patch("/meta")
 async def patch_meta(body: MetaUpdate, ctx=Depends(get_ctx)):
     proactive.cache_ctx(ctx)
-    from store import get_meta, save_meta, transaction
+    from store import get_meta as store_get_meta, save_meta, transaction
 
     async with transaction():
-        meta = await get_meta(ctx)
+        meta = await store_get_meta(ctx)
         patch = body.model_dump(exclude_none=True)
         meta.update(patch)
         await save_meta(ctx, meta)
@@ -405,6 +455,7 @@ async def patch_meta(body: MetaUpdate, ctx=Depends(get_ctx)):
 
 # ─── SSE 事件流 ─────────────────────────────────────────────────────
 
+
 @router.get("/stream")
 async def stream(ctx=Depends(get_ctx)):
     proactive.cache_ctx(ctx)
@@ -412,6 +463,10 @@ async def stream(ctx=Depends(get_ctx)):
 
     async def event_gen():
         try:
+            # Flush headers immediately, even when the event history is empty.
+            # Otherwise buffering proxies can leave EventSource connecting
+            # until the first event/30-second keepalive arrives.
+            yield ": connected\n\n"
             # 先回放最近事件
             for ev in recent_events():
                 yield f"data: {json.dumps(ev, ensure_ascii=False)}\n\n"
@@ -433,6 +488,7 @@ async def stream(ctx=Depends(get_ctx)):
 
 
 # ─── 生命周期 ───────────────────────────────────────────────────────
+
 
 @app.on_launch
 async def on_launch() -> None:

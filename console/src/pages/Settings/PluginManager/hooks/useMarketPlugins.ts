@@ -8,8 +8,14 @@ import {
   type MarketPluginEntry,
   type MarketPluginSortBy,
 } from "@/api/modules/pluginMarket";
-import { installPlugin, type InstallPluginResult } from "@/api/modules/plugin";
+import {
+  fetchPlugins,
+  installPlugin,
+  replaceInstalledPlugin,
+  type InstallPluginResult,
+} from "@/api/modules/plugin";
 import { isMarketPluginCompatible } from "@/utils/pluginCompatibility";
+import { findMatchingInstalledPlugin } from "@/utils/marketPluginIdentity";
 
 export { isMarketPluginCompatible } from "@/utils/pluginCompatibility";
 
@@ -254,7 +260,30 @@ export function useMarketPlugins({ onInstalled }: UseMarketPluginsOptions) {
       setInstallingId(entry.id);
       try {
         const downloadUrl = buildMarketDownloadUrl(entry);
-        const result = await installPlugin(downloadUrl, { force: true });
+        if (entry.installed) {
+          const installed = findMatchingInstalledPlugin(
+            entry,
+            await fetchPlugins(),
+          );
+          if (!installed)
+            throw new Error(tRef.current("pluginManager.loadFailed"));
+          const result = await replaceInstalledPlugin({
+            pluginId: installed.id,
+            source: downloadUrl,
+            version: entry.version,
+          });
+          await onInstalled({
+            id: installed.id,
+            name: entry.display_name,
+            version: result.version,
+            description: "",
+            loaded: true,
+            message: "",
+          });
+          message.success(tRef.current("pluginManager.updateSuccess"));
+          return;
+        }
+        const result = await installPlugin(downloadUrl);
         message.success(
           `${tRef.current("pluginManager.installSuccess")}: ${result.name}`,
         );

@@ -17,7 +17,11 @@ from typing import Any
 
 from .layout import CacheLayout
 
-logger = logging.getLogger("qwenpaw").getChild("plugin.oilgas_vis.cache.manifest")
+logger = logging.getLogger("qwenpaw").getChild(
+    "plugin.oilgas_vis.cache.manifest",
+)
+_STORE_LOCKS: dict[str, threading.RLock] = {}
+_STORE_LOCKS_GUARD = threading.Lock()
 
 
 def _repair_legacy_dataset_names(manifest: dict[str, Any]) -> None:
@@ -36,7 +40,13 @@ class ManifestStore:
         self.bin_dir.mkdir(parents=True, exist_ok=True)
         self.manifest_path = bin_dir / "manifest.json"
         self.cache = cache
-        self._lock = threading.RLock()
+        # API requests and background importers create separate store objects.
+        # Serialize their read-modify-write transactions for the same catalog.
+        with _STORE_LOCKS_GUARD:
+            self._lock = _STORE_LOCKS.setdefault(
+                str(self.manifest_path.resolve()),
+                threading.RLock(),
+            )
 
     def read(self) -> dict[str, Any]:
         """Read manifest with error recovery."""
@@ -49,7 +59,9 @@ class ManifestStore:
                     _repair_legacy_dataset_names(manifest)
                     return manifest
             except (json.JSONDecodeError, OSError):
-                logger.warning("Manifest unreadable or corrupted, starting fresh")
+                logger.warning(
+                    "Manifest unreadable or corrupted, starting fresh",
+                )
             return {"version": 1, "datasets": []}
 
     def upsert(self, dataset_info: dict[str, Any]) -> None:

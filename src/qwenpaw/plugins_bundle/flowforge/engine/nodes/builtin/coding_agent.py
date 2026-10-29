@@ -127,11 +127,17 @@ class CodingAgentNode(WorkflowNode):
             not_idempotent=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         runtime = hidden.agent_runtime
         if runtime is None:
             return NodeOutput(
-                error="CodingAgentNode requires an agent runtime on the workflow executor.",
+                error="CodingAgentNode requires an agent runtime on "
+                "the workflow executor.",
                 metadata={"node_id": hidden.unique_id},
             )
 
@@ -153,11 +159,12 @@ class CodingAgentNode(WorkflowNode):
 
         max_iter = int(inputs.get("max_iterations") or 40)
         max_iter = max(1, min(80, max_iter))
-        read_only = bool(inputs.get("read_only") or False)
+        read_only = bool(inputs.get("read_only"))
         allowed_raw = inputs.get("allowed_tools") or DEFAULT_CODING_AGENT_TOOLS
         if read_only and (
             not inputs.get("allowed_tools")
-            or list(inputs["allowed_tools"]) == list(DEFAULT_CODING_AGENT_TOOLS)
+            or list(inputs["allowed_tools"])
+            == list(DEFAULT_CODING_AGENT_TOOLS)
         ):
             allowed_raw = _READ_ONLY_PROJECT_TOOLS
         allowed = [str(t) for t in allowed_raw]
@@ -168,7 +175,9 @@ class CodingAgentNode(WorkflowNode):
         path = Path(project_path).expanduser()
         if not path.is_absolute():
             return NodeOutput(
-                error=f"`project_path` must be absolute. Got {project_path!r}.",
+                error=f"`project_path` must be absolute. Got "
+                f"{project_path!r}"
+                f".",
                 metadata={"node_id": hidden.unique_id},
             )
         try:
@@ -230,6 +239,7 @@ class CodingAgentNode(WorkflowNode):
         finally:
             end_execution(exec_run.run_id)
         result.metadata.setdefault(
-            "duration_ms", int((time.monotonic() - started) * 1000),
+            "duration_ms",
+            int((time.monotonic() - started) * 1000),
         )
         return result

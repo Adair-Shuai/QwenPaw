@@ -29,7 +29,12 @@ export interface PublishResult extends PublishInspection {
   archive_size_bytes: number;
   archive_path?: string;
   metadata_path?: string;
-  remote?: unknown;
+  remote?: {
+    receipt_id?: string;
+    operation?: "create" | "update";
+    object_key?: string;
+    verified?: boolean;
+  };
 }
 
 async function parseResponse<T>(response: Response): Promise<T> {
@@ -69,12 +74,21 @@ export async function publishInstalledAsset(options: {
   pluginId: string;
   kind: PublishAssetKind;
   mode: PublishMode;
+  token?: string;
 }): Promise<PublishResult> {
   return parseResponse(
     await fetch(getApiUrl("/publisher/publish"), {
       method: "POST",
-      headers: { ...buildAuthHeaders(), "Content-Type": "application/json" },
-      body: JSON.stringify(options),
+      headers: {
+        ...buildAuthHeaders(),
+        "Content-Type": "application/json",
+        ...(options.token ? { "X-UGSci-Publisher-Token": options.token } : {}),
+      },
+      body: JSON.stringify({
+        pluginId: options.pluginId,
+        kind: options.kind,
+        mode: options.mode,
+      }),
     }),
   );
 }
@@ -83,6 +97,8 @@ export async function uploadPublishArchive(options: {
   file: File;
   kind: PublishAssetKind;
   mode: PublishMode;
+  token?: string;
+  inspectOnly?: boolean;
 }): Promise<PublishResult> {
   return parseResponse(
     await fetch(getApiUrl("/publisher/upload"), {
@@ -93,6 +109,8 @@ export async function uploadPublishArchive(options: {
         "X-UGSci-Filename": encodeURIComponent(options.file.name),
         "X-UGSci-Asset-Kind": options.kind,
         "X-UGSci-Publish-Mode": options.mode,
+        ...(options.token ? { "X-UGSci-Publisher-Token": options.token } : {}),
+        ...(options.inspectOnly ? { "X-UGSci-Inspect-Only": "true" } : {}),
       },
       body: options.file,
     }),

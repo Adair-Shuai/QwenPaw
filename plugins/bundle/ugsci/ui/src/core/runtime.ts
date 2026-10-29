@@ -15,10 +15,12 @@ export interface QwenPawHost {
   fetch?: (path: string, init?: RequestInit) => Promise<Response>;
   setSelectedAgent?: (agentId: string) => void;
   useNavigate?: () => (path: string) => void;
+  useLocation?: () => { pathname: string; search: string; hash: string };
   refreshAgents?: (options?: { force?: boolean }) => Promise<void>;
   useSelectedAgent?: () => { id: string };
   getCurrentSessionId?: () => string;
   getSelectedAgentId?: () => string;
+  openExternalLink?: (url: string) => void;
   ReactMarkdown?: ReactTypes.ComponentType<any>;
   remarkGfm?: unknown;
   loadBuiltinPage?: (page: BuiltinPageId) => Promise<any>;

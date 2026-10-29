@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Build independently versioned Python dependency and QwenPaw backend layers."""
+(
+    "Build independently versioned Python dependency an"
+    "d QwenPaw backend layers."
+)
 
 from __future__ import annotations
 
@@ -163,7 +166,10 @@ def _safe_empty(path: Path, parent: Path) -> None:
 
 @contextmanager
 def _staged_console(repo: Path) -> Iterator[None]:
-    """Temporarily expose the built console to setuptools without dirtying src."""
+    (
+        "Temporarily expose the built console to setuptools"
+        " without dirtying src."
+    )
     console_dist = repo / "console" / "dist"
     if not (console_dist / "index.html").is_file():
         raise FileNotFoundError(
@@ -211,7 +217,10 @@ def build_layers(
     lock = repo / "requirements-desktop.lock"
     if not lock.is_file():
         raise FileNotFoundError(
-            "requirements-desktop.lock is required for a reproducible desktop layer",
+            (
+                "requirements-desktop.lock is required for a reprod"
+                "ucible desktop layer"
+            ),
         )
     if not runtime_python.is_file():
         raise FileNotFoundError(
@@ -308,6 +317,9 @@ def build_layers(
                 "-c",
                 (
                     "import importlib, qwenpaw, qwenpaw.tauri.entry; "
+                    "importlib.import_module('qwenpaw.cli.init_cmd'); "
+                    "importlib.import_module('qwenpaw.app._app'); "
+                    "importlib.import_module('xlrd'); "
                     "importlib.import_module('modelscope.hub.api'); "
                     "print(qwenpaw.__file__)"
                 ),

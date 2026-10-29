@@ -203,7 +203,8 @@ def is_requirement_satisfied(req: Requirement) -> bool:
             from .loader import _plugin_site_dir
 
             for dist in Distribution.discover(
-                name=req.name, path=[str(_plugin_site_dir())]
+                name=req.name,
+                path=[str(_plugin_site_dir())],
             ):
                 installed = dist.version
                 break

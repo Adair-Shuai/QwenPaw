@@ -4,7 +4,12 @@
 
 import { getHost, clearApiCache, apiFetch } from "../core/runtime";
 import { PRIMARY_BTN_STYLE } from "../core/shared";
-import type { SkillSpec, PoolSkillSpec, MCPClientInfo, ExpertData } from "../core/types";
+import type {
+  SkillSpec,
+  PoolSkillSpec,
+  MCPClientInfo,
+  ExpertData,
+} from "../core/types";
 import {
   fetchHeartbeatConfig,
   updateHeartbeatConfig,
@@ -36,7 +41,11 @@ import {
   type AgentsRunningConfig,
 } from "./expertApi";
 import { KnowledgeBaseTab } from "./expertTabs";
-import { fetchAgentSkills, fetchPoolSkills, fetchAgentConfig } from "../core/api";
+import {
+  fetchAgentSkills,
+  fetchPoolSkills,
+  fetchAgentConfig,
+} from "../core/api";
 import { DEFAULT_PROMPT_FILES, TagList, SkillPickerModal } from "./expertUtils";
 
 // ─── Expert Config Modal ─────────────────────────────────────────────────────
@@ -492,8 +501,13 @@ export function SkillsConfigTab({
           Button,
           {
             size: "small",
-            icon: ReloadOutlined ? React.createElement(ReloadOutlined) : undefined,
-            onClick: () => { clearApiCache(); loadSkills(); },
+            icon: ReloadOutlined
+              ? React.createElement(ReloadOutlined)
+              : undefined,
+            onClick: () => {
+              clearApiCache();
+              loadSkills();
+            },
           },
           "刷新",
         ),
@@ -699,9 +713,7 @@ export function MCPConfigTab({
       }
       for (const [clientKey, cfg] of entries) {
         const clientCfg = cfg as Record<string, unknown>;
-        const transport = clientCfg.url
-          ? "streamable_http"
-          : "stdio";
+        const transport = clientCfg.url ? "streamable_http" : "stdio";
         await createMCPForAgent(agentId, {
           client_key: clientKey,
           client: {
@@ -754,7 +766,11 @@ export function MCPConfigTab({
           marginBottom: 12,
         },
       },
-      React.createElement(Text, { strong: true }, `MCP 客户端 (${mcps.length})`),
+      React.createElement(
+        Text,
+        { strong: true },
+        `MCP 客户端 (${mcps.length})`,
+      ),
       React.createElement(
         "div",
         { style: { display: "flex", gap: 8 } },
@@ -762,8 +778,13 @@ export function MCPConfigTab({
           Button,
           {
             size: "small",
-            icon: ReloadOutlined ? React.createElement(ReloadOutlined) : undefined,
-            onClick: () => { clearApiCache(); loadMCPs(); },
+            icon: ReloadOutlined
+              ? React.createElement(ReloadOutlined)
+              : undefined,
+            onClick: () => {
+              clearApiCache();
+              loadMCPs();
+            },
           },
           "刷新",
         ),
@@ -830,8 +851,16 @@ export function MCPConfigTab({
                       marginBottom: 4,
                     },
                   },
-                  React.createElement("span", { style: { fontSize: 14 } }, "🔌"),
-                  React.createElement(Text, { strong: true }, mcp.name || mcp.key),
+                  React.createElement(
+                    "span",
+                    { style: { fontSize: 14 } },
+                    "🔌",
+                  ),
+                  React.createElement(
+                    Text,
+                    { strong: true },
+                    mcp.name || mcp.key,
+                  ),
                   React.createElement(
                     Tag,
                     {
@@ -860,7 +889,13 @@ export function MCPConfigTab({
                 mcp.tools && mcp.tools.length > 0
                   ? React.createElement(
                       "div",
-                      { style: { marginTop: 4, fontSize: 11, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
+                      {
+                        style: {
+                          marginTop: 4,
+                          fontSize: 11,
+                          color: "var(--ant-color-text-tertiary, #8c8c8c)",
+                        },
+                      },
                       `提供 ${mcp.tools.length} 个工具`,
                     )
                   : null,
@@ -881,7 +916,13 @@ export function MCPConfigTab({
       },
       React.createElement(
         "div",
-        { style: { marginBottom: 8, fontSize: 12, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
+        {
+          style: {
+            marginBottom: 8,
+            fontSize: 12,
+            color: "var(--ant-color-text-tertiary, #8c8c8c)",
+          },
+        },
         "粘贴 MCP 配置 JSON（支持 mcpServers 格式），将创建到当前专家工作区：",
       ),
       React.createElement(TextArea, {
@@ -967,7 +1008,10 @@ export function RunningConfigTab({ agentId }: { agentId: string }) {
       // Basic
       setShellTimeout(config.shell_command_timeout ?? 60);
       setShellExecutable(config.shell_command_executable ?? "");
-      const atc = config.auto_title_config ?? { enabled: true, timeout_seconds: 30 };
+      const atc = config.auto_title_config ?? {
+        enabled: true,
+        timeout_seconds: 30,
+      };
       setAutoTitleEnabled(atc.enabled ?? true);
       setAutoTitleTimeout(atc.timeout_seconds ?? 30);
       setLanguage(lang);
@@ -1054,7 +1098,8 @@ export function RunningConfigTab({ agentId }: { agentId: string }) {
       originalRef.current = configToSave;
 
       // Also save language and timezone (separate endpoints)
-      if (language) await updateAgentLanguage(agentId, language).catch(() => {});
+      if (language)
+        await updateAgentLanguage(agentId, language).catch(() => {});
       if (timezone) await updateUserTimezone(timezone).catch(() => {});
 
       antdMsg.success("运行配置已保存");
@@ -1074,11 +1119,7 @@ export function RunningConfigTab({ agentId }: { agentId: string }) {
   }
 
   // Helper: a labelled form field row
-  const field = (
-    label: string,
-    control: any,
-    hint?: string,
-  ) =>
+  const field = (label: string, control: any, hint?: string) =>
     React.createElement(
       "div",
       { style: CFG_ROW_STYLE },
@@ -1121,11 +1162,7 @@ export function RunningConfigTab({ agentId }: { agentId: string }) {
     "div",
     { style: { paddingBottom: 8 } },
     // ── Section: 基础设置 ──
-    React.createElement(
-      "div",
-      { style: CFG_SECTION_TITLE_STYLE },
-      "基础设置",
-    ),
+    React.createElement("div", { style: CFG_SECTION_TITLE_STYLE }, "基础设置"),
     fieldPair(
       "Shell 命令超时 (秒)",
       React.createElement(InputNumber, {
@@ -1182,10 +1219,14 @@ export function RunningConfigTab({ agentId }: { agentId: string }) {
     ),
     fieldPair(
       "自动生成会话标题",
-      React.createElement(Space, null, React.createElement(Switch, {
-        checked: autoTitleEnabled,
-        onChange: (v: boolean) => setAutoTitleEnabled(v),
-      })),
+      React.createElement(
+        Space,
+        null,
+        React.createElement(Switch, {
+          checked: autoTitleEnabled,
+          onChange: (v: boolean) => setAutoTitleEnabled(v),
+        }),
+      ),
       "标题生成超时 (秒)",
       React.createElement(InputNumber, {
         min: 5,
@@ -1216,7 +1257,11 @@ export function RunningConfigTab({ agentId }: { agentId: string }) {
 
     // ── Section: 迭代与循环 ──
     React.createElement(Divider, { style: { margin: "8px 0 16px" } }),
-    React.createElement("div", { style: CFG_SECTION_TITLE_STYLE }, "迭代与循环"),
+    React.createElement(
+      "div",
+      { style: CFG_SECTION_TITLE_STYLE },
+      "迭代与循环",
+    ),
     field(
       "启用迭代限制",
       React.createElement(Switch, {
@@ -1360,7 +1405,11 @@ export function RunningConfigTab({ agentId }: { agentId: string }) {
 
     // ── Section: 上下文与记忆 ──
     React.createElement(Divider, { style: { margin: "8px 0 16px" } }),
-    React.createElement("div", { style: CFG_SECTION_TITLE_STYLE }, "上下文与记忆"),
+    React.createElement(
+      "div",
+      { style: CFG_SECTION_TITLE_STYLE },
+      "上下文与记忆",
+    ),
     fieldPair(
       "上下文管理后端",
       React.createElement(Select, {
@@ -1500,7 +1549,9 @@ export function ExpertConfigModal({
     },
     {
       key: "skills",
-      label: `技能 (${expert.skills.filter((s) => s.enabled !== false).length})`,
+      label: `技能 (${
+        expert.skills.filter((s) => s.enabled !== false).length
+      })`,
       children: React.createElement(SkillsConfigTab, {
         agentId: agent.id,
         onRefresh,

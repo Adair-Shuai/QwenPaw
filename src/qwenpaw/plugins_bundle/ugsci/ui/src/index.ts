@@ -27,6 +27,7 @@ import {
   LegacyGenUiSettingsRedirect,
 } from "./settings/UgsciSettingsPage";
 import { registerVisualizationFrontend } from "./visualization";
+import { registerSimulationFrontend } from "./simulation";
 import { StorageDynamicsPage } from "./storage/StorageDynamicsPage";
 
 // ─── Plugin Registration ──────────────────────────────────────────────────────
@@ -42,6 +43,7 @@ function buildPlugin() {
 
   const React = getHost().React;
   const PLUGIN_ID = "ugsci";
+  registerSimulationFrontend(QP, React);
 
   function EmbeddedMarketplacePage() {
     const React = getHost().React;

@@ -1,8 +1,8 @@
 # UGSci 领域计算引擎架构设计
 
-> 状态：Design Proposed  
-> 适用范围：UGSci bundled plugin、QwenPaw Driver/Tool Registry、桌面内置科学计算组件  
-> 目标版本：领域计算第二阶段  
+> 状态：Design Proposed
+> 适用范围：UGSci bundled plugin、QwenPaw Driver/Tool Registry、桌面内置科学计算组件
+> 目标版本：领域计算第二阶段
 > 更新日期：2026-08-09
 
 ## 1. 摘要
@@ -765,26 +765,26 @@ interface EngineView {
 
 ### ADR-001：领域计算是业务视图，不是工具来源
 
-**决定**：使用 `category=domain_compute` 与 `source=builtin|plugin|mcp|remote` 两个正交维度。  
-**原因**：用户按问题寻找能力，平台按来源管理生命周期。  
+**决定**：使用 `category=domain_compute` 与 `source=builtin|plugin|mcp|remote` 两个正交维度。
+**原因**：用户按问题寻找能力，平台按来源管理生命周期。
 **后果**：同一能力可同时出现在领域页和 MCP/工具管理页。
 
 ### ADR-002：不复用仿真 EngineInfo 作为领域引擎模型
 
-**决定**：首阶段新增 `DomainEngineDescriptor`。  
-**原因**：现有模型以 executable、install_dir、license_server 为中心，不适合 MCP 和 Python 包。  
+**决定**：首阶段新增 `DomainEngineDescriptor`。
+**原因**：现有模型以 executable、install_dir、license_server 为中心，不适合 MCP 和 Python 包。
 **后果**：短期双模型，长期通过只读 `EngineView` 聚合。
 
 ### ADR-003：执行真相保留在 Driver/Tool Registry
 
-**决定**：UGSci Registry 不直接执行 MCP，也不复制工具 Schema。  
-**原因**：避免绕过安全策略并消除状态双写。  
+**决定**：UGSci Registry 不直接执行 MCP，也不复制工具 Schema。
+**原因**：避免绕过安全策略并消除状态双写。
 **后果**：领域状态依赖 Resolver 查询 QwenPaw 运行时。
 
 ### ADR-004：技能依赖 capability，而非库名
 
-**决定**：技能逐步声明稳定 capability ID。  
-**原因**：底层 Provider 可替换，技能工作流仍保持稳定。  
+**决定**：技能逐步声明稳定 capability ID。
+**原因**：底层 Provider 可替换，技能工作流仍保持稳定。
 **后果**：需要 capability 到工具的确定性解析和缺失提示。
 
 ## 25. 建议目录结构

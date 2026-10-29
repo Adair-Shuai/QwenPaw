@@ -5,14 +5,14 @@ Each operation maps to the same ``TraceStep`` kinds the curated path uses,
 so the worksheet renders identically.
 
 +-------------+--------------------------+----------------------------------------------+
-| Freeform op | SymPy call               | TraceStep emitted                            |
+| Freeform op | SymPy call | TraceStep emitted |
 +=============+==========================+==============================================+
-| substitute  | expr.subs({old: new})    | kind=symbolic, operation=substitute          |
-| rearrange   | solve(expr, target)      | kind=symbolic, operation=solve               |
-| simplify    | sp.simplify (if idempotent| kind=symbolic, operation=simplify           |
-| expand      | sp.expand                | kind=symbolic, operation=simplify             |
-| collect     | sp.collect               | kind=symbolic, operation=simplify             |
-| solve_for   | sp.solve(expr, target)   | kind=symbolic, operation=solve               |
+| substitute | expr.subs({old: new}) | kind=symbolic, operation=substitute |
+| rearrange | solve(expr, target) | kind=symbolic, operation=solve |
+| simplify | sp.simplify (if idempotent | kind=symbolic, operation=simplify |
+| expand | sp.expand | kind=symbolic, operation=simplify |
+| collect | sp.collect | kind=symbolic, operation=simplify |
+| solve_for | sp.solve(expr, target) | kind=symbolic, operation=solve |
 +-------------+--------------------------+----------------------------------------------+
 """
 
@@ -73,7 +73,9 @@ def do_solve(
     sp = _get_sympy()
     if max_steps is not None:
         recorder.set_max_steps(max_steps)
-    target_sym = sp.Symbol(target) if not isinstance(target, sp.Symbol) else target
+    target_sym = (
+        sp.Symbol(target) if not isinstance(target, sp.Symbol) else target
+    )
 
     # Handle equation vs expression
     if isinstance(expr, sp.Eq):
@@ -114,7 +116,9 @@ def do_solve(
         reads=reads,
         writes=target,
         description=f"Selected solution: {sol_str}",
-        note=f"From {len(solutions)} solution(s)" if len(solutions) > 1 else "",
+        note=f"From {len(solutions)} solution(s)"
+        if len(solutions) > 1
+        else "",
     )
 
     return selected
@@ -140,7 +144,10 @@ def do_substitute(
             # Parse the replacement expression
             from .parser import parse_expression
 
-            subs_dict[sym] = parse_expression(value, allowed_symbols=allowed_symbols)
+            subs_dict[sym] = parse_expression(
+                value,
+                allowed_symbols=allowed_symbols,
+            )
         else:
             subs_dict[sym] = value
 
@@ -198,13 +205,17 @@ def do_simplify(
         )
         return expr
 
-    result = guards.with_timeout(guards.MAX_TRANSFORM_SECONDS, lambda: sp.simplify(expr))
+    result = guards.with_timeout(
+        guards.MAX_TRANSFORM_SECONDS,
+        lambda: sp.simplify(expr),
+    )
     new_ops = _op_count(result)
     if new_ops > original_ops and new_ops > guards.MAX_SYMPY_OPS:
         recorder.assert_true(
             "Simplify did not inflate result",
             False,
-            detail=f"ops {original_ops} → {new_ops} (cap {guards.MAX_SYMPY_OPS})",
+            detail=f"ops {original_ops} → {new_ops} "
+            f"(cap {guards.MAX_SYMPY_OPS})",
             group=group,
             reads=reads,
         )
@@ -233,7 +244,10 @@ def do_expand(
 ) -> Any:
     """Expand an expression."""
     sp = _get_sympy()
-    result = guards.with_timeout(guards.MAX_TRANSFORM_SECONDS, lambda: sp.expand(expr))
+    result = guards.with_timeout(
+        guards.MAX_TRANSFORM_SECONDS,
+        lambda: sp.expand(expr),
+    )
     new_ops = _op_count(result)
     if new_ops > guards.MAX_SYMPY_OPS:
         recorder.assert_true(
@@ -269,8 +283,13 @@ def do_collect(
 ) -> Any:
     """Collect terms by ``target``."""
     sp = _get_sympy()
-    target_sym = sp.Symbol(target) if not isinstance(target, sp.Symbol) else target
-    result = guards.with_timeout(guards.MAX_TRANSFORM_SECONDS, lambda: sp.collect(expr, target_sym))
+    target_sym = (
+        sp.Symbol(target) if not isinstance(target, sp.Symbol) else target
+    )
+    result = guards.with_timeout(
+        guards.MAX_TRANSFORM_SECONDS,
+        lambda: sp.collect(expr, target_sym),
+    )
     ops = _op_count(result)
     if ops > guards.MAX_SYMPY_OPS:
         recorder.assert_true(
@@ -303,7 +322,14 @@ def do_rearrange(
     max_steps: int | None = None,
 ) -> Any:
     """Rearrange an equation for ``target`` (built on ``sp.solve``)."""
-    return do_solve(expr, target, recorder, group=group, reads=reads, max_steps=max_steps)
+    return do_solve(
+        expr,
+        target,
+        recorder,
+        group=group,
+        reads=reads,
+        max_steps=max_steps,
+    )
 
 
 __all__ = [

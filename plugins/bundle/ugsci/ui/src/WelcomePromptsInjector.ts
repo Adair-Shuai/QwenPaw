@@ -24,7 +24,8 @@ export function detectLocale(): string {
     const stored = localStorage.getItem("language") || "";
     if (stored) return stored.split("-")[0];
   } catch {}
-  const nav = (typeof navigator !== "undefined" ? navigator.language : "") || "";
+  const nav =
+    (typeof navigator !== "undefined" ? navigator.language : "") || "";
   return nav.split("-")[0] || "en";
 }
 
@@ -39,13 +40,34 @@ export const UGSCI_DESCRIPTIONS: Record<string, string> = {
 };
 
 /** Default prompt per locale (shown when agent has no skills). */
-export const UGSCI_DEFAULT_PROMPT: Record<string, { label: string; value: string }> = {
-  zh: { label: "能告诉我你都能做点什么吗？", value: "能告诉我你都能做点什么吗" },
-  en: { label: "Can you tell me what you can do?", value: "Can you tell me what you can do?" },
-  ja: { label: "あなたができることを教えてください", value: "あなたができることを教えてください" },
-  ru: { label: "Расскажи, что ты умеешь делать?", value: "Расскажи, что ты умеешь делать?" },
-  vi: { label: "Bạn có thể cho tôi biết bạn làm được gì không?", value: "Bạn có thể cho tôi biết bạn làm được gì không?" },
-  id: { label: "Bisa cerita apa saja yang bisa Anda lakukan?", value: "Bisa cerita apa saja yang bisa Anda lakukan?" },
+export const UGSCI_DEFAULT_PROMPT: Record<
+  string,
+  { label: string; value: string }
+> = {
+  zh: {
+    label: "能告诉我你都能做点什么吗？",
+    value: "能告诉我你都能做点什么吗",
+  },
+  en: {
+    label: "Can you tell me what you can do?",
+    value: "Can you tell me what you can do?",
+  },
+  ja: {
+    label: "あなたができることを教えてください",
+    value: "あなたができることを教えてください",
+  },
+  ru: {
+    label: "Расскажи, что ты умеешь делать?",
+    value: "Расскажи, что ты умеешь делать?",
+  },
+  vi: {
+    label: "Bạn có thể cho tôi biết bạn làm được gì không?",
+    value: "Bạn có thể cho tôi biết bạn làm được gì không?",
+  },
+  id: {
+    label: "Bisa cerita apa saja yang bisa Anda lakukan?",
+    value: "Bisa cerita apa saja yang bisa Anda lakukan?",
+  },
 };
 
 export function WelcomePromptsInjector() {
@@ -55,7 +77,9 @@ export function WelcomePromptsInjector() {
 
   // useSelectedAgent() is a host hook that returns { id: string }.
   // It re-renders this component whenever the selected agent changes.
-  const agentInfo = host.useSelectedAgent ? host.useSelectedAgent() : { id: "default" };
+  const agentInfo = host.useSelectedAgent
+    ? host.useSelectedAgent()
+    : { id: "default" };
   const agentId = agentInfo?.id || "default";
 
   // Keep track of the last injected agent so we don't re-fetch unnecessarily.
@@ -74,7 +98,8 @@ export function WelcomePromptsInjector() {
 
     const locale = detectLocale();
     const description = UGSCI_DESCRIPTIONS[locale] || UGSCI_DESCRIPTIONS.en;
-    const defaultPrompt = UGSCI_DEFAULT_PROMPT[locale] || UGSCI_DEFAULT_PROMPT.en;
+    const defaultPrompt =
+      UGSCI_DEFAULT_PROMPT[locale] || UGSCI_DEFAULT_PROMPT.en;
 
     let cancelled = false;
 
@@ -87,7 +112,9 @@ export function WelcomePromptsInjector() {
 
         // Dispose the previous registration before setting a new one.
         if (disposableRef.current) {
-          try { disposableRef.current(); } catch {}
+          try {
+            disposableRef.current();
+          } catch {}
           disposableRef.current = null;
         }
 
@@ -122,7 +149,9 @@ export function WelcomePromptsInjector() {
         const QP = (window as any).QwenPaw;
         if (QP?.chat?.welcome && !cancelled) {
           if (disposableRef.current) {
-            try { disposableRef.current(); } catch {}
+            try {
+              disposableRef.current();
+            } catch {}
             disposableRef.current = null;
           }
           disposableRef.current = QP.chat.welcome.set("ugsci", {
@@ -141,4 +170,3 @@ export function WelcomePromptsInjector() {
   // Render nothing — this component exists only for its side effect.
   return null;
 }
-

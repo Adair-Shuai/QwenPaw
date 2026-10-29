@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""User catalog overlay: hide built-in examples without deleting package files."""
+"""User catalog overlay: hide built-in examples without deleting package
+files."""
 
 from __future__ import annotations
 
@@ -11,7 +12,9 @@ import threading
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("qwenpaw").getChild("plugin.oilgas_vis.cache.catalog")
+logger = logging.getLogger("qwenpaw").getChild(
+    "plugin.oilgas_vis.cache.catalog",
+)
 
 
 class CatalogState:
@@ -33,7 +36,9 @@ class CatalogState:
                         if isinstance(hidden, list):
                             return {
                                 "hidden": [
-                                    str(item) for item in hidden if str(item).strip()
+                                    str(item)
+                                    for item in hidden
+                                    if str(item).strip()
                                 ],
                             }
             except (json.JSONDecodeError, OSError):
@@ -44,7 +49,8 @@ class CatalogState:
         return set(self.read().get("hidden") or [])
 
     def hide(self, dataset_ids: list[str]) -> list[str]:
-        """Add ids to the hidden list. Returns the ids that were newly hidden."""
+        """Add ids to the hidden list. Returns the ids that were newly
+        hidden."""
         wanted = [item for item in dict.fromkeys(dataset_ids) if item]
         if not wanted:
             return []

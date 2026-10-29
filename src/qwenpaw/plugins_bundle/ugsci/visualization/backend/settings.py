@@ -8,7 +8,6 @@ overridden via environment variables.
 from __future__ import annotations
 
 import os
-from pathlib import Path
 from pydantic import BaseModel
 
 
@@ -40,16 +39,17 @@ class PluginSettings(BaseModel):
         """Load settings from environment variables."""
         return cls(
             max_upload_size=int(
-                os.environ.get("OILGAS_MAX_UPLOAD", 500 * 1024 * 1024)
+                os.environ.get("OILGAS_MAX_UPLOAD", 500 * 1024 * 1024),
             ),
             max_concurrent_imports=int(
-                os.environ.get("OILGAS_MAX_IMPORTS", 2)
+                os.environ.get("OILGAS_MAX_IMPORTS", 2),
             ),
             chunk_target_triangles=int(
-                os.environ.get("OILGAS_CHUNK_TRIANGLES", 500_000)
+                os.environ.get("OILGAS_CHUNK_TRIANGLES", 500_000),
             ),
             coordinate_origin_mode=os.environ.get(
-                "OILGAS_COORD_ORIGIN", "auto"
+                "OILGAS_COORD_ORIGIN",
+                "auto",
             ),
         )
 

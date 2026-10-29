@@ -3,11 +3,8 @@
 
 from __future__ import annotations
 
-import asyncio
 import inspect
 import json
-import math
-import re
 from typing import Any
 
 from ...io import IO, Hidden, HiddenHolder, NodeOutput, Schema
@@ -21,16 +18,25 @@ class InputNode(WorkflowNode):
     @classmethod
     def define_schema(cls) -> Schema:
         return Schema(
-            node_id=cls.NODE_ID, display_name="Input", category="workflow/io",
+            node_id=cls.NODE_ID,
+            display_name="Input",
+            category="workflow/io",
             description="Read one value from workflow inputs.",
             inputs=[IO.String.Input(id="name")],
             outputs=[IO.Any_.Output(id="value")],
             hidden=[Hidden.WORKFLOW_STATE],
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         state = hidden.workflow_state
-        return NodeOutput(values=((state.inputs.get(inputs["name"]) if state else None),))
+        return NodeOutput(
+            values=((state.inputs.get(inputs["name"]) if state else None),),
+        )
 
 
 class OutputNode(WorkflowNode):
@@ -39,7 +45,9 @@ class OutputNode(WorkflowNode):
     @classmethod
     def define_schema(cls) -> Schema:
         return Schema(
-            node_id=cls.NODE_ID, display_name="Output", category="workflow/io",
+            node_id=cls.NODE_ID,
+            display_name="Output",
+            category="workflow/io",
             description="Publish a workflow output.",
             inputs=[IO.Any_.Input(id="value")],
             outputs=[IO.Any_.Output(id="value")],
@@ -47,7 +55,12 @@ class OutputNode(WorkflowNode):
             is_output_node=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         value = inputs.get("value")
         if hidden.workflow_state is not None and hidden.unique_id:
             hidden.workflow_state.outputs[hidden.unique_id] = value
@@ -60,7 +73,8 @@ class AgentNode(WorkflowNode):
     @classmethod
     def define_schema(cls) -> Schema:
         return Schema(
-            node_id=cls.NODE_ID, display_name="Agent Turn",
+            node_id=cls.NODE_ID,
+            display_name="Agent Turn",
             category="workflow/action",
             inputs=[
                 IO.String.Input(id="agent_id"),
@@ -73,7 +87,12 @@ class AgentNode(WorkflowNode):
             not_idempotent=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         runtime = hidden.agent_runtime
         if runtime is None:
             return NodeOutput(error="AgentNode requires agent_runtime")
@@ -81,16 +100,15 @@ class AgentNode(WorkflowNode):
             query = str(inputs["query"])
             context = inputs.get("context")
             if context is not None:
-                query += (
-                    "\n\n## 上游输入/产物\n"
-                    + (
-                        context
-                        if isinstance(context, str)
-                        else json.dumps(context, ensure_ascii=False, default=str)
-                    )
+                query += "\n\n## 上游输入/产物\n" + (
+                    context
+                    if isinstance(context, str)
+                    else json.dumps(context, ensure_ascii=False, default=str)
                 )
             reply = await _dispatch_agent_turn(
-                runtime, str(inputs["agent_id"]), query,
+                runtime,
+                str(inputs["agent_id"]),
+                query,
             )
         except Exception as exc:  # noqa: BLE001
             return NodeOutput(error=f"{type(exc).__name__}: {exc}")
@@ -103,7 +121,8 @@ class ToolNode(WorkflowNode):
     @classmethod
     def define_schema(cls) -> Schema:
         return Schema(
-            node_id=cls.NODE_ID, display_name="Tool Call",
+            node_id=cls.NODE_ID,
+            display_name="Tool Call",
             category="workflow/action",
             inputs=[
                 IO.String.Input(id="tool_name"),
@@ -115,14 +134,28 @@ class ToolNode(WorkflowNode):
             not_idempotent=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         tool_name = str(inputs.get("tool_name") or "")
         context = hidden.tool_context
         executor = getattr(context, "tool_executor", None)
         if executor is not None:
-            result = await executor.execute(tool_name, inputs.get("args") or {}, hidden.workflow_state)
+            result = await executor.execute(
+                tool_name,
+                inputs.get("args") or {},
+                hidden.workflow_state,
+            )
             if not result.result.success:
-                return NodeOutput(error=result.result.error or "Tool execution failed", metadata={"retryable": getattr(result.result, "retryable", True)})
+                return NodeOutput(
+                    error=result.result.error or "Tool execution failed",
+                    metadata={
+                        "retryable": getattr(result.result, "retryable", True),
+                    },
+                )
             return NodeOutput(values=(result.result.data,))
         registry = getattr(context, "tool_registry", context)
         descriptor = (
@@ -150,18 +183,24 @@ class ConditionNode(WorkflowNode):
     @classmethod
     def define_schema(cls) -> Schema:
         return Schema(
-            node_id=cls.NODE_ID, display_name="Condition",
+            node_id=cls.NODE_ID,
+            display_name="Condition",
             category="workflow/control",
             outputs=[],
             hidden=[Hidden.UNIQUE_ID, Hidden.PROMPT, Hidden.WORKFLOW_STATE],
             control_flow=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         node = hidden.prompt.get(hidden.unique_id or "", {})
         control = node.get("control") or {}
         context = (
-            hidden.workflow_state._build_context()
+            hidden.workflow_state.build_context()
             if hidden.workflow_state is not None
             else {}
         )
@@ -171,7 +210,8 @@ class ConditionNode(WorkflowNode):
             )
             if expression.evaluate(context):
                 return NodeOutput(
-                    next_node=condition.get("then_node") or condition.get("then"),
+                    next_node=condition.get("then_node")
+                    or condition.get("then"),
                 )
         return NodeOutput(
             next_node=control.get("else_node") or control.get("else"),
@@ -184,7 +224,8 @@ class LLMNode(WorkflowNode):
     @classmethod
     def define_schema(cls) -> Schema:
         return Schema(
-            node_id=cls.NODE_ID, display_name="LLM Call",
+            node_id=cls.NODE_ID,
+            display_name="LLM Call",
             category="workflow/action",
             inputs=[
                 IO.String.Input(id="prompt", multiline=True),
@@ -196,7 +237,12 @@ class LLMNode(WorkflowNode):
             not_idempotent=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         service = hidden.llm_service
         if service is None:
             return NodeOutput(error="LLMNode requires llm_service")
@@ -204,11 +250,19 @@ class LLMNode(WorkflowNode):
             if hasattr(service, "chat"):
                 messages = []
                 if inputs.get("system"):
-                    messages.append({"role": "system", "content": inputs["system"]})
+                    messages.append(
+                        {"role": "system", "content": inputs["system"]},
+                    )
                 messages.append({"role": "user", "content": inputs["prompt"]})
                 result = service.chat(messages=messages)
             else:
-                result = service.complete(inputs["prompt"])
+                from ...adapter.chat_message import ChatMessage
+
+                chat_messages = []
+                if inputs.get("system"):
+                    chat_messages.append(ChatMessage.system(inputs["system"]))
+                chat_messages.append(ChatMessage.user(inputs["prompt"]))
+                result = service.complete(messages=chat_messages)
             if inspect.isawaitable(result):
                 result = await result
         except Exception as exc:  # noqa: BLE001
@@ -219,17 +273,33 @@ class LLMNode(WorkflowNode):
 class CodeNode(WorkflowNode):
     NODE_ID = "CodeNode"
     _BUILTINS = {
-        "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict,
-        "enumerate": enumerate, "float": float, "int": int, "len": len,
-        "list": list, "max": max, "min": min, "range": range, "round": round,
-        "set": set, "sorted": sorted, "str": str, "sum": sum, "tuple": tuple,
+        "abs": abs,
+        "all": all,
+        "any": any,
+        "bool": bool,
+        "dict": dict,
+        "enumerate": enumerate,
+        "float": float,
+        "int": int,
+        "len": len,
+        "list": list,
+        "max": max,
+        "min": min,
+        "range": range,
+        "round": round,
+        "set": set,
+        "sorted": sorted,
+        "str": str,
+        "sum": sum,
+        "tuple": tuple,
         "zip": zip,
     }
 
     @classmethod
     def define_schema(cls) -> Schema:
         return Schema(
-            node_id=cls.NODE_ID, display_name="Code",
+            node_id=cls.NODE_ID,
+            display_name="Code",
             category="workflow/action",
             inputs=[IO.String.Input(id="code", multiline=True)],
             outputs=[IO.Any_.Output(id="result")],
@@ -237,17 +307,39 @@ class CodeNode(WorkflowNode):
             not_idempotent=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         from ...adapter.sandbox import execute_script
-        node = (hidden.prompt or {}).get(hidden.unique_id or "", {})
-        timeout = min(30.0, float((node.get("control") or {}).get("timeout_sec", 5.0)))
-        result = await execute_script(str(inputs["code"]), inputs={"inputs": inputs}, timeout_sec=timeout)
-        return NodeOutput(values=(result.result,), metadata={"execution_isolation": "process", "trusted_code_only": True})
 
+        node = (hidden.prompt or {}).get(hidden.unique_id or "", {})
+        timeout = min(
+            30.0,
+            float((node.get("control") or {}).get("timeout_sec", 5.0)),
+        )
+        result = await execute_script(
+            str(inputs["code"]),
+            inputs={"inputs": inputs},
+            timeout_sec=timeout,
+        )
+        return NodeOutput(
+            values=(result.result,),
+            metadata={
+                "execution_isolation": "process",
+                "trusted_code_only": True,
+            },
+        )
 
 
 async def _dispatch_agent_turn(runtime: Any, agent_id: str, query: str) -> str:
-    agents = getattr(runtime, "agents", None) or getattr(runtime, "workspaces", None)
+    agents = getattr(runtime, "agents", None) or getattr(
+        runtime,
+        "workspaces",
+        None,
+    )
     if agents and agent_id in agents and hasattr(agents[agent_id], "process"):
         result = agents[agent_id].process(query)
     elif hasattr(runtime, "process_agent_message"):
@@ -272,5 +364,11 @@ def _stringify(value: Any) -> str:
 
 
 CORE_NODES = [
-    InputNode, OutputNode, AgentNode, ToolNode, ConditionNode, LLMNode, CodeNode,
+    InputNode,
+    OutputNode,
+    AgentNode,
+    ToolNode,
+    ConditionNode,
+    LLMNode,
+    CodeNode,
 ]

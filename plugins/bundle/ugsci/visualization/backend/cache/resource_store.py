@@ -13,7 +13,9 @@ import logging
 from pathlib import Path
 from typing import Any
 
-logger = logging.getLogger("qwenpaw").getChild("plugin.oilgas_vis.cache.resource")
+logger = logging.getLogger("qwenpaw").getChild(
+    "plugin.oilgas_vis.cache.resource",
+)
 
 
 class ResourceStore:

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Descriptive storage analysis with explicit coverage and operating-state gates."""
+"""Descriptive storage analysis with explicit coverage and \
+operating-state gates."""
 
 from __future__ import annotations
 
@@ -123,32 +124,32 @@ def _well_summary(history, as_of, drop_threshold):
                     "rate_change_pct": _rounded(change),
                     "pressure_change_pct": _rounded(pressure_change),
                     "source": {k: row[k] for k in ("file", "sheet", "row")},
-                    "message": "同方向连续阶段内 24h 折算量下降；核查调度、气嘴、井口压力、计量与出水，尚未确认产能损失",
-                }
+                    "message": "同方向连续阶段内 24h 折算量下降；核查调度、气嘴、井口压力、计量与出"
+                    "水，尚未确认产能损失",
+                },
             )
-        result["forecast"] = {
+        forecast = {
             "method": "同方向连续运行阶段末 7 日计量日量中位数，保持工况的 7 日基线",
             "horizon_days": 7,
             "daily_volume": _rounded(median([r["gas"] for r in segment[-7:]])),
             "observed_p10": _rounded(
-                _percentile([r["gas"] for r in segment[-28:]], 0.1)
+                _percentile([r["gas"] for r in segment[-28:]], 0.1),
             ),
             "observed_p90": _rounded(
-                _percentile([r["gas"] for r in segment[-28:]], 0.9)
+                _percentile([r["gas"] for r in segment[-28:]], 0.9),
             ),
             "range_kind": "历史日量分位范围，非预测置信区间",
             "backtest_mae": None,
         }
+        result["forecast"] = forecast
         # Rolling-origin holdout: each estimate uses only earlier observations.
         if len(segment) >= 21:
             errors = []
             for i in range(len(segment) - 7, len(segment)):
                 predicted = median([r["gas"] for r in segment[i - 7 : i]])
                 errors.append(abs(predicted - segment[i]["gas"]))
-            result["forecast"]["backtest_mae"] = _rounded(mean(errors))
-        result["forecast_reason"] = (
-            "在注采方向、调度与工况保持条件下可用；未纳入地层压力和设施约束"
-        )
+            forecast["backtest_mae"] = _rounded(mean(errors))
+        result["forecast_reason"] = "在注采方向、调度与工况保持条件下可用；未纳入地层压力和设施约束"
     return result, flags
 
 
@@ -185,7 +186,7 @@ def _historical_screen(history, threshold):
                     "rate_change_pct": _rounded(change),
                     "source": {k: row[k] for k in ("file", "sheet", "row")},
                     "message": "同方向连续 14 日中末 7 日运行折算量下降，需核查调度、气嘴、计量、压力与出水",
-                }
+                },
             )
         flagged = dropping
     return events
@@ -251,7 +252,7 @@ def analyze(
                             k: row[k] for k in ("file", "sheet", "row")
                         },
                         "message": "有气量但生产时间为 0，保留计量量，排除 24h 折算分析",
-                    }
+                    },
                 )
             daily[(row["facility"], row["day"])].append(row)
             histories[(row["facility"], row["well"], row["mode"])].append(row)
@@ -288,23 +289,19 @@ def analyze(
                 "records": len(rows),
                 "missing_gas": sum(r["gas"] is None for r in rows),
                 "observed_volume": _safe_sum([r["gas"] for r in rows]),
-            }
+            },
         )
     for name in sorted({k[0] for k in coverage}):
         inj = coverage.get((name, "injection"))
         out = coverage.get((name, "withdrawal"))
         if not inj or not out:
-            warnings.append(
-                f"{name}：筛选范围缺少一侧注采记录，不能比较注采平衡"
-            )
+            warnings.append(f"{name}：筛选范围缺少一侧注采记录，不能比较注采平衡")
         elif abs(_days(inj[-1]["day"], out[-1]["day"])) > 365:
-            warnings.append(
-                f"{name}：注采记录末期相差超过一年，年度净量不代表库存变化的完整记录"
-            )
+            warnings.append(f"{name}：注采记录末期相差超过一年，年度净量不代表库存变化的完整记录")
     for source in manifest["sources"]:
         if source["xls_row_limit"]:
             warnings.append(
-                f"{source['file']}/{source['sheet']}：达到 XLS 行上限，疑似导出截断"
+                f"{source['file']}/{source['sheet']}：达到 XLS 行上限，疑似导出截断",
             )
 
     timeline, phases = [], []
@@ -348,15 +345,15 @@ def analyze(
                         r["well"]
                         for r in rows
                         if r["gas"] is not None and r["gas"] > 0
-                    }
+                    },
                 ),
                 "wellhead_pressure_median": (
                     _rounded(median(pressures)) if pressures else None
                 ),
                 "water": _safe_sum(
-                    [r["water"] for r in rows if r["mode"] == "withdrawal"]
+                    [r["water"] for r in rows if r["mode"] == "withdrawal"],
                 ),
-            }
+            },
         )
         if (
             not phases
@@ -373,7 +370,7 @@ def analyze(
                     "observed_days": 1,
                     "injection": v["injection"],
                     "withdrawal": v["withdrawal"],
-                }
+                },
             )
         else:
             phase = phases[-1]
@@ -405,7 +402,7 @@ def analyze(
                 if r["mode"] == "withdrawal"
                 and r["gas"] is not None
                 and r["gas"] > 0
-            ]
+            ],
         )
         paired_gas = _safe_sum(
             [
@@ -415,7 +412,7 @@ def analyze(
                 and r["water"] is not None
                 and r["gas"] is not None
                 and r["gas"] > 0
-            ]
+            ],
         )
         cycles.append(
             {
@@ -430,7 +427,7 @@ def analyze(
                 ),
                 "ratio_unit": "t/万m³（仅气水均有记录的采气行）",
                 "completeness": "未验证完整周期",
-            }
+            },
         )
     wells = []
     for history in histories.values():
@@ -438,7 +435,8 @@ def analyze(
         wells.append(summary)
         anomalies.extend(_historical_screen(history, drop_threshold_pct))
     latest = [r for r in timeline if r["day"] == as_of]
-    # Totals are based on original measured volumes, never operating-rate normalization.
+    # Totals are based on original measured volumes, never operating-rate
+    # normalization.
     total = {
         mode: _safe_sum(
             [
@@ -446,7 +444,7 @@ def analyze(
                 for rows in coverage.values()
                 for r in rows
                 if r["mode"] == mode
-            ]
+            ],
         )
         for mode in ("injection", "withdrawal")
     }
@@ -479,12 +477,14 @@ def analyze(
         "cycles": cycles,
         "monthly": series,
         "daily_recent": sorted(
-            timeline, key=lambda r: (r["day"], r["facility"])
+            timeline,
+            key=lambda r: (r["day"], r["facility"]),
         )[-730:],
         "phases_recent": phases[-200:],
         "latest": latest,
         "wells": sorted(
-            wells, key=lambda r: (r["facility"], r["well"], r["mode"])
+            wells,
+            key=lambda r: (r["facility"], r["well"], r["mode"]),
         ),
         "anomalies": sorted(anomalies, key=lambda r: r["day"], reverse=True)[
             :100
@@ -519,11 +519,30 @@ def markdown_report(result: dict) -> str:
         "# 储气库生产动态分析报告",
         "",
         f"数据集：{result['dataset_id']}  ·  引擎：{result['engine_version']}",
-        f"筛选：{cell(result['filters']['facility'] or '全部储气库')} / {cell(result['filters']['well'] or '全部井')}；气年度 {result['parameters']['cycle_start_month']} 月起；下降筛查阈值 {result['parameters']['drop_threshold_pct']}%。",
+        f"筛选："
+        f"{cell(result['filters']['facility'] or '全部储气库')}"
+        f" / "
+        f"{cell(result['filters']['well'] or '全部井')}"
+        f"；气年度 "
+        f"{result['parameters']['cycle_start_month']}"
+        f" 月起；下降筛查阈值 "
+        f"{result['parameters']['drop_threshold_pct']}"
+        f"%。",
         f"记录范围：{s['start']} 至 {s['as_of']}（数据日期，不代表今日实时工况）",
-        f"{s['facilities']} 座库 / {s['wells']} 个原始井号 / {s['records']:,} 条日记录；气量缺测 {s['missing_gas']:,} 条。",
+        f"{s['facilities']}"
+        f" 座库 / "
+        f"{s['wells']}"
+        f" 个原始井号 / "
+        f"{s['records']:,}"
+        f" 条日记录；气量缺测 "
+        f"{s['missing_gas']:,}"
+        f" 条。",
         "",
-        f"已记录注气总量：{fmt(s['injection'])} 万m³；已记录采气总量：{fmt(s['withdrawal'])} 万m³。",
+        f"已记录注气总量："
+        f"{fmt(s['injection'])}"
+        f" 万m³；已记录采气总量："
+        f"{fmt(s['withdrawal'])}"
+        f" 万m³。",
         "",
         "## 数据覆盖",
         "",
@@ -532,7 +551,19 @@ def markdown_report(result: dict) -> str:
     ]
     for r in result["coverage"]:
         lines.append(
-            f"| {cell(r['facility'])} | {'注气' if r['mode']=='injection' else '采气'} | {r['start']} | {r['end']} | {r['records']} | {r['missing_gas']} |"
+            f"| "
+            f"{cell(r['facility'])}"
+            f" | "
+            f"{('注气' if r['mode'] == 'injection' else '采气')}"
+            f" | "
+            f"{r['start']}"
+            f" | "
+            f"{r['end']}"
+            f" | "
+            f"{r['records']}"
+            f" | "
+            f"{r['missing_gas']}"
+            f" |",
         )
     lines += [
         "",
@@ -542,10 +573,21 @@ def markdown_report(result: dict) -> str:
         "|---|---|---:|---:|---:|",
     ]
     for r in sorted(
-        result["cycles"], key=lambda c: (c["gas_year"], c["facility"])
+        result["cycles"],
+        key=lambda c: (c["gas_year"], c["facility"]),
     )[-30:]:
         lines.append(
-            f"| {cell(r['facility'])} | {r['gas_year']} | {fmt(r['injection'])} | {fmt(r['withdrawal'])} | {fmt(r['net_metered_change'])} |"
+            f"| "
+            f"{cell(r['facility'])}"
+            f" | "
+            f"{r['gas_year']}"
+            f" | "
+            f"{fmt(r['injection'])}"
+            f" | "
+            f"{fmt(r['withdrawal'])}"
+            f" | "
+            f"{fmt(r['net_metered_change'])}"
+            f" |",
         )
     lines += [
         "",
@@ -555,13 +597,25 @@ def markdown_report(result: dict) -> str:
         "",
     ]
     if not result["anomalies"]:
-        lines.append(
-            "本筛选范围未触发已配置的筛查规则；不等于已排除全部问题。"
-        )
+        lines.append("本筛选范围未触发已配置的筛查规则；不等于已排除全部问题。")
     for r in result["anomalies"][:20]:
         source = r["source"]
         lines.append(
-            f"- {r['day']} {r['facility']}/{r['well']}：{r['message']}（{source['file']} / {source['sheet']} / 第 {source['row']} 行）"
+            f"- "
+            f"{r['day']}"
+            f" "
+            f"{r['facility']}"
+            f"/"
+            f"{r['well']}"
+            f"："
+            f"{r['message']}"
+            f"（"
+            f"{source['file']}"
+            f" / "
+            f"{source['sheet']}"
+            f" / 第 "
+            f"{source['row']}"
+            f" 行）",
         )
     lines += ["", "## 短期基线", ""]
     forecasts = [r for r in result["wells"] if r["forecast"]]
@@ -570,11 +624,19 @@ def markdown_report(result: dict) -> str:
     for r in forecasts:
         f = r["forecast"]
         lines.append(
-            f"- {r['facility']}/{r['well']}（{r['mode']}）：条件性 7 日基线 {fmt(f['daily_volume'])} 万m³/日；滚动回测 MAE {fmt(f['backtest_mae'])} 万m³/日。"
+            f"- "
+            f"{r['facility']}"
+            f"/"
+            f"{r['well']}"
+            f"（"
+            f"{r['mode']}"
+            f"）：条件性 7 日基线 "
+            f"{fmt(f['daily_volume'])}"
+            f" 万m³/日；滚动回测 MAE "
+            f"{fmt(f['backtest_mae'])}"
+            f" 万m³/日。",
         )
-    lines += ["", "## 分析口径与限制", ""] + [
-        "- " + w for w in result["warnings"]
-    ]
+    lines += ["", "## 分析口径与限制", ""] + ["- " + w for w in result["warnings"]]
     lines += ["", "## 数据指纹", ""]
     lines += [
         f"- {p['file']}：SHA-256 `{p['sha256']}`"
@@ -582,7 +644,8 @@ def markdown_report(result: dict) -> str:
     ]
     lines += [
         "",
-        "定义参考：[EIA 储气库基础概念](https://www.eia.gov/naturalgas/storage/basics/)；不采用美国季节规则推断本项目运行周期。",
+        "定义参考：[EIA 储气库基础概念](https://www.eia.gov/naturalgas/st"
+        "orage/basics/)；不采用美国季节规则推断本项目运行周期。",
         "",
     ]
     return "\n".join(lines)

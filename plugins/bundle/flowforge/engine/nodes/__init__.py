@@ -13,21 +13,30 @@ entire package from loading.
 from __future__ import annotations
 
 from .base import WorkflowNode
+from .builtin.core import (
+    AgentNode,
+    CodeNode,
+    ConditionNode,
+    InputNode,
+    LLMNode,
+    OutputNode,
+    ToolNode,
+)
 
 __all__ = ["WorkflowNode"]
 
-# ── Registry ──────────────────────────────────────────────────────────────────
+# Registry
 try:
     from .registry import (
         NodeRegistry,
-        get_registry,
         reset_registry,
     )
+
     __all__ += ["NodeRegistry", "get_registry", "reset_registry"]
 except ImportError:  # pragma: no cover
     pass
 
-# ── Loader ────────────────────────────────────────────────────────────────────
+# Loader
 _bootstrap_sync = None
 try:
     from .loader import (
@@ -36,8 +45,14 @@ try:
         load_directory,
         load_entrypoints,
     )
+
     _bootstrap_sync = bootstrap_sync
-    __all__ += ["bootstrap_sync", "load_builtins", "load_directory", "load_entrypoints"]
+    __all__ += [
+        "bootstrap_sync",
+        "load_builtins",
+        "load_directory",
+        "load_entrypoints",
+    ]
 except ImportError:  # pragma: no cover
     pass
 
@@ -51,13 +66,15 @@ def bootstrap():
     around an async loader is unsafe.
     """
     try:
-        from .registry import get_registry
-        reg = get_registry()
+        from .registry import get_registry as registry_get
+
+        reg = registry_get()
     except ImportError:
         return None
 
     try:
         from .builtin import BUILTIN_NODES
+
         for node_cls in BUILTIN_NODES:
             try:
                 reg.register(node_cls)
@@ -70,16 +87,18 @@ def bootstrap():
 
 __all__ += ["bootstrap"]
 
-# ── Extension ─────────────────────────────────────────────────────────────────
+# Extension
 try:
     from .extension import NodeExtension
+
     __all__ += ["NodeExtension"]
 except ImportError:  # pragma: no cover
     pass
 
-# ── Hot reload ────────────────────────────────────────────────────────────────
+# Hot reload
 try:
     from .hot_reload import HotReloader
+
     __all__ += ["HotReloader"]
 except ImportError:  # pragma: no cover
     pass
@@ -92,7 +111,13 @@ try:
         get_replace_registry,
         reset_replace_registry,
     )
-    __all__ += ["NodeReplaceRegistry", "NodeReplacement", "get_replace_registry", "reset_replace_registry"]
+
+    __all__ += [
+        "NodeReplaceRegistry",
+        "NodeReplacement",
+        "get_replace_registry",
+        "reset_replace_registry",
+    ]
 except ImportError:  # pragma: no cover
     pass
 
@@ -103,35 +128,41 @@ try:
         clear_factory_cache,
         register_tool_nodes,
     )
-    __all__ += ["build_node_class", "clear_factory_cache", "register_tool_nodes"]
+
+    __all__ += [
+        "build_node_class",
+        "clear_factory_cache",
+        "register_tool_nodes",
+    ]
 except ImportError:  # pragma: no cover
     pass
 
 
+_fallback_registry = None
+
+
 def get_registry():
     """Get or create the singleton NodeRegistry."""
+    global _fallback_registry
     try:
         from .registry import get_registry as _get
+
         return _get()
     except ImportError:
-        from .registry import NodeRegistry
-        if not hasattr(get_registry, '_instance'):
-            get_registry._instance = NodeRegistry()
-        return get_registry._instance
+        from .registry import NodeRegistry as registry_class
+
+        if _fallback_registry is None:
+            _fallback_registry = registry_class()
+        return _fallback_registry
 
 
-# Schema-native authoring nodes retained under their established class ids.
-from .builtin.core import (
-    AgentNode,
-    CodeNode,
-    ConditionNode,
-    InputNode,
-    LLMNode,
-    OutputNode,
-    ToolNode,
-)
-
+# Schema-native authoring nodes retain their established class ids.
 __all__ += [
-    "AgentNode", "CodeNode", "ConditionNode", "InputNode", "LLMNode",
-    "OutputNode", "ToolNode",
+    "AgentNode",
+    "CodeNode",
+    "ConditionNode",
+    "InputNode",
+    "LLMNode",
+    "OutputNode",
+    "ToolNode",
 ]

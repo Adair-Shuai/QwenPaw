@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Real staged engine contract. Run explicitly after staging OfficeCLI.
 
 These tests never mock the CLI, and fail if the staged engine is missing.
@@ -20,8 +21,8 @@ BINARY = (
 )
 
 
-@pytest.fixture
-def cli():
+@pytest.fixture(name="cli")
+def _cli_fixture():
     assert BINARY.is_file(), "Stage the reviewed OfficeCLI engine first"
 
     def run(*args):
@@ -32,6 +33,7 @@ def cli():
             errors="replace",
             timeout=60,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            check=False,
         )
         assert result.returncode == 0, result.stdout + result.stderr
         return result.stdout
@@ -43,15 +45,24 @@ def cli():
 @pytest.mark.asyncio
 @pytest.mark.parametrize("extension", ["docx", "xlsx", "pptx"])
 async def test_tools_create_write_and_reopen_real_documents(
-    cli, tmp_path, monkeypatch, extension
+    cli,
+    tmp_path,
+    monkeypatch,
+    extension,
 ):
     import qwenpaw.agents.tools.office_tools as office
 
     monkeypatch.setattr(office, "_officecli_bin", lambda: str(BINARY))
     monkeypatch.setattr(
-        office, "_resolve_workspace_path", lambda path: str(tmp_path / path)
+        office,
+        "_resolve_workspace_path",
+        lambda path: str(tmp_path / path),
     )
-    monkeypatch.setattr(office, "get_current_workspace_dir", lambda: str(tmp_path))
+    monkeypatch.setattr(
+        office,
+        "get_current_workspace_dir",
+        lambda: str(tmp_path),
+    )
 
     def unpack(chunk):
         return json.loads(chunk.content[0].text)
@@ -73,15 +84,21 @@ async def test_tools_create_write_and_reopen_real_documents(
     if extension == "xlsx":
         added = unpack(
             await office.office_add_element(
-                name, "/Contract", "cell", {"ref": "A1", "value": "Engine contract"}
-            )
+                name,
+                "/Contract",
+                "cell",
+                {"ref": "A1", "value": "Engine contract"},
+            ),
         )
         assert added["ok"], added
     elif extension == "pptx":
         added = unpack(
             await office.office_add_element(
-                name, "/slide[1]", "shape", {"text": "Engine contract"}
-            )
+                name,
+                "/slide[1]",
+                "shape",
+                {"text": "Engine contract"},
+            ),
         )
         assert added["ok"], added
 
@@ -107,14 +124,20 @@ async def test_csv_locale_import_persists_numbers(cli, tmp_path, monkeypatch):
 
     monkeypatch.setattr(office, "_officecli_bin", lambda: str(BINARY))
     monkeypatch.setattr(
-        office, "_resolve_workspace_path", lambda path: str(tmp_path / path)
+        office,
+        "_resolve_workspace_path",
+        lambda path: str(tmp_path / path),
     )
     path = tmp_path / "locale.xlsx"
     csv = tmp_path / "values.csv"
     csv.write_text("name;value\npressure;12,5\n", encoding="utf-8")
     cli("create", path)
     chunk = await office.office_import_data(
-        "locale.xlsx", "/Sheet1", str(csv), delimiter=";", decimal=","
+        "locale.xlsx",
+        "/Sheet1",
+        str(csv),
+        delimiter=";",
+        decimal=",",
     )
     result = json.loads(chunk.content[0].text)
     assert result["ok"], result
@@ -148,22 +171,32 @@ def test_macro_payload_survives_edit_without_execution(cli, tmp_path):
     Document().save(source)
     macro = tmp_path / "preserved.docm"
     payload = b"inert VBA preservation regression fixture"
-    with zipfile.ZipFile(source) as original, zipfile.ZipFile(macro, "w") as target:
+    with zipfile.ZipFile(source) as original, zipfile.ZipFile(
+        macro,
+        "w",
+    ) as target:
         for item in original.infolist():
             data = original.read(item.filename)
             if item.filename == "[Content_Types].xml":
                 data = data.replace(
-                    b"application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml",
+                    b"application/vnd.openxmlformats-offic"
+                    b"edocument.wordprocessingml.document."
+                    b"main+xml",
                     b"application/vnd.ms-word.document.macroEnabled.main+xml",
                 )
                 data = data.replace(
                     b"</Types>",
-                    b'<Override PartName="/word/vbaProject.bin" ContentType="application/vnd.ms-office.vbaProject"/></Types>',
+                    b'<Override PartName="/word/vbaProject'
+                    b'.bin" ContentType="application/vnd.m'
+                    b's-office.vbaProject"/></Types>',
                 )
             if item.filename == "word/_rels/document.xml.rels":
                 data = data.replace(
                     b"</Relationships>",
-                    b'<Relationship Id="rIdMacro" Type="http://schemas.microsoft.com/office/2006/relationships/vbaProject" Target="vbaProject.bin"/></Relationships>',
+                    b'<Relationship Id="rIdMacro" '
+                    b'Type="http://schemas.microsoft.com/o'
+                    b'ffice/2006/relationships/vbaProject" '
+                    b'Target="vbaProject.bin"/></Relationships>',
                 )
             target.writestr(item.filename, data)
         target.writestr("word/vbaProject.bin", payload)
@@ -184,7 +217,11 @@ def test_macro_payload_survives_edit_without_execution(cli, tmp_path):
 
 
 @pytest.mark.asyncio
-async def test_word_form_inspection_uses_real_engine(cli, tmp_path, monkeypatch):
+@pytest.mark.usefixtures("cli")
+async def test_word_form_inspection_uses_real_engine(
+    tmp_path,
+    monkeypatch,
+):
     from docx import Document
     from docx.oxml import parse_xml
     import qwenpaw.agents.tools.office_tools as office
@@ -192,17 +229,25 @@ async def test_word_form_inspection_uses_real_engine(cli, tmp_path, monkeypatch)
     doc = Document()
     doc.element.body.insert(
         0,
-        parse_xml("""
-      <w:sdt xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">
-        <w:sdtPr><w:alias w:val="Company"/><w:tag w:val="company"/><w:id w:val="123"/><w:text/></w:sdtPr>
-        <w:sdtContent><w:p><w:r><w:t>Initial company</w:t></w:r></w:p></w:sdtContent>
-      </w:sdt>"""),
+        parse_xml(
+            "\n"
+            '      <w:sdt xmlns:w="http://schemas.openxmlform'
+            'ats.org/wordprocessingml/2006/main">\n'
+            "        <w:sdtPr><w:alias "
+            'w:val="Company"/><w:tag w:val="company"/><w:id '
+            'w:val="123"/><w:text/></w:sdtPr>\n'
+            "        <w:sdtContent><w:p><w:r><w:t>Initial "
+            "company</w:t></w:r></w:p></w:sdtContent>\n"
+            "      </w:sdt>",
+        ),
     )
     path = tmp_path / "form.docx"
     doc.save(path)
     monkeypatch.setattr(office, "_officecli_bin", lambda: str(BINARY))
     monkeypatch.setattr(
-        office, "_resolve_workspace_path", lambda value: str(tmp_path / value)
+        office,
+        "_resolve_workspace_path",
+        lambda value: str(tmp_path / value),
     )
     chunk = await office.office_view_document("form.docx", "forms")
     result = json.loads(chunk.content[0].text)

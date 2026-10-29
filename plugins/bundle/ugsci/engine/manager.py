@@ -10,6 +10,7 @@ This module is responsible for:
 
 Detection logic lives in ``engine/detector.py``.
 """
+
 from __future__ import annotations
 
 import json
@@ -99,6 +100,20 @@ class EngineInfo:
 
 DEFAULT_ENGINES: List[Dict[str, Any]] = [
     {
+        "id": "opm_flow",
+        "name": "OPM Flow",
+        "vendor": "Open Porous Media",
+        "category": "reservoir_simulation",
+        "description": "开源油藏数值模拟器，读取 Eclipse DATA 并输出兼容的网格、场与摘要结果；需配置已有 Flow "
+        "可执行文件。",
+        "invocation_hint": "flow <完整 model.DATA 路径> --output-dir=<输出目录>\n"
+        "仅校验用户配置路径或 OPM_FLOW_EXECUTABLE，不自动安装，不执行 PATH "
+        "中的同名程序；未执行试算。",
+        "status": "configured",
+        "is_default": True,
+        "is_custom": False,
+    },
+    {
         "id": "cmg",
         "name": "CMG",
         "vendor": "Computer Modelling Group",
@@ -160,7 +175,8 @@ DEFAULT_ENGINES: List[Dict[str, Any]] = [
         "install_dir": "",
         "category": "multiphysics",
         "description": "COMSOL Multiphysics 多物理场耦合仿真平台",
-        "invocation_hint": "comsolbatch.exe -input <model.mph> -output <result.mph>\n"
+        "invocation_hint": "comsolbatch.exe -input <model.mph> -output "
+        "<result.mph>\n"
         "批处理模式运行, 不启动 GUI。",
         "license_server": "",
         "extra_paths": [],
@@ -294,7 +310,9 @@ def _migrate_legacy_engines() -> int:
     if count:
         logger.info(
             "Migrated %d engine config(s) from %s to %s",
-            count, legacy_dir, new_dir,
+            count,
+            legacy_dir,
+            new_dir,
         )
     return count
 
@@ -384,10 +402,23 @@ def update_engine(engine_id: str, data: Dict[str, Any]) -> EngineInfo:
         raise ValueError(f"Engine '{engine_id}' not found")
 
     for key in [
-        "name", "vendor", "version", "executable_path", "install_dir",
-        "category", "description", "invocation_hint", "license_server",
-        "extra_paths", "modules", "module_paths",
-        "arch", "build", "license_status", "lmutil_path", "extra_info",
+        "name",
+        "vendor",
+        "version",
+        "executable_path",
+        "install_dir",
+        "category",
+        "description",
+        "invocation_hint",
+        "license_server",
+        "extra_paths",
+        "modules",
+        "module_paths",
+        "arch",
+        "build",
+        "license_status",
+        "lmutil_path",
+        "extra_info",
     ]:
         if key in data:
             setattr(engine, key, data[key])
@@ -440,19 +471,14 @@ def build_capability_summary(engines: List[EngineInfo]) -> str:
         return ""
 
     detected = [
-        e for e in engines
-        if e.status == "detected" and e.executable_path
+        e for e in engines if e.status == "detected" and e.executable_path
     ]
     configured = [
-        e for e in engines
-        if e.status != "detected"
-        and not e.is_custom
+        e for e in engines if e.status != "detected" and not e.is_custom
     ]
     # Custom engines that are configured but not verified
     custom_pending = [
-        e for e in engines
-        if e.status != "detected"
-        and e.is_custom
+        e for e in engines if e.status != "detected" and e.is_custom
     ]
 
     if not detected and not configured and not custom_pending:
@@ -484,29 +510,33 @@ def build_capability_summary(engines: List[EngineInfo]) -> str:
     if configured:
         names = ", ".join(e.name for e in configured)
         lines.append(
-            f"已配置但尚未检测到安装: {names}。"
-            "可通过 /api/ugsci/engines/detect 触发自动检测。"
+            f"已配置但尚未检测到安装: {names}。" "可通过 /api/ugsci/engines/detect 触发自动检测。",
         )
         lines.append("")
 
     if custom_pending:
         names = ", ".join(e.name for e in custom_pending)
         lines.append(
-            f"自定义引擎待验证: {names}。"
-            "请确认路径正确后再使用。"
+            f"自定义引擎待验证: {names}。" "请确认路径正确后再使用。",
         )
         lines.append("")
 
     lines.append("## 模拟工具使用指南")
     lines.append("")
     lines.append(
-        "本机已安装以下模拟工具，**必须优先使用这些工具**而非裸 shell 命令："
+        "本机已安装以下模拟工具，**必须优先使用这些工具**而非裸 shell 命令：",
     )
     lines.append("")
     lines.append("- `launch_simulation(simulator, deck_file)` — 启动模拟")
-    lines.append("  - simulator 可选: eclipse, cmg_imex, cmg_stars, cmg_gem, comsol, intersect, tnavigator")
+    lines.append(
+        "  - simulator 可选: eclipse, cmg_imex, "
+        "cmg_stars, cmg_gem, comsol, intersect, "
+        "tnavigator",
+    )
     lines.append("  - 工具会自动从引擎注册表解析可执行文件路径")
-    lines.append("  - 工具会自动处理各模拟器的参数约定 (如 Eclipse 不带 .DATA 后缀)")
+    lines.append(
+        "  - 工具会自动处理各模拟器的参数约定 (如 Eclipse 不带 .DATA 后缀)",
+    )
     lines.append("  - 返回 job_id，可用于后续监控")
     lines.append("- `check_simulation_status(job_id)` — 查询运行状态")
     lines.append("- `read_simulation_results(job_id)` — 读取结果数据")
@@ -517,6 +547,6 @@ def build_capability_summary(engines: List[EngineInfo]) -> str:
         "⚠️ **禁止**直接使用 execute_shell_command 调用模拟器可执行文件。"
         "裸 shell 调用会绕过适配器层，导致参数错误、许可证缺失、"
         "路径解析失败等问题。如果 launch_simulation 返回错误，"
-        "应根据错误信息排查而非回退到 shell。"
+        "应根据错误信息排查而非回退到 shell。",
     )
     return "\n".join(lines)

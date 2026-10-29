@@ -1,12 +1,12 @@
 {
   "id": "uproject",
   "name": "UProject 科研项目",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "type": "app",
-  "description": "企业科研项目对接对齐台：甲方/乙方、对齐项、对齐会与一键周报。",
+  "description": "科研项目工作台：项目总览、事项看板、负责人和截止日期、依赖关系、里程碑、甲乙方会议与 AI 简报。",
   "description_i18n": {
-    "zh-CN": "企业科研项目对接对齐台：管甲乙方、对齐项、对齐会，一键生成议程和周报。",
-    "en-US": "Client-vendor research project alignment desk: parties, open items, meetings, and weekly briefs."
+    "zh-CN": "科研项目工作台：统筹甲乙方项目，跟踪事项优先级、负责人、期限、依赖和里程碑，整理会议与 AI 周报。",
+    "en-US": "Research project workspace with portfolio views, priorities, owners, due dates, dependencies, milestones, client-vendor meetings, and AI briefs."
   },
   "author": "UGSci Team",
   "channel": "ugsci",
@@ -16,7 +16,7 @@
   },
   "qwenpaw_version": {
     "min": "2.0.1",
-    "max": "2.4.0"
+    "max": "3.0.0"
   },
   "meta": {
     "pawapp": {

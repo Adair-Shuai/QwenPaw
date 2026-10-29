@@ -153,6 +153,8 @@ export interface Route {
   id: string;
   /** URL path. Supports react-router patterns, including "/chat/*". */
   path: string;
+  /** Application display name, independent of sidebar visibility and page title. */
+  label?: Localized<string>;
   /** Match path casing exactly. Defaults to case-insensitive matching. */
   caseSensitive?: boolean;
   /** Lazy or eager component. */

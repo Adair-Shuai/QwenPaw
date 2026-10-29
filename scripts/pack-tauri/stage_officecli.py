@@ -37,7 +37,9 @@ from pathlib import Path
 
 LOCK_PATH = Path(__file__).with_name("officecli-release.json")
 DEFAULT_OFFICECLI_VERSION = "v1.0.157"
-GITHUB_DOWNLOAD_BASE = "https://github.com/iOfficeAI/OfficeCLI/releases/download"
+GITHUB_DOWNLOAD_BASE = (
+    "https://github.com/iOfficeAI/OfficeCLI/releases/download"
+)
 
 
 def _target() -> tuple[str, str]:
@@ -77,10 +79,14 @@ def _release_asset_name(platform_name: str, arch: str) -> str:
 def _resolve_version(explicit: str | None) -> str:
     """Use a reviewed pin on every platform; never silently fall back."""
     locked = json.loads(LOCK_PATH.read_text(encoding="utf-8"))["version"]
-    requested = explicit or os.environ.get("QWENPAW_OFFICECLI_VERSION") or locked
+    requested = (
+        explicit or os.environ.get("QWENPAW_OFFICECLI_VERSION") or locked
+    )
     requested = "v" + requested.removeprefix("v")
     if requested != locked or locked != DEFAULT_OFFICECLI_VERSION:
-        raise SystemExit("OfficeCLI version must match the reviewed release lock")
+        raise SystemExit(
+            "OfficeCLI version must match the reviewed release lock",
+        )
     return locked
 
 
@@ -102,8 +108,14 @@ def _verify_binary(path: Path, asset: str, version: str) -> None:
     )
     output = (result.stdout or "") + (result.stderr or "")
     reported = re.search(r"\b(\d+\.\d+\.\d+)\b", output)
-    if result.returncode or not reported or reported[1] != version.removeprefix("v"):
-        raise SystemExit(f"OfficeCLI version verification failed: {output[:200]}")
+    if (
+        result.returncode
+        or not reported
+        or reported[1] != version.removeprefix("v")
+    ):
+        raise SystemExit(
+            f"OfficeCLI version verification failed: {output[:200]}",
+        )
 
 
 def _sha256_file(path: Path) -> str:
@@ -140,7 +152,11 @@ def _stage_doc_plugin(source: str | None, dest: Path) -> None:
     target.parent.mkdir(parents=True, exist_ok=True)
     digest = _sha256_file(source_path)
     marker = target.parent / "plugin.sha256"
-    if target.is_file() and marker.is_file() and marker.read_text().strip() == digest:
+    if (
+        target.is_file()
+        and marker.is_file()
+        and marker.read_text().strip() == digest
+    ):
         print(
             f"OfficeCLI .doc plugin already staged ({digest[:12]}...); skipping",
         )
@@ -246,13 +262,17 @@ def main() -> None:
             downloaded.chmod(
                 st.st_mode | stat.S_IEXEC | stat.S_IXGRP | stat.S_IXOTH,
             )
-        expected = json.loads(LOCK_PATH.read_text(encoding="utf-8"))["sha256"].get(
-            asset_name
+        expected = json.loads(LOCK_PATH.read_text(encoding="utf-8"))[
+            "sha256"
+        ].get(
+            asset_name,
         )
         if not expected or _sha256_file(downloaded) != expected:
             raise SystemExit(f"OfficeCLI checksum mismatch: {asset_name}")
         staged = dest / (
-            "officecli.staging.exe" if platform_name == "win" else ".officecli.staging"
+            "officecli.staging.exe"
+            if platform_name == "win"
+            else ".officecli.staging"
         )
         try:
             shutil.copy2(downloaded, staged)

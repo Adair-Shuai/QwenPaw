@@ -93,7 +93,10 @@ async def _invoke(tool_name: str, arguments: dict[str, Any]) -> Any:
             "message": str(exc),
             "runtime": status.to_dict(),
         }
-    capability = next((item for item in capabilities if item.name == tool_name), None)
+    capability = next(
+        (item for item in capabilities if item.name == tool_name),
+        None,
+    )
     if capability is None:
         return {
             "ok": False,
@@ -161,10 +164,15 @@ async def ugsci_neqsim_phase_envelope(
 
 async def ugsci_neqsim_process_simulate(process: dict[str, Any] | str) -> Any:
     """Run an exact NeqSim ``runProcess`` flowsheet simulation."""
-    return await _invoke("runProcess", {"processJson": _json_argument(process)})
+    return await _invoke(
+        "runProcess",
+        {"processJson": _json_argument(process)},
+    )
 
 
-async def ugsci_neqsim_pipeline_flow(specification: dict[str, Any] | str) -> Any:
+async def ugsci_neqsim_pipeline_flow(
+    specification: dict[str, Any] | str,
+) -> Any:
     """Run an exact NeqSim ``runPipeline`` multiphase-flow calculation."""
     return await _invoke(
         "runPipeline",

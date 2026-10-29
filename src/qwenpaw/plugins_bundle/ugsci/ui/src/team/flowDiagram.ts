@@ -176,7 +176,12 @@ export function TeamFlowDiagram({ team }: { team: ExpertTeam }) {
                   ),
                   React.createElement(
                     "div",
-                    { style: { fontSize: 11, color: "var(--ant-color-text-tertiary, #8c8c8c)" } },
+                    {
+                      style: {
+                        fontSize: 11,
+                        color: "var(--ant-color-text-tertiary, #8c8c8c)",
+                      },
+                    },
                     member.role,
                   ),
                 ),

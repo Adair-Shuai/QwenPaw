@@ -38,7 +38,10 @@ OPERATION = "reservoir.material_balance.gas_pz"
 METHOD = "p_over_z"
 
 
-def _require_positive(value: float, name: str, *, strict_upper: bool = False) -> float:
+def _require_positive(
+    value: float,
+    name: str,
+) -> float:
     value = float(value)
     if not math.isfinite(value) or value <= 0:
         raise DomainError(
@@ -69,14 +72,29 @@ def _fingerprint(inputs: dict[str, Any]) -> str:
     return f"sha256:{hashlib.sha256(encoded).hexdigest()}"
 
 
-def _gas_pz_case(inputs: dict[str, Any], recorder: TraceRecorder) -> DomainResult:
-    gas_volume_unit = require_unit(inputs.get("gas_volume_unit", "scf"), "gas_volume")
-    pressure_unit = require_unit(inputs.get("pressure_unit", "psi"), "pressure")
-    recorder.trace.input_units.update({"gas_volume_unit": gas_volume_unit, "pressure_unit": pressure_unit})
+def _gas_pz_case(
+    inputs: dict[str, Any],
+    recorder: TraceRecorder,
+) -> DomainResult:
+    gas_volume_unit = require_unit(
+        inputs.get("gas_volume_unit", "scf"),
+        "gas_volume",
+    )
+    pressure_unit = require_unit(
+        inputs.get("pressure_unit", "psi"),
+        "pressure",
+    )
+    recorder.trace.input_units.update(
+        {"gas_volume_unit": gas_volume_unit, "pressure_unit": pressure_unit},
+    )
 
     # ── Gather and convert inputs ────────────────────────────────────────
     produced_gas = float(inputs["produced_gas"])
-    pi = convert(_require_positive(produced_gas, "produced_gas"), gas_volume_unit, "scf")
+    pi = convert(
+        _require_positive(produced_gas, "produced_gas"),
+        gas_volume_unit,
+        "scf",
+    )
 
     pip = _require_positive(inputs["initial_pressure"], "initial_pressure")
     pi_psi = convert(pip, pressure_unit, "psi")
@@ -94,29 +112,59 @@ def _gas_pz_case(inputs: dict[str, Any], recorder: TraceRecorder) -> DomainResul
 
     # ── Bind variables ───────────────────────────────────────────────────
     recorder.bind(
-        "produced_gas", "G_p", produced_gas, gas_volume_unit,
-        source="input", description="Cumulative gas produced (surface volume)",
-        editable=True, display_name="Produced gas (G_p)", input_bounds=(0.0, None),
+        "produced_gas",
+        "G_p",
+        produced_gas,
+        gas_volume_unit,
+        source="input",
+        description="Cumulative gas produced (surface volume)",
+        editable=True,
+        display_name="Produced gas (G_p)",
+        input_bounds=(0.0, None),
     )
     recorder.bind(
-        "initial_pressure", "p_i", pip, pressure_unit,
-        source="input", description="Initial average reservoir pressure",
-        editable=True, display_name="Initial pressure (p_i)", input_bounds=(0.0, None),
+        "initial_pressure",
+        "p_i",
+        pip,
+        pressure_unit,
+        source="input",
+        description="Initial average reservoir pressure",
+        editable=True,
+        display_name="Initial pressure (p_i)",
+        input_bounds=(0.0, None),
     )
     recorder.bind(
-        "initial_z_factor", "z_i", zi, "", source="input",
+        "initial_z_factor",
+        "z_i",
+        zi,
+        "",
+        source="input",
         description="Gas compressibility factor at initial state",
-        editable=True, display_name="Initial z-factor (z_i)", input_bounds=(Z_FACTOR_MIN, Z_FACTOR_MAX),
+        editable=True,
+        display_name="Initial z-factor (z_i)",
+        input_bounds=(Z_FACTOR_MIN, Z_FACTOR_MAX),
     )
     recorder.bind(
-        "current_pressure", "p", pcur, pressure_unit,
-        source="input", description="Current average reservoir pressure",
-        editable=True, display_name="Current pressure (p)", input_bounds=(0.0, None),
+        "current_pressure",
+        "p",
+        pcur,
+        pressure_unit,
+        source="input",
+        description="Current average reservoir pressure",
+        editable=True,
+        display_name="Current pressure (p)",
+        input_bounds=(0.0, None),
     )
     recorder.bind(
-        "current_z_factor", "z", z, "", source="input",
+        "current_z_factor",
+        "z",
+        z,
+        "",
+        source="input",
         description="Gas compressibility factor at current state",
-        editable=True, display_name="Current z-factor (z)", input_bounds=(Z_FACTOR_MIN, Z_FACTOR_MAX),
+        editable=True,
+        display_name="Current z-factor (z)",
+        input_bounds=(Z_FACTOR_MIN, Z_FACTOR_MAX),
     )
 
     # ── Derivation: p/z depletion equation ───────────────────────────────
@@ -126,7 +174,13 @@ def _gas_pz_case(inputs: dict[str, Any], recorder: TraceRecorder) -> DomainResul
         latex=r"G_p \;=\; OGIP \left(1 - \frac{p/z}{\;p_i/z_i\;}\right)",
         for_symbol="OGIP",
         group="assemble",
-        reads=("produced_gas", "initial_pressure", "initial_z_factor", "current_pressure", "current_z_factor"),
+        reads=(
+            "produced_gas",
+            "initial_pressure",
+            "initial_z_factor",
+            "current_pressure",
+            "current_z_factor",
+        ),
         writes="ogip",
         description="For a volumetric dry-gas reservoir, produced gas is the "
         "product of OGIP and the fractional depletion of the p/z ratio.",
@@ -143,13 +197,21 @@ def _gas_pz_case(inputs: dict[str, Any], recorder: TraceRecorder) -> DomainResul
         reads=("initial_pressure", "initial_z_factor"),
         writes="initial_pz",
         group="substitute",
-        latex=r"\frac{p_i}{z_i} = \frac{" + f"{pi_psi:.4g}" + r"}{" + f"{zi:.4g}" + r"}",
+        latex=r"\frac{p_i}{z_i} = \frac{"
+        + f"{pi_psi:.4g}"
+        + r"}{"
+        + f"{zi:.4g}"
+        + r"}",
         display_value=convert(initial_pz, "psi", pressure_unit),
         display_unit=pressure_unit,
     )
     recorder.bind(
-        "initial_pz", "p_i/z_i", initial_pz, "psi",
-        source="derived", description="Initial pressure divided by initial z-factor",
+        "initial_pz",
+        "p_i/z_i",
+        initial_pz,
+        "psi",
+        source="derived",
+        description="Initial pressure divided by initial z-factor",
     )
 
     # current p/z
@@ -163,13 +225,21 @@ def _gas_pz_case(inputs: dict[str, Any], recorder: TraceRecorder) -> DomainResul
         reads=("current_pressure", "current_z_factor"),
         writes="current_pz",
         group="substitute",
-        latex=r"\frac{p}{z} = \frac{" + f"{p_psi:.4g}" + r"}{" + f"{z:.4g}" + r"}",
+        latex=r"\frac{p}{z} = \frac{"
+        + f"{p_psi:.4g}"
+        + r"}{"
+        + f"{z:.4g}"
+        + r"}",
         display_value=convert(current_pz, "psi", pressure_unit),
         display_unit=pressure_unit,
     )
     recorder.bind(
-        "current_pz", "p/z", current_pz, "psi",
-        source="derived", description="Current pressure divided by current z-factor",
+        "current_pz",
+        "p/z",
+        current_pz,
+        "psi",
+        source="derived",
+        description="Current pressure divided by current z-factor",
     )
 
     # depletion fraction
@@ -188,7 +258,10 @@ def _gas_pz_case(inputs: dict[str, Any], recorder: TraceRecorder) -> DomainResul
         "1 - (p/z) / (p_i/z_i)",
         denominator,
         "",
-        substitutions=(("p/z", f"{current_pz:.4g} psi"), ("p_i/z_i", f"{initial_pz:.4g} psi")),
+        substitutions=(
+            ("p/z", f"{current_pz:.4g} psi"),
+            ("p_i/z_i", f"{initial_pz:.4g} psi"),
+        ),
         reads=("initial_pz", "current_pz"),
         writes="depletion_fraction",
         group="reduce",
@@ -223,7 +296,10 @@ def _gas_pz_case(inputs: dict[str, Any], recorder: TraceRecorder) -> DomainResul
         "G_p / (1 - (p/z) / (p_i/z_i))",
         ogip_scf,
         "scf",
-        substitutions=(("G_p", f"{pi:.4g} scf"), ("1 - (p/z)/(p_i/z_i)", f"{denominator:.6g}")),
+        substitutions=(
+            ("G_p", f"{pi:.4g} scf"),
+            ("1 - (p/z)/(p_i/z_i)", f"{denominator:.6g}"),
+        ),
         reads=("produced_gas", "depletion_fraction"),
         writes="ogip_scf",
         group="solve",
@@ -246,8 +322,10 @@ def _gas_pz_case(inputs: dict[str, Any], recorder: TraceRecorder) -> DomainResul
         "G_p / OGIP",
         recovery_factor,
         "",
-        substitutions=(("G_p", f"{produced_input:.4g} {gas_volume_unit}"),
-                       ("OGIP", f"{ogip:.4g} {gas_volume_unit}")),
+        substitutions=(
+            ("G_p", f"{produced_input:.4g} {gas_volume_unit}"),
+            ("OGIP", f"{ogip:.4g} {gas_volume_unit}"),
+        ),
         reads=("produced_gas", "ogip"),
         writes="recovery_factor",
     )
@@ -295,15 +373,23 @@ def _gas_pz_case(inputs: dict[str, Any], recorder: TraceRecorder) -> DomainResul
             "method": METHOD,
             "deterministic": True,
             "input_fingerprint": _fingerprint(inputs),
-            "reference": 'Standing (1947), pressure/z material balance',
+            "reference": "Standing (1947), pressure/z material balance",
             "formula_id": FORMULA_ID,
             "source": "curated",
             "parameter_sources": dict(recorder.trace.parameter_sources),
-            "unit_audit": audit_units(GAS_PZ_FORMULA.unit_dimensions, inputs, {
-                "estimated_ogip": gas_volume_unit,
-                "remaining_gas": gas_volume_unit,
-            }),
-            "gate": [step.title for step in recorder.trace.steps if step.kind.value == "assert" and step.value is True],
+            "unit_audit": audit_units(
+                GAS_PZ_FORMULA.unit_dimensions,
+                inputs,
+                {
+                    "estimated_ogip": gas_volume_unit,
+                    "remaining_gas": gas_volume_unit,
+                },
+            ),
+            "gate": [
+                step.title
+                for step in recorder.trace.steps
+                if step.kind.value == "assert" and step.value is True
+            ],
         },
     )
 

@@ -49,13 +49,20 @@ _HOST_DISTRIBUTIONS = (
     "statsmodels",
 )
 _guard = threading.RLock()
-_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="ugsci-runtime")
+_executor = ThreadPoolExecutor(
+    max_workers=1,
+    thread_name_prefix="ugsci-runtime",
+)
 
 
 def _task_file() -> Path:
     from qwenpaw.constant import WORKING_DIR
 
-    return Path(WORKING_DIR) / "plugin_runtime" / "ugsci-domain-install-tasks.json"
+    return (
+        Path(WORKING_DIR)
+        / "plugin_runtime"
+        / "ugsci-domain-install-tasks.json"
+    )
 
 
 def _probe_missing(engine: Any) -> list[str]:
@@ -64,7 +71,9 @@ def _probe_missing(engine: Any) -> list[str]:
     ):
         return []
     result = probe_engine(engine)
-    available = {d.name for d in result.dependencies if d.status == "available"}
+    available = {
+        d.name for d in result.dependencies if d.status == "available"
+    }
     return [dep for dep in engine.dependencies if dep not in available]
 
 
@@ -90,7 +99,8 @@ class RuntimeInstallManager:
             and isinstance(task, dict)
             and task.get("id") == key
             and isinstance(task.get("engine_id"), str)
-            and task.get("status") in {"queued", "running", "completed", "failed"}
+            and task.get("status")
+            in {"queued", "running", "completed", "failed"}
             and isinstance(task.get("progress", 0), (int, float))
             and isinstance(task.get("message", ""), str)
             and isinstance(task.get("error", ""), str)
@@ -169,7 +179,7 @@ class RuntimeInstallManager:
         from qwenpaw.plugins import loader
 
         if os.environ.get("QWENPAW_RUNTIME_PROVISIONER") == "local" or (
-            loader._is_frozen() and loader._desktop_python() is None
+            not loader.has_dependency_install_runtime()
         ):
             return {
                 "engine_id": engine_id,
@@ -210,19 +220,23 @@ class RuntimeInstallManager:
             dep not in PACKAGE_REQUIREMENTS for dep in engine.dependencies
         ):
             raise ValueError(
-                "该引擎没有可按卡片安装的 Python 依赖；请使用对应专用运行时"
+                "该引擎没有可按卡片安装的 Python 依赖；请使用对应专用运行时",
             )
         from qwenpaw.plugins import loader
 
         if os.environ.get("QWENPAW_RUNTIME_PROVISIONER") == "local":
             raise ValueError("当前 Python 环境由管理员管理，请联系管理员安装依赖")
-        if loader._is_frozen() and loader._desktop_python() is None:
+        if not loader.has_dependency_install_runtime():
             raise ValueError("桌面 Python 安装组件不可用，请修复或重新安装 QwenPaw")
         missing = _probe_missing(engine)
         with _guard:
             tasks = self._load()
             active = next(
-                (t for t in tasks.values() if t["status"] in ("queued", "running")),
+                (
+                    t
+                    for t in tasks.values()
+                    if t["status"] in ("queued", "running")
+                ),
                 None,
             )
             if active:
@@ -238,18 +252,19 @@ class RuntimeInstallManager:
                     "message": "依赖已就绪，无需安装",
                     "error": "",
                 }
+            task_id = str(uuid.uuid4())
             task = {
-                "id": str(uuid.uuid4()),
+                "id": task_id,
                 "engine_id": engine_id,
                 "status": "queued",
                 "progress": 0,
                 "message": "等待安装",
                 "error": "",
             }
-            tasks[task["id"]] = task
+            tasks[task_id] = task
             self._save(dict(list(tasks.items())[-20:]))
             try:
-                _executor.submit(self._run, task["id"], engine)
+                _executor.submit(self._run, task_id, engine)
             except Exception:
                 task.update(
                     status="failed",
@@ -266,61 +281,68 @@ class RuntimeInstallManager:
                 tasks[task_id].update(changes)
                 self._save(dict(list(tasks.items())[-20:]))
 
+    def _install_missing(self, task_id: str, missing: list[str]) -> None:
+        fd, name = tempfile.mkstemp(prefix="ugsci-domain-", suffix=".txt")
+        cfd, constraints_name = tempfile.mkstemp(
+            prefix="ugsci-host-constraints-",
+            suffix=".txt",
+        )
+        try:
+            target_dists = {d.lower().replace("_", "-") for d in missing}
+            constraints = []
+            for dist in _HOST_DISTRIBUTIONS:
+                if dist.lower().replace("_", "-") in target_dists:
+                    continue
+                try:
+                    installed = importlib.metadata.version(dist)
+                    Version(installed)
+                except (
+                    importlib.metadata.PackageNotFoundError,
+                    InvalidVersion,
+                ):
+                    continue
+                constraints.append(f"{dist}=={installed}")
+            with os.fdopen(cfd, "w", encoding="utf-8") as constraint_file:
+                constraint_file.write("\n".join(constraints) + "\n")
+            with os.fdopen(fd, "w", encoding="utf-8") as req:
+                req.write("--only-binary=:all:\n")
+                req.write(
+                    f'--constraint "{Path(constraints_name).as_posix()}"\n',
+                )
+                req.write("\n".join(PACKAGE_REQUIREMENTS[p] for p in missing))
+                req.write("\n")
+            from qwenpaw.plugins.loader import PluginLoader
+
+            self._update(task_id, progress=20, message="正在下载并安装运行依赖")
+            PluginLoader([]).install_runtime_requirements(
+                Path(name),
+                "ugsci-domain-runtime",
+            )
+        finally:
+            try:
+                os.unlink(name)
+            except OSError:
+                pass
+            try:
+                os.unlink(constraints_name)
+            except OSError:
+                pass
+
     def _run(self, task_id: str, engine: Any) -> None:
         self._update(task_id, status="running", progress=5, message="正在准备依赖")
         try:
             missing = _probe_missing(engine)
             if missing:
-                fd, name = tempfile.mkstemp(prefix="ugsci-domain-", suffix=".txt")
-                cfd, constraints_name = tempfile.mkstemp(
-                    prefix="ugsci-host-constraints-", suffix=".txt"
-                )
-                try:
-                    target_dists = {d.lower().replace("_", "-") for d in missing}
-                    constraints = []
-                    for dist in _HOST_DISTRIBUTIONS:
-                        if dist.lower().replace("_", "-") in target_dists:
-                            continue
-                        try:
-                            installed = importlib.metadata.version(dist)
-                            Version(installed)
-                        except (
-                            importlib.metadata.PackageNotFoundError,
-                            InvalidVersion,
-                        ):
-                            continue
-                        constraints.append(f"{dist}=={installed}")
-                    with os.fdopen(cfd, "w", encoding="utf-8") as constraint_file:
-                        constraint_file.write("\n".join(constraints) + "\n")
-                    with os.fdopen(fd, "w", encoding="utf-8") as req:
-                        req.write("--only-binary=:all:\n")
-                        req.write(
-                            f'--constraint "{Path(constraints_name).as_posix()}"\n'
-                        )
-                        req.write("\n".join(PACKAGE_REQUIREMENTS[p] for p in missing))
-                        req.write("\n")
-                    from qwenpaw.plugins.loader import PluginLoader
-
-                    self._update(task_id, progress=20, message="正在下载并安装运行依赖")
-                    PluginLoader([])._install_requirements_locked(
-                        Path(name), "ugsci-domain-runtime"
-                    )
-                finally:
-                    try:
-                        os.unlink(name)
-                    except OSError:
-                        pass
-                    try:
-                        os.unlink(constraints_name)
-                    except OSError:
-                        pass
+                self._install_missing(task_id, missing)
             from qwenpaw.plugins.loader import _ensure_plugin_site_on_path
 
             self._update(task_id, progress=85, message="正在重新检测依赖")
             _ensure_plugin_site_on_path()
             importlib.invalidate_caches()
             if any(
-                importlib.util.find_spec(_IMPORT_NAMES.get(p, p.replace("-", "_")))
+                importlib.util.find_spec(
+                    _IMPORT_NAMES.get(p, p.replace("-", "_")),
+                )
                 is None
                 for p in engine.dependencies
             ):
@@ -342,7 +364,8 @@ class RuntimeInstallManager:
             if "administrator-managed" in text or "administrator" in text:
                 msg = "当前 Python 环境由管理员管理，请联系管理员安装依赖"
             elif (
-                "runtime is unavailable" in text or "qwenpaw_desktop_py_runtime" in text
+                "runtime is unavailable" in text
+                or "qwenpaw_desktop_py_runtime" in text
             ):
                 msg = "桌面 Python 安装组件不可用，请修复或重新安装 QwenPaw"
             else:

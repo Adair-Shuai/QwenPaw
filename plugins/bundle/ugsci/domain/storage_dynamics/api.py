@@ -6,7 +6,6 @@ from __future__ import annotations
 import threading
 import uuid
 from concurrent.futures import ThreadPoolExecutor
-from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
@@ -39,7 +38,8 @@ def build_storage_dynamics_router(
     jobs: dict[str, dict] = {}
     lock = threading.Lock()
     executor = ThreadPoolExecutor(
-        max_workers=1, thread_name_prefix="ugsci-history"
+        max_workers=1,
+        thread_name_prefix="ugsci-history",
     )
 
     @router.get("/datasets")
@@ -102,7 +102,9 @@ def build_storage_dynamics_router(
             markdown_report(compute(body)),
             media_type="text/markdown; charset=utf-8",
             headers={
-                "Content-Disposition": 'attachment; filename="storage-dynamics-report.md"'
+                "Content-Disposition": "attachment; "
+                'filename="storage-dynamics-report.md'
+                '"',
             },
         )
 

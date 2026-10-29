@@ -17,6 +17,15 @@ const mocks = vi.hoisted(() => ({
   hostFetch: vi.fn(),
 }));
 
+// These imperative routing calls run outside React. Loading the unrelated
+// chat UI graph is unnecessary; invoking its hook here remains an error.
+// Mounted Chat integration tests continue to use the actual SDK.
+vi.mock("@agentscope-ai/chat", () => ({
+  useChatAnywhereSessionsState: () => {
+    throw new Error("React session hooks require a render context");
+  },
+}));
+
 vi.mock("../../pages/Chat/sessionApi", () => ({ default: mocks.sessionApi }));
 vi.mock("../hostSdk/fetch", () => ({ hostFetch: mocks.hostFetch }));
 

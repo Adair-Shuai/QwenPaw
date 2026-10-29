@@ -33,7 +33,11 @@ class AgentEvent:
 
     __slots__ = ("type", "data")
 
-    def __init__(self, type: AgentEventType | str, data: dict | None = None) -> None:
+    def __init__(
+        self,
+        type: AgentEventType | str,
+        data: dict | None = None,
+    ) -> None:
         self.type = type
         self.data = data or {}
 

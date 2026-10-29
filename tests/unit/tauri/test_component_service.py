@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime
+from types import SimpleNamespace
 
 import pytest
 
@@ -22,6 +23,48 @@ from qwenpaw.components.service import (
 )
 from qwenpaw.components.update import ComponentUpdateError
 from qwenpaw.components.update import ComponentUpdater
+
+
+@pytest.mark.parametrize("failure", [None, "filesystem", "component"])
+def test_runtime_cleanup_is_once_per_boot_and_retries_next_boot(
+    monkeypatch,
+    tmp_path,
+    failure,
+):
+    calls = []
+
+    def finalize():
+        calls.append("finalize")
+        if failure == "filesystem":
+            raise OSError("candidate directory temporarily locked")
+        if failure == "component":
+            raise ComponentUpdateError("candidate cleanup must retry")
+
+    service = SimpleNamespace(
+        updater=SimpleNamespace(finalize_runtime_activations=finalize),
+        client=SimpleNamespace(close=lambda: calls.append("close")),
+    )
+
+    def configure():
+        calls.append("configure")
+        return service
+
+    monkeypatch.setenv("QWENPAW_COMPONENT_PROTOCOL", "2")
+    monkeypatch.setattr(
+        "qwenpaw.components.service.configured_service",
+        configure,
+    )
+    monkeypatch.setattr(
+        "qwenpaw.components.service._PENDING_UPDATES_PATH",
+        tmp_path / "pending.json",
+    )
+    for _ in range(2):
+        assert run_startup_updates() == {
+            "enabled": False,
+            "updated": [],
+            "errors": [],
+        }
+    assert calls == ["configure", "finalize", "close"] * 2
 
 
 class _Client:
@@ -1071,7 +1114,7 @@ def test_pending_update_runs_even_when_automatic_updates_are_disabled(
         def snapshot(self):
             return {"release": "one"}, [{"component": "demo"}]
 
-        def _install_from_manifest(self, component, manifest):
+        def install_from_manifest(self, component, manifest):
             assert manifest == {"release": "one"}
             return {"component": component, "updated": True}
 

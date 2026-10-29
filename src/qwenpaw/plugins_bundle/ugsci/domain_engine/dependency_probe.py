@@ -153,7 +153,8 @@ def probe_java_runtime() -> DependencyProbeResult:
         )
         if any(candidate.exists() for candidate in candidates):
             return DependencyProbeResult(
-                name="java-runtime", status="available"
+                name="java-runtime",
+                status="available",
             )
 
     try:
@@ -166,7 +167,8 @@ def probe_java_runtime() -> DependencyProbeResult:
             and not any("Java" in issue for issue in status.issues)
         ):
             return DependencyProbeResult(
-                name="java-runtime", status="available"
+                name="java-runtime",
+                status="available",
             )
         runtime_reason = "; ".join(status.issues)
     except Exception as exc:
@@ -191,7 +193,8 @@ def probe_neqsim_mcp_server() -> DependencyProbeResult:
     desktop_jar = os.environ.get("QWENPAW_DESKTOP_NEQSIM_JAR", "").strip()
     if desktop_jar and Path(desktop_jar).is_file():
         return DependencyProbeResult(
-            name="neqsim-mcp-server", status="available"
+            name="neqsim-mcp-server",
+            status="available",
         )
     resource_dir = os.environ.get("QWENPAW_TAURI_RESOURCE_DIR", "").strip()
     if resource_dir:
@@ -203,7 +206,8 @@ def probe_neqsim_mcp_server() -> DependencyProbeResult:
         )
         if bundled_jar.is_file():
             return DependencyProbeResult(
-                name="neqsim-mcp-server", status="available"
+                name="neqsim-mcp-server",
+                status="available",
             )
 
     try:
@@ -218,7 +222,8 @@ def probe_neqsim_mcp_server() -> DependencyProbeResult:
             )
         ):
             return DependencyProbeResult(
-                name="neqsim-mcp-server", status="available"
+                name="neqsim-mcp-server",
+                status="available",
             )
         runtime_reason = "; ".join(status.issues)
     except Exception as exc:
@@ -229,15 +234,18 @@ def probe_neqsim_mcp_server() -> DependencyProbeResult:
     neqsim_home = os.environ.get("NEQSIM_HOME", "")
     if neqsim_home and Path(neqsim_home).exists():
         return DependencyProbeResult(
-            name="neqsim-mcp-server", status="available"
+            name="neqsim-mcp-server",
+            status="available",
         )
     # Check for JAR path
     neqsim_jar = os.environ.get("NEQSIM_JAR", "")
     if neqsim_jar and Path(neqsim_jar).exists():
         return DependencyProbeResult(
-            name="neqsim-mcp-server", status="available"
+            name="neqsim-mcp-server",
+            status="available",
         )
-    # The MCP server might be configured via QwenPaw Driver even without env vars
+    # The MCP server might be configured via QwenPaw Driver even without env
+    # vars
     return DependencyProbeResult(
         name="neqsim-mcp-server",
         status="unavailable",

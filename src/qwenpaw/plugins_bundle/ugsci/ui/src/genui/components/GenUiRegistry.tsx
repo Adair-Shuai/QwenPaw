@@ -27,20 +27,37 @@ import {
 type ReactNode = any;
 type ReactElement = any;
 
-const s = (v: unknown): string => (typeof v === "string" ? v : v != null ? String(v) : "");
-const n = (v: unknown): number => (typeof v === "number" ? v : typeof v === "string" ? Number(v) || 0 : 0);
+const s = (v: unknown): string =>
+  typeof v === "string" ? v : v != null ? String(v) : "";
+const n = (v: unknown): number =>
+  typeof v === "number" ? v : typeof v === "string" ? Number(v) || 0 : 0;
 const b = (v: unknown): boolean => Boolean(v);
 const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
-const recordsEqual = (left: Record<string, unknown>, right: Record<string, unknown>): boolean => {
-  const leftKeys = Object.keys(left); const rightKeys = Object.keys(right);
-  return leftKeys.length === rightKeys.length && leftKeys.every((key) => Object.is(left[key], right[key]));
+const recordsEqual = (
+  left: Record<string, unknown>,
+  right: Record<string, unknown>,
+): boolean => {
+  const leftKeys = Object.keys(left);
+  const rightKeys = Object.keys(right);
+  return (
+    leftKeys.length === rightKeys.length &&
+    leftKeys.every((key) => Object.is(left[key], right[key]))
+  );
 };
 
-const TEXT_SIZES: Record<string, string> = { xs: "12px", sm: "13px", base: "14px", lg: "16px" };
+const TEXT_SIZES: Record<string, string> = {
+  xs: "12px",
+  sm: "13px",
+  base: "14px",
+  lg: "16px",
+};
 const TEXT_COLORS: Record<string, string> = {
-  muted: "var(--ant-color-text-secondary, #8c8c8c)", default: "var(--ant-color-text, #000000d9)",
-  primary: "var(--ant-color-primary, #1677ff)", success: "var(--ant-color-success, #52c41a)",
-  warning: "var(--ant-color-warning, #faad14)", error: "var(--ant-color-error, #ff4d4f)",
+  muted: "var(--ant-color-text-secondary, #8c8c8c)",
+  default: "var(--ant-color-text, #000000d9)",
+  primary: "var(--ant-color-primary, #1677ff)",
+  success: "var(--ant-color-success, #52c41a)",
+  warning: "var(--ant-color-warning, #faad14)",
+  error: "var(--ant-color-error, #ff4d4f)",
 };
 
 const FORM_FIELD_KINDS = new Set<string>(FORM_FIELD_KIND_LIST);
@@ -63,12 +80,15 @@ function getFormContext(React: any): any {
 
 function GenUiForm({ node }: { node: GenUiNode }): ReactElement | null {
   const host = (window as any).QwenPaw?.host;
-  const React = host?.React; const antd = host?.antd || {};
+  const React = host?.React;
+  const antd = host?.antd || {};
   if (!React) return null;
   const p = node.props || {};
   const interaction = React.useContext(getInteractionContext(React));
   const [values, setValues] = React.useState({} as Record<string, unknown>);
-  const [status, setStatus] = React.useState(null as null | { ok: boolean; message: string });
+  const [status, setStatus] = React.useState(
+    null as null | { ok: boolean; message: string },
+  );
   const formFields: GenUiNode[] = React.useMemo(
     () => collectFormFields(node),
     [node],
@@ -76,92 +96,373 @@ function GenUiForm({ node }: { node: GenUiNode }): ReactElement | null {
   const initialValues = React.useMemo(() => {
     const result: Record<string, unknown> = {};
     for (const child of formFields) {
-      const cp = child.props || {}; const name = fieldName(child);
+      const cp = child.props || {};
+      const name = fieldName(child);
       if (cp.value !== undefined) result[name] = cp.value;
       else if (cp.checked !== undefined) result[name] = cp.checked;
     }
     return result;
   }, [formFields]);
-  React.useEffect(() => setValues((old: Record<string, unknown>) => {
-    const next = { ...initialValues, ...old, ...(interaction?.values || {}) };
-    return recordsEqual(old, next) ? old : next;
-  }), [initialValues, interaction?.values]);
-  const api = React.useMemo(() => ({ values, setValue: (name: string, value: unknown) => {
-    setStatus(null);
-    setValues((old: Record<string, unknown>) => ({ ...old, [name]: value }));
-    interaction?.setValue(name, value);
-  } }), [values, interaction]);
+  React.useEffect(
+    () =>
+      setValues((old: Record<string, unknown>) => {
+        const next = {
+          ...initialValues,
+          ...old,
+          ...(interaction?.values || {}),
+        };
+        return recordsEqual(old, next) ? old : next;
+      }),
+    [initialValues, interaction?.values],
+  );
+  const api = React.useMemo(
+    () => ({
+      values,
+      setValue: (name: string, value: unknown) => {
+        setStatus(null);
+        setValues((old: Record<string, unknown>) => ({
+          ...old,
+          [name]: value,
+        }));
+        interaction?.setValue(name, value);
+      },
+    }),
+    [values, interaction],
+  );
   const submit = () => {
-    const missing = formFields.filter((child) => child.props?.required).find((child) => {
-      const name = fieldName(child); const value = values[name];
-      return value === undefined || value === null || value === "" || (Array.isArray(value) && value.length === 0);
-    });
+    const missing = formFields
+      .filter((child) => child.props?.required)
+      .find((child) => {
+        const name = fieldName(child);
+        const value = values[name];
+        return (
+          value === undefined ||
+          value === null ||
+          value === "" ||
+          (Array.isArray(value) && value.length === 0)
+        );
+      });
     if (missing) {
-      setStatus({ ok: false, message: `${s(missing.props?.label) || s(missing.props?.name) || "必填项"}不能为空` });
+      setStatus({
+        ok: false,
+        message: `${
+          s(missing.props?.label) || s(missing.props?.name) || "必填项"
+        }不能为空`,
+      });
       return;
     }
-    const action = p.action && typeof p.action === "object" ? p.action as any : { type: "submit_form", payload: {} };
-    setStatus(dispatchGenUiAction(action, { formValues: values, formId: s(p.formId) || node.nodeId }));
+    const action =
+      p.action && typeof p.action === "object"
+        ? (p.action as any)
+        : { type: "submit_form", payload: {} };
+    setStatus(
+      dispatchGenUiAction(action, {
+        formValues: values,
+        formId: s(p.formId) || node.nodeId,
+      }),
+    );
   };
-  return React.createElement(getFormContext(React).Provider, { value: api },
-    React.createElement("div", { style: { margin: "4px 0" } },
-      p.title ? React.createElement("div", { style: { fontWeight: 600, marginBottom: 8 } }, s(p.title)) : null,
-      ...(node.children || []).map((child, index) => React.createElement(getMemoTreeView(React), { key: child.nodeId || index, node: child })),
-      React.createElement(antd.Button || "button", { type: "primary", size: "small", style: { marginTop: 8 }, onClick: submit }, s(p.submitLabel) || "提交"),
-      status ? React.createElement("div", { role: "status", style: { marginTop: 6, fontSize: 12, color: status.ok ? TEXT_COLORS.success : TEXT_COLORS.error } }, status.message) : null,
+  return React.createElement(
+    getFormContext(React).Provider,
+    { value: api },
+    React.createElement(
+      "div",
+      { style: { margin: "4px 0" } },
+      p.title
+        ? React.createElement(
+            "div",
+            { style: { fontWeight: 600, marginBottom: 8 } },
+            s(p.title),
+          )
+        : null,
+      ...(node.children || []).map((child, index) =>
+        React.createElement(getMemoTreeView(React), {
+          key: child.nodeId || index,
+          node: child,
+        }),
+      ),
+      React.createElement(
+        antd.Button || "button",
+        {
+          type: "primary",
+          size: "small",
+          style: { marginTop: 8 },
+          onClick: submit,
+        },
+        s(p.submitLabel) || "提交",
+      ),
+      status
+        ? React.createElement(
+            "div",
+            {
+              role: "status",
+              style: {
+                marginTop: 6,
+                fontSize: 12,
+                color: status.ok ? TEXT_COLORS.success : TEXT_COLORS.error,
+              },
+            },
+            status.message,
+          )
+        : null,
     ),
   );
 }
 
-function GenUiField({ node, fieldType }: { node: GenUiNode; fieldType: string }): ReactElement | null {
-  const host = (window as any).QwenPaw?.host; const React = host?.React; const antd = host?.antd || {};
+function GenUiField({
+  node,
+  fieldType,
+}: {
+  node: GenUiNode;
+  fieldType: string;
+}): ReactElement | null {
+  const host = (window as any).QwenPaw?.host;
+  const React = host?.React;
+  const antd = host?.antd || {};
   if (!React) return null;
-  const p = node.props || {}; const form = React.useContext(getFormContext(React));
+  const p = node.props || {};
+  const form = React.useContext(getFormContext(React));
   const interaction = React.useContext(getInteractionContext(React));
   const ctx = form || interaction;
-  const [standaloneValue, setStandaloneValue] = React.useState(p.value ?? p.checked ?? "");
-  const name = fieldName(node); const initial = p.value ?? p.checked ?? "";
-  const value = ctx ? (ctx.values?.[name] ?? initial) : standaloneValue;
+  const [standaloneValue, setStandaloneValue] = React.useState(
+    p.value ?? p.checked ?? "",
+  );
+  const name = fieldName(node);
+  const initial = p.value ?? p.checked ?? "";
+  const value = ctx ? ctx.values?.[name] ?? initial : standaloneValue;
   const change = (next: any) => {
-    const normalized = next?.target ? (fieldType === "Switch" ? next.target.checked : next.target.value) : next;
-    if (ctx) ctx.setValue(name, normalized); else setStandaloneValue(normalized);
+    const normalized = next?.target
+      ? fieldType === "Switch"
+        ? next.target.checked
+        : next.target.value
+      : next;
+    if (ctx) ctx.setValue(name, normalized);
+    else setStandaloneValue(normalized);
   };
-  const shell = (control: any) => React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 4, margin: "4px 0" } },
-    p.label && fieldType !== "Switch" ? React.createElement("label", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.label), p.required ? React.createElement("span", { style: { color: TEXT_COLORS.error } }, " *") : null) : null,
-    control,
-    p.description ? React.createElement("span", { style: { fontSize: 11, color: TEXT_COLORS.muted } }, s(p.description)) : null,
-  );
+  const shell = (control: any) =>
+    React.createElement(
+      "div",
+      {
+        style: {
+          display: "flex",
+          flexDirection: "column",
+          gap: 4,
+          margin: "4px 0",
+        },
+      },
+      p.label && fieldType !== "Switch"
+        ? React.createElement(
+            "label",
+            { style: { fontSize: 12, color: TEXT_COLORS.muted } },
+            s(p.label),
+            p.required
+              ? React.createElement(
+                  "span",
+                  { style: { color: TEXT_COLORS.error } },
+                  " *",
+                )
+              : null,
+          )
+        : null,
+      control,
+      p.description
+        ? React.createElement(
+            "span",
+            { style: { fontSize: 11, color: TEXT_COLORS.muted } },
+            s(p.description),
+          )
+        : null,
+    );
   const ariaLabel = s(p.label) || s(p.placeholder) || name;
-  if (fieldType === "Input") return shell(React.createElement(antd.Input || "input", { "aria-label": ariaLabel, placeholder: s(p.placeholder), value, onChange: change, size: "small" }));
-  if (fieldType === "NumberInput") return shell(React.createElement(antd.InputNumber || "input", { "aria-label": ariaLabel, value, min: p.min, max: p.max, step: p.step, onChange: change, size: "small", style: { width: "100%" } }));
-  if (fieldType === "Textarea") return shell(React.createElement(antd.Input?.TextArea || "textarea", { "aria-label": ariaLabel, placeholder: s(p.placeholder), value, rows: n(p.rows) || 3, onChange: change, style: { width: "100%" } }));
-  if (fieldType === "Select") return shell(React.createElement(antd.Select || "select", { "aria-label": ariaLabel, placeholder: s(p.placeholder), value: value || undefined, onChange: change, size: "small", style: { width: "100%" } }, arr(p.options).map((option, index) => React.createElement(antd.Select?.Option || "option", { key: index, value: typeof option === "object" ? s((option as any).value) : s(option) }, typeof option === "object" ? s((option as any).label) : s(option)))));
-  if (fieldType === "Switch") return React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } }, React.createElement(antd.Switch || "input", { type: "checkbox", checked: Boolean(value), onChange: change, size: "small" }), React.createElement("span", null, s(p.label)));
-  if (fieldType === "Slider") return shell(React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8 } }, React.createElement(antd.Slider || "input", { type: "range", value: n(value), min: p.min ?? 0, max: p.max ?? 100, step: p.step ?? 1, onChange: change, style: { flex: 1 } }), React.createElement("span", { style: { minWidth: 32, fontSize: 12 } }, s(value))));
-  if (fieldType === "FileInput") return React.createElement("label", { style: { display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer" } },
-    React.createElement("span", null, s(p.label) || "选择文件"),
-    React.createElement("input", { type: "file", multiple: b(p.multiple), accept: s(p.accept) || undefined, onChange: (event: any) => ctx?.setValue(name, Array.from(event.target.files || []).map((file: any) => ({ name: file.name, size: file.size, type: file.type }))) }),
-  );
+  if (fieldType === "Input")
+    return shell(
+      React.createElement(antd.Input || "input", {
+        "aria-label": ariaLabel,
+        placeholder: s(p.placeholder),
+        value,
+        onChange: change,
+        size: "small",
+      }),
+    );
+  if (fieldType === "NumberInput")
+    return shell(
+      React.createElement(antd.InputNumber || "input", {
+        "aria-label": ariaLabel,
+        value,
+        min: p.min,
+        max: p.max,
+        step: p.step,
+        onChange: change,
+        size: "small",
+        style: { width: "100%" },
+      }),
+    );
+  if (fieldType === "Textarea")
+    return shell(
+      React.createElement(antd.Input?.TextArea || "textarea", {
+        "aria-label": ariaLabel,
+        placeholder: s(p.placeholder),
+        value,
+        rows: n(p.rows) || 3,
+        onChange: change,
+        style: { width: "100%" },
+      }),
+    );
+  if (fieldType === "Select")
+    return shell(
+      React.createElement(
+        antd.Select || "select",
+        {
+          "aria-label": ariaLabel,
+          placeholder: s(p.placeholder),
+          value: value || undefined,
+          onChange: change,
+          size: "small",
+          style: { width: "100%" },
+        },
+        arr(p.options).map((option, index) =>
+          React.createElement(
+            antd.Select?.Option || "option",
+            {
+              key: index,
+              value:
+                typeof option === "object"
+                  ? s((option as any).value)
+                  : s(option),
+            },
+            typeof option === "object" ? s((option as any).label) : s(option),
+          ),
+        ),
+      ),
+    );
+  if (fieldType === "Switch")
+    return React.createElement(
+      "div",
+      { style: { display: "flex", alignItems: "center", gap: 8 } },
+      React.createElement(antd.Switch || "input", {
+        type: "checkbox",
+        checked: Boolean(value),
+        onChange: change,
+        size: "small",
+      }),
+      React.createElement("span", null, s(p.label)),
+    );
+  if (fieldType === "Slider")
+    return shell(
+      React.createElement(
+        "div",
+        { style: { display: "flex", alignItems: "center", gap: 8 } },
+        React.createElement(antd.Slider || "input", {
+          type: "range",
+          value: n(value),
+          min: p.min ?? 0,
+          max: p.max ?? 100,
+          step: p.step ?? 1,
+          onChange: change,
+          style: { flex: 1 },
+        }),
+        React.createElement(
+          "span",
+          { style: { minWidth: 32, fontSize: 12 } },
+          s(value),
+        ),
+      ),
+    );
+  if (fieldType === "FileInput")
+    return React.createElement(
+      "label",
+      {
+        style: {
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 8,
+          cursor: "pointer",
+        },
+      },
+      React.createElement("span", null, s(p.label) || "选择文件"),
+      React.createElement("input", {
+        type: "file",
+        multiple: b(p.multiple),
+        accept: s(p.accept) || undefined,
+        onChange: (event: any) =>
+          ctx?.setValue(
+            name,
+            Array.from(event.target.files || []).map((file: any) => ({
+              name: file.name,
+              size: file.size,
+              type: file.type,
+            })),
+          ),
+      }),
+    );
   return null;
 }
 
-function GenUiActionButton({ node, link = false, toggle = false }: { node: GenUiNode; link?: boolean; toggle?: boolean }): ReactElement | null {
-  const host = (window as any).QwenPaw?.host; const React = host?.React; const antd = host?.antd || {};
+function GenUiActionButton({
+  node,
+  link = false,
+  toggle = false,
+}: {
+  node: GenUiNode;
+  link?: boolean;
+  toggle?: boolean;
+}): ReactElement | null {
+  const host = (window as any).QwenPaw?.host;
+  const React = host?.React;
+  const antd = host?.antd || {};
   if (!React) return null;
-  const p = node.props || {}; const form = React.useContext(getFormContext(React));
+  const p = node.props || {};
+  const form = React.useContext(getFormContext(React));
   const [checked, setChecked] = React.useState(b(p.checked));
-  const [status, setStatus] = React.useState(null as null | { ok: boolean; message: string });
+  const [status, setStatus] = React.useState(
+    null as null | { ok: boolean; message: string },
+  );
   const click = () => {
     if (toggle) setChecked((value: boolean) => !value);
     if (p.action && typeof p.action === "object") {
-      setStatus(dispatchGenUiAction(p.action, { formValues: form?.values, formId: form ? "form" : undefined }));
+      setStatus(
+        dispatchGenUiAction(p.action, {
+          formValues: form?.values,
+          formId: form ? "form" : undefined,
+        }),
+      );
     } else if (link && typeof p.href === "string") {
-      setStatus(dispatchGenUiAction({ type: "open_url", payload: { url: p.href } }));
+      setStatus(
+        dispatchGenUiAction({ type: "open_url", payload: { url: p.href } }),
+      );
     }
   };
-  return React.createElement("span", { style: { display: "inline-flex", flexDirection: "column", gap: 3 } },
-    React.createElement(antd.Button || "button", { type: link ? "link" : (toggle ? checked : s(p.variant) === "primary") ? "primary" : "default", size: "small", disabled: b(p.disabled), loading: b(p.loading), onClick: click }, s(p.label) || "Action"),
-    status ? React.createElement("span", { role: "status", style: { fontSize: 11, color: status.ok ? TEXT_COLORS.success : TEXT_COLORS.error } }, status.message) : null,
+  return React.createElement(
+    "span",
+    { style: { display: "inline-flex", flexDirection: "column", gap: 3 } },
+    React.createElement(
+      antd.Button || "button",
+      {
+        type: link
+          ? "link"
+          : (toggle ? checked : s(p.variant) === "primary")
+          ? "primary"
+          : "default",
+        size: "small",
+        disabled: b(p.disabled),
+        loading: b(p.loading),
+        onClick: click,
+      },
+      s(p.label) || "Action",
+    ),
+    status
+      ? React.createElement(
+          "span",
+          {
+            role: "status",
+            style: {
+              fontSize: 11,
+              color: status.ok ? TEXT_COLORS.success : TEXT_COLORS.error,
+            },
+          },
+          status.message,
+        )
+      : null,
   );
 }
 
@@ -174,7 +475,8 @@ let cachedErrorBoundaryReact: any = null;
 let CachedErrorBoundary: any = null;
 
 function getErrorBoundaryClass(React: any): any {
-  if (CachedErrorBoundary && cachedErrorBoundaryReact === React) return CachedErrorBoundary;
+  if (CachedErrorBoundary && cachedErrorBoundaryReact === React)
+    return CachedErrorBoundary;
   cachedErrorBoundaryReact = React;
   CachedErrorBoundary = class GenUiNodeErrorBoundary extends React.Component<
     { node: GenUiNode; children: ReactNode },
@@ -184,20 +486,37 @@ function getErrorBoundaryClass(React: any): any {
       super(props);
       this.state = { hasError: false };
     }
-    static getDerivedStateFromError() { return { hasError: true }; }
+    static getDerivedStateFromError() {
+      return { hasError: true };
+    }
     componentDidUpdate(prevProps: { node: GenUiNode; children: ReactNode }) {
       if (prevProps.node !== this.props.node && this.state.hasError) {
         this.setState({ hasError: false });
       }
     }
     componentDidCatch(err: unknown) {
-      console.error("[ugsci.genui] Component error for kind '%s':", this.props.node.kind, err);
+      console.error(
+        "[ugsci.genui] Component error for kind '%s':",
+        this.props.node.kind,
+        err,
+      );
     }
     render() {
       if (this.state.hasError) {
-        return React.createElement("div", {
-          style: { padding: 8, border: "1px dashed var(--ant-color-error, #ff4d4f)", borderRadius: 8, fontSize: 12, color: TEXT_COLORS.error, fontFamily: "monospace" },
-        }, `Component error: ${this.props.node.kind}`);
+        return React.createElement(
+          "div",
+          {
+            style: {
+              padding: 8,
+              border: "1px dashed var(--ant-color-error, #ff4d4f)",
+              borderRadius: 8,
+              fontSize: 12,
+              color: TEXT_COLORS.error,
+              fontFamily: "monospace",
+            },
+          },
+          `Component error: ${this.props.node.kind}`,
+        );
       }
       return this.props.children;
     }
@@ -216,11 +535,19 @@ function GenUiTreeNodeImpl({ node }: { node: GenUiNode }): ReactElement | null {
 
   const p = node.props || {};
   const children = node.children || [];
-  const renderChildren = () => children.map((c, i) =>
-    React.createElement(NodeView, { key: c.nodeId || i, node: c })
-  );
+  const renderChildren = () =>
+    children.map((c, i) =>
+      React.createElement(NodeView, { key: c.nodeId || i, node: c }),
+    );
 
-  return renderNode(React, antd, node, p, children, renderChildren) as ReactElement;
+  return renderNode(
+    React,
+    antd,
+    node,
+    p,
+    children,
+    renderChildren,
+  ) as ReactElement;
 }
 
 let memoTreeView: any = null;
@@ -228,12 +555,20 @@ let memoTreeViewReact: any = null;
 
 function getMemoTreeView(React: any) {
   if (memoTreeView && memoTreeViewReact === React) return memoTreeView;
-  memoTreeView = React.memo(GenUiTreeNodeImpl, (prev: { node: GenUiNode }, next: { node: GenUiNode }) => prev.node === next.node);
+  memoTreeView = React.memo(
+    GenUiTreeNodeImpl,
+    (prev: { node: GenUiNode }, next: { node: GenUiNode }) =>
+      prev.node === next.node,
+  );
   memoTreeViewReact = React;
   return memoTreeView;
 }
 
-export function GenUiTreeView({ node }: { node: GenUiNode }): ReactElement | null {
+export function GenUiTreeView({
+  node,
+}: {
+  node: GenUiNode;
+}): ReactElement | null {
   const host = (window as any).QwenPaw?.host;
   if (!host?.React) return null;
   const React = host.React;
@@ -244,101 +579,509 @@ export function GenUiTreeView({ node }: { node: GenUiNode }): ReactElement | nul
   );
 }
 
-function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, unknown>, children: GenUiNode[], renderChildren: () => any[]): ReactElement | null {
+function renderNode(
+  React: any,
+  antd: any,
+  node: GenUiNode,
+  p: Record<string, unknown>,
+  children: GenUiNode[],
+  renderChildren: () => any[],
+): ReactElement | null {
   // Kind coverage is contract-tested against schema._COMPONENT_CATALOG.
   switch (node.kind) {
     // ── Layout ───────────────────────────────────────────────────────────
-    case "Stack": return React.createElement("div", { style: layoutBoxStyle("Stack", p) }, renderChildren());
-    case "Row": return React.createElement("div", { style: layoutBoxStyle("Row", p) }, renderChildren());
-    case "Grid": return React.createElement("div", { style: layoutBoxStyle("Grid", p) }, renderChildren());
-    case "Spacer": return React.createElement("div", { style: layoutBoxStyle("Spacer", p) });
-    case "ScrollArea": return React.createElement("div", { style: layoutBoxStyle("ScrollArea", p) }, renderChildren());
-    case "AspectBox": return React.createElement("div", { style: layoutBoxStyle("AspectBox", p) }, renderChildren());
+    case "Stack":
+      return React.createElement(
+        "div",
+        { style: layoutBoxStyle("Stack", p) },
+        renderChildren(),
+      );
+    case "Row":
+      return React.createElement(
+        "div",
+        { style: layoutBoxStyle("Row", p) },
+        renderChildren(),
+      );
+    case "Grid":
+      return React.createElement(
+        "div",
+        { style: layoutBoxStyle("Grid", p) },
+        renderChildren(),
+      );
+    case "Spacer":
+      return React.createElement("div", { style: layoutBoxStyle("Spacer", p) });
+    case "ScrollArea":
+      return React.createElement(
+        "div",
+        { style: layoutBoxStyle("ScrollArea", p) },
+        renderChildren(),
+      );
+    case "AspectBox":
+      return React.createElement(
+        "div",
+        { style: layoutBoxStyle("AspectBox", p) },
+        renderChildren(),
+      );
 
     // ── Text ─────────────────────────────────────────────────────────────
-    case "Text": return React.createElement("div", { style: { fontSize: TEXT_SIZES[s(p.size)] || TEXT_SIZES.base, color: TEXT_COLORS[s(p.color)] || TEXT_COLORS.default, fontWeight: b(p.bold) ? "bold" : "normal", lineHeight: 1.6 } }, s(p.value));
-    case "Heading": { const lvl = clampHeadingLevel(p.level); const sizes: Record<number, string> = { 1: "24px", 2: "20px", 3: "18px", 4: "16px" }; return React.createElement(`h${lvl}`, { style: { fontSize: sizes[lvl], fontWeight: "bold", margin: "4px 0" } }, s(p.value)); }
-    case "Divider": return React.createElement(antd.Divider || "hr", p.label ? { children: s(p.label) } : {});
+    case "Text":
+      return React.createElement(
+        "div",
+        {
+          style: {
+            fontSize: TEXT_SIZES[s(p.size)] || TEXT_SIZES.base,
+            color: TEXT_COLORS[s(p.color)] || TEXT_COLORS.default,
+            fontWeight: b(p.bold) ? "bold" : "normal",
+            lineHeight: 1.6,
+          },
+        },
+        s(p.value),
+      );
+    case "Heading": {
+      const lvl = clampHeadingLevel(p.level);
+      const sizes: Record<number, string> = {
+        1: "24px",
+        2: "20px",
+        3: "18px",
+        4: "16px",
+      };
+      return React.createElement(
+        `h${lvl}`,
+        {
+          style: { fontSize: sizes[lvl], fontWeight: "bold", margin: "4px 0" },
+        },
+        s(p.value),
+      );
+    }
+    case "Divider":
+      return React.createElement(
+        antd.Divider || "hr",
+        p.label ? { children: s(p.label) } : {},
+      );
     case "Markdown": {
       const host = (window as any).QwenPaw?.host;
       const ReactMarkdown = host?.ReactMarkdown;
       if (ReactMarkdown) {
         const remarkPlugins = host?.remarkGfm ? [host.remarkGfm] : [];
-        return React.createElement("div", { className: "qwenpaw-genui-markdown" },
-          React.createElement(ReactMarkdown, { children: s(p.content || p.value), remarkPlugins }),
+        return React.createElement(
+          "div",
+          { className: "qwenpaw-genui-markdown" },
+          React.createElement(ReactMarkdown, {
+            children: s(p.content || p.value),
+            remarkPlugins,
+          }),
         );
       }
       // Fallback: render as preformatted text if ReactMarkdown not available
-      return React.createElement("div", { style: { whiteSpace: "pre-wrap", lineHeight: 1.6 } }, s(p.content || p.value));
+      return React.createElement(
+        "div",
+        { style: { whiteSpace: "pre-wrap", lineHeight: 1.6 } },
+        s(p.content || p.value),
+      );
     }
-    case "CodeBlock": return React.createElement("pre", { style: { padding: 12, background: "var(--ant-color-fill-tertiary, rgba(0,0,0,0.04))", borderRadius: 8, overflow: "auto", fontSize: 13, fontFamily: "monospace" } }, s(p.code));
-    case "SectionHeader": return React.createElement("div", { style: { display: "flex", alignItems: "center", gap: 8, marginBottom: 8 } }, p.icon ? React.createElement("span", { style: { fontSize: 20 } }, s(p.icon)) : null, React.createElement("div", null, React.createElement("div", { style: { fontSize: 16, fontWeight: 600 } }, s(p.title)), p.subtitle ? React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.subtitle)) : null));
+    case "CodeBlock":
+      return React.createElement(
+        "pre",
+        {
+          style: {
+            padding: 12,
+            background: "var(--ant-color-fill-tertiary, rgba(0,0,0,0.04))",
+            borderRadius: 8,
+            overflow: "auto",
+            fontSize: 13,
+            fontFamily: "monospace",
+          },
+        },
+        s(p.code),
+      );
+    case "SectionHeader":
+      return React.createElement(
+        "div",
+        {
+          style: {
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            marginBottom: 8,
+          },
+        },
+        p.icon
+          ? React.createElement("span", { style: { fontSize: 20 } }, s(p.icon))
+          : null,
+        React.createElement(
+          "div",
+          null,
+          React.createElement(
+            "div",
+            { style: { fontSize: 16, fontWeight: 600 } },
+            s(p.title),
+          ),
+          p.subtitle
+            ? React.createElement(
+                "div",
+                { style: { fontSize: 12, color: TEXT_COLORS.muted } },
+                s(p.subtitle),
+              )
+            : null,
+        ),
+      );
     case "KeyValueList": {
       const items = arr(p.items);
-      return React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 4 } },
-        ...items.map((item: any, i: number) => React.createElement("div", { key: i, style: { display: "flex", justifyContent: "space-between", padding: "2px 0", borderBottom: i < items.length - 1 ? "1px solid var(--ant-color-border-secondary, #f0f0f0)" : "none" } },
-          React.createElement("span", { style: { color: TEXT_COLORS.muted, fontSize: 13 } }, s(item.key)),
-          React.createElement("span", { style: { fontWeight: 500, fontSize: 13 } }, s(item.value)),
-        )),
+      return React.createElement(
+        "div",
+        { style: { display: "flex", flexDirection: "column", gap: 4 } },
+        ...items.map((item: any, i: number) =>
+          React.createElement(
+            "div",
+            {
+              key: i,
+              style: {
+                display: "flex",
+                justifyContent: "space-between",
+                padding: "2px 0",
+                borderBottom:
+                  i < items.length - 1
+                    ? "1px solid var(--ant-color-border-secondary, #f0f0f0)"
+                    : "none",
+              },
+            },
+            React.createElement(
+              "span",
+              { style: { color: TEXT_COLORS.muted, fontSize: 13 } },
+              s(item.key),
+            ),
+            React.createElement(
+              "span",
+              { style: { fontWeight: 500, fontSize: 13 } },
+              s(item.value),
+            ),
+          ),
+        ),
       );
     }
 
     // ── Status / Display ────────────────────────────────────────────────
-    case "Badge": return React.createElement(antd.Tag || "span", { color: s(p.variant) || "default", children: s(p.value) });
-    case "Tag": return React.createElement(antd.Tag || "span", { color: s(p.color) || "default", children: s(p.label) });
-    case "Stat": return React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 2 } }, React.createElement("span", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.label)), React.createElement("span", { style: { fontSize: 20, fontWeight: "bold" } }, s(p.value)), p.delta ? React.createElement("span", { style: { fontSize: 12, color: s(p.trend) === "up" ? TEXT_COLORS.success : s(p.trend) === "down" ? TEXT_COLORS.error : TEXT_COLORS.muted } }, s(p.delta)) : null);
-    case "Progress": return React.createElement(antd.Progress || "div", { percent: n(p.value), size: "small" });
+    case "Badge":
+      return React.createElement(antd.Tag || "span", {
+        color: s(p.variant) || "default",
+        children: s(p.value),
+      });
+    case "Tag":
+      return React.createElement(antd.Tag || "span", {
+        color: s(p.color) || "default",
+        children: s(p.label),
+      });
+    case "Stat":
+      return React.createElement(
+        "div",
+        { style: { display: "flex", flexDirection: "column", gap: 2 } },
+        React.createElement(
+          "span",
+          { style: { fontSize: 12, color: TEXT_COLORS.muted } },
+          s(p.label),
+        ),
+        React.createElement(
+          "span",
+          { style: { fontSize: 20, fontWeight: "bold" } },
+          s(p.value),
+        ),
+        p.delta
+          ? React.createElement(
+              "span",
+              {
+                style: {
+                  fontSize: 12,
+                  color:
+                    s(p.trend) === "up"
+                      ? TEXT_COLORS.success
+                      : s(p.trend) === "down"
+                      ? TEXT_COLORS.error
+                      : TEXT_COLORS.muted,
+                },
+              },
+              s(p.delta),
+            )
+          : null,
+      );
+    case "Progress":
+      return React.createElement(antd.Progress || "div", {
+        percent: n(p.value),
+        size: "small",
+      });
     case "Skeleton": {
       const rows = n(p.rows) || 3;
-      return React.createElement("div", { style: { display: "flex", flexDirection: "column", gap: 8 } },
-        ...Array.from({ length: rows }).map((_, i) => React.createElement(antd.Skeleton || "div", { key: i, active: b(p.active), title: false, paragraph: { rows: 1 } }),
+      return React.createElement(
+        "div",
+        { style: { display: "flex", flexDirection: "column", gap: 8 } },
+        ...Array.from({ length: rows }).map((_, i) =>
+          React.createElement(antd.Skeleton || "div", {
+            key: i,
+            active: b(p.active),
+            title: false,
+            paragraph: { rows: 1 },
+          }),
         ),
       );
     }
-    case "Avatar": return React.createElement(GenUiMediaAvatar, {
-      src: s(p.src),
-      name: s(p.name),
-      size: n(p.size) || 32,
-    });
+    case "Avatar":
+      return React.createElement(GenUiMediaAvatar, {
+        src: s(p.src),
+        name: s(p.name),
+        size: n(p.size) || 32,
+      });
     case "Icon": {
       const icon = resolveGenUiIcon(p.name);
       const size = n(p.size) || 16;
       const color = TEXT_COLORS[s(p.color)] || TEXT_COLORS.default;
       if (icon.kind === "emoji") {
-        return React.createElement("span", { "aria-hidden": true, style: { fontSize: size, color, lineHeight: 1 } }, icon.text);
+        return React.createElement(
+          "span",
+          {
+            "aria-hidden": true,
+            style: { fontSize: size, color, lineHeight: 1 },
+          },
+          icon.text,
+        );
       }
       if (icon.kind === "svg") {
-        return React.createElement("svg", {
-          width: size,
-          height: size,
-          viewBox: "0 0 24 24",
-          fill: "none",
-          stroke: color,
-          strokeWidth: 2,
-          strokeLinecap: "round",
-          strokeLinejoin: "round",
-          "aria-hidden": true,
-          focusable: "false",
-          style: { display: "inline-block", verticalAlign: "middle" },
-        }, ...icon.paths.map((d, i) => React.createElement("path", { key: i, d })));
+        return React.createElement(
+          "svg",
+          {
+            width: size,
+            height: size,
+            viewBox: "0 0 24 24",
+            fill: "none",
+            stroke: color,
+            strokeWidth: 2,
+            strokeLinecap: "round",
+            strokeLinejoin: "round",
+            "aria-hidden": true,
+            focusable: "false",
+            style: { display: "inline-block", verticalAlign: "middle" },
+          },
+          ...icon.paths.map((d, i) =>
+            React.createElement("path", { key: i, d }),
+          ),
+        );
       }
-      return React.createElement("span", { "aria-hidden": true, style: { width: size, height: size, display: "inline-block" } });
+      return React.createElement("span", {
+        "aria-hidden": true,
+        style: { width: size, height: size, display: "inline-block" },
+      });
     }
 
     // ── Cards ───────────────────────────────────────────────────────────
-    case "Card": return React.createElement(antd.Card || "div", { title: p.title ? s(p.title) : undefined, size: "small", style: { margin: "4px 0" } }, renderChildren());
-    case "DataCard": return React.createElement(antd.Card || "div", { size: "small", style: { margin: "4px 0" } }, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.title)), React.createElement("div", { style: { fontSize: 24, fontWeight: "bold" } }, s(p.value))), p.icon ? React.createElement("span", { style: { fontSize: 32 } }, s(p.icon)) : null));
-    case "MetricCard": return React.createElement(antd.Card || "div", { size: "small", style: { margin: "4px 0" } }, React.createElement("div", { style: { display: "flex", justifyContent: "space-between", alignItems: "center" } }, React.createElement("div", null, React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.title)), React.createElement("div", { style: { fontSize: 24, fontWeight: "bold" } }, s(p.value)), p.delta ? React.createElement("span", { style: { fontSize: 12, color: s(p.trend) === "up" ? TEXT_COLORS.success : s(p.trend) === "down" ? TEXT_COLORS.error : TEXT_COLORS.muted } }, `${s(p.delta)} ${p.period ? s(p.period) : ""}`.trim()) : null), p.icon ? React.createElement("span", { style: { fontSize: 32 } }, s(p.icon)) : null));
-    case "AlertCard": case "Alert": return React.createElement(antd.Alert || "div", { type: s(p.severity) === "success" ? "success" : s(p.severity) === "warning" ? "warning" : s(p.severity) === "error" ? "error" : "info", message: p.title ? s(p.title) : undefined, description: s(p.message), showIcon: true, style: { margin: "4px 0" } });
-    case "Callout": return React.createElement(antd.Alert || "div", { type: s(p.variant) === "tip" ? "success" : s(p.variant) === "warning" ? "warning" : s(p.variant) === "important" ? "error" : "info", message: p.title ? s(p.title) : undefined, description: s(p.message), showIcon: true });
-    case "TimelineCard": return React.createElement(antd.Card || "div", { size: "small", style: { margin: "4px 0" } }, React.createElement("div", { style: { display: "flex", gap: 8, alignItems: "flex-start" } }, React.createElement("div", { style: { width: 8, height: 8, borderRadius: "50%", background: s(p.status) === "done" ? TEXT_COLORS.success : s(p.status) === "pending" ? TEXT_COLORS.warning : TEXT_COLORS.primary, marginTop: 4, flexShrink: 0 } }), React.createElement("div", null, React.createElement("div", { style: { fontWeight: 600 } }, s(p.title)), p.date ? React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.date)) : null, p.description ? React.createElement("div", { style: { fontSize: 13, marginTop: 4 } }, s(p.description)) : null)));
-    case "KpiBoard": return React.createElement("div", { style: { margin: "4px 0" } }, p.title ? React.createElement("div", { style: { fontSize: 16, fontWeight: 600, marginBottom: 8 } }, s(p.title)) : null, React.createElement("div", { style: layoutBoxStyle("KpiBoard", p) }, renderChildren()));
-    case "FeatureGrid": return React.createElement("div", { style: { ...layoutBoxStyle("FeatureGrid", p), margin: "4px 0" } }, renderChildren());
+    case "Card":
+      return React.createElement(
+        antd.Card || "div",
+        {
+          title: p.title ? s(p.title) : undefined,
+          size: "small",
+          style: { margin: "4px 0" },
+        },
+        renderChildren(),
+      );
+    case "DataCard":
+      return React.createElement(
+        antd.Card || "div",
+        { size: "small", style: { margin: "4px 0" } },
+        React.createElement(
+          "div",
+          {
+            style: {
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            },
+          },
+          React.createElement(
+            "div",
+            null,
+            React.createElement(
+              "div",
+              { style: { fontSize: 12, color: TEXT_COLORS.muted } },
+              s(p.title),
+            ),
+            React.createElement(
+              "div",
+              { style: { fontSize: 24, fontWeight: "bold" } },
+              s(p.value),
+            ),
+          ),
+          p.icon
+            ? React.createElement(
+                "span",
+                { style: { fontSize: 32 } },
+                s(p.icon),
+              )
+            : null,
+        ),
+      );
+    case "MetricCard":
+      return React.createElement(
+        antd.Card || "div",
+        { size: "small", style: { margin: "4px 0" } },
+        React.createElement(
+          "div",
+          {
+            style: {
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            },
+          },
+          React.createElement(
+            "div",
+            null,
+            React.createElement(
+              "div",
+              { style: { fontSize: 12, color: TEXT_COLORS.muted } },
+              s(p.title),
+            ),
+            React.createElement(
+              "div",
+              { style: { fontSize: 24, fontWeight: "bold" } },
+              s(p.value),
+            ),
+            p.delta
+              ? React.createElement(
+                  "span",
+                  {
+                    style: {
+                      fontSize: 12,
+                      color:
+                        s(p.trend) === "up"
+                          ? TEXT_COLORS.success
+                          : s(p.trend) === "down"
+                          ? TEXT_COLORS.error
+                          : TEXT_COLORS.muted,
+                    },
+                  },
+                  `${s(p.delta)} ${p.period ? s(p.period) : ""}`.trim(),
+                )
+              : null,
+          ),
+          p.icon
+            ? React.createElement(
+                "span",
+                { style: { fontSize: 32 } },
+                s(p.icon),
+              )
+            : null,
+        ),
+      );
+    case "AlertCard":
+    case "Alert":
+      return React.createElement(antd.Alert || "div", {
+        type:
+          s(p.severity) === "success"
+            ? "success"
+            : s(p.severity) === "warning"
+            ? "warning"
+            : s(p.severity) === "error"
+            ? "error"
+            : "info",
+        message: p.title ? s(p.title) : undefined,
+        description: s(p.message),
+        showIcon: true,
+        style: { margin: "4px 0" },
+      });
+    case "Callout":
+      return React.createElement(antd.Alert || "div", {
+        type:
+          s(p.variant) === "tip"
+            ? "success"
+            : s(p.variant) === "warning"
+            ? "warning"
+            : s(p.variant) === "important"
+            ? "error"
+            : "info",
+        message: p.title ? s(p.title) : undefined,
+        description: s(p.message),
+        showIcon: true,
+      });
+    case "TimelineCard":
+      return React.createElement(
+        antd.Card || "div",
+        { size: "small", style: { margin: "4px 0" } },
+        React.createElement(
+          "div",
+          { style: { display: "flex", gap: 8, alignItems: "flex-start" } },
+          React.createElement("div", {
+            style: {
+              width: 8,
+              height: 8,
+              borderRadius: "50%",
+              background:
+                s(p.status) === "done"
+                  ? TEXT_COLORS.success
+                  : s(p.status) === "pending"
+                  ? TEXT_COLORS.warning
+                  : TEXT_COLORS.primary,
+              marginTop: 4,
+              flexShrink: 0,
+            },
+          }),
+          React.createElement(
+            "div",
+            null,
+            React.createElement(
+              "div",
+              { style: { fontWeight: 600 } },
+              s(p.title),
+            ),
+            p.date
+              ? React.createElement(
+                  "div",
+                  { style: { fontSize: 12, color: TEXT_COLORS.muted } },
+                  s(p.date),
+                )
+              : null,
+            p.description
+              ? React.createElement(
+                  "div",
+                  { style: { fontSize: 13, marginTop: 4 } },
+                  s(p.description),
+                )
+              : null,
+          ),
+        ),
+      );
+    case "KpiBoard":
+      return React.createElement(
+        "div",
+        { style: { margin: "4px 0" } },
+        p.title
+          ? React.createElement(
+              "div",
+              { style: { fontSize: 16, fontWeight: 600, marginBottom: 8 } },
+              s(p.title),
+            )
+          : null,
+        React.createElement(
+          "div",
+          { style: layoutBoxStyle("KpiBoard", p) },
+          renderChildren(),
+        ),
+      );
+    case "FeatureGrid":
+      return React.createElement(
+        "div",
+        { style: { ...layoutBoxStyle("FeatureGrid", p), margin: "4px 0" } },
+        renderChildren(),
+      );
     case "Stepper": {
       const steps = arr(p.steps).map((st) => s(st));
       const current = n(p.current);
-      return React.createElement(antd.Steps || "div", { current, size: "small", style: { margin: "4px 0" } },
-        ...steps.map((label: string, i: number) => React.createElement(antd.Steps?.Item || "div", { key: i, title: label })),
+      return React.createElement(
+        antd.Steps || "div",
+        { current, size: "small", style: { margin: "4px 0" } },
+        ...steps.map((label: string, i: number) =>
+          React.createElement(antd.Steps?.Item || "div", {
+            key: i,
+            title: label,
+          }),
+        ),
       );
     }
 
@@ -347,7 +1090,9 @@ function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, un
       const headers = arr(p.headers).map((h) => s(h));
       const rows = children.filter((c) => c.kind === "TableRow");
       const dataSource = rows.map((row, ri) => {
-        const cells = (row.children || []).filter((c) => c.kind === "TableCell");
+        const cells = (row.children || []).filter(
+          (c) => c.kind === "TableCell",
+        );
         const rd: Record<string, unknown> = { key: ri };
         headers.forEach((h, ci) => {
           const value = cells[ci]?.props?.value;
@@ -356,37 +1101,117 @@ function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, un
         return rd;
       });
       const columns = headers.map((h) => ({ title: h, dataIndex: h, key: h }));
-      return React.createElement(antd.Table || "table", { dataSource, columns, size: b(p.compact) ? "small" : "middle", pagination: false, style: { margin: "4px 0" } });
+      return React.createElement(antd.Table || "table", {
+        dataSource,
+        columns,
+        size: b(p.compact) ? "small" : "middle",
+        pagination: false,
+        style: { margin: "4px 0" },
+      });
     }
     case "List": {
       const items = children.filter((c) => c.kind === "ListItem");
-      return React.createElement(antd.List || "ul", { size: "small", style: { margin: "4px 0" } },
-        items.map((item, i) => React.createElement(antd.List?.Item || "li", { key: i }, item.props?.icon ? React.createElement("span", { style: { marginRight: 6 } }, s(item.props.icon)) : null, s(item.props?.value))));
+      return React.createElement(
+        antd.List || "ul",
+        { size: "small", style: { margin: "4px 0" } },
+        items.map((item, i) =>
+          React.createElement(
+            antd.List?.Item || "li",
+            { key: i },
+            item.props?.icon
+              ? React.createElement(
+                  "span",
+                  { style: { marginRight: 6 } },
+                  s(item.props.icon),
+                )
+              : null,
+            s(item.props?.value),
+          ),
+        ),
+      );
     }
     case "ImageGallery": {
       const images = children.filter((c) => c.kind === "Image");
-      return React.createElement("div", { style: { ...layoutBoxStyle("ImageGallery", p), margin: "4px 0" } },
+      return React.createElement(
+        "div",
+        { style: { ...layoutBoxStyle("ImageGallery", p), margin: "4px 0" } },
         ...images.map((img, i) => {
           const ip = img.props || {};
-          return React.createElement(GenUiMediaImage, { key: i, src: s(ip.src), alt: s(ip.alt), style: { width: "100%", height: 120, objectFit: "cover", borderRadius: 8, cursor: "pointer" } });
+          return React.createElement(GenUiMediaImage, {
+            key: i,
+            src: s(ip.src),
+            alt: s(ip.alt),
+            style: {
+              width: "100%",
+              height: 120,
+              objectFit: "cover",
+              borderRadius: 8,
+              cursor: "pointer",
+            },
+          });
         }),
       );
     }
 
     // ── Media ───────────────────────────────────────────────────────────
-    case "Image": return React.createElement("div", null, React.createElement(GenUiMediaImage, { src: s(p.src), alt: s(p.alt), style: { maxWidth: "100%", borderRadius: b(p.rounded) ? "8px" : undefined, maxHeight: p.maxHeight ? `${n(p.maxHeight)}px` : undefined } }), p.caption ? React.createElement("div", { style: { fontSize: 12, color: TEXT_COLORS.muted } }, s(p.caption)) : null);
-    case "Chart": return React.createElement(GenUiChart, { props: p });
+    case "Image":
+      return React.createElement(
+        "div",
+        null,
+        React.createElement(GenUiMediaImage, {
+          src: s(p.src),
+          alt: s(p.alt),
+          style: {
+            maxWidth: "100%",
+            borderRadius: b(p.rounded) ? "8px" : undefined,
+            maxHeight: p.maxHeight ? `${n(p.maxHeight)}px` : undefined,
+          },
+        }),
+        p.caption
+          ? React.createElement(
+              "div",
+              { style: { fontSize: 12, color: TEXT_COLORS.muted } },
+              s(p.caption),
+            )
+          : null,
+      );
+    case "Chart":
+      return React.createElement(GenUiChart, { props: p });
 
     // ── Interactive ─────────────────────────────────────────────────────
-    case "Button": case "InteractiveButton": return React.createElement(GenUiActionButton, { node });
-    case "ToggleButton": return React.createElement(GenUiActionButton, { node, toggle: true });
-    case "LinkButton": return React.createElement(GenUiActionButton, { node, link: true });
-    case "Input": case "NumberInput": case "Select": case "Textarea": case "Switch": case "Slider": case "FileInput": return React.createElement(GenUiField, { node, fieldType: node.kind });
-    case "Form": return React.createElement(GenUiForm, { node });
-    case "Chip": return React.createElement(antd.Tag || "span", { color: s(p.color) || "default", closable: true, onClose: () => {}, children: s(p.label) });
+    case "Button":
+    case "InteractiveButton":
+      return React.createElement(GenUiActionButton, { node });
+    case "ToggleButton":
+      return React.createElement(GenUiActionButton, { node, toggle: true });
+    case "LinkButton":
+      return React.createElement(GenUiActionButton, { node, link: true });
+    case "Input":
+    case "NumberInput":
+    case "Select":
+    case "Textarea":
+    case "Switch":
+    case "Slider":
+    case "FileInput":
+      return React.createElement(GenUiField, { node, fieldType: node.kind });
+    case "Form":
+      return React.createElement(GenUiForm, { node });
+    case "Chip":
+      return React.createElement(antd.Tag || "span", {
+        color: s(p.color) || "default",
+        closable: true,
+        onClose: () => {},
+        children: s(p.label),
+      });
     case "ChipGroup": {
       const items = arr(p.items);
-      return React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 4 } }, ...items.map((item, i) => React.createElement(antd.Tag || "span", { key: i }, s(item))));
+      return React.createElement(
+        "div",
+        { style: { display: "flex", flexWrap: "wrap", gap: 4 } },
+        ...items.map((item, i) =>
+          React.createElement(antd.Tag || "span", { key: i }, s(item)),
+        ),
+      );
     }
 
     // ── Tabs / Accordion ────────────────────────────────────────────────
@@ -396,12 +1221,34 @@ function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, un
       const items = tabItems.map((tab) => ({
         key: s(tab.props?.key) || s(tab.props?.tab),
         label: s(tab.props?.tab),
-        children: (tab.children || []).map((c, i) => React.createElement(NodeView, { key: c.nodeId || i, node: c })),
+        children: (tab.children || []).map((c, i) =>
+          React.createElement(NodeView, { key: c.nodeId || i, node: c }),
+        ),
       }));
-      if (antd.Tabs) return React.createElement(antd.Tabs, { items, defaultActiveKey: s(p.activeKey) || items[0]?.key });
-      return React.createElement("div", null, ...items.map((item, i) => React.createElement("div", { key: i }, React.createElement("div", { style: { fontWeight: 600, marginBottom: 4 } }, item.label), item.children)));
+      if (antd.Tabs)
+        return React.createElement(antd.Tabs, {
+          items,
+          defaultActiveKey: s(p.activeKey) || items[0]?.key,
+        });
+      return React.createElement(
+        "div",
+        null,
+        ...items.map((item, i) =>
+          React.createElement(
+            "div",
+            { key: i },
+            React.createElement(
+              "div",
+              { style: { fontWeight: 600, marginBottom: 4 } },
+              item.label,
+            ),
+            item.children,
+          ),
+        ),
+      );
     }
-    case "TabItem": return React.createElement("div", null, renderChildren());
+    case "TabItem":
+      return React.createElement("div", null, renderChildren());
     case "Accordion": {
       const NodeView = getMemoTreeView(React);
       const accItems = children.filter((c) => c.kind === "AccordionItem");
@@ -409,24 +1256,86 @@ function renderNode(React: any, antd: any, node: GenUiNode, p: Record<string, un
         const panels = accItems.map((item) => ({
           key: s(item.props?.key) || s(item.props?.header),
           label: s(item.props?.header),
-          children: (item.children || []).map((c, i) => React.createElement(NodeView, { key: c.nodeId || i, node: c })),
+          children: (item.children || []).map((c, i) =>
+            React.createElement(NodeView, { key: c.nodeId || i, node: c }),
+          ),
         }));
         return React.createElement(antd.Collapse, { items: panels });
       }
-      return React.createElement("div", null, ...accItems.map((item, i) => React.createElement("details", { key: i }, React.createElement("summary", { style: { fontWeight: 600, cursor: "pointer", padding: "4px 0" } }, s(item.props?.header)), React.createElement("div", { style: { paddingLeft: 12 } }, (item.children || []).map((c, j) => React.createElement(NodeView, { key: c.nodeId || j, node: c }))))));
+      return React.createElement(
+        "div",
+        null,
+        ...accItems.map((item, i) =>
+          React.createElement(
+            "details",
+            { key: i },
+            React.createElement(
+              "summary",
+              {
+                style: { fontWeight: 600, cursor: "pointer", padding: "4px 0" },
+              },
+              s(item.props?.header),
+            ),
+            React.createElement(
+              "div",
+              { style: { paddingLeft: 12 } },
+              (item.children || []).map((c, j) =>
+                React.createElement(NodeView, { key: c.nodeId || j, node: c }),
+              ),
+            ),
+          ),
+        ),
+      );
     }
-    case "AccordionItem": return React.createElement("div", null, renderChildren());
+    case "AccordionItem":
+      return React.createElement("div", null, renderChildren());
 
     // ── Debug ───────────────────────────────────────────────────────────
-    case "JsonDebug": return React.createElement("details", { style: { margin: "4px 0", fontSize: 12 } }, React.createElement("summary", null, s(p.label) || "Debug JSON"), React.createElement("pre", { style: { fontSize: 12, padding: 8, background: "var(--ant-color-fill-tertiary, rgba(0,0,0,0.04))", borderRadius: 4, overflow: "auto" } }, JSON.stringify(p.data ?? p, null, 2)));
+    case "JsonDebug":
+      return React.createElement(
+        "details",
+        { style: { margin: "4px 0", fontSize: 12 } },
+        React.createElement("summary", null, s(p.label) || "Debug JSON"),
+        React.createElement(
+          "pre",
+          {
+            style: {
+              fontSize: 12,
+              padding: 8,
+              background: "var(--ant-color-fill-tertiary, rgba(0,0,0,0.04))",
+              borderRadius: 4,
+              overflow: "auto",
+            },
+          },
+          JSON.stringify(p.data ?? p, null, 2),
+        ),
+      );
 
     // ── Unknown (safe placeholder) ──────────────────────────────────────
-    default: return React.createElement("div", { style: { padding: 8, border: "1px dashed var(--ant-color-border, #d9d9d9)", borderRadius: 8, fontSize: 12, color: TEXT_COLORS.muted, fontFamily: "monospace" } }, `Unknown component: ${node.kind}`);
+    default:
+      return React.createElement(
+        "div",
+        {
+          style: {
+            padding: 8,
+            border: "1px dashed var(--ant-color-border, #d9d9d9)",
+            borderRadius: 8,
+            fontSize: 12,
+            color: TEXT_COLORS.muted,
+            fontFamily: "monospace",
+          },
+        },
+        `Unknown component: ${node.kind}`,
+      );
   }
 }
 
 // ── Chart renderer (SVG-based, no external deps) ─────────────────────────
-function GenUiChart({ props: p }: { props: Record<string, unknown> }): ReactElement | null {
+function GenUiChart({
+  props: p,
+}: {
+  props: Record<string, unknown>;
+}): ReactElement | null {
   const React = (window as any).QwenPaw?.host?.React;
   if (!React) return null;
 
@@ -441,7 +1350,11 @@ function GenUiChart({ props: p }: { props: Record<string, unknown> }): ReactElem
   const width = 400;
 
   if (model.empty) {
-    return React.createElement("div", { style: { padding: 12, color: TEXT_COLORS.muted, fontSize: 12 } }, "Chart: no data");
+    return React.createElement(
+      "div",
+      { style: { padding: 12, color: TEXT_COLORS.muted, fontSize: 12 } },
+      "Chart: no data",
+    );
   }
 
   // Pie chart
@@ -450,28 +1363,82 @@ function GenUiChart({ props: p }: { props: Record<string, unknown> }): ReactElem
     // for pie slices, but we handle them gracefully by taking abs()
     const pieValues = series[0].values.map((v) => Math.abs(v));
     const total = pieValues.reduce((a, b) => a + b, 0) || 1;
-    const cx = width / 2, cy = height / 2, r = Math.min(width, height) / 2 - 20;
+    const cx = width / 2,
+      cy = height / 2,
+      r = Math.min(width, height) / 2 - 20;
     let cumAngle = -Math.PI / 2;
     const slices = pieValues.map((val, i) => {
       const angle = (val / total) * 2 * Math.PI;
-      const x1 = cx + r * Math.cos(cumAngle), y1 = cy + r * Math.sin(cumAngle);
-      const x2 = cx + r * Math.cos(cumAngle + angle), y2 = cy + r * Math.sin(cumAngle + angle);
+      const x1 = cx + r * Math.cos(cumAngle),
+        y1 = cy + r * Math.sin(cumAngle);
+      const x2 = cx + r * Math.cos(cumAngle + angle),
+        y2 = cy + r * Math.sin(cumAngle + angle);
       const largeArc = angle > Math.PI ? 1 : 0;
       const path = `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${largeArc} 1 ${x2} ${y2} Z`;
       cumAngle += angle;
-      return { path, color: CHART_COLORS[i % CHART_COLORS.length], label: categories[i] || `#${i + 1}`, val };
+      return {
+        path,
+        color: CHART_COLORS[i % CHART_COLORS.length],
+        label: categories[i] || `#${i + 1}`,
+        val,
+      };
     });
-    return React.createElement("div", { style: { margin: "4px 0" } },
-      title ? React.createElement("div", { style: { fontSize: 13, fontWeight: 600, marginBottom: 4 } }, title) : null,
-      React.createElement("svg", { width, height, style: { maxWidth: "100%" } },
-        ...slices.map((sl, i) => React.createElement("path", { key: i, d: sl.path, fill: sl.color, stroke: "#fff", strokeWidth: 1 })),
+    return React.createElement(
+      "div",
+      { style: { margin: "4px 0" } },
+      title
+        ? React.createElement(
+            "div",
+            { style: { fontSize: 13, fontWeight: 600, marginBottom: 4 } },
+            title,
+          )
+        : null,
+      React.createElement(
+        "svg",
+        { width, height, style: { maxWidth: "100%" } },
+        ...slices.map((sl, i) =>
+          React.createElement("path", {
+            key: i,
+            d: sl.path,
+            fill: sl.color,
+            stroke: "#fff",
+            strokeWidth: 1,
+          }),
+        ),
       ),
-      showLegend ? React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4, fontSize: 11 } },
-        ...slices.map((sl, i) => React.createElement("span", { key: i, style: { display: "flex", alignItems: "center", gap: 4 } },
-          React.createElement("span", { style: { display: "inline-block", width: 10, height: 10, borderRadius: 2, background: sl.color } }),
-          `${sl.label}: ${sl.val}`,
-        )),
-      ) : null,
+      showLegend
+        ? React.createElement(
+            "div",
+            {
+              style: {
+                display: "flex",
+                flexWrap: "wrap",
+                gap: 8,
+                marginTop: 4,
+                fontSize: 11,
+              },
+            },
+            ...slices.map((sl, i) =>
+              React.createElement(
+                "span",
+                {
+                  key: i,
+                  style: { display: "flex", alignItems: "center", gap: 4 },
+                },
+                React.createElement("span", {
+                  style: {
+                    display: "inline-block",
+                    width: 10,
+                    height: 10,
+                    borderRadius: 2,
+                    background: sl.color,
+                  },
+                }),
+                `${sl.label}: ${sl.val}`,
+              ),
+            ),
+          )
+        : null,
     );
   }
 
@@ -482,48 +1449,131 @@ function GenUiChart({ props: p }: { props: Record<string, unknown> }): ReactElem
   const range = maxVal - minVal || 1;
   const groupW = categories.length > 0 ? (width - 40) / categories.length : 0;
   const barW = series.length > 0 ? Math.max(1, groupW / series.length - 2) : 0;
-  const xStep = categories.length > 1 ? (width - 40) / (categories.length - 1) : 0;
+  const xStep =
+    categories.length > 1 ? (width - 40) / (categories.length - 1) : 0;
   const labelEvery = Math.max(1, Math.ceil(categories.length / 8));
-  const yScale = (v: number) => height - 20 - ((v - minVal) / range) * (height - 40);
+  const yScale = (v: number) =>
+    height - 20 - ((v - minVal) / range) * (height - 40);
   const zeroY = yScale(0);
   const xPos = (i: number) => 30 + i * xStep;
 
-  return React.createElement("div", { style: { margin: "4px 0" } },
-    title ? React.createElement("div", { style: { fontSize: 13, fontWeight: 600, marginBottom: 4 } }, title) : null,
-    React.createElement("svg", { width, height, style: { maxWidth: "100%" } },
+  return React.createElement(
+    "div",
+    { style: { margin: "4px 0" } },
+    title
+      ? React.createElement(
+          "div",
+          { style: { fontSize: 13, fontWeight: 600, marginBottom: 4 } },
+          title,
+        )
+      : null,
+    React.createElement(
+      "svg",
+      { width, height, style: { maxWidth: "100%" } },
       ...[0, 0.25, 0.5, 0.75, 1].map((t, i) => {
         const y = height - 20 - t * (height - 40);
-        return React.createElement("line", { key: `g${i}`, x1: 30, y1: y, x2: width - 10, y2: y, stroke: "var(--ant-color-border-secondary, #f0f0f0)", strokeWidth: 1 });
+        return React.createElement("line", {
+          key: `g${i}`,
+          x1: 30,
+          y1: y,
+          x2: width - 10,
+          y2: y,
+          stroke: "var(--ant-color-border-secondary, #f0f0f0)",
+          strokeWidth: 1,
+        });
       }),
-      ...categories.map((cat, i) => (i % labelEvery === 0 || i === categories.length - 1) ? React.createElement("text", { key: `x${i}`, x: xPos(i), y: height - 6, fontSize: 10, fill: TEXT_COLORS.muted, textAnchor: "middle" }, cat.length > 6 ? cat.slice(0, 6) + "…" : cat) : null),
+      ...categories.map((cat, i) =>
+        i % labelEvery === 0 || i === categories.length - 1
+          ? React.createElement(
+              "text",
+              {
+                key: `x${i}`,
+                x: xPos(i),
+                y: height - 6,
+                fontSize: 10,
+                fill: TEXT_COLORS.muted,
+                textAnchor: "middle",
+              },
+              cat.length > 6 ? cat.slice(0, 6) + "…" : cat,
+            )
+          : null,
+      ),
       ...series.map((sr, si) => {
         const color = CHART_COLORS[si % CHART_COLORS.length];
         if (chartType === "bar") {
-          return sr.values.map((val, vi) => React.createElement("rect", {
-            key: `b${si}-${vi}`,
-            x: 30 + vi * groupW + si * (barW + 2) + 1,
-            y: Math.min(yScale(val), zeroY),
-            width: barW,
-            height: Math.abs(zeroY - yScale(val)),
-            fill: color,
-            rx: 2,
-          }));
+          return sr.values.map((val, vi) =>
+            React.createElement("rect", {
+              key: `b${si}-${vi}`,
+              x: 30 + vi * groupW + si * (barW + 2) + 1,
+              y: Math.min(yScale(val), zeroY),
+              width: barW,
+              height: Math.abs(zeroY - yScale(val)),
+              fill: color,
+              rx: 2,
+            }),
+          );
         }
-        const points = sr.values.map((val, vi) => `${xPos(vi)},${yScale(val)}`).join(" ");
-        const elems = [React.createElement("polyline", { key: `l${si}`, points, fill: "none", stroke: color, strokeWidth: 2 })];
+        const points = sr.values
+          .map((val, vi) => `${xPos(vi)},${yScale(val)}`)
+          .join(" ");
+        const elems = [
+          React.createElement("polyline", {
+            key: `l${si}`,
+            points,
+            fill: "none",
+            stroke: color,
+            strokeWidth: 2,
+          }),
+        ];
         if (chartType === "area") {
-          const areaPoints = `${xPos(0)},${height - 20} ${points} ${xPos(sr.values.length - 1)},${height - 20}`;
-          elems.unshift(React.createElement("polygon", { key: `a${si}`, points: areaPoints, fill: color, opacity: 0.15 }));
+          const areaPoints = `${xPos(0)},${height - 20} ${points} ${xPos(
+            sr.values.length - 1,
+          )},${height - 20}`;
+          elems.unshift(
+            React.createElement("polygon", {
+              key: `a${si}`,
+              points: areaPoints,
+              fill: color,
+              opacity: 0.15,
+            }),
+          );
         }
         return elems;
       }),
     ),
-    showLegend ? React.createElement("div", { style: { display: "flex", flexWrap: "wrap", gap: 8, marginTop: 4, fontSize: 11 } },
-      ...series.map((sr, si) => React.createElement("span", { key: si, style: { display: "flex", alignItems: "center", gap: 4 } },
-        React.createElement("span", { style: { display: "inline-block", width: 10, height: 10, borderRadius: 2, background: CHART_COLORS[si % CHART_COLORS.length] } }),
-        sr.name,
-      )),
-    ) : null,
+    showLegend
+      ? React.createElement(
+          "div",
+          {
+            style: {
+              display: "flex",
+              flexWrap: "wrap",
+              gap: 8,
+              marginTop: 4,
+              fontSize: 11,
+            },
+          },
+          ...series.map((sr, si) =>
+            React.createElement(
+              "span",
+              {
+                key: si,
+                style: { display: "flex", alignItems: "center", gap: 4 },
+              },
+              React.createElement("span", {
+                style: {
+                  display: "inline-block",
+                  width: 10,
+                  height: 10,
+                  borderRadius: 2,
+                  background: CHART_COLORS[si % CHART_COLORS.length],
+                },
+              }),
+              sr.name,
+            ),
+          ),
+        )
+      : null,
   );
 }
 
@@ -547,7 +1597,8 @@ function GenUiMediaImage(props: {
 
   const { useState, useEffect } = React;
   const [resolvedUrl, setResolvedUrl] = useState(
-    (getCachedMediaUrl(props.src) || (isDirectUrl(props.src) ? props.src : null)) as string | null,
+    (getCachedMediaUrl(props.src) ||
+      (isDirectUrl(props.src) ? props.src : null)) as string | null,
   );
   const [resolutionError, setResolutionError] = useState(
     getMediaResolutionError(props.src),
@@ -577,7 +1628,9 @@ function GenUiMediaImage(props: {
         setResolutionError(url ? null : getMediaResolutionError(props.src));
       }
     });
-    return () => { cancelled = true; };
+    return () => {
+      cancelled = true;
+    };
   }, [props.src]);
 
   if (!resolvedUrl) {

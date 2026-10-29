@@ -191,7 +191,9 @@ async function _fetchBlobViaHttp(
   }
 
   if (!url) {
-    throw new Error("宿主未提供 workspaceApi.getBinaryFileUrl 或 chatApi.filePreviewUrl");
+    throw new Error(
+      "宿主未提供 workspaceApi.getBinaryFileUrl 或 chatApi.filePreviewUrl",
+    );
   }
 
   // Build auth headers

@@ -282,7 +282,9 @@ export function KnowledgeBaseTab({
                 avatar: React.createElement(FileTextOutlined, {
                   style: {
                     fontSize: 20,
-                    color: isEnabled ? "#1677ff" : "var(--ant-color-text-quaternary, #bfbfbf)",
+                    color: isEnabled
+                      ? "#1677ff"
+                      : "var(--ant-color-text-quaternary, #bfbfbf)",
                   },
                 }),
                 title: React.createElement(
@@ -310,7 +312,9 @@ export function KnowledgeBaseTab({
                 description: React.createElement(
                   "div",
                   { style: { fontSize: 12 } },
-                  `${(file.size / 1024).toFixed(1)} KB · 修改于 ${new Date(file.modified_time).toLocaleString()}`,
+                  `${(file.size / 1024).toFixed(1)} KB · 修改于 ${new Date(
+                    file.modified_time,
+                  ).toLocaleString()}`,
                 ),
               }),
               React.createElement(Switch, {
@@ -370,7 +374,15 @@ export function KnowledgeBaseTab({
         React.createElement(
           Text,
           { type: "secondary", style: { fontSize: 12 } },
-          `${editContent.length} 字符 · 约 ${Math.ceil(editContent.length / 4)} tokens · ${editingFile && enabledFiles.includes(editingFile) ? "已挂载" : editingFile ? "未挂载" : "保存后自动挂载"}`,
+          `${editContent.length} 字符 · 约 ${Math.ceil(
+            editContent.length / 4,
+          )} tokens · ${
+            editingFile && enabledFiles.includes(editingFile)
+              ? "已挂载"
+              : editingFile
+              ? "未挂载"
+              : "保存后自动挂载"
+          }`,
         ),
       ),
       !editContent.trim()
@@ -538,4 +550,3 @@ export function PresetPromptsTab({
     }),
   );
 }
-

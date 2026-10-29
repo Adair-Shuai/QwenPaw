@@ -638,6 +638,12 @@ jobs:
           npm --prefix plugins/bundle/qwenpaw-run-center/ui run build
           python scripts/sync_run_center_bundle.py --sync
 
+      - name: Build OpenUI task layout runtime
+        working-directory: ${{ github.workspace }}
+        run: |
+          npm --prefix plugins/bundle/qwenpaw-openui/frontend ci
+          npm --prefix plugins/bundle/qwenpaw-openui/frontend test
+
       - name: Verify fork feature regression inventory
         run: node scripts/verify-fork-features.mjs --check
 

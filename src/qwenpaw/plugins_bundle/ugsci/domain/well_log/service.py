@@ -15,15 +15,9 @@ from pathlib import Path
 from typing import Any
 
 from ..common.errors import DomainError, DomainErrorCode
-from ..common.result import ArtifactRef, DomainResult
-from ..common.serialization import sanitize_json, to_python_float
-from .models import (
-    CurveSummary,
-    LogCurve,
-    WellLogDataset,
-    WellLogReadSummary,
-    WellMetadata,
-)
+from ..common.result import DomainResult
+from ..common.serialization import sanitize_json
+from .models import CurveSummary, WellLogDataset, WellLogReadSummary
 from .ports import (
     DependencyStatus,
     WellLogEngine,
@@ -58,7 +52,12 @@ class WellLogService:
 
     # ── Read ──────────────────────────────────────────────────────────
 
-    def read(self, path: str, encoding: str = "", sample_rows: int = 20) -> DomainResult:
+    def read(
+        self,
+        path: str,
+        encoding: str = "",
+        sample_rows: int = 20,
+    ) -> DomainResult:
         """Read a LAS file and return a summary DomainResult."""
         self._validate_path(path)
         sample_rows = max(0, min(sample_rows, MAX_SAMPLE_ROWS))
@@ -127,7 +126,12 @@ class WellLogService:
 
     # ── Export ────────────────────────────────────────────────────────
 
-    def export(self, input_path: str, output_path: str, encoding: str = "utf-8") -> DomainResult:
+    def export(
+        self,
+        input_path: str,
+        output_path: str,
+        encoding: str = "utf-8",
+    ) -> DomainResult:
         """Export a LAS file to a new normalised file."""
         self._validate_path(input_path)
         self._validate_path(output_path)
@@ -199,16 +203,22 @@ class WellLogService:
                     current_dir = 0
                 if direction == 0:
                     direction = current_dir
-                elif current_dir != 0 and current_dir != direction:
+                elif current_dir not in (0, direction):
                     is_monotonic = False
                     break
-        checks.append({
-            "name": "depth_monotonicity",
-            "passed": is_monotonic,
-            "detail": "Depth values are monotonically ordered" if is_monotonic else "Depth is not monotonic",
-        })
+        checks.append(
+            {
+                "name": "depth_monotonicity",
+                "passed": is_monotonic,
+                "detail": "Depth values are monotonically ordered"
+                if is_monotonic
+                else "Depth is not monotonic",
+            },
+        )
         if not is_monotonic:
-            errors.append("Depth is not monotonically increasing or decreasing")
+            errors.append(
+                "Depth is not monotonically increasing or decreasing",
+            )
 
         # Check 2: duplicate depths
         seen: set[float] = set()
@@ -217,11 +227,15 @@ class WellLogService:
             if d in seen:
                 duplicates += 1
             seen.add(d)
-        checks.append({
-            "name": "duplicate_depths",
-            "passed": duplicates == 0,
-            "detail": f"{duplicates} duplicate depth value(s)" if duplicates else "No duplicate depths",
-        })
+        checks.append(
+            {
+                "name": "duplicate_depths",
+                "passed": duplicates == 0,
+                "detail": f"{duplicates} duplicate depth value(s)"
+                if duplicates
+                else "No duplicate depths",
+            },
+        )
         if duplicates > 0:
             warnings.append(f"{duplicates} duplicate depth value(s) found")
 
@@ -232,42 +246,54 @@ class WellLogService:
             null_count_total += nulls
             if nulls > 0:
                 pct = nulls / len(curve.values) * 100 if curve.values else 0
-                warnings.append(f"Curve {curve.mnemonic}: {nulls} null values ({pct:.1f}%)")
-                checks.append({
-                    "name": f"null_values_{curve.mnemonic}",
-                    "passed": nulls == 0,
-                    "detail": f"{nulls} null values ({pct:.1f}%)",
-                })
+                warnings.append(
+                    f"Curve {curve.mnemonic}: {nulls} null values "
+                    f"({pct:.1f}%)",
+                )
+                checks.append(
+                    {
+                        "name": f"null_values_{curve.mnemonic}",
+                        "passed": nulls == 0,
+                        "detail": f"{nulls} null values ({pct:.1f}%)",
+                    },
+                )
 
         # Check 4: missing units
         for curve in dataset.curves:
             if not curve.unit:
                 warnings.append(f"Curve {curve.mnemonic} has no unit")
-                checks.append({
-                    "name": f"missing_unit_{curve.mnemonic}",
-                    "passed": False,
-                    "detail": "No unit specified",
-                })
+                checks.append(
+                    {
+                        "name": f"missing_unit_{curve.mnemonic}",
+                        "passed": False,
+                        "detail": "No unit specified",
+                    },
+                )
 
         # Check 5: empty curves
         for curve in dataset.curves:
             if not curve.values:
                 warnings.append(f"Curve {curve.mnemonic} is empty")
-                checks.append({
-                    "name": f"empty_curve_{curve.mnemonic}",
-                    "passed": False,
-                    "detail": "No data values",
-                })
+                checks.append(
+                    {
+                        "name": f"empty_curve_{curve.mnemonic}",
+                        "passed": False,
+                        "detail": "No data values",
+                    },
+                )
 
         # Check 6: non-finite values (already converted to None by adapter)
         # This check verifies the conversion happened
         for curve in dataset.curves:
             non_finite = sum(
-                1 for v in curve.values
+                1
+                for v in curve.values
                 if v is not None and (math.isnan(v) or math.isinf(v))
             )
             if non_finite > 0:
-                warnings.append(f"Curve {curve.mnemonic}: {non_finite} non-finite values")
+                warnings.append(
+                    f"Curve {curve.mnemonic}: {non_finite} non-finite values",
+                )
 
         # Check 7: missing rate metadata
         if not dataset.metadata.well_name:
@@ -295,44 +321,59 @@ class WellLogService:
             count = len(curve.values)
             null_count = count - len(valid)
             if valid:
-                curve_summaries.append(CurveSummary(
-                    mnemonic=curve.mnemonic,
-                    unit=curve.unit,
-                    description=curve.description,
-                    count=count,
-                    null_count=null_count,
-                    min=min(valid),
-                    max=max(valid),
-                    mean=statistics.mean(valid),
-                ))
+                curve_summaries.append(
+                    CurveSummary(
+                        mnemonic=curve.mnemonic,
+                        unit=curve.unit,
+                        description=curve.description,
+                        count=count,
+                        null_count=null_count,
+                        min=min(valid),
+                        max=max(valid),
+                        mean=statistics.mean(valid),
+                    ),
+                )
             else:
-                curve_summaries.append(CurveSummary(
-                    mnemonic=curve.mnemonic,
-                    unit=curve.unit,
-                    description=curve.description,
-                    count=count,
-                    null_count=null_count,
-                    min=None,
-                    max=None,
-                    mean=None,
-                ))
+                curve_summaries.append(
+                    CurveSummary(
+                        mnemonic=curve.mnemonic,
+                        unit=curve.unit,
+                        description=curve.description,
+                        count=count,
+                        null_count=null_count,
+                        min=None,
+                        max=None,
+                        mean=None,
+                    ),
+                )
 
         # Build sample rows
         total = len(dataset.depth)
         head_count = min(sample_rows, total)
         tail_count = min(sample_rows, total - head_count)
 
-        def _build_rows(start: int, count: int) -> list[dict[str, float | None]]:
+        def _build_rows(
+            start: int,
+            count: int,
+        ) -> list[dict[str, float | None]]:
             rows: list[dict[str, float | None]] = []
             for i in range(start, start + count):
-                row: dict[str, float | None] = {dataset.depth_mnemonic: dataset.depth[i]}
+                row: dict[str, float | None] = {
+                    dataset.depth_mnemonic: dataset.depth[i],
+                }
                 for curve in dataset.curves:
-                    row[curve.mnemonic] = curve.values[i] if i < len(curve.values) else None
+                    row[curve.mnemonic] = (
+                        curve.values[i] if i < len(curve.values) else None
+                    )
                 rows.append(row)
             return rows
 
         sample_head = _build_rows(0, head_count)
-        sample_tail = _build_rows(total - tail_count, tail_count) if tail_count > 0 else []
+        sample_tail = (
+            _build_rows(total - tail_count, tail_count)
+            if tail_count > 0
+            else []
+        )
 
         return WellLogReadSummary(
             metadata=dataset.metadata,
@@ -342,40 +383,44 @@ class WellLogService:
             sample_tail=sample_tail,
             sample_rows=sample_rows,
             total_rows=total,
-            warnings=warnings if warnings is not None else list(dataset.warnings),
+            warnings=warnings
+            if warnings is not None
+            else list(dataset.warnings),
         )
 
     @staticmethod
     def _summary_to_dict(summary: WellLogReadSummary) -> dict[str, Any]:
         """Convert summary to JSON-safe dict."""
-        return sanitize_json({
-            "metadata": {
-                "well_name": summary.metadata.well_name,
-                "uwi": summary.metadata.uwi,
-                "field": summary.metadata.field,
-                "company": summary.metadata.company,
-                "start_depth": summary.metadata.start_depth,
-                "stop_depth": summary.metadata.stop_depth,
-                "step": summary.metadata.step,
-                "depth_unit": summary.metadata.depth_unit,
+        return sanitize_json(
+            {
+                "metadata": {
+                    "well_name": summary.metadata.well_name,
+                    "uwi": summary.metadata.uwi,
+                    "field": summary.metadata.field,
+                    "company": summary.metadata.company,
+                    "start_depth": summary.metadata.start_depth,
+                    "stop_depth": summary.metadata.stop_depth,
+                    "step": summary.metadata.step,
+                    "depth_unit": summary.metadata.depth_unit,
+                },
+                "depth_mnemonic": summary.depth_mnemonic,
+                "curves": [
+                    {
+                        "mnemonic": cs.mnemonic,
+                        "unit": cs.unit,
+                        "description": cs.description,
+                        "count": cs.count,
+                        "null_count": cs.null_count,
+                        "min": cs.min,
+                        "max": cs.max,
+                        "mean": cs.mean,
+                    }
+                    for cs in summary.curve_summaries
+                ],
+                "sample_head": summary.sample_head,
+                "sample_tail": summary.sample_tail,
+                "sample_rows": summary.sample_rows,
+                "total_rows": summary.total_rows,
+                "warnings": summary.warnings,
             },
-            "depth_mnemonic": summary.depth_mnemonic,
-            "curves": [
-                {
-                    "mnemonic": cs.mnemonic,
-                    "unit": cs.unit,
-                    "description": cs.description,
-                    "count": cs.count,
-                    "null_count": cs.null_count,
-                    "min": cs.min,
-                    "max": cs.max,
-                    "mean": cs.mean,
-                }
-                for cs in summary.curve_summaries
-            ],
-            "sample_head": summary.sample_head,
-            "sample_tail": summary.sample_tail,
-            "sample_rows": summary.sample_rows,
-            "total_rows": summary.total_rows,
-            "warnings": summary.warnings,
-        })
+        )

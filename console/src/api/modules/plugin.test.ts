@@ -21,6 +21,7 @@ import {
   fetchPlugins,
   fetchPluginCatalog,
   fetchUGSciPluginCatalog,
+  fetchQwenPawPluginCatalog,
   installPlugin,
   replaceInstalledPlugin,
   upgradeInstalledUGSciPlugin,
@@ -198,6 +199,43 @@ describe("plugin module", () => {
       "Failed to load plugin catalog (503)",
     );
   });
+
+  it.each([
+    ["2.9.99", 1],
+    ["3.0.0", 0],
+    ["3.0.0b1", 0],
+  ])(
+    "catalog compatibility uses an exclusive 3.0 upper bound for %s",
+    async (host, count) => {
+      global.fetch = vi.fn().mockImplementation(async (url: string) => {
+        const path = new URL(String(url)).pathname;
+        let json: unknown;
+        if (path === "/plugins") json = [];
+        else if (path === "/version") json = { version: host };
+        else if (path === "/metadata/index.json")
+          json = {
+            products: {
+              plugins: { index_url: "/metadata/plugins/index.json" },
+            },
+          };
+        else
+          json = {
+            files: {
+              probe: {
+                plugin_id: "probe",
+                id: "probe-1.0.0",
+                version: "1.0.0",
+                name: "Probe",
+                url: "/files/plugins/probe.zip",
+                qwenpaw_version: { min: "2.0.0", max: "3.0.0" },
+              },
+            },
+          };
+        return mockResponse({ ok: true, status: 200, json });
+      });
+      expect((await fetchQwenPawPluginCatalog()).plugins).toHaveLength(count);
+    },
+  );
 
   it("installPlugin posts JSON with force defaulting to false", async () => {
     const res = { id: "p1", name: "n", message: "ok" };

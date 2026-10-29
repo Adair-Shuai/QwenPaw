@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Agent-scoped node discovery and governed tool execution.
 
 Catalogues are rebuilt from the host's public list_tools interface. They are
@@ -23,14 +24,51 @@ from .engine.nodes.registry import NodeRegistry
 from .engine.nodes.tool_factory import build_node_class
 
 
+async def _execute_governed_tool(
+    guarded: Any,
+    params: dict[str, Any],
+) -> ToolExecResult:
+    """Collect governed output and preserve denial and stream cleanup."""
+    raw = guarded(**params)
+    if inspect.isawaitable(raw):
+        raw = await raw
+    chunks = []
+    if hasattr(raw, "__aiter__"):
+        try:
+            async for chunk in raw:
+                chunks.append(chunk)
+        finally:
+            await raw.aclose()
+    else:
+        chunks.append(raw)
+    for chunk in chunks:
+        state = getattr(getattr(chunk, "state", None), "value", None)
+        if state in {"error", "denied"}:
+            return ToolExecResult(
+                ToolResult(
+                    False,
+                    error=str(_normalise_tool_output(chunk)),
+                    retryable=False,
+                ),
+            )
+    data = [_normalise_tool_output(chunk) for chunk in chunks]
+    return ToolExecResult(
+        ToolResult(True, data=data[0] if len(data) == 1 else data),
+    )
+
+
 class AgentNodeCatalog:
     def __init__(self, workspace_manager: Any, *, host_loop=None) -> None:
         self.manager = workspace_manager
         self.host_loop = host_loop
 
     async def _on_host(self, operation):
-        """Keep manager locks and approval futures on the application's loop."""
-        if self.host_loop is None or asyncio.get_running_loop() is self.host_loop:
+        """Keep manager locks and approval futures on the application's \
+loop."""
+        if (
+            self.host_loop is None
+            or asyncio.get_running_loop() is self.host_loop
+        ):
             return await operation()
         if self.host_loop.is_closed() or not self.host_loop.is_running():
             raise RuntimeError("Host event loop is unavailable")
@@ -66,7 +104,8 @@ class AgentNodeCatalog:
         }
         hook_ctx = HookContext(
             request=SimpleNamespace(
-                channel=context["channel"], request_context=context
+                channel=context["channel"],
+                request_context=context,
             ),
             session_id=context["session_id"],
             agent_id=agent_id,
@@ -79,7 +118,9 @@ class AgentNodeCatalog:
         )
         modes = workspace.plugins.active_mode_names(hook_ctx)
         skills = await asyncio.to_thread(
-            resolve_effective_skills, workspace.workspace_dir, context["channel"]
+            resolve_effective_skills,
+            workspace.workspace_dir,
+            context["channel"],
         )
         tools = await local.list_tools(
             agent_config=config,
@@ -96,15 +137,15 @@ class AgentNodeCatalog:
 
         _, _, tools = await self._on_host(discover)
         registry = NodeRegistry()
-        for name, node in executor.node_registry.items():
+        for _, node in executor.node_registry.items():
             # Never import another agent's generated palette into this one.
             if not node.get_schema().metadata.get("auto_generated"):
                 registry.register(node)
         for tool in tools.values():
-            native = getattr(getattr(tool, "_func", None), "_tool_descriptor", None)
+            native = getattr(tool.source_function, "_tool_descriptor", None)
             descriptor = SimpleNamespace(
                 name=tool.name,
-                func=getattr(tool, "_func", None),
+                func=tool.source_function,
                 description=tool.description,
                 input_schema=tool.input_schema,
                 metadata=getattr(native, "metadata", {}),
@@ -118,11 +159,23 @@ class AgentNodeCatalog:
         # reaches this run, but replace all tool-facing attributes locally.
         scoped = copy.copy(executor)
         scoped.node_registry = registry
-        scoped.tool_registry = None  # Raw callable dispatch is unavailable here.
+        scoped.tool_registry = (
+            None  # Raw callable dispatch is unavailable here.
+        )
         scoped.tool_executor = GovernedWorkflowTools(self, agent_id, metadata)
+        from .engine.adapter.llm_service import LLMService
+
+        if isinstance(executor.llm_service, LLMService):
+            scoped.llm_service = executor.llm_service.for_agent(agent_id)
         return scoped
 
-    async def invoke(self, agent_id: str, metadata: dict, tool_name: str, params: dict):
+    async def invoke(
+        self,
+        agent_id: str,
+        metadata: dict,
+        tool_name: str,
+        params: dict,
+    ):
         async def execute():
             from agentscope.permission import PermissionBehavior
             from jsonschema import validate
@@ -145,9 +198,13 @@ class AgentNodeCatalog:
                 return ToolExecResult(
                     ToolResult(
                         False,
-                        error=f"Tool '{tool_name}' is unavailable for agent '{agent_id}'",
+                        error=f"Tool '"
+                        f"{tool_name}"
+                        f"' is unavailable for agent '"
+                        f"{agent_id}"
+                        f"'",
                         retryable=False,
-                    )
+                    ),
                 )
             validate(params, tool.input_schema)
             project = await asyncio.to_thread(get_agent_project_dir, workspace)
@@ -155,7 +212,9 @@ class AgentNodeCatalog:
             set_current_user_id(context["user_id"])
             set_current_session_id(context["session_id"])
             set_current_channel(context["channel"])
-            config_context.set_current_workspace_dir(Path(workspace.workspace_dir))
+            config_context.set_current_workspace_dir(
+                Path(workspace.workspace_dir),
+            )
             config_context.set_current_project_dir(project)
             config_context.set_current_project_dirs(None)
             config_context.set_current_session_id(context["session_id"])
@@ -163,13 +222,13 @@ class AgentNodeCatalog:
             for key in ("approval_coordinator", "tool_coordinator"):
                 context[key] = getattr(app_services, key, None)
             governor = await asyncio.to_thread(
-                AgentBuilder._init_governor,
+                AgentBuilder.create_resource_governor,
                 workspace.workspace_dir,
                 project,
             )
             try:
                 guarded = PolicyGuardedTool(
-                    tool._func,
+                    tool.source_function,
                     governor=governor,
                     request_context=context,
                     input_schema=tool.input_schema,
@@ -181,34 +240,9 @@ class AgentNodeCatalog:
                             False,
                             error=decision.message or "Tool permission denied",
                             retryable=False,
-                        )
+                        ),
                     )
-                raw = guarded(**params)
-                if inspect.isawaitable(raw):
-                    raw = await raw
-                chunks = []
-                if hasattr(raw, "__aiter__"):
-                    try:
-                        async for chunk in raw:
-                            chunks.append(chunk)
-                    finally:
-                        await raw.aclose()
-                else:
-                    chunks.append(raw)
-                for chunk in chunks:
-                    state = getattr(getattr(chunk, "state", None), "value", None)
-                    if state in {"error", "denied"}:
-                        return ToolExecResult(
-                            ToolResult(
-                                False,
-                                error=str(_normalise_tool_output(chunk)),
-                                retryable=False,
-                            )
-                        )
-                data = [_normalise_tool_output(chunk) for chunk in chunks]
-                return ToolExecResult(
-                    ToolResult(True, data=data[0] if len(data) == 1 else data)
-                )
+                return await _execute_governed_tool(guarded, params)
             finally:
                 if governor is not None:
                     await asyncio.to_thread(governor.stop)
@@ -221,20 +255,36 @@ class AgentNodeCatalog:
             return await self._on_host(isolated)
         except Exception as exc:
             return ToolExecResult(
-                ToolResult(False, error=f"{type(exc).__name__}: {exc}", retryable=False)
+                ToolResult(
+                    False,
+                    error=f"{type(exc).__name__}: {exc}",
+                    retryable=False,
+                ),
             )
 
 
 class GovernedWorkflowTools:
     def __init__(
-        self, catalog: AgentNodeCatalog, agent_id: str, metadata: dict
+        self,
+        catalog: AgentNodeCatalog,
+        agent_id: str,
+        metadata: dict,
     ) -> None:
-        self.catalog, self.agent_id, self.metadata = catalog, agent_id, metadata
+        self.catalog, self.agent_id, self.metadata = (
+            catalog,
+            agent_id,
+            metadata,
+        )
 
     def get_tool_context(self, state=None):
         return state
 
     async def execute(self, tool_name, params, context=None):
+        # Caller context cannot override the trusted catalog's Agent scope.
+        del context
         return await self.catalog.invoke(
-            self.agent_id, self.metadata, tool_name, params
+            self.agent_id,
+            self.metadata,
+            tool_name,
+            params,
         )

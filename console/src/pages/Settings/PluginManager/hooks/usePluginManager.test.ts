@@ -6,13 +6,15 @@ const hoisted = vi.hoisted(() => ({
   messageMock: {
     success: vi.fn(),
     error: vi.fn(),
+    info: vi.fn(),
+    warning: vi.fn(),
   },
   stableT: (k: string) => k,
   fetchPluginsMock: vi.fn(),
   fetchPluginCatalogMock: vi.fn(),
   fetchMarketPluginsMock: vi.fn(),
-  installPluginMock: vi.fn(),
-  uninstallPluginMock: vi.fn(),
+  upgradeInstalledPluginMock: vi.fn(),
+  unupgradeInstalledPluginMock: vi.fn(),
   // Captured Modal.confirm options; initialized per-test in beforeEach.
   modalConfirmMock: vi.fn(),
   refreshMock: vi.fn(),
@@ -31,8 +33,8 @@ vi.mock("react-i18next", async (importOriginal) => ({
 vi.mock("@/api/modules/plugin", () => ({
   fetchPlugins: hoisted.fetchPluginsMock,
   fetchPluginCatalog: hoisted.fetchPluginCatalogMock,
-  installPlugin: hoisted.installPluginMock,
-  uninstallPlugin: hoisted.uninstallPluginMock,
+  upgradeInstalledPlugin: hoisted.upgradeInstalledPluginMock,
+  uninstallPlugin: hoisted.unupgradeInstalledPluginMock,
 }));
 
 vi.mock("@/api/modules/pluginMarket", () => ({
@@ -63,8 +65,12 @@ vi.mock("antd", () => ({
 
 import { usePluginManager } from "./usePluginManager";
 
-const { messageMock, modalConfirmMock, refreshMock, uninstallPluginMock } =
-  hoisted;
+const {
+  messageMock,
+  modalConfirmMock,
+  refreshMock,
+  unupgradeInstalledPluginMock,
+} = hoisted;
 
 function makePlugin(): PluginInfo {
   return {
@@ -79,8 +85,8 @@ describe("usePluginManager", () => {
     messageMock.error.mockReset();
     modalConfirmMock.mockReset();
     refreshMock.mockReset();
-    hoisted.installPluginMock.mockReset();
-    uninstallPluginMock.mockReset();
+    hoisted.upgradeInstalledPluginMock.mockReset();
+    unupgradeInstalledPluginMock.mockReset();
     hoisted.fetchPluginCatalogMock
       .mockReset()
       .mockResolvedValue({ plugins: [] });
@@ -115,7 +121,7 @@ describe("usePluginManager", () => {
   });
 
   it("Modal.confirm onOk success calls uninstallPlugin, success message, and refresh", async () => {
-    uninstallPluginMock.mockResolvedValue(undefined);
+    unupgradeInstalledPluginMock.mockResolvedValue(undefined);
     const { result } = renderHook(() => usePluginManager());
 
     act(() => {
@@ -130,7 +136,7 @@ describe("usePluginManager", () => {
       await opts.onOk();
     });
 
-    expect(uninstallPluginMock).toHaveBeenCalledWith("p1");
+    expect(unupgradeInstalledPluginMock).toHaveBeenCalledWith("p1");
     expect(messageMock.success).toHaveBeenCalledWith(
       "pluginManager.uninstallSuccess",
     );
@@ -151,7 +157,10 @@ describe("usePluginManager", () => {
         },
       ],
     });
-    hoisted.installPluginMock.mockResolvedValue({ name: "demo" });
+    hoisted.upgradeInstalledPluginMock.mockResolvedValue({
+      method: "replaced",
+      version: "2.0.0",
+    });
 
     const { result } = renderHook(() => usePluginManager());
     await waitFor(() => expect(result.current.updates.size).toBe(1));
@@ -160,9 +169,12 @@ describe("usePluginManager", () => {
       await result.current.updateOne(plugin);
     });
 
-    expect(hoisted.installPluginMock).toHaveBeenCalledWith(
-      "https://example.com/demo.zip",
-      { force: true },
+    expect(hoisted.upgradeInstalledPluginMock).toHaveBeenCalledWith(
+      "p1",
+      expect.objectContaining({
+        source: "https://example.com/demo.zip",
+        version: "2.0.0",
+      }),
     );
     expect(refreshMock).toHaveBeenCalled();
   });
@@ -367,9 +379,9 @@ describe("usePluginManager", () => {
         },
       ],
     });
-    hoisted.installPluginMock
+    hoisted.upgradeInstalledPluginMock
       .mockRejectedValueOnce(new Error("first failed"))
-      .mockResolvedValueOnce({ name: "second" });
+      .mockResolvedValueOnce({ method: "replaced", version: "2.0.0" });
 
     const { result } = renderHook(() => usePluginManager());
     await waitFor(() => expect(result.current.updates.size).toBe(2));
@@ -377,10 +389,13 @@ describe("usePluginManager", () => {
       await result.current.updateAll();
     });
 
-    expect(hoisted.installPluginMock).toHaveBeenCalledTimes(2);
-    expect(hoisted.installPluginMock).toHaveBeenLastCalledWith(
-      "https://example.com/second.zip",
-      { force: true },
+    expect(hoisted.upgradeInstalledPluginMock).toHaveBeenCalledTimes(2);
+    expect(hoisted.upgradeInstalledPluginMock).toHaveBeenLastCalledWith(
+      "second",
+      expect.objectContaining({
+        source: "https://example.com/second.zip",
+        version: "2.0.0",
+      }),
     );
     expect(refreshMock).toHaveBeenCalledTimes(1);
     expect(result.current.updates.has("first")).toBe(true);

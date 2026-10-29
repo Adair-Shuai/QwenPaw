@@ -18,20 +18,17 @@ from ..errors import NodeExecutionError
 from ..io import HiddenHolder, NodeOutput
 from ..progress import NodeStatus, ProgressRegistry
 
-try:
-    from ..progress import CurrentNodeContext
-except ImportError:
-    class CurrentNodeContext:
-        def __init__(self, node_id): self.node_id = node_id
-        def __enter__(self): return self
-        def __exit__(self, *a): pass
+from ..progress import CurrentNodeContext
 
 
-# ── Simplified node base (old API) ─────────────────────────────────────────────
+# ── Simplified node base (old API)
+# ─────────────────────────────────────────────
+
 
 class WorkflowNode:
     """Simplified node base (old API): async run() with positional args.
     Not abstract — allows instantiation for testing."""
+
     class_type: str = "WorkflowNode"
     display_name: str = "Workflow Node"
     description: str = ""
@@ -41,17 +38,39 @@ class WorkflowNode:
     outputs_schema: list = []
     control_schema: list = []
 
-    async def run(self, node_id, node_def, upstream_values, hidden) -> NodeOutput:
+    async def run(
+        self,
+        node_id,
+        node_def,
+        upstream_values,
+        hidden,
+    ) -> NodeOutput:
         raise NotImplementedError
 
     def resolve_inputs(self, node_def, upstream_values, hidden):
-        state = getattr(hidden, 'workflow_state', None)
-        ctx = state._build_context() if state and hasattr(state, '_build_context') else {}
+        state = getattr(hidden, "workflow_state", None)
+        ctx = (
+            state.build_context()
+            if state and hasattr(state, "_build_context")
+            else {}
+        )
+
         def resolve(value):
-            if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
+            if (
+                isinstance(value, list)
+                and len(value) == 2
+                and isinstance(value[0], str)
+            ):
                 return upstream_values.get((value[0], int(value[1])))
-            if isinstance(value, list) and value and all(
-                isinstance(i, list) and len(i) == 2 and isinstance(i[0], str) for i in value
+            if (
+                isinstance(value, list)
+                and value
+                and all(
+                    isinstance(i, list)
+                    and len(i) == 2
+                    and isinstance(i[0], str)
+                    for i in value
+                )
             ):
                 return [upstream_values.get((i[0], int(i[1]))) for i in value]
             if isinstance(value, dict):
@@ -60,9 +79,13 @@ class WorkflowNode:
                 return [resolve(i) for i in value]
             if state is not None:
                 from ..types import _resolve_template
+
                 return _resolve_template(value, ctx)
             return value
-        return {k: resolve(v) for k, v in (node_def.get("inputs") or {}).items()}
+
+        return {
+            k: resolve(v) for k, v in (node_def.get("inputs") or {}).items()
+        }
 
 
 class InputNode(WorkflowNode):
@@ -109,20 +132,33 @@ class ToolNode(WorkflowNode):
         if not isinstance(kwargs, dict):
             kwargs = {"value": kwargs}
         func = node_def.get("func")
-        tool_name = node_def.get("tool_name") or node_def.get("inputs", {}).get("tool_name")
+        tool_name = node_def.get("tool_name") or node_def.get(
+            "inputs",
+            {},
+        ).get("tool_name")
         if func is None and tool_name and hidden.tool_context is not None:
             tc = hidden.tool_context
             desc = None
             if hasattr(tc, "get"):
                 desc = tc.get(tool_name)
             if desc is not None:
-                func = getattr(desc, "func", None) or (desc if callable(desc) else None)
+                func = getattr(desc, "func", None) or (
+                    desc if callable(desc) else None
+                )
             elif isinstance(tc, dict):
                 func = tc.get(tool_name)
         if func is None:
-            return NodeOutput(error=f"ToolNode '{node_id}': no callable (tool_name={tool_name!r})")
+            return NodeOutput(
+                error=f"ToolNode '"
+                f"{node_id}"
+                f"': no callable (tool_name="
+                f"{tool_name!r}"
+                f")",
+            )
         try:
-            result = func(**kwargs) if not _is_async(func) else await func(**kwargs)
+            result = (
+                func(**kwargs) if not _is_async(func) else await func(**kwargs)
+            )
             if inspect.isawaitable(result):
                 result = await result
         except Exception as exc:
@@ -147,7 +183,9 @@ class AgentNode(WorkflowNode):
         agent_id = resolved.get("agent_id")
         query = resolved.get("query")
         if not agent_id or not query:
-            return NodeOutput(error=f"AgentNode '{node_id}': agent_id and query required")
+            return NodeOutput(
+                error=f"AgentNode '{node_id}': agent_id and query required",
+            )
         runtime = hidden.agent_runtime
         if runtime is None:
             return NodeOutput(error="AgentNode requires agent_runtime")
@@ -174,10 +212,13 @@ class ConditionNode(WorkflowNode):
             expr_data = cond.get("condition") or cond.get("expr") or {}
             try:
                 from ..types import ConditionExpression
+
                 expr = ConditionExpression.model_validate(expr_data)
             except Exception as exc:
-                return NodeOutput(error=f"ConditionNode '{node_id}': invalid expr: {exc}")
-            if state is not None and expr.evaluate(state._build_context()):
+                return NodeOutput(
+                    error=f"ConditionNode '{node_id}': invalid expr: {exc}",
+                )
+            if state is not None and expr.evaluate(state.build_context()):
                 chosen = cond.get("then_node") or cond.get("then")
                 break
         if chosen is None:
@@ -221,12 +262,30 @@ class CodeNode(WorkflowNode):
     outputs_schema = [{"name": "result", "type": "any"}]
     control_schema = ["next", "error_handler"]
     _ALLOWED_BUILTINS = {
-        "abs": abs, "all": all, "any": any, "bool": bool, "dict": dict,
-        "enumerate": enumerate, "filter": filter, "float": float,
-        "int": int, "len": len, "list": list, "map": map, "max": max,
-        "min": min, "range": range, "round": round, "set": set,
-        "sorted": sorted, "str": str, "sum": sum, "tuple": tuple,
-        "zip": zip, "isinstance": isinstance, "print": print,
+        "abs": abs,
+        "all": all,
+        "any": any,
+        "bool": bool,
+        "dict": dict,
+        "enumerate": enumerate,
+        "filter": filter,
+        "float": float,
+        "int": int,
+        "len": len,
+        "list": list,
+        "map": map,
+        "max": max,
+        "min": min,
+        "range": range,
+        "round": round,
+        "set": set,
+        "sorted": sorted,
+        "str": str,
+        "sum": sum,
+        "tuple": tuple,
+        "zip": zip,
+        "isinstance": isinstance,
+        "print": print,
     }
 
     async def run(self, node_id, node_def, upstream_values, hidden):
@@ -234,8 +293,16 @@ class CodeNode(WorkflowNode):
         code = resolved.get("code") or node_def.get("code")
         if not code:
             return NodeOutput(error=f"CodeNode '{node_id}': code required")
-        import math, json, re
-        globals_ns = {"__builtins__": self._ALLOWED_BUILTINS, "math": math, "json": json, "re": re}
+        import math
+        import json
+        import re
+
+        globals_ns = {
+            "__builtins__": self._ALLOWED_BUILTINS,
+            "math": math,
+            "json": json,
+            "re": re,
+        }
         locals_ns = {"inputs": resolved, "result": None}
         try:
             exec(code, globals_ns, locals_ns)
@@ -244,7 +311,9 @@ class CodeNode(WorkflowNode):
         return NodeOutput(values=(locals_ns.get("result"),))
 
 
-# ── NodeRegistry (old API wrapper) ─────────────────────────────────────────────
+# ── NodeRegistry (old API wrapper)
+# ─────────────────────────────────────────────
+
 
 class NodeRegistry:
     """Old API: maps class_type strings to node instances.
@@ -260,10 +329,14 @@ class NodeRegistry:
     def register(self, node, *, module_path: str | None = None):
         if isinstance(node, type):
             # New-style Schema-driven node class
-            if hasattr(node, 'define_schema') and hasattr(node, 'execute'):
+            if hasattr(node, "define_schema") and hasattr(node, "execute"):
                 try:
                     schema = node.get_schema()
-                    ct = schema.node_id or getattr(node, 'NODE_ID', None) or node.__name__
+                    ct = (
+                        schema.node_id
+                        or getattr(node, "NODE_ID", None)
+                        or node.__name__
+                    )
                     self._new_classes[ct] = node
                     self._nodes[ct] = node()  # Also instantiate for old API
                     return
@@ -273,11 +346,18 @@ class NodeRegistry:
             node = node()
         if not isinstance(node, WorkflowNode):
             # Check if it's a new-style WorkflowNode (from base.py)
-            if hasattr(node, 'execute') and hasattr(node, 'define_schema'):
+            if hasattr(node, "execute") and hasattr(node, "define_schema"):
                 pass  # Accept it
             else:
-                raise TypeError(f"register() requires a WorkflowNode, got {type(node).__name__}")
-        ct = getattr(node, 'class_type', None) or getattr(node, 'NODE_ID', None)
+                raise TypeError(
+                    f"register() requires a WorkflowNode, got "
+                    f"{type(node).__name__}",
+                )
+        ct = getattr(node, "class_type", None) or getattr(
+            node,
+            "NODE_ID",
+            None,
+        )
         if not ct:
             raise ValueError("node must define class_type or NODE_ID")
         if ct in self._nodes:
@@ -300,7 +380,7 @@ class NodeRegistry:
         for ct, node in sorted(self._nodes.items()):
             # Try new-style schema first
             schema = None
-            if hasattr(node, 'get_schema'):
+            if hasattr(node, "get_schema"):
                 try:
                     schema = node.get_schema()
                 except Exception:
@@ -309,36 +389,47 @@ class NodeRegistry:
                 inputs_schema = []
                 for inp in schema.inputs:
                     raw = inp.as_dict()
-                    inputs_schema.append({
-                        "name": inp.id,
-                        "type": inp.get_io_type().lower(),
-                        "required": not inp.optional,
-                        **raw.get("options", {}),
-                    })
-                out.append({
-                    "class_type": ct,
-                    "display_name": schema.display_name or ct,
-                    "description": schema.description or '',
-                    "category": schema.category or 'general',
-                    "icon": getattr(node, 'icon', '🔧'),
-                    "inputs_schema": inputs_schema,
-                    "outputs_schema": [
-                        {"name": output.id or f"out{index}", "type": output.get_io_type().lower()}
-                        for index, output in enumerate(schema.outputs)
-                    ],
-                    "control_schema": ["next", "error_handler"] if schema.control_flow else [],
-                })
+                    inputs_schema.append(
+                        {
+                            "name": inp.id,
+                            "type": inp.get_io_type().lower(),
+                            "required": not inp.optional,
+                            **raw.get("options", {}),
+                        },
+                    )
+                out.append(
+                    {
+                        "class_type": ct,
+                        "display_name": schema.display_name or ct,
+                        "description": schema.description or "",
+                        "category": schema.category or "general",
+                        "icon": getattr(node, "icon", "🔧"),
+                        "inputs_schema": inputs_schema,
+                        "outputs_schema": [
+                            {
+                                "name": output.id or f"out{index}",
+                                "type": output.get_io_type().lower(),
+                            }
+                            for index, output in enumerate(schema.outputs)
+                        ],
+                        "control_schema": ["next", "error_handler"]
+                        if schema.control_flow
+                        else [],
+                    },
+                )
             else:
-                out.append({
-                    "class_type": ct,
-                    "display_name": getattr(node, 'display_name', ct),
-                    "description": getattr(node, 'description', ''),
-                    "category": getattr(node, 'category', 'general'),
-                    "icon": getattr(node, 'icon', '🔧'),
-                    "inputs_schema": getattr(node, 'inputs_schema', []),
-                    "outputs_schema": getattr(node, 'outputs_schema', []),
-                    "control_schema": getattr(node, 'control_schema', []),
-                })
+                out.append(
+                    {
+                        "class_type": ct,
+                        "display_name": getattr(node, "display_name", ct),
+                        "description": getattr(node, "description", ""),
+                        "category": getattr(node, "category", "general"),
+                        "icon": getattr(node, "icon", "🔧"),
+                        "inputs_schema": getattr(node, "inputs_schema", []),
+                        "outputs_schema": getattr(node, "outputs_schema", []),
+                        "control_schema": getattr(node, "control_schema", []),
+                    },
+                )
         return out
 
     def __contains__(self, ct):
@@ -348,7 +439,9 @@ class NodeRegistry:
         return len(self._nodes)
 
 
-# ── NodeRunner (old API) ───────────────────────────────────────────────────────
+# ── NodeRunner (old API)
+# ───────────────────────────────────────────────────────
+
 
 class NodeRunResult:
     __slots__ = ("output", "cached", "duration_ms", "error")
@@ -366,7 +459,8 @@ class NodeRunner:
     Supports both old-style nodes (``run()`` method) and new-style
     Schema-driven nodes (``execute()`` method).
     """
-    def __init__(self, *, registry, progress=None, **kwargs):
+
+    def __init__(self, *, registry, progress=None, **_kwargs):
         self.registry = registry
         self.progress = progress
 
@@ -384,35 +478,61 @@ class NodeRunner:
         try:
             with CurrentNodeContext(node_id):
                 # New-style Schema-driven node: call execute()
-                if hasattr(node, 'execute') and not hasattr(node, 'run'):
+                if hasattr(node, "execute") and not hasattr(node, "run"):
                     output = await self._run_new_style(
-                        node, node_id, node_def, upstream_values, hidden,
+                        node,
+                        node_id,
+                        node_def,
+                        upstream_values,
+                        hidden,
                     )
                 # Old-style node: call run()
-                elif hasattr(node, 'run'):
-                    output = await node.run(node_id, node_def, upstream_values, hidden)
+                elif hasattr(node, "run"):
+                    output = await node.run(
+                        node_id,
+                        node_def,
+                        upstream_values,
+                        hidden,
+                    )
                 else:
                     raise NodeExecutionError(
-                        ct, f"node '{ct}' has neither run() nor execute()",
+                        ct,
+                        f"node '{ct}' has neither run() nor execute()",
                     )
         except Exception as exc:
             if self.progress:
-                self.progress.set_status(node_id, NodeStatus.FAILED, error=str(exc))
+                self.progress.set_status(
+                    node_id,
+                    NodeStatus.FAILED,
+                    error=str(exc),
+                )
             raise NodeExecutionError(node_id, str(exc)) from exc
         duration_ms = int((time.monotonic() - start) * 1000)
         if not isinstance(output, NodeOutput):
             output = NodeOutput(values=output)
         if self.progress:
             status = (
-                NodeStatus.FAILED if output.error
-                else NodeStatus.BLOCKED if output.block_execution
+                NodeStatus.FAILED
+                if output.error
+                else NodeStatus.BLOCKED
+                if output.block_execution
                 else NodeStatus.COMPLETED
             )
-            self.progress.set_status(node_id, status, duration_ms=duration_ms, metadata=output.metadata)
+            self.progress.set_status(
+                node_id,
+                status,
+                duration_ms=duration_ms,
+                metadata=output.metadata,
+            )
         return NodeRunResult(output=output, duration_ms=duration_ms)
 
     async def _run_new_style(
-        self, node, node_id, node_def, upstream_values, hidden,
+        self,
+        node,
+        node_id,
+        node_def,
+        upstream_values,
+        hidden,
     ) -> NodeOutput:
         """Execute a new-style Schema-driven node.
 
@@ -436,8 +556,12 @@ class NodeRunner:
                 inp_id = inp.id
                 if inp_id in raw_inputs:
                     val = raw_inputs[inp_id]
-                    inputs[inp_id] = self._resolve_value(val, upstream_values, hidden)
-                elif hasattr(inp, 'default') and inp.default is not None:
+                    inputs[inp_id] = self._resolve_value(
+                        val,
+                        upstream_values,
+                        hidden,
+                    )
+                elif hasattr(inp, "default") and inp.default is not None:
                     inputs[inp_id] = inp.default
         else:
             # Fallback: resolve all raw inputs
@@ -455,33 +579,61 @@ class NodeRunner:
     @staticmethod
     def _resolve_value(value, upstream_values, hidden):
         """Resolve a value that may reference upstream node outputs."""
-        if isinstance(value, list) and len(value) == 2 and isinstance(value[0], str):
+        if (
+            isinstance(value, list)
+            and len(value) == 2
+            and isinstance(value[0], str)
+        ):
             return upstream_values.get((value[0], int(value[1])))
-        if isinstance(value, list) and value and all(
-            isinstance(i, list) and len(i) == 2 and isinstance(i[0], str) for i in value
+        if (
+            isinstance(value, list)
+            and value
+            and all(
+                isinstance(i, list) and len(i) == 2 and isinstance(i[0], str)
+                for i in value
+            )
         ):
             return [upstream_values.get((i[0], int(i[1]))) for i in value]
         if isinstance(value, dict):
-            return {k: NodeRunner._resolve_value(v, upstream_values, hidden) for k, v in value.items()}
+            return {
+                k: NodeRunner._resolve_value(v, upstream_values, hidden)
+                for k, v in value.items()
+            }
         if isinstance(value, list):
-            return [NodeRunner._resolve_value(i, upstream_values, hidden) for i in value]
+            return [
+                NodeRunner._resolve_value(i, upstream_values, hidden)
+                for i in value
+            ]
         # Template resolution against workflow state
-        state = getattr(hidden, 'workflow_state', None)
+        state = getattr(hidden, "workflow_state", None)
         if state is not None and isinstance(value, str):
             from ..types import _resolve_template
-            ctx = state._build_context() if hasattr(state, '_build_context') else {}
+
+            ctx = (
+                state.build_context()
+                if hasattr(state, "_build_context")
+                else {}
+            )
             return _resolve_template(value, ctx)
         return value
 
 
-# ── Helpers ───────────────────────────────────────────────────────────────────
+# ── Helpers
+# ───────────────────────────────────────────────────────────────────
+
 
 def _is_async(func):
-    return asyncio.iscoroutinefunction(func) or inspect.iscoroutinefunction(func)
+    return asyncio.iscoroutinefunction(func) or inspect.iscoroutinefunction(
+        func,
+    )
 
 
 async def _dispatch_agent_turn(runtime, agent_id, query):
-    agents = getattr(runtime, "agents", None) or getattr(runtime, "workspaces", None)
+    agents = getattr(runtime, "agents", None) or getattr(
+        runtime,
+        "workspaces",
+        None,
+    )
     if agents and agent_id in agents:
         ws = agents[agent_id]
         process = getattr(ws, "process", None)
@@ -502,15 +654,20 @@ async def _dispatch_agent_turn(runtime, agent_id, query):
         if inspect.isawaitable(result):
             result = await result
         return _stringify_reply(result)
-    raise RuntimeError(f"agent_runtime {type(runtime).__name__} has no dispatch method")
+    raise RuntimeError(
+        f"agent_runtime {type(runtime).__name__} has no dispatch method",
+    )
 
 
 def _stringify_reply(result):
-    if result is None: return ""
-    if isinstance(result, str): return result
+    if result is None:
+        return ""
+    if isinstance(result, str):
+        return result
     for attr in ("content", "text", "message", "reply", "output"):
         val = getattr(result, attr, None)
-        if isinstance(val, str) and val: return val
+        if isinstance(val, str) and val:
+            return val
     return str(result)
 
 
@@ -518,17 +675,26 @@ async def _call_llm(svc, prompt, system):
     chat = getattr(svc, "chat", None)
     if chat:
         messages = []
-        if system: messages.append({"role": "system", "content": system})
+        if system:
+            messages.append({"role": "system", "content": system})
         messages.append({"role": "user", "content": prompt})
-        result = chat(messages=messages) if "messages" in _callable_kwargs(chat) else chat(prompt)
-        if inspect.isawaitable(result): result = await result
+        result = (
+            chat(messages=messages)
+            if "messages" in _callable_kwargs(chat)
+            else chat(prompt)
+        )
+        if inspect.isawaitable(result):
+            result = await result
         return _stringify_reply(result)
     complete = getattr(svc, "complete", None)
     if complete:
         result = complete(prompt)
-        if inspect.isawaitable(result): result = await result
+        if inspect.isawaitable(result):
+            result = await result
         return _stringify_reply(result)
-    raise RuntimeError(f"llm_service {type(svc).__name__} has no chat/complete")
+    raise RuntimeError(
+        f"llm_service {type(svc).__name__} has no chat/complete",
+    )
 
 
 def _callable_kwargs(func):
@@ -538,7 +704,8 @@ def _callable_kwargs(func):
         return set()
 
 
-# ── Bootstrap ─────────────────────────────────────────────────────────────────
+# ── Bootstrap
+# ─────────────────────────────────────────────────────────────────
 
 _registry: NodeRegistry | None = None
 
@@ -548,7 +715,15 @@ def bootstrap() -> NodeRegistry:
     if _registry is None:
         _registry = NodeRegistry()
         # Old-style nodes
-        for cls in (InputNode, OutputNode, ToolNode, AgentNode, ConditionNode, LLMNode, CodeNode):
+        for cls in (
+            InputNode,
+            OutputNode,
+            ToolNode,
+            AgentNode,
+            ConditionNode,
+            LLMNode,
+            CodeNode,
+        ):
             try:
                 _registry.register(cls())
             except Exception:
@@ -556,6 +731,7 @@ def bootstrap() -> NodeRegistry:
         # New-style Schema-driven builtin nodes
         try:
             from .builtin import BUILTIN_NODES
+
             for node_cls in BUILTIN_NODES:
                 try:
                     _registry.register(node_cls)
@@ -571,7 +747,20 @@ def get_registry() -> NodeRegistry:
 
 
 __all__ = [
-    "AgentNode", "CodeNode", "ConditionNode", "HiddenHolder", "InputNode",
-    "LLMNode", "NodeOutput", "NodeRegistry", "NodeRunResult", "NodeRunner",
-    "OutputNode", "ToolNode", "WorkflowNode", "bootstrap", "get_registry",
+    "ProgressRegistry",
+    "AgentNode",
+    "CodeNode",
+    "ConditionNode",
+    "HiddenHolder",
+    "InputNode",
+    "LLMNode",
+    "NodeOutput",
+    "NodeRegistry",
+    "NodeRunResult",
+    "NodeRunner",
+    "OutputNode",
+    "ToolNode",
+    "WorkflowNode",
+    "bootstrap",
+    "get_registry",
 ]

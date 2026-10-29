@@ -224,6 +224,7 @@ class ChatPage(BasePage):
         "AUTO": ("Auto Mode", "自动模式"),
         "OFF": ("Off Mode", "关闭模式"),
     }
+    DECISION_APPROVAL_LABEL = "Decision Model Mode"
     # Only items inside the currently-open dropdown (antd keeps closed menus in
     # the DOM with a ``-hidden`` modifier). The #7334 rebuild kept the antd
     # Dropdown for the menu itself, so this selector is unchanged.
@@ -2240,7 +2241,7 @@ class ChatPage(BasePage):
         return self
 
     def get_approval_menu_items(self) -> List[Locator]:
-        """Return the visible approval dropdown items (expected: 5)."""
+        """Return all five levels, including gated decision-model approval."""
         return self.page.locator(self.APPROVAL_MENU_ITEM).all()
 
     def select_approval_level(self, level: str) -> "ChatPage":

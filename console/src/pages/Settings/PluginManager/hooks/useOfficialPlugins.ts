@@ -5,9 +5,11 @@ import { subscribeToPluginChanges } from "@/utils/pluginChangeEvents";
 import {
   fetchPluginCatalog,
   installPlugin,
+  upgradeInstalledPlugin,
   type InstallPluginResult,
   type OfficialPluginCatalogEntry,
 } from "@/api/modules/plugin";
+import { isUGSciCatalogPlugin } from "@/distribution";
 
 interface UseOfficialPluginsOptions {
   onInstalled: (result: InstallPluginResult) => void | Promise<void>;
@@ -57,9 +59,38 @@ export function useOfficialPlugins({ onInstalled }: UseOfficialPluginsOptions) {
     async (entry: OfficialPluginCatalogEntry) => {
       setInstallingId(entry.id);
       try {
-        const result = await installPlugin(entry.install_url, {
-          force: entry.installed || entry.upgrade_available,
-        });
+        if (entry.installed) {
+          if (!entry.upgrade_available) {
+            message.info(t("pluginManager.catalogLatest"));
+            return;
+          }
+          const result = await upgradeInstalledPlugin(entry.plugin_id, {
+            source: entry.install_url,
+            version: entry.version,
+            name: entry.name,
+            sha256: entry.sha256,
+            channel: isUGSciCatalogPlugin(entry) ? "ugsci" : entry.channel,
+          });
+          if (result.method === "queued") {
+            message.success(t("pluginManager.ugsciUpgradeQueued"));
+          } else if (result.method === "core-update-required") {
+            message.warning(t("pluginManager.coreUpdateRequired"));
+          } else if (result.method === "up-to-date") {
+            message.info(t("pluginManager.catalogLatest"));
+          } else {
+            await onInstalled({
+              id: entry.plugin_id,
+              name: entry.name,
+              version: result.version,
+              description: entry.description,
+              loaded: true,
+              message: "",
+            });
+            message.success(t("pluginManager.updateSuccess"));
+          }
+          return;
+        }
+        const result = await installPlugin(entry.install_url);
         message.success(`${t("pluginManager.installSuccess")}: ${result.name}`);
         await onInstalled(result);
       } catch (err) {

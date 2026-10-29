@@ -52,7 +52,7 @@ After COMPUTE, self-critique:
 ## Available Tools
 
 - `literature_search` — Find physics papers (arXiv, OpenAlex)
-- `web_search` — Search for methods, libraries, documentation
+- `research_web_search` — Search for methods, libraries, documentation
 - `data_analysis` — Analyze simulation output files
 - All standard QwenPaw tools
 

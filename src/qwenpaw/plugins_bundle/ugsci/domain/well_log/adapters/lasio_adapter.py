@@ -19,7 +19,9 @@ from ...common.serialization import to_python_float, to_python_list
 from ..models import LogCurve, WellLogDataset, WellMetadata
 from ..ports import DependencyStatus, WellLogExportRequest, WellLogReadRequest
 
-logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.domain.well_log.lasio")
+logger = logging.getLogger("qwenpaw").getChild(
+    "plugin.ugsci.domain.well_log.lasio",
+)
 
 PROVIDER_ID = "ugsci-welllog-lasio"
 
@@ -84,7 +86,7 @@ class LasioAdapter:
         warnings: list[str] = []
 
         # Extract well metadata
-        metadata = self._extract_metadata(las, warnings)
+        metadata = self._extract_metadata(las)
 
         # Identify depth curve mnemonic (from first curve, not index_unit)
         depth_mnemonic = "DEPT"
@@ -121,9 +123,21 @@ class LasioAdapter:
                 unit = str(curve.unit or "")
                 descr = str(curve.descr or "")
                 values = to_python_list(curve.data)
-                curves.append(LogCurve(mnemonic=mnem, unit=unit, description=descr, values=values))
+                curves.append(
+                    LogCurve(
+                        mnemonic=mnem,
+                        unit=unit,
+                        description=descr,
+                        values=values,
+                    ),
+                )
             except Exception as exc:
-                warnings.append(f"Failed to extract curve {getattr(curve, 'mnemonic', '?')}: {exc}")
+                warnings.append(
+                    f"Failed to extract curve "
+                    f"{getattr(curve, 'mnemonic', '?')}"
+                    f": "
+                    f"{exc}",
+                )
 
         # NULL value
         null_value: float | None = None
@@ -203,8 +217,9 @@ class LasioAdapter:
         )
 
     @staticmethod
-    def _extract_metadata(las: Any, warnings: list[str]) -> WellMetadata:
+    def _extract_metadata(las: Any) -> WellMetadata:
         """Extract well header fields from a lasio LASFile object."""
+
         def _get_header(section: str, key: str) -> str:
             try:
                 items = getattr(las, section, {})

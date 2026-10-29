@@ -147,7 +147,8 @@ function fromStoredTeam(team: StoredExpertTeam): ExpertTeam {
     name: team.name,
     emoji: team.emoji || "🤝",
     category: team.category || "自定义",
-    description: team.description || `${team.name}（${team.members.length} 位专家）`,
+    description:
+      team.description || `${team.name}（${team.members.length} 位专家）`,
     mode: team.mode,
     members: team.members,
     steps: team.steps,
@@ -196,7 +197,9 @@ export async function saveCustomTeamToBackend(
   return { ...team, id: result.team_id };
 }
 
-export async function deleteCustomTeamFromBackend(teamId: string): Promise<void> {
+export async function deleteCustomTeamFromBackend(
+  teamId: string,
+): Promise<void> {
   const response = await hostFetch(
     `/ugsci/team/custom/${encodeURIComponent(teamId)}`,
     { method: "DELETE" },
@@ -236,9 +239,7 @@ export async function migrateCachedCustomTeams(): Promise<void> {
  * the client stops reading; the chat page will reconnect to the stream
  * when the user navigates to it.
  */
-async function _consumeSseUntilActivated(
-  response: Response,
-): Promise<void> {
+async function _consumeSseUntilActivated(response: Response): Promise<void> {
   const reader = response.body?.getReader();
   if (!reader) return;
 
@@ -275,16 +276,12 @@ async function _consumeSseUntilActivated(
             const msg =
               typeof errVal === "string"
                 ? errVal
-                : (errVal as { message?: string })?.message ||
-                  "工作流启动失败";
+                : (errVal as { message?: string })?.message || "工作流启动失败";
             throw new Error(msg);
           }
 
           // Response event — check for failure status.
-          if (
-            payload.object === "response" ||
-            payload.type === "response"
-          ) {
+          if (payload.object === "response" || payload.type === "response") {
             const status = payload.status as string;
             if (status === "failed" || status === "error") {
               const msg =
@@ -299,10 +296,7 @@ async function _consumeSseUntilActivated(
 
           // Content / message event — the agent has started producing
           // output, confirming the workflow is active.
-          if (
-            payload.object === "content" ||
-            payload.type === "message"
-          ) {
+          if (payload.object === "content" || payload.type === "message") {
             return;
           }
         }
@@ -353,9 +347,7 @@ export async function sendTeamMessage(
   });
   if (!createResponse.ok) {
     const detail = await createResponse.text().catch(() => "");
-    throw new Error(
-      detail || `创建会话失败 (HTTP ${createResponse.status})`,
-    );
+    throw new Error(detail || `创建会话失败 (HTTP ${createResponse.status})`);
   }
   const chat = (await createResponse.json()) as { id: string };
   const chatId = chat.id;
@@ -393,9 +385,7 @@ export async function sendTeamMessage(
   return chatId;
 }
 
-export async function registerCustomTeam(
-  team: ExpertTeam,
-): Promise<string> {
+export async function registerCustomTeam(team: ExpertTeam): Promise<string> {
   /** Register a custom team definition on the backend and return its team_id.
    *  The team_id is a whitespace-free token used in the /ugsci-team slash
    *  command as @<team_id>, avoiding the name-with-spaces parsing problem. */
@@ -408,7 +398,7 @@ export async function registerCustomTeam(
     const detail = await response.text().catch(() => "");
     throw new Error(detail || `HTTP ${response.status}`);
   }
-  const data = await response.json() as { team_id: string };
+  const data = (await response.json()) as { team_id: string };
   return data.team_id;
 }
 

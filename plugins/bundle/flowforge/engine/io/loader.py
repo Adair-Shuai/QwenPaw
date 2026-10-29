@@ -68,7 +68,9 @@ class WorkflowDocument:
         _assert_canonical(raw)
         return cls(
             id=str(raw.get("id", "") or ""),
-            name=str(raw.get("name", "Unnamed Workflow") or "Unnamed Workflow"),
+            name=str(
+                raw.get("name", "Unnamed Workflow") or "Unnamed Workflow",
+            ),
             description=str(raw.get("description", "") or ""),
             inputs=list(raw.get("inputs", []) or []),
             outputs=list(raw.get("outputs", []) or []),
@@ -122,14 +124,17 @@ def _assert_canonical(raw: dict[str, Any]) -> None:
     if not isinstance(nodes, dict):
         raise WorkflowLoaderError(
             "Workflow document is not in the canonical shape: "
-            "'nodes' must be a mapping of node_id -> {class_type, inputs, meta, control}."
-            " Run scripts/workflow/migrate_flows.py to upgrade legacy payloads.",
+            "'nodes' must be a mapping of node_id -> "
+            "{class_type, inputs, meta, control}."
+            " Run scripts/workflow/migrate_flows.py to "
+            "upgrade legacy payloads.",
         )
 
     for node_id, spec in nodes.items():
         if not isinstance(spec, dict):
             raise WorkflowLoaderError(
-                f"Node '{node_id}' must be a mapping, got {type(spec).__name__}",
+                f"Node '{node_id}' must be a mapping, "
+                f"got {type(spec).__name__}",
             )
         if not spec.get("class_type"):
             raise WorkflowLoaderError(

@@ -346,7 +346,7 @@ class _CappingDashScopeFormatter(
             return {
                 "type": "input_audio",
                 "input_audio": {
-                    "data": (f"data:{media_type};base64,{source.data}"),
+                    "data": f"data:{media_type};base64,{source.data}",
                     "format": provider_format,
                 },
             }

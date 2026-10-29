@@ -3,17 +3,39 @@
 
 from __future__ import annotations
 
+import errno
 import json
 import os
 import tempfile
+import time
 from contextlib import nullcontext
 from pathlib import Path
+
+# pylint: disable-next=E0611
 from typing import Any, Callable, ContextManager, TypeVar
 
 from .errors import SDKError
 from .messages import Attachment
 
 _T = TypeVar("_T")
+
+
+def _retry_windows_lock(operation: Callable[[], _T]) -> _T:
+    """Retry only bounded Windows sharing/access conflicts, never hide them."""
+    attempt = 0
+    while True:
+        try:
+            return operation()
+        except PermissionError as exc:
+            # CRT-backed open() reports EACCES without a winerror attribute;
+            # MoveFileEx/os.replace normally preserves WinError 5 or 32.
+            transient = getattr(exc, "winerror", None) in (5, 32) or (
+                os.name == "nt" and exc.errno in (errno.EACCES, errno.EPERM)
+            )
+            if not transient or attempt == 6:
+                raise
+            time.sleep(min(0.02 * (2**attempt), 0.32))
+            attempt += 1
 
 
 class PluginStorage:
@@ -59,9 +81,15 @@ class PluginStorage:
         return path
 
     def read_bytes(self, name: str) -> bytes:
-        return self._path(name).read_bytes()
+        from ..utils.io_utils import get_sync_path_lock
+
+        path = self._path(name)
+        with get_sync_path_lock(path):
+            return _retry_windows_lock(path.read_bytes)
 
     def write_bytes(self, name: str, data: bytes) -> None:
+        from ..utils.io_utils import get_sync_path_lock
+
         self._guard()
         path = self._path(name)
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -71,8 +99,17 @@ class PluginStorage:
                 stream.write(data)
                 stream.flush()
                 os.fsync(stream.fileno())
-            self._guard()
-            os.replace(temporary, path)
+
+            def publish():
+                self._guard()
+                os.replace(temporary, path)
+
+            # Coordinate handles across PluginStorage instances and threads.
+            # Readers may keep reading the old file during temp-file fsync;
+            # only final publication excludes them. External scanners still
+            # require bounded Windows retries and a fresh generation guard.
+            with get_sync_path_lock(path):
+                _retry_windows_lock(publish)
         finally:
             if os.path.exists(temporary):
                 os.unlink(temporary)
@@ -87,8 +124,17 @@ class PluginStorage:
         self.write_bytes(name, json.dumps(value, ensure_ascii=False).encode())
 
     def delete(self, name: str) -> None:
+        from ..utils.io_utils import get_sync_path_lock
+
         self._guard()
-        self._path(name).unlink(missing_ok=True)
+        path = self._path(name)
+
+        def remove():
+            self._guard()
+            path.unlink(missing_ok=True)
+
+        with get_sync_path_lock(path):
+            _retry_windows_lock(remove)
 
 
 class MediaStore:  # pylint: disable=protected-access

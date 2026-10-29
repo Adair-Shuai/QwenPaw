@@ -2,7 +2,9 @@
 
 import { NAMED_VIEWS, type NamedView } from "./standardViews";
 
-export function createViewCluster(onPick: (view: NamedView) => void): HTMLElement {
+export function createViewCluster(
+  onPick: (view: NamedView) => void,
+): HTMLElement {
   const root = document.createElement("div");
   root.className = "oilgas-view-cluster";
   root.style.cssText = [
@@ -12,18 +14,26 @@ export function createViewCluster(onPick: (view: NamedView) => void): HTMLElemen
   ].join("");
 
   const order: Array<NamedView | null> = [
-    null, "north", null,
-    "west", "top", "east",
-    null, "south", "iso",
-    "bottom", null, null,
+    null,
+    "north",
+    null,
+    "west",
+    "top",
+    "east",
+    null,
+    "south",
+    "iso",
+    "bottom",
+    null,
+    null,
   ];
   const labels: Record<NamedView, string> = {
-    top: "T",
-    bottom: "B",
-    north: "N",
-    south: "S",
-    east: "E",
-    west: "W",
+    top: "顶",
+    bottom: "底",
+    north: "北",
+    south: "南",
+    east: "东",
+    west: "西",
     iso: "3D",
   };
 
@@ -37,8 +47,12 @@ export function createViewCluster(onPick: (view: NamedView) => void): HTMLElemen
     const btn = document.createElement("button");
     btn.type = "button";
     btn.textContent = labels[id];
-    btn.title = NAMED_VIEWS.find((item) => item.id === id)?.label + " (" +
-      (NAMED_VIEWS.find((item) => item.id === id)?.shortcut || "") + ")";
+    btn.title =
+      NAMED_VIEWS.find((item) => item.id === id)?.label +
+      " (" +
+      (NAMED_VIEWS.find((item) => item.id === id)?.shortcut || "") +
+      ")";
+    btn.setAttribute("aria-label", btn.title);
     btn.style.cssText = [
       "width:24px;height:22px;padding:0;border:1px solid #30363d;border-radius:4px;",
       "background:#21262d;color:#c9d1d9;cursor:pointer;font:600 10px/22px sans-serif;",

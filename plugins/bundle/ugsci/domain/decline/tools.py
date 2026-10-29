@@ -21,7 +21,9 @@ from ..common.tool_chunk import emit_tool_chunk
 from .adapters.scipy_arps import ScipyArpsAdapter
 from .service import DeclineAnalysisService
 
-logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.domain.decline.tools")
+logger = logging.getLogger("qwenpaw").getChild(
+    "plugin.ugsci.domain.decline.tools",
+)
 
 # Singleton service — created lazily
 _service: DeclineAnalysisService | None = None
@@ -36,8 +38,15 @@ def _check_agentscope() -> bool:
     global _agentscope_available
     if _agentscope_available is None:
         try:
-            from agentscope.message import TextBlock, ToolResultState  # noqa: F401
-            from agentscope.tool import ToolChunk  # noqa: F401
+            from importlib import import_module
+
+            message = import_module("agentscope.message")
+            tools = import_module("agentscope.tool")
+            # Check every symbol required by chunk construction, including
+            # partially installed SDKs that still have importable modules.
+            getattr(message, "TextBlock")
+            getattr(message, "ToolResultState")
+            getattr(tools, "ToolChunk")
 
             _agentscope_available = True
         except Exception:
@@ -97,12 +106,17 @@ async def ugsci_decline_fit(
     """Fit Arps decline curve(s) to production data.
 
     Args:
-        time: List of time values (relative, starting from 0 or first production).
-        rate: List of production rates corresponding to each time value.
-        time_unit: Unit of time (e.g. ``"month"``, ``"day"``, ``"year"``).
-        rate_unit: Unit of rate (e.g. ``"bbl/d"``, ``"m3/d"``).
-        model: Decline model to fit: ``"auto"``, ``"exponential"``,
-            ``"harmonic"``, or ``"hyperbolic"`` (default ``"auto"``).
+        time: List of time values (relative, starting from 0 or first \
+production).
+        rate: List of production rates corresponding to each time \
+value.
+        time_unit: Unit of time (e.g. ``\"month\"``, ``\"day\"``, \
+``\"year\"``).
+        rate_unit: Unit of rate (e.g. ``\"bbl/d\"``, ``\"m3/d\"``).
+        model: Decline model to fit: ``\"auto\"``, \
+``\"exponential\"``,
+            ``\"harmonic\"``, or ``\"hyperbolic\"`` (default \
+``\"auto\"``).
 
     Returns:
         ToolChunk with JSON containing fit parameters, metrics, and
@@ -130,10 +144,12 @@ async def ugsci_decline_forecast(
     """Forecast production rates at specified times using decline parameters.
 
     Args:
-        model: Decline model: ``"exponential"``, ``"harmonic"``, or ``"hyperbolic"``.
+        model: Decline model: ``\"exponential\"``, ``\"harmonic\"``, \
+or ``\"hyperbolic\"``.
         qi: Initial production rate.
         di: Initial decline rate.
-        b: Hyperbolic exponent (required for ``"hyperbolic"``, ignored otherwise).
+        b: Hyperbolic exponent (required for ``\"hyperbolic\"``, \
+ignored otherwise).
         forecast_time: List of time values to forecast.
         time_unit: Unit of time.
         rate_unit: Unit of rate.
@@ -171,20 +187,24 @@ async def ugsci_decline_eur(
 ) -> Any:
     """Compute Estimated Ultimate Recovery (EUR) for a decline model.
 
-    At least one of ``forecast_end`` or ``economic_limit`` must be provided.
+    At least one of ``forecast_end`` or ``economic_limit`` must be \
+provided.
 
     Args:
-        model: Decline model: ``"exponential"``, ``"harmonic"``, or ``"hyperbolic"``.
+        model: Decline model: ``\"exponential\"``, ``\"harmonic\"``, \
+or ``\"hyperbolic\"``.
         qi: Initial production rate.
         di: Initial decline rate.
-        b: Hyperbolic exponent (required for ``"hyperbolic"``).
+        b: Hyperbolic exponent (required for ``\"hyperbolic\"``).
         time_unit: Unit of time.
         rate_unit: Unit of rate.
         forecast_end: End time for cumulative production.
-        economic_limit: Economic limit rate (production stops when rate drops below this).
+        economic_limit: Economic limit rate (production stops when \
+rate drops below this).
 
     Returns:
-        ToolChunk with JSON containing cumulative production and effective end time.
+        ToolChunk with JSON containing cumulative production and \
+effective end time.
     """
     try:
         service = _get_service()

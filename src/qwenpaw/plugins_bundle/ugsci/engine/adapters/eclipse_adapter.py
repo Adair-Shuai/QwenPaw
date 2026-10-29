@@ -15,7 +15,13 @@ import re
 from pathlib import Path
 from typing import List, Optional
 
-from .base import BaseSimAdapter, SimCapabilities, SimProgress, SimSummary, SimWarning
+from .base import (
+    BaseSimAdapter,
+    SimCapabilities,
+    SimProgress,
+    SimSummary,
+    SimWarning,
+)
 
 
 class EclipseAdapter(BaseSimAdapter):
@@ -36,8 +42,16 @@ class EclipseAdapter(BaseSimAdapter):
 
     def tuning_rules(self) -> dict[str, tuple[int, int, object]]:
         return {
-            "NSTACK": (1, 100, lambda value: max(value + 5, int(value * 1.5 + 0.5))),
-            "LITMAX": (1, 100, lambda value: max(value + 5, int(value * 1.5 + 0.5))),
+            "NSTACK": (
+                1,
+                100,
+                lambda value: max(value + 5, int(value * 1.5 + 0.5)),
+            ),
+            "LITMAX": (
+                1,
+                100,
+                lambda value: max(value + 5, int(value * 1.5 + 0.5)),
+            ),
         }
 
     # ------------------------------------------------------------------
@@ -68,30 +82,36 @@ class EclipseAdapter(BaseSimAdapter):
         re.IGNORECASE,
     )
     _RE_TIME_ALT = re.compile(
-        r"^\s*TIME\s*=\s*([\d.]+)\s+(DAYS|DAY)", re.IGNORECASE,
+        r"^\s*TIME\s*=\s*([\d.]+)\s+(DAYS|DAY)",
+        re.IGNORECASE,
     )
     _RE_TARGET = re.compile(
-        r"TSTEP.*?|END\s+OF\s+SIMULATION", re.IGNORECASE,
+        r"TSTEP.*?|END\s+OF\s+SIMULATION",
+        re.IGNORECASE,
     )
     _RE_NEWTON = re.compile(
-        r"ITER\s*#\s*(\d+)", re.IGNORECASE,
+        r"ITER\s*#\s*(\d+)",
+        re.IGNORECASE,
     )
     _RE_MBE = re.compile(
         r"MATERIAL\s+BALANCE.*?ERROR\s*=\s*([0-9.eE+\-]+)",
         re.IGNORECASE,
     )
     _RE_CFL = re.compile(
-        r"CFL\s*=\s*([0-9.eE+\-]+)", re.IGNORECASE,
+        r"CFL\s*=\s*([0-9.eE+\-]+)",
+        re.IGNORECASE,
     )
     _RE_TOTAL_STEPS = re.compile(
         r"TOTAL\s+REPORT\s+STEPS\s*:\s*\d+\s+TOTAL\s+TIME\s+STEPS\s*:\s*(\d+)",
         re.IGNORECASE,
     )
     _RE_FINAL_CPU = re.compile(
-        r"^\s*FINAL\s+CPU\b", re.IGNORECASE | re.MULTILINE,
+        r"^\s*FINAL\s+CPU\b",
+        re.IGNORECASE | re.MULTILINE,
     )
     _RE_ERROR_SUMMARY = re.compile(
-        r"^\s*ERROR\s+SUMMARY\s*:?\s*$", re.IGNORECASE | re.MULTILINE,
+        r"^\s*ERROR\s+SUMMARY\s*:?\s*$",
+        re.IGNORECASE | re.MULTILINE,
     )
 
     def parse_progress(self, working_dir: str | Path) -> SimProgress:
@@ -109,9 +129,15 @@ class EclipseAdapter(BaseSimAdapter):
         if has_end_marker or final_cpu_matches:
             progress.status = "completed"
         elif any(
-            re.match(r"^\s*(?:[*#]+\s*)?(?:ERROR|FATAL|ABORT)\b", line, re.IGNORECASE)
+            re.match(
+                r"^\s*(?:[*#]+\s*)?(?:ERROR|FATAL|ABORT)\b",
+                line,
+                re.IGNORECASE,
+            )
             and not re.match(
-                r"^\s*(?:[*#]+\s*)?ERROR\s+SUMMARY\b", line, re.IGNORECASE,
+                r"^\s*(?:[*#]+\s*)?ERROR\s+SUMMARY\b",
+                line,
+                re.IGNORECASE,
             )
             for line in log_tail.splitlines()[-40:]
         ):
@@ -132,15 +158,19 @@ class EclipseAdapter(BaseSimAdapter):
             summary_body = ""
         if (has_end_marker or final_cpu_matches) and summary_body:
             error_match = re.search(
-                r"(?im)^\s*Errors?\s*:?\s*(\d+)\b", summary_body,
+                r"(?im)^\s*Errors?\s*:?\s*(\d+)\b",
+                summary_body,
             )
             problem_match = re.search(
-                r"(?im)^\s*Problems?\s*:?\s*(\d+)\b", summary_body,
+                r"(?im)^\s*Problems?\s*:?\s*(\d+)\b",
+                summary_body,
             )
             errors = int(error_match.group(1)) if error_match else 0
             problems = int(problem_match.group(1)) if problem_match else 0
             if error_match or problem_match:
-                progress.status = "failed" if errors or problems else "completed"
+                progress.status = (
+                    "failed" if errors or problems else "completed"
+                )
 
         # Time / progress
         for line in log_tail.splitlines():
@@ -170,14 +200,18 @@ class EclipseAdapter(BaseSimAdapter):
         # Eclipse wraps this line in some versions, so normalize whitespace
         # before parsing the authoritative cumulative time-step count.
         normalized = re.sub(r"\s+", " ", log_tail)
-        step_matches = [int(m.group(1)) for m in self._RE_TOTAL_STEPS.finditer(normalized)]
+        step_matches = [
+            int(m.group(1)) for m in self._RE_TOTAL_STEPS.finditer(normalized)
+        ]
         if step_matches:
             progress.current_step = max(step_matches)
 
         return progress
 
     def parse_warnings(
-        self, working_dir: str | Path, limit: int = 20,
+        self,
+        working_dir: str | Path,
+        limit: int = 20,
     ) -> List[SimWarning]:
         warnings: List[SimWarning] = []
         log_file = self.find_log_file(working_dir)
@@ -217,7 +251,9 @@ class EclipseAdapter(BaseSimAdapter):
         return None
 
     def find_binary_summary_files(
-        self, working_dir: str | Path, case_stem: str = "",
+        self,
+        working_dir: str | Path,
+        case_stem: str = "",
     ) -> tuple[Optional[Path], Optional[Path]]:
         directory = Path(working_dir)
         stem = case_stem
@@ -228,7 +264,10 @@ class EclipseAdapter(BaseSimAdapter):
             return None, None
         spec = directory / f"{stem}.SMSPEC"
         unsmry = directory / f"{stem}.UNSMRY"
-        return (spec if spec.is_file() else None, unsmry if unsmry.is_file() else None)
+        return (
+            spec if spec.is_file() else None,
+            unsmry if unsmry.is_file() else None,
+        )
 
     def read_summary(
         self,
@@ -246,13 +285,25 @@ class EclipseAdapter(BaseSimAdapter):
         rsm_file = self.find_summary_file(working_dir, case_stem=case_stem)
         if not rsm_file or not rsm_file.is_file():
             from .eclipse_summary import read_binary_summary
-            return read_binary_summary(working_dir, case_stem, variables, wells)
+
+            return read_binary_summary(
+                working_dir,
+                case_stem,
+                variables,
+                wells,
+            )
 
         try:
             content = rsm_file.read_text(encoding="utf-8", errors="replace")
         except Exception:
             from .eclipse_summary import read_binary_summary
-            return read_binary_summary(working_dir, case_stem, variables, wells)
+
+            return read_binary_summary(
+                working_dir,
+                case_stem,
+                variables,
+                wells,
+            )
 
         lines = content.splitlines()
         # Parse RSM format: find header line, then data lines
@@ -271,7 +322,13 @@ class EclipseAdapter(BaseSimAdapter):
 
         if header_idx is None:
             from .eclipse_summary import read_binary_summary
-            return read_binary_summary(working_dir, case_stem, variables, wells)
+
+            return read_binary_summary(
+                working_dir,
+                case_stem,
+                variables,
+                wells,
+            )
 
         # Identify column indices
         date_col = None
@@ -289,7 +346,7 @@ class EclipseAdapter(BaseSimAdapter):
                 vec_cols[upper] = j
 
         # Parse data rows
-        for line in lines[header_idx + 1:]:
+        for line in lines[header_idx + 1 :]:
             fields = line.split()
             if len(fields) < len(col_names):
                 continue
@@ -299,7 +356,9 @@ class EclipseAdapter(BaseSimAdapter):
             time_val = float(summary.dates.__len__())  # 1-based step index
 
             for vec_name, col_idx in vec_cols.items():
-                if variables and vec_name not in [v.upper() for v in variables]:
+                if variables and vec_name not in [
+                    v.upper() for v in variables
+                ]:
                     continue
                 try:
                     val = float(fields[col_idx])
@@ -312,7 +371,9 @@ class EclipseAdapter(BaseSimAdapter):
             for well_key, col_idx in well_cols.items():
                 if wells:
                     parts = well_key.split(":")
-                    if len(parts) < 2 or parts[1].upper() not in [w.upper() for w in wells]:
+                    if len(parts) < 2 or parts[1].upper() not in [
+                        w.upper() for w in wells
+                    ]:
                         continue
                 try:
                     val = float(fields[col_idx])
@@ -325,9 +386,18 @@ class EclipseAdapter(BaseSimAdapter):
         # A partially written/corrupt text report can still contain a valid
         # header while yielding no usable rows. Prefer the native binary
         # summary in that case instead of silently returning an empty result.
-        if not summary.dates and not summary.vectors and not summary.well_vectors:
+        if (
+            not summary.dates
+            and not summary.vectors
+            and not summary.well_vectors
+        ):
             from .eclipse_summary import read_binary_summary
 
-            return read_binary_summary(working_dir, case_stem, variables, wells)
+            return read_binary_summary(
+                working_dir,
+                case_stem,
+                variables,
+                wells,
+            )
 
         return summary

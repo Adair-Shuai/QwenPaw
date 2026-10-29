@@ -22,12 +22,14 @@ from qwenpaw.config.context import (
     get_current_workspace_dir,
 )
 
-from ..common.errors import DomainError, DomainErrorCode, wrap_unknown_error
+from ..common.errors import DomainError, wrap_unknown_error
 from ..common.tool_chunk import emit_tool_chunk
 from .adapters.lasio_adapter import LasioAdapter
 from .service import WellLogService
 
-logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.domain.well_log.tools")
+logger = logging.getLogger("qwenpaw").getChild(
+    "plugin.ugsci.domain.well_log.tools",
+)
 
 # Singleton service — created lazily
 _service: WellLogService | None = None
@@ -42,8 +44,15 @@ def _check_agentscope() -> bool:
     global _agentscope_available
     if _agentscope_available is None:
         try:
-            from agentscope.message import TextBlock, ToolResultState  # noqa: F401
-            from agentscope.tool import ToolChunk  # noqa: F401
+            from importlib import import_module
+
+            message = import_module("agentscope.message")
+            tools = import_module("agentscope.tool")
+            # Check every symbol required by chunk construction, including
+            # partially installed SDKs that still have importable modules.
+            getattr(message, "TextBlock")
+            getattr(message, "ToolResultState")
+            getattr(tools, "ToolChunk")
 
             _agentscope_available = True
         except Exception:
@@ -65,7 +74,9 @@ def _resolve_workspace_path(path: str) -> str:
     candidate = Path(path).expanduser()
     if candidate.is_absolute():
         return str(candidate.resolve())
-    base = get_current_project_dir() or get_current_workspace_dir() or Path.cwd()
+    base = (
+        get_current_project_dir() or get_current_workspace_dir() or Path.cwd()
+    )
     return str((base / candidate).resolve())
 
 
@@ -111,8 +122,9 @@ async def ugsci_welllog_read(
 
     Args:
         path: Path to the LAS file (relative to agent workspace).
-        encoding: Optional file encoding (e.g. ``"latin-1"``).
-        sample_rows: Number of sample rows from head and tail (default 20, max 200).
+        encoding: Optional file encoding (e.g. ``\"latin-1\"``).
+        sample_rows: Number of sample rows from head and tail \
+(default 20, max 200).
 
     Returns:
         ToolChunk with JSON containing metadata, curve summaries,
@@ -148,7 +160,10 @@ async def ugsci_welllog_validate(
     """
     try:
         service = _get_service()
-        result = service.validate(_resolve_workspace_path(path), encoding=encoding)
+        result = service.validate(
+            _resolve_workspace_path(path),
+            encoding=encoding,
+        )
         return _make_success_chunk(result.to_dict())
     except DomainError as exc:
         return _make_error_chunk(exc)

@@ -44,8 +44,16 @@ def _resolve_react_iterations(
     configured: int,
     request_context: dict[str, Any],
 ) -> int:
-    """Let a bounded internal migration outgrow the normal chat limit."""
+    """Apply workflow caps or a bounded internal migration allowance."""
     requested = request_context.get("max_react_iterations")
+    if request_context.get("source") == "flowforge":
+        if (
+            isinstance(requested, int)
+            and not isinstance(requested, bool)
+            and requested > 0
+        ):
+            return min(configured, requested)
+        return configured
     if (
         request_context.get("source") != "portability_adaptation"
         or isinstance(requested, bool)
@@ -697,6 +705,24 @@ class AgentBuilder:
             if hasattr(innermost, "formatter"):
                 innermost.formatter = formatter
         return model, formatter
+
+    @classmethod
+    def create_resource_governor(
+        cls,
+        workspace_dir: Any,
+        coding_project_dir: Any = None,
+        extra_project_dirs: Iterable[Any] | None = None,
+    ) -> Any:
+        """Create the host governor for trusted non-chat execution clients."""
+        # Preserve two-argument governor integrations unless extra roots
+        # were explicitly supplied by this caller.
+        if extra_project_dirs is None:
+            return cls._init_governor(workspace_dir, coding_project_dir)
+        return cls._init_governor(
+            workspace_dir,
+            coding_project_dir,
+            extra_project_dirs,
+        )
 
     @staticmethod
     def _init_governor(

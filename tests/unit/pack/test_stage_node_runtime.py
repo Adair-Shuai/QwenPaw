@@ -187,7 +187,8 @@ def test_upgrade_replaces_old_runtime_and_reuses_new_cache(
     monkeypatch.setattr(runtime, f"_http_get", download)
     digest = hashlib.sha256(buffer.getvalue()).hexdigest()
     monkeypatch.setattr(
-        sys, f"argv",
+        sys,
+        f"argv",
         [str(SCRIPT_FILE), f"--dest", str(dest), "--sha256", digest],
     )
     runtime.main()
@@ -198,7 +199,9 @@ def test_upgrade_replaces_old_runtime_and_reuses_new_cache(
     assert node.read_bytes() == b"new node"
     assert npx.read_bytes() == b"new npx"
     assert not stale.exists()
-    assert marker.read_text(encoding=f"utf-8") == f"{version}-{target}-{digest}"
+    assert (
+        marker.read_text(encoding=f"utf-8") == f"{version}-{target}-{digest}"
+    )
 
     runtime.main()
 

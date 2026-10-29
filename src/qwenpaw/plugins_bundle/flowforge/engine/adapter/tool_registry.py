@@ -1,13 +1,16 @@
 # -*- coding: utf-8 -*-
-"""Adapter: ``ToolRegistry`` / ``ToolExecutor`` bridging QwenPaw's tool system.
+"""Adapter: ``ToolRegistry`` / ``ToolExecutor`` bridging QwenPaw's tool \
+system.
 
 LeAgent's workflow engine expects:
 
 * ``ToolRegistry.list_all()`` → ``list[BaseTool]``
-* ``ToolExecutor.execute(name, params, context)`` → result with ``.result.success`` / ``.result.data`` / ``.result.error``
+* ``ToolExecutor.execute(name, params, context)`` → result with \
+``.result.success`` / ``.result.data`` / ``.result.error``
 
 QwenPaw's :class:`~qwenpaw.runtime.tool_registry.ToolRegistry` stores
-:class:`~qwenpaw.runtime.tool_registry.ToolDescriptor` instances (plain
+:class:`~qwenpaw.runtime.tool_registry.ToolDescriptor` instances \
+(plain
 decorated functions).  This adapter wraps them into :class:`BaseTool`
 facades and provides a ``ToolExecutor`` that calls ``descriptor.func``
 directly — honouring async vs sync and normalising the return value.
@@ -17,7 +20,6 @@ from __future__ import annotations
 
 import asyncio
 import inspect
-import logging
 from dataclasses import dataclass
 from typing import Any
 
@@ -45,9 +47,11 @@ class ToolExecResult:
 
 
 class ToolRegistry:
-    """Adapter wrapping QwenPaw's ``ToolRegistry`` into LeAgent-compatible API.
+    """Adapter wrapping QwenPaw's ``ToolRegistry`` into LeAgent-compatible \
+API.
 
-    * ``list_all()`` — returns ``list[BaseTool]`` (one per registered descriptor)
+    * ``list_all()`` — returns ``list[BaseTool]`` (one per registered \
+descriptor)
     * ``get(name)``  — returns the ``BaseTool`` or ``None``
     * ``names()``    — returns sorted tool names
     """
@@ -98,10 +102,14 @@ class ToolRegistry:
 class ToolExecutor:
     """Adapter that executes QwenPaw tool functions directly.
 
-    The workflow nodes call ``tool_executor.execute(tool_name, params, context)``
-    and expect a result object with ``.result.success``, ``.result.data``, and
-    ``.result.error``.  This executor resolves the tool from the registry,
-    calls ``descriptor.func(**params)``, and normalises the return value.
+    The workflow nodes call ``tool_executor.execute(tool_name, \
+params, context)``
+    and expect a result object with ``.result.success``, \
+``.result.data``, and
+    ``.result.error``.  This executor resolves the tool from the \
+registry,
+    calls ``descriptor.func(**params)``, and normalises the return \
+value.
     """
 
     def __init__(self, registry: ToolRegistry | Any | None = None) -> None:
@@ -113,7 +121,8 @@ class ToolExecutor:
             self._registry = ToolRegistry()
 
     def get_tool_context(self, state: Any | None = None) -> Any:
-        """Return a context object for the tool (currently the state itself)."""
+        """Return a context object for the tool (currently the state \
+itself)."""
         return state
 
     async def execute(
@@ -122,7 +131,8 @@ class ToolExecutor:
         params: dict[str, Any],
         context: Any | None = None,
     ) -> ToolExecResult:
-        """Execute ``tool_name`` with ``params`` and return a normalised result."""
+        """Execute ``tool_name`` with ``params`` and return a normalised \
+result."""
         tool = self._registry.get(tool_name)
         if tool is None:
             return ToolExecResult(
@@ -148,7 +158,10 @@ class ToolExecutor:
                 exc_info=True,
             )
             return ToolExecResult(
-                result=ToolResult(success=False, error=f"{type(exc).__name__}: {exc}"),
+                result=ToolResult(
+                    success=False,
+                    error=f"{type(exc).__name__}: {exc}",
+                ),
             )
 
         # Normalise the return value into a ``ToolResult.data`` payload.
@@ -188,6 +201,7 @@ def _normalise_tool_output(raw: Any) -> Any:
 
 
 __all__ = [
+    "ToolCategory",
     "ToolExecResult",
     "ToolExecutor",
     "ToolRegistry",

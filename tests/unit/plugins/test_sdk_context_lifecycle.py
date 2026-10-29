@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=redefined-outer-name
 """Bound model services retain both caller and provider resource ownership."""
 
 import asyncio
+import threading
+import time
 
 import pytest
 
@@ -289,6 +292,70 @@ async def test_finished_call_context_cannot_start_another_model_invocation(
         assert provider.storage.read_json("entered.json", False) is False
 
 
+def _deadline_provider_source():
+    return ASYNC_PROVIDER.replace(
+        '            ctx.storage.write_json("entered.json", True)',
+        """            measured_at = asyncio.get_running_loop().time()
+            remaining = (
+                call.deadline - measured_at
+                if call.deadline is not None else None
+            )
+            ctx.storage.write_json("entered.json", True)
+            ctx.storage.write_json(
+                "deadline.json", {
+                    "remaining": remaining,
+                    "deadline": call.deadline,
+                    "measured_at": measured_at,
+                },
+            )""",
+    )
+
+
+def _deadline_caller_source(tool_timeout, model_timeout):
+    return f"""
+from qwenpaw.plugins.messages import ContentBlock, Message
+from qwenpaw.plugins.tools import ToolSpec, ToolResult
+class Plugin:
+    def register(self, ctx):
+        async def complete(call, args):
+            result = await call.models.complete(
+                (Message("user", (ContentBlock(text="hold"),)),),
+                timeout={model_timeout!r},
+            )
+            return ToolResult(result.content)
+        async def warm(call, args):
+            result = await call.models.complete(
+                (Message("user", (ContentBlock(text="warm"),)),),
+                timeout=2.0,
+            )
+            return ToolResult(result.content)
+        ctx.register_tool(ToolSpec(
+            "bound_warm", "warm", {{"type": "object"}}, warm,
+            enabled=True, timeout=2.0,
+        ))
+        ctx.register_tool(ToolSpec(
+            "bound_deadline", "deadline", {{"type": "object"}}, complete,
+            enabled=True, timeout={tool_timeout!r},
+        ))
+plugin = Plugin()
+"""
+
+
+async def _warm_deadline_route(host, provider):
+    # Exercise the real workspace, governed tool, configured model and provider
+    # before measuring its in-flight deadline. Cold construction is verified
+    # separately with a controlled slow production factory.
+    provider.storage.write_json("release.json", True)
+    result = await host.call_tool("bound_warm", {}, workspace_id="bound")
+    assert "".join(block.text or "" for block in result.content) == "firstlast"
+    assert provider.storage.read_json("provider-closed.json") is True
+    # No warm-up marker may satisfy an assertion for the measured request.
+    provider.storage.write_json("release.json", False)
+    provider.storage.write_json("entered.json", False)
+    provider.storage.write_json("provider-closed.json", False)
+    provider.storage.write_json("deadline.json", None)
+
+
 @pytest.mark.parametrize(
     "tool_timeout, model_timeout",
     [(300.0, 60.0), (60.0, 300.0)],
@@ -384,6 +451,80 @@ plugin = Plugin()
             assert (await host.reload(owner)).ok
 
 
+@pytest.mark.parametrize(
+    "tool_timeout, model_timeout",
+    [(2.0, 0.08), (0.08, 2.0)],
+)
+async def test_deadline_during_model_build_releases_without_provider_call(
+    tmp_path,
+    monkeypatch,
+    tool_timeout,
+    model_timeout,
+):
+    from qwenpaw.agents import model_factory
+    from qwenpaw.plugins import SDKError
+    from qwenpaw.plugins.testing import PluginTestHost
+
+    async with PluginTestHost(tmp_path / "host") as host:
+        provider = await host.load(
+            package(
+                tmp_path / "provider",
+                "deadline-provider",
+                _deadline_provider_source(),
+                ["providers", "storage"],
+            ),
+        )
+        await host.load(
+            package(
+                tmp_path / "caller",
+                "deadline-caller",
+                _deadline_caller_source(tool_timeout, model_timeout),
+                ["tools"],
+            ),
+        )
+        await host.configure_chat_model(
+            "bound-provider",
+            "bound-model",
+            workspace_id="bound",
+        )
+        await _warm_deadline_route(host, provider)
+        started, finished = threading.Event(), threading.Event()
+        original = model_factory.create_model_and_formatter
+
+        def slow_build(*args, **kwargs):
+            started.set()
+            try:
+                # Only construction latency is controlled. The actual factory,
+                # model wrappers, caller custody and provider all remain real.
+                time.sleep(0.12)
+                return original(*args, **kwargs)
+            finally:
+                finished.set()
+
+        with monkeypatch.context() as patch:
+            patch.setattr(
+                model_factory,
+                "create_model_and_formatter",
+                slow_build,
+            )
+            with pytest.raises(SDKError, match="deadline"):
+                await host.call_tool(
+                    "bound_deadline",
+                    {},
+                    workspace_id="bound",
+                )
+        # An uninterruptible construction thread must finish before ownership
+        # is released, but an expired request must never enter the provider.
+        assert started.is_set()
+        assert finished.is_set()
+        assert provider.storage.read_json("entered.json") is False
+        assert provider.storage.read_json("deadline.json") is None
+        assert provider.storage.read_json("provider-closed.json") is False
+        for owner in ("deadline-provider", "deadline-caller"):
+            assert host.resource_snapshot(owner)["active_calls"] == 0
+            assert (await host.reload(owner)).ok
+
+
 async def test_failed_model_scope_cleanup_keeps_ownership_until_retry(
     tmp_path,
 ):
@@ -473,5 +614,60 @@ plugin = Plugin()
                 await asyncio.wait_for(task, WAIT_TIMEOUT)
         assert provider.storage.read_json("cleanup-finished.json") is True
         for owner in ("bound-caller-owner", "bound-provider-owner"):
+            assert host.resource_snapshot(owner)["active_calls"] == 0
+            assert (await host.reload(owner)).ok
+
+
+@pytest.mark.parametrize(
+    "tool_timeout, model_timeout",
+    [(2.0, 0.08), (0.08, 2.0)],
+)
+async def test_bound_model_uses_earliest_deadline_and_closes_provider(
+    tmp_path,
+    tool_timeout,
+    model_timeout,
+):
+    from qwenpaw.plugins import SDKError
+    from qwenpaw.plugins.testing import PluginTestHost
+
+    provider_source = _deadline_provider_source()
+    caller_source = _deadline_caller_source(tool_timeout, model_timeout)
+    async with PluginTestHost(tmp_path / "host") as host:
+        provider = await host.load(
+            package(
+                tmp_path / "provider",
+                "deadline-provider",
+                provider_source,
+                ["providers", "storage"],
+            ),
+        )
+        await host.load(
+            package(
+                tmp_path / "caller",
+                "deadline-caller",
+                caller_source,
+                ["tools"],
+            ),
+        )
+        await host.configure_chat_model(
+            "bound-provider",
+            "bound-model",
+            workspace_id="bound",
+        )
+        await _warm_deadline_route(host, provider)
+        with pytest.raises(SDKError, match="deadline"):
+            await host.call_tool("bound_deadline", {}, workspace_id="bound")
+        measured = provider.storage.read_json("deadline.json")
+        remaining = measured["remaining"]
+        assert remaining is not None and 0 < remaining
+        # Compare absolute monotonic timestamps. Subtracting two large clock
+        # values can turn exactly 80ms into 0.08000000000004093 on Windows.
+        # Keep the real 80ms deadline and both provider-entry/closure guards.
+        assert measured["deadline"] <= measured["measured_at"] + min(
+            tool_timeout,
+            model_timeout,
+        )
+        assert provider.storage.read_json("provider-closed.json") is True
+        for owner in ("deadline-provider", "deadline-caller"):
             assert host.resource_snapshot(owner)["active_calls"] == 0
             assert (await host.reload(owner)).ok

@@ -20,7 +20,9 @@ router = APIRouter()
 @router.post("/ai/sessions")
 async def create_ai_session(body: AISessionCreate) -> dict:
     return await AIService.get_or_create_session(
-        body.scope_type, body.scope_id, body.title
+        body.scope_type,
+        body.scope_id,
+        body.title,
     )
 
 

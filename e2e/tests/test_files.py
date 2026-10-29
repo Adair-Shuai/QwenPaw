@@ -20,7 +20,7 @@ from utils.helpers import log_test_step, log_test_result
 logger = logging.getLogger(__name__)
 
 WORKSPACE_URL = f"{config.base_url}/files"
-FILE_ITEM_SELECTOR = 'button[class*="treeRow"]:not([aria-expanded])'
+FILE_ITEM_SELECTOR = '[role="treeitem"]:not([aria-expanded])'
 FILE_NAME_SELECTOR = "span"
 FILE_META_SELECTOR = "span"
 
@@ -265,7 +265,7 @@ class TestFileContentEditAndSave:
         navigate_to_workspace(page)
 
         log_test_step("2. Open the seeded Markdown file")
-        file_item = page.get_by_role("button", name=file_name, exact=True)
+        file_item = page.get_by_role("treeitem", name=file_name, exact=True)
         expect(file_item).to_be_visible(timeout=5000)
         file_item.click()
         page.wait_for_timeout(2000)
@@ -280,6 +280,7 @@ class TestFileContentEditAndSave:
         try:
             log_test_step("4. Append a Markdown section in Monaco")
             monaco.click(position={"x": 200, "y": 60})
+            page.keyboard.press("ControlOrMeta+End")
             page.keyboard.type(marker)
 
             log_test_step("5. Save through the workspace toolbar")
@@ -311,7 +312,7 @@ class TestFileContentEditAndSave:
             page.reload()
             page.wait_for_load_state("domcontentloaded")
             page.wait_for_timeout(3000)
-            file_item = page.get_by_role("button", name=file_name, exact=True)
+            file_item = page.get_by_role("treeitem", name=file_name, exact=True)
             expect(file_item).to_be_visible(timeout=5000)
             file_item.click()
             page.get_by_role("button", name="Edit", exact=True).click()

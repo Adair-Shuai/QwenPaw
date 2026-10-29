@@ -72,15 +72,11 @@ class ConditionExpression(BaseModel):
 
     # ------------------------------------------------------------------
     def _evaluate_logical(self, context: dict[str, Any]) -> bool:
-        if not self.conditions:
-            return False
-        if self.operator == ConditionOperator.AND:
-            return all(c.evaluate(context) for c in self.conditions)
-        if self.operator == ConditionOperator.OR:
-            return any(c.evaluate(context) for c in self.conditions)
-        if self.operator == ConditionOperator.NOT:
-            return not self.conditions[0].evaluate(context) if self.conditions else False
-        return False
+        return _evaluate_logical_conditions(
+            self.conditions,
+            self.operator,
+            context,
+        )
 
     def _evaluate_comparison(self, context: dict[str, Any]) -> bool:
         left_value = _resolve_field(self.left, context)
@@ -89,36 +85,35 @@ class ConditionExpression(BaseModel):
             resolved = _resolve_field(right_value, context)
             if resolved is not right_value and resolved != right_value:
                 right_value = resolved
-        left_value, right_value = _coerce_for_comparison(left_value, right_value)
-        match self.operator:
-            case ConditionOperator.EQ:
-                return left_value == right_value
-            case ConditionOperator.NE:
-                return left_value != right_value
-            case ConditionOperator.GT:
-                return left_value > right_value if left_value is not None and right_value is not None else False
-            case ConditionOperator.GE:
-                return left_value >= right_value if left_value is not None and right_value is not None else False
-            case ConditionOperator.LT:
-                return left_value < right_value if left_value is not None and right_value is not None else False
-            case ConditionOperator.LE:
-                return left_value <= right_value if left_value is not None and right_value is not None else False
-            case ConditionOperator.IN:
-                return left_value in right_value if right_value is not None else False
-            case ConditionOperator.NOT_IN:
-                return left_value not in right_value if right_value is not None else True
-            case ConditionOperator.CONTAINS:
-                return right_value in left_value if left_value else False
-            case ConditionOperator.STARTS_WITH:
-                return str(left_value).startswith(str(right_value)) if left_value else False
-            case ConditionOperator.ENDS_WITH:
-                return str(left_value).endswith(str(right_value)) if left_value else False
-            case ConditionOperator.MATCHES:
-                return bool(re.match(str(right_value), str(left_value))) if left_value else False
-            case ConditionOperator.IS_NULL:
-                return left_value is None
-            case ConditionOperator.IS_NOT_NULL:
-                return left_value is not None
+        left_value, right_value = _coerce_for_comparison(
+            left_value,
+            right_value,
+        )
+        operator = self.operator
+        match operator:
+            case ConditionOperator.EQ | ConditionOperator.NE:
+                return _compare_equality(operator, left_value, right_value)
+            case (
+                ConditionOperator.GT
+                | ConditionOperator.GE
+                | ConditionOperator.LT
+                | ConditionOperator.LE
+            ):
+                return _compare_ordered(operator, left_value, right_value)
+            case (
+                ConditionOperator.IN
+                | ConditionOperator.NOT_IN
+                | ConditionOperator.CONTAINS
+            ):
+                return _compare_membership(operator, left_value, right_value)
+            case (
+                ConditionOperator.STARTS_WITH
+                | ConditionOperator.ENDS_WITH
+                | ConditionOperator.MATCHES
+            ):
+                return _compare_text(operator, left_value, right_value)
+            case ConditionOperator.IS_NULL | ConditionOperator.IS_NOT_NULL:
+                return _compare_null(operator, left_value)
             case _:
                 return False
 
@@ -176,7 +171,10 @@ class WorkflowState(BaseModel):
         """Evaluate a condition expression against current state."""
         return expr.evaluate(self._build_context())
 
-    def fork(self, extra_vars: dict[str, Any] | None = None) -> "WorkflowState":
+    def fork(
+        self,
+        extra_vars: dict[str, Any] | None = None,
+    ) -> "WorkflowState":
         """Create a forked state for parallel execution."""
         forked = WorkflowState(
             workflow_id=self.workflow_id,
@@ -195,6 +193,10 @@ class WorkflowState(BaseModel):
         if result.output is not None and result.node_id:
             self.outputs[result.node_id] = result.output
 
+    def build_context(self) -> dict[str, Any]:
+        """Build the execution context shared with workflow node adapters."""
+        return self._build_context()
+
     def _build_context(self) -> dict[str, Any]:
         """Build context dictionary for template resolution."""
         ctx: dict[str, Any] = {}
@@ -203,7 +205,9 @@ class WorkflowState(BaseModel):
         # Stored output slots stay intact for recovery; public templates use
         # the single output value directly (outputs.method.value).
         outputs = {
-            key: value[0] if isinstance(value, (tuple, list)) and len(value) == 1 else value
+            key: value[0]
+            if isinstance(value, (tuple, list)) and len(value) == 1
+            else value
             for key, value in self.outputs.items()
         }
         ctx.update(outputs)
@@ -270,7 +274,11 @@ class WorkflowResult(BaseModel):
 TEMPLATE_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
 
-def _resolve_field(expr: Any, context: dict[str, Any], default: Any = None) -> Any:
+def _resolve_field(
+    expr: Any,
+    context: dict[str, Any],
+    default: Any = None,
+) -> Any:
     """Resolve a field reference against context.
 
     Handles three forms:
@@ -291,6 +299,119 @@ def _resolve_field(expr: Any, context: dict[str, Any], default: Any = None) -> A
     return expr
 
 
+def _compare_equality(
+    operator: ConditionOperator,
+    left_value: Any,
+    right_value: Any,
+) -> bool:
+    """Evaluate the equality comparison family."""
+    match operator:
+        case ConditionOperator.EQ:
+            return left_value == right_value
+        case ConditionOperator.NE:
+            return left_value != right_value
+        case _:
+            return False
+
+
+def _compare_ordered(
+    operator: ConditionOperator,
+    left_value: Any,
+    right_value: Any,
+) -> bool:
+    """Evaluate the ordered comparison family."""
+    match operator:
+        case ConditionOperator.GT:
+            return (
+                left_value > right_value
+                if left_value is not None and right_value is not None
+                else False
+            )
+        case ConditionOperator.GE:
+            return (
+                left_value >= right_value
+                if left_value is not None and right_value is not None
+                else False
+            )
+        case ConditionOperator.LT:
+            return (
+                left_value < right_value
+                if left_value is not None and right_value is not None
+                else False
+            )
+        case ConditionOperator.LE:
+            return (
+                left_value <= right_value
+                if left_value is not None and right_value is not None
+                else False
+            )
+        case _:
+            return False
+
+
+def _compare_membership(
+    operator: ConditionOperator,
+    left_value: Any,
+    right_value: Any,
+) -> bool:
+    """Evaluate the membership comparison family."""
+    match operator:
+        case ConditionOperator.IN:
+            return (
+                left_value in right_value if right_value is not None else False
+            )
+        case ConditionOperator.NOT_IN:
+            return (
+                left_value not in right_value
+                if right_value is not None
+                else True
+            )
+        case ConditionOperator.CONTAINS:
+            return right_value in left_value if left_value else False
+        case _:
+            return False
+
+
+def _compare_text(
+    operator: ConditionOperator,
+    left_value: Any,
+    right_value: Any,
+) -> bool:
+    """Evaluate the text comparison family."""
+    match operator:
+        case ConditionOperator.STARTS_WITH:
+            return (
+                str(left_value).startswith(str(right_value))
+                if left_value
+                else False
+            )
+        case ConditionOperator.ENDS_WITH:
+            return (
+                str(left_value).endswith(str(right_value))
+                if left_value
+                else False
+            )
+        case ConditionOperator.MATCHES:
+            return (
+                bool(re.match(str(right_value), str(left_value)))
+                if left_value
+                else False
+            )
+        case _:
+            return False
+
+
+def _compare_null(operator: ConditionOperator, left_value: Any) -> bool:
+    """Evaluate explicit null checks without truthiness coercion."""
+    match operator:
+        case ConditionOperator.IS_NULL:
+            return left_value is None
+        case ConditionOperator.IS_NOT_NULL:
+            return left_value is not None
+        case _:
+            return False
+
+
 def _coerce_for_comparison(left: Any, right: Any) -> tuple[Any, Any]:
     """Coerce left/right to compatible types for comparison."""
     if left is None or right is None:
@@ -299,12 +420,9 @@ def _coerce_for_comparison(left: Any, right: Any) -> tuple[Any, Any]:
         return left, right
     if isinstance(left, (int, float)) and isinstance(right, (int, float)):
         return float(left), float(right)
-    if isinstance(left, str) and isinstance(right, (int, float)):
-        try:
-            return float(left), float(right)
-        except (ValueError, TypeError):
-            return left, right
-    if isinstance(left, (int, float)) and isinstance(right, str):
+    if (isinstance(left, str) and isinstance(right, (int, float))) or (
+        isinstance(left, (int, float)) and isinstance(right, str)
+    ):
         try:
             return float(left), float(right)
         except (ValueError, TypeError):
@@ -312,7 +430,11 @@ def _coerce_for_comparison(left: Any, right: Any) -> tuple[Any, Any]:
     return left, right
 
 
-def _resolve_value(expr: Any, context: dict[str, Any], default: Any = None) -> Any:
+def _resolve_value(
+    expr: Any,
+    context: dict[str, Any],
+    default: Any = None,
+) -> Any:
     if not isinstance(expr, str):
         return expr
     match = TEMPLATE_PATTERN.fullmatch(expr)
@@ -325,7 +447,9 @@ def _resolve_template(template: Any, context: dict[str, Any]) -> Any:
     """Recursively resolve all ``${...}`` template expressions in a value."""
     if isinstance(template, str):
         if TEMPLATE_PATTERN.fullmatch(template):
-            path = TEMPLATE_PATTERN.fullmatch(template).group(1)  # type: ignore[union-attr]
+            path = TEMPLATE_PATTERN.fullmatch(  # type: ignore[union-attr]
+                template,
+            ).group(1)
             return _get_nested_value(context, path)
 
         def replace_match(m: re.Match[str]) -> str:
@@ -341,7 +465,15 @@ def _resolve_template(template: Any, context: dict[str, Any]) -> Any:
     return template
 
 
-def _get_nested_value(obj: dict[str, Any], path: str, default: Any = None) -> Any:
+# Keep the historical private helper and expose its shared adapter contract.
+resolve_template = _resolve_template
+
+
+def _get_nested_value(
+    obj: dict[str, Any],
+    path: str,
+    default: Any = None,
+) -> Any:
     """Get nested value from dictionary using dot notation."""
     parts = path.split(".")
     current: Any = obj
@@ -362,6 +494,7 @@ ConditionExpression.model_rebuild()
 
 
 __all__ = [
+    "resolve_template",
     "ConditionExpression",
     "ConditionOperator",
     "NodeExecutionResult",
@@ -369,3 +502,20 @@ __all__ = [
     "WorkflowState",
     "WorkflowStatus",
 ]
+
+
+def _evaluate_logical_conditions(
+    conditions: list[ConditionExpression] | None,
+    operator: ConditionOperator,
+    context: dict[str, Any],
+) -> bool:
+    """Evaluate a validated optional group with short-circuit semantics."""
+    if not conditions:
+        return False
+    if operator == ConditionOperator.AND:
+        return all(c.evaluate(context) for c in conditions)
+    if operator == ConditionOperator.OR:
+        return any(c.evaluate(context) for c in conditions)
+    if operator == ConditionOperator.NOT:
+        return not conditions[0].evaluate(context) if conditions else False
+    return False

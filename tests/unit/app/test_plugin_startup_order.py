@@ -169,7 +169,9 @@ def test_bundled_candidates_are_health_checked_before_agent_startup() -> None:
         name = (
             func.attr
             if isinstance(func, ast.Attribute)
-            else func.id if isinstance(func, ast.Name) else None
+            else func.id
+            if isinstance(func, ast.Name)
+            else None
         )
         if name in calls:
             calls[name].append(node.lineno)

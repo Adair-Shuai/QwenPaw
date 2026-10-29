@@ -21,7 +21,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 
 from . import repository as repo
-from .database import compute_sha256, file_path_for_hash, get_data_root
+from .database import compute_sha256, file_path_for_hash
 from .enums import (
     paper_session_id,
     project_session_id,
@@ -34,11 +34,20 @@ logger = logging.getLogger(__name__)
 #  Library Service — projects, papers, search
 # ════════════════════════════════════════════════════════════════════
 
-class LibraryService:
 
+class LibraryService:
     @staticmethod
-    async def create_project(name: str, question: str = "", description: str = "") -> dict:
-        return await asyncio.to_thread(repo.create_project, name, question, description)
+    async def create_project(
+        name: str,
+        question: str = "",
+        description: str = "",
+    ) -> dict:
+        return await asyncio.to_thread(
+            repo.create_project,
+            name,
+            question,
+            description,
+        )
 
     @staticmethod
     async def get_project(project_id: str) -> dict | None:
@@ -50,7 +59,11 @@ class LibraryService:
 
     @staticmethod
     async def update_project(project_id: str, **fields: Any) -> dict | None:
-        return await asyncio.to_thread(repo.update_project, project_id, **fields)
+        return await asyncio.to_thread(
+            repo.update_project,
+            project_id,
+            **fields,
+        )
 
     @staticmethod
     async def delete_project(project_id: str) -> bool:
@@ -73,13 +86,24 @@ class LibraryService:
 
     @staticmethod
     async def add_paper_to_project(project_id: str, paper_id: str) -> dict:
-        await asyncio.to_thread(repo.add_paper_to_project, project_id, paper_id)
+        await asyncio.to_thread(
+            repo.add_paper_to_project,
+            project_id,
+            paper_id,
+        )
         paper = await asyncio.to_thread(repo.get_paper, paper_id)
         return paper or {}
 
     @staticmethod
-    async def remove_paper_from_project(project_id: str, paper_id: str) -> bool:
-        return await asyncio.to_thread(repo.remove_paper_from_project, project_id, paper_id)
+    async def remove_paper_from_project(
+        project_id: str,
+        paper_id: str,
+    ) -> bool:
+        return await asyncio.to_thread(
+            repo.remove_paper_from_project,
+            project_id,
+            paper_id,
+        )
 
     @staticmethod
     async def list_papers(
@@ -120,7 +144,10 @@ class LibraryService:
         paper["files"] = files
         tags = await asyncio.to_thread(repo.get_paper_tags, paper_id)
         paper["tags"] = [t["name"] for t in tags]
-        identifiers = await asyncio.to_thread(repo.get_paper_identifiers, paper_id)
+        identifiers = await asyncio.to_thread(
+            repo.get_paper_identifiers,
+            paper_id,
+        )
         paper["identifiers"] = identifiers
         return paper
 
@@ -141,10 +168,17 @@ class LibraryService:
         return await asyncio.to_thread(repo.merge_papers, source_id, target_id)
 
     @staticmethod
-    async def search(query: str, *, project_id: Optional[str] = None, limit: int = 50) -> list[dict]:
+    async def search(
+        query: str,
+        *,
+        project_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> list[dict]:
         """Search metadata and parsed full text using FTS5."""
+
         def _search():
             from .database import get_db
+
             fts_query = query.strip()
             if not fts_query:
                 return []
@@ -157,14 +191,17 @@ class LibraryService:
                 "ORDER BY rank LIMIT ?"
             )
             rows = get_db().query(sql, (fts_query, limit))
-            return [
-                {k: r[k] for k in r.keys()} for r in rows
-            ]
+            return [{k: r[k] for k in r.keys()} for r in rows]
+
         results = await asyncio.to_thread(_search)
         # A title/abstract hit is still the primary paper result.  If a query
         # only occurs in the parsed PDF, append that paper once and expose the
         # matching page/chunk so the UI and agent can jump to the source.
-        chunk_hits = await asyncio.to_thread(repo.search_chunks, query, limit=limit)
+        chunk_hits = await asyncio.to_thread(
+            repo.search_chunks,
+            query,
+            limit=limit,
+        )
         by_id = {p["id"]: p for p in results}
         for hit in chunk_hits:
             paper_id = hit.get("paper_id")
@@ -175,11 +212,13 @@ class LibraryService:
                 if paper:
                     by_id[paper_id] = paper
             if paper_id in by_id:
-                by_id[paper_id].setdefault("matches", []).append({
-                    "chunk_id": hit.get("id"),
-                    "page_start": hit.get("page_start"),
-                    "text": hit.get("text", "")[:500],
-                })
+                by_id[paper_id].setdefault("matches", []).append(
+                    {
+                        "chunk_id": hit.get("id"),
+                        "page_start": hit.get("page_start"),
+                        "text": hit.get("text", "")[:500],
+                    },
+                )
         results = list(by_id.values())[:limit]
         # Enrich
         for p in results:
@@ -191,7 +230,10 @@ class LibraryService:
                 p["primary_file_id"] = None
         if project_id:
             # Filter to papers in this project
-            project_papers = await asyncio.to_thread(repo.get_project_papers, project_id)
+            project_papers = await asyncio.to_thread(
+                repo.get_project_papers,
+                project_id,
+            )
             project_ids = {p["id"] for p in project_papers}
             results = [p for p in results if p["id"] in project_ids]
         return results
@@ -200,6 +242,7 @@ class LibraryService:
 # ════════════════════════════════════════════════════════════════════
 #  Ingest Service — PDF import, metadata extraction, dedup
 # ════════════════════════════════════════════════════════════════════
+
 
 class IngestService:
     """Handles file import, metadata extraction, and document parsing."""
@@ -211,7 +254,8 @@ class IngestService:
         *,
         project_id: Optional[str] = None,
     ) -> dict:
-        """Import a PDF file: hash, dedup, store, create paper & file records."""
+        """Import a PDF file: hash, dedup, store, create paper & file \
+records."""
         sha256 = compute_sha256(data)
 
         # Check for existing file by hash
@@ -219,7 +263,11 @@ class IngestService:
         if existing:
             # Already in library — optionally add to project
             if project_id:
-                await asyncio.to_thread(repo.add_paper_to_project, project_id, existing["id"])
+                await asyncio.to_thread(
+                    repo.add_paper_to_project,
+                    project_id,
+                    existing["id"],
+                )
             existing["duplicate"] = True
             return existing
 
@@ -253,7 +301,11 @@ class IngestService:
 
         # Add to project if specified
         if project_id:
-            await asyncio.to_thread(repo.add_paper_to_project, project_id, paper["id"])
+            await asyncio.to_thread(
+                repo.add_paper_to_project,
+                project_id,
+                paper["id"],
+            )
 
         paper["file"] = file_rec
         paper["duplicate"] = False
@@ -285,7 +337,9 @@ class IngestService:
                 if existing:
                     if project_id:
                         await asyncio.to_thread(
-                            repo.add_paper_to_project, project_id, existing["id"]
+                            repo.add_paper_to_project,
+                            project_id,
+                            existing["id"],
                         )
                     existing["duplicate"] = True
                     results.append(existing)
@@ -303,9 +357,17 @@ class IngestService:
                 inbox=True,
             )
             if entry.get("authors"):
-                await asyncio.to_thread(repo.set_paper_authors, paper["id"], entry["authors"])
+                await asyncio.to_thread(
+                    repo.set_paper_authors,
+                    paper["id"],
+                    entry["authors"],
+                )
             if project_id:
-                await asyncio.to_thread(repo.add_paper_to_project, project_id, paper["id"])
+                await asyncio.to_thread(
+                    repo.add_paper_to_project,
+                    project_id,
+                    paper["id"],
+                )
             paper["duplicate"] = False
             results.append(paper)
         return results
@@ -323,14 +385,22 @@ class IngestService:
             if not ident:
                 continue
             # Detect type
-            if ident.lower().startswith(("https://doi.org/", "http://doi.org/")):
+            if ident.lower().startswith(
+                ("https://doi.org/", "http://doi.org/"),
+            ):
                 ident = ident.split("/", 3)[-1]
             if ident.startswith("10."):
-                scheme = "doi"
-                existing = await asyncio.to_thread(repo.find_paper_by_doi, ident)
+                existing = await asyncio.to_thread(
+                    repo.find_paper_by_doi,
+                    ident,
+                )
                 if existing:
                     if project_id:
-                        await asyncio.to_thread(repo.add_paper_to_project, project_id, existing["id"])
+                        await asyncio.to_thread(
+                            repo.add_paper_to_project,
+                            project_id,
+                            existing["id"],
+                        )
                     existing["duplicate"] = True
                     results.append(existing)
                     continue
@@ -346,7 +416,11 @@ class IngestService:
                     inbox=True,
                 )
                 if metadata.get("authors"):
-                    await asyncio.to_thread(repo.set_paper_authors, paper["id"], metadata["authors"])
+                    await asyncio.to_thread(
+                        repo.set_paper_authors,
+                        paper["id"],
+                        metadata["authors"],
+                    )
             else:
                 paper = await asyncio.to_thread(
                     repo.create_paper,
@@ -355,7 +429,11 @@ class IngestService:
                     inbox=True,
                 )
             if project_id:
-                await asyncio.to_thread(repo.add_paper_to_project, project_id, paper["id"])
+                await asyncio.to_thread(
+                    repo.add_paper_to_project,
+                    project_id,
+                    paper["id"],
+                )
             paper["duplicate"] = False
             results.append(paper)
         return results
@@ -370,41 +448,63 @@ class IngestService:
         # Create or get document record
         doc = await asyncio.to_thread(repo.get_document_by_file, file_id)
         if doc is None:
-            doc = await asyncio.to_thread(repo.create_document, file_id, "basic")
+            doc = await asyncio.to_thread(
+                repo.create_document,
+                file_id,
+                "basic",
+            )
 
-        await asyncio.to_thread(repo.update_document, doc["id"], status="parsing")
+        await asyncio.to_thread(
+            repo.update_document,
+            doc["id"],
+            status="parsing",
+        )
 
         try:
             await asyncio.to_thread(repo.clear_document_content, doc["id"])
             page_texts = await asyncio.to_thread(
-                _extract_pdf_text, file_rec["path"]
+                _extract_pdf_text,
+                file_rec["path"],
             )
             # Store page texts
             for i, text in enumerate(page_texts):
                 text_hash = hashlib.md5(text.encode()).hexdigest()
                 await asyncio.to_thread(
-                    repo.add_page_text, doc["id"], i, text, text_hash
+                    repo.add_page_text,
+                    doc["id"],
+                    i,
+                    text,
+                    text_hash,
                 )
             # Create chunks (one per page for simplicity)
             for i, text in enumerate(page_texts):
                 if text.strip():
                     await asyncio.to_thread(
-                        repo.add_chunk, doc["id"], text,
-                        page_start=i, page_end=i,
-                        char_start=0, char_end=len(text),
+                        repo.add_chunk,
+                        doc["id"],
+                        text,
+                        page_start=i,
+                        page_end=i,
+                        char_start=0,
+                        char_end=len(text),
                     )
 
             quality = "good" if len(page_texts) > 0 else "poor"
             needs_ocr = len(page_texts) == 0
             await asyncio.to_thread(
-                repo.update_document, doc["id"],
-                status="parsed", page_count=len(page_texts),
-                text_quality=quality, needs_ocr=1 if needs_ocr else 0,
+                repo.update_document,
+                doc["id"],
+                status="parsed",
+                page_count=len(page_texts),
+                text_quality=quality,
+                needs_ocr=1 if needs_ocr else 0,
             )
-        except Exception as exc:
+        except Exception:
             logger.exception("[ulit] Failed to parse PDF %s", file_id)
             await asyncio.to_thread(
-                repo.update_document, doc["id"], status="failed"
+                repo.update_document,
+                doc["id"],
+                status="failed",
             )
             raise
 
@@ -416,8 +516,8 @@ class IngestService:
 #  Annotation Service
 # ════════════════════════════════════════════════════════════════════
 
-class AnnotationService:
 
+class AnnotationService:
     @staticmethod
     async def create_annotation(**kwargs: Any) -> dict:
         return await asyncio.to_thread(repo.create_annotation, **kwargs)
@@ -431,8 +531,15 @@ class AnnotationService:
         return await asyncio.to_thread(repo.list_annotations, file_id)
 
     @staticmethod
-    async def update_annotation(annotation_id: str, **fields: Any) -> dict | None:
-        return await asyncio.to_thread(repo.update_annotation, annotation_id, **fields)
+    async def update_annotation(
+        annotation_id: str,
+        **fields: Any,
+    ) -> dict | None:
+        return await asyncio.to_thread(
+            repo.update_annotation,
+            annotation_id,
+            **fields,
+        )
 
     @staticmethod
     async def delete_annotation(annotation_id: str) -> bool:
@@ -481,6 +588,7 @@ class AnnotationService:
 # ════════════════════════════════════════════════════════════════════
 #  AI Service — Q&A with source references
 # ════════════════════════════════════════════════════════════════════
+
 
 class AIService:
     """Handles AI-powered reading and Q&A with evidence grounding."""
@@ -533,14 +641,24 @@ class AIService:
 """
 
     @staticmethod
-    async def get_or_create_session(scope_type: str, scope_id: str, title: str = "") -> dict:
+    async def get_or_create_session(
+        scope_type: str,
+        scope_id: str,
+        title: str = "",
+    ) -> dict:
         """Find or create an AI session for a paper or project."""
-        existing = await asyncio.to_thread(repo.find_ai_session, scope_type, scope_id)
+        existing = await asyncio.to_thread(
+            repo.find_ai_session,
+            scope_type,
+            scope_id,
+        )
         if existing:
             # Refresh title if a new one was provided and it differs
             if title and existing.get("title") != title:
                 await asyncio.to_thread(
-                    repo.update_ai_session, existing["id"], title=title
+                    repo.update_ai_session,
+                    existing["id"],
+                    title=title,
                 )
                 existing["title"] = title
             return existing
@@ -549,7 +667,11 @@ class AIService:
         else:
             sid = project_session_id(scope_id)
         return await asyncio.to_thread(
-            repo.create_ai_session, scope_type, scope_id, sid, title
+            repo.create_ai_session,
+            scope_type,
+            scope_id,
+            sid,
+            title,
         )
 
     @staticmethod
@@ -572,16 +694,25 @@ class AIService:
         context_parts = []
         for ch in chunks[:20]:  # Limit context size
             ref = f"paper:{paper_id}/chunk:{ch['id']}"
-            page_info = f" (p.{(ch['page_start'] or 0) + 1})" if ch.get("page_start") is not None else ""
+            page_info = (
+                f" (p.{(ch['page_start'] or 0) + 1})"
+                if ch.get("page_start") is not None
+                else ""
+            )
             context_parts.append(
-                f"[{ref}]\n页码: {page_info}\n内容: {ch['text'][:2000]}\n"
+                f"[{ref}]\n页码: {page_info}\n内容: {ch['text'][:2000]}\n",
             )
 
         # If selected text is provided, add it as primary context
         if selected_text:
-            context_parts.insert(0, f"[user_selection]\n用户选中文本: {selected_text}\n")
+            context_parts.insert(
+                0,
+                f"[user_selection]\n用户选中文本: {selected_text}\n",
+            )
 
-        context = "\n---\n".join(context_parts) if context_parts else "（无可用全文上下文）"
+        context = (
+            "\n---\n".join(context_parts) if context_parts else "（无可用全文上下文）"
+        )
 
         # Create AI session
         session = await AIService.get_or_create_session("paper", paper_id)
@@ -589,7 +720,10 @@ class AIService:
 
         # Create AI run
         run = await asyncio.to_thread(
-            repo.create_ai_run, session["id"], ctx.config.get("active_model", "qwen-max"), "v1",
+            repo.create_ai_run,
+            session["id"],
+            ctx.config.get("active_model", "qwen-max"),
+            "v1",
             input_refs=[ch["id"] for ch in chunks[:20]],
         )
 
@@ -619,9 +753,17 @@ class AIService:
                 # Verify quotes exist in chunks
                 claims = parsed.get("claims", [])
                 for claim in claims:
-                    refs = claim.get("source_refs", []) if isinstance(claim, dict) else []
+                    refs = (
+                        claim.get("source_refs", [])
+                        if isinstance(claim, dict)
+                        else []
+                    )
                     if refs:
-                        verified_refs = [ref for ref in refs if _verify_source_ref(ref, paper_id, chunks)]
+                        verified_refs = [
+                            ref
+                            for ref in refs
+                            if _verify_source_ref(ref, paper_id, chunks)
+                        ]
                         claim["verified_source_refs"] = verified_refs
                         if len(verified_refs) != len(refs):
                             claim["source_refs_verified"] = False
@@ -637,7 +779,8 @@ class AIService:
                             claim["verified"] = True
 
                 await asyncio.to_thread(
-                    repo.update_ai_run, run["id"],
+                    repo.update_ai_run,
+                    run["id"],
                     status="completed",
                     output_json=parsed,
                     grounding_status=grounding,
@@ -645,7 +788,10 @@ class AIService:
                 return {
                     "run_id": run["id"],
                     "session_id": session["id"],
-                    "answer_markdown": parsed.get("answer_markdown", answer_text),
+                    "answer_markdown": parsed.get(
+                        "answer_markdown",
+                        answer_text,
+                    ),
                     "claims": parsed.get("claims", []),
                     "uncertainties": parsed.get("uncertainties", []),
                     "grounding_status": grounding,
@@ -654,7 +800,8 @@ class AIService:
             else:
                 # Fallback: return plain text
                 await asyncio.to_thread(
-                    repo.update_ai_run, run["id"],
+                    repo.update_ai_run,
+                    run["id"],
                     status="completed",
                     output_json={"answer_markdown": answer_text},
                     grounding_status="ungrounded",
@@ -671,7 +818,8 @@ class AIService:
         except Exception as exc:
             logger.exception("[ulit] AI ask failed")
             await asyncio.to_thread(
-                repo.update_ai_run, run["id"],
+                repo.update_ai_run,
+                run["id"],
                 status="failed",
                 output_json={"error": str(exc)},
                 grounding_status="ungrounded",
@@ -688,14 +836,29 @@ class AIService:
         chunks = await asyncio.to_thread(repo.get_chunks_for_paper, paper_id)
         context_parts = []
         for ch in chunks[:15]:
-            page_info = f"p.{(ch['page_start'] or 0) + 1}" if ch.get("page_start") is not None else ""
+            page_info = (
+                f"p.{(ch['page_start'] or 0) + 1}"
+                if ch.get("page_start") is not None
+                else ""
+            )
             context_parts.append(f"[{page_info}]\n{ch['text'][:1500]}\n")
 
-        context = "\n---\n".join(context_parts) if context_parts else paper.get("abstract", "")
+        context = (
+            "\n---\n".join(context_parts)
+            if context_parts
+            else paper.get("abstract", "")
+        )
 
-        session = await AIService.get_or_create_session("paper", paper_id, "reading-card")
+        session = await AIService.get_or_create_session(
+            "paper",
+            paper_id,
+            "reading-card",
+        )
         run = await asyncio.to_thread(
-            repo.create_ai_run, session["id"], ctx.config.get("active_model", "qwen-max"), "reading_card_v1",
+            repo.create_ai_run,
+            session["id"],
+            ctx.config.get("active_model", "qwen-max"),
+            "reading_card_v1",
         )
 
         user_msg = f"""论文标题: {paper['title']}
@@ -711,7 +874,8 @@ class AIService:
         parsed = _extract_json(text) or {}
 
         await asyncio.to_thread(
-            repo.update_ai_run, run["id"],
+            repo.update_ai_run,
+            run["id"],
             status="completed",
             output_json=parsed if parsed else {"raw": text},
             grounding_status="grounded" if parsed else "ungrounded",
@@ -730,7 +894,9 @@ class AIService:
         if session is None:
             return []
         try:
-            history = await ctx.get_session_history(session_id=session["qwen_session_id"])
+            history = await ctx.get_session_history(
+                session_id=session["qwen_session_id"],
+            )
             return history
         except Exception:
             logger.exception("[ulit] Failed to get session history")
@@ -751,8 +917,8 @@ class AIService:
 #  Export Service
 # ════════════════════════════════════════════════════════════════════
 
-class ExportService:
 
+class ExportService:
     @staticmethod
     async def export_markdown(
         *,
@@ -764,7 +930,10 @@ class ExportService:
         """Export papers, annotations, and evidence as Markdown."""
         if paper_ids is None:
             if project_id:
-                papers = await asyncio.to_thread(repo.get_project_papers, project_id)
+                papers = await asyncio.to_thread(
+                    repo.get_project_papers,
+                    project_id,
+                )
                 paper_ids = [p["id"] for p in papers]
             else:
                 papers = await asyncio.to_thread(repo.list_papers, limit=500)
@@ -801,19 +970,34 @@ class ExportService:
             if include_annotations:
                 files = await asyncio.to_thread(repo.get_paper_files, pid)
                 for f in files:
-                    annos = await asyncio.to_thread(repo.list_annotations, f["id"])
+                    annos = await asyncio.to_thread(
+                        repo.list_annotations,
+                        f["id"],
+                    )
                     if annos:
                         lines.append("### 标注\n")
                         for a in annos:
                             page = a["page_index"] + 1
-                            lines.append(f"- **p.{page} [{a['type']}]**: {a['selected_text'][:200]}")
+                            lines.append(
+                                f"- **p."
+                                f"{page}"
+                                f" ["
+                                f"{a['type']}"
+                                f"]**: "
+                                f"{a['selected_text'][:200]}",
+                            )
                             if a.get("comment"):
                                 lines.append(f"  - 批注: {a['comment']}")
                         lines.append("")
 
             if include_evidence and project_id:
-                evidence = await asyncio.to_thread(repo.list_evidence, project_id)
-                paper_evidence = [e for e in evidence if e.get("paper_id") == pid]
+                evidence = await asyncio.to_thread(
+                    repo.list_evidence,
+                    project_id,
+                )
+                paper_evidence = [
+                    e for e in evidence if e.get("paper_id") == pid
+                ]
                 if paper_evidence:
                     lines.append("### 证据卡片\n")
                     for e in paper_evidence:
@@ -837,7 +1021,10 @@ class ExportService:
         """Export papers as BibTeX."""
         if paper_ids is None:
             if project_id:
-                papers = await asyncio.to_thread(repo.get_project_papers, project_id)
+                papers = await asyncio.to_thread(
+                    repo.get_project_papers,
+                    project_id,
+                )
                 paper_ids = [p["id"] for p in papers]
             else:
                 papers = await asyncio.to_thread(repo.list_papers, limit=500)
@@ -851,19 +1038,33 @@ class ExportService:
             authors = await asyncio.to_thread(repo.get_paper_authors, pid)
             author_str = " and ".join(a["canonical_name"] for a in authors)
             # Generate citation key
-            first_author = authors[0]["canonical_name"].split()[-1] if authors else "Unknown"
+            first_author = (
+                authors[0]["canonical_name"].split()[-1]
+                if authors
+                else "Unknown"
+            )
             year = paper.get("year", "nd")
-            title_word = paper.get("title", "").split()[0] if paper.get("title") else "Untitled"
+            title_word = (
+                paper.get("title", "").split()[0]
+                if paper.get("title")
+                else "Untitled"
+            )
             key = f"{first_author}{year}{title_word}".lower()
 
-            entry_type = "article" if paper.get("type") == "journal" else "inproceedings"
+            entry_type = (
+                "article"
+                if paper.get("type") == "journal"
+                else "inproceedings"
+            )
             lines.append(f"@{entry_type}{{{key},")
             lines.append(f"  title = {{{paper.get('title', '')}}},")
             lines.append(f"  author = {{{author_str}}},")
             if paper.get("year"):
                 lines.append(f"  year = {{{paper['year']}}},")
             if paper.get("venue"):
-                venue_field = "journal" if entry_type == "article" else "booktitle"
+                venue_field = (
+                    "journal" if entry_type == "article" else "booktitle"
+                )
                 lines.append(f"  {venue_field} = {{{paper['venue']}}},")
             if paper.get("doi"):
                 lines.append(f"  doi = {{{paper['doi']}}},")
@@ -884,7 +1085,10 @@ class ExportService:
         """Export all data as JSON (CSL-JSON compatible for papers)."""
         if paper_ids is None:
             if project_id:
-                papers = await asyncio.to_thread(repo.get_project_papers, project_id)
+                papers = await asyncio.to_thread(
+                    repo.get_project_papers,
+                    project_id,
+                )
                 paper_ids = [p["id"] for p in papers]
             else:
                 papers = await asyncio.to_thread(repo.list_papers, limit=500)
@@ -901,14 +1105,24 @@ class ExportService:
 
             csl_item = {
                 "id": paper["id"],
-                "type": "article-journal" if paper.get("type") == "journal" else "paper-conference",
+                "type": "article-journal"
+                if paper.get("type") == "journal"
+                else "paper-conference",
                 "title": paper.get("title", ""),
                 "author": [
-                    {"family": a["canonical_name"].split()[-1] if " " in a["canonical_name"] else a["canonical_name"],
-                     "given": " ".join(a["canonical_name"].split()[:-1]) if " " in a["canonical_name"] else ""}
+                    {
+                        "family": a["canonical_name"].split()[-1]
+                        if " " in a["canonical_name"]
+                        else a["canonical_name"],
+                        "given": " ".join(a["canonical_name"].split()[:-1])
+                        if " " in a["canonical_name"]
+                        else "",
+                    }
                     for a in authors
                 ],
-                "issued": {"date-parts": [[paper["year"]]]} if paper.get("year") else None,
+                "issued": {"date-parts": [[paper["year"]]]}
+                if paper.get("year")
+                else None,
                 "container-title": paper.get("venue", ""),
                 "DOI": paper.get("doi", ""),
                 "abstract": paper.get("abstract", ""),
@@ -919,33 +1133,43 @@ class ExportService:
             if include_annotations:
                 files = await asyncio.to_thread(repo.get_paper_files, pid)
                 for f in files:
-                    annos = await asyncio.to_thread(repo.list_annotations, f["id"])
+                    annos = await asyncio.to_thread(
+                        repo.list_annotations,
+                        f["id"],
+                    )
                     for a in annos:
-                        result["annotations"].append({
-                            "id": a["id"],
-                            "paper_id": pid,
-                            "file_id": f["id"],
-                            "page_index": a["page_index"],
-                            "type": a["type"],
-                            "selected_text": a["selected_text"],
-                            "comment": a["comment"],
-                            "color": a["color"],
-                        })
+                        result["annotations"].append(
+                            {
+                                "id": a["id"],
+                                "paper_id": pid,
+                                "file_id": f["id"],
+                                "page_index": a["page_index"],
+                                "type": a["type"],
+                                "selected_text": a["selected_text"],
+                                "comment": a["comment"],
+                                "color": a["color"],
+                            },
+                        )
 
             if include_evidence and project_id:
-                evidence = await asyncio.to_thread(repo.list_evidence, project_id)
+                evidence = await asyncio.to_thread(
+                    repo.list_evidence,
+                    project_id,
+                )
                 for e in evidence:
                     if e.get("paper_id") == pid:
                         result["evidence"].append(e)
 
             notes = await asyncio.to_thread(repo.list_notes, paper_id=pid)
             for n in notes:
-                result["notes"].append({
-                    "id": n["id"],
-                    "paper_id": pid,
-                    "title": n["title"],
-                    "content_markdown": n["content_markdown"],
-                })
+                result["notes"].append(
+                    {
+                        "id": n["id"],
+                        "paper_id": pid,
+                        "title": n["title"],
+                        "content_markdown": n["content_markdown"],
+                    },
+                )
 
         return json.dumps(result, ensure_ascii=False, indent=2)
 
@@ -953,6 +1177,7 @@ class ExportService:
 # ════════════════════════════════════════════════════════════════════
 #  Helper functions
 # ════════════════════════════════════════════════════════════════════
+
 
 def _write_bytes(path: Path, data: bytes) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -969,13 +1194,17 @@ def _extract_pdf_text(file_path: str) -> list[str]:
         try:
             # Try pdfminer as fallback
             from pdfminer.high_level import extract_text
+
             text = extract_text(file_path)
             # Can't get per-page with this simple call, return as single page
             return [text] if text else []
         except ImportError:
-            logger.warning("[ulit] No PDF text extraction library available (install PyMuPDF or pdfminer.six)")
+            logger.warning(
+                "[ulit] No PDF text extraction library "
+                "available (install PyMuPDF or pdfminer.six)",
+            )
             return []
-    
+
     try:
         doc = fitz.open(file_path)
         page_texts = []
@@ -996,24 +1225,48 @@ def _resolve_crossref(doi: str) -> dict[str, Any]:
     response error simply returns an empty dict; the caller keeps the DOI
     entry so users can retry enrichment later.
     """
-    normalized = doi.strip().removeprefix("https://doi.org/").removeprefix("http://doi.org/")
+    normalized = (
+        doi.strip()
+        .removeprefix("https://doi.org/")
+        .removeprefix("http://doi.org/")
+    )
     if not normalized:
         return {}
     url = "https://api.crossref.org/works/" + quote(normalized, safe="")
     email = os.environ.get("ULIT_METADATA_EMAIL", "")
-    user_agent = "ULit/0.1 (local research app)" + (f" mailto:{email}" if email else "")
+    user_agent = "ULit/0.1 (local research app)" + (
+        f" mailto:{email}" if email else ""
+    )
     try:
-        request = Request(url, headers={"Accept": "application/json", "User-Agent": user_agent})
-        with urlopen(request, timeout=8) as response:  # nosec B310 — fixed HTTPS host
+        request = Request(
+            url,
+            headers={"Accept": "application/json", "User-Agent": user_agent},
+        )
+        with urlopen(
+            request,
+            timeout=8,
+        ) as response:  # nosec B310 — fixed HTTPS host
             payload = json.loads(response.read().decode("utf-8"))
         item = payload.get("message", {})
         title = (item.get("title") or [""])[0]
-        abstract = unescape(re.sub(r"<[^>]+>", "", item.get("abstract", ""))).strip()
-        date_parts = (item.get("published-print") or item.get("published-online") or item.get("issued") or {}).get("date-parts", [])
+        abstract = unescape(
+            re.sub(r"<[^>]+>", "", item.get("abstract", "")),
+        ).strip()
+        date_parts = (
+            item.get("published-print")
+            or item.get("published-online")
+            or item.get("issued")
+            or {}
+        ).get("date-parts", [])
         year = date_parts[0][0] if date_parts and date_parts[0] else None
         authors = []
         for author in item.get("author", []):
-            name = " ".join(filter(None, [author.get("given", ""), author.get("family", "")])).strip()
+            name = " ".join(
+                filter(
+                    None,
+                    [author.get("given", ""), author.get("family", "")],
+                ),
+            ).strip()
             if name:
                 authors.append(name)
         return {
@@ -1025,7 +1278,11 @@ def _resolve_crossref(doi: str) -> dict[str, Any]:
             "type": _crossref_type_to_paper(item.get("type", "")),
         }
     except Exception as exc:  # network failures are intentionally non-fatal
-        logger.info("[ulit] Crossref metadata unavailable for %s: %s", normalized, exc)
+        logger.info(
+            "[ulit] Crossref metadata unavailable for %s: %s",
+            normalized,
+            exc,
+        )
         return {}
 
 
@@ -1048,7 +1305,7 @@ def _extract_json(text: str) -> dict | None:
     if text.startswith("```"):
         lines = text.split("\n")
         # Remove first and last line (fences)
-        lines = [l for l in lines if not l.strip().startswith("```")]
+        lines = [line for line in lines if not line.strip().startswith("```")]
         text = "\n".join(lines)
 
     try:
@@ -1068,7 +1325,8 @@ def _extract_json(text: str) -> dict | None:
 
 
 def _verify_quote(quote: str, chunks: list[dict]) -> bool:
-    """Check if a quote exists in any chunk text (case-insensitive, trimmed)."""
+    """Check if a quote exists in any chunk text (case-insensitive, \
+trimmed)."""
     if not quote or len(quote) < 5:
         return True  # Too short to verify reliably
     q = quote.strip().lower()
@@ -1078,7 +1336,11 @@ def _verify_quote(quote: str, chunks: list[dict]) -> bool:
     return False
 
 
-def _verify_source_ref(source_ref: str, paper_id: str, chunks: list[dict]) -> bool:
+def _verify_source_ref(
+    source_ref: str,
+    paper_id: str,
+    chunks: list[dict],
+) -> bool:
     """Validate the source-ref format emitted by the Q&A prompt."""
     if not isinstance(source_ref, str) or not source_ref:
         return False
@@ -1096,7 +1358,11 @@ def _parse_bibtex(content: str) -> list[dict]:
         entry_type = match.group(1).lower()
         fields_text = match.group(3)
         entry = {"type": _bibtex_type_to_paper(entry_type)}
-        for field_match in re.finditer(r"(\w+)\s*=\s*\{(.*?)\}", fields_text, re.DOTALL):
+        for field_match in re.finditer(
+            r"(\w+)\s*=\s*\{(.*?)\}",
+            fields_text,
+            re.DOTALL,
+        ):
             key = field_match.group(1).lower()
             value = field_match.group(2).strip()
             if key == "title":
@@ -1108,7 +1374,7 @@ def _parse_bibtex(content: str) -> list[dict]:
                     entry["year"] = int(value)
                 except ValueError:
                     pass
-            elif key == "journal" or key == "booktitle":
+            elif key in ("journal", "booktitle"):
                 entry["venue"] = value
             elif key == "abstract":
                 entry["abstract"] = value
@@ -1155,18 +1421,18 @@ def _parse_ris(content: str) -> list[dict]:
                 entries.append(current)
             current = {"type": "other"}
             current_authors = []
-        elif tag == "TI" or tag == "T1":
+        elif tag in ("TI", "T1"):
             current["title"] = value
-        elif tag == "AU" or tag == "A1":
+        elif tag in ("AU", "A1"):
             current_authors.append(value)
-        elif tag == "PY" or tag == "Y1":
+        elif tag in ("PY", "Y1"):
             try:
                 current["year"] = int(value[:4])
             except ValueError:
                 pass
-        elif tag == "JO" or tag == "JF":
+        elif tag in ("JO", "JF"):
             current["venue"] = value
-        elif tag == "AB" or tag == "N2":
+        elif tag in ("AB", "N2"):
             current["abstract"] = value
         elif tag == "DO":
             current["doi"] = value

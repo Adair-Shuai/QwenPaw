@@ -5,7 +5,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import logging
 
 from ...io import IO, Hidden, HiddenHolder, NodeOutput, Schema
 from ..base import WorkflowNode
@@ -24,8 +23,10 @@ class ConditionNode(WorkflowNode):
             display_name="Condition",
             category="workflow/control",
             description=(
-                "Evaluates each 'condition' in control.conditions and routes to "
-                "the first matching ``then_node``. Falls back to ``else_node``."
+                "Evaluates each 'condition' in control.co"
+                "nditions and routes to "
+                "the first matching ``then_node``. Falls "
+                "back to ``else_node``."
             ),
             inputs=[],
             outputs=[IO.Object.Output(id="result")],
@@ -33,7 +34,12 @@ class ConditionNode(WorkflowNode):
             control_flow=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         state = hidden.workflow_state
         node_id = hidden.unique_id
         control = _control_for(hidden, node_id)
@@ -46,8 +52,10 @@ class ConditionNode(WorkflowNode):
                 matched = _eval(state, expr)
             except Exception as exc:  # noqa: BLE001
                 logger.warning(
-                    "condition_eval_error", node_id=node_id,
-                    index=i, error=str(exc),
+                    "condition_eval_error",
+                    node_id=node_id,
+                    index=i,
+                    error=str(exc),
                 )
                 continue
             if matched:
@@ -65,12 +73,15 @@ class ConditionNode(WorkflowNode):
                 metadata={"used_else": True},
             )
 
-        return NodeOutput(error="No condition matched and no else branch defined")
+        return NodeOutput(
+            error="No condition matched and no else branch defined",
+        )
 
 
 def _eval(state: Any, expr: Any) -> bool:
     if isinstance(expr, dict):
         from ...types import ConditionExpression
+
         expr = ConditionExpression.model_validate(expr)
     if state is not None and hasattr(state, "evaluate_expression"):
         return bool(state.evaluate_expression(expr))

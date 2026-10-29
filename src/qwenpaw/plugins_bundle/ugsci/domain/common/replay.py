@@ -41,7 +41,12 @@ def _persisted_key() -> bytes:
                 raise ValueError("invalid replay signing key")
         except FileNotFoundError:
             key = secrets.token_bytes(_KEY_BYTES)
-            flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY | getattr(os, "O_NOFOLLOW", 0)
+            flags = (
+                os.O_CREAT
+                | os.O_EXCL
+                | os.O_WRONLY
+                | getattr(os, "O_NOFOLLOW", 0)
+            )
             try:
                 fd = os.open(path, flags, 0o600)
             except FileExistsError:
@@ -67,7 +72,9 @@ def _key() -> bytes:
     except (ImportError, OSError):
         # A process fallback keeps restricted/read-only environments usable.
         if not hasattr(_key, "_fallback"):
-            _key._fallback = secrets.token_bytes(32)  # type: ignore[attr-defined]
+            _key._fallback = secrets.token_bytes(  # type: ignore[attr-defined]
+                32,
+            )
         return _key._fallback  # type: ignore[attr-defined]
 
 
@@ -80,9 +87,18 @@ def _unb64(value: str) -> bytes:
 
 
 def encode_replay_token(payload: dict[str, Any]) -> str:
-    body = json.dumps(payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")).encode()
+    body = json.dumps(
+        payload,
+        ensure_ascii=True,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode()
     encoded = _b64(body)
-    signature = hmac.new(_key(), encoded.encode("ascii"), hashlib.sha256).hexdigest()
+    signature = hmac.new(
+        _key(),
+        encoded.encode("ascii"),
+        hashlib.sha256,
+    ).hexdigest()
     token = f"{TOKEN_PREFIX}:{encoded}:{signature}"
     if len(token) > MAX_TOKEN_LENGTH:
         raise ValueError("replay payload is too large")
@@ -96,9 +112,15 @@ def verify_replay_token(token: str) -> dict[str, Any]:
     if len(parts) != 5 or ":".join(parts[:3]) != TOKEN_PREFIX:
         raise ValueError("invalid replay token format")
     encoded, supplied = parts[3], parts[4]
-    if len(supplied) != 64 or any(ch not in "0123456789abcdef" for ch in supplied.lower()):
+    if len(supplied) != 64 or any(
+        ch not in "0123456789abcdef" for ch in supplied.lower()
+    ):
         raise ValueError("invalid replay token signature")
-    expected = hmac.new(_key(), encoded.encode("ascii"), hashlib.sha256).hexdigest()
+    expected = hmac.new(
+        _key(),
+        encoded.encode("ascii"),
+        hashlib.sha256,
+    ).hexdigest()
     if not hmac.compare_digest(supplied, expected):
         raise ValueError("replay token signature mismatch")
     try:

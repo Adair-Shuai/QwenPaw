@@ -11,7 +11,6 @@ from __future__ import annotations
 import threading
 from typing import Any, Iterator
 
-import logging
 
 from ..io import Schema
 
@@ -30,7 +29,12 @@ class NodeRegistry:
         self._display: dict[str, str] = {}
         self._module_index: dict[str, set[str]] = {}  # module_path -> node_ids
 
-    def register(self, cls: type[WorkflowNode], *, module_path: str | None = None) -> None:
+    def register(
+        self,
+        cls: type[WorkflowNode],
+        *,
+        module_path: str | None = None,
+    ) -> None:
         """Register a node class. Duplicates overwrite the previous class."""
         if not issubclass(cls, WorkflowNode):
             raise TypeError(f"{cls!r} is not a WorkflowNode subclass")
@@ -40,13 +44,22 @@ class NodeRegistry:
         with self._lock:
             prev = self._classes.get(node_id)
             if prev is not None and prev is not cls:
-                logger.info("node_registry_override", node_id=node_id, prev=prev.__name__, new=cls.__name__)
+                logger.info(
+                    "node_registry_override",
+                    node_id=node_id,
+                    prev=prev.__name__,
+                    new=cls.__name__,
+                )
             self._classes[node_id] = cls
             self._display[schema.display_name or node_id] = node_id
             if module_path:
                 cls.MODULE_PATH = module_path
                 self._module_index.setdefault(module_path, set()).add(node_id)
-            logger.debug("node_registered", node_id=node_id, module=module_path)
+            logger.debug(
+                "node_registered",
+                node_id=node_id,
+                module=module_path,
+            )
 
     def unregister(self, node_id: str) -> None:
         with self._lock:
@@ -101,12 +114,17 @@ class NodeRegistry:
 
     def schemas(self) -> dict[str, Schema]:
         with self._lock:
-            return {nid: cls.get_schema() for nid, cls in self._classes.items()}
+            return {
+                nid: cls.get_schema() for nid, cls in self._classes.items()
+            }
 
     def snapshot(self) -> dict[str, dict[str, Any]]:
         """Return the full ``/object_info`` payload."""
         with self._lock:
-            return {nid: cls.get_schema().get_info_dict() for nid, cls in self._classes.items()}
+            return {
+                nid: cls.get_schema().get_info_dict()
+                for nid, cls in self._classes.items()
+            }
 
     def all_types(self) -> list[dict[str, Any]]:
         """Frontend-friendly schema list used by the FlowForge editor."""
@@ -119,7 +137,8 @@ class NodeRegistry:
                 options = descriptor.get("options") or {}
                 raw_type = descriptor.get("type")
                 field_type = (
-                    "enum" if isinstance(raw_type, list)
+                    "enum"
+                    if isinstance(raw_type, list)
                     else str(raw_type or "any").lower()
                 )
                 inputs_schema.append(
@@ -154,14 +173,32 @@ class NodeRegistry:
                     "control_schema": (
                         (schema.metadata or {}).get("control_schema")
                         or {
-                            "ConditionNode": ["conditions", "else_node", "error_handler"],
+                            "ConditionNode": [
+                                "conditions",
+                                "else_node",
+                                "error_handler",
+                            ],
                             "ParallelNode": ["branches", "error_handler"],
-                            "HumanReviewNode": ["next", "on_reject", "error_handler"],
-                            "QualityGateNode": ["pass_node", "fail_node", "error_handler"],
-                            "IterativeRefineNode": ["retry_node", "exhausted_node", "error_handler"],
+                            "HumanReviewNode": [
+                                "next",
+                                "on_reject",
+                                "error_handler",
+                            ],
+                            "QualityGateNode": [
+                                "pass_node",
+                                "fail_node",
+                                "error_handler",
+                            ],
+                            "IterativeRefineNode": [
+                                "retry_node",
+                                "exhausted_node",
+                                "error_handler",
+                            ],
                         }.get(
                             node_id,
-                            ["next", "error_handler"] if schema.control_flow else [],
+                            ["next", "error_handler"]
+                            if schema.control_flow
+                            else [],
                         )
                     ),
                 },

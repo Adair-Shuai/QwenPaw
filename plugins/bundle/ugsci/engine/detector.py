@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=no-name-in-module
 """Engine detector — portable per-software detection strategies.
 
 Each software has its own optimized detection strategy:
@@ -10,6 +11,7 @@ Each software has its own optimized detection strategy:
 
 All engines are detected **in parallel** via ``ThreadPoolExecutor``.
 """
+
 from __future__ import annotations
 
 import logging
@@ -113,8 +115,15 @@ def _get_from_registry(vendor_key: str) -> Optional[str]:
     ]
 
     value_names = [
-        "COMSOLROOT", "CMG_HOME", "InstallDir", "InstallPath",
-        "Location", "Path", "BaseDir", "Home", "",
+        "COMSOLROOT",
+        "CMG_HOME",
+        "InstallDir",
+        "InstallPath",
+        "Location",
+        "Path",
+        "BaseDir",
+        "Home",
+        "",
     ]
 
     for hkey, reg_path in registry_paths:
@@ -131,6 +140,19 @@ def _get_from_registry(vendor_key: str) -> Optional[str]:
             continue
 
     return None
+
+
+def _registry_existing_values(key, value_names, subkey_name):
+    """Read existing vendor paths in the original registry value order."""
+    result = []
+    for name in value_names:
+        try:
+            value, _ = winreg.QueryValueEx(key, name)
+            if value and os.path.exists(value):
+                result.append((subkey_name, value))
+        except OSError:
+            continue
+    return result
 
 
 def _get_from_registry_subkeys(
@@ -161,13 +183,7 @@ def _get_from_registry_subkeys(
         try:
             with winreg.OpenKey(hkey, reg_path) as key:
                 # First, try direct value
-                for vn in value_names:
-                    try:
-                        val, _ = winreg.QueryValueEx(key, vn)
-                        if val and os.path.exists(val):
-                            results.append(("", val))
-                    except OSError:
-                        continue
+                results.extend(_registry_existing_values(key, value_names, ""))
                 # Enumerate subkeys
                 sub_idx = 0
                 while True:
@@ -177,13 +193,13 @@ def _get_from_registry_subkeys(
                         sub_idx += 1
                         try:
                             with winreg.OpenKey(hkey, sub_path) as sub_key:
-                                for vn in value_names:
-                                    try:
-                                        val, _ = winreg.QueryValueEx(sub_key, vn)
-                                        if val and os.path.exists(val):
-                                            results.append((sub_name, val))
-                                    except OSError:
-                                        continue
+                                results.extend(
+                                    _registry_existing_values(
+                                        sub_key,
+                                        value_names,
+                                        sub_name,
+                                    ),
+                                )
                         except OSError:
                             continue
                     except OSError:
@@ -215,10 +231,39 @@ _CMG_PLATFORM_DIRS = ["Win_x64", "win64", "Win32", "win32", ""]
 _CMG_EXE_SUBDIRS = ["EXE", "exe", "bin", os.path.join("bin", "win64")]
 
 # Legacy subdirectories (older CMG versions, flat structure)
-_CMG_LEGACY_SUBDIRS = ["exe", "bin", os.path.join("bin", "win64"), os.path.join("bin", "win32"), os.path.join("win", "exe")]
+_CMG_LEGACY_SUBDIRS = [
+    "exe",
+    "bin",
+    os.path.join("bin", "win64"),
+    os.path.join("bin", "win32"),
+    os.path.join("win", "exe"),
+]
 
 
-def _detect_cmg_from_home(cmg_home: str) -> Optional[Tuple[List[str], Dict[str, str], str]]:
+def _collect_legacy_cmg_module(
+    mod_dir: Path,
+    exe_pattern: str,
+    mod_name: str,
+    modules: List[str],
+    module_paths: Dict[str, str],
+) -> None:
+    """Collect one legacy module using the established subdirectory order."""
+    for subdir in _CMG_LEGACY_SUBDIRS:
+        exe_dir = mod_dir / subdir
+        if not exe_dir.is_dir():
+            continue
+        for exe_file in exe_dir.glob(exe_pattern):
+            if exe_file.is_file() and mod_name not in modules:
+                modules.append(mod_name)
+                module_paths[mod_name] = str(exe_file)
+                break
+        if mod_name in modules:
+            break
+
+
+def _detect_cmg_from_home(
+    cmg_home: str,
+) -> Optional[Tuple[List[str], Dict[str, str], str]]:
     """Detect CMG modules and version from a CMG home directory.
 
     Returns ``(modules, module_paths, version)`` or ``None``.
@@ -243,17 +288,13 @@ def _detect_cmg_from_home(cmg_home: str) -> Optional[Tuple[List[str], Dict[str, 
 
         if not version_dirs:
             # Legacy: no version subdirs — check exe/ directly under module dir
-            for subdir in _CMG_LEGACY_SUBDIRS:
-                exe_dir = mod_dir / subdir
-                if not exe_dir.is_dir():
-                    continue
-                for exe_file in exe_dir.glob(exe_pattern):
-                    if exe_file.is_file() and mod_name not in modules:
-                        modules.append(mod_name)
-                        module_paths[mod_name] = str(exe_file)
-                        break
-                if mod_name in modules:
-                    break
+            _collect_legacy_cmg_module(
+                mod_dir,
+                exe_pattern,
+                mod_name,
+                modules,
+                module_paths,
+            )
             continue
 
         # Sort by version, latest first
@@ -274,7 +315,10 @@ def _detect_cmg_from_home(cmg_home: str) -> Optional[Tuple[List[str], Dict[str, 
     return modules, module_paths, version or ""
 
 
-def _find_cmg_exe_in_version_dir(ver_dir: Path, exe_pattern: str) -> Optional[Path]:
+def _find_cmg_exe_in_version_dir(
+    ver_dir: Path,
+    exe_pattern: str,
+) -> Optional[Path]:
     """Find an executable in a CMG version directory.
 
     Checks ``<VERSION>/<PLATFORM>/<EXE_SUBDIR>/`` pattern.
@@ -293,6 +337,32 @@ def _find_cmg_exe_in_version_dir(ver_dir: Path, exe_pattern: str) -> Optional[Pa
     return None
 
 
+def _read_cmg_manifest_version(cmg_home: str) -> Optional[str]:
+    """Read the first available vendor version without changing priority."""
+    # 1. Parse InstallManifest XML
+    manifest_dir = Path(cmg_home) / "InstallManifest"
+    if manifest_dir.is_dir():
+        try:
+            for xml_file in manifest_dir.glob("MF_*.xml"):
+                try:
+                    content = xml_file.read_text(
+                        encoding="utf-8",
+                        errors="ignore",
+                    )
+                    match = re.search(
+                        r"<ProductVersion>([^<]+)</ProductVersion>",
+                        content,
+                    )
+                    if match:
+                        return match.group(1).strip()
+                except Exception:
+                    continue
+        except (PermissionError, OSError):
+            pass
+
+    return None
+
+
 def _extract_cmg_version(
     cmg_home: str,
     modules: List[str],
@@ -303,22 +373,12 @@ def _extract_cmg_version(
     Strategy:
     1. InstallManifest XML  2. Version directory name  3. Executable name
     """
-    # 1. Parse InstallManifest XML
-    manifest_dir = Path(cmg_home) / "InstallManifest"
-    if manifest_dir.is_dir():
-        try:
-            for xml_file in manifest_dir.glob("MF_*.xml"):
-                try:
-                    content = xml_file.read_text(encoding="utf-8", errors="ignore")
-                    match = re.search(
-                        r"<ProductVersion>([^<]+)</ProductVersion>", content,
-                    )
-                    if match:
-                        return match.group(1).strip()
-                except Exception:
-                    continue
-        except (PermissionError, OSError):
-            pass
+    # Module names are retained for older callers; versions come from paths
+    # and vendor manifests, never from the number of detected modules.
+    del modules
+    manifest_version = _read_cmg_manifest_version(cmg_home)
+    if manifest_version is not None:
+        return manifest_version
 
     # 2. Version directory name (e.g. IMEX/2025.30)
     for mod_dir_name in ["IMEX", "GEM", "STARS", "Launcher"]:
@@ -374,7 +434,13 @@ def _detect_cmg(engine: EngineInfo) -> EngineInfo:
         result = _detect_cmg_from_home(reg_path)
         if result:
             modules, module_paths, version = result
-            return _apply_cmg_result(engine, reg_path, modules, module_paths, version)
+            return _apply_cmg_result(
+                engine,
+                reg_path,
+                modules,
+                module_paths,
+                version,
+            )
 
     # 3. PATH.  Exact stable launcher names are preferred; versioned module
     # executables can still be supplied through executable_path/extra_paths.
@@ -409,7 +475,9 @@ def _apply_cmg_result(
     engine.status = "detected"
     logger.info(
         "CMG detected: version=%s, modules=%s, home=%s",
-        version, modules, cmg_home,
+        version,
+        modules,
+        cmg_home,
     )
     return engine
 
@@ -441,6 +509,20 @@ _COMSOL_EXECUTABLES = [
 ]
 
 
+def _find_comsol_version_directory(ver_dir: Path):
+    """Find a version's executable in vendor bin/name priority order."""
+    for subdir in _COMSOL_BIN_SUBDIRS:
+        bin_path = ver_dir / subdir
+        if not bin_path.is_dir():
+            continue
+        for exe_name in _COMSOL_EXECUTABLES:
+            exe_path = bin_path / exe_name
+            if exe_path.is_file():
+                version = _extract_comsol_version(ver_dir.name)
+                return str(exe_path), str(ver_dir), version or ""
+    return None
+
+
 def _detect_comsol_from_base(base_dir: str) -> Optional[Tuple[str, str, str]]:
     """Detect COMSOL from a base installation directory.
 
@@ -458,42 +540,37 @@ def _detect_comsol_from_base(base_dir: str) -> Optional[Tuple[str, str, str]]:
     version_dirs: List[Path] = []
     try:
         for item in base_path.iterdir():
-            if item.is_dir() and re.match(r"COMSOL\d+", item.name, re.IGNORECASE):
+            if item.is_dir() and re.match(
+                r"COMSOL\d+",
+                item.name,
+                re.IGNORECASE,
+            ):
                 version_dirs.append(item)
     except (PermissionError, OSError):
         return None
 
     # Sort by version number (highest first)
     version_dirs.sort(
-        key=lambda x: int(re.search(r"COMSOL(\d+)", x.name, re.IGNORECASE).group(1))
-        if re.search(r"COMSOL(\d+)", x.name, re.IGNORECASE) else 0,
+        key=lambda x: (
+            int(
+                re.search(r"COMSOL(\d+)", x.name, re.IGNORECASE).group(1),
+            )
+            if re.search(r"COMSOL(\d+)", x.name, re.IGNORECASE)
+            else 0
+        ),
         reverse=True,
     )
 
     for ver_dir in version_dirs:
-        for subdir in _COMSOL_BIN_SUBDIRS:
-            bin_path = ver_dir / subdir
-            if not bin_path.is_dir():
-                continue
-            for exe_name in _COMSOL_EXECUTABLES:
-                exe_path = bin_path / exe_name
-                if exe_path.is_file():
-                    version = _extract_comsol_version(ver_dir.name)
-                    return str(exe_path), str(ver_dir), version or ""
+        result = _find_comsol_version_directory(ver_dir)
+        if result:
+            return result
 
     # Also check if base_dir itself is a version directory
     # (e.g. registry returns the COMSOL61 directory directly)
     dir_name = base_path.name
     if re.match(r"COMSOL\d+", dir_name, re.IGNORECASE):
-        for subdir in _COMSOL_BIN_SUBDIRS:
-            bin_path = base_path / subdir
-            if not bin_path.is_dir():
-                continue
-            for exe_name in _COMSOL_EXECUTABLES:
-                exe_path = bin_path / exe_name
-                if exe_path.is_file():
-                    version = _extract_comsol_version(dir_name)
-                    return str(exe_path), str(base_path), version or ""
+        return _find_comsol_version_directory(base_path)
 
     return None
 
@@ -512,6 +589,59 @@ def _extract_comsol_version(dir_name: str) -> Optional[str]:
             return f"{version_num[0]}.{version_num[1]}.{version_num[2]}"
         elif len(version_num) >= 4:
             return f"{version_num[:2]}.{version_num[2]}.{version_num[3:]}"
+    return None
+
+
+def _detect_comsol_registry(engine: EngineInfo):
+    """Resolve COMSOL registry candidates in their existing priority order."""
+    # 2. Registry — check multiple possible keys and subkeys
+    for reg_key in ["COMSOL\\COMSOL", "COMSOL", "COMSOL AB"]:
+        # Direct registry value
+        reg_path = _get_from_registry(reg_key)
+        if reg_path and os.path.isdir(reg_path):
+            result = _detect_comsol_from_base(reg_path)
+            if result:
+                exe, install_dir, version = result
+                return _apply_comsol_result(engine, exe, install_dir, version)
+            # Maybe registry returns the version dir directly
+            result = _detect_comsol_from_base(
+                (
+                    str(Path(reg_path).parent)
+                    if re.match(
+                        r"COMSOL\d+",
+                        Path(reg_path).name,
+                        re.IGNORECASE,
+                    )
+                    else reg_path
+                ),
+            )
+            if result:
+                exe, install_dir, version = result
+                return _apply_comsol_result(engine, exe, install_dir, version)
+
+        # Enumerate subkeys (for per-version keys like COMSOL61)
+        subkey_results = _get_from_registry_subkeys(reg_key)
+        for _sub_name, sub_path in subkey_results:
+            result = _detect_comsol_from_base(sub_path)
+            if result:
+                exe, install_dir, version = result
+                return _apply_comsol_result(engine, exe, install_dir, version)
+            # Also try parent directory (registry might return bin/win64 path)
+            parent = (
+                str(Path(sub_path).parent.parent)
+                if len(Path(sub_path).parts) > 2
+                else sub_path
+            )
+            if parent != sub_path:
+                result = _detect_comsol_from_base(parent)
+                if result:
+                    exe, install_dir, version = result
+                    return _apply_comsol_result(
+                        engine,
+                        exe,
+                        install_dir,
+                        version,
+                    )
     return None
 
 
@@ -537,37 +667,9 @@ def _detect_comsol(engine: EngineInfo) -> EngineInfo:
                 exe, install_dir, version = result
                 return _apply_comsol_result(engine, exe, install_dir, version)
 
-    # 2. Registry — check multiple possible keys and subkeys
-    for reg_key in ["COMSOL\\COMSOL", "COMSOL", "COMSOL AB"]:
-        # Direct registry value
-        reg_path = _get_from_registry(reg_key)
-        if reg_path and os.path.isdir(reg_path):
-            result = _detect_comsol_from_base(reg_path)
-            if result:
-                exe, install_dir, version = result
-                return _apply_comsol_result(engine, exe, install_dir, version)
-            # Maybe registry returns the version dir directly
-            result = _detect_comsol_from_base(
-                str(Path(reg_path).parent) if re.match(r"COMSOL\d+", Path(reg_path).name, re.IGNORECASE) else reg_path,
-            )
-            if result:
-                exe, install_dir, version = result
-                return _apply_comsol_result(engine, exe, install_dir, version)
-
-        # Enumerate subkeys (for per-version keys like COMSOL61)
-        subkey_results = _get_from_registry_subkeys(reg_key)
-        for sub_name, sub_path in subkey_results:
-            result = _detect_comsol_from_base(sub_path)
-            if result:
-                exe, install_dir, version = result
-                return _apply_comsol_result(engine, exe, install_dir, version)
-            # Also try parent directory (registry might return bin/win64 path)
-            parent = str(Path(sub_path).parent.parent) if len(Path(sub_path).parts) > 2 else sub_path
-            if parent != sub_path:
-                result = _detect_comsol_from_base(parent)
-                if result:
-                    exe, install_dir, version = result
-                    return _apply_comsol_result(engine, exe, install_dir, version)
+    registry_result = _detect_comsol_registry(engine)
+    if registry_result is not None:
+        return registry_result
 
     # 3. Fallback: try PATH
     for exe_name in _COMSOL_EXECUTABLES:
@@ -600,7 +702,8 @@ def _apply_comsol_result(
     engine.status = "detected"
     logger.info(
         "COMSOL detected: version=%s, path=%s",
-        engine.version, exe_path,
+        engine.version,
+        exe_path,
     )
     return engine
 
@@ -612,17 +715,22 @@ def _apply_comsol_result(
 # All Schlumberger simulator executable names (lowercase)
 # Eclipse family — E100, E300, ECLRUN, FrontSim, Visage, Petrel
 _ECLIPSE_EXE_NAMES: set = {
-    "eclipse.exe", "eclipse_msmpi.exe",
-    "e100.exe", "e100_msmpi.exe",
-    "e300.exe", "e300_msmpi.exe",
+    "eclipse.exe",
+    "eclipse_msmpi.exe",
+    "e100.exe",
+    "e100_msmpi.exe",
+    "e300.exe",
+    "e300_msmpi.exe",
     "eclrun.exe",
     "frontsim.exe",
     "visage.exe",
-    "petrel.exe", "petrel_b.exe",
+    "petrel.exe",
+    "petrel_b.exe",
 }
 # Intersect family
 _INTERSECT_EXE_NAMES: set = {
-    "intersect.exe", "ix.exe",
+    "intersect.exe",
+    "ix.exe",
 }
 # Combined set — used when scanning a Schlumberger install root
 # that may contain products from multiple families.
@@ -631,16 +739,16 @@ _ALL_SCHLUMBERGER_EXE_NAMES: set = _ECLIPSE_EXE_NAMES | _INTERSECT_EXE_NAMES
 # Product identification rules: (exe-name regex, sub-product label)
 _ECLIPSE_PRODUCT_RULES = [
     (re.compile(r"^eclipse(_msmpi)?\.exe$", re.I), "ECLIPSE_100"),
-    (re.compile(r"^e100(_msmpi)?\.exe$", re.I),    "ECLIPSE_100"),
-    (re.compile(r"^e300(_msmpi)?\.exe$", re.I),    "ECLIPSE_300"),
-    (re.compile(r"^eclrun\.exe$", re.I),           "ECLRUN"),
-    (re.compile(r"^frontsim\.exe$", re.I),         "FRONTSIM"),
-    (re.compile(r"^visage\.exe$", re.I),           "VISAGE"),
-    (re.compile(r"^petrel(_b)?\.exe$", re.I),      "PETREL"),
+    (re.compile(r"^e100(_msmpi)?\.exe$", re.I), "ECLIPSE_100"),
+    (re.compile(r"^e300(_msmpi)?\.exe$", re.I), "ECLIPSE_300"),
+    (re.compile(r"^eclrun\.exe$", re.I), "ECLRUN"),
+    (re.compile(r"^frontsim\.exe$", re.I), "FRONTSIM"),
+    (re.compile(r"^visage\.exe$", re.I), "VISAGE"),
+    (re.compile(r"^petrel(_b)?\.exe$", re.I), "PETREL"),
 ]
 _INTERSECT_PRODUCT_RULES = [
-    (re.compile(r"^intersect\.exe$", re.I),         "INTERSECT"),
-    (re.compile(r"^ix\.exe$", re.I),                 "INTERSECT"),
+    (re.compile(r"^intersect\.exe$", re.I), "INTERSECT"),
+    (re.compile(r"^ix\.exe$", re.I), "INTERSECT"),
 ]
 
 # tNavigator executable patterns (used by tNavigator strategy)
@@ -656,9 +764,15 @@ _SCHLUMBERGER_HOME_ENV: Dict[str, Tuple[str, ...]] = {
 # Architecture subdirectories within bin/ (Eclipse/Intersect)
 # Includes MPI variant dirs used by Intersect (x64_ilmpi, x64_msmpi)
 _SCHLUMBERGER_ARCH_DIRS = [
-    "pc_x86_64", "pc_x86_64e", "pc_win32",
-    "win64", "win32", "x64", "x86_64",
-    "x64_ilmpi", "x64_msmpi",  # Intersect MPI variants
+    "pc_x86_64",
+    "pc_x86_64e",
+    "pc_win32",
+    "win64",
+    "win32",
+    "x64",
+    "x86_64",
+    "x64_ilmpi",
+    "x64_msmpi",  # Intersect MPI variants
     "",  # flat layout (no arch subdir)
 ]
 
@@ -691,7 +805,8 @@ _SCHLUMBERGER_VERSION_PATTERN = re.compile(r"^(\d{4}\.\d+)$")
 
 # PRT file version extraction pattern
 _PRT_VERSION_PATTERN = re.compile(
-    r"(?:Schlumberger\s+)?(?:ECLIPSE|E300|INTERSECT|FrontSim|VISAGE)\s+([\d.]+)\s*"
+    "(?:Schlumberger\\s+)?(?:ECLIPSE|E300|INTERSECT|FrontSim|V"
+    "ISAGE)\\s+([\\d.]+)\\s*"
     r"(?:\(Build\s+([\d.]+)\)\s*)?(?:\(?(\d+\s*bit)?\)?)?",
     re.I,
 )
@@ -707,15 +822,22 @@ _LICENSE_ENV_VARS = [
 ]
 
 # Registry uninstall keys (Windows) for Schlumberger products
-_REGISTRY_UNINSTALL_KEYS = [
-    (winreg.HKEY_LOCAL_MACHINE,
-     r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall") if winreg else None,
-    (winreg.HKEY_LOCAL_MACHINE,
-     r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall") if winreg else None,
-    (winreg.HKEY_CURRENT_USER,
-     r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall") if winreg else None,
-]
-_REGISTRY_UNINSTALL_KEYS = [k for k in _REGISTRY_UNINSTALL_KEYS if k is not None]
+_REGISTRY_UNINSTALL_KEYS: list[tuple[Any, str]] = []
+if winreg:
+    _REGISTRY_UNINSTALL_KEYS = [
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
+        (
+            winreg.HKEY_LOCAL_MACHINE,
+            r"SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
+        (
+            winreg.HKEY_CURRENT_USER,
+            r"SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall",
+        ),
+    ]
 
 # Registry name match pattern for Schlumberger products
 _REGISTRY_NAME_PATTERN = re.compile(
@@ -727,9 +849,9 @@ _REGISTRY_NAME_PATTERN = re.compile(
 # (they are not the simulator itself — we want the real simulator exe).
 # These are still searched in Layers 2-3 (registry + common paths).
 _PATH_SKIP_EXES: set = {
-    "eclrun.exe",     # ECLRUN launcher
-    "petrel.exe",     # Petrel platform (not a simulator)
-    "petrel_b.exe",   # Petrel batch
+    "eclrun.exe",  # ECLRUN launcher
+    "petrel.exe",  # Petrel platform (not a simulator)
+    "petrel_b.exe",  # Petrel batch
 }
 
 # Minimal smoke-test deck (1x1x1, single-phase gas, ~seconds to run)
@@ -829,6 +951,119 @@ END
 """
 
 
+def _configured_schlumberger(engine: EngineInfo, exe_names: set):
+    """Resolve explicit paths before considering environment PATH."""
+    found_exe = found_version = found_arch = found_install_root = None
+    source = "unknown"
+    # ── Layer 1: explicit configuration ──────────────────────────
+    env_names = _SCHLUMBERGER_HOME_ENV.get(engine.id, ())
+    for configured in _configured_paths(engine, env_names):
+        if configured.is_file():
+            exe_lower = configured.name.lower()
+            if exe_lower in exe_names and exe_lower not in _PATH_SKIP_EXES:
+                found_exe = str(configured)
+                (
+                    found_version,
+                    found_install_root,
+                    found_arch,
+                ) = _infer_schlumberger_version_and_root(configured)
+                source = "configured"
+                break
+        for candidate in _bounded_roots(configured):
+            result = _scan_schlumberger_dir(candidate, exe_names)
+            if result:
+                (
+                    found_exe,
+                    found_version,
+                    found_install_root,
+                    found_arch,
+                ) = result
+                source = "configured"
+                break
+        if found_exe:
+            break
+
+    return found_exe, found_version, found_install_root, found_arch, source
+
+
+def _path_schlumberger(exe_names: set):
+    """Find real simulator executables without accepting PATH launchers."""
+    found_exe = found_version = found_arch = found_install_root = None
+    source = "unknown"
+    path_env = os.environ.get("PATH", "")
+    for p in path_env.split(os.pathsep):
+        if not p:
+            continue
+        try:
+            pp = Path(p)
+            for exe in pp.glob("*.exe"):
+                exe_lower = exe.name.lower()
+                if exe_lower in exe_names and exe_lower not in _PATH_SKIP_EXES:
+                    found_exe = str(exe)
+                    source = "path"
+                    (
+                        found_version,
+                        found_install_root,
+                        found_arch,
+                    ) = _infer_schlumberger_version_and_root(exe)
+                    break
+            if found_exe:
+                break
+        except (PermissionError, OSError):
+            continue
+
+    return found_exe, found_version, found_install_root, found_arch, source
+
+
+def _apply_schlumberger_result(
+    engine: EngineInfo,
+    found_exe: str,
+    found_version,
+    found_arch,
+    found_install_root,
+    source: str,
+    product_rules,
+):
+    """Apply discovery fields and enrich simulator metadata."""
+    engine.executable_path = found_exe
+    engine.status = "detected"
+    if found_version:
+        engine.version = found_version
+    if found_arch:
+        engine.arch = found_arch
+    if found_install_root:
+        engine.install_dir = found_install_root
+    else:
+        engine.install_dir = str(Path(found_exe).parent.parent)
+
+    # Identify sub-product (E100/E300/Intersect)
+    for pattern, product_label in product_rules:
+        if pattern.match(Path(found_exe).name):
+            engine.extra_info["sub_product"] = product_label
+            break
+
+    # Enrich version from file info if still missing
+    if not engine.version:
+        ver = _extract_version_from_exe(found_exe)
+        if ver:
+            engine.version = ver
+
+    # Enrich version from path inference if still missing
+    if not engine.version:
+        ver, _, _ = _infer_schlumberger_version_and_root(Path(found_exe))
+        if ver:
+            engine.version = ver
+
+    logger.info(
+        "%s detected: version=%s, arch=%s, path=%s, source=%s",
+        engine.name,
+        engine.version,
+        engine.arch,
+        found_exe,
+        source,
+    )
+
+
 def _detect_schlumberger(
     engine: EngineInfo,
     exe_names: set,
@@ -844,55 +1079,23 @@ def _detect_schlumberger(
     Each layer fills in as much info as possible; later layers
     enrich fields left empty by earlier ones.
     """
-    found_exe: Optional[str] = None
-    found_version: Optional[str] = None
-    found_arch: Optional[str] = None
-    found_install_root: Optional[str] = None
-    source: str = "unknown"
-
-    # ── Layer 1: explicit configuration ──────────────────────────
-    env_names = _SCHLUMBERGER_HOME_ENV.get(engine.id, ())
-    for configured in _configured_paths(engine, env_names):
-        if configured.is_file():
-            exe_lower = configured.name.lower()
-            if exe_lower in exe_names and exe_lower not in _PATH_SKIP_EXES:
-                found_exe = str(configured)
-                found_version, found_install_root, found_arch = (
-                    _infer_schlumberger_version_and_root(configured)
-                )
-                source = "configured"
-                break
-        for candidate in _bounded_roots(configured):
-            result = _scan_schlumberger_dir(candidate, exe_names)
-            if result:
-                found_exe, found_version, found_install_root, found_arch = result
-                source = "configured"
-                break
-        if found_exe:
-            break
+    (
+        found_exe,
+        found_version,
+        found_install_root,
+        found_arch,
+        source,
+    ) = _configured_schlumberger(engine, exe_names)
 
     # ── Layer 2: PATH environment variable ───────────────────────
-    # Skip utility/launcher exes in PATH — we want the real simulator.
     if not found_exe:
-        path_env = os.environ.get("PATH", "")
-        for p in path_env.split(os.pathsep):
-            if not p:
-                continue
-            try:
-                pp = Path(p)
-                for exe in pp.glob("*.exe"):
-                    exe_lower = exe.name.lower()
-                    if exe_lower in exe_names and exe_lower not in _PATH_SKIP_EXES:
-                        found_exe = str(exe)
-                        source = "path"
-                        found_version, found_install_root, found_arch = (
-                            _infer_schlumberger_version_and_root(exe)
-                        )
-                        break
-                if found_exe:
-                    break
-            except (PermissionError, OSError):
-                continue
+        (
+            found_exe,
+            found_version,
+            found_install_root,
+            found_arch,
+            source,
+        ) = _path_schlumberger(exe_names)
 
     # ── Layer 3: Windows registry ─────────────────────────────────
     # Skip non-simulator exes in registry too — we want the real
@@ -901,43 +1104,24 @@ def _detect_schlumberger(
         reg_exe_names = exe_names - _PATH_SKIP_EXES
         reg_result = _search_registry_for_schlumberger(reg_exe_names)
         if reg_result:
-            found_exe, found_version, found_install_root, found_arch = reg_result
+            (
+                found_exe,
+                found_version,
+                found_install_root,
+                found_arch,
+            ) = reg_result
             source = "registry"
 
     # ── Apply detection result ────────────────────────────────────
     if found_exe and os.path.isfile(found_exe):
-        engine.executable_path = found_exe
-        engine.status = "detected"
-        if found_version:
-            engine.version = found_version
-        if found_arch:
-            engine.arch = found_arch
-        if found_install_root:
-            engine.install_dir = found_install_root
-        else:
-            engine.install_dir = str(Path(found_exe).parent.parent)
-
-        # Identify sub-product (E100/E300/Intersect)
-        for pattern, product_label in product_rules:
-            if pattern.match(Path(found_exe).name):
-                engine.extra_info["sub_product"] = product_label
-                break
-
-        # Enrich version from file info if still missing
-        if not engine.version:
-            ver = _extract_version_from_exe(found_exe)
-            if ver:
-                engine.version = ver
-
-        # Enrich version from path inference if still missing
-        if not engine.version:
-            ver, _, _ = _infer_schlumberger_version_and_root(Path(found_exe))
-            if ver:
-                engine.version = ver
-
-        logger.info(
-            "%s detected: version=%s, arch=%s, path=%s, source=%s",
-            engine.name, engine.version, engine.arch, found_exe, source,
+        _apply_schlumberger_result(
+            engine,
+            found_exe,
+            found_version,
+            found_arch,
+            found_install_root,
+            source,
+            product_rules,
         )
     else:
         engine.status = "not_found"
@@ -967,13 +1151,16 @@ def _search_registry_for_schlumberger(
                         subname = winreg.EnumKey(k, i)
                         with winreg.OpenKey(k, subname) as sk:
                             name = _reg_get_value(sk, "DisplayName")
-                            if not name or not _REGISTRY_NAME_PATTERN.search(name):
+                            if not name or not _REGISTRY_NAME_PATTERN.search(
+                                name,
+                            ):
                                 continue
                             loc = _reg_get_value(sk, "InstallLocation")
                             ver = _reg_get_value(sk, "DisplayVersion")
                             if loc and os.path.isdir(loc):
                                 result = _scan_schlumberger_dir(
-                                    Path(loc), exe_names,
+                                    Path(loc),
+                                    exe_names,
                                 )
                                 if result:
                                     exe_path, _, install_root, arch = result
@@ -982,6 +1169,37 @@ def _search_registry_for_schlumberger(
                         continue
         except OSError:
             continue
+    return None
+
+
+def _scan_schlumberger_other_dirs(
+    root: Path,
+    primary_exes: set,
+    exe_names: set,
+):
+    """Scan bounded non-version subdirectories after both version passes."""
+    # Strategy C: Scan one level of subdirectories (for non-version dirs)
+    try:
+        for sub in root.iterdir():
+            if not sub.is_dir():
+                continue
+            if _SCHLUMBERGER_VERSION_PATTERN.match(sub.name):
+                continue
+            for names in (primary_exes, exe_names):
+                result = _find_exe_in_version_dir(sub, names)
+                if result:
+                    exe_path, arch = result
+                    (
+                        ver,
+                        install_root,
+                        _,
+                    ) = _infer_schlumberger_version_and_root(
+                        Path(exe_path),
+                    )
+                    return exe_path, ver, install_root, arch
+    except (PermissionError, OSError):
+        pass
+
     return None
 
 
@@ -1005,15 +1223,22 @@ def _scan_schlumberger_dir(
 
     # Primary simulator executables — the actual simulators, not
     # platform/utility tools.
-    primary_exes = exe_names - _PATH_SKIP_EXES - {
-        "visage.exe", "frontsim.exe",
-    }
+    primary_exes = (
+        exe_names
+        - _PATH_SKIP_EXES
+        - {
+            "visage.exe",
+            "frontsim.exe",
+        }
+    )
 
     # Collect version subdirectories (e.g. 2022.2, 2022.3)
     try:
         version_dirs: List[Path] = []
         for item in root.iterdir():
-            if item.is_dir() and _SCHLUMBERGER_VERSION_PATTERN.match(item.name):
+            if item.is_dir() and _SCHLUMBERGER_VERSION_PATTERN.match(
+                item.name,
+            ):
                 version_dirs.append(item)
     except (PermissionError, OSError):
         version_dirs = []
@@ -1044,25 +1269,7 @@ def _scan_schlumberger_dir(
             )
             return exe_path, ver, install_root, arch
 
-    # Strategy C: Scan one level of subdirectories (for non-version dirs)
-    try:
-        for sub in root.iterdir():
-            if not sub.is_dir():
-                continue
-            if _SCHLUMBERGER_VERSION_PATTERN.match(sub.name):
-                continue
-            for names in (primary_exes, exe_names):
-                result = _find_exe_in_version_dir(sub, names)
-                if result:
-                    exe_path, arch = result
-                    ver, install_root, _ = _infer_schlumberger_version_and_root(
-                        Path(exe_path),
-                    )
-                    return exe_path, ver, install_root, arch
-    except (PermissionError, OSError):
-        pass
-
-    return None
+    return _scan_schlumberger_other_dirs(root, primary_exes, exe_names)
 
 
 def _find_exe_in_version_dir(
@@ -1158,6 +1365,27 @@ def _infer_schlumberger_version_and_root(
 # ──────────────────────────────────────────────────────────────────────────────
 
 
+def _apply_license_environment(engine: EngineInfo, license_env):
+    """Keep license value priority and network/local classification."""
+    # Parse server info from the first env var that has port@host
+    for _key, val in license_env.items():
+        m = re.match(r"(\d+)@([\w.\-]+)", val)
+        if m:
+            engine.license_server = val
+            engine.extra_info["license_port"] = int(m.group(1))
+            engine.extra_info["license_host"] = m.group(2)
+            engine.extra_info["license_type"] = "network"
+            break
+        if "@" in val or val.startswith("28000"):
+            engine.license_server = val
+            engine.extra_info["license_type"] = "network"
+            break
+        engine.license_server = val
+        engine.extra_info["license_type"] = "node_locked_or_unknown"
+
+    engine.extra_info["license_env_vars"] = license_env
+
+
 def _verify_schlumberger_license(engine: EngineInfo) -> None:
     """Multi-dimensional license verification for Schlumberger engines.
 
@@ -1173,24 +1401,7 @@ def _verify_schlumberger_license(engine: EngineInfo) -> None:
             license_env[var] = val
 
     if license_env:
-        # Parse server info from the first env var that has port@host
-        for key, val in license_env.items():
-            m = re.match(r"(\d+)@([\w.\-]+)", val)
-            if m:
-                engine.license_server = val
-                engine.extra_info["license_port"] = int(m.group(1))
-                engine.extra_info["license_host"] = m.group(2)
-                engine.extra_info["license_type"] = "network"
-                break
-            elif "@" in val or val.startswith("28000"):
-                engine.license_server = val
-                engine.extra_info["license_type"] = "network"
-                break
-            else:
-                engine.license_server = val
-                engine.extra_info["license_type"] = "node_locked_or_unknown"
-
-        engine.extra_info["license_env_vars"] = license_env
+        _apply_license_environment(engine, license_env)
 
     # 2. Find lmutil and run lmstat
     lmutil_path = _find_lmutil(engine)
@@ -1216,6 +1427,35 @@ def _verify_schlumberger_license(engine: EngineInfo) -> None:
         engine.license_status = "unknown"
 
 
+def _lmutil_search_roots(engine: EngineInfo, candidates: List[str]):
+    """Derive bounded license-tool roots from explicit engine paths."""
+    # 2. User-provided extra paths. They may be either a direct executable or
+    # an installation directory.
+    search_roots: List[Path] = []
+    for configured in engine.extra_paths:
+        if configured:
+            candidates.append(configured)
+            search_roots.append(Path(configured))
+
+    # 3. Derive locations from the detected executable and install directory.
+    # Walk a bounded number of parents so an unrelated filesystem root is
+    # never scanned. The common relative locations cover Eclipse/Intersect
+    # layouts without embedding a drive letter or vendor-specific root.
+    for configured in (engine.executable_path, engine.install_dir):
+        if not configured:
+            continue
+        configured_path = Path(configured)
+        search_roots.append(
+            (
+                configured_path.parent
+                if configured_path.suffix
+                else configured_path
+            ),
+        )
+
+    return search_roots
+
+
 def _find_lmutil(engine: EngineInfo) -> Optional[str]:
     """Locate ``lmutil`` without assuming a particular install location.
 
@@ -1236,27 +1476,7 @@ def _find_lmutil(engine: EngineInfo) -> Optional[str]:
         if found:
             candidates.append(found)
 
-    # 2. User-provided extra paths. They may be either a direct executable or
-    # an installation directory.
-    search_roots: List[Path] = []
-    for configured in engine.extra_paths:
-        if configured:
-            candidates.append(configured)
-            search_roots.append(Path(configured))
-
-    # 3. Derive locations from the detected executable and install directory.
-    # Walk a bounded number of parents so an unrelated filesystem root is
-    # never scanned. The common relative locations cover Eclipse/Intersect
-    # layouts without embedding a drive letter or vendor-specific root.
-    for configured in (engine.executable_path, engine.install_dir):
-        if not configured:
-            continue
-        configured_path = Path(configured)
-        search_roots.append(
-            configured_path.parent
-            if configured_path.suffix
-            else configured_path,
-        )
+    search_roots = _lmutil_search_roots(engine, candidates)
 
     relative_locations = (
         Path("lmutil"),
@@ -1291,7 +1511,10 @@ def _run_lmstat(lmutil_path: str, license_str: str) -> Optional[str]:
     try:
         result = subprocess.run(
             [lmutil_path, "lmstat", "-c", license_str, "-a"],
-            capture_output=True, text=True, timeout=5,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
         )
         output = result.stdout + result.stderr
         # Extract key lines
@@ -1300,17 +1523,133 @@ def _run_lmstat(lmutil_path: str, license_str: str) -> Optional[str]:
             if any(
                 kw in line.lower()
                 for kw in [
-                    "server", "license", "feature", "error",
-                    "up", "down", "vendor", "daemon", "conn",
+                    "server",
+                    "license",
+                    "feature",
+                    "error",
+                    "up",
+                    "down",
+                    "vendor",
+                    "daemon",
+                    "conn",
                 ]
             ):
                 summary_lines.append(line.strip())
-        return "\n".join(summary_lines[:30]) if summary_lines else output[:1500]
+        return (
+            "\n".join(summary_lines[:30]) if summary_lines else output[:1500]
+        )
     except subprocess.TimeoutExpired:
         logger.warning("lmutil lmstat query timed out")
     except Exception as e:
         logger.warning("lmutil query failed: %s", e)
     return None
+
+
+def _read_smoke_case_outputs(
+    engine: EngineInfo,
+    td_path: Path,
+    case_name: str,
+    prt: Path,
+    head: str,
+    smoke_result: Dict[str, Any],
+):
+    """Read version and completion evidence after license checks."""
+    # Extract version/build from PRT
+    m = _PRT_VERSION_PATTERN.search(head)
+    if m:
+        smoke_result["extracted_version"] = m.group(1)
+        if m.group(2):
+            smoke_result["extracted_build"] = m.group(2)
+            engine.build = m.group(2)
+        if not engine.version:
+            engine.version = m.group(1)
+
+    # Check error count and ECLEND
+    full_prt = prt.read_text(
+        encoding="latin-1",
+        errors="ignore",
+    )
+    err_match = re.search(
+        r"^\s*Errors?\s+(\d+)\s*$",
+        full_prt,
+        re.MULTILINE | re.IGNORECASE,
+    )
+    error_count = int(err_match.group(1)) if err_match else None
+    smoke_result["error_count"] = error_count
+
+    ecle = td_path / f"{case_name}.ECLEND"
+    if not ecle.exists():
+        smoke_result["error"] = "no_ecle_end"
+        if engine.license_status != "no_license":
+            engine.license_status = "unknown"
+    elif error_count == 0:
+        smoke_result["ok"] = True
+        engine.license_status = "ok"
+    elif error_count and error_count > 0:
+        smoke_result["error"] = f"case_errors_{error_count}"
+        # License works if we got this far
+        if engine.license_status != "no_license":
+            engine.license_status = "ok"
+    else:
+        # Fallback: has ECLEND, no license error → pass
+        smoke_result["ok"] = True
+        engine.license_status = "ok"
+
+    # List output files
+    smoke_result["outputs"] = sorted(
+        f.name for f in td_path.glob(f"{case_name}.*")
+    )
+
+
+def _read_smoke_outputs(
+    engine: EngineInfo,
+    td_path: Path,
+    case_name: str,
+    r,
+    smoke_result: Dict[str, Any],
+):
+    """Classify actual smoke-test files and process diagnostics."""
+    # Parse .PRT file
+    prt = td_path / f"{case_name}.PRT"
+    if prt.exists():
+        head = prt.read_text(
+            encoding="latin-1",
+            errors="ignore",
+        )[:1500]
+        smoke_result["prt_head"] = head
+
+        head_lower = head.lower()
+        # Check for license denial
+        if any(
+            kw in head_lower
+            for kw in [
+                "no license",
+                "flexlm error",
+                "license error",
+                "cannot get license",
+            ]
+        ):
+            smoke_result["error"] = "license_denied"
+            engine.license_status = "no_license"
+        else:
+            _read_smoke_case_outputs(
+                engine,
+                td_path,
+                case_name,
+                prt,
+                head,
+                smoke_result,
+            )
+    else:
+        # No PRT → likely license failure
+        combined = (r.stdout + r.stderr).lower()
+        if "license" in combined:
+            smoke_result["error"] = "license_denied"
+            engine.license_status = "no_license"
+        else:
+            smoke_result["error"] = "no_prt_file"
+            if engine.license_status != "no_license":
+                engine.license_status = "unknown"
 
 
 def _run_smoke_test(engine: EngineInfo) -> None:
@@ -1350,7 +1689,8 @@ def _run_smoke_test(engine: EngineInfo) -> None:
         with tempfile.TemporaryDirectory(prefix="ecl_smoke_") as td:
             td_path = Path(td)
             (td_path / f"{case_name}.DATA").write_text(
-                _SMOKE_TEST_DECK, encoding="utf-8",
+                _SMOKE_TEST_DECK,
+                encoding="utf-8",
             )
 
             t0 = time.time()
@@ -1361,85 +1701,12 @@ def _run_smoke_test(engine: EngineInfo) -> None:
                 capture_output=True,
                 text=True,
                 timeout=30,
+                check=False,
             )
             smoke_result["duration_sec"] = round(time.time() - t0, 2)
             smoke_result["returncode"] = r.returncode
 
-            # Parse .PRT file
-            prt = td_path / f"{case_name}.PRT"
-            if prt.exists():
-                head = prt.read_text(
-                    encoding="latin-1", errors="ignore",
-                )[:1500]
-                smoke_result["prt_head"] = head
-
-                head_lower = head.lower()
-                # Check for license denial
-                if any(
-                    kw in head_lower
-                    for kw in [
-                        "no license", "flexlm error",
-                        "license error", "cannot get license",
-                    ]
-                ):
-                    smoke_result["error"] = "license_denied"
-                    engine.license_status = "no_license"
-                else:
-                    # Extract version/build from PRT
-                    m = _PRT_VERSION_PATTERN.search(head)
-                    if m:
-                        smoke_result["extracted_version"] = m.group(1)
-                        if m.group(2):
-                            smoke_result["extracted_build"] = m.group(2)
-                            engine.build = m.group(2)
-                        if not engine.version:
-                            engine.version = m.group(1)
-
-                    # Check error count and ECLEND
-                    full_prt = prt.read_text(
-                        encoding="latin-1", errors="ignore",
-                    )
-                    err_match = re.search(
-                        r"^\s*Errors?\s+(\d+)\s*$",
-                        full_prt, re.MULTILINE | re.IGNORECASE,
-                    )
-                    error_count = (
-                        int(err_match.group(1)) if err_match else None
-                    )
-                    smoke_result["error_count"] = error_count
-
-                    ecle = td_path / f"{case_name}.ECLEND"
-                    if not ecle.exists():
-                        smoke_result["error"] = "no_ecle_end"
-                        if engine.license_status != "no_license":
-                            engine.license_status = "unknown"
-                    elif error_count == 0:
-                        smoke_result["ok"] = True
-                        engine.license_status = "ok"
-                    elif error_count and error_count > 0:
-                        smoke_result["error"] = f"case_errors_{error_count}"
-                        # License works if we got this far
-                        if engine.license_status != "no_license":
-                            engine.license_status = "ok"
-                    else:
-                        # Fallback: has ECLEND, no license error → pass
-                        smoke_result["ok"] = True
-                        engine.license_status = "ok"
-
-                    # List output files
-                    smoke_result["outputs"] = sorted(
-                        f.name for f in td_path.glob(f"{case_name}.*")
-                    )
-            else:
-                # No PRT → likely license failure
-                combined = (r.stdout + r.stderr).lower()
-                if "license" in combined:
-                    smoke_result["error"] = "license_denied"
-                    engine.license_status = "no_license"
-                else:
-                    smoke_result["error"] = "no_prt_file"
-                    if engine.license_status != "no_license":
-                        engine.license_status = "unknown"
+            _read_smoke_outputs(engine, td_path, case_name, r, smoke_result)
 
     except subprocess.TimeoutExpired:
         smoke_result["duration_sec"] = 30.0
@@ -1451,46 +1718,42 @@ def _run_smoke_test(engine: EngineInfo) -> None:
     engine.extra_info["smoke_test"] = smoke_result
 
 
+def _find_exe_in_patterns(
+    directory: Path,
+    patterns: List[str],
+) -> Optional[str]:
+    """Keep literal/glob matching in caller-specified pattern order."""
+    for pattern in patterns:
+        if "*" in pattern or "?" in pattern:
+            for match in directory.glob(pattern):
+                if match.is_file():
+                    return str(match)
+        else:
+            direct = directory / pattern
+            if direct.is_file():
+                return str(direct)
+    return None
+
+
 def _find_exe_in_dir(
     base_dir: str,
     patterns: List[str],
     subdirs: List[str],
 ) -> Optional[str]:
-    """Search for an executable in base_dir and its subdirectories.
-
-    Checks up to 2 levels deep — **no rglob** for performance.
-    """
+    """Search direct, known, then one version level; never recurse."""
     base_path = Path(base_dir)
     if not base_path.is_dir():
         return None
-
-    # Check direct directory
-    for pattern in patterns:
-        if "*" in pattern or "?" in pattern:
-            for match in base_path.glob(pattern):
-                if match.is_file():
-                    return str(match)
-        else:
-            direct = base_path / pattern
-            if direct.is_file():
-                return str(direct)
-
-    # Check known subdirectories
+    found = _find_exe_in_patterns(base_path, patterns)
+    if found:
+        return found
     for subdir in subdirs:
         sub_path = base_path / subdir
         if not sub_path.is_dir():
             continue
-        for pattern in patterns:
-            if "*" in pattern or "?" in pattern:
-                for match in sub_path.glob(pattern):
-                    if match.is_file():
-                        return str(match)
-            else:
-                direct = sub_path / pattern
-                if direct.is_file():
-                    return str(direct)
-
-    # Check one level of subdirectories (for version dirs)
+        found = _find_exe_in_patterns(sub_path, patterns)
+        if found:
+            return found
     try:
         for sub in base_path.iterdir():
             if not sub.is_dir():
@@ -1499,18 +1762,11 @@ def _find_exe_in_dir(
                 sub_path = sub / subdir
                 if not sub_path.is_dir():
                     continue
-                for pattern in patterns:
-                    if "*" in pattern or "?" in pattern:
-                        for match in sub_path.glob(pattern):
-                            if match.is_file():
-                                return str(match)
-                    else:
-                        direct = sub_path / pattern
-                        if direct.is_file():
-                            return str(direct)
+                found = _find_exe_in_patterns(sub_path, patterns)
+                if found:
+                    return found
     except (PermissionError, OSError):
         pass
-
     return None
 
 
@@ -1524,7 +1780,11 @@ def _extract_version_from_exe(executable: str) -> Optional[str]:
     try:
         result = subprocess.run(
             [executable, "--version"],
-            capture_output=True, text=True, timeout=5, shell=False,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            shell=False,
+            check=False,
         )
         output = (result.stdout + result.stderr).strip()
         if output:
@@ -1548,9 +1808,11 @@ _DETECTION_STRATEGIES: Dict[str, Callable[[EngineInfo], EngineInfo]] = {}
 
 def _register_strategy(engine_id: str):
     """Decorator to register a detection strategy for an engine ID."""
+
     def decorator(func: Callable[[EngineInfo], EngineInfo]):
         _DETECTION_STRATEGIES[engine_id] = func
         return func
+
     return decorator
 
 
@@ -1566,12 +1828,20 @@ def _strategy_comsol(engine: EngineInfo) -> EngineInfo:
 
 @_register_strategy("eclipse")
 def _strategy_eclipse(engine: EngineInfo) -> EngineInfo:
-    return _detect_schlumberger(engine, _ECLIPSE_EXE_NAMES, _ECLIPSE_PRODUCT_RULES)
+    return _detect_schlumberger(
+        engine,
+        _ECLIPSE_EXE_NAMES,
+        _ECLIPSE_PRODUCT_RULES,
+    )
 
 
 @_register_strategy("intersect")
 def _strategy_intersect(engine: EngineInfo) -> EngineInfo:
-    return _detect_schlumberger(engine, _INTERSECT_EXE_NAMES, _INTERSECT_PRODUCT_RULES)
+    return _detect_schlumberger(
+        engine,
+        _INTERSECT_EXE_NAMES,
+        _INTERSECT_PRODUCT_RULES,
+    )
 
 
 @_register_strategy("tnavigator")
@@ -1646,6 +1916,30 @@ def _detect_generic(engine: EngineInfo) -> EngineInfo:
     return engine
 
 
+@_register_strategy("opm_flow")
+def _detect_opm_flow(engine: EngineInfo) -> EngineInfo:
+    """Only inspect explicitly configured paths; do not execute a namesake \
+flow."""
+    configured = engine.executable_path or os.environ.get(
+        "OPM_FLOW_EXECUTABLE",
+        "",
+    )
+    if not configured:
+        engine.status = "configured"
+        return engine
+    path = Path(os.path.expandvars(configured)).expanduser()
+    if path.is_absolute() and path.is_file():
+        engine.executable_path = str(path.resolve())
+        engine.install_dir = str(path.resolve().parent)
+        engine.status = "detected"
+        engine.extra_info[
+            "verification"
+        ] = "explicit_path_exists; solver_not_executed"
+    else:
+        engine.status = "not_found"
+    return engine
+
+
 # ──────────────────────────────────────────────────────────────────────────────
 # Parallel detection entry point
 # ──────────────────────────────────────────────────────────────────────────────
@@ -1683,9 +1977,7 @@ def detect_engines() -> List[EngineInfo]:
 
     # Run all detections in parallel
     with ThreadPoolExecutor(max_workers=4) as executor:
-        future_to_id = {
-            executor.submit(_detect_one, e): e.id for e in engines
-        }
+        future_to_id = {executor.submit(_detect_one, e): e.id for e in engines}
         for future in as_completed(future_to_id):
             engine_id = future_to_id[future]
             try:
@@ -1693,16 +1985,20 @@ def detect_engines() -> List[EngineInfo]:
                 _write_engine(updated)
                 logger.info(
                     "Detection complete: %s → status=%s",
-                    updated.name, updated.status,
+                    updated.name,
+                    updated.status,
                 )
             except Exception as exc:
                 logger.error(
-                    "Detection failed for '%s': %s", engine_id, exc,
+                    "Detection failed for '%s': %s",
+                    engine_id,
+                    exc,
                     exc_info=True,
                 )
                 # Mark as error
                 err_engine = next(
-                    (e for e in engines if e.id == engine_id), None,
+                    (e for e in engines if e.id == engine_id),
+                    None,
                 )
                 if err_engine:
                     err_engine.status = "error"

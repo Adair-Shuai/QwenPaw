@@ -60,7 +60,7 @@ After COMPUTE, self-critique:
 ## Available Tools
 
 - `literature_search` — Find ML papers (arXiv, OpenAlex)
-- `web_search` — Search for libraries and documentation
+- `research_web_search` — Search for libraries and documentation
 - `data_analysis` — Analyze training logs and results
 - All standard QwenPaw tools
 

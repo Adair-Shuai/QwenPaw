@@ -11,6 +11,8 @@ import struct
 from pathlib import Path
 from typing import Any
 
+from .geometry import finite_number, geometry_metadata, resource_name
+
 
 def convert_regular_surface(
     x: list[float],
@@ -30,9 +32,19 @@ def convert_regular_surface(
     """
     nx = len(x)
     ny = len(y)
+    if nx < 2 or ny < 2 or len(z) != ny or any(len(row) != nx for row in z):
+        raise ValueError("层面网格至少为 2×2，Z 的行列数必须与 Y、X 一致")
+    x = [finite_number(value, "X") for value in x]
+    y = [finite_number(value, "Y") for value in y]
+    z = [[finite_number(value, "Z") for value in row] for row in z]
+    for label, axis in (("X", x), ("Y", y)):
+        increasing = all(b > a for a, b in zip(axis, axis[1:]))
+        decreasing = all(b < a for a, b in zip(axis, axis[1:]))
+        if not (increasing or decreasing):
+            raise ValueError(f"层面 {label} 坐标必须严格单调")
     n_vertices = nx * ny
 
-    prefix = f"surface_{name}"
+    prefix = f"surface_{resource_name(name)}"
 
     positions: list[float] = []
     for j in range(ny):
@@ -51,19 +63,20 @@ def convert_regular_surface(
 
     cell_ids = list(range(len(indices) // 3))
 
+    bin_dir.mkdir(parents=True, exist_ok=True)
     (bin_dir / f"{prefix}_positions.f32").write_bytes(
-        struct.pack(f"<{len(positions)}f", *positions)
+        struct.pack(f"<{len(positions)}f", *positions),
     )
     (bin_dir / f"{prefix}_indices.u32").write_bytes(
-        struct.pack(f"<{len(indices)}I", *indices)
+        struct.pack(f"<{len(indices)}I", *indices),
     )
     (bin_dir / f"{prefix}_cell_ids.u32").write_bytes(
-        struct.pack(f"<{len(cell_ids)}I", *cell_ids)
+        struct.pack(f"<{len(cell_ids)}I", *cell_ids),
     )
 
     return {
-        "id": f"surface_{name}",
-        "name": f"Surface: {name} ({nx}x{ny})",
+        "id": prefix,
+        "name": f"层面：{name}（{nx}×{ny}）",
         "n_vertices": n_vertices,
         "n_cells": len(cell_ids),
         "n_indices": len(indices),
@@ -75,6 +88,8 @@ def convert_regular_surface(
             "scalars": {},
         },
         "metadata": {
+            **geometry_metadata("triangles", "cell"),
+            "indices_per_cell": 3,
             "grid_dims": [nx, ny],
             "x_range": [float(min(x)), float(max(x))],
             "y_range": [float(min(y)), float(max(y))],

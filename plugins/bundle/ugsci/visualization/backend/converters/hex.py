@@ -41,9 +41,18 @@ VTK_HEX_FACES: tuple[tuple[int, int, int, int], ...] = (
 )
 
 VTK_HEX_EDGES: tuple[tuple[int, int], ...] = (
-    (0, 1), (1, 2), (2, 3), (3, 0),
-    (4, 5), (5, 6), (6, 7), (7, 4),
-    (0, 4), (1, 5), (2, 6), (3, 7),
+    (0, 1),
+    (1, 2),
+    (2, 3),
+    (3, 0),
+    (4, 5),
+    (5, 6),
+    (6, 7),
+    (7, 4),
+    (0, 4),
+    (1, 5),
+    (2, 6),
+    (3, 7),
 )
 
 # vtk_corner_index -> xtgeo/Eclipse pairing index
@@ -63,7 +72,9 @@ def build_hex_triangle_indices(n_cells: int) -> array:
     for cell_index in range(n_cells):
         base = cell_index * 8
         for a, b, c, d in VTK_HEX_FACES:
-            indices.extend((base + a, base + b, base + c, base + a, base + c, base + d))
+            indices.extend(
+                (base + a, base + b, base + c, base + a, base + c, base + d),
+            )
     return indices
 
 
@@ -73,14 +84,17 @@ def eclipse_pairing_to_vtk(positions: Sequence[float]) -> list[float]:
         raise ValueError("hex positions length must be a multiple of 24")
     remapped: list[float] = []
     for base in range(0, len(positions), 24):
-        cell = positions[base:base + 24]
+        cell = positions[base : base + 24]
         for eclipse_index in XTGEO_TO_VTK:
             offset = eclipse_index * 3
-            remapped.extend(cell[offset:offset + 3])
+            remapped.extend(cell[offset : offset + 3])
     return remapped
 
 
-def _cross(a: tuple[float, float, float], b: tuple[float, float, float]) -> tuple[float, float, float]:
+def _cross(
+    a: tuple[float, float, float],
+    b: tuple[float, float, float],
+) -> tuple[float, float, float]:
     return (
         a[1] * b[2] - a[2] * b[1],
         a[2] * b[0] - a[0] * b[2],
@@ -93,19 +107,31 @@ def hex_quad_normal_agreement(
     cell_index: int,
     face: tuple[int, int, int, int],
 ) -> float:
-    """Return the cosine of the angle between the two triangle normals of a quad.
+    """Return the cosine of the angle between the two triangle normals of a \
+quad.
 
-    ~+1 means a proper planar face; ~-1 means a bowtie / pairing-order face.
+    ~+1 means a proper planar face; ~-1 means a bowtie / \
+pairing-order face.
     """
     base = cell_index * 8
 
     def vertex(corner: int) -> tuple[float, float, float]:
         offset = (base + corner) * 3
-        return (float(positions[offset]), float(positions[offset + 1]), float(positions[offset + 2]))
+        return (
+            float(positions[offset]),
+            float(positions[offset + 1]),
+            float(positions[offset + 2]),
+        )
 
     a, b, c, d = (vertex(index) for index in face)
-    n1 = _cross((b[0] - a[0], b[1] - a[1], b[2] - a[2]), (c[0] - a[0], c[1] - a[1], c[2] - a[2]))
-    n2 = _cross((c[0] - a[0], c[1] - a[1], c[2] - a[2]), (d[0] - a[0], d[1] - a[1], d[2] - a[2]))
+    n1 = _cross(
+        (b[0] - a[0], b[1] - a[1], b[2] - a[2]),
+        (c[0] - a[0], c[1] - a[1], c[2] - a[2]),
+    )
+    n2 = _cross(
+        (c[0] - a[0], c[1] - a[1], c[2] - a[2]),
+        (d[0] - a[0], d[1] - a[1], d[2] - a[2]),
+    )
     len1 = (n1[0] ** 2 + n1[1] ** 2 + n1[2] ** 2) ** 0.5
     len2 = (n2[0] ** 2 + n2[1] ** 2 + n2[2] ** 2) ** 0.5
     if len1 == 0.0 or len2 == 0.0:
@@ -121,12 +147,22 @@ def uses_eclipse_pairing(positions: Sequence[float], sample: int = 32) -> bool:
     vtk_score = 0.0
     eclipse_score = 0.0
     for cell_index in range(min(n_cells, max(1, sample))):
-        vtk_score += hex_quad_normal_agreement(positions, cell_index, (0, 1, 2, 3))
-        eclipse_score += hex_quad_normal_agreement(positions, cell_index, (0, 1, 3, 2))
+        vtk_score += hex_quad_normal_agreement(
+            positions,
+            cell_index,
+            (0, 1, 2, 3),
+        )
+        eclipse_score += hex_quad_normal_agreement(
+            positions,
+            cell_index,
+            (0, 1, 3, 2),
+        )
     return eclipse_score > vtk_score + 0.25 * min(n_cells, sample)
 
 
-def _normalize(vector: tuple[float, float, float]) -> tuple[float, float, float]:
+def _normalize(
+    vector: tuple[float, float, float],
+) -> tuple[float, float, float]:
     length = (vector[0] ** 2 + vector[1] ** 2 + vector[2] ** 2) ** 0.5
     if length == 0.0:
         return (0.0, 0.0, 1.0)
@@ -182,7 +218,10 @@ def hex_verts_per_cell(n_coordinates: int, n_cells: int) -> int:
     return verts_per_cell
 
 
-def extract_hex_corners(positions: Sequence[float], n_cells: int) -> list[float]:
+def extract_hex_corners(
+    positions: Sequence[float],
+    n_cells: int,
+) -> list[float]:
     """Return the 8 VTK corners per cell from an 8- or 14-vert hex buffer."""
     verts_per_cell = hex_verts_per_cell(len(positions), n_cells)
     if verts_per_cell == 8:
@@ -192,7 +231,7 @@ def extract_hex_corners(positions: Sequence[float], n_cells: int) -> list[float]
     corners: list[float] = []
     for cell_index in range(n_cells):
         start = cell_index * HEX_COMPACT_VERTS_PER_CELL * 3
-        corners.extend(float(value) for value in positions[start:start + 24])
+        corners.extend(float(value) for value in positions[start : start + 24])
     return corners
 
 
@@ -204,12 +243,22 @@ def build_hex_centroid_fan_indices(n_cells: int) -> array:
         for face_index, face in enumerate(VTK_HEX_FACES):
             midpoint = vert_base + 8 + face_index
             a, b, c, d = (vert_base + index for index in face)
-            indices.extend((
-                midpoint, a, b,
-                midpoint, b, c,
-                midpoint, c, d,
-                midpoint, d, a,
-            ))
+            indices.extend(
+                (
+                    midpoint,
+                    a,
+                    b,
+                    midpoint,
+                    b,
+                    c,
+                    midpoint,
+                    c,
+                    d,
+                    midpoint,
+                    d,
+                    a,
+                ),
+            )
     return indices
 
 
@@ -228,15 +277,22 @@ def compact_hex_centroid_mesh(
     positions: list[float] = []
     for cell_index in range(n_cells):
         source = cell_index * 24
-        corners = [float(value) for value in corner_positions[source:source + 24]]
+        corners = [
+            float(value) for value in corner_positions[source : source + 24]
+        ]
         positions.extend(corners)
         for face in VTK_HEX_FACES:
-            points = [corners[index * 3:index * 3 + 3] for index in face]
-            positions.extend((
-                (points[0][0] + points[1][0] + points[2][0] + points[3][0]) * 0.25,
-                (points[0][1] + points[1][1] + points[2][1] + points[3][1]) * 0.25,
-                (points[0][2] + points[1][2] + points[2][2] + points[3][2]) * 0.25,
-            ))
+            points = [corners[index * 3 : index * 3 + 3] for index in face]
+            positions.extend(
+                (
+                    (points[0][0] + points[1][0] + points[2][0] + points[3][0])
+                    * 0.25,
+                    (points[0][1] + points[1][1] + points[2][1] + points[3][1])
+                    * 0.25,
+                    (points[0][2] + points[1][2] + points[2][2] + points[3][2])
+                    * 0.25,
+                ),
+            )
     return positions, build_hex_centroid_fan_indices(n_cells)
 
 
@@ -259,8 +315,11 @@ def tessellate_hex_opm_fan(
     for cell_index in range(n_cells):
         corner_base = cell_index * 8
 
-        def corner(index: int) -> tuple[float, float, float]:
-            offset = (corner_base + index) * 3
+        def corner(
+            index: int,
+            base: int = corner_base,
+        ) -> tuple[float, float, float]:
+            offset = (base + index) * 3
             return (
                 float(corner_positions[offset]),
                 float(corner_positions[offset + 1]),
@@ -281,10 +340,20 @@ def tessellate_hex_opm_fan(
                 positions.extend(point)
                 normals.extend(normal)
             midpoint = face_vert + 4
-            indices.extend((
-                midpoint, face_vert, face_vert + 1,
-                midpoint, face_vert + 1, face_vert + 2,
-                midpoint, face_vert + 2, face_vert + 3,
-                midpoint, face_vert + 3, face_vert,
-            ))
+            indices.extend(
+                (
+                    midpoint,
+                    face_vert,
+                    face_vert + 1,
+                    midpoint,
+                    face_vert + 1,
+                    face_vert + 2,
+                    midpoint,
+                    face_vert + 2,
+                    face_vert + 3,
+                    midpoint,
+                    face_vert + 3,
+                    face_vert,
+                ),
+            )
     return positions, indices, normals

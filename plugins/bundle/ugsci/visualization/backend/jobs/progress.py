@@ -20,7 +20,11 @@ class ProgressReporter:
     calls report() at each stage transition.
     """
 
-    def __init__(self, job_id: str, emit_callback: Callable[[str, dict], None]):
+    def __init__(
+        self,
+        job_id: str,
+        emit_callback: Callable[[str, dict], None],
+    ):
         self.job_id = job_id
         self._emit = emit_callback
         self._stages: list[StageInfo] = []
@@ -42,11 +46,14 @@ class ProgressReporter:
         if self._current_stage:
             self._current_stage.finished_at = time.time()
             self._current_stage.status = "completed"
-            self._emit("stage-completed", {
-                "stage": self._current_stage.name,
-                "duration": self._current_stage.duration,
-                **kwargs,
-            })
+            self._emit(
+                "stage-completed",
+                {
+                    "stage": self._current_stage.name,
+                    "duration": self._current_stage.duration,
+                    **kwargs,
+                },
+            )
 
     def report_error(self, stage: str, error: str) -> None:
         """Report an error in a stage."""

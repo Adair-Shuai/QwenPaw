@@ -26,13 +26,13 @@ export function createReadoutPanel(): HTMLElement {
     boxSizing: "border-box",
   } as CSSStyleDeclaration);
   el.innerHTML = [
-    '<div style="color:#8b949e;font:600 10px/1 -apple-system,sans-serif;letter-spacing:.06em;margin-bottom:6px;">SELECTED</div>',
+    '<div style="color:#8b949e;font:600 10px/1 -apple-system,sans-serif;letter-spacing:.06em;margin-bottom:6px;">选中对象</div>',
     '<div data-readout="selected" style="color:#e6edf3;font-weight:600;margin-bottom:2px;">—</div>',
     '<div data-readout="meta" style="color:#8b949e;margin-bottom:8px;">将指针移到场景中拾取</div>',
-    '<div style="color:#8b949e;font:600 10px/1 -apple-system,sans-serif;letter-spacing:.06em;margin-bottom:6px;">READOUT</div>',
-    row("Easting", "easting"),
-    row("Northing", "northing"),
-    row("TVD", "tvd"),
+    '<div style="color:#8b949e;font:600 10px/1 -apple-system,sans-serif;letter-spacing:.06em;margin-bottom:6px;">拾取坐标</div>',
+    row("东向 X", "easting"),
+    row("北向 Y", "northing"),
+    row("垂向 Z", "tvd"),
   ].join("");
   return el;
 }
@@ -41,7 +41,9 @@ function row(label: string, key: string): string {
   return [
     '<div style="display:flex;justify-content:space-between;gap:12px;margin:2px 0;">',
     '<span style="color:#8b949e;">' + label + "</span>",
-    '<span data-readout="' + key + '" style="color:#58a6ff;font-weight:600;">—</span>',
+    '<span data-readout="' +
+      key +
+      '" style="color:#58a6ff;font-weight:600;">—</span>',
     "</div>",
   ].join("");
 }
@@ -50,7 +52,9 @@ export function updateReadout(el: HTMLElement, state: ReadoutState) {
   const selected = el.querySelector('[data-readout="selected"]');
   const meta = el.querySelector('[data-readout="meta"]');
   if (selected) selected.textContent = state.selectedLabel || "—";
-  if (meta) meta.textContent = state.selectedMeta || (state.pickKind ? state.pickKind : "未选中对象");
+  if (meta)
+    meta.textContent =
+      state.selectedMeta || (state.pickKind ? state.pickKind : "未选中对象");
   const coords = state.hover;
   setValue(el, "easting", coords ? formatCoord(coords[0]) : "—");
   setValue(el, "northing", coords ? formatCoord(coords[1]) : "—");

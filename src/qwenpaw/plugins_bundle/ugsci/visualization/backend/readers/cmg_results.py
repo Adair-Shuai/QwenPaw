@@ -14,6 +14,7 @@ matches the imported grid (active cells or the full IJK lattice).
 from __future__ import annotations
 
 import logging
+import math
 from array import array
 from pathlib import Path
 from typing import Any, Iterable
@@ -39,8 +40,19 @@ _PROPERTY_ALIASES = {
 }
 
 _PREFERRED = {
-    "PRES", "PRESSURE", "SOIL", "SWAT", "SGAS", "TEMP", "TEMPERATURE",
-    "SO", "SW", "SG", "OILSAT", "WATSAT", "GASSAT",
+    "PRES",
+    "PRESSURE",
+    "SOIL",
+    "SWAT",
+    "SGAS",
+    "TEMP",
+    "TEMPERATURE",
+    "SO",
+    "SW",
+    "SG",
+    "OILSAT",
+    "WATSAT",
+    "GASSAT",
 }
 
 
@@ -85,7 +97,7 @@ def _as_float_list(dataset: Any) -> list[float] | None:
             number = float(item)
         except (TypeError, ValueError):
             return None
-        values.append(0.0 if number != number else number)
+        values.append(number if math.isfinite(number) else float("nan"))
     return values
 
 
@@ -133,7 +145,10 @@ def _gather_timestep_groups(spatial: Any) -> list[tuple[str, Any]]:
     timestep_keys = [key for key in keys if _looks_like_timestep(str(key))]
     if timestep_keys:
         groups: list[tuple[str, Any]] = []
-        for key in sorted(timestep_keys, key=lambda item: _timestep_sort_key(str(item))):
+        for key in sorted(
+            timestep_keys,
+            key=lambda item: _timestep_sort_key(str(item)),
+        ):
             try:
                 groups.append((str(key), spatial[key]))
             except Exception:
@@ -166,7 +181,11 @@ def _datasets_in(group: Any) -> Iterable[tuple[str, Any]]:
     return found
 
 
-def _active_values(values: list[float], active_ids: list[int], n_total: int) -> array | None:
+def _active_values(
+    values: list[float],
+    active_ids: list[int],
+    n_total: int,
+) -> array | None:
     count = len(values)
     if count == len(active_ids):
         return array("f", (float(value) for value in values))
@@ -188,10 +207,16 @@ def attach_sr3_spatial_properties(
     try:
         h5py = __import__("h5py")
     except ImportError:
-        return [], {"has_dynamic_results": False, "sr3_error": "h5py is not installed"}
+        return [], {
+            "has_dynamic_results": False,
+            "sr3_error": "h5py is not installed",
+        }
 
     if not sr3_path.exists():
-        return [], {"has_dynamic_results": False, "sr3_error": f"SR3 not found: {sr3_path}"}
+        return [], {
+            "has_dynamic_results": False,
+            "sr3_error": f"SR3 not found: {sr3_path}",
+        }
 
     time_steps: list[dict[str, Any]] = []
     info: dict[str, Any] = {
@@ -204,7 +229,11 @@ def attach_sr3_spatial_properties(
     try:
         with h5py.File(sr3_path, "r") as handle:
             spatial = None
-            for candidate in ("SpatialProperties", "SPATIALPROPERTIES", "GridProperties"):
+            for candidate in (
+                "SpatialProperties",
+                "SPATIALPROPERTIES",
+                "GridProperties",
+            ):
                 if candidate in handle:
                     spatial = handle[candidate]
                     break
@@ -221,8 +250,12 @@ def attach_sr3_spatial_properties(
                         alias = _normalize_property(raw_name)
                         if alias in scalars:
                             continue
-                        preferred = raw_name.split("/")[-1].upper().replace(" ", "")
-                        if preferred not in _PREFERRED and alias not in set(_PROPERTY_ALIASES.values()):
+                        preferred = (
+                            raw_name.split("/")[-1].upper().replace(" ", "")
+                        )
+                        if preferred not in _PREFERRED and alias not in set(
+                            _PROPERTY_ALIASES.values(),
+                        ):
                             if len(scalars) >= 4:
                                 continue
                         values = _as_float_list(dataset)
@@ -236,19 +269,28 @@ def attach_sr3_spatial_properties(
                         scalars[alias] = filename
                     if not scalars:
                         continue
-                    digits = "".join(character for character in label if character.isdigit())
-                    time_steps.append({
-                        "index": len(time_steps),
-                        "step_number": int(digits) if digits else index,
-                        "label": label,
-                        "scalars": scalars,
-                    })
+                    digits = "".join(
+                        character for character in label if character.isdigit()
+                    )
+                    time_steps.append(
+                        {
+                            "index": len(time_steps),
+                            "step_number": int(digits) if digits else index,
+                            "label": label,
+                            "scalars": scalars,
+                        },
+                    )
             elif "Data" in spatial and "Variables" in spatial:
-                variables = [_decode_name(item) for item in spatial["Variables"][:]]
+                variables = [
+                    _decode_name(item) for item in spatial["Variables"][:]
+                ]
                 data = spatial["Data"]
                 shape = getattr(data, "shape", ())
                 step_count = int(shape[0]) if shape else 0
-                selected_indices = _select_steps(list(range(step_count)), max_steps)
+                selected_indices = _select_steps(
+                    list(range(step_count)),
+                    max_steps,
+                )
                 for index, step in enumerate(selected_indices):
                     scalars = {}
                     for variable_index, raw_name in enumerate(variables):
@@ -267,22 +309,30 @@ def attach_sr3_spatial_properties(
                         _write_f32(bin_dir / filename, active)
                         scalars[alias] = filename
                     if scalars:
-                        time_steps.append({
-                            "index": len(time_steps),
-                            "step_number": int(step),
-                            "scalars": scalars,
-                        })
+                        time_steps.append(
+                            {
+                                "index": len(time_steps),
+                                "step_number": int(step),
+                                "scalars": scalars,
+                            },
+                        )
     except (OSError, KeyError, TypeError, ValueError) as exc:
-        logger.warning("Failed to read CMG SR3 spatial properties from %s: %s", sr3_path, exc)
+        logger.warning(
+            "Failed to read CMG SR3 spatial properties from %s: %s",
+            sr3_path,
+            exc,
+        )
         info["sr3_error"] = str(exc)
         return [], info
 
-    properties = sorted({
-        name for step in time_steps for name in step.get("scalars", {})
-    })
-    info.update({
-        "has_dynamic_results": bool(time_steps),
-        "sr3_properties": properties,
-        "sr3_time_steps": len(time_steps),
-    })
+    properties = sorted(
+        {name for step in time_steps for name in step.get("scalars", {})},
+    )
+    info.update(
+        {
+            "has_dynamic_results": bool(time_steps),
+            "sr3_properties": properties,
+            "sr3_time_steps": len(time_steps),
+        },
+    )
     return time_steps, info

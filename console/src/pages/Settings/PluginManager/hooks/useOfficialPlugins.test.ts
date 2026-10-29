@@ -3,9 +3,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const h = vi.hoisted(() => ({
   t: (key: string) => key,
-  message: { success: vi.fn(), error: vi.fn() },
+  message: {
+    success: vi.fn(),
+    error: vi.fn(),
+    info: vi.fn(),
+    warning: vi.fn(),
+  },
   fetchPluginCatalog: vi.fn(),
   installPlugin: vi.fn(),
+  upgradeInstalledPlugin: vi.fn(),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -19,6 +25,7 @@ vi.mock("@/hooks/useAppMessage", () => ({
 vi.mock("@/api/modules/plugin", () => ({
   fetchPluginCatalog: h.fetchPluginCatalog,
   installPlugin: h.installPlugin,
+  upgradeInstalledPlugin: h.upgradeInstalledPlugin,
 }));
 
 import { useOfficialPlugins } from "./useOfficialPlugins";
@@ -52,6 +59,10 @@ const RESULT = {
 beforeEach(() => {
   vi.clearAllMocks();
   h.fetchPluginCatalog.mockResolvedValue(CATALOG);
+  h.upgradeInstalledPlugin.mockResolvedValue({
+    method: "replaced",
+    version: "1.0.0",
+  });
   h.installPlugin.mockImplementation(async () => {
     notifyPluginChange();
     return RESULT;
@@ -178,9 +189,7 @@ describe("useOfficialPlugins handleInstall", () => {
     await act(async () => {
       await result.current.handleInstall(ENTRY);
     });
-    expect(h.installPlugin).toHaveBeenCalledWith(ENTRY.install_url, {
-      force: false,
-    });
+    expect(h.installPlugin).toHaveBeenCalledWith(ENTRY.install_url);
     expect(onInstalled).toHaveBeenCalledWith(RESULT);
     expect(h.message.success).toHaveBeenCalledWith(
       "pluginManager.installSuccess: Demo",
@@ -190,20 +199,30 @@ describe("useOfficialPlugins handleInstall", () => {
     expect(result.current.installingId).toBeNull();
   });
 
-  it("forces the install when the plugin is already installed", async () => {
+  it("uses the verified updater when the plugin is already installed", async () => {
     const { result } = renderHook(() =>
       useOfficialPlugins({ onInstalled: vi.fn() }),
     );
     await waitFor(() => expect(result.current.loading).toBe(false));
     await act(async () => {
-      await result.current.handleInstall({ ...ENTRY, installed: true });
+      await result.current.handleInstall({
+        ...ENTRY,
+        installed: true,
+        upgrade_available: true,
+      });
     });
-    expect(h.installPlugin).toHaveBeenCalledWith(ENTRY.install_url, {
-      force: true,
-    });
+    expect(h.installPlugin).not.toHaveBeenCalled();
+    expect(h.upgradeInstalledPlugin).toHaveBeenCalledWith(
+      "p1",
+      expect.objectContaining({
+        source: ENTRY.install_url,
+        version: ENTRY.version,
+        sha256: ENTRY.sha256,
+      }),
+    );
   });
 
-  it("forces the install when an upgrade is available", async () => {
+  it("installs a missing plugin without force even if the catalog advertises an upgrade", async () => {
     const { result } = renderHook(() =>
       useOfficialPlugins({ onInstalled: vi.fn() }),
     );
@@ -211,9 +230,7 @@ describe("useOfficialPlugins handleInstall", () => {
     await act(async () => {
       await result.current.handleInstall({ ...ENTRY, upgrade_available: true });
     });
-    expect(h.installPlugin).toHaveBeenCalledWith(ENTRY.install_url, {
-      force: true,
-    });
+    expect(h.installPlugin).toHaveBeenCalledWith(ENTRY.install_url);
   });
 
   it("marks the entry as installing while the request is in flight", async () => {

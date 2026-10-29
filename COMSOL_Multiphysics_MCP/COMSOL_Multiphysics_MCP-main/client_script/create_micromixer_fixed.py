@@ -1,12 +1,15 @@
+# -*- coding: utf-8 -*-
 """Create 3D Microfluidic Mixer - Fixed Boundary Identification."""
+import importlib
 import sys
-if sys.platform == 'win32':
-    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
-
-import mph
 from pathlib import Path
 from datetime import datetime
-import numpy as np
+
+if sys.platform == "win32":
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+
+mph = importlib.import_module("mph")
+np = importlib.import_module("numpy")
 
 print("=" * 70)
 print("3D Microfluidic Mixer - Fixed Boundary Selection")
@@ -34,18 +37,18 @@ print(f"    Model: {model.name()}")
 # Add parameters
 print("\n[3] Setting parameters...")
 params = jm.param()
-params.set('w_main', '500[um]', 'Main channel width')
-params.set('h_ch', '100[um]', 'Channel height')
-params.set('L_main', '2000[um]', 'Main channel length')
-params.set('w_inlet', '200[um]', 'Inlet width')
-params.set('L_inlet', '500[um]', 'Inlet length')
-params.set('v_in', '0.01[m/s]', 'Inlet velocity')
+params.set("w_main", "500[um]", "Main channel width")
+params.set("h_ch", "100[um]", "Channel height")
+params.set("L_main", "2000[um]", "Main channel length")
+params.set("w_inlet", "200[um]", "Inlet width")
+params.set("L_inlet", "500[um]", "Inlet length")
+params.set("v_in", "0.01[m/s]", "Inlet velocity")
 print("    Parameters set")
 
 # Create component and geometry
 print("\n[4] Creating 3D geometry...")
-comp = jm.component().create('comp1', True)
-geom = comp.geom().create('geom1', 3)
+comp = jm.component().create("comp1", True)
+geom = comp.geom().create("geom1", 3)
 
 # Create a simpler geometry: single Y-channel using workplane and extrusion
 # Or use three separate blocks that touch (forming a Y-mixer)
@@ -54,26 +57,26 @@ geom = comp.geom().create('geom1', 3)
 # Main channel + two inlets merging at one point
 
 # Main channel: L_main x w_main x h_ch (positioned at origin)
-blk1 = geom.feature().create('blk1', 'Block')
-blk1.set('size', ['L_main', 'w_main', 'h_ch'])
-blk1.set('pos', ['0', '0', '0'])
-blk1.label('Main Channel')
+blk1 = geom.feature().create("blk1", "Block")
+blk1.set("size", ["L_main", "w_main", "h_ch"])
+blk1.set("pos", ["0", "0", "0"])
+blk1.label("Main Channel")
 
 # Inlet 1 (bottom): connects to main channel at x=0, y in [0, w_inlet]
-blk2 = geom.feature().create('blk2', 'Block')
-blk2.set('size', ['L_inlet', 'w_inlet', 'h_ch'])
-blk2.set('pos', ['-L_inlet', '0', '0'])
-blk2.label('Inlet 1')
+blk2 = geom.feature().create("blk2", "Block")
+blk2.set("size", ["L_inlet", "w_inlet", "h_ch"])
+blk2.set("pos", ["-L_inlet", "0", "0"])
+blk2.label("Inlet 1")
 
 # Inlet 2 (top): connects to main channel at x=0, y in [w_main-w_inlet, w_main]
-blk3 = geom.feature().create('blk3', 'Block')
-blk3.set('size', ['L_inlet', 'w_inlet', 'h_ch'])
-blk3.set('pos', ['-L_inlet', 'w_main-w_inlet', '0'])
-blk3.label('Inlet 2')
+blk3 = geom.feature().create("blk3", "Block")
+blk3.set("size", ["L_inlet", "w_inlet", "h_ch"])
+blk3.set("pos", ["-L_inlet", "w_main-w_inlet", "0"])
+blk3.label("Inlet 2")
 
 # Union to merge touching faces
-uni = geom.feature().create('uni1', 'Union')
-uni.selection('input').set(['blk1', 'blk2', 'blk3'])
+uni = geom.feature().create("uni1", "Union")
+uni.selection("input").set(["blk1", "blk2", "blk3"])
 
 print("    Building geometry...")
 geom.run()
@@ -81,24 +84,24 @@ print("    Geometry built")
 
 # Get mesh info to understand boundary count
 print("\n[5] Creating mesh to identify boundaries...")
-mesh = comp.mesh().create('mesh1', 'geom1')
+mesh = comp.mesh().create("mesh1", "geom1")
 mesh.autoMeshSize(5)
 mesh.run()
 print("    Mesh generated")
 
 # Add water material
 print("\n[6] Adding water material...")
-mat = comp.material().create('mat1', 'Common')
-mat.propertyGroup('def').set('relpermeability', '1')
-mat.propertyGroup('def').set('relpermittivity', '80')
-mat.propertyGroup('def').set('density', '1000[kg/m^3]')
-mat.propertyGroup('def').set('dynamicviscosity', '0.001[Pa*s]')
-mat.label('Water')
+mat = comp.material().create("mat1", "Common")
+mat.propertyGroup("def").set("relpermeability", "1")
+mat.propertyGroup("def").set("relpermittivity", "80")
+mat.propertyGroup("def").set("density", "1000[kg/m^3]")
+mat.propertyGroup("def").set("dynamicviscosity", "0.001[Pa*s]")
+mat.label("Water")
 
 # Add Laminar Flow physics
 print("\n[7] Adding Laminar Flow physics...")
-spf = comp.physics().create('spf', 'LaminarFlow', 'geom1')
-spf.label('Laminar Flow')
+spf = comp.physics().create("spf", "LaminarFlow", "geom1")
+spf.label("Laminar Flow")
 
 # Try to set boundary conditions using selections or manual boundary numbers
 print("\n[8] Setting boundary conditions...")
@@ -122,31 +125,31 @@ outlet_boundary_found = None
 # Set boundary conditions using fallback boundary numbers
 print("    Using fallback boundary numbers (1, 3 for inlets, 2 for outlet)...")
 for i, bnd in enumerate([1, 3]):
-    inlet_tag = f'inl{i+1}'
+    inlet_tag = f"inl{i+1}"
     try:
-        inlet = spf.create(inlet_tag, 'InletBoundary')
+        inlet = spf.create(inlet_tag, "InletBoundary")
         inlet.selection().set([bnd])
         # U0in is the correct property name for inlet velocity
-        inlet.set('U0in', 'v_in')
-        inlet.label(f'Inlet {i+1} (Boundary {bnd})')
+        inlet.set("U0in", "v_in")
+        inlet.label(f"Inlet {i+1} (Boundary {bnd})")
         print(f"    Inlet {i+1} configured on boundary {bnd} with U0in=v_in")
     except Exception as e:
         print(f"    Inlet {i+1} error: {e}")
 
 # Outlet
 try:
-    outlet = spf.create('out1', 'OutletBoundary')
+    outlet = spf.create("out1", "OutletBoundary")
     outlet.selection().set([2])
-    outlet.set('p0', '0')
-    outlet.label('Outlet (Boundary 2)')
+    outlet.set("p0", "0")
+    outlet.label("Outlet (Boundary 2)")
     print("    Outlet configured on boundary 2")
 except Exception as e:
     print(f"    Outlet error: {e}")
 
 # Add study
 print("\n[10] Adding stationary study...")
-study = jm.study().create('std1')
-study.create('stat', 'Stationary')
+study = jm.study().create("std1")
+study.create("stat", "Stationary")
 
 # Solve
 print("\n[11] Solving...")
@@ -174,19 +177,19 @@ print(f"    Latest:  {latest_file.name}")
 if solution_success:
     print("\n[13] Evaluating results...")
     try:
-        U = model.evaluate('spf.U', unit='m/s')
+        U = model.evaluate("spf.U", unit="m/s")
         print(f"    Velocity range: {np.min(U):.6f} to {np.max(U):.6f} m/s")
         print(f"    Mean velocity: {np.mean(U):.6f} m/s")
         print(f"    Max velocity: {np.max(U)*1000:.4f} mm/s")
-        
+
         # Also check velocity components
         try:
-            u = model.evaluate('u', unit='m/s')
-            v = model.evaluate('v', unit='m/s')
-            w = model.evaluate('w', unit='m/s')
+            u = model.evaluate("u", unit="m/s")
+            v = model.evaluate("v", unit="m/s")
+            w = model.evaluate("w", unit="m/s")
             print(f"    u range: {np.min(u):.6f} to {np.max(u):.6f} m/s")
             print(f"    v range: {np.min(v):.6f} to {np.max(v):.6f} m/s")
-        except:
+        except Exception:
             pass
     except Exception as e:
         print(f"    Could not evaluate: {e}")

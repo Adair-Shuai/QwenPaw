@@ -20,15 +20,23 @@ import time
 from array import array
 from datetime import date
 from pathlib import Path
-from typing import Any, Iterable
+from typing import Any, Callable, Iterable
 
 from .base import BaseReader, register_reader
 
-
-_GRID_CORNER_RE = re.compile(r"^\s*\*?GRID\s+CORNER\s+(\d+)\s+(\d+)\s+(\d+)\b", re.I)
-_GRID_CART_RE = re.compile(r"^\s*\*?GRID\s+(?:CART|CARTESIAN)\s+(\d+)\s+(\d+)\s+(\d+)\b", re.I)
+_GRID_CORNER_RE = re.compile(
+    r"^\s*\*?GRID\s+CORNER\s+(\d+)\s+(\d+)\s+(\d+)\b",
+    re.I,
+)
+_GRID_CART_RE = re.compile(
+    r"^\s*\*?GRID\s+(?:CART|CARTESIAN)\s+(\d+)\s+(\d+)\s+(\d+)\b",
+    re.I,
+)
 _REPEAT_RE = re.compile(r"^(\d+)\*(.+)$")
-_RESULTS_RE = re.compile(r"^\s*\*?RESULTS\s+SIMULATOR\s+(\S+)(?:\s+(.*))?$", re.I)
+_RESULTS_RE = re.compile(
+    r"^\s*\*?RESULTS\s+SIMULATOR\s+(\S+)(?:\s+(.*))?$",
+    re.I,
+)
 _MODEL_RE = re.compile(r"^\s*\*?MODEL\s+(\S+)", re.I)
 _WELL_RE = re.compile(r"^\s*\*?WELL\s+['\"]([^'\"]+)['\"]", re.I)
 _DATE_RE = re.compile(r"^\s*\*?DATE\s+(\d{4})\s+(\d{1,2})\s+([0-9.]+)", re.I)
@@ -37,7 +45,10 @@ _ORIGIN_RE = re.compile(
     r"^\s*\*?ORIGIN(?:\s+X)?\s+([^\s]+)\s+([^\s]+)(?:\s+([^\s]+))?",
     re.I,
 )
-_EQUALSI_RE = re.compile(r"^EQUALSI(?:\s*\*\s*([+-]?\d+(?:\.\d+)?(?:[EeDd][+-]?\d+)?))?$", re.I)
+_EQUALSI_RE = re.compile(
+    r"^EQUALSI(?:\s*\*\s*([+-]?\d+(?:\.\d+)?(?:[EeDd][+-]?\d+)?))?$",
+    re.I,
+)
 
 
 def _number(token: str) -> float:
@@ -73,14 +84,29 @@ def _first_keyword(line: str) -> str:
 
 
 def _find_grid_spec(path: Path) -> tuple[str, int, int, int]:
-    with path.open("r", encoding="utf-8", errors="replace", newline=None) as handle:
+    with path.open(
+        "r",
+        encoding="utf-8",
+        errors="replace",
+        newline=None,
+    ) as handle:
         for line in handle:
             match = _GRID_CORNER_RE.match(line)
             if match:
-                return ("corner", int(match.group(1)), int(match.group(2)), int(match.group(3)))
+                return (
+                    "corner",
+                    int(match.group(1)),
+                    int(match.group(2)),
+                    int(match.group(3)),
+                )
             match = _GRID_CART_RE.match(line)
             if match:
-                return ("cartesian", int(match.group(1)), int(match.group(2)), int(match.group(3)))
+                return (
+                    "cartesian",
+                    int(match.group(1)),
+                    int(match.group(2)),
+                    int(match.group(3)),
+                )
     raise ValueError("CMG deck does not contain GRID CORNER/CART I J K")
 
 
@@ -94,21 +120,33 @@ def _read_keyword_values(path: Path, keyword: str, expected: int) -> array:
     result = array("d")
     found = False
     target = keyword.upper()
-    with path.open("r", encoding="utf-8", errors="replace", newline=None) as handle:
+    with path.open(
+        "r",
+        encoding="utf-8",
+        errors="replace",
+        newline=None,
+    ) as handle:
         for line in handle:
             stripped = line.strip()
-            words = stripped.upper().split()
             if not found:
                 if _first_keyword(stripped) == target:
                     found = True
                 continue
             if stripped.startswith("**") or not stripped:
                 continue
-            if stripped.startswith("*") and not _REPEAT_RE.match(stripped.split()[0]):
+            if stripped.startswith("*") and not _REPEAT_RE.match(
+                stripped.split()[0],
+            ):
                 # A control line before the expected number means the input is
                 # malformed; do not return a misleading partial array.
                 raise ValueError(
-                    f"CMG {keyword} section ended after {len(result):,} of {expected:,} values"
+                    f"CMG "
+                    f"{keyword}"
+                    f" section ended after "
+                    f"{len(result):,}"
+                    f" of "
+                    f"{expected:,}"
+                    f" values",
                 )
             for value in _values_from_line(stripped):
                 result.append(value)
@@ -116,16 +154,30 @@ def _read_keyword_values(path: Path, keyword: str, expected: int) -> array:
                     return result
                 if len(result) > expected:
                     raise ValueError(
-                        f"CMG {keyword} section has more than {expected:,} values"
+                        f"CMG "
+                        f"{keyword}"
+                        f" section has more than "
+                        f"{expected:,}"
+                        f" values",
                     )
     if not found:
         raise ValueError(f"CMG deck is missing {keyword} section")
     raise ValueError(
-        f"CMG {keyword} section ended after {len(result):,} of {expected:,} values"
+        f"CMG "
+        f"{keyword}"
+        f" section ended after "
+        f"{len(result):,}"
+        f" of "
+        f"{expected:,}"
+        f" values",
     )
 
 
-def _try_keyword_values(path: Path, keyword: str, expected: int) -> array | None:
+def _try_keyword_values(
+    path: Path,
+    keyword: str,
+    expected: int,
+) -> array | None:
     try:
         return _read_keyword_values(path, keyword, expected)
     except ValueError:
@@ -142,6 +194,7 @@ def _apply_equalsi(source: array, expression: str) -> array:
     return array("d", (value * factor for value in source))
 
 
+# pylint: disable-next=R0912,R0911
 def _read_grid_property(
     path: Path,
     keyword: str,
@@ -151,7 +204,12 @@ def _read_grid_property(
 ) -> array | None:
     """Read a numeric grid array or a PERMJ/PERMK EQUALSI expression."""
     target = keyword.upper()
-    with path.open("r", encoding="utf-8", errors="replace", newline=None) as handle:
+    with path.open(
+        "r",
+        encoding="utf-8",
+        errors="replace",
+        newline=None,
+    ) as handle:
         for line in handle:
             stripped = line.strip()
             if not stripped or stripped.startswith("**"):
@@ -166,7 +224,10 @@ def _read_grid_property(
             if joined and _EQUALSI_RE.match(joined.replace(" ", "")):
                 if equals_source is None:
                     return None
-                return _apply_equalsi(equals_source, joined.replace(" ", "") if " " not in joined else joined)
+                return _apply_equalsi(
+                    equals_source,
+                    joined.replace(" ", "") if " " not in joined else joined,
+                )
             if joined.upper().startswith("EQUALSI"):
                 if equals_source is None:
                     return None
@@ -189,7 +250,11 @@ def _read_grid_property(
                         return None
                     return _apply_equalsi(equals_source, follow_stripped)
                 follow_key = _first_keyword(follow_stripped)
-                if follow_key.isalpha() and follow_key != target and not _REPEAT_RE.match(follow_stripped.split()[0]):
+                if (
+                    follow_key.isalpha()
+                    and follow_key != target
+                    and not _REPEAT_RE.match(follow_stripped.split()[0])
+                ):
                     break
                 try:
                     for value in _values_from_line(follow_stripped):
@@ -217,7 +282,12 @@ def _find_sibling(source_path: Path, suffixes: set[str]) -> Path | None:
 
 
 def _read_origin(path: Path) -> tuple[float, float, float]:
-    with path.open("r", encoding="utf-8", errors="replace", newline=None) as handle:
+    with path.open(
+        "r",
+        encoding="utf-8",
+        errors="replace",
+        newline=None,
+    ) as handle:
         for line in handle:
             match = _ORIGIN_RE.match(line)
             if not match:
@@ -262,6 +332,7 @@ def _cartesian_cell_points(
 
 def _build_hex_indices(n_cells: int) -> array:
     from ..converters.hex import build_hex_centroid_fan_indices
+
     return build_hex_centroid_fan_indices(n_cells)
 
 
@@ -331,7 +402,8 @@ def _cell_corner_points(
 
 
 def _scan_deck_metadata(path: Path) -> dict[str, Any]:
-    """Collect schedule/well metadata without pretending deck dates are results."""
+    """Collect schedule/well metadata without pretending deck dates are \
+results."""
     simulator = "GEM"
     simulator_version = ""
     model = ""
@@ -340,7 +412,12 @@ def _scan_deck_metadata(path: Path) -> dict[str, Any]:
     dates: list[date] = []
     dynamic_properties: list[str] = []
 
-    with path.open("r", encoding="utf-8", errors="replace", newline=None) as handle:
+    with path.open(
+        "r",
+        encoding="utf-8",
+        errors="replace",
+        newline=None,
+    ) as handle:
         for line in handle:
             if match := _RESULTS_RE.match(line):
                 simulator = match.group(1).upper()
@@ -354,7 +431,13 @@ def _scan_deck_metadata(path: Path) -> dict[str, Any]:
                     wells.append(well)
             elif match := _DATE_RE.match(line):
                 try:
-                    dates.append(date(int(match.group(1)), int(match.group(2)), max(1, int(float(match.group(3))))))
+                    dates.append(
+                        date(
+                            int(match.group(1)),
+                            int(match.group(2)),
+                            max(1, int(float(match.group(3)))),
+                        ),
+                    )
                 except ValueError:
                     pass
             elif match := _OUTSRF_GRID_RE.match(line):
@@ -376,7 +459,10 @@ def _scan_deck_metadata(path: Path) -> dict[str, Any]:
         "has_dynamic_results": False,
     }
     if dates:
-        metadata["schedule_range"] = [min(dates).isoformat(), max(dates).isoformat()]
+        metadata["schedule_range"] = [
+            min(dates).isoformat(),
+            max(dates).isoformat(),
+        ]
     return metadata
 
 
@@ -391,6 +477,7 @@ class CmgReader(BaseReader):
     def extensions(self) -> tuple[str, ...]:
         return (".dat",)
 
+    # pylint: disable-next=R0912,R0915
     def read(
         self,
         file_path: str,
@@ -413,30 +500,65 @@ class CmgReader(BaseReader):
             active_mask = [True] * n_total
         else:
             active_mask = [value != 0.0 for value in null_values]
-        active_ids = [index for index, active in enumerate(active_mask) if active]
+        active_ids = [
+            index for index, active in enumerate(active_mask) if active
+        ]
 
-        corner_lookup = None
+        corner_lookup: Callable[[int], tuple[tuple[float, float, float], ...]]
         if grid_type == "corner":
-            corner_values = _read_keyword_values(source_path, "CORNERS", 24 * n_total)
+            corner_values = _read_keyword_values(
+                source_path,
+                "CORNERS",
+                24 * n_total,
+            )
 
-            def corner_lookup(cell_id: int) -> tuple[tuple[float, float, float], ...]:
-                return _cell_corner_points(corner_values, cell_id, ncol, nrow, nlay)
+            def corner_grid_points(
+                cell_id: int,
+            ) -> tuple[tuple[float, float, float], ...]:
+                return _cell_corner_points(
+                    corner_values,
+                    cell_id,
+                    ncol,
+                    nrow,
+                    nlay,
+                )
+
+            corner_lookup = corner_grid_points
         else:
-            di = _try_keyword_values(source_path, "DI", ncol) or _try_keyword_values(source_path, "DX", ncol)
-            dj = _try_keyword_values(source_path, "DJ", nrow) or _try_keyword_values(source_path, "DY", nrow)
-            dk = _try_keyword_values(source_path, "DK", nlay) or _try_keyword_values(source_path, "DZ", nlay)
+            di = _try_keyword_values(
+                source_path,
+                "DI",
+                ncol,
+            ) or _try_keyword_values(source_path, "DX", ncol)
+            dj = _try_keyword_values(
+                source_path,
+                "DJ",
+                nrow,
+            ) or _try_keyword_values(source_path, "DY", nrow)
+            dk = _try_keyword_values(
+                source_path,
+                "DK",
+                nlay,
+            ) or _try_keyword_values(source_path, "DZ", nlay)
             if di is None or dj is None or dk is None:
-                raise ValueError("CMG cartesian grid is missing DI/DJ/DK (or DX/DY/DZ) sizes")
+                raise ValueError(
+                    "CMG cartesian grid is missing DI/DJ/DK "
+                    "(or DX/DY/DZ) sizes",
+                )
             origin = _read_origin(source_path)
             xs = _accumulate(di, origin[0])
             ys = _accumulate(dj, origin[1])
             zs = _accumulate(dk, origin[2])
 
-            def corner_lookup(cell_id: int) -> tuple[tuple[float, float, float], ...]:
+            def cartesian_grid_points(
+                cell_id: int,
+            ) -> tuple[tuple[float, float, float], ...]:
                 i = cell_id % ncol
                 j = (cell_id // ncol) % nrow
                 k = cell_id // (ncol * nrow)
                 return _cartesian_cell_points(i, j, k, xs, ys, zs)
+
+            corner_lookup = cartesian_grid_points
 
         positions = array("f")
         for cell_id in active_ids:
@@ -445,6 +567,7 @@ class CmgReader(BaseReader):
 
         n_active = len(active_ids)
         from ..converters.hex import compact_hex_centroid_mesh
+
         packed_positions, indices = compact_hex_centroid_mesh(positions)
         positions = array("f", packed_positions)
         prefix = name
@@ -458,7 +581,10 @@ class CmgReader(BaseReader):
         scalar_files: dict[str, str] = {}
 
         def write_property(key: str, values: array) -> None:
-            active_values = array("f", (float(values[index]) for index in active_ids))
+            active_values = array(
+                "f",
+                (float(values[index]) for index in active_ids),
+            )
             filename = f"{prefix}_scalars_{key}.f32"
             _write_array(bin_dir / filename, "f", active_values)
             scalar_files[key] = filename
@@ -469,21 +595,46 @@ class CmgReader(BaseReader):
         porosity = _read_grid_property(source_path, "POR", n_total)
         if porosity is not None:
             write_property("porosity", porosity)
-        permi = _read_grid_property(source_path, "PERMI", n_total) or _read_grid_property(source_path, "PERMX", n_total)
+        permi = _read_grid_property(
+            source_path,
+            "PERMI",
+            n_total,
+        ) or _read_grid_property(source_path, "PERMX", n_total)
         if permi is not None:
             write_property("permi", permi)
-            permj = _read_grid_property(source_path, "PERMJ", n_total, equals_source=permi)
-            permj = permj or _read_grid_property(source_path, "PERMY", n_total, equals_source=permi)
+            permj = _read_grid_property(
+                source_path,
+                "PERMJ",
+                n_total,
+                equals_source=permi,
+            )
+            permj = permj or _read_grid_property(
+                source_path,
+                "PERMY",
+                n_total,
+                equals_source=permi,
+            )
             if permj is not None:
                 write_property("permj", permj)
-            permk = _read_grid_property(source_path, "PERMK", n_total, equals_source=permi)
-            permk = permk or _read_grid_property(source_path, "PERMZ", n_total, equals_source=permi)
+            permk = _read_grid_property(
+                source_path,
+                "PERMK",
+                n_total,
+                equals_source=permi,
+            )
+            permk = permk or _read_grid_property(
+                source_path,
+                "PERMZ",
+                n_total,
+                equals_source=permi,
+            )
             if permk is not None:
                 write_property("permk", permk)
 
         related_datasets: list[dict[str, Any]] = []
         try:
             from .cmg_wells import convert_cmg_wells, parse_cmg_wells
+
             related_datasets = convert_cmg_wells(
                 parse_cmg_wells(source_path),
                 prefix,
@@ -497,12 +648,22 @@ class CmgReader(BaseReader):
             related_datasets = []
 
         sr3_option = options.get("sr3_path")
-        sr3_path = Path(sr3_option) if sr3_option else _find_sibling(source_path, {".sr3"})
+        sr3_path = (
+            Path(sr3_option)
+            if sr3_option
+            else _find_sibling(source_path, {".sr3"})
+        )
         time_steps: list[dict[str, Any]] = []
         if sr3_path is not None:
             from .cmg_results import attach_sr3_spatial_properties
+
             time_steps, sr3_info = attach_sr3_spatial_properties(
-                sr3_path, active_ids, n_total, prefix, bin_dir,
+                sr3_path,
+                active_ids,
+                n_total,
+                prefix,
+                bin_dir,
+                max_steps=int(options.get("max_steps", 8)),
             )
             deck_metadata.update(sr3_info)
 
@@ -510,7 +671,19 @@ class CmgReader(BaseReader):
         simulator = deck_metadata.get("simulator") or "CMG"
         result = {
             "id": prefix,
-            "name": f"CMG {simulator}: {prefix} ({ncol}x{nrow}x{nlay}, {n_active:,} active)",
+            "name": f"CMG "
+            f"{simulator}"
+            f": "
+            f"{prefix}"
+            f" ("
+            f"{ncol}"
+            f"x"
+            f"{nrow}"
+            f"x"
+            f"{nlay}"
+            f", "
+            f"{n_active:,}"
+            f" active)",
             "n_vertices": len(positions) // 3,
             "n_cells": n_active,
             "n_indices": len(indices),
@@ -523,19 +696,37 @@ class CmgReader(BaseReader):
                 "scalars": scalar_files,
             },
             "time_steps": time_steps,
+            "properties": {
+                key: {
+                    "label": key,
+                    "association": "cell",
+                    "count": n_active,
+                    "unit": None,
+                }
+                for key in set(scalar_files).union(
+                    *(set(step["scalars"]) for step in time_steps),
+                )
+            },
             "related_datasets": related_datasets,
             "metadata": {
                 **deck_metadata,
                 "format": "CMG DAT",
-                "units": "SI",
-                "grid_type": "corner-point" if grid_type == "corner" else "cartesian",
+                "units": None,
+                "grid_type": (
+                    "corner-point" if grid_type == "corner" else "cartesian"
+                ),
                 "n_total_cells": n_total,
                 "n_active_cells": n_active,
                 "n_wells_geometry": len(related_datasets),
                 "parse_seconds": round(elapsed, 3),
-                "properties": sorted(set(scalar_files) | {
-                    name for step in time_steps for name in step.get("scalars", {})
-                }),
+                "properties": sorted(
+                    set(scalar_files)
+                    | {
+                        name
+                        for step in time_steps
+                        for name in step.get("scalars", {})
+                    },
+                ),
             },
         }
         return result

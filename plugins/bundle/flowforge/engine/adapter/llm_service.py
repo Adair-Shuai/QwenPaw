@@ -1,19 +1,27 @@
 # -*- coding: utf-8 -*-
 """Adapter: LLM service bridging QwenPaw's ``ProviderManager``.
 
-LeAgent's workflow nodes call ``llm_service.complete(messages=..., model=..., temperature=..., max_tokens=...)``
+LeAgent's workflow nodes call \
+``llm_service.complete(messages=..., model=..., temperature=..., \
+max_tokens=...)``
 and expect a response object with ``.content`` (str).
 
-QwenPaw uses agentscope 2.0's ``ChatModelBase.__call__`` which takes
-``Msg`` objects and returns a ``ChatResponse`` or an async response stream.
-The final ``is_last=True`` response contains the complete text; earlier
-responses are deltas and must not be appended to that final response.
+QwenPaw uses agentscope 2.0's ``ChatModelBase.__call__`` which \
+takes
+``Msg`` objects and returns a ``ChatResponse`` or an async \
+response stream.
+The final ``is_last=True`` response contains the complete text; \
+earlier
+responses are deltas and must not be appended to that final \
+response.
 This adapter:
 
 1. Accepts ``ChatMessage`` objects (from :mod:`.chat_message`).
 2. Converts them to agentscope ``Msg``.
-3. Resolves the model via ``ProviderManager`` (active model or override).
-4. Calls the model and extracts the text content from the response.
+3. Resolves the model via ``ProviderManager`` (active model or \
+override).
+4. Calls the model and extracts the text content from the \
+response.
 """
 
 from __future__ import annotations
@@ -55,8 +63,19 @@ class LLMService:
         print(response.content)
     """
 
-    def __init__(self, provider_manager: Any | None = None) -> None:
+    def __init__(
+        self,
+        provider_manager: Any | None = None,
+        *,
+        agent_id: str | None = None,
+    ) -> None:
         self._pm = provider_manager
+        self.agent_id = agent_id
+
+    def for_agent(self, agent_id: str) -> LLMService:
+        """Bind a request without changing the shared adapter or global \
+model."""
+        return LLMService(self._pm, agent_id=agent_id)
 
     def _get_provider_manager(self) -> Any:
         """Lazily resolve the ProviderManager singleton."""
@@ -80,26 +99,35 @@ class LLMService:
         if pm is None:
             raise RuntimeError("No ProviderManager available")
 
-        if provider and model:
-            prov = pm.get_provider(provider)
-            if prov is None:
-                raise RuntimeError(f"Provider '{provider}' not found")
-            chat_model = prov.get_chat_model_instance(model)
-            return chat_model, provider, model
+        if not (provider and model):
+            # Read on every completion so changing an agent's model takes
+            # effect without a plugin restart. A missing/broken agent must
+            # fail rather than silently borrow another agent's configuration.
+            active = None
+            if self.agent_id is not None:
+                from qwenpaw.config.config import load_agent_config
 
-        # Fallback: use the active model
-        active = pm.get_active_model()
-        if active is None or not active.provider_id or not active.model:
-            raise RuntimeError("No active model configured")
+                config = load_agent_config(self.agent_id)
+                if getattr(config, "enabled", True) is False:
+                    raise RuntimeError(f"Agent '{self.agent_id}' is disabled")
+                active = config.active_model
+            # An unset agent model inherits the host default, as chat does.
+            active = active or pm.get_active_model()
+            if active is None or not active.provider_id or not active.model:
+                raise RuntimeError("No active model configured")
+            if provider and provider != active.provider_id:
+                raise ValueError("A provider override requires a model")
+            provider = provider or active.provider_id
+            model = model or active.model
 
-        prov = pm.get_provider(active.provider_id)
+        prov = pm.get_provider(provider)
         if prov is None:
-            raise RuntimeError(
-                f"Active provider '{active.provider_id}' not found"
-            )
+            raise RuntimeError(f"Provider '{provider}' not found")
+        if getattr(prov, "enabled", True) is False:
+            raise RuntimeError(f"Provider '{provider}' is disabled")
 
-        chat_model = prov.get_chat_model_instance(active.model)
-        return chat_model, active.provider_id, active.model
+        chat_model = prov.get_chat_model_instance(model)
+        return chat_model, provider, model
 
     async def complete(
         self,

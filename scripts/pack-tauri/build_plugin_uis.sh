@@ -22,6 +22,13 @@ fi
 
 echo "[build_plugin_uis] Building plugin frontend bundles..."
 
+# OpenUI emits plugin-root dist/ from frontend/, rather than ui/dist/.
+openui_frontend="$REPO_ROOT/plugins/bundle/qwenpaw-openui/frontend"
+npm ci --prefix "$openui_frontend"
+npm run build --prefix "$openui_frontend"
+test -s "$REPO_ROOT/plugins/bundle/qwenpaw-openui/dist/index.js"
+test -s "$REPO_ROOT/plugins/bundle/qwenpaw-openui/dist/system-prompt.txt"
+
 built=0
 skipped=0
 

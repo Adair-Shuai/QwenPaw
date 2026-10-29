@@ -21,6 +21,8 @@ from .backend.evaluation import (
     ingest_uploaded_documents,
 )
 
+from .backend.service import register as register_workbench
+
 
 app = PawApp(name="Storage Capacity", app_id="storage-capacity")
 router = APIRouter()
@@ -80,13 +82,18 @@ def _summary_lines(text: str) -> List[str]:
     return lines[:6]
 
 
-async def _expert_summary(ctx: Any, evaluation: Dict[str, Any]) -> tuple[List[str], str]:
+async def _expert_summary(
+    ctx: Any,
+    evaluation: Dict[str, Any],
+) -> tuple[List[str], str]:
     try:
         reply = await ctx.chat(build_expert_prompt(evaluation))
         lines = _summary_lines(getattr(reply, "text", "") or "")
         if len(lines) >= 3:
             return lines, "agent"
-    except Exception:  # The deterministic calculation remains available offline.
+    except (
+        Exception
+    ):  # The deterministic calculation remains available offline.
         pass
     return fallback_expert_summary(evaluation), "deterministic_fallback"
 
@@ -126,19 +133,34 @@ async def api_ingest(
         uploaded.append(
             {
                 "filename": item.filename or "未命名资料",
-                "content_type": item.content_type or "application/octet-stream",
+                "content_type": item.content_type
+                or "application/octet-stream",
                 "size_bytes": len(content),
                 "content": content,
-            }
+            },
         )
-    return ingest_uploaded_documents(uploaded, case_id=case_id, case_name=case_name)
+    return ingest_uploaded_documents(
+        uploaded,
+        case_id=case_id,
+        case_name=case_name,
+    )
 
 
 @router.post("/evaluate")
-async def api_evaluate(body: EvaluateBody, ctx=Depends(get_ctx)) -> Dict[str, Any]:
-    if body.pressure_basis not in {"absolute", "apparent_formation", "report_defined"}:
+async def api_evaluate(
+    body: EvaluateBody,
+    ctx=Depends(get_ctx),
+) -> Dict[str, Any]:
+    if body.pressure_basis not in {
+        "absolute",
+        "apparent_formation",
+        "report_defined",
+    }:
         raise HTTPException(status_code=400, detail="pressure_basis 不受支持")
-    if body.injection_end_state_id.casefold() == body.evaluation_state_id.casefold():
+    if (
+        body.injection_end_state_id.casefold()
+        == body.evaluation_state_id.casefold()
+    ):
         raise HTTPException(status_code=400, detail="注气末与评价期必须是不同状态")
     try:
         evaluation = evaluate_case(body.model_dump())
@@ -154,7 +176,6 @@ async def api_evaluate(body: EvaluateBody, ctx=Depends(get_ctx)) -> Dict[str, An
 
 
 # PluginLoader contract.
-from .backend.service import register as register_workbench
 
 register_workbench(router)
 plugin = app

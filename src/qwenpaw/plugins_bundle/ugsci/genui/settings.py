@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Persistent, plugin-owned GenUI feature settings."""
 
 from __future__ import annotations
@@ -54,17 +55,24 @@ def save_freeform_settings(
 
     Only the provided keys are updated; the rest are preserved.
     """
-    if freeform_max_steps is not None and not 1 <= int(freeform_max_steps) <= 100:
+    if (
+        freeform_max_steps is not None
+        and not 1 <= int(freeform_max_steps) <= 100
+    ):
         raise ValueError("freeform_max_steps must be between 1 and 100")
     with _LOCK:
         current = load_settings()
-        current.update({
-            k: v for k, v in {
-                "freeform_enabled": freeform_enabled,
-                "freeform_max_steps": freeform_max_steps,
-                "freeform_simplify": freeform_simplify,
-            }.items() if v is not None
-        })
+        current.update(
+            {
+                k: v
+                for k, v in {
+                    "freeform_enabled": freeform_enabled,
+                    "freeform_max_steps": freeform_max_steps,
+                    "freeform_simplify": freeform_simplify,
+                }.items()
+                if v is not None
+            },
+        )
         _PATH.parent.mkdir(parents=True, exist_ok=True)
         temporary = _PATH.with_suffix(".tmp")
         temporary.write_text(

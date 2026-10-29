@@ -1,5 +1,5 @@
 import type { TFunction } from "i18next";
-import { OS_APPS, type OsAppDef } from "./osApps";
+import { OS_APPS, getAppLabel, type OsAppDef } from "./osApps";
 import type { IconLayout } from "./osIconStore";
 
 const coreIds = new Set(OS_APPS.map((app) => app.routeId));
@@ -21,8 +21,8 @@ export function arrangeApps(
       const rank = iconTypeRank(left) - iconTypeRank(right);
       if (rank !== 0) return rank;
     }
-    return t(left.labelKey, left.fallback).localeCompare(
-      t(right.labelKey, right.fallback),
+    return getAppLabel(left, t, language).localeCompare(
+      getAppLabel(right, t, language),
       language,
       { numeric: true, sensitivity: "base" },
     );

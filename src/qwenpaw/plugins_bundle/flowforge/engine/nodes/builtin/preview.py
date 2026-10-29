@@ -1,16 +1,25 @@
 # -*- coding: utf-8 -*-
-"""``PreviewNode`` — a professional artifact preview node (ComfyUI ``PreviewImage`` analogue).
+"""``PreviewNode`` — a professional artifact preview node (ComfyUI \
+``PreviewImage`` analogue).
 
-A terminal-but-composable node that accepts any generated media artifact
-(image / video / 3D mesh / audio) by reference and renders a rich preview on
-the canvas: the asset itself plus filename, kind, dimensions, MIME, file size,
-and a download link. It passes the asset straight through on an output socket
-so it can be dropped *between* a generator/processor and a downstream consumer
+A terminal-but-composable node that accepts any generated media \
+artifact
+(image / video / 3D mesh / audio) by reference and renders a rich \
+preview on
+the canvas: the asset itself plus filename, kind, dimensions, \
+MIME, file size,
+and a download link. It passes the asset straight through on an \
+output socket
+so it can be dropped *between* a generator/processor and a \
+downstream consumer
 (e.g. ``AssetExportNode``) without breaking the chain.
 
-Assets travel by reference (``MediaRef``) — never inline base64 — so previewing
-is free: the node only re-emits the existing ``/api/v1/files/{id}/preview`` URL
-inside a ``NodeOutput.ui.gen_ui`` tree and exposes structured metadata that the
+Assets travel by reference (``MediaRef``) — never inline base64 — \
+so previewing
+is free: the node only re-emits the existing \
+``/api/v1/files/{id}/preview`` URL
+inside a ``NodeOutput.ui.gen_ui`` tree and exposes structured \
+metadata that the
 frontend renders as a professional artifact card.
 """
 
@@ -18,7 +27,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import logging
 
 from ...adapter.log_compat import get_logger
 from ...io import (
@@ -47,7 +55,8 @@ class PreviewNode(WorkflowNode):
             display_name="Artifact Preview",
             category="art/preview",
             description=(
-                "Preview a generated media artifact (image, video, 3D mesh, or "
+                "Preview a generated media artifact (imag"
+                "e, video, 3D mesh, or "
                 "audio) with its filename, dimensions, type, and a download "
                 "link. Passes the asset through so it can sit between a "
                 "generator and a downstream consumer."
@@ -59,7 +68,8 @@ class PreviewNode(WorkflowNode):
                 IO.Any.Input(
                     id="asset",
                     optional=True,
-                    tooltip="Generated media artifact to preview (image / video / 3D / audio).",
+                    tooltip="Generated media artifact to preview (ima"
+                    "ge / video / 3D / audio).",
                 ),
                 IO.String.Input(
                     id="title",
@@ -77,7 +87,12 @@ class PreviewNode(WorkflowNode):
             is_output_node=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         ref = MediaRef.from_dict(inputs.get("asset"))
         if ref is None or not ref.src:
             # Nothing wired in yet — a benign no-op rather than a hard failure.
@@ -86,7 +101,9 @@ class PreviewNode(WorkflowNode):
                 metadata={"empty": True},
             )
 
-        title = str(inputs.get("title") or "").strip() or self._default_title(ref)
+        title = str(inputs.get("title") or "").strip() or self._default_title(
+            ref,
+        )
         caption = self._caption(ref)
         download_url = ref.download_url or (
             f"/api/v1/files/{ref.file_id}/download" if ref.file_id else ref.src
@@ -114,7 +131,11 @@ class PreviewNode(WorkflowNode):
             values=(ref.to_dict(), ref.src or ""),
             ui=publish_gen_ui(
                 gen_ui,
-                ui_id=flowforge_gen_ui_id("preview", hidden.unique_id, ref.file_id or ref.src),
+                ui_id=flowforge_gen_ui_id(
+                    "preview",
+                    hidden.unique_id,
+                    ref.file_id or ref.src,
+                ),
             ),
             metadata={
                 "kind": ref.kind,

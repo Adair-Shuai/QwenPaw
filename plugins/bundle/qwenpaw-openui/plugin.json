@@ -1,7 +1,7 @@
 {
   "id": "qwenpaw-openui",
   "name": "QwenPaw OpenUI",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Interactive OpenUI components inline in QwenPaw Chat replies.",
   "description_i18n": {
     "zh-CN": "在 QwenPaw 对话中交错呈现文字与可交互的 OpenUI 组件。",
@@ -15,7 +15,7 @@
   "dependencies": [],
   "qwenpaw_version": {
     "min": "2.2.3",
-    "max": "2.4.0"
+    "max": "3.0.0"
   },
   "pack_requires": ["dist/system-prompt.txt"],
   "pack_exclude": ["frontend"],

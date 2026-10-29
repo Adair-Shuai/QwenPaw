@@ -14,20 +14,119 @@ def _workflow(name: str) -> str:
     )
 
 
+def test_clean_release_and_frontend_checks_build_openui_runtime() -> None:
+    for name, gate in (
+        ("release-resume.yml", "Pack plugins and build index"),
+        ("plugins-build.yml", "Pack plugins and build index"),
+        ("frontend-tests.yml", "Verify fork feature regression inventory"),
+        ("full-tests-nightly.yml", "Verify fork feature regression inventory"),
+    ):
+        workflow = _workflow(name)
+        assert (
+            "npm --prefix plugins/bundle/qwenpaw-openui/frontend ci"
+            in workflow
+        )
+        assert workflow.index(
+            "npm --prefix plugins/bundle/qwenpaw-openui/frontend test",
+        ) < workflow.index(gate)
+        if name in {"frontend-tests.yml", "full-tests-nightly.yml"}:
+            # Mounted Run Center tests consume the generated charts module.
+            assert "npm --prefix plugins/bundle/qwenpaw-run-center/ui ci" in (
+                workflow
+            )
+            assert workflow.index(
+                "npm --prefix plugins/bundle/qwenpaw-run-center/ui run build",
+            ) < workflow.index(gate)
+            assert workflow.index(
+                "scripts/sync_run_center_bundle.py --sync",
+            ) < workflow.index(gate)
+
+    for suffix in ("sh", "ps1"):
+        helper = (
+            REPO_ROOT / "scripts" / "pack-tauri" / f"build_plugin_uis.{suffix}"
+        )
+        text = helper.read_text(encoding="utf-8")
+        assert "qwenpaw-openui/frontend" in text
+        assert "system-prompt.txt" in text
+        assert "npm ci --prefix" in text and "npm run build --prefix" in text
+
+    for name, gate in (
+        ("release.yml", "Build package"),
+        ("publish-pypi.yml", "Build package"),
+        ("fork-verify.yml", "Build package"),
+        ("release-verify.yml", "Run install script (Linux/macOS)"),
+    ):
+        workflow = _workflow(name)
+        assert workflow.index(
+            "Build and stage bundled OpenUI runtime",
+        ) < workflow.index(gate)
+        assert "npm --prefix plugins/bundle/qwenpaw-openui/frontend test" in (
+            workflow
+        )
+        assert "stage_bundled_plugins.py --repo . --dest" in workflow
+        assert (
+            "cp -R .codex-tmp/wheel-plugin-stage/qwenpaw-openui "
+            "src/qwenpaw/plugins_bundle/" in workflow
+        )
+        for asset in ("index.js", "system-prompt.txt"):
+            assert (
+                "test -s src/qwenpaw/plugins_bundle/qwenpaw-openui/"
+                f"dist/{asset}" in workflow
+            )
+
+
+def test_reusable_plugin_build_matches_release_artifact_scope() -> None:
+    for name in ("release-resume.yml", "plugins-build.yml"):
+        workflow = _workflow(name)
+        pack = workflow.index("Pack plugins and build index")
+        for stage in (
+            "Build memory plugin frontends",
+            "Build Run Center frontend",
+        ):
+            assert workflow.index(stage) < pack
+        assert "for frontend_dir in plugins/memory/*/frontend; do" in workflow
+        for command in ("ci", "run build"):
+            assert f'npm --prefix "$frontend_dir" {command}' in workflow
+            assert (
+                f"npm --prefix plugins/bundle/qwenpaw-run-center/ui {command}"
+                in workflow
+            )
+        for plugin in (
+            "qwenpaw-creator",
+            "uproject",
+            "datapaw",
+            "qwenpaw-data",
+        ):
+            assert f"--exclude {plugin}" in workflow[pack:]
+
+
 def test_release_builds_run_center_and_docker_runtime_dependencies() -> None:
     release = _workflow("release.yml")
     resumable = _workflow("release-resume.yml")
     standalone = _workflow("plugins-release.yml")
-    dockerfile = (REPO_ROOT / "deploy" / "Dockerfile").read_text(encoding="utf-8")
+    dockerfile = (REPO_ROOT / "deploy" / "Dockerfile").read_text(
+        encoding="utf-8",
+    )
 
     for workflow in (release, resumable, standalone):
-        assert "npm --prefix plugins/bundle/qwenpaw-run-center/ui ci" in workflow
-        assert "npm --prefix plugins/bundle/qwenpaw-run-center/ui run build" in workflow
-        assert workflow.index("Build Run Center frontend") < workflow.index(
-            "Pack plugins and build index"
+        assert (
+            "npm --prefix plugins/bundle/qwenpaw-run-center/ui ci" in workflow
         )
-    assert "COPY scripts/pack-tauri/runtime_staging.py /tmp/runtime_staging.py" in dockerfile
-    assert "COPY scripts/pack-tauri/copy_windows_tree.py /tmp/copy_windows_tree.py" in dockerfile
+        assert (
+            "npm --prefix plugins/bundle/qwenpaw-run-center/ui run build"
+            in workflow
+        )
+        assert workflow.index("Build Run Center frontend") < workflow.index(
+            "Pack plugins and build index",
+        )
+    assert (
+        "COPY scripts/pack-tauri/runtime_staging.py /tmp/runtime_staging.py"
+        in dockerfile
+    )
+    assert (
+        "COPY scripts/pack-tauri/copy_windows_tree.py "
+        "/tmp/copy_windows_tree.py" in dockerfile
+    )
     assert (
         "rm /tmp/stage_python_runtime.py /tmp/runtime_staging.py "
         "/tmp/copy_windows_tree.py"
@@ -43,7 +142,8 @@ def test_resumable_release_publish_waits_for_full_test_gate() -> None:
         ("publish-components", "full-test-gate"),
     ):
         block = release.split(f"  {job}:\n", 1)[1].split(
-            f"  {following}:\n", 1
+            f"  {following}:\n",
+            1,
         )[0]
         assert "cleanup-draft-immutable-artifacts, full-test-gate]" in block
         assert "needs.full-test-gate.result == 'success'" in block
@@ -61,15 +161,17 @@ def test_distribution_builds_embed_run_center_frontend() -> None:
         assert text.index("Build bundled Run Center frontend") < text.index(
             "python -m build"
             if workflow != "release-verify.yml"
-            else "Run install script"
+            else "Run install script",
         )
         assert "python scripts/sync_run_center_bundle.py --sync" in text
         assert (
-            "test -s src/qwenpaw/plugins_bundle/qwenpaw-run-center/ui/dist/index.js"
-            in text
+            "test -s src/qwenpaw/plugins_bundle/"
+            "qwenpaw-run-center/ui/dist/index.js" in text
         )
 
-    dockerfile = (REPO_ROOT / "deploy" / "Dockerfile").read_text(encoding="utf-8")
+    dockerfile = (REPO_ROOT / "deploy" / "Dockerfile").read_text(
+        encoding="utf-8",
+    )
     assert "npm --prefix /app/run-center-ui run build" in dockerfile
     assert (
         "COPY --from=console-builder /app/run-center-ui/dist/ "
@@ -83,7 +185,8 @@ def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
 
     assert 'source_path="$(jq -r .path' in release
     assert (
-        'if [ "$source_path" != ".github/workflows/release-resume.yml" ]' in release
+        'if [ "$source_path" != ".github/workflows/release-resume.yml" ]'
+        in release
     )
     assert 'if [ "$source_sha" != "$sha" ]' in release
     assert "validate_artifact_reuse_diff" in release

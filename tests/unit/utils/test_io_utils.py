@@ -8,8 +8,10 @@ import json
 import os
 import stat
 import threading
+import time
 from pathlib import Path
-from unittest.mock import patch
+from types import SimpleNamespace
+from unittest.mock import Mock, patch
 
 import pytest
 import yaml
@@ -77,9 +79,14 @@ def test_write_text_atomic_retries_transient_windows_lock(
             raise error
         real_replace(source, destination)
 
+    sleep = Mock()
+    # Patch this module's bindings, not the process-wide os/time modules.
+    # Other live workers must retain their real replacement and sleep APIs.
+    local_os = SimpleNamespace(**{**vars(os), "replace": replace_after_lock})
+    local_time = SimpleNamespace(**{**vars(time), "sleep": sleep})
     with (
-        patch("qwenpaw.utils.io_utils.os.replace", replace_after_lock),
-        patch("qwenpaw.utils.io_utils.time.sleep") as sleep,
+        patch("qwenpaw.utils.io_utils.os", local_os),
+        patch("qwenpaw.utils.io_utils.time", local_time),
     ):
         write_text_atomic(path, "new")
 

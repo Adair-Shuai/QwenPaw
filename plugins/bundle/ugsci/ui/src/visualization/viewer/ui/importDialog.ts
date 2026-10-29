@@ -5,17 +5,19 @@
 import {
   classifyPickedFiles,
   fileAcceptAttribute,
-  hostApiFetch,
   isImportableFilename,
   listWorkspaceTree,
   pollImportJob,
   type WorkspaceRoot,
   type WorkspaceTreeEntry,
 } from "./importFormats";
+import { ApiClient } from "../api/client";
 
 export interface ImportDialogHost {
   apiBase: string;
   authToken?: string;
+  headers?: Record<string, string>;
+  request?: typeof fetch;
   container: HTMLElement;
   onStatus: (message: string) => void;
   onImported: (datasetId: string) => Promise<void>;
@@ -46,7 +48,9 @@ function buttonCss(tone: "default" | "primary" | "ghost" = "default"): string {
   return `padding:6px 10px;border:1px solid;border-radius:6px;cursor:pointer;font-size:12px;${colors}`;
 }
 
-export function createHiddenFileInput(onFiles: (files: File[]) => void): HTMLInputElement {
+export function createHiddenFileInput(
+  onFiles: (files: File[]) => void,
+): HTMLInputElement {
   const input = document.createElement("input");
   input.type = "file";
   input.multiple = true;
@@ -61,7 +65,10 @@ export function createHiddenFileInput(onFiles: (files: File[]) => void): HTMLInp
   return input;
 }
 
-export function bindDropImport(target: HTMLElement, onFiles: (files: File[]) => void): () => void {
+export function bindDropImport(
+  target: HTMLElement,
+  onFiles: (files: File[]) => void,
+): () => void {
   const onDragOver = (event: DragEvent) => {
     if (!event.dataTransfer?.types.includes("Files")) return;
     event.preventDefault();
@@ -80,48 +87,49 @@ export function bindDropImport(target: HTMLElement, onFiles: (files: File[]) => 
   };
 }
 
-export async function importLocalFiles(host: ImportDialogHost, files: File[]): Promise<void> {
+export async function importLocalFiles(
+  host: ImportDialogHost,
+  files: File[],
+): Promise<void> {
   const picked = classifyPickedFiles(files);
   if (!picked) {
     host.onStatus("没有可导入的油气文件（EGRID/GRDECL/DAT/SR3/LAS/ROFF 等）");
     return;
-  }
-  const form = new FormData();
-  form.append("file", picked.primary, picked.primary.name);
-  form.append("name", picked.primary.name.replace(/\.[^.]+$/, ""));
-  if (picked.companion) {
-    form.append("companion_file", picked.companion, picked.companion.name);
   }
   host.onStatus(
     picked.companion
       ? `正在上传 ${picked.primary.name} + ${picked.companion.name}...`
       : `正在上传 ${picked.primary.name}...`,
   );
-  const headers: Record<string, string> = host.authToken
-    ? { Authorization: `Bearer ${host.authToken}` }
-    : {};
-  const response = await fetch(`${host.apiBase}/imports`, {
-    method: "POST",
-    headers,
-    body: form,
-  });
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(text || `导入失败: HTTP ${response.status}`);
-  }
-  const submitted = await response.json();
+  const api = new ApiClient(host.apiBase, host.authToken, host);
+  const submitted = await api.createImport(
+    picked.primary,
+    picked.primary.name.replace(/\.[^.]+$/, ""),
+    undefined,
+    picked.companion,
+  );
   const result = await pollImportJob({
     apiBase: host.apiBase,
     authToken: host.authToken,
+    headers: host.headers,
+    request: host.request,
     jobId: submitted.job_id,
     onProgress: (progress, status) => {
-      host.onStatus(`后台解析 ${picked.primary.name}（${status} ${Math.round(progress * 100)}%）`);
+      host.onStatus(
+        `后台解析 ${picked.primary.name}（${status} ${Math.round(
+          progress * 100,
+        )}%）`,
+      );
     },
   });
-  if (picked.extra.length) {
-    host.onStatus(`已导入 ${result.name || result.id}；同一次多选的其余文件请再导入一次，或改用「从工作区导入」自动匹配伴随文件`);
-  }
   await host.onImported(result.id);
+  if (picked.extra.length) {
+    host.onStatus(
+      `已导入 ${result.name || result.id}；其余 ${
+        picked.extra.length
+      } 个文件未导入，请逐个导入，或使用「从工作区导入」自动匹配伴随文件`,
+    );
+  }
 }
 
 export async function importWorkspaceFile(
@@ -131,71 +139,85 @@ export async function importWorkspaceFile(
 ): Promise<void> {
   const name = path.split("/").pop() || path;
   host.onStatus(`正在从工作区提交 ${name}...`);
-  let response: Response;
-  try {
-    response = await hostApiFetch("/ugsci/visualization/imports/workspace", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ path, root, name: name.replace(/\.[^.]+$/, "") }),
-    });
-  } catch {
-    response = await fetch(`${host.apiBase}/imports/workspace`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        ...(host.authToken ? { Authorization: `Bearer ${host.authToken}` } : {}),
-      },
-      body: JSON.stringify({ path, root, name: name.replace(/\.[^.]+$/, "") }),
-    });
-  }
-  if (!response.ok) {
-    const text = await response.text().catch(() => "");
-    throw new Error(text || `工作区导入失败: HTTP ${response.status}`);
-  }
-  const submitted = await response.json();
+  const api = new ApiClient(host.apiBase, host.authToken, host);
+  const submitted = await api.createWorkspaceImport(
+    path,
+    root,
+    name.replace(/\.[^.]+$/, ""),
+  );
   const result = await pollImportJob({
     apiBase: host.apiBase,
     authToken: host.authToken,
+    headers: host.headers,
+    request: host.request,
     jobId: submitted.job_id,
     onProgress: (progress, status) => {
-      host.onStatus(`后台解析 ${name}（${status} ${Math.round(progress * 100)}%）`);
+      host.onStatus(
+        `后台解析 ${name}（${status} ${Math.round(progress * 100)}%）`,
+      );
     },
   });
   await host.onImported(result.id);
 }
 
-export function openWorkspacePicker(host: ImportDialogHost): void {
+const openPickers = new WeakMap<HTMLElement, () => void>();
+
+export function openWorkspacePicker(host: ImportDialogHost): () => void {
+  openPickers.get(host.container)?.();
+  const previousFocus =
+    document.activeElement instanceof HTMLElement
+      ? document.activeElement
+      : null;
+  let closed = false;
+  let revision = 0;
+  let request: AbortController | null = null;
   const rootEl = document.createElement("div");
   rootEl.style.cssText = overlayStyle();
   rootEl.setAttribute("role", "dialog");
   rootEl.setAttribute("aria-label", "从工作区导入");
+  rootEl.setAttribute("aria-modal", "true");
 
   const panel = document.createElement("div");
   panel.style.cssText = panelStyle();
 
   const title = document.createElement("div");
   title.textContent = "从工作区导入";
-  title.style.cssText = "font-weight:600;color:#e6edf3;margin-bottom:6px;font-size:14px;";
+  title.style.cssText =
+    "font-weight:600;color:#e6edf3;margin-bottom:6px;font-size:14px;";
 
   const hint = document.createElement("div");
-  hint.textContent = "Eclipse/CMG 的 INIT、UNRST、SR3 会在同目录自动匹配，不必手动多选。";
+  hint.textContent =
+    "Eclipse/CMG 的 INIT、UNRST、SR3 会在同目录自动匹配，不必手动多选。";
   hint.style.cssText = "color:#8b949e;font-size:11px;margin-bottom:10px;";
 
   const toolbar = document.createElement("div");
-  toolbar.style.cssText = "display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center;";
+  toolbar.style.cssText =
+    "display:flex;gap:6px;margin-bottom:8px;flex-wrap:wrap;align-items:center;";
 
   let root: WorkspaceRoot = "project";
   let currentPath = "";
   const crumb = document.createElement("div");
-  crumb.style.cssText = "flex:1;min-width:120px;color:#58a6ff;font-size:12px;word-break:break-all;";
+  crumb.style.cssText =
+    "flex:1;min-width:120px;color:#58a6ff;font-size:12px;word-break:break-all;";
 
   const list = document.createElement("div");
-  list.style.cssText = "border:1px solid #30363d;border-radius:8px;min-height:220px;max-height:280px;overflow:auto;background:#0d1117;";
+  list.style.cssText =
+    "border:1px solid #30363d;border-radius:8px;min-height:220px;max-height:280px;overflow:auto;background:#0d1117;";
 
   const status = document.createElement("div");
-  status.style.cssText = "color:#8b949e;font-size:11px;margin-top:8px;min-height:16px;";
+  status.setAttribute("role", "status");
+  status.style.cssText =
+    "color:#8b949e;font-size:11px;margin-top:8px;min-height:16px;";
 
-  const close = () => rootEl.remove();
+  const close = () => {
+    if (closed) return;
+    closed = true;
+    revision++;
+    request?.abort();
+    rootEl.remove();
+    openPickers.delete(host.container);
+    if (previousFocus?.isConnected) previousFocus.focus();
+  };
 
   const setRoot = (next: WorkspaceRoot) => {
     root = next;
@@ -210,8 +232,14 @@ export function openWorkspacePicker(host: ImportDialogHost): void {
   workspaceBtn.type = "button";
   workspaceBtn.textContent = "Agent 工作区";
   const paintRoots = () => {
-    projectBtn.style.cssText = buttonCss(root === "project" ? "primary" : "ghost");
-    workspaceBtn.style.cssText = buttonCss(root === "workspace" ? "primary" : "ghost");
+    projectBtn.style.cssText = buttonCss(
+      root === "project" ? "primary" : "ghost",
+    );
+    workspaceBtn.style.cssText = buttonCss(
+      root === "workspace" ? "primary" : "ghost",
+    );
+    projectBtn.setAttribute("aria-pressed", String(root === "project"));
+    workspaceBtn.setAttribute("aria-pressed", String(root === "workspace"));
   };
   projectBtn.addEventListener("click", () => {
     setRoot("project");
@@ -237,11 +265,19 @@ export function openWorkspacePicker(host: ImportDialogHost): void {
 
   toolbar.append(projectBtn, workspaceBtn, upBtn, crumb);
 
-  const renderEntries = (entries: WorkspaceTreeEntry[], append: boolean) => {
+  const renderEntries = (
+    entries: WorkspaceTreeEntry[],
+    append: boolean,
+    pageRoot: WorkspaceRoot,
+  ) => {
     if (!append) list.innerHTML = "";
-    const visible = entries.filter((entry) => entry.kind === "directory" || isImportableFilename(entry.name));
-    if (!append && visible.length === 0) {
+    list.querySelector("[data-empty]")?.remove();
+    const visible = entries.filter(
+      (entry) => entry.kind === "directory" || isImportableFilename(entry.name),
+    );
+    if (list.childElementCount === 0 && visible.length === 0) {
       const empty = document.createElement("div");
+      empty.dataset.empty = "true";
       empty.style.cssText = "padding:16px;color:#6e7681;";
       empty.textContent = "此目录没有可导入的油气文件";
       list.appendChild(empty);
@@ -259,7 +295,8 @@ export function openWorkspacePicker(host: ImportDialogHost): void {
       kind.style.cssText = "color:#8b949e;flex:0 0 auto;font-size:11px;";
       const name = document.createElement("span");
       name.textContent = entry.name;
-      name.style.cssText = "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
+      name.style.cssText =
+        "flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;";
       row.append(kind, name);
       row.addEventListener("click", () => {
         if (entry.kind === "directory") {
@@ -268,7 +305,7 @@ export function openWorkspacePicker(host: ImportDialogHost): void {
           return;
         }
         close();
-        void importWorkspaceFile(host, entry.path, root).catch((error) => {
+        void importWorkspaceFile(host, entry.path, pageRoot).catch((error) => {
           host.onStatus(error instanceof Error ? error.message : String(error));
         });
       });
@@ -277,12 +314,34 @@ export function openWorkspacePicker(host: ImportDialogHost): void {
   };
 
   const loadPage = async (cursor?: string | null) => {
+    const pageRevision = ++revision;
+    const pageRoot = root;
+    const pagePath = currentPath;
+    request?.abort();
+    request = new AbortController();
+    if (!cursor) list.replaceChildren();
+    list.setAttribute("aria-busy", "true");
     status.textContent = "正在读取工作区...";
-    crumb.textContent = `${root === "project" ? "项目" : "工作区"} / ${currentPath || ""}`;
+    crumb.textContent = `${root === "project" ? "项目" : "工作区"} / ${
+      currentPath || ""
+    }`;
+    upBtn.disabled = !currentPath;
     try {
-      const page = await listWorkspaceTree({ path: currentPath, root, cursor });
-      renderEntries(page.entries, Boolean(cursor));
-      status.textContent = page.has_more ? "还有更多条目，滚动到底部继续加载" : "";
+      const page = await listWorkspaceTree({
+        path: pagePath,
+        root: pageRoot,
+        cursor,
+        signal: request.signal,
+        apiBase: host.apiBase,
+        authToken: host.authToken,
+        headers: host.headers,
+        request: host.request,
+      });
+      if (closed || pageRevision !== revision) return;
+      renderEntries(page.entries, Boolean(cursor), pageRoot);
+      status.textContent = page.has_more
+        ? "还有更多条目，请点击「加载更多」"
+        : "";
       if (page.has_more && page.next_cursor) {
         const more = document.createElement("button");
         more.type = "button";
@@ -295,8 +354,21 @@ export function openWorkspacePicker(host: ImportDialogHost): void {
         list.appendChild(more);
       }
     } catch (error) {
-      list.innerHTML = "";
-      status.textContent = error instanceof Error ? error.message : String(error);
+      if (closed || pageRevision !== revision) return;
+      status.textContent =
+        error instanceof Error ? error.message : String(error);
+      const retry = document.createElement("button");
+      retry.type = "button";
+      retry.textContent = "重试读取";
+      retry.style.cssText = `${buttonCss()};width:100%;margin:6px 0;`;
+      retry.addEventListener("click", () => {
+        retry.remove();
+        void loadPage(cursor);
+      });
+      list.appendChild(retry);
+    } finally {
+      if (!closed && pageRevision === revision)
+        list.setAttribute("aria-busy", "false");
     }
   };
 
@@ -308,9 +380,35 @@ export function openWorkspacePicker(host: ImportDialogHost): void {
   rootEl.addEventListener("click", (event) => {
     if (event.target === rootEl) close();
   });
+  rootEl.addEventListener("keydown", (event) => {
+    // Keep modal keystrokes out of the scene's Delete / H / I shortcuts.
+    event.stopPropagation();
+    if (event.key === "Escape") {
+      event.preventDefault();
+      close();
+    } else if (event.key === "Tab") {
+      const focusable = Array.from(
+        panel.querySelectorAll<HTMLElement>(
+          "button:not(:disabled),input:not(:disabled),select:not(:disabled),[tabindex='0']",
+        ),
+      );
+      const first = focusable[0];
+      const last = focusable[focusable.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last?.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first?.focus();
+      }
+    }
+  });
 
   panel.append(title, hint, toolbar, list, status, cancel);
   rootEl.appendChild(panel);
   host.container.appendChild(rootEl);
+  openPickers.set(host.container, close);
+  projectBtn.focus();
   void loadPage();
+  return close;
 }

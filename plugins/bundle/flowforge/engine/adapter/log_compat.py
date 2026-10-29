@@ -42,8 +42,12 @@ class StructuredLogger:
             full_msg = msg
 
         self._logger.log(
-            level, full_msg, *args,
-            exc_info=exc_info, stack_info=stack_info, extra=extra,
+            level,
+            full_msg,
+            *args,
+            exc_info=exc_info,
+            stack_info=stack_info,
+            extra=extra,
         )
 
     def debug(self, msg: str, *args: Any, **kwargs: Any) -> None:

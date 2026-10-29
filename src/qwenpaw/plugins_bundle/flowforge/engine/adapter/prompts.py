@@ -38,7 +38,8 @@ _MODE_DEFAULTS: dict[str, dict[str, str]] = {
             "or can be reasonably inferred."
         ),
         "context_template": "Context: ${context}",
-        "output_contract": "Output: a JSON object with parameter key-value pairs.",
+        "output_contract": "Output: a JSON object with parameter "
+        "key-value pairs.",
     },
     "state_patch": {
         "system": (
@@ -48,7 +49,8 @@ _MODE_DEFAULTS: dict[str, dict[str, str]] = {
             "values to set."
         ),
         "context_template": "Current state: ${context}",
-        "output_contract": "Output: a JSON object of variable → value patches.",
+        "output_contract": "Output: a JSON object of variable → value "
+        "patches.",
     },
     "route_decision": {
         "system": (
@@ -57,7 +59,7 @@ _MODE_DEFAULTS: dict[str, dict[str, str]] = {
             "'route' key containing the target node or branch name."
         ),
         "context_template": "Context: ${context}",
-        "output_contract": "Output: {\"route\": \"<target>\"}",
+        "output_contract": 'Output: {"route": "<target>"}',
     },
     "custom": {
         "system": "",

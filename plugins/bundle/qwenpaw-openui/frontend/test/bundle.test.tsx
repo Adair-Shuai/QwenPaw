@@ -1,6 +1,8 @@
 import React from "react";
 import ReactDOM from "react-dom";
 import { readFileSync } from "node:fs";
+import { createRequire } from "node:module";
+import { pathToFileURL } from "node:url";
 import {
   act,
   cleanup,
@@ -14,11 +16,17 @@ import type {
   ChatCodeBlockProps,
   ChatRequestPayloadTransform,
 } from "../src/qwenpaw-host";
+import type { TaskLayoutProps } from "../src/TaskLayout";
 
 afterEach(cleanup);
 
 let Component: React.ComponentType<ChatCodeBlockProps>;
 let transform: ChatRequestPayloadTransform;
+const nativeRequire = createRequire(import.meta.url);
+const loadShippedBundle = nativeRequire("./loadShippedBundle.cjs") as (
+  url: string,
+  expectedFunction: typeof Function,
+) => Promise<unknown>;
 const submit = vi.fn(async () => {});
 const openExternalLink = vi.fn();
 const disposeAll = vi.fn();
@@ -62,7 +70,12 @@ beforeAll(async () => {
   // This file is the actual release artifact: no source aliases or second React.
   const dynamicCode = vi.spyOn(globalThis, "Function");
   try {
-    await import("../../dist/index.js");
+    // Keep the compiled release module in Node's ESM loader. The Function spy
+    // still covers its initialization without Vite transforming the bundle.
+    const artifactUrl = pathToFileURL(
+      nativeRequire.resolve("../../dist/index.js"),
+    ).href;
+    await loadShippedBundle(artifactUrl, globalThis.Function);
     // Zod otherwise catches a blocked Function probe before falling back.
     // Verify that even this probe is avoided during schema initialization.
     expect(dynamicCode).not.toHaveBeenCalled();
@@ -447,7 +460,11 @@ it.each([
       view.rerender(
         <Component {...props} source={source + tail.slice(0, i)} />,
       );
-      expect(screen.getByRole("tab", { name: "Tab A" })).toBe(tabA);
+      // The initial role query verifies accessibility. At every token, find
+      // the real label and owning tab again, preserving identity and hidden
+      // state checks without recomputing the entire CSS accessibility tree.
+      expect(screen.getByText("Tab A").closest('[role="tab"]')).toBe(tabA);
+      expect(tabA.closest('[hidden], [aria-hidden="true"]')).toBeNull();
       expect(tabA.getAttribute("aria-selected")).toBe("true");
       expect(document.activeElement).toBe(tabA);
     }
@@ -455,7 +472,8 @@ it.each([
     view.rerender(
       <Component {...props} source={source + tail} isStreaming={false} />,
     );
-    expect(screen.getByRole("tab", { name: "Tab A" })).toBe(tabA);
+    expect(screen.getByText("Tab A").closest('[role="tab"]')).toBe(tabA);
+    expect(tabA.closest('[hidden], [aria-hidden="true"]')).toBeNull();
     expect(tabA.getAttribute("aria-selected")).toBe("true");
     expect(submit).not.toHaveBeenCalled();
   },
@@ -484,9 +502,83 @@ it("keeps repeated references as independent instances while earlier siblings ar
       source={source + '\nheading = TextContent("Hello")'}
     />,
   );
-  const after = screen.getAllByRole("tab", { name: "Tab A" });
+  // The initial role query verifies visibility; retained nodes must also
+  // remain outside hidden ancestors when their preceding sibling arrives.
+  const after = screen
+    .getAllByText("Tab A")
+    .map((label) => label.closest('[role="tab"]')!);
+  for (const tab of after) {
+    expect(tab.closest('[hidden], [aria-hidden="true"]')).toBeNull();
+  }
   expect(after[0]).toBe(before[0]);
   expect(after[1]).toBe(before[1]);
   expect(after[0].getAttribute("aria-selected")).toBe("true");
   expect(after[1].getAttribute("aria-selected")).toBe("false");
+});
+
+it("ships the task-layout API using the real renderer and keeps panels alive through live updates", () => {
+  const TaskSurface = (
+    window as unknown as {
+      QwenPaw: {
+        openui: {
+          version: number;
+          TaskLayout: React.ComponentType<TaskLayoutProps>;
+        };
+      };
+    }
+  ).QwenPaw.openui.TaskLayout;
+  expect(TaskSurface).toBeTruthy();
+  const plan: TaskLayoutProps["plan"] = {
+    title: "Run",
+    layout: "tabs",
+    panels: [
+      { id: "fields", title: "Fields" },
+      { id: "curves", title: "Curves" },
+    ],
+  };
+  const mounted = vi.fn();
+  const unmounted = vi.fn();
+  function LivePanel({ value }: { value: string }) {
+    React.useEffect(() => {
+      mounted();
+      return unmounted;
+    }, []);
+    return <input aria-label={value} defaultValue="retained" />;
+  }
+  const panels = (value: string) => ({
+    fields: <LivePanel value={value} />,
+    curves: <p>{value}</p>,
+  });
+  const view = render(
+    <TaskSurface scopeKey="real-run" plan={plan} panels={panels("first")} />,
+  );
+  const input = screen.getByRole("textbox", { name: "first" });
+  fireEvent.change(input, { target: { value: "user zoom state" } });
+  fireEvent.click(screen.getByRole("tab", { name: "Curves" }));
+  view.rerender(
+    <TaskSurface
+      scopeKey="real-run"
+      plan={{ ...plan, title: "Updated run" }}
+      panels={panels("second")}
+    />,
+  );
+  expect(
+    screen.getByRole("tab", { name: "Curves" }).getAttribute("aria-selected"),
+  ).toBe("true");
+  fireEvent.click(screen.getByRole("tab", { name: "Fields" }));
+  expect(screen.getByRole("textbox", { name: "second" })).toBe(input);
+  expect((input as HTMLInputElement).value).toBe("user zoom state");
+  view.rerender(
+    <TaskSurface
+      scopeKey="real-run"
+      plan={{ ...plan, layout: "dashboard" }}
+      panels={panels("third")}
+    />,
+  );
+  expect(screen.getByRole("textbox", { name: "third" })).toBe(input);
+  expect(mounted).toHaveBeenCalledTimes(1);
+  expect(unmounted).not.toHaveBeenCalled();
+  expect(submit).not.toHaveBeenCalled();
+  view.unmount();
+  expect(unmounted).toHaveBeenCalledTimes(1);
 });

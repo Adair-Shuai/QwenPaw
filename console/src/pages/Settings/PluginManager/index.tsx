@@ -33,6 +33,7 @@ export default function PluginManagerPage() {
     updatesLoading,
     updatingId,
     updatingAll,
+    queuedIds,
     updateOne,
     updateAll,
   } = usePluginManager();
@@ -69,6 +70,7 @@ export default function PluginManagerPage() {
           updatesLoading={updatesLoading}
           updatingId={updatingId}
           updatingAll={updatingAll}
+          queuedIds={queuedIds}
           onUpdate={updateOne}
           onUpdateAll={updateAll}
         />

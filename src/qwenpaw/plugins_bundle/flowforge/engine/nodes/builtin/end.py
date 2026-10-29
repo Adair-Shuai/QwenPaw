@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""``EndNode`` — terminal marker. Collects the document's declared ``outputs``."""
+"""``EndNode`` — return an explicit value or collect preceding outputs."""
 
 from __future__ import annotations
 
@@ -18,16 +18,23 @@ class EndNode(WorkflowNode):
             node_id="EndNode",
             display_name="End",
             category="workflow/control",
-            description="Workflow terminator. Marked as an output node so the "
-                        "validator treats it as a required root.",
+            description="Workflow terminator. Returns value when provided; "
+            "otherwise collects preceding node outputs.",
             inputs=[IO.Any.Input(id="value", optional=True)],
-            outputs=[IO.Object.Output(id="outputs")],
+            outputs=[IO.Any.Output(id="outputs")],
             hidden=[Hidden.UNIQUE_ID, Hidden.WORKFLOW_STATE],
             is_output_node=True,
             control_flow=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
+        if "value" in inputs:
+            return NodeOutput(values=(inputs["value"],), next_node=None)
         state = hidden.workflow_state
         outs = dict(state.outputs) if state is not None else {}
         return NodeOutput(values=(outs,), next_node=None)

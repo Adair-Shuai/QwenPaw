@@ -12,7 +12,7 @@ import { X } from "lucide-react";
 import { useAgentStore } from "../stores/agentStore";
 import { useShallow } from "zustand/react/shallow";
 import { useOsWindows } from "./osWindowStore";
-import { OS_APPS } from "./osApps";
+import { OS_APPS, getAppLabel } from "./osApps";
 import { resolveAppDef } from "./osAppRegistry";
 import { buttonRoleProps } from "./a11y";
 import { useOsStyles } from "./useOsStyles";
@@ -37,7 +37,8 @@ function colorFor(id: string): string {
 
 export default function MissionControl() {
   const { styles, cx } = useOsStyles();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const language = i18n?.resolvedLanguage ?? i18n?.language;
   const { agents, selectedAgent, setSelectedAgent } = useAgentStore();
   // Narrow subscription: Mission Control is an overlay — it needs layout
   // fields, not per-frame geometry (drags don't happen while it's open).
@@ -142,7 +143,7 @@ export default function MissionControl() {
                 key={win.id}
                 className={styles.mcWindowCard}
                 onClick={focusWindow}
-                {...buttonRoleProps(focusWindow, t(def.labelKey, def.fallback))}
+                {...buttonRoleProps(focusWindow, getAppLabel(def, t, language))}
               >
                 <div
                   style={{
@@ -158,7 +159,7 @@ export default function MissionControl() {
                 >
                   <Icon size={22} />
                 </div>
-                <div className="title">{t(def.labelKey, def.fallback)}</div>
+                <div className="title">{getAppLabel(def, t, language)}</div>
               </div>
             );
           })

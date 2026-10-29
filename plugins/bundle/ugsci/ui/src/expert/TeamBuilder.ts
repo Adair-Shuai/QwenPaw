@@ -35,26 +35,89 @@ function inferRoleKey(name: string): string {
   if (compact.includes("地球物理")) return "geophysicist";
   if (compact.includes("油藏")) return "reservoir-engineer";
   if (compact.includes("钻井")) return "drilling-engineer";
-  if (compact.includes("采油") || compact.includes("生产")) return "production-engineer";
+  if (compact.includes("采油") || compact.includes("生产"))
+    return "production-engineer";
   if (compact.includes("pvt") || compact.includes("物性")) return "pvt-analyst";
-  if (compact.includes("审核") || compact.includes("verifier")) return "domain-reviewer";
-  if (compact.includes("master") || compact.includes("planner")) return "planner";
+  if (compact.includes("审核") || compact.includes("verifier"))
+    return "domain-reviewer";
+  if (compact.includes("master") || compact.includes("planner"))
+    return "planner";
   // Unknown display names fail closed to the restricted analyst role. Users
   // can select a more specific role explicitly in the builder.
   return "analyst";
 }
 
 const FALLBACK_ROLE_OPTIONS: RoleDefinition[] = [
-  { key: "analyst", display_name: "需求分析师", allowed_tools: [], skills: [], prompt: "" },
-  { key: "reservoir-engineer", display_name: "油藏工程师", allowed_tools: [], skills: [], prompt: "" },
-  { key: "log-analyst", display_name: "测井分析师", allowed_tools: [], skills: [], prompt: "" },
-  { key: "geophysicist", display_name: "地球物理专家", allowed_tools: [], skills: [], prompt: "" },
-  { key: "drilling-engineer", display_name: "钻井工程师", allowed_tools: [], skills: [], prompt: "" },
-  { key: "production-engineer", display_name: "采油工程师", allowed_tools: [], skills: [], prompt: "" },
-  { key: "pvt-analyst", display_name: "PVT 分析师", allowed_tools: [], skills: [], prompt: "" },
-  { key: "domain-reviewer", display_name: "领域审核专家", allowed_tools: [], skills: [], prompt: "" },
-  { key: "planner", display_name: "规划者", allowed_tools: [], skills: [], prompt: "" },
-  { key: "verifier", display_name: "验证者", allowed_tools: [], skills: [], prompt: "" },
+  {
+    key: "analyst",
+    display_name: "需求分析师",
+    allowed_tools: [],
+    skills: [],
+    prompt: "",
+  },
+  {
+    key: "reservoir-engineer",
+    display_name: "油藏工程师",
+    allowed_tools: [],
+    skills: [],
+    prompt: "",
+  },
+  {
+    key: "log-analyst",
+    display_name: "测井分析师",
+    allowed_tools: [],
+    skills: [],
+    prompt: "",
+  },
+  {
+    key: "geophysicist",
+    display_name: "地球物理专家",
+    allowed_tools: [],
+    skills: [],
+    prompt: "",
+  },
+  {
+    key: "drilling-engineer",
+    display_name: "钻井工程师",
+    allowed_tools: [],
+    skills: [],
+    prompt: "",
+  },
+  {
+    key: "production-engineer",
+    display_name: "采油工程师",
+    allowed_tools: [],
+    skills: [],
+    prompt: "",
+  },
+  {
+    key: "pvt-analyst",
+    display_name: "PVT 分析师",
+    allowed_tools: [],
+    skills: [],
+    prompt: "",
+  },
+  {
+    key: "domain-reviewer",
+    display_name: "领域审核专家",
+    allowed_tools: [],
+    skills: [],
+    prompt: "",
+  },
+  {
+    key: "planner",
+    display_name: "规划者",
+    allowed_tools: [],
+    skills: [],
+    prompt: "",
+  },
+  {
+    key: "verifier",
+    display_name: "验证者",
+    allowed_tools: [],
+    skills: [],
+    prompt: "",
+  },
 ];
 
 // ─── Expert Teams (多智能体协同) ─────────────────────────────────────────────
@@ -110,7 +173,9 @@ export function TeamBuilderModal({
   const [memberBindings, setMemberBindings] = useState<
     Record<string, "fixed" | "preferred" | "temporary">
   >({});
-  const [memberRoleKeys, setMemberRoleKeys] = useState<Record<string, string>>({});
+  const [memberRoleKeys, setMemberRoleKeys] = useState<Record<string, string>>(
+    {},
+  );
   const [roleOptions, setRoleOptions] = useState<RoleDefinition[]>(
     FALLBACK_ROLE_OPTIONS,
   );
@@ -123,12 +188,54 @@ export function TeamBuilderModal({
     topology: string;
     accent: string;
   }> = [
-    { value: "pipeline", icon: "→", title: "顺序交接", description: "上一步产物成为下一位专家的上下文", topology: "A → B → C", accent: "#08979c" },
-    { value: "roundtable", icon: "⇉", title: "并行汇聚", description: "独立并行分析，避免观点相互污染", topology: "A ∥ B ∥ C → 汇总", accent: "#531dab" },
-    { value: "coordinator", icon: "◎", title: "主管协作", description: "主控专家拆解任务并按需组织成员", topology: "主管 → 专家组", accent: "#0958d9" },
-    { value: "router", icon: "◇", title: "智能路由", description: "按任务能力需求选择最小充分专家集合", topology: "任务 → 路由 → 子集", accent: "#d46b08" },
-    { value: "review_loop", icon: "↻", title: "评审迭代", description: "产出、独立审查、修订，直到满足标准", topology: "执行 ⇄ 评审", accent: "#389e0d" },
-    { value: "debate", icon: "⚖", title: "多方论证", description: "独立立场、交叉质询，再由裁决者综合", topology: "观点 ⇄ 反驳 → 裁决", accent: "#c41d7f" },
+    {
+      value: "pipeline",
+      icon: "→",
+      title: "顺序交接",
+      description: "上一步产物成为下一位专家的上下文",
+      topology: "A → B → C",
+      accent: "#08979c",
+    },
+    {
+      value: "roundtable",
+      icon: "⇉",
+      title: "并行汇聚",
+      description: "独立并行分析，避免观点相互污染",
+      topology: "A ∥ B ∥ C → 汇总",
+      accent: "#531dab",
+    },
+    {
+      value: "coordinator",
+      icon: "◎",
+      title: "主管协作",
+      description: "主控专家拆解任务并按需组织成员",
+      topology: "主管 → 专家组",
+      accent: "#0958d9",
+    },
+    {
+      value: "router",
+      icon: "◇",
+      title: "智能路由",
+      description: "按任务能力需求选择最小充分专家集合",
+      topology: "任务 → 路由 → 子集",
+      accent: "#d46b08",
+    },
+    {
+      value: "review_loop",
+      icon: "↻",
+      title: "评审迭代",
+      description: "产出、独立审查、修订，直到满足标准",
+      topology: "执行 ⇄ 评审",
+      accent: "#389e0d",
+    },
+    {
+      value: "debate",
+      icon: "⚖",
+      title: "多方论证",
+      description: "独立立场、交叉质询，再由裁决者综合",
+      topology: "观点 ⇄ 反驳 → 裁决",
+      accent: "#c41d7f",
+    },
   ];
 
   // Reset form when modal opens
@@ -277,29 +384,33 @@ export function TeamBuilderModal({
       // Build member objects from agent list
       let orderedMembers = [...selectedMembers];
       if (mode === "coordinator" && coordinatorName) {
-        orderedMembers = [coordinatorName, ...orderedMembers.filter((n) => n !== coordinatorName)];
+        orderedMembers = [
+          coordinatorName,
+          ...orderedMembers.filter((n) => n !== coordinatorName),
+        ];
       } else if (mode === "debate" && coordinatorName) {
-        orderedMembers = [...orderedMembers.filter((n) => n !== coordinatorName), coordinatorName];
+        orderedMembers = [
+          ...orderedMembers.filter((n) => n !== coordinatorName),
+          coordinatorName,
+        ];
       }
-      const memberObjs: ExpertTeamMember[] = orderedMembers.map(
-        (agentName) => {
-          const agent = agents.find((a) => a.name === agentName);
-          const bindingMode = memberBindings[agentName] || "fixed";
-          const roleKey = memberRoleKeys[agentName] || inferRoleKey(agentName);
-          const roleDefinition = roleOptions.find((role) => role.key === roleKey);
-          return {
-            name: agentName,
-            role:
-              roleDefinition?.display_name ||
-              agent?.description?.slice(0, 30) ||
-              "需求分析师",
-            emoji: "",
-            agentId: bindingMode === "temporary" ? undefined : agent?.id,
-            roleKey,
-            bindingMode,
-          };
-        },
-      );
+      const memberObjs: ExpertTeamMember[] = orderedMembers.map((agentName) => {
+        const agent = agents.find((a) => a.name === agentName);
+        const bindingMode = memberBindings[agentName] || "fixed";
+        const roleKey = memberRoleKeys[agentName] || inferRoleKey(agentName);
+        const roleDefinition = roleOptions.find((role) => role.key === roleKey);
+        return {
+          name: agentName,
+          role:
+            roleDefinition?.display_name ||
+            agent?.description?.slice(0, 30) ||
+            "需求分析师",
+          emoji: "",
+          agentId: bindingMode === "temporary" ? undefined : agent?.id,
+          roleKey,
+          bindingMode,
+        };
+      });
 
       // Sync steps if not manually set
       let finalSteps = steps;
@@ -322,7 +433,9 @@ export function TeamBuilderModal({
         mode,
         members: memberObjs,
         coordinatorName:
-          mode === "coordinator" || mode === "debate" ? coordinatorName : undefined,
+          mode === "coordinator" || mode === "debate"
+            ? coordinatorName
+            : undefined,
         taskTemplate: taskTemplate.trim(),
         orchestrationPrompt: "", // Custom teams use steps-based instructions
         steps: finalSteps,
@@ -410,7 +523,14 @@ export function TeamBuilderModal({
       ),
       React.createElement(
         "div",
-        { style: { display: "flex", gap: 8, marginBottom: 8, alignItems: "center" } },
+        {
+          style: {
+            display: "flex",
+            gap: 8,
+            marginBottom: 8,
+            alignItems: "center",
+          },
+        },
         selectedMembers.length > 0
           ? React.createElement(TeamAvatar, {
               members: selectedMembers,
@@ -433,7 +553,10 @@ export function TeamBuilderModal({
       }),
       React.createElement(
         Text,
-        { strong: true, style: { display: "block", margin: "12px 0 8px", fontSize: 13 } },
+        {
+          strong: true,
+          style: { display: "block", margin: "12px 0 8px", fontSize: 13 },
+        },
         "选择协同模式",
       ),
       React.createElement(
@@ -454,26 +577,68 @@ export function TeamBuilderModal({
               type: "button",
               onClick: () => {
                 setMode(template.value);
-                if (template.value !== "coordinator" && template.value !== "debate") setCoordinatorName("");
+                if (
+                  template.value !== "coordinator" &&
+                  template.value !== "debate"
+                )
+                  setCoordinatorName("");
               },
               style: {
                 textAlign: "left",
                 padding: 10,
                 borderRadius: 8,
                 cursor: "pointer",
-                background: active ? `${template.accent}0d` : "var(--ant-color-bg-container, #fff)",
-                border: `1px solid ${active ? template.accent : "var(--ant-color-border, #d9d9d9)"}`,
+                background: active
+                  ? `${template.accent}0d`
+                  : "var(--ant-color-bg-container, #fff)",
+                border: `1px solid ${
+                  active ? template.accent : "var(--ant-color-border, #d9d9d9)"
+                }`,
                 boxShadow: active ? `0 0 0 2px ${template.accent}1a` : "none",
               },
             },
             React.createElement(
               "div",
-              { style: { display: "flex", alignItems: "center", gap: 7, color: template.accent, fontWeight: 600 } },
-              React.createElement("span", { style: { fontSize: 18 } }, template.icon),
+              {
+                style: {
+                  display: "flex",
+                  alignItems: "center",
+                  gap: 7,
+                  color: template.accent,
+                  fontWeight: 600,
+                },
+              },
+              React.createElement(
+                "span",
+                { style: { fontSize: 18 } },
+                template.icon,
+              ),
               template.title,
             ),
-            React.createElement("div", { style: { fontSize: 11, color: "#595959", marginTop: 5, lineHeight: 1.45 } }, template.description),
-            React.createElement("div", { style: { fontSize: 10, color: template.accent, marginTop: 5, fontFamily: "monospace" } }, template.topology),
+            React.createElement(
+              "div",
+              {
+                style: {
+                  fontSize: 11,
+                  color: "#595959",
+                  marginTop: 5,
+                  lineHeight: 1.45,
+                },
+              },
+              template.description,
+            ),
+            React.createElement(
+              "div",
+              {
+                style: {
+                  fontSize: 10,
+                  color: template.accent,
+                  marginTop: 5,
+                  fontFamily: "monospace",
+                },
+              },
+              template.topology,
+            ),
           );
         }),
       ),
@@ -549,13 +714,17 @@ export function TeamBuilderModal({
                 React.createElement(
                   "div",
                   { style: { display: "flex", alignItems: "center", gap: 6 } },
-                  React.createElement(ExpertAvatar, { name: memberName, size: 24 }),
+                  React.createElement(ExpertAvatar, {
+                    name: memberName,
+                    size: 24,
+                  }),
                   React.createElement(
                     Text,
                     { strong: true, style: { fontSize: 13 } },
                     memberName,
                   ),
-                  (mode === "coordinator" || mode === "debate") && coordinatorName === memberName
+                  (mode === "coordinator" || mode === "debate") &&
+                    coordinatorName === memberName
                     ? React.createElement(
                         Tag,
                         { color: "blue", style: { fontSize: 10 } },
@@ -568,10 +737,14 @@ export function TeamBuilderModal({
                   { style: { display: "flex", gap: 4 } },
                   React.createElement(Select, {
                     size: "small",
-                    value: memberRoleKeys[memberName] || inferRoleKey(memberName),
+                    value:
+                      memberRoleKeys[memberName] || inferRoleKey(memberName),
                     style: { width: 132 },
                     onChange: (value: string) =>
-                      setMemberRoleKeys({ ...memberRoleKeys, [memberName]: value }),
+                      setMemberRoleKeys({
+                        ...memberRoleKeys,
+                        [memberName]: value,
+                      }),
                     options: roleOptions.map((role) => ({
                       value: role.key,
                       label: role.display_name,
@@ -582,7 +755,10 @@ export function TeamBuilderModal({
                     value: memberBindings[memberName] || "fixed",
                     style: { width: 118 },
                     onChange: (value: "fixed" | "preferred" | "temporary") =>
-                      setMemberBindings({ ...memberBindings, [memberName]: value }),
+                      setMemberBindings({
+                        ...memberBindings,
+                        [memberName]: value,
+                      }),
                     options: [
                       { value: "fixed", label: "固定实例" },
                       { value: "preferred", label: "优先实例" },
@@ -633,22 +809,33 @@ export function TeamBuilderModal({
           mode === "review_loop"
             ? React.createElement(
                 "div",
-                { style: { display: "grid", gridTemplateColumns: "150px 1fr", gap: 10 } },
+                {
+                  style: {
+                    display: "grid",
+                    gridTemplateColumns: "150px 1fr",
+                    gap: 10,
+                  },
+                },
                 React.createElement(Select, {
                   value: maxReviewRounds,
                   onChange: (value: number) => setMaxReviewRounds(value),
-                  options: [1, 2, 3, 4, 5].map((value) => ({ value, label: `最多 ${value} 轮` })),
+                  options: [1, 2, 3, 4, 5].map((value) => ({
+                    value,
+                    label: `最多 ${value} 轮`,
+                  })),
                 }),
                 React.createElement(Input, {
                   value: successCriteria,
                   onChange: (e: any) => setSuccessCriteria(e.target.value),
-                  placeholder: "验收标准，例如：关键结论均有数据依据，且无高风险缺陷",
+                  placeholder:
+                    "验收标准，例如：关键结论均有数据依据，且无高风险缺陷",
                 }),
               )
             : React.createElement(Input, {
                 value: routingInstruction,
                 onChange: (e: any) => setRoutingInstruction(e.target.value),
-                placeholder: "路由偏好，例如：仅调用任务必需的专家；涉及模拟时优先油藏工程师",
+                placeholder:
+                  "路由偏好，例如：仅调用任务必需的专家；涉及模拟时优先油藏工程师",
               }),
         )
       : null,
@@ -664,7 +851,19 @@ export function TeamBuilderModal({
               strong: true,
               style: { display: "block", marginBottom: 8, fontSize: 13 },
             },
-            `3. 配置专家任务${mode === "roundtable" ? "（并行独立）" : mode === "pipeline" ? "（顺序交接）" : mode === "router" ? "（作为候选能力）" : mode === "review_loop" ? "（首位执行、末位评审）" : mode === "debate" ? "（末位为裁决者）" : "（由主控动态编排）"}`,
+            `3. 配置专家任务${
+              mode === "roundtable"
+                ? "（并行独立）"
+                : mode === "pipeline"
+                ? "（顺序交接）"
+                : mode === "router"
+                ? "（作为候选能力）"
+                : mode === "review_loop"
+                ? "（首位执行、末位评审）"
+                : mode === "debate"
+                ? "（末位为裁决者）"
+                : "（由主控动态编排）"
+            }`,
           ),
           // Auto-sync button
           React.createElement(
@@ -975,7 +1174,8 @@ export function ExpertTeamCard({
                     Popconfirm,
                     {
                       title: `删除专家团「${team.name}」？`,
-                      description: "此操作会删除后端定义，但不会删除既有讨论记录。",
+                      description:
+                        "此操作会删除后端定义，但不会删除既有讨论记录。",
                       okText: "删除",
                       cancelText: "取消",
                       okButtonProps: { danger: true },
@@ -1026,8 +1226,8 @@ export function ExpertTeamCard({
               m.temporary
                 ? " - OMP 临时派生"
                 : m.found
-                  ? " - 已绑定实例"
-                  : " - OMP 按角色派发"
+                ? " - 已绑定实例"
+                : " - OMP 按角色派发"
             }`,
           },
           React.createElement(
@@ -1055,7 +1255,10 @@ export function ExpertTeamCard({
             m.temporary
               ? React.createElement(
                   Tag,
-                  { color: "purple", style: { fontSize: 9, marginInlineEnd: 0 } },
+                  {
+                    color: "purple",
+                    style: { fontSize: 9, marginInlineEnd: 0 },
+                  },
                   "派生",
                 )
               : null,
@@ -1079,8 +1282,8 @@ export function ExpertTeamCard({
             ? React.createElement(UpOutlined)
             : "▲"
           : DownOutlined
-            ? React.createElement(DownOutlined)
-            : "▼",
+          ? React.createElement(DownOutlined)
+          : "▼",
       },
       showFlow ? "收起流程" : "查看执行流程",
     ),
@@ -1135,21 +1338,21 @@ export function ExpertTeamSection({
 }) {
   const React = getHost().React;
   const { useMemo, useState, useCallback, useEffect } = React;
-const {
-Row,
-Col,
-Input,
-Empty,
-Typography,
-Tag,
-Button,
-Divider,
-Tabs,
-message: antdMsg,
-} = getHost().antd;
-const { SearchOutlined, PlusOutlined, RocketOutlined } =
-  getHost().antdIcons || {};
-const { Text } = Typography;
+  const {
+    Row,
+    Col,
+    Input,
+    Empty,
+    Typography,
+    Tag,
+    Button,
+    Divider,
+    Tabs,
+    message: antdMsg,
+  } = getHost().antd;
+  const { SearchOutlined, PlusOutlined, RocketOutlined } =
+    getHost().antdIcons || {};
+  const { Text } = Typography;
 
   const [searchText, setSearchText] = useState("");
   const [customTeams, setCustomTeams] = useState<ExpertTeam[]>([]);
@@ -1257,7 +1460,9 @@ const { Text } = Typography;
       },
       React.createElement(Input, {
         placeholder: "搜索团队名称、描述或类别...",
-        prefix: SearchOutlined ? React.createElement(SearchOutlined) : undefined,
+        prefix: SearchOutlined
+          ? React.createElement(SearchOutlined)
+          : undefined,
         value: searchText,
         onChange: (e: any) => setSearchText(e.target.value),
         allowClear: true,
@@ -1276,96 +1481,96 @@ const { Text } = Typography;
       ),
     ),
     // Tabs: preset teams vs custom teams
-    React.createElement(
-      Tabs,
-      {
-        activeKey: activeTab,
-        onChange: setActiveTab,
-        items: [
-          {
-            key: "preset",
-            label: `预设团队${presetFiltered.length ? ` (${presetFiltered.length})` : ""}`,
-            children: React.createElement(
-              "div",
-              null,
-              presetFiltered.length > 0
-                ? React.createElement(
-                    Row,
-                    { gutter: [12, 12] },
-                    ...presetFiltered.map((team) =>
-                      React.createElement(
-                        Col,
-                        { key: team.id, xs: 24, sm: 12, md: 8 },
-                        React.createElement(ExpertTeamCard, {
-                          team,
-                          agents,
-                          onLaunch,
-                        }),
-                      ),
+    React.createElement(Tabs, {
+      activeKey: activeTab,
+      onChange: setActiveTab,
+      items: [
+        {
+          key: "preset",
+          label: `预设团队${
+            presetFiltered.length ? ` (${presetFiltered.length})` : ""
+          }`,
+          children: React.createElement(
+            "div",
+            null,
+            presetFiltered.length > 0
+              ? React.createElement(
+                  Row,
+                  { gutter: [12, 12] },
+                  ...presetFiltered.map((team) =>
+                    React.createElement(
+                      Col,
+                      { key: team.id, xs: 24, sm: 12, md: 8 },
+                      React.createElement(ExpertTeamCard, {
+                        team,
+                        agents,
+                        onLaunch,
+                      }),
                     ),
-                  )
-                : React.createElement(Empty, {
-                    description: "未找到匹配的预设团队",
-                    image: Empty.PRESENTED_IMAGE_SIMPLE,
-                  }),
-            ),
-          },
-          {
-            key: "custom",
-            label: `自定义团队${customFiltered.length ? ` (${customFiltered.length})` : ""}`,
-            children: React.createElement(
-              "div",
-              null,
-              customFiltered.length > 0
-                ? React.createElement(
-                    Row,
-                    { gutter: [12, 12] },
-                    ...customFiltered.map((team) =>
-                      React.createElement(
-                        Col,
-                        { key: team.id, xs: 24, sm: 12, md: 8 },
-                        React.createElement(ExpertTeamCard, {
-                          team,
-                          agents,
-                          onLaunch,
-                          onEdit: handleEditTeam,
-                          onDelete: handleDeleteTeam,
-                        }),
-                      ),
+                  ),
+                )
+              : React.createElement(Empty, {
+                  description: "未找到匹配的预设团队",
+                  image: Empty.PRESENTED_IMAGE_SIMPLE,
+                }),
+          ),
+        },
+        {
+          key: "custom",
+          label: `自定义团队${
+            customFiltered.length ? ` (${customFiltered.length})` : ""
+          }`,
+          children: React.createElement(
+            "div",
+            null,
+            customFiltered.length > 0
+              ? React.createElement(
+                  Row,
+                  { gutter: [12, 12] },
+                  ...customFiltered.map((team) =>
+                    React.createElement(
+                      Col,
+                      { key: team.id, xs: 24, sm: 12, md: 8 },
+                      React.createElement(ExpertTeamCard, {
+                        team,
+                        agents,
+                        onLaunch,
+                        onEdit: handleEditTeam,
+                        onDelete: handleDeleteTeam,
+                      }),
                     ),
-                  )
-                : React.createElement(Empty, {
-                    description:
-                      "暂无自定义团队，点击「创建专家团」自定义",
-                    image: Empty.PRESENTED_IMAGE_SIMPLE,
-                  }),
-            ),
-          },
-          {
-            key: "active",
-            label: "进行中的讨论",
-            children: React.createElement(
-              React.Fragment,
-              null,
-              React.createElement(TeamWorkflowCard, {
-                enabled: activeTab === "active",
-              }),
-              React.createElement(TeamRunHistory, {
-                activeOnly: true,
-                enabled: activeTab === "active",
-              }),
-            ),
-          },
-          {
-            key: "history",
-            label: "讨论历史",
-            children: React.createElement(TeamRunHistory, {
-              enabled: activeTab === "history",
+                  ),
+                )
+              : React.createElement(Empty, {
+                  description: "暂无自定义团队，点击「创建专家团」自定义",
+                  image: Empty.PRESENTED_IMAGE_SIMPLE,
+                }),
+          ),
+        },
+        {
+          key: "active",
+          label: "进行中的讨论",
+          children: React.createElement(
+            React.Fragment,
+            null,
+            React.createElement(TeamWorkflowCard, {
+              enabled: activeTab === "active",
             }),
-          },
-        ],
-      },
-    ),
+            React.createElement(TeamRunHistory, {
+              activeOnly: true,
+              enabled: activeTab === "active",
+            }),
+          ),
+        },
+        {
+          key: "history",
+          label: "讨论历史",
+          children: React.createElement(TeamRunHistory, {
+            enabled: activeTab === "history",
+          }),
+        },
+      ],
+    }),
     // Team Builder Modal
     React.createElement(TeamBuilderModal, {
       open: builderOpen,

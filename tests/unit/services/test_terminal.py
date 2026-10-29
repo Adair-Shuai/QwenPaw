@@ -87,6 +87,44 @@ async def read_until(session, needle, cursor=0):
     return await asyncio.wait_for(collect(), 8)
 
 
+async def wait_for_child_command(parent, command, terminal_fd=None):
+    """Wait for the intended child and its terminal foreground handoff."""
+    for _ in range(100):
+        for child in parent.children():
+            try:
+                if child.name() != command:
+                    continue
+                if terminal_fd is None or os.tcgetpgrp(
+                    terminal_fd,
+                ) == os.getpgid(child.pid):
+                    return child
+            except (psutil.NoSuchProcess, ProcessLookupError):
+                continue
+        await asyncio.sleep(0.01)
+    raise AssertionError(f"Child command did not start: {command}")
+
+
+async def test_child_readiness_waits_past_previous_command_exit(monkeypatch):
+    previous = MagicMock()
+    previous.name.return_value = "python"
+    gone = MagicMock()
+    gone.name.side_effect = psutil.NoSuchProcess(123)
+    sleeper = MagicMock()
+    sleeper.name.return_value = "sleep"
+    parent = MagicMock()
+    parent.children.side_effect = [[previous, gone], [sleeper], [sleeper]]
+    monkeypatch.setattr(os, "tcgetpgrp", lambda _fd: 42, raising=False)
+    monkeypatch.setattr(
+        os,
+        "getpgid",
+        MagicMock(side_effect=[24, 42]),
+        raising=False,
+    )
+
+    assert await wait_for_child_command(parent, "sleep", 9) is sleeper
+    assert parent.children.call_count == 3
+
+
 @pytest.mark.skipif(os.name == "nt", reason="Unix shell syntax")
 async def test_real_pty_cwd_unicode_resize_interrupt_and_cleanup(
     tmp_path,
@@ -124,11 +162,15 @@ async def test_real_pty_cwd_unicode_resize_interrupt_and_cleanup(
         assert "UTF=你好" in text
         assert "columns=101, lines=37" in text
         await asyncio.to_thread(session.write, "sleep 30\r")
-        for _ in range(100):
-            if psutil.Process(pid).children():
-                break
-            await asyncio.sleep(0.01)
+        sleeper = await wait_for_child_command(
+            psutil.Process(pid),
+            "sleep",
+            session.process.fd,
+        )
         await asyncio.to_thread(session.write, "\x03")
+        # INTR may flush queued terminal input. Wait for its actual target to
+        # exit before sending the next shell command into that input queue.
+        await asyncio.to_thread(sleeper.wait, timeout=3)
         await asyncio.to_thread(session.write, "printf 'INTERRUPTED\\n'\r")
         _, cursor = await read_until(session, "INTERRUPTED", cursor)
         await asyncio.to_thread(session.write, "sleep 60 &\r")

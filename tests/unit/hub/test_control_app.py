@@ -291,14 +291,15 @@ async def test_slow_auth_status_does_not_block_event_loop(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    started = threading.Event()
+    loop = asyncio.get_running_loop()
+    started = asyncio.Event()
     release = threading.Event()
 
     with _client(tmp_path) as client:
         auth = client.app.state.auth_service
 
         def slow_status() -> dict[str, object]:
-            started.set()
+            loop.call_soon_threadsafe(started.set)
             release.wait(timeout=2)
             return {"enabled": True}
 
@@ -311,13 +312,20 @@ async def test_slow_auth_status_does_not_block_event_loop(
             blocked = asyncio.create_task(
                 async_client.get("/api/auth/status"),
             )
-            assert await asyncio.to_thread(started.wait, 1)
-            responsive = await asyncio.wait_for(
-                async_client.get("/api/version"),
-                timeout=0.2,
-            )
-            release.set()
-            status = await blocked
+            try:
+                # The worker signals the test loop without consuming another
+                # executor thread. The status request must remain held while
+                # the independent readiness request completes.
+                await asyncio.wait_for(started.wait(), timeout=1)
+                assert not blocked.done()
+                responsive = await asyncio.wait_for(
+                    async_client.get("/api/version"),
+                    timeout=0.2,
+                )
+                assert not blocked.done()
+            finally:
+                release.set()
+                status = await blocked
 
     assert responsive.status_code == 200
     assert status.json() == {"enabled": True}

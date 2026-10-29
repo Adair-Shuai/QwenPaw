@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Run Center runtime contracts and repository."""
 
 from .models import (

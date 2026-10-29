@@ -36,11 +36,10 @@ def host_fingerprint(root: Path) -> str:
     paths = []
     for name in HOST_INPUTS:
         path = root / name
-        (
+        if path.is_dir():
             paths.extend(p for p in path.rglob("*") if p.is_file())
-            if path.is_dir()
-            else paths.append(path)
-        )
+        else:
+            paths.append(path)
     digest = hashlib.sha256()
     for path in sorted(paths, key=lambda p: p.relative_to(root).as_posix()):
         if not path.is_file():

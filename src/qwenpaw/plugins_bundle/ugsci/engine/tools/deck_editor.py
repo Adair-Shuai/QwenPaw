@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any
 
 import logging
+
 _logger = logging.getLogger("qwenpaw.plugin.ugsci.sim")
 
 
@@ -68,6 +69,7 @@ async def edit_simulation_deck(
         else:
             try:
                 from qwenpaw.config.context import get_current_workspace_dir
+
                 deck_path = get_current_workspace_dir() / deck_file
             except Exception:
                 deck_path = Path(deck_file)
@@ -75,6 +77,7 @@ async def edit_simulation_deck(
 
     # BUG-001: Verify deck file is within the workspace boundary.
     from .launcher import _ensure_path_in_workspace
+
     _ensure_path_in_workspace(deck_path)
 
     if not deck_path.exists():
@@ -95,7 +98,17 @@ async def edit_simulation_deck(
         return ToolChunk(
             is_last=True,
             state=ToolResultState.ERROR,
-            content=[TextBlock(type="text", text=f"Error: deck changed since diagnosis (expected {expected_sha256}, found {original_sha256}).")],
+            content=[
+                TextBlock(
+                    type="text",
+                    text=f"Error: deck changed since diagnosis "
+                    f"(expected "
+                    f"{expected_sha256}"
+                    f", found "
+                    f"{original_sha256}"
+                    f").",
+                ),
+            ],
         )
 
     # ── Read file ────────────────────────────────────────────────────
@@ -232,7 +245,9 @@ async def edit_simulation_deck(
             content=[
                 TextBlock(
                     type="text",
-                    text=f"Error: Unknown action '{action}'. Use replace/append/insert/remove.",
+                    text=f"Error: Unknown action '"
+                    f"{action}"
+                    f"'. Use replace/append/insert/remove.",
                 ),
             ],
         )
@@ -242,7 +257,9 @@ async def edit_simulation_deck(
     # write does not leave a partially-written (and potentially corrupt)
     # deck file.
     new_text = "".join(new_lines)
-    backup_path = deck_path.with_suffix(deck_path.suffix + f".{original_sha256[:12]}.bak")
+    backup_path = deck_path.with_suffix(
+        deck_path.suffix + f".{original_sha256[:12]}.bak",
+    )
     try:
         if create_backup and not backup_path.exists():
             shutil.copy2(deck_path, backup_path)
@@ -293,12 +310,18 @@ async def edit_simulation_deck(
         for line in original_block.splitlines()[:5]:
             summary_parts.append(f"    - {line}")
         if len(block_lines) > 5:
-            summary_parts.append(f"    ... ({len(block_lines) - 5} more lines)")
-        summary_parts.append(f"  New content ({len(new_content_lines)} lines):")
+            summary_parts.append(
+                f"    ... ({len(block_lines) - 5} more lines)",
+            )
+        summary_parts.append(
+            f"  New content ({len(new_content_lines)} lines):",
+        )
         for line in content.splitlines()[:5]:
             summary_parts.append(f"    + {line}")
         if len(new_content_lines) > 5:
-            summary_parts.append(f"    ... ({len(new_content_lines) - 5} more lines)")
+            summary_parts.append(
+                f"    ... ({len(new_content_lines) - 5} more lines)",
+            )
     elif action == "remove":
         summary_parts.append(f"  Removed {len(block_lines)} lines.")
     else:

@@ -110,18 +110,24 @@ class UGSciTeamMode(UGSciModeBase):
     def is_active(self, ctx: Any) -> bool:
         if self._gate is None or _is_child_request(ctx):
             return False
-        state = self._gate._state()
+        state = self._gate.current_state()
         return bool(
             state
             and state.owner_session_id
-            == str(getattr(ctx, "session_id", "") or self._gate._session_id())
+            == str(
+                getattr(ctx, "session_id", "")
+                or self._gate.current_session_id(),
+            ),
         )
 
     def hooks(self) -> list:
         return [_RestoreTeamBeforeBuild(self)]
 
     def tools(self) -> list:
-        from qwenpaw.runtime.tool_registry import ToolDescriptor, ToolGovernanceSpec
+        from qwenpaw.runtime.tool_registry import (
+            ToolDescriptor,
+            ToolGovernanceSpec,
+        )
         from .state_tools import make_state_tools
 
         return [
@@ -152,7 +158,7 @@ class UGSciTeamMode(UGSciModeBase):
             return
         # Skip when state is already loaded (same process, new turn).
         # pylint: disable=protected-access
-        if self._gate._state() is not None:
+        if self._gate.current_state() is not None:
             return
         workspace_dir = getattr(ctx, "workspace_dir", None)
         if not workspace_dir:
@@ -162,19 +168,26 @@ class UGSciTeamMode(UGSciModeBase):
             self._gate.restore,
             Path(workspace_dir),
             agent_id,
-            str(getattr(ctx, "session_id", "") or self._gate._session_id()),
+            str(
+                getattr(ctx, "session_id", "")
+                or self._gate.current_session_id(),
+            ),
         )
 
     def commands(self) -> list[CommandSpec]:
         return [
             CommandSpec(
                 name="ugsci-team",
-                handler=self._handler,
+                handler=self.handle_command,
                 category="builtin",
                 help_text=_HELP,
                 metadata={"builtin": True},
             ),
         ]
+
+    async def handle_command(self, ctx: Any, args: str) -> Optional["Msg"]:
+        """Run the registered team command with controller ownership checks."""
+        return await self._handler(ctx, args)
 
     async def _handler(
         self,
@@ -229,9 +242,10 @@ class UGSciTeamMode(UGSciModeBase):
         # A new explicit invocation replaces only this session's workflow.
         # Close its snapshot before activating another instance so restart
         # recovery cannot later resurrect the abandoned run.
-        if self._gate._state() is not None:
+        if self._gate.current_state() is not None:
             await asyncio.to_thread(
-                self._gate.terminate_current, "replaced_by_new_team"
+                self._gate.terminate_current,
+                "replaced_by_new_team",
             )
         self.claim_workflow()
         loop_dir = await asyncio.to_thread(
@@ -244,13 +258,17 @@ class UGSciTeamMode(UGSciModeBase):
             task,
             str(getattr(ctx, "agent_id", "") or ""),
             max_dispatch_retries,
-            str(getattr(ctx, "session_id", "") or self._gate._session_id()),
+            str(
+                getattr(ctx, "session_id", "")
+                or self._gate.current_session_id(),
+            ),
             artifact_protocol=1,
         )
 
         # Build the initial prompt for the plan phase
         member_list = "\n".join(
-            f"- {m.get('emoji', '')} {m.get('name', '')}" f"（{m.get('role', '')}）"
+            f"- {m.get('emoji', '')} {m.get('name', '')}"
+            f"（{m.get('role', '')}）"
             for m in members
         )
 
@@ -274,12 +292,12 @@ class UGSciTeamMode(UGSciModeBase):
                 "",
             )
             if routing_instruction:
-                extra_sections += f"\n---\n\n## 路由策略\n\n{routing_instruction}\n"
+                extra_sections += (
+                    f"\n---\n\n## 路由策略\n\n{routing_instruction}\n"
+                )
             if team_mode == "review_loop":
                 rounds = custom_team_def.get("max_review_rounds", 2)
-                extra_sections += (
-                    f"\n评审迭代上限：{rounds} 轮。规划时写入 plan.json。\n"
-                )
+                extra_sections += f"\n评审迭代上限：{rounds} 轮。规划时写入 plan.json。\n"
 
             steps = custom_team_def.get("steps", [])
             if steps:
@@ -292,9 +310,7 @@ class UGSciTeamMode(UGSciModeBase):
                         step.get("pass_context", False),
                     )
                     ctx_note = (
-                        "（传递上一步的结果作为上下文）"
-                        if pass_ctx
-                        else "（独立执行，不传递上下文）"
+                        "（传递上一步的结果作为上下文）" if pass_ctx else "（独立执行，不传递上下文）"
                     )
                     step_lines.append(
                         f"{idx + 1}. 向「{agent}」发送请求：{instr} {ctx_note}",
@@ -377,7 +393,7 @@ def _parse_args(raw: str) -> dict | None:
         parts = remaining[1:].split(None, 1)
         if len(parts) < 2:
             return {
-                "_error": "请提供任务描述。用法: /ugsci-team <mode> @<team_id> <task>"
+                "_error": "请提供任务描述。用法: /ugsci-team <mode> @<team_id> <task>",
             }
         custom_team_id = parts[0]
         task = parts[1]
@@ -392,8 +408,7 @@ def _parse_args(raw: str) -> dict | None:
             )
             return {
                 "_error": (
-                    f"自定义团队 '@{custom_team_id}' 不存在或已过期。"
-                    f"请重新发起团队任务。"
+                    f"自定义团队 '@{custom_team_id}' 不存在或已过期。" f"请重新发起团队任务。"
                 ),
             }
 

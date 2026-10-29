@@ -37,10 +37,15 @@ class UGSciModeBase(AgentMode):
 
     _instances: ClassVar[list[weakref.ReferenceType]] = []
 
-    def __init__(self) -> None:
-        self._gate: Any = None
+    def __init__(self, gate: Any = None) -> None:
+        self._gate: Any = gate
         self._workspace_ref: weakref.ReferenceType[Any] | None = None
         UGSciModeBase._instances.append(weakref.ref(self))
+
+    @property
+    def gate(self) -> Any:
+        """The mode-owned gate used by controller tools and integrations."""
+        return self._gate
 
     def setup(self, workspace: object) -> None:
         super().setup(workspace)
@@ -71,7 +76,9 @@ class UGSciModeBase(AgentMode):
         ctx: Any,  # pylint: disable=unused-argument
     ) -> bool:
         # pylint: disable=protected-access
-        return self._gate is not None and self._gate._state() is not None
+        return (
+            self._gate is not None and self._gate.current_state() is not None
+        )
 
     async def on_conversation_reset(
         self,
@@ -104,7 +111,9 @@ class UGSciModeBase(AgentMode):
             )
             if my_ws is not None and peer_ws is not my_ws:
                 continue
-            if peer_gate._state() is not None:  # pylint: disable=protected-access
+            if (
+                peer_gate.current_state() is not None
+            ):  # pylint: disable=protected-access
                 logger.info(
                     "Deactivating peer mode '%s' for '%s'",
                     mode.name,

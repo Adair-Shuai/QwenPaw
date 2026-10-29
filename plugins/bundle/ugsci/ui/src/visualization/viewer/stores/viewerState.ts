@@ -1,5 +1,5 @@
 /**
- * Global viewer state store.
+ * Per-instance viewer state store.
  *
  * Implements a lightweight pub/sub pattern (no external dependency).
  * All engines and panels interact only through store actions,
@@ -40,7 +40,7 @@ const DEFAULT_LOADING: LoadingState = {
   error: null,
 };
 
-class ViewerStore {
+export class ViewerStore {
   private state: ViewerState = {
     dataset: null,
     activeView: "reservoir",
@@ -49,7 +49,7 @@ class ViewerStore {
     property: null,
     timeStep: 0,
     filters: [],
-    colorMap: { ...DEFAULT_COLORMAP },
+    colorMap: { ...DEFAULT_COLORMAP, range: [...DEFAULT_COLORMAP.range] },
     loading: { ...DEFAULT_LOADING },
     metrics: { ...DEFAULT_METRICS },
   };
@@ -143,5 +143,7 @@ class ViewerStore {
   }
 }
 
-// Singleton store
-export const viewerStore = new ViewerStore();
+/** Create one store per mounted engine; viewers never share mutable state. */
+export function createViewerStore(): ViewerStore {
+  return new ViewerStore();
+}

@@ -19,10 +19,6 @@ from plugins.bundle.ugsci.domain.storage_dynamics.analysis import (
 from plugins.bundle.ugsci.domain.storage_dynamics.api import (
     build_storage_dynamics_router,
 )
-from plugins.bundle.ugsci.domain.storage_dynamics.reader import (
-    day_string,
-    read_file,
-)
 from plugins.bundle.ugsci.domain.storage_dynamics.store import DatasetStore
 from plugins.bundle.ugsci.domain.storage_dynamics.tools import save_report
 
@@ -41,7 +37,7 @@ def source(tmp_path, rows, name="history.csv", unit="万方", mode="采"):
                 "油压(兆帕)",
                 "日产水量(吨)",
                 "备注",
-            ]
+            ],
         )
         writer.writerows(rows)
     return path
@@ -52,6 +48,38 @@ def import_rows(tmp_path, rows, **kwargs):
     path = source(tmp_path, rows, **kwargs)
     manifest = store.import_path(str(path))
     return store, manifest
+
+
+@pytest.mark.parametrize(
+    "unit,factor",
+    [
+        ("万方", 1.0),
+        ("万m3", 1.0),
+        ("万m³", 1.0),
+        ("万立方米", 1.0),
+        ("亿方", 10000.0),
+        ("亿m3", 10000.0),
+        ("亿m³", 10000.0),
+        ("亿立方米", 10000.0),
+        ("m3", 0.0001),
+        ("m³", 0.0001),
+        ("立方米", 0.0001),
+    ],
+)
+def test_explicit_gas_units_are_converted_before_aggregation(
+    tmp_path,
+    unit,
+    factor,
+):
+    store, manifest = import_rows(
+        tmp_path,
+        [["库A", "井1", "2026-01-01", 12, 10, 15, 2, ""]],
+        unit=unit,
+    )
+    result = analyze(store, manifest["id"])
+    assert result["summary"]["withdrawal"] == pytest.approx(10 * factor)
+    assert result["summary"]["missing_gas"] == 0
+    assert manifest["quality_counts"] == {}
 
 
 def test_measured_volumes_not_operating_rates_and_missing_not_zero(tmp_path):
@@ -237,7 +265,8 @@ def test_injection_and_withdrawal_separate_even_same_well(tmp_path):
 
 def test_report_persists_exact_parameters_and_provenance(tmp_path):
     store, m = import_rows(
-        tmp_path, [["库A", "井1", "2026-01-01", 24, 10, 15, 0, ""]]
+        tmp_path,
+        [["库A", "井1", "2026-01-01", 24, 10, 15, 0, ""]],
     )
     r = analyze(store, m["id"], cycle_start_month=5)
     saved = save_report(store, r)
@@ -246,7 +275,7 @@ def test_report_persists_exact_parameters_and_provenance(tmp_path):
     from pathlib import Path
 
     snapshot = json.loads(
-        Path(saved["analysis_path"]).read_text(encoding="utf-8")
+        Path(saved["analysis_path"]).read_text(encoding="utf-8"),
     )
     assert snapshot["parameters"]["cycle_start_month"] == 5
     assert "气年度 5 月起" in saved["markdown"]
@@ -290,19 +319,22 @@ def test_http_import_analysis_export_and_validation(tmp_path):
         assert client.post("/api/test/export", json=body).status_code == 200
         assert (
             client.post(
-                "/api/test/analyze", json={**body, "cycle_start_month": 13}
+                "/api/test/analyze",
+                json={**body, "cycle_start_month": 13},
             ).status_code
             == 422
         )
         assert (
             client.post(
-                "/api/test/analyze", json={**body, "dataset_id": "../escape"}
+                "/api/test/analyze",
+                json={**body, "dataset_id": "../escape"},
             ).status_code
             == 422
         )
         assert (
             client.post(
-                "/api/test/analyze", json={**body, "facility": "不存在"}
+                "/api/test/analyze",
+                json={**body, "facility": "不存在"},
             ).status_code
             == 422
         )

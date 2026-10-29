@@ -10,9 +10,18 @@ from __future__ import annotations
 import json
 import logging
 import re
+from datetime import date
 from typing import Any, Dict, List, Optional, Tuple
 
-from .store import ITEM_KINDS, SIDES, ITEM_STATUSES, new_id, now_iso
+from .store import (
+    ITEM_KINDS,
+    SIDES,
+    ITEM_STATUSES,
+    PRIORITIES,
+    item_defaults,
+    new_id,
+    now_iso,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +47,46 @@ STATUS_LABEL = {
     "blocked": "阻塞",
     "deferred": "暂缓",
 }
+PRIORITY_LABEL = {
+    "urgent": "紧急",
+    "high": "高",
+    "normal": "普通",
+    "low": "低",
+}
+
+
+def _schedule_context(item: Dict[str, Any], bundle: Dict[str, Any]) -> str:
+    items = {row["id"]: row for row in bundle.get("items", [])}
+    milestones = {row["id"]: row for row in bundle.get("milestones", [])}
+    dependencies = [
+        (
+            f"{items[key]['title']}"
+            f"（{STATUS_LABEL.get(items[key].get('status'), '未知')}）"
+            if key in items
+            else f"未知事项 {key}"
+        )
+        for key in item.get("depends_on", [])
+    ]
+    milestone = milestones.get(item.get("milestone_id"))
+    return (
+        f"优先级：{PRIORITY_LABEL.get(item.get('priority', 'normal'), '普通')}；"
+        f"负责人：{item.get('assignee') or '待分配'}；"
+        f"截止：{item.get('due_date') or '未定'}；"
+        f"里程碑：{milestone['title'] if milestone else '未关联'}；"
+        f"前置依赖：{'、'.join(dependencies) or '无'}"
+    )
+
+
+def _focus_order(item: Dict[str, Any]) -> tuple:
+    return (
+        (
+            PRIORITIES.index(item.get("priority"))
+            if item.get("priority") in PRIORITIES
+            else 2
+        ),
+        item.get("due_date") or "9999",
+        item.get("title", ""),
+    )
 
 
 def _extract_json(text: str) -> Optional[Any]:
@@ -49,7 +98,7 @@ def _extract_json(text: str) -> Optional[Any]:
         stripped = fence.group(1).strip()
     else:
         start, end = stripped.find("{"), stripped.rfind("}")
-        if start >= 0 and end > start:
+        if 0 <= start < end:
             stripped = stripped[start : end + 1]
     try:
         return json.loads(stripped)
@@ -64,10 +113,13 @@ def project_snapshot(bundle: Dict[str, Any]) -> str:
     lines = [
         f"项目：{project.get('name')}（{project.get('code') or '无编号'}）",
         f"状态：{project.get('status')}  领域：{project.get('domain') or '-'}",
-        f"周期：{project.get('start_date') or '-'} ~ {project.get('end_date') or '-'}",
+        f"周期：{project.get('start_date') or '-'} ~ "
+        f"{project.get('end_date') or '-'}",
         f"下次对齐：{project.get('next_align_at') or '未约'}",
-        f"甲方：{client.get('org')} / {client.get('contact')}（{client.get('role')}）",
-        f"乙方：{vendor.get('org')} / {vendor.get('contact')}（{vendor.get('role')}）",
+        f"甲方：{client.get('org')} / {client.get('contact')}"
+        f"（{client.get('role')}）",
+        f"乙方：{vendor.get('org')} / {vendor.get('contact')}"
+        f"（{vendor.get('role')}）",
         f"范围：{project.get('sow') or '-'}",
         "",
         "对齐项：",
@@ -76,8 +128,9 @@ def project_snapshot(bundle: Dict[str, Any]) -> str:
         lines.append(
             f"- [{STATUS_LABEL.get(item.get('status'), item.get('status'))}] "
             f"[{KIND_LABEL.get(item.get('kind'), item.get('kind'))}] "
-            f"[{SIDE_LABEL.get(item.get('owner_side'), item.get('owner_side'))}] "
+            f"[{SIDE_LABEL.get(item.get('owner_side'), '未知')}] "
             f"{item.get('title')}。{item.get('detail') or ''}"
+            f" [{_schedule_context(item, bundle)}]",
         )
     lines.append("")
     lines.append("里程碑：")
@@ -85,7 +138,7 @@ def project_snapshot(bundle: Dict[str, Any]) -> str:
         lines.append(
             f"- [{milestone.get('status')}] {milestone.get('title')} "
             f"截止 {milestone.get('due_date') or '-'} "
-            f"负责 {SIDE_LABEL.get(milestone.get('owner_side'), '')}"
+            f"负责 {SIDE_LABEL.get(milestone.get('owner_side'), '')}",
         )
     recent = (bundle.get("meetings") or [])[-2:]
     if recent:
@@ -94,7 +147,7 @@ def project_snapshot(bundle: Dict[str, Any]) -> str:
         for meeting in recent:
             lines.append(
                 f"- {meeting.get('held_at')} {meeting.get('title')}: "
-                f"{meeting.get('decisions') or meeting.get('notes') or ''}"
+                f"{meeting.get('decisions') or meeting.get('notes') or ''}",
             )
     return "\n".join(lines)
 
@@ -104,7 +157,14 @@ def fallback_agenda(bundle: Dict[str, Any]) -> str:
     client = project.get("client") or {}
     vendor = project.get("vendor") or {}
     items = bundle.get("items") or []
-    focus = [i for i in items if i.get("status") in ("open", "proposed", "blocked")]
+    focus = sorted(
+        [
+            i
+            for i in items
+            if i.get("status") in ("open", "proposed", "blocked")
+        ],
+        key=_focus_order,
+    )
     lines = [
         f"# {project.get('name')} 对齐会议程",
         "",
@@ -119,7 +179,9 @@ def fallback_agenda(bundle: Dict[str, Any]) -> str:
     if blocked:
         for item in blocked:
             lines.append(
-                f"- 【阻塞】{item.get('title')}（负责：{SIDE_LABEL.get(item.get('owner_side'))}）"
+                f"- 【阻塞】{item.get('title')}"
+                f"（负责：{SIDE_LABEL.get(item.get('owner_side'))}）"
+                f"\n  - {_schedule_context(item, bundle)}",
             )
     else:
         lines.append("- 无阻塞项")
@@ -132,17 +194,21 @@ def fallback_agenda(bundle: Dict[str, Any]) -> str:
         lines.append(
             f"- {item.get('title')}（{KIND_LABEL.get(item.get('kind'))} / "
             f"{SIDE_LABEL.get(item.get('owner_side'))}）"
+            f"\n  - {_schedule_context(item, bundle)}",
         )
         if item.get("detail"):
             lines.append(f"  - 背景：{item['detail']}")
     lines.append("")
     lines.append("## 3. 里程碑核对")
-    pending = [m for m in bundle.get("milestones") or [] if m.get("status") != "done"]
+    pending = [
+        m for m in bundle.get("milestones") or [] if m.get("status") != "done"
+    ]
     if not pending:
         lines.append("- 里程碑均已完成")
     for milestone in pending:
         lines.append(
-            f"- {milestone.get('title')}，截止 {milestone.get('due_date') or '未定'}"
+            f"- {milestone.get('title')}，"
+            f"截止 {milestone.get('due_date') or '未定'}",
         )
     lines.append("")
     lines.append("## 4. 会后动作")
@@ -160,9 +226,12 @@ def fallback_weekly(bundle: Dict[str, Any]) -> str:
     lines = [
         f"# {project.get('name')} 周报（给甲方）",
         "",
-        f"编号：{project.get('code') or '-'}    下次对齐：{project.get('next_align_at') or '待约'}",
+        f"编号：{project.get('code') or '-'}    "
+        f"下次对齐：{project.get('next_align_at') or '待约'}",
         "",
-        "## 本周进展",
+        "本稿基于当前台账快照；累计已对齐事项不代表本周新增完成，发送前请补充本周实际进展。",
+        "",
+        "## 当前台账进展",
         f"- 已对齐 {len(agreed)} 项，待对齐 {len(open_items)} 项，阻塞 {len(blocked)} 项。",
         f"- 项目范围：{project.get('sow') or '见合同'}",
     ]
@@ -179,26 +248,38 @@ def fallback_weekly(bundle: Dict[str, Any]) -> str:
         and i.get("owner_side") in ("client", "both")
     ]
     if not need_client:
-        lines.append("- 本周无需要甲方拍板的事项")
-    for item in need_client:
-        lines.append(f"- {item.get('title')}（{STATUS_LABEL.get(item.get('status'))}）")
+        lines.append("- 当前无需要甲方拍板的事项")
+    for item in sorted(need_client, key=_focus_order):
+        lines.append(
+            f"- {item.get('title')}（{STATUS_LABEL.get(item.get('status'))}）",
+        )
+        lines.append(f"  - {_schedule_context(item, bundle)}")
     lines.append("")
     lines.append("## 乙方下周计划")
     lines.append("- 关闭可独立推进的对齐项")
-    pending = [m for m in bundle.get("milestones") or [] if m.get("status") != "done"]
+    pending = [
+        m for m in bundle.get("milestones") or [] if m.get("status") != "done"
+    ]
     for milestone in pending[:3]:
-        lines.append(f"- 里程碑推进：{milestone.get('title')}（{milestone.get('due_date') or '未定'}）")
+        lines.append(
+            f"- 里程碑推进：{milestone.get('title')}"
+            f"（{milestone.get('due_date') or '未定'}）",
+        )
     lines.append("")
     lines.append("## 风险")
     if blocked:
         for item in blocked:
             lines.append(f"- {item.get('title')}")
+            lines.append(f"  - {_schedule_context(item, bundle)}")
     else:
         lines.append("- 当前无阻塞，关注资料到齐与验收口径")
     return "\n".join(lines)
 
 
-def extract_items_from_notes(notes: str, project_id: str) -> List[Dict[str, Any]]:
+def extract_items_from_notes(
+    notes: str,
+    project_id: str,
+) -> List[Dict[str, Any]]:
     """Rule-based extraction used when the Agent is offline."""
     created: List[Dict[str, Any]] = []
     now = now_iso()
@@ -240,9 +321,9 @@ def extract_items_from_notes(notes: str, project_id: str) -> List[Dict[str, Any]
                 "status": status,
                 "created_at": now,
                 "updated_at": now,
-            }
+            },
         )
-    return created[:12]
+    return [item_defaults(row) for row in created[:12]]
 
 
 async def _chat(ctx: Any, prompt: str) -> str:
@@ -254,25 +335,48 @@ async def _chat(ctx: Any, prompt: str) -> str:
         return ""
 
 
-def _normalize_item(raw: Dict[str, Any], project_id: str) -> Optional[Dict[str, Any]]:
+def _normalize_item(
+    raw: Dict[str, Any],
+    project_id: str,
+) -> Optional[Dict[str, Any]]:
     title = str(raw.get("title") or "").strip()
     if not title:
         return None
     kind = raw.get("kind") if raw.get("kind") in ITEM_KINDS else "scope"
     owner = raw.get("owner_side") if raw.get("owner_side") in SIDES else "both"
-    status = raw.get("status") if raw.get("status") in ITEM_STATUSES else "open"
+    status = (
+        raw.get("status") if raw.get("status") in ITEM_STATUSES else "open"
+    )
     now = now_iso()
-    return {
-        "id": new_id("it"),
-        "project_id": project_id,
-        "title": title[:120],
-        "detail": str(raw.get("detail") or "").strip()[:2000],
-        "kind": kind,
-        "owner_side": owner,
-        "status": status,
-        "created_at": now,
-        "updated_at": now,
-    }
+    due_date = str(raw.get("due_date") or "").strip()
+    try:
+        if due_date and (
+            not re.fullmatch(r"\d{4}-\d{2}-\d{2}", due_date)
+            or not date.fromisoformat(due_date)
+        ):
+            due_date = ""
+    except ValueError:
+        due_date = ""
+    return item_defaults(
+        {
+            "id": new_id("it"),
+            "project_id": project_id,
+            "title": title[:120],
+            "detail": str(raw.get("detail") or "").strip()[:2000],
+            "kind": kind,
+            "owner_side": owner,
+            "status": status,
+            "priority": (
+                raw.get("priority")
+                if raw.get("priority") in PRIORITIES
+                else "normal"
+            ),
+            "assignee": str(raw.get("assignee") or "").strip()[:200],
+            "due_date": due_date,
+            "created_at": now,
+            "updated_at": now,
+        },
+    )
 
 
 async def generate_agenda(ctx: Any, bundle: Dict[str, Any]) -> Tuple[str, str]:
@@ -290,9 +394,10 @@ async def generate_agenda(ctx: Any, bundle: Dict[str, Any]) -> Tuple[str, str]:
 async def generate_weekly(ctx: Any, bundle: Dict[str, Any]) -> Tuple[str, str]:
     prompt = (
         "你是乙方项目经理。根据台账写一份发给甲方项目经理的周报。"
-        "结构：本周进展 / 需要甲方拍板 / 乙方下周计划 / 风险。"
-        "语气克制、可转发邮件。只输出 Markdown 正文。\n\n"
-        + project_snapshot(bundle)
+        "结构：当前台账进展 / 需要甲方拍板 / 乙方下周计划 / 风险。"
+        "台账是当前状态快照，不提供本周完成时间证据；不要把累计已对齐事项称为本周新增完成。"
+        "标明负责人、真实截止日期、优先级和前置依赖，未提供的信息写待确认，不能编造。"
+        "语气克制、可转发邮件。只输出 Markdown 正文。\n\n" + project_snapshot(bundle)
     )
     text = (await _chat(ctx, prompt)).strip()
     if len(text) >= 40:
@@ -307,10 +412,13 @@ async def generate_minutes_items(
 ) -> Tuple[List[Dict[str, Any]], str]:
     prompt = (
         "从对齐会纪要中抽取需要对齐或已对齐的事项，输出 JSON：\n"
-        '{"items":[{"title":"","detail":"","kind":"scope|milestone|deliverable|'
-        'data|interface|acceptance|change|risk","owner_side":"client|vendor|both",'
-        '"status":"open|proposed|agreed|blocked|deferred"}]}\n'
-        "只抽取可执行事项，不要寒暄。只输出 JSON。\n\n"
+        '{"items":[{"title":"","detail":"",'
+        '"kind":"scope|milestone|deliverable|data|interface|acceptance|'
+        'change|risk","owner_side":"client|vendor|both",'
+        '"status":"open|proposed|agreed|blocked|deferred",'
+        '"priority":"urgent|high|normal|low",'
+        '"assignee":"纪要明确的负责人或空","due_date":"YYYY-MM-DD或空"}]}\n'
+        "只抽取可执行事项，不要寒暄。负责人和日期必须来自纪要，不确定就留空，优先级不明确用normal。只输出 JSON。\n\n"
         f"{project_snapshot(bundle)}\n\n纪要：\n{notes}"
     )
     parsed = _extract_json(await _chat(ctx, prompt))

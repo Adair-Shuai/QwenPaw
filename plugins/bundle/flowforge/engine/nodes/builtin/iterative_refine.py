@@ -15,7 +15,6 @@ from __future__ import annotations
 
 from typing import Any
 
-import logging
 
 from ...io import IO, Hidden, HiddenHolder, NodeOutput, Schema
 
@@ -41,15 +40,23 @@ class IterativeRefineNode(WorkflowNode):
             ),
             inputs=[
                 IO.Int.Input(
-                    id="max_iterations", optional=True, default=3, min=1, max=20,
+                    id="max_iterations",
+                    optional=True,
+                    default=3,
+                    min=1,
+                    max=20,
                     tooltip="Maximum regeneration attempts.",
                 ),
                 IO.String.Input(
-                    id="iteration_var", optional=True, default="refine_iteration",
+                    id="iteration_var",
+                    optional=True,
+                    default="refine_iteration",
                     tooltip="State variable holding the iteration count.",
                 ),
                 IO.String.Input(
-                    id="feedback", optional=True, multiline=True,
+                    id="feedback",
+                    optional=True,
+                    multiline=True,
                     tooltip="Optional critique fed back into regeneration.",
                 ),
             ],
@@ -62,13 +69,23 @@ class IterativeRefineNode(WorkflowNode):
             not_idempotent=True,
         )
 
-    async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+    async def execute(
+        self,
+        *,
+        hidden: HiddenHolder,
+        **inputs: Any,
+    ) -> NodeOutput:
         state = hidden.workflow_state
         node_id = hidden.unique_id
         var = str(inputs.get("iteration_var") or "refine_iteration")
-        max_iter = int(inputs.get("max_iterations") if inputs.get("max_iterations") is not None else 3)
+        raw_max_iter = inputs.get("max_iterations")
+        max_iter = int(raw_max_iter if raw_max_iter is not None else 3)
 
-        counters = state.metadata.setdefault("refine_counters", {}) if state is not None else {}
+        counters = (
+            state.metadata.setdefault("refine_counters", {})
+            if state is not None
+            else {}
+        )
         current = int(counters.get(node_id, 0)) + 1
         counters[node_id] = current
         if state is not None:
@@ -79,17 +96,27 @@ class IterativeRefineNode(WorkflowNode):
         exhausted = current > max_iter
         control = _control_for(hidden, node_id)
         retry_node = control.get("retry_node") or control.get("next")
-        exhausted_node = control.get("exhausted_node") or control.get("else_node")
+        exhausted_node = control.get("exhausted_node") or control.get(
+            "else_node",
+        )
         target = exhausted_node if exhausted else retry_node
 
         logger.info(
-            "iterative_refine", node_id=node_id, iteration=current,
-            max_iterations=max_iter, exhausted=exhausted, target=target,
+            "iterative_refine",
+            node_id=node_id,
+            iteration=current,
+            max_iterations=max_iter,
+            exhausted=exhausted,
+            target=target,
         )
         return NodeOutput(
             values=(current, exhausted),
             next_node=target,
-            metadata={"iteration": current, "max_iterations": max_iter, "exhausted": exhausted},
+            metadata={
+                "iteration": current,
+                "max_iterations": max_iter,
+                "exhausted": exhausted,
+            },
         )
 
 

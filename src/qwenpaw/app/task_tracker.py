@@ -48,6 +48,29 @@ class _RunState:
     owner: object | None = None
 
 
+async def _broadcast_stream(
+    tracker_ref: weakref.ReferenceType[TaskTracker],
+    run: _RunState,
+    stream: AsyncIterator[str],
+) -> None:
+    try:
+        async for sse in stream:
+            tracker = tracker_ref()
+            if tracker is None:
+                return
+            async with tracker.lock:
+                run.buffer.append(sse)
+                for queue in run.queues:
+                    queue.put_nowait(sse)
+    finally:
+        # Cancellation while broadcasting leaves an async generator
+        # suspended at yield. Release its plugin custody before host
+        # completion persistence starts.
+        close = getattr(stream, "aclose", None)
+        if close is not None:
+            await close()
+
+
 class TaskTracker:
     """Per-agent tracker: run_key -> RunState.
 
@@ -301,14 +324,11 @@ class TaskTracker:
                             # pylint: disable=protected-access
                             tracker._global_last_run_at = start_time
 
-                    async for sse in stream_fn(payload):
-                        tracker = tracker_ref()
-                        if tracker is None:
-                            return
-                        async with tracker.lock:
-                            run.buffer.append(sse)
-                            for q in run.queues:
-                                q.put_nowait(sse)
+                    await _broadcast_stream(
+                        tracker_ref,
+                        run,
+                        stream_fn(payload),
+                    )
                 except asyncio.CancelledError:
                     logger.debug("run cancelled run_key=%s", run_key)
                 except Exception:

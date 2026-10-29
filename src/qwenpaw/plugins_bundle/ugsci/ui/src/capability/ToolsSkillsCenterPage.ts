@@ -116,7 +116,8 @@ function HostBuiltinPage({ page }: { page: BuiltinPageId }) {
     page === "mcp"
       ? {
           title: "UGSci MCP",
-          description: "连接外部工具、数据服务与计算能力，扩展当前专家的可调用范围",
+          description:
+            "连接外部工具、数据服务与计算能力，扩展当前专家的可调用范围",
           managedTitle: "已接入服务",
           managedDescription: "启用后可由当前专家调用，并可按工具配置访问权限",
           create: "接入 MCP 服务",
@@ -185,11 +186,13 @@ function EngineWorkspaceSection({
             onNavigateToMcp?: () => void;
             onNavigateToTools?: (subTab?: string) => void;
             onNavigateToSkills?: () => void;
-          }>, {
-          onNavigateToMcp,
-          onNavigateToTools,
-          onNavigateToSkills,
-          }),
+          }>,
+          {
+            onNavigateToMcp,
+            onNavigateToTools,
+            onNavigateToSkills,
+          },
+        ),
       },
       {
         key: "runtime",
@@ -268,17 +271,19 @@ export function ToolsSkillsCenterPage({
               onNavigateToMcp?: () => void;
               onNavigateToTools?: (subTab?: string) => void;
               onNavigateToSkills?: () => void;
-            }>, {
-            onNavigateToMcp: () => {
-              setToolsSubTab("mcp");
-              changeTab("tools");
+            }>,
+            {
+              onNavigateToMcp: () => {
+                setToolsSubTab("mcp");
+                changeTab("tools");
+              },
+              onNavigateToTools: (subTab?: string) => {
+                setToolsSubTab(subTab || "mcp");
+                changeTab("tools");
+              },
+              onNavigateToSkills: () => changeTab("skills"),
             },
-            onNavigateToTools: (subTab?: string) => {
-              setToolsSubTab(subTab || "mcp");
-              changeTab("tools");
-            },
-            onNavigateToSkills: () => changeTab("skills"),
-            }),
+          ),
         },
         {
           key: "tools",

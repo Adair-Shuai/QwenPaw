@@ -78,27 +78,42 @@ def test_release_lock_covers_all_supported_desktop_targets():
             assert len(bytes.fromhex(digest)) == 32
 
 
-def test_binary_verification_checks_bytes_and_executed_version(tmp_path, monkeypatch):
+def test_binary_verification_checks_bytes_and_executed_version(
+    tmp_path,
+    monkeypatch,
+):
     helper = _load_helper()
     binary = tmp_path / "officecli"
     binary.write_bytes(b"test engine")
     lock = tmp_path / "release.json"
     lock.write_text(
         json.dumps(
-            {"sha256": {"asset": hashlib.sha256(binary.read_bytes()).hexdigest()}}
-        )
+            {
+                "sha256": {
+                    "asset": hashlib.sha256(binary.read_bytes()).hexdigest(),
+                },
+            },
+        ),
     )
     monkeypatch.setattr(helper, "LOCK_PATH", lock)
     monkeypatch.setattr(
         helper.subprocess,
         "run",
-        lambda *a, **k: SimpleNamespace(returncode=0, stdout="1.0.157", stderr=""),
+        lambda *a, **k: SimpleNamespace(
+            returncode=0,
+            stdout="1.0.157",
+            stderr="",
+        ),
     )
     helper._verify_binary(binary, "asset", "v1.0.157")
     monkeypatch.setattr(
         helper.subprocess,
         "run",
-        lambda *a, **k: SimpleNamespace(returncode=0, stdout="1.0.141", stderr=""),
+        lambda *a, **k: SimpleNamespace(
+            returncode=0,
+            stdout="1.0.141",
+            stderr="",
+        ),
     )
     with pytest.raises(SystemExit, match="version verification failed"):
         helper._verify_binary(binary, "asset", "v1.0.157")
@@ -112,7 +127,10 @@ def test_binary_verification_checks_bytes_and_executed_version(tmp_path, monkeyp
         helper._verify_binary(binary, "asset", "v1.0.157")
 
 
-def test_matching_marker_cannot_bypass_cached_binary_validation(tmp_path, monkeypatch):
+def test_matching_marker_cannot_bypass_cached_binary_validation(
+    tmp_path,
+    monkeypatch,
+):
     helper = _load_helper()
     monkeypatch.setattr(helper, "_target", lambda: ("win", "x64"))
     monkeypatch.delenv("QWENPAW_OFFICECLI_VERSION", raising=False)
@@ -125,7 +143,9 @@ def test_matching_marker_cannot_bypass_cached_binary_validation(tmp_path, monkey
 
 @pytest.mark.parametrize("failure", ["checksum", "version"])
 def test_failed_upgrade_preserves_existing_engine_and_marker(
-    tmp_path, monkeypatch, failure
+    tmp_path,
+    monkeypatch,
+    failure,
 ):
     helper = _load_helper()
     monkeypatch.delenv("QWENPAW_OFFICECLI_VERSION", raising=False)
@@ -144,20 +164,26 @@ def test_failed_upgrade_preserves_existing_engine_and_marker(
                 "version": "v1.0.157",
                 "sha256": {
                     "officecli-win-x64.exe": hashlib.sha256(
-                        payload if failure == "version" else b"different"
-                    ).hexdigest()
+                        payload if failure == "version" else b"different",
+                    ).hexdigest(),
                 },
-            }
-        )
+            },
+        ),
     )
     monkeypatch.setattr(helper, "LOCK_PATH", lock)
     monkeypatch.setattr(
-        helper, "_http_download", lambda url, target: target.write_bytes(payload)
+        helper,
+        "_http_download",
+        lambda url, target: target.write_bytes(payload),
     )
     monkeypatch.setattr(
         helper.subprocess,
         "run",
-        lambda *a, **k: SimpleNamespace(returncode=0, stdout="1.0.141", stderr=""),
+        lambda *a, **k: SimpleNamespace(
+            returncode=0,
+            stdout="1.0.141",
+            stderr="",
+        ),
     )
     monkeypatch.setattr(helper.sys, "argv", ["stage", "--dest", str(dest)])
     with pytest.raises(SystemExit):

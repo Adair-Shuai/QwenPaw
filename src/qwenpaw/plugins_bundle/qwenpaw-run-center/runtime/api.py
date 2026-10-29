@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """FastAPI endpoints for the independent Run Center R0."""
 
 from __future__ import annotations
@@ -6,13 +7,20 @@ import asyncio
 import json
 from typing import Any, Callable
 
-from fastapi import APIRouter, Body, Header, HTTPException, Query, Request, status
+from fastapi import (
+    APIRouter,
+    Body,
+    Header,
+    HTTPException,
+    Query,
+    Request,
+    status as http_status,
+)
 from fastapi.responses import StreamingResponse
 
 from .models import CONTRACT_VERSION, TERMINAL_STATUSES
 from .descriptors import normalize_operation_descriptor, validate_json_schema
 from .repository import RunRepository
-
 
 # These values describe executable implementation details.  They are allowed
 # in trusted provider-to-provider calls (which use the repository directly),
@@ -30,11 +38,15 @@ _FORBIDDEN_CLIENT_RUN_KEYS = frozenset(
         "prop_path",
         "bin_dir",
         "output_dir",
-    }
+    },
 )
 
 
-def _find_forbidden_run_key(value: Any, *, path: str = "payload") -> str | None:
+def _find_forbidden_run_key(
+    value: Any,
+    *,
+    path: str = "payload",
+) -> str | None:
     if isinstance(value, dict):
         for key, child in value.items():
             normalized = str(key).strip().lower()
@@ -51,6 +63,24 @@ def _find_forbidden_run_key(value: Any, *, path: str = "payload") -> str | None:
     return None
 
 
+def _executor_runtime_started(executor_service: Any) -> bool:
+    """Read either a status property or a legacy status callback."""
+    if executor_service is None:
+        return False
+    started = getattr(executor_service, "started", None)
+    return bool(started() if callable(started) else started)
+
+
+def _executor_runtime_snapshot(executor_service: Any) -> dict[str, Any]:
+    """Normalize an optional host snapshot into the public pool shape."""
+    snapshot_fn = getattr(executor_service, "snapshot", None)
+    snapshot = snapshot_fn() if callable(snapshot_fn) else {}
+    if not isinstance(snapshot, dict):
+        snapshot = {}
+
+    return snapshot
+
+
 def build_router(
     repository: RunRepository,
     sync_operations: Callable[[], None] | None = None,
@@ -58,13 +88,45 @@ def build_router(
     research_service: Any | None = None,
 ) -> APIRouter:
     router = APIRouter()
+    from .presentation import build_presentation_router
+
+    router.routes.extend(build_presentation_router(repository).routes)
 
     def _executor_started() -> bool:
-        if executor_service is None:
-            return False
-        started = getattr(executor_service, "started", None)
-        return bool(started() if callable(started) else started)
+        return _executor_runtime_started(executor_service)
 
+    _register_run_reads(
+        router,
+        repository,
+        research_service,
+        _executor_started,
+    )
+    _register_run_components(router, repository)
+    _register_run_stream(router, repository)
+    _register_run_writes(router, repository)
+    _register_run_controls(router, repository, executor_service)
+    _register_operation_routes(router, repository, sync_operations)
+    _register_resource_pool(
+        router,
+        repository,
+        executor_service,
+        _executor_started,
+    )
+    _register_queue_routes(
+        router,
+        repository,
+        executor_service,
+        _executor_started,
+    )
+    return router
+
+
+def _register_run_reads(
+    router: APIRouter,
+    repository: RunRepository,
+    research_service: Any | None,
+    _executor_started: Callable[[], bool],
+) -> None:
     @router.get("/health")
     def health() -> dict[str, Any]:
         repository.initialize()
@@ -97,7 +159,11 @@ def build_router(
                 "resource_leases": True,
                 "model_registry": research_service is not None,
                 "study_engine": research_service is not None,
-                "doe": ["latin_hypercube", "random", "sobol", "full_factorial"] if research_service is not None else [],
+                "doe": (
+                    ["latin_hypercube", "random", "sobol", "full_factorial"]
+                    if research_service is not None
+                    else []
+                ),
                 "uncertainty_statistics": research_service is not None,
                 "sensitivity_screening": research_service is not None,
                 "scenario_comparison": research_service is not None,
@@ -142,7 +208,9 @@ def build_router(
         limit: int = Query(default=100, ge=1, le=500),
     ) -> dict[str, Any]:
         try:
-            normalized_status = repository._query_status(status) if status else None  # noqa: SLF001
+            normalized_status = (
+                repository.normalize_query_status(status) if status else None
+            )
         except ValueError as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
         return {
@@ -175,13 +243,25 @@ def build_router(
             "events": repository.list_events(run_id, after_seq),
         }
 
+
+def _register_run_components(
+    router: APIRouter,
+    repository: RunRepository,
+) -> None:
     @router.get("/runs/{run_id}/stages")
     def list_stages(run_id: str) -> dict[str, Any]:
         try:
             stages = repository.list_stages(run_id)
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Run not found") from exc
-        return {"contract_version": CONTRACT_VERSION, "run_id": run_id, "stages": stages}
+            raise HTTPException(
+                status_code=404,
+                detail="Run not found",
+            ) from exc
+        return {
+            "contract_version": CONTRACT_VERSION,
+            "run_id": run_id,
+            "stages": stages,
+        }
 
     @router.put("/runs/{run_id}/stages/{stage_id}")
     def upsert_stage(
@@ -190,11 +270,20 @@ def build_router(
         payload: dict[str, Any] = Body(...),
     ) -> dict[str, Any]:
         if payload.get("stage_id") not in (None, stage_id):
-            raise HTTPException(status_code=400, detail="stage_id does not match path")
+            raise HTTPException(
+                status_code=400,
+                detail="stage_id does not match path",
+            )
         try:
-            stage = repository.upsert_stage(run_id, {**payload, "stage_id": stage_id})
+            stage = repository.upsert_stage(
+                run_id,
+                {**payload, "stage_id": stage_id},
+            )
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Run not found") from exc
+            raise HTTPException(
+                status_code=404,
+                detail="Run not found",
+            ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"contract_version": CONTRACT_VERSION, "stage": stage}
@@ -206,18 +295,35 @@ def build_router(
         role: str | None = Query(default=None),
     ) -> dict[str, Any]:
         try:
-            artifacts = repository.list_artifacts(run_id, stage_id=stage_id, role=role)
+            artifacts = repository.list_artifacts(
+                run_id,
+                stage_id=stage_id,
+                role=role,
+            )
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Run not found") from exc
+            raise HTTPException(
+                status_code=404,
+                detail="Run not found",
+            ) from exc
         return {
             "contract_version": CONTRACT_VERSION,
             "run_id": run_id,
             "artifacts": artifacts,
         }
 
-    @router.post("/runs/{run_id}/artifacts", status_code=status.HTTP_201_CREATED)
-    def add_artifact(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
-        artifact = payload.get("artifact") if isinstance(payload.get("artifact"), dict) else payload
+    @router.post(
+        "/runs/{run_id}/artifacts",
+        status_code=http_status.HTTP_201_CREATED,
+    )
+    def add_artifact(
+        run_id: str,
+        payload: dict[str, Any] = Body(...),
+    ) -> dict[str, Any]:
+        artifact = (
+            payload.get("artifact")
+            if isinstance(payload.get("artifact"), dict)
+            else payload
+        )
         try:
             item = repository.add_artifact(
                 run_id,
@@ -226,7 +332,10 @@ def build_router(
                 role=str(payload.get("role") or "output"),
             )
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Run not found") from exc
+            raise HTTPException(
+                status_code=404,
+                detail="Run not found",
+            ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"contract_version": CONTRACT_VERSION, "artifact": item}
@@ -236,19 +345,31 @@ def build_router(
         try:
             checkpoints = repository.list_checkpoints(run_id)
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Run not found") from exc
+            raise HTTPException(
+                status_code=404,
+                detail="Run not found",
+            ) from exc
         return {
             "contract_version": CONTRACT_VERSION,
             "run_id": run_id,
             "checkpoints": checkpoints,
         }
 
-    @router.post("/runs/{run_id}/checkpoints", status_code=status.HTTP_201_CREATED)
-    def create_checkpoint(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    @router.post(
+        "/runs/{run_id}/checkpoints",
+        status_code=http_status.HTTP_201_CREATED,
+    )
+    def create_checkpoint(
+        run_id: str,
+        payload: dict[str, Any] = Body(...),
+    ) -> dict[str, Any]:
         try:
             item = repository.create_checkpoint(run_id, payload)
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Run not found") from exc
+            raise HTTPException(
+                status_code=404,
+                detail="Run not found",
+            ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"contract_version": CONTRACT_VERSION, "checkpoint": item}
@@ -258,7 +379,10 @@ def build_router(
         try:
             provenance = repository.list_provenance(run_id)
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Run not found") from exc
+            raise HTTPException(
+                status_code=404,
+                detail="Run not found",
+            ) from exc
         return {
             "contract_version": CONTRACT_VERSION,
             "run_id": run_id,
@@ -266,7 +390,10 @@ def build_router(
         }
 
     @router.put("/runs/{run_id}/provenance")
-    def upsert_provenance(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    def upsert_provenance(
+        run_id: str,
+        payload: dict[str, Any] = Body(...),
+    ) -> dict[str, Any]:
         try:
             item = repository.upsert_provenance(
                 run_id,
@@ -274,17 +401,29 @@ def build_router(
                 artifact_ref_id=payload.get("artifact_ref_id"),
             )
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Run not found") from exc
+            raise HTTPException(
+                status_code=404,
+                detail="Run not found",
+            ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"contract_version": CONTRACT_VERSION, "provenance": item}
 
+
+def _register_run_stream(
+    router: APIRouter,
+    repository: RunRepository,
+) -> None:
     @router.get("/runs/{run_id}/events/stream")
     async def stream_events(
         request: Request,
         run_id: str,
         after_seq: int = Query(default=0, ge=0),
-        last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+        last_event_id: str
+        | None = Header(
+            default=None,
+            alias="Last-Event-ID",
+        ),
     ) -> StreamingResponse:
         """Replay durable events, then follow the run until it is terminal."""
         if repository.get_run(run_id) is None:
@@ -294,13 +433,20 @@ def build_router(
             try:
                 cursor = max(cursor, int(last_event_id))
             except ValueError as exc:
-                raise HTTPException(status_code=400, detail="Last-Event-ID must be an integer") from exc
+                raise HTTPException(
+                    status_code=400,
+                    detail="Last-Event-ID must be an integer",
+                ) from exc
 
         async def generate():
             sequence = cursor
             heartbeat_at = asyncio.get_running_loop().time() + 15.0
             while True:
-                events = await asyncio.to_thread(repository.list_events, run_id, sequence)
+                events = await asyncio.to_thread(
+                    repository.list_events,
+                    run_id,
+                    sequence,
+                )
                 for event in events:
                     sequence = max(sequence, int(event.get("sequence") or 0))
                     envelope = {
@@ -315,13 +461,29 @@ def build_router(
                     yield (
                         f"id: {sequence}\n"
                         f"event: {envelope['type']}\n"
-                        f"data: {json.dumps(envelope, ensure_ascii=False, separators=(',', ':'))}\n\n"
+                        f"data: "
+                        f"""{(
+                            json.dumps(
+                                envelope,
+                                ensure_ascii=False,
+                                separators=(",", ":"),
+                            )
+                        )}"""
+                        f"\n"
+                        f"\n"
                     )
                 current = await asyncio.to_thread(repository.get_run, run_id)
-                if current is None or current.get("status") in TERMINAL_STATUSES:
+                if (
+                    current is None
+                    or current.get("status") in TERMINAL_STATUSES
+                ):
                     # A final query closes the race between the last replay and
                     # terminal transition without duplicating earlier events.
-                    final_events = await asyncio.to_thread(repository.list_events, run_id, sequence)
+                    final_events = await asyncio.to_thread(
+                        repository.list_events,
+                        run_id,
+                        sequence,
+                    )
                     if final_events:
                         continue
                     return
@@ -339,10 +501,19 @@ def build_router(
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
-    @router.post("/runs", status_code=status.HTTP_201_CREATED)
+
+def _register_run_writes(
+    router: APIRouter,
+    repository: RunRepository,
+) -> None:
+    @router.post("/runs", status_code=http_status.HTTP_201_CREATED)
     def create_run(
         payload: dict[str, Any] = Body(...),
-        idempotency_key: str | None = Header(default=None, alias="Idempotency-Key"),
+        idempotency_key: str
+        | None = Header(
+            default=None,
+            alias="Idempotency-Key",
+        ),
     ) -> dict[str, Any]:
         """Create a native durable Run.
 
@@ -355,30 +526,44 @@ def build_router(
                 status_code=400,
                 detail=(
                     f"{forbidden} is reserved for trusted providers; "
-                    "submit an artifact/reference and provider parameters instead"
+                    "submit an artifact/reference and "
+                    "provider parameters instead"
                 ),
             )
-        requested_status = str(payload.get("status") or "draft").strip().lower()
+        requested_status = (
+            str(payload.get("status") or "draft").strip().lower()
+        )
         if requested_status not in {"draft", "queued"}:
             raise HTTPException(
                 status_code=400,
-                detail="public Run creation only accepts draft or queued status",
+                detail="public Run creation only accepts draft or "
+                "queued status",
             )
         try:
             item = repository.create_run(
                 payload,
-                idempotency_key=idempotency_key or payload.get("idempotency_key"),
+                idempotency_key=idempotency_key
+                or payload.get("idempotency_key"),
             )
         except ValueError as exc:
             detail = str(exc)
             code = 409 if "already exists" in detail else 400
             raise HTTPException(status_code=code, detail=detail) from exc
         except (TypeError, OverflowError) as exc:
-            raise HTTPException(status_code=400, detail="run must be JSON-safe") from exc
+            raise HTTPException(
+                status_code=400,
+                detail="run must be JSON-safe",
+            ) from exc
         return item
 
-    @router.post("/runs/{run_id}/events", status_code=status.HTTP_201_CREATED)
-    def append_event(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    @router.post(
+        "/runs/{run_id}/events",
+        status_code=http_status.HTTP_201_CREATED,
+    )
+    def append_event(
+        run_id: str,
+        payload: dict[str, Any] = Body(...),
+    ) -> dict[str, Any]:
         event_type = payload.get("event_type") or payload.get("type")
         data = payload.get("data")
         if not isinstance(data, dict):
@@ -392,40 +577,78 @@ def build_router(
                 created_at=payload.get("created_at"),
             )
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Run not found") from exc
+            raise HTTPException(
+                status_code=404,
+                detail="Run not found",
+            ) from exc
         except (TypeError, OverflowError) as exc:
-            raise HTTPException(status_code=400, detail="event data must be JSON-safe") from exc
+            raise HTTPException(
+                status_code=400,
+                detail="event data must be JSON-safe",
+            ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return {"contract_version": CONTRACT_VERSION, "event": event}
 
     @router.post("/runs/{run_id}/transition")
-    def transition_run(run_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    def transition_run(
+        run_id: str,
+        payload: dict[str, Any] = Body(...),
+    ) -> dict[str, Any]:
         try:
             item = repository.transition(
                 run_id,
                 str(payload.get("status") or ""),
                 phase=payload.get("phase"),
                 progress=payload.get("progress"),
-                error=payload.get("error") if isinstance(payload.get("error"), dict) else None,
-                data=payload.get("data") if isinstance(payload.get("data"), dict) else None,
+                error=(
+                    payload.get("error")
+                    if isinstance(payload.get("error"), dict)
+                    else None
+                ),
+                data=(
+                    payload.get("data")
+                    if isinstance(payload.get("data"), dict)
+                    else None
+                ),
             )
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Run not found") from exc
+            raise HTTPException(
+                status_code=404,
+                detail="Run not found",
+            ) from exc
         except (TypeError, OverflowError) as exc:
-            raise HTTPException(status_code=400, detail="transition data must be JSON-safe") from exc
+            raise HTTPException(
+                status_code=400,
+                detail="transition data must be JSON-safe",
+            ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         return item
 
-    @router.post("/runs/{run_id}/submit", status_code=status.HTTP_202_ACCEPTED)
+
+def _register_run_controls(
+    router: APIRouter,
+    repository: RunRepository,
+    executor_service: Any | None,
+) -> None:
+    @router.post(
+        "/runs/{run_id}/submit",
+        status_code=http_status.HTTP_202_ACCEPTED,
+    )
     def submit_run(run_id: str) -> dict[str, Any]:
         if executor_service is None:
-            raise HTTPException(status_code=503, detail="Executor runtime is unavailable")
+            raise HTTPException(
+                status_code=503,
+                detail="Executor runtime is unavailable",
+            )
         try:
             executor_service.submit(run_id)
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Run not found") from exc
+            raise HTTPException(
+                status_code=404,
+                detail="Run not found",
+            ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         item = repository.get_run(run_id)
@@ -441,12 +664,17 @@ def build_router(
         run_id: str,
         payload: dict[str, Any] = Body(default={}),
     ) -> dict[str, Any]:
-        checkpoint_id = payload.get("checkpoint_id") if isinstance(payload, dict) else None
+        checkpoint_id = (
+            payload.get("checkpoint_id") if isinstance(payload, dict) else None
+        )
         if checkpoint_id and executor_service is None:
             try:
                 repository.mark_resume_requested(run_id, str(checkpoint_id))
             except KeyError as exc:
-                raise HTTPException(status_code=404, detail="Run not found") from exc
+                raise HTTPException(
+                    status_code=404,
+                    detail="Run not found",
+                ) from exc
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
         if checkpoint_id and executor_service is not None:
@@ -456,7 +684,10 @@ def build_router(
             try:
                 repository.mark_resume_requested(run_id, str(checkpoint_id))
             except KeyError as exc:
-                raise HTTPException(status_code=404, detail="Run not found") from exc
+                raise HTTPException(
+                    status_code=404,
+                    detail="Run not found",
+                ) from exc
             except ValueError as exc:
                 raise HTTPException(status_code=400, detail=str(exc)) from exc
         return _control(repository, run_id, "resume", executor_service)
@@ -465,28 +696,59 @@ def build_router(
     def cancel_run(run_id: str) -> dict[str, Any]:
         return _control(repository, run_id, "cancel", executor_service)
 
-    @router.post("/runs/{run_id}/clone", status_code=status.HTTP_201_CREATED)
-    def clone_run(run_id: str, payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    @router.post(
+        "/runs/{run_id}/clone",
+        status_code=http_status.HTTP_201_CREATED,
+    )
+    def clone_run(
+        run_id: str,
+        payload: dict[str, Any] = Body(default={}),
+    ) -> dict[str, Any]:
         try:
             return repository.clone_run(
                 run_id,
                 idempotency_key=payload.get("idempotency_key"),
-                overrides=payload.get("overrides") if isinstance(payload.get("overrides"), dict) else None,
+                overrides=(
+                    payload.get("overrides")
+                    if isinstance(payload.get("overrides"), dict)
+                    else None
+                ),
             )
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Run not found") from exc
+            raise HTTPException(
+                status_code=404,
+                detail="Run not found",
+            ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    @router.post("/runs/{run_id}/retry", status_code=status.HTTP_201_CREATED)
-    def retry_run(run_id: str, payload: dict[str, Any] = Body(default={})) -> dict[str, Any]:
+    @router.post(
+        "/runs/{run_id}/retry",
+        status_code=http_status.HTTP_201_CREATED,
+    )
+    def retry_run(
+        run_id: str,
+        payload: dict[str, Any] = Body(default={}),
+    ) -> dict[str, Any]:
         try:
-            return repository.retry_run(run_id, idempotency_key=payload.get("idempotency_key"))
+            return repository.retry_run(
+                run_id,
+                idempotency_key=payload.get("idempotency_key"),
+            )
         except KeyError as exc:
-            raise HTTPException(status_code=404, detail="Run not found") from exc
+            raise HTTPException(
+                status_code=404,
+                detail="Run not found",
+            ) from exc
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
+
+def _register_operation_routes(
+    router: APIRouter,
+    repository: RunRepository,
+    sync_operations: Callable[[], None] | None,
+) -> None:
     @router.get("/operations")
     def list_operations() -> dict[str, Any]:
         if sync_operations is not None:
@@ -503,7 +765,8 @@ def build_router(
         return {
             "contract_version": CONTRACT_VERSION,
             "operations": operations,
-            "message": "Operation providers register JSON descriptors during startup.",
+            "message": "Operation providers register JSON descriptors "
+            "during startup.",
         }
 
     @router.get("/operations/{operation}")
@@ -560,6 +823,13 @@ def build_router(
             "schema": schema,
         }
 
+
+def _register_resource_pool(
+    router: APIRouter,
+    repository: RunRepository,
+    executor_service: Any | None,
+    _executor_started: Callable[[], bool],
+) -> None:
     @router.get("/resource-pools")
     def list_resource_pools() -> dict[str, Any]:
         """Return a provider-neutral snapshot of local execution capacity.
@@ -579,13 +849,13 @@ def build_router(
             max_workers = int(max_workers) if max_workers is not None else None
         except (TypeError, ValueError):
             max_workers = None
-        snapshot_fn = getattr(executor_service, "snapshot", None)
-        snapshot = snapshot_fn() if callable(snapshot_fn) else {}
-        if not isinstance(snapshot, dict):
-            snapshot = {}
+        snapshot = _executor_runtime_snapshot(executor_service)
 
         def _counter(name: str, fallback: Any = 0) -> int:
-            value = snapshot.get(name, getattr(executor_service, name, fallback))
+            value = snapshot.get(
+                name,
+                getattr(executor_service, name, fallback),
+            )
             try:
                 return max(0, int(value() if callable(value) else value))
             except (TypeError, ValueError):
@@ -595,11 +865,20 @@ def build_router(
         # compatibility with host executors that only expose properties.
         active_runs = _counter("active")
         submitted_runs = _counter("submitted", active_runs)
-        pending_runs = _counter("pending", max(0, submitted_runs - active_runs))
+        pending_runs = _counter(
+            "pending",
+            max(0, submitted_runs - active_runs),
+        )
         registered_operations = _counter("registered_operations")
         counts = {
             state: len(repository.list_runs(status=state, limit=500))
-            for state in ("queued", "preparing", "running", "paused", "cancelling")
+            for state in (
+                "queued",
+                "preparing",
+                "running",
+                "paused",
+                "cancelling",
+            )
         }
         return {
             "contract_version": CONTRACT_VERSION,
@@ -630,10 +909,17 @@ def build_router(
                         "project_concurrency": True,
                         "resource_leases": True,
                     },
-                }
+                },
             ],
         }
 
+
+def _register_queue_routes(
+    router: APIRouter,
+    repository: RunRepository,
+    executor_service: Any | None,
+    _executor_started: Callable[[], bool],
+) -> None:
     @router.get("/queue/policies")
     def list_queue_policies() -> dict[str, Any]:
         """Return durable project scheduling policies."""
@@ -649,11 +935,17 @@ def build_router(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         if policy is None:
-            raise HTTPException(status_code=404, detail="Queue policy not found")
+            raise HTTPException(
+                status_code=404,
+                detail="Queue policy not found",
+            )
         return {"contract_version": CONTRACT_VERSION, "policy": policy}
 
     @router.put("/queue/policies/{project_id}")
-    def put_queue_policy(project_id: str, payload: dict[str, Any] = Body(...)) -> dict[str, Any]:
+    def put_queue_policy(
+        project_id: str,
+        payload: dict[str, Any] = Body(...),
+    ) -> dict[str, Any]:
         try:
             policy = repository.upsert_project_queue_policy(
                 project_id,
@@ -673,8 +965,15 @@ def build_router(
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         if not deleted:
-            raise HTTPException(status_code=404, detail="Queue policy not found")
-        return {"contract_version": CONTRACT_VERSION, "deleted": True, "project_id": project_id}
+            raise HTTPException(
+                status_code=404,
+                detail="Queue policy not found",
+            )
+        return {
+            "contract_version": CONTRACT_VERSION,
+            "deleted": True,
+            "project_id": project_id,
+        }
 
     @router.get("/resource-leases")
     def list_resource_leases(
@@ -685,7 +984,10 @@ def build_router(
     ) -> dict[str, Any]:
         try:
             leases = repository.list_resource_leases(
-                run_id=run_id, project_id=project_id, state=state, limit=limit
+                run_id=run_id,
+                project_id=project_id,
+                state=state,
+                limit=limit,
             )
         except ValueError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -694,18 +996,35 @@ def build_router(
     @router.post("/resource-leases/{lease_id}/release")
     def release_resource_lease(lease_id: str) -> dict[str, Any]:
         try:
-            lease = repository.release_resource_lease(lease_id, reason="api_request")
+            lease = repository.release_resource_lease(
+                lease_id,
+                reason="api_request",
+            )
         except ValueError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
         if lease is None:
-            raise HTTPException(status_code=404, detail="Resource lease not found")
+            raise HTTPException(
+                status_code=404,
+                detail="Resource lease not found",
+            )
         return {"contract_version": CONTRACT_VERSION, "lease": lease}
 
     @router.get("/queue")
     def queue_snapshot() -> dict[str, Any]:
         """Return a compact queue snapshot for dashboards and diagnostics."""
-        states = ("draft", "queued", "preparing", "running", "paused", "cancelling", "retry_wait")
-        counts = {state: len(repository.list_runs(status=state, limit=500)) for state in states}
+        states = (
+            "draft",
+            "queued",
+            "preparing",
+            "running",
+            "paused",
+            "cancelling",
+            "retry_wait",
+        )
+        counts = {
+            state: len(repository.list_runs(status=state, limit=500))
+            for state in states
+        }
         snapshot = {}
         if executor_service is not None:
             getter = getattr(executor_service, "snapshot", None)
@@ -717,15 +1036,18 @@ def build_router(
             "contract_version": CONTRACT_VERSION,
             "counts": counts,
             "executor_started": _executor_started(),
-            "max_workers": getattr(executor_service, "max_workers", None)
-            if executor_service is not None
-            else None,
+            "max_workers": (
+                getattr(executor_service, "max_workers", None)
+                if executor_service is not None
+                else None
+            ),
             "executor": snapshot,
             "policies": repository.list_project_queue_policies(),
-            "active_leases": repository.list_resource_leases(state="active", limit=500),
+            "active_leases": repository.list_resource_leases(
+                state="active",
+                limit=500,
+            ),
         }
-
-    return router
 
 
 def _control(

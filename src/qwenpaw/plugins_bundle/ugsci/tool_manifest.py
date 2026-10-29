@@ -8,18 +8,20 @@ import json
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Iterable
+from typing import Iterable, Mapping
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.tools")
 
-_VALID_GROUPS = frozenset({
-    "genui",
-    "simulation",
-    "domain",
-    "visualization",
-    "derivation",
-    "freeform",
-})
+_VALID_GROUPS = frozenset(
+    {
+        "genui",
+        "simulation",
+        "domain",
+        "visualization",
+        "derivation",
+        "freeform",
+    },
+)
 _VALID_TOOL_TYPES = frozenset({"file", "internal", "network", "shell"})
 _DEFAULT_MIGRATION_MARKER = "_ugsci_manifest_default_applied"
 
@@ -39,6 +41,49 @@ class ToolManifestSpec:
     enabled_by_default: bool
     tool_type: str
     target_param: str
+
+
+def _parse_tool_spec(
+    raw: object,
+    index: int,
+    seen: set[str],
+) -> ToolManifestSpec:
+    if not isinstance(raw, dict):
+        raise ToolManifestError(f"meta.tools[{index}] must be an object")
+    name = raw.get("name")
+    group = raw.get("group")
+    description = raw.get("description")
+    icon = raw.get("icon")
+    enabled = raw.get("enabled_by_default")
+    tool_type = raw.get("tool_type")
+    target_param = raw.get("target_param", "")
+    if not isinstance(name, str) or not name:
+        raise ToolManifestError(f"meta.tools[{index}].name is invalid")
+    if name in seen:
+        raise ToolManifestError(f"duplicate tool declaration: {name}")
+    if group not in _VALID_GROUPS:
+        raise ToolManifestError(f"tool '{name}' has invalid group")
+    if not isinstance(description, str) or not description:
+        raise ToolManifestError(f"tool '{name}' has no description")
+    if not isinstance(icon, str) or not icon:
+        raise ToolManifestError(f"tool '{name}' has no icon")
+    if not isinstance(enabled, bool):
+        raise ToolManifestError(
+            f"tool '{name}' enabled_by_default must be boolean",
+        )
+    if tool_type not in _VALID_TOOL_TYPES:
+        raise ToolManifestError(f"tool '{name}' has invalid tool_type")
+    if not isinstance(target_param, str):
+        raise ToolManifestError(f"tool '{name}' target_param is invalid")
+    return ToolManifestSpec(
+        name=name,
+        group=group,
+        description=description,
+        icon=icon,
+        enabled_by_default=enabled,
+        tool_type=tool_type,
+        target_param=target_param,
+    )
 
 
 def load_tool_manifest(
@@ -77,52 +122,16 @@ def load_tool_manifest(
     specs: list[ToolManifestSpec] = []
     seen: set[str] = set()
     for index, raw in enumerate(raw_tools):
-        if not isinstance(raw, dict):
-            raise ToolManifestError(f"meta.tools[{index}] must be an object")
-        name = raw.get("name")
-        group = raw.get("group")
-        description = raw.get("description")
-        icon = raw.get("icon")
-        enabled = raw.get("enabled_by_default")
-        tool_type = raw.get("tool_type")
-        target_param = raw.get("target_param", "")
-        if not isinstance(name, str) or not name:
-            raise ToolManifestError(f"meta.tools[{index}].name is invalid")
-        if name in seen:
-            raise ToolManifestError(f"duplicate tool declaration: {name}")
-        if group not in _VALID_GROUPS:
-            raise ToolManifestError(f"tool '{name}' has invalid group")
-        if not isinstance(description, str) or not description:
-            raise ToolManifestError(f"tool '{name}' has no description")
-        if not isinstance(icon, str) or not icon:
-            raise ToolManifestError(f"tool '{name}' has no icon")
-        if not isinstance(enabled, bool):
-            raise ToolManifestError(
-                f"tool '{name}' enabled_by_default must be boolean",
-            )
-        if tool_type not in _VALID_TOOL_TYPES:
-            raise ToolManifestError(f"tool '{name}' has invalid tool_type")
-        if not isinstance(target_param, str):
-            raise ToolManifestError(f"tool '{name}' target_param is invalid")
-        seen.add(name)
-        if requested_groups is None or group in requested_groups:
-            specs.append(
-                ToolManifestSpec(
-                    name=name,
-                    group=group,
-                    description=description,
-                    icon=icon,
-                    enabled_by_default=enabled,
-                    tool_type=tool_type,
-                    target_param=target_param,
-                ),
-            )
+        spec = _parse_tool_spec(raw, index, seen)
+        seen.add(spec.name)
+        if requested_groups is None or spec.group in requested_groups:
+            specs.append(spec)
     return tuple(specs)
 
 
 def validate_tool_bindings(
     plugin_dir: Path,
-    bindings: dict[str, object],
+    bindings: Mapping[str, object],
     *,
     groups: Iterable[str] | None = None,
 ) -> tuple[ToolManifestSpec, ...]:
@@ -151,6 +160,8 @@ def validate_tool_bindings(
             continue
         func = bindings[spec.name]
         try:
+            if not callable(func):
+                raise TypeError("tool implementation is not callable")
             parameters = inspect.signature(func).parameters
         except (TypeError, ValueError) as exc:
             raise ToolManifestError(
@@ -202,7 +213,9 @@ def sync_manifest_tools_to_all_agents(
                         and spec.enabled_by_default
                         else {}
                     )
-                    agent_config.tools.builtin_tools[spec.name] = BuiltinToolConfig(
+                    agent_config.tools.builtin_tools[
+                        spec.name
+                    ] = BuiltinToolConfig(
                         name=spec.name,
                         enabled=spec.enabled_by_default,
                         description=spec.description,

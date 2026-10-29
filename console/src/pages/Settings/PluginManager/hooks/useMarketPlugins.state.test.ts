@@ -14,6 +14,8 @@ import type {
 const hoisted = vi.hoisted(() => ({
   fetchMarketPlugins: vi.fn(),
   installPlugin: vi.fn(),
+  fetchPlugins: vi.fn(),
+  replaceInstalledPlugin: vi.fn(),
   buildMarketDownloadUrl: vi.fn(() => "https://example.com/plugin.zip"),
   message: { success: vi.fn(), error: vi.fn() },
 }));
@@ -33,6 +35,8 @@ vi.mock("@/api/modules/pluginMarket", () => ({
 
 vi.mock("@/api/modules/plugin", () => ({
   installPlugin: hoisted.installPlugin,
+  fetchPlugins: hoisted.fetchPlugins,
+  replaceInstalledPlugin: hoisted.replaceInstalledPlugin,
 }));
 
 import { useMarketPlugins } from "./useMarketPlugins";
@@ -622,7 +626,7 @@ describe("useMarketPlugins install flow", () => {
     vi.restoreAllMocks();
   });
 
-  it("installs with force and notifies the caller on success", async () => {
+  it("installs without force and notifies the caller on success", async () => {
     hoisted.installPlugin.mockResolvedValue(installed);
     const onInstalled = vi.fn().mockResolvedValue(undefined);
     const entry = makeEntry("installable");
@@ -637,7 +641,6 @@ describe("useMarketPlugins install flow", () => {
     expect(hoisted.buildMarketDownloadUrl).toHaveBeenCalledWith(entry);
     expect(hoisted.installPlugin).toHaveBeenCalledWith(
       "https://example.com/plugin.zip",
-      { force: true },
     );
     expect(onInstalled).toHaveBeenCalledWith(installed);
     expect(hoisted.message.success).toHaveBeenCalledWith(
@@ -660,6 +663,29 @@ describe("useMarketPlugins install flow", () => {
     expect(hoisted.message.error).toHaveBeenCalledWith("disk full");
     expect(onInstalled).not.toHaveBeenCalled();
     expect(result.current.installingId).toBeNull();
+  });
+
+  it("updates an installed market plugin through its matched local identity", async () => {
+    hoisted.fetchPlugins.mockResolvedValue([
+      { id: "package", author: "owner", version: "0.9.0" },
+    ]);
+    hoisted.replaceInstalledPlugin.mockResolvedValue({ version: "1.0.0" });
+    const onInstalled = vi.fn();
+    const entry = makeEntry("@owner/package", { installed: true });
+    const { result } = renderHook(() => useMarketPlugins({ onInstalled }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await result.current.handleInstall(entry);
+    });
+    expect(hoisted.replaceInstalledPlugin).toHaveBeenCalledWith({
+      pluginId: "package",
+      version: entry.version,
+      source: "https://example.com/plugin.zip",
+    });
+    expect(hoisted.installPlugin).not.toHaveBeenCalled();
+    expect(onInstalled).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "package", version: "1.0.0" }),
+    );
   });
 
   it("falls back to a generic message for a non-Error rejection", async () => {

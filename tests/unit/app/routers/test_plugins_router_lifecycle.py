@@ -765,13 +765,17 @@ class TestUninstallPluginSource:
             tools=SimpleNamespace(builtin_tools=settings.copy()),
         )
         loader = PluginLoader([tmp_path])
-        with patch(
-            "qwenpaw.config.config.load_agent_config",
-            return_value=cfg,
-        ), patch("qwenpaw.config.config.save_agent_config") as save, patch(
-            "qwenpaw.plugins.api._remove_tool_config",
-            wraps=plugin_api._remove_tool_config,
-        ) as remove:
+        with (
+            patch(
+                "qwenpaw.config.config.load_agent_config",
+                return_value=cfg,
+            ),
+            patch("qwenpaw.config.config.save_agent_config") as save,
+            patch(
+                "qwenpaw.plugins.api._remove_tool_config",
+                wraps=plugin_api._remove_tool_config,
+            ) as remove,
+        ):
             await uninstall_plugin_source("failed-plugin", app=_app(loader))
         assert not source.exists()
         assert cfg.tools.builtin_tools == settings
@@ -1597,3 +1601,38 @@ def test_literal_plugin_get_routes_precede_catch_all():
             if r.matches(scope)[0] == Match.FULL
         )
         assert winner is route, f"{route.path} shadowed by {winner.path}"
+
+
+def test_oss_proxy_revalidates_browser_etag_and_force_bypasses_it():
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+
+    app = FastAPI()
+    app.include_router(plugins_module.router, prefix="/api")
+    fetch = AsyncMock(
+        return_value=(b'{"skills": []}', "application/json", "fresh"),
+    )
+    with patch("qwenpaw.plugins.oss_cache.fetch_oss_resource", fetch):
+        client = TestClient(app)
+        first = client.get(
+            "/api/plugins/oss-proxy",
+            params={"path": "skills/manifest.json"},
+        )
+        assert first.headers["cache-control"] == "private, no-cache"
+        headers = {"If-None-Match": f'W/{first.headers["etag"]}'}
+        unchanged = client.get(
+            "/api/plugins/oss-proxy",
+            params={"path": "skills/manifest.json"},
+            headers=headers,
+        )
+        assert unchanged.status_code == 304
+        assert unchanged.content == b""
+        forced = client.get(
+            "/api/plugins/oss-proxy",
+            params={"path": "skills/manifest.json", "refresh": "true"},
+            headers=headers,
+        )
+        assert forced.status_code == 200
+        assert forced.json() == {"skills": []}
+        assert forced.headers["cache-control"] == "no-store"
+        fetch.assert_awaited_with("skills/manifest.json", force=True)

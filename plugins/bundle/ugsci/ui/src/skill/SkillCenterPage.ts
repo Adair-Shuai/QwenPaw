@@ -4,8 +4,16 @@
 
 import { getHost, clearAgentCache } from "../core/runtime";
 import { PageHeader } from "../core/shared";
-import type { AgentSummary, PoolSkillSpec, WorkspaceSkillSummary } from "../core/types";
-import { fetchAgents, fetchPoolSkills, fetchWorkspaceSkills } from "../core/api";
+import type {
+  AgentSummary,
+  PoolSkillSpec,
+  WorkspaceSkillSummary,
+} from "../core/types";
+import {
+  fetchAgents,
+  fetchPoolSkills,
+  fetchWorkspaceSkills,
+} from "../core/api";
 import { CurrentAgentSkillsTab } from "./CurrentAgentSkillsTab";
 import { SkillPoolTab } from "./SkillPoolTab";
 
@@ -18,8 +26,7 @@ export function SkillCenterPage({
   const React = getHost().React;
   const { useState, useEffect, useCallback, useMemo } = React;
   const { Tabs, message: antdMsg } = getHost().antd;
-  const { ThunderboltOutlined, AppstoreOutlined } =
-    getHost().antdIcons || {};
+  const { ThunderboltOutlined, AppstoreOutlined } = getHost().antdIcons || {};
 
   // Track the currently selected agent via the host hook
   const host = getHost();
@@ -114,7 +121,9 @@ export function SkillCenterPage({
         "span",
         { style: { display: "flex", alignItems: "center", gap: 6 } },
         ThunderboltOutlined
-          ? React.createElement(ThunderboltOutlined, { style: { fontSize: 14 } })
+          ? React.createElement(ThunderboltOutlined, {
+              style: { fontSize: 14 },
+            })
           : null,
         "当前专家",
       ),

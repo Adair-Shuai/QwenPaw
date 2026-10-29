@@ -1,6 +1,9 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
-"""Renew signed metadata without changing the selected release or its artifacts."""
+(
+    "Renew signed metadata without changing the selecte"
+    "d release or its artifacts."
+)
 
 from __future__ import annotations
 
@@ -51,13 +54,16 @@ def renew(
         (now + timedelta(days=30)).isoformat().replace("+00:00", "Z")
     )
     pointer["signature"] = base64.b64encode(
-        private.sign(canonical_json(pointer))
+        private.sign(canonical_json(pointer)),
     ).decode("ascii")
     atomic_write_bytes(output, canonical_json(pointer))
 
 
 def renew_oss(bucket: str, target: str) -> None:
-    """Run under the shared OSS publication lock; verify references before signing."""
+    (
+        "Run under the shared OSS publication lock; verify "
+        "references before signing."
+    )
 
     def copy(source, destination, *flags):
         subprocess.run(
@@ -79,6 +85,7 @@ def renew_oss(bucket: str, target: str) -> None:
             url = urlparse(pointer[f"{name}_url"])
             prefix = f"/metadata/components/stable/{target}-"
             if (
+                # pylint: disable-next=R0916
                 url.scheme != "https"
                 or not url.hostname
                 or url.query
@@ -91,8 +98,16 @@ def renew_oss(bucket: str, target: str) -> None:
             paths[name] = root / f"{name}.json"
             copy(f"oss://{bucket}{url.path}", paths[name])
         renewed = root / "renewed.json"
-        renew(current, renewed, private_key_b64=key, target=target, **paths)
-        # Also guard against a writer outside the shared workflow concurrency group.
+        renew(
+            current,
+            renewed,
+            private_key_b64=key,
+            target=target,
+            manifest=paths["manifest"],
+            history=paths["history"],
+        )
+        # Also guard against a writer outside the shared workflow
+        # concurrency group.
         check = root / "check.json"
         copy(uri, check)
         if check.read_bytes() != current.read_bytes():
@@ -115,7 +130,9 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--bucket", required=True)
     parser.add_argument(
-        "--target", choices=("windows-x86_64", "macos-aarch64"), required=True
+        "--target",
+        choices=("windows-x86_64", "macos-aarch64"),
+        required=True,
     )
     args = parser.parse_args()
     renew_oss(args.bucket, args.target)

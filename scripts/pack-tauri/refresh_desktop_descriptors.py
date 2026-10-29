@@ -19,7 +19,10 @@ def refresh(binaries: Path, version: str, active: dict | None = None) -> dict:
         descriptor = describe_component(source, component, record, version)
         (source / "component.json").write_text(
             json.dumps(
-                descriptor, ensure_ascii=False, indent=2, sort_keys=True
+                descriptor,
+                ensure_ascii=False,
+                indent=2,
+                sort_keys=True,
             )
             + "\n",
             encoding="utf-8",

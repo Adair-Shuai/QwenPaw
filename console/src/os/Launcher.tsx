@@ -7,7 +7,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Search } from "lucide-react";
 import { useOsWindows } from "./osWindowStore";
-import type { OsAppDef } from "./osApps";
+import { getAppLabel, type OsAppDef } from "./osApps";
 import { buttonRoleProps } from "./a11y";
 import { useOsStyles } from "./useOsStyles";
 import { useOsAppLauncher } from "./useOsAppLauncher";
@@ -19,7 +19,8 @@ interface LauncherProps {
 
 export default function Launcher({ apps: source }: LauncherProps) {
   const { styles } = useOsStyles();
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
+  const language = i18n?.resolvedLanguage ?? i18n?.language;
   // Actions only (referentially stable) — window updates never re-render
   // the launcher grid.
   const setLauncher = useOsWindows((s) => s.setLauncher);
@@ -29,10 +30,10 @@ export default function Launcher({ apps: source }: LauncherProps) {
   const apps = useMemo(
     () =>
       source.filter((a) => {
-        const label = t(a.labelKey, a.fallback).toLowerCase();
+        const label = getAppLabel(a, t, language).toLowerCase();
         return label.includes(query.toLowerCase());
       }),
-    [source, query, t],
+    [source, query, t, language],
   );
 
   const launch = useCallback(
@@ -92,7 +93,7 @@ export default function Launcher({ apps: source }: LauncherProps) {
                 key={a.routeId}
                 className={styles.launcherItem}
                 onClick={activate}
-                {...buttonRoleProps(activate, t(a.labelKey, a.fallback))}
+                {...buttonRoleProps(activate, getAppLabel(a, t, language))}
               >
                 <div
                   className={styles.launcherIcon}
@@ -100,7 +101,7 @@ export default function Launcher({ apps: source }: LauncherProps) {
                 >
                   <Icon size={27} />
                 </div>
-                <span>{t(a.labelKey, a.fallback)}</span>
+                <span>{getAppLabel(a, t, language)}</span>
               </div>
             );
           })}

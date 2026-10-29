@@ -11,7 +11,8 @@ type ReactElement = any;
 let interactionContext: any = null;
 
 export function getInteractionContext(React: any): any {
-  if (!interactionContext) interactionContext = React.createContext(null as any);
+  if (!interactionContext)
+    interactionContext = React.createContext(null as any);
   return interactionContext;
 }
 
@@ -40,7 +41,9 @@ export function GenUiInteractionProvider({
   const React = (window as any).QwenPaw?.host?.React;
   if (!React) return null;
   const initial = React.useMemo(() => collectInitialValues(node), [node]);
-  const [values, setValues] = React.useState(initial as Record<string, unknown>);
+  const [values, setValues] = React.useState(
+    initial as Record<string, unknown>,
+  );
   React.useEffect(
     () => setValues((old: Record<string, unknown>) => ({ ...initial, ...old })),
     [initial],
@@ -52,7 +55,10 @@ export function GenUiInteractionProvider({
     () => ({
       values,
       setValue: (name: string, value: unknown) =>
-        setValues((old: Record<string, unknown>) => ({ ...old, [name]: value })),
+        setValues((old: Record<string, unknown>) => ({
+          ...old,
+          [name]: value,
+        })),
     }),
     [values],
   );

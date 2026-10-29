@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """COMSOL MCP Server - Main entry point."""
 
 import logging
@@ -43,10 +44,10 @@ def register_all_resources() -> None:
 def main() -> None:
     """Run the MCP server."""
     logger.info("Starting COMSOL MCP Server...")
-    
+
     register_all_tools()
     register_all_resources()
-    
+
     mcp.run()
 
 

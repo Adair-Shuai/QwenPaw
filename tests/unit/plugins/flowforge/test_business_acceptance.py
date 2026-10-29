@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Business acceptance through real catalog, policy and durable runtime.
 
 Only external business functions/model responses are deterministic fixtures.
@@ -20,7 +21,10 @@ from qwenpaw.governance.resource_governor import ResourceGovernor
 from qwenpaw.governance.tool_registry import ToolRegistry as GovernanceRegistry
 from qwenpaw.plugins_bundle.flowforge.node_catalog import AgentNodeCatalog
 from qwenpaw.plugins_bundle.flowforge.service import WorkflowService
-from qwenpaw.runtime.tool_registry import ToolDescriptor
+from qwenpaw.plugins_bundle.flowforge.execution_repository import (
+    ExecutionRepository,
+)
+from qwenpaw.runtime.tool_registry import ToolDescriptor, tool_descriptor
 
 
 AGENT = "acceptance"
@@ -34,8 +38,8 @@ def wait(handle, timeout=10):
     return handle.to_dict()
 
 
-@pytest.fixture
-def business(tmp_path, monkeypatch):
+@pytest.fixture(name="business")
+def _business_fixture(tmp_path, monkeypatch):
     """Actual host discovery + actual policy; never use OFF or raw dispatch."""
     registry = GovernanceRegistry()
     decisions, services = [], []
@@ -55,7 +59,8 @@ def business(tmp_path, monkeypatch):
         config=config,
         plugins=plugins,
         local_workspace=QwenPawLocalWorkspace(
-            plugins.tool_registry, workdir=str(root)
+            plugins.tool_registry,
+            workdir=str(root),
         ),
     )
 
@@ -64,9 +69,17 @@ def business(tmp_path, monkeypatch):
             return workspace if agent_id == AGENT else None
 
     class RecordingGovernor(ResourceGovernor):
-        def assert_policy(self, spec):
-            decision = super().assert_policy(spec)
-            decisions.append((spec.tool_name, decision.action.value))
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self._policy = GovernancePolicy(
+                _registry=registry,
+                execution_level="smart",
+                audit_level="none",
+            )
+
+        def assert_policy(self, tc_spec):
+            decision = super().assert_policy(tc_spec)
+            decisions.append((tc_spec.tool_name, decision.action.value))
             return decision
 
     def governor(workspace_dir, project_dir):
@@ -75,34 +88,33 @@ def business(tmp_path, monkeypatch):
             governance_dir=str(tmp_path / "governance"),
             coding_project_dir=str(project_dir),
         )
-        instance._policy = GovernancePolicy(
-            _registry=registry,
-            execution_level="smart",
-            audit_level="none",
-        )
         return instance
 
     monkeypatch.setattr(
-        "qwenpaw.governance.tool_adapter.DEFAULT_REGISTRY", registry
+        "qwenpaw.governance.tool_adapter.DEFAULT_REGISTRY",
+        registry,
     )
     monkeypatch.setattr(
-        "qwenpaw.governance.tool_registry.DEFAULT_REGISTRY", registry
+        "qwenpaw.governance.tool_registry.DEFAULT_REGISTRY",
+        registry,
     )
     monkeypatch.setattr(
         "qwenpaw.config.utils.load_config",
         lambda: SimpleNamespace(
-            agents=SimpleNamespace(profiles={AGENT: config})
+            agents=SimpleNamespace(profiles={AGENT: config}),
         ),
     )
     monkeypatch.setattr(
-        "qwenpaw.config.config.load_agent_config", lambda _: config
+        "qwenpaw.config.config.load_agent_config",
+        lambda _: config,
     )
     monkeypatch.setattr(
         "qwenpaw.agents.skill_system.resolve_effective_skills",
-        lambda *args: [],
+        lambda *_args: [],
     )
     monkeypatch.setattr(
-        "qwenpaw.runtime.builder.AgentBuilder._init_governor", governor
+        "qwenpaw.runtime.builder.AgentBuilder._init_governor",
+        governor,
     )
     monkeypatch.setattr(
         "qwenpaw.app.agent_context.get_agent_project_dir",
@@ -114,7 +126,7 @@ def business(tmp_path, monkeypatch):
         for fn in functions:
             descriptor = ToolDescriptor(name=fn.__name__, func=fn)
             plugins.tool_registry.register(descriptor)
-            fn._tool_descriptor = descriptor
+            tool_descriptor(async_execution=False)(fn)
             # These fixtures perform only in-memory arithmetic/trace recording.
             # Their explicit registration is still revocable by real policy.
             registry.register(fn.__name__, "internal", "")
@@ -128,12 +140,12 @@ def business(tmp_path, monkeypatch):
         return service
 
     def stop_service(service):
-        for handle in list(service._runs.values()):
-            if not handle.is_done:
+        for record in service.list_runs():
+            handle = service.get_run(record["run_id"])
+            if handle is not None and not handle.is_done:
                 service.cancel_run(handle.run_id)
                 wait(handle)
-        service._loop.call_soon_threadsafe(service._loop.stop)
-        service._loop_thread.join(timeout=3)
+        service.close(timeout=3)
 
     yield SimpleNamespace(
         service=create_service(),
@@ -146,7 +158,7 @@ def business(tmp_path, monkeypatch):
         workspace=workspace,
     )
     for service in services:
-        if service._loop.is_running():
+        if not service.closed:
             stop_service(service)
 
 
@@ -160,7 +172,7 @@ def inventory_flow(flow_id="inventory", threshold=0.03):
             "positions": {
                 "input": {"x": 0, "y": 100},
                 "compare": {"x": 400, "y": 100},
-            }
+            },
         },
         "nodes": {
             "input": {
@@ -191,7 +203,7 @@ def inventory_flow(flow_id="inventory", threshold=0.03):
                                 "right": threshold,
                             },
                             "then_node": "review",
-                        }
+                        },
                     ],
                     "else_node": "normal_report",
                 },
@@ -213,7 +225,7 @@ def inventory_flow(flow_id="inventory", threshold=0.03):
                     "value": {
                         "status": "normal",
                         "deviation": "${outputs.compare}",
-                    }
+                    },
                 },
             },
             "approved_report": {
@@ -222,7 +234,7 @@ def inventory_flow(flow_id="inventory", threshold=0.03):
                     "value": {
                         "status": "approved",
                         "deviation": "${outputs.compare}",
-                    }
+                    },
                 },
             },
             "rejected_report": {
@@ -231,7 +243,7 @@ def inventory_flow(flow_id="inventory", threshold=0.03):
                     "value": {
                         "status": "rejected",
                         "deviation": "${outputs.compare}",
-                    }
+                    },
                 },
             },
         },
@@ -276,7 +288,7 @@ def inventory_inputs(pressure=103):
             "injected": 12,
             "withdrawn": 8,
             "pressure_estimate": pressure,
-        }
+        },
     }
 
 
@@ -287,14 +299,16 @@ def test_parallel_inventory_join_low_deviation_publishes_only_normal_report(
     business.service.save_flow("inventory", inventory_flow())
     result = wait(
         business.service.start_run(
-            "inventory", inventory_inputs(), agent_id=AGENT
-        )
+            "inventory",
+            inventory_inputs(),
+            agent_id=AGENT,
+        ),
     )
     assert result["status"] == "completed", result
     assert set(result["outputs"]) == {"normal_report"}
     assert result["outputs"]["normal_report"]["status"] == "normal"
     assert float(
-        result["outputs"]["normal_report"]["deviation"]
+        result["outputs"]["normal_report"]["deviation"],
     ) == pytest.approx(1 / 104)
     assert sorted(calls) == ["book", "compare", "pressure"]
     assert calls[-1] == "compare"
@@ -308,29 +322,35 @@ def test_parallel_inventory_join_low_deviation_publishes_only_normal_report(
 
 
 @pytest.mark.parametrize(
-    "approved,output", [(True, "approved_report"), (False, "rejected_report")]
+    "approved,output",
+    [(True, "approved_report"), (False, "rejected_report")],
 )
 def test_high_deviation_requires_explicit_review_and_routes_decision(
-    business, approved, output
+    business,
+    approved,
+    output,
 ):
     calls = install_inventory(business)
     business.service.save_flow("inventory", inventory_flow())
     original = business.service.start_run(
-        "inventory", inventory_inputs(95), agent_id=AGENT
+        "inventory",
+        inventory_inputs(95),
+        agent_id=AGENT,
     )
     paused = wait(original)
     assert paused["status"] == "waiting_human", paused
     assert not {"normal_report", "approved_report", "rejected_report"} & set(
-        paused["outputs"]
+        paused["outputs"],
     )
     resumed = business.service.resume_run(
-        original.run_id, {"approved": approved, "comments": "核对记录完成"}
+        original.run_id,
+        {"approved": approved, "comments": "核对记录完成"},
     )
     result = wait(resumed)
     assert result["status"] == "completed", result
     assert set(result["outputs"]) == {output}
     assert float(result["outputs"][output]["deviation"]) == pytest.approx(
-        9 / 104
+        9 / 104,
     )
     assert sorted(calls) == ["book", "compare", "pressure"]
     assert resumed.run_id != original.run_id
@@ -350,20 +370,22 @@ def test_invalid_approval_does_not_consume_paused_business_run(business):
     calls = install_inventory(business)
     business.service.save_flow("inventory", inventory_flow())
     original = business.service.start_run(
-        "inventory", inventory_inputs(95), agent_id=AGENT
+        "inventory",
+        inventory_inputs(95),
+        agent_id=AGENT,
     )
     assert wait(original)["status"] == "waiting_human"
     with pytest.raises(ValueError, match="approved|布尔"):
         business.service.resume_run(original.run_id, {"approved": "false"})
     assert (
         business.service.get_run_record(original.run_id).get(
-            "resumed_by_run_id"
+            "resumed_by_run_id",
         )
         is None
     )
     assert len(business.service.list_runs()) == 1
     result = wait(
-        business.service.resume_run(original.run_id, {"approved": False})
+        business.service.resume_run(original.run_id, {"approved": False}),
     )
     assert result["status"] == "completed", result
     assert set(result["outputs"]) == {"rejected_report"}
@@ -377,10 +399,12 @@ def test_restart_keeps_saved_revision_without_repeating_business_effects(
     first = business.service
     first.save_flow("inventory", inventory_flow())
     original = first.start_run(
-        "inventory", inventory_inputs(95), agent_id=AGENT
+        "inventory",
+        inventory_inputs(95),
+        agent_id=AGENT,
     )
     assert wait(original)["status"] == "waiting_human"
-    stored = first._execution_repository.get(original.run_id)
+    stored = ExecutionRepository(first.flows_dir).get(original.run_id)
     assert (
         stored["flow_snapshot"]["nodes"]["condition"]["control"]["conditions"][
             0
@@ -395,7 +419,7 @@ def test_restart_keeps_saved_revision_without_repeating_business_effects(
                 "wrong": {
                     "class_type": "OutputNode",
                     "inputs": {"value": "WRONG NEW VERSION"},
-                }
+                },
             },
             "outputs": ["wrong"],
         },
@@ -410,7 +434,9 @@ def test_restart_keeps_saved_revision_without_repeating_business_effects(
     assert result["status"] == "completed", result
     assert set(result["outputs"]) == {"approved_report"}
     assert sorted(calls) == ["book", "compare", "pressure"]
-    resumed_record = second._execution_repository.get(continuation.run_id)
+    resumed_record = ExecutionRepository(second.flows_dir).get(
+        continuation.run_id,
+    )
     assert resumed_record["flow_snapshot"] == stored["flow_snapshot"]
     assert resumed_record["flow_revision"] == stored["flow_revision"]
 
@@ -428,28 +454,33 @@ def test_policy_revocation_after_catalog_prepare_prevents_function_call(
 
     async def scenario():
         scoped = await business.catalog.prepare(
-            business.service.executor, AGENT, {}
+            business.service.executor,
+            AGENT,
+            {},
         )
         assert scoped.tool_registry is None
         assert scoped.node_registry.get("Tool.publish_report") is not None
         business.policy_registry.unregister_python_tool("publish_report")
         result = await scoped.tool_executor.execute(
-            "publish_report", {"value": "must not publish"}
+            "publish_report",
+            {"value": "must not publish"},
         )
         assert not result.result.success
         assert "denied" in result.result.error
         assert result.result.retryable is False
 
     asyncio.run(scenario())
-    assert calls == []
+    assert not calls
     assert business.decisions[-1][1] == "deny"
 
 
 @pytest.mark.parametrize(
-    "node_type", ["Tool.publish_report", "ToolNode", "ToolCallNode"]
+    "node_type",
+    ["Tool.publish_report", "ToolNode", "ToolCallNode"],
 )
 def test_governance_denial_is_not_retried_even_with_retry_budget(
-    business, node_type
+    business,
+    node_type,
 ):
     calls = []
 
@@ -484,7 +515,7 @@ def test_governance_denial_is_not_retried_even_with_retry_budget(
     result = wait(business.service.start_run("denied", agent_id=AGENT))
     assert result["status"] == "failed", result
     assert "denied" in str(result["errors"] or result["error"])
-    assert calls == []
+    assert not calls
     assert len(business.decisions) == 1, business.decisions
     assert business.decisions[0][1] == "deny"
 
@@ -516,7 +547,7 @@ def test_unknown_tool_never_publishes_downstream_report(business):
         assert result["status"] == "failed", result
         assert result["outputs"] == {}
         assert "unregistered_inventory" in str(
-            result["errors"] or result["error"]
+            result["errors"] or result["error"],
         )
         assert result["node_statuses"].get("publish") != "success"
     assert business.decisions == []
@@ -590,7 +621,7 @@ def test_parent_child_restart_resume_pins_both_revisions_and_lineage(business):
     assert child["root_run_id"] == parent.run_id
     assert child["workflow_stack"] == ["parent", "inventory"]
     snapshots = {
-        r["flow_id"]: service._execution_repository.get(r["run_id"])
+        r["flow_id"]: ExecutionRepository(service.flows_dir).get(r["run_id"])
         for r in service.list_runs()
     }
     # Deleted definitions force restart to use run snapshots.
@@ -611,7 +642,9 @@ def test_parent_child_restart_resume_pins_both_revisions_and_lineage(business):
     assert child_continuation["parent_run_id"] == continuation.run_id
     assert child_continuation["root_run_id"] == parent.run_id
     for resumed in (result, child_continuation):
-        record = restarted._execution_repository.get(resumed["run_id"])
+        record = ExecutionRepository(restarted.flows_dir).get(
+            resumed["run_id"],
+        )
         original = snapshots[resumed["flow_id"]]
         assert record["flow_snapshot"] == original["flow_snapshot"]
         assert record["flow_revision"] == original["flow_revision"]
@@ -726,14 +759,14 @@ def test_parallel_child_approvals_target_one_child_without_repeating_either(
 class ThresholdModel:
     """Deterministic external model; exercises the actual proposal protocol."""
 
-    async def complete(self, messages, **kwargs):
+    async def complete(self, messages, **_kwargs):
         request = json.loads(messages[-1].content)
         candidate = copy.deepcopy(request["current_flow"])
         candidate["nodes"]["condition"]["control"]["conditions"][0]["if"][
             "right"
         ] = 0.05
         return SimpleNamespace(
-            content=json.dumps({"flow": candidate, "warnings": []})
+            content=json.dumps({"flow": candidate, "warnings": []}),
         )
 
 
@@ -743,7 +776,7 @@ def test_natural_language_creation_previews_before_persisting_or_executing(
     calls = install_inventory(business)
 
     class CreationModel:
-        async def complete(self, messages, **kwargs):
+        async def complete(self, messages, **_kwargs):
             request = json.loads(messages[-1].content)
             assert request["current_flow"] is None
             assert set(request["available_tools"]) == {
@@ -753,7 +786,7 @@ def test_natural_language_creation_previews_before_persisting_or_executing(
             }
             candidate = inventory_flow(request["flow_id"])
             return SimpleNamespace(
-                content=json.dumps({"flow": candidate, "warnings": []})
+                content=json.dumps({"flow": candidate, "warnings": []}),
             )
 
     business.service.executor.llm_service = CreationModel()
@@ -768,7 +801,7 @@ def test_natural_language_creation_previews_before_persisting_or_executing(
         assert proposal["changes"]
         assert business.service.list_flows() == []
         assert business.service.list_runs() == []
-        assert calls == [] and business.decisions == []
+        assert not calls and business.decisions == []
         return await business.service.apply_proposal_for_agent(
             proposal["proposal_id"],
             expected_revision=0,
@@ -779,8 +812,10 @@ def test_natural_language_creation_previews_before_persisting_or_executing(
     assert saved["revision"] == 1
     result = wait(
         business.service.start_run(
-            saved["id"], inventory_inputs(), agent_id=AGENT
-        )
+            saved["id"],
+            inventory_inputs(),
+            agent_id=AGENT,
+        ),
     )
     assert result["status"] == "completed", result
     assert set(result["outputs"]) == {"normal_report"}
@@ -796,7 +831,9 @@ def test_threshold_proposal_changes_only_condition_after_apply(
     async def scenario():
         before = business.service.get_flow("inventory")
         proposal = await business.service.create_proposal(
-            "将偏差阈值从3%改为5%，保留其他所有节点和布局", flow=before, agent_id=AGENT
+            "将偏差阈值从3%改为5%，保留其他所有节点和布局",
+            flow=before,
+            agent_id=AGENT,
         )
         assert proposal["validation"]["ok"] is True, proposal
         assert business.service.get_flow("inventory") == before
@@ -827,13 +864,15 @@ def test_threshold_proposal_changes_only_condition_after_apply(
     # 4% lies between the old and new thresholds, proving changed behavior.
     result = wait(
         business.service.start_run(
-            "inventory", inventory_inputs(99.84), agent_id=AGENT
-        )
+            "inventory",
+            inventory_inputs(99.84),
+            agent_id=AGENT,
+        ),
     )
     assert result["status"] == "completed", result
     assert set(result["outputs"]) == {"normal_report"}
     assert float(
-        result["outputs"]["normal_report"]["deviation"]
+        result["outputs"]["normal_report"]["deviation"],
     ) == pytest.approx(0.04)
 
 
@@ -845,7 +884,9 @@ def test_stale_ai_proposal_cannot_overwrite_newer_business_revision(business):
     async def scenario():
         base = business.service.get_flow("inventory")
         proposal = await business.service.create_proposal(
-            "阈值改为5%", flow=base, agent_id=AGENT
+            "阈值改为5%",
+            flow=base,
+            agent_id=AGENT,
         )
         manual = copy.deepcopy(base)
         manual["description"] = "人工更新业务解释，不得被过期提案覆盖"

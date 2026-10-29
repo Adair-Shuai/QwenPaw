@@ -1,4 +1,5 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=no-name-in-module
 # pylint: disable=protected-access
 
 import threading
@@ -24,6 +25,7 @@ from qwenpaw.governance import PolicyGuardedTool
 from qwenpaw.governance.policy import GovernanceAction, GovernancePolicy
 from qwenpaw.governance.tool_registry import DEFAULT_REGISTRY
 from qwenpaw.runtime.builder import AgentBuilder
+from qwenpaw.config.config import CodingModeConfig
 
 
 def _manager(
@@ -539,7 +541,7 @@ async def test_runtime_builder_registers_powercontext_search_as_network(
     manager._client = object()
 
     toolkit = await AgentBuilder().build_toolkit(
-        SimpleNamespace(),
+        SimpleNamespace(coding_mode=CodingModeConfig()),
         memory_tools=manager.list_memory_tools(),
     )
     search_tool = next(

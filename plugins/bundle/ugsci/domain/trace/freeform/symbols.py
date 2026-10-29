@@ -149,7 +149,11 @@ def infer_unit(name: str) -> tuple[str, bool]:
     # Match complete underscore-delimited tokens for compound names such as
     # ``initial_pressure``.  Raw substring matching makes one-letter aliases
     # (``n``, ``p``, ``q``) incorrectly classify almost every unknown name.
-    for pattern, unit in sorted(_UNIT_INFER.items(), key=lambda item: len(item[0]), reverse=True):
+    for pattern, unit in sorted(
+        _UNIT_INFER.items(),
+        key=lambda item: len(item[0]),
+        reverse=True,
+    ):
         if pattern and re.search(rf"(?:^|_){re.escape(pattern)}(?:_|$)", key):
             return unit, True
     return "", False  # unit_unknown
@@ -190,7 +194,8 @@ def build_symbol_table(
 def unit_unknown_symbols(table: dict[str, dict[str, Any]]) -> list[str]:
     """Return the names whose unit could not be inferred."""
     return [
-        name for name, info in table.items()
+        name
+        for name, info in table.items()
         if info.get("source") == "unit_unknown"
     ]
 
@@ -198,8 +203,7 @@ def unit_unknown_symbols(table: dict[str, dict[str, Any]]) -> list[str]:
 def inferred_symbols(table: dict[str, dict[str, Any]]) -> list[str]:
     """Return the names whose unit was inferred (not explicit)."""
     return [
-        name for name, info in table.items()
-        if info.get("inferred") is True
+        name for name, info in table.items() if info.get("inferred") is True
     ]
 
 

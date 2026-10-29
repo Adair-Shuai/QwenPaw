@@ -2,7 +2,6 @@
 """Abstract base class for all simulator adapters."""
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, List, Optional
@@ -48,7 +47,9 @@ class SimSummary:
     # Field-level (FOPR, FPR, etc.) — list of (time, value) tuples
     vectors: dict[str, list[tuple[float, float]]] = field(default_factory=dict)
     # Well-level (WOPR:name, WWPR:name, etc.)
-    well_vectors: dict[str, list[tuple[float, float]]] = field(default_factory=dict)
+    well_vectors: dict[str, list[tuple[float, float]]] = field(
+        default_factory=dict,
+    )
     # Simulation dates
     dates: list[str] = field(default_factory=list)
     # Spatial/table exports are kept separate from time-series vectors.
@@ -136,7 +137,11 @@ class BaseSimAdapter:
         if progress.status == "completed":
             return ("completed", 0, None)
         if progress.status == "failed":
-            return ("failed", None, "simulator log reports a failed terminal state")
+            return (
+                "failed",
+                None,
+                "simulator log reports a failed terminal state",
+            )
         return (None, None, None)
 
     # ------------------------------------------------------------------
@@ -157,7 +162,8 @@ class BaseSimAdapter:
             output_file: Optional output file path.
 
         Returns:
-            List of command tokens (for ``subprocess`` / ``create_subprocess_exec``).
+            List of command tokens (for ``subprocess`` / \
+``create_subprocess_exec``).
         """
         raise NotImplementedError
 
@@ -171,7 +177,11 @@ class BaseSimAdapter:
         if not working_dir.is_dir():
             return None
         pattern = f"*{self.log_extension}"
-        matches = sorted(working_dir.glob(pattern), key=lambda p: p.stat().st_mtime, reverse=True)
+        matches = sorted(
+            working_dir.glob(pattern),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
         return matches[0] if matches else None
 
     def parse_progress(self, working_dir: str | Path) -> SimProgress:
@@ -239,7 +249,10 @@ class BaseSimAdapter:
         if not deck_path.is_file():
             return None
         keyword_upper = keyword.upper().strip()
-        lines = deck_path.read_text(encoding="utf-8", errors="replace").splitlines()
+        lines = deck_path.read_text(
+            encoding="utf-8",
+            errors="replace",
+        ).splitlines()
         start = None
         for i, line in enumerate(lines):
             stripped = line.strip()
@@ -249,7 +262,8 @@ class BaseSimAdapter:
             if start is not None:
                 # End of keyword: next keyword (all-caps word) or "/" alone
                 if stripped == "/" or (
-                    stripped and stripped.split()[0].isupper()
+                    stripped
+                    and stripped.split()[0].isupper()
                     and not stripped.startswith("--")
                     and not stripped.startswith("'")
                     and not stripped.startswith('"')
@@ -262,6 +276,16 @@ class BaseSimAdapter:
     # ------------------------------------------------------------------
     # Utility
     # ------------------------------------------------------------------
+
+    @classmethod
+    def read_log_tail(cls, log_path: Path, n_lines: int = 500) -> str:
+        """Read a bounded log tail through an adapter's override."""
+        return cls._read_log_tail(log_path, n_lines)
+
+    @classmethod
+    def read_log_full(cls, log_path: Path) -> str:
+        """Read a complete log through an adapter's override."""
+        return cls._read_log_full(log_path)
 
     @staticmethod
     def _read_log_tail(log_path: Path, n_lines: int = 500) -> str:
@@ -276,7 +300,11 @@ class BaseSimAdapter:
                 handle.seek(max(0, size - 2 * 1024 * 1024))
                 content = handle.read().decode("utf-8", errors="replace")
             lines = content.splitlines()
-            return "\n".join(lines[-n_lines:]) if len(lines) > n_lines else content
+            return (
+                "\n".join(lines[-n_lines:])
+                if len(lines) > n_lines
+                else content
+            )
         except Exception:
             return ""
 

@@ -34,6 +34,16 @@ def _database_file() -> Path:
     return _store_file().with_name("jobs.sqlite3")
 
 
+def legacy_store_path() -> Path:
+    """Locate historical job metadata without creating or migrating it."""
+    return _store_file()
+
+
+def database_path() -> Path:
+    """Locate the job database without opening or initializing it."""
+    return _database_file()
+
+
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
 
@@ -61,13 +71,13 @@ def _connection(*, write: bool = False) -> Iterator[sqlite3.Connection]:
         conn.execute(
             "CREATE TABLE IF NOT EXISTS jobs ("
             "job_id TEXT PRIMARY KEY, payload TEXT NOT NULL, "
-            "updated_at TEXT NOT NULL)"
+            "updated_at TEXT NOT NULL)",
         )
         conn.execute(
             "CREATE TABLE IF NOT EXISTS job_events ("
             "job_id TEXT NOT NULL, sequence INTEGER NOT NULL, "
             "payload TEXT NOT NULL, created_at TEXT NOT NULL, "
-            "PRIMARY KEY(job_id, sequence))"
+            "PRIMARY KEY(job_id, sequence))",
         )
         if write:
             conn.execute("BEGIN IMMEDIATE")
@@ -101,7 +111,11 @@ def _migrate_legacy_json_if_needed(conn: sqlite3.Connection) -> None:
             conn.execute(
                 "INSERT OR IGNORE INTO jobs(job_id, payload, updated_at) "
                 "VALUES (?, ?, ?)",
-                (job_id, json.dumps(payload, ensure_ascii=False, default=str), updated_at),
+                (
+                    job_id,
+                    json.dumps(payload, ensure_ascii=False, default=str),
+                    updated_at,
+                ),
             )
         # Commit the imported rows before archiving the source.  File rename
         # and SQLite cannot share one transaction; this ordering prevents a
@@ -112,11 +126,15 @@ def _migrate_legacy_json_if_needed(conn: sqlite3.Connection) -> None:
             archive = legacy.with_name(f"{legacy.name}.migrated")
             if archive.exists():
                 archive = legacy.with_name(
-                    f"{legacy.name}.migrated.{int(time.time())}"
+                    f"{legacy.name}.migrated.{int(time.time())}",
                 )
             os.replace(legacy, archive)
         except OSError as exc:
-            logger.warning("Migrated jobs but could not archive %s: %s", legacy, exc)
+            logger.warning(
+                "Migrated jobs but could not archive %s: %s",
+                legacy,
+                exc,
+            )
         finally:
             conn.execute("BEGIN IMMEDIATE")
         logger.info("Migrated %d UGSci jobs from JSON to SQLite", len(raw))
@@ -135,7 +153,11 @@ def _write_payload(
         "INSERT INTO jobs(job_id, payload, updated_at) VALUES (?, ?, ?) "
         "ON CONFLICT(job_id) DO UPDATE SET payload=excluded.payload, "
         "updated_at=excluded.updated_at",
-        (job_id, json.dumps(payload, ensure_ascii=False, default=str), updated_at),
+        (
+            job_id,
+            json.dumps(payload, ensure_ascii=False, default=str),
+            updated_at,
+        ),
     )
 
 
@@ -152,7 +174,7 @@ def _load_payload_for_update(
 
 def _prune(conn: sqlite3.Connection) -> None:
     rows = conn.execute(
-        "SELECT job_id, payload FROM jobs ORDER BY updated_at DESC"
+        "SELECT job_id, payload FROM jobs ORDER BY updated_at DESC",
     ).fetchall()
     if len(rows) <= _MAX_STORED_JOBS:
         return
@@ -236,7 +258,9 @@ def claim_wake_attempt(
         payload = _load_payload_for_update(conn, job_id)
         if payload is None:
             return False, 0, ""
-        run_key = str(payload.get("wake_run_key") or f"simulation:{job_id}:terminal")
+        run_key = str(
+            payload.get("wake_run_key") or f"simulation:{job_id}:terminal",
+        )
         status = str(payload.get("wake_status") or "pending")
         try:
             attempts = int(payload.get("wake_attempts") or 0)
@@ -282,10 +306,15 @@ def finish_wake_attempt(
                 current_attempt = int(payload.get("wake_attempts") or 0)
             except (TypeError, ValueError, OverflowError):
                 return False
-            if current_attempt != attempt or payload.get("wake_status") != "running":
+            if (
+                current_attempt != attempt
+                or payload.get("wake_status") != "running"
+            ):
                 return False
         payload.update(
-            wake_status="completed" if success else ("pending" if retryable else "failed"),
+            wake_status="completed"
+            if success
+            else ("pending" if retryable else "failed"),
             wake_completed_ts=time.time() if success else None,
             wake_run_id=run_id,
             wake_error=error,
@@ -299,7 +328,9 @@ def list_jobs() -> dict[str, dict[str, Any]]:
         with _connection(write=True) as conn:
             _migrate_legacy_json_if_needed(conn)
             rows = conn.execute("SELECT job_id, payload FROM jobs").fetchall()
-            return {row["job_id"]: _decode_payload(row["payload"]) for row in rows}
+            return {
+                row["job_id"]: _decode_payload(row["payload"]) for row in rows
+            }
     except (sqlite3.Error, OSError) as exc:
         logger.warning("Failed to list UGSci jobs: %s", exc)
         return {}
@@ -315,7 +346,12 @@ def append_job_event_if_changed(
     job_id: str,
     event: dict[str, Any],
 ) -> tuple[int, bool]:
-    encoded = json.dumps(event, sort_keys=True, ensure_ascii=False, default=str)
+    encoded = json.dumps(
+        event,
+        sort_keys=True,
+        ensure_ascii=False,
+        default=str,
+    )
     with _connection(write=True) as conn:
         latest = conn.execute(
             "SELECT sequence, payload FROM job_events WHERE job_id=? "
@@ -337,7 +373,10 @@ def append_job_event_if_changed(
         return sequence, True
 
 
-def list_job_events(job_id: str, after_sequence: int = 0) -> list[dict[str, Any]]:
+def list_job_events(
+    job_id: str,
+    after_sequence: int = 0,
+) -> list[dict[str, Any]]:
     try:
         with _connection() as conn:
             rows = conn.execute(
@@ -349,13 +388,21 @@ def list_job_events(job_id: str, after_sequence: int = 0) -> list[dict[str, Any]
         logger.warning("Failed to list UGSci events for %s: %s", job_id, exc)
         return []
     return [
-        {"sequence": int(row["sequence"]), "data": _decode_payload(row["payload"])}
+        {
+            "sequence": int(row["sequence"]),
+            "data": _decode_payload(row["payload"]),
+        }
         for row in rows
     ]
 
 
-def is_pid_ours(pid: int, expected_start_ts: float, deck_file: str = "") -> bool:
-    """Confirm PID identity using create time and an exact deck basename token."""
+def is_pid_ours(
+    pid: int,
+    expected_start_ts: float,
+    deck_file: str = "",
+) -> bool:
+    """Confirm PID identity using create time and an exact deck basename \
+token."""
     if pid <= 0 or not is_pid_alive(pid):
         return False
     basename = os.path.basename(deck_file).casefold() if deck_file else ""
@@ -369,9 +416,15 @@ def is_pid_ours(pid: int, expected_start_ts: float, deck_file: str = "") -> bool
         import psutil
 
         process = psutil.Process(pid)
-        if expected_start_ts > 0 and abs(process.create_time() - expected_start_ts) > 5:
+        if (
+            expected_start_ts > 0
+            and abs(process.create_time() - expected_start_ts) > 5
+        ):
             return False
-        tokens = [os.path.basename(part.strip('"')).casefold() for part in process.cmdline()]
+        tokens = [
+            os.path.basename(part.strip('"')).casefold()
+            for part in process.cmdline()
+        ]
         return bool(expected_tokens.intersection(tokens))
     except Exception:
         pass
@@ -385,14 +438,17 @@ def is_pid_ours(pid: int, expected_start_ts: float, deck_file: str = "") -> bool
                 "powershell",
                 "-NoProfile",
                 "-Command",
-                f"(Get-CimInstance Win32_Process -Filter 'ProcessId={pid}').CommandLine",
+                f"(Get-CimInstance Win32_Process -Filter "
+                f"'ProcessId="
+                f"{pid}"
+                f"').CommandLine",
             ],
             capture_output=True,
             text=True,
             timeout=5,
             check=False,
         )
-        command = result.stdout.replace('"', '').casefold()
+        command = result.stdout.replace('"', "").casefold()
         tokens = [os.path.basename(token) for token in command.split()]
         return bool(expected_tokens.intersection(tokens))
     except Exception:
@@ -406,7 +462,9 @@ def is_pid_alive(pid: int) -> bool:
         import psutil
 
         process = psutil.Process(pid)
-        return process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+        return (
+            process.is_running() and process.status() != psutil.STATUS_ZOMBIE
+        )
     except ImportError:
         pass
     except Exception:

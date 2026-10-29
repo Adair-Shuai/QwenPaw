@@ -1,7 +1,10 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=protected-access
 """Release bumps must preserve bundled plugins and explicit version gates."""
 
 import json
+import importlib.util
+import zipfile
 from pathlib import Path
 
 import pytest
@@ -17,13 +20,13 @@ MANIFESTS = sorted(
             "plugins/bundle",
             "plugins/apps",
             "plugins/hub",
+            "plugins/memory",
+            "plugins/tool",
+            "plugins/channel",
+            "plugins/middleware-demo",
             "src/qwenpaw/plugins_bundle",
         )
         for path in (ROOT / folder).glob("*/plugin.json")
-    ]
-    + [
-        ROOT / "plugins/tool/gpt-image2/plugin.json",
-        ROOT / "plugins/middleware-demo/thinking-log-middleware/plugin.json",
     ],
 )
 
@@ -39,6 +42,94 @@ def test_shipped_plugin_accepts_current_core(path):
     )
     compatible, reason = check_plugin_version_compat(manifest)
     assert compatible, reason
+
+
+@pytest.mark.parametrize(
+    "path",
+    MANIFESTS,
+    ids=lambda p: str(p.relative_to(ROOT)),
+)
+@pytest.mark.parametrize(
+    "host,expected",
+    [("2.9.99", True), ("3.0.0", False), ("3.0.0b1", False)],
+)
+def test_shipped_plugins_keep_major_version_compatibility_boundary(
+    monkeypatch,
+    path,
+    host,
+    expected,
+):
+    monkeypatch.setattr("qwenpaw.__version__.__version__", host)
+    manifest = PluginManifest.from_dict(
+        json.loads(path.read_text(encoding="utf-8")),
+    )
+    assert manifest.qwenpaw_version.max == "3.0.0"
+    assert check_plugin_version_compat(manifest)[0] is expected
+
+
+@pytest.mark.parametrize(
+    "relative,previous",
+    [
+        ("apps/uproject", "0.1.2"),
+        ("tool/wan27", "1.0.4"),
+    ],
+)
+def test_repaired_market_archives_cover_b2_and_advance_versions(
+    tmp_path,
+    monkeypatch,
+    relative,
+    previous,
+):
+    """Validate actual market ZIPs, not just a modified source manifest."""
+    from packaging.version import Version
+
+    monkeypatch.setattr("qwenpaw.__version__.__version__", "2.3.0b2")
+    spec = importlib.util.spec_from_file_location(
+        "plugin_packer_compat",
+        ROOT / "scripts/pack/generate_plugin_metadata.py",
+    )
+    packer = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(packer)
+    source = ROOT / "plugins" / relative
+    manifest = json.loads((source / "plugin.json").read_text(encoding="utf-8"))
+    assert Version(manifest["version"]) > Version(previous)
+    archive = tmp_path / f"{manifest['id']}-{manifest['version']}.zip"
+    packer._zip_plugin(source, archive, manifest)
+    with zipfile.ZipFile(archive) as bundle:
+        packaged = json.loads(bundle.read(f"{source.name}/plugin.json"))
+    compatible, reason = check_plugin_version_compat(
+        PluginManifest.from_dict(packaged),
+    )
+    assert compatible, reason
+    metadata = packer._build_metadata(
+        packaged,
+        file_id=archive.stem,
+        plugin_id=manifest["id"],
+        version=manifest["version"],
+        kind=relative.split("/")[0],
+        zip_path=archive,
+        cdn_path=f"/files/plugins/{archive.name}",
+    )
+    assert metadata["qwenpaw_version"] == packaged["qwenpaw_version"]
+
+
+@pytest.mark.parametrize("relative", ["memory/adbpg", "memory/powercontext"])
+def test_memory_market_release_advances_incompatible_published_version(
+    monkeypatch,
+    relative,
+):
+    from packaging.version import Version
+
+    monkeypatch.setattr("qwenpaw.__version__.__version__", "2.3.0b2")
+    manifest = PluginManifest.from_dict(
+        json.loads(
+            (ROOT / "plugins" / relative / "plugin.json").read_text(
+                encoding="utf-8",
+            ),
+        ),
+    )
+    assert Version(manifest.version) > Version("1.0.1")
+    assert check_plugin_version_compat(manifest) == (True, "")
 
 
 def test_unspecified_range_does_not_invent_a_legacy_upper_bound():
@@ -68,6 +159,35 @@ def test_explicit_legacy_minimum_keeps_derived_upper_bound():
         },
     )
     assert check_plugin_version_compat(manifest)[0] is False
+
+
+@pytest.mark.parametrize(
+    "host, compatible",
+    [
+        ("2.3.0b1", False),
+        ("2.3.0b2", True),
+        ("2.3.0rc1", True),
+        ("2.3.0", True),
+        ("2.4.0b1", True),
+        ("3.0.0b1", False),
+        ("3.0.0", False),
+    ],
+)
+def test_explicit_beta_minimum_preserves_required_api_boundary(
+    monkeypatch,
+    host,
+    compatible,
+):
+    monkeypatch.setattr("qwenpaw.__version__.__version__", host)
+    manifest = PluginManifest.from_dict(
+        json.loads(
+            (ROOT / "plugins/bundle/flowforge/plugin.json").read_text(
+                encoding="utf-8",
+            ),
+        ),
+    )
+    assert manifest.qwenpaw_version.min == "2.3.0b2"
+    assert check_plugin_version_compat(manifest)[0] is compatible
 
 
 @pytest.mark.asyncio

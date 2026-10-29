@@ -9,15 +9,177 @@ import logging
 import time
 from typing import Any
 
-from fastapi import APIRouter, Request
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, Request, HTTPException
+from fastapi.responses import StreamingResponse, Response
 
 logger = logging.getLogger("qwenpaw").getChild("plugin.ugsci.sim_api")
 
 
-def build_sim_router(plugin_id: str) -> APIRouter:
-    """Build job-list and server-sent-event monitoring routes."""
-    router = APIRouter()
+def _register_result_routes(
+    router,
+    owned_job,
+):
+    """Register result routes."""
+
+    @router.get("/jobs/{job_id}/results")
+    async def get_results(job_id: str, request: Request):
+        from .engine.tools.result_service import (
+            load_snapshot,
+            empty_snapshot,
+            sampled_snapshot,
+        )
+
+        run_id, metadata = await owned_job(job_id, request)
+        return await asyncio.to_thread(
+            lambda: sampled_snapshot(
+                load_snapshot(run_id) or empty_snapshot(run_id, metadata),
+            ),
+        )
+
+    @router.get("/jobs/{job_id}/results/export")
+    async def export_results(job_id: str, request: Request, series_id: str):
+        from .engine.tools.result_service import load_snapshot, export_csv
+
+        run_id, _ = await owned_job(job_id, request)
+        snapshot = await asyncio.to_thread(load_snapshot, run_id)
+        if snapshot is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Results have not been collected",
+            )
+        try:
+            body = await asyncio.to_thread(export_csv, snapshot, series_id)
+        except KeyError:
+            raise HTTPException(
+                status_code=404,
+                detail="Result series not found",
+            ) from None
+        return Response(
+            body,
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": (
+                    "attachment; " 'filename="simulation-series.csv"'
+                ),
+            },
+        )
+
+    @router.post("/jobs/{job_id}/results/refresh", status_code=202)
+    async def refresh_results(job_id: str, request: Request):
+        from .engine.tools.result_service import start_collection
+
+        run_id, _ = await owned_job(job_id, request)
+        await asyncio.to_thread(start_collection, run_id)
+        return {"run_id": run_id, "status": "collection_requested"}
+
+
+def _register_job_list_route(
+    router,
+    plugin_id,
+):
+    """Register job list route."""
+
+    async def owned_job(job_id: str, request: Request):
+        from .engine.tools.result_service import normalize_run_id, read_job
+
+        try:
+            run_id = normalize_run_id(job_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=404,
+                detail="Simulation job not found",
+            ) from None
+        # This lookup never invokes launcher recovery (which can wake
+        # an agent).
+        metadata = read_job(run_id)
+        if metadata is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Simulation job not found",
+            )
+        from qwenpaw.app.agent_context import (
+            get_agent_for_request,
+            get_current_session_id,
+            get_current_user_id,
+        )
+
+        # Resolve against host configuration and the live workspace manager,
+        # including unknown/disabled agents. Never trust a bare header/context
+        # value or skip ownership checks on the global plugin route.
+        workspace = await get_agent_for_request(request)
+        agent = workspace.agent_id
+        session = get_current_session_id()
+        user = get_current_user_id()
+        if (
+            # pylint: disable-next=too-many-boolean-expressions
+            ((metadata.get("agent_id") or "default") != agent)
+            or (
+                metadata.get("user_id")
+                and user
+                and metadata["user_id"] != user
+            )
+            or (
+                metadata.get("session_id")
+                and session
+                and metadata["session_id"] != session
+            )
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail="Simulation job not found",
+            )
+        return run_id, metadata
+
+    @router.get("/jobs/{job_id}/results")
+    async def get_results(job_id: str, request: Request):
+        from .engine.tools.result_service import (
+            load_snapshot,
+            empty_snapshot,
+            sampled_snapshot,
+        )
+
+        run_id, metadata = await owned_job(job_id, request)
+        return await asyncio.to_thread(
+            lambda: sampled_snapshot(
+                load_snapshot(run_id) or empty_snapshot(run_id, metadata),
+            ),
+        )
+
+    @router.get("/jobs/{job_id}/results/export")
+    async def export_results(job_id: str, request: Request, series_id: str):
+        from .engine.tools.result_service import load_snapshot, export_csv
+
+        run_id, _ = await owned_job(job_id, request)
+        snapshot = await asyncio.to_thread(load_snapshot, run_id)
+        if snapshot is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Results have not been collected",
+            )
+        try:
+            body = await asyncio.to_thread(export_csv, snapshot, series_id)
+        except KeyError:
+            raise HTTPException(
+                status_code=404,
+                detail="Result series not found",
+            ) from None
+        return Response(
+            body,
+            media_type="text/csv; charset=utf-8",
+            headers={
+                "Content-Disposition": (
+                    'attachment; filename="simulation-series.csv"'
+                ),
+            },
+        )
+
+    @router.post("/jobs/{job_id}/results/refresh", status_code=202)
+    async def refresh_results(job_id: str, request: Request):
+        from .engine.tools.result_service import start_collection
+
+        run_id, _ = await owned_job(job_id, request)
+        await asyncio.to_thread(start_collection, run_id)
+        return {"run_id": run_id, "status": "collection_requested"}
 
     @router.get("/jobs")
     def list_sim_jobs() -> dict[str, Any]:
@@ -51,6 +213,37 @@ def build_sim_router(plugin_id: str) -> APIRouter:
             logger.error("[%s] Failed to list jobs: %s", plugin_id, exc)
             return {"jobs": [], "error": str(exc)}
 
+
+def _live_job_snapshot(
+    job,
+):
+    """Live job snapshot."""
+    data: dict[str, Any] = {
+        "job_id": job.job_id,
+        "status": job.status,
+        "simulator": job.simulator,
+        "pid": job.pid,
+    }
+    if job.start_ts > 0:
+        elapsed = time.time() - job.start_ts
+        data["elapsed"] = round(elapsed, 1)
+        data["remaining"] = (
+            None if job.unlimited else round(max(0, job.timeout - elapsed), 1)
+        )
+    if job.returncode is not None:
+        data["returncode"] = job.returncode
+    if job.error:
+        data["error"] = job.error
+    if job.end_ts:
+        data["end_ts"] = job.end_ts
+    return data
+
+
+def _register_job_stream_route(
+    router,
+):
+    """Register job stream route."""
+
     @router.get("/jobs/{job_id}/stream")
     async def job_stream(job_id: str, request: Request):
         async def event_stream():
@@ -58,7 +251,10 @@ def build_sim_router(plugin_id: str) -> APIRouter:
                 from .engine.tools import job_store
                 from .engine.tools.launcher import _get_job
             except Exception:
-                yield ("data: " f"{json.dumps({'error': 'Job store unavailable'})}\n\n")
+                yield (
+                    "data: "
+                    f"{json.dumps({'error': 'Job store unavailable'})}\n\n"
+                )
                 return
 
             terminal_states = {
@@ -89,29 +285,21 @@ def build_sim_router(plugin_id: str) -> APIRouter:
                 if not job:
                     yield (
                         "data: "
-                        f"{json.dumps({'error': 'Job not found', 'job_id': job_id})}"
+                        f"""{(
+                            json.dumps(
+                                {
+                                    "error": "Job not found",
+                                    "job_id": job_id,
+                                }
+                            )
+                        )}"""
                         "\n\n"
                     )
                     return
 
-                data: dict[str, Any] = {
-                    "job_id": job.job_id,
-                    "status": job.status,
-                    "simulator": job.simulator,
-                    "pid": job.pid,
-                }
-                if job.start_ts > 0:
-                    elapsed = time.time() - job.start_ts
-                    data["elapsed"] = round(elapsed, 1)
-                    data["remaining"] = (
-                        None if job.unlimited else round(max(0, job.timeout - elapsed), 1)
-                    )
-                if job.returncode is not None:
-                    data["returncode"] = job.returncode
-                if job.error:
-                    data["error"] = job.error
-                if job.end_ts:
-                    data["end_ts"] = job.end_ts
+                data = _live_job_snapshot(
+                    job,
+                )
 
                 try:
                     sequence, changed = job_store.append_job_event_if_changed(
@@ -121,12 +309,18 @@ def build_sim_router(plugin_id: str) -> APIRouter:
                 except Exception as exc:
                     # Keep the live stream useful during a transient store
                     # outage; the next poll can persist/replay the snapshot.
-                    logger.warning("Failed to persist simulation SSE event %s: %s", job_id, exc)
+                    logger.warning(
+                        "Failed to persist simulation SSE event %s: %s",
+                        job_id,
+                        exc,
+                    )
                     sequence, changed = cursor, False
                 # Avoid duplicating a terminal event already replayed on
                 # reconnect, while still emitting current state if history
                 # retention removed the event behind the supplied cursor.
-                if changed or (job.status in terminal_states and not replayed_any):
+                if changed or (
+                    job.status in terminal_states and not replayed_any
+                ):
                     cursor = sequence
                     yield (
                         f"id: {sequence}\nevent: simulation\n"
@@ -152,6 +346,77 @@ def build_sim_router(plugin_id: str) -> APIRouter:
                 "X-Accel-Buffering": "no",
             },
         )
+
+
+def build_sim_router(plugin_id: str) -> APIRouter:
+    """Build job-list and server-sent-event monitoring routes."""
+    router = APIRouter()
+
+    async def owned_job(job_id: str, request: Request):
+        from .engine.tools.result_service import normalize_run_id, read_job
+
+        try:
+            run_id = normalize_run_id(job_id)
+        except ValueError:
+            raise HTTPException(
+                status_code=404,
+                detail="Simulation job not found",
+            ) from None
+        # This lookup never invokes launcher recovery (which can wake an
+        # agent).
+        metadata = read_job(run_id)
+        if metadata is None:
+            raise HTTPException(
+                status_code=404,
+                detail="Simulation job not found",
+            )
+        from qwenpaw.app.agent_context import (
+            get_agent_for_request,
+            get_current_session_id,
+            get_current_user_id,
+        )
+
+        # Resolve against host configuration and the live workspace manager,
+        # including unknown/disabled agents. Never trust a bare header/context
+        # value or skip ownership checks on the global plugin route.
+        workspace = await get_agent_for_request(request)
+        agent = workspace.agent_id
+        session = get_current_session_id()
+        user = get_current_user_id()
+        if (metadata.get("agent_id") or "default") != agent:
+            raise HTTPException(
+                status_code=404,
+                detail="Simulation job not found",
+            )
+        if metadata.get("user_id") and user and (metadata["user_id"] != user):
+            raise HTTPException(
+                status_code=404,
+                detail="Simulation job not found",
+            )
+        if (
+            metadata.get("session_id")
+            and session
+            and (metadata["session_id"] != session)
+        ):
+            raise HTTPException(
+                status_code=404,
+                detail="Simulation job not found",
+            )
+        return run_id, metadata
+
+    _register_result_routes(
+        router,
+        owned_job,
+    )
+
+    _register_job_list_route(
+        router,
+        plugin_id,
+    )
+
+    _register_job_stream_route(
+        router,
+    )
 
     return router
 

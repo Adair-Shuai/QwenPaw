@@ -170,6 +170,11 @@ test = [
     "hypothesis>=6.0.0",
     "respx>=0.22.0",
     "qoder-agent-sdk==1.0.9",
+    # Real synthetic reservoir files exercise the protected result pipeline.
+    "xtgeo>=4.27,<5",
+    "resfo>=5,<6",
+    "h5py>=3.10,<4",
+    "meshio>=5.3,<6",
 ]
 dev = [
     "pre-commit>=4.2.0",

@@ -24,8 +24,6 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, List, Optional
 
-logger = logging.getLogger(__name__)
-
 from memory import build_think_context
 from store import (
     create_suggestion,
@@ -33,6 +31,8 @@ from store import (
     is_thinking_available,
     record_think,
 )
+
+logger = logging.getLogger(__name__)
 
 # 后台循环轮询间隔（秒）
 LOOP_INTERVAL_SECONDS = 30
@@ -92,8 +92,6 @@ async def _proactive_loop() -> None:
             if not await is_thinking_available(ctx):
                 continue
             await think_once(ctx)
-        except asyncio.CancelledError:
-            raise
         except Exception as exc:  # pylint: disable=broad-except
             logger.warning("[uideas] proactive round failed: %s", exc)
 
@@ -162,7 +160,7 @@ async def _think_once_unlocked(ctx: Any) -> Dict[str, Any]:
     meta = await get_meta(ctx)
     interval = float(meta.get("interval_minutes", 60))
     cooldown = datetime.now(timezone.utc) + timedelta(
-        minutes=interval * COOLDOWN_FACTOR
+        minutes=interval * COOLDOWN_FACTOR,
     )
     await record_think(
         ctx,
@@ -181,7 +179,7 @@ async def _think_once_unlocked(ctx: Any) -> Dict[str, Any]:
                 "last_think_at": datetime.now(timezone.utc).isoformat(),
                 "cooldown_until": cooldown.isoformat(),
             },
-        }
+        },
     )
 
     logger.info("[uideas] think round done: %d new suggestions", len(created))
@@ -210,7 +208,7 @@ def _parse_suggestions(text: str) -> List[Dict[str, Any]]:
         stripped = fence.group(1).strip()
     else:
         start, end = stripped.find("{"), stripped.rfind("}")
-        if start >= 0 and end > start:
+        if 0 <= start < end:
             stripped = stripped[start : end + 1]
     try:
         data = json.loads(stripped)

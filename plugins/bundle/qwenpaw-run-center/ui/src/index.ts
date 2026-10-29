@@ -5,6 +5,9 @@
  * lifecycle controls, event/log replay, and background refresh.
  */
 
+import { createSimulationMonitor } from "./simulationMonitor";
+import { createAdaptiveRunView } from "./adaptive";
+
 (() => {
   type RunRecord = Record<string, any> & {
     run_id: string;
@@ -19,6 +22,8 @@
     data?: Record<string, any>;
   };
   type CenterView = "runs" | "models" | "research" | "compare";
+  let SimulationMonitor: any;
+  let AdaptiveRunView: any;
 
   const AUTO_REFRESH_MS = 3000;
   const ACTIVE_STATUSES = new Set([
@@ -114,6 +119,12 @@
     const [compareLoading, setCompareLoading] = React.useState(false);
     const [report, setReport] = React.useState(null as any | null);
     const [reportLoading, setReportLoading] = React.useState(false);
+    const [simulationCapabilities, setSimulationCapabilities] = React.useState(
+      null as { runId: string; checkpoint_resume?: unknown } | null,
+    );
+    const selectedAgentScope = React.useRef(
+      getHost().getSelectedAgentId?.() || "",
+    );
     const selectedRef = React.useRef(null as RunRecord | null);
     const listRequestSerial = React.useRef(0);
     const detailRequestSerial = React.useRef(0);
@@ -254,7 +265,9 @@
         while (active) {
           try {
             const host = getHost();
-            const streamPath = `/run-center/runs/${encodeURIComponent(runId)}/events/stream?after_seq=${lastSeq}`;
+            const streamPath = `/run-center/runs/${encodeURIComponent(
+              runId,
+            )}/events/stream?after_seq=${lastSeq}`;
             const response = host.fetch
               ? await host.fetch(streamPath, {
                   signal: controller.signal,
@@ -282,7 +295,9 @@
                   .find((line) => line.startsWith("data:"));
                 if (!dataLine) continue;
                 try {
-                  const event = JSON.parse(dataLine.slice(5).trim()) as RunEvent;
+                  const event = JSON.parse(
+                    dataLine.slice(5).trim(),
+                  ) as RunEvent;
                   const sequence = Number(event.seq ?? event.sequence ?? 0);
                   if (sequence > lastSeq) lastSeq = sequence;
                   setEvents((current: RunEvent[]) => {
@@ -307,7 +322,8 @@
           } catch {
             if (!active) return;
           }
-          if (active) await new Promise((resolve) => window.setTimeout(resolve, 1000));
+          if (active)
+            await new Promise((resolve) => window.setTimeout(resolve, 1000));
         }
       };
       void consume();
@@ -327,6 +343,7 @@
 
     const selectRun = React.useCallback(
       (run: RunRecord) => {
+        selectedAgentScope.current = getHost().getSelectedAgentId?.() || "";
         setNotice("");
         void loadRunDetails(run, false);
       },
@@ -499,7 +516,7 @@
           key: action,
           type: "button",
           onClick: () => void runAction(action),
-          disabled: Boolean(actionBusy),
+          disabled: Boolean(actionBusy || options.disabled),
           title: options.title,
           style: {
             padding: "6px 11px",
@@ -552,10 +569,30 @@
       selected?.source === "ugsci-legacy" ||
       String(selected?.run_id || "").startsWith("ugsci:");
     const controls = [] as any[];
+    const simulation = selected?.operation === "simulation.run";
+    const resumeCapability =
+      simulationCapabilities?.runId === selected?.run_id
+        ? simulationCapabilities?.checkpoint_resume
+        : undefined;
+    const cannotResume = simulation && resumeCapability !== true;
+    const resumeHint =
+      resumeCapability === false
+        ? "此模拟器不支持检查点暂停／续算"
+        : "尚未确认此模拟器支持检查点暂停／续算";
     if (!isLegacy && status === "running")
-      controls.push(button("暂停", "pause"));
+      controls.push(
+        button("暂停", "pause", {
+          disabled: cannotResume,
+          title: cannotResume ? resumeHint : undefined,
+        }),
+      );
     if (!isLegacy && status === "paused")
-      controls.push(button("恢复", "resume"));
+      controls.push(
+        button("恢复", "resume", {
+          disabled: cannotResume,
+          title: cannotResume ? resumeHint : undefined,
+        }),
+      );
     if (!isLegacy && ACTIVE_STATUSES.has(status))
       controls.push(button("取消", "cancel", { danger: true }));
     if (!isLegacy && ["failed", "blocked", "cancelled"].includes(status))
@@ -991,7 +1028,9 @@
                       React.createElement(
                         "div",
                         { style: { color: "#389e0d", fontSize: 12 } },
-                        `报告已生成 · ${report.artifact?.ref_id || report.report_id}`,
+                        `报告已生成 · ${
+                          report.artifact?.ref_id || report.report_id
+                        }`,
                       ),
                       React.createElement(
                         "pre",
@@ -1001,7 +1040,8 @@
                             overflow: "auto",
                             padding: 10,
                             whiteSpace: "pre-wrap",
-                            background: "var(--ant-color-fill-tertiary, #f5f5f5)",
+                            background:
+                              "var(--ant-color-fill-tertiary, #f5f5f5)",
                             fontSize: 11,
                           },
                         },
@@ -1441,7 +1481,7 @@
                   ),
                 ),
           ],
-          { flex: "3 1 560px" },
+          { flex: "1 1 300px" },
         ),
         card(
           selected
@@ -1597,6 +1637,23 @@
                     ),
                   ),
                 ),
+                AdaptiveRunView
+                  ? React.createElement(AdaptiveRunView, {
+                      key: `adaptive:${selected.run_id}`,
+                      run: selected,
+                      events,
+                      agentId: selected.agent_id || selectedAgentScope.current,
+                      subscribe: false,
+                      refreshKey: events.length
+                        ? eventSequence(events[events.length - 1])
+                        : 0,
+                      onCapabilities: (value: Record<string, unknown>) =>
+                        setSimulationCapabilities({
+                          runId: selected.run_id,
+                          ...value,
+                        }),
+                    })
+                  : null,
                 React.createElement(
                   "div",
                   {
@@ -1706,7 +1763,7 @@
                   "选择一条运行记录查看详情、控制任务和回放日志。",
                 ),
               ],
-          { flex: "2 1 420px" },
+          { flex: "3 1 580px" },
         ),
       ),
       renderViewPanel(),
@@ -1723,6 +1780,14 @@
     if ((window as any).__qwenpawRunCenterRegistered) return;
     (window as any).__qwenpawRunCenterRegistered = true;
     const React = getHost().React;
+    SimulationMonitor = createSimulationMonitor(React, getHost());
+    AdaptiveRunView = createAdaptiveRunView(
+      React,
+      getHost(),
+      SimulationMonitor,
+    );
+    QP.runCenter = { ...QP.runCenter, SimulationMonitor, AdaptiveRunView };
+    window.dispatchEvent(new Event("qwenpaw:simulation-monitor-ready"));
     const routeId = "qwenpaw-run-center.run-center";
     QP.route.add("qwenpaw-run-center", {
       id: routeId,

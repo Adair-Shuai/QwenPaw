@@ -66,6 +66,7 @@ class Input:
         range, enum, or regex constraints. Defaults to accepting any
         value.
         """
+        del value
         return True, None
 
     def as_dict(self) -> dict[str, Any]:
@@ -222,17 +223,35 @@ class IO:
 
             def validate(self, value: Any) -> tuple[bool, str | None]:
                 if value is None:
-                    return (True, None) if self.optional or self.default is not None else (
-                        False, f"'{self.id}' is required",
+                    return (
+                        (True, None)
+                        if self.optional or self.default is not None
+                        else (
+                            False,
+                            f"'{self.id}' is required",
+                        )
                     )
                 if not isinstance(value, str):
-                    return False, f"'{self.id}' must be a string, got {type(value).__name__}"
-                if self.min_length is not None and len(value) < self.min_length:
+                    return (
+                        False,
+                        f"'"
+                        f"{self.id}"
+                        f"' must be a string, got "
+                        f"{type(value).__name__}",
+                    )
+                if (
+                    self.min_length is not None
+                    and len(value) < self.min_length
+                ):
                     return False, f"'{self.id}' length < {self.min_length}"
-                if self.max_length is not None and len(value) > self.max_length:
+                if (
+                    self.max_length is not None
+                    and len(value) > self.max_length
+                ):
                     return False, f"'{self.id}' length > {self.max_length}"
                 if self.pattern:
                     import re
+
                     if not re.fullmatch(self.pattern, value):
                         return False, f"'{self.id}' does not match pattern"
                 return True, None
@@ -253,7 +272,10 @@ class IO:
             display: str = "number"  # "number" | "slider"
 
             def _options_extra(self) -> dict[str, Any]:
-                extra: dict[str, Any] = {"step": self.step, "display": self.display}
+                extra: dict[str, Any] = {
+                    "step": self.step,
+                    "display": self.display,
+                }
                 if self.min is not None:
                     extra["min"] = self.min
                 if self.max is not None:
@@ -262,8 +284,13 @@ class IO:
 
             def validate(self, value: Any) -> tuple[bool, str | None]:
                 if value is None:
-                    return (True, None) if self.optional or self.default is not None else (
-                        False, f"'{self.id}' is required",
+                    return (
+                        (True, None)
+                        if self.optional or self.default is not None
+                        else (
+                            False,
+                            f"'{self.id}' is required",
+                        )
                     )
                 if isinstance(value, bool) or not isinstance(value, int):
                     if isinstance(value, str):
@@ -296,7 +323,10 @@ class IO:
             round: float | None = None
 
             def _options_extra(self) -> dict[str, Any]:
-                extra: dict[str, Any] = {"step": self.step, "display": self.display}
+                extra: dict[str, Any] = {
+                    "step": self.step,
+                    "display": self.display,
+                }
                 if self.min is not None:
                     extra["min"] = self.min
                 if self.max is not None:
@@ -307,10 +337,18 @@ class IO:
 
             def validate(self, value: Any) -> tuple[bool, str | None]:
                 if value is None:
-                    return (True, None) if self.optional or self.default is not None else (
-                        False, f"'{self.id}' is required",
+                    return (
+                        (True, None)
+                        if self.optional or self.default is not None
+                        else (
+                            False,
+                            f"'{self.id}' is required",
+                        )
                     )
-                if isinstance(value, bool) or not isinstance(value, (int, float)):
+                if isinstance(value, bool) or not isinstance(
+                    value,
+                    (int, float),
+                ):
                     return False, f"'{self.id}' must be a number"
                 if self.min is not None and value < self.min:
                     return False, f"'{self.id}' below min {self.min}"
@@ -341,8 +379,13 @@ class IO:
 
             def validate(self, value: Any) -> tuple[bool, str | None]:
                 if value is None:
-                    return (True, None) if self.optional or self.default is not None else (
-                        False, f"'{self.id}' is required",
+                    return (
+                        (True, None)
+                        if self.optional or self.default is not None
+                        else (
+                            False,
+                            f"'{self.id}' is required",
+                        )
                     )
                 if not isinstance(value, bool):
                     return False, f"'{self.id}' must be bool"
@@ -377,15 +420,27 @@ class IO:
 
             def validate(self, value: Any) -> tuple[bool, str | None]:
                 if value is None:
-                    return (True, None) if self.optional or self.default is not None else (
-                        False, f"'{self.id}' is required",
+                    return (
+                        (True, None)
+                        if self.optional or self.default is not None
+                        else (
+                            False,
+                            f"'{self.id}' is required",
+                        )
                     )
                 if not self.choices:
                     return True, None
-                values = value if self.multiselect and isinstance(value, list) else [value]
+                values = (
+                    value
+                    if self.multiselect and isinstance(value, list)
+                    else [value]
+                )
                 for v in values:
                     if v not in self.choices:
-                        return False, f"'{self.id}' must be one of {self.choices}"
+                        return (
+                            False,
+                            f"'{self.id}' must be one of {self.choices}",
+                        )
                 return True, None
 
         Output = _make_typed("COMBO", str)[1]
@@ -539,7 +594,8 @@ def socket_color(io_type: str) -> str:
 
 
 def widget_kind(io_type: str) -> str:
-    """Return the inline widget kind for an ``io_type`` (``""`` = socket-only)."""
+    """Return the inline widget kind for an ``io_type`` (``\"\"`` = \
+socket-only)."""
     if io_type in _WIDGET_KINDS:
         return _WIDGET_KINDS[io_type]
     return ""
@@ -564,5 +620,7 @@ def types_compatible(upstream: str, downstream: str) -> bool:
     if upstream == downstream:
         return True
     up_set = set(upstream.split(",")) if "," in upstream else {upstream}
-    down_set = set(downstream.split(",")) if "," in downstream else {downstream}
+    down_set = (
+        set(downstream.split(",")) if "," in downstream else {downstream}
+    )
     return bool(up_set & down_set)

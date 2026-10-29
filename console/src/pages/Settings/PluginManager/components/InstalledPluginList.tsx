@@ -34,6 +34,7 @@ interface InstalledPluginListProps {
   updatesLoading: boolean;
   updatingId: string | null;
   updatingAll: boolean;
+  queuedIds?: ReadonlySet<string>;
   onUpdate: (plugin: PluginInfo) => void;
   onUpdateAll: () => void;
 }
@@ -48,6 +49,7 @@ export function InstalledPluginList({
   updatesLoading,
   updatingId,
   updatingAll,
+  queuedIds,
   onUpdate,
   onUpdateAll,
 }: InstalledPluginListProps) {
@@ -66,6 +68,9 @@ export function InstalledPluginList({
   }, [plugins, search]);
 
   const renderUpdateAction = (plugin: PluginInfo) => {
+    if (queuedIds?.has(plugin.id)) {
+      return <Text type="secondary">{t("appCenter.updateQueued")}</Text>;
+    }
     const update = updates.get(plugin.id);
     if (!update) return null;
     return (

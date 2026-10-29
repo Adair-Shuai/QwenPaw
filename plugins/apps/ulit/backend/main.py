@@ -10,10 +10,11 @@ prefix contract.
 
 from __future__ import annotations
 
+import importlib
 import asyncio
 import logging
 
-from qwenpaw.pawapp import PawApp, get_ctx
+from qwenpaw.pawapp import PawApp
 
 # PluginLoader imports this file with the plugin root as the package path
 # (for example ``plugin_ulit.backend.main``).  Keep the backend package in
@@ -64,12 +65,14 @@ async def _startup() -> None:
 
     # Check PDF parser availability
     try:
-        import fitz  # noqa: F401
+        importlib.import_module("fitz")
+
         logger.info("[ulit] PDF text extraction: PyMuPDF available")
     except ImportError:
         logger.warning(
-            "[ulit] PyMuPDF (fitz) not installed — PDF text extraction disabled. "
-            "Install with: pip install PyMuPDF"
+            "[ulit] PyMuPDF (fitz) not installed — PDF text "
+            "extraction disabled. "
+            "Install with: pip install PyMuPDF",
         )
 
     logger.info("[ulit] ULit 文研 ready")
@@ -101,7 +104,8 @@ async def _shutdown() -> None:
 
 @app.tool(
     "ulit_search_library",
-    description="Search the ULit literature library by keyword. Returns matching papers with title, authors, year, and DOI.",
+    description="Search the ULit literature library by keyword. Returns "
+    "matching papers with title, authors, year, and DOI.",
     icon="🔍",
     enabled=True,
 )
@@ -114,7 +118,11 @@ async def ulit_search_library(
     if not query:
         papers = await LibraryService.list_papers(limit=limit)
     else:
-        papers = await LibraryService.search(query, project_id=project_id or None, limit=limit)
+        papers = await LibraryService.search(
+            query,
+            project_id=project_id or None,
+            limit=limit,
+        )
 
     # Return compact summaries
     return {
@@ -134,7 +142,8 @@ async def ulit_search_library(
 
 @app.tool(
     "ulit_get_paper",
-    description="Get detailed metadata for a paper in the ULit library, including abstract, authors, and identifiers.",
+    description="Get detailed metadata for a paper in the ULit library, "
+    "including abstract, authors, and identifiers.",
     icon="📄",
     enabled=True,
 )
@@ -148,7 +157,9 @@ async def ulit_get_paper(paper_id: str) -> dict:
 
 @app.tool(
     "ulit_read_evidence",
-    description="Read evidence cards, annotations, or page text from a paper in the ULit library. Specify what to read with kind: 'evidence', 'annotations', or 'page'.",
+    description="Read evidence cards, annotations, or page text from a "
+    "paper in the ULit library. Specify what to read with "
+    "kind: 'evidence', 'annotations', or 'page'.",
     icon="📖",
     enabled=True,
 )
@@ -162,7 +173,11 @@ async def ulit_read_evidence(
     if kind == "evidence" and project_id:
         evidence = await asyncio.to_thread(repo.list_evidence, project_id)
         paper_evidence = [e for e in evidence if e.get("paper_id") == paper_id]
-        return {"kind": "evidence", "count": len(paper_evidence), "items": paper_evidence}
+        return {
+            "kind": "evidence",
+            "count": len(paper_evidence),
+            "items": paper_evidence,
+        }
 
     elif kind == "annotations":
         files = await asyncio.to_thread(repo.get_paper_files, paper_id)
@@ -170,35 +185,57 @@ async def ulit_read_evidence(
         for f in files:
             annos = await asyncio.to_thread(repo.list_annotations, f["id"])
             all_annos.extend(annos)
-        return {"kind": "annotations", "count": len(all_annos), "items": all_annos}
+        return {
+            "kind": "annotations",
+            "count": len(all_annos),
+            "items": all_annos,
+        }
 
     elif kind == "page":
         files = await asyncio.to_thread(repo.get_paper_files, paper_id)
         if not files:
             return {"error": "No file attached to this paper"}
-        doc = await asyncio.to_thread(repo.get_document_by_file, files[0]["id"])
+        doc = await asyncio.to_thread(
+            repo.get_document_by_file,
+            files[0]["id"],
+        )
         if doc is None:
             return {"error": "Document not yet parsed"}
         if page_index >= 0:
-            page = await asyncio.to_thread(repo.get_page_text, doc["id"], page_index)
-            return {"kind": "page", "page_index": page_index, "text": page.get("text", "") if page else ""}
+            page = await asyncio.to_thread(
+                repo.get_page_text,
+                doc["id"],
+                page_index,
+            )
+            return {
+                "kind": "page",
+                "page_index": page_index,
+                "text": page.get("text", "") if page else "",
+            }
         else:
             pages = await asyncio.to_thread(repo.get_page_texts, doc["id"])
             return {"kind": "pages", "page_count": len(pages), "items": pages}
 
-    return {"error": f"Unknown kind: {kind}. Use 'evidence', 'annotations', or 'page'."}
+    return {
+        "error": f"Unknown kind: "
+        f"{kind}"
+        f". Use 'evidence', 'annotations', or 'page'.",
+    }
 
 
 @app.tool(
     "ulit_list_project_evidence",
-    description="List confirmed evidence cards for a ULit project. Returns claims, quotes, and source references.",
+    description="List confirmed evidence cards for a ULit project. "
+    "Returns claims, quotes, and source references.",
     icon="🗂️",
     enabled=True,
 )
 async def ulit_list_project_evidence(project_id: str) -> dict:
     """List project evidence cards."""
     evidence = await asyncio.to_thread(repo.list_evidence, project_id)
-    confirmed = [e for e in evidence if e.get("verification_status") == "confirmed"]
+    confirmed = [
+        e for e in evidence if e.get("verification_status") == "confirmed"
+    ]
     return {
         "project_id": project_id,
         "total": len(evidence),

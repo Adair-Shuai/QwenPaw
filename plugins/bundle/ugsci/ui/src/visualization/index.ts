@@ -9,6 +9,7 @@
 import { getHost } from "../core/runtime";
 import { OilGasPluginPage } from "./PluginPage";
 import { OilGasWorkspaceRenderer } from "./WorkspaceRenderer";
+import { mountVisualization } from "./embed";
 
 export function registerVisualizationFrontend(QP: any, React: any): void {
   // The host can re-evaluate a plugin bundle during dev/HMR or after a
@@ -18,6 +19,12 @@ export function registerVisualizationFrontend(QP: any, React: any): void {
   const globalWindow = window as any;
   if (globalWindow[registrationKey]) return;
   globalWindow[registrationKey] = true;
+  // A lazy, container-based API: applications reuse the engine without
+  // duplicating Three.js, a route shell, or private workspace import logic.
+  QP.ugsci = {
+    ...QP.ugsci,
+    visualization: { version: 1, mount: mountVisualization },
+  };
 
   const antdIcons = getHost().antdIcons || {};
   const GlobalOutlined = antdIcons.GlobalOutlined || antdIcons.AppstoreOutlined;
@@ -26,6 +33,14 @@ export function registerVisualizationFrontend(QP: any, React: any): void {
     id: "ugsci.visualization",
     path: "/oilgas-visualization",
     component: OilGasPluginPage,
+    meta: {
+      domain: "workspace",
+      title: "油气可视化",
+      description: "地质气藏、井筒与地面管网的统一可视化工作台",
+      scope: "agent",
+      layout: "workbench",
+      navigation: "rail",
+    },
   });
   QP.menu.add("ugsci", {
     id: "ugsci.visualization",
@@ -47,10 +62,35 @@ export function registerVisualizationFrontend(QP: any, React: any): void {
       name: "UGSci 油气可视化",
       component: OilGasWorkspaceRenderer,
       extensions: [
-        "egrid", "grid", "grdecl", "init", "unrst", "roff", "roffbin",
-        "dat", "sr3", "irf", "data", "model", "tnav", "tpr", "las", "las3", "dlis",
-        "vtk", "vtu", "pvtu", "vti", "xdmf", "csv", "arrow", "parquet",
-        "well.json", "surface.json", "network.json", "json",
+        "egrid",
+        "grid",
+        "grdecl",
+        "init",
+        "unrst",
+        "roff",
+        "roffbin",
+        "dat",
+        "sr3",
+        "irf",
+        "data",
+        "model",
+        "tnav",
+        "tpr",
+        "las",
+        "las3",
+        "dlis",
+        "vtk",
+        "vtu",
+        "pvtu",
+        "vti",
+        "xdmf",
+        "csv",
+        "arrow",
+        "parquet",
+        "well.json",
+        "surface.json",
+        "network.json",
+        "json",
       ],
       mimeTypes: [
         "application/x-eclipse-grid",
@@ -73,6 +113,9 @@ export function registerVisualizationFrontend(QP: any, React: any): void {
       description: "UGSci 油气三维网格、井、剖面和测井可视化",
     });
   } catch (error) {
-    console.warn("[ugsci] Visualization workspace renderer registration failed:", error);
+    console.warn(
+      "[ugsci] Visualization workspace renderer registration failed:",
+      error,
+    );
   }
 }

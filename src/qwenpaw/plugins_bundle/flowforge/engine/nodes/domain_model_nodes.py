@@ -20,7 +20,7 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import TYPE_CHECKING, Any
 
-import logging
+from ..adapter.log_compat import get_logger
 
 from ..io import IO, Hidden, HiddenHolder, InputBase, NodeOutput, Schema
 from .base import WorkflowNode
@@ -32,7 +32,7 @@ if TYPE_CHECKING:
         DomainParam,
     )
 
-logger = logging.getLogger(__name__)
+logger = get_logger(__name__)
 
 #: Canonical output slot order for every domain-model node.
 MODEL_OUTPUT_NAMES = ("text", "data_b64", "mime", "result", "success")
@@ -62,14 +62,16 @@ def _param_to_input(param: DomainParam) -> InputBase:
             min=float(param.min) if param.min is not None else None,
             max=float(param.max) if param.max is not None else None,
         )
-    if io_type == "BOOLEAN":
-        return IO.Boolean.Input(**common)
     if io_type == "COMBO":
         return IO.Combo.Input(**common, choices=list(param.choices))
-    if io_type == "FILE":
-        return IO.File.Input(**common)
-    if io_type == "OBJECT":
-        return IO.Object.Input(**common)
+    simple_inputs: dict[str, type[InputBase]] = {
+        "BOOLEAN": IO.Boolean.Input,
+        "FILE": IO.File.Input,
+        "OBJECT": IO.Object.Input,
+    }
+    factory = simple_inputs.get(io_type)
+    if factory is not None:
+        return factory(**common)
     # STRING and any unknown types fall back to a (multiline?) string input.
     return IO.String.Input(**common, multiline=param.multiline)
 
@@ -84,7 +86,8 @@ def build_domain_model_node(adapter: DomainModelAdapter) -> type[WorkflowNode]:
         node_id=node_id,
         display_name=display,
         category=f"models/{spec.task}",
-        description=spec.description or f"Run the {spec.provider} {spec.task} model.",
+        description=spec.description
+        or f"Run the {spec.provider} {spec.task} model.",
         inputs=[_param_to_input(p) for p in spec.params],
         outputs=[
             IO.String.Output(id="text"),
@@ -112,7 +115,12 @@ def build_domain_model_node(adapter: DomainModelAdapter) -> type[WorkflowNode]:
         def define_schema(cls) -> Schema:
             return cls._schema
 
-        async def execute(self, *, hidden: HiddenHolder, **inputs: Any) -> NodeOutput:
+        async def execute(
+            self,
+            *,
+            hidden: HiddenHolder,
+            **inputs: Any,
+        ) -> NodeOutput:
             params = {k: v for k, v in inputs.items() if v is not None}
             # Resolve {{var}} templates against the workflow state.
             state = hidden.workflow_state
@@ -144,12 +152,18 @@ def build_domain_model_node(adapter: DomainModelAdapter) -> type[WorkflowNode]:
                     error=str(exc),
                     exc_info=True,
                 )
-                return NodeOutput(error=str(exc), metadata={"node_id": hidden.unique_id})
+                return NodeOutput(
+                    error=str(exc),
+                    metadata={"node_id": hidden.unique_id},
+                )
 
             if not result.success:
                 return NodeOutput(
                     error=result.error or f"{node_id} invocation failed",
-                    metadata={"node_id": hidden.unique_id, "provider": result.provider},
+                    metadata={
+                        "node_id": hidden.unique_id,
+                        "provider": result.provider,
+                    },
                 )
 
             envelope = asdict(result)
