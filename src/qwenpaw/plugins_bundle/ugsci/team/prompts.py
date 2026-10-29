@@ -557,10 +557,10 @@ def _dispatch_pipeline(ctx: TeamPromptCtx, member_str: str) -> str:
     # Build sequential spawn calls for each member
     spawn_calls = []
     for i, m in enumerate(ctx.members):
-        name = m.get("name", m.get("display_name", f"专家{i+1}"))
+        name = m.get("name", m.get("display_name", f"专家{i + 1}"))
         step_num = i + 1
         prev_file = (
-            f"\n上下文：上一步结果文件: {ctx.loop_dir}/results/step-{step_num-1}.json"
+            f"\n上下文：上一步结果文件: {ctx.loop_dir}/results/step-{step_num - 1}.json"
             if i > 0
             else ""
         )
@@ -677,7 +677,7 @@ def _dispatch_coordinator(ctx: TeamPromptCtx, member_str: str) -> str:
         spawn = _member_dispatch_call(
             m,
             f"按协调者（{coord_name}）的请求执行专业任务。\n"
-            f"将结果写入 {ctx.loop_dir}/results/step-{i-1}.json。",
+            f"将结果写入 {ctx.loop_dir}/results/step-{i - 1}.json。",
         )
         other_spawns.append(f"专家 {name}:\n{spawn}")
 
@@ -785,7 +785,7 @@ UGSci 专家团控制器 — 阶段: verify（验证审核）
 def _synthesize(ctx: TeamPromptCtx) -> str:
     member_str = _member_list(ctx.members)
     result_files = "\n".join(
-        f"   - {ctx.loop_dir}/results/step-{i+1}.json"
+        f"   - {ctx.loop_dir}/results/step-{i + 1}.json"
         for i in range(len(ctx.members))
     )
 

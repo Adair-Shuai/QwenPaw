@@ -66,6 +66,7 @@ async def _register_via_qwenpaw(
     user_id: str | None,
 ) -> dict[str, Any] | None:
     """Try to register via QwenPaw's file/attachment service."""
+    del session_id, user_id
     try:
         from qwenpaw.plugins.registry import PluginRegistry
 

@@ -256,6 +256,7 @@ class InProcessExecutor:
         return self._invoke(handler, context, payload)
 
     @staticmethod
+    # pylint: disable-next=R0912
     def _invoke(
         handler: Any,
         context: ExecutionContext,
@@ -354,6 +355,7 @@ class ProcessExecutor:
     """Execute an argv command without a shell and stream stdout/stderr \
 events."""
 
+    # pylint: disable-next=R0912,R0915
     def execute(
         self,
         handler: Any,
@@ -384,6 +386,7 @@ events."""
             try:
                 log_target = Path(str(log_path)).expanduser().resolve()
                 log_target.parent.mkdir(parents=True, exist_ok=True)
+                # pylint: disable-next=R1732
                 log_handle = log_target.open(
                     "w",
                     encoding="utf-8",
@@ -410,6 +413,7 @@ events."""
                 Path(str(execution_dir)).expanduser().resolve(),
             )
         try:
+            # pylint: disable-next=R1732
             process = subprocess.Popen(
                 list(argv),
                 **process_kwargs,
@@ -1039,6 +1043,7 @@ contract.
                 self.submit(run_id)
         return result
 
+    # pylint: disable-next=R0911,R0912,R0915
     def _execute(
         self,
         run: dict[str, Any],

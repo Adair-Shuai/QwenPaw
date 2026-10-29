@@ -396,6 +396,7 @@ def list_job_events(
     ]
 
 
+# pylint: disable-next=R0911
 def is_pid_ours(
     pid: int,
     expected_start_ts: float,
@@ -455,6 +456,7 @@ token."""
         return False
 
 
+# pylint: disable-next=R0911
 def is_pid_alive(pid: int) -> bool:
     if pid <= 0:
         return False

@@ -133,6 +133,7 @@ itself)."""
     ) -> ToolExecResult:
         """Execute ``tool_name`` with ``params`` and return a normalised \
 result."""
+        del context
         tool = self._registry.get(tool_name)
         if tool is None:
             return ToolExecResult(

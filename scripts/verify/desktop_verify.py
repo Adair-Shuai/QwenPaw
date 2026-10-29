@@ -1002,6 +1002,7 @@ def _run_llm_with_retry(
 # =============================================================================
 
 
+# pylint: disable-next=R0915
 def main() -> int:
     parser = argparse.ArgumentParser(
         description=(

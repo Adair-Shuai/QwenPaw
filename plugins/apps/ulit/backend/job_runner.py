@@ -295,6 +295,7 @@ async def _execute_job(job: dict, ctx: Any) -> None:
 
 async def _handle_import_file(job_id: str, payload: dict, ctx: Any) -> None:
     """Handle PDF file import job."""
+    del ctx
     file_data_b64 = payload.get("file_data")
     filename = payload.get("filename", "upload.pdf")
     project_id = payload.get("project_id")
@@ -347,6 +348,7 @@ async def _handle_import_file(job_id: str, payload: dict, ctx: Any) -> None:
 
 async def _handle_parse_document(job_id: str, payload: dict, ctx: Any) -> None:
     """Handle document parsing job."""
+    del ctx
     file_id = payload.get("file_id")
     if not file_id:
         raise ValueError("file_id required")
@@ -413,6 +415,7 @@ async def _handle_answer_question(
 
 async def _handle_export(job_id: str, payload: dict, ctx: Any) -> None:
     """Handle export job."""
+    del ctx
     from .services import ExportService
 
     fmt = payload.get("format", "markdown")
@@ -440,6 +443,8 @@ async def _handle_export(job_id: str, payload: dict, ctx: Any) -> None:
             raise ValueError("project_id required for CSV export")
         import csv as _csv
         import io as _io
+
+        # pylint: disable-next=W0621
         from . import repository as repo
 
         evidence = await asyncio.to_thread(repo.list_evidence, project_id)

@@ -33,6 +33,7 @@ def convert_to_boundary_surface(
     Returns:
         Dict with reduced positions/indices/cell_ids for boundary only.
     """
+    del actnum, indices
     # Build a face → cell mapping to detect shared (interior) faces
     # Each cell has 6 faces, each face is 2 triangles (6 indices)
     # Face vertex signatures are sorted for comparison

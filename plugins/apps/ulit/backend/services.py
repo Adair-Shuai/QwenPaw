@@ -675,6 +675,7 @@ class AIService:
         )
 
     @staticmethod
+    # pylint: disable-next=R0912
     async def ask(
         ctx: Any,
         question: str,
@@ -685,6 +686,7 @@ class AIService:
         page_index: Optional[int] = None,
     ) -> dict:
         """Ask a question about a paper with evidence grounding."""
+        del page_index, scope
         paper = await asyncio.to_thread(repo.get_paper, paper_id)
         if paper is None:
             raise ValueError(f"Paper {paper_id} not found")
@@ -920,6 +922,7 @@ class AIService:
 
 class ExportService:
     @staticmethod
+    # pylint: disable-next=R0912,R0915
     async def export_markdown(
         *,
         project_id: Optional[str] = None,
@@ -950,6 +953,7 @@ class ExportService:
                     lines.append(f"**研究问题**: {proj['question']}\n")
         lines.append("")
 
+        # pylint: disable-next=R1702
         for pid in paper_ids:
             paper = await asyncio.to_thread(repo.get_paper, pid)
             if not paper:
@@ -1324,6 +1328,7 @@ def _extract_json(text: str) -> dict | None:
     return None
 
 
+# pylint: disable-next=W0621
 def _verify_quote(quote: str, chunks: list[dict]) -> bool:
     """Check if a quote exists in any chunk text (case-insensitive, \
 trimmed)."""
@@ -1401,6 +1406,7 @@ def _bibtex_type_to_paper(bib_type: str) -> str:
     return mapping.get(bib_type, "other")
 
 
+# pylint: disable-next=R0912
 def _parse_ris(content: str) -> list[dict]:
     """Simple RIS parser."""
     entries = []

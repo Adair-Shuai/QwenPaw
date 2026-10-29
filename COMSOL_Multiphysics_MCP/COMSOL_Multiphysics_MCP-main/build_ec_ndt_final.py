@@ -147,8 +147,8 @@ B_array = np.atleast_1d(np.array(B_norm, dtype=float))
 B_max = float(np.max(B_array))
 B_mean = float(np.mean(B_array))
 print(f"Bmax = {B_max:.10f} T")
-print(f"Bmax = {B_max*1000:.3f} mT")
-print(f"Mean |B| = {B_mean*1000:.3f} mT")
+print(f"Bmax = {B_max * 1000:.3f} mT")
+print(f"Mean |B| = {B_mean * 1000:.3f} mT")
 
 # Save
 model.save(r"C:\Users\nguye\EC_NDT_Model.mph")

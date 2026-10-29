@@ -141,6 +141,7 @@ def _tool_func_matches_name(tool_func: Callable, tool_name: str) -> bool:
     return getattr(desc, "name", None) == tool_name
 
 
+# pylint: disable-next=R0912
 def _bridge_to_runtime(
     tool_name: str,
     tool_func: Callable,
@@ -347,6 +348,7 @@ def _agent_ids_for_tool_write() -> list[str]:
     return agent_ids
 
 
+# pylint: disable-next=R0915
 def _write_tool_config(
     tool_name: str,
     enabled: bool,
@@ -1864,6 +1866,7 @@ class PluginApi:  # pylint: disable=too-many-public-methods
         if self._registry:
             self._registry.set_tool_config(tool_name, agent_id, config)
 
+    # pylint: disable-next=R0915
     def register_tool(
         self,
         tool_name: str,

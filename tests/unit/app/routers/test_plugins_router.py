@@ -132,9 +132,15 @@ def test_external_upgrade_archive_must_match_catalog_entry(tmp_path):
         )
 
 
+@pytest.mark.parametrize(
+    "interrupt_tasks,busy",
+    [(False, False), (False, True), (True, True)],
+)
 def test_replace_installed_plugin_uses_backend_lifecycle(
     monkeypatch,
     tmp_path,
+    interrupt_tasks,
+    busy,
 ):
     plugins_dir = tmp_path / "plugins"
     installed = plugins_dir / "external-plugin"
@@ -152,8 +158,19 @@ def test_replace_installed_plugin_uses_backend_lifecycle(
 
     calls = []
 
-    async def fake_load(loader, request, source_path, *, force):
-        calls.append((loader, request, source_path, force))
+    async def fake_load(
+        loader,
+        request,
+        source_path,
+        *,
+        force,
+        interrupt_tasks=False,
+    ):
+        from qwenpaw.plugins.activity import PluginBusyError
+
+        calls.append((loader, request, source_path, force, interrupt_tasks))
+        if busy and not interrupt_tasks:
+            raise PluginBusyError("external-plugin", 1, can_interrupt=True)
         return SimpleNamespace(
             manifest=SimpleNamespace(
                 id="external-plugin",
@@ -176,26 +193,38 @@ def test_replace_installed_plugin_uses_backend_lifecycle(
         app=SimpleNamespace(state=SimpleNamespace(plugin_loader=loader)),
     )
 
-    result = asyncio.run(
-        plugin_router.replace_installed_plugin(
-            plugin_router.ReplacePluginRequest(
-                source=(
-                    "https://download.qwenpaw.agentscope.io/"
-                    "external-plugin.zip"
-                ),
-                plugin_id="external-plugin",
-                version="2.0.0",
-                sha256=digest,
+    operation = plugin_router.replace_installed_plugin(
+        plugin_router.ReplacePluginRequest(
+            source=(
+                "https://download.qwenpaw.agentscope.io/" "external-plugin.zip"
             ),
-            request,
+            plugin_id="external-plugin",
+            version="2.0.0",
+            sha256=digest,
+            interrupt_tasks=interrupt_tasks,
         ),
+        request,
     )
+    if busy and not interrupt_tasks:
+        with pytest.raises(HTTPException) as caught:
+            asyncio.run(operation)
+        assert caught.value.status_code == 409
+        assert caught.value.detail["code"] == "plugin_busy"
+        assert caught.value.detail["can_interrupt"] is True
+        assert len(calls) == 1, "Busy rejection must not trigger rollback"
+        assert (
+            json.loads((installed / "plugin.json").read_text())["version"]
+            == "1.0.0"
+        )
+        return
+    result = asyncio.run(operation)
 
     assert result["id"] == "external-plugin"
     assert result["version"] == "2.0.0"
     assert result["restart_required"] is True
     assert len(calls) == 1
     assert calls[0][3] is True
+    assert calls[0][4] is interrupt_tasks
     backup = result["backup_path"]
     assert backup is not None
     with open(f"{backup}/plugin.json", encoding="utf-8") as handle:
@@ -246,9 +275,11 @@ def test_replace_installed_plugin_rejects_unapproved_host():
     assert "approved external catalog" in caught.value.detail
 
 
+@pytest.mark.parametrize("active_invocation", [False, True])
 def test_replace_installed_plugin_full_isolated_lifecycle(
     monkeypatch,
     tmp_path,
+    active_invocation,
 ):
     """Exercise ZIP verification, backup, disk swap and real hot reload."""
     plugin_id = "isolated-upgrade-lifecycle"
@@ -321,20 +352,52 @@ def test_replace_installed_plugin_full_isolated_lifecycle(
         app=SimpleNamespace(state=SimpleNamespace(plugin_loader=loader)),
     )
 
-    result = asyncio.run(
-        plugin_router.replace_installed_plugin(
-            plugin_router.ReplacePluginRequest(
-                source=(
-                    "https://download.qwenpaw.agentscope.io/"
-                    "isolated-upgrade-lifecycle-1.1.0.zip"
-                ),
-                plugin_id=plugin_id,
-                version="1.1.0",
-                sha256=digest,
+    async def upgrade():
+        body = plugin_router.ReplacePluginRequest(
+            source=(
+                "https://download.qwenpaw.agentscope.io/"
+                "isolated-upgrade-lifecycle-1.1.0.zip"
             ),
-            request,
-        ),
-    )
+            plugin_id=plugin_id,
+            version="1.1.0",
+            sha256=digest,
+        )
+        if not active_invocation:
+            return await plugin_router.replace_installed_plugin(body, request)
+        entered = asyncio.Event()
+
+        async def invoke():
+            with loader.lifecycle.activity(plugin_id).invocation():
+                entered.set()
+                await asyncio.Future()
+
+        task = asyncio.create_task(invoke())
+        try:
+            await entered.wait()
+            with pytest.raises(HTTPException) as caught:
+                await plugin_router.replace_installed_plugin(body, request)
+            assert caught.value.status_code == 409
+            assert caught.value.detail["can_interrupt"] is True
+            assert not task.done()
+            assert (
+                loader.get_loaded_plugin(plugin_id).manifest.version == "1.0.0"
+            )
+            assert (
+                json.loads((installed / "plugin.json").read_text())["version"]
+                == "1.0.0"
+            )
+            body.interrupt_tasks = True
+            result = await plugin_router.replace_installed_plugin(
+                body,
+                request,
+            )
+            assert task.cancelled()
+            return result
+        finally:
+            task.cancel()
+            await asyncio.gather(task, return_exceptions=True)
+
+    result = asyncio.run(upgrade())
 
     assert result["version"] == "1.1.0"
     assert loader.get_loaded_plugin(plugin_id).manifest.version == "1.1.0"

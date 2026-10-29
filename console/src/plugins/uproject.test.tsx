@@ -701,11 +701,11 @@ describe("UProject shipped workspace", () => {
       return "blob:uproject-test";
     });
     vi.spyOn(URL, "revokeObjectURL").mockImplementation(() => {});
-    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
-      function (this: HTMLAnchorElement) {
-        filenames.push(this.download);
-      },
-    );
+    vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      filenames.push(this.download);
+    });
     await open();
     change("搜索项目", "压裂");
     expect(screen.getAllByRole("button", { name: /^打开项目：/ })).toHaveLength(

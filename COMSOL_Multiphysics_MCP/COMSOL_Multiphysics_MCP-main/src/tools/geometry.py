@@ -294,7 +294,7 @@ geometry)
             if error:
                 return {"success": False, "error": error}
 
-            feat_name = feature_name or f"blk{len(geom.feature())+1}"
+            feat_name = feature_name or f"blk{len(geom.feature()) + 1}"
             block = geom.feature().create(feat_name, "Block")
 
             block.set("pos", [str(p) for p in position])
@@ -358,7 +358,7 @@ geometry)
             if error:
                 return {"success": False, "error": error}
 
-            feat_name = feature_name or f"cyl{len(geom.feature())+1}"
+            feat_name = feature_name or f"cyl{len(geom.feature()) + 1}"
             cyl = geom.feature().create(feat_name, "Cylinder")
 
             cyl.set("pos", [str(p) for p in position])
@@ -426,7 +426,7 @@ def _register_geometry_group_3(mcp):
             if error:
                 return {"success": False, "error": error}
 
-            feat_name = feature_name or f"sph{len(geom.feature())+1}"
+            feat_name = feature_name or f"sph{len(geom.feature()) + 1}"
             sphere = geom.feature().create(feat_name, "Sphere")
 
             sphere.set("pos", [str(p) for p in position])
@@ -488,7 +488,7 @@ def _register_geometry_group_3(mcp):
             if error:
                 return {"success": False, "error": error}
 
-            feat_name = feature_name or f"r{len(geom.feature())+1}"
+            feat_name = feature_name or f"r{len(geom.feature()) + 1}"
             rect = geom.feature().create(feat_name, "Rectangle")
 
             rect.set("pos", [str(p) for p in position])
@@ -678,7 +678,7 @@ def _register_geometry_group_5(mcp):
             if error:
                 return {"success": False, "error": error}
 
-            feat_name = feature_name or f"dif{len(geom.feature())+1}"
+            feat_name = feature_name or f"dif{len(geom.feature()) + 1}"
             diff = geom.feature().create(feat_name, "Difference")
 
             diff.selection("input").set([input_object])

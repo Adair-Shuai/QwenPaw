@@ -159,9 +159,10 @@ class SandboxProcess:
                     stdin_handle=reader,
                 )
             else:
-                handles = tuple(
-                    msvcrt.get_osfhandle(stream.fileno())
-                    for stream in (reader, writer, writer)
+                handles = (
+                    msvcrt.get_osfhandle(reader.fileno()),
+                    msvcrt.get_osfhandle(writer.fileno()),
+                    msvcrt.get_osfhandle(writer.fileno()),
                 )
                 for handle in set(handles):
                     os.set_handle_inheritable(handle, True)

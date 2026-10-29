@@ -9,9 +9,11 @@ export function removePluginRuntime(pluginId: string): void {
   // OpenUI also publishes an optional renderer shared with Run Center.
   // Revoke it with the owning plugin, including when its disposer fails.
   if (pluginId === "qwenpaw-openui" && typeof window !== "undefined") {
-    const namespace = (window as unknown as {
-      QwenPaw?: { openui?: { dispose?: () => void } };
-    }).QwenPaw;
+    const namespace = (
+      window as unknown as {
+        QwenPaw?: { openui?: { dispose?: () => void } };
+      }
+    ).QwenPaw;
     const runtime = namespace?.openui;
     try {
       runtime?.dispose?.();

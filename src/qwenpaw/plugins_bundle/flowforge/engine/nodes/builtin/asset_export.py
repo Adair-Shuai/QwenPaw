@@ -183,6 +183,7 @@ class AssetExportNode(WorkflowNode):
     ) -> dict[str, bytes]:
         """Best-effort fetch of managed asset bytes by file id for \
 embedding."""
+        del hidden
         out: dict[str, bytes] = {}
         file_service = None
         try:

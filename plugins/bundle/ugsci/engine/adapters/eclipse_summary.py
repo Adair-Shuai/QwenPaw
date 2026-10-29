@@ -125,6 +125,7 @@ def _series_name(keyword: str, wgname: str, number: int | None) -> str:
     return keyword
 
 
+# pylint: disable-next=R0912,R0915
 def _fallback_read(
     spec: Path,
     unsmry: Path,

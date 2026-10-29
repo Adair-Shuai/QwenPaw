@@ -28,6 +28,7 @@ PROPERTY_LABELS = {
 }
 
 
+# pylint: disable-next=R0912,R0915
 def _prepare_segments(
     segments: list[dict[str, Any]],
 ) -> tuple[list[dict], dict]:

@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any, Sequence
 
 
+# pylint: disable-next=R0912
 def create_ijk_slice(
     positions: Sequence[float],
     indices: Sequence[int],

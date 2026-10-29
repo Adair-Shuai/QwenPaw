@@ -2,7 +2,7 @@
   "id": "modelscope-hub",
   "name": "ModelScope Skill Hub",
   "publish": false,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "hub",
   "description": "ModelScope Skill marketplace source.",
   "author": "QwenPaw Team",

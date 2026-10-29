@@ -126,10 +126,17 @@ describe("qwenpaw-run-center frontend bundle", () => {
     let status = "running";
     const fetchMock = vi.fn(async (url: string, init?: RequestInit) => {
       if (url.endsWith("/sim/jobs/native-1/results")) {
-        return new Response(JSON.stringify({
-          schema_version: 1, run_id: "native-1", status, finalized: false,
-          capabilities: { checkpoint_resume: true }, metrics: [], series: [],
-        }));
+        return new Response(
+          JSON.stringify({
+            schema_version: 1,
+            run_id: "native-1",
+            status,
+            finalized: false,
+            capabilities: { checkpoint_resume: true },
+            metrics: [],
+            series: [],
+          }),
+        );
       }
       if (url.endsWith("/pause") && init?.method === "POST") {
         status = "paused";
@@ -205,7 +212,9 @@ describe("qwenpaw-run-center frontend bundle", () => {
     await waitFor(() =>
       expect(screen.getByText("solver iteration 12")).toBeInTheDocument(),
     );
-    await waitFor(() => expect(screen.getByRole("button", { name: "暂停" })).toBeEnabled());
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "暂停" })).toBeEnabled(),
+    );
     expect(screen.getByRole("button", { name: "取消" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "克隆" })).toBeInTheDocument();
     expect(intervalSpy).toHaveBeenCalledWith(expect.any(Function), 3000);

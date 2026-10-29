@@ -244,6 +244,7 @@ snapshot."""
         wf.cleanup()
         self.deactivate()
 
+    # pylint: disable-next=R0911
     def restore(
         self,
         workspace_dir: Path,
@@ -408,6 +409,7 @@ snapshot."""
 
         return False
 
+    # pylint: disable-next=R0912
     async def check(  # pylint: disable=too-many-return-statements
         self,
         ctx: Any,

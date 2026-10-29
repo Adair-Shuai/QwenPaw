@@ -327,6 +327,7 @@ class NodeRegistry:
         self._new_classes: dict[str, type] = {}
 
     def register(self, node, *, module_path: str | None = None):
+        del module_path
         if isinstance(node, type):
             # New-style Schema-driven node class
             if hasattr(node, "define_schema") and hasattr(node, "execute"):

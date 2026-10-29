@@ -122,7 +122,8 @@
     ],
     "inventory": [
       "tests/unit/verify/test_fork_regression_inventory.py",
-      "tests/unit/verify/test_pylint_namespace.py"
+      "tests/unit/verify/test_pylint_namespace.py",
+      "tests/unit/scripts/test_check_plugin_sdk_artifacts.py"
     ],
     "upstream_merge": [
       "tests/unit/plugins/test_upstream_merge_compat.py",
@@ -279,7 +280,8 @@
       "test_explicit_beta_minimum_preserves_required_api_boundary",
       "test_shipped_plugins_keep_major_version_compatibility_boundary",
       "test_repaired_market_archives_cover_b2_and_advance_versions",
-      "test_memory_market_release_advances_incompatible_published_version"
+      "test_memory_market_release_advances_incompatible_published_version",
+      "test_data_app_compatibility_release_advances_version_before_build"
     ],
     "tests/unit/plugins/test_plugin_uninstall_tombstones.py": [
       "test_api_uninstall_persists_tombstone_before_deleting",
@@ -297,7 +299,8 @@
       "test_installs_serialised_through_shared_target_lock"
     ],
     "tests/unit/app/routers/test_plugins_router.py": [
-      "test_replace_installed_plugin_full_isolated_lifecycle"
+      "test_replace_installed_plugin_full_isolated_lifecycle",
+      "test_replace_installed_plugin_uses_backend_lifecycle"
     ],
     "tests/unit/app/routers/test_plugins_router_lifecycle.py": [
       "test_failed_plugin_removal_preserves_tool_config",
@@ -589,6 +592,9 @@
       "test_http_pending_ai_cannot_write_after_demo_reset",
       "test_http_minutes_commit_is_atomic_on_storage_failure",
       "test_legacy_generation_is_stable_and_last_project_deletion_stays_empty"
+    ],
+    "tests/unit/scripts/test_check_plugin_sdk_artifacts.py": [
+      "test_exported_author_suite_collects_outside_checkout"
     ]
   }
 }

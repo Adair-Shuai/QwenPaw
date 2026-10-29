@@ -163,6 +163,7 @@ async def ulit_get_paper(paper_id: str) -> dict:
     icon="📖",
     enabled=True,
 )
+# pylint: disable-next=R0911
 async def ulit_read_evidence(
     paper_id: str,
     kind: str = "evidence",

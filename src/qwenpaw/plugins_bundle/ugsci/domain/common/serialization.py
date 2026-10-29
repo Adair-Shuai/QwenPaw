@@ -79,6 +79,7 @@ def to_python_list(values: Any) -> list[float | None]:
     return result
 
 
+# pylint: disable-next=R0911,R0912
 def sanitize_json(value: Any) -> Any:
     """Recursively sanitize a value for JSON serialization.
 

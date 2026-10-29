@@ -3,6 +3,7 @@
 
 All data is synthetic. No user chats, credentials or external model are used.
 """
+# pylint: disable=protected-access  # White-box host lifecycle contracts.
 
 import asyncio
 import json
@@ -390,7 +391,7 @@ def test_interrupted_publish_can_retry_without_replacing_immutable_snapshot(
     flow,
     monkeypatch,
 ):
-    import plugins.bundle.ugsci.team.artifacts as artifacts
+    from plugins.bundle.ugsci.team import artifacts
 
     flow.phase("dispatch")
     attempt = flow.call("prepare_result", step=1, task_id="task")
@@ -493,6 +494,7 @@ def test_plan_rejects_cycles_missing_dependencies_and_duplicate_steps(
         "debate",
     ],
 )
+# pylint: disable-next=R0915
 async def test_system_host_sdk_workflow_rework_restart_and_history(
     tmp_path,
     style,
@@ -683,9 +685,11 @@ HTTP API."""
         restored_ws.plugins = WorkspacePlugins()
         restored = UGSciTeamMode()
         restored_ws.plugins.register_mode(restored, restored_ws)
-        assert (
-            restored_ws.plugins.tool_registry.filter(active_modes=set()) == []
+        matching_tools = restored_ws.plugins.tool_registry.filter(
+            active_modes=set(),
         )
+        assert isinstance(matching_tools, list)
+        assert not matching_tools
         await restored_ws.plugins.hook_registry.run(Phase.PRE_AGENT_BUILD, ctx)
         assert (
             restored.is_active(ctx)

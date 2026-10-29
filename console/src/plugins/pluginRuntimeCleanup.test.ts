@@ -104,12 +104,24 @@ describe("plugin runtime cleanup", () => {
       openui?: { dispose: () => void };
     };
     const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    namespace.openui = { dispose: () => { throw new Error("fixture cleanup failure"); } };
-    routeRegistry.add("qwenpaw-openui", { id: "openui.fixture", path: "/fixture", component: () => null });
+    namespace.openui = {
+      dispose: () => {
+        throw new Error("fixture cleanup failure");
+      },
+    };
+    routeRegistry.add("qwenpaw-openui", {
+      id: "openui.fixture",
+      path: "/fixture",
+      component: () => null,
+    });
     try {
       removePluginRuntime("qwenpaw-openui");
       expect(namespace.openui).toBeUndefined();
-      expect(routeRegistry.snapshot().some((route) => route.source === "qwenpaw-openui")).toBe(false);
+      expect(
+        routeRegistry
+          .snapshot()
+          .some((route) => route.source === "qwenpaw-openui"),
+      ).toBe(false);
       expect(warn).toHaveBeenCalledOnce();
     } finally {
       delete namespace.openui;

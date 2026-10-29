@@ -189,6 +189,7 @@ class UGSciTeamMode(UGSciModeBase):
         """Run the registered team command with controller ownership checks."""
         return await self._handler(ctx, args)
 
+    # pylint: disable-next=R0911,R0912,R0915
     async def _handler(
         self,
         ctx: "Any",
@@ -350,6 +351,7 @@ class UGSciTeamMode(UGSciModeBase):
 # ── Argument parsing ──────────────────────────────────────────────────
 
 
+# pylint: disable-next=R0911
 def _parse_args(raw: str) -> dict | None:
     """Parse /ugsci-team arguments.
 

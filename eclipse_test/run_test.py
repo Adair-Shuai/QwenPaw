@@ -23,6 +23,7 @@ sys.path.insert(0, str(repo_root / "src"))
 # and are imported as qwenpaw.plugins_bundle.ugsci.engine.tools.*
 
 
+# pylint: disable-next=R0912,R0915
 async def main():
     print("=" * 70)
     print("UGSci Simulation Tool Chain Test")
@@ -102,7 +103,7 @@ async def main():
                 text += block.text
         status_line = [line for line in text.splitlines() if "Status:" in line]
         if status_line:
-            print(f"   [{(i+1)*5}s] {status_line[0].strip()}")
+            print(f"   [{(i + 1) * 5}s] {status_line[0].strip()}")
 
         if "completed" in text.lower() or "failed" in text.lower():
             break

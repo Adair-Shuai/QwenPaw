@@ -96,6 +96,7 @@ def test_registry_and_runtime_readiness_are_distinct() -> None:
             if isinstance(state, str):
                 state_lines.setdefault(state, []).append(node.lineno)
         if (
+            # pylint: disable-next=R0916
             isinstance(node, ast.Call)
             and isinstance(node.func, ast.Attribute)
             and (

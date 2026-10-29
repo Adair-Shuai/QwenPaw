@@ -45,6 +45,7 @@ VectorRetriever = retriever.VectorRetriever
 DEFAULT_DB_DIR = retriever.DEFAULT_DB_DIR
 
 
+# pylint: disable-next=R0912,R0915
 def main():
     parser = argparse.ArgumentParser(
         description="Build COMSOL documentation knowledge base",
@@ -129,6 +130,7 @@ def main():
             print(f"    ... and {len(modules) - 20} more")
 
         # Check existing database
+        # pylint: disable-next=W0621
         retriever = VectorRetriever(pdf_dir, db_dir)
         stats = retriever.get_stats()
         print(f"\n[4] Existing knowledge base:")
@@ -178,7 +180,7 @@ def main():
         print(f"    Query: 'electrostatic field'")
         print(f"    Results: {len(results)}")
         for i, r in enumerate(results):
-            print(f"    [{i+1}] Module: {r.module}, Score: {r.score:.3f}")
+            print(f"    [{i + 1}] Module: {r.module}, Score: {r.score:.3f}")
             # Filter non-ASCII chars for Windows console compatibility
             preview = r.text[:100].encode("ascii", "replace").decode("ascii")
             print(f"        Preview: {preview}...")

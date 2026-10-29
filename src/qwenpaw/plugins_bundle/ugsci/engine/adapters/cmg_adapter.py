@@ -124,6 +124,7 @@ class CMGAdapter(BaseSimAdapter):
         re.IGNORECASE,
     )
 
+    # pylint: disable-next=R0912
     def parse_progress(self, working_dir: str | Path) -> SimProgress:
         progress = SimProgress()
         log_file = self.find_log_file(working_dir)
@@ -241,6 +242,7 @@ class CMGAdapter(BaseSimAdapter):
                 return max(matches, key=lambda path: path.stat().st_mtime)
         return None
 
+    # pylint: disable-next=R0912
     def read_summary(
         self,
         working_dir: str | Path,

@@ -18,6 +18,7 @@ import logging
 _logger = logging.getLogger("qwenpaw.plugin.ugsci.sim")
 
 
+# pylint: disable-next=R0911,R0912,R0915
 async def edit_simulation_deck(
     deck_file: str,
     keyword: str,

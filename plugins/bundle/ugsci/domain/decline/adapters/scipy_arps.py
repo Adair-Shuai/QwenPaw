@@ -120,6 +120,7 @@ class ScipyArpsAdapter:
             results.append(safe_float(rate))
         return results
 
+    # pylint: disable-next=R0911
     def cumulative(self, fit: DeclineFit, start: float, end: float) -> float:
         """Compute cumulative production between ``start`` and ``end``.
 
@@ -242,6 +243,7 @@ class ScipyArpsAdapter:
             return fit.qi / (1 + b * fit.di * t) ** (1 / b)
         return 0.0
 
+    # pylint: disable-next=R0912,R0915
     def _fit_single_model(
         self,
         model: DeclineModel,

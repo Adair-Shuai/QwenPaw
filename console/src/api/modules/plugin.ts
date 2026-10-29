@@ -131,7 +131,11 @@ function comparePluginVersions(a: string, b: string): number {
       .replace(/^v/i, "")
       .split(/[.+-]/)
       .flatMap((part) => part.match(/\d+|[a-z]+/gi) ?? [])
-      .map((part) => (/^\d+$/.test(part) ? Number(part) : part.toLowerCase()));
+      .map((part) => {
+        if (/^\d+$/.test(part)) return Number(part);
+        const label = part.toLowerCase();
+        return label === "alpha" ? "a" : label === "beta" ? "b" : label;
+      });
   const left = tokenize(a);
   const right = tokenize(b);
   const length = Math.max(left.length, right.length);
@@ -172,16 +176,19 @@ function localizedValue(
 
 function isCompatible(entry: RemoteCatalogFile, appVersion: string): boolean {
   if (!appVersion || !entry.qwenpaw_version) return true;
-  // Match the backend: prerelease hosts use their base release for bounds.
-  const hostVersion = appVersion
-    .trim()
-    .replace(/^v/i, "")
-    .replace(
-      /^(\d+\.\d+\.\d+)[.-]?(?:alpha|beta|rc|a|b)\.?\d+(?:\+.*)?$/i,
-      "$1",
-    );
+  // Stable bounds use the upcoming release; an explicit beta minimum
+  // preserves the API boundary between beta builds, as the backend does.
+  const installedVersion = appVersion.trim().replace(/^v/i, "");
+  const hostVersion = installedVersion.replace(
+    /^(\d+\.\d+\.\d+)[.-]?(?:alpha|beta|rc|a|b)\.?\d+(?:\+.*)?$/i,
+    "$1",
+  );
   const { min, max } = entry.qwenpaw_version;
-  if (min && comparePluginVersions(hostVersion, min) < 0) return false;
+  const lowerVersion =
+    min && /(?:alpha|beta|rc|a|b)[.-]?\d+(?:\+.*)?$/i.test(min)
+      ? installedVersion
+      : hostVersion;
+  if (min && comparePluginVersions(lowerVersion, min) < 0) return false;
   if (max && comparePluginVersions(hostVersion, max) >= 0) return false;
   return true;
 }
@@ -353,23 +360,30 @@ export async function replaceInstalledPlugin(options: {
   version?: string;
   sha256?: string;
 }): Promise<RuntimePluginReplaceResult> {
-  const response = await fetch(getApiUrl("/plugins/replace"), {
-    method: "POST",
-    headers: {
-      ...buildAuthHeaders(),
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      source: options.source,
-      plugin_id: options.pluginId,
-      version: options.version,
-      sha256: options.sha256,
-    }),
-  });
+  const response = await requestWithPluginBusyConfirmation(
+    (interruptTasks) =>
+      fetch(getApiUrl("/plugins/replace"), {
+        method: "POST",
+        headers: {
+          ...buildAuthHeaders(),
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          source: options.source,
+          plugin_id: options.pluginId,
+          version: options.version,
+          sha256: options.sha256,
+          ...(interruptTasks ? { interrupt_tasks: true } : {}),
+        }),
+      }),
+    "update",
+  );
   if (!response.ok) {
-    const body = await response.json().catch(() => ({}));
     throw new Error(
-      body.detail ?? `Plugin upgrade failed (${response.status})`,
+      await responseErrorMessage(
+        response,
+        `Plugin upgrade failed (${response.status})`,
+      ),
     );
   }
   const result = await response.json();

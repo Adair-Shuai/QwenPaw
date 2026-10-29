@@ -93,6 +93,7 @@ agent nodes."""
         a single turn with the given prompt.  Agent output (text deltas,
         tool calls, results) is yielded as ``AgentEvent`` objects.
         """
+        del session_id, tool_extra
         agent_name = definition.name
 
         # Try to get the workspace for this agent
@@ -148,6 +149,7 @@ agent nodes."""
         ``steps_count``, ``checkpoint_id``, ``activity``, ``produced_files``,
         ``partial``, ``changed_files``, ``error``.
         """
+        del log_event, log_fields
         events = self.stream(
             definition,
             prompt,
@@ -268,6 +270,8 @@ agent nodes."""
         workspace: Any,
         prompt: str,
         definition: AgentDefinition,
+        # Kept for the common agent invocation signature.
+        # pylint: disable-next=unused-argument
         cwd: str,
         abort_event: asyncio.Event | None,
         *,

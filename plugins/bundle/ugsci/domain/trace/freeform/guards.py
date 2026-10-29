@@ -155,6 +155,7 @@ def with_timeout(seconds: float | None, func, *args, **kwargs):
     if seconds is None or seconds <= 0:
         return func(*args, **kwargs)
 
+    # pylint: disable-next=R1732
     if not _TRANSFORM_SLOT.acquire(blocking=False):
         raise _ff_errors.guard_exceeded(
             "MAX_TRANSFORM_CONCURRENCY",

@@ -72,9 +72,11 @@ def _key() -> bytes:
     except (ImportError, OSError):
         # A process fallback keeps restricted/read-only environments usable.
         if not hasattr(_key, "_fallback"):
+            # pylint: disable-next=protected-access
             _key._fallback = secrets.token_bytes(  # type: ignore[attr-defined]
                 32,
             )
+        # pylint: disable-next=protected-access
         return _key._fallback  # type: ignore[attr-defined]
 
 

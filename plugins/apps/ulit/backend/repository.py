@@ -629,6 +629,7 @@ def create_annotation(
     *,
     file_id: str,
     page_index: int,
+    # pylint: disable-next=redefined-builtin
     type: str = "highlight",
     color: str = "#fbbf24",
     selected_text: str = "",
@@ -892,11 +893,11 @@ def update_ai_session(session_id: str, **fields: Any) -> dict | None:
     allowed = {"title", "qwen_session_id"}
     sets: list[str] = []
     vals: list[Any] = []
-    for k in fields:
+    for k, value in fields.items():
         if k not in allowed:
             continue
         sets.append(f"{k}=?")
-        vals.append(fields[k])
+        vals.append(value)
     if not sets:
         return get_ai_session(session_id)
     vals.append(session_id)
@@ -930,10 +931,10 @@ def update_ai_run(run_id: str, **fields: Any) -> None:
     vals: list[Any] = []
     # Build sets/vals by field name (not .index()) so identical values for
     # different fields (e.g. output_json == grounding_status) can't collide.
-    for k in fields:
+    for k, value in fields.items():
         if k not in allowed:
             continue
-        v = fields[k]
+        v = value
         if k == "output_json" and isinstance(v, (dict, list)):
             v = json.dumps(v, ensure_ascii=False)
         sets.append(f"{k}=?")

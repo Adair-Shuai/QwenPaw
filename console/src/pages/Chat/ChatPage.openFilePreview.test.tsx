@@ -361,24 +361,43 @@ describe("ChatPage message Markdown action", () => {
   it("UGSci simulation: the real chat opens the requested run and rejects another agent or session", async () => {
     renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
     await screen.findByTestId("chat-ui");
-    act(() => window.dispatchEvent(new CustomEvent("qwenpaw:open-simulation-workbench", {
-      detail: { runId: "sim_demo", agentId: "default", sessionId: "new" },
-    })));
-    expect(useFilesSurfaceStore.getState().sessionDrawers["session:default:new"])
-      .toMatchObject({ kind: "workspace", mode: "simulation", simulationRunId: "sim_demo" });
-    act(() => {
-      window.dispatchEvent(new CustomEvent("qwenpaw:open-simulation-workbench", {
-        detail: { runId: "wrong_agent", agentId: "other", sessionId: "new" },
-      }));
-      window.dispatchEvent(new CustomEvent("qwenpaw:open-simulation-workbench", {
-        detail: { runId: "wrong_session", agentId: "default", sessionId: "other" },
-      }));
+    act(() =>
+      window.dispatchEvent(
+        new CustomEvent("qwenpaw:open-simulation-workbench", {
+          detail: { runId: "sim_demo", agentId: "default", sessionId: "new" },
+        }),
+      ),
+    );
+    expect(
+      useFilesSurfaceStore.getState().sessionDrawers["session:default:new"],
+    ).toMatchObject({
+      kind: "workspace",
+      mode: "simulation",
+      simulationRunId: "sim_demo",
     });
-    expect(useFilesSurfaceStore.getState().sessionDrawers["session:default:new"])
-      .toMatchObject({ simulationRunId: "sim_demo" });
+    act(() => {
+      window.dispatchEvent(
+        new CustomEvent("qwenpaw:open-simulation-workbench", {
+          detail: { runId: "wrong_agent", agentId: "other", sessionId: "new" },
+        }),
+      );
+      window.dispatchEvent(
+        new CustomEvent("qwenpaw:open-simulation-workbench", {
+          detail: {
+            runId: "wrong_session",
+            agentId: "default",
+            sessionId: "other",
+          },
+        }),
+      );
+    });
+    expect(
+      useFilesSurfaceStore.getState().sessionDrawers["session:default:new"],
+    ).toMatchObject({ simulationRunId: "sim_demo" });
     act(() => openFilePreview({ source: "workspace", path: "after.txt" }));
-    expect(useFilesSurfaceStore.getState().sessionDrawers["session:default:new"])
-      .not.toHaveProperty("simulationRunId");
+    expect(
+      useFilesSurfaceStore.getState().sessionDrawers["session:default:new"],
+    ).not.toHaveProperty("simulationRunId");
   });
 
   it("UGSci simulation: accepts the current runtime session when its Chat UUID differs", async () => {
@@ -388,28 +407,59 @@ describe("ChatPage message Markdown action", () => {
     const originalIdentity = getIdentity.getMockImplementation()!;
     getIdentity.mockImplementation((id) => ({
       ...originalIdentity(id),
-      sessionId: id === chatId ? runtimeSessionId : originalIdentity(id).sessionId,
+      sessionId:
+        id === chatId ? runtimeSessionId : originalIdentity(id).sessionId,
     }));
-    const backgroundTasks = vi.spyOn(toolCallsApi, "list").mockResolvedValue({ items: [], total: 0 });
-    const view = renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    const backgroundTasks = vi
+      .spyOn(toolCallsApi, "list")
+      .mockResolvedValue({ items: [], total: 0 });
+    const view = renderWithProviders(<ChatPage />, {
+      initialEntries: [`/chat/${chatId}`],
+    });
     try {
       await screen.findByTestId("chat-ui");
       const key = `session:default:${chatId}`;
-      act(() => window.dispatchEvent(new CustomEvent("qwenpaw:open-simulation-workbench", {
-        detail: { runId: "sim_backend_session", agentId: "default", sessionId: runtimeSessionId },
-      })));
-      expect(useFilesSurfaceStore.getState().sessionDrawers[key])
-        .toMatchObject({ kind: "workspace", mode: "simulation", simulationRunId: "sim_backend_session" });
+      act(() =>
+        window.dispatchEvent(
+          new CustomEvent("qwenpaw:open-simulation-workbench", {
+            detail: {
+              runId: "sim_backend_session",
+              agentId: "default",
+              sessionId: runtimeSessionId,
+            },
+          }),
+        ),
+      );
+      expect(useFilesSurfaceStore.getState().sessionDrawers[key]).toMatchObject(
+        {
+          kind: "workspace",
+          mode: "simulation",
+          simulationRunId: "sim_backend_session",
+        },
+      );
       act(() => {
-        window.dispatchEvent(new CustomEvent("qwenpaw:open-simulation-workbench", {
-          detail: { runId: "wrong_agent", agentId: "other", sessionId: runtimeSessionId },
-        }));
-        window.dispatchEvent(new CustomEvent("qwenpaw:open-simulation-workbench", {
-          detail: { runId: "wrong_runtime_session", agentId: "default", sessionId: "unrelated-runtime-session" },
-        }));
+        window.dispatchEvent(
+          new CustomEvent("qwenpaw:open-simulation-workbench", {
+            detail: {
+              runId: "wrong_agent",
+              agentId: "other",
+              sessionId: runtimeSessionId,
+            },
+          }),
+        );
+        window.dispatchEvent(
+          new CustomEvent("qwenpaw:open-simulation-workbench", {
+            detail: {
+              runId: "wrong_runtime_session",
+              agentId: "default",
+              sessionId: "unrelated-runtime-session",
+            },
+          }),
+        );
       });
-      expect(useFilesSurfaceStore.getState().sessionDrawers[key])
-        .toMatchObject({ simulationRunId: "sim_backend_session" });
+      expect(useFilesSurfaceStore.getState().sessionDrawers[key]).toMatchObject(
+        { simulationRunId: "sim_backend_session" },
+      );
     } finally {
       view.unmount();
       getIdentity.mockImplementation(originalIdentity);

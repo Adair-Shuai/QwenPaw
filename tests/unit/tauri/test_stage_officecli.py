@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
+# pylint: disable=protected-access  # White-box host lifecycle contracts.
 from __future__ import annotations
+
 
 import importlib.util
 import hashlib

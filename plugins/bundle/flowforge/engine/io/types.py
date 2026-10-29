@@ -615,7 +615,7 @@ def types_compatible(upstream: str, downstream: str) -> bool:
     2. Exact string equality matches.
     3. Multi-type descriptors (``"A,B"``) match if the sets intersect.
     """
-    if upstream == WILDCARD_TYPE or downstream == WILDCARD_TYPE:
+    if WILDCARD_TYPE in (upstream, downstream):
         return True
     if upstream == downstream:
         return True

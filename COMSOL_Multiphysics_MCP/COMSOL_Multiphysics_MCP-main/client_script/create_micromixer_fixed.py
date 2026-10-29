@@ -125,16 +125,16 @@ outlet_boundary_found = None
 # Set boundary conditions using fallback boundary numbers
 print("    Using fallback boundary numbers (1, 3 for inlets, 2 for outlet)...")
 for i, bnd in enumerate([1, 3]):
-    inlet_tag = f"inl{i+1}"
+    inlet_tag = f"inl{i + 1}"
     try:
         inlet = spf.create(inlet_tag, "InletBoundary")
         inlet.selection().set([bnd])
         # U0in is the correct property name for inlet velocity
         inlet.set("U0in", "v_in")
-        inlet.label(f"Inlet {i+1} (Boundary {bnd})")
-        print(f"    Inlet {i+1} configured on boundary {bnd} with U0in=v_in")
+        inlet.label(f"Inlet {i + 1} (Boundary {bnd})")
+        print(f"    Inlet {i + 1} configured on boundary {bnd} with U0in=v_in")
     except Exception as e:
-        print(f"    Inlet {i+1} error: {e}")
+        print(f"    Inlet {i + 1} error: {e}")
 
 # Outlet
 try:
@@ -180,7 +180,7 @@ if solution_success:
         U = model.evaluate("spf.U", unit="m/s")
         print(f"    Velocity range: {np.min(U):.6f} to {np.max(U):.6f} m/s")
         print(f"    Mean velocity: {np.mean(U):.6f} m/s")
-        print(f"    Max velocity: {np.max(U)*1000:.4f} mm/s")
+        print(f"    Max velocity: {np.max(U) * 1000:.4f} mm/s")
 
         # Also check velocity components
         try:

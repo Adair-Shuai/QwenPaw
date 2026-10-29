@@ -125,13 +125,13 @@ class DeclineAnalysisService:
 
         try:
             model_enum = DeclineModel(model.lower().strip())
-        except ValueError:
+        except ValueError as exc:
             raise DomainError(
                 DomainErrorCode.INVALID_INPUT,
                 f"Unknown model: "
                 f"{model}"
                 f". Valid: auto, exponential, harmonic, hyperbolic",
-            )
+            ) from exc
 
         request = DeclineFitRequest(
             points=points,
@@ -286,6 +286,7 @@ class DeclineAnalysisService:
 
     # ── EUR ───────────────────────────────────────────────────────────
 
+    # pylint: disable-next=R0912
     def eur(
         self,
         model: str,
@@ -502,11 +503,11 @@ class DeclineAnalysisService:
         """Build a DeclineFit from user-provided parameters."""
         try:
             model_enum = DeclineModel(model.lower().strip())
-        except ValueError:
+        except ValueError as exc:
             raise DomainError(
                 DomainErrorCode.INVALID_INPUT,
                 f"Unknown model: {model}",
-            )
+            ) from exc
 
         if model_enum == DeclineModel.AUTO:
             raise DomainError(

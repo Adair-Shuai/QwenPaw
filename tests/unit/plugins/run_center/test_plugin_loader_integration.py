@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Exercise Run Center through the real PluginLoader namespace path."""
+# pylint: disable=protected-access  # White-box host lifecycle contracts.
 
 from __future__ import annotations
 

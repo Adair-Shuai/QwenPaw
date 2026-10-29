@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Regression tests for independently reproduced incremental update \
 failures."""
+# pylint: disable=protected-access  # White-box host lifecycle contracts.
 
 from pathlib import Path
 import base64
@@ -502,6 +503,7 @@ def test_startup_validates_runtime_before_pointer_and_defers_plugins(
     calls = []
 
     def install(component, manifest):
+        del manifest
         calls.append(component)
         updater._commit_active(component, "1.1.0", tmp_path / component)
         snapshot = updater.candidate_directory_records

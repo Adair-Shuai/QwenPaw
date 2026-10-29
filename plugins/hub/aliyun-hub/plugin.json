@@ -2,7 +2,7 @@
   "id": "aliyun-hub",
   "name": "Aliyun Skill Hub",
   "publish": false,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "hub",
   "description": "Aliyun Skill marketplace source.",
   "author": "QwenPaw Team",

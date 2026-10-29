@@ -114,6 +114,7 @@ class EclipseAdapter(BaseSimAdapter):
         re.IGNORECASE | re.MULTILINE,
     )
 
+    # pylint: disable-next=R0912
     def parse_progress(self, working_dir: str | Path) -> SimProgress:
         progress = SimProgress()
         log_file = self.find_log_file(working_dir)
@@ -269,6 +270,7 @@ class EclipseAdapter(BaseSimAdapter):
             unsmry if unsmry.is_file() else None,
         )
 
+    # pylint: disable-next=R0912,R0915
     def read_summary(
         self,
         working_dir: str | Path,

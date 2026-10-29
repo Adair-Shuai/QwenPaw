@@ -1,8 +1,25 @@
 import React from "react";
 import { readFileSync } from "node:fs";
 import path from "node:path";
-import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 import { installHostExternals } from "./hostExternals";
 import { installHostSdk } from "./hostSdk/install";
 import { removePluginRuntime } from "./pluginRuntimeCleanup";
@@ -33,10 +50,18 @@ const run = (capacity = 42) => ({
   run_id: "openui-integration-run",
   operation: "storage.capacity.evaluate",
   status: "succeeded",
-  payload: { result: {
-    metrics: { working_gas: { value: capacity, unit: "m³" } },
-    result: { answer: capacity, layers: [{ layer: "A", capacity: 30 }, { layer: "B", capacity: capacity - 30 }] },
-  } },
+  payload: {
+    result: {
+      metrics: { working_gas: { value: capacity, unit: "m³" } },
+      result: {
+        answer: capacity,
+        layers: [
+          { layer: "A", capacity: 30 },
+          { layer: "B", capacity: capacity - 30 },
+        ],
+      },
+    },
+  },
 });
 
 describe("published OpenUI and Run Center integration", () => {
@@ -64,9 +89,15 @@ describe("published OpenUI and Run Center integration", () => {
     // @ts-expect-error The generated release module intentionally has no source declarations.
     await import("../../../plugins/bundle/qwenpaw-openui/dist/index.js");
     // Run Center is the shipped host script, with no source rewriting or mocks.
-    new Function(readFileSync(path.resolve(
-      process.cwd(), "../plugins/bundle/qwenpaw-run-center/ui/dist/index.js",
-    ), "utf8"))();
+    new Function(
+      readFileSync(
+        path.resolve(
+          process.cwd(),
+          "../plugins/bundle/qwenpaw-run-center/ui/dist/index.js",
+        ),
+        "utf8",
+      ),
+    )();
     View = runtime.runCenter!.AdaptiveRunView;
   }, 60_000);
 
@@ -74,7 +105,10 @@ describe("published OpenUI and Run Center integration", () => {
     saved = { revision: 1, plan: plan() };
     fetchHost.mockClear();
   });
-  afterEach(() => { cleanup(); vi.useRealTimers(); });
+  afterEach(() => {
+    cleanup();
+    vi.useRealTimers();
+  });
   afterAll(() => {
     removePluginRuntime("qwenpaw-openui");
     removePluginRuntime("qwenpaw-run-center");
@@ -87,9 +121,13 @@ describe("published OpenUI and Run Center integration", () => {
     const view = render(<View run={run()} events={[]} scope={scope} />);
     expect(runtime.openui?.TaskLayout).toBeTypeOf("function");
     await screen.findByRole("tab", { name: "容量指标" });
-    expect(view.container.querySelector("[data-openui-task-scope]")).not.toBeNull();
+    expect(
+      view.container.querySelector("[data-openui-task-scope]"),
+    ).not.toBeNull();
     expect(view.container.querySelector("[data-task-layout]")).toBeNull();
-    expect(within(screen.getByRole("table", { name: "结果明细" })).getByText("42")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("table", { name: "结果明细" })).getByText("42"),
+    ).toBeInTheDocument();
     const tab = screen.getByRole("tab", { name: "容量指标" });
     fireEvent.click(tab);
     const metric = screen.getByText("42 m³");
@@ -97,10 +135,21 @@ describe("published OpenUI and Run Center integration", () => {
     expect(panel).not.toHaveAttribute("hidden");
     expect(tab).toHaveAttribute("aria-selected", "true");
 
-    saved = { revision: 2, plan: { ...plan(), title: "轮询更新的容量结果", panels: [...plan().panels].reverse() } };
+    saved = {
+      revision: 2,
+      plan: {
+        ...plan(),
+        title: "轮询更新的容量结果",
+        panels: [...plan().panels].reverse(),
+      },
+    };
     const requestsBeforePoll = fetchHost.mock.calls.length;
-    await act(async () => { await vi.advanceTimersByTimeAsync(5000); });
-    await waitFor(() => expect(fetchHost.mock.calls.length).toBeGreaterThan(requestsBeforePoll));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(5000);
+    });
+    await waitFor(() =>
+      expect(fetchHost.mock.calls.length).toBeGreaterThan(requestsBeforePoll),
+    );
     expect(screen.getByText("轮询更新的容量结果")).toBeInTheDocument();
     view.rerender(<View run={run(43)} events={[]} scope={scope} />);
     expect(screen.getByRole("tab", { name: "容量指标" })).toBe(tab);
@@ -108,7 +157,11 @@ describe("published OpenUI and Run Center integration", () => {
     expect(screen.getByText("43 m³")).toBe(metric);
     expect(metric.closest("[data-openui-task-panel]")).toBe(panel);
     fireEvent.click(screen.getByRole("tab", { name: "层段数据" }));
-    expect(within(screen.getByRole("table", { name: "layers数据表" })).getByText("13")).toBeInTheDocument();
+    expect(
+      within(screen.getByRole("table", { name: "layers数据表" })).getByText(
+        "13",
+      ),
+    ).toBeInTheDocument();
     const headers = new Headers(fetchHost.mock.calls[0][1]?.headers);
     expect(headers.get("X-Agent-Id")).toBe(scope.agentId);
     expect(headers.get("X-Chat-Id")).toBe(scope.chatId);
@@ -117,18 +170,38 @@ describe("published OpenUI and Run Center integration", () => {
   it("uses the real plugin cleanup to revoke OpenUI and keep Run Center results readable in the native layout", async () => {
     const view = render(<View run={run()} events={[]} scope={scope} />);
     await screen.findByRole("tab", { name: "容量指标" });
-    expect(view.container.querySelector("[data-openui-task-scope]")).not.toBeNull();
-    expect(chatExtensions.getListSnapshot()["response.codeBlocks"].some((entry) => entry.pluginId === "qwenpaw-openui")).toBe(true);
+    expect(
+      view.container.querySelector("[data-openui-task-scope]"),
+    ).not.toBeNull();
+    expect(
+      chatExtensions
+        .getListSnapshot()
+        ["response.codeBlocks"].some(
+          (entry) => entry.pluginId === "qwenpaw-openui",
+        ),
+    ).toBe(true);
     act(() => removePluginRuntime("qwenpaw-openui"));
     expect(runtime.openui).toBeUndefined();
-    expect(chatExtensions.getListSnapshot()["response.codeBlocks"].some((entry) => entry.pluginId === "qwenpaw-openui")).toBe(false);
+    expect(
+      chatExtensions
+        .getListSnapshot()
+        ["response.codeBlocks"].some(
+          (entry) => entry.pluginId === "qwenpaw-openui",
+        ),
+    ).toBe(false);
     expect(view.container.querySelector("[data-openui-task-scope]")).toBeNull();
-    expect(view.container.querySelector('[data-task-layout="tabs"]')).not.toBeNull();
-    expect(within(screen.getByRole("table", { name: "结果明细" })).getByText("42")).toBeInTheDocument();
+    expect(
+      view.container.querySelector('[data-task-layout="tabs"]'),
+    ).not.toBeNull();
+    expect(
+      within(screen.getByRole("table", { name: "结果明细" })).getByText("42"),
+    ).toBeInTheDocument();
     fireEvent.click(screen.getByRole("tab", { name: "容量指标" }));
     expect(screen.getByText("42 m³").closest("[hidden]")).toBeNull();
     view.rerender(<View run={run(44)} events={[]} scope={scope} />);
     expect(screen.getByText("44 m³").closest("[hidden]")).toBeNull();
-    expect(document.querySelector('style[data-qwenpaw-plugin="qwenpaw-openui"]')).toBeNull();
+    expect(
+      document.querySelector('style[data-qwenpaw-plugin="qwenpaw-openui"]'),
+    ).toBeNull();
   });
 });

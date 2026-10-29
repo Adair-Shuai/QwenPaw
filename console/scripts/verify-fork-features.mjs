@@ -125,6 +125,14 @@ for (const file of files) {
 }
 for (const [file, titles] of [
   [
+    "src/api/modules/plugin.test.ts",
+    [
+      "catalog compatibility uses an exclusive 3.0 upper bound for %s",
+      "replaceInstalledPlugin displays %s errors",
+      "replaceInstalledPlugin interrupts only after confirmation: %s",
+    ],
+  ],
+  [
     "src/pages/Settings/PluginManager/PluginManager.upgrades.test.tsx",
     [
       "queues signed upgrades from the real page and shows restart state",

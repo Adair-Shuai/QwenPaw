@@ -1,7 +1,7 @@
 {
   "id": "middleware-demo-thinking-log",
   "name": "Thinking Log Middleware Demo",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Demo: prints model reasoning steps to stdout",
   "author": "QwenPaw Team",
   "type": "general",

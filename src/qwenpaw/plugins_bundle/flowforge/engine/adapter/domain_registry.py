@@ -88,7 +88,6 @@ def register_builtin_domain_models(registry: Any = None) -> None:
 
 def load_domain_model_plugins() -> None:
     """No-op — no domain model plugins to load."""
-    pass
 
 
 __all__ = [

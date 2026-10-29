@@ -414,6 +414,7 @@ async def ugsci_evaluate_formula(
 # ── ugsci_transform_formula ─────────────────────────────────────────────────
 
 
+# pylint: disable-next=R0912
 async def ugsci_transform_formula(
     expression: str,
     operation: str = "rearrange",

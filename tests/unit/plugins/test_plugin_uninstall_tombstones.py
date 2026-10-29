@@ -93,7 +93,7 @@ async def test_api_uninstall_persists_tombstone_before_deleting(
 ):
     from qwenpaw.plugins import loader as loader_module
 
-    loader, request, plugins, source_root, adoption = native_install
+    _loader, request, plugins, source_root, adoption = native_install
     original = loader_module.safe_remove
     observed = []
 
@@ -116,7 +116,7 @@ async def test_api_uninstall_restores_adoption_when_delete_fails(
     native_install,
     monkeypatch,
 ):
-    loader, request, plugins, _source, adoption = native_install
+    _loader, request, plugins, _source, adoption = native_install
     monkeypatch.setattr(
         "qwenpaw.plugins.loader.safe_remove",
         MagicMock(side_effect=OSError("locked")),

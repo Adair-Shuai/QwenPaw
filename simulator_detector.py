@@ -462,6 +462,7 @@ class SimulatorDetector:
             drives = ["C:", "D:", "E:"]
 
         # PowerShell Get-ChildItem 比 Python os.walk 快得多
+        # pylint: disable-next=R1702
         for drive in drives:
             drive_path = Path(drive + "\\")
             if not drive_path.exists():
@@ -520,6 +521,7 @@ class SimulatorDetector:
     # ------------------------------------------------------------
 
     def _scan_dir_for_exes(self, root: Path, source: str, maxdepth: int = 6):
+        del maxdepth
         if not root.exists():
             return
         try:
@@ -681,7 +683,7 @@ class SimulatorDetector:
                 self.license.env_vars[v] = os.environ[v]
 
         # 解析 server 端口和主机
-        for key, val in self.license.env_vars.items():
+        for _key, val in self.license.env_vars.items():
             # 格式: port@host 或 port@host[,port@host]
             m = re.match(r"(\d+)@([\w.\-]+)", val)
             if m:
@@ -689,13 +691,14 @@ class SimulatorDetector:
                 self.license.server_host = m.group(2)
                 self.license.license_type = "network"
                 break
-            elif val.startswith("28000") or "@" in val:
+            if val.startswith("28000") or "@" in val:
                 # 网络版
                 self.license.license_type = "network"
             else:
                 # 可能是 node-locked
                 self.license.license_type = "node_locked_or_unknown"
 
+    # pylint: disable-next=R0912
     def _check_lmutil(self):
         """查找 lmutil 并尝试 lmstat 查询"""
         candidates = []
@@ -831,6 +834,7 @@ class SimulatorDetector:
         self.license.smoke_test_results = results
         return results
 
+    # pylint: disable-next=R0912,R0915
     def _smoke_test_one(self, sim: SimulatorInstance) -> dict:
         """运行最小测试案例"""
         result: dict[str, Any] = {
@@ -976,6 +980,7 @@ class SimulatorDetector:
 # ============================================================
 
 
+# pylint: disable-next=R0912,R0915
 def format_text_report(report: DetectionReport) -> str:
     """生成可读文本报告"""
     lines = []

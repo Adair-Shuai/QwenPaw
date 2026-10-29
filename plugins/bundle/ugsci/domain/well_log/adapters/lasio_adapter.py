@@ -43,6 +43,7 @@ class LasioAdapter:
             reason="lasio package not found",
         )
 
+    # pylint: disable-next=R0912,R0915
     def read(self, request: WellLogReadRequest) -> WellLogDataset:
         """Read a LAS file and return a ``WellLogDataset``."""
         try:

@@ -48,6 +48,7 @@ class SubworkflowNode(WorkflowNode):
             not_idempotent=True,
         )
 
+    # pylint: disable-next=R0911,R0912
     async def execute(
         self,
         *,

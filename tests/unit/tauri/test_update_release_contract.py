@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Future releases must remain consumable by the actual current updater."""
+# pylint: disable=protected-access  # White-box host lifecycle contracts.
 
 import base64
 import hashlib

@@ -125,6 +125,7 @@ def validate(
     return ok, output_nodes, errors
 
 
+# pylint: disable-next=R0912
 def _validate_node_inputs(
     node_id: str,
     node_def: dict[str, Any],
@@ -153,7 +154,7 @@ def _validate_node_inputs(
             and len(value) == 2
             and isinstance(value[0], str)
         ):
-            up_id, slot = value
+            up_id, _slot = value
             if up_id not in node_ids:
                 errors.append(
                     _error(

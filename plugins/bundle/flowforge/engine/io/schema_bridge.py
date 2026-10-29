@@ -49,6 +49,7 @@ def _resolve_type(prop: dict[str, Any]) -> str | None:
     return None
 
 
+# pylint: disable-next=R0911
 def _build_input(
     prop_id: str,
     prop_schema: dict[str, Any],

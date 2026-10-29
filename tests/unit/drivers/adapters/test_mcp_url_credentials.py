@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """URL query tokens are stored and resolved like header credentials."""
+# pylint: disable=protected-access  # White-box host lifecycle contracts.
 
 from types import SimpleNamespace
 from urllib.parse import parse_qs, urlsplit

@@ -666,6 +666,7 @@ _SIZE_TOKENS: dict[str, int] = {
 }
 
 
+# pylint: disable-next=R0911
 def _coerce_number_token(value: Any) -> Any:
     if isinstance(value, bool):
         return value
@@ -697,6 +698,7 @@ def _rename_prop(props: dict[str, Any], target: str, *aliases: str) -> None:
             return
 
 
+# pylint: disable-next=R0912
 def _normalize_node_props(node: dict[str, Any]) -> None:
     _lift_known_flat_props(node)
     kind = node.get("kind")
@@ -812,6 +814,7 @@ def _validate_nested_value(
 def _validate_string_and_url_limits(node: dict[str, Any]) -> None:
     props = node.get("props")
     kind = node.get("kind", "")
+    # pylint: disable-next=R1702
     if isinstance(props, dict):
         for key, val in props.items():
             _validate_nested_value(val, key=key)
@@ -954,6 +957,7 @@ def _parse_patch_path(path: str) -> list[Any]:
     return tokens
 
 
+# pylint: disable-next=R0912
 def _apply_single_patch(doc: Any, op: str, path: list[Any], value: Any) -> Any:
     """Apply a single RFC 6902 operation (replace, add, remove) to a \
 document."""

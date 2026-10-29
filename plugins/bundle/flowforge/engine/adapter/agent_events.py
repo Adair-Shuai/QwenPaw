@@ -35,6 +35,7 @@ class AgentEvent:
 
     def __init__(
         self,
+        # pylint: disable-next=redefined-builtin
         type: AgentEventType | str,
         data: dict | None = None,
     ) -> None:

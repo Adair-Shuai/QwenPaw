@@ -162,6 +162,7 @@ def _checked(value: float, dims: dict[str, Fraction], label: str) -> _Quantity:
     return _Quantity(guards.check_finite(value, label), _clean_dims(dims))
 
 
+# pylint: disable-next=R0911,R0912
 def _evaluate_node(
     expr: Any,
     values: dict[str, _Quantity],

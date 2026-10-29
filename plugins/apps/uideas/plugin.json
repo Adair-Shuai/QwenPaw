@@ -1,7 +1,7 @@
 {
   "id": "uideas",
   "name": "UIdeas",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "科研灵感工作台：捕捉与检索灵感、整理研究方向、扩充想法，并将主动建议转化为可跟进的研究行动。",
   "author": "UGSci Team",
   "type": "app",

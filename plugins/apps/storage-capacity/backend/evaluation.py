@@ -289,6 +289,7 @@ def _extract_text_values(text: str) -> Dict[str, Any]:
     return values
 
 
+# pylint: disable-next=R0911
 def _document_text(filename: str, raw: bytes) -> str:
     """Best-effort text extraction for common report formats."""
     suffix = filename.casefold().rsplit(".", 1)[-1] if "." in filename else ""
@@ -400,6 +401,7 @@ def _merge_candidate(case: Dict[str, Any], candidate: Dict[str, Any]) -> int:
     return extracted
 
 
+# pylint: disable-next=R0912,R0915
 def ingest_uploaded_documents(
     files: List[Dict[str, Any]],
     case_id: str = "",

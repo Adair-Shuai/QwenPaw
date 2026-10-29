@@ -89,6 +89,7 @@ def _mph_external_reference(
     }
 
 
+# pylint: disable-next=R0912,R0915
 def inspect_mph_metadata(
     path: str | Path,
     *,
@@ -639,6 +640,7 @@ class COMSOLAdapter(BaseSimAdapter):
                     selected.append(candidate)
         return selected
 
+    # pylint: disable-next=R0912
     def _associated_csv_files(
         self,
         directory: Path,

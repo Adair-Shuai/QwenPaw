@@ -261,7 +261,7 @@ def _table_collector(result):
                 "label": label,
                 "rows": rows,
                 "locations": locations
-                or [f"{label} 第 {i+1} 行" for i in range(len(rows))],
+                or [f"{label} 第 {i + 1} 行" for i in range(len(rows))],
             },
         )
 
@@ -408,12 +408,12 @@ def _append_mapped_rows(
                 record["_evidence"][field] = {
                     "document_id": document["id"],
                     "sha256": document["sha256"],
-                    "location": f"{table['label']}!R{index+1}C{col+1}",
+                    "location": f"{table['label']}!R{index + 1}C{col + 1}",
                     "raw": raw,
                     "factor": factor,
                 }
             except (ValueError, TypeError) as exc:
-                errors.append(f"{source} 第 {col+1} 列：{exc}")
+                errors.append(f"{source} 第 {col + 1} 列：{exc}")
         if kind == "units":
             if not record.get("name"):
                 errors.append(f"{source} 缺少单元名称")

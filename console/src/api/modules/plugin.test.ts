@@ -201,12 +201,21 @@ describe("plugin module", () => {
   });
 
   it.each([
-    ["2.9.99", 1],
-    ["3.0.0", 0],
-    ["3.0.0b1", 0],
+    ["2.9.99", "2.0.0", 1],
+    ["3.0.0", "2.0.0", 0],
+    ["3.0.0b1", "2.0.0", 0],
+    ["2.3.0b1", "2.3.0", 1],
+    ["2.3.0b1", "2.3.0b2", 0],
+    ["2.3.0a1", "2.3.0-alpha.2", 0],
+    [" v2.3.0-alpha.3 ", "2.3.0a2", 1],
+    ["2.3.0b2", "2.3.0b2", 1],
+    ["2.3.0b3", "2.3.0-beta.2", 1],
+    ["2.3.0rc1", "2.3.0b2", 1],
+    ["2.3.0rc1", "2.3.0rc2", 0],
+    ["2.3.0", "2.3.0b2", 1],
   ])(
     "catalog compatibility uses an exclusive 3.0 upper bound for %s",
-    async (host, count) => {
+    async (host, min, count) => {
       global.fetch = vi.fn().mockImplementation(async (url: string) => {
         const path = new URL(String(url)).pathname;
         let json: unknown;
@@ -227,7 +236,7 @@ describe("plugin module", () => {
                 version: "1.0.0",
                 name: "Probe",
                 url: "/files/plugins/probe.zip",
-                qwenpaw_version: { min: "2.0.0", max: "3.0.0" },
+                qwenpaw_version: { min, max: "3.0.0" },
               },
             },
           };
@@ -310,6 +319,98 @@ describe("plugin module", () => {
       }),
     });
   });
+
+  it.each([
+    [
+      "message",
+      { message: "Finish the active run", errors: ["Cleanup pending"] },
+      "Finish the active run; Cleanup pending",
+    ],
+    [
+      "validation",
+      [{ loc: ["body", "version"], msg: "Invalid version" }],
+      "version: Invalid version",
+    ],
+    ["string", "Upgrade denied", "Upgrade denied"],
+    ["fallback", {}, "Plugin upgrade failed (409)"],
+  ])(
+    "replaceInstalledPlugin displays %s errors",
+    async (_, detail, expected) => {
+      global.fetch = vi
+        .fn()
+        .mockResolvedValue(
+          mockResponse({ ok: false, status: 409, json: { detail } }),
+        );
+      await expect(
+        replaceInstalledPlugin({
+          pluginId: "p1",
+          source: "https://download.qwenpaw.agentscope.io/p1.zip",
+        }),
+      ).rejects.toThrow(expected);
+      expect(Modal.confirm).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each([true, false])(
+    "replaceInstalledPlugin interrupts only after confirmation: %s",
+    async (confirmed) => {
+      const busy = {
+        code: "plugin_busy",
+        can_interrupt: true,
+        message: "Active plugin invocation",
+      };
+      const updated = { id: "p1", version: "2.0.0", restart_required: true };
+      global.fetch = vi
+        .fn()
+        .mockResolvedValueOnce(
+          mockResponse({ ok: false, status: 409, json: { detail: busy } }),
+        )
+        .mockResolvedValueOnce(
+          mockResponse({ ok: true, status: 200, json: updated }),
+        );
+      const onChanged = vi.fn();
+      const unsubscribe = subscribeToPluginChanges(onChanged);
+      const options = {
+        pluginId: "p1",
+        source: "https://download.qwenpaw.agentscope.io/p1.zip",
+        version: "2.0.0",
+        sha256: "a".repeat(64),
+      };
+      const pending = replaceInstalledPlugin(options);
+      // Attach a rejection handler before a cancellation can settle the request.
+      const outcome = pending.then(
+        (value) => value,
+        (error: Error) => error,
+      );
+      await vi.waitFor(() => expect(Modal.confirm).toHaveBeenCalledOnce());
+      expect(fetch).toHaveBeenCalledTimes(1);
+      expect(onChanged).not.toHaveBeenCalled();
+      const dialog = vi.mocked(Modal.confirm).mock.calls[0][0];
+      if (confirmed) await dialog.onOk?.();
+      else dialog.onCancel?.();
+      const result = await outcome;
+      expect(fetch).toHaveBeenCalledTimes(confirmed ? 2 : 1);
+      if (confirmed) {
+        expect(result).toEqual(updated);
+        const requests = vi.mocked(fetch).mock.calls;
+        const first = JSON.parse(String(requests[0][1]?.body));
+        const retry = JSON.parse(String(requests[1][1]?.body));
+        expect(first).toEqual({
+          source: options.source,
+          plugin_id: "p1",
+          version: options.version,
+          sha256: options.sha256,
+        });
+        expect(retry).toEqual({ ...first, interrupt_tasks: true });
+        expect(onChanged).toHaveBeenCalledOnce();
+      } else {
+        expect(result).toBeInstanceOf(Error);
+        expect((result as Error).message).toBe(busy.message);
+        expect(onChanged).not.toHaveBeenCalled();
+      }
+      unsubscribe();
+    },
+  );
 
   it("upgradeInstalledUGSciPlugin prefers the signed component updater", async () => {
     hoisted.queueComponentUpdate.mockResolvedValue({

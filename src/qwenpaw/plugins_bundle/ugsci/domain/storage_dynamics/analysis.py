@@ -42,7 +42,7 @@ def _year(day: str, start_month: int) -> str:
     if start_month == 1:
         return str(d.year)
     y = d.year - (d.month < start_month)
-    return f"{y}-{y+1}"
+    return f"{y}-{y + 1}"
 
 
 def _percentile(values, p):
@@ -192,6 +192,7 @@ def _historical_screen(history, threshold):
     return events
 
 
+# pylint: disable-next=R0912,R0915
 def analyze(
     store: DatasetStore,
     dataset_id: str,

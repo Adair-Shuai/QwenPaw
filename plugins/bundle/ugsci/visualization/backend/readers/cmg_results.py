@@ -194,6 +194,7 @@ def _active_values(
     return None
 
 
+# pylint: disable-next=R0912,R0915
 def attach_sr3_spatial_properties(
     sr3_path: Path,
     active_ids: list[int],

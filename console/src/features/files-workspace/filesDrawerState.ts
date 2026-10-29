@@ -26,7 +26,9 @@ export function filesDrawerReducer(
         target: event.target,
         trigger: event.trigger,
         ...(event.mode ? { mode: event.mode } : {}),
-        ...(event.simulationRunId ? { simulationRunId: event.simulationRunId } : {}),
+        ...(event.simulationRunId
+          ? { simulationRunId: event.simulationRunId }
+          : {}),
       };
     case "EXPAND_WORKSPACE":
       return state.kind === "preview"

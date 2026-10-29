@@ -55,6 +55,7 @@ def _parse_error_summary(
     return result or None
 
 
+# pylint: disable-next=R0912,R0915
 async def analyze_simulation(
     job_id: str,
     analysis_type: str = "convergence",
@@ -84,6 +85,7 @@ async def analyze_simulation(
     Returns:
         ``ToolChunk``: Contains a structured analysis report.
     """
+    del metrics
     from agentscope.message import TextBlock, ToolResultState
     from agentscope.tool import ToolChunk
 
@@ -338,6 +340,7 @@ async def analyze_simulation(
             )
 
     # ── Comparison analysis ──────────────────────────────────────────
+    # pylint: disable-next=R1702
     elif analysis_type == "comparison":
         if not reference_job_id:
             return ToolChunk(

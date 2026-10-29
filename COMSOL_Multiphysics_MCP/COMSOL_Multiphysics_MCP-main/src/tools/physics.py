@@ -879,6 +879,7 @@ def _register_physics_group_5(mcp):
         Returns:
             Boundary information and setup instructions
         """
+        del physics_name
         model = session_manager.get_model(model_name)
         if model is None:
             return {
@@ -1029,7 +1030,7 @@ boundary conditions
                 inlet = physics_java.create(inlet_tag, "InletBoundary")
                 inlet.selection().set([int(boundary)])
                 inlet.set("U0", inlet_velocity)
-                inlet.label(f"Inlet {i+1} (Boundary {boundary})")
+                inlet.label(f"Inlet {i + 1} (Boundary {boundary})")
                 results["inlets"].append(
                     {
                         "tag": inlet_tag,
@@ -1043,7 +1044,7 @@ boundary conditions
                 outlet = physics_java.create(outlet_tag, "OutletBoundary")
                 outlet.selection().set([int(boundary)])
                 outlet.set("p0", outlet_pressure)
-                outlet.label(f"Outlet {i+1} (Boundary {boundary})")
+                outlet.label(f"Outlet {i + 1} (Boundary {boundary})")
                 results["outlets"].append(
                     {
                         "tag": outlet_tag,
@@ -1092,6 +1093,7 @@ boundary conditions
         Returns:
             Boundary information and setup instructions
         """
+        del physics_name
         model = session_manager.get_model(model_name)
         if model is None:
             return {
@@ -1248,7 +1250,7 @@ convection
                 bc = physics_java.create(tag, "HeatFluxBoundary")
                 bc.selection().set([int(boundary)])
                 bc.set("q0", heat_flux_value)
-                bc.label(f"Heat Flux {i+1} (Boundary {boundary})")
+                bc.label(f"Heat Flux {i + 1} (Boundary {boundary})")
                 results["heat_flux"].append(
                     {
                         "tag": tag,
@@ -1262,7 +1264,7 @@ convection
                 bc = physics_java.create(tag, "TemperatureBoundary")
                 bc.selection().set([int(boundary)])
                 bc.set("T0", temperature_value)
-                bc.label(f"Temperature {i+1} (Boundary {boundary})")
+                bc.label(f"Temperature {i + 1} (Boundary {boundary})")
                 results["temperature"].append(
                     {
                         "tag": tag,
@@ -1277,7 +1279,7 @@ convection
                 bc.selection().set([int(boundary)])
                 bc.set("h", convection_coeff)
                 bc.set("Text", ambient_temp)
-                bc.label(f"Convection {i+1} (Boundary {boundary})")
+                bc.label(f"Convection {i + 1} (Boundary {boundary})")
                 results["convection"].append(
                     {
                         "tag": tag,

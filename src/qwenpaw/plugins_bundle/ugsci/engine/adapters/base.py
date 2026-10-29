@@ -109,6 +109,7 @@ class BaseSimAdapter:
 
     def inspect_input(self, deck_file: str | Path) -> dict[str, Any]:
         """Return bounded, JSON-safe preflight metadata for an input model."""
+        del deck_file
         return {}
 
     def infer_terminal_status(
@@ -124,6 +125,7 @@ class BaseSimAdapter:
         Adapters may override it when a simulator has a dedicated completion
         marker (for example ``.ECLEND``) in addition to its log file.
         """
+        del case_stem
         log_file = self.find_log_file(working_dir)
         if log_file is None:
             return (None, None, None)
@@ -261,6 +263,7 @@ class BaseSimAdapter:
                 continue
             if start is not None:
                 # End of keyword: next keyword (all-caps word) or "/" alone
+                # pylint: disable-next=R0916
                 if stripped == "/" or (
                     stripped
                     and stripped.split()[0].isupper()

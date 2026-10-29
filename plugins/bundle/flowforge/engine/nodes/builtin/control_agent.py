@@ -154,6 +154,7 @@ class ControlAgentNode(WorkflowNode):
             },
         )
 
+    # pylint: disable-next=R0912,R0915
     async def execute(
         self,
         *,

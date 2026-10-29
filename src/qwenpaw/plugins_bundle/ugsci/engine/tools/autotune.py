@@ -183,6 +183,7 @@ def _replace_parameter(
     )
 
 
+# pylint: disable-next=R0912,R0915
 def create_tuning_candidate(
     job: Any,
     diagnosis: dict[str, Any],

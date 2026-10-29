@@ -2,7 +2,7 @@
   "id": "clawhub-hub",
   "name": "ClawHub Skill Hub",
   "publish": false,
-  "version": "1.0.0",
+  "version": "1.0.1",
   "type": "hub",
   "description": "ClawHub Skill marketplace source.",
   "author": "QwenPaw Team",

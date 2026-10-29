@@ -72,6 +72,27 @@ def test_shipped_plugins_keep_major_version_compatibility_boundary(
     [
         ("apps/uproject", "0.1.2"),
         ("tool/wan27", "1.0.4"),
+        ("apps/agent-kanban", "0.1.4"),
+        ("apps/document-forms", "1.5.1"),
+        ("apps/storage-capacity", "0.3.1"),
+        ("apps/uideas", "0.2.0"),
+        ("apps/ulit", "0.1.4"),
+        ("apps/wellbore-pressure", "1.3.1"),
+        ("bundle/chrome", "0.1.4"),
+        ("bundle/cloudpaw", "0.0.4"),
+        ("bundle/computer-use", "1.0.6"),
+        ("bundle/flowforge", "0.1.8"),
+        ("bundle/qwenpaw-openui", "0.2.0"),
+        ("bundle/qwenpaw-pet", "0.1.5"),
+        ("bundle/qwenpaw-run-center", "0.3.0"),
+        ("bundle/ugsci", "0.8.0"),
+        ("bundle/ugsci_research", "0.1.6"),
+        ("hub/aliyun-hub", "1.0.0"),
+        ("hub/clawhub-hub", "1.0.0"),
+        ("hub/modelscope-hub", "1.0.0"),
+        ("hub/qwenpaw-hub", "1.0.0"),
+        ("middleware-demo/thinking-log-middleware", "1.0.0"),
+        ("tool/gpt-image2", "1.1.1"),
     ],
 )
 def test_repaired_market_archives_cover_b2_and_advance_versions(
@@ -111,6 +132,18 @@ def test_repaired_market_archives_cover_b2_and_advance_versions(
         cdn_path=f"/files/plugins/{archive.name}",
     )
     assert metadata["qwenpaw_version"] == packaged["qwenpaw_version"]
+
+
+def test_data_app_compatibility_release_advances_version_before_build():
+    """The release job builds the Data UI before validating its ZIP."""
+    from packaging.version import Version
+
+    path = ROOT / "plugins/apps/qwenpaw-data/plugin.json"
+    manifest = PluginManifest.from_dict(
+        json.loads(path.read_text(encoding="utf-8")),
+    )
+    assert Version(manifest.version) > Version("1.0.3")
+    assert manifest.qwenpaw_version.max == "3.0.0"
 
 
 @pytest.mark.parametrize("relative", ["memory/adbpg", "memory/powercontext"])

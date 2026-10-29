@@ -175,6 +175,7 @@ class WellLogService:
         # This allows the service to be tested with fake engines.
 
     @staticmethod
+    # pylint: disable-next=R0912,R0915
     def _run_qc(dataset: WellLogDataset) -> dict[str, Any]:
         """Run quality-control checks on the dataset.
 

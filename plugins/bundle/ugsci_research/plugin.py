@@ -462,7 +462,7 @@ async def _literature_search(
                         ][0]
                     ),
                     "authors": [
-                        f"{a.get('given','')} {a.get('family','')}".strip()
+                        f"{a.get('given', '')} {a.get('family', '')}".strip()
                         for a in (item.get("author") or [])[:5]
                     ],
                     "url": item.get("URL", ""),
@@ -918,6 +918,7 @@ class UGSciResearchPlugin:
         delete_files: bool = False,
     ) -> None:
         """Remove plugin-sourced skills from the pool on uninstall."""
+        del delete_files
         try:
             from qwenpaw.agents.skill_system.store import (
                 get_pool_skill_manifest_path,

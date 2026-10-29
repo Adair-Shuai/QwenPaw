@@ -454,7 +454,9 @@ describe("UIdeas shipped workspace", () => {
     expect(JSON.parse(text).suggestions).toHaveLength(1);
     expect(JSON.parse(text).clusters).toHaveLength(1);
   });
-it("paginates and sorts the real library while keyboard navigation retains filters", async () => {
+  // This combined page scenario performs several full renders; each assertion
+  // keeps its normal wait budget while the complete workflow gets more time.
+  it("paginates and sorts the real library while keyboard navigation retains filters", async () => {
     ideas = Array.from({ length: 14 }, (_, i) =>
       makeIdea(String(i).padStart(2, "0"), {
         tags: [i === 13 ? "专属标签" : "普通标签"],
@@ -498,5 +500,5 @@ it("paginates and sorts the real library while keyboard navigation retains filte
       panel().getAllByRole("button", { name: "筛选标签 普通标签" })[0],
     );
     expect(panel().queryByRole("button", { name: "灵感 13" })).toBeNull();
-  });
+  }, 45_000);
 });

@@ -489,6 +489,7 @@ class ReplacePluginRequest(BaseModel):
     plugin_id: str
     version: str | None = None
     sha256: str | None = None
+    interrupt_tasks: bool = False
 
 
 async def install_plugin_source(
@@ -1226,9 +1227,14 @@ async def replace_installed_plugin(
             request,
             source_path,
             force=True,
+            **_interrupt_options(body.interrupt_tasks),
         )
     except HTTPException:
         raise
+    except PluginBusyError as exc:
+        # Busy is raised before the lifecycle transaction mutates the plugin.
+        # Preserve the confirmation contract and do not attempt a reinstall.
+        raise HTTPException(status_code=409, detail=exc.detail) from exc
     except Exception as exc:
         if replacement_started and backup_path is not None:
             try:

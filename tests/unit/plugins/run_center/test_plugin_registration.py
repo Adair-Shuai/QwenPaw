@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Plugin registration test for qwenpaw-run-center."""
+# pylint: disable=protected-access  # White-box host lifecycle contracts.
 
 from __future__ import annotations
 

@@ -127,6 +127,7 @@ class CodingAgentNode(WorkflowNode):
             not_idempotent=True,
         )
 
+    # pylint: disable-next=R0911
     async def execute(
         self,
         *,

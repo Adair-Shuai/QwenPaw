@@ -131,6 +131,7 @@ def test_node_version_changes_trigger_creator_tests() -> None:
 
 @pytest.mark.parametrize(f"system", [f"Windows", f"Darwin", f"Linux"])
 @pytest.mark.parametrize(f"machine", [f"AMD64", f"aarch64"])
+# pylint: disable-next=R0915
 def test_upgrade_replaces_old_runtime_and_reuses_new_cache(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,

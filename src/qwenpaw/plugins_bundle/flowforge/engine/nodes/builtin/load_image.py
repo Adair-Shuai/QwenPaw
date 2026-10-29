@@ -24,6 +24,7 @@ from ...io import (
 from ..base import WorkflowNode
 
 
+# pylint: disable-next=R0911
 async def _resolve_session_attachment(
     *,
     session_id: str | None,

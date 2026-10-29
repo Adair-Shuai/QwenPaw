@@ -34,6 +34,7 @@ class EclipseReader(BaseReader):
     def requires(self) -> tuple[str, ...]:
         return ("xtgeo",)
 
+    # pylint: disable-next=R0915
     def read(
         self,
         file_path: str,
@@ -284,6 +285,7 @@ class EclipseReader(BaseReader):
         Every advertised timestep has real scalar resources. The legacy
         ``manifest-only`` spelling no longer produces an incomplete catalog.
         """
+        del time_step_mode
         import xtgeo
         import resfo
 

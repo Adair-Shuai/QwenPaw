@@ -165,7 +165,9 @@ def test_host_registry_and_sdk_expose_tools_only_in_team_mode():
 
     registry = ToolRegistry()
     registry.register_many(mode().tools())
-    assert registry.filter(active_modes=set()) == []
+    matching_tools = registry.filter(active_modes=set())
+    assert isinstance(matching_tools, list)
+    assert not matching_tools
     tools = registry.filter(active_modes={"ugsci-team"})
     assert {
         "ugsci_team_get_state",

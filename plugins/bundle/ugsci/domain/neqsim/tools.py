@@ -51,6 +51,7 @@ def _request_context() -> dict[str, str]:
     return {"session_id": session_id} if session_id else {}
 
 
+# pylint: disable-next=R0911
 async def _invoke(tool_name: str, arguments: dict[str, Any]) -> Any:
     try:
         from qwenpaw.agents.builtin_mcp.neqsim import NEQSIM_CLIENT_KEY

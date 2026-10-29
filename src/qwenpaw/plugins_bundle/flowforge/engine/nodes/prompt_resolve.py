@@ -11,6 +11,7 @@ from typing import Any
 _PROMPT_KEYS = ("prompt", "task", "query", "message", "text", "input")
 
 
+# pylint: disable-next=R0912
 def resolve_node_prompt(raw: Any, state: Any | None) -> str:
     """Turn a prompt widget, template string, or Start ``inputs`` bag into \
 text.

@@ -21,6 +21,7 @@ def _object_schema() -> dict[str, Any]:
     return {"type": "object", "additionalProperties": True}
 
 
+# pylint: disable-next=R0915
 def normalize_operation_descriptor(
     descriptor: dict[str, Any] | None,
     *,
@@ -125,6 +126,7 @@ def normalize_operation_descriptor(
     return value
 
 
+# pylint: disable-next=R0912
 def validate_json_schema(value: Any, schema: dict[str, Any]) -> list[str]:
     """Validate the small JSON-Schema subset used for operation inputs.
 

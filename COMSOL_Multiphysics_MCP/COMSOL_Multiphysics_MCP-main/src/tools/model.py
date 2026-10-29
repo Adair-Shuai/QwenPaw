@@ -243,6 +243,7 @@ def _register_model_group_2(mcp):
     def model_save(
         model_name: Optional[str] = None,
         file_path: Optional[str] = None,
+        # pylint: disable-next=redefined-builtin
         format: Optional[str] = None,
     ) -> dict:
         """

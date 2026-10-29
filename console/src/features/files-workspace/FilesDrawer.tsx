@@ -372,7 +372,9 @@ function SessionFilesDrawer({
         {mode === "compute" && <WorkbenchComputePanel />}
         {mode === "simulation" && (
           <WorkbenchSimulationPanel
-            runId={state.kind === "workspace" ? state.simulationRunId : undefined}
+            runId={
+              state.kind === "workspace" ? state.simulationRunId : undefined
+            }
             scope={scope}
           />
         )}

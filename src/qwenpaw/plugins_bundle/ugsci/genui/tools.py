@@ -129,6 +129,7 @@ def _payload_size(value: Any) -> int:
         return GENUI_MAX_JSON_CHARS + 1
 
 
+# pylint: disable-next=R0911
 def emit_ui_tree(tree: dict[str, Any] | str, ui_id: str = "") -> ToolChunk:
     """Emit a validated generative UI tree that renders inline in the \
 chat.
@@ -249,6 +250,7 @@ error_code, message}``
     return _ok(result)
 
 
+# pylint: disable-next=R0911,R0912
 def emit_ui_patch(patches: dict[str, Any] | str) -> ToolChunk:
     """Apply JSON Patch operations to an existing GenUI tree.
 
@@ -259,7 +261,8 @@ add, remove).
 
     The ``patches`` parameter is a JSON string:
     \
-``{\"ui_id\":\"ui_xxx\",\"base_revision\":1,\"patches\":[{\"op\":\"replace\",\"path\":\"/root/children/0/props/text\",\"value\":\"Updated\"}]}``
+``{\"ui_id\":\"ui_xxx\",\"base_revision\":1,\"patches\":
+[{\"op\":\"replace\",\"path\":\"/root/children/0/props/text\",\"value\":\"Updated\"}]}``
 
     Rules:
     - ``ui_id`` must be a tree previously emitted in this session.

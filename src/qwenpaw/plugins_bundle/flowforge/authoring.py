@@ -150,11 +150,8 @@ def workflow_diff(before, after):
         if kind == "modified" and old[node_id] == new[node_id]:
             continue
         details = _details(old.get(node_id), new.get(node_id))
-        description = (
-            f"{ {'added': '新增', 'removed': '删除', 'modified': '修改'}[kind]}"
-            f"节点："
-            f"{node_id}"
-        )
+        action = {"added": "新增", "removed": "删除", "modified": "修改"}[kind]
+        description = f"{action}" f"节点：" f"{node_id}"
         if kind == "modified" and details:
             description += (
                 "（"
@@ -200,6 +197,7 @@ def workflow_diff(before, after):
     return changes
 
 
+# pylint: disable-next=R0912,R0915
 async def propose(
     service,
     prompt,

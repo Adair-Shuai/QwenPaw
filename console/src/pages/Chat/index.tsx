@@ -1424,19 +1424,28 @@ export default function ChatPage() {
   useEffect(() => {
     const openSimulation = (event: Event) => {
       if (!isChatActiveRef.current) return;
-      const detail = (event as CustomEvent<{
-        runId?: string;
-        agentId?: string;
-        sessionId?: string;
-      }>).detail;
+      const detail = (
+        event as CustomEvent<{
+          runId?: string;
+          agentId?: string;
+          sessionId?: string;
+        }>
+      ).detail;
       if (!detail?.runId || !/^[\w:.-]{1,160}$/.test(detail.runId)) return;
       if (detail.agentId && detail.agentId !== selectedAgent) return;
       // Plugins use the runtime session identity; the route/queue IDs can be
       // the persisted Chat UUID. Resolve at dispatch time after hydration.
-      const runtimeSessionId = queueSessionId !== "new"
-        ? sessionApi.getSessionIdentity(queueSessionId).sessionId
-        : undefined;
-      if (detail.sessionId && ![backendChatId, queueSessionId, runtimeSessionId].includes(detail.sessionId)) return;
+      const runtimeSessionId =
+        queueSessionId !== "new"
+          ? sessionApi.getSessionIdentity(queueSessionId).sessionId
+          : undefined;
+      if (
+        detail.sessionId &&
+        ![backendChatId, queueSessionId, runtimeSessionId].includes(
+          detail.sessionId,
+        )
+      )
+        return;
       dispatchFilesDrawer({
         type: "OPEN_WORKSPACE",
         mode: "simulation",
@@ -1444,8 +1453,15 @@ export default function ChatPage() {
         trigger: null,
       });
     };
-    window.addEventListener("qwenpaw:open-simulation-workbench", openSimulation);
-    return () => window.removeEventListener("qwenpaw:open-simulation-workbench", openSimulation);
+    window.addEventListener(
+      "qwenpaw:open-simulation-workbench",
+      openSimulation,
+    );
+    return () =>
+      window.removeEventListener(
+        "qwenpaw:open-simulation-workbench",
+        openSimulation,
+      );
   }, [backendChatId, queueSessionId, selectedAgent, dispatchFilesDrawer]);
 
   const handleInternalFileLink = useCallback(
