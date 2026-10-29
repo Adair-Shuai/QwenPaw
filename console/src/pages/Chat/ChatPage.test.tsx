@@ -23,6 +23,7 @@ let capturedOptions: any = null;
 
 const {
   mockListProviders,
+  mockPreviewModelInfo,
   mockGetActiveModels,
   mockLoadSessionModel,
   mockUploadFile,
@@ -33,6 +34,7 @@ const {
   mockGetTranscriptionProviderType,
 } = vi.hoisted(() => ({
   mockListProviders: vi.fn(),
+  mockPreviewModelInfo: vi.fn(),
   mockGetActiveModels: vi.fn(),
   mockLoadSessionModel: vi.fn(),
   mockUploadFile: vi.fn(),
@@ -128,6 +130,7 @@ vi.mock(
 vi.mock("@/api/modules/provider", () => ({
   providerApi: {
     listProviders: mockListProviders,
+    previewModelInfo: mockPreviewModelInfo,
     getActiveModels: mockGetActiveModels,
   },
 }));
@@ -304,6 +307,7 @@ describe("ChatPage", () => {
     chatExtensions.__resetForTests();
     capturedOptions = null;
     mockListProviders.mockResolvedValue(mockProviders);
+    mockPreviewModelInfo.mockResolvedValue(mockProviders[0].models[0]);
     mockGetActiveModels.mockResolvedValue(mockActiveModel);
     mockLoadSessionModel.mockResolvedValue(mockActiveModel);
     useUploadLimitStore.setState({ uploadMaxSizeMb: 10 });
@@ -636,22 +640,26 @@ describe("ChatPage", () => {
     renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
     await screen.findByTestId("chat-ui");
     await waitFor(() => expect(mockLoadSessionModel).toHaveBeenCalled());
-    expect(mockListProviders).toHaveBeenCalled();
+    await waitFor(() =>
+      expect(mockPreviewModelInfo).toHaveBeenCalledWith("openai", "gpt-4"),
+    );
   });
 
   it("model-switched event triggers re-fetch of multimodal capabilities", async () => {
     renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
     await screen.findByTestId("chat-ui");
-    // wait for initial mount calls to settle
-    await waitFor(() => expect(mockLoadSessionModel).toHaveBeenCalled());
-    const callsBefore = mockLoadSessionModel.mock.calls.length;
+    // Wait for the initial capability request before triggering a refresh.
+    await waitFor(() =>
+      expect(mockPreviewModelInfo).toHaveBeenCalledWith("openai", "gpt-4"),
+    );
+    const callsBefore = mockPreviewModelInfo.mock.calls.length;
 
     act(() => {
       window.dispatchEvent(new CustomEvent("model-switched"));
     });
 
     await waitFor(() =>
-      expect(mockLoadSessionModel.mock.calls.length).toBeGreaterThan(
+      expect(mockPreviewModelInfo.mock.calls.length).toBeGreaterThan(
         callsBefore,
       ),
     );
