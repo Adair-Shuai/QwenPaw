@@ -1630,6 +1630,10 @@
     "selectAtLeastOneDay": "Selecione pelo menos um dia."
   },
   "channels": {
+    "qrcodeInstallRequired": "Instale o plugin para escanear um código QR",
+    "runtime": {
+      "missing_code": "Plugin não instalado"
+    },
     "title": "Canais",
     "description": "Manage and configure message channels",
     "loading": "Carregando channels...",
