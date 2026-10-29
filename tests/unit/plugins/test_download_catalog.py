@@ -176,7 +176,15 @@ def test_bundled_hubs_replace_same_cdn_version_and_keep_remote_updates(
         "qwenpaw.plugins.download_catalog.__file__",
         str(tmp_path / "download_catalog.py"),
     )
-    versions = ("1.0.0", "1.1.0")
+    from packaging.version import Version
+
+    bundled_manifest = json.loads(
+        (bundled / "hub/qwenpaw-hub/plugin.json").read_text(encoding="utf-8"),
+    )
+    bundled_version = bundled_manifest["version"]
+    current = Version(bundled_version)
+    remote_version = f"{current.major}.{current.minor + 1}.0"
+    versions = (bundled_version, remote_version)
     files = {
         version: {
             "id": f"qwenpaw-hub-{version}",
@@ -198,7 +206,7 @@ def test_bundled_hubs_replace_same_cdn_version_and_keep_remote_updates(
         ),
         patch(
             "qwenpaw.plugins.download_catalog._installed_plugin_ids",
-            return_value={"qwenpaw-hub": "1.0.0"},
+            return_value={"qwenpaw-hub": bundled_version},
         ),
     ):
         result = catalog()
@@ -209,11 +217,13 @@ def test_bundled_hubs_replace_same_cdn_version_and_keep_remote_updates(
         if entry["plugin_id"] == "qwenpaw-hub"
     }
     assert set(qwenpaw) == set(versions)
-    assert (Path(qwenpaw["1.0.0"]["install_url"]) / "plugin.json").is_file()
-    assert qwenpaw["1.1.0"]["install_url"].endswith(
-        "/plugins/qwenpaw-hub-1.1.0.zip",
+    assert (
+        Path(qwenpaw[bundled_version]["install_url"]) / "plugin.json"
+    ).is_file()
+    assert qwenpaw[remote_version]["install_url"].endswith(
+        f"/plugins/qwenpaw-hub-{remote_version}.zip",
     )
-    assert qwenpaw["1.1.0"]["upgrade_available"] is True
+    assert qwenpaw[remote_version]["upgrade_available"] is True
     tool_entry = next(
         entry
         for entry in result["plugins"]

@@ -105,6 +105,12 @@ jobs:
           mkdir -p src/qwenpaw/console
           cp -R console/dist/* src/qwenpaw/console/
 
+      - name: Build OpenUI runtime for plugin archive contracts
+        shell: bash
+        run: |
+          npm --prefix plugins/bundle/qwenpaw-openui/frontend ci
+          npm --prefix plugins/bundle/qwenpaw-openui/frontend run build
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:

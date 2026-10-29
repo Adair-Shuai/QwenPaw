@@ -134,14 +134,21 @@ jobs:
             sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
 
-      # Phase-1 simplification (plan v1.6, item 1-2): console frontend build
-      # removed from the three backend tiers. Verified: tests/unit,
-      # tests/contract and tests/integration contain no reference to built
-      # frontend assets; the only web-root probe (test_app_startup.py) asserts
-      # BOTH branches (200-with-HTML or 404-with-fallback-JSON), and the Hub
-      # local-runtime E2E only hits API routes. Behavioral evidence: the
-      # fork-local pr-preview workflow ran all three tiers without any console
-      # build and passed. The E2E tier keeps its own build (_e2e-job.yml).
+      # Backend tests do not need a console build. The archive regression
+      # does require the real OpenUI release entry, generated from its lockfile.
+
+      - name: Set up Node.js for plugin archive contracts
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: 'npm'
+          cache-dependency-path: plugins/bundle/qwenpaw-openui/frontend/package-lock.json
+
+      - name: Build OpenUI runtime for plugin archive contracts
+        shell: bash
+        run: |
+          npm --prefix plugins/bundle/qwenpaw-openui/frontend ci
+          npm --prefix plugins/bundle/qwenpaw-openui/frontend run build
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
