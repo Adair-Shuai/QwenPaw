@@ -177,6 +177,7 @@ async function finishBackgroundTask(
 function startPolling(sessionId: string, toolCallId: string): AbortFn {
   let stopped = false;
   let inFlight = false;
+  let missingCount = 0;
   const timer = setInterval(async () => {
     if (stopped || inFlight) return;
     inFlight = true;
@@ -186,7 +187,12 @@ function startPolling(sessionId: string, toolCallId: string): AbortFn {
     };
     try {
       const info = await toolCallsApi.getInfo(sessionId, toolCallId);
-      if (!info) return;
+      if (!info) {
+        missingCount += 1;
+        if (missingCount >= 3) await finishPoll(false);
+        return;
+      }
+      missingCount = 0;
       if (info.status === "running" || info.status === "offloaded") {
         return;
       }
@@ -272,7 +278,7 @@ export function registerBackgroundTask(opts: {
       const timer = setInterval(() => {
         attempts += 1;
         const sid = resolveBackendSessionId();
-        if (hydrate(sid) || attempts >= 20) {
+        if (hydrate(sid) || attempts >= 240) {
           clearInterval(timer);
         }
       }, 250);
@@ -294,7 +300,7 @@ export function registerBackgroundTask(opts: {
     const timer = setInterval(() => {
       attempts += 1;
       const sid = resolveBackendSessionId();
-      if (startWatcher(sid) || attempts >= 20) {
+      if (startWatcher(sid) || attempts >= 240) {
         clearInterval(timer);
       }
     }, 250);
@@ -418,7 +424,7 @@ export async function cancelBackgroundTask(
     throw new Error("Missing backend session id for cancel");
   }
   const hadOutputStream = activeOutputStreams.has(watcherKey(sid, toolCallId));
-  stopBackgroundTaskWatcher(toolCallId, sessionId);
+  stopBackgroundTaskWatcher(toolCallId, sid);
   try {
     await toolCallsApi.cancel(sid, toolCallId);
   } catch (err) {
@@ -439,9 +445,8 @@ export async function cancelBackgroundTask(
   const live =
     useBackgroundTasksStore
       .getState()
-      .tasks.find(
-        (t) => t.sessionId === sessionId && t.toolCallId === toolCallId,
-      )?.liveOutput || "";
+      .tasks.find((t) => t.sessionId === sid && t.toolCallId === toolCallId)
+      ?.liveOutput || "";
   useBackgroundTasksStore.getState().updateTaskForSession(sid, toolCallId, {
     status: "cancelled",
     result: live || null,

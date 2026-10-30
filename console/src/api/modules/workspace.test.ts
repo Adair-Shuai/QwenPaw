@@ -43,7 +43,6 @@ vi.mock("../../stores/codeFileCacheStore", () => ({
 
 import { request } from "../request";
 import { workspaceApi } from "./workspace";
-import { downloadFileFromUrl } from "../../utils/downloadFileFromUrl";
 import { useAgentStore } from "../../stores/agentStore";
 import { useCodingModeStore } from "../../stores/codingModeStore";
 import { useProjectDirectoryStore } from "../../stores/projectDirectoryStore";

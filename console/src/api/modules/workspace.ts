@@ -7,7 +7,6 @@ import {
 } from "../../stores/codeFileCacheStore";
 import { useAgentStore } from "../../stores/agentStore";
 import { useProjectDirectoryStore } from "../../stores/projectDirectoryStore";
-import { downloadFileFromUrl } from "../../utils/downloadFileFromUrl";
 import type {
   MdFileInfo,
   MdFileContent,

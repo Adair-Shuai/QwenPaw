@@ -671,3 +671,43 @@ describe("session-scoped background task recovery", () => {
     expect(mocks.message.success).toHaveBeenCalledTimes(1);
   });
 });
+
+describe("late background task availability", () => {
+  it("confirms a missing status repeatedly before reading final output", async () => {
+    vi.useFakeTimers();
+    mocks.getInfo.mockResolvedValue(null);
+    const { registerBackgroundTask, useBackgroundTasksStore } =
+      await loadModule();
+    registerBackgroundTask({
+      sessionId: "s",
+      toolCallId: "missing",
+      toolName: "shell",
+    });
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(useBackgroundTasksStore.getState().tasks[0].status).toBe("running");
+    expect(mocks.getOutput).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(mocks.getOutput).toHaveBeenCalledWith("s", "missing");
+    expect(useBackgroundTasksStore.getState().tasks[0].status).toBe("done");
+  });
+
+  it("resolves a first-turn session after the original five-second window", async () => {
+    vi.useFakeTimers();
+    mocks.resolveBackendSessionId.mockReturnValue("");
+    mocks.getInfo.mockResolvedValue({ status: "running" });
+    const { registerBackgroundTask, useBackgroundTasksStore } =
+      await loadModule();
+    registerBackgroundTask({
+      sessionId: "",
+      toolCallId: "late",
+      toolName: "shell",
+    });
+    await vi.advanceTimersByTimeAsync(6000);
+    mocks.resolveBackendSessionId.mockReturnValue("resolved");
+    await vi.advanceTimersByTimeAsync(3250);
+    expect(useBackgroundTasksStore.getState().tasks[0].sessionId).toBe(
+      "resolved",
+    );
+    expect(mocks.getInfo).toHaveBeenCalledWith("resolved", "late");
+  });
+});

@@ -314,3 +314,6 @@ UGSci 通用计算服务按数据类字段契约接收科学计算与储气库�
 固定回归新增 `tests/unit/test_turn_files.py`、`tests/unit/runtime/test_turn_file_lifecycle.py`；前端包含 API、真实 HostResponseCard 挂载、sessionApi 历史映射、TurnFileSummary、成果分页、legacy registry，以及 FilesWorkspace/TabbedEditor 草稿保留集成测试。它们登记在前后端固定执行清单，不得用仅测提取函数替代。
 
 设计参考：[DeepSeek Harness workspace-changes](https://github.com/deepseek-ai/deepseek-harness/blob/master/packages/deliverables/workspace-changes/README.zh.md) 的轮次起止捕获，以及 [Codex 文件审阅](https://developers.openai.com/blog/mastering-codex-remote-for-engineering) 的汇总到差异浏览流程；实现沿用本项目生命周期和原生文件工作区，不引入 DSH 的运行时依赖。
+
+
+后台工具监听按会话与工具调用 ID 共同标识，取消、输出流、状态轮询和完成去重必须隔离会话；切换会话不能删除新会话同名任务。保留按需打开输出流，后台轮询不主动订阅全部输出。读取最终输出发生临时错误时继续恢复，不提前显示完成；状态缺失连续确认后再读取最终输出，首轮会话解析允许等待一分钟。`useBackgroundTaskWatcher.test.ts` 和关键用例加入前端固定执行清单，保护实际轮询、流回调、会话切换、延迟解析和最终输出恢复。

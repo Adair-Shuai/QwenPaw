@@ -726,6 +726,8 @@ requireCases("src/plugins/expertPresentation.test.tsx", [
 requireCases("src/hooks/useBackgroundTaskWatcher.test.ts", [
   "isolates equal tool call ids when an older session is removed",
   "retries unavailable final output before completing the task",
+  "confirms a missing status repeatedly before reading final output",
+  "resolves a first-turn session after the original five-second window",
 ]);
 
 console.log(`Fork feature inventory verified: ${files.length} suites.`);
