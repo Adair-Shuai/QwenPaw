@@ -36,6 +36,8 @@ export interface ArtifactPreviewProps {
   onOpenArtifact?: (artifact: WorkspaceArtifact) => void;
   onFullscreen?: (artifact: WorkspaceArtifact) => void;
   hostControls?: boolean;
+  listenForUpdates?: boolean;
+  onMemoryTagClick?: (tag: string) => void;
 }
 
 function artifactRequestHeaders(
@@ -63,6 +65,8 @@ const ArtifactPreview: React.FC<ArtifactPreviewProps> = ({
   onOpenArtifact,
   onFullscreen,
   hostControls = false,
+  listenForUpdates = true,
+  onMemoryTagClick,
 }) => {
   const { t, i18n } = useTranslation();
   const { isDark } = useTheme();
@@ -71,6 +75,7 @@ const ArtifactPreview: React.FC<ArtifactPreviewProps> = ({
   useEffect(() => setArtifact(artifactProp), [artifactProp]);
 
   useEffect(() => {
+    if (!listenForUpdates) return;
     const handleUpdate = (event: Event) => {
       const detail = (
         event as CustomEvent<{
@@ -84,7 +89,7 @@ const ArtifactPreview: React.FC<ArtifactPreviewProps> = ({
     window.addEventListener(UPDATE_FILE_PREVIEW_EVENT, handleUpdate);
     return () =>
       window.removeEventListener(UPDATE_FILE_PREVIEW_EVENT, handleUpdate);
-  }, [artifact.id]);
+  }, [artifact.id, listenForUpdates]);
 
   useSyncExternalStore(
     subscribeRendererRegistry,
@@ -173,8 +178,17 @@ const ArtifactPreview: React.FC<ArtifactPreviewProps> = ({
       locale: i18n.language,
       workspace,
       hostControls,
+      onMemoryTagClick,
     }),
-    [artifact, hostControls, i18n.language, isDark, readOnly, workspace],
+    [
+      artifact,
+      hostControls,
+      i18n.language,
+      isDark,
+      readOnly,
+      workspace,
+      onMemoryTagClick,
+    ],
   );
   const RendererComponent = rendererMatch?.renderer.component;
 

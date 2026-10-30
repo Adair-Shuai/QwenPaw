@@ -56,6 +56,7 @@ import {
   updateRunningConfig,
 } from "./expertApi";
 import { DEFAULT_PROMPT_FILES, TagList, SkillPickerModal } from "./expertUtils";
+import { expertPresentation } from "./expertPresentation";
 import { ExpertConfigModal } from "./ExpertConfigModal";
 import { KnowledgeBaseTab, PresetPromptsTab } from "./expertTabs";
 import { ExpertAvatar } from "../components/avatars";
@@ -79,13 +80,6 @@ async function selectCreatedAgent(agentId: string): Promise<void> {
 
 // ─── Expert Center Page ───────────────────────────────────────────────────────
 
-function previewNames(names: string[]): string {
-  return (
-    names.slice(0, 2).join("、") +
-    (names.length > 2 ? ` 等 ${names.length} 项` : "")
-  );
-}
-
 export function ExpertCard({
   expert,
   onClick,
@@ -98,222 +92,92 @@ export function ExpertCard({
   onConfigure?: () => void;
 }) {
   const React = getHost().React;
-  const { Card, Badge, Button, Tooltip } = getHost().antd;
-  const { ThunderboltOutlined, SettingOutlined } = getHost().antdIcons || {};
-
-  const { agent, skills } = expert;
-  const isEnabled = agent.enabled;
-  const enabledSkills = skills.filter((skill) => skill.enabled !== false);
-  const bundle = EXPERT_BUNDLES.find(
-    (item) => item.id === agent.id || item.name === agent.name,
-  );
-  const coreAbilityTags = Array.from(
-    new Set(
-      bundle?.tags?.length
-        ? bundle.tags
-        : enabledSkills.flatMap((skill) => skill.tags || []),
-    ),
-  ).slice(0, 3);
-  const specialty = agent.managed_by_app
-    ? "应用专属专家"
-    : bundle?.category || (agent.id === "default" ? "通用助手" : "自定义专家");
-  const description = agent.description?.trim() || "";
-  const skillNames = enabledSkills.map((skill) => skill.name);
-
+  const { Card, Badge, Button } = getHost().antd;
+  const { SettingOutlined } = getHost().antdIcons || {};
+  const { agent } = expert;
+  const display = expertPresentation(expert);
   return React.createElement(
     Card,
     {
-      hoverable: true,
-      onClick,
+      className: "ugsci-expert-card",
       size: "small",
-      style: {
-        cursor: "pointer",
-        transition: "transform 0.2s ease, box-shadow 0.2s ease",
-        borderColor: isEnabled ? undefined : "var(--ant-color-border, #d9d9d9)",
-        opacity: isEnabled ? 1 : 0.7,
-        height: "100%",
-        width: "100%",
-        display: "flex",
-        flexDirection: "column",
-      },
+      style: { opacity: agent.enabled ? 1 : 0.7 },
       styles: {
         body: {
+          padding: 19,
           display: "flex",
           flexDirection: "column",
           height: "100%",
-          flex: 1,
-          padding: 18,
+          minHeight: 236,
         },
       },
     },
     React.createElement(
       "div",
-      {
-        style: {
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          gap: 8,
-          marginBottom: 14,
-        },
-      },
+      { className: "ugsci-expert-card-top" },
+      React.createElement(ExpertAvatar, { name: agent.name, size: 36 }),
       React.createElement(
         "div",
-        {
-          style: {
-            display: "flex",
-            alignItems: "center",
-            gap: 11,
-            minWidth: 0,
-          },
-        },
-        React.createElement(ExpertAvatar, { name: agent.name, size: 42 }),
+        { className: "ugsci-expert-identity" },
+        React.createElement(
+          "button",
+          { type: "button", className: "ugsci-expert-name", onClick },
+          display.name,
+        ),
         React.createElement(
           "div",
-          { style: { minWidth: 0 } },
-          React.createElement(
-            "div",
-            {
-              style: {
-                fontSize: 15,
-                fontWeight: 650,
-                lineHeight: 1.4,
-                display: "-webkit-box",
-                WebkitLineClamp: 2,
-                WebkitBoxOrient: "vertical",
-                overflow: "hidden",
-              },
-            },
-            agent.name,
-          ),
-          React.createElement(
-            "div",
-            {
-              style: {
-                fontSize: 12,
-                color: "var(--ant-color-text-secondary, #595959)",
-                marginTop: 3,
-              },
-            },
-            specialty,
-          ),
+          { className: "ugsci-expert-specialty" },
+          display.specialty,
         ),
       ),
       React.createElement(
         "span",
-        { style: { flexShrink: 0, whiteSpace: "nowrap" } },
+        { className: "ugsci-expert-status" },
         React.createElement(Badge, {
-          status: isEnabled ? "success" : "default",
-          text: isEnabled ? "启用" : "停用",
+          status: agent.enabled ? "success" : "default",
+          text: agent.enabled ? "启用" : "停用",
         }),
       ),
     ),
     React.createElement(
-      "div",
-      { style: { minHeight: 48, marginBottom: 12 } },
-      React.createElement(
-        "div",
-        {
-          style: {
-            fontSize: 11,
-            color: "var(--ant-color-text-tertiary, #8c8c8c)",
-            marginBottom: 6,
-          },
-        },
-        "能力标签",
-      ),
-      coreAbilityTags.length > 0
-        ? React.createElement(TagList, {
-            items: coreAbilityTags,
-            max: 3,
-            color: "blue",
-          })
-        : React.createElement(
-            "span",
-            {
-              style: {
-                fontSize: 12,
-                color: "var(--ant-color-text-secondary, #595959)",
-              },
-            },
-            skillNames.length
-              ? previewNames(skillNames)
-              : "尚未配置技能，可在专家配置中补充",
-          ),
+      "p",
+      { className: "ugsci-expert-summary", title: display.summary },
+      display.summary,
     ),
     React.createElement(
       "div",
-      { style: { marginTop: "auto", minHeight: 78 } },
-      React.createElement(
-        "div",
-        {
-          style: {
-            fontSize: 11,
-            color: "var(--ant-color-text-tertiary, #8c8c8c)",
-            marginBottom: 6,
-          },
-        },
-        "智能体描述",
-      ),
-      React.createElement(
-        "div",
-        {
-          style: {
-            color: "var(--ant-color-text-secondary, #595959)",
-            fontSize: 13,
-            lineHeight: 1.5,
-            maxHeight: 58,
-            overflow: "hidden",
-          },
-          title: description,
-        },
-        description ? renderMarkdown(description, React) : "暂无描述",
-      ),
+      { className: "ugsci-expert-tags" },
+      display.tags.length
+        ? display.tags.map((tag) =>
+            React.createElement(
+              "span",
+              { key: tag, className: "ugsci-expert-tag" },
+              tag,
+            ),
+          )
+        : `${
+            expert.skills.filter((s) => s.enabled !== false).length
+          } 项技能 · ${expert.mcps.length} 个 MCP`,
     ),
     React.createElement(
       "div",
-      {
-        style: {
-          display: "flex",
-          justifyContent: "flex-end",
-          alignItems: "center",
-          gap: 6,
-          marginTop: 14,
-          paddingTop: 12,
-          borderTop: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
-        },
-      },
-      React.createElement(
-        Tooltip,
-        { title: "配置专家", placement: "top" },
-        React.createElement(Button, {
-          type: "text",
-          size: "small",
-          "aria-label": `配置 ${agent.name}`,
-          icon: SettingOutlined
-            ? React.createElement(SettingOutlined, {
-                style: {
-                  fontSize: 16,
-                  color: "var(--ant-color-text-tertiary, #8c8c8c)",
-                },
-              })
-            : undefined,
-          onClick: (e: any) => {
-            e.stopPropagation();
-            if (onConfigure) onConfigure();
-          },
-        }),
-      ),
+      { className: "ugsci-expert-actions" },
       React.createElement(
         Button,
         {
-          type: "link",
+          type: "text",
           size: "small",
-          onClick: (event: any) => {
-            event.stopPropagation();
-            onClick();
-          },
+          "aria-label": `设置 ${display.name}`,
+          icon: SettingOutlined
+            ? React.createElement(SettingOutlined)
+            : undefined,
+          onClick: onConfigure,
         },
+        "设置",
+      ),
+      React.createElement(
+        Button,
+        { type: "link", size: "small", onClick },
         "查看详情",
       ),
       React.createElement(
@@ -321,17 +185,10 @@ export function ExpertCard({
         {
           type: "primary",
           size: "small",
-          icon: ThunderboltOutlined
-            ? React.createElement(ThunderboltOutlined)
-            : undefined,
-          disabled: !isEnabled,
-          onClick: (e: any) => {
-            e.stopPropagation();
-            if (onSummon) onSummon();
-          },
-          style: PRIMARY_BTN_STYLE,
+          disabled: !agent.enabled,
+          onClick: onSummon,
         },
-        agent.managed_by_app ? "打开应用" : "召唤专家",
+        agent.managed_by_app ? "打开应用" : "开始对话",
       ),
     ),
   );
@@ -461,7 +318,7 @@ export function ExpertDrawer({
             },
             FileTextOutlined
               ? React.createElement(FileTextOutlined, {
-                  style: { fontSize: 14, color: "#1677ff" },
+                  style: { fontSize: 14, color: "var(--app-action-link)" },
                 })
               : null,
             React.createElement(Text, { strong: true }, "系统提示词文件"),
@@ -795,7 +652,7 @@ export function ExpertDrawer({
                             style: {
                               marginTop: 4,
                               fontSize: 11,
-                              color: "var(--ant-color-text-tertiary, #8c8c8c)",
+                              color: "var(--app-card-muted, #8c8c8c)",
                             },
                           },
                           `提供 ${mcp.tools.length} 个工具`,
@@ -825,7 +682,7 @@ export function ExpertDrawer({
             },
             ToolOutlined
               ? React.createElement(ToolOutlined, {
-                  style: { fontSize: 14, color: "#1677ff" },
+                  style: { fontSize: 14, color: "var(--app-action-link)" },
                 })
               : null,
             React.createElement(Text, { strong: true }, "工具配置"),
@@ -834,7 +691,7 @@ export function ExpertDrawer({
             "pre",
             {
               style: {
-                background: "var(--ant-color-fill-quaternary, #fafafa)",
+                background: "var(--app-fill-faint, #fafafa)",
                 padding: 12,
                 borderRadius: 6,
                 fontSize: 12,
@@ -1123,7 +980,7 @@ export function ExpertTemplateModal({
               {
                 style: {
                   marginTop: 12,
-                  color: "var(--ant-color-text-tertiary, #8c8c8c)",
+                  color: "var(--app-card-muted, #8c8c8c)",
                 },
               },
               "正在创建专家...",
@@ -1146,8 +1003,8 @@ export function ExpertTemplateModal({
                       style: {
                         cursor: "pointer",
                         height: "100%",
-                        border: "2px dashed var(--ant-color-border, #d9d9d9)",
-                        background: "var(--ant-color-fill-quaternary, #fafafa)",
+                        border: "2px dashed var(--app-border, #d9d9d9)",
+                        background: "var(--app-fill-faint, #fafafa)",
                       },
                     },
                     React.createElement(
@@ -1165,7 +1022,7 @@ export function ExpertTemplateModal({
                         {
                           style: {
                             fontSize: 28,
-                            color: "var(--ant-color-text-tertiary, #8c8c8c)",
+                            color: "var(--app-card-muted, #8c8c8c)",
                           },
                         },
                         FileAddOutlined
@@ -1588,7 +1445,9 @@ export function BlankExpertModal({
     ),
     React.createElement(
       "div",
-      { style: { borderTop: "1px solid #f0f0f0", padding: "20px 0" } },
+      {
+        style: { borderTop: "1px solid var(--app-border)", padding: "20px 0" },
+      },
       sectionTitle("角色指令", "保存为 AGENTS.md"),
       React.createElement(Input.TextArea, {
         placeholder:
@@ -1604,7 +1463,7 @@ export function BlankExpertModal({
     ),
     React.createElement(
       "div",
-      { style: { borderTop: "1px solid #f0f0f0", paddingTop: 20 } },
+      { style: { borderTop: "1px solid var(--app-border)", paddingTop: 20 } },
       sectionTitle("初始能力"),
       React.createElement(
         Row,

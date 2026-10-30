@@ -8,11 +8,12 @@ import json
 import os
 import tempfile
 import time
+from contextlib import AbstractContextManager as ContextManager
 from contextlib import nullcontext
 from pathlib import Path
+from typing import Any, Callable, TypeVar
 
-# pylint: disable-next=E0611
-from typing import Any, Callable, ContextManager, TypeVar
+from ..utils.windows_paths import io_path
 
 from .errors import SDKError
 from .messages import Attachment
@@ -85,15 +86,15 @@ class PluginStorage:
 
         path = self._path(name)
         with get_sync_path_lock(path):
-            return _retry_windows_lock(path.read_bytes)
+            return _retry_windows_lock(type(path)(io_path(path)).read_bytes)
 
     def write_bytes(self, name: str, data: bytes) -> None:
         from ..utils.io_utils import get_sync_path_lock
 
         self._guard()
         path = self._path(name)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        fd, temporary = tempfile.mkstemp(dir=path.parent)
+        Path(io_path(path.parent)).mkdir(parents=True, exist_ok=True)
+        fd, temporary = tempfile.mkstemp(dir=io_path(path.parent))
         try:
             with os.fdopen(fd, "wb") as stream:
                 stream.write(data)
@@ -102,7 +103,7 @@ class PluginStorage:
 
             def publish():
                 self._guard()
-                os.replace(temporary, path)
+                os.replace(temporary, io_path(path))
 
             # Coordinate handles across PluginStorage instances and threads.
             # Readers may keep reading the old file during temp-file fsync;
@@ -131,7 +132,7 @@ class PluginStorage:
 
         def remove():
             self._guard()
-            path.unlink(missing_ok=True)
+            Path(io_path(path)).unlink(missing_ok=True)
 
         with get_sync_path_lock(path):
             _retry_windows_lock(remove)

@@ -1,0 +1,181 @@
+/* Geometry of the approved first two prototypes; colors come from the theme. */
+html[data-page-style]:not([data-page-style="classic"]) {
+  --app-shadow-panel: 0 8px 28px rgb(0 0 0 / 12%);
+}
+
+html[data-page-style]:not([data-page-style="classic"]) .page-container {
+  padding: 0;
+}
+html[data-page-style]:not([data-page-style="classic"]) .page-content {
+  border: 0;
+  border-radius: 0;
+}
+
+html[data-page-style]:not([data-page-style="classic"])
+  .qwenpaw-chat-anywhere-layout-right-header {
+  height: 66px !important;
+  min-height: 66px;
+  padding-inline: 20px;
+  border-bottom: 0;
+  background: var(--app-bg);
+}
+html[data-page-style="openai"] .qwenpaw-chat-anywhere-layout-right-header {
+  height: 58px !important;
+  min-height: 58px;
+  border-bottom: 1px solid var(--app-border);
+}
+html[data-page-style]:not([data-page-style="classic"])
+  .qwenpaw-chat-anywhere-default-header-right {
+  height: 100%;
+}
+
+html[data-page-style]:not([data-page-style="classic"])
+  .qwenpaw-chat-anywhere-input {
+  padding: 12px var(--app-chat-gutter) 16px;
+  background: var(--app-bg) !important;
+}
+html[data-page-style]:not([data-page-style="classic"])
+  [data-chat-wide="false"]
+  .qwenpaw-chat-anywhere-input-wrapper {
+  width: 100%;
+  max-width: 740px;
+  margin-inline: auto;
+}
+html[data-page-style]:not([data-page-style="classic"])
+  [data-chat-wide="false"]
+  .qwenpaw-bubble-list {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: calc(
+    var(--app-message-max-width) + 2 * var(--app-chat-gutter)
+  ) !important;
+  margin-inline: auto;
+  padding-inline: var(--app-chat-gutter);
+}
+html[data-page-style]:not([data-page-style="classic"]) .qwenpaw-sender {
+  box-shadow: none;
+  overflow: visible;
+}
+html[data-page-style]:not([data-page-style="classic"]) .qwenpaw-sender-content {
+  padding: 13px 10px 9px;
+  overflow: visible;
+  border-radius: inherit;
+}
+html[data-page-style]:not([data-page-style="classic"]) .qwenpaw-sender-input {
+  min-height: 52px !important;
+  padding: 3px 6px;
+  font-size: calc(13px * var(--app-font-scale));
+  line-height: 1.7;
+}
+html[data-page-style]:not([data-page-style="classic"])
+  .qwenpaw-sender-content-bottom {
+  gap: 6px;
+  flex-wrap: nowrap;
+}
+html[data-page-style]:not([data-page-style="classic"])
+  .qwenpaw-sender-content-bottom
+  button {
+  font-size: calc(11px * var(--app-font-scale));
+  border-color: transparent;
+  box-shadow: none;
+}
+html[data-page-style]:not([data-page-style="classic"]) .qwenpaw-markdown {
+  font-size: calc(14px * var(--app-font-scale));
+  line-height: 1.85;
+}
+html[data-page-style="openai"] .qwenpaw-markdown {
+  font-size: calc(13px * var(--app-font-scale));
+}
+html[data-page-style]:not([data-page-style="classic"])
+  .qwenpaw-bubble-end
+  .qwenpaw-bubble-content {
+  padding: 12px 18px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--app-surface-subtle);
+}
+html[data-page-style]:not([data-page-style="classic"])
+  :is(
+    .ant-popover-inner,
+    .qwenpaw-popover-inner,
+    .ant-dropdown-menu,
+    .qwenpaw-dropdown-menu
+  ) {
+  backdrop-filter: none;
+}
+
+@media (max-width: 768px) {
+  html[data-page-style]:not([data-page-style="classic"])
+    .qwenpaw-chat-anywhere-layout-right-header {
+    height: 58px !important;
+    min-height: 58px;
+    padding-inline: 12px;
+  }
+  html[data-page-style]:not([data-page-style="classic"])
+    .qwenpaw-chat-anywhere-input {
+    padding-inline: 10px;
+  }
+  html[data-page-style]:not([data-page-style="classic"]) .qwenpaw-sender-input {
+    font-size: 16px;
+  }
+  html[data-page-style]:not([data-page-style="classic"]) .qwenpaw-bubble {
+    min-width: 0;
+    max-width: 100%;
+  }
+  html[data-page-style]:not([data-page-style="classic"]) .qwenpaw-markdown {
+    overflow-wrap: anywhere;
+  }
+}
+
+html[data-page-style]:not([data-page-style="classic"])
+  .qwenpaw-sender-content-bottom
+  button:not([data-qwenpaw-composer-submit]) {
+  background: transparent;
+}
+
+/* Keep the primary tools beside the send action; secondary controls live in a menu. */
+[data-composer-model] {
+  display: contents;
+}
+html[data-page-style]:not([data-page-style="classic"]) .qwenpaw-sender-prefix {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+  overscroll-behavior-x: contain;
+}
+html[data-page-style]:not([data-page-style="classic"])
+  .qwenpaw-sender-prefix
+  > div {
+  gap: 4px !important;
+}
+html[data-page-style]:not([data-page-style="classic"]) [data-composer-model] {
+  display: inline-flex;
+  min-width: 0;
+  max-width: 240px;
+}
+html[data-page-style]:not([data-page-style="classic"])
+  [data-composer-model]
+  > button {
+  min-width: 0;
+  max-width: 100%;
+}
+html[data-page-style]:not([data-page-style="classic"])
+  [data-composer-model]
+  > button
+  > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+/* On touch screens, two deliberate rows keep each target comfortably tappable. */
+@media (max-width: 768px) {
+  html[data-page-style]:not([data-page-style="classic"])
+    .qwenpaw-sender-content-bottom {
+    row-gap: 2px;
+  }
+  html[data-page-style]:not([data-page-style="classic"]) [data-composer-model] {
+    max-width: 170px;
+  }
+}

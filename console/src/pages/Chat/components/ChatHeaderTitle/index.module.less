@@ -266,3 +266,14 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+:global(html[data-page-style]:not([data-page-style="classic"])) {
+  .chatName {
+    font-size: var(--app-font-caption);
+    font-weight: 400;
+    max-width: 360px;
+  }
+  .titleBlock {
+    padding-block: 0;
+  }
+}

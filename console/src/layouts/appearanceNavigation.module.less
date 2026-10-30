@@ -1,0 +1,106 @@
+.navigation {
+  display: flex;
+  flex-direction: column;
+  flex-shrink: 0;
+  gap: 3px;
+}
+
+.navigation > button,
+.morePanel button {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  width: 100%;
+  min-height: 36px;
+  gap: 9px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--app-text);
+  font: inherit;
+  font-size: var(--app-font-secondary);
+  text-align: left;
+  cursor: pointer;
+  > svg {
+    flex-shrink: 0;
+    stroke-width: 1.65;
+  }
+  &:hover,
+  &[aria-current="page"] {
+    background: var(--app-fill);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--app-focus-ring);
+    outline-offset: -2px;
+  }
+}
+
+.popover {
+  :global(.ant-popover-inner),
+  :global(.qwenpaw-popover-inner) {
+    padding: 8px !important;
+    border: 1px solid var(--app-border);
+    border-radius: 14px;
+    background: var(--app-surface-raised);
+    box-shadow: var(--app-shadow-panel);
+  }
+}
+@media (max-width: 768px) {
+  .popover {
+    position: fixed !important;
+    inset: auto 12px 12px !important;
+    width: auto !important;
+    max-width: none !important;
+    .morePanel {
+      width: 100%;
+      max-height: min(540px, calc(100dvh - 60px));
+    }
+  }
+}
+.morePanel {
+  width: min(320px, calc(100vw - 36px));
+  max-height: min(540px, 70dvh);
+  overflow-y: auto;
+  scrollbar-width: thin;
+}
+.group + .group {
+  border-top: 1px solid var(--app-border-subtle);
+  margin-top: 6px;
+  padding-top: 6px;
+}
+.groupHeading {
+  padding: 5px 8px;
+  font-size: var(--app-font-caption);
+  color: var(--app-text-tertiary);
+}
+.entryGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 2px 4px;
+  button {
+    min-width: 0;
+    min-height: 38px;
+    padding: 8px;
+    gap: 9px;
+    color: var(--app-text);
+    font-size: var(--app-font-secondary);
+    > span:first-child {
+      flex: 0 0 20px;
+      width: 20px;
+      display: inline-flex;
+      justify-content: center;
+    }
+    > span:first-child > svg {
+      width: 17px;
+      height: 17px;
+    }
+  }
+}
+
+@media (any-pointer: coarse) {
+  .navigation > button,
+  .morePanel button {
+    min-height: 44px;
+  }
+}

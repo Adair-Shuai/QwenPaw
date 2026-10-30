@@ -552,10 +552,10 @@ html.dark-mode [class*="chat-anywhere"] [class*="toolCallResultMd"] {
    4. Buttons — Dark Mode
    ═══════════════════════════════════════════════════════════════════════════ */
 
-/* Primary button — force white text in both light & dark mode */
+/* Primary foreground follows the actual accent luminance, including dark palettes. */
 .ant-btn-primary,
 .qwenpaw-btn-primary {
-  color: #fff !important;
+  color: var(--app-action-fg, #fff) !important;
 }
 
 /* Default button — subtle dark surface */

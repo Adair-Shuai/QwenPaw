@@ -340,8 +340,7 @@ export function RuntimeInstallDialog({
                   style: {
                     padding: 12,
                     borderRadius: 8,
-                    background:
-                      "var(--ant-color-fill-quaternary, rgba(127,127,127,.07))",
+                    background: "var(--app-fill-faint, rgba(127,127,127,.07))",
                   },
                 },
                 React.createElement(

@@ -130,10 +130,6 @@ def test_worker_uses_host_installer_and_probes_after_success(
 
     monkeypatch.setattr("qwenpaw.plugins.loader.PluginLoader", Loader)
     monkeypatch.setattr(
-        "qwenpaw.plugins.loader._ensure_plugin_site_on_path",
-        lambda: None,
-    )
-    monkeypatch.setattr(
         runtime.importlib.util,
         "find_spec",
         lambda name: object(),

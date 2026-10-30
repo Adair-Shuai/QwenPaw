@@ -273,7 +273,8 @@ function buildUserCard(msg: Message): IAgentScopeRuntimeWebUIMessage {
  */
 const buildResponseCard = (
   outputMessages: OutputMessage[],
-  terminal?: { status?: string; error?: unknown },
+  terminal?: { status?: string; error?: unknown; response_id?: string },
+  clientMessageId?: string,
 ): IAgentScopeRuntimeWebUIMessage => {
   const fallbackNow = Math.floor(Date.now() / 1000);
   const maxSeq = outputMessages.reduce(
@@ -307,7 +308,8 @@ const buildResponseCard = (
       {
         code: CARD_RESPONSE,
         data: {
-          id: `response_${generateId()}`,
+          id: terminal?.response_id || `response_${generateId()}`,
+          client_message_id: clientMessageId,
           output: normalizedMessages,
           object: "response",
           status: terminal?.status || "completed",
@@ -340,11 +342,15 @@ const convertMessages = (
   let i = 0;
 
   while (i < len) {
-    let terminal: { status?: string; error?: unknown } | undefined;
+    let terminal:
+      | { status?: string; error?: unknown; response_id?: string }
+      | undefined;
+    let clientMessageId: string | undefined;
     if (messages[i].role === ROLE_USER) {
       const user = messages[i++];
       const meta = user.metadata as Record<string, any> | undefined;
       terminal = (meta?.metadata ?? meta)?.qwenpaw_turn_state;
+      clientMessageId = (meta?.metadata ?? meta)?.qwenpaw_client_message_id;
       result.push(buildUserCard(user));
     }
     const startIdx = i;
@@ -355,7 +361,7 @@ const convertMessages = (
       terminal?.status === "failed" ||
       terminal?.status === "canceled"
     ) {
-      result.push(buildResponseCard(outputMsgs, terminal));
+      result.push(buildResponseCard(outputMsgs, terminal, clientMessageId));
     }
   }
 

@@ -76,8 +76,8 @@ export function ModelPickerPopover({
       className={styles.pickerViewport}
       style={{
         width: 360,
-        borderRadius: 20,
-        background: "var(--app-surface)",
+        borderRadius: 12,
+        background: "var(--app-surface-raised)",
         maxHeight: Math.max(120, layout.height),
       }}
     >

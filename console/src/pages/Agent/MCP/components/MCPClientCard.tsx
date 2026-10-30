@@ -11,6 +11,7 @@ import { Trash2, Wrench as ToolOutlined } from "lucide-react";
 import { ShieldCheck, ShieldAlert, ShieldX, KeyRound } from "lucide-react";
 import { MCPAccessModal } from "./MCPAccessModal";
 import { MCPOAuthSection } from "./MCPOAuthSection";
+import { CapabilityConfig } from "@/components/interaction/CapabilityWorkspace";
 
 interface MCPClientUpdate {
   name?: string;
@@ -109,6 +110,11 @@ export const MCPClientCard = React.memo(function MCPClientCard({
           <>
             <span>{clientType}</span>
             <span>{client.transport}</span>
+            {usesHeaderAuth && (
+              <Tooltip title={t("mcp.headerAuthHint")}>
+                <Tag>{t("mcp.headerAuth")}</Tag>
+              </Tooltip>
+            )}
           </>
         }
         actions={
@@ -121,11 +127,6 @@ export const MCPClientCard = React.memo(function MCPClientCard({
                 onClick={() => setAccessModalOpen(true)}
               />
             </Tooltip>
-            {usesHeaderAuth && (
-              <Tooltip title={t("mcp.headerAuthHint")}>
-                <Tag>{t("mcp.headerAuth")}</Tag>
-              </Tooltip>
-            )}
             {isRemote && !usesHeaderAuth && (
               <Tooltip title={t("mcp.oauth.manage")}>
                 <Button
@@ -169,7 +170,8 @@ export const MCPClientCard = React.memo(function MCPClientCard({
         <p>{t("mcp.deleteConfirm")}</p>
       </Modal>
 
-      <Modal
+      <CapabilityConfig
+        autoSave
         surfaceId={surfaceId}
         styles={{
           body: {
@@ -202,7 +204,7 @@ export const MCPClientCard = React.memo(function MCPClientCard({
             scheduleJson();
           }}
         />
-      </Modal>
+      </CapabilityConfig>
 
       <MCPAccessModal
         client={client}

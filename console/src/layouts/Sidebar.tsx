@@ -10,7 +10,14 @@ import {
   Popconfirm,
   Divider,
 } from "antd";
-import { useState, useEffect, useMemo, useCallback, useRef } from "react";
+import {
+  useState,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useCallback,
+  useRef,
+} from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
@@ -28,13 +35,18 @@ import AgentSelector from "../components/AgentSelector";
 import {
   Bot as SparkAgentLine,
   SquarePen as SparkNewChatLine,
-  ChevronLeft as SparkOperateLeftLine,
-  ChevronRight as SparkOperateRightLine,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
 import SidebarSessionList from "./SidebarSessionList";
 import DockableSidebar from "./DockableSidebar";
+import {
+  clampSidebarWidth,
+  readStoredSidebarWidth,
+  writeStoredSidebarWidth,
+  clearStoredSidebarWidth,
+} from "./sidebarSizing";
 import skin from "./sidebarA.module.less";
-import SidebarUsage from "./SidebarUsage";
 import {
   DEFAULT_AVATAR,
   builtinAvatarSource,
@@ -79,6 +91,8 @@ import AppBrand from "./AppBrand";
 import { AgentStatusIndicator } from "../components/AgentStatusIndicator";
 import { getAgentDisplayName } from "../utils/agentDisplayName";
 import { isAgentAvailableInChat } from "../utils/agentVisibility";
+import { PAGE_LAYOUTS } from "../utils/pageStyle";
+import AppearanceNavigation from "./AppearanceNavigation";
 
 // ── Layout ────────────────────────────────────────────────────────────────
 
@@ -151,7 +165,7 @@ export default function Sidebar({
   }, []);
   const language = i18n.resolvedLanguage ?? i18n.language;
   const { message } = useAppMessage();
-  const { isDark } = useTheme();
+  const { isDark, pageStyle = "classic" } = useTheme();
   const [authEnabled, setAuthEnabled] = useState(false);
   const [hubAdmin, setHubAdmin] = useState(false);
   const [hubUsername, setHubUsername] = useState("");
@@ -162,6 +176,7 @@ export default function Sidebar({
   const [settingsOpen, setSettingsOpen] = useState(false);
   const settingsTriggerRef = useRef<HTMLButtonElement>(null);
   const [historyPopoverOpen, setHistoryPopoverOpen] = useState(false);
+  const redesigned = pageStyle !== "classic";
   const [agentPopoverOpen, setAgentPopoverOpen] = useState(false);
   const [version, setVersion] = useState("");
   const [accountForm] = Form.useForm();
@@ -169,9 +184,27 @@ export default function Sidebar({
   // the main content on narrow viewports. On desktop, restore the persisted
   // preference so a reload keeps the last collapsed/expanded state.
   const [collapsed, setCollapsed] = useState(
-    () => isMobileSidebarViewport() || getSidebarCollapsedPreference(),
+    () => isMobileSidebarViewport() || getSidebarCollapsedPreference(pageStyle),
   );
   const [isMobile, setIsMobile] = useState(isMobileSidebarViewport);
+  const [customWidth, setCustomWidth] = useState(() =>
+    readStoredSidebarWidth(localStorage, pageStyle),
+  );
+  const handleWidthChange = useCallback(
+    (width: number) => {
+      const next = clampSidebarWidth(
+        width,
+        PAGE_LAYOUTS[pageStyle].sidebarMinWidth,
+      );
+      setCustomWidth(next);
+      writeStoredSidebarWidth(localStorage, next, pageStyle);
+    },
+    [pageStyle],
+  );
+  const handleWidthReset = useCallback(() => {
+    setCustomWidth(null);
+    clearStoredSidebarWidth(localStorage, pageStyle);
+  }, [pageStyle]);
   const navScrollRef = useRef<HTMLDivElement>(null);
   const reducedMotion = useReducedMotion();
   const [toolsMode, setToolsMode] = useState(readToolsMode);
@@ -283,6 +316,21 @@ export default function Sidebar({
     ];
     return orderSidebarEntries(uniqueEntries, focusItemIds);
   }, [agentMenu, focusItemIds, routes, selectedSettingsMenu, language]);
+  const allNavigation = useMemo(() => {
+    const entries = [
+      ...flattenMenu(visibleAgentMenu, routes, 17),
+      ...flattenMenu(rawSettingsMenu, routes, 17),
+    ];
+    const apps = routes.find((route) => route.id === "core.app-center");
+    if (apps && !entries.some((entry) => entry.key === apps.id))
+      entries.push({
+        key: apps.id,
+        path: apps.path,
+        label: t("nav.apps", "Apps"),
+        icon: <Grid2X2 size={17} />,
+      });
+    return entries;
+  }, [visibleAgentMenu, rawSettingsMenu, routes, language, t]);
   // ── Effects ──────────────────────────────────────────────────────────────
 
   useEffect(() => {
@@ -329,7 +377,7 @@ export default function Sidebar({
       .catch(() => {});
   }, []);
 
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (
       typeof window === "undefined" ||
       typeof window.matchMedia !== "function"
@@ -343,16 +391,19 @@ export default function Sidebar({
       // Collapse on mobile to avoid covering the main content. This is a
       // transient viewport override: it never writes the preference, and
       // returning to desktop width restores what the user last chose.
-      setCollapsed(mediaQuery.matches || getSidebarCollapsedPreference());
+      setCollapsed(
+        mediaQuery.matches || getSidebarCollapsedPreference(pageStyle),
+      );
     };
 
     syncMobileSidebar();
+    setCustomWidth(readStoredSidebarWidth(localStorage, pageStyle));
     mediaQuery.addEventListener("change", syncMobileSidebar);
 
     return () => {
       mediaQuery.removeEventListener("change", syncMobileSidebar);
     };
-  }, []);
+  }, [pageStyle]);
 
   useEffect(() => {
     if (!collapsed) {
@@ -499,10 +550,13 @@ export default function Sidebar({
    * Viewport-driven collapsing stays transient so a narrow window does not
    * permanently pin the desktop sidebar.
    */
-  const handleSetCollapsed = useCallback((nextCollapsed: boolean) => {
-    setCollapsed(nextCollapsed);
-    setSidebarCollapsedPreference(nextCollapsed);
-  }, []);
+  const handleSetCollapsed = useCallback(
+    (nextCollapsed: boolean) => {
+      setCollapsed(nextCollapsed);
+      setSidebarCollapsedPreference(nextCollapsed, pageStyle);
+    },
+    [pageStyle],
+  );
 
   /**
    * New chat: if we're already on the chat page, dispatch the event so
@@ -675,13 +729,13 @@ export default function Sidebar({
     );
   };
 
-  const renderNavItem = (entry: FlatMenuEntry) => {
+  const renderNavItem = (entry: FlatMenuEntry, menu = false) => {
     const isActive = selectedKey === entry.key;
     const isInbox = entry.key === "core.inbox";
     return (
       <Tooltip
         key={entry.key}
-        title={toolsMode === 2 ? null : entry.label}
+        title={menu || toolsMode === 2 ? null : entry.label}
         placement="top"
         trigger={["hover", "focus"]}
         styles={{ root: { pointerEvents: "none" } }}
@@ -720,8 +774,8 @@ export default function Sidebar({
             )}
           </span>
           <motion.span
-            className={skin.navLabel}
-            animate={{ opacity: toolsMode === 2 ? 1 : 0 }}
+            className={menu ? skin.menuNavLabel : skin.navLabel}
+            animate={{ opacity: menu || toolsMode === 2 ? 1 : 0 }}
             transition={{ duration: reducedMotion ? 0 : 0.18 }}
           >
             {entry.label}
@@ -731,16 +785,30 @@ export default function Sidebar({
     );
   };
 
-  const siderWidth = collapsed ? (isMobile ? 56 : 72) : isMobile ? 240 : 280;
+  const expandedWidth = PAGE_LAYOUTS[pageStyle].sidebarWidth;
+  const siderWidth = collapsed
+    ? isMobile
+      ? 56
+      : redesigned
+      ? 66
+      : 72
+    : isMobile
+    ? 240
+    : customWidth ?? expandedWidth;
 
   return (
     <DockableSidebar
       width={siderWidth}
+      minWidth={PAGE_LAYOUTS[pageStyle].sidebarMinWidth}
       mobile={isMobile}
       onMobileDismiss={() => handleSetCollapsed(true)}
+      onWidthChange={handleWidthChange}
+      onWidthReset={handleWidthReset}
+      onResizeCollapse={() => handleSetCollapsed(true)}
     >
       <Sider
         width={siderWidth}
+        data-page-navigation={redesigned ? pageStyle : undefined}
         className={`${styles.sider} ${skin.surface} ${
           collapsed ? skin.compactRail : ""
         }${collapsed ? ` ${styles.siderCollapsed}` : ""}${
@@ -753,7 +821,7 @@ export default function Sidebar({
           action={
             <Button
               type="text"
-              icon={<SparkOperateLeftLine size={18} />}
+              icon={<PanelLeftClose size={18} />}
               onClick={() => handleSetCollapsed(true)}
               className={styles.brandCollapseToggle}
               aria-label={t("sidebar.collapse", "Collapse sidebar")}
@@ -761,7 +829,7 @@ export default function Sidebar({
           }
         />
 
-        {collapsed ? (
+        {collapsed && (
           <nav className={styles.collapsedNav}>
             <div className={styles.collapsedNavPinned}>
               <Tooltip
@@ -775,7 +843,7 @@ export default function Sidebar({
                   aria-label={t("sidebar.expand", "Expand sidebar")}
                   onClick={() => handleSetCollapsed(false)}
                 >
-                  <SparkOperateRightLine size={18} />
+                  <PanelLeftOpen size={18} />
                 </button>
               </Tooltip>
               <Popover
@@ -901,148 +969,190 @@ export default function Sidebar({
               {collapsedNavItems.map(renderCollapsedNavItem)}
             </div>
           </nav>
-        ) : (
-          <>
-            <InteractiveCard
-              as="section"
-              tilt={2}
-              frameClassName={skin.toolFrame}
-              className={`${skin.toolPanel} ${
-                toolsOpen ? skin.toolPanelOpen : ""
-              }`}
-              aria-label={t("sidebar.tools", "Agent and shortcuts")}
-            >
-              <div className={skin.toolHeader}>
-                <button
-                  type="button"
-                  className={skin.toolHeaderHitArea}
-                  data-testid="tool-header-toggle"
-                  aria-hidden="true"
-                  tabIndex={-1}
-                  title={headerToggleLabel}
-                  onClick={toggleToolsFromHeader}
-                />
-                <div className={skin.agent}>
-                  <AgentSelector compact />
-                </div>
-                <button
-                  type="button"
-                  className={skin.toolButton}
-                  data-press
-                  aria-expanded={toolsOpen}
-                  title={modeLabel}
-                  aria-label={modeLabel}
-                  data-mode={toolsMode}
-                  onClick={cycleTools}
-                >
-                  <Grid2X2 size={16} />
-                </button>
-              </div>
-              <RunningGlow active />
-              <AnimatePresence initial={false}>
-                {toolsOpen && (
-                  <motion.div
-                    key="tools"
-                    layout="size"
-                    initial={{ height: 0, opacity: 0 }}
-                    animate={{ height: "auto", opacity: 1 }}
-                    exit={{ height: 0, opacity: 0 }}
-                    transition={
-                      reducedMotion
-                        ? { duration: 0 }
-                        : { type: "spring", stiffness: 420, damping: 40 }
-                    }
-                    style={{ overflow: "hidden" }}
+        )}
+        <div className={styles.expandedSidebarContent} hidden={collapsed}>
+          {!collapsed && (
+            <>
+              <InteractiveCard
+                data-page-agent-selector={redesigned || undefined}
+                as="section"
+                tilt={2}
+                frameClassName={skin.toolFrame}
+                className={`${skin.toolPanel} ${
+                  toolsOpen ? skin.toolPanelOpen : ""
+                }`}
+                aria-label={t("sidebar.tools", "Agent and shortcuts")}
+              >
+                <div className={skin.toolHeader}>
+                  <button
+                    type="button"
+                    className={skin.toolHeaderHitArea}
+                    data-testid="tool-header-toggle"
+                    aria-hidden="true"
+                    tabIndex={-1}
+                    title={headerToggleLabel}
+                    onClick={toggleToolsFromHeader}
+                  />
+                  <div className={skin.agent}>
+                    <AgentSelector compact />
+                  </div>
+                  <button
+                    type="button"
+                    className={skin.toolButton}
+                    data-press
+                    aria-expanded={toolsOpen}
+                    title={modeLabel}
+                    aria-label={modeLabel}
+                    data-mode={toolsMode}
+                    onClick={cycleTools}
                   >
+                    <Grid2X2 size={16} />
+                  </button>
+                </div>
+                <RunningGlow active />
+                <AnimatePresence initial={false}>
+                  {toolsOpen && !redesigned && (
                     <motion.div
-                      layout
+                      key="tools"
+                      layout="size"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
                       transition={
                         reducedMotion
                           ? { duration: 0 }
-                          : {
+                          : { type: "spring", stiffness: 420, damping: 40 }
+                      }
+                      style={{ overflow: "hidden" }}
+                    >
+                      <motion.div
+                        layout
+                        transition={
+                          reducedMotion
+                            ? { duration: 0 }
+                            : {
+                                type: "spring",
+                                stiffness: 420,
+                                damping: 40,
+                              }
+                        }
+                        ref={navScrollRef}
+                        className={`${skin.navGrid} ${
+                          toolsMode === 2 ? skin.navDetailed : ""
+                        }`}
+                      >
+                        {selectedFlatNav.map((entry, index) => (
+                          <motion.div
+                            key={entry.key}
+                            layout="position"
+                            initial={
+                              reducedMotion ? false : { y: 7, opacity: 0 }
+                            }
+                            animate={{ y: 0, opacity: 1 }}
+                            transition={{
                               type: "spring",
                               stiffness: 420,
-                              damping: 40,
-                            }
-                      }
-                      ref={navScrollRef}
-                      className={`${skin.navGrid} ${
-                        toolsMode === 2 ? skin.navDetailed : ""
-                      }`}
-                    >
-                      {selectedFlatNav.map((entry, index) => (
-                        <motion.div
-                          key={entry.key}
-                          layout="position"
-                          initial={reducedMotion ? false : { y: 7, opacity: 0 }}
-                          animate={{ y: 0, opacity: 1 }}
-                          transition={{
-                            type: "spring",
-                            stiffness: 420,
-                            damping: 30,
-                            delay: reducedMotion
-                              ? 0
-                              : Math.min(index * 0.025, 0.15),
-                          }}
-                        >
-                          {renderNavItem(entry)}
-                        </motion.div>
-                      ))}
+                              damping: 30,
+                              delay: reducedMotion
+                                ? 0
+                                : Math.min(index * 0.025, 0.15),
+                            }}
+                          >
+                            {renderNavItem(entry)}
+                          </motion.div>
+                        ))}
 
-                      <Tooltip
-                        title={
-                          toolsMode === 2
-                            ? null
-                            : t("nav.moreSettings", "More settings")
-                        }
-                        placement="top"
-                        trigger={["hover", "focus"]}
-                      >
-                        <button
-                          type="button"
-                          className={skin.moreSettings}
-                          data-press
-                          aria-label={t("nav.moreSettings", "More settings")}
-                          onClick={handleOpenSettings}
+                        <Tooltip
+                          title={
+                            toolsMode === 2
+                              ? null
+                              : t("nav.moreSettings", "More settings")
+                          }
+                          placement="top"
+                          trigger={["hover", "focus"]}
                         >
-                          <Settings size={18} />
-                          <span className={skin.navLabel}>
-                            {t("nav.moreSettings", "More settings")}
-                          </span>
-                        </button>
-                      </Tooltip>
+                          <button
+                            type="button"
+                            className={skin.moreSettings}
+                            data-press
+                            aria-label={t("nav.moreSettings", "More settings")}
+                            onClick={handleOpenSettings}
+                          >
+                            <Settings size={18} />
+                            <span className={skin.navLabel}>
+                              {t("nav.moreSettings", "More settings")}
+                            </span>
+                          </button>
+                        </Tooltip>
+                      </motion.div>
                     </motion.div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
-            </InteractiveCard>
-            <button
-              type="button"
-              data-press
-              className={skin.newTask}
-              onClick={handleNewChat}
-            >
-              <SparkNewChatLine size={18} />
-              <span>{t("chat.newTask", "New task")}</span>
-            </button>
-            <div className={skin.pluginSlot}>
-              <Slot name="sider.top" kind="fill" />
-            </div>
+                  )}
+                </AnimatePresence>
+              </InteractiveCard>
+              <button
+                type="button"
+                data-press
+                data-page-new-task={redesigned || undefined}
+                className={skin.newTask}
+                onClick={handleNewChat}
+              >
+                <SparkNewChatLine size={18} />
+                <span>{t("chat.newTask", "New task")}</span>
+              </button>
+              {redesigned && (
+                <AppearanceNavigation
+                  entries={allNavigation}
+                  shortcuts={selectedFlatNav}
+                  selectedKey={selectedKey}
+                  onNavigate={(entry) =>
+                    entry.href
+                      ? openExternalLink(entry.href)
+                      : navigate(entry.path)
+                  }
+                  onWorkspace={
+                    backendCapabilities?.workspace_ui === false
+                      ? undefined
+                      : (trigger) => {
+                          if (isChatActive)
+                            window.dispatchEvent(
+                              new CustomEvent(
+                                "qwenpaw:toggle-files-workspace",
+                                { detail: { trigger } },
+                              ),
+                            );
+                          else {
+                            const entry = allNavigation.find(
+                              (item) => item.key === "core.files",
+                            );
+                            if (entry) navigate(entry.path);
+                          }
+                        }
+                  }
+                  renderEntry={(entry) => renderNavItem(entry, true)}
+                />
+              )}
+            </>
+          )}
+          <div className={skin.pluginSlot} data-sidebar-plugin="top">
+            <Slot name="sider.top" kind="fill" />
+          </div>
 
-            {/* Session list — fills the primary space. */}
+          {/* Session list — fills the primary space. */}
+          {!collapsed && (
             <div className={styles.sessionArea}>
               <SidebarSessionList
                 defaultSearchOpen
+                minimal={redesigned}
                 hideNewTask
                 onNewChat={handleNewChat}
                 onSessionClick={handleSidebarSessionClick}
               />
             </div>
-            <div className={skin.pluginSlot}>
-              <Slot name="sider.bottom" kind="fill" />
-            </div>
-          </>
-        )}
+          )}
+          <div className={skin.pluginSlot} data-sidebar-plugin="bottom">
+            <Slot name="sider.bottom" kind="fill" />
+          </div>
+        </div>
 
         {authEnabled && hubAdmin && !collapsed && (
           <div className={styles.authActions}>
@@ -1058,12 +1168,6 @@ export default function Sidebar({
           </div>
         )}
 
-        {!collapsed && (
-          <SidebarUsage
-            mobile={isMobile}
-            agentId={selectedAgent ?? undefined}
-          />
-        )}
         <div className={styles.collapseToggleContainer}>
           <Popover
             open={settingsOpen}

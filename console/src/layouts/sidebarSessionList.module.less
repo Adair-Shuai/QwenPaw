@@ -120,8 +120,49 @@
 
 .historyHeaderRow {
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   min-height: var(--app-control-md);
+}
+
+.historyHeaderControls {
+  display: flex;
+  flex: 1 1 100%;
+  min-width: 0;
+  align-items: center;
+}
+
+.historySearch {
+  flex: 1 1 100%;
+  min-width: 0;
+  width: 100%;
+  padding: 4px 8px 6px;
+}
+
+.historyHeaderControls[hidden],
+.historySearch[hidden] {
+  display: none;
+}
+
+.searchClose {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  color: var(--app-text-secondary);
+  background: transparent;
+  cursor: pointer;
+  &:hover {
+    color: var(--app-text);
+    background: var(--app-fill);
+  }
+  &:focus-visible {
+    outline: var(--app-focus-ring-width) solid var(--app-focus-ring);
+  }
 }
 
 .historyHeader {
@@ -186,6 +227,10 @@
 }
 
 .historyLabel {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   font-size: var(--app-font-secondary);
   font-weight: 600;
   letter-spacing: 0.1px;
@@ -228,6 +273,9 @@
 }
 
 .primarySidebar {
+  .historySearch {
+    padding: 0 3px;
+  }
   .searchContainer {
     padding: 6px 4px 8px;
   }
@@ -238,5 +286,37 @@
     border-radius: 10px;
     background: var(--app-fill-subtle);
     font-size: 12px;
+  }
+}
+
+:global(html[data-interface-style]:not([data-interface-style="classic"])) {
+  .sessionList {
+    --sidebar-header-bg: var(--app-shell-bg);
+    --sidebar-sticky-bg: var(--app-shell-bg);
+  }
+}
+
+.searchContainer[hidden] {
+  display: none;
+}
+:global(html[data-page-style]:not([data-page-style="classic"])) {
+  .historyHeaderRow {
+    min-height: 28px;
+  }
+  .historyHeader {
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--app-text-secondary);
+    padding: 0 9px;
+  }
+  .scroll {
+    padding-inline: 0;
+    > div {
+      scrollbar-width: thin;
+      scrollbar-color: var(--app-border-strong) transparent;
+    }
+  }
+  .searchContainer {
+    padding-inline: 3px;
   }
 }

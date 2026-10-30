@@ -50,6 +50,8 @@ class HarnessRuntime:
         workspace: Any = None,
     ) -> None:
         self._state_dir = workspace_dir / "harnesses"
+        self._workspace_dir = workspace_dir
+        self._workspace = workspace
         self._agent_id = agent_id
         self._adapters: dict[str, HarnessAdapter] = {}
         self._adapter_keys: dict[str, tuple[Any, ...]] = {}
@@ -110,7 +112,136 @@ class HarnessRuntime:
             self._adapters[provider_id] = adapter
             return adapter
 
-    async def stream(  # pylint: disable=too-many-branches,too-many-statements
+    async def stream(
+        self,
+        *,
+        backend: str,
+        request: Any,
+        cwd: Path,
+        settings: dict[str, Any] | None = None,
+    ) -> AsyncGenerator[Any, None]:
+        """Capture the same immutable turn files for every adapter."""
+        from ..turn_files.lifecycle import begin_turn_files, terminal_status
+
+        tracker = None
+        error = None
+        status = "completed"
+        stream = self._stream(
+            backend=backend,
+            request=request,
+            cwd=cwd,
+            settings=settings,
+        )
+        try:
+            async for item in stream:
+                if getattr(item, "object", None) == "response":
+                    item_status = str(
+                        getattr(
+                            getattr(item, "status", None),
+                            "value",
+                            getattr(item, "status", ""),
+                        ),
+                    )
+                    if item_status == "created":
+                        prompt, attachments = self._content_from_request(
+                            request,
+                        )
+                        command = (
+                            self._parse_command(prompt)[0]
+                            if not attachments
+                            else ""
+                        )
+                        if not command:
+                            (
+                                capture_dirs,
+                                capture_warning,
+                            ) = await self._file_capture_dirs(request, cwd)
+                            tracker = await begin_turn_files(
+                                workspace_dir=self._workspace_dir,
+                                request=request,
+                                agent_id=self._agent_id,
+                                response_id=item.id,
+                                project_dirs=capture_dirs,
+                            )
+                            if tracker is not None and capture_warning:
+                                tracker.capture.before.warn(capture_warning)
+                    if item_status in {
+                        "completed",
+                        "failed",
+                        "canceled",
+                        "cancelled",
+                    }:
+                        status = (
+                            "canceled"
+                            if item_status == "cancelled"
+                            else item_status
+                        )
+                        if tracker is not None:
+                            await tracker.finish(status)
+                yield item
+        except BaseException as exc:
+            error = exc
+            raise
+        finally:
+            try:
+                await stream.aclose()
+            finally:
+                if tracker is not None:
+                    await tracker.finish(
+                        terminal_status(error) if error else status,
+                    )
+
+    async def _file_capture_dirs(
+        self,
+        request: Any,
+        cwd: Path,
+    ) -> tuple[list[Path], str | None]:
+        """Capture bound projects while retaining the adapter cwd."""
+        if self._workspace is None:
+            return [cwd], None
+        try:
+            from ..config.config import load_agent_config
+            from ..services.project_directory import (
+                agent_project_dirs_from_config,
+                resolve_effective_project_dirs,
+                session_project_dirs_raw_from_meta,
+            )
+
+            config = await asyncio.to_thread(load_agent_config, self._agent_id)
+            session_dirs = None
+            manager = getattr(self._workspace, "chat_manager", None)
+            if manager is not None:
+                chat_id = await manager.get_chat_id_by_session(
+                    getattr(request, "session_id", ""),
+                    getattr(request, "channel", None) or "console",
+                    getattr(request, "user_id", None),
+                )
+                if chat_id:
+                    chat = await manager.get_chat(chat_id)
+                    if chat is None:
+                        raise LookupError("Bound chat unavailable")
+                    session_dirs = session_project_dirs_raw_from_meta(
+                        chat.meta,
+                    )
+            resolved = await asyncio.to_thread(
+                resolve_effective_project_dirs,
+                self._workspace_dir,
+                agent_project_dirs=agent_project_dirs_from_config(config),
+                session_project_dirs=session_dirs,
+            )
+            return list(dict.fromkeys([*resolved.paths, cwd])), None
+        except Exception:
+            logger.warning(
+                "Could not resolve external file capture roots",
+                exc_info=True,
+            )
+            return (
+                [cwd],
+                "Bound project directories unavailable; "
+                "only the execution directory was captured",
+            )
+
+    async def _stream(  # pylint: disable=too-many-branches,too-many-statements
         self,
         *,
         backend: str,
@@ -195,34 +326,39 @@ class HarnessRuntime:
                     settings=settings,
                     attachments=attachments,
                 )
-            async for event in event_stream:
-                if event.kind == HarnessEventKind.TEXT_DELTA:
-                    for item in text_stream.push(
-                        MessageType.MESSAGE,
-                        event.text,
-                    ):
-                        yield tagged(item)
-                elif event.kind == HarnessEventKind.REASONING_DELTA:
-                    for item in text_stream.push(
-                        MessageType.REASONING,
-                        event.text,
-                    ):
-                        yield tagged(item)
-                elif event.kind == HarnessEventKind.TOOL_STARTED:
-                    for item in text_stream.finish():
-                        yield tagged(item)
-                    for item in tool_stream.start(event):
-                        yield tagged(item)
-                elif event.kind == HarnessEventKind.TOOL_PROGRESS:
-                    for item in tool_stream.progress(event):
-                        yield tagged(item)
-                elif event.kind == HarnessEventKind.TOOL_COMPLETED:
-                    for item in tool_stream.complete(event):
-                        yield tagged(item)
-                elif event.kind == HarnessEventKind.ERROR:
-                    error_text = event.text
-                elif event.kind == HarnessEventKind.CANCELLED:
-                    cancelled = True
+            try:
+                async for event in event_stream:
+                    if event.kind == HarnessEventKind.TEXT_DELTA:
+                        for item in text_stream.push(
+                            MessageType.MESSAGE,
+                            event.text,
+                        ):
+                            yield tagged(item)
+                    elif event.kind == HarnessEventKind.REASONING_DELTA:
+                        for item in text_stream.push(
+                            MessageType.REASONING,
+                            event.text,
+                        ):
+                            yield tagged(item)
+                    elif event.kind == HarnessEventKind.TOOL_STARTED:
+                        for item in text_stream.finish():
+                            yield tagged(item)
+                        for item in tool_stream.start(event):
+                            yield tagged(item)
+                    elif event.kind == HarnessEventKind.TOOL_PROGRESS:
+                        for item in tool_stream.progress(event):
+                            yield tagged(item)
+                    elif event.kind == HarnessEventKind.TOOL_COMPLETED:
+                        for item in tool_stream.complete(event):
+                            yield tagged(item)
+                    elif event.kind == HarnessEventKind.ERROR:
+                        error_text = event.text
+                    elif event.kind == HarnessEventKind.CANCELLED:
+                        cancelled = True
+            finally:
+                close = getattr(event_stream, "aclose", None)
+                if close is not None:
+                    await close()
         except asyncio.CancelledError:
             cancelled = True
             task_cancelled = True

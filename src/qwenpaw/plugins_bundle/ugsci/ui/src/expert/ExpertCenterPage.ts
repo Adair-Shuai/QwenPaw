@@ -1,3 +1,9 @@
+import { EXPERT_STYLES } from "./expertStyles";
+import {
+  EXPERT_CATEGORIES,
+  expertPresentation,
+  fetchExpertPresentation,
+} from "./expertPresentation";
 /**
  * Expert center page with knowledge base tab and preset prompts tab.
  */
@@ -151,6 +157,7 @@ export function ExpertCenterPage() {
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeExpert, setActiveExpert] = useState<ExpertData | null>(null);
   const [searchText, setSearchText] = useState("");
+  const [category, setCategory] = useState("全部专家");
   const [templateModalOpen, setTemplateModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState(sectionFromLocation);
   const [teamLaunchModal, setTeamLaunchModal] = useState<ExpertTeam | null>(
@@ -173,17 +180,23 @@ export function ExpertCenterPage() {
       const expertDataList: ExpertData[] = await Promise.all(
         agents.map(async (agent): Promise<ExpertData> => {
           try {
-            const [config, skills, agentMCPs] = await Promise.all([
-              fetchAgentConfig(agent.id).catch(() => null),
-              fetchAgentSkills(agent.id).catch(() => [] as SkillSpec[]),
-              fetchAgentMCPClients(agent.id).catch(() => [] as MCPClientInfo[]),
-            ]);
+            const [config, skills, agentMCPs, presentation] = await Promise.all(
+              [
+                fetchAgentConfig(agent.id).catch(() => null),
+                fetchAgentSkills(agent.id).catch(() => [] as SkillSpec[]),
+                fetchAgentMCPClients(agent.id).catch(
+                  () => [] as MCPClientInfo[],
+                ),
+                fetchExpertPresentation(agent.id).catch(() => null),
+              ],
+            );
 
             return {
               agent,
               config,
               skills,
               mcps: agentMCPs,
+              presentation,
               loading: false,
             };
           } catch {
@@ -355,16 +368,21 @@ export function ExpertCenterPage() {
   );
 
   const filteredExperts = useMemo(() => {
-    if (!searchText.trim()) return experts;
-    const q = searchText.toLowerCase();
-    return experts.filter(
-      (e) =>
-        e.agent.name.toLowerCase().includes(q) ||
-        e.agent.description?.toLowerCase().includes(q) ||
-        e.agent.id.toLowerCase().includes(q) ||
-        e.skills.some((s) => s.name.toLowerCase().includes(q)),
-    );
-  }, [experts, searchText]);
+    const q = searchText.trim().toLowerCase();
+    return experts.filter((e) => {
+      const display = expertPresentation(e);
+      return (
+        (category === "全部专家" || display.category === category) &&
+        `${display.name} ${display.specialty} ${display.summary} ${
+          e.agent.name
+        } ${e.agent.id} ${e.agent.description || ""} ${e.skills
+          .map((s) => s.name)
+          .join(" ")}`
+          .toLowerCase()
+          .includes(q)
+      );
+    });
+  }, [experts, searchText, category]);
 
   const enabledCount = experts.filter((e) => e.agent.enabled).length;
   const totalSkills = experts.reduce(
@@ -386,7 +404,8 @@ export function ExpertCenterPage() {
       ),
       children: React.createElement(
         "div",
-        null,
+        { className: "ugsci-expert-library" },
+        React.createElement("style", null, EXPERT_STYLES),
         // Search bar
         React.createElement(
           "div",
@@ -401,7 +420,8 @@ export function ExpertCenterPage() {
             },
           },
           React.createElement(Input, {
-            placeholder: "搜索专家名称、描述或技能...",
+            placeholder: "搜索名称、职责或技能",
+            "aria-label": "搜索专家",
             prefix: SearchOutlined
               ? React.createElement(SearchOutlined)
               : undefined,
@@ -423,6 +443,32 @@ export function ExpertCenterPage() {
             "创建专家",
           ),
         ),
+        React.createElement(
+          "nav",
+          { className: "ugsci-expert-filters", "aria-label": "专家分类" },
+          ...EXPERT_CATEGORIES.map((value) =>
+            React.createElement(
+              "button",
+              {
+                key: value,
+                type: "button",
+                className: "ugsci-expert-filter",
+                "aria-pressed": category === value,
+                onClick: () => setCategory(value),
+              },
+              value,
+              React.createElement(
+                "small",
+                null,
+                value === "全部专家"
+                  ? experts.length
+                  : experts.filter(
+                      (e) => expertPresentation(e).category === value,
+                    ).length,
+              ),
+            ),
+          ),
+        ),
         // Content
         loading
           ? React.createElement(
@@ -432,20 +478,16 @@ export function ExpertCenterPage() {
             )
           : filteredExperts.length === 0
           ? React.createElement(Empty, {
-              description: searchText
-                ? "未找到匹配的专家"
-                : "暂无专家，点击「创建专家」添加",
+              description:
+                searchText || category !== "全部专家"
+                  ? "未找到匹配的专家"
+                  : "暂无专家，点击「创建专家」添加",
             })
           : React.createElement(
               "div",
               {
-                style: {
-                  display: "grid",
-                  gridTemplateColumns:
-                    "repeat(auto-fit, minmax(min(100%, 250px), 1fr))",
-                  gap: 14,
-                  alignItems: "stretch",
-                },
+                className: "ugsci-expert-grid",
+                "aria-live": "polite",
               },
               ...filteredExperts.map((expert) =>
                 React.createElement(
@@ -498,7 +540,10 @@ export function ExpertCenterPage() {
 
   return React.createElement(
     "div",
-    { style: { padding: 24 } },
+    {
+      className: activeTab === "experts" ? "ugsci-expert-page" : undefined,
+      style: { padding: 24 },
+    },
     React.createElement(PageHeader, {
       title: "专家·协作",
       subtitle:
@@ -624,13 +669,13 @@ export function ExpertCenterPage() {
               style: {
                 marginTop: 12,
                 padding: "8px 12px",
-                background: "#e6f4ff",
+                background: "var(--app-info-bg)",
                 borderRadius: 6,
               },
             },
             React.createElement(
               Text,
-              { style: { fontSize: 12, color: "#0958d9" } },
+              { style: { fontSize: 12, color: "var(--app-action-link)" } },
               `协调者: ${
                 teamLaunchModal.coordinatorName ||
                 teamLaunchModal.members[0]?.name ||

@@ -24,6 +24,8 @@ export interface FileTarget {
   root?: WorkspaceRoot;
   /** Explicit rendering intent for formats that support both text and GenUI. */
   preferredView?: "text" | "visualization";
+  /** Latest file metadata, supplied by the native file loader. */
+  size?: number;
   /** Stable URL emitted by a chat tool result for a historical artifact. */
   artifactUrl?: string;
   /** Inline or generated content that is not necessarily backed by a file. */
@@ -39,7 +41,8 @@ export type WorkbenchMode =
   | "agents"
   | "genui"
   | "compute"
-  | "simulation";
+  | "simulation"
+  | "interactions";
 
 export type FilesDrawerState =
   | { kind: "closed" }
@@ -49,6 +52,7 @@ export type FilesDrawerState =
       target?: FileTarget;
       mode?: WorkbenchMode;
       simulationRunId?: string;
+      interactionRequestId?: string;
       trigger: HTMLElement | null;
     };
 
@@ -63,6 +67,7 @@ export type FilesDrawerEvent =
       target?: FileTarget;
       mode?: WorkbenchMode;
       simulationRunId?: string;
+      interactionRequestId?: string;
       trigger: HTMLElement | null;
     }
   | { type: "EXPAND_WORKSPACE" }

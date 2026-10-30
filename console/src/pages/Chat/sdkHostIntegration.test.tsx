@@ -1946,6 +1946,7 @@ describe("ChatPage coverage", () => {
     expect(attachments?.trigger).toBeTypeOf("function");
     const element = attachments.trigger({ disabled: false });
     renderWithProviders(element);
+    fireEvent.click(screen.getByRole("button", { name: "Add content" }));
     expect(screen.getByRole("button", { name: "Attach files" })).toBeTruthy();
   });
 

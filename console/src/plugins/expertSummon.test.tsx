@@ -162,7 +162,7 @@ describe.each([
     const label = await screen.findByText(name, { exact: true });
     const card = label.closest<HTMLElement>(".ant-card")!;
     await userEvent.click(
-      within(card).getByRole("button", { name: /召唤专家/ }),
+      within(card).getByRole("button", { name: /开始对话/ }),
     );
   }
   it.each([
@@ -253,7 +253,7 @@ describe.each([
     const label = await screen.findByText("Disabled expert", { exact: true });
     expect(
       within(label.closest<HTMLElement>(".ant-card")!).getByRole("button", {
-        name: /召唤专家/,
+        name: /开始对话/,
       }),
     ).toBeDisabled();
     expect(select).not.toHaveBeenCalled();

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import {
+  act,
   fireEvent,
   render,
   screen,
@@ -7,8 +8,11 @@ import {
   within,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { useEffect } from "react";
 import TabbedEditor from "./TabbedEditor";
 import { useCodingTabsStore } from "../../stores/codingTabsStore";
+import { rendererRegistry } from "../../components/Workspace/store/rendererRegistry";
+import { updateArtifactPreview } from "../../features/files-workspace/openFilePreview";
 
 const SCOPE_KEY = "agent:default";
 
@@ -61,9 +65,13 @@ vi.mock("../../hooks/useAppMessage", () => ({
 function Harness({
   onSaveFile,
   onDownloadFile,
+  previewActive,
+  previewManagedUpdates,
 }: {
   onSaveFile: (path: string, content: string) => Promise<void>;
   onDownloadFile?: (path: string) => Promise<void>;
+  previewActive?: boolean;
+  previewManagedUpdates?: boolean;
 }) {
   const tabs = useCodingTabsStore(
     (state) => state.tabsByAgent[SCOPE_KEY] ?? [],
@@ -94,9 +102,133 @@ function Harness({
       }
       onDownloadFile={onDownloadFile}
       onSaveFile={onSaveFile}
+      previewActive={previewActive}
+      previewManagedUpdates={previewManagedUpdates}
     />
   );
 }
+
+describe("TabbedEditor preview activity", () => {
+  it("keeps legacy artifact subscriptions unless its host manages updates", async () => {
+    const artifact = {
+      id: "managed-update-artifact",
+      title: "generated.md",
+      source: "generated" as const,
+      mimeType: "text/markdown",
+      textContent: "# Initial generated content",
+    };
+    useCodingTabsStore.setState({
+      tabsByAgent: {
+        [SCOPE_KEY]: [
+          {
+            path: "artifact::generated.md",
+            displayPath: "generated.md",
+            content: artifact.textContent,
+            dirty: false,
+            source: "artifact",
+            previewKind: "text",
+            artifact,
+          },
+        ],
+      },
+      activeTabByAgent: { [SCOPE_KEY]: "artifact::generated.md" },
+      diffsByAgent: { [SCOPE_KEY]: {} },
+    });
+    const onSaveFile = vi.fn(async () => undefined);
+    const view = render(<Harness onSaveFile={onSaveFile} />);
+    await screen.findByRole(
+      "heading",
+      { name: "Initial generated content" },
+      { timeout: 12_000 },
+    );
+    act(() =>
+      updateArtifactPreview(artifact.id, { textContent: "# Legacy update" }),
+    );
+    expect(
+      await screen.findByRole("heading", { name: "Legacy update" }),
+    ).toBeInTheDocument();
+
+    view.rerender(<Harness onSaveFile={onSaveFile} previewManagedUpdates />);
+    act(() =>
+      updateArtifactPreview(artifact.id, {
+        textContent: "# Bypassed store update",
+      }),
+    );
+    expect(
+      screen.queryByRole("heading", { name: "Bypassed store update" }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("heading", { name: "Legacy update" }),
+    ).toBeInTheDocument();
+  });
+
+  it("releases hidden renderer resources and retains tabs and unsaved content", async () => {
+    const mounted = vi.fn();
+    const disposed = vi.fn();
+    const registration = rendererRegistry.register({
+      id: "test-resource-preview",
+      name: "Resource Preview",
+      mimeTypes: ["application/x-resource-preview"],
+      extensions: ["resourcepreview"],
+      component: function ResourcePreview() {
+        useEffect(() => {
+          mounted();
+          return () => disposed();
+        }, []);
+        return <div data-testid="resource-preview">Preview resource</div>;
+      },
+    });
+    const tab = {
+      path: "scene.resourcepreview",
+      content: "unsaved scene",
+      dirty: true,
+      previewKind: "binary" as const,
+      artifact: {
+        id: "resource-artifact",
+        title: "scene.resourcepreview",
+        source: "generated" as const,
+        mimeType: "application/x-resource-preview",
+        textContent: "unsaved scene",
+      },
+    };
+    useCodingTabsStore.setState({
+      tabsByAgent: { [SCOPE_KEY]: [tab] },
+      activeTabByAgent: { [SCOPE_KEY]: tab.path },
+      diffsByAgent: { [SCOPE_KEY]: {} },
+    });
+    const onSaveFile = vi.fn(async () => undefined);
+    const view = render(
+      <Harness onSaveFile={onSaveFile} previewActive={false} />,
+    );
+    try {
+      expect(mounted).not.toHaveBeenCalled();
+      expect(
+        screen.getByRole("tab", { name: /scene.resourcepreview/i }),
+      ).toBeInTheDocument();
+      view.rerender(<Harness onSaveFile={onSaveFile} />);
+      expect(await screen.findByTestId("resource-preview")).toBeInTheDocument();
+      expect(mounted).toHaveBeenCalledTimes(1);
+
+      view.rerender(<Harness onSaveFile={onSaveFile} previewActive={false} />);
+      expect(screen.queryByTestId("resource-preview")).not.toBeInTheDocument();
+      expect(disposed).toHaveBeenCalledTimes(1);
+      expect(useCodingTabsStore.getState().tabsByAgent[SCOPE_KEY]).toEqual([
+        tab,
+      ]);
+      expect(useCodingTabsStore.getState().activeTabByAgent[SCOPE_KEY]).toBe(
+        tab.path,
+      );
+
+      view.rerender(<Harness onSaveFile={onSaveFile} previewActive />);
+      expect(await screen.findByTestId("resource-preview")).toBeInTheDocument();
+      expect(mounted).toHaveBeenCalledTimes(2);
+    } finally {
+      view.unmount();
+      registration.dispose();
+    }
+    expect(disposed).toHaveBeenCalledTimes(2);
+  });
+});
 
 describe("TabbedEditor diff resolution", () => {
   beforeEach(() => {

@@ -5,6 +5,16 @@ from pathlib import Path
 
 from agentscope.middleware import MiddlewareBase
 
+from .interactions import (
+    InteractionMiddleware,
+    InteractionService,
+    InteractionStore,
+    build_router,
+    build_tool,
+    is_available,
+)
+from .interactions.tool import capable_context
+
 
 class OpenUIMiddleware(MiddlewareBase):
     """Append the catalog without modifying messages or agent config."""
@@ -22,6 +32,8 @@ class OpenUIPlugin:
     """The frontend capability disappears when the plugin is disabled."""
 
     def register(self, api):
+        from qwenpaw.constant import WORKING_DIR
+
         prompt = (
             (Path(__file__).parent / "dist" / "system-prompt.txt")
             .read_text(encoding="utf-8")
@@ -66,6 +78,33 @@ class OpenUIPlugin:
             return OpenUIMiddleware(prompt)
 
         api.register_middleware(factory)
+
+        service = InteractionService(
+            InteractionStore(
+                Path(WORKING_DIR) / "openui" / "interactions.sqlite3",
+            ),
+        )
+        api.register_http_router(
+            build_router(service),
+            prefix="/openui/interactions",
+            tags=["openui"],
+        )
+        tool = build_tool(service)
+        api.register_tool(
+            tool_name=tool.__name__,
+            tool_func=tool,
+            description=tool.__doc__,
+            enabled=True,
+            tool_type="internal",
+            icon="📝",
+            allowed_channels=("console",),
+            availability_check=is_available,
+        )
+        api.register_middleware(
+            lambda ctx, _config: (
+                InteractionMiddleware(ctx) if capable_context(ctx) else None
+            ),
+        )
 
 
 plugin = OpenUIPlugin()

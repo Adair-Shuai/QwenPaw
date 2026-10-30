@@ -9,6 +9,9 @@
 
 import { getHost } from "../core/runtime";
 import type { BuiltinPageId } from "../core/runtime";
+import { CAPABILITY_STYLES } from "./capabilityStyles";
+import { fetchAgents } from "../core/api";
+import type { AgentSummary } from "../core/types";
 import { PageHeader } from "../core/shared";
 import { SkillCenterPage } from "../skill/SkillCenterPage";
 import { EngineSection } from "./EngineSection";
@@ -115,7 +118,7 @@ function HostBuiltinPage({ page }: { page: BuiltinPageId }) {
   const embeddedLabels =
     page === "mcp"
       ? {
-          title: "UGSci MCP",
+          title: "MCP 接入",
           description:
             "连接外部工具、数据服务与计算能力，扩展当前专家的可调用范围",
           managedTitle: "已接入服务",
@@ -148,7 +151,7 @@ function ToolsWorkspaceSection({
       },
       {
         key: "builtin",
-        label: "平台内置",
+        label: "平台内置工具",
         children: React.createElement(HostBuiltinPage, { page: "tools" }),
       },
     ],
@@ -172,6 +175,7 @@ function EngineWorkspaceSection({
 
   return React.createElement(Tabs, {
     defaultActiveKey: "simulation",
+    className: "ugsci-engine-tabs",
     items: [
       {
         key: "simulation",
@@ -210,11 +214,23 @@ export function ToolsSkillsCenterPage({
 } = {}) {
   const React = getHost().React;
   const { useEffect, useState } = React;
-  const { Tabs, Tag } = getHost().antd;
+  const { Tabs, Select } = getHost().antd;
   const { RocketOutlined, ToolOutlined, ThunderboltOutlined } =
     getHost().antdIcons || {};
   const selected = getHost().useSelectedAgent?.();
   const agentId = selected?.id || "default";
+  const [agents, setAgents] = useState<AgentSummary[]>([]);
+  useEffect(() => {
+    let active = true;
+    fetchAgents()
+      .then((items) => {
+        if (active) setAgents(items);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, []);
   const [activeTab, setActiveTab] = useState<CenterTab>(() =>
     tabFromLocation(initialTab),
   );
@@ -249,23 +265,41 @@ export function ToolsSkillsCenterPage({
 
   return React.createElement(
     "div",
-    { style: { padding: 24 } },
+    { className: "ugsci-capabilities" },
+    React.createElement("style", null, CAPABILITY_STYLES),
     React.createElement(PageHeader, {
-      title: "工具·技能",
+      title: "工具与技能",
       subtitle: "管理当前专家可调用的引擎、工具、运行服务与专业技能",
-      extra: React.createElement(
-        Tag,
-        { color: "blue" },
-        `当前专家：${agentId}`,
-      ),
     }),
+    React.createElement(
+      "div",
+      { className: "ugsci-capability-context" },
+      React.createElement(
+        "label",
+        { htmlFor: "ugsci-capability-agent" },
+        "配置对象",
+      ),
+      React.createElement(Select, {
+        id: "ugsci-capability-agent",
+        "aria-label": "配置对象",
+        value: agentId,
+        style: { minWidth: 180, maxWidth: "100%" },
+        options: agents.length
+          ? agents.map((agent) => ({
+              value: agent.id,
+              label: agent.name || agent.id,
+            }))
+          : [{ value: agentId, label: agentId }],
+        onChange: (id: string) => getHost().setSelectedAgent?.(id),
+      }),
+    ),
     React.createElement(Tabs, {
       activeKey: activeTab,
       onChange: (key: string) => changeTab(key as CenterTab),
       items: [
         {
           key: "engines",
-          label: tabLabel("引擎", RocketOutlined),
+          label: tabLabel("计算引擎", RocketOutlined),
           children: React.createElement(
             EngineWorkspaceSection as ComponentType<{
               onNavigateToMcp?: () => void;

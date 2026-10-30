@@ -22,6 +22,7 @@ import { reloadFrontendPlugin, reloadPawApp } from "@/plugins/usePluginLoader";
 import { removePluginRuntime } from "@/plugins/pluginRuntimeCleanup";
 import { removePluginAppState } from "@/os/osCleanup";
 import { isUGSciCatalogPlugin } from "@/distribution";
+import { runPluginUpgrade } from "../dependencyUpgrade";
 
 const MARKET_PAGE_SIZE = 50;
 const MARKET_MAX_PAGES = 20;
@@ -186,7 +187,11 @@ export function usePluginManager() {
       if (!update || updatingId !== null || updatingAll) return;
       setUpdatingId(plugin.id);
       try {
-        const result = await upgradeInstalledPlugin(plugin.id, update);
+        const result = await runPluginUpgrade(
+          () => upgradeInstalledPlugin(plugin.id, update),
+          t,
+        );
+        if (result === null) return;
         if (result.method === "core-update-required") {
           message.warning(t("pluginManager.coreUpdateRequired"));
           return;
@@ -223,13 +228,21 @@ export function usePluginManager() {
     setUpdatingAll(true);
     const completedIds = new Set<string>();
     const failedPluginNames: string[] = [];
+    let cancelled = false;
     try {
       for (const plugin of plugins ?? []) {
         const update = updates.get(plugin.id);
         if (!update) continue;
         setUpdatingId(plugin.id);
         try {
-          const result = await upgradeInstalledPlugin(plugin.id, update);
+          const result = await runPluginUpgrade(
+            () => upgradeInstalledPlugin(plugin.id, update),
+            t,
+          );
+          if (result === null) {
+            cancelled = true;
+            break;
+          }
           if (result.method === "core-update-required") {
             throw new Error(t("pluginManager.coreUpdateRequired"));
           }
@@ -245,10 +258,15 @@ export function usePluginManager() {
             next.delete(plugin.id);
             return next;
           });
-        } catch {
-          failedPluginNames.push(plugin.name);
+        } catch (error) {
+          failedPluginNames.push(
+            error instanceof Error && error.message
+              ? `${plugin.name}: ${error.message}`
+              : plugin.name,
+          );
         }
       }
+      if (cancelled) return;
       if (failedPluginNames.length === 0) {
         message.success(
           t(

@@ -7,6 +7,8 @@ import {
   AgentScopeRuntimeRunStatus,
 } from "@agentscope-ai/chat";
 import { HostRequestCard, HostResponseCard } from "./HostBubbles";
+import { TurnFilesScopeProvider } from "../../features/files-workspace/TurnFilesScope";
+import { turnFilesApi } from "../../api/modules/turnFiles";
 import * as assistantMarkdown from "./AssistantMarkdown";
 import { ChatScalar, ChatList } from "../../plugins/registry/slotKeys";
 import {
@@ -34,7 +36,8 @@ vi.mock("../../features/files-workspace/ResponseArtifactList", () => ({
 vi.mock("../../components/Chat/MediaDownload", () => ({
   DownloadableAudios: () => null,
 }));
-vi.mock("react-i18next", () => ({
+vi.mock("react-i18next", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("react-i18next")>()),
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 // Keep the real vendor Request/Card and SDK contexts. Only visual leaves are
@@ -134,6 +137,90 @@ beforeEach(() => {
   extensions.scalar = {};
   extensions.lists = {};
   localStorage.clear();
+});
+
+it("mounts the persisted turn file summary in the real response and opens an immutable scoped version", async () => {
+  const scope = {
+    kind: "session" as const,
+    agentId: "agent",
+    sessionId: "session",
+    chatId: "chat",
+  };
+  const list = vi.spyOn(turnFilesApi, "list").mockResolvedValue({
+    turns: [
+      {
+        id: "turn",
+        response_id: "response_archive",
+        session_id: "session",
+        agent_id: "agent",
+        started_at: "2026-10-30T00:00:00Z",
+        finished_at: "2026-10-30T00:00:01Z",
+        status: "completed",
+        incomplete: false,
+        warnings: [],
+        overlap: false,
+        files: [
+          {
+            id: "report",
+            root: "workspace",
+            path: "output/report.txt",
+            name: "report.txt",
+            status: "created",
+            size: 6,
+            binary: false,
+            additions: 1,
+            deletions: 0,
+            before_available: false,
+            after_available: true,
+            delivered: true,
+          },
+        ],
+      },
+    ],
+  });
+  const open = vi.fn();
+  window.addEventListener("qwenpaw:open-file-preview", open);
+  try {
+    render(
+      provider(
+        <TurnFilesScopeProvider value={scope}>
+          <HostResponseCard
+            id="host"
+            data={{
+              id: "response_archive",
+              status: AgentScopeRuntimeRunStatus.Completed,
+              output: [],
+            }}
+            isLast
+          />
+        </TurnFilesScopeProvider>,
+      ),
+    );
+    const report = await screen.findByRole("button", {
+      name: "turnFiles.openArchive report.txt",
+    });
+    await act(async () => report.click());
+    expect(list).toHaveBeenCalledWith(scope, expect.anything());
+    expect(open).toHaveBeenCalledOnce();
+    const detail = (open.mock.calls[0][0] as CustomEvent).detail;
+    expect(detail).toMatchObject({
+      agentId: "agent",
+      sessionId: "session",
+      chatId: "chat",
+      target: { source: "artifact" },
+    });
+    expect(detail.target.artifact.meta).toMatchObject({
+      turnFileArchive: true,
+      turnId: "turn",
+      fileId: "report",
+    });
+    expect(detail.target.artifactUrl).toContain(
+      "/agents/agent/workspace/turn-files/turn/files/report",
+    );
+  } finally {
+    window.removeEventListener("qwenpaw:open-file-preview", open);
+    list.mockRestore();
+  }
 });
 
 it.each([

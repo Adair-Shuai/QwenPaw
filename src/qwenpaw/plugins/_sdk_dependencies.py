@@ -46,7 +46,7 @@ def _public_module_loaded(package, files, loaded) -> bool:
     return False
 
 
-def _installed_snapshot() -> dict[str, tuple[str, tuple[str, ...]]]:
+def _installed_snapshot(names=None) -> dict[str, tuple[str, tuple[str, ...]]]:
     """Audit effective distributions, retaining their version and provenance.
 
     Some tools append bundled dependencies to sys.path. A later copy is only
@@ -69,6 +69,8 @@ def _installed_snapshot() -> dict[str, tuple[str, tuple[str, ...]]]:
         loaded = None
         for package, files in packages:
             name = canonicalize_name(package.metadata["Name"], validate=True)
+            if names is not None and name not in names:
+                continue
             version = str(Version(package.version))
             metadata = {
                 Path(package.locate_file(path)).resolve()
@@ -114,7 +116,10 @@ def loaded_sdk_conflicts(source: Path, missing: list[str]) -> list[str]:
     """Also protect not-yet-imported packages from concurrent first imports."""
     if not missing or not is_sdk_source(source):
         return []
-    installed = _installed_versions()
+    requested = {canonicalize_name(Requirement(line).name) for line in missing}
+    # This early guard protects requested SDKs. The audited writer still
+    # validates the complete relevant dependency closure before publication.
+    installed = _installed_snapshot(requested)
     return [
         line
         for line in missing

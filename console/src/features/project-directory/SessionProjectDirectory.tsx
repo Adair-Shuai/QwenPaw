@@ -40,6 +40,7 @@ import { setPendingProjectDirectory } from "./pendingProjectDirectory";
 import { loadSessionProjectDirs } from "./loadSessionProjectDirs";
 import type { FilesWorkspaceScope } from "../files-workspace/filesWorkspaceScope";
 import { notifyProjectDirectoryChanged } from "./projectDirectoryChangeEvent";
+import { useOverlayVisibility } from "@/contexts/OverlayVisibilityContext";
 
 /** Mirrors the server's MAX_PROJECT_DIRS: the whole list is capped at 10. */
 const MAX_PROJECT_DIRS = 10;
@@ -133,6 +134,10 @@ export default function SessionProjectDirectory({
     },
     [controlledOpen, onOpenChange],
   );
+  const overlayVisible = useOverlayVisibility();
+  useEffect(() => {
+    if (!overlayVisible) setOpen(false);
+  }, [overlayVisible, setOpen]);
   const [saving, setSaving] = useState(false);
   const [projects, setProjects] = useState<ProjectListItem[]>([]);
   const [selectedRecentPath, setSelectedRecentPath] = useState<string | null>(
@@ -142,6 +147,9 @@ export default function SessionProjectDirectory({
   const [browseLoading, setBrowseLoading] = useState(false);
   const [showHidden, setShowHidden] = useState(false);
   const [createDirectoryOpen, setCreateDirectoryOpen] = useState(false);
+  useEffect(() => {
+    if (!overlayVisible) setCreateDirectoryOpen(false);
+  }, [overlayVisible]);
   const [newDirectoryName, setNewDirectoryName] = useState("");
   const [createDirectoryLoading, setCreateDirectoryLoading] = useState(false);
   const [createDirectoryError, setCreateDirectoryError] = useState("");

@@ -131,15 +131,11 @@ def swap_mount_point_contents(
     try:
         _swap_mount_point_contents(dst, tmp_dst, retain_old=retain_old)
     except Exception:
-        logger.exception("Mount-point content swap failed for %s", dst)
+        logger.error("Mount-point content swap failed")
         try:
             recover_mount_point_swap(dst, tmp_dst)
         except Exception:
-            logger.exception(
-                "Immediate recovery failed after mount-point swap error "
-                "for %s",
-                dst,
-            )
+            logger.error("Immediate recovery failed after mount-point swap")
         raise
 
 
@@ -288,14 +284,8 @@ def _write_state(dst: Path, state: str) -> None:
                 os.close(fd)
         except OSError:
             pass
-    except OSError as exc:
-        logger.error(
-            "Failed to write restore state %r for %s via %s: %s",
-            state,
-            dst,
-            tmp_marker,
-            exc,
-        )
+    except OSError:
+        logger.error("Failed to write restore state %r", state)
         raise
 
 

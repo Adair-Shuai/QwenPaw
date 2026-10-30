@@ -41,6 +41,8 @@ export interface EditorTab {
   workspaceRoot?: WorkspaceRoot;
   artifactUrl?: string;
   artifact?: WorkspaceArtifact;
+  /** Last loaded byte size; refreshed from the source, never persisted. */
+  size?: number;
   previewKind?: "text" | "image" | "pdf" | "csv" | "binary";
   preferredView?: "text" | "visualization";
   readOnly?: boolean;
@@ -64,11 +66,17 @@ interface CodingTabsState {
   setActiveTab: (agentId: string, path: string) => void;
   setTabContent: (agentId: string, path: string, content: string) => void;
   setTabEtag: (agentId: string, path: string, etag: string) => void;
+  updateArtifactTabs: (
+    scopeKey: string,
+    artifactId: string,
+    patch: Partial<WorkspaceArtifact>,
+  ) => void;
   refreshTab: (
     agentId: string,
     path: string,
     content: string,
     etag: string,
+    size?: number,
   ) => void;
   setTabDirty: (agentId: string, path: string, dirty: boolean) => void;
 
@@ -322,7 +330,44 @@ export const useCodingTabsStore = create<CodingTabsState>()(
           };
         }),
 
-      refreshTab: (agentId, path, content, etag) =>
+      updateArtifactTabs: (scopeKey, artifactId, patch) =>
+        set((state) => {
+          const tabs = state.tabsByAgent[scopeKey] ?? [];
+          let changed = false;
+          const nextTabs = tabs.map((tab) => {
+            if (tab.source !== "artifact" || tab.artifact?.id !== artifactId)
+              return tab;
+            changed = true;
+            const protectBuffer =
+              tab.dirty || Boolean(state.diffsByAgent[scopeKey]?.[tab.path]);
+            const content =
+              !protectBuffer && typeof patch.textContent === "string"
+                ? patch.textContent
+                : tab.content;
+            return {
+              ...tab,
+              content,
+              size:
+                typeof patch.textContent === "string"
+                  ? new Blob([content]).size
+                  : patch.size ?? tab.size,
+              artifactUrl:
+                "binaryUrl" in patch ? patch.binaryUrl : tab.artifactUrl,
+              artifact: {
+                ...tab.artifact,
+                ...patch,
+                id: artifactId,
+                // Streaming cannot replace unsaved or pending-review content.
+                ...(protectBuffer ? { textContent: tab.content } : {}),
+              },
+            };
+          });
+          return changed
+            ? { tabsByAgent: { ...state.tabsByAgent, [scopeKey]: nextTabs } }
+            : state;
+        }),
+
+      refreshTab: (agentId, path, content, etag, size) =>
         set((state) => {
           const tabs = state.tabsByAgent[agentId] ?? [];
           const tab = tabs.find((item) => item.path === path);
@@ -332,6 +377,7 @@ export const useCodingTabsStore = create<CodingTabsState>()(
           if (
             tab.content === content &&
             tab.etag === etag &&
+            (size === undefined || tab.size === size) &&
             (!diff || diff.modified === content)
           ) {
             return state;
@@ -341,7 +387,14 @@ export const useCodingTabsStore = create<CodingTabsState>()(
             tabsByAgent: {
               ...state.tabsByAgent,
               [agentId]: tabs.map((item) =>
-                item.path === path ? { ...item, content, etag } : item,
+                item.path === path
+                  ? {
+                      ...item,
+                      content,
+                      etag,
+                      ...(size !== undefined && { size }),
+                    }
+                  : item,
               ),
             },
             ...(diff && {

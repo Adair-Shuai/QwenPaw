@@ -497,7 +497,11 @@ export default function ToolsPage({ embedded = false }: ToolsPageProps = {}) {
                           index={index}
                           animate={!entered.current}
                         >
-                          <InteractiveCard className={styles.toolCard} tilt={2}>
+                          <InteractiveCard
+                            data-themed-card="true"
+                            className={styles.toolCard}
+                            tilt={2}
+                          >
                             <div className={styles.cardHeader}>
                               <span className={styles.toolIcon}>
                                 <Icon

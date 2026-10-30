@@ -2,6 +2,7 @@ import React from "react";
 import { useTranslation } from "react-i18next";
 import { ServiceCard } from "@/components/interaction/ServiceCard";
 import type { ACPAgentConfig } from "../../../../api/types";
+import { SquareTerminal } from "lucide-react";
 
 interface ACPCardProps {
   surfaceId?: string;
@@ -24,6 +25,7 @@ export const ACPCard = React.memo(function ACPCard({
   return (
     <ServiceCard
       surfaceId={surfaceId}
+      icon={<SquareTerminal size={21} />}
       name={agentKey}
       enabled={config.enabled}
       onConfigure={onClick}

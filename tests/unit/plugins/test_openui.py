@@ -2,6 +2,7 @@
 """The optional UI prompt must stay scoped to capable Console requests."""
 
 import importlib.util
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -17,8 +18,10 @@ def openui_factory(tmp_path):
     spec = importlib.util.spec_from_file_location(
         "test_openui_plugin",
         PLUGIN_DIR / "plugin.py",
+        submodule_search_locations=[str(PLUGIN_DIR)],
     )
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
     spec.loader.exec_module(module)
     # Keep backend tests independent of Node/build artifacts.
     (tmp_path / "dist").mkdir()
@@ -29,7 +32,11 @@ def openui_factory(tmp_path):
     module.__file__ = str(tmp_path / "plugin.py")
     factories = []
     module.plugin.register(
-        SimpleNamespace(register_middleware=factories.append),
+        SimpleNamespace(
+            register_middleware=factories.append,
+            register_http_router=lambda *args, **kwargs: None,
+            register_tool=lambda **kwargs: None,
+        ),
     )
     return factories[0]
 

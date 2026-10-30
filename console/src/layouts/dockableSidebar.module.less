@@ -4,6 +4,26 @@
   flex-shrink: 0;
   min-width: 0;
 }
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  right: -3px;
+  width: 7px;
+  z-index: 30;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
+  &:hover,
+  &:focus-visible {
+    background: var(--app-accent-soft);
+    outline: 1px solid var(--app-accent-border);
+  }
+}
+.resizing {
+  cursor: col-resize;
+  user-select: none;
+}
 .frame {
   position: relative;
   flex-shrink: 0;

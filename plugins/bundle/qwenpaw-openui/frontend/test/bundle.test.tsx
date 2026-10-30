@@ -103,7 +103,7 @@ it("loads the shipped module with host React and registers rendering plus a merg
     input: [],
     request_context: {
       approval_level: "ask",
-      ui_capabilities: { other: "v2", openui: "v1" },
+      ui_capabilities: { other: "v2", openui: "v1", openui_interactions: "v1" },
     },
   });
   const source = readFileSync("../examples/seeds.openui", "utf8");

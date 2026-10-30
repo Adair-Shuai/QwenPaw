@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import ast
+import os
 import sys
 from pathlib import Path
 
@@ -21,11 +22,15 @@ _EXCLUDED_DIRECTORIES = {
 def default_source_files() -> list[Path]:
     """Discover canonical hand-written UGSci Python sources."""
     root = Path(__file__).resolve().parents[1] / "plugins" / "bundle" / "ugsci"
-    return sorted(
-        path
-        for path in root.rglob("*.py")
-        if not any(part in _EXCLUDED_DIRECTORIES for part in path.parts)
-    )
+    files = []
+    for directory, subdirs, names in os.walk(root):
+        subdirs[:] = [
+            name for name in subdirs if name not in _EXCLUDED_DIRECTORIES
+        ]
+        files.extend(
+            Path(directory) / name for name in names if name.endswith(".py")
+        )
+    return sorted(files)
 
 
 def check_file(path: Path) -> list[str]:

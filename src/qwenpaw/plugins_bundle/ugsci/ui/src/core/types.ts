@@ -116,4 +116,13 @@ export interface ExpertData {
   skills: SkillSpec[];
   mcps: MCPClientInfo[];
   loading: boolean;
+  presentation?: ExpertPresentation | null;
+}
+
+export interface ExpertPresentation {
+  revision: number;
+  display_name: string;
+  category: "油气工程" | "数据与研究" | "通用助手" | "应用专家" | null;
+  specialty: string;
+  summary: string;
 }

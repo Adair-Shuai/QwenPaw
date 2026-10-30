@@ -16,6 +16,7 @@ import {
 } from "@/api/modules/plugin";
 import { isMarketPluginCompatible } from "@/utils/pluginCompatibility";
 import { findMatchingInstalledPlugin } from "@/utils/marketPluginIdentity";
+import { runPluginInstall } from "../dependencyUpgrade";
 
 export { isMarketPluginCompatible } from "@/utils/pluginCompatibility";
 
@@ -267,11 +268,16 @@ export function useMarketPlugins({ onInstalled }: UseMarketPluginsOptions) {
           );
           if (!installed)
             throw new Error(tRef.current("pluginManager.loadFailed"));
-          const result = await replaceInstalledPlugin({
-            pluginId: installed.id,
-            source: downloadUrl,
-            version: entry.version,
-          });
+          const result = await runPluginInstall(
+            () =>
+              replaceInstalledPlugin({
+                pluginId: installed.id,
+                source: downloadUrl,
+                version: entry.version,
+              }),
+            tRef.current,
+          );
+          if (result === null) return;
           await onInstalled({
             id: installed.id,
             name: entry.display_name,
@@ -283,7 +289,11 @@ export function useMarketPlugins({ onInstalled }: UseMarketPluginsOptions) {
           message.success(tRef.current("pluginManager.updateSuccess"));
           return;
         }
-        const result = await installPlugin(downloadUrl);
+        const result = await runPluginInstall(
+          () => installPlugin(downloadUrl),
+          tRef.current,
+        );
+        if (result === null) return;
         message.success(
           `${tRef.current("pluginManager.installSuccess")}: ${result.name}`,
         );

@@ -29,10 +29,12 @@ export function KnowledgeBaseTab({
   agentId,
   systemPromptFiles,
   onRefresh,
+  onDirtyChange,
 }: {
   agentId: string;
   systemPromptFiles: string[];
   onRefresh: () => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }) {
   const React = getHost().React;
   const { useState, useEffect, useCallback, useRef } = React;
@@ -53,6 +55,7 @@ export function KnowledgeBaseTab({
   const { FileTextOutlined, PlusOutlined, EditOutlined, ReloadOutlined } =
     getHost().antdIcons || {};
   const { Text } = Typography;
+  const [confirmModal, confirmContext] = Modal.useModal();
 
   const [files, setFiles] = useState<KnowledgeFileInfo[]>([]);
   const [loading, setLoading] = useState(true);
@@ -66,6 +69,13 @@ export function KnowledgeBaseTab({
   const [saving, setSaving] = useState(false);
   const [editorMode, setEditorMode] = useState<"source" | "preview">("source");
   const loadRequestRef = useRef(0);
+  const fileBaseline = useRef("");
+  useEffect(() => {
+    onDirtyChange?.(
+      editModalOpen &&
+        `${newFileName}\n${editContent}` !== fileBaseline.current,
+    );
+  }, [editModalOpen, newFileName, editContent, onDirtyChange]);
 
   const loadFiles = useCallback(async () => {
     const requestId = ++loadRequestRef.current;
@@ -122,6 +132,7 @@ export function KnowledgeBaseTab({
         `/workspace/files/${encodeURIComponent(filename)}`,
         { headers: { "X-Agent-Id": agentId } },
       );
+      fileBaseline.current = `${newFileName}\n${content.content || ""}`;
       setEditingFile(filename);
       setEditContent(content.content || "");
       setEditorMode("source");
@@ -132,6 +143,7 @@ export function KnowledgeBaseTab({
   };
 
   const handleNewFile = () => {
+    fileBaseline.current = "\n";
     setEditingFile(null);
     setEditContent("");
     setNewFileName("");
@@ -195,6 +207,7 @@ export function KnowledgeBaseTab({
   return React.createElement(
     "div",
     null,
+    confirmContext,
     React.createElement(
       "div",
       {
@@ -331,7 +344,20 @@ export function KnowledgeBaseTab({
       Modal,
       {
         open: editModalOpen,
-        onCancel: () => setEditModalOpen(false),
+        onCancel: () => {
+          if (saving) return;
+          if (`${newFileName}\n${editContent}` === fileBaseline.current) {
+            setEditModalOpen(false);
+            return;
+          }
+          confirmModal.confirm({
+            title: "还有未保存的文档修改",
+            content: "关闭编辑器将放弃这些修改。",
+            okText: "放弃修改",
+            cancelText: "继续编辑",
+            onOk: () => setEditModalOpen(false),
+          });
+        },
         title: editingFile ? `编辑 ${editingFile}` : "新建 Markdown 文档",
         width: 700,
         onOk: handleSaveFile,

@@ -213,6 +213,22 @@ def test_python_wheel_and_sdist_exclude_visualization_test_data(tmp_path):
     project.mkdir()
     for name in ("pyproject.toml", "setup.py", "MANIFEST.in"):
         shutil.copy2(ROOT / name, project / name)
+    # Build the real official channel resources introduced by the upstream
+    # backend; the UGSci exclusion assertions still inspect actual archives.
+    for name in (
+        "scripts/pack/generate_plugin_metadata.py",
+        "scripts/pack/validate_channel_contracts.py",
+        "scripts/pack/channel-contract-requirements.txt",
+        "src/qwenpaw/plugins/official_channel_catalog.py",
+    ):
+        destination = project / name
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(ROOT / name, destination)
+    shutil.copytree(
+        ROOT / "plugins/channel",
+        project / "plugins/channel",
+        ignore=shutil.ignore_patterns("__pycache__", "node_modules"),
+    )
     _write(project, "README.md", b"Test release\n")
     _write(project, "src/qwenpaw/__init__.py", b"")
     _write(project, "src/qwenpaw/__version__.py", b'__version__ = "0.0.1"\n')

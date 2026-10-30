@@ -1,3 +1,4 @@
+import { CapabilityWorkspace } from "@/components/interaction/CapabilityWorkspace";
 import { Input, Empty } from "antd";
 import { SharedModal } from "@/components/interaction/SharedModal";
 import { Cascade } from "@/components/interaction/Cascade";
@@ -736,4 +737,10 @@ function ACPPage({ embedded = false }: ACPPageProps = {}) {
   );
 }
 
-export default ACPPage;
+export default function ACPWorkspace(props: { embedded?: boolean } = {}) {
+  return (
+    <CapabilityWorkspace enabled={!!props.embedded}>
+      <ACPPage {...props} />
+    </CapabilityWorkspace>
+  );
+}

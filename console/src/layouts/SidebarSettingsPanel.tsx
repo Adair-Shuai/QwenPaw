@@ -3,6 +3,7 @@ import {
   BookOpen,
   BrainCircuit,
   Check,
+  ChevronLeft,
   ChevronRight,
   Info,
   Languages,
@@ -12,6 +13,7 @@ import {
   Monitor,
   Moon,
   Palette,
+  PanelsTopLeft,
   Settings,
   Sun,
   UnfoldHorizontal,
@@ -51,6 +53,9 @@ import {
 import { openExternalLink } from "../utils/openExternalLink";
 import styles from "./sidebarSettingsPanel.module.less";
 import LocalAvatarPicker from "./LocalAvatarPicker";
+import { COLOR_THEMES, type InterfaceStyle } from "../utils/interfaceStyle";
+import { PAGE_STYLES, type PageStyle } from "../utils/pageStyle";
+import { useIsMobile } from "../hooks/useIsMobile";
 
 type ContentWidth = "standard" | "wide";
 
@@ -84,8 +89,12 @@ interface FlyoutContextValue {
 // Popover content is portaled, so hovering a child can close its parent before
 // the pointer reaches the child. Track open descendants to keep ancestors open.
 const FlyoutContext = createContext<FlyoutContextValue | null>(null);
+const CompactMenuContext = createContext<
+  ((label: ReactNode, content: ReactNode) => void) | null
+>(null);
 
 function FlyoutItem({ icon, label, content }: FlyoutItemProps) {
+  const openCompactPanel = useContext(CompactMenuContext);
   const parentFlyout = useContext(FlyoutContext);
   const flyoutId = useId();
   const [requestedOpen, setRequestedOpen] = useState(false);
@@ -112,6 +121,20 @@ function FlyoutItem({ icon, label, content }: FlyoutItemProps) {
     () => () => parentFlyout?.setChildOpen(flyoutId, false),
     [flyoutId, parentFlyout],
   );
+
+  if (openCompactPanel) {
+    return (
+      <button
+        type="button"
+        className={styles.menuItem}
+        onClick={() => openCompactPanel(label, content)}
+      >
+        {icon}
+        <span>{label}</span>
+        <ChevronRight className={styles.chevron} size={15} />
+      </button>
+    );
+  }
 
   return (
     <Popover
@@ -192,13 +215,31 @@ export default function SidebarSettingsPanel({
   onLogout,
 }: SidebarSettingsPanelProps) {
   const { t, i18n } = useTranslation();
+  const compact = useIsMobile();
+  const [panels, setPanels] = useState<
+    Array<{ label: ReactNode; content: ReactNode }>
+  >([]);
+  const openPanel = useCallback((label: ReactNode, content: ReactNode) => {
+    setPanels((current) => [...current, { label, content }]);
+  }, []);
+  const activePanel = compact ? panels[panels.length - 1] : undefined;
   const panelRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     panelRef.current
       ?.querySelector<HTMLButtonElement>("button:not(:disabled)")
       ?.focus({ preventScroll: true });
-  }, []);
-  const { themeMode, setThemeMode } = useTheme();
+  }, [activePanel]);
+  useEffect(() => {
+    if (!compact) setPanels([]);
+  }, [compact]);
+  const {
+    themeMode,
+    setThemeMode,
+    interfaceStyle = "classic",
+    setInterfaceStyle,
+    pageStyle = "classic",
+    setPageStyle,
+  } = useTheme();
   const [wideMode, setWideMode] = useState(getChatWideModePreference);
   const [showThinking, setShowThinking] = useState(getShowThinkingPreference);
   const [toolDisplayMode, setToolDisplayMode] = useState(
@@ -275,27 +316,50 @@ export default function SidebarSettingsPanel({
   );
 
   const themeChoices = (
-    <ChoicePanel<ThemeMode>
-      choices={[
-        {
-          value: "light",
-          label: t("theme.light", "Light"),
-          icon: <Sun size={15} />,
-        },
-        {
-          value: "dark",
-          label: t("theme.dark", "Dark"),
-          icon: <Moon size={15} />,
-        },
-        {
-          value: "system",
-          label: t("theme.system", "System"),
-          icon: <Monitor size={15} />,
-        },
-      ]}
-      value={themeMode}
-      onChange={changeTheme}
-    />
+    <div className={styles.themePanel}>
+      <p className={styles.choiceHeading}>
+        {t("sidebar.settings.colorTheme", "Color palette")}
+      </p>
+      <ChoicePanel<InterfaceStyle>
+        choices={COLOR_THEMES.map((theme) => ({
+          value: theme.id,
+          label: t(`sidebar.interfaceStyles.${theme.id}`, theme.label),
+          icon: (
+            <span
+              className={styles.styleSwatch}
+              style={{ backgroundColor: theme.swatch }}
+              aria-hidden="true"
+            />
+          ),
+        }))}
+        value={interfaceStyle}
+        onChange={(theme) => finishAction(() => setInterfaceStyle(theme))}
+      />
+      <p className={styles.choiceHeading}>
+        {t("sidebar.settings.colorMode", "Light & dark")}
+      </p>
+      <ChoicePanel<ThemeMode>
+        choices={[
+          {
+            value: "light",
+            label: t("theme.light", "Light"),
+            icon: <Sun size={15} />,
+          },
+          {
+            value: "dark",
+            label: t("theme.dark", "Dark"),
+            icon: <Moon size={15} />,
+          },
+          {
+            value: "system",
+            label: t("theme.system", "System"),
+            icon: <Monitor size={15} />,
+          },
+        ]}
+        value={themeMode}
+        onChange={changeTheme}
+      />
+    </div>
   );
 
   const widthChoices = (
@@ -368,6 +432,21 @@ export default function SidebarSettingsPanel({
         label={t("sidebar.settings.theme", "Theme")}
         content={themeChoices}
       />
+      <FlyoutItem
+        icon={<PanelsTopLeft size={16} />}
+        label={t("sidebar.settings.pageStyle", "Page style")}
+        content={
+          <ChoicePanel<PageStyle>
+            choices={PAGE_STYLES.map((style) => ({
+              value: style.id,
+              label: t(`sidebar.pageStyles.${style.id}`, style.label),
+              icon: <PanelsTopLeft size={16} />,
+            }))}
+            value={pageStyle}
+            onChange={(style) => finishAction(() => setPageStyle(style))}
+          />
+        }
+      />
       <button
         type="button"
         className={styles.menuItem}
@@ -412,7 +491,7 @@ export default function SidebarSettingsPanel({
     </div>
   );
 
-  return (
+  const rootContent = (
     <div ref={panelRef} className={styles.panel}>
       <LocalAvatarPicker />
       <FlyoutItem
@@ -475,5 +554,30 @@ export default function SidebarSettingsPanel({
         </>
       )}
     </div>
+  );
+
+  return (
+    <CompactMenuContext.Provider value={compact ? openPanel : null}>
+      {activePanel ? (
+        <div
+          ref={panelRef}
+          className={`${styles.panel} ${styles.compactPanel}`}
+        >
+          <button
+            type="button"
+            className={styles.menuItem}
+            aria-label={t("common.back", "Back")}
+            onClick={() => setPanels((current) => current.slice(0, -1))}
+          >
+            <ChevronLeft size={16} />
+            <span>{activePanel.label}</span>
+          </button>
+          <div className={styles.divider} />
+          {activePanel.content}
+        </div>
+      ) : (
+        rootContent
+      )}
+    </CompactMenuContext.Provider>
   );
 }

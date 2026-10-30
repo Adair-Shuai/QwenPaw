@@ -92,6 +92,7 @@ QWENPAW_RUNTIME_STATE_FILES = frozenset(
 )
 
 QWENPAW_RUNTIME_STATE_DIRS = (
+    ".turn-files/",
     ".qwenpaw/",
     ".scroll/",
     ".pawgit/",

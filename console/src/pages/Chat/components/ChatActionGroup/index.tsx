@@ -3,7 +3,7 @@ import React from "react";
 import { IconButton } from "@agentscope-ai/design";
 import { useTranslation } from "react-i18next";
 import { Flex, Tooltip, message } from "antd";
-import { LayoutGrid, Terminal } from "lucide-react";
+import { PanelRightClose, PanelRightOpen, Terminal } from "lucide-react";
 import styles from "./ChatActionGroup.module.less";
 
 interface ChatActionGroupProps {
@@ -24,6 +24,7 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
   workspaceOpen = false,
 }) => {
   const { t } = useTranslation();
+  const WorkspaceIcon = workspaceOpen ? PanelRightClose : PanelRightOpen;
 
   return (
     <Flex className={styles.actionGroup} gap={8} align="center">
@@ -80,7 +81,7 @@ const ChatActionGroup: React.FC<ChatActionGroupProps> = ({
             )}
             aria-pressed={workspaceOpen}
             icon={
-              <LayoutGrid
+              <WorkspaceIcon
                 size={17}
                 strokeWidth={2}
                 style={{ width: 17, height: 17 }}

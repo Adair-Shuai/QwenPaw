@@ -1,9 +1,10 @@
-import { fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen } from "@testing-library/react";
 import { useNavigate } from "react-router-dom";
 import { describe, expect, it, vi } from "vitest";
 import type { MarketResult } from "@/api/modules/market";
 import { renderWithProviders } from "@/test/common_setup";
 import MarketplacePage from ".";
+import { marketplaceExtensionRegistry } from "./marketplaceRegistry";
 
 vi.mock("../../stores/agentStore", () => ({
   useAgentStore: (selector: (state: { selectedAgent: string }) => unknown) =>
@@ -93,6 +94,23 @@ function renderMarketplace(initialEntry: string, withNavigation = false) {
 }
 
 describe("MarketplacePage", () => {
+  it("themes registered market cards without intercepting their install actions", () => {
+    const install = vi.fn();
+    const registration = marketplaceExtensionRegistry.add("theme-fixture", {
+      id: "theme-fixture",
+      label: "Theme fixture",
+      component: () => <button onClick={install}>Install fixture</button>,
+    });
+    try {
+      renderMarketplace("/market?tab=theme-fixture");
+      const button = screen.getByRole("button", { name: "Install fixture" });
+      expect(button.closest("[data-themed-card]")).toBeInTheDocument();
+      fireEvent.click(button);
+      expect(install).toHaveBeenCalledOnce();
+    } finally {
+      act(() => registration.dispose());
+    }
+  });
   it("shows apps by default", () => {
     renderMarketplace("/market");
     expect(screen.getByText("apps-content")).toBeInTheDocument();

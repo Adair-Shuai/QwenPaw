@@ -1,13 +1,8 @@
 import {
   ArrowLeft,
   Expand,
-  Blocks,
-  Calculator,
-  ChartNoAxesCombined,
   FileText,
-  Globe2,
   MessageSquarePlus,
-  Network,
   X,
 } from "lucide-react";
 import {
@@ -29,21 +24,19 @@ import type { FilesDrawerEvent, FilesDrawerState, FileTarget } from "./types";
 import type { FilesWorkspaceScope } from "./filesWorkspaceScope";
 import { filesWorkspaceScopeKey } from "./filesWorkspaceScope";
 import {
-  WorkbenchAgentPanel,
-  WorkbenchBrowserPanel,
-  WorkbenchComputePanel,
-  WorkbenchGenUiPanel,
-  WorkbenchSimulationPanel,
-  type WorkbenchMode,
-} from "./WorkbenchPanels";
+  useWorkbenchSelection,
+  WorkbenchTitle,
+  WorkbenchNavigation,
+  WorkbenchExtensionPanels,
+} from "./WorkbenchExtensions";
 import styles from "./FilesWorkspace.module.less";
+import { useTheme } from "../../contexts/ThemeContext";
 
 const PREVIEW_WIDTH_STORAGE_KEY = "qwenpaw-files-preview-width";
 const WORKSPACE_WIDTH_STORAGE_KEY = "qwenpaw-files-workspace-width";
 const MIN_DRAWER_WIDTH = 420;
 const MIN_CHAT_WIDTH = 420;
 const FilesWorkspace = lazy(() => import("./FilesWorkspace"));
-const WORKBENCH_MODE_STORAGE_KEY = "qwenpaw-workbench-mode";
 
 function readStoredWidth(key: string): number {
   if (typeof window === "undefined") return 0;
@@ -103,47 +96,28 @@ function SessionFilesDrawer({
   useImperativeHandle(forwardedRef, () => drawerRef.current!, []);
   const resizeCleanupRef = useRef<(() => void) | undefined>(undefined);
   const [isResizing, setIsResizing] = useState(false);
-  const [mode, setMode] = useState<WorkbenchMode>(() => {
-    const stored = localStorage.getItem(WORKBENCH_MODE_STORAGE_KEY);
-    return stored === "browser" ||
-      stored === "agents" ||
-      stored === "genui" ||
-      stored === "compute" ||
-      stored === "simulation"
-      ? stored
-      : "files";
-  });
-  const [genUiTarget, setGenUiTarget] = useState<FileTarget | undefined>();
+  const { mode, setMode, genUiTarget, clearGenUiTarget } =
+    useWorkbenchSelection(state);
   const prefersReducedMotion = useReducedMotion();
   const isWorkspace = state.kind === "workspace";
-  const [activeFileTarget, setActiveFileTarget] = useState<FileTarget>();
-  const target = activeFileTarget ?? state.target;
-  const widthStorageKey = isWorkspace
+  const [activeFileTarget, setActiveFileTarget] = useState<
+    FileTarget | undefined
+  >(state.target);
+  // An explicit empty selection must not fall back to an already closed file.
+  const target = activeFileTarget;
+  const { pageStyle = "classic" } = useTheme();
+  const baseWidthStorageKey = isWorkspace
     ? WORKSPACE_WIDTH_STORAGE_KEY
     : PREVIEW_WIDTH_STORAGE_KEY;
+  const widthStorageKey =
+    pageStyle === "classic"
+      ? baseWidthStorageKey
+      : `${baseWidthStorageKey}:${pageStyle}`;
   const [width, setWidth] = useState(() => readStoredWidth(widthStorageKey));
 
   useLayoutEffect(() => {
     setWidth(readStoredWidth(widthStorageKey));
   }, [widthStorageKey]);
-
-  useEffect(() => {
-    localStorage.setItem(WORKBENCH_MODE_STORAGE_KEY, mode);
-  }, [mode]);
-
-  // Only an explicit open request changes tools. Background file hydration
-  // must not steal the browser/compute view the user has just selected.
-  useLayoutEffect(() => {
-    if (state.kind === "workspace" && state.mode) {
-      setMode(state.mode);
-    } else if (state.target?.preferredView === "visualization") {
-      setGenUiTarget(state.target);
-      setMode("genui");
-    } else if (state.target) {
-      setGenUiTarget(undefined);
-      setMode("files");
-    }
-  }, [state]);
 
   const close = useCallback(() => {
     const trigger = state.trigger;
@@ -293,21 +267,23 @@ function SessionFilesDrawer({
         </div>
         <div className={styles.drawerTitle}>
           <strong>
-            {mode === "files"
-              ? isWorkspace && !target
-                ? t("files.workspace")
-                : filename
-              : mode === "browser"
-              ? "浏览器"
-              : mode === "agents"
-              ? "智能体进程"
-              : mode === "compute"
-              ? "计算轨道"
-              : mode === "simulation"
-              ? "数模监测"
-              : "GenUI"}
+            {mode === "files" ? (
+              isWorkspace && !target ? (
+                t("files.workspace")
+              ) : (
+                filename
+              )
+            ) : (
+              <WorkbenchTitle mode={mode} />
+            )}
           </strong>
-          {!isWorkspace && <span>{t("files.preview")}</span>}
+          {!isWorkspace && (
+            <span>
+              {target?.size !== undefined
+                ? t("files.previewSize", { size: target.size })
+                : t("files.preview")}
+            </span>
+          )}
         </div>
         {mode === "files" && isWorkspace && target && (
           <button
@@ -330,54 +306,21 @@ function SessionFilesDrawer({
       </header>
 
       <div className={styles.workspace}>
-        <nav className={styles.activityRail} aria-label="工作台活动">
-          {(
-            [
-              ["files", FileText, "文件与预览"],
-              ["browser", Globe2, "浏览器"],
-              ["agents", Network, "智能体进程"],
-              ["genui", Blocks, "GenUI"],
-              ["compute", Calculator, "计算轨道"],
-              ["simulation", ChartNoAxesCombined, "数模监测"],
-            ] as const
-          ).map(([nextMode, Icon, label]) => (
-            <button
-              key={nextMode}
-              type="button"
-              className={mode === nextMode ? styles.activityActive : undefined}
-              aria-label={label}
-              aria-pressed={mode === nextMode}
-              onClick={() => setMode(nextMode)}
-            >
-              <Icon size={17} />
-            </button>
-          ))}
-        </nav>
-
-        {mode === "browser" && <WorkbenchBrowserPanel active />}
-        {mode === "agents" && (
-          <WorkbenchAgentPanel
-            scope={scope}
-            runtimeSessionId={runtimeSessionId}
-          />
-        )}
-        {mode === "genui" && (
-          <WorkbenchGenUiPanel
-            target={genUiTarget}
-            scope={scope}
-            onClearTarget={() => setGenUiTarget(undefined)}
-            onOpenFiles={() => setMode("files")}
-          />
-        )}
-        {mode === "compute" && <WorkbenchComputePanel />}
-        {mode === "simulation" && (
-          <WorkbenchSimulationPanel
-            runId={
-              state.kind === "workspace" ? state.simulationRunId : undefined
-            }
-            scope={scope}
-          />
-        )}
+        <WorkbenchNavigation mode={mode} onSelect={setMode} />
+        <WorkbenchExtensionPanels
+          mode={mode}
+          scope={scope}
+          runtimeSessionId={runtimeSessionId}
+          target={genUiTarget}
+          simulationRunId={
+            state.kind === "workspace" ? state.simulationRunId : undefined
+          }
+          interactionRequestId={
+            state.kind === "workspace" ? state.interactionRequestId : undefined
+          }
+          onClearTarget={clearGenUiTarget}
+          onOpenFiles={() => setMode("files")}
+        />
 
         <AnimatePresence initial={false} mode="popLayout">
           <motion.div
@@ -409,8 +352,10 @@ function SessionFilesDrawer({
               <FilesWorkspace
                 initialTarget={state.target}
                 scope={scope}
+                active={mode === "files"}
                 hideNavigator={!isWorkspace}
                 onActiveTargetChange={setActiveFileTarget}
+                onBrowseMemoryTag={() => dispatch({ type: "EXPAND_WORKSPACE" })}
               />
             </Suspense>
             {!isWorkspace && (
@@ -428,16 +373,14 @@ function SessionFilesDrawer({
                       {t("files.mentionInChat")}
                     </button>
                   )}
-                  {target && (
-                    <button
-                      type="button"
-                      className={styles.primaryButton}
-                      onClick={() => dispatch({ type: "EXPAND_WORKSPACE" })}
-                    >
-                      <Expand size={15} />
-                      {t("files.expandWorkspace")}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    className={styles.primaryButton}
+                    onClick={() => dispatch({ type: "EXPAND_WORKSPACE" })}
+                  >
+                    <Expand size={15} />
+                    {t("files.expandWorkspace")}
+                  </button>
                 </footer>
               </>
             )}

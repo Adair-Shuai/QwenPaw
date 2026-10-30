@@ -32,6 +32,10 @@ import {
   RuntimeAvailabilityGuard,
 } from "./App";
 import { getUiFontScale } from "./utils/uiFontSizePreference";
+import {
+  getInterfacePalette,
+  type InterfaceStyle,
+} from "./utils/interfaceStyle";
 
 afterEach(() => {
   cleanup();
@@ -102,6 +106,24 @@ describe("getAppThemeToken", () => {
   it("passes a configured radius through to antd", () => {
     expect(getAppThemeToken({ radius: "12px" }, false).borderRadius).toBe(12);
   });
+
+  it.each(["warm-minimal", "cool-workspace", "soft-focus"] as InterfaceStyle[])(
+    "aligns %s component colors with the light and dark interface palette",
+    (style) => {
+      for (const dark of [false, true]) {
+        const palette = getInterfacePalette(style, dark)!;
+        const token = getAppThemeToken({ accent: "#ff0000" }, dark, 16, style);
+        expect(token.colorPrimary).toBe(palette.accent);
+        expect(token.colorBgLayout).toBe(palette.background);
+        expect(token.colorBgContainer).toBe(palette.surface);
+        expect(token.colorText).toBe(palette.text);
+        expect(token.colorTextLightSolid).toBe(
+          dark ? palette.background : "#ffffff",
+        );
+        expect(token.fontSize).toBe(16);
+      }
+    },
+  );
 
   it("grows control heights with larger fonts without shrinking defaults", () => {
     const small = getAppThemeToken({}, false, 12);

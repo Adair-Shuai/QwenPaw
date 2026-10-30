@@ -18,6 +18,8 @@ import { act, screen, fireEvent, waitFor } from "@testing-library/react";
 import React from "react";
 import { renderWithProviders } from "@/test/common_setup";
 import { useLocation } from "react-router-dom";
+import type { PageStyle } from "../utils/pageStyle";
+import type { InterfaceStyle } from "../utils/interfaceStyle";
 
 // ---- Hoisted mocks ---------------------------------------------------------
 
@@ -44,6 +46,8 @@ const mocks = vi.hoisted(() => ({
   refreshAgents: vi.fn().mockResolvedValue(undefined),
   language: "en",
   renderActualSettingsPanel: false,
+  interfaceStyle: "classic" as InterfaceStyle,
+  pageStyle: "classic" as PageStyle,
 }));
 
 vi.mock("react-i18next", () => ({
@@ -63,6 +67,8 @@ vi.mock("react-i18next", () => ({
 vi.mock("../contexts/ThemeContext", () => ({
   useTheme: () => ({
     isDark: false,
+    interfaceStyle: mocks.interfaceStyle,
+    pageStyle: mocks.pageStyle,
     themeMode: "light",
     setThemeMode: vi.fn(),
   }),
@@ -305,6 +311,14 @@ const viewportState = {
   listeners: [] as Array<() => void>,
 };
 
+class ResizePointerEvent extends MouseEvent {
+  pointerId: number;
+  constructor(type: string, init: PointerEventInit = {}) {
+    super(type, init);
+    this.pointerId = init.pointerId ?? 1;
+  }
+}
+
 function mockMobileViewport(matches: boolean) {
   viewportState.matches = matches;
   viewportState.listeners = [];
@@ -409,6 +423,19 @@ describe("Sidebar", () => {
 
   beforeEach(() => {
     mockMobileViewport(false);
+    mocks.interfaceStyle = "classic";
+    mocks.pageStyle = "classic";
+    for (const style of [
+      "warm-minimal",
+      "cool-workspace",
+      "soft-focus",
+      "deepseek",
+      "openai",
+    ]) {
+      localStorage.removeItem(`qwenpaw_sidebar_collapsed:${style}`);
+      localStorage.removeItem(`qwenpaw_sidebar_width:${style}`);
+    }
+    localStorage.removeItem("qwenpaw_sidebar_width");
     localStorage.removeItem("qwenpaw_sidebar_collapsed");
     localStorage.setItem("qwenpaw_sidebar_tools_mode", "2");
     mocks.sidebar.focusItemIds = ["core.workspace", "core.models"];
@@ -464,6 +491,164 @@ describe("Sidebar", () => {
     expect(
       screen.getAllByRole("textbox", { name: "Plugin sider.bottom" }),
     ).toHaveLength(1);
+  });
+
+  it("preserves sidebar plugin drafts and expansion while changing interface styles", () => {
+    // An explicit per-style expansion overrides each style's default layout.
+    localStorage.setItem("qwenpaw_sidebar_collapsed:soft-focus", "false");
+    const view = renderSidebar();
+    const slot = screen.getByRole("textbox", { name: "Plugin sider.top" });
+    fireEvent.change(slot, { target: { value: "unsaved research note" } });
+    for (const style of [
+      "warm-minimal",
+      "cool-workspace",
+      "soft-focus",
+      "classic",
+    ] as InterfaceStyle[]) {
+      mocks.interfaceStyle = style;
+      view.rerender(
+        <>
+          <Sidebar selectedKey="core.workspace" />
+          <LocationProbe />
+        </>,
+      );
+      expect(screen.getByRole("textbox", { name: "Plugin sider.top" })).toBe(
+        slot,
+      );
+      expect(slot).toHaveValue("unsaved research note");
+      expect(screen.getByRole("button", { name: "Workspace" })).toBeVisible();
+      expect(localStorage.getItem("qwenpaw_sidebar_collapsed")).toBeNull();
+    }
+  });
+
+  it("switches style layouts and restores independent sidebar choices without remounting plugins", () => {
+    const view = renderSidebar();
+    const slot = screen.getByRole("textbox", { name: "Plugin sider.top" });
+    fireEvent.change(slot, { target: { value: "keep this plugin draft" } });
+    const switchStyle = (style: PageStyle) => {
+      mocks.pageStyle = style;
+      view.rerender(
+        <>
+          <Sidebar selectedKey="core.workspace" />
+          <LocationProbe />
+        </>,
+      );
+    };
+    switchStyle("deepseek");
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "208px",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "66px",
+    });
+    expect(slot).toBeInTheDocument();
+    expect(slot).not.toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
+    expect(slot).toBeVisible();
+    fireEvent.keyDown(
+      screen.getByRole("separator", { name: "Resize sidebar" }),
+      { key: "End" },
+    );
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "480px",
+    });
+    switchStyle("openai");
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "180px",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+    switchStyle("deepseek");
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "480px",
+    });
+    expect(screen.getByRole("textbox", { name: "Plugin sider.top" })).toBe(
+      slot,
+    );
+    expect(slot).toHaveValue("keep this plugin draft");
+    switchStyle("openai");
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "66px",
+    });
+    switchStyle("classic");
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "280px",
+    });
+    expect(localStorage.getItem("qwenpaw_sidebar_collapsed")).toBeNull();
+    expect(localStorage.getItem("qwenpaw_sidebar_width")).toBeNull();
+  });
+
+  it("keeps prototype navigation connected to registered apps, automation, workspace and plugin shortcuts", () => {
+    mocks.pageStyle = "openai";
+    mocks.menuItems.push({
+      id: "core.cron-jobs",
+      location: "primary.agentScoped",
+      route: "core.cron-jobs",
+      label: "Automation",
+    });
+    mocks.routes.push(
+      { id: "core.app-center", path: "/apps" },
+      { id: "core.cron-jobs", path: "/cron-jobs" },
+    );
+    const onWorkspace = vi.fn();
+    window.addEventListener("qwenpaw:toggle-files-workspace", onWorkspace);
+    try {
+      renderSidebar({ selectedKey: "core.chat" });
+      fireEvent.click(screen.getByRole("button", { name: "Apps" }));
+      expect(screen.getByTestId("probe-path")).toHaveTextContent("/apps");
+      fireEvent.click(screen.getByRole("button", { name: "Automation" }));
+      expect(screen.getByTestId("probe-path")).toHaveTextContent("/cron-jobs");
+      fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
+      expect(onWorkspace).toHaveBeenCalledOnce();
+      fireEvent.click(screen.getByRole("button", { name: "More" }));
+      fireEvent.click(screen.getByRole("button", { name: "Models" }));
+      expect(screen.getByTestId("probe-path")).toHaveTextContent("/models");
+    } finally {
+      window.removeEventListener("qwenpaw:toggle-files-workspace", onWorkspace);
+    }
+  });
+
+  it("groups More shortcuts and keeps settings in the account menu", async () => {
+    mocks.pageStyle = "openai";
+    mocks.renderActualSettingsPanel = true;
+    mocks.menuItems.push(inboxItem, {
+      id: "plugin.tools",
+      location: "primary.agentScoped",
+      route: "plugin.tools",
+      label: "Tools and skills",
+    });
+    mocks.routes.push(
+      { id: "core.inbox", path: "/inbox" },
+      { id: "plugin.tools", path: "/tools" },
+    );
+    mocks.approvals = [{ request_id: "pending-1" }];
+    renderSidebar({ selectedKey: "core.chat" });
+    expect(screen.getAllByRole("button", { name: "Settings" })).toHaveLength(1);
+    const more = screen.getByRole("button", { name: "More" });
+    fireEvent.click(more);
+    const panel = screen.getByRole("dialog", { name: "More" });
+    expect(
+      screen.getByRole("region", { name: "Work & notifications" }),
+    ).toHaveTextContent("Inbox");
+    expect(
+      screen.getByRole("region", { name: "Configuration" }),
+    ).toHaveTextContent("Models");
+    expect(
+      screen.getByRole("region", { name: "Extensions" }),
+    ).toHaveTextContent("Tools and skills");
+    expect(panel).not.toHaveTextContent("Settings");
+    fireEvent.keyDown(panel, { key: "Escape" });
+    expect(more).toHaveFocus();
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(more);
+    fireEvent.click(screen.getByRole("button", { name: /Inbox/ }));
+    expect(screen.getByTestId("probe-path")).toHaveTextContent(
+      "/inbox?tab=approvals",
+    );
+    expect(more).toHaveAttribute("aria-expanded", "false");
+    fireEvent.click(screen.getByRole("button", { name: "Settings" }));
+    const account = await screen.findByRole("dialog", { name: "Settings" });
+    expect(account).toHaveTextContent("Settings");
   });
 
   it("cycles collapsed, compact and detailed tools without folding on navigation", () => {
@@ -1077,6 +1262,154 @@ describe("Sidebar", () => {
     function renderedSider() {
       return document.querySelector<HTMLElement>(".ant-layout-sider");
     }
+
+    it("resizes the mounted sidebar by dragging and preserves its width and plugin state", async () => {
+      vi.stubGlobal("PointerEvent", ResizePointerEvent);
+      try {
+        const view = renderSidebar();
+        const plugin = screen.getByRole("textbox", {
+          name: "Plugin sider.top",
+        });
+        fireEvent.change(plugin, { target: { value: "Unsaved draft" } });
+        const handle = screen.getByRole("separator", {
+          name: "Resize sidebar",
+        });
+        handle.setPointerCapture = vi.fn();
+        handle.hasPointerCapture = vi.fn(() => true);
+        handle.releasePointerCapture = vi.fn();
+        fireEvent.pointerDown(handle, {
+          pointerId: 7,
+          button: 0,
+          clientX: 280,
+        });
+        fireEvent.pointerMove(handle, { pointerId: 7, clientX: 360 });
+        fireEvent.pointerUp(handle, { pointerId: 7, clientX: 360 });
+        expect(renderedSider()).toHaveStyle({ width: "360px" });
+        expect(localStorage.getItem("qwenpaw_sidebar_width")).toBe("360");
+        expect(screen.getByRole("textbox", { name: "Plugin sider.top" })).toBe(
+          plugin,
+        );
+        expect(plugin).toHaveValue("Unsaved draft");
+        fireEvent.click(
+          screen.getByRole("button", { name: "Collapse sidebar" }),
+        );
+        expect(screen.queryByRole("separator")).not.toBeInTheDocument();
+        fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
+        expect(renderedSider()).toHaveStyle({ width: "360px" });
+        view.unmount();
+        renderSidebar();
+        expect(renderedSider()).toHaveStyle({ width: "360px" });
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it.each(["move", "release"])(
+      "collapses a narrow sidebar on pointer %s and restores its previous width after reopening",
+      (stage) => {
+        vi.stubGlobal("PointerEvent", ResizePointerEvent);
+        try {
+          localStorage.setItem("qwenpaw_sidebar_width", "360");
+          const view = renderSidebar();
+          expect(
+            screen
+              .getByRole("button", { name: "Collapse sidebar" })
+              .querySelector("svg.lucide-panel-left-close"),
+          ).toBeInTheDocument();
+          const handle = screen.getByRole("separator", {
+            name: "Resize sidebar",
+          });
+          handle.setPointerCapture = vi.fn();
+          handle.hasPointerCapture = vi.fn(() => true);
+          handle.releasePointerCapture = vi.fn();
+          fireEvent.pointerDown(handle, {
+            pointerId: 7,
+            button: 0,
+            clientX: 360,
+          });
+          fireEvent.pointerMove(handle, { pointerId: 7, clientX: 200 });
+          expect(renderedSider()).toHaveStyle({ width: "220px" });
+          expect(localStorage.getItem("qwenpaw_sidebar_collapsed")).toBeNull();
+          if (stage === "move")
+            fireEvent.pointerMove(handle, { pointerId: 7, clientX: 160 });
+          else fireEvent.pointerUp(handle, { pointerId: 7, clientX: 160 });
+          expect(renderedSider()).toHaveStyle({ width: "72px" });
+          expect(handle.releasePointerCapture).toHaveBeenCalledWith(7);
+          expect(localStorage.getItem("qwenpaw_sidebar_width")).toBe("360");
+          expect(localStorage.getItem("qwenpaw_sidebar_collapsed")).toBe(
+            "true",
+          );
+          view.unmount();
+          renderSidebar();
+          expect(renderedSider()).toHaveStyle({ width: "72px" });
+          const expand = screen.getByRole("button", { name: "Expand sidebar" });
+          expect(
+            expand.querySelector("svg.lucide-panel-left-open"),
+          ).toBeInTheDocument();
+          fireEvent.click(expand);
+          expect(renderedSider()).toHaveStyle({ width: "360px" });
+        } finally {
+          vi.unstubAllGlobals();
+        }
+      },
+    );
+
+    it("cancels a narrow resize without persisting a collapsed sidebar", () => {
+      vi.stubGlobal("PointerEvent", ResizePointerEvent);
+      try {
+        localStorage.setItem("qwenpaw_sidebar_width", "360");
+        renderSidebar();
+        const handle = screen.getByRole("separator", {
+          name: "Resize sidebar",
+        });
+        handle.setPointerCapture = vi.fn();
+        handle.hasPointerCapture = vi.fn(() => true);
+        handle.releasePointerCapture = vi.fn();
+        fireEvent.pointerDown(handle, {
+          pointerId: 7,
+          button: 0,
+          clientX: 360,
+        });
+        fireEvent.pointerMove(handle, { pointerId: 7, clientX: 200 });
+        fireEvent.keyDown(window, { key: "Escape" });
+        expect(renderedSider()).toHaveStyle({ width: "360px" });
+        expect(localStorage.getItem("qwenpaw_sidebar_width")).toBe("360");
+        expect(localStorage.getItem("qwenpaw_sidebar_collapsed")).toBeNull();
+      } finally {
+        vi.unstubAllGlobals();
+      }
+    });
+
+    it("supports width limits, keyboard resizing and double-click reset on the mounted sidebar", () => {
+      renderSidebar();
+      const handle = screen.getByRole("separator", { name: "Resize sidebar" });
+      fireEvent.keyDown(handle, { key: "ArrowRight" });
+      expect(renderedSider()).toHaveStyle({ width: "296px" });
+      fireEvent.keyDown(handle, { key: "Home" });
+      fireEvent.keyDown(handle, { key: "ArrowLeft" });
+      expect(renderedSider()).toHaveStyle({ width: "220px" });
+      fireEvent.keyDown(handle, { key: "End" });
+      fireEvent.keyDown(handle, { key: "ArrowRight" });
+      expect(renderedSider()).toHaveStyle({ width: "480px" });
+      fireEvent.doubleClick(handle);
+      expect(renderedSider()).toHaveStyle({ width: "280px" });
+      expect(localStorage.getItem("qwenpaw_sidebar_width")).toBeNull();
+    });
+
+    it("preserves the custom desktop width through the mobile overlay", async () => {
+      localStorage.setItem("qwenpaw_sidebar_width", "360");
+      mockMobileViewport(true);
+      renderSidebar();
+      expect(renderedSider()).toHaveStyle({ width: "56px" });
+      fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
+      expect(renderedSider()).toHaveStyle({ width: "240px" });
+      expect(screen.queryByRole("separator")).not.toBeInTheDocument();
+      resizeViewport(false);
+      await waitFor(() =>
+        expect(renderedSider()).toHaveStyle({ width: "360px" }),
+      );
+      expect(localStorage.getItem("qwenpaw_sidebar_width")).toBe("360");
+    });
 
     it("restores the collapsed state after a reload", async () => {
       const view = renderSidebar();

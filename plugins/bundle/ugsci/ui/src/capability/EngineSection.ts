@@ -3,7 +3,8 @@
  */
 
 import { getHost, apiUrl, apiFetch } from "../core/runtime";
-import { PRIMARY_BTN_STYLE, PageHeader } from "../core/shared";
+import { CapabilityDetail } from "./CapabilityDetail";
+import { PRIMARY_BTN_STYLE } from "../core/shared";
 
 // ─── Engine Types & Helpers ──────────────────────────────────────────────────
 
@@ -110,158 +111,92 @@ export async function detectEngines(): Promise<{ engines: EngineInfo[] }> {
 export function EngineCard({
   engine,
   onClick,
+  onConfigure,
 }: {
   engine: EngineInfo;
   onClick: () => void;
+  onConfigure: () => void;
 }) {
   const React = getHost().React;
-  const { Card, Tag, Typography } = getHost().antd;
-  const { Text } = Typography;
-
-  const isDetected = engine.status === "detected";
-  const icon = CATEGORY_ICONS[engine.category] || "📦";
-  const hasCustomIcon = ENGINE_ICON_IDS.has(engine.id);
-  const iconElement = hasCustomIcon
-    ? React.createElement("img", {
-        src: getEngineIconUrl(engine.id),
-        alt: engine.name,
-        style: { width: 24, height: 24, objectFit: "contain" },
-      })
-    : React.createElement("span", { style: { fontSize: 20 } }, icon);
-
+  const { Card, Tag, Typography, Button } = getHost().antd;
+  const status =
+    engine.status === "detected"
+      ? ["success", "已检测"]
+      : engine.status === "configured"
+      ? ["processing", "已配置"]
+      : engine.status === "error"
+      ? ["error", "检测异常"]
+      : engine.executable_path
+      ? ["warning", "路径无效"]
+      : ["default", "待配置"];
   return React.createElement(
     Card,
     {
-      hoverable: true,
-      onClick,
       size: "small",
-      style: {
-        cursor: "pointer",
-        borderColor: isDetected
-          ? undefined
-          : "var(--ant-color-border, #d9d9d9)",
-        height: "100%",
-        width: "100%",
-        display: "flex",
-        flexDirection: "column",
-      },
-      styles: {
-        body: {
-          display: "flex",
-          flexDirection: "column",
-          height: "100%",
-          flex: 1,
-        },
-      },
+      className: "ugsci-capability-card",
+      style: { width: "100%", height: "100%" },
     },
     React.createElement(
       "div",
-      {
-        style: {
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "flex-start",
-          marginBottom: 8,
-        },
-      },
+      { className: "ugsci-capability-card-title" },
       React.createElement(
-        "div",
-        { style: { display: "flex", alignItems: "center", gap: 8 } },
-        iconElement,
-        React.createElement(
-          "div",
-          null,
-          React.createElement(
-            Text,
-            { strong: true, style: { fontSize: 14 } },
-            engine.name,
-          ),
-          React.createElement("br"),
-          React.createElement(
-            Text,
-            { type: "secondary", style: { fontSize: 11 } },
-            engine.vendor || "—",
-          ),
-        ),
+        "span",
+        { className: "ugsci-capability-avatar" },
+        ENGINE_ICON_IDS.has(engine.id)
+          ? React.createElement("img", {
+              src: getEngineIconUrl(engine.id),
+              alt: engine.name,
+            })
+          : CATEGORY_ICONS[engine.category] || "📦",
       ),
-      React.createElement(
-        "div",
-        {
-          style: {
-            display: "flex",
-            flexDirection: "column",
-            gap: 4,
-            alignItems: "flex-end",
-          },
-        },
-        isDetected
-          ? React.createElement(
-              Tag,
-              { color: "success", style: { fontSize: 11 } },
-              "✅ 已检测",
-            )
-          : engine.executable_path
-          ? React.createElement(
-              Tag,
-              { color: "warning", style: { fontSize: 11 } },
-              "⚠ 路径无效",
-            )
-          : React.createElement(Tag, { style: { fontSize: 11 } }, "🔧 待配置"),
-        engine.is_default
-          ? React.createElement(
-              Tag,
-              { color: "blue", style: { fontSize: 10 } },
-              "默认",
-            )
-          : engine.is_custom
-          ? React.createElement(
-              Tag,
-              { color: "purple", style: { fontSize: 10 } },
-              "自定义",
-            )
-          : null,
-      ),
+      React.createElement("button", { type: "button", onClick }, engine.name),
     ),
     React.createElement(
       "div",
-      { style: { flex: 1, minHeight: 32 } },
-      React.createElement(
-        Text,
-        { type: "secondary", style: { fontSize: 12 } },
-        engine.description || "暂无描述",
-      ),
+      { className: "ugsci-capability-card-meta" },
+      [engine.vendor, engine.version ? `v${engine.version}` : ""]
+        .filter(Boolean)
+        .join(" · "),
+    ),
+    React.createElement(
+      Typography.Paragraph,
+      {
+        className: "ugsci-capability-card-copy",
+        ellipsis: { rows: 2 },
+        style: { margin: 0 },
+      },
+      engine.description || "暂无描述",
     ),
     React.createElement(
       "div",
-      {
-        style: {
-          marginTop: 8,
-          display: "flex",
-          gap: 4,
-          flexWrap: "wrap",
-        },
-      },
+      null,
       engine.category
         ? React.createElement(
             Tag,
-            { style: { fontSize: 11 } },
+            null,
             CATEGORY_LABELS[engine.category] || engine.category,
           )
         : null,
-      engine.version
-        ? React.createElement(
-            Tag,
-            { color: "blue", style: { fontSize: 11 } },
-            `v${engine.version}`,
-          )
-        : null,
-      // Display detected modules (e.g. IMEX, GEM, STARS)
       ...(engine.modules || []).map((mod) =>
-        React.createElement(
-          Tag,
-          { key: mod, color: "cyan", style: { fontSize: 10 } },
-          mod,
-        ),
+        React.createElement(Tag, { key: mod }, mod),
+      ),
+    ),
+    React.createElement(
+      "div",
+      { className: "ugsci-capability-card-footer" },
+      React.createElement(
+        Button,
+        {
+          size: "small",
+          onClick: onConfigure,
+          "aria-label": `配置 ${engine.name}`,
+        },
+        "配置",
+      ),
+      React.createElement(
+        Tag,
+        { color: status[0], style: { margin: 0 } },
+        status[1],
       ),
     ),
   );
@@ -279,11 +214,9 @@ export function EngineSection() {
     message: antdMsg,
     Row,
     Col,
-    Drawer,
     Descriptions,
     Tag,
     Typography,
-    Modal,
     Input,
     Select,
     Popconfirm,
@@ -338,8 +271,6 @@ export function EngineSection() {
         e.description?.toLowerCase().includes(q),
     );
   }, [engines, searchText]);
-
-  const detectedCount = engines.filter((e) => e.status === "detected").length;
 
   const handleCopyPath = useCallback((path: string) => {
     navigator.clipboard
@@ -434,12 +365,16 @@ export function EngineSection() {
         "div",
         { style: { marginBottom: 12 } },
         React.createElement(
-          Text,
-          { style: { fontSize: 13, display: "block", marginBottom: 4 } },
+          "label",
+          {
+            htmlFor: `engine-${key}`,
+            style: { fontSize: 13, display: "block", marginBottom: 4 },
+          },
           label,
         ),
         opts?.select
           ? React.createElement(Select, {
+              id: `engine-${key}`,
               value: value || undefined,
               onChange: (v: string) =>
                 setFormData((prev: any) => ({ ...prev, [key]: v })),
@@ -450,6 +385,7 @@ export function EngineSection() {
             })
           : opts?.textarea
           ? React.createElement(Input.TextArea, {
+              id: `engine-${key}`,
               value,
               onChange: (e: any) =>
                 setFormData((prev: any) => ({
@@ -460,6 +396,7 @@ export function EngineSection() {
               placeholder: `输入${label}`,
             })
           : React.createElement(Input, {
+              id: `engine-${key}`,
               value,
               onChange: (e: any) =>
                 setFormData((prev: any) => ({
@@ -475,7 +412,10 @@ export function EngineSection() {
 
   return React.createElement(
     "div",
-    null,
+    {
+      className: "ugsci-capability-section",
+      "data-focused": drawerOpen || editModalOpen,
+    },
     // Action bar
     React.createElement(
       "div",
@@ -546,12 +486,14 @@ export function EngineSection() {
                 key: engine.id,
                 xs: 24,
                 sm: 12,
-                md: 8,
-                lg: 6,
+                md: 12,
+                lg: 8,
+                xxl: 6,
                 style: { display: "flex" },
               },
               React.createElement(EngineCard, {
                 engine,
+                onConfigure: () => openEditModal(engine),
                 onClick: () => {
                   setActiveEngine(engine);
                   setDrawerOpen(true);
@@ -563,7 +505,7 @@ export function EngineSection() {
     // Detail drawer
     activeEngine
       ? React.createElement(
-          Drawer,
+          CapabilityDetail,
           {
             title: React.createElement(
               "div",
@@ -786,7 +728,7 @@ export function EngineSection() {
                   style: {
                     marginTop: 16,
                     padding: 12,
-                    background: "#e6f4ff",
+                    background: "var(--app-fill, #f5f5f5)",
                     borderRadius: 8,
                   },
                 },
@@ -814,11 +756,11 @@ export function EngineSection() {
           ),
         )
       : null,
-    // Add/Edit modal
+    // Add/Edit configuration
     React.createElement(
-      Modal,
+      CapabilityDetail,
       {
-        title: editingEngine ? "编辑引擎" : "添加引擎",
+        title: editingEngine ? `配置 ${editingEngine.name}` : "添加引擎",
         open: editModalOpen,
         onOk: handleSave,
         onCancel: () => setEditModalOpen(false),
@@ -829,23 +771,30 @@ export function EngineSection() {
       },
       React.createElement(
         "div",
-        { style: { maxHeight: 480, overflow: "auto", paddingRight: 8 } },
+        null,
         formField("引擎名称 *", "name"),
-        formField("厂商", "vendor"),
-        formField("版本", "version"),
         formField("可执行文件路径", "executable_path"),
         formField("安装目录", "install_dir"),
-        formField("分类", "category", {
-          select: {
-            options: Object.entries(CATEGORY_LABELS).map(([value, label]) => ({
-              label,
-              value,
-            })),
-          },
-        }),
-        formField("描述", "description", { textarea: true }),
-        formField("调用方式提示", "invocation_hint", { textarea: true }),
         formField("许可证服务器", "license_server"),
+        React.createElement(
+          "details",
+          { className: "ugsci-capability-advanced" },
+          React.createElement("summary", null, "更多设置"),
+          formField("厂商", "vendor"),
+          formField("版本", "version"),
+          formField("分类", "category", {
+            select: {
+              options: Object.entries(CATEGORY_LABELS).map(
+                ([value, label]) => ({
+                  label,
+                  value,
+                }),
+              ),
+            },
+          }),
+          formField("描述", "description", { textarea: true }),
+          formField("调用方式提示", "invocation_hint", { textarea: true }),
+        ),
       ),
     ),
   );

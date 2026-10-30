@@ -12,12 +12,11 @@ type ReactNode = any;
 // ─── Shared Styles ────────────────────────────────────────────────────────────
 
 /**
- * Shared button style that matches the "新建聊天" (new chat) button:
- * solid #0072f5 fill, white text, 13px / 600 weight, no border, 8px radius.
+ * Shared button geometry with contrast-safe colors supplied by the host theme.
  */
 export const PRIMARY_BTN_STYLE: Record<string, unknown> = {
-  background: "#0072f5",
-  color: "#fff",
+  background: "var(--app-action-bg, var(--app-accent, #0072f5))",
+  color: "var(--app-action-fg, #fff)",
   fontSize: 13,
   fontWeight: 600,
   border: "none",
@@ -79,7 +78,7 @@ export function PageHeader({
         alignItems: "center",
         marginBottom: 20,
         paddingBottom: 12,
-        borderBottom: "1px solid #f0f0f0",
+        borderBottom: "1px solid var(--app-border)",
       },
     },
     React.createElement(
@@ -97,7 +96,7 @@ export function PageHeader({
               style: {
                 marginTop: 4,
                 fontSize: 13,
-                color: "var(--ant-color-text-tertiary, #8c8c8c)",
+                color: "var(--app-card-muted, #8c8c8c)",
               },
             },
             subtitle,

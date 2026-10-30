@@ -1,0 +1,183 @@
+.root,
+.panel,
+.row,
+.control {
+  display: contents;
+}
+.heading,
+.label {
+  display: none;
+}
+
+.root[data-composer-options="persistent"] {
+  display: block;
+  min-width: 0;
+  .panel {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 4px 12px;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+  }
+  .row:nth-child(2) {
+    margin-right: auto;
+    flex: 1 1 180px;
+  }
+  .row:has(.control:empty),
+  .row:has(.control > span:empty) {
+    display: none;
+  }
+  .label {
+    display: inline;
+    flex: 0 0 auto;
+    color: var(--app-text-secondary);
+    font-size: var(--app-font-caption);
+  }
+  .control {
+    display: inline-flex;
+    align-items: center;
+    min-width: 0;
+  }
+  .control > button {
+    max-width: 100%;
+  }
+  @media (max-width: 600px) {
+    .panel {
+      gap: 2px 8px;
+    }
+    .row:nth-child(2) {
+      flex-basis: 100%;
+    }
+    .row:not(:nth-child(2)) {
+      flex: 1 1 auto;
+    }
+    .control > button {
+      min-height: 38px !important;
+    }
+  }
+}
+
+.root[data-composer-options="menu"] {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  .trigger {
+    width: 32px;
+    min-height: 32px;
+    padding: 0;
+    display: grid;
+    place-items: center;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--app-text-secondary);
+    cursor: pointer;
+    &:hover,
+    &[aria-expanded="true"] {
+      background: var(--app-fill) !important;
+      color: var(--app-text);
+    }
+    &:focus-visible {
+      outline: 2px solid var(--app-focus-ring);
+      outline-offset: 2px;
+    }
+  }
+  .panel {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    right: 0;
+    bottom: calc(100% + 12px);
+    width: min(320px, calc(100vw - 94px));
+    padding: 8px;
+    max-height: min(420px, 65dvh);
+    overflow-y: auto;
+    border: 1px solid var(--app-border);
+    border-radius: 14px;
+    background: var(--app-surface-raised);
+    box-shadow: var(--app-shadow-panel);
+    z-index: 30;
+    &[hidden] {
+      display: none;
+    }
+    &:focus {
+      outline: none;
+    }
+  }
+  .heading {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 0 4px 5px 8px;
+    color: var(--app-text-secondary);
+    font-size: var(--app-font-caption);
+    button {
+      display: grid;
+      place-items: center;
+      width: 28px;
+      min-height: 28px !important;
+      padding: 0;
+      border: 0;
+      border-radius: 7px;
+      color: inherit;
+      background: transparent;
+      cursor: pointer;
+    }
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    min-height: 46px;
+    padding: 6px 8px;
+    & + .row {
+      border-top: 1px solid var(--app-border-subtle);
+    }
+  }
+  .row:has(.control:empty),
+  .row:has(.control > span:empty) {
+    display: none;
+  }
+  .label {
+    display: inline;
+    flex: 0 0 auto;
+    color: var(--app-text-secondary);
+    font-size: var(--app-font-caption);
+  }
+  .control {
+    display: flex;
+    justify-content: flex-end;
+    min-width: 0;
+    flex: 1;
+    max-width: 220px;
+  }
+  .control > button {
+    max-width: 100%;
+  }
+}
+
+@media (max-width: 768px) {
+  .root[data-composer-options="menu"] {
+    .trigger {
+      width: 44px;
+      min-height: 44px;
+    }
+    .panel {
+      right: -44px;
+    }
+    .heading button {
+      width: 40px;
+      min-height: 40px !important;
+    }
+    .control > button {
+      min-height: 44px !important;
+    }
+  }
+}

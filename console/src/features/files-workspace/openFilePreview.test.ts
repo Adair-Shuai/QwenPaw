@@ -1,5 +1,39 @@
 import { describe, expect, it } from "vitest";
-import { artifactToFileTarget, normalizeArtifactUrl } from "./openFilePreview";
+import {
+  artifactToFileTarget,
+  normalizeArtifactUrl,
+  fileRequestMatchesScope,
+} from "./openFilePreview";
+
+describe("file request ownership", () => {
+  it("accepts the existing Workspace SDK session key only within its own agent and chat", () => {
+    const scope = {
+      kind: "session" as const,
+      agentId: "agent-a",
+      sessionId: "chat-a",
+      chatId: "chat-a",
+    };
+    expect(
+      fileRequestMatchesScope(
+        { agentId: "agent-a", sessionId: "agent-a:chat-a" },
+        scope,
+      ),
+    ).toBe(true);
+    expect(
+      fileRequestMatchesScope(
+        { agentId: "agent-a", sessionId: "agent-a:runtime-a" },
+        scope,
+        "runtime-a",
+      ),
+    ).toBe(true);
+    expect(
+      fileRequestMatchesScope({ sessionId: "agent-b:chat-a" }, scope),
+    ).toBe(false);
+    expect(
+      fileRequestMatchesScope({ sessionId: "agent-a:chat-b" }, scope),
+    ).toBe(false);
+  });
+});
 
 describe("normalizeArtifactUrl", () => {
   it("converts file URLs into backend preview URLs", () => {

@@ -13,6 +13,8 @@ import { openFilePreview } from "@/features/files-workspace/openFilePreview";
 import { useFilesSurfaceStore } from "@/stores/filesSurfaceStore";
 import { chatExtensions } from "@/plugins/registry/chatExtensions";
 import { toolCallsApi } from "@/api/modules/toolCalls";
+import { workspaceApi } from "@/api/modules/workspace";
+import { setPendingProjectDirectory } from "@/features/project-directory/pendingProjectDirectory";
 import sessionApi from "./sessionApi";
 
 const {
@@ -286,12 +288,40 @@ describe("ChatPage message Markdown action", () => {
     );
   });
 
+  it("UGSci workspace: scoped file previews reject another agent or session", async () => {
+    renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
+    await screen.findByTestId("chat-ui");
+    const target = { source: "workspace" as const, path: "report.md" };
+    act(() => {
+      openFilePreview(target, null, {
+        agentId: "other-agent",
+        sessionId: "new",
+      });
+      openFilePreview(target, null, {
+        agentId: "default",
+        sessionId: "other-session",
+      });
+      openFilePreview(target, null, {
+        agentId: "default",
+        sessionId: "new",
+        chatId: "other-chat",
+      });
+    });
+    expect(useFilesSurfaceStore.getState().sessionDrawers).toEqual({});
+    act(() =>
+      openFilePreview(target, null, { agentId: "default", sessionId: "new" }),
+    );
+    expect(
+      useFilesSurfaceStore.getState().sessionDrawers["session:default:new"],
+    ).toMatchObject({ kind: "preview", target });
+  });
+
   it("UGSci workspace: the real header opens, expands and closes the current session panel", async () => {
     renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
     const open = await screen.findByRole("button", {
       name: /^(打开工作区|Open Workspace|files.openWorkspace)$/i,
     });
-    expect(open.querySelector(".lucide-layout-grid")).toBeInTheDocument();
+    expect(open.querySelector(".lucide-panel-right-open")).toBeInTheDocument();
     fireEvent.click(open);
     expect(
       useFilesSurfaceStore.getState().sessionDrawers["session:default:new"],
@@ -347,15 +377,163 @@ describe("ChatPage message Markdown action", () => {
   });
 
   it("UGSci workspace: inactive chat ignores global file and compute requests", async () => {
+    const reveal = vi
+      .spyOn(workspaceApi, "revealInFileManager")
+      .mockResolvedValue({ ok: true });
     renderWithProviders(<ChatPage />, {
       initialEntries: ["/ugsci-storage-dynamics"],
     });
-    await screen.findByTestId("chat-ui");
-    act(() => {
-      openFilePreview({ source: "workspace", path: "ignored.txt" });
-      window.dispatchEvent(new CustomEvent("qwenpaw:open-compute-workbench"));
+    try {
+      await screen.findByTestId("chat-ui");
+      act(() => {
+        openFilePreview({ source: "workspace", path: "ignored.txt" });
+        window.dispatchEvent(new CustomEvent("qwenpaw:open-compute-workbench"));
+        window.dispatchEvent(
+          new CustomEvent("qwenpaw:reveal-file", {
+            detail: { target: { source: "workspace", path: "ignored.txt" } },
+          }),
+        );
+        window.dispatchEvent(
+          new CustomEvent("qwenpaw:open-simulation-workbench", {
+            detail: { runId: "ignored_run" },
+          }),
+        );
+      });
+      expect(useFilesSurfaceStore.getState().sessionDrawers).toEqual({});
+      expect(reveal).not.toHaveBeenCalled();
+    } finally {
+      reveal.mockRestore();
+    }
+  });
+
+  it("UGSci workspace: extension requests follow session ownership and late runtime identity", async () => {
+    const chatId = "12345678-1234-4234-8234-123456789012";
+    const runtimeSessionId = "hydrated-runtime-session";
+    const getIdentity = vi.mocked(sessionApi.getSessionIdentity);
+    const originalIdentity = getIdentity.getMockImplementation()!;
+    const reveal = vi
+      .spyOn(workspaceApi, "revealInFileManager")
+      .mockResolvedValue({ ok: true });
+    const backgroundTasks = vi
+      .spyOn(toolCallsApi, "list")
+      .mockResolvedValue({ items: [], total: 0 });
+    const view = renderWithProviders(<ChatPage />, {
+      initialEntries: [`/chat/${chatId}`],
     });
-    expect(useFilesSurfaceStore.getState().sessionDrawers).toEqual({});
+    const target = {
+      source: "workspace",
+      path: "results/grid.vtu",
+      root: "workspace",
+    };
+    try {
+      await screen.findByTestId("chat-ui");
+      // Resolve the runtime id after mount, as session hydration does.
+      getIdentity.mockImplementation((id) => ({
+        ...originalIdentity(id),
+        sessionId:
+          id === chatId ? runtimeSessionId : originalIdentity(id).sessionId,
+      }));
+      act(() => {
+        for (const owner of [
+          { agentId: "other" },
+          { sessionId: "other" },
+          { chatId: "other" },
+        ]) {
+          window.dispatchEvent(
+            new CustomEvent("qwenpaw:reveal-file", {
+              detail: { ...owner, target },
+            }),
+          );
+          window.dispatchEvent(
+            new CustomEvent("qwenpaw:open-compute-workbench", {
+              detail: owner,
+            }),
+          );
+        }
+      });
+      expect(reveal).not.toHaveBeenCalled();
+      expect(useFilesSurfaceStore.getState().sessionDrawers).toEqual({});
+      const owner = { agentId: "default", sessionId: runtimeSessionId, chatId };
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent("qwenpaw:open-compute-workbench", {
+            detail: owner,
+          }),
+        );
+        window.dispatchEvent(
+          new CustomEvent("qwenpaw:reveal-file", {
+            detail: { ...owner, target },
+          }),
+        );
+      });
+      expect(
+        useFilesSurfaceStore.getState().sessionDrawers[
+          `session:default:${chatId}`
+        ],
+      ).toMatchObject({ kind: "workspace", mode: "compute" });
+      expect(reveal).toHaveBeenCalledExactlyOnceWith(
+        target.path,
+        chatId,
+        "workspace",
+        undefined,
+      );
+
+      view.unmount();
+      useFilesSurfaceStore.setState({ sessionDrawers: {} });
+      act(() => {
+        window.dispatchEvent(new CustomEvent("qwenpaw:open-compute-workbench"));
+        window.dispatchEvent(
+          new CustomEvent("qwenpaw:reveal-file", { detail: { target } }),
+        );
+      });
+      expect(useFilesSurfaceStore.getState().sessionDrawers).toEqual({});
+      expect(reveal).toHaveBeenCalledTimes(1);
+    } finally {
+      view.unmount();
+      getIdentity.mockImplementation(originalIdentity);
+      reveal.mockRestore();
+      backgroundTasks.mockRestore();
+    }
+  });
+
+  it("UGSci workspace: legacy reveal requests retain the pending project directory", async () => {
+    const projectDir = "C:/work/pending-project";
+    setPendingProjectDirectory("default", "new", [
+      { path: projectDir, label: null },
+    ]);
+    const reveal = vi
+      .spyOn(workspaceApi, "revealInFileManager")
+      .mockResolvedValue({ ok: true });
+    const view = renderWithProviders(<ChatPage />, {
+      initialEntries: ["/chat"],
+    });
+    try {
+      await screen.findByTestId("chat-ui");
+      act(() => {
+        window.dispatchEvent(
+          new CustomEvent("qwenpaw:reveal-file", {
+            detail: {
+              target: { source: "attachment", path: "inputs/report.pdf" },
+            },
+          }),
+        );
+        window.dispatchEvent(
+          new CustomEvent("qwenpaw:reveal-file", {
+            detail: { target: { source: "artifact", path: "generated.md" } },
+          }),
+        );
+      });
+      expect(reveal).toHaveBeenCalledExactlyOnceWith(
+        "inputs/report.pdf",
+        undefined,
+        "project",
+        projectDir,
+      );
+    } finally {
+      view.unmount();
+      reveal.mockRestore();
+      setPendingProjectDirectory("default", "new", null);
+    }
   });
 
   it("UGSci simulation: the real chat opens the requested run and rejects another agent or session", async () => {

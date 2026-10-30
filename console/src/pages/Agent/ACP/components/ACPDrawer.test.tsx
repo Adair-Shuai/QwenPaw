@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { Form } from "@agentscope-ai/design";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { CapabilityWorkspace } from "@/components/interaction/CapabilityWorkspace";
 import { ACPDrawer } from "./ACPDrawer";
 vi.mock("@agentscope-ai/design", async () =>
   vi.importActual<typeof import("antd")>("antd"),
@@ -111,5 +112,33 @@ describe("ACP connection editor", () => {
     await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
     expect(onSubmit).not.toHaveBeenCalled();
     expect(confirm).not.toHaveBeenCalled();
+  });
+  it("keeps an embedded runtime edit open on failure and flushes the original form on return", async () => {
+    const onClose = vi.fn();
+    const onSubmit = vi.fn().mockResolvedValue(false);
+    render(
+      <CapabilityWorkspace enabled>
+        <Fixture onClose={onClose} onSubmit={onSubmit} />
+      </CapabilityWorkspace>,
+    );
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(screen.getByText("acp.trustedHelp")).toBeVisible();
+    fireEvent.change(screen.getByLabelText("acp.command"), {
+      target: { value: "updated-runner" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "common.back" }));
+    await waitFor(() => expect(confirm).toHaveBeenCalledOnce());
+    expect(onClose).not.toHaveBeenCalled();
+    await act(async () => confirm.mock.calls[0][0].onCancel());
+    expect(screen.getByLabelText("acp.command")).toHaveValue("updated-runner");
+    onSubmit.mockResolvedValue(true);
+    fireEvent.change(screen.getByLabelText("acp.command"), {
+      target: { value: "saved-runner" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "common.back" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(onSubmit).toHaveBeenLastCalledWith(
+      expect.objectContaining({ command: "saved-runner", trusted: false }),
+    );
   });
 });

@@ -8,7 +8,10 @@ import { renderWithProviders } from "@/test/common_setup";
 const mocks = vi.hoisted(() => ({
   openExternalLink: vi.fn(),
   updateLanguage: vi.fn(() => Promise.resolve()),
+  mobile: false,
 }));
+
+vi.mock("../hooks/useIsMobile", () => ({ useIsMobile: () => mocks.mobile }));
 
 vi.mock("../utils/openExternalLink", () => ({
   openExternalLink: mocks.openExternalLink,
@@ -27,6 +30,9 @@ function last<T>(items: T[]): T {
 describe("SidebarSettingsPanel", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.mobile = false;
+    localStorage.removeItem("qwenpaw-interface-style");
+    localStorage.removeItem("qwenpaw-page-style");
     localStorage.removeItem("qwenpaw_tool_display_mode");
     localStorage.removeItem("qwenpaw_assistant_message_display_mode");
     localStorage.removeItem("qwenpaw_show_thinking");
@@ -46,6 +52,149 @@ describe("SidebarSettingsPanel", () => {
       screen.getByRole("button", { name: "sidebar.changeAvatar" }),
     ).toHaveFocus();
   });
+
+  it("keeps mobile appearance navigation in one panel with Back and persists a style choice", async () => {
+    mocks.mobile = true;
+    const onClose = vi.fn();
+    const { container } = renderWithProviders(
+      <ThemeProvider syncRemote={false}>
+        <SidebarSettingsPanel
+          onClose={onClose}
+          onOpenDesktopMode={vi.fn()}
+          onOpenSettings={vi.fn()}
+        />
+      </ThemeProvider>,
+    );
+    await userEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    await userEvent.click(screen.getByRole("button", { name: "Theme" }));
+    expect(container.querySelectorAll(".ant-popover")).toHaveLength(0);
+    expect(screen.getByRole("button", { name: "Back" })).toHaveFocus();
+    expect(
+      screen.getByRole("button", { name: "Cool workspace" }),
+    ).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("button", { name: "Theme" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Back" }));
+    expect(screen.getByRole("button", { name: "Settings" })).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    await userEvent.click(screen.getByRole("button", { name: "Theme" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "Cool workspace" }),
+    );
+    expect(localStorage.getItem("qwenpaw-interface-style")).toBe(
+      "cool-workspace",
+    );
+    expect(onClose).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    ["Warm minimal", "warm-minimal", "#fcfcfa"],
+    ["Cool workspace", "cool-workspace", "#ffffff"],
+    ["Soft focus", "soft-focus", "#ffffff"],
+  ])(
+    "persists %s from the actual appearance flyout and restores it on reopen",
+    async (label, style, surface) => {
+      const onClose = vi.fn();
+      const content = (
+        <ThemeProvider syncRemote={false}>
+          <SidebarSettingsPanel
+            onClose={onClose}
+            onOpenDesktopMode={vi.fn()}
+            onOpenSettings={vi.fn()}
+          />
+        </ThemeProvider>
+      );
+      const first = renderWithProviders(content);
+      await userEvent.click(screen.getByRole("button", { name: "Appearance" }));
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Theme" }),
+      );
+      await userEvent.click(await screen.findByRole("button", { name: label }));
+      expect(document.documentElement).toHaveAttribute(
+        "data-interface-style",
+        style,
+      );
+      expect(
+        document.documentElement.style.getPropertyValue("--app-surface"),
+      ).toBe(surface);
+      expect(localStorage.getItem("qwenpaw-interface-style")).toBe(style);
+      expect(onClose).toHaveBeenCalledOnce();
+      first.unmount();
+      renderWithProviders(content);
+      expect(document.documentElement).toHaveAttribute(
+        "data-interface-style",
+        style,
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Appearance" }));
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Theme" }),
+      );
+      expect(
+        await screen.findByRole("button", { name: label }),
+      ).toHaveAttribute("aria-current", "true");
+      await userEvent.click(screen.getByRole("button", { name: "Original" }));
+      expect(document.documentElement).toHaveAttribute(
+        "data-interface-style",
+        "classic",
+      );
+      expect(
+        document.documentElement.style.getPropertyValue("--app-shell-bg"),
+      ).toBe("");
+    },
+  );
+
+  it.each(["deepseek", "openai"])(
+    "selects %s layout from Page style without changing the theme",
+    async (style) => {
+      localStorage.setItem("qwenpaw-interface-style", "warm-minimal");
+      const content = (
+        <ThemeProvider syncRemote={false}>
+          <SidebarSettingsPanel
+            onOpenDesktopMode={vi.fn()}
+            onOpenSettings={vi.fn()}
+          />
+        </ThemeProvider>
+      );
+      const first = renderWithProviders(content);
+      await userEvent.click(screen.getByRole("button", { name: "Appearance" }));
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Page style" }),
+      );
+      await userEvent.click(
+        await screen.findByRole("button", { name: `${style} style` }),
+      );
+      expect(document.documentElement).toHaveAttribute(
+        "data-page-style",
+        style,
+      );
+      expect(document.documentElement).toHaveAttribute(
+        "data-interface-style",
+        "warm-minimal",
+      );
+      expect(localStorage.getItem("qwenpaw-page-style")).toBe(style);
+      first.unmount();
+      renderWithProviders(content);
+      expect(document.documentElement).toHaveAttribute(
+        "data-page-style",
+        style,
+      );
+      await userEvent.click(screen.getByRole("button", { name: "Appearance" }));
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Theme" }),
+      );
+      await userEvent.click(
+        await screen.findByRole("button", { name: "Soft focus" }),
+      );
+      expect(document.documentElement).toHaveAttribute(
+        "data-page-style",
+        style,
+      );
+      expect(document.documentElement).toHaveAttribute(
+        "data-interface-style",
+        "soft-focus",
+      );
+    },
+  );
 
   it("keeps Settings as an action alongside the About version", async () => {
     const onClose = vi.fn();

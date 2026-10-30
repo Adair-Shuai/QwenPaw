@@ -1,4 +1,6 @@
 # Build output
+src-tauri/tauri.version.conf.json
+src-tauri/binaries/
 dist/
 dist-tauri/
 src-tauri/target/
@@ -10,6 +12,8 @@ public/
 node_modules/
 
 # Cache
+.vite/
+.codex-tmp/
 .cache/
 *.cache
 

@@ -94,8 +94,19 @@ def test_host_has_dedicated_compute_slot_and_open_event():
     assert "chat.workbench.compute" in panels
     assert "suppressChildrenWhenFilled" in panels
     assert 'QP.slot.fill(PLUGIN_ID, "chat.workbench.compute"' in genui
-    assert '"compute"' in drawer and "WorkbenchComputePanel" in drawer
-    assert "qwenpaw:open-compute-workbench" in chat
+    extensions = (
+        ROOT / "console/src/features/files-workspace/WorkbenchExtensions.tsx"
+    ).read_text(encoding="utf-8")
+    requests = (
+        ROOT / "console/src/features/files-workspace/useWorkbenchRequests.ts"
+    ).read_text(encoding="utf-8")
+    assert "<WorkbenchExtensionPanels" in drawer
+    assert 'id: "compute"' in extensions
+    assert "component: WorkbenchComputePanel" in extensions
+    assert "<Panel {...context} active={active}" in extensions
+    assert "useWorkbenchRequests(" in chat
+    assert "qwenpaw:open-compute-workbench" in requests
+    assert 'mode: "compute"' in requests
 
 
 def test_packaged_frontend_sources_match_bundle():

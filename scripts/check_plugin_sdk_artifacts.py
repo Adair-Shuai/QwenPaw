@@ -16,6 +16,7 @@ import subprocess
 import tarfile
 import zipfile
 
+# These suites use private host adapters or repository-only fixtures.
 INTERNAL = {
     # Host dependency auditing uses private helpers and subprocess fixtures.
     # It still runs in the full host unit suite, outside the author export.
@@ -27,7 +28,10 @@ INTERNAL = {
     "test_sdk_event_bridge.py",
     "test_sdk_approval_event_bridge.py",
     "test_sdk_channel_bridge.py",
+    "test_sdk_channel_routing_contract.py",
     "test_sdk_channel_run_bridge.py",
+    "test_sdk_provider_contract.py",
+    "test_sdk_resource_contract.py",
 }
 
 

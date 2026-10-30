@@ -93,7 +93,9 @@ def runtime_report(plugin, capsys=None):
             [sys.executable, "-m", "qwenpaw.plugins.check", *args],
             capture_output=True,
             text=True,
-            timeout=30,
+            # Runtime profiling includes real host/dependency admission.
+            # Windows file and process startup need a larger bounded budget.
+            timeout=90 if os.name == "nt" else 30,
             check=False,
         )
         code, output = result.returncode, result.stdout

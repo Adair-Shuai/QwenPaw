@@ -1,124 +1,169 @@
-import { FileText, RefreshCw } from "lucide-react";
-import { useCallback, useEffect, useState, type ReactNode } from "react";
-import { workspaceApi } from "../../api/modules/workspace";
-import type { DirectoryEntry, FileTarget } from "./types";
+import { RefreshCw } from "lucide-react";
+import { useTranslation } from "react-i18next";
+import type { ReactNode } from "react";
+import type { FileTarget } from "./types";
 import type { FilesWorkspaceScope } from "./filesWorkspaceScope";
-import { useResponseArtifacts } from "./responseArtifactRegistry";
+import {
+  responseArtifactIdentity,
+  useResponseArtifacts,
+} from "./responseArtifactRegistry";
+import FileGlyph from "./FileGlyph";
 import styles from "./FilesWorkspace.module.less";
 
 interface ArtifactsWorkspaceProps {
   scope: Extract<FilesWorkspaceScope, { kind: "session" }>;
   target?: FileTarget;
   onSelect: (target: FileTarget) => void;
-  preview: ReactNode;
+  preview?: ReactNode;
+  persistedArtifacts?: FileTarget[];
+  loading?: boolean;
+  error?: string;
+  onRefresh?: () => void;
+  hasMore?: boolean;
+  loadingMore?: boolean;
+  moreError?: boolean;
+  onLoadMore?: () => void;
 }
 
-/** Chat artifacts are a flat collection, separate from the file manager tree. */
+/** Only explicit session deliveries belong here; the shared output folder does not. */
 export default function ArtifactsWorkspace({
   scope,
   target,
   onSelect,
   preview,
+  persistedArtifacts = [],
+  loading = false,
+  error,
+  onRefresh,
+  hasMore = false,
+  loadingMore = false,
+  moreError = false,
+  onLoadMore,
 }: ArtifactsWorkspaceProps) {
-  const [entries, setEntries] = useState<DirectoryEntry[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [revision, setRevision] = useState(0);
-  const responseArtifacts = useResponseArtifacts();
-  const refresh = useCallback(() => setRevision((value) => value + 1), []);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    void workspaceApi
-      .listDirectory(
-        "output",
-        undefined,
-        200,
-        scope.chatId,
-        "workspace",
-        scope.projectDirOverride,
-      )
-      .then((page) => {
-        if (!cancelled) {
-          setEntries(page.entries.filter((entry) => entry.kind === "file"));
-        }
-      })
-      .catch(() => {
-        if (!cancelled) setEntries([]);
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [revision, scope.agentId, scope.chatId, scope.projectDirOverride]);
-
-  const artifacts: FileTarget[] = [...responseArtifacts];
-  const seenPaths = new Set(artifacts.map((item) => item.path));
-  for (const entry of entries) {
-    if (seenPaths.has(entry.path)) continue;
-    artifacts.push({
-      source: "workspace",
-      path: entry.path,
-      root: "workspace",
-    });
-    seenPaths.add(entry.path);
+  const { t } = useTranslation();
+  const responseArtifacts = useResponseArtifacts(scope);
+  const artifacts = new Map<string, FileTarget>();
+  const persistedPaths = new Set(
+    persistedArtifacts.map((item) =>
+      JSON.stringify([item.root ?? "", item.path]),
+    ),
+  );
+  for (const item of [
+    ...persistedArtifacts,
+    ...responseArtifacts.filter(
+      (item) =>
+        !persistedPaths.has(JSON.stringify([item.root ?? "", item.path])),
+    ),
+  ]) {
+    const identity = responseArtifactIdentity(item);
+    if (!artifacts.has(identity)) artifacts.set(identity, item);
   }
-  if (
-    target &&
-    !artifacts.some(
-      (item) => item.path === target.path && item.root === target.root,
-    )
-  ) {
-    artifacts.unshift(target);
-  }
-
-  return (
-    <div className={styles.artifactsWorkspace}>
-      <aside className={styles.artifactShelf} aria-label="Artifact 区域">
-        <header className={styles.artifactShelfHeader}>
-          <div>
-            <strong>Artifacts</strong>
-            <span>{artifacts.length} 个文件</span>
-          </div>
-          <button type="button" aria-label="刷新 Artifacts" onClick={refresh}>
+  const selectedIdentity = target ? responseArtifactIdentity(target) : "";
+  const shelf = (
+    <aside
+      className={styles.artifactShelf}
+      aria-label={t("files.deliverables", "会话成果")}
+    >
+      <header className={styles.artifactShelfHeader}>
+        <div>
+          <strong>{t("files.deliverables", "会话成果")}</strong>
+          <span>
+            {t("files.deliverablesCount", "{{count}} 个文件", {
+              count: artifacts.size,
+            })}
+          </span>
+        </div>
+        {onRefresh && (
+          <button
+            type="button"
+            aria-label={t("files.refreshDeliverables", "刷新会话成果")}
+            onClick={onRefresh}
+            disabled={loading}
+          >
             <RefreshCw size={15} />
           </button>
-        </header>
-        <div className={styles.artifactItems}>
-          {artifacts.map((item) => {
-            const name =
-              item.path.replace(/\\/g, "/").split("/").pop() || item.path;
-            const selected =
-              item.path === target?.path && item.root === target.root;
-            return (
-              <button
-                type="button"
-                key={`${item.root ?? "url"}:${item.path}`}
-                className={`${styles.artifactItem} ${
-                  selected ? styles.artifactItemSelected : ""
-                }`}
-                aria-pressed={selected}
-                onClick={() => onSelect(item)}
-                title={item.path}
-              >
-                <FileText size={17} />
+        )}
+      </header>
+      <div className={styles.artifactItems} aria-busy={loading}>
+        {error && (
+          <div className={styles.artifactShelfEmpty} role="alert">
+            {error}
+          </div>
+        )}
+        {Array.from(artifacts, ([identity, item]) => {
+          const name =
+            item.path.replace(/\\/g, "/").split("/").pop() || item.path;
+          const selected = identity === selectedIdentity;
+          const archivedAt =
+            item.artifact?.meta?.finishedAt || item.artifact?.meta?.startedAt;
+          const archiveDate =
+            typeof archivedAt === "string" ? new Date(archivedAt) : null;
+          const archiveLabel =
+            archiveDate && Number.isFinite(archiveDate.getTime())
+              ? archiveDate.toLocaleString()
+              : "";
+          return (
+            <button
+              type="button"
+              key={identity}
+              className={`${styles.artifactItem} ${
+                selected ? styles.artifactItemSelected : ""
+              }`}
+              aria-pressed={selected}
+              onClick={() => onSelect(item)}
+              title={`${item.root ?? item.source}: ${item.path}`}
+            >
+              <FileGlyph name={name} size={17} />
+              <span className={styles.artifactFileDetails}>
                 <span>{name}</span>
-              </button>
-            );
-          })}
-          {!loading && artifacts.length === 0 && (
-            <div className={styles.artifactShelfEmpty}>
-              本会话生成的文件会显示在这里。
-            </div>
-          )}
-          {loading && artifacts.length === 0 && (
-            <div className={styles.artifactShelfEmpty}>正在加载 Artifacts…</div>
-          )}
-        </div>
-      </aside>
-      <section className={styles.artifactPreview} aria-label="Artifact 预览">
+                <small>
+                  {item.root ? `${item.root} / ` : ""}
+                  {item.path}
+                </small>
+                {archiveLabel && <small>{archiveLabel}</small>}
+              </span>
+            </button>
+          );
+        })}
+        {!loading && !error && artifacts.size === 0 && (
+          <div className={styles.artifactShelfEmpty}>
+            {t(
+              "files.deliverablesEmpty",
+              "本会话生成和交付的文件会显示在这里。",
+            )}
+          </div>
+        )}
+        {loading && artifacts.size === 0 && (
+          <div className={styles.artifactShelfEmpty} role="status">
+            {t("files.deliverablesLoading", "正在加载会话成果…")}
+          </div>
+        )}
+        {hasMore && onLoadMore && (
+          <button
+            type="button"
+            className={styles.artifactLoadMore}
+            onClick={onLoadMore}
+            disabled={loading}
+          >
+            {loadingMore
+              ? t("files.loadingMoreDeliverables", "正在加载历史成果…")
+              : moreError
+              ? t("files.retryMoreDeliverables", "重试加载历史成果")
+              : t("files.loadMoreDeliverables", "加载更多历史成果")}
+          </button>
+        )}
+      </div>
+    </aside>
+  );
+  return preview === undefined ? (
+    shelf
+  ) : (
+    <div className={styles.artifactsWorkspace}>
+      {shelf}
+      <section
+        className={styles.artifactPreview}
+        aria-label={t("files.deliverablePreview", "成果预览")}
+      >
         {preview}
       </section>
     </div>

@@ -13,6 +13,7 @@ from agentscope.message import ToolResultState
 from agentscope.message import TextBlock, DataBlock, URLSource
 
 from ...runtime.tool_registry import tool_descriptor
+from ...utils.outbound_media import stage_outbound_file
 from .file_io import _resolve_file_path, _path_to_file_url
 
 
@@ -154,7 +155,12 @@ async def send_file_to_user(
         mime_type = "application/octet-stream"
 
     try:
-        file_url = _path_to_file_url(file_path)
+        snapshot = await stage_outbound_file(file_path)
+        file_url = _path_to_file_url(str(snapshot))
+
+        from ...turn_files.lifecycle import record_delivered_file
+
+        await record_delivered_file(file_path)
 
         return ToolChunk(
             is_last=True,

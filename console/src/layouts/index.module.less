@@ -98,6 +98,12 @@
 }
 
 // ─── Sidebar ─────────────────────────────────────────────────────────────────
+.expandedSidebarContent {
+  display: contents;
+  &[hidden] {
+    display: none;
+  }
+}
 .sider {
   background: var(--app-shell-bg) !important;
   border-right-color: var(--app-border-subtle) !important;
@@ -519,7 +525,25 @@
 }
 
 .versionBadgeClickable {
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  padding: 5px 2px;
+  font-family: inherit;
+  white-space: nowrap;
   cursor: pointer;
+  &:hover,
+  &[data-update-state="available"],
+  &[data-update-state="ready"] {
+    color: var(--app-accent-text);
+  }
+  &[data-update-state="failed"] {
+    color: var(--app-error);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--app-focus-ring);
+    outline-offset: 2px;
+  }
 }
 
 // ─── Hub administration ───────────────────────────────────────────────────────
@@ -1578,6 +1602,42 @@
     border: 0;
   }
 }
+
+:global(html[data-page-style]:not([data-page-style="classic"])) {
+  .appBrandLogo {
+    flex: 0 0 auto;
+  }
+  .logoDivider {
+    flex: 0 0 1px;
+    width: 1px;
+    height: 14px;
+    margin: 0 8px;
+    border: 0;
+    background: var(--app-border);
+    transform: none;
+  }
+  .collapseToggleContainer {
+    background: var(--app-shell-bg);
+  }
+  .ambientLight {
+    display: none;
+  }
+  .mainContentLayout.mainContentLayout {
+    margin: 0;
+    height: 100%;
+    border: 0;
+    border-radius: 0;
+    .header {
+      height: 44px;
+      min-height: 44px;
+      background: var(--app-surface);
+      border-bottom: 1px solid var(--app-border-subtle);
+    }
+  }
+  .sider {
+    border-right: 1px solid var(--app-border-subtle);
+  }
+}
 @media (max-width: 768px) {
   .mainContentLayout.mainContentLayout {
     margin: 0;
@@ -1683,4 +1743,51 @@
   .ambientLight {
     display: none;
   }
+}
+
+:global(html[data-page-style]:not([data-page-style="classic"])) {
+  .appBrand {
+    height: 84px;
+    flex-basis: 84px;
+    padding: 0 8px;
+    overflow: visible;
+  }
+  .logoDivider {
+    display: none;
+  }
+  .appBrandLogo {
+    flex: 0 0 auto;
+  }
+  .appBrandVersionArea {
+    margin-left: 6px;
+  }
+  .versionBadge {
+    font-size: 10px;
+    font-weight: 400;
+    color: var(--app-text-tertiary);
+  }
+  .logoImg {
+    height: 16px;
+  }
+  .brandCollapseToggle {
+    width: 26px !important;
+    min-width: 26px !important;
+  }
+  .sessionArea {
+    order: 4;
+    margin-top: 28px;
+  }
+  .collapseToggleContainer {
+    order: 8;
+    width: 100%;
+    margin: 0;
+    padding: 8px 0 14px;
+    flex-direction: column;
+  }
+  .sider {
+    border-right: 0;
+  }
+}
+:global(html[data-page-style="openai"]) .appBrand {
+  padding-inline: 4px;
 }

@@ -1,0 +1,67 @@
+/* Opt-in skins. Existing routes, SDK components and workspace instances stay mounted. */
+html[data-interface-style]:not([data-interface-style="classic"]) {
+  --app-shadow-panel: 0 8px 28px rgb(0 0 0 / 12%);
+}
+
+html[data-interface-style]:not([data-interface-style="classic"])
+  :is(
+    .ant-layout,
+    .qwenpaw-layout,
+    .ant-layout-content,
+    .qwenpaw-layout-content
+  ) {
+  background: var(--app-bg) !important;
+}
+
+html[data-page-style]:not([data-page-style="classic"]) .page-container {
+  padding: 0;
+}
+
+html[data-page-style]:not([data-page-style="classic"]) .page-content {
+  background: var(--app-surface);
+  border: 0;
+  border-radius: 0;
+}
+
+html[data-interface-style]:not([data-interface-style="classic"])
+  :is(
+    .ant-popover-inner,
+    .qwenpaw-popover-inner,
+    .ant-dropdown-menu,
+    .qwenpaw-dropdown-menu
+  ) {
+  backdrop-filter: none;
+}
+
+html[data-interface-style]:not([data-interface-style="classic"])
+  :is(
+    .qwenpaw-bubble-list-wrapper,
+    .qwenpaw-chat-anywhere-input,
+    .qwenpaw-chat-anywhere-message-list-welcome
+  ) {
+  background: var(--app-surface) !important;
+}
+
+html.dark-mode[data-interface-style]:not([data-interface-style="classic"])
+  [data-qwenpaw-composer-submit="true"]:not(:disabled) {
+  color: var(--app-bg) !important;
+}
+
+html[data-interface-style]:not([data-interface-style="classic"])
+  [data-qwenpaw-composer-submit="true"]:disabled {
+  color: var(--app-disabled-text) !important;
+}
+
+@media (max-width: 768px) {
+  html[data-interface-style]:not([data-interface-style="classic"])
+    .qwenpaw-bubble {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  html[data-interface-style]:not([data-interface-style="classic"])
+    .qwenpaw-bubble-end
+    .qwenpaw-markdown {
+    overflow-wrap: anywhere;
+  }
+}

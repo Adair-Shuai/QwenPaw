@@ -140,10 +140,15 @@ class CapabilityStorage:  # pylint: disable=protected-access
         await self.storage.adelete(key)
 
     async def keys(self):
+        from pathlib import Path
+
+        from ..utils.windows_paths import io_path
+
+        root = Path(io_path(self.storage._root))
         return await self.storage._io(
             lambda: [
-                str(path.relative_to(self.storage._root))
-                for path in self.storage._root.rglob("*")
+                str(path.relative_to(root))
+                for path in root.rglob("*")
                 if path.is_file() and not path.is_symlink()
             ],
         )

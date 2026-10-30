@@ -632,6 +632,98 @@ describe("SidebarSessionList", () => {
     });
   });
 
+  it("opens minimal navigation search and preserves filtering when its presentation changes", async () => {
+    mockData([sessionA, sessionB]);
+    const view = renderWithProviders(
+      <SidebarSessionList minimal searchRequest={0} />,
+    );
+    const search = screen.getByPlaceholderText("Search…");
+    expect(search).not.toBeVisible();
+    view.rerender(<SidebarSessionList minimal searchRequest={1} />);
+    await waitFor(() => expect(search).toHaveFocus());
+    fireEvent.change(search, { target: { value: "beta" } });
+    await waitFor(() =>
+      expect(screen.queryByTestId("session-item-sess-a")).toBeNull(),
+    );
+    expect(screen.getByTestId("session-item-sess-b")).toBeVisible();
+    view.rerender(<SidebarSessionList minimal={false} searchRequest={1} />);
+    expect(screen.getByPlaceholderText("Search…")).toBe(search);
+    expect(search).toHaveValue("beta");
+    view.rerender(<SidebarSessionList minimal searchRequest={1} />);
+    fireEvent.blur(search);
+    expect(search).toBeVisible();
+    fireEvent.change(search, { target: { value: "" } });
+    fireEvent.blur(search);
+    expect(search).not.toBeVisible();
+    view.rerender(<SidebarSessionList minimal searchRequest={2} />);
+    await waitFor(() => expect(search).toHaveFocus());
+    expect(search).toBeVisible();
+  });
+
+  it("replaces the primary history header with focused search and restores it on Escape", async () => {
+    mockData([sessionA, sessionB]);
+    renderWithProviders(<SidebarSessionList defaultSearchOpen minimal />);
+    const open = screen.getByRole("button", { name: "Search conversations" });
+    const input = screen.getByPlaceholderText("Search…");
+    expect(input).not.toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Conversation History" }),
+    ).toBeVisible();
+    fireEvent.click(open);
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(
+      screen.queryByRole("button", { name: "Conversation History" }),
+    ).toBeNull();
+    expect(screen.queryByRole("button", { name: "By source" })).toBeNull();
+    fireEvent.change(input, { target: { value: "beta" } });
+    await waitFor(() =>
+      expect(screen.queryByTestId("session-item-sess-a")).toBeNull(),
+    );
+    expect(screen.getByTestId("session-item-sess-b")).toBeVisible();
+    fireEvent.blur(input);
+    expect(input).toBeVisible();
+    fireEvent.keyDown(input, { key: "Escape" });
+    await waitFor(() => expect(open).toHaveFocus());
+    expect(input).not.toBeVisible();
+    expect(input).toHaveValue("");
+    expect(
+      screen.getByRole("button", { name: "Conversation History" }),
+    ).toBeVisible();
+    expect(screen.getByTestId("session-item-sess-a")).toBeVisible();
+    fireEvent.click(open);
+    await waitFor(() => expect(input).toHaveFocus());
+    const close = screen.getByRole("button", { name: "Close search" });
+    fireEvent.blur(input, { relatedTarget: close });
+    expect(input).toBeVisible();
+    fireEvent.click(close);
+    await waitFor(() => expect(open).toHaveFocus());
+    expect(input).not.toBeVisible();
+  });
+
+  it("opens header search from collapsed history without losing its input across layouts", async () => {
+    mockData([sessionA, sessionB]);
+    const view = renderWithProviders(
+      <SidebarSessionList defaultSearchOpen minimal />,
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: "Conversation History" }),
+    );
+    expect(screen.queryByTestId("virtual-list")).toBeNull();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Search conversations" }),
+    );
+    const input = screen.getByRole("textbox", { name: "Search conversations" });
+    await waitFor(() => expect(input).toHaveFocus());
+    expect(screen.getByTestId("virtual-list")).toBeVisible();
+    fireEvent.change(input, { target: { value: "beta" } });
+    view.rerender(<SidebarSessionList defaultSearchOpen minimal={false} />);
+    expect(screen.getByRole("textbox", { name: "Search conversations" })).toBe(
+      input,
+    );
+    expect(input).toHaveValue("beta");
+    expect(screen.queryByTestId("session-item-sess-a")).toBeNull();
+  });
+
   it("filters sessions by the search query", async () => {
     mockData([sessionA, sessionB]);
     renderWithProviders(<SidebarSessionList />);

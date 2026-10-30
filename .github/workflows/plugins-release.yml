@@ -87,6 +87,8 @@ jobs:
         run: |
           npm --prefix plugins/bundle/qwenpaw-run-center/ui ci
           npm --prefix plugins/bundle/qwenpaw-run-center/ui run build
+      - name: Install channel contract preflight dependencies
+        run: python -m pip install -r scripts/pack/channel-contract-requirements.txt
 
       - name: Pack plugins and build index
         # qwenpaw-creator and qwenpaw-data are released through their own

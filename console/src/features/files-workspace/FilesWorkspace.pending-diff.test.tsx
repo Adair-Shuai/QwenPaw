@@ -164,7 +164,7 @@ describe("FilesWorkspace pending diff refresh", () => {
         modified: "agent edit v3",
       });
       fireEvent.click(
-        screen.getByRole("button", { name: /keepAll|全部保留/i }),
+        screen.getByRole("button", { name: /keep\s*all|全部保留/i }),
       );
 
       await waitFor(() => {
@@ -189,7 +189,7 @@ describe("FilesWorkspace pending diff refresh", () => {
     const view = render(<FilesWorkspace scope={scope} />);
     await waitFor(() => expect(harness.loadFileText).toHaveBeenCalledOnce());
     fireEvent.click(
-      screen.getByRole("button", { name: /^files.edit$|^编辑$/i }),
+      screen.getByRole("button", { name: /^files.edit$|^编辑$|^Edit$/i }),
     );
     act(() => harness.editDiff("user edit"));
     expect(currentTab().dirty).toBe(true);
@@ -223,7 +223,7 @@ describe("FilesWorkspace pending diff refresh", () => {
       await waitFor(() => expect(harness.loadFileText).toHaveBeenCalledOnce());
       if (change === "edit") {
         fireEvent.click(
-          screen.getByRole("button", { name: /^files.edit$|^编辑$/i }),
+          screen.getByRole("button", { name: /^files.edit$|^编辑$|^Edit$/i }),
         );
       }
       act(() => {

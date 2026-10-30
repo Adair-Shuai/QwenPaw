@@ -10,23 +10,32 @@ import { GripVertical, PanelLeft } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { constrainSidebar } from "./sidebarPlacement";
 import styles from "./dockableSidebar.module.less";
+import SidebarResizeHandle from "./SidebarResizeHandle";
 
 const MARGIN = 12;
 const DOCK_EDGE = 64;
 const spring = { type: "spring" as const, stiffness: 340, damping: 36 };
 interface Props {
   width: number;
+  minWidth?: number;
   mobile: boolean;
   children: ReactNode;
   onMobileDismiss?: () => void;
+  onWidthChange?: (width: number) => void;
+  onWidthReset?: () => void;
+  onResizeCollapse?: () => void;
 }
 
 /** One stable subtree: docking only changes its presentation, never its owner. */
 export default function DockableSidebar({
   width,
+  minWidth,
   mobile,
   children,
   onMobileDismiss,
+  onWidthChange,
+  onWidthReset,
+  onResizeCollapse,
 }: Props) {
   const { t } = useTranslation();
   const reduced = useReducedMotion();
@@ -39,6 +48,7 @@ export default function DockableSidebar({
   const [floating, setFloating] = useState(false);
   const [landing, setLanding] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [resizing, setResizing] = useState(false);
   const [dockReady, setDockReady] = useState(false);
   const flight = useRef(0);
   const controls = useRef<Array<{ stop: () => void }>>([]);
@@ -157,6 +167,9 @@ export default function DockableSidebar({
     };
   }, [floating, landing, place, cancel, x, y, height]);
   useEffect(() => stop, [stop]);
+  useEffect(() => {
+    if (floating && !landing) place(x.get(), y.get());
+  }, [width, floating, landing, place, x, y]);
   const down = (event: PointerEvent<HTMLButtonElement>) => {
     if (mobile || event.button !== 0) return;
     const rect = frame.current!.getBoundingClientRect();
@@ -285,7 +298,7 @@ export default function DockableSidebar({
       className={styles.anchor}
       initial={false}
       animate={{ width: mobile ? 56 : floating && !landing ? 0 : width }}
-      transition={reduced ? { duration: 0 } : spring}
+      transition={reduced || resizing ? { duration: 0 } : spring}
     >
       {mobile && width > 56 && (
         <button
@@ -312,7 +325,7 @@ export default function DockableSidebar({
         data-sidebar-landing={landing || undefined}
         className={`${styles.frame} ${floating ? styles.floating : ""} ${
           dragging ? styles.dragging : ""
-        } ${mobile ? styles.mobile : ""} ${
+        } ${resizing ? styles.resizing : ""} ${mobile ? styles.mobile : ""} ${
           mobile && width > 56 ? styles.mobileExpanded : ""
         } ${width <= 72 ? styles.rail : ""}`}
         initial={false}
@@ -372,6 +385,16 @@ export default function DockableSidebar({
           </div>
         )}
         {children}
+        {!mobile && width > 72 && onWidthChange && (
+          <SidebarResizeHandle
+            minWidth={minWidth}
+            width={width}
+            onChange={onWidthChange}
+            onReset={onWidthReset}
+            onResizingChange={setResizing}
+            onCollapse={onResizeCollapse}
+          />
+        )}
       </motion.div>
     </motion.div>
   );

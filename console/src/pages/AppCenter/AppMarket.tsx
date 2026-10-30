@@ -736,6 +736,7 @@ export function AppMarket({
                     style={{ borderRadius: 20, height: "100%" }}
                   >
                     <Card
+                      data-themed-card="true"
                       className={
                         usesSignedCatalog
                           ? `${styles.appCard} ${styles.appCardLarge}`

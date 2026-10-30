@@ -7,18 +7,22 @@
 import React, { useCallback, useEffect, useMemo, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
+import remarkMath from "remark-math";
+import rehypeKatex from "rehype-katex";
 import { buildWorkspaceScopeHeaders } from "../../../api/authHeaders";
 import { chatApi } from "../../../api/modules/chat";
 import { workspaceApi as workspaceFileApi } from "../../../api/modules/workspace";
 import { isAbsoluteLocalFilePath } from "../../../features/files-workspace/internalFileLinks";
 import { useAuthenticatedWorkspaceBlob } from "../../../hooks/useAuthenticatedWorkspaceBlob";
 import { mimeFromExtension } from "../../../utils/mimeForPreview";
-import { parseMarkdownFrontmatter } from "../../../utils/markdown";
+import { useTranslation } from "react-i18next";
+import {
+  parseMemoryTags,
+  parseMarkdownFrontmatter,
+} from "../../../utils/markdown";
 import { resolveWorkspaceMarkdownTarget } from "../../../utils/workspaceMarkdownLinks";
 import { ExternalMarkdownLink } from "../../Markdown/externalLinkComponents";
-import { MermaidCodeBlock } from "@/components/MermaidCodeBlock";
+import { RenderableCodeBlock } from "../../RenderableCodeBlock";
 import styles from "../../../pages/Coding/FilePreview.module.less";
 import type { RendererContext } from "../types";
 
@@ -52,45 +56,62 @@ const upstreamMarkdownComponents = {
     void node;
     void inline;
     const match = /language-([\w-]+)/.exec(className || "");
-    const language = match?.[1]?.toLowerCase();
-    const codeText = String(children).replace(/\n$/, "");
-    if (language === "mermaid") {
-      return <MermaidCodeBlock chart={codeText} />;
-    }
-    if (language) {
-      return (
-        <SyntaxHighlighter
-          language={language}
-          style={oneDark}
-          customStyle={{
-            margin: 0,
-            borderRadius: "6px",
-            fontSize: "13px",
-            lineHeight: "1.6",
-          }}
-        >
-          {codeText}
-        </SyntaxHighlighter>
-      );
-    }
     return (
-      <code className={className} {...rest}>
+      <RenderableCodeBlock
+        {...rest}
+        block={!!match}
+        className={className}
+        lang={match?.[1]}
+      >
         {children}
-      </code>
+      </RenderableCodeBlock>
     );
   },
 };
 
+type MarkdownAstNode = {
+  type?: string;
+  lang?: string;
+  children?: MarkdownAstNode[];
+};
+
+// Keep fenced math in the upstream source/preview controls. Inline and display
+// math still flow through remark-math and KaTeX below.
+function preserveMathCodeBlocks() {
+  return (tree: MarkdownAstNode) => {
+    const visit = (child: MarkdownAstNode) => {
+      if (child.type === "code" && child.lang === "math") {
+        child.lang = "latex";
+      }
+      for (const nested of child.children ?? []) visit(nested);
+    };
+    for (const child of tree.children ?? []) visit(child);
+  };
+}
+
 const MarkdownRenderer: React.FC<RendererContext> = ({
   artifact,
   workspace,
+  onMemoryTagClick,
 }) => {
+  const { t } = useTranslation();
   const containerRef = useRef<HTMLDivElement>(null);
   const content = artifact.textContent ?? "";
   const parsedMarkdown = useMemo(
     () => parseMarkdownFrontmatter(content),
     [content],
   );
+
+  const tags = useMemo(() => parseMemoryTags(content), [content]);
+  const metadataEntries = tags.length
+    ? [
+        ...parsedMarkdown.entries.filter(
+          ({ key }) =>
+            !["memory_tags", '"memory_tags"', "'memory_tags'"].includes(key),
+        ),
+        { key: "memory_tags", value: "" },
+      ]
+    : parsedMarkdown.entries;
 
   useEffect(() => {
     if (artifact.isStreaming && containerRef.current) {
@@ -270,18 +291,46 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
 
   return (
     <div ref={containerRef} className={styles.markdownWrap}>
-      {parsedMarkdown.entries.length > 0 && (
+      {metadataEntries.length > 0 && (
         <dl className={styles.frontmatter} aria-label="Front matter">
-          {parsedMarkdown.entries.map(({ key, value }, index) => (
+          {metadataEntries.map(({ key, value }, index) => (
             <div className={styles.frontmatterRow} key={`${key}:${index}`}>
-              <dt className={styles.frontmatterKey}>{key}</dt>
-              <dd className={styles.frontmatterValue}>{value}</dd>
+              <dt className={styles.frontmatterKey}>
+                {key === "memory_tags" ? t("files.memoryTagsLabel") : key}
+              </dt>
+              <dd className={styles.frontmatterValue}>
+                {key === "memory_tags" && tags.length ? (
+                  <span className={styles.memoryTags}>
+                    {tags.map((tag) =>
+                      onMemoryTagClick ? (
+                        <button
+                          type="button"
+                          key={tag}
+                          className={styles.memoryTag}
+                          onClick={() => onMemoryTagClick(tag)}
+                          aria-label={t("files.memoryTagBrowse", { tag })}
+                          title={t("files.memoryTagBrowse", { tag })}
+                        >
+                          {tag}
+                        </button>
+                      ) : (
+                        <span key={tag} className={styles.memoryTag}>
+                          {tag}
+                        </span>
+                      ),
+                    )}
+                  </span>
+                ) : (
+                  value
+                )}
+              </dd>
             </div>
           ))}
         </dl>
       )}
       <ReactMarkdown
-        remarkPlugins={[remarkGfm]}
+        remarkPlugins={[remarkGfm, remarkMath, preserveMathCodeBlocks]}
+        rehypePlugins={[rehypeKatex]}
         components={markdownComponents}
       >
         {parsedMarkdown.body}

@@ -1,3 +1,8 @@
+import { EXPERT_STYLES } from "./expertStyles";
+import { ExpertBasicSettings } from "./ExpertBasicSettings";
+import { ExpertAvatar } from "../components/avatars";
+import { expertPresentation } from "./expertPresentation";
+import { useExpertDraft } from "./useExpertDraft";
 /**
  * Expert configuration modal with tabs for heartbeat, skills, MCP, and running config.
  */
@@ -56,7 +61,7 @@ export const CFG_LABEL_STYLE: Record<string, unknown> = {
   marginBottom: 4,
   fontSize: 13,
   fontWeight: 500,
-  color: "rgba(0,0,0,0.85)",
+  color: "var(--app-text, var(--ant-color-text))",
   display: "flex",
   alignItems: "center",
   gap: 4,
@@ -73,20 +78,27 @@ export const CFG_GRID_2COL_STYLE: Record<string, unknown> = {
 export const CFG_SECTION_TITLE_STYLE: Record<string, unknown> = {
   fontSize: 13,
   fontWeight: 600,
-  color: "rgba(0,0,0,0.85)",
+  color: "var(--app-text, var(--ant-color-text))",
   marginBottom: 12,
   paddingBottom: 8,
-  borderBottom: "1px solid #f0f0f0",
+  borderBottom:
+    "1px solid var(--app-border, var(--ant-color-border-secondary))",
 };
 // Tooltip hint text next to a control
 export const CFG_HINT_STYLE: Record<string, unknown> = {
   fontSize: 12,
-  color: "rgba(0,0,0,0.45)",
+  color: "var(--app-text-secondary, var(--ant-color-text-secondary))",
   marginLeft: 8,
 };
 
 /** Heartbeat configuration tab — fetches/saves /config/heartbeat with X-Agent-Id. */
-export function HeartbeatConfigTab({ agentId }: { agentId: string }) {
+export function HeartbeatConfigTab({
+  agentId,
+  onDirtyChange,
+}: {
+  agentId: string;
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
   const React = getHost().React;
   const { useState, useEffect, useCallback } = React;
   const {
@@ -114,6 +126,20 @@ export function HeartbeatConfigTab({ agentId }: { agentId: string }) {
   const [activeHoursStart, setActiveHoursStart] = useState("08:00");
   const [activeHoursEnd, setActiveHoursEnd] = useState("22:00");
 
+  const markSaved = useExpertDraft(
+    loading,
+    {
+      enabled,
+      everyNumber,
+      everyUnit,
+      target,
+      timeoutSeconds,
+      useActiveHours,
+      activeHoursStart,
+      activeHoursEnd,
+    },
+    onDirtyChange,
+  );
   const loadConfig = useCallback(async () => {
     setLoading(true);
     try {
@@ -151,6 +177,7 @@ export function HeartbeatConfigTab({ agentId }: { agentId: string }) {
             ? { start: activeHoursStart, end: activeHoursEnd }
             : undefined,
       });
+      markSaved();
       antdMsg.success("心跳配置已保存");
     } catch (err: any) {
       antdMsg.error(err.message || "保存心跳配置失败");
@@ -204,7 +231,7 @@ export function HeartbeatConfigTab({ agentId }: { agentId: string }) {
   ) =>
     React.createElement(
       "div",
-      { style: CFG_GRID_2COL_STYLE },
+      { className: "ugsci-config-pair", style: CFG_GRID_2COL_STYLE },
       React.createElement(
         "div",
         null,
@@ -936,7 +963,13 @@ export function MCPConfigTab({
 }
 
 /** Running configuration tab — fetches/saves /workspace/running-config. */
-export function RunningConfigTab({ agentId }: { agentId: string }) {
+export function RunningConfigTab({
+  agentId,
+  onDirtyChange,
+}: {
+  agentId: string;
+  onDirtyChange?: (dirty: boolean) => void;
+}) {
   const React = getHost().React;
   const { useState, useEffect, useCallback, useRef } = React;
   const {
@@ -996,6 +1029,37 @@ export function RunningConfigTab({ agentId }: { agentId: string }) {
   // ── Approval ──
   const [approvalLevel, setApprovalLevel] = useState("AUTO");
 
+  const markSaved = useExpertDraft(
+    loading,
+    {
+      shellTimeout,
+      shellExecutable,
+      autoTitleEnabled,
+      autoTitleTimeout,
+      language,
+      timezone,
+      iterEnabled,
+      maxIters,
+      doomLoopEnabled,
+      doomWindowSize,
+      doomSimilarity,
+      llmRetryEnabled,
+      llmMaxRetries,
+      llmBackoffBase,
+      llmBackoffCap,
+      llmMaxConcurrent,
+      llmMaxQpm,
+      llmRateLimitPause,
+      llmRateLimitJitter,
+      llmAcquireTimeout,
+      historyMaxLength,
+      contextBackend,
+      contextStrategy,
+      memoryBackend,
+      approvalLevel,
+    },
+    onDirtyChange,
+  );
   const loadConfig = useCallback(async () => {
     setLoading(true);
     try {
@@ -1098,10 +1162,10 @@ export function RunningConfigTab({ agentId }: { agentId: string }) {
       originalRef.current = configToSave;
 
       // Also save language and timezone (separate endpoints)
-      if (language)
-        await updateAgentLanguage(agentId, language).catch(() => {});
-      if (timezone) await updateUserTimezone(timezone).catch(() => {});
+      if (language) await updateAgentLanguage(agentId, language);
+      if (timezone) await updateUserTimezone(timezone);
 
+      markSaved();
       antdMsg.success("运行配置已保存");
     } catch (err: any) {
       antdMsg.error(err.message || "保存运行配置失败");
@@ -1143,7 +1207,7 @@ export function RunningConfigTab({ agentId }: { agentId: string }) {
   ) =>
     React.createElement(
       "div",
-      { style: CFG_GRID_2COL_STYLE },
+      { className: "ugsci-config-pair", style: CFG_GRID_2COL_STYLE },
       React.createElement(
         "div",
         null,
@@ -1162,294 +1226,304 @@ export function RunningConfigTab({ agentId }: { agentId: string }) {
     "div",
     { style: { paddingBottom: 8 } },
     // ── Section: 基础设置 ──
-    React.createElement("div", { style: CFG_SECTION_TITLE_STYLE }, "基础设置"),
-    fieldPair(
-      "Shell 命令超时 (秒)",
-      React.createElement(InputNumber, {
-        min: 1,
-        value: shellTimeout,
-        onChange: (v: number | null) => setShellTimeout(v ?? 60),
-        style: { width: "100%" },
-      }),
-      "Shell 可执行文件",
-      React.createElement(Input, {
-        value: shellExecutable,
-        onChange: (e: any) => setShellExecutable(e.target.value),
-        placeholder: "留空使用系统默认",
-        style: { width: "100%" },
-      }),
-    ),
-    fieldPair(
-      "语言",
-      React.createElement(Select, {
-        value: language,
-        onChange: (v: string) => setLanguage(v),
-        style: { width: "100%" },
-        options: [
-          { value: "zh", label: "中文" },
-          { value: "en", label: "English" },
-          { value: "id", label: "Bahasa Indonesia" },
-          { value: "ru", label: "Русский" },
-        ],
-      }),
-      "时区",
-      React.createElement(Select, {
-        value: timezone,
-        onChange: (v: string) => setTimezone(v),
-        style: { width: "100%" },
-        showSearch: true,
-        filterOption: (input: string, option: any) =>
-          (option?.label?.toString() || "")
-            .toLowerCase()
-            .includes(input.toLowerCase()),
-        options: [
-          "UTC",
-          "Asia/Shanghai",
-          "Asia/Tokyo",
-          "Asia/Singapore",
-          "Asia/Kolkata",
-          "Europe/London",
-          "Europe/Paris",
-          "America/New_York",
-          "America/Los_Angeles",
-          "America/Chicago",
-          "Australia/Sydney",
-        ].map((tz) => ({ value: tz, label: tz })),
-      }),
-    ),
-    fieldPair(
-      "自动生成会话标题",
-      React.createElement(
-        Space,
-        null,
-        React.createElement(Switch, {
-          checked: autoTitleEnabled,
-          onChange: (v: boolean) => setAutoTitleEnabled(v),
+    React.createElement(
+      "details",
+      { className: "ugsci-config-section", open: true },
+      React.createElement("summary", null, "基础设置"),
+      fieldPair(
+        "Shell 命令超时 (秒)",
+        React.createElement(InputNumber, {
+          min: 1,
+          value: shellTimeout,
+          onChange: (v: number | null) => setShellTimeout(v ?? 60),
+          style: { width: "100%" },
+        }),
+        "Shell 可执行文件",
+        React.createElement(Input, {
+          value: shellExecutable,
+          onChange: (e: any) => setShellExecutable(e.target.value),
+          placeholder: "留空使用系统默认",
+          style: { width: "100%" },
         }),
       ),
-      "标题生成超时 (秒)",
-      React.createElement(InputNumber, {
-        min: 5,
-        value: autoTitleTimeout,
-        onChange: (v: number | null) => setAutoTitleTimeout(v ?? 30),
-        style: { width: "100%" },
-        disabled: !autoTitleEnabled,
-      }),
-    ),
+      fieldPair(
+        "语言",
+        React.createElement(Select, {
+          value: language,
+          onChange: (v: string) => setLanguage(v),
+          style: { width: "100%" },
+          options: [
+            { value: "zh", label: "中文" },
+            { value: "en", label: "English" },
+            { value: "id", label: "Bahasa Indonesia" },
+            { value: "ru", label: "Русский" },
+          ],
+        }),
+        "时区",
+        React.createElement(Select, {
+          value: timezone,
+          onChange: (v: string) => setTimezone(v),
+          style: { width: "100%" },
+          showSearch: true,
+          filterOption: (input: string, option: any) =>
+            (option?.label?.toString() || "")
+              .toLowerCase()
+              .includes(input.toLowerCase()),
+          options: [
+            "UTC",
+            "Asia/Shanghai",
+            "Asia/Tokyo",
+            "Asia/Singapore",
+            "Asia/Kolkata",
+            "Europe/London",
+            "Europe/Paris",
+            "America/New_York",
+            "America/Los_Angeles",
+            "America/Chicago",
+            "Australia/Sydney",
+          ].map((tz) => ({ value: tz, label: tz })),
+        }),
+      ),
+      fieldPair(
+        "自动生成会话标题",
+        React.createElement(
+          Space,
+          null,
+          React.createElement(Switch, {
+            checked: autoTitleEnabled,
+            onChange: (v: boolean) => setAutoTitleEnabled(v),
+          }),
+        ),
+        "标题生成超时 (秒)",
+        React.createElement(InputNumber, {
+          min: 5,
+          value: autoTitleTimeout,
+          onChange: (v: number | null) => setAutoTitleTimeout(v ?? 30),
+          style: { width: "100%" },
+          disabled: !autoTitleEnabled,
+        }),
+      ),
 
-    // ── Section: 审批级别 ──
-    React.createElement(Divider, { style: { margin: "8px 0 16px" } }),
-    React.createElement("div", { style: CFG_SECTION_TITLE_STYLE }, "审批级别"),
-    field(
-      "工具执行审批",
-      React.createElement(Select, {
-        value: approvalLevel,
-        onChange: (v: string) => setApprovalLevel(v),
-        style: { width: "100%" },
-        options: [
-          { value: "STRICT", label: "严格 (STRICT) — 每次工具调用需审批" },
-          { value: "SMART", label: "智能 (SMART) — 高风险操作需审批" },
-          { value: "AUTO", label: "自动 (AUTO) — 自动执行" },
-          { value: "OFF", label: "关闭 (OFF) — 无限制" },
-        ],
-      }),
+      // ── Section: 审批级别 ──
     ),
-
-    // ── Section: 迭代与循环 ──
-    React.createElement(Divider, { style: { margin: "8px 0 16px" } }),
     React.createElement(
-      "div",
-      { style: CFG_SECTION_TITLE_STYLE },
-      "迭代与循环",
-    ),
-    field(
-      "启用迭代限制",
-      React.createElement(Switch, {
-        checked: iterEnabled,
-        onChange: (v: boolean) => setIterEnabled(v),
-      }),
-      "停止 Agent 前的最大循环轮次",
-    ),
-    iterEnabled
-      ? field(
-          "最大迭代次数",
-          React.createElement(InputNumber, {
-            min: 1,
-            max: 500,
-            value: maxIters,
-            onChange: (v: number | null) => setMaxIters(v ?? 100),
-            style: { width: "100%" },
-          }),
-        )
-      : null,
-    field(
-      "启用重复循环保护",
-      React.createElement(Switch, {
-        checked: doomLoopEnabled,
-        onChange: (v: boolean) => setDoomLoopEnabled(v),
-      }),
-      "检测并阻止重复操作循环",
-    ),
-    doomLoopEnabled
-      ? fieldPair(
-          "检测窗口大小",
-          React.createElement(InputNumber, {
-            min: 2,
-            max: 20,
-            value: doomWindowSize,
-            onChange: (v: number | null) => setDoomWindowSize(v ?? 3),
-            style: { width: "100%" },
-          }),
-          "相似度阈值",
-          React.createElement(InputNumber, {
-            min: 0,
-            max: 1,
-            step: 0.05,
-            value: doomSimilarity,
-            onChange: (v: number | null) => setDoomSimilarity(v ?? 1.0),
-            style: { width: "100%" },
-          }),
-        )
-      : null,
+      "details",
+      { className: "ugsci-config-section", open: undefined },
+      React.createElement("summary", null, "审批级别"),
+      field(
+        "工具执行审批",
+        React.createElement(Select, {
+          value: approvalLevel,
+          onChange: (v: string) => setApprovalLevel(v),
+          style: { width: "100%" },
+          options: [
+            { value: "STRICT", label: "严格 (STRICT) — 每次工具调用需审批" },
+            { value: "SMART", label: "智能 (SMART) — 高风险操作需审批" },
+            { value: "AUTO", label: "自动 (AUTO) — 自动执行" },
+            { value: "OFF", label: "关闭 (OFF) — 无限制" },
+          ],
+        }),
+      ),
 
-    // ── Section: LLM 重试 ──
-    React.createElement(Divider, { style: { margin: "8px 0 16px" } }),
-    React.createElement("div", { style: CFG_SECTION_TITLE_STYLE }, "LLM 重试"),
-    field(
-      "启用 LLM 重试",
-      React.createElement(Switch, {
-        checked: llmRetryEnabled,
-        onChange: (v: boolean) => setLlmRetryEnabled(v),
-      }),
+      // ── Section: 迭代与循环 ──
     ),
-    fieldPair(
-      "最大重试次数",
-      React.createElement(InputNumber, {
-        min: 1,
-        value: llmMaxRetries,
-        onChange: (v: number | null) => setLlmMaxRetries(v ?? 3),
-        style: { width: "100%" },
-        disabled: !llmRetryEnabled,
-      }),
-      "退避基数 (秒)",
-      React.createElement(InputNumber, {
-        min: 0.1,
-        step: 0.1,
-        value: llmBackoffBase,
-        onChange: (v: number | null) => setLlmBackoffBase(v ?? 2),
-        style: { width: "100%" },
-        disabled: !llmRetryEnabled,
-      }),
-    ),
-    field(
-      "退避上限 (秒)",
-      React.createElement(InputNumber, {
-        min: 0.5,
-        step: 0.5,
-        value: llmBackoffCap,
-        onChange: (v: number | null) => setLlmBackoffCap(v ?? 60),
-        style: { width: 200 },
-        disabled: !llmRetryEnabled,
-      }),
-    ),
-
-    // ── Section: LLM 限流 ──
-    React.createElement(Divider, { style: { margin: "8px 0 16px" } }),
-    React.createElement("div", { style: CFG_SECTION_TITLE_STYLE }, "LLM 限流"),
-    fieldPair(
-      "最大并发数",
-      React.createElement(InputNumber, {
-        min: 1,
-        value: llmMaxConcurrent,
-        onChange: (v: number | null) => setLlmMaxConcurrent(v ?? 1),
-        style: { width: "100%" },
-      }),
-      "最大 QPM (0=不限)",
-      React.createElement(InputNumber, {
-        min: 0,
-        step: 10,
-        value: llmMaxQpm,
-        onChange: (v: number | null) => setLlmMaxQpm(v ?? 0),
-        style: { width: "100%" },
-      }),
-    ),
-    fieldPair(
-      "限流暂停时间 (秒)",
-      React.createElement(InputNumber, {
-        min: 1.0,
-        step: 0.5,
-        value: llmRateLimitPause,
-        onChange: (v: number | null) => setLlmRateLimitPause(v ?? 1),
-        style: { width: "100%" },
-      }),
-      "限流抖动 (秒)",
-      React.createElement(InputNumber, {
-        min: 0.0,
-        step: 0.5,
-        value: llmRateLimitJitter,
-        onChange: (v: number | null) => setLlmRateLimitJitter(v ?? 0),
-        style: { width: "100%" },
-      }),
-    ),
-    field(
-      "获取超时 (秒)",
-      React.createElement(InputNumber, {
-        min: 10.0,
-        step: 10,
-        value: llmAcquireTimeout,
-        onChange: (v: number | null) => setLlmAcquireTimeout(v ?? 30),
-        style: { width: 200 },
-      }),
-      "应大于 限流暂停 + 抖动",
-    ),
-
-    // ── Section: 上下文与记忆 ──
-    React.createElement(Divider, { style: { margin: "8px 0 16px" } }),
     React.createElement(
-      "div",
-      { style: CFG_SECTION_TITLE_STYLE },
-      "上下文与记忆",
-    ),
-    fieldPair(
-      "上下文管理后端",
-      React.createElement(Select, {
-        value: contextBackend,
-        onChange: (v: string) => setContextBackend(v),
-        style: { width: "100%" },
-        options: [{ value: "light", label: "light" }],
-      }),
-      "上下文策略",
-      React.createElement(Select, {
-        value: contextStrategy,
-        onChange: (v: string) => setContextStrategy(v),
-        style: { width: "100%" },
-        options: [
-          { value: "scroll", label: "scroll (滚动窗口)" },
-          { value: "native", label: "native (原生)" },
-        ],
-      }),
-    ),
-    fieldPair(
-      "记忆管理后端",
-      React.createElement(Select, {
-        value: memoryBackend,
-        onChange: (v: string) => setMemoryBackend(v),
-        style: { width: "100%" },
-        options: [
-          { value: "remelight", label: "remelight" },
-          { value: "adbpg", label: "adbpg" },
-          { value: "none", label: "none (禁用)" },
-        ],
-      }),
-      "历史消息最大长度",
-      React.createElement(InputNumber, {
-        min: 1,
-        value: historyMaxLength,
-        onChange: (v: number | null) => setHistoryMaxLength(v ?? 50),
-        style: { width: "100%" },
-      }),
-    ),
+      "details",
+      { className: "ugsci-config-section", open: undefined },
+      React.createElement("summary", null, "迭代与循环"),
+      field(
+        "启用迭代限制",
+        React.createElement(Switch, {
+          checked: iterEnabled,
+          onChange: (v: boolean) => setIterEnabled(v),
+        }),
+        "停止 Agent 前的最大循环轮次",
+      ),
+      iterEnabled
+        ? field(
+            "最大迭代次数",
+            React.createElement(InputNumber, {
+              min: 1,
+              max: 500,
+              value: maxIters,
+              onChange: (v: number | null) => setMaxIters(v ?? 100),
+              style: { width: "100%" },
+            }),
+          )
+        : null,
+      field(
+        "启用重复循环保护",
+        React.createElement(Switch, {
+          checked: doomLoopEnabled,
+          onChange: (v: boolean) => setDoomLoopEnabled(v),
+        }),
+        "检测并阻止重复操作循环",
+      ),
+      doomLoopEnabled
+        ? fieldPair(
+            "检测窗口大小",
+            React.createElement(InputNumber, {
+              min: 2,
+              max: 20,
+              value: doomWindowSize,
+              onChange: (v: number | null) => setDoomWindowSize(v ?? 3),
+              style: { width: "100%" },
+            }),
+            "相似度阈值",
+            React.createElement(InputNumber, {
+              min: 0,
+              max: 1,
+              step: 0.05,
+              value: doomSimilarity,
+              onChange: (v: number | null) => setDoomSimilarity(v ?? 1.0),
+              style: { width: "100%" },
+            }),
+          )
+        : null,
 
+      // ── Section: LLM 重试 ──
+    ),
+    React.createElement(
+      "details",
+      { className: "ugsci-config-section", open: undefined },
+      React.createElement("summary", null, "LLM 重试"),
+      field(
+        "启用 LLM 重试",
+        React.createElement(Switch, {
+          checked: llmRetryEnabled,
+          onChange: (v: boolean) => setLlmRetryEnabled(v),
+        }),
+      ),
+      fieldPair(
+        "最大重试次数",
+        React.createElement(InputNumber, {
+          min: 1,
+          value: llmMaxRetries,
+          onChange: (v: number | null) => setLlmMaxRetries(v ?? 3),
+          style: { width: "100%" },
+          disabled: !llmRetryEnabled,
+        }),
+        "退避基数 (秒)",
+        React.createElement(InputNumber, {
+          min: 0.1,
+          step: 0.1,
+          value: llmBackoffBase,
+          onChange: (v: number | null) => setLlmBackoffBase(v ?? 2),
+          style: { width: "100%" },
+          disabled: !llmRetryEnabled,
+        }),
+      ),
+      field(
+        "退避上限 (秒)",
+        React.createElement(InputNumber, {
+          min: 0.5,
+          step: 0.5,
+          value: llmBackoffCap,
+          onChange: (v: number | null) => setLlmBackoffCap(v ?? 60),
+          style: { width: 200 },
+          disabled: !llmRetryEnabled,
+        }),
+      ),
+
+      // ── Section: LLM 限流 ──
+    ),
+    React.createElement(
+      "details",
+      { className: "ugsci-config-section", open: undefined },
+      React.createElement("summary", null, "LLM 限流"),
+      fieldPair(
+        "最大并发数",
+        React.createElement(InputNumber, {
+          min: 1,
+          value: llmMaxConcurrent,
+          onChange: (v: number | null) => setLlmMaxConcurrent(v ?? 1),
+          style: { width: "100%" },
+        }),
+        "最大 QPM (0=不限)",
+        React.createElement(InputNumber, {
+          min: 0,
+          step: 10,
+          value: llmMaxQpm,
+          onChange: (v: number | null) => setLlmMaxQpm(v ?? 0),
+          style: { width: "100%" },
+        }),
+      ),
+      fieldPair(
+        "限流暂停时间 (秒)",
+        React.createElement(InputNumber, {
+          min: 1.0,
+          step: 0.5,
+          value: llmRateLimitPause,
+          onChange: (v: number | null) => setLlmRateLimitPause(v ?? 1),
+          style: { width: "100%" },
+        }),
+        "限流抖动 (秒)",
+        React.createElement(InputNumber, {
+          min: 0.0,
+          step: 0.5,
+          value: llmRateLimitJitter,
+          onChange: (v: number | null) => setLlmRateLimitJitter(v ?? 0),
+          style: { width: "100%" },
+        }),
+      ),
+      field(
+        "获取超时 (秒)",
+        React.createElement(InputNumber, {
+          min: 10.0,
+          step: 10,
+          value: llmAcquireTimeout,
+          onChange: (v: number | null) => setLlmAcquireTimeout(v ?? 30),
+          style: { width: 200 },
+        }),
+        "应大于 限流暂停 + 抖动",
+      ),
+
+      // ── Section: 上下文与记忆 ──
+    ),
+    React.createElement(
+      "details",
+      { className: "ugsci-config-section", open: undefined },
+      React.createElement("summary", null, "上下文与记忆"),
+      fieldPair(
+        "上下文管理后端",
+        React.createElement(Select, {
+          value: contextBackend,
+          onChange: (v: string) => setContextBackend(v),
+          style: { width: "100%" },
+          options: [{ value: "light", label: "light" }],
+        }),
+        "上下文策略",
+        React.createElement(Select, {
+          value: contextStrategy,
+          onChange: (v: string) => setContextStrategy(v),
+          style: { width: "100%" },
+          options: [
+            { value: "scroll", label: "scroll (滚动窗口)" },
+            { value: "native", label: "native (原生)" },
+          ],
+        }),
+      ),
+      fieldPair(
+        "记忆管理后端",
+        React.createElement(Select, {
+          value: memoryBackend,
+          onChange: (v: string) => setMemoryBackend(v),
+          style: { width: "100%" },
+          options: [
+            { value: "remelight", label: "remelight" },
+            { value: "adbpg", label: "adbpg" },
+            { value: "none", label: "none (禁用)" },
+          ],
+        }),
+        "历史消息最大长度",
+        React.createElement(InputNumber, {
+          min: 1,
+          value: historyMaxLength,
+          onChange: (v: number | null) => setHistoryMaxLength(v ?? 50),
+          style: { width: "100%" },
+        }),
+      ),
+    ),
     // ── Save button ──
     React.createElement(
       "div",
@@ -1486,130 +1560,234 @@ export function ExpertConfigModal({
   onRefresh: () => void;
 }) {
   const React = getHost().React;
-  const { useState, useEffect, useCallback } = React;
-  const { Modal, Tabs, Spin, Typography } = getHost().antd;
-  const { SettingOutlined } = getHost().antdIcons || {};
-  const { Text } = Typography;
-
-  // System prompt files for the Files tab (KnowledgeBaseTab needs them as prop)
+  const { useState, useEffect, useMemo, useRef } = React;
+  const { Modal, Tabs, Button } = getHost().antd;
+  const [confirmModal, confirmContext] = Modal.useModal();
+  const [activeTab, setActiveTab] = useState("basic");
   const [promptFiles, setPromptFiles] = useState<string[]>([]);
-  const [filesLoading, setFilesLoading] = useState(false);
-  const [activeTab, setActiveTab] = useState("heartbeat");
-
-  const loadPromptFiles = useCallback(async () => {
-    if (!expert) return;
-    setFilesLoading(true);
+  const [narrow, setNarrow] = useState(
+    () => window.matchMedia("(max-width: 680px)").matches,
+  );
+  const dirty = useRef<Record<string, boolean>>({});
+  const changes = useMemo(
+    () =>
+      Object.fromEntries(
+        ["basic", "files", "heartbeat", "running"].map((key) => [
+          key,
+          (value: boolean) => {
+            dirty.current[key] = value;
+          },
+        ]),
+      ),
+    [],
+  );
+  const id = expert?.agent.id;
+  const requestRef = useRef(0);
+  const loadFiles = async () => {
+    if (!id) return;
+    const request = ++requestRef.current;
     try {
-      const files = await fetchSystemPromptFiles(expert.agent.id);
-      setPromptFiles(files);
+      const files = await fetchSystemPromptFiles(id);
+      if (request === requestRef.current) setPromptFiles(files);
     } catch {
-      setPromptFiles([]);
-    } finally {
-      setFilesLoading(false);
+      if (request === requestRef.current)
+        setPromptFiles(expert?.config?.system_prompt_files || []);
     }
-  }, [expert]);
-
-  useEffect(() => {
-    if (open && expert) {
-      loadPromptFiles();
-    }
-  }, [open, expert, loadPromptFiles]);
-
-  if (!expert) return null;
-
-  const { agent } = expert;
-
-  const handleFilesRefresh = () => {
-    loadPromptFiles();
-    onRefresh();
   };
-
+  useEffect(() => {
+    const media = window.matchMedia("(max-width: 680px)");
+    const update = () => setNarrow(media.matches);
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+  useEffect(() => {
+    dirty.current = {};
+    setActiveTab("basic");
+    setPromptFiles([]);
+    if (open) void loadFiles();
+    return () => {
+      requestRef.current++;
+    };
+  }, [id, open]);
+  useEffect(() => {
+    const guard = (e: BeforeUnloadEvent) => {
+      if (open && Object.values(dirty.current).some(Boolean)) {
+        e.preventDefault();
+        e.returnValue = "";
+      }
+    };
+    window.addEventListener("beforeunload", guard);
+    return () => window.removeEventListener("beforeunload", guard);
+  }, [open]);
+  if (!expert) return null;
+  const agent = expert.agent,
+    display = expertPresentation(expert);
+  const close = () => {
+    if (Object.values(dirty.current).some(Boolean))
+      confirmModal.confirm({
+        title: "还有未保存的修改",
+        content: "关闭后将放弃未保存的内容。已保存的配置不受影响。",
+        okText: "放弃修改",
+        cancelText: "继续编辑",
+        onOk: () => {
+          dirty.current = {};
+          onClose();
+        },
+      });
+    else onClose();
+  };
+  const intro = (title: string, text: string, child: any) =>
+    React.createElement(
+      "div",
+      null,
+      React.createElement("h3", null, title),
+      React.createElement("p", { className: "ugsci-settings-intro" }, text),
+      child,
+    );
   const tabItems = [
     {
-      key: "heartbeat",
-      label: "心跳",
-      children: React.createElement(HeartbeatConfigTab, {
-        agentId: agent.id,
+      key: "basic",
+      label: "基本信息",
+      children: React.createElement(ExpertBasicSettings, {
+        key: agent.id,
+        expert,
+        onRefresh,
+        onDirtyChange: changes.basic,
       }),
-    },
-    {
-      key: "files",
-      label: "文件",
-      children: filesLoading
-        ? React.createElement(
-            "div",
-            { style: { textAlign: "center", padding: 40 } },
-            React.createElement(Spin, { size: "large" }),
-          )
-        : React.createElement(KnowledgeBaseTab, {
-            agentId: agent.id,
-            systemPromptFiles: promptFiles,
-            onRefresh: handleFilesRefresh,
-          }),
     },
     {
       key: "skills",
       label: `技能 (${
         expert.skills.filter((s) => s.enabled !== false).length
       })`,
-      children: React.createElement(SkillsConfigTab, {
-        agentId: agent.id,
-        onRefresh,
-      }),
+      children: intro(
+        "技能",
+        "管理专家可用的技能，启用、停用与安装操作即时生效。",
+        React.createElement(SkillsConfigTab, { agentId: agent.id, onRefresh }),
+      ),
+    },
+    {
+      key: "files",
+      label: "文件与提示词",
+      children: intro(
+        "文件与提示词",
+        "保留现有工作区文件与系统提示词挂载关系。",
+        React.createElement(KnowledgeBaseTab, {
+          agentId: agent.id,
+          systemPromptFiles: promptFiles,
+          onRefresh: () => {
+            void loadFiles();
+            onRefresh();
+          },
+          onDirtyChange: changes.files,
+        }),
+      ),
     },
     {
       key: "mcp",
       label: `MCP (${expert.mcps.length})`,
-      children: React.createElement(MCPConfigTab, {
-        agentId: agent.id,
-        onRefresh,
-        isActive: activeTab === "mcp",
-      }),
+      children: intro(
+        "MCP 服务",
+        "配置、连接和工具权限沿用当前专家的独立设置。",
+        React.createElement(MCPConfigTab, {
+          agentId: agent.id,
+          onRefresh,
+          isActive: activeTab === "mcp",
+        }),
+      ),
+    },
+    {
+      key: "heartbeat",
+      label: "自动检查",
+      children: intro(
+        "自动检查",
+        "按固定间隔唤醒专家执行心跳任务。",
+        React.createElement(HeartbeatConfigTab, {
+          agentId: agent.id,
+          onDirtyChange: changes.heartbeat,
+        }),
+      ),
     },
     {
       key: "running",
-      label: "运行配置",
-      children: React.createElement(RunningConfigTab, {
-        agentId: agent.id,
-      }),
+      label: "高级运行",
+      children: intro(
+        "高级运行",
+        "按需展开参数组，修改后保存运行配置。",
+        React.createElement(RunningConfigTab, {
+          agentId: agent.id,
+          onDirtyChange: changes.running,
+        }),
+      ),
     },
   ];
-
   return React.createElement(
-    Modal,
-    {
-      open,
-      title: React.createElement(
-        "div",
-        { style: { display: "flex", alignItems: "center", gap: 8 } },
-        SettingOutlined
-          ? React.createElement(SettingOutlined, { style: { fontSize: 18 } })
-          : null,
-        React.createElement("span", null, `配置 - ${agent.name}`),
-        React.createElement(
-          Text,
-          { type: "secondary", style: { fontSize: 12, fontWeight: 400 } },
-          agent.id,
+    React.Fragment,
+    null,
+    confirmContext,
+    React.createElement("style", null, EXPERT_STYLES),
+    React.createElement(
+      Modal,
+      {
+        open,
+        title: "专家设置",
+        className: "ugsci-expert-settings",
+        onCancel: close,
+        footer: React.createElement(
+          "div",
+          { className: "ugsci-settings-footer" },
+          React.createElement(
+            "span",
+            null,
+            "各栏目分别保存；技能与 MCP 操作即时生效。",
+          ),
+          React.createElement(
+            Button,
+            { onClick: close, "aria-label": "关闭设置" },
+            "关闭",
+          ),
         ),
-      ),
-      onCancel: onClose,
-      footer: null,
-      width: 800,
-      centered: true,
-      styles: {
-        body: {
-          height: "min(520px, calc(100vh - 280px))",
-          overflowY: "auto",
-          overflowX: "hidden",
+        width: 940,
+        centered: true,
+        styles: {
+          body: {
+            maxHeight: "calc(100dvh - 200px)",
+            overflowY: "auto",
+            overflowX: "hidden",
+          },
+          footer: { margin: 0, textAlign: "start" },
         },
       },
-    },
-    React.createElement(Tabs, {
-      items: tabItems,
-      activeKey: activeTab,
-      onChange: (k: string) => setActiveTab(k),
-      size: "small",
-      tabBarStyle: { marginBottom: 16 },
-    }),
+      open
+        ? React.createElement(
+            React.Fragment,
+            { key: agent.id },
+            React.createElement(
+              "div",
+              { className: "ugsci-expert-settings-identity" },
+              React.createElement(ExpertAvatar, { name: agent.name, size: 36 }),
+              React.createElement(
+                "div",
+                null,
+                React.createElement("strong", null, display.name),
+                React.createElement(
+                  "small",
+                  null,
+                  `${agent.id} · ${display.category}`,
+                ),
+              ),
+            ),
+            React.createElement(Tabs, {
+              className: "ugsci-settings-tabs",
+              items: tabItems,
+              activeKey: activeTab,
+              onChange: setActiveTab,
+              tabPosition: narrow ? "top" : "left",
+              destroyOnHidden: false,
+              size: "small",
+            }),
+          )
+        : null,
+    ),
   );
 }

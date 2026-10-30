@@ -201,31 +201,12 @@ async def test_missing_boot_dependency_can_be_repaired_explicitly(
     monkeypatch,
     fresh_registry,
 ):
+    from .test_manifest_dependencies import install_case
+
     name = "qwenpaw-startup-repair-probe"
-    _plugin(tmp_path, "repair", name + "==1.0")
-    loader = PluginLoader([tmp_path])
-    loader.registry = fresh_registry
-    installed = []
-    original = gate_mod._dist_version
-
-    def version(package):
-        if package == name and installed:
-            return "1.0"
-        return original(package)
-
-    monkeypatch.setattr(gate_mod, "_dist_version", version)
-
-    def install(*args, **kwargs):
-        installed.append("repair")
-
-    monkeypatch.setattr(loader, "_install_requirements", install)
-    records = await loader.load_all_plugins()
-    assert records["repair"].status == "failed"
-    assert installed == []
-    record = await loader.repair_dependencies("repair")
-    assert record.status == "active"
-    assert installed == ["repair"]
-    await loader.unload_plugin("repair")
+    _plugin(tmp_path, "extension-contract", name + "==1.0")
+    source = tmp_path / "extension-contract"
+    install_case(tmp_path, source, {name}, repair=True)
 
 
 def test_satisfied_cache_is_lock_guarded() -> None:
@@ -251,18 +232,23 @@ def test_satisfied_cache_is_lock_guarded() -> None:
     )
     assert "invalidate_caches" in helper
     assert "_SATISFIED_LOCK" in helper
+    # Pip/uv now build wheels; one audited publisher handles every runtime.
     install_source = _inspect.getsource(
-        loader_mod.PluginLoader._install_requirements,
+        loader_mod.PluginLoader._prepare_python_dependencies,
     )
-    assert (
-        install_source.count("_after_successful_install") >= 2
-    ), "pip and uv success paths must both call _after_successful_install"
-    frozen_source = _inspect.getsource(
-        loader_mod.PluginLoader._install_requirements_frozen,
+    assert "_acquire_dependency_wheels" in install_source
+    assert "_publish_dependency_site" in install_source
+    assert "_after_successful_install" in install_source
+    assert install_source.index("_after_successful_install") > (
+        install_source.index("_acquire_dependency_wheels")
+    ), "Invalidate caches after the verified installation completes"
+    for entry in ("_install_requirements", "_install_requirements_frozen"):
+        assert "_install_requirements_locked" in _inspect.getsource(
+            getattr(loader_mod.PluginLoader, entry),
+        )
+    assert "_prepare_python_dependencies" in _inspect.getsource(
+        loader_mod.PluginLoader._install_requirements_locked,
     )
-    assert (
-        "_after_successful_install" in frozen_source
-    ), "frozen install path must call _after_successful_install"
 
 
 def test_installs_serialised_through_shared_target_lock() -> None:

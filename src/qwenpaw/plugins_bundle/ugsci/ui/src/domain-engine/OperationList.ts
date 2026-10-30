@@ -31,7 +31,7 @@ export function OperationList({
           key: op.id,
           style: {
             padding: "10px 12px",
-            border: "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+            border: "1px solid var(--app-border-subtle, #f0f0f0)",
             borderRadius: 6,
             minWidth: 0,
           },

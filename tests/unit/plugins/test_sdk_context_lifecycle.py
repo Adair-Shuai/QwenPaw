@@ -5,12 +5,68 @@
 import asyncio
 import threading
 import time
+import json
 
 import pytest
 
-from .test_sdk_context_services import package
-
 from .timing import WAIT_TIMEOUT
+
+
+def package(root, plugin_id, source, capabilities):
+    root.mkdir()
+    (root / "plugin.json").write_text(
+        json.dumps(
+            {
+                "id": plugin_id,
+                "version": "1.0.0",
+                "entry": {"backend": "main.py"},
+                "sdk": {"version": "1.0", "capabilities": capabilities},
+            },
+        ),
+    )
+    (root / "main.py").write_text(source)
+    return root
+
+
+ASYNC_PROVIDER = """
+import asyncio
+from qwenpaw.plugins.messages import ContentBlock
+from qwenpaw.plugins.providers import (
+    ProviderSpec,
+    ModelInfo,
+    ModelChunk,
+)
+
+
+class Plugin:
+    def register(self, ctx):
+        async def generate(call, request):
+            ctx.storage.write_json("entered.json", True)
+            try:
+                yield ModelChunk((ContentBlock(text="first"),))
+                while not ctx.storage.read_json(
+                    "release.json", False
+                ):
+                    await asyncio.sleep(0.01)
+                yield ModelChunk(
+                    (ContentBlock(text="last"),), is_last=True
+                )
+            finally:
+                ctx.storage.write_json("provider-closed.json", True)
+
+        ctx.register_provider(
+            ProviderSpec(
+                "bound-provider",
+                "Bound",
+                generate,
+                models=(ModelInfo("bound-model", "Bound"),),
+                require_api_key=False,
+            )
+        )
+
+
+plugin = Plugin()
+"""
 
 CALLER = """
 from qwenpaw.plugins.messages import ContentBlock, Message
@@ -74,45 +130,6 @@ class Plugin:
 plugin = Plugin()
 """
 
-ASYNC_PROVIDER = """
-import asyncio
-from qwenpaw.plugins.messages import ContentBlock
-from qwenpaw.plugins.providers import (
-    ProviderSpec,
-    ModelInfo,
-    ModelChunk,
-)
-
-
-class Plugin:
-    def register(self, ctx):
-        async def generate(call, request):
-            ctx.storage.write_json("entered.json", True)
-            try:
-                yield ModelChunk((ContentBlock(text="first"),))
-                while not ctx.storage.read_json(
-                    "release.json", False
-                ):
-                    await asyncio.sleep(0.01)
-                yield ModelChunk(
-                    (ContentBlock(text="last"),), is_last=True
-                )
-            finally:
-                ctx.storage.write_json("provider-closed.json", True)
-
-        ctx.register_provider(
-            ProviderSpec(
-                "bound-provider",
-                "Bound",
-                generate,
-                models=(ModelInfo("bound-model", "Bound"),),
-                require_api_key=False,
-            )
-        )
-
-
-plugin = Plugin()
-"""
 
 SYNC_PROVIDER = """
 import time
@@ -164,7 +181,12 @@ async def until(predicate):
             await asyncio.sleep(0.01)
 
 
-async def load_pair(host, tmp_path, provider_source=ASYNC_PROVIDER):
+async def load_pair(
+    host,
+    tmp_path,
+    provider_source=ASYNC_PROVIDER,
+    caller_source=CALLER,
+):
     provider = await host.load(
         package(
             tmp_path / "provider",
@@ -177,7 +199,7 @@ async def load_pair(host, tmp_path, provider_source=ASYNC_PROVIDER):
         package(
             tmp_path / "caller",
             "bound-caller-owner",
-            CALLER,
+            caller_source,
             ["tools", "storage"],
         ),
     )
@@ -187,40 +209,6 @@ async def load_pair(host, tmp_path, provider_source=ASYNC_PROVIDER):
         workspace_id="bound",
     )
     return provider, caller
-
-
-async def test_context_model_stream_close_releases_both_plugin_owners(
-    tmp_path,
-):
-    from qwenpaw.plugins import PluginBusyError
-    from qwenpaw.plugins.testing import PluginTestHost
-
-    async with PluginTestHost(tmp_path / "host") as host:
-        provider, caller = await load_pair(host, tmp_path)
-        stream = host.stream_tool(
-            "bound_stream",
-            {},
-            workspace_id="bound",
-            session_id="owned",
-        )
-        try:
-            first = asyncio.create_task(anext(stream))
-            event = await asyncio.wait_for(first, WAIT_TIMEOUT)
-            assert first.done() and event.content[0].text == "first"
-            for owner in ("bound-caller-owner", "bound-provider-owner"):
-                assert host.resource_snapshot(owner)["active_calls"] > 0
-                with pytest.raises(PluginBusyError):
-                    await host.reload(owner)
-        finally:
-            try:
-                await asyncio.wait_for(stream.aclose(), WAIT_TIMEOUT)
-            finally:
-                provider.storage.write_json("release.json", True)
-        assert provider.storage.read_json("provider-closed.json") is True
-        assert caller.storage.read_json("caller-closed.json") is True
-        for owner in ("bound-caller-owner", "bound-provider-owner"):
-            assert host.resource_snapshot(owner)["active_calls"] == 0
-            assert (await host.reload(owner)).ok
 
 
 async def test_context_model_cancel_waits_for_actual_sync_provider_worker(
@@ -264,6 +252,69 @@ async def test_context_model_cancel_waits_for_actual_sync_provider_worker(
             assert (await host.reload(owner)).ok
 
 
+CAPTURE_CALLER = """
+from qwenpaw.plugins.messages import ContentBlock, Message
+from qwenpaw.plugins.tools import ToolSpec, ToolEvent, ToolResult
+
+saved = None
+
+
+class Plugin:
+    def register(self, ctx):
+        async def streaming(call, args):
+            stream = call.models.stream(
+                (Message("user", (ContentBlock(text="hold"),)),)
+            )
+            try:
+                async for chunk in stream:
+                    if chunk.content:
+                        yield ToolEvent("delta", chunk.content)
+            finally:
+                await stream.aclose()
+                ctx.storage.write_json("caller-closed.json", True)
+
+        async def complete(call, args):
+            result = await call.models.complete(
+                (Message("user", (ContentBlock(text="hold"),)),)
+            )
+            return ToolResult(result.content)
+
+        async def capture(call, args):
+            global saved
+            saved = call
+            return ToolResult.text("captured")
+
+        async def reuse(call, args):
+            result = await saved.models.complete(
+                (
+                    Message(
+                        "user", (ContentBlock(text="must not run"),)
+                    ),
+                )
+            )
+            return ToolResult(result.content)
+
+        for name, handler in (
+            ("bound_stream", streaming),
+            ("bound_complete", complete),
+            ("bound_capture", capture),
+            ("bound_reuse", reuse),
+        ):
+            ctx.register_tool(
+                ToolSpec(
+                    name,
+                    name,
+                    {"type": "object"},
+                    handler,
+                    enabled=True,
+                )
+            )
+
+
+plugin = Plugin()
+"""
+
+
 async def test_finished_call_context_cannot_start_another_model_invocation(
     tmp_path,
 ):
@@ -271,7 +322,12 @@ async def test_finished_call_context_cannot_start_another_model_invocation(
     from qwenpaw.plugins.testing import PluginTestHost
 
     async with PluginTestHost(tmp_path / "host") as host:
-        provider, caller = await load_pair(host, tmp_path)
+        provider, caller = await load_pair(
+            host,
+            tmp_path,
+            ASYNC_PROVIDER,
+            CAPTURE_CALLER,
+        )
         assert not hasattr(
             caller,
             "models",

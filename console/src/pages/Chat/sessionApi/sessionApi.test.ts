@@ -425,6 +425,40 @@ describe("toOutputMessage", () => {
 });
 
 describe("buildUserCard", () => {
+  it("restores the exact response attempt and client identity for persisted turn files", () => {
+    const cards = T.convertMessages([
+      msg({
+        role: "user",
+        metadata: {
+          qwenpaw_client_message_id: "client-one",
+          qwenpaw_turn_state: {
+            status: "completed",
+            response_id: "response_saved_attempt",
+          },
+        },
+      }),
+      msg({ role: "assistant", id: "reply" }),
+      msg({
+        role: "user",
+        metadata: {
+          qwenpaw_client_message_id: "client-two",
+          qwenpaw_turn_state: {
+            status: "canceled",
+            response_id: "response_canceled_attempt",
+          },
+        },
+      }),
+    ] as never);
+    expect(cards[1].cards![0].data).toMatchObject({
+      id: "response_saved_attempt",
+      client_message_id: "client-one",
+    });
+    expect(cards[3].cards![0].data).toMatchObject({
+      id: "response_canceled_attempt",
+      client_message_id: "client-two",
+      status: "canceled",
+    });
+  });
   it("uses the message id and parses the created timestamp", () => {
     const card = T.buildUserCard(
       msg({

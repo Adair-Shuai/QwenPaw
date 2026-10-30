@@ -2,12 +2,28 @@ import {
   createContext,
   useContext,
   useEffect,
+  useLayoutEffect,
   useState,
   useCallback,
   type ReactNode,
 } from "react";
 
 import { themeApi, type ThemeConfig } from "@/api/modules/theme";
+import {
+  applyInterfaceTheme,
+  INTERFACE_STYLE_STORAGE_KEY,
+  parseInterfaceStyle,
+  readInterfaceStyle,
+  type InterfaceStyle,
+} from "../utils/interfaceStyle";
+
+import {
+  applyPageStyle,
+  PAGE_STYLE_STORAGE_KEY,
+  parsePageStyle,
+  readPageStyle,
+  type PageStyle,
+} from "../utils/pageStyle";
 
 export type ThemeMode = "light" | "dark" | "system";
 export type ResolvedTheme = "light" | "dark";
@@ -17,6 +33,10 @@ const STORAGE_KEY = "qwenpaw-theme";
 interface ThemeContextValue {
   /** User selected preference: light / dark / system */
   themeMode: ThemeMode;
+  interfaceStyle: InterfaceStyle;
+  setInterfaceStyle: (style: InterfaceStyle) => void;
+  pageStyle: PageStyle;
+  setPageStyle: (style: PageStyle) => void;
   /** Resolved final theme after applying system preference */
   isDark: boolean;
   setThemeMode: (mode: ThemeMode) => void;
@@ -31,6 +51,10 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue>({
   themeMode: "light",
+  interfaceStyle: "classic",
+  setInterfaceStyle: () => {},
+  pageStyle: "classic",
+  setPageStyle: () => {},
   isDark: false,
   setThemeMode: () => {},
   toggleTheme: () => {},
@@ -73,6 +97,54 @@ export function ThemeProvider({
   );
   const [userTheme, setUserTheme] = useState<ThemeConfig>({});
   const [previewTheme, setPreviewTheme] = useState<ThemeConfig>({});
+  const [interfaceStyle, setInterfaceStyleState] = useState(readInterfaceStyle);
+  const [pageStyle, setPageStyleState] = useState(readPageStyle);
+  const setPageStyle = useCallback((style: PageStyle) => {
+    const next = parsePageStyle(style);
+    setPageStyleState(next);
+    try {
+      localStorage.setItem(PAGE_STYLE_STORAGE_KEY, next);
+    } catch {
+      /* Apply in memory when storage is unavailable. */
+    }
+  }, []);
+
+  const setInterfaceStyle = useCallback((style: InterfaceStyle) => {
+    const next = parseInterfaceStyle(style);
+    setInterfaceStyleState(next);
+    try {
+      localStorage.setItem(INTERFACE_STYLE_STORAGE_KEY, next);
+    } catch {
+      // Still apply the style for this window when storage is unavailable.
+    }
+  }, []);
+
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      if (event.key === INTERFACE_STYLE_STORAGE_KEY || event.key === null) {
+        setInterfaceStyleState(parseInterfaceStyle(event.newValue));
+      }
+      if (event.key === PAGE_STYLE_STORAGE_KEY || event.key === null) {
+        setPageStyleState(parsePageStyle(event.newValue));
+      }
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, []);
+
+  useLayoutEffect(() => {
+    const clearTheme = applyInterfaceTheme(
+      document.documentElement,
+      interfaceStyle,
+      previewTheme,
+      isDark,
+    );
+    const clearLayout = applyPageStyle(document.documentElement, pageStyle);
+    return () => {
+      clearLayout();
+      clearTheme();
+    };
+  }, [interfaceStyle, previewTheme, isDark, pageStyle]);
 
   useEffect(() => {
     if (!syncRemote) return;
@@ -146,6 +218,10 @@ export function ThemeProvider({
     <ThemeContext.Provider
       value={{
         themeMode,
+        interfaceStyle,
+        setInterfaceStyle,
+        pageStyle,
+        setPageStyle,
         isDark,
         setThemeMode,
         toggleTheme,

@@ -428,11 +428,7 @@ export function MCPConnectModal({
       width: 560,
       destroyOnClose: true,
     },
-    h(
-      "p",
-      { style: { color: "var(--ant-color-text-secondary)" } },
-      template.description,
-    ),
+    h("p", { style: { color: "var(--app-card-muted)" } }, template.description),
     h("p", null, `目标专家：${agentName}`),
     h(Tag, { color: phase === "connected" ? "green" : "blue" }, status),
     oauth

@@ -10,6 +10,7 @@ import {
   type OfficialPluginCatalogEntry,
 } from "@/api/modules/plugin";
 import { isUGSciCatalogPlugin } from "@/distribution";
+import { runPluginInstall, runPluginUpgrade } from "../dependencyUpgrade";
 
 interface UseOfficialPluginsOptions {
   onInstalled: (result: InstallPluginResult) => void | Promise<void>;
@@ -64,13 +65,18 @@ export function useOfficialPlugins({ onInstalled }: UseOfficialPluginsOptions) {
             message.info(t("pluginManager.catalogLatest"));
             return;
           }
-          const result = await upgradeInstalledPlugin(entry.plugin_id, {
-            source: entry.install_url,
-            version: entry.version,
-            name: entry.name,
-            sha256: entry.sha256,
-            channel: isUGSciCatalogPlugin(entry) ? "ugsci" : entry.channel,
-          });
+          const result = await runPluginUpgrade(
+            () =>
+              upgradeInstalledPlugin(entry.plugin_id, {
+                source: entry.install_url,
+                version: entry.version,
+                name: entry.name,
+                sha256: entry.sha256,
+                channel: isUGSciCatalogPlugin(entry) ? "ugsci" : entry.channel,
+              }),
+            t,
+          );
+          if (result === null) return;
           if (result.method === "queued") {
             message.success(t("pluginManager.ugsciUpgradeQueued"));
           } else if (result.method === "core-update-required") {
@@ -90,7 +96,11 @@ export function useOfficialPlugins({ onInstalled }: UseOfficialPluginsOptions) {
           }
           return;
         }
-        const result = await installPlugin(entry.install_url);
+        const result = await runPluginInstall(
+          () => installPlugin(entry.install_url),
+          t,
+        );
+        if (result === null) return;
         message.success(`${t("pluginManager.installSuccess")}: ${result.name}`);
         await onInstalled(result);
       } catch (err) {

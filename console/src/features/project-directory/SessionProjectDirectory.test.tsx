@@ -1,8 +1,9 @@
-import { act, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { renderWithProviders } from "@/test/common_setup";
 import SessionProjectDirectory from "./SessionProjectDirectory";
+import { ComposerOptions } from "@/pages/Chat/components/ComposerOptions";
 import { getPendingProjectDirs } from "./pendingProjectDirectory";
 
 const {
@@ -110,6 +111,40 @@ describe("SessionProjectDirectory", () => {
         name: "projectDirectory.agentTitle",
       }),
     );
+
+  it("closes the portaled directory picker when its containing composer menu closes", async () => {
+    const user = userEvent.setup();
+    renderWithProviders(
+      <ComposerOptions enabled>
+        <SessionProjectDirectory scope={scope} />
+      </ComposerOptions>,
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: /Chat options|chat.composer.options/,
+      }),
+    );
+    await openPanel(user);
+    const trigger = screen.getByRole("button", {
+      name: "projectDirectory.agentTitle",
+    });
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    fireEvent.keyDown(screen.getByRole("dialog", { name: "Chat options" }), {
+      key: "Escape",
+    });
+    await waitFor(() =>
+      expect(trigger).toHaveAttribute("aria-expanded", "false"),
+    );
+    await user.click(
+      screen.getByRole("button", {
+        name: /Chat options|chat.composer.options/,
+      }),
+    );
+    expect(
+      screen.getByRole("button", { name: "projectDirectory.agentTitle" }),
+    ).toHaveAttribute("aria-expanded", "false");
+    expect(mockSetSessionDirectory).not.toHaveBeenCalled();
+  });
 
   it("renders a single icon trigger in compact mode", async () => {
     renderWithProviders(

@@ -6,7 +6,7 @@ vi.mock("react-i18next", () => ({
   useTranslation: () => ({
     t: (key: string) =>
       ({
-        "files.artifactCreated": "已新增",
+        "files.artifactWritten": "已写入",
         "files.artifactModified": "已修改",
         "files.artifactSent": "已发送",
         "files.artifactsCollapse": "收起",
@@ -16,10 +16,13 @@ vi.mock("react-i18next", () => ({
 }));
 
 import ResponseArtifactList from "./ResponseArtifactList";
-import { useResponseArtifacts } from "./responseArtifactRegistry";
+import {
+  useResponseArtifacts,
+  type ResponseArtifactScope,
+} from "./responseArtifactRegistry";
 
-function ArtifactShelfProbe() {
-  const artifacts = useResponseArtifacts();
+function ArtifactShelfProbe({ scope }: { scope?: ResponseArtifactScope }) {
+  const artifacts = useResponseArtifacts(scope);
   return (
     <output data-testid="artifact-shelf">
       {artifacts.map((item) => item.path).join(",")}
@@ -126,6 +129,98 @@ function failedSendFile(path: string, serializedOutput = false) {
 }
 
 describe("ResponseArtifactList", () => {
+  it("isolates response files by agent and session and scopes file actions", () => {
+    const scope: ResponseArtifactScope = {
+      kind: "session",
+      agentId: "agent-a",
+      sessionId: "session-a",
+      chatId: "chat-a",
+    };
+    const preview = vi.fn();
+    window.addEventListener("qwenpaw:open-file-preview", preview);
+    try {
+      render(
+        <>
+          <ResponseArtifactList
+            scope={scope}
+            messages={successfulFileIo("ours.md")}
+          />
+          <ResponseArtifactList
+            scope={{ ...scope, sessionId: "session-b" }}
+            messages={successfulFileIo("other-chat.md")}
+          />
+          <ResponseArtifactList
+            scope={{ ...scope, agentId: "agent-b" }}
+            messages={successfulFileIo("other-agent.md")}
+          />
+          <ResponseArtifactList messages={successfulFileIo("unscoped.md")} />
+          <ArtifactShelfProbe scope={scope} />
+        </>,
+      );
+      expect(screen.getByTestId("artifact-shelf").textContent).toBe("ours.md");
+      fireEvent.click(screen.getByRole("button", { name: "ours.md ours.md" }));
+      expect((preview.mock.calls[0][0] as CustomEvent).detail).toMatchObject({
+        agentId: "agent-a",
+        sessionId: "session-a",
+        chatId: "chat-a",
+      });
+    } finally {
+      window.removeEventListener("qwenpaw:open-file-preview", preview);
+    }
+  });
+
+  it.each([
+    [
+      {
+        type: "text",
+        text: "Error: Write file failed due to permission denied",
+      },
+    ],
+    JSON.stringify([
+      { type: "text", text: "Error: The text to replace was not found" },
+    ]),
+    "Error: Append file failed due to missing directory",
+    { is_error: true, text: "Access denied" },
+  ])(
+    "rejects legacy error output wrapped in a successful result: %j",
+    (output) => {
+      const messages = successfulFileIo("missing.md");
+      Object.assign(messages[0].content[1].data, { output });
+      const { container } = render(
+        <ResponseArtifactList messages={messages} />,
+      );
+      expect(container).toBeEmptyDOMElement();
+    },
+  );
+
+  it("does not publish an unfinished file operation", () => {
+    const messages = successfulFileIo("in-progress.md");
+    messages[0].content[1].data.state = "running";
+    const { container } = render(<ResponseArtifactList messages={messages} />);
+    expect(container).toBeEmptyDOMElement();
+  });
+
+  it("keeps literal percent escapes in filesystem tool paths", () => {
+    const preview = vi.fn();
+    window.addEventListener("qwenpaw:open-file-preview", preview);
+    try {
+      render(
+        <ResponseArtifactList
+          messages={successfulFileIo("report%20final.md")}
+        />,
+      );
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "report%20final.md report%20final.md",
+        }),
+      );
+      expect((preview.mock.calls[0][0] as CustomEvent).detail.target.path).toBe(
+        "report%20final.md",
+      );
+    } finally {
+      window.removeEventListener("qwenpaw:open-file-preview", preview);
+    }
+  });
   it.each([
     ["reports/Report #3.pdf", "reports/Report #3.pdf", "workspace"],
     ["C:\\work\\示例文档.docx", "C:/work/示例文档.docx", "attachment"],
@@ -183,8 +278,8 @@ describe("ResponseArtifactList", () => {
     expect(screen.getByText("main.js")).toBeInTheDocument();
     expect(screen.getByText("snack-shop/public/main.js")).toBeInTheDocument();
     expect(screen.getByText("package.json")).toBeInTheDocument();
-    expect(screen.getAllByText("已新增")).toHaveLength(2);
-    expect(screen.getAllByText("已新增")[0].tagName).toBe("SMALL");
+    expect(screen.getAllByText("已写入")).toHaveLength(2);
+    expect(screen.getAllByText("已写入")[0].tagName).toBe("SMALL");
   });
 
   it("marks edit and append operations as modified", () => {

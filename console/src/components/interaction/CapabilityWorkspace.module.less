@@ -1,0 +1,47 @@
+.workspace {
+  min-width: 0;
+}
+.workspace > [hidden] {
+  display: none;
+}
+.focus {
+  max-width: 760px;
+  margin: 0 auto;
+  min-width: 0;
+}
+.panel {
+  margin-top: 16px;
+  padding: 24px;
+  border: 1px solid var(--app-border-subtle);
+  border-radius: 14px;
+  background: var(--app-surface);
+}
+.panel h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 24px;
+  font-size: 18px;
+  color: var(--app-text);
+  overflow-wrap: anywhere;
+}
+.footer {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--app-border-subtle);
+}
+@media (max-width: 600px) {
+  .panel {
+    padding: 16px;
+  }
+}
+
+.focus {
+  outline: none;
+}
+
+.hint {
+  margin: -12px 0 20px;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+}

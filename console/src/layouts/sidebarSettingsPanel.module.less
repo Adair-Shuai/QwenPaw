@@ -83,6 +83,43 @@
   color: var(--app-accent) !important;
 }
 
+.styleSwatch {
+  width: 15px;
+  height: 15px;
+  border-radius: 5px;
+  flex: 0 0 auto;
+}
+
+.compactPanel {
+  width: min(280px, calc(100vw - 32px));
+  max-height: calc(100dvh - 32px);
+  overflow-y: auto;
+  .flyoutPanel,
+  .choicePanel {
+    width: 100%;
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    box-shadow: none;
+  }
+}
+
+:global(html[data-interface-style]:not([data-interface-style="classic"])) {
+  .panel,
+  .flyoutPanel,
+  .choicePanel {
+    background: var(--app-surface-raised);
+    color: var(--app-text);
+  }
+  .menuItem,
+  .choiceItem {
+    color: var(--app-text);
+    > svg {
+      color: var(--app-text-secondary);
+    }
+  }
+}
+
 .dangerItem {
   color: #d94a42;
 
@@ -169,4 +206,27 @@
       color: #ff8d87;
     }
   }
+}
+
+.themePanel {
+  width: 208px;
+  padding: 5px;
+  border-radius: 13px;
+  background: var(--app-surface-raised);
+  .choicePanel {
+    width: 100%;
+    padding: 0;
+    box-shadow: none;
+    background: transparent;
+  }
+}
+.choiceHeading {
+  margin: 4px 9px;
+  padding-top: 5px;
+  color: var(--app-text-secondary);
+  font-size: var(--app-font-caption);
+}
+.compactPanel .themePanel {
+  width: 100%;
+  padding: 0;
 }

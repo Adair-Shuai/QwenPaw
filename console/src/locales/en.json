@@ -1,4 +1,40 @@
 {
+  "turnFiles": {
+    "capturing": "Preparing this turn's file archive…",
+    "captureFailed": "This turn's file record is unavailable. Please retry.",
+    "title": "Files this turn",
+    "lineChanges": "Counted text lines added and removed",
+    "deliveredCount": "{{count}} deliverables",
+    "downloadTurn": "Download turn archive",
+    "archiveHint": "File names open this turn's archive; folder buttons open current workspace files.",
+    "interrupted": "This turn did not finish normally. Files captured before it ended remain available below.",
+    "overlap": "Other tasks used these directories at the same time. Changes may include their writes.",
+    "incomplete": "Some files could not be captured fully. See capture details.",
+    "captureDetails": "Capture details",
+    "status": {
+      "created": "Added",
+      "modified": "Modified",
+      "deleted": "Deleted",
+      "delivered": "Delivered"
+    },
+    "delivery": "Deliverable",
+    "binary": "Binary",
+    "diff": "View changes",
+    "openCurrent": "Open current file",
+    "openArchive": "Open archived file",
+    "downloadBefore": "Download version before deletion",
+    "download": "Download this turn's version",
+    "unavailable": "This version was not archived and cannot be previewed or downloaded.",
+    "beforeVersion": "Archived version before deletion",
+    "diffHint": "Read-only comparison: before this turn → when this turn ended",
+    "diffFailed": "Could not load changes.",
+    "retry": "Retry",
+    "loadingDiff": "Loading changes…",
+    "diffTruncated": "Only part of the content is shown. Download the archive for the complete file.",
+    "collapse": "Collapse file list",
+    "showAll": "Show all {{count}} files",
+    "downloadFailed": "Download failed. Please try again."
+  },
   "accessibility": {
     "skipToContent": "Skip to content"
   },
@@ -61,6 +97,7 @@
     "no": "No",
     "advancedSettings": "Advanced",
     "done": "Done",
+    "configAutoSaveHint": "Changes are saved automatically",
     "autoSaveFailed": "Could not save changes",
     "discardChangesTitle": "Discard unsaved changes?",
     "discardChangesContent": "Some changes could not be saved. You can continue editing or discard the unsaved changes and close.",
@@ -372,6 +409,11 @@
     "windows": "windows"
   },
   "sidebar": {
+    "moreGroups": {
+      "work": "Work & notifications",
+      "configuration": "Configuration",
+      "extensions": "Extensions"
+    },
     "avatarLoadFailed": "Could not load avatars. Please retry.",
     "toolsCompact": "Show compact menu",
     "toolsDetailed": "Show detailed menu",
@@ -444,7 +486,27 @@
     "settings": {
       "language": "Language",
       "theme": "Theme",
+      "pageStyle": "Page style",
+      "colorTheme": "Color palette",
+      "colorMode": "Light & dark",
+      "interfaceStyle": "Interface style",
       "desktopMode": "Desktop Mode"
+    },
+    "pageStyles": {
+      "classic": "Original layout",
+      "deepseek": "deepseek style",
+      "openai": "openai style"
+    },
+    "pageNavigation": "Main navigation",
+    "searchConversations": "Search conversations",
+    "automation": "Automation",
+    "pageWorkspace": "Workspace",
+    "moreFeatures": "More",
+    "interfaceStyles": {
+      "classic": "Original",
+      "warm-minimal": "Warm minimal",
+      "cool-workspace": "Cool workspace",
+      "soft-focus": "Soft focus"
     },
     "quickMenu": {
       "settings": "Settings",
@@ -453,6 +515,8 @@
       "about": "About UGSci"
     },
     "collapse": "Collapse sidebar",
+    "resize": "Resize sidebar",
+    "resizeHint": "Drag to resize or further left to collapse; double-click to reset, or use Left/Right arrow keys",
     "expand": "Expand sidebar",
     "more": "More",
     "toggleAgentNavigation": "Expand or collapse agent navigation",
@@ -607,6 +671,8 @@
     "skillBuiltinSyncFailed": "\"{{skill}}\" could not sync to: {{agents}}",
     "requestedBy": "By",
     "markRead": "Mark Read",
+    "unreadOnly": "Unread only",
+    "emptyUnread": "No unread messages match the current filters",
     "markAllRead": "Mark All Read",
     "markAllReadNoUnread": "No unread messages",
     "markAllReadSuccess": "Marked {{count}} messages as read",
@@ -723,6 +789,7 @@
     "required": " (required)"
   },
   "acp": {
+    "description": "Connect external agents and coding assistants, and configure how they start and run.",
     "title": "ACP integrations",
     "loading": "Loading ACP configuration...",
     "loadError": "Failed to load ACP configuration.",
@@ -2012,6 +2079,10 @@
     "selectAtLeastOneDay": "Select at least one day."
   },
   "channels": {
+    "runtime": {
+      "missing_code": "Plugin not installed"
+    },
+    "qrcodeInstallRequired": "Install the plugin to scan a QR code",
     "manualCredentials": "Manual credentials",
     "deliverySettings": "Delivery options",
     "presentationSettings": "Message presentation",
@@ -3098,6 +3169,18 @@
     }
   },
   "files": {
+    "loadingMoreDeliverables": "Loading older results…",
+    "deliverablesMoreFailed": "Could not load older results. Try again.",
+    "retryMoreDeliverables": "Retry older results",
+    "loadMoreDeliverables": "Load older results",
+    "artifactWritten": "Written",
+    "deliverables": "Deliverables",
+    "deliverablesCount": "{{count}} deliverables",
+    "refreshDeliverables": "Refresh deliverables",
+    "deliverablesEmpty": "No deliverables in this conversation yet",
+    "deliverablesLoading": "Loading deliverables…",
+    "deliverablePreview": "Preview deliverable",
+    "deliverablesLoadFailed": "Could not load deliverables. Refresh to retry.",
     "title": "Files",
     "navigator": "Files navigator",
     "source": "Source",
@@ -3107,6 +3190,22 @@
     "memory": "Long-term Memory",
     "daily": "Daily",
     "digest": "Knowledge Base",
+    "memoryTags": "Memory tags",
+    "memoryTagsLabel": "Tags",
+    "memoryTagBrowse": "Search indexed memories tagged {{tag}}",
+    "memoryTagsAll": "All tags",
+    "memoryTagsScope": "Searches indexed memories. The current file may not be indexed.",
+    "memoryTagsRefresh": "Refresh memory tags",
+    "memoryTagsCount_one": "{{count}} tag",
+    "memoryTagsCount_other": "{{count}} tags",
+    "memoryTagFilesCount_one": "{{count}} file",
+    "memoryTagFilesCount_other": "{{count}} files",
+    "memoryTagsLoadFailed": "Memory tags are unavailable. Please try again.",
+    "memoryTagsEmpty": "No memory tags yet.",
+    "memoryTagFilesEmpty": "No indexed memories carry this tag.",
+    "memoryTagsPrevious": "Previous page",
+    "memoryTagsNext": "Next page",
+    "memoryTagsPage": "{{page}} / {{total}}",
     "memoryGraph": "Memory Graph",
     "memoryGraphShort": "Graph",
     "memoryGraphLoading": "Loading memory graph…",
@@ -4197,6 +4296,7 @@
     "system": "System"
   },
   "chat": {
+    "assignAgent": "Assign Agent",
     "sessionSettings": {
       "advanced": "Advanced options",
       "decisionEnabled": "Use decision model"
@@ -4236,6 +4336,27 @@
     "prompt2": "Can you tell me what skills you have?",
     "inputPlaceholder": "\"↑↓\" for message navigation · \"/\" for quick commands · \"@\" to assign an Agent",
     "composer": {
+      "placeholder": "Message · \"/\" for commands · \"@\" to assign an Agent · ↑↓ history",
+      "addContent": "Add content",
+      "addFile": "Add files",
+      "fileHint": "Documents, images…",
+      "agent": "@ Agent",
+      "agentHint": "Assign / collaborate",
+      "commonCommands": "Common commands",
+      "allCommands": "All commands",
+      "allCommandsHint": "Browse / commands",
+      "workspaceLabel": "Workspace",
+      "contextUnavailable": "Choose a model to see context usage",
+      "commandHints": {
+        "new": "New chat",
+        "compact": "Compact context",
+        "skills": "Available skills",
+        "goal": "Continue a goal"
+      },
+      "options": "Chat options",
+      "contextLabel": "Context usage",
+      "projectLabel": "Project",
+      "approvalLabel": "Tool approval",
       "attach": "Attach files",
       "send": "Send message",
       "stop": "Stop generating"
@@ -4343,6 +4464,10 @@
       "staleConversation": "Open the original conversation before submitting this action.",
       "notReady": "Chat is not ready. Open the original conversation and retry."
     },
+    "taskPanel": {
+      "expand": "Expand task panel",
+      "collapse": "Collapse task panel"
+    },
     "queue": {
       "title": "Message Queue",
       "paused": "Paused",
@@ -4395,6 +4520,7 @@
       "deleteHint": "Conversations will return to their built-in group."
     },
     "sessionPanel": {
+      "closeSearch": "Close search",
       "searchConversations": "Search conversations…",
       "noConversations": "No conversations yet",
       "noMatchingConversations": "No matching conversations",
@@ -5391,17 +5517,28 @@
     "details": "Details"
   },
   "pluginManager": {
-    "busyTitle": "Plugin tasks are running",
-    "busy": {
-      "update": {
-        "warning": "Forcing this update will interrupt running tasks. Unfinished tasks may fail.",
-        "confirm": "Force update",
-        "cancel": "Not now"
-      },
-      "uninstall": {
-        "warning": "Forcing this uninstall will interrupt running tasks. Unfinished tasks may fail.",
-        "confirm": "Force uninstall",
-        "cancel": "Not now"
+    "dependencyUpgrade": {
+      "title": "Confirm shared dependency upgrade",
+      "confirm": "Upgrade and install",
+      "progress": "Updating shared dependencies",
+      "changes": "Shared package changes",
+      "affected": "Affected plugin instances",
+      "noInstances": "No plugin instances are affected.",
+      "restart": "The backend must restart to complete this upgrade. Installation will continue after it reconnects.",
+      "background": "Track in background",
+      "resume": "Tracking was interrupted. Reopen Plugin Manager after the backend reconnects to check the installation.",
+      "invalid": "The dependency upgrade response does not match this installation. Reopen Plugin Manager to check its status.",
+      "notStarted": "The dependency upgrade has not started. Reopen Plugin Manager to review and confirm it again.",
+      "cancelFailed": "The upgrade could not be cancelled. Reopen Plugin Manager to check its status.",
+      "failed": "The shared dependency upgrade failed.",
+      "status": {
+        "needs_confirmation": "Waiting for confirmation",
+        "preparing": "Preparing the upgrade",
+        "applying": "Applying the upgrade",
+        "waiting_restart": "Waiting for the backend to restart",
+        "succeeded": "Installation completed",
+        "failed": "Upgrade failed",
+        "cancelled": "Upgrade cancelled"
       }
     },
     "title": "Plugin Manager",
@@ -5482,7 +5619,20 @@
     "marketSortFavorites": "Most favorited",
     "compatWarningTitle": "Compatibility Warning",
     "compatWarningContent": "This plugin is labeled for QwenPaw {{labels}}. Your QwenPaw version is {{version}}. Installing it may cause errors. Are you sure you want to continue?",
-    "compatWarningConfirm": "Install anyway"
+    "compatWarningConfirm": "Install anyway",
+    "busyTitle": "Plugin tasks are running",
+    "busy": {
+      "update": {
+        "warning": "Forcing this update will interrupt running tasks. Unfinished tasks may fail.",
+        "confirm": "Force update",
+        "cancel": "Not now"
+      },
+      "uninstall": {
+        "warning": "Forcing this uninstall will interrupt running tasks. Unfinished tasks may fail.",
+        "confirm": "Force uninstall",
+        "cancel": "Not now"
+      }
+    }
   },
   "codingMode": {
     "toolPresentationHelp": "When enabled, the agent uses a single code tool. It searches, processes files, and performs other tool operations by writing and running Python code.",

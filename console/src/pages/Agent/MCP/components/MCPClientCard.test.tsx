@@ -7,6 +7,7 @@ import {
 } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import type { MCPClientInfo } from "@/api/types";
+import { CapabilityWorkspace } from "@/components/interaction/CapabilityWorkspace";
 import { MCPClientCard } from "./MCPClientCard";
 import type { ReactNode } from "react";
 
@@ -25,12 +26,15 @@ vi.mock("@/components/interaction/ServiceCard", () => ({
   ServiceCard: ({
     onConfigure,
     actions,
+    metadata,
   }: {
     onConfigure: () => void;
     actions: ReactNode;
+    metadata?: ReactNode;
   }) => (
     <>
       <button onClick={onConfigure}>Configure connection</button>
+      {metadata}
       {actions}
     </>
   ),
@@ -147,5 +151,45 @@ describe("MCP connection draft dismissal", () => {
       client.command,
     );
     expect(onUpdate).not.toHaveBeenCalled();
+  });
+  it("keeps embedded MCP validation and saves through the original editor before returning to its card", async () => {
+    confirm.mockClear();
+    const onUpdate = vi.fn().mockResolvedValue(true);
+    render(
+      <CapabilityWorkspace enabled>
+        <MCPClientCard
+          client={client}
+          onToggle={vi.fn()}
+          onDelete={vi.fn()}
+          onUpdate={onUpdate}
+          onUpdatePolicy={vi.fn()}
+        />
+      </CapabilityWorkspace>,
+    );
+    const configure = screen.getByRole("button", {
+      name: "Configure connection",
+    });
+    fireEvent.click(configure);
+    expect(configure).not.toBeVisible();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    fireEvent.change(screen.getByLabelText("mcp.form.command"), {
+      target: { value: "" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "common.back" }));
+    await waitFor(() => expect(confirm).toHaveBeenCalledOnce());
+    expect(onUpdate).not.toHaveBeenCalled();
+    await act(async () => confirm.mock.calls[0][0].onCancel());
+    expect(screen.getByLabelText("mcp.form.command")).toHaveValue("");
+    fireEvent.change(screen.getByLabelText("mcp.form.command"), {
+      target: { value: "updated-node" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "common.back" }));
+    await waitFor(() =>
+      expect(onUpdate).toHaveBeenCalledWith(
+        client.key,
+        expect.objectContaining({ command: "updated-node" }),
+      ),
+    );
+    await waitFor(() => expect(configure).toBeVisible());
   });
 });

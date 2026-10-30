@@ -93,7 +93,7 @@ def wait_for_shutdown_event(handle: int) -> bool:
         close(handle)
 
 
-def signal_shutdown_event(pid: int) -> bool:
+def _signal_exact_shutdown_event(pid: int) -> bool:
     """Signal a QwenPaw process's named graceful-shutdown event."""
     if sys.platform != "win32":
         return False
@@ -122,3 +122,25 @@ def signal_shutdown_event(pid: int) -> bool:
         return bool(set_event(handle))
     finally:
         close(handle)
+
+
+def signal_shutdown_event(pid: int) -> bool:
+    """Signal the app, including an interpreter behind a Windows venv launcher."""
+    if sys.platform != "win32":
+        return False
+    if _signal_exact_shutdown_event(pid):
+        return True
+
+    import psutil
+
+    try:
+        launcher = psutil.Process(pid)
+        if not launcher.name().lower().startswith("python"):
+            return False
+        for child in launcher.children():
+            if child.name().lower().startswith("python"):
+                if _signal_exact_shutdown_event(child.pid):
+                    return True
+    except (psutil.NoSuchProcess, psutil.AccessDenied):
+        return False
+    return False

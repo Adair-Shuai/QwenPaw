@@ -4,6 +4,7 @@ import NumberFlow from "@number-flow/react";
 import { useTheme } from "../../contexts/ThemeContext";
 import { useTranslation } from "react-i18next";
 import styles from "./SnapTrend.module.less";
+import { getInterfaceTheme } from "../../utils/interfaceStyle";
 
 type Point = { date: string; value: number; [key: string]: unknown };
 type Chart = Parameters<NonNullable<LineConfig["onReady"]>>[0];
@@ -18,7 +19,12 @@ export function SnapTrend({
   compact?: boolean;
 }) {
   const { i18n } = useTranslation();
-  const { isDark, previewTheme } = useTheme();
+  const {
+    isDark,
+    previewTheme: customTheme,
+    interfaceStyle = "classic",
+  } = useTheme();
+  const previewTheme = getInterfaceTheme(customTheme, interfaceStyle);
   const accent =
     (isDark ? previewTheme.dark?.accent : undefined) ??
     previewTheme.accent ??

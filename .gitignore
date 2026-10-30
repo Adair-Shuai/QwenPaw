@@ -44,6 +44,9 @@ src/qwenpaw/console/
 # Docs bundled at build time (copied from website/public/docs/)
 src/qwenpaw/docs/
 
+# Official channel bundles generated for editable installs
+src/qwenpaw/official_channels/
+
 # frontend (website)
 website/node_modules/
 website/.vite/
@@ -174,6 +177,7 @@ test_inspector.py
 docs-site/
 
 # Local review notes
+.local-review/
 docs/reviews/
 # Local QwenPaw runtime state. Runtime data belongs under ~/.qwenpaw and
 # ~/.qwenpaw.secret; repository-local variants are disposable test profiles.

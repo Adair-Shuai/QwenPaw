@@ -30,6 +30,31 @@ if (!existsSync(teamArtifactsSuite))
 // Keep this inventory separate from Vitest discovery: deleting a feature's
 // tests during a merge must fail verification instead of silently reducing it.
 const suites = {
+  turnFileDelivery: [
+    "src/api/modules/turnFiles.test.ts",
+    "src/features/files-workspace/TurnFileSummary.test.tsx",
+    "src/features/files-workspace/ResponseArtifactList.test.tsx",
+    "src/features/files-workspace/responseArtifactRegistry.test.tsx",
+    "src/features/files-workspace/ArtifactsWorkspace.test.tsx",
+    "src/features/files-workspace/useSessionDeliverables.test.tsx",
+    "src/features/files-workspace/openFilePreview.test.ts",
+    "src/pages/Chat/sessionApi/sessionApi.test.ts",
+  ],
+  interfaceAppearance: [
+    "src/pages/Chat/components/ComposerAddMenu.test.tsx",
+    "src/utils/actionColors.test.ts",
+    "src/pages/Market/index.test.tsx",
+    "src/features/project-directory/SessionProjectDirectory.test.tsx",
+    "src/pages/Chat/components/ApprovalToggle.test.tsx",
+    "src/pages/Chat/components/ContextUsageIndicator/ContextUsageIndicator.test.tsx",
+    "src/pages/Chat/components/ComposerOptions.test.tsx",
+    "src/utils/pageStyle.test.tsx",
+    "src/layouts/DockableSidebar.test.tsx",
+    "src/layouts/sidebarSizing.test.ts",
+    "src/contexts/ThemeContext.test.tsx",
+    "src/layouts/Sidebar.render.test.tsx",
+    "src/App.runtime.test.tsx",
+  ],
   mentions: [
     "src/pages/Chat/ChatPage.coverage.test.tsx",
     "src/pages/Chat/agentMentionSubmission.test.ts",
@@ -40,6 +65,7 @@ const suites = {
     "src/pages/Chat/components/ComposerTokenHighlights.test.tsx",
   ],
   submission: [
+    "src/pages/Chat/components/ChatSenderTabsPanel.test.tsx",
     "src/hooks/useAgentProcessTracking.test.tsx",
     "src/stores/backgroundTasksStore.test.ts",
     "src/components/Chat/ToolCards/shared/ToolCardShell.test.tsx",
@@ -68,6 +94,7 @@ const suites = {
     "src/os/DesktopAppLabels.test.tsx",
     "src/plugins/runCenterAdaptive.test.tsx",
     "src/plugins/openuiRunCenterIntegration.test.tsx",
+    "src/features/user-input/InteractionPanel.integration.test.tsx",
     "src/plugins/simulationChat.test.tsx",
     "src/plugins/runCenterSimulation.test.tsx",
     "src/plugins/runCenterBundle.test.tsx",
@@ -81,21 +108,34 @@ const suites = {
     "src/components/SessionItem/SessionItem.test.tsx",
     "src/pages/Chat/HostBubbles.render.test.tsx",
     "src/plugins/expertSummon.test.tsx",
+    "src/plugins/expertPresentation.test.tsx",
     "src/layouts/LocalAvatarPicker.test.tsx",
     "src/stores/localAvatarStore.test.ts",
     "src/layouts/SidebarSettingsPanel.test.tsx",
     "src/pages/Chat/ChatPage.openFilePreview.test.tsx",
     "src/features/files-workspace/FilesDrawer.test.tsx",
     "src/features/files-workspace/FilesWorkspace.test.tsx",
+    "src/features/files-workspace/FilesWorkspace.integration.test.tsx",
+    "src/features/files-workspace/FilesWorkspace.pending-diff.test.tsx",
+    "src/features/files-workspace/FilesWorkspace.revalidation.test.tsx",
+    "src/pages/Coding/FilePreview.test.tsx",
+    "src/pages/Coding/TabbedEditor.test.tsx",
+    "src/components/RenderableCodeBlock/RenderableCodeBlock.test.tsx",
+    "src/components/Workspace/renderers/__tests__/MarkdownRenderer.workspaceLinks.test.tsx",
     "src/features/files-workspace/filesDrawerState.test.ts",
     "src/components/Workspace/renderers/__tests__/OfficeDocRenderer.test.tsx",
     "src/components/Workspace/renderers/__tests__/OfficePreviewRenderer.test.tsx",
     "src/components/Workspace/store/__tests__/builtinRenderers.boundaries.test.ts",
     "src/stores/filesSurfaceStore.test.ts",
+    "src/stores/codingTabsStore.test.ts",
     "src/pages/Chat/components/ChatActionGroup/ChatActionGroup.test.tsx",
     "src/plugins/ugsciSidebarBundle.test.tsx",
     "src/plugins/ugsciSettings.test.tsx",
     "src/plugins/domainEngines.test.tsx",
+    "src/plugins/capabilitiesWorkspace.test.tsx",
+    "src/pages/Agent/ACP/components/ACPDrawer.test.tsx",
+    "src/pages/Agent/ACP/index.test.tsx",
+    "src/pages/Agent/MCP/index.test.tsx",
     "src/plugins/mcpCatalog.test.tsx",
     "src/plugins/marketLoading.test.tsx",
     "src/plugins/marketCache.test.ts",
@@ -124,6 +164,21 @@ for (const file of files) {
   requireCases(file, []);
 }
 for (const [file, titles] of [
+  [
+    "src/features/user-input/InteractionPanel.integration.test.tsx",
+    [
+      "creates the demo from FilesDrawer, preserves zero and selected parameters in saved drafts, reopens and queues the exact scoped answer",
+      "keeps false and zero after a rejected submit and accepts one retry without duplicate submission from a double click",
+      "retries a failed queued acknowledgement after remount without sending the saved answer to chat twice",
+      "discovers requests through useWorkbenchRequests, ignores another scope, and leaves the form being edited selected",
+      "discards a late discovery response after switching agent and runtime session",
+      "does not deliver a late submit result into a different conversation",
+      "finishes an explicitly submitted answer after closing the drawer while the server response is pending",
+      "retains a restored local draft when another window advances the revision and requires an explicit reload",
+      "does not let an earlier list response erase the demo created and edited while it was in flight",
+      "safely unloads the plugin and restores a persisted request and local draft after loading the shipped bundle again",
+    ],
+  ],
   [
     "src/api/modules/plugin.test.ts",
     [
@@ -232,6 +287,8 @@ for (const [file, titles] of [
     [
       "only accepts simulation tool references from live and historical messages",
       "registers a real chat card that opens a scoped monitor without automatically subscribing",
+      "keeps technical identifiers in toggled details and makes results the primary action",
+      "keeps run actions scoped to the owning agent and releases results on an agent switch",
       "mounts the shared sidebar monitor with session scope and handles late plugin loading",
     ],
   ],
@@ -306,6 +363,15 @@ for (const [file, titles] of [
     ],
   ],
   [
+    "src/plugins/expertPresentation.test.tsx",
+    [
+      "filters real cards without exposing prompt metadata and keeps application routing labels",
+      "preserves drafts across settings tabs and saves only display metadata",
+      "preserves advanced drafts and unknown running configuration fields when saving",
+      "retains failed saves and confirms discarding an unsaved draft",
+    ],
+  ],
+  [
     "src/plugins/expertSummon.test.tsx",
     [
       "opens a fresh chat for %s through the page router",
@@ -349,6 +415,8 @@ for (const [file, titles] of [
     "src/layouts/SidebarSettingsPanel.test.tsx",
     [
       "restores Manual and About links to UGSci while keeping settings available",
+      "persists %s from the actual appearance flyout and restores it on reopen",
+      "keeps mobile appearance navigation in one panel with Back and persists a style choice",
     ],
   ],
   [
@@ -421,8 +489,10 @@ for (const title of [
   }
 }
 for (const title of [
+  "UGSci fork feature: the mounted task panel stays collapsible during and after multi-agent execution",
   "UGSci fork feature: sender placeholder advertises @ Agent assignment in %s",
   "UGSci fork feature: @ opens the real Agent picker and keyboard selection inserts a mention",
+  "UGSci fork feature: interface style changes preserve the mounted chat and sender draft",
   "UGSci fork feature: @ %s survives SDK input clearing and routes the actual request",
   "UGSci fork feature: queued @ collaboration keeps the enqueue-time selection",
 ]) {
@@ -467,6 +537,57 @@ for (const title of [
       `Required domain engine page integration case missing: ${title}`,
     );
 }
+requireCases("src/plugins/capabilitiesWorkspace.test.tsx", [
+  "configures a real engine from its compact icon card and preserves advanced values after a failed save",
+  "keeps built-in tools separate and embeds the original MCP and runtime managers",
+  "shows skill controls without hovering and returns from focused details to the updated agent card",
+  "ignores an old skill response after the configuration agent changes",
+  "installs from the visible skill-pool card and refreshes the current expert without a page reload",
+]);
+requireCases("src/pages/Agent/MCP/components/MCPClientCard.test.tsx", [
+  "keeps embedded MCP validation and saves through the original editor before returning to its card",
+]);
+requireCases("src/pages/Agent/ACP/components/ACPDrawer.test.tsx", [
+  "keeps an embedded runtime edit open on failure and flushes the original form on return",
+]);
+// Native file behavior and fork panels must remain connected through the real host.
+requireCases(
+  "src/features/files-workspace/FilesWorkspace.integration.test.tsx",
+  [
+    "opens text decks in the native editor and preserves explicit preview intent",
+    "keeps different same-name artifacts in independent tabs",
+    "releases a hidden file preview while preserving its tab and unsaved buffer",
+    "saves actual artifact bytes with session and root scope and opens the returned conflict-renamed path",
+    "keeps the artifact and retries a failed save using a new session's pending project directory",
+    "cancels save-as without writing or changing the artifact",
+    "keeps a later existing tab selected while the saved file is still loading",
+    "does not reopen a saved file after the workspace switches to another session",
+    "keeps preview-only document content visible with no route to a hidden navigator",
+    "refreshes byte sizes when restoring, reloading and reselecting a file",
+    "keeps streamed artifact previews, copy and saved bytes on the same current content",
+    "rejects foreign-scope artifact updates and preserves unsaved buffers",
+  ],
+);
+requireCases("src/features/files-workspace/FilesDrawer.test.tsx", [
+  "restores per-style file widths without replacing the active editor or its unsaved draft",
+  "clears closed file actions instead of falling back to the opening request",
+  "retains browser history, address drafts and the iframe across tool switches",
+  "keeps native files usable after a compute plugin is removed",
+  "releases the simulation view on hide and reflects provider removal",
+  "shows native file size and keeps expansion available after a load failure",
+]);
+requireCases("src/pages/Coding/FilePreview.test.tsx", [
+  "keeps math code blocks in the renderable code block controls",
+  "renders inline and display math through the registered Markdown renderer",
+  "renders ICO through the registered image renderer after authenticated loading",
+  "copies and downloads the original fenced code from Markdown preview",
+  "contains renderer failures, exposes original text and recovers for another file",
+  "retries a failed renderer without replacing the current file",
+]);
+requireCases("src/pages/Coding/TabbedEditor.test.tsx", [
+  "releases hidden renderer resources and retains tabs and unsaved content",
+  "keeps legacy artifact subscriptions unless its host manages updates",
+]);
 const workspaceTests = readFileSync(
   path.join(root, "src/pages/Chat/ChatPage.openFilePreview.test.tsx"),
   "utf8",
@@ -477,6 +598,8 @@ for (const title of [
   "UGSci workspace: inactive chat ignores global file and compute requests",
   "UGSci simulation: the real chat opens the requested run and rejects another agent or session",
   "UGSci simulation: accepts the current runtime session when its Chat UUID differs",
+  "UGSci workspace: extension requests follow session ownership and late runtime identity",
+  "UGSci workspace: legacy reveal requests retain the pending project directory",
 ]) {
   if (
     !inspectForkTestSource(
@@ -491,6 +614,113 @@ requireCases("src/plugins/pawapp-sdk/sessionRouting.test.ts", [
   "respects an explicit session instead of the active dialogue",
   "resolves a normal chat route to its backend session",
   "infers the active PawApp from the browser path",
+]);
+requireCases("src/layouts/Sidebar.render.test.tsx", [
+  "switches style layouts and restores independent sidebar choices without remounting plugins",
+  "collapses a narrow sidebar on pointer %s and restores its previous width after reopening",
+  "cancels a narrow resize without persisting a collapsed sidebar",
+  "resizes the mounted sidebar by dragging and preserves its width and plugin state",
+  "supports width limits, keyboard resizing and double-click reset on the mounted sidebar",
+  "preserves the custom desktop width through the mobile overlay",
+]);
+requireCases("src/layouts/Header.test.tsx", [
+  "uses the version as the only update entry",
+  "shows background progress on the version and retries a failed download from it",
+  "opens a downloaded update from the version and installs it only after confirmation",
+]);
+requireCases("src/utils/pageStyle.test.tsx", [
+  "keeps the theme, layout and light-dark mode independent across switches and reloads",
+  "synchronizes layout between windows without changing the color theme",
+]);
+requireCases("src/layouts/SidebarSettingsPanel.test.tsx", [
+  "selects %s layout from Page style without changing the theme",
+]);
+requireCases("src/layouts/SidebarSessionList.test.tsx", [
+  "opens minimal navigation search and preserves filtering when its presentation changes",
+  "replaces the primary history header with focused search and restores it on Escape",
+  "opens header search from collapsed history without losing its input across layouts",
+]);
+requireCases("src/layouts/Sidebar.render.test.tsx", [
+  "keeps prototype navigation connected to registered apps, automation, workspace and plugin shortcuts",
+  "groups More shortcuts and keeps settings in the account menu",
+]);
+requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
+  "UGSci fork feature: prototype Agent action opens real mention choices without submitting the draft",
+]);
+requireCases("src/pages/Chat/HostBubbles.render.test.tsx", [
+  "mounts the persisted turn file summary in the real response and opens an immutable scoped version",
+]);
+requireCases("src/pages/Chat/sessionApi/sessionApi.test.ts", [
+  "restores the exact response attempt and client identity for persisted turn files",
+]);
+requireCases(
+  "src/features/files-workspace/FilesWorkspace.integration.test.tsx",
+  [
+    "opens persistent delivered versions through the native editor without losing workspace drafts",
+  ],
+);
+requireCases("src/features/files-workspace/TurnFileSummary.test.tsx", [
+  "opens the immutable version and current file through distinct scoped native targets",
+  "never matches another attempt, agent, or session by a shared client message ID",
+  "replaces misleading legacy hints even when the captured turn has no file changes",
+]);
+requireCases("src/pages/Chat/components/ComposerOptions.test.tsx", [
+  "retains a control draft across dismissal and layout changes",
+  "keeps portaled picker interaction open and closes on an outside pointer",
+]);
+requireCases("src/pages/Chat/components/ComposerAddMenu.test.tsx", [
+  "delegates file selection to the original Upload without opening it for menu navigation",
+  "keeps drafts while inserting available commands and mentions and restores focus on Escape",
+]);
+requireCases(
+  "src/pages/Chat/components/ContextUsageIndicator/ContextUsageIndicator.test.tsx",
+  [
+    "keeps context controls available without inventing usage before a model is selected",
+  ],
+);
+requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
+  "UGSci fork feature: composer add menu fills registered commands without sending or replacing the draft",
+]);
+requireCases(
+  "src/features/project-directory/SessionProjectDirectory.test.tsx",
+  [
+    "closes the portaled directory picker when its containing composer menu closes",
+  ],
+);
+requireCases("src/pages/Chat/components/ApprovalToggle.test.tsx", [
+  "dismisses a nested %s approval picker without changing the saved policy",
+]);
+requireCases("src/contexts/ThemeContext.test.tsx", [
+  "updates readable card action roles live across all palettes and modes without changing layout",
+]);
+requireCases("src/utils/actionColors.test.ts", [
+  "uses WCAG luminance rather than a fixed light-dark text rule",
+]);
+requireCases("src/pages/Market/index.test.tsx", [
+  "themes registered market cards without intercepting their install actions",
+]);
+requireCases("src/features/user-input/InteractionPanel.integration.test.tsx", [
+  "creates the demo from FilesDrawer, preserves zero and selected parameters in saved drafts, reopens and queues the exact scoped answer",
+  "retries a failed queued acknowledgement after remount without sending the saved answer to chat twice",
+  "does not deliver a late submit result into a different conversation",
+  "finishes an explicitly submitted answer after closing the drawer while the server response is pending",
+  "retains a restored local draft when another window advances the revision and requires an explicit reload",
+  "safely unloads the plugin and restores a persisted request and local draft after loading the shipped bundle again",
+  "cancels an edited request without queuing it and cannot resurrect it from a stale poll or local draft",
+  "retains the accepted answer when the real chat queue is full and retries admission after space becomes available",
+  "keeps independent unsaved values when switching between requests with identical field names",
+]);
+requireCases("src/features/files-workspace/useSessionDeliverables.test.tsx", [
+  "loads older pages with version deduplication, retries failures and resets on refresh",
+  "discards an older history page after switching scope and restarts returning sessions at page zero",
+  "rejects a non-advancing history cursor %s without losing results and retries the same page",
+  "discards an in-flight history page when a turn update refreshes the first page",
+  "ignores a pending response while hidden and reloads from the server when reopened",
+]);
+requireCases("src/plugins/expertPresentation.test.tsx", [
+  "preserves drafts across settings tabs and saves only display metadata",
+  "preserves advanced drafts and unknown running configuration fields when saving",
+  "retains failed saves and confirms discarding an unsaved draft",
 ]);
 console.log(`Fork feature inventory verified: ${files.length} suites.`);
 if (!process.argv.includes("--check")) {

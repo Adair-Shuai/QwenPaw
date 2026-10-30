@@ -12,13 +12,11 @@ WAIT_TIMEOUT = 15.0
 
 
 def wait_for_thread_progress(predicate):
-    """Wait in a worker for observable progress without assuming disk speed."""
+    """Observe real event-loop progress while a synchronous worker waits."""
     deadline = time.monotonic() + WAIT_TIMEOUT
     while not predicate():
         if time.monotonic() >= deadline:
-            raise AssertionError(
-                "Event loop made no progress during worker I/O",
-            )
+            raise AssertionError("Synchronous work blocked the event loop")
         time.sleep(0.005)
 
 

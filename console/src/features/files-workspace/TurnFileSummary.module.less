@@ -1,0 +1,222 @@
+.summary {
+  margin: 14px 0;
+  border: 1px solid var(--app-border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--app-fill-faint);
+  color: var(--app-text);
+  font-size: var(--app-font-caption);
+  button {
+    font: inherit;
+    cursor: pointer;
+    color: inherit;
+  }
+  button:disabled {
+    opacity: 0.45;
+    cursor: default;
+  }
+  button:focus-visible {
+    outline: 2px solid var(--app-selected-border);
+    outline-offset: -2px;
+  }
+}
+.captureStatus {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--app-text-secondary);
+  font-size: var(--app-font-caption);
+  button {
+    border: 1px solid var(--app-border);
+    background: transparent;
+    color: inherit;
+    border-radius: 4px;
+    padding: 3px 6px;
+    cursor: pointer;
+  }
+}
+.header {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 12px 14px 6px;
+}
+.heading {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  strong {
+    font-size: var(--app-font-body);
+  }
+}
+.counts {
+  display: flex;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.added {
+  color: var(--app-success-text, #238636);
+}
+.removed {
+  color: var(--app-error-text, #cf4446);
+}
+.deliveryCount {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  color: var(--app-info-text);
+}
+.bundle {
+  margin-left: auto;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  padding: 4px;
+}
+.caption {
+  margin: 0;
+  padding: 0 14px 10px;
+  color: var(--app-text-tertiary);
+}
+.notice {
+  margin: 4px 14px 10px;
+  color: var(--app-warning-text, #996315);
+}
+.warnings {
+  margin: 5px 14px 10px;
+  color: var(--app-text-secondary);
+  summary {
+    cursor: pointer;
+  }
+  ul {
+    padding-left: 18px;
+    word-break: break-word;
+  }
+}
+.files {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+.file {
+  border-top: 1px solid var(--app-border);
+}
+.row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  padding: 7px 12px;
+}
+.status {
+  color: var(--app-info-text);
+  min-width: 30px;
+  &[data-status="created"] {
+    color: var(--app-success-text);
+  }
+  &[data-status="deleted"] {
+    color: var(--app-error-text);
+  }
+}
+.fileName {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  flex: 1;
+  text-align: left;
+  padding: 3px 0;
+  background: transparent;
+  border: 0;
+  strong,
+  small {
+    overflow: hidden;
+    max-width: 100%;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  strong {
+    font-size: var(--app-font-body);
+    font-weight: 500;
+  }
+  small {
+    color: var(--app-text-tertiary);
+    margin-top: 3px;
+  }
+}
+.fileMeta {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: var(--app-text-tertiary);
+}
+.deliveryTag {
+  color: var(--app-info-text);
+  background: var(--app-info-bg);
+  padding: 2px 5px;
+  border-radius: 4px;
+}
+.actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 2px;
+  button {
+    width: 28px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border: 0;
+    background: transparent;
+    border-radius: 5px;
+    &:hover:not(:disabled) {
+      background: var(--app-info-bg);
+      color: var(--app-info-text);
+    }
+  }
+}
+.unavailable,
+.version {
+  display: block;
+  margin: -2px 12px 8px 52px;
+  color: var(--app-text-tertiary);
+}
+.diff {
+  border-top: 1px solid var(--app-border);
+  p {
+    margin: 10px 14px;
+  }
+}
+.diffHeading {
+  background: var(--app-fill-faint);
+  color: var(--app-text-secondary);
+  padding: 8px 14px;
+}
+.expand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-top: 1px solid var(--app-border);
+  background: transparent;
+}
+@media (max-width: 600px) {
+  .row {
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .fileMeta {
+    margin-left: 36px;
+    order: 4;
+    flex-basis: 100%;
+  }
+  .bundle {
+    margin-left: 0;
+  }
+}

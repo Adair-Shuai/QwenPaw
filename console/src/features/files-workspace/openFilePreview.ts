@@ -3,13 +3,34 @@ import { chatApi } from "../../api/modules/chat";
 import { isAbsoluteLocalFilePath } from "./internalFileLinks";
 import type { FileTarget } from "./types";
 import { withDefaultFileView } from "./fileOpenModes";
+import type { FilesWorkspaceScope } from "./filesWorkspaceScope";
 
 export const OPEN_FILE_PREVIEW_EVENT = "qwenpaw:open-file-preview";
 export const UPDATE_FILE_PREVIEW_EVENT = "qwenpaw:update-file-preview";
 
-export interface OpenFilePreviewDetail {
+export interface FilePreviewScope {
+  agentId?: string;
+  sessionId?: string;
+  chatId?: string;
+}
+
+export interface OpenFilePreviewDetail extends FilePreviewScope {
   target: FileTarget;
   trigger?: HTMLElement | null;
+}
+
+export function fileRequestMatchesScope(
+  request: FilePreviewScope | undefined,
+  scope: Extract<FilesWorkspaceScope, { kind: "session" }>,
+  runtimeSessionId?: string,
+): boolean {
+  if (request?.agentId && request.agentId !== scope.agentId) return false;
+  if (request?.chatId && request.chatId !== scope.chatId) return false;
+  const sessionAliases = [scope.sessionId, scope.chatId, runtimeSessionId]
+    .filter((id): id is string => Boolean(id))
+    .flatMap((id) => [id, `${scope.agentId}:${id}`]);
+  // The existing Workspace SDK scopes generated artifacts as "agent:session".
+  return !request?.sessionId || sessionAliases.includes(request.sessionId);
 }
 
 export interface UpdateFilePreviewDetail {
@@ -42,10 +63,20 @@ function normalizeTarget(target: FileTarget): FileTarget {
 export function openFilePreview(
   target: FileTarget,
   trigger: HTMLElement | null = null,
+  scope?: FilePreviewScope,
 ): void {
   window.dispatchEvent(
     new CustomEvent<OpenFilePreviewDetail>(OPEN_FILE_PREVIEW_EVENT, {
-      detail: { target: normalizeTarget(target), trigger },
+      detail: {
+        target: normalizeTarget(target),
+        trigger,
+        ...(scope ??
+          (target.artifact && {
+            agentId: target.artifact.agentId,
+            sessionId: target.artifact.sessionId,
+            chatId: target.artifact.chatId,
+          })),
+      },
     }),
   );
 }

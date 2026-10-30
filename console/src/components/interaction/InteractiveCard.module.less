@@ -22,6 +22,15 @@
   flex: 1;
 }
 
+:global(html[data-page-style]:not([data-page-style="classic"])) {
+  .surface {
+    transform: none !important;
+  }
+  .reflection {
+    display: none;
+  }
+}
+
 .reflection {
   display: block;
   position: absolute;

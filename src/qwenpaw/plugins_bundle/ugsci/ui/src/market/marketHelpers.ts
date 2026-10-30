@@ -1596,7 +1596,7 @@ export function GenericSourceConfigModal({
             style: {
               marginBottom: 16,
               padding: 12,
-              background: "var(--ant-color-fill-quaternary, #fafafa)",
+              background: "var(--app-fill-faint, #fafafa)",
               borderRadius: 8,
               border: "1px solid #f0f0f0",
             },
@@ -1777,10 +1777,10 @@ export function GenericSourceConfigModal({
         style: {
           marginTop: 12,
           padding: "8px 12px",
-          background: "#e6f4ff",
+          background: "var(--app-info-bg)",
           borderRadius: 6,
           fontSize: 12,
-          color: "#1677ff",
+          color: "var(--app-action-link)",
         },
       },
       React.createElement(

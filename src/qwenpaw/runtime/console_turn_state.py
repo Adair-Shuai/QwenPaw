@@ -63,6 +63,8 @@ def stamp_console_turn(
     request: Any,
     status: str,
     error: BaseException | None = None,
+    *,
+    response_id: str | None = None,
 ) -> None:
     """Keep terminal status with its user turn, including empty responses."""
     if getattr(request, "channel", None) != "console":
@@ -77,6 +79,8 @@ def stamp_console_turn(
         meta = message.get("metadata") or {}
         if message.get("role") == "user" and meta.get(CLIENT_ID) == client_id:
             terminal = {"status": status}
+            if response_id:
+                terminal["response_id"] = response_id
             if status == "failed" and error is not None:
                 terminal["error"] = {
                     "code": type(error).__name__,

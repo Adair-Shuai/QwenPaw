@@ -61,7 +61,8 @@
       "tests/unit/plugins/ugsci/test_runtime_host_contract.py",
       "tests/unit/plugins/ugsci/test_visualization_tool_contract.py",
       "tests/unit/plugins/ugsci/test_storage_inventory_stage_contract.py",
-      "tests/unit/plugins/ugsci/test_roff_conversion_contract.py"
+      "tests/unit/plugins/ugsci/test_roff_conversion_contract.py",
+      "tests/unit/plugins/ugsci/test_expert_presentation.py"
     ],
     "flowforge": [
       "tests/unit/plugins/test_plugin_api_helpers.py",
@@ -108,7 +109,8 @@
       "tests/unit/plugins/run_center/test_plugin_registration.py",
       "tests/unit/plugins/run_center/test_plugin_loader_integration.py",
       "tests/unit/plugins/run_center/test_bundle_sync.py",
-      "tests/unit/plugins/test_openui.py"
+      "tests/unit/plugins/test_openui.py",
+      "tests/unit/plugins/test_openui_interactions.py"
     ],
     "avatars": [
       "tests/unit/app/routers/test_avatars_router.py"
@@ -138,7 +140,12 @@
       "tests/unit/plugins/test_sdk_channel_routing_contract.py",
       "tests/unit/market/test_search_deadline.py",
       "tests/unit/channels/test_base_core.py",
-      "tests/unit/plugins/test_sdk_context_lifecycle.py"
+      "tests/unit/plugins/test_sdk_context_lifecycle.py",
+      "tests/unit/plugins/test_manifest_dependencies.py",
+      "tests/unit/plugins/test_plugin_storage_windows_paths.py",
+      "tests/unit/plugins/test_sdk_storage_http_concurrency.py",
+      "tests/unit/plugins/test_plugin_manifest_snapshot.py",
+      "tests/unit/plugins/test_sdk_storage_contract.py"
     ],
     "run_center": [
       "tests/unit/plugins/run_center/test_research_router_contract.py",
@@ -149,9 +156,27 @@
     ],
     "uproject": [
       "tests/unit/plugins/test_uproject_app.py"
+    ],
+    "turnFileDelivery": [
+      "tests/unit/test_turn_files.py",
+      "tests/unit/runtime/test_turn_file_lifecycle.py"
     ]
   },
   "required_cases": {
+    "tests/unit/plugins/test_openui_interactions.py": [
+      "test_tool_http_draft_restart_submit_and_delivery",
+      "test_http_owner_scope_and_persisted_session_validation",
+      "test_http_rejects_invalid_answers_without_mutation",
+      "test_revision_conflict_cancel_and_pending_queue",
+      "test_cleared_draft_missing_defaults_and_optional_submission",
+      "test_concurrent_agent_tool_contexts_and_exception_cleanup",
+      "test_demo_is_explicit_and_uses_the_same_real_lifecycle",
+      "test_plugin_registers_scoped_tool_and_surfaces_registration_errors",
+      "test_tool_scope_does_not_leak_outside_real_middleware_iteration",
+      "test_concurrent_http_writers_commit_one_revision_and_survive_restart",
+      "test_concurrent_identical_submissions_and_receipts_are_idempotent",
+      "test_sqlite_write_failure_preserves_draft_and_allows_http_retry"
+    ],
     "tests/unit/plugins/run_center/test_presentation.py": [
       "test_http_plan_persists_without_changing_run_and_projects_true_binding_ids",
       "test_terminal_legacy_plans_keep_events_and_execution",
@@ -269,7 +294,10 @@
     ],
     "tests/unit/verify/test_fork_regression_inventory.py": [
       "test_missing_disabled_or_empty_critical_cases_block_merge",
-      "test_missing_suite_blocks_merge"
+      "test_missing_suite_blocks_merge",
+      "test_duplicate_inventory_keys_cannot_silently_remove_protected_cases",
+      "test_shipped_plugin_changes_trigger_frontend_behavior_regressions",
+      "test_frontend_ci_builds_real_plugin_bundles_before_inventory_and_tests"
     ],
     "tests/unit/plugins/test_upstream_merge_compat.py": [
       "test_shipped_plugin_accepts_current_core",
@@ -595,6 +623,47 @@
     ],
     "tests/unit/scripts/test_check_plugin_sdk_artifacts.py": [
       "test_exported_author_suite_collects_outside_checkout"
+    ],
+    "tests/unit/plugins/ugsci/test_expert_presentation.py": [
+      "test_display_metadata_roundtrip_preserves_prompts_and_agent_isolation",
+      "test_display_metadata_rejects_stale_invalid_and_unknown_updates",
+      "test_display_metadata_corruption_is_not_silently_overwritten"
+    ],
+    "tests/unit/test_turn_files.py": [
+      "test_real_turn_diff_uses_dirty_baseline_without_touching_git_index",
+      "test_delivery_versions_survive_same_turn_changes_and_restart",
+      "test_delivery_is_durable_before_finish_and_id_survives_final_merge",
+      "test_limits_and_read_errors_report_incomplete_without_false_deletions",
+      "test_scope_traversal_and_blob_integrity_are_enforced",
+      "test_http_routes_enforce_chat_identity_and_serve_archived_bytes",
+      "test_history_pagination_filters_scope_before_page_boundaries",
+      "test_damaged_archive_never_falls_back_to_mutable_workspace_bytes"
+    ],
+    "tests/unit/runtime/test_turn_file_lifecycle.py": [
+      "test_native_turn_archives_real_files_on_all_exit_paths",
+      "test_successful_send_freezes_delivered_bytes_before_later_overwrite",
+      "test_repeated_cancellation_keeps_archive_task_alive",
+      "test_third_party_turn_has_same_durable_file_contract"
+    ],
+    "tests/unit/plugins/test_manifest_dependencies.py": [
+      "test_wheel_identity_and_header_validation",
+      "test_installed_hidden_files_preserve_module_collision_checks"
+    ],
+    "tests/unit/plugins/test_plugin_storage_windows_paths.py": [
+      "test_long_paths_keep_storage_keys_media_and_access_boundary"
+    ],
+    "tests/unit/plugins/test_sdk_storage_http_concurrency.py": [
+      "test_standard_http_storage_keeps_loop_responsive",
+      "test_cancelled_http_write_blocks_reload_until_disk_finishes"
+    ],
+    "tests/unit/plugins/test_plugin_manifest_snapshot.py": [
+      "test_runtime_metadata_keeps_source_snapshot_and_rejects_disk_changes"
+    ],
+    "tests/unit/plugins/test_sdk_storage_contract.py": [
+      "test_tool_settings_are_declared_workspace_scoped_and_persistent",
+      "test_storage_read_retries_windows_crt_access_error_without_losing_state",
+      "test_storage_mutation_waits_for_other_instances_open_reader",
+      "test_storage_retries_transient_windows_replace_without_partial_publication"
     ]
   }
 }

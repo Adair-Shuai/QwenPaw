@@ -379,16 +379,13 @@ def _swap_directories(
             try:
                 old_dst.rename(dst)
                 logger.warning(
-                    "Rolled back %s rename after failed commit; "
-                    "original data restored from %s",
-                    dst,
-                    old_dst,
+                    "Rolled back rename after failed commit; "
+                    "original data restored",
                 )
             except OSError:
-                logger.exception(
-                    "Rollback of %s failed — original data is in %s",
-                    dst,
-                    old_dst,
+                logger.error(
+                    "Rollback failed; original data remains in the "
+                    "restore_old directory",
                 )
         raise
 
@@ -425,10 +422,7 @@ def assert_directory_renamable(dst: Path) -> None:
                 try:
                     probe.rename(dst)
                 except OSError:
-                    logger.exception(
-                        "Failed to restore %s after rename probe",
-                        dst,
-                    )
+                    logger.error("Failed to restore after rename probe")
             raise
 
 

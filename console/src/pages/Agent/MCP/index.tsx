@@ -1,5 +1,8 @@
+import {
+  CapabilityWorkspace,
+  CapabilityConfig,
+} from "@/components/interaction/CapabilityWorkspace";
 import { Cascade } from "@/components/interaction/Cascade";
-import { SharedModal as Modal } from "@/components/interaction/SharedModal";
 import { useState, useCallback, useLayoutEffect, useRef } from "react";
 import { Button, Empty, Input, Select } from "@agentscope-ai/design";
 import { Tabs, Alert, Segmented } from "antd";
@@ -503,7 +506,7 @@ function MCPPage({ embedded = false, embeddedLabels }: MCPPageProps = {}) {
         </>
       )}
 
-      <Modal
+      <CapabilityConfig
         centered
         title={t("mcp.create")}
         open={ready && createModalOpen}
@@ -704,7 +707,7 @@ function MCPPage({ embedded = false, embeddedLabels }: MCPPageProps = {}) {
             },
           ]}
         />
-      </Modal>
+      </CapabilityConfig>
     </div>
   );
 }
@@ -721,4 +724,10 @@ const fieldStyle: React.CSSProperties = {
   gap: 4,
 };
 
-export default MCPPage;
+export default function MCPWorkspace(props: MCPPageProps = {}) {
+  return (
+    <CapabilityWorkspace enabled={!!props.embedded}>
+      <MCPPage {...props} />
+    </CapabilityWorkspace>
+  );
+}

@@ -26,18 +26,25 @@
 
 .sidebar {
   align-items: center;
-  gap: 6px;
   padding: 3px 10px;
   border-radius: 8px;
   margin-bottom: 2px;
 
-  &:hover {
-    background: var(--app-fill-subtle);
-
+  &:hover,
+  &:focus-within,
+  &.dropdownOpen {
     .moreBtn {
       opacity: 1;
       pointer-events: auto;
     }
+
+    &:not(.editing) .primary {
+      padding-inline-end: calc(var(--app-hit-desktop) - 2px);
+    }
+  }
+
+  &:hover {
+    background: var(--app-fill-subtle);
 
     .statusSlot {
       opacity: 0;
@@ -58,11 +65,6 @@
   }
 
   &.dropdownOpen {
-    .moreBtn {
-      opacity: 1;
-      pointer-events: auto;
-    }
-
     .statusSlot {
       opacity: 0;
     }
@@ -104,6 +106,7 @@
   color: var(--app-text);
   white-space: nowrap;
   overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .nameTrack {
@@ -111,6 +114,15 @@
   min-width: max-content;
   white-space: nowrap;
   transform: translateX(0);
+}
+
+// Clip on the text box itself so a narrow sidebar shows an ellipsis. Hover
+// still reveals the full title through the existing marquee and info card.
+.sidebar:not(:hover) .primary:not(:focus-visible) .nameTrack {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .nameTrackOverflow {
@@ -264,6 +276,11 @@
 /* ── More button ─────────────────────────────────────────────────────── */
 
 .moreBtn {
+  // Hidden actions must not shorten titles or change virtualized row heights.
+  position: absolute;
+  inset-inline-end: 4px;
+  top: 50%;
+  translate: 0 -50%;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -301,10 +318,17 @@
 }
 
 @media (hover: none), (any-pointer: coarse) {
+  .sidebar:not(.editing) .primary,
+  .sidebar:not(.editing):hover .primary,
+  .sidebar:not(.editing):focus-within .primary,
+  .sidebar:not(.editing).dropdownOpen .primary {
+    padding-inline-end: calc(var(--app-hit-touch) - 8px);
+  }
+
   .moreBtn {
+    inset-inline-end: -2px;
     width: var(--app-hit-touch);
     height: var(--app-hit-touch);
-    margin: -11px;
     opacity: 1;
     pointer-events: auto;
   }
@@ -316,4 +340,24 @@
   flex: 1;
   min-width: 0;
   font-size: var(--app-font-secondary);
+}
+
+:global(html[data-page-style]:not([data-page-style="classic"])) {
+  .sidebar {
+    padding-inline: 9px;
+    border-radius: 7px;
+  }
+  .nameViewport {
+    font-size: var(--app-font-caption);
+  }
+  .statusSlot {
+    order: 2;
+    width: 6px;
+  }
+  .idleDot {
+    opacity: 0;
+  }
+  .pinMark {
+    order: 1;
+  }
 }

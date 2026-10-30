@@ -853,3 +853,22 @@
   color: var(--app-text-tertiary);
   margin: 0;
 }
+
+// Narrow prototype side panels retain all document actions without clipping.
+:global(html[data-page-style]:not([data-page-style="classic"])) {
+  @container (max-width: 520px) {
+    .toolbarRight {
+      width: 100%;
+      flex-wrap: wrap;
+    }
+    .documentActions {
+      min-width: 0;
+      flex: 1 1 auto;
+      flex-wrap: wrap;
+    }
+    .modeSwitch {
+      margin-right: auto;
+      flex-shrink: 0;
+    }
+  }
+}

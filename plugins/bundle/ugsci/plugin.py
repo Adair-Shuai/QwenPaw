@@ -25,6 +25,7 @@ from .docs_api import build_docs_router
 from .engine.api import EngineRequest, build_engine_router
 from .sim_api import build_sim_router
 from .genui.api import build_genui_router
+from .expert_presentation import build_expert_presentation_router
 from .health_api import build_health_router, record_route_registration
 from .skill_pool import (
     remove_plugin_pool_skills,
@@ -101,6 +102,13 @@ class UGSciPlugin:
             PLUGIN_ID,
         )
         self._register_lifecycle_hooks(api)
+        self._register_router(
+            api,
+            build_expert_presentation_router,
+            "/ugsci/experts",
+            "ugsci-expert-presentation",
+            "expert card presentation",
+        )
         self._register_team(api)
         self._initialize_engines()
         self._register_router(

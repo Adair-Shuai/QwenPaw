@@ -19,7 +19,7 @@
       }
 
       .cls-5 {
-        fill: url(#pattern_4);
+        fill: #f1f5f9;
         font-family: Arial-Black, 'Arial Black';
         font-size: 162.28px;
         font-weight: 800;

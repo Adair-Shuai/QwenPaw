@@ -534,6 +534,44 @@ describe("ChatSenderTabsPanel queue toolbar", () => {
 });
 
 describe("ChatSenderTabsPanel tab switching and fallback", () => {
+  it.each(["running", "done", "error", "cancelled"])(
+    "collapses and reopens the task panel for %s tasks without clearing or cancelling them",
+    (status) => {
+      h.bgTasks = [task({ status })];
+      renderPanel();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Collapse task panel" }),
+      );
+      expect(screen.queryByTestId("bg-panel")).toBeNull();
+      expect(screen.queryByRole("checkbox")).toBeNull();
+      expect(bgTab().getAttribute("aria-expanded")).toBe("false");
+      fireEvent.click(
+        screen.getByRole("button", { name: "Expand task panel" }),
+      );
+      expect(screen.getByTestId("bg-panel")).toBeTruthy();
+      expect(bgTab().getAttribute("aria-expanded")).toBe("true");
+      expect(h.removeTasks).not.toHaveBeenCalled();
+      expect(h.cancelBackgroundTask).not.toHaveBeenCalled();
+      expect(h.stopBackgroundTaskWatcher).not.toHaveBeenCalled();
+    },
+  );
+
+  it("toggles the active tab and expands a different tab while preserving the completed filter", () => {
+    h.bgTasks = [task({ status: "done" })];
+    h.queueItems = [queueItem()];
+    renderPanel();
+    fireEvent.click(bgTab());
+    fireEvent.click(screen.getByRole("checkbox"));
+    fireEvent.click(bgTab());
+    expect(screen.queryByTestId("bg-panel")).toBeNull();
+    fireEvent.click(queueTab());
+    expect(screen.getByTestId("queue-panel")).toBeTruthy();
+    fireEvent.click(queueTab());
+    expect(screen.queryByTestId("queue-panel")).toBeNull();
+    fireEvent.click(bgTab());
+    expect(screen.getByTestId("bg-panel").dataset.showFinished).toBe("true");
+  });
+
   it("switches to the queue tab on click", () => {
     h.bgTasks = [task()];
     h.queueItems = [queueItem()];

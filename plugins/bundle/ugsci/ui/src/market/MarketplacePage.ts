@@ -825,7 +825,10 @@ export function MarketplacePage({
                   },
                   GithubOutlined
                     ? React.createElement(GithubOutlined, {
-                        style: { fontSize: 14, color: "#1677ff" },
+                        style: {
+                          fontSize: 14,
+                          color: "var(--app-action-link)",
+                        },
                       })
                     : null,
                   React.createElement(
@@ -866,8 +869,7 @@ export function MarketplacePage({
                               ? React.createElement(GithubOutlined, {
                                   style: {
                                     fontSize: 18,
-                                    color:
-                                      "var(--ant-color-text-secondary, #57606a)",
+                                    color: "var(--app-card-muted, #57606a)",
                                   },
                                 })
                               : React.createElement(
@@ -934,8 +936,7 @@ export function MarketplacePage({
                                     {
                                       style: {
                                         fontSize: 10,
-                                        color:
-                                          "var(--ant-color-text-tertiary, #999)",
+                                        color: "var(--app-card-muted, #999)",
                                         display: "inline-flex",
                                         alignItems: "center",
                                         gap: 2,
@@ -1031,7 +1032,7 @@ export function MarketplacePage({
                 },
                 ShopOutlined
                   ? React.createElement(ShopOutlined, {
-                      style: { fontSize: 14, color: "#1677ff" },
+                      style: { fontSize: 14, color: "var(--app-action-link)" },
                     })
                   : null,
                 React.createElement(
@@ -1300,7 +1301,7 @@ export function MarketplacePage({
                                   style: {
                                     fontSize: 18,
                                     fontWeight: 600,
-                                    color: "#1677ff",
+                                    color: "var(--app-action-link)",
                                   },
                                 },
                                 String(value),
@@ -1745,7 +1746,7 @@ export function MarketplacePage({
                                 {
                                   style: {
                                     cursor: "pointer",
-                                    color: "var(--ant-color-primary, #1677ff)",
+                                    color: "var(--app-action-link, #1677ff)",
                                   },
                                 },
                                 "接入要求与限制",
@@ -1780,7 +1781,7 @@ export function MarketplacePage({
                             style: {
                               marginTop: 10,
                               paddingTop: 8,
-                              borderTop: "1px solid #f0f0f0",
+                              borderTop: "1px solid var(--app-border)",
                               display: "flex",
                               justifyContent: "space-between",
                               alignItems: "center",
@@ -1848,16 +1849,16 @@ export function MarketplacePage({
                 marginTop: 20,
                 padding: 16,
                 textAlign: "center",
-                border: "1px dashed var(--ant-color-border, #d9d9d9)",
+                border: "1px dashed var(--app-border, #d9d9d9)",
                 borderRadius: 8,
-                background: "var(--ant-color-fill-quaternary, #fafafa)",
+                background: "var(--app-fill-faint, #fafafa)",
               },
             },
             ShopOutlined
               ? React.createElement(ShopOutlined, {
                   style: {
                     fontSize: 24,
-                    color: "var(--ant-color-text-quaternary, #bfbfbf)",
+                    color: "var(--app-card-muted, #bfbfbf)",
                     marginBottom: 8,
                   },
                 })
@@ -2124,7 +2125,7 @@ export function MarketplacePage({
                           style: {
                             marginTop: 10,
                             paddingTop: 8,
-                            borderTop: "1px solid #f0f0f0",
+                            borderTop: "1px solid var(--app-border)",
                             display: "flex",
                             justifyContent: "space-between",
                             alignItems: "center",
@@ -2184,16 +2185,16 @@ export function MarketplacePage({
                 marginTop: 20,
                 padding: 16,
                 textAlign: "center",
-                border: "1px dashed var(--ant-color-border, #d9d9d9)",
+                border: "1px dashed var(--app-border, #d9d9d9)",
                 borderRadius: 8,
-                background: "var(--ant-color-fill-quaternary, #fafafa)",
+                background: "var(--app-fill-faint, #fafafa)",
               },
             },
             ShopOutlined
               ? React.createElement(ShopOutlined, {
                   style: {
                     fontSize: 24,
-                    color: "var(--ant-color-text-quaternary, #bfbfbf)",
+                    color: "var(--app-card-muted, #bfbfbf)",
                     marginBottom: 8,
                   },
                 })
@@ -2248,7 +2249,7 @@ export function MarketplacePage({
 
   return React.createElement(
     "div",
-    { style: { padding: 24 } },
+    { className: "ugsci-marketplace", style: { padding: 24 } },
     embedded
       ? null
       : React.createElement(PageHeader, {
@@ -2439,14 +2440,19 @@ export function MarketplacePage({
                   style: {
                     marginBottom: 16,
                     padding: 12,
-                    background: "#f6ffed",
+                    background: "var(--app-success-bg)",
                     borderRadius: 8,
-                    border: "1px solid #b7eb8f",
+                    border: "1px solid var(--app-success-border)",
                   },
                 },
                 React.createElement(
                   Text,
-                  { style: { fontSize: 12, color: "#52c41a" } },
+                  {
+                    style: {
+                      fontSize: 12,
+                      color: "var(--app-card-success-fg)",
+                    },
+                  },
                   "✓ 包含技能清单，创建后将自动安装推荐技能",
                 ),
               )
@@ -2459,14 +2465,14 @@ export function MarketplacePage({
                   style: {
                     marginBottom: 16,
                     padding: 12,
-                    background: "#e6f4ff",
+                    background: "var(--app-info-bg)",
                     borderRadius: 8,
-                    border: "1px solid #91caff",
+                    border: "1px solid var(--app-info-border)",
                   },
                 },
                 React.createElement(
                   Text,
-                  { style: { fontSize: 12, color: "#1677ff" } },
+                  { style: { fontSize: 12, color: "var(--app-action-link)" } },
                   "✓ 包含系统提示词，创建后将自动写入 AGENTS.md",
                 ),
               )

@@ -1,0 +1,16 @@
+{
+  "id": "wechat",
+  "name": "WeChat",
+  "version": "0.1.0.dev1",
+  "type": "channel",
+  "description": "WeChat iLink polling and explicit QR management worker.",
+  "author": "QwenPaw Team",
+  "entry": {
+    "descriptor": "channel.json"
+  },
+  "qwenpaw_version": {
+    "min": "2.2.2b4",
+    "max": "3.0.0"
+  },
+  "publish": false
+}

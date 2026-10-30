@@ -6,6 +6,7 @@ import React, {
   useState,
 } from "react";
 import { Dropdown, Tooltip } from "antd";
+import { useOverlayVisibility } from "@/contexts/OverlayVisibilityContext";
 import type { MenuProps } from "antd";
 import {
   AlertTriangle,
@@ -65,6 +66,10 @@ const ApprovalLevelToggle: React.FC<ApprovalLevelToggleProps> = ({
   const { t } = useTranslation();
   const isMobile = useIsMobile();
   const [open, setOpen] = useState(false);
+  const overlayVisible = useOverlayVisibility();
+  useEffect(() => {
+    if (!overlayVisible) setOpen(false);
+  }, [overlayVisible]);
   const [sessionLevel, setSessionLevel] = useState<ToolExecutionLevel | null>(
     null,
   );

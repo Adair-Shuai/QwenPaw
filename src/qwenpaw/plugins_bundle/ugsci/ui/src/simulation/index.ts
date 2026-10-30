@@ -108,7 +108,12 @@ export function extractSimulationRuns(output: unknown): RunReference[] {
 function SimulationCard({ reference }: { reference: RunReference }) {
   const host = getHost();
   const React = host.React;
+  const { Button } = host.antd;
   const [expanded, setExpanded] = React.useState(false);
+  const [detailsExpanded, setDetailsExpanded] = React.useState(false);
+  const cardId = React.useId();
+  const detailsId = `${cardId}-details`;
+  const resultsId = `${cardId}-results`;
   const [, setReady] = React.useState(0);
   const navigate = host.useNavigate?.();
   const currentAgent =
@@ -116,6 +121,16 @@ function SimulationCard({ reference }: { reference: RunReference }) {
   const sessionId = host.getCurrentSessionId?.() || "";
   const agentId = reference.agent_id || currentAgent;
   const sameAgent = currentAgent === agentId;
+  const title = `数模任务 · ${reference.simulator || "模拟计算"}`;
+  const buttonStyle = {
+    borderRadius: "var(--app-radius, 10px)",
+    minHeight: 34,
+    height: "auto",
+    padding: "6px 14px",
+    fontSize: "var(--app-font-secondary, 13px)",
+    lineHeight: 1.5,
+    whiteSpace: "normal" as const,
+  };
   React.useEffect(() => {
     const changed = () => setReady((version) => version + 1);
     window.addEventListener("qwenpaw:simulation-monitor-ready", changed);
@@ -133,55 +148,110 @@ function SimulationCard({ reference }: { reference: RunReference }) {
   return React.createElement(
     "section",
     {
-      "aria-label": `数模任务 ${reference.run_id}`,
+      "aria-label": title,
       style: {
-        padding: 14,
-        margin: "10px 0",
-        border: "1px solid var(--ant-color-border, #d9e2ec)",
-        borderRadius: 10,
+        boxSizing: "border-box",
+        width: "100%",
+        maxWidth: 640,
+        minWidth: 0,
+        padding: "var(--app-space-4, 16px)",
+        margin: "12px 0",
+        border: "1px solid var(--app-border-subtle, #e2e8f0)",
+        borderRadius: "var(--app-radius-card, 16px)",
+        background: "var(--app-surface, #fff)",
+        color: "var(--app-text, #1e293b)",
       },
     },
-    React.createElement(
-      "strong",
-      null,
-      `数模任务 · ${reference.simulator || "模拟计算"}`,
-    ),
     React.createElement(
       "div",
       {
         style: {
-          fontSize: 12,
-          color: "var(--ant-color-text-secondary, #64748b)",
-          margin: "6px 0",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexWrap: "wrap",
+          gap: 8,
         },
       },
-      reference.run_id,
+      React.createElement(
+        "strong",
+        {
+          style: {
+            fontSize: "var(--app-font-body, 14px)",
+            lineHeight: 1.5,
+            overflowWrap: "anywhere",
+          },
+        },
+        title,
+      ),
+      React.createElement(
+        Button,
+        {
+          type: "text",
+          size: "small",
+          "aria-expanded": detailsExpanded,
+          "aria-controls": detailsId,
+          onClick: () => setDetailsExpanded((value) => !value),
+          style: {
+            fontSize: "var(--app-font-caption, 12px)",
+            color: "var(--app-text-secondary, #64748b)",
+            borderRadius: "var(--app-radius, 10px)",
+          },
+        },
+        detailsExpanded ? "收起详情" : "任务详情",
+      ),
+    ),
+    React.createElement(
+      "p",
+      {
+        style: {
+          fontSize: "var(--app-font-secondary, 13px)",
+          lineHeight: 1.6,
+          color: "var(--app-text-secondary, #64748b)",
+          margin: "6px 0 14px",
+        },
+      },
+      "查看计算结果，或在工作区持续监测。",
     ),
     !sameAgent &&
-      React.createElement("p", null, "请切换到该任务所属智能体后查看结果。"),
+      React.createElement(
+        "p",
+        {
+          style: {
+            fontSize: "var(--app-font-secondary, 13px)",
+            lineHeight: 1.6,
+            margin: "0 0 12px",
+            color: "var(--app-text-secondary, #64748b)",
+          },
+        },
+        "请切换到该任务所属智能体后查看结果。",
+      ),
     React.createElement(
       "div",
       { style: { display: "flex", flexWrap: "wrap", gap: 8 } },
       React.createElement(
-        "button",
-        { type: "button", disabled: !sameAgent, onClick: openPanel },
-        "在侧栏监测",
-      ),
-      React.createElement(
-        "button",
+        Button,
         {
-          type: "button",
+          type: "primary",
+          style: buttonStyle,
           disabled: !sameAgent,
           "aria-expanded": expanded,
-          onClick: () => setExpanded(!expanded),
+          "aria-controls": resultsId,
+          onClick: () => setExpanded((value) => !value),
         },
-        expanded ? "收起结果" : "查看实时结果",
+        expanded ? "收起结果" : "查看结果",
+      ),
+      React.createElement(
+        Button,
+        { style: buttonStyle, disabled: !sameAgent, onClick: openPanel },
+        "在侧栏监测",
       ),
       navigate &&
         React.createElement(
-          "button",
+          Button,
           {
-            type: "button",
+            type: "text",
+            style: buttonStyle,
             disabled: !sameAgent,
             onClick: () =>
               navigate(
@@ -193,17 +263,77 @@ function SimulationCard({ reference }: { reference: RunReference }) {
     ),
     expanded &&
       sameAgent &&
-      (Monitor
-        ? React.createElement(Monitor, {
-            runId: reference.run_id,
-            compact: true,
-            scope: { agentId, chatId: sessionId },
-          })
-        : React.createElement(
-            "p",
-            { role: "status" },
-            "运行中心监测组件尚未加载，请启用运行中心插件。",
-          )),
+      React.createElement(
+        "div",
+        {
+          id: resultsId,
+          style: {
+            minWidth: 0,
+            marginTop: 16,
+            paddingTop: 16,
+            borderTop: "1px solid var(--app-border-subtle, #e2e8f0)",
+          },
+        },
+        Monitor
+          ? React.createElement(Monitor, {
+              runId: reference.run_id,
+              compact: true,
+              scope: { agentId, chatId: sessionId },
+            })
+          : React.createElement(
+              "p",
+              { role: "status" },
+              "运行中心监测组件尚未加载，请启用运行中心插件。",
+            ),
+      ),
+    detailsExpanded &&
+      React.createElement(
+        "dl",
+        {
+          id: detailsId,
+          "aria-label": "任务详情",
+          style: {
+            display: "grid",
+            gridTemplateColumns: "max-content minmax(0, 1fr)",
+            gap: "8px 12px",
+            margin: "14px 0 0",
+            padding: 12,
+            borderRadius: "var(--app-radius, 10px)",
+            background: "var(--app-fill-subtle, #f8fafc)",
+            fontSize: "var(--app-font-caption, 12px)",
+            lineHeight: 1.6,
+          },
+        },
+        ...[
+          ["任务 ID", reference.run_id],
+          ["所属智能体", agentId],
+          ["来源会话", reference.session_id || sessionId],
+        ]
+          .filter(([, value]) => value)
+          .flatMap(([label, value]) => [
+            React.createElement(
+              "dt",
+              {
+                key: `${label}-label`,
+                style: { color: "var(--app-text-secondary, #64748b)" },
+              },
+              label,
+            ),
+            React.createElement(
+              "dd",
+              {
+                key: label,
+                style: {
+                  margin: 0,
+                  minWidth: 0,
+                  overflowWrap: "anywhere",
+                  fontFamily: "ui-monospace, SFMono-Regular, monospace",
+                },
+              },
+              value,
+            ),
+          ]),
+      ),
   );
 }
 

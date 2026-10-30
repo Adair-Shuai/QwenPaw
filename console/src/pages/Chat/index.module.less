@@ -784,3 +784,300 @@
   gap: 8px;
   flex-wrap: wrap;
 }
+
+:global(html[data-page-style]:not([data-page-style="classic"])) {
+  .chatPageRoot {
+    background: var(--app-surface);
+    :global {
+      .qwenpaw-sender {
+        border: 1px solid var(--app-border);
+        border-radius: var(--app-composer-radius);
+        background: var(--app-composer-bg);
+        box-shadow: none;
+      }
+      [class$="-sender-content"] {
+        background: var(--app-composer-bg);
+        border-radius: inherit;
+      }
+      [class$="-sender-content-bottom"] {
+        padding-top: 6px;
+      }
+      [class*="chat-anywhere-default-header"] {
+        background: var(--app-surface);
+        border-color: var(--app-border-subtle);
+        box-shadow: none;
+      }
+      [data-role="user"] [class$="-bubble-content"] {
+        background: var(--app-surface-subtle);
+        border-radius: var(--app-composer-radius);
+      }
+    }
+  }
+  .senderProjectControl,
+  .senderApprovalControl {
+    border-color: transparent !important;
+    background: var(--app-fill-faint) !important;
+    box-shadow: none !important;
+    &:focus-visible {
+      outline: 2px solid var(--app-focus-ring);
+    }
+  }
+}
+
+.pageHeaderContext {
+  display: none;
+}
+:global(html[data-page-style="deepseek"]) .pageHeaderContext {
+  display: inline-flex;
+  gap: 12px;
+  align-items: center;
+  flex-shrink: 0;
+  color: var(--app-text-tertiary);
+  font-size: var(--app-font-caption);
+  padding-right: 10px;
+}
+:global(html[data-page-style]:not([data-page-style="classic"])) {
+  .chatPageRoot :global(.qwenpaw-sender) {
+    background: var(--app-composer-bg, var(--app-surface));
+  }
+  .chatPageRoot :global([class$="-sender-content"]) {
+    background: var(--app-composer-bg, var(--app-surface));
+  }
+  .senderProjectControl,
+  .senderApprovalControl {
+    background: transparent !important;
+  }
+}
+@media (max-width: 850px) {
+  :global(html[data-page-style="deepseek"]) .pageHeaderContext {
+    display: none;
+  }
+}
+
+.pageAgentControl {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  padding: 6px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--app-text-secondary);
+  font: inherit;
+  font-size: var(--app-font-caption);
+  cursor: pointer;
+  white-space: nowrap;
+  &:hover {
+    background: var(--app-fill);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--app-focus-ring);
+  }
+}
+
+@media (max-width: 768px) {
+  .pageAgentControl {
+    justify-content: center;
+    > span {
+      display: none;
+    }
+  }
+}
+:global(html[data-page-style]:not([data-page-style="classic"]))
+  .senderContextAffix {
+  display: inline-flex;
+}
+
+/* One writing surface, a primary toolbar, and always-visible session controls.
+ * Keep SDK controls mounted; only their geometry changes between page styles. */
+.chatPageRoot :global {
+  .qwenpaw-chat-anywhere-input-wrapper {
+    min-width: 0;
+  }
+  .qwenpaw-sender {
+    border: 1px solid var(--app-border) !important;
+    border-radius: 16px !important;
+    background: var(--app-composer-bg, var(--app-surface)) !important;
+    box-shadow: none !important;
+    overflow: visible;
+  }
+  .qwenpaw-chat-anywhere-input-wrapper:has([data-composer-metadata] button)
+    .qwenpaw-sender {
+    border-bottom-left-radius: 0 !important;
+    border-bottom-right-radius: 0 !important;
+    border-bottom-color: transparent !important;
+  }
+  .qwenpaw-sender-content {
+    padding: 15px 12px 10px !important;
+    border-radius: inherit;
+    overflow: visible;
+  }
+  .qwenpaw-sender-input {
+    min-height: 78px !important;
+    padding: 4px 6px !important;
+  }
+  .qwenpaw-sender textarea::placeholder {
+    color: var(--app-text-secondary) !important;
+    opacity: 1;
+  }
+  .qwenpaw-sender-content-bottom {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 5px !important;
+    align-items: center;
+    padding-top: 6px;
+    margin-top: 0;
+  }
+  .qwenpaw-sender-prefix,
+  .qwenpaw-sender-prefix > div {
+    display: contents !important;
+    overflow: visible !important;
+  }
+  [data-composer-mode] {
+    display: inline-flex;
+    order: 1;
+    min-width: 0;
+  }
+  [data-composer-model] {
+    display: inline-flex;
+    order: 2;
+    min-width: 0;
+    max-width: min(260px, 100%);
+  }
+  [data-composer-model] > * {
+    min-width: 0;
+    max-width: 100%;
+  }
+  [data-composer-voice] {
+    display: contents;
+  }
+  .qwenpaw-sender-prefix > div > button.qwenpaw-sender-actions-btn,
+  [data-composer-voice] > button {
+    order: 4;
+    margin-left: auto;
+  }
+  .qwenpaw-sender-actions-list {
+    order: 5;
+    margin-left: auto;
+    flex: 0 0 auto;
+    overflow: visible;
+  }
+  .qwenpaw-sender-content-bottom:has(
+      .qwenpaw-sender-prefix > div > button.qwenpaw-sender-actions-btn
+    )
+    .qwenpaw-sender-actions-list,
+  .qwenpaw-sender-content-bottom:has([data-composer-voice] > button)
+    .qwenpaw-sender-actions-list {
+    margin-left: 0;
+  }
+  .qwenpaw-sender-content-bottom button:not([data-qwenpaw-composer-submit]) {
+    border-color: transparent !important;
+    box-shadow: none !important;
+    background: transparent;
+    border-radius: 8px;
+    min-height: 32px;
+  }
+  [data-qwenpaw-composer-submit="true"] {
+    border-radius: 9px !important;
+  }
+}
+
+.composerMetadata {
+  position: relative;
+  padding: 6px 12px;
+  border: 1px solid var(--app-border);
+  border-top-color: var(--app-border-subtle);
+  border-radius: 0 0 16px 16px;
+  background: var(--app-composer-bg, var(--app-surface));
+  color: var(--app-text);
+  &:not(:has(button)) {
+    display: none;
+  }
+  .senderContextAffix {
+    display: inline-flex !important;
+  }
+  .senderProjectControl,
+  .senderApprovalControl {
+    min-height: 32px !important;
+    max-width: 240px;
+    padding: 4px 6px;
+    border: 0 !important;
+    border-radius: 7px;
+    background: transparent !important;
+    box-shadow: none !important;
+    font-size: var(--app-font-caption);
+    flex: 0 1 auto !important;
+    &:hover {
+      background: var(--app-fill) !important;
+    }
+  }
+}
+.composerQueueNotice {
+  color: var(--app-text-secondary) !important;
+  background: var(--app-fill-faint) !important;
+  border: 1px solid var(--app-border-subtle) !important;
+  border-radius: 10px;
+  margin-bottom: 8px;
+  padding: 8px 12px;
+  font-size: var(--app-font-caption);
+  :global(.ant-alert-icon),
+  :global(.qwenpaw-alert-icon) {
+    color: var(--app-text-secondary);
+  }
+}
+@media (max-width: 768px) {
+  .chatPageRoot :global {
+    .qwenpaw-sender-input {
+      min-height: 76px !important;
+      font-size: 16px !important;
+    }
+    .qwenpaw-sender-content-bottom {
+      gap: 3px !important;
+    }
+    .qwenpaw-sender-prefix > div > button.qwenpaw-sender-actions-btn {
+      min-width: 44px;
+      min-height: 44px;
+    }
+    [data-composer-model] {
+      max-width: min(210px, 100%);
+    }
+  }
+  .composerMetadata {
+    padding: 5px 9px;
+  }
+}
+@media (max-width: 600px) {
+  .chatPageRoot :global {
+    .qwenpaw-sender-content-bottom {
+      display: grid !important;
+      grid-template-columns: 44px 44px minmax(0, 1fr) auto;
+      row-gap: 4px !important;
+    }
+    .qwenpaw-sender-prefix > div > .qwenpaw-upload-wrapper {
+      grid-row: 1;
+      grid-column: 1;
+    }
+    [data-composer-mode] {
+      grid-row: 1;
+      grid-column: 2;
+    }
+    [data-composer-model] {
+      grid-row: 1;
+      grid-column: 3 / -1;
+      max-width: 100%;
+    }
+    .qwenpaw-sender-prefix > div > button.qwenpaw-sender-actions-btn,
+    [data-composer-voice] > button {
+      grid-row: 2;
+      grid-column: 3;
+      justify-self: end;
+      margin: 0;
+    }
+    .qwenpaw-sender-actions-list {
+      grid-row: 2;
+      grid-column: 4;
+      justify-self: end;
+      margin-left: 0 !important;
+    }
+  }
+}

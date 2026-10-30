@@ -262,7 +262,7 @@ describe.each([
         </antd.App>
       </antd.ConfigProvider>,
     );
-    await userEvent.click(await screen.findByRole("tab", { name: "引擎" }));
+    await userEvent.click(await screen.findByRole("tab", { name: "计算引擎" }));
     await userEvent.click(screen.getByRole("tab", { name: "领域计算" }));
     await screen.findByText("储气库库存评价");
   }
@@ -321,7 +321,7 @@ describe.each([
     expect(
       (await screen.findAllByText("平台内置工具管理")).length,
     ).toBeGreaterThan(0);
-    expect(screen.getByRole("tab", { name: "平台内置" })).toHaveAttribute(
+    expect(screen.getByRole("tab", { name: "平台内置工具" })).toHaveAttribute(
       "aria-selected",
       "true",
     );
@@ -392,7 +392,7 @@ describe.each([
       await userEvent.click(
         within(scienceCard).getByRole("button", { name: /查看.*详情/ }),
       );
-      const detail = await screen.findByRole("dialog", {
+      const detail = await screen.findByRole("region", {
         name: /符号多项式计算/,
       });
       expect(
@@ -527,7 +527,7 @@ describe.each([
       within(card).getByRole("button", { name: "启用工具" }),
     );
     expect(
-      await screen.findByRole("tab", { name: "平台内置", selected: true }),
+      await screen.findByRole("tab", { name: "平台内置工具", selected: true }),
     ).toBeVisible();
     expect(installStarts).toBe(0);
   });

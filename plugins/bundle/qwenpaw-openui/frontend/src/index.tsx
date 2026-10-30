@@ -26,7 +26,11 @@ try {
       ...payload,
       request_context: {
         ...context,
-        ui_capabilities: { ...capabilities, openui: "v1" },
+        ui_capabilities: {
+          ...capabilities,
+          openui: "v1",
+          openui_interactions: "v1",
+        },
       },
     };
   });

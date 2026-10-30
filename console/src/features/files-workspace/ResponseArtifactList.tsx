@@ -4,14 +4,19 @@ import { useTranslation } from "react-i18next";
 import { chatApi } from "../../api/modules/chat";
 import FileGlyph from "./FileGlyph";
 import type { FileTarget } from "./types";
-import { setResponseArtifactGroup } from "./responseArtifactRegistry";
+import {
+  responseArtifactIdentity,
+  setResponseArtifactGroup,
+  type ResponseArtifactScope,
+} from "./responseArtifactRegistry";
 import styles from "./ResponseArtifactList.module.less";
 
 interface ResponseArtifactListProps {
   messages: unknown;
+  scope?: ResponseArtifactScope;
 }
 
-type ArtifactChange = "created" | "modified" | "sent";
+type ArtifactChange = "written" | "modified" | "sent";
 interface ResponseArtifact {
   id: string;
   name: string;
@@ -47,6 +52,7 @@ const FAILED_STATES = new Set([
   "interrupted",
   "rejected",
 ]);
+const COMPLETED_STATES = new Set(["success", "succeeded", "completed", "done"]);
 
 function record(value: unknown): Record<string, unknown> | null {
   return value && typeof value === "object"
@@ -151,12 +157,7 @@ function targetForPath(path: string): FileTarget | null {
   // on `#`, which drops ordinary names such as "Report #3.pdf" and retargets
   // `report#L12` onto a different file. The traversal guard it provided is
   // preserved below.
-  let relative: string;
-  try {
-    relative = decodeURIComponent(normalized).replace(/^(?:\.\/)+/, "");
-  } catch {
-    return null;
-  }
+  const relative = normalized.replace(/^(?:\.\/)+/, "");
   if (
     !relative ||
     /^[a-z]:/i.test(relative) ||
@@ -197,6 +198,27 @@ function hasDeliveredFile(output: unknown): boolean {
   return blocks.some((block) => record(block)?.type === "data");
 }
 
+/** Some historical tool results wrap an Error TextBlock in a success event. */
+function hasErrorOutput(output: unknown): boolean {
+  if (typeof output === "string") {
+    try {
+      return hasErrorOutput(JSON.parse(output));
+    } catch {
+      return /^\s*(?:error|failed|failure)\s*:/i.test(output);
+    }
+  }
+  if (Array.isArray(output)) return output.some(hasErrorOutput);
+  const value = record(output);
+  if (!value) return false;
+  if (value.is_error === true || value.isError === true) return true;
+  if (
+    FAILED_STATES.has(firstString(value, ["state", "status"]).toLowerCase())
+  ) {
+    return true;
+  }
+  return typeof value.text === "string" && hasErrorOutput(value.text);
+}
+
 function extractResponseArtifacts(messages: unknown): ResponseArtifact[] {
   const artifacts = new Map<string, ResponseArtifact>();
   for (const value of mergeArtifactToolMessages(messages)) {
@@ -209,6 +231,7 @@ function extractResponseArtifacts(messages: unknown): ResponseArtifact[] {
     // tool entry. Reusing that shape keeps artifacts in sync with ResponseTool.
     const callData = contentData(item, 0);
     const resultData = contentData(item, 1);
+    if (Object.keys(resultData).length === 0) continue;
     const state = (
       firstString(resultData, ["state", "status"]) ||
       firstString(item, ["state", "status"])
@@ -216,7 +239,9 @@ function extractResponseArtifacts(messages: unknown): ResponseArtifact[] {
     if (
       resultData.is_error === true ||
       item.is_error === true ||
-      FAILED_STATES.has(state)
+      FAILED_STATES.has(firstString(item, ["state", "status"]).toLowerCase()) ||
+      !COMPLETED_STATES.has(state) ||
+      hasErrorOutput(resultData.output)
     ) {
       continue;
     }
@@ -240,7 +265,7 @@ function extractResponseArtifacts(messages: unknown): ResponseArtifact[] {
     const target = targetForPath(path);
     if (!target) continue;
     const name = path.replace(/\\/g, "/").split("/").pop() || "file";
-    const id = `${target.source}:${target.path}`;
+    const id = responseArtifactIdentity(target);
     artifacts.delete(id);
     artifacts.set(id, {
       id,
@@ -254,7 +279,7 @@ function extractResponseArtifacts(messages: unknown): ResponseArtifact[] {
 }
 
 const CHANGE_LABEL_KEY: Record<ArtifactChange, string> = {
-  created: "files.artifactCreated",
+  written: "files.artifactWritten",
   modified: "files.artifactModified",
   sent: "files.artifactSent",
 };
@@ -262,11 +287,13 @@ const CHANGE_LABEL_KEY: Record<ArtifactChange, string> = {
 function artifactChange(toolName?: string): ArtifactChange {
   const normalized = normalizedToolName(toolName ?? "");
   if (normalized === SEND_FILE_TOOL) return "sent";
-  return normalized === "writefile" ? "created" : "modified";
+  // Legacy tool output cannot distinguish creating a file from overwriting it.
+  return normalized === "writefile" ? "written" : "modified";
 }
 
 export default function ResponseArtifactList({
   messages,
+  scope,
 }: ResponseArtifactListProps) {
   const { t } = useTranslation();
   const groupId = useId();
@@ -282,8 +309,9 @@ export default function ResponseArtifactList({
       setResponseArtifactGroup(
         groupId,
         artifacts.map((item) => item.target),
+        scope,
       ),
-    [artifacts, groupId],
+    [artifacts, groupId, scope?.agentId, scope?.sessionId],
   );
   const gridRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
@@ -341,6 +369,11 @@ export default function ResponseArtifactList({
                       detail: {
                         target: artifact.target,
                         trigger: event.currentTarget,
+                        ...(scope && {
+                          agentId: scope.agentId,
+                          sessionId: scope.sessionId,
+                          chatId: scope.chatId,
+                        }),
                       },
                     }),
                   );
@@ -370,7 +403,14 @@ export default function ResponseArtifactList({
                   event.stopPropagation();
                   window.dispatchEvent(
                     new CustomEvent("qwenpaw:reveal-file", {
-                      detail: { target: artifact.target },
+                      detail: {
+                        target: artifact.target,
+                        ...(scope && {
+                          agentId: scope.agentId,
+                          sessionId: scope.sessionId,
+                          chatId: scope.chatId,
+                        }),
+                      },
                     }),
                   );
                 }}

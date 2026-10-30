@@ -123,6 +123,8 @@ export default function GeneralSettings() {
     setThemePreview,
     saveUserTheme,
     resetUserTheme,
+    interfaceStyle = "classic",
+    setInterfaceStyle,
   } = useTheme();
   const { message } = App.useApp();
   const [editorOpen, setEditorOpen] = useState(false);
@@ -173,6 +175,7 @@ export default function GeneralSettings() {
   }, [previewTheme]);
 
   const updateDraftTheme = (patch: Partial<ThemeConfig>) => {
+    if (interfaceStyle !== "classic") setInterfaceStyle("classic");
     const next = { ...draftTheme, ...patch };
     setDraftTheme(next);
     setThemePreview(next);
@@ -184,6 +187,7 @@ export default function GeneralSettings() {
   };
 
   const selectThemePreset = (presetId: string) => {
+    if (interfaceStyle !== "classic") setInterfaceStyle("classic");
     const next = applyThemePreset(draftTheme, presetId);
     setDraftTheme(next);
     setThemePreview(next);

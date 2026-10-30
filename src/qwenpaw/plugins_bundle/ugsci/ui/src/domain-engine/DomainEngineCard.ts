@@ -69,6 +69,7 @@ export function DomainEngineCard({
     Card,
     {
       size: "small",
+      className: "ugsci-capability-card",
       style: { width: "100%", minWidth: 0 },
       styles: {
         body: { minWidth: 0, display: "flex", flexDirection: "column" },
@@ -79,7 +80,7 @@ export function DomainEngineCard({
       {
         style: {
           display: "flex",
-          alignItems: "flex-start",
+          alignItems: "center",
           gap: 10,
           minWidth: 0,
         },
@@ -96,7 +97,7 @@ export function DomainEngineCard({
             height: 36,
             borderRadius: 9,
             fontSize: 20,
-            background: "var(--ant-color-fill-tertiary, rgba(127,127,127,.12))",
+            background: "var(--app-fill-subtle, rgba(127,127,127,.12))",
           },
         },
         DOMAIN_ICONS[def.domain] || "📦",
@@ -141,43 +142,13 @@ export function DomainEngineCard({
         type: "secondary",
         style: {
           display: "block",
-          marginTop: 10,
-          fontSize: 13,
-          lineHeight: "20px",
+          marginTop: 0,
+          fontSize: 12,
+          lineHeight: "18px",
           overflowWrap: "anywhere",
         },
       },
       presentation?.description || def.description || "暂无领域说明",
-    ),
-    React.createElement(
-      "div",
-      {
-        style: {
-          display: "grid",
-          gridTemplateColumns: "minmax(0, 1fr)",
-          gap: 5,
-          marginTop: 10,
-          padding: "8px 10px",
-          borderRadius: 8,
-          background: "var(--ant-color-fill-quaternary, rgba(127,127,127,.07))",
-        },
-      },
-      React.createElement(
-        Text,
-        {
-          type: "secondary",
-          style: { fontSize: 12, lineHeight: "18px", overflowWrap: "anywhere" },
-        },
-        `输入 · ${presentation?.inputs || "输入信息未提供"}`,
-      ),
-      React.createElement(
-        Text,
-        {
-          type: "secondary",
-          style: { fontSize: 12, lineHeight: "18px", overflowWrap: "anywhere" },
-        },
-        `输出 · ${presentation?.outputs || "输出信息未提供"}`,
-      ),
     ),
     installTask && busy
       ? React.createElement(
@@ -200,7 +171,7 @@ export function DomainEngineCard({
           flexWrap: "wrap",
           gap: 8,
           marginTop: "auto",
-          paddingTop: 10,
+          paddingTop: 4,
         },
       },
       React.createElement(

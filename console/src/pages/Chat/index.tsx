@@ -32,13 +32,12 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { Alert, Button, Modal, Result, Tooltip } from "antd";
+import { Alert, Button, Modal, Result } from "antd";
 import { useAppMessage } from "../../hooks/useAppMessage";
 import { useIsMobile } from "../../hooks/useIsMobile";
 import {
   CircleAlert as ExclamationCircleOutlined,
   Copy,
-  Paperclip as SparkAttachmentLine,
   Settings as SettingOutlined,
 } from "lucide-react";
 import { usePlugins } from "../../plugins/PluginContext";
@@ -49,7 +48,7 @@ import { AnimatePresence } from "motion/react";
 import i18n from "../../i18n";
 import { useLocation, useNavigate } from "react-router-dom";
 import sessionApi from "./sessionApi";
-import { revealWorkspacePath } from "../../features/files-workspace/workspaceReveal";
+import { useWorkbenchRequests } from "../../features/files-workspace/useWorkbenchRequests";
 import {
   getDraftStorageKey,
   handoverDraftToSession,
@@ -94,12 +93,12 @@ import { LoopModeSelector } from "../../components/LoopInput";
 import { useChatAnywhereInput } from "@agentscope-ai/chat";
 import { useChatAnywhereI18n } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Context/ChatAnywhereI18nContext";
 import styles from "./index.module.less";
-import { IconButton } from "@agentscope-ai/design";
 import {
   CHAT_WIDE_MODE_CHANGE_EVENT,
   getChatWideModePreference,
 } from "@/utils/chatLayoutPreference";
 import { toChatThemeHex } from "@/utils/chatThemeColor";
+import { getInterfaceTheme } from "@/utils/interfaceStyle";
 import ChatActionGroup from "./components/ChatActionGroup";
 import ContextUsageIndicator from "./components/ContextUsageIndicator";
 import { wrapChatResponseUsageStream } from "./turnUsage";
@@ -133,6 +132,7 @@ import {
 } from "../../plugins/registry/types";
 import { ChatScalar, ChatList } from "../../plugins/registry/slotKeys";
 import { HostResponseCard } from "./HostBubbles";
+import { TurnFilesScopeProvider } from "../../features/files-workspace/TurnFilesScope";
 import { cancelSdkChatRequest } from "./sdkCancellation";
 import {
   awaitInChatScope,
@@ -141,6 +141,11 @@ import {
   waitForChatIdle,
 } from "./chatRunLifecycle";
 import { applyChatPayloadTransforms } from "./chatPayload";
+import ComposerAddMenu from "./components/ComposerAddMenu";
+import {
+  ComposerOptions,
+  ComposerOptionRow,
+} from "./components/ComposerOptions";
 import AgentMentionController from "./components/AgentMentionController";
 import ComposerTokenHighlights from "./components/ComposerTokenHighlights";
 import {
@@ -169,6 +174,10 @@ import {
   stripScrollHeadlineTextBlocks,
 } from "./headlineFilter";
 import FilesDrawer from "../../features/files-workspace/FilesDrawer";
+import {
+  fileRequestMatchesScope,
+  type OpenFilePreviewDetail,
+} from "../../features/files-workspace/openFilePreview";
 import { headerWorkspaceToggleEvent } from "../../features/files-workspace/filesDrawerState";
 import SessionProjectDirectory from "../../features/project-directory/SessionProjectDirectory";
 import TerminalDock from "../../features/terminal/TerminalDock";
@@ -1227,7 +1236,16 @@ export default function ChatPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
   const location = useLocation();
-  const { isDark, previewTheme = {} } = useTheme();
+  const {
+    isDark,
+    previewTheme: customTheme = {},
+    interfaceStyle = "classic",
+    pageStyle = "classic",
+  } = useTheme();
+  const previewTheme = useMemo(
+    () => getInterfaceTheme(customTheme, interfaceStyle),
+    [customTheme, interfaceStyle],
+  );
   const { selectedAgent, agents } = useAgentStore();
   // useLocation().pathname is already basename-relative. React Router
   // strips the basename before exposing it (Desktop `/console/chat/<id>`
@@ -1365,16 +1383,35 @@ export default function ChatPage() {
     },
     [currentSessionFilesScopeKey, dispatchFilesDrawer],
   );
+  useEffect(() => {
+    const toggle = (event: Event) => {
+      if (!isChatActiveRef.current) return;
+      const trigger = (event as CustomEvent<{ trigger?: HTMLElement }>).detail
+        ?.trigger;
+      if (trigger instanceof HTMLElement) toggleFilesWorkspace(trigger);
+    };
+    window.addEventListener("qwenpaw:toggle-files-workspace", toggle);
+    return () =>
+      window.removeEventListener("qwenpaw:toggle-files-workspace", toggle);
+  }, [toggleFilesWorkspace]);
   const loopAvailableModes = useLoopStore((state) => state.availableModes);
   const { message } = useAppMessage();
 
   useEffect(() => {
     const openPreview = (event: Event) => {
       if (!isChatActiveRef.current) return;
-      const customEvent = event as CustomEvent<{
-        target: FileTarget;
-        trigger?: HTMLElement | null;
-      }>;
+      const customEvent = event as CustomEvent<OpenFilePreviewDetail>;
+      if (
+        !customEvent.detail?.target ||
+        !fileRequestMatchesScope(
+          customEvent.detail,
+          sessionScope,
+          sessionApi.getSessionIdentity(
+            sessionScope.chatId || sessionScope.sessionId,
+          ).sessionId,
+        )
+      )
+        return;
       dispatchFilesDrawer({
         type: "OPEN_PREVIEW",
         target: customEvent.detail.target,
@@ -1384,85 +1421,7 @@ export default function ChatPage() {
     window.addEventListener("qwenpaw:open-file-preview", openPreview);
     return () =>
       window.removeEventListener("qwenpaw:open-file-preview", openPreview);
-  }, [dispatchFilesDrawer]);
-
-  useEffect(() => {
-    const revealFile = (event: Event) => {
-      const target = (event as CustomEvent<{ target: FileTarget }>).detail
-        ?.target;
-      if (!target || !["workspace", "attachment"].includes(target.source))
-        return;
-      void revealWorkspacePath({
-        path: target.path,
-        root: target.root ?? "project",
-        chatId: backendChatId,
-        projectDirOverride: backendChatId
-          ? undefined
-          : pendingProjectDir ?? undefined,
-      }).catch(() =>
-        message.error(t("workspace.revealFailed", "无法在文件管理器中打开")),
-      );
-    };
-    window.addEventListener("qwenpaw:reveal-file", revealFile);
-    return () => window.removeEventListener("qwenpaw:reveal-file", revealFile);
-  }, [backendChatId, pendingProjectDir, message, t]);
-
-  useEffect(() => {
-    const openCompute = () => {
-      if (!isChatActiveRef.current) return;
-      dispatchFilesDrawer({
-        type: "OPEN_WORKSPACE",
-        mode: "compute",
-        trigger: null,
-      });
-    };
-    window.addEventListener("qwenpaw:open-compute-workbench", openCompute);
-    return () =>
-      window.removeEventListener("qwenpaw:open-compute-workbench", openCompute);
-  }, [dispatchFilesDrawer]);
-
-  useEffect(() => {
-    const openSimulation = (event: Event) => {
-      if (!isChatActiveRef.current) return;
-      const detail = (
-        event as CustomEvent<{
-          runId?: string;
-          agentId?: string;
-          sessionId?: string;
-        }>
-      ).detail;
-      if (!detail?.runId || !/^[\w:.-]{1,160}$/.test(detail.runId)) return;
-      if (detail.agentId && detail.agentId !== selectedAgent) return;
-      // Plugins use the runtime session identity; the route/queue IDs can be
-      // the persisted Chat UUID. Resolve at dispatch time after hydration.
-      const runtimeSessionId =
-        queueSessionId !== "new"
-          ? sessionApi.getSessionIdentity(queueSessionId).sessionId
-          : undefined;
-      if (
-        detail.sessionId &&
-        ![backendChatId, queueSessionId, runtimeSessionId].includes(
-          detail.sessionId,
-        )
-      )
-        return;
-      dispatchFilesDrawer({
-        type: "OPEN_WORKSPACE",
-        mode: "simulation",
-        simulationRunId: detail.runId,
-        trigger: null,
-      });
-    };
-    window.addEventListener(
-      "qwenpaw:open-simulation-workbench",
-      openSimulation,
-    );
-    return () =>
-      window.removeEventListener(
-        "qwenpaw:open-simulation-workbench",
-        openSimulation,
-      );
-  }, [backendChatId, queueSessionId, selectedAgent, dispatchFilesDrawer]);
+  }, [dispatchFilesDrawer, sessionScope]);
 
   const handleInternalFileLink = useCallback(
     (event: React.MouseEvent<HTMLDivElement>) => {
@@ -2148,6 +2107,19 @@ export default function ChatPage() {
   isChatActiveRef.current = isChatActivePage;
 
   const isChatActive = useCallback(() => isChatActiveRef.current, []);
+  const getWorkbenchRuntimeSessionId = useCallback(
+    () =>
+      queueSessionId !== "new"
+        ? sessionApi.getSessionIdentity(queueSessionId).sessionId
+        : undefined,
+    [queueSessionId],
+  );
+  useWorkbenchRequests({
+    scope: sessionScope,
+    isActive: isChatActive,
+    getRuntimeSessionId: getWorkbenchRuntimeSessionId,
+    dispatch: dispatchFilesDrawer,
+  });
 
   useLayoutEffect(() => {
     sessionApi.invalidateSessionCreation();
@@ -3665,7 +3637,9 @@ export default function ChatPage() {
     [multimodalCaps, t, usesQwenPawBackend],
   );
 
-  const compactSender = filesDrawerState.kind === "workspace";
+  const compactSender =
+    filesDrawerState.kind === "workspace" ||
+    (pageStyle !== "classic" && filesDrawerState.kind === "preview");
   const chatMessagesAreaRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -4126,6 +4100,19 @@ export default function ChatPage() {
       label: renderSuggestionLabel(item.command, item.description),
       value: item.value,
     }));
+    const composerCommands = [
+      ...commandSuggestions,
+      ...loopSuggestions,
+      ...skillSuggestions,
+      ...activePluginSuggestions.map((item) => ({
+        command: `/${item.value}`,
+        value: item.value,
+        description: typeof item.label === "string" ? item.label : "",
+      })),
+    ].filter(
+      (item, index, items) =>
+        items.findIndex((entry) => entry.value === item.value) === index,
+    );
     const userMessageAnchorsConfig = {
       ...defaultConfig.theme.bubbleList.userMessageAnchors,
       ...LONG_CHAT_USER_MESSAGE_ANCHORS,
@@ -4175,6 +4162,10 @@ export default function ChatPage() {
               agentTransition={isSessionTransition}
             />
             <ComposerAccessibilityLabels />
+            <span className={styles.pageHeaderContext}>
+              {selectedAgentDisplayName}
+              <span>/</span>
+            </span>
             <ChatHeaderTitle />
             <span className={styles.headerSpacer} />
             <ChatActionGroup
@@ -4234,6 +4225,7 @@ export default function ChatPage() {
               <>
                 {isQueueOnlyTab && (
                   <Alert
+                    className={styles.composerQueueNotice}
                     type="info"
                     showIcon
                     banner
@@ -4258,96 +4250,102 @@ export default function ChatPage() {
         ),
         prefix: (
           <>
-            {whisperEnabled ? (
-              <WhisperSpeechButton
-                ref={whisperSpeechRef}
-                onTranscription={handleWhisperTranscription}
-              />
-            ) : null}
-            {usesQwenPawBackend && (
-              <LoopModeSelector
-                className={isMobile ? styles.mobileComposerControl : undefined}
-                compact={isMobile}
-                chatId={backendChatId}
-                agentId={selectedAgent}
+            {!supportsAttachments && (
+              <ComposerAddMenu
+                commands={composerCommands}
+                allowAgent={usesQwenPawBackend}
               />
             )}
-            {usesQwenPawBackend && !isSessionTransition ? (
-              advisorConversation ? (
-                <AdvisorModelsPill />
-              ) : (
-                <SessionThinking
-                  agentId={selectedAgent}
-                  sessionId={queueSessionId}
-                  chatId={backendChatId}
-                  onDecisionEnabledChange={handleDecisionEnabledChange}
+            {whisperEnabled ? (
+              <span data-composer-voice>
+                <WhisperSpeechButton
+                  ref={whisperSpeechRef}
+                  onTranscription={handleWhisperTranscription}
                 />
-              )
-            ) : backendCapabilities?.model_selection ? (
-              <HarnessModelSelector providerId={selectedAgentBackend} />
+              </span>
             ) : null}
-            {pluginSenderPrefix}
-          </>
-        ),
-        actionAffix: (
-          <span
-            className={`${styles.senderActionAffix} ${
-              compactSender ? styles.compactSenderAffix : ""
-            }`}
-          >
-            {(usesQwenPawBackend || backendCapabilities?.context_usage) && (
-              <span className={styles.senderContextAffix}>
-                <ContextUsageIndicator
-                  onCompact={handleCompactCommand}
-                  onNew={handleNewCommand}
+            {usesQwenPawBackend && (
+              <span data-composer-mode>
+                <LoopModeSelector
+                  className={
+                    isMobile ? styles.mobileComposerControl : undefined
+                  }
+                  compact={isMobile}
+                  chatId={backendChatId}
+                  agentId={selectedAgent}
                 />
               </span>
             )}
-            {usesQwenPawBackend && !isSessionTransition && (
-              <SessionProjectDirectory
-                scope={sessionScope}
-                compact={isMobile || compactSender}
-                className={[
-                  !isMobile && !compactSender
-                    ? styles.senderProjectControl
-                    : "",
-                  isMobile || compactSender ? styles.mobileComposerControl : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-              />
-            )}
-            {usesQwenPawBackend ? (
-              <ApprovalLevelToggle
-                sessionId={queueKey}
-                runningConfigApprovalLevel={runningConfigApprovalLevel}
-                decisionModelEnabled={decisionModelEnabled}
-                compact={isMobile || compactSender}
-                className={[
-                  !isMobile && !compactSender
-                    ? styles.senderApprovalControl
-                    : "",
-                  isMobile || compactSender ? styles.mobileComposerControl : "",
-                ]
-                  .filter(Boolean)
-                  .join(" ")}
-                onChange={(sessionOverride) => {
-                  sessionApprovalLevelRef.current = sessionOverride;
-                }}
-              />
-            ) : approvalPresets.length > 0 ? (
-              <HarnessApprovalToggle
-                backend={selectedAgentBackend}
-                sessionId={queueKey}
-                presets={approvalPresets}
-                className={isMobile ? styles.mobileComposerControl : undefined}
-                compact={isMobile}
-                onChange={(settings) => {
-                  backendControlsRef.current = settings;
-                }}
-              />
-            ) : null}
-          </span>
+            <span data-composer-model>
+              {usesQwenPawBackend && !isSessionTransition ? (
+                advisorConversation ? (
+                  <AdvisorModelsPill />
+                ) : (
+                  <SessionThinking
+                    agentId={selectedAgent}
+                    sessionId={queueSessionId}
+                    chatId={backendChatId}
+                    onDecisionEnabledChange={handleDecisionEnabledChange}
+                  />
+                )
+              ) : backendCapabilities?.model_selection ? (
+                <HarnessModelSelector providerId={selectedAgentBackend} />
+              ) : null}
+            </span>
+            {pluginSenderPrefix}
+          </>
+        ),
+        afterUI: (
+          <div className={styles.composerMetadata} data-composer-metadata>
+            <ComposerOptions enabled={false} persistent>
+              {usesQwenPawBackend && !isSessionTransition && (
+                <ComposerOptionRow label={t("chat.composer.workspaceLabel")}>
+                  <SessionProjectDirectory
+                    scope={sessionScope}
+                    className={styles.senderProjectControl}
+                  />
+                </ComposerOptionRow>
+              )}
+              {(usesQwenPawBackend || backendCapabilities?.context_usage) && (
+                <ComposerOptionRow
+                  label={t("chat.composer.contextLabel", "Context usage")}
+                >
+                  <span className={styles.senderContextAffix}>
+                    <ContextUsageIndicator
+                      showValue
+                      onCompact={handleCompactCommand}
+                      onNew={handleNewCommand}
+                    />
+                  </span>
+                </ComposerOptionRow>
+              )}
+              {usesQwenPawBackend ? (
+                <ComposerOptionRow>
+                  <ApprovalLevelToggle
+                    sessionId={queueKey}
+                    runningConfigApprovalLevel={runningConfigApprovalLevel}
+                    decisionModelEnabled={decisionModelEnabled}
+                    className={styles.senderApprovalControl}
+                    onChange={(sessionOverride) => {
+                      sessionApprovalLevelRef.current = sessionOverride;
+                    }}
+                  />
+                </ComposerOptionRow>
+              ) : approvalPresets.length > 0 ? (
+                <ComposerOptionRow>
+                  <HarnessApprovalToggle
+                    backend={selectedAgentBackend}
+                    sessionId={queueKey}
+                    presets={approvalPresets}
+                    className={styles.senderApprovalControl}
+                    onChange={(settings) => {
+                      backendControlsRef.current = settings;
+                    }}
+                  />
+                </ComposerOptionRow>
+              ) : null}
+            </ComposerOptions>
+          </div>
         ),
         ...(supportsAttachments
           ? {
@@ -4372,21 +4370,20 @@ export default function ChatPage() {
                         )}`
                       : t(tooltipKey);
                   return (
-                    <Tooltip title={tooltipTitle}>
-                      <IconButton
-                        aria-label={t("chat.composer.attach")}
-                        disabled={props?.disabled}
-                        icon={<SparkAttachmentLine size="1em" />}
-                        bordered={false}
-                      />
-                    </Tooltip>
+                    <ComposerAddMenu
+                      commands={composerCommands}
+                      allowAgent={usesQwenPawBackend}
+                      uploadEnabled
+                      attachmentTooltip={tooltipTitle}
+                      disabled={props?.disabled}
+                    />
                   );
                 },
                 customRequest: handleFileUpload,
               },
             }
           : {}),
-        placeholder: extPlaceholder ?? t("chat.inputPlaceholder"),
+        placeholder: extPlaceholder ?? t("chat.composer.placeholder"),
         ...(extDisclaimer !== undefined ? { disclaimer: extDisclaimer } : {}),
         suggestions: [...baseSuggestions, ...activePluginSuggestions],
       },
@@ -4744,6 +4741,7 @@ export default function ChatPage() {
     compactSender,
     sessionScope,
     filesWorkspaceOpen,
+    pageStyle,
     toggleFilesWorkspace,
     terminalOpen,
     terminalEnabled,
@@ -4782,6 +4780,7 @@ export default function ChatPage() {
         <div className={styles.chatMainArea}>
           <div
             ref={chatMessagesAreaRef}
+            data-chat-wide={isWideMode ? "true" : "false"}
             className={[
               styles.chatMessagesArea,
               isWideMode && styles.wideMode,
@@ -4807,11 +4806,13 @@ export default function ChatPage() {
                   onRetry={retrySession}
                 >
                   {!isAgentTransition && (
-                    <AgentScopeRuntimeWebUI
-                      ref={chatRef}
-                      key={refreshKey}
-                      options={options}
-                    />
+                    <TurnFilesScopeProvider value={sessionScope}>
+                      <AgentScopeRuntimeWebUI
+                        ref={chatRef}
+                        key={refreshKey}
+                        options={options}
+                      />
+                    </TurnFilesScopeProvider>
                   )}
                 </ChatSessionTransition>
                 <AgentMentionController

@@ -1,6 +1,8 @@
-import React from "react";
+import React, { useEffect, useState } from "react";
+import { useOverlayVisibility } from "@/contexts/OverlayVisibilityContext";
 import { Button, Popover, Space } from "antd";
 import { useTranslation } from "react-i18next";
+import { ChartPie } from "lucide-react";
 import { formatCompact } from "../../../../utils/formatNumber";
 import { cacheHitRate, formatPercent } from "../../../../utils/cacheUsage";
 import { useTurnUsageStore } from "../../turnUsageStore";
@@ -163,7 +165,14 @@ function PopoverBody({
   );
   const cacheRate = cacheRateFromUsage(usage);
   return (
-    <div style={{ width: 260, fontSize: 13, lineHeight: 1.5 }}>
+    <div
+      style={{
+        width: "min(260px, calc(100vw - 64px))",
+        fontSize: 13,
+        lineHeight: 1.5,
+        color: "var(--app-text)",
+      }}
+    >
       <MetricRow
         name={t("chat.turnUsagePopover.contextLabel")}
         position={t("chat.turnUsagePopover.outerRing")}
@@ -176,7 +185,7 @@ function PopoverBody({
         style={{
           marginTop: 12,
           paddingTop: 12,
-          borderTop: "1px solid rgba(0,0,0,0.06)",
+          borderTop: "1px solid var(--app-border)",
         }}
       >
         <MetricRow
@@ -202,7 +211,7 @@ function PopoverBody({
         style={{
           marginTop: 12,
           paddingTop: 12,
-          borderTop: "1px solid rgba(0,0,0,0.06)",
+          borderTop: "1px solid var(--app-border)",
         }}
       >
         <div style={{ fontSize: 12, opacity: 0.65, marginBottom: 8 }}>
@@ -224,20 +233,26 @@ function PopoverBody({
 const ContextUsageIndicator: React.FC<{
   onCompact: () => void;
   onNew: () => void;
-}> = ({ onCompact, onNew }) => {
+  showValue?: boolean;
+}> = ({ onCompact, onNew, showValue = false }) => {
   const { t } = useTranslation();
   const snapshot = useTurnUsageStore((state) => state.snapshot);
+  const [open, setOpen] = useState(false);
+  const overlayVisible = useOverlayVisibility();
+  useEffect(() => {
+    if (!overlayVisible) setOpen(false);
+  }, [overlayVisible]);
 
   const activeMax = useTurnUsageStore((state) => state.activeMaxInputLength);
   const maxInputLength = activeMax ?? snapshot?.context_usage?.max_input_length;
-  if (!maxInputLength) return null;
+  if (!maxInputLength && !showValue) return null;
   const estimatedTokens = snapshot?.context_usage?.estimated_tokens ?? 0;
   const context = {
     estimated_tokens: estimatedTokens,
-    max_input_length: maxInputLength,
+    max_input_length: maxInputLength ?? 0,
     context_usage_ratio: Math.min(
       100,
-      (estimatedTokens / maxInputLength) * 100,
+      maxInputLength ? (estimatedTokens / maxInputLength) * 100 : 0,
     ),
   };
 
@@ -249,26 +264,48 @@ const ContextUsageIndicator: React.FC<{
 
   return (
     <Popover
+      open={open}
+      onOpenChange={setOpen}
       trigger={["hover", "click"]}
       mouseEnterDelay={0.15}
       content={
-        <PopoverBody
-          usage={snapshot?.usage ?? null}
-          context={context}
-          onCompact={onCompact}
-          onNew={onNew}
-        />
+        maxInputLength ? (
+          <PopoverBody
+            usage={snapshot?.usage ?? null}
+            context={context}
+            onCompact={onCompact}
+            onNew={onNew}
+          />
+        ) : (
+          <div style={{ color: "var(--app-text)", padding: 8 }}>
+            <p>{t("chat.composer.contextUnavailable")}</p>
+            <Space size={8}>
+              <Button size="small" onClick={onCompact}>
+                {t("chat.turnUsagePopover.compact")}
+              </Button>
+              <Button size="small" onClick={onNew}>
+                {t("chat.turnUsagePopover.new")}
+              </Button>
+            </Space>
+          </div>
+        )
       }
     >
       <button
         type="button"
-        aria-label={t("chat.turnUsagePopover.ariaLabel", {
-          contextRate: formatPercent(contextRate),
-          cacheRate: formatPercent(cacheRate),
-        })}
+        aria-label={
+          !maxInputLength
+            ? t("chat.composer.contextUnavailable")
+            : t("chat.turnUsagePopover.ariaLabel", {
+                contextRate: formatPercent(contextRate),
+                cacheRate: formatPercent(cacheRate),
+              })
+        }
         style={{
-          display: "grid",
-          width: 32,
+          display: showValue ? "inline-flex" : "grid",
+          gap: 6,
+          alignItems: "center",
+          width: showValue ? "auto" : 32,
           height: 32,
           padding: 4,
           placeItems: "center",
@@ -280,7 +317,14 @@ const ContextUsageIndicator: React.FC<{
           borderRadius: 9,
         }}
       >
-        <FusionUsageDial contextRate={contextRate} cacheRate={cacheRate} />
+        {maxInputLength ? (
+          <FusionUsageDial contextRate={contextRate} cacheRate={cacheRate} />
+        ) : (
+          <ChartPie size={16} />
+        )}
+        {showValue && (
+          <span>{maxInputLength ? formatPercent(contextRate) : "—"}</span>
+        )}
       </button>
     </Popover>
   );

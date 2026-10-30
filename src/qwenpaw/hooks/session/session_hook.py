@@ -114,7 +114,15 @@ class SessionSaveHook(LifecycleHook):
             restore_cron_context(ctx)
             proxy = StateProxy()
             proxy.data = ctx.agent.state_dict()
-            stamp_console_turn(proxy.data, request, "completed")
+            envelope = getattr(ctx, "_envelope", None)
+            stamp_console_turn(
+                proxy.data,
+                request,
+                "completed",
+                response_id=(
+                    envelope.response.id if envelope is not None else None
+                ),
+            )
             proxy.data["mode_state"] = ctx.mode_state
             await session.save_session_state(
                 session_id=ctx.session_id,

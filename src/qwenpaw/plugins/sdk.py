@@ -652,12 +652,16 @@ class PluginContext:  # pylint: disable=protected-access
                         state=state,
                         is_last=event.kind == "end",
                         metadata=_tool_metadata(
-                            author_metadata
-                            if event.kind == "end"
-                            else result.metadata,
-                            accumulated.content
-                            if event.kind == "end"
-                            else blocks,
+                            (
+                                author_metadata
+                                if event.kind == "end"
+                                else result.metadata
+                            ),
+                            (
+                                accumulated.content
+                                if event.kind == "end"
+                                else blocks
+                            ),
                             event.kind,
                             failed,
                             (
@@ -948,7 +952,7 @@ class PluginContext:  # pylint: disable=protected-access
                         )
                     result = task.result()
                 finally:
-                    if not task.done():
+                    if not task.done() and not task.cancelling():
                         task.cancel()
                 context._guard()
                 if not isinstance(result, HookResult):

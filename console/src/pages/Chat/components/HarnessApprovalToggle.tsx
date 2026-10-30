@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Dropdown, Tooltip } from "antd";
+import { useOverlayVisibility } from "@/contexts/OverlayVisibilityContext";
 import type { MenuProps } from "antd";
 import { Check, ChevronDown, ShieldCheck, X } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -36,6 +37,10 @@ export default function HarnessApprovalToggle({
   const defaultPreset = presets[0];
   const [selectedId, setSelectedId] = useState(defaultPreset?.id ?? "");
   const [open, setOpen] = useState(false);
+  const overlayVisible = useOverlayVisibility();
+  useEffect(() => {
+    if (!overlayVisible) setOpen(false);
+  }, [overlayVisible]);
   const onChangeRef = useRef(onChange);
   onChangeRef.current = onChange;
 

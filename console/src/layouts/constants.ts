@@ -88,7 +88,7 @@ export const compareVersions = (a: string, b: string): number => {
 export const UPDATE_MD: Record<string, string> = {
   zh: `### UGSci 桌面端更新
 
-1. 打开 UGSci 桌面应用，点击版本号旁的更新按钮。
+1. 打开 UGSci 桌面应用，点击左上角的版本号。
 2. 如有可用更新，查看目标版本和更新内容，点击“现在更新”。
 3. 按提示完成下载、安装与重启。重启后如有组件更新，请继续按提示完成。
 
@@ -96,7 +96,7 @@ export const UPDATE_MD: Record<string, string> = {
 
   ru: `### Обновление UGSci для компьютера
 
-1. Откройте настольное приложение UGSci и нажмите кнопку обновления рядом с номером версии.
+1. Откройте настольное приложение UGSci и нажмите номер версии в левом верхнем углу.
 2. Если доступно обновление, проверьте новую версию и список изменений, затем нажмите «Обновить сейчас».
 3. Следуйте подсказкам для загрузки, установки и перезапуска. Если после перезапуска доступны обновления компонентов, следуйте дальнейшим подсказкам.
 
@@ -104,7 +104,7 @@ export const UPDATE_MD: Record<string, string> = {
 
   en: `### Updating UGSci Desktop
 
-1. Open the UGSci desktop app and click the update button next to the version number.
+1. Open the UGSci desktop app and click the version number in the upper-left corner.
 2. If an update is available, review the target version and release notes, then click “Update now”.
 3. Follow the prompts to download, install, and restart. If component updates are available after restarting, follow the remaining prompts.
 

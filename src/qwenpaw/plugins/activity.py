@@ -38,6 +38,7 @@ class PluginActivity:
         self.protected_cleanup_tasks = set()
         self.cleanup_retries = {}
         self._cleanup_changed = asyncio.Event()
+        self._interrupted_tasks = set()
 
     @contextmanager
     def invocation(self, *, cleanup=False):
@@ -102,7 +103,7 @@ class PluginActivity:
             if not task.done()
         }
 
-    def _interrupt_pending(self, pending, retried):
+    def _interrupt_pending(self, pending, retried, interrupt_tasks):
         for task in pending:
             retry = self.cleanup_retries.get(task)
             if retry is not None:
@@ -110,10 +111,14 @@ class PluginActivity:
                     retry.set()
                     retried.add(task)
             elif (
-                task not in self.cleanup_tasks
+                interrupt_tasks
+                and task not in self._interrupted_tasks
+                and task not in self.cleanup_tasks
                 and task not in self.protected_cleanup_tasks
                 and not task.cancelling()
             ):
+                self._interrupted_tasks.add(task)
+                task.add_done_callback(self._interrupted_tasks.discard)
                 task.cancel()
 
     async def _wait_pending(self, pending, deadline):
@@ -148,10 +153,12 @@ class PluginActivity:
                 len(pending),
                 can_interrupt=False,
             )
-        cleanup_only = pending <= (
-            self.cleanup_retries.keys() | self.cleanup_tasks
+        drainable = pending <= (
+            self.cleanup_retries.keys()
+            | self.cleanup_tasks
+            | self._interrupted_tasks
         )
-        if pending and not interrupt_tasks and not cleanup_only:
+        if pending and not interrupt_tasks and not drainable:
             raise PluginBusyError(
                 self.plugin_id,
                 len(pending),
@@ -170,7 +177,7 @@ class PluginActivity:
                 # draining. Keep the gate closed until those new owners finish.
                 while pending:
                     self._cleanup_changed.clear()
-                    self._interrupt_pending(pending, retried)
+                    self._interrupt_pending(pending, retried, interrupt_tasks)
                     pending = await self._wait_pending(pending, deadline)
                     if (
                         pending

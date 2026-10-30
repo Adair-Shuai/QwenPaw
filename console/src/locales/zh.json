@@ -1,4 +1,40 @@
 {
+  "turnFiles": {
+    "capturing": "正在整理本轮文件归档…",
+    "captureFailed": "本轮文件记录暂不可用，请重试。",
+    "title": "本轮文件",
+    "lineChanges": "已统计文本行增删",
+    "deliveredCount": "{{count}} 个交付成果",
+    "downloadTurn": "下载本轮归档",
+    "archiveHint": "文件名打开本轮归档；文件夹按钮打开工作区当前版本。",
+    "interrupted": "本轮未正常完成，下方保留结束前已捕获的文件。",
+    "overlap": "本轮与其他任务同时操作目录，变更可能包含其他任务的写入。",
+    "incomplete": "部分文件未能完整捕获；请查看记录详情。",
+    "captureDetails": "捕获记录详情",
+    "status": {
+      "created": "新增",
+      "modified": "修改",
+      "deleted": "删除",
+      "delivered": "交付"
+    },
+    "delivery": "交付成果",
+    "binary": "二进制",
+    "diff": "查看差异",
+    "openCurrent": "打开当前文件",
+    "openArchive": "打开本轮归档",
+    "downloadBefore": "下载删除前版本",
+    "download": "下载本轮版本",
+    "unavailable": "该版本未归档，无法预览或下载。",
+    "beforeVersion": "显示删除前的归档版本",
+    "diffHint": "只读比较：本轮开始前 → 本轮结束时",
+    "diffFailed": "差异加载失败。",
+    "retry": "重试",
+    "loadingDiff": "正在加载差异…",
+    "diffTruncated": "此处仅显示部分内容；下载归档可查看完整文件。",
+    "collapse": "收起文件列表",
+    "showAll": "展开全部 {{count}} 个文件",
+    "downloadFailed": "下载失败，请重试。"
+  },
   "accessibility": {
     "skipToContent": "跳到主要内容"
   },
@@ -61,6 +97,7 @@
     "no": "否",
     "advancedSettings": "高级",
     "done": "完成",
+    "configAutoSaveHint": "修改会自动保存",
     "autoSaveFailed": "未能保存改动",
     "discardChangesTitle": "放弃未保存的改动？",
     "discardChangesContent": "部分改动尚未保存。你可以继续编辑，或放弃未保存的改动并关闭。",
@@ -372,6 +409,11 @@
     "windows": "个窗口"
   },
   "sidebar": {
+    "moreGroups": {
+      "work": "工作与通知",
+      "configuration": "配置与模型",
+      "extensions": "扩展工具"
+    },
     "avatarLoadFailed": "头像加载失败，请重试",
     "toolsCompact": "展开精简菜单栏",
     "toolsDetailed": "展开详细菜单栏",
@@ -444,7 +486,27 @@
     "settings": {
       "language": "语言",
       "theme": "主题",
+      "pageStyle": "页面风格",
+      "colorTheme": "配色主题",
+      "colorMode": "明暗模式",
+      "interfaceStyle": "界面风格",
       "desktopMode": "桌面模式"
+    },
+    "pageStyles": {
+      "classic": "原有布局",
+      "deepseek": "deepseek风格",
+      "openai": "openai风格"
+    },
+    "pageNavigation": "主导航",
+    "searchConversations": "搜索对话",
+    "automation": "自动化",
+    "pageWorkspace": "工作区",
+    "moreFeatures": "更多",
+    "interfaceStyles": {
+      "classic": "原有风格",
+      "warm-minimal": "暖白极简",
+      "cool-workspace": "冷白工作台",
+      "soft-focus": "柔灰专注"
     },
     "quickMenu": {
       "settings": "设置",
@@ -453,6 +515,8 @@
       "about": "关于我们"
     },
     "collapse": "收起侧边栏",
+    "resize": "调整侧边栏宽度",
+    "resizeHint": "拖动调整宽度，继续向左拖可收起；双击恢复默认，也可使用左右方向键",
     "expand": "展开侧边栏",
     "more": "更多",
     "toggleAgentNavigation": "展开或收起智能体导航",
@@ -607,6 +671,8 @@
     "skillBuiltinSyncFailed": "“{{skill}}”未能同步至：{{agents}}",
     "requestedBy": "请求方",
     "markRead": "标记已读",
+    "unreadOnly": "仅看未读",
+    "emptyUnread": "当前筛选条件下没有未读消息",
     "markAllRead": "全部标记已读",
     "markAllReadNoUnread": "当前没有未读消息",
     "markAllReadSuccess": "已将 {{count}} 条消息标记为已读",
@@ -1090,6 +1156,7 @@
     "mailPushWakeOptionSummary": "总结邮件要点存入收件箱"
   },
   "acp": {
+    "description": "接入外部智能体和编程助手，配置启动方式与运行权限。",
     "title": "ACP 协议接入",
     "loading": "加载 ACP 配置中...",
     "loadError": "ACP 配置加载失败。",
@@ -1851,6 +1918,10 @@
     "selectAtLeastOneDay": "请选择至少一天。"
   },
   "channels": {
+    "runtime": {
+      "missing_code": "插件未安装"
+    },
+    "qrcodeInstallRequired": "安装插件后可扫码",
     "manualCredentials": "手动填写凭据",
     "deliverySettings": "发送方式",
     "presentationSettings": "消息呈现",
@@ -2957,6 +3028,18 @@
     }
   },
   "files": {
+    "loadingMoreDeliverables": "正在加载历史成果…",
+    "deliverablesMoreFailed": "历史成果加载失败，请重试。",
+    "retryMoreDeliverables": "重试加载历史成果",
+    "loadMoreDeliverables": "加载更多历史成果",
+    "artifactWritten": "已写入",
+    "deliverables": "交付成果",
+    "deliverablesCount": "{{count}} 个成果",
+    "refreshDeliverables": "刷新交付成果",
+    "deliverablesEmpty": "本会话尚无交付成果",
+    "deliverablesLoading": "正在加载交付成果…",
+    "deliverablePreview": "预览交付成果",
+    "deliverablesLoadFailed": "成果列表加载失败，请刷新重试。",
     "title": "文件",
     "navigator": "文件导航器",
     "source": "来源",
@@ -2966,6 +3049,20 @@
     "memory": "长期记忆",
     "daily": "日记",
     "digest": "知识库",
+    "memoryTags": "记忆标签",
+    "memoryTagsLabel": "标签",
+    "memoryTagBrowse": "搜索带有“{{tag}}”标签的已索引记忆",
+    "memoryTagsAll": "全部标签",
+    "memoryTagsScope": "仅搜索已索引的记忆，当前文件可能尚未被索引。",
+    "memoryTagsRefresh": "刷新记忆标签",
+    "memoryTagsCount": "{{count}} 个标签",
+    "memoryTagFilesCount": "{{count}} 篇记忆",
+    "memoryTagsLoadFailed": "记忆标签暂不可用，请重试。",
+    "memoryTagsEmpty": "还没有记忆标签。",
+    "memoryTagFilesEmpty": "没有带此标签的已索引记忆。",
+    "memoryTagsPrevious": "上一页",
+    "memoryTagsNext": "下一页",
+    "memoryTagsPage": "{{page}} / {{total}} 页",
     "memoryGraph": "记忆图谱",
     "memoryGraphShort": "Graph",
     "memoryGraphLoading": "正在加载记忆图谱…",
@@ -4056,6 +4153,7 @@
     "system": "跟随系统"
   },
   "chat": {
+    "assignAgent": "选择指派智能体",
     "sessionSettings": {
       "advanced": "高级选项",
       "decisionEnabled": "使用决策模型"
@@ -4094,6 +4192,27 @@
     "prompt2": "能告诉我你有哪些技能吗？",
     "inputPlaceholder": "\"↑↓\" 浏览消息 · \"/\" 快捷指令 · \"@\" 指派 Agent",
     "composer": {
+      "placeholder": "发送消息 · \"/\" 快捷指令 · \"@\" 指派 Agent · ↑↓ 浏览记录",
+      "addContent": "添加内容",
+      "addFile": "添加文件",
+      "fileHint": "文档、图片等",
+      "agent": "@ 专家",
+      "agentHint": "指派 / 协作",
+      "commonCommands": "常用指令",
+      "allCommands": "全部指令",
+      "allCommandsHint": "查看全部 / 指令",
+      "workspaceLabel": "工作区",
+      "contextUnavailable": "选择模型后查看上下文用量",
+      "commandHints": {
+        "new": "新建对话",
+        "compact": "压缩上下文",
+        "skills": "查看可用技能",
+        "goal": "持续推进目标"
+      },
+      "options": "聊天选项",
+      "contextLabel": "上下文用量",
+      "projectLabel": "项目目录",
+      "approvalLabel": "工具审批",
       "attach": "添加附件",
       "send": "发送消息",
       "stop": "停止生成"
@@ -4201,6 +4320,10 @@
       "staleConversation": "请回到原来的对话后再提交。",
       "notReady": "对话尚未就绪，请打开原来的对话后重试。"
     },
+    "taskPanel": {
+      "expand": "展开任务面板",
+      "collapse": "收起任务面板"
+    },
     "queue": {
       "title": "消息队列",
       "paused": "已暂停",
@@ -4253,6 +4376,7 @@
       "deleteHint": "组内会话将返回各自的系统分组。"
     },
     "sessionPanel": {
+      "closeSearch": "关闭搜索",
       "searchConversations": "搜索对话…",
       "noConversations": "暂无对话",
       "noMatchingConversations": "无匹配对话",
@@ -5410,17 +5534,28 @@
     "details": "详细信息"
   },
   "pluginManager": {
-    "busyTitle": "插件正在执行任务",
-    "busy": {
-      "update": {
-        "warning": "强制更新将中断当前任务，未完成的任务可能失败。",
-        "confirm": "强制更新",
-        "cancel": "暂不更新"
-      },
-      "uninstall": {
-        "warning": "强制卸载将中断当前任务，未完成的任务可能失败。",
-        "confirm": "强制卸载",
-        "cancel": "暂不卸载"
+    "dependencyUpgrade": {
+      "title": "确认升级共享依赖",
+      "confirm": "升级并安装",
+      "progress": "正在升级共享依赖",
+      "changes": "共享依赖版本变更",
+      "affected": "受影响的插件实例",
+      "noInstances": "没有受影响的插件实例。",
+      "restart": "此次升级需要重启后端，重新连接后将继续安装插件。",
+      "background": "在后台跟踪",
+      "resume": "进度跟踪已中断。后端重新连接后，请重新打开插件管理查看安装结果。",
+      "invalid": "依赖升级响应与当前安装不匹配，请重新打开插件管理查看状态。",
+      "notStarted": "依赖升级尚未开始，请重新打开插件管理，查看计划并再次确认。",
+      "cancelFailed": "未能取消依赖升级，请重新打开插件管理查看状态。",
+      "failed": "共享依赖升级失败。",
+      "status": {
+        "needs_confirmation": "等待确认",
+        "preparing": "正在准备升级",
+        "applying": "正在应用升级",
+        "waiting_restart": "等待后端重启",
+        "succeeded": "插件安装完成",
+        "failed": "升级失败",
+        "cancelled": "已取消升级"
       }
     },
     "title": "插件管理",
@@ -5501,7 +5636,20 @@
     "marketSortFavorites": "收藏量最多",
     "compatWarningTitle": "兼容性警告",
     "compatWarningContent": "该插件标注适配 QwenPaw {{labels}}，而您当前的 QwenPaw 版本为 {{version}}。安装后可能出现错误，是否确认继续？",
-    "compatWarningConfirm": "仍然安装"
+    "compatWarningConfirm": "仍然安装",
+    "busyTitle": "插件正在执行任务",
+    "busy": {
+      "update": {
+        "warning": "强制更新将中断当前任务，未完成的任务可能失败。",
+        "confirm": "强制更新",
+        "cancel": "暂不更新"
+      },
+      "uninstall": {
+        "warning": "强制卸载将中断当前任务，未完成的任务可能失败。",
+        "confirm": "强制卸载",
+        "cancel": "暂不卸载"
+      }
+    }
   },
   "codingMode": {
     "toolPresentationHelp": "开启后，智能体只使用一个代码工具。搜索、文件处理等操作，统一通过编写并执行 Python 代码完成。",

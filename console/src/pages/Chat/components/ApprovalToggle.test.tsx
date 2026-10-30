@@ -1,4 +1,6 @@
-import { screen } from "@testing-library/react";
+import { fireEvent, screen, waitFor } from "@testing-library/react";
+import { ConfigProvider } from "antd";
+import { ComposerOptions } from "./ComposerOptions";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -63,6 +65,75 @@ describe("compact approval controls", () => {
     migrateChatSessionPreferences("draft:a", "created-chat", "codex");
     expect(localStorage.getItem("approval_level-created-chat")).toBe("SMART");
   });
+
+  it.each(["qwenpaw", "codex"])(
+    "dismisses a nested %s approval picker without changing the saved policy",
+    async (backend) => {
+      const user = userEvent.setup();
+      renderWithProviders(
+        <ConfigProvider theme={{ token: { motion: false } }}>
+          <ComposerOptions enabled>
+            {backend === "qwenpaw" ? (
+              <ApprovalLevelToggle
+                onChange={vi.fn()}
+                runningConfigApprovalLevel="AUTO"
+                sessionId="nested-test"
+              />
+            ) : (
+              <HarnessApprovalToggle
+                backend="codex"
+                sessionId="nested-test"
+                onChange={vi.fn()}
+                presets={[
+                  {
+                    id: "auto",
+                    name: "Automatic",
+                    description: "Automatic approval",
+                    settings: {},
+                  },
+                ]}
+              />
+            )}
+          </ComposerOptions>
+        </ConfigProvider>,
+      );
+      await user.click(
+        screen.getByRole("button", {
+          name: /Chat options|chat.composer.options/,
+        }),
+      );
+      const trigger = screen.getByRole("button", {
+        name:
+          backend === "qwenpaw"
+            ? "agentConfig.toolExecutionLevelTitle"
+            : "agent.backend.approvalMode",
+      });
+      await user.click(trigger);
+      expect(trigger).toHaveAttribute("aria-expanded", "true");
+      fireEvent.keyDown(screen.getByRole("dialog", { name: "Chat options" }), {
+        key: "Escape",
+      });
+      await waitFor(() =>
+        expect(trigger).toHaveAttribute("aria-expanded", "false"),
+      );
+      await waitFor(() =>
+        expect(screen.getByRole("menu", { hidden: true })).not.toBeVisible(),
+      );
+      await user.click(
+        screen.getByRole("button", {
+          name: /Chat options|chat.composer.options/,
+        }),
+      );
+      expect(trigger).toHaveAttribute("aria-expanded", "false");
+      expect(
+        localStorage.getItem(
+          backend === "qwenpaw"
+            ? "approval_level-nested-test"
+            : "harness-approval-codex-nested-test",
+        ),
+      ).toBeNull();
+    },
+  );
 
   it("renders only the QwenPaw approval icon", () => {
     const { container } = renderWithProviders(

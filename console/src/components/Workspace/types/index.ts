@@ -120,6 +120,8 @@ export interface RendererContext {
   workspace: WorkspaceApi;
   /** Host owns the shared file toolbar; renderer should omit duplicate chrome. */
   hostControls?: boolean;
+  /** Browse an indexed memory tag through the owning files workspace. */
+  onMemoryTagClick?: (tag: string) => void;
 }
 
 /**

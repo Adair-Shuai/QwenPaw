@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Disposable dependency installers with explicit pip/uv selection."""
+"""Disposable pip environments with verified installer integrity."""
 
 import ensurepip
 import os
@@ -32,7 +32,7 @@ def expose(source, destination):
 
 
 def dependency_python(root, *, installer="pip"):
-    """Reuse host dependencies, exposing exactly one pip or none for uv."""
+    """Reuse host dependencies, exposing exactly one pip installation."""
     venv.EnvBuilder(with_pip=False, symlinks=os.name != "nt").create(root)
     python = root / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     library = Path(
@@ -63,7 +63,11 @@ def dependency_python(root, *, installer="pip"):
                 continue
             destination = library / entry.name
             if not destination.exists():
-                expose(entry, destination)
+                # Audits resolve metadata origins within the observed site.
+                if entry.suffix == ".dist-info" and entry.is_dir():
+                    shutil.copytree(entry, destination)
+                else:
+                    expose(entry, destination)
     source = library / "qwenpaw"
     if not source.exists():
         expose(Path(qwenpaw.__file__).resolve().parent, source)

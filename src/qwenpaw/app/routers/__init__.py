@@ -38,6 +38,7 @@ from .provider_oauth import router as provider_oauth_router
 from .pawapps import router as pawapps_router
 from .harnesses import router as harnesses_router
 from .checkpoints import router as checkpoints_router
+from .turn_files import router as turn_files_router
 from .components import router as components_router
 from .publisher import router as publisher_router
 from .terminal import router as terminal_router
@@ -79,6 +80,7 @@ router.include_router(provider_oauth_router)
 router.include_router(pawapps_router)
 router.include_router(harnesses_router)
 router.include_router(checkpoints_router)
+router.include_router(turn_files_router)
 router.include_router(components_router)
 router.include_router(publisher_router)
 router.include_router(terminal_router)

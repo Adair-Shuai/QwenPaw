@@ -1,11 +1,7 @@
-import { Badge, message, Popover, Spin, Tooltip } from "antd";
+import { Badge, message, Spin, Tooltip } from "antd";
 import {
-  CircleCheck as CheckCircleOutlined,
   Check as CheckOutlined,
-  CloudDownload as CloudDownloadOutlined,
   Copy as CopyOutlined,
-  CircleAlert as ExclamationCircleOutlined,
-  RefreshCw as SyncOutlined,
   Tag as TagOutlined,
 } from "lucide-react";
 import { Button, Modal } from "@agentscope-ai/design";
@@ -245,6 +241,23 @@ export default function AppBrand({
 
   const handleCheckUpdates = async () => {
     if (unifiedUpdateBusyRef.current || installActionRef.current) return;
+    if (isBackgroundFailed) {
+      unifiedUpdateBusyRef.current = true;
+      setUnifiedUpdateBusy(true);
+      try {
+        await desktop.startBackgroundDownload();
+      } catch (error) {
+        message.error(
+          `${t("sidebar.updateModal.failedTitle")}: ${
+            error instanceof Error ? error.message : String(error)
+          }`,
+        );
+      } finally {
+        unifiedUpdateBusyRef.current = false;
+        setUnifiedUpdateBusy(false);
+      }
+      return;
+    }
     if (!onDesktop) {
       handleOpenUpdateModal();
       return;
@@ -291,94 +304,28 @@ export default function AppBrand({
 
   const versionContent = (
     <span className={styles.appBrandVersionArea}>
-      {version && (
-        <Badge
-          dot={hasUpdate && !isReady && !isBackgroundActive}
-          color="rgba(255, 157, 77, 1)"
-          offset={[3, 1]}
-        >
-          <span
-            className={`${styles.versionBadge} ${
-              hasUpdate && !isReady ? styles.versionBadgeClickable : ""
-            }`}
-            onClick={
-              hasUpdate && !isReady
-                ? () => void handleCheckUpdates()
-                : undefined
-            }
-          >
-            v{version}
-          </span>
-        </Badge>
-      )}
-      {isBackgroundActive && (
-        <Tooltip title={backgroundDownloadTitle}>
-          <SyncOutlined
-            size="1em"
-            data-spinning={true}
-            className={styles.appBrandUpdateIcon}
-          />
-        </Tooltip>
-      )}
-      {isReady && (
-        <Popover
-          content={
-            <div style={{ textAlign: "center" }}>
-              <p style={{ marginBottom: 12 }}>
-                {t("sidebar.updateModal.readyToInstallHint", {
-                  version: desktop.version,
-                })}
-              </p>
-              <Button
-                type="primary"
-                size="small"
-                onClick={() => void desktop.installDownloaded()}
-                loading={isApplyingDownloadedUpdate}
-              >
-                {t("sidebar.updateModal.restartNow")}
-              </Button>
-            </div>
-          }
-          title={t("sidebar.updateModal.readyToInstall")}
-          trigger="click"
-        >
-          <Tooltip title={t("sidebar.updateModal.readyToInstall")}>
-            <CheckCircleOutlined
-              size="1em"
-              className={styles.appBrandReadyIcon}
-            />
-          </Tooltip>
-        </Popover>
-      )}
-      {isBackgroundFailed && (
-        <Tooltip title={backgroundFailureTitle}>
-          <ExclamationCircleOutlined
-            size="1em"
-            className={styles.appBrandFailedIcon}
-            onClick={() => void desktop.startBackgroundDownload()}
-          />
-        </Tooltip>
-      )}
       <Badge
-        dot={hasUpdate && !isReady && !isBackgroundActive}
-        color="rgba(37, 99, 235, 1)"
-        offset={[-1, 3]}
+        dot={
+          !isBackgroundActive && (hasUpdate || isReady || isBackgroundFailed)
+        }
+        color={isBackgroundFailed ? "#ff4d4f" : "rgba(255, 157, 77, 1)"}
+        offset={[3, 1]}
       >
         <Tooltip title={unifiedUpdateTitle}>
-          <Button
-            type="text"
-            size="small"
-            className={styles.appBrandUpdateButton}
-            // The design Button forwards its size to icons; Lucide needs a length.
-            iconSize={18}
+          <button
+            type="button"
+            className={`${styles.versionBadge} ${styles.versionBadgeClickable}`}
+            data-update-state={
+              isBackgroundFailed
+                ? "failed"
+                : isReady
+                ? "ready"
+                : hasUpdate
+                ? "available"
+                : undefined
+            }
             aria-label={unifiedUpdateTitle}
             aria-busy={
-              unifiedUpdateBusy ||
-              isBackgroundActive ||
-              isApplyingDownloadedUpdate
-            }
-            icon={<CloudDownloadOutlined />}
-            loading={
               unifiedUpdateBusy ||
               isBackgroundActive ||
               isApplyingDownloadedUpdate
@@ -387,7 +334,11 @@ export default function AppBrand({
               event.stopPropagation();
               void handleCheckUpdates();
             }}
-          />
+          >
+            v{version || "…"}
+            {backgroundDownloadPercent !== undefined &&
+              ` · ${backgroundDownloadPercent}%`}
+          </button>
         </Tooltip>
       </Badge>
     </span>

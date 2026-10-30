@@ -5,14 +5,24 @@
  * Strategy: render ChatPage with comprehensive mocks, exercise callbacks.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
-import { forwardRef, useImperativeHandle, useEffect } from "react";
+import {
+  createElement,
+  forwardRef,
+  useImperativeHandle,
+  useEffect,
+} from "react";
+import { Upload } from "antd";
 import { screen, waitFor, act, fireEvent } from "@testing-library/react";
 import { useNavigate } from "react-router-dom";
 import { renderWithProviders } from "@/test/common_setup";
 import { useMessageQueueStore } from "@/stores/messageQueueStore";
+import { useBackgroundTasksStore } from "@/stores/backgroundTasksStore";
 import ChatPage from "./index";
 import i18n, { i18nReady } from "../../i18n";
 import { LongTextPasteInput } from "./LongTextPaste";
+import { ThemeProvider, useTheme } from "@/contexts/ThemeContext";
+import { PAGE_STYLES } from "@/utils/pageStyle";
+import { INTERFACE_STYLES } from "@/utils/interfaceStyle";
 import { ChatRunLifecycle } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Execution/runLifecycle";
 import sessionApi from "./sessionApi";
 import { stopBackgroundQueue } from "./backgroundQueueRegistry";
@@ -49,6 +59,7 @@ const {
   mockApprovalLevelToggle,
   mockHydrateBackgroundTasksForSession,
   mockRenderSender,
+  mockUseActualTheme,
   mockAgentList,
 } = vi.hoisted(() => ({
   mockListProviders: vi.fn(),
@@ -72,6 +83,7 @@ const {
   mockApprovalLevelToggle: vi.fn(),
   mockHydrateBackgroundTasksForSession: vi.fn(() => Promise.resolve()),
   mockRenderSender: vi.fn(() => false),
+  mockUseActualTheme: vi.fn(() => false),
   mockAgentList: vi.fn(),
 }));
 
@@ -133,8 +145,19 @@ vi.mock("@agentscope-ai/chat", () => ({
     return (
       <div data-testid="chat-ui">
         {mockRenderSender() && (
-          <div className="test-sender">
+          <div className="test-sender qwenpaw-sender">
             {props.options?.sender?.beforeUI}
+            {props.options?.sender?.attachments?.trigger && (
+              <Upload
+                {...props.options.sender.attachments}
+                showUploadList={false}
+              >
+                {createElement(props.options.sender.attachments.trigger, {
+                  disabled: false,
+                })}
+              </Upload>
+            )}
+            {props.options?.sender?.prefix}
             <LongTextPasteInput
               data-testid="mention-sender"
               placeholder={props.options?.sender?.placeholder}
@@ -142,8 +165,9 @@ vi.mock("@agentscope-ai/chat", () => ({
           </div>
         )}
         {props.options?.theme?.rightHeader}
-        {props.options?.sender?.prefix}
+        {!mockRenderSender() && props.options?.sender?.prefix}
         {props.options?.sender?.actionAffix}
+        {props.options?.sender?.afterUI}
       </div>
     );
   }),
@@ -234,12 +258,19 @@ vi.mock("@/stores/agentStore", () => {
   return { useAgentStore: store };
 });
 
-vi.mock("@/contexts/ThemeContext", () => ({
-  useTheme: vi.fn(() => ({
-    isDark: false,
-    previewTheme: { accent: "#0b57d0" },
-  })),
-}));
+vi.mock("@/contexts/ThemeContext", async (importOriginal) => {
+  const actual = await importOriginal<
+    typeof import("@/contexts/ThemeContext")
+  >();
+  return {
+    ...actual,
+    useTheme: vi.fn(() =>
+      mockUseActualTheme()
+        ? actual.useTheme()
+        : { isDark: false, previewTheme: { accent: "#0b57d0" } },
+    ),
+  };
+});
 
 vi.mock("./sessionApi", () => ({
   default: {
@@ -375,16 +406,6 @@ vi.mock("@/stores/uploadLimitStore", () => ({
   ),
 }));
 
-vi.mock("@/stores/backgroundTasksStore", () => ({
-  useBackgroundTasksStore: Object.assign(
-    vi.fn(() => ({ tasks: [] })),
-    {
-      getState: vi.fn(() => ({ tasks: [] })),
-    },
-  ),
-  selectTasksForSession: vi.fn(() => []),
-}));
-
 vi.mock("@/hooks/useBackgroundTaskWatcher", () => ({
   hydrateBackgroundTasksForSession: mockHydrateBackgroundTasksForSession,
   stopBackgroundWatchersNotInSession: vi.fn(),
@@ -453,10 +474,6 @@ vi.mock("./components/WhisperSpeechButton", () => ({
 
 vi.mock("../../components/LoopInput", () => ({
   LoopModeSelector: () => null,
-}));
-
-vi.mock("./components/ChatSenderTabsPanel", () => ({
-  default: () => <div data-testid="sender-tabs" />,
 }));
 
 vi.mock("./components/ApprovalLevelToggle", () => ({
@@ -594,7 +611,13 @@ vi.mock("./utils", async () => {
 describe("ChatPage coverage", () => {
   beforeEach(() => {
     clearAgentMentionModes();
+    useBackgroundTasksStore.setState({ tasks: [] });
+    vi.mocked(sessionApi.getBackendSessionId).mockReturnValue(
+      "backend-session-1",
+    );
+    vi.mocked(sessionApi.getRealIdForSession).mockReturnValue(null);
     mockRenderSender.mockReturnValue(false);
+    mockUseActualTheme.mockReturnValue(false);
     mockAgentList.mockReturnValue([
       { id: "default", name: "Default", backend: "qwenpaw" },
     ]);
@@ -713,6 +736,146 @@ describe("ChatPage coverage", () => {
     await act(async () => acquireOwnership?.());
 
     expect(mockRuntimeMount).toHaveBeenCalledTimes(1);
+  });
+
+  it("UGSci fork feature: interface style changes preserve the mounted chat and sender draft", async () => {
+    localStorage.removeItem("qwenpaw-interface-style");
+    localStorage.removeItem("qwenpaw-page-style");
+    mockUseActualTheme.mockReturnValue(true);
+    mockRenderSender.mockReturnValue(true);
+    function StyleControls() {
+      const { setInterfaceStyle, setPageStyle } = useTheme();
+      return (
+        <>
+          {PAGE_STYLES.map(({ id }) => (
+            <button
+              key={`layout-${id}`}
+              onClick={() => setPageStyle(id)}
+            >{`layout-${id}`}</button>
+          ))}
+          {INTERFACE_STYLES.map((style) => (
+            <button key={style.id} onClick={() => setInterfaceStyle(style.id)}>
+              {style.id}
+            </button>
+          ))}
+        </>
+      );
+    }
+    renderWithProviders(
+      <ThemeProvider syncRemote={false}>
+        <StyleControls />
+        <ChatPage />
+      </ThemeProvider>,
+      { initialEntries: ["/chat/test-session"] },
+    );
+    const sender = await screen.findByTestId("mention-sender");
+    fireEvent.input(sender, {
+      target: { value: "请保留这段尚未提交的研究草稿" },
+    });
+    const chat = screen.getByTestId("chat-ui");
+    const project = await screen.findByTestId("session-project-directory");
+    const approval = screen.getByTestId("approval-toggle");
+    const usage = screen.getByTestId("context-usage");
+    for (const [style, accent] of [
+      ["warm-minimal", "#485440"],
+      ["cool-workspace", "#4269cc"],
+      ["soft-focus", "#45685a"],
+    ]) {
+      fireEvent.click(screen.getByRole("button", { name: style }));
+      await waitFor(() =>
+        expect(capturedOptions.theme.colorPrimary.toLowerCase()).toBe(accent),
+      );
+      expect(screen.getByTestId("chat-ui")).toBe(chat);
+      expect(screen.getByTestId("mention-sender")).toBe(sender);
+      expect(sender).toHaveValue("请保留这段尚未提交的研究草稿");
+      expect(mockRuntimeMount).toHaveBeenCalledTimes(1);
+    }
+    for (const { id } of PAGE_STYLES) {
+      fireEvent.click(screen.getByRole("button", { name: `layout-${id}` }));
+      expect(document.documentElement).toHaveAttribute("data-page-style", id);
+      expect(screen.getByTestId("session-project-directory")).toBe(project);
+      expect(screen.getByTestId("approval-toggle")).toBe(approval);
+      expect(screen.getByTestId("context-usage")).toBe(usage);
+      expect(project).toBeVisible();
+      expect(approval).toBeVisible();
+      expect(usage).toBeVisible();
+      expect(project.closest("[data-composer-metadata]")).not.toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Chat options" }),
+      ).not.toBeInTheDocument();
+      expect(screen.getByTestId("chat-ui")).toBe(chat);
+      expect(screen.getByTestId("mention-sender")).toBe(sender);
+      expect(sender).toHaveValue("请保留这段尚未提交的研究草稿");
+      expect(mockRuntimeMount).toHaveBeenCalledTimes(1);
+    }
+    fireEvent.click(screen.getByRole("button", { name: "classic" }));
+    expect(sender).toHaveValue("请保留这段尚未提交的研究草稿");
+    expect(mockRuntimeMount).toHaveBeenCalledTimes(1);
+    localStorage.removeItem("qwenpaw-interface-style");
+    localStorage.removeItem("qwenpaw-page-style");
+  });
+
+  it("UGSci fork feature: prototype Agent action opens real mention choices without submitting the draft", async () => {
+    localStorage.setItem("qwenpaw-page-style", "openai");
+    mockUseActualTheme.mockReturnValue(true);
+    mockRenderSender.mockReturnValue(true);
+    mockAgentList.mockReturnValue([
+      { id: "default", name: "Default", backend: "qwenpaw", enabled: true },
+      {
+        id: "helper",
+        name: "Research Helper",
+        backend: "qwenpaw",
+        enabled: true,
+      },
+    ]);
+    const actual = await vi.importActual<typeof import("./utils")>("./utils");
+    const utilities = await import("./utils");
+    vi.mocked(utilities.setTextareaValue).mockImplementationOnce(
+      actual.setTextareaValue,
+    );
+    renderWithProviders(
+      <ThemeProvider syncRemote={false}>
+        <ChatPage />
+      </ThemeProvider>,
+      { initialEntries: ["/chat/test-session"] },
+    );
+    const sender = await screen.findByTestId("mention-sender");
+    fireEvent.input(sender, { target: { value: "Retain this draft" } });
+    fireEvent.click(screen.getByRole("button", { name: "Add content" }));
+    fireEvent.click(screen.getByRole("button", { name: "Assign Agent" }));
+    expect(sender).toHaveValue("Retain this draft @");
+    await waitFor(() =>
+      expect(
+        document.querySelector("[data-agent-mention-popup]"),
+      ).toHaveTextContent("Research Helper"),
+    );
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+    localStorage.removeItem("qwenpaw-page-style");
+  });
+
+  it("UGSci fork feature: composer add menu fills registered commands without sending or replacing the draft", async () => {
+    mockRenderSender.mockReturnValue(true);
+    const actual = await vi.importActual<typeof import("./utils")>("./utils");
+    const utilities = await import("./utils");
+    vi.mocked(utilities.setTextareaValue).mockImplementationOnce(
+      actual.setTextareaValue,
+    );
+    renderWithProviders(<ChatPage />, {
+      initialEntries: ["/chat/test-session"],
+    });
+    const sender = await screen.findByTestId("mention-sender");
+    fireEvent.input(sender, {
+      target: { value: "Keep the unsent research notes" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Add content" }));
+    fireEvent.click(screen.getByRole("button", { name: "/compact" }));
+    expect(sender).toHaveValue("/compact Keep the unsent research notes");
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+    expect(capturedOptions.sender.placeholder).toContain("/");
+    expect(capturedOptions.sender.placeholder).toContain("@");
+    expect(screen.getByTestId("session-project-directory")).toBeVisible();
+    expect(screen.getByTestId("approval-toggle")).toBeVisible();
+    expect(screen.getByTestId("context-usage")).toBeVisible();
   });
 
   it("renders ChatPage and captures options", async () => {
@@ -1365,6 +1528,66 @@ describe("ChatPage coverage", () => {
       }),
       { sessionId: "test-session", source: "direct" },
     );
+  });
+
+  it("UGSci fork feature: the mounted task panel stays collapsible during and after multi-agent execution", async () => {
+    mockRenderSender.mockReturnValue(true);
+    const store = useBackgroundTasksStore.getState();
+    for (const agentId of ["reviewer", "researcher"]) {
+      store.addTask(
+        {
+          toolCallId: `agent-${agentId}`,
+          toolName: `Work by ${agentId}`,
+          sourceTool: "spawn_agent",
+          agentId,
+          sessionId: "backend-session-1",
+          taskSummary: `Work by ${agentId}`,
+          startTime: Date.now(),
+        },
+        { kind: "agent" },
+      );
+    }
+    renderWithProviders(<ChatPage />, {
+      initialEntries: ["/chat/test-session"],
+    });
+    await waitFor(() =>
+      expect(screen.getByText("Work by reviewer")).toBeVisible(),
+    );
+    expect(screen.getByText("Work by researcher")).toBeVisible();
+    const collapseLabel = i18n.t("chat.taskPanel.collapse");
+    const expandLabel = i18n.t("chat.taskPanel.expand");
+    fireEvent.click(screen.getByRole("button", { name: collapseLabel }));
+    expect(screen.queryByText("Work by reviewer")).not.toBeInTheDocument();
+    expect(screen.getByTestId("mention-sender")).toBeVisible();
+    act(() => {
+      store.appendLiveOutput("agent-reviewer", "Still running");
+      store.updateTask("agent-researcher", {
+        status: "done",
+        result: "Result",
+      });
+    });
+    expect(screen.getByRole("button", { name: expandLabel })).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+    expect(useBackgroundTasksStore.getState().tasks[0].status).toBe("running");
+    fireEvent.click(screen.getByRole("button", { name: expandLabel }));
+    expect(screen.getByText("Work by reviewer")).toBeVisible();
+    act(() =>
+      store.updateTask("agent-reviewer", {
+        status: "done",
+        result: "Reviewed",
+      }),
+    );
+    fireEvent.click(screen.getByRole("checkbox"));
+    expect(screen.getByText("Work by reviewer")).toBeVisible();
+    expect(screen.getByText("Work by researcher")).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: collapseLabel }));
+    expect(screen.queryByText("Work by reviewer")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: expandLabel }));
+    expect(screen.getByRole("checkbox")).toBeChecked();
+    expect(screen.getByText("Work by researcher")).toBeVisible();
+    expect(useBackgroundTasksStore.getState().tasks).toHaveLength(2);
   });
 
   it("UGSci fork feature: @ opens the real Agent picker and keyboard selection inserts a mention", async () => {

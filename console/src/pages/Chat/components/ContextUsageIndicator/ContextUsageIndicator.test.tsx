@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { screen } from "@testing-library/react";
+import { fireEvent, screen } from "@testing-library/react";
 import { renderWithProviders } from "@/test/common_setup";
 import { useTurnUsageStore } from "../../turnUsageStore";
 import ContextUsageIndicator from "./ContextUsageIndicator";
@@ -66,6 +66,22 @@ function setUsage(cacheRate: number) {
 }
 
 describe("ContextUsageIndicator", () => {
+  it("keeps context controls available without inventing usage before a model is selected", () => {
+    useTurnUsageStore.setState({ snapshot: null, activeMaxInputLength: null });
+    const compact = vi.fn();
+    const newChat = vi.fn();
+    renderWithProviders(
+      <ContextUsageIndicator showValue onCompact={compact} onNew={newChat} />,
+    );
+    expect(
+      screen.getByRole("button", { name: "chat.composer.contextUnavailable" }),
+    ).toHaveTextContent("—");
+    expect(screen.queryByText("0%")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /压\s*缩/ }));
+    fireEvent.click(screen.getByRole("button", { name: "新对话" }));
+    expect(compact).toHaveBeenCalledOnce();
+    expect(newChat).toHaveBeenCalledOnce();
+  });
   it("renders a compact fusion dial with explicit shared details", () => {
     setUsage(94);
 

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 from pathlib import Path, PurePosixPath
 
@@ -105,18 +106,31 @@ def iter_runtime_files(plugin_dir: Path):
         "plugin.json",
         *(manifest.get("entry") or {}).values(),
     }
-    for path in plugin_dir.rglob("*"):
-        relative = path.relative_to(plugin_dir)
+
+    def included(relative):
         if any(part in _IGNORED_NAMES for part in relative.parts):
-            continue
-        if relative.as_posix() not in protected and any(
+            return False
+        return relative.as_posix() in protected or not any(
             relative.as_posix() == item.as_posix()
             or relative.as_posix().startswith(item.as_posix() + "/")
             for item in excluded
-        ):
-            continue
-        if path.is_file() and path.suffix not in {".pyc", ".pyo"}:
-            yield path
+        )
+
+    # Prune excluded directories before traversal, including Windows junctions.
+    for directory, subdirs, filenames in os.walk(plugin_dir):
+        parent = Path(directory)
+        subdirs[:] = [
+            name
+            for name in subdirs
+            if included((parent / name).relative_to(plugin_dir))
+        ]
+        for name in filenames:
+            path = parent / name
+            if included(path.relative_to(plugin_dir)) and path.suffix not in {
+                ".pyc",
+                ".pyo",
+            }:
+                yield path
 
 
 def stage_bundled_plugins(

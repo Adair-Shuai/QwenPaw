@@ -3,6 +3,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fireEvent, render, screen, act } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Button } from "antd";
 import { extractSimulationRuns } from "../../../plugins/bundle/ugsci/ui/src/simulation";
 import { WorkbenchSimulationPanel } from "../features/files-workspace/WorkbenchPanels";
 
@@ -89,46 +90,59 @@ it("only accepts simulation tool references from live and historical messages", 
   ).toEqual([]);
 });
 
+function loadSimulationCard(bundle: string) {
+  let append: any;
+  let selectedAgent = "default";
+  const navigate = vi.fn();
+  const monitor = vi.fn((props: any) => (
+    <div data-testid="monitor">{props.runId}</div>
+  ));
+  (window as any).QwenPaw = {
+    host: {
+      React,
+      antd: { Button },
+      antdIcons: {},
+      getApiUrl: (s: string) => `/api${s}`,
+      getApiToken: () => "",
+      getSelectedAgentId: () => selectedAgent,
+      getCurrentSessionId: () => "chat-one",
+      useNavigate: () => navigate,
+      fetch: async () => new Response(JSON.stringify({ enabled: true })),
+    },
+    menu: { add: vi.fn(), snapshot: () => [] },
+    route: { add: vi.fn() },
+    chat: {
+      response: {
+        append: (_plugin: string, renderFn: any, options: any) => {
+          if (options.id === "ugsci.simulation.response-append")
+            append = renderFn;
+          return { dispose() {} };
+        },
+      },
+    },
+    runCenter: { SimulationMonitor: monitor },
+  };
+  const source = fs.readFileSync(path.resolve(process.cwd(), bundle), "utf8");
+  new Function(source)();
+  expect(append).toBeTypeOf("function");
+  return {
+    append,
+    navigate,
+    monitor,
+    selectAgent: (agentId: string) => {
+      selectedAgent = agentId;
+    },
+  };
+}
+
 describe.each([
   "../plugins/bundle/ugsci/ui/dist/index.js",
   "../src/qwenpaw/plugins_bundle/ugsci/ui/dist/index.js",
 ])("simulation chat from published %s", (bundle) => {
   it("registers a real chat card that opens a scoped monitor without automatically subscribing", () => {
-    let append: any;
-    const navigate = vi.fn();
-    const monitor = vi.fn((props: any) => (
-      <div data-testid="monitor">{props.runId}</div>
-    ));
+    const { append, navigate, monitor } = loadSimulationCard(bundle);
     const eventSpy = vi.fn();
     window.addEventListener("qwenpaw:open-simulation-workbench", eventSpy);
-    (window as any).QwenPaw = {
-      host: {
-        React,
-        antd: {},
-        antdIcons: {},
-        getApiUrl: (s: string) => `/api${s}`,
-        getApiToken: () => "",
-        getSelectedAgentId: () => "default",
-        getCurrentSessionId: () => "chat-one",
-        useNavigate: () => navigate,
-        fetch: async () => new Response(JSON.stringify({ enabled: true })),
-      },
-      menu: { add: vi.fn(), snapshot: () => [] },
-      route: { add: vi.fn() },
-      chat: {
-        response: {
-          append: (_plugin: string, renderFn: any, options: any) => {
-            if (options.id === "ugsci.simulation.response-append")
-              append = renderFn;
-            return { dispose() {} };
-          },
-        },
-      },
-      runCenter: { SimulationMonitor: monitor },
-    };
-    const source = fs.readFileSync(path.resolve(process.cwd(), bundle), "utf8");
-    new Function(source)();
-    expect(append).toBeTypeOf("function");
     const view = render(append({ data: { output } }));
     expect(screen.getByText("数模任务 · eclipse")).toBeInTheDocument();
     expect(monitor).not.toHaveBeenCalled();
@@ -140,10 +154,65 @@ describe.each([
     });
     fireEvent.click(screen.getByRole("button", { name: "打开运行中心" }));
     expect(navigate).toHaveBeenCalledWith("/run-center?run_id=sim_case");
-    fireEvent.click(screen.getByRole("button", { name: "查看实时结果" }));
+    fireEvent.click(screen.getByRole("button", { name: "查看结果" }));
     expect(screen.getByTestId("monitor")).toBeInTheDocument();
     view.unmount();
     window.removeEventListener("qwenpaw:open-simulation-workbench", eventSpy);
+  });
+
+  it("keeps technical identifiers in toggled details and makes results the primary action", () => {
+    const { append, monitor } = loadSimulationCard(bundle);
+    render(append({ data: { output } }));
+    expect(screen.queryByText("sim_case")).not.toBeInTheDocument();
+    const results = screen.getByRole("button", { name: "查看结果" });
+    expect(results.className).toMatch(/(?:ant|qwenpaw)-btn-primary/);
+    fireEvent.click(screen.getByRole("button", { name: "任务详情" }));
+    expect(screen.getByText("sim_case")).toBeVisible();
+    expect(screen.getByText("所属智能体")).toBeVisible();
+    expect(screen.getByText("chat-one")).toBeVisible();
+    expect(monitor).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "收起详情" }));
+    expect(screen.queryByText("sim_case")).not.toBeInTheDocument();
+    fireEvent.click(results);
+    expect(monitor.mock.calls[0][0]).toMatchObject({
+      runId: "sim_case",
+      compact: true,
+      scope: { agentId: "default", chatId: "chat-one" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "收起结果" }));
+    expect(screen.queryByTestId("monitor")).not.toBeInTheDocument();
+  });
+
+  it("keeps run actions scoped to the owning agent and releases results on an agent switch", () => {
+    const { append, selectAgent, monitor, navigate } =
+      loadSimulationCard(bundle);
+    selectAgent("other-agent");
+    const view = render(append({ data: { output } }));
+    const dispatch = vi.spyOn(window, "dispatchEvent");
+    for (const name of ["查看结果", "在侧栏监测", "打开运行中心"]) {
+      const button = screen.getByRole("button", { name });
+      expect(button).toBeDisabled();
+      fireEvent.click(button);
+    }
+    expect(monitor).not.toHaveBeenCalled();
+    expect(navigate).not.toHaveBeenCalled();
+    expect(
+      dispatch.mock.calls.filter(
+        ([event]) => event.type === "qwenpaw:open-simulation-workbench",
+      ),
+    ).toHaveLength(0);
+    expect(
+      screen.getByText("请切换到该任务所属智能体后查看结果。"),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "任务详情" }));
+    expect(screen.getByText("sim_case")).toBeVisible();
+    selectAgent("default");
+    view.rerender(append({ data: { output } }));
+    fireEvent.click(screen.getByRole("button", { name: "查看结果" }));
+    expect(screen.getByTestId("monitor")).toBeInTheDocument();
+    selectAgent("other-agent");
+    view.rerender(append({ data: { output } }));
+    expect(screen.queryByTestId("monitor")).not.toBeInTheDocument();
   });
 });
 

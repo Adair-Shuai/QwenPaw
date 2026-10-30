@@ -12,8 +12,23 @@ ROOT = Path(__file__).resolve().parents[1]
 INVENTORY = Path(__file__).with_name("fork_backend_suites.json")
 
 
+def load_inventory(path=INVENTORY):
+    def unique_keys(pairs):
+        result = {}
+        for key, value in pairs:
+            if key in result:
+                raise ValueError(f"Duplicate fork inventory key: {key}")
+            result[key] = value
+        return result
+
+    return json.loads(
+        path.read_text(encoding="utf-8"),
+        object_pairs_hook=unique_keys,
+    )
+
+
 def verify_inventory(root=ROOT, inventory=None):
-    inventory = inventory or json.loads(INVENTORY.read_text(encoding="utf-8"))
+    inventory = load_inventory() if inventory is None else inventory
     suites = list(
         dict.fromkeys(
             name for group in inventory["groups"].values() for name in group

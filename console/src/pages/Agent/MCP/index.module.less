@@ -8,6 +8,64 @@
   height: 100%;
 }
 
+.embeddedPage {
+  height: auto;
+  min-width: 0;
+  overflow: visible;
+}
+.embeddedHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px 24px;
+  margin: 0 16px 20px;
+  > div {
+    flex: 1 1 340px;
+    min-width: 0;
+  }
+  > button {
+    flex: 0 0 auto;
+    margin-inline-start: auto;
+  }
+}
+.embeddedTitle {
+  margin: 0;
+  color: var(--app-text);
+  font-size: var(--app-font-subtitle);
+  font-weight: 600;
+  line-height: 1.4;
+}
+.embeddedDescription {
+  margin: 4px 0 0;
+  color: var(--app-text-secondary);
+  font-size: var(--app-font-caption);
+  line-height: 1.6;
+}
+.embeddedManagedSection .sectionHeader h2 {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--app-font-body);
+}
+.serviceCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 22px;
+  padding: 2px 7px;
+  border-radius: 999px;
+  background: var(--app-fill);
+  color: var(--app-text-secondary);
+  font-size: var(--app-font-caption);
+  font-weight: 500;
+}
+@media (max-width: 600px) {
+  .embeddedHeader {
+    margin-inline: 0;
+  }
+}
+
 .mcpSections {
   display: flex;
   min-width: 0;
@@ -406,6 +464,10 @@
 }
 
 .mcpGrid {
+  > div {
+    display: flex;
+    min-width: 0;
+  }
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(min(100%, 400px), 1fr));
   gap: 16px;

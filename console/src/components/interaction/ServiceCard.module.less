@@ -1,4 +1,16 @@
+.frame {
+  container-type: inline-size;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+}
 .card {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
   cursor: pointer;
   padding: var(--app-space-5);
   height: 100%;
@@ -27,7 +39,11 @@
     color: var(--app-text);
     text-align: start;
     font: inherit;
-    overflow-wrap: anywhere;
+    display: block;
+    width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
     cursor: pointer;
   }
   button:focus-visible {
@@ -37,6 +53,13 @@
   }
 }
 .metadata {
+  :global(.ant-tag),
+  :global(.qwenpaw-tag) {
+    margin: 0 0 0 auto;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
   min-height: 40px;
   display: flex;
   align-items: center;
@@ -48,6 +71,7 @@
   overflow-wrap: anywhere;
 }
 .actions {
+  margin-top: auto;
   border-top: 1px solid var(--app-border-subtle);
   padding-top: var(--app-space-3);
   display: flex;
@@ -62,8 +86,54 @@
 .trailing {
   display: flex;
   align-items: center;
-  flex-wrap: wrap;
+  margin-inline-start: auto;
+  flex-wrap: nowrap;
   gap: var(--app-space-2);
+}
+
+.compact {
+  padding: 12px;
+  .heading {
+    align-items: center;
+  }
+  .heading h3 {
+    font-size: 15px;
+  }
+  .metadata {
+    min-height: 24px;
+    margin: 7px 0;
+  }
+  .actions {
+    border: 0;
+    padding-top: 4px;
+    gap: 6px;
+  }
+  .trailing {
+    gap: 4px;
+  }
+}
+.avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 9px;
+  background: var(--app-fill-faint);
+  color: var(--app-text-secondary);
+  display: grid;
+  place-items: center;
+  flex-shrink: 0;
+}
+.description {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  color: var(--app-text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  margin-top: 7px;
+  min-height: 3em;
+  flex-shrink: 0;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 768px) {
@@ -81,5 +151,12 @@
 
   .trailing > button:not(:global(.ant-switch)):not(:global(.qwenpaw-switch)) {
     min-width: var(--app-hit-touch);
+  }
+}
+
+/* Reserve a second metadata line when a narrow card wraps an auth badge. */
+@container (max-width: 280px) {
+  .compact .metadata {
+    min-height: 52px;
   }
 }

@@ -1,7 +1,9 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { message, Tooltip } from "antd";
 import {
+  ChevronDown,
+  ChevronUp,
   Eraser as SparkClearLine,
   CircleAlert as SparkErrorCircleLine,
   Pause as SparkPauseLine,
@@ -66,6 +68,8 @@ export default function ChatSenderTabsPanel({
   );
   const [batchBusy, setBatchBusy] = useState(false);
   const [showFinished, setShowFinished] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
+  const bodyId = useId();
 
   const sessionTasks = useMemo(
     () => selectTasksForSession(tasks, bgSessionId),
@@ -202,11 +206,18 @@ export default function ChatSenderTabsPanel({
       <button
         key={key}
         type="button"
-        onClick={() => setActiveTab(key)}
+        aria-expanded={active && !collapsed}
+        aria-controls={bodyId}
+        onClick={() => {
+          setCollapsed(active ? !collapsed : false);
+          setActiveTab(key);
+        }}
         style={{
           display: "inline-flex",
           alignItems: "center",
           gap: 6,
+          flexShrink: 0,
+          whiteSpace: "nowrap",
           border: `1px solid ${borderColor}`,
           borderBottom: active
             ? `1px solid ${tabActiveBg}`
@@ -396,8 +407,9 @@ export default function ChatSenderTabsPanel({
           display: "flex",
           alignItems: "center",
           gap: 8,
-          padding: "6px 10px 0",
-          borderBottom: `1px solid ${borderColor}`,
+          padding: collapsed ? "6px 10px" : "6px 10px 0",
+          flexWrap: "wrap",
+          borderBottom: collapsed ? undefined : `1px solid ${borderColor}`,
           background: isDark ? "rgba(0,0,0,0.15)" : "rgba(0,0,0,0.02)",
         }}
       >
@@ -406,7 +418,8 @@ export default function ChatSenderTabsPanel({
             display: "flex",
             alignItems: "flex-end",
             gap: 4,
-            flex: 1,
+            flex: "1 1 auto",
+            flexWrap: "wrap",
             minWidth: 0,
           }}
         >
@@ -427,7 +440,7 @@ export default function ChatSenderTabsPanel({
               bgBadgeColor,
             )}
         </div>
-        {tabActions && (
+        {!collapsed && tabActions && (
           <div
             style={{
               display: "flex",
@@ -439,32 +452,52 @@ export default function ChatSenderTabsPanel({
             {tabActions}
           </div>
         )}
+        <button
+          type="button"
+          aria-label={
+            collapsed
+              ? t("chat.taskPanel.expand", "Expand task panel")
+              : t("chat.taskPanel.collapse", "Collapse task panel")
+          }
+          aria-expanded={!collapsed}
+          aria-controls={bodyId}
+          onClick={() => setCollapsed((value) => !value)}
+          style={{
+            ...chipBtnStyle,
+            marginLeft: "auto",
+            marginBottom: collapsed ? 0 : 5,
+          }}
+        >
+          {collapsed ? <ChevronDown size={14} /> : <ChevronUp size={14} />}
+        </button>
       </div>
 
-      <div style={{ padding: "8px 12px" }}>
-        {activeTab === "bg" && hasBg && (
-          <BackgroundTaskPanel
-            sessionId={bgSessionId}
-            embedded
-            showFinished={showFinished}
-          />
-        )}
-        {activeTab === "queue" && hasQueue && (
-          <MessageQueuePanel
-            embedded
-            items={queueItems}
-            runState={runState}
-            onRemove={onRemove}
-            onEdit={onEdit}
-            onReorder={onReorder}
-            onInterruptAndSend={onInterruptAndSend}
-            onClear={onClear}
-            onPauseResume={onPauseResume}
-            onRetry={onRetry}
-            onSkip={onSkip}
-          />
-        )}
-      </div>
+      {!collapsed && (
+        <div id={bodyId} style={{ padding: "8px 12px" }}>
+          {activeTab === "bg" && hasBg && (
+            <BackgroundTaskPanel
+              sessionId={bgSessionId}
+              embedded
+              showFinished={showFinished}
+            />
+          )}
+          {activeTab === "queue" && hasQueue && (
+            <MessageQueuePanel
+              embedded
+              items={queueItems}
+              runState={runState}
+              onRemove={onRemove}
+              onEdit={onEdit}
+              onReorder={onReorder}
+              onInterruptAndSend={onInterruptAndSend}
+              onClear={onClear}
+              onPauseResume={onPauseResume}
+              onRetry={onRetry}
+              onSkip={onSkip}
+            />
+          )}
+        </div>
+      )}
     </div>
   );
 }

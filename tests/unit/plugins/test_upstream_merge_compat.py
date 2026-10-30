@@ -117,7 +117,7 @@ def test_repaired_market_archives_cover_b2_and_advance_versions(
     archive = tmp_path / f"{manifest['id']}-{manifest['version']}.zip"
     packer._zip_plugin(source, archive, manifest)
     with zipfile.ZipFile(archive) as bundle:
-        packaged = json.loads(bundle.read(f"{source.name}/plugin.json"))
+        packaged = json.loads(bundle.read(f"{manifest['id']}/plugin.json"))
     compatible, reason = check_plugin_version_compat(
         PluginManifest.from_dict(packaged),
     )

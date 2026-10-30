@@ -2,6 +2,7 @@
  * Current agent skills tab — shows skills installed for the selected agent.
  */
 
+import { CapabilityDetail } from "../capability/CapabilityDetail";
 import { getHost, clearApiCache, clearAgentCache } from "../core/runtime";
 import { PRIMARY_BTN_STYLE, renderMarkdown, PageHeader } from "../core/shared";
 import type { SkillSpec, PoolSkillSpec } from "../core/types";
@@ -34,8 +35,9 @@ export function CurrentAgentSkillsTab({
   onNavigate: (path: string) => void;
 }) {
   const React = getHost().React;
-  const { useState, useEffect, useCallback } = React;
+  const { useState, useEffect, useCallback, useRef, useMemo } = React;
   const {
+    Input,
     Spin,
     Empty,
     Button,
@@ -46,7 +48,7 @@ export function CurrentAgentSkillsTab({
     Checkbox,
     Modal,
     Typography,
-    Drawer,
+    Switch,
     Descriptions,
     message: antdMsg,
   } = getHost().antd;
@@ -63,27 +65,68 @@ export function CurrentAgentSkillsTab({
   const { Text, Paragraph } = Typography;
 
   const [skills, setSkills] = useState<SkillSpec[]>([]);
+  const [skillsOwner, setSkillsOwner] = useState("");
+  const [searchText, setSearchText] = useState("");
+  const filteredSkills = useMemo(() => {
+    const query = searchText.trim().toLowerCase();
+    return query
+      ? skills.filter((skill) =>
+          [skill.name, skill.description, ...(skill.tags || [])].some(
+            (value) => value?.toLowerCase().includes(query),
+          ),
+        )
+      : skills;
+  }, [skills, searchText]);
   const [loading, setLoading] = useState(true);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [activeSkill, setActiveSkill] = useState<SkillSpec | null>(null);
   const [batchMode, setBatchMode] = useState(false);
   const [selectedSkills, setSelectedSkills] = useState<Set<string>>(new Set());
   const [batchLoading, setBatchLoading] = useState(false);
-  const [hoveredSkill, setHoveredSkill] = useState<string | null>(null);
+  const requestGeneration = useRef(0);
+  const currentAgent = useRef(agentId);
+  currentAgent.current = agentId;
   const [actionLoading, setActionLoading] = useState(false);
 
   const loadSkills = useCallback(async () => {
-    if (!agentId) return;
+    if (!agentId || currentAgent.current !== agentId) return;
+    const generation = ++requestGeneration.current;
     setLoading(true);
     try {
       const data = await fetchAgentSkills(agentId);
-      setSkills(data);
+      if (
+        generation === requestGeneration.current &&
+        currentAgent.current === agentId
+      ) {
+        setSkills(data);
+        setSkillsOwner(agentId);
+      }
     } catch (err: any) {
+      if (
+        generation !== requestGeneration.current ||
+        currentAgent.current !== agentId
+      )
+        return;
       antdMsg.error(err.message || "加载技能失败");
       setSkills([]);
+      setSkillsOwner(agentId);
     } finally {
-      setLoading(false);
+      if (
+        generation === requestGeneration.current &&
+        currentAgent.current === agentId
+      )
+        setLoading(false);
     }
+  }, [agentId]);
+
+  useEffect(() => {
+    setDrawerOpen(false);
+    setActiveSkill(null);
+    setBatchMode(false);
+    setSelectedSkills(new Set());
+    return () => {
+      requestGeneration.current++;
+    };
   }, [agentId]);
 
   useEffect(() => {
@@ -232,6 +275,7 @@ export function CurrentAgentSkillsTab({
         setActionLoading(true);
         try {
           await deleteSkillForAgent(agentId, skill.name);
+          if (currentAgent.current === agentId) setDrawerOpen(false);
           antdMsg.success(`已删除技能「${skill.name}」`);
           await loadSkills();
         } catch (err: any) {
@@ -243,9 +287,10 @@ export function CurrentAgentSkillsTab({
     });
   };
 
+  const focused = drawerOpen && skillsOwner === agentId;
   return React.createElement(
     "div",
-    null,
+    { className: "ugsci-capability-section", "data-focused": focused },
     React.createElement(
       "div",
       {
@@ -258,6 +303,13 @@ export function CurrentAgentSkillsTab({
           gap: 8,
         },
       },
+      React.createElement(Input, {
+        placeholder: "搜索当前专家的技能...",
+        value: searchText,
+        allowClear: true,
+        style: { maxWidth: 320 },
+        onChange: (event: any) => setSearchText(event.target.value),
+      }),
       React.createElement(
         Text,
         { type: "secondary", style: { fontSize: 13 } },
@@ -358,7 +410,7 @@ export function CurrentAgentSkillsTab({
                     ? React.createElement(CheckSquareOutlined)
                     : undefined,
                   onClick: toggleBatchMode,
-                  disabled: skills.length === 0,
+                  disabled: filteredSkills.length === 0,
                 },
                 "批量管理",
               ),
@@ -378,7 +430,7 @@ export function CurrentAgentSkillsTab({
             ),
       ),
     ),
-    loading
+    loading || skillsOwner !== agentId
       ? React.createElement(
           "div",
           { style: { textAlign: "center", padding: 60 } },
@@ -386,199 +438,108 @@ export function CurrentAgentSkillsTab({
         )
       : skills.length === 0
       ? React.createElement(Empty, {
-          description: "当前智能体未加载任何技能",
+          description: searchText
+            ? "未找到匹配的技能"
+            : "当前智能体未加载任何技能",
         })
       : React.createElement(
           Row,
           { gutter: [12, 12] },
-          ...skills.map((skill) =>
+          ...filteredSkills.map((skill) =>
             React.createElement(
               Col,
-              { key: skill.name, xs: 24, sm: 12, md: 8, lg: 6 },
+              { key: skill.name, xs: 24, sm: 12, md: 12, lg: 8, xxl: 6 },
               React.createElement(
                 Card,
-                {
-                  hoverable: true,
-                  size: "small",
-                  style: {
-                    cursor: batchMode ? "default" : "pointer",
-                    height: "100%",
-                    position: "relative",
-                    borderColor:
-                      batchMode && selectedSkills.has(skill.name)
-                        ? "#0072f5"
-                        : undefined,
-                    borderWidth:
-                      batchMode && selectedSkills.has(skill.name) ? 2 : 1,
-                  },
-                  onClick: () => {
-                    if (batchMode) {
-                      toggleSelect(skill.name);
-                    } else {
-                      setActiveSkill(skill);
-                      setDrawerOpen(true);
-                    }
-                  },
-                  onMouseEnter: () => {
-                    if (!batchMode) setHoveredSkill(skill.name);
-                  },
-                  onMouseLeave: () => setHoveredSkill(null),
-                },
-                batchMode
-                  ? React.createElement(
-                      "div",
-                      {
-                        style: {
-                          position: "absolute",
-                          top: 8,
-                          right: 8,
-                          zIndex: 1,
-                        },
-                        onClick: (e: any) => {
-                          e.stopPropagation();
-                          toggleSelect(skill.name);
-                        },
-                      },
-                      React.createElement(Checkbox, {
-                        checked: selectedSkills.has(skill.name),
-                      }),
-                    )
-                  : null,
+                { size: "small", className: "ugsci-capability-card" },
                 React.createElement(
                   "div",
-                  {
-                    style: {
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 8,
-                      marginBottom: 8,
-                    },
-                  },
-                  skill.emoji
-                    ? React.createElement(
-                        "span",
-                        { style: { fontSize: 18 } },
-                        skill.emoji,
-                      )
-                    : React.createElement(
-                        "span",
-                        { style: { fontSize: 18 } },
-                        "⚡",
-                      ),
+                  { className: "ugsci-capability-card-title" },
                   React.createElement(
-                    Text,
+                    "span",
                     {
-                      strong: true,
-                      style: {
-                        fontSize: 13,
-                        flex: 1,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
+                      className: "ugsci-capability-avatar",
+                      "aria-hidden": true,
+                    },
+                    skill.emoji || "⚡",
+                  ),
+                  React.createElement(
+                    "button",
+                    {
+                      type: "button",
+                      onClick: () => {
+                        setActiveSkill(skill);
+                        setDrawerOpen(true);
                       },
                     },
                     skill.name,
                   ),
-                  skill.enabled === false
-                    ? React.createElement(
-                        Tag,
-                        { color: "default", style: { fontSize: 10 } },
-                        "已禁用",
-                      )
-                    : React.createElement(
-                        Tag,
-                        { color: "green", style: { fontSize: 10 } },
-                        "已启用",
-                      ),
+                  batchMode
+                    ? React.createElement(Checkbox, {
+                        "aria-label": `选择 ${skill.name}`,
+                        checked: selectedSkills.has(skill.name),
+                        onChange: () => toggleSelect(skill.name),
+                      })
+                    : null,
                 ),
-                skill.description
-                  ? React.createElement(
-                      Paragraph,
-                      {
-                        type: "secondary",
-                        style: { fontSize: 11, margin: 0, lineHeight: 1.4 },
-                        ellipsis: { rows: 2 },
-                      },
-                      skill.description,
-                    )
-                  : null,
+                React.createElement(
+                  Paragraph,
+                  {
+                    className: "ugsci-capability-card-copy",
+                    ellipsis: { rows: 2 },
+                    style: { margin: 0 },
+                  },
+                  skill.description || "暂无描述",
+                ),
                 React.createElement(
                   "div",
-                  {
-                    style: {
-                      marginTop: 8,
-                      display: "flex",
-                      gap: 4,
-                      flexWrap: "wrap",
-                    },
-                  },
+                  { className: "ugsci-capability-card-meta" },
                   skill.version_text
-                    ? React.createElement(
-                        Tag,
-                        { style: { fontSize: 10 } },
-                        `v${skill.version_text}`,
-                      )
+                    ? React.createElement(Tag, null, `v${skill.version_text}`)
                     : null,
                   ...(skill.tags || [])
                     .slice(0, 3)
-                    .map((tag, i) =>
-                      React.createElement(
-                        Tag,
-                        { key: i, color: "blue", style: { fontSize: 10 } },
-                        tag,
-                      ),
-                    ),
+                    .map((tag) => React.createElement(Tag, { key: tag }, tag)),
                 ),
-                // Hover action footer (not in batch mode)
-                !batchMode && hoveredSkill === skill.name
+                !batchMode
                   ? React.createElement(
                       "div",
-                      {
-                        style: {
-                          marginTop: 8,
-                          paddingTop: 8,
-                          borderTop: "1px solid #f0f0f0",
-                          display: "flex",
-                          gap: 8,
-                          justifyContent: "flex-end",
-                        },
-                      },
+                      { className: "ugsci-capability-card-footer" },
                       React.createElement(
                         Button,
                         {
                           size: "small",
-                          type: "default",
-                          icon:
-                            skill.enabled === false
-                              ? EyeOutlined
-                                ? React.createElement(EyeOutlined)
-                                : undefined
-                              : EyeInvisibleOutlined
-                              ? React.createElement(EyeInvisibleOutlined)
-                              : undefined,
-                          disabled: actionLoading,
-                          onClick: (e: any) => {
-                            e.stopPropagation();
-                            handleToggleEnabled(skill);
+                          onClick: () => {
+                            setActiveSkill(skill);
+                            setDrawerOpen(true);
                           },
+                          "aria-label": `配置 ${skill.name}`,
                         },
-                        skill.enabled === false ? "启用" : "禁用",
+                        "配置",
                       ),
                       React.createElement(
-                        Button,
+                        "span",
                         {
-                          size: "small",
-                          danger: true,
-                          icon: DeleteOutlined
-                            ? React.createElement(DeleteOutlined)
-                            : undefined,
-                          disabled: actionLoading,
-                          onClick: (e: any) => {
-                            e.stopPropagation();
-                            handleDelete(skill);
+                          style: {
+                            display: "flex",
+                            gap: 8,
+                            alignItems: "center",
                           },
                         },
-                        "删除",
+                        React.createElement(
+                          Text,
+                          { type: "secondary", style: { fontSize: 12 } },
+                          skill.enabled === false ? "已禁用" : "已启用",
+                        ),
+                        React.createElement(Switch, {
+                          size: "small",
+                          checked: skill.enabled !== false,
+                          loading: actionLoading,
+                          "aria-label": `${
+                            skill.enabled === false ? "启用" : "禁用"
+                          } ${skill.name}`,
+                          onChange: () => handleToggleEnabled(skill),
+                        }),
                       ),
                     )
                   : null,
@@ -589,7 +550,7 @@ export function CurrentAgentSkillsTab({
     // Skill detail drawer
     activeSkill
       ? React.createElement(
-          Drawer,
+          CapabilityDetail,
           {
             title: React.createElement(
               "div",
@@ -601,9 +562,18 @@ export function CurrentAgentSkillsTab({
               ),
               React.createElement("span", null, activeSkill.name),
             ),
-            open: drawerOpen,
+            open: focused,
             onClose: () => setDrawerOpen(false),
             width: 520,
+            footer: React.createElement(
+              Button,
+              {
+                danger: true,
+                disabled: actionLoading,
+                onClick: () => handleDelete(activeSkill),
+              },
+              "删除技能",
+            ),
             extra: React.createElement(
               Button,
               {
@@ -697,7 +667,7 @@ export function CurrentAgentSkillsTab({
                       maxHeight: 300,
                       overflow: "auto",
                       padding: 12,
-                      background: "var(--ant-color-fill-secondary, #f5f5f5)",
+                      background: "var(--app-fill, #f5f5f5)",
                       borderRadius: 6,
                       fontSize: 12,
                       whiteSpace: "pre-wrap",

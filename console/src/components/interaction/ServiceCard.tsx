@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react";
 import { Button, Switch } from "antd";
-import { Settings2 } from "lucide-react";
+import { Settings2, Plug } from "lucide-react";
+import { useCapabilityWorkspace } from "./CapabilityWorkspace";
 import { useTranslation } from "react-i18next";
 import { motion, useReducedMotion } from "motion/react";
 import InlineHelp from "@/components/InlineHelp";
@@ -16,8 +17,10 @@ export function ServiceCard({
   onToggle,
   actions,
   surfaceId,
+  icon,
 }: {
   surfaceId?: string;
+  icon?: ReactNode;
   name: string;
   description?: ReactNode;
   metadata?: ReactNode;
@@ -29,8 +32,10 @@ export function ServiceCard({
   const { t } = useTranslation();
   const reducedMotion = useReducedMotion();
   const [pending, setPending] = useState(false);
+  const compact = useCapabilityWorkspace();
   return (
     <motion.div
+      className={styles.frame}
       layout
       transition={{
         layout: reducedMotion
@@ -39,10 +44,11 @@ export function ServiceCard({
       }}
     >
       <InteractiveCard
+        data-themed-card="true"
         tilt={0}
         layoutId={reducedMotion ? undefined : surfaceId}
-        style={{ borderRadius: 20 }}
-        className={styles.card}
+        style={{ borderRadius: compact ? 12 : 20 }}
+        className={`${styles.card} ${compact ? styles.compact : ""}`}
         onClick={(event) => {
           if (
             !(event.target instanceof Element) ||
@@ -55,13 +61,17 @@ export function ServiceCard({
         }}
       >
         <div className={styles.heading}>
+          {compact && (
+            <span className={styles.avatar}>{icon || <Plug size={21} />}</span>
+          )}
           <h3>
-            <button type="button" onClick={onConfigure}>
+            <button type="button" title={name} onClick={onConfigure}>
               {name}
             </button>
           </h3>
           {description && <InlineHelp>{description}</InlineHelp>}
         </div>
+        {compact && <div className={styles.description}>{description}</div>}
         <div className={styles.metadata}>{metadata}</div>
         <div className={styles.actions}>
           <Button

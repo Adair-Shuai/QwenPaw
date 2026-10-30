@@ -1,0 +1,451 @@
+/* Shared, opt-in card colors. Geometry and click behavior stay with each card. */
+:root {
+  --app-card-success-fg: #237804;
+  --app-card-warning-fg: #8c5a00;
+  --app-card-error-fg: #b42318;
+}
+html.dark-mode {
+  --app-card-success-fg: #95de64;
+  --app-card-warning-fg: #ffd666;
+  --app-card-error-fg: #ffaaa6;
+}
+:is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  ) {
+  color: var(--app-card-text, var(--app-text));
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  :is(.ant-card, .qwenpaw-card) {
+  color: var(--app-card-text, var(--app-text));
+  background: var(--app-surface) !important;
+  border-color: var(--app-border) !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  :is(.ant-typography, .qwenpaw-typography) {
+  color: var(--app-card-text, var(--app-text));
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  :is(
+    .ant-typography-secondary,
+    .qwenpaw-typography-secondary,
+    .ant-typography-disabled,
+    .qwenpaw-typography-disabled
+  ) {
+  color: var(--app-card-muted, var(--app-text-secondary)) !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  button:is(.ant-btn, .qwenpaw-btn) {
+  box-shadow: none;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  button:is(.ant-btn-default, .qwenpaw-btn-default) {
+  background: var(--app-surface-raised) !important;
+  color: var(--app-card-text, var(--app-text)) !important;
+  border-color: var(--app-action-border, var(--app-border-strong)) !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  button:is(.ant-btn-default, .qwenpaw-btn-default):not(:disabled):hover {
+  background: var(--app-state-hover-bg) !important;
+  color: var(--app-action-link, var(--app-accent-text)) !important;
+  border-color: var(--app-action-link, var(--app-accent-text)) !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  button:is(.ant-btn-text, .qwenpaw-btn-text) {
+  color: var(--app-card-text, var(--app-text)) !important;
+  background: transparent !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  button:is(.ant-btn-link, .qwenpaw-btn-link) {
+  color: var(--app-action-link, var(--app-accent-text)) !important;
+  background: transparent !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  button:is(
+    .ant-btn-text,
+    .qwenpaw-btn-text,
+    .ant-btn-link,
+    .qwenpaw-btn-link
+  ):not(:disabled):hover {
+  background: var(--app-state-hover-bg) !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  button:is(.ant-btn-primary, .qwenpaw-btn-primary) {
+  background: var(--app-action-bg, var(--app-accent)) !important;
+  color: var(--app-action-fg, #fff) !important;
+  border-color: var(--app-action-bg, var(--app-accent)) !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  button:is(.ant-btn-primary, .qwenpaw-btn-primary):not(:disabled):hover {
+  background: var(--app-action-hover, var(--app-accent-hover)) !important;
+  border-color: var(--app-action-hover, var(--app-accent-hover)) !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  button:is(.ant-btn-primary, .qwenpaw-btn-primary):not(:disabled):active {
+  background: var(--app-action-active, var(--app-accent-active)) !important;
+  border-color: var(--app-action-active, var(--app-accent-active)) !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  button:is(
+    .ant-btn-dangerous,
+    .qwenpaw-btn-dangerous,
+    .ant-btn-danger,
+    .qwenpaw-btn-danger
+  ) {
+  color: var(--app-card-error-fg) !important;
+  border-color: var(--app-error-border) !important;
+  background: var(--app-error-bg) !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  button:is(.ant-btn, .qwenpaw-btn):is(
+    :disabled,
+    [aria-disabled="true"],
+    .ant-btn-disabled,
+    .qwenpaw-btn-disabled
+  ) {
+  color: var(--app-card-muted, var(--app-text-secondary)) !important;
+  background: var(--app-surface-subtle) !important;
+  border-color: var(--app-border-strong) !important;
+  opacity: 1 !important;
+  box-shadow: none !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  button:is(.ant-btn, .qwenpaw-btn)
+  > :is(span, svg) {
+  color: inherit !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  :is(button, a, input, textarea, [role="switch"]):focus-visible {
+  outline: 2px solid var(--app-action-link, var(--app-focus-ring));
+  outline-offset: 3px;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  :is(.ant-tag, .qwenpaw-tag) {
+  color: var(--app-card-muted, var(--app-text-secondary));
+  background: var(--app-surface-subtle);
+  border-color: var(--app-border-strong);
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  :is(
+    .ant-tag-success,
+    .qwenpaw-tag-success,
+    .ant-tag-green,
+    .qwenpaw-tag-green
+  ) {
+  color: var(--app-card-success-fg) !important;
+  background: var(--app-success-bg) !important;
+  border-color: var(--app-success-border) !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  :is(
+    .ant-tag-warning,
+    .qwenpaw-tag-warning,
+    .ant-tag-orange,
+    .qwenpaw-tag-orange,
+    .ant-tag-gold,
+    .qwenpaw-tag-gold
+  ) {
+  color: var(--app-card-warning-fg) !important;
+  background: var(--app-warning-bg) !important;
+  border-color: var(--app-warning-border) !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  :is(.ant-tag-error, .qwenpaw-tag-error, .ant-tag-red, .qwenpaw-tag-red) {
+  color: var(--app-card-error-fg) !important;
+  background: var(--app-error-bg) !important;
+  border-color: var(--app-error-border) !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  :is(
+    .ant-tag-processing,
+    .qwenpaw-tag-processing,
+    .ant-tag-blue,
+    .qwenpaw-tag-blue,
+    .ant-tag-geekblue,
+    .qwenpaw-tag-geekblue,
+    .ant-tag-cyan,
+    .qwenpaw-tag-cyan,
+    .ant-tag-purple,
+    .qwenpaw-tag-purple
+  ) {
+  color: var(--app-action-link, var(--app-accent-text)) !important;
+  background: color-mix(
+    in srgb,
+    var(--app-action-bg, var(--app-accent)) 8%,
+    var(--app-surface)
+  ) !important;
+  border-color: var(--app-accent-border) !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  :is(.ant-switch, .qwenpaw-switch) {
+  border: 1px solid var(--app-action-border, var(--app-border-strong));
+  background: var(--app-fill-strong);
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  :is(.ant-switch-handle, .qwenpaw-switch-handle)::before {
+  background: var(--app-card-text, var(--app-text));
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  :is(.ant-switch-checked, .qwenpaw-switch-checked) {
+  background: var(--app-action-bg, var(--app-accent)) !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  :is(.ant-switch-checked, .qwenpaw-switch-checked)
+  :is(.ant-switch-handle, .qwenpaw-switch-handle)::before {
+  background: var(--app-action-fg, #fff) !important;
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  :is(
+    .ant-input,
+    .qwenpaw-input,
+    .ant-select-selector,
+    .qwenpaw-select-selector
+  ) {
+  background: var(--app-surface-raised) !important;
+  color: var(--app-card-text, var(--app-text)) !important;
+  border-color: var(--app-action-border, var(--app-border-strong));
+}
+html
+  :is(
+    [data-themed-card],
+    .ugsci-capabilities,
+    .ugsci-expert-page,
+    .ugsci-expert-settings,
+    .ugsci-marketplace,
+    .ugsci-capability-focus
+  )
+  :is(input, textarea)::placeholder {
+  color: var(--app-card-muted, var(--app-text-secondary));
+  opacity: 1;
+}
+
+/* Keep the compact descriptions subordinate to the title, including legacy bundles. */
+html :is(.ugsci-capabilities, .ugsci-marketplace) > div:first-of-type {
+  border-color: var(--app-border) !important;
+}
+html :is(.ugsci-capabilities, .ugsci-marketplace) .ugsci-capability-card-copy {
+  color: var(--app-card-muted, var(--app-text-secondary)) !important;
+}
+html
+  :is([data-themed-card], .ugsci-capabilities, .ugsci-expert-settings)
+  :is(
+    input:disabled,
+    textarea:disabled,
+    .ant-select-disabled .ant-select-selector,
+    .qwenpaw-select-disabled .qwenpaw-select-selector
+  ) {
+  color: var(--app-card-muted, var(--app-text-secondary)) !important;
+  background: var(--app-surface-subtle) !important;
+}

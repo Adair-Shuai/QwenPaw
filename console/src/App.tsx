@@ -70,7 +70,6 @@ import { hubApi, type HubHealth } from "./api/modules/hub";
 import { isTauri } from "@tauri-apps/api/core";
 import { isDesktopTauriRuntime } from "./utils/openExternalLink";
 import { interceptBlankLinkClicks } from "./utils/interceptBlankLinkClicks";
-import { isSafeCssColor } from "./utils/chatThemeColor";
 import {
   applyUiFontSizeToRoot,
   getUiFontScale,
@@ -79,12 +78,21 @@ import {
   UI_FONT_SIZE_DEFAULT,
 } from "./utils/uiFontSizePreference";
 import type { ThemeConfig } from "./api/modules/theme";
-import { DEFAULT_THEME_PRESET } from "./pages/SettingsCenter/themePresets";
 import "./styles/tokens.css";
 import "./styles/layout.css";
 import "./styles/form-override.css";
 import "./styles/workspace.css";
-import "./styles/lobehub-override.css";
+import legacyAppearance from "./styles/lobehub-override.css?inline";
+import "./styles/interface-style.css";
+import "./styles/page-style.css";
+import "./styles/card-theme.css";
+import type { PageStyle } from "./utils/pageStyle";
+import {
+  getInterfaceTheme,
+  getInterfaceActionColors,
+  getInterfacePalette,
+  type InterfaceStyle,
+} from "./utils/interfaceStyle";
 import { PressFeedback } from "./components/interaction/PressFeedback";
 import "katex/dist/katex.min.css";
 
@@ -100,23 +108,37 @@ export function getAppThemeToken(
   userTheme: ThemeConfig,
   isDark: boolean,
   fontSize: number = UI_FONT_SIZE_DEFAULT,
+  interfaceStyle: InterfaceStyle = "classic",
+  pageStyle: PageStyle = "classic",
 ): NonNullable<AntThemeConfig["token"]> {
+  const actionColors = getInterfaceActionColors(
+    interfaceStyle,
+    isDark,
+    userTheme,
+  );
+  userTheme = getInterfaceTheme(userTheme, interfaceStyle);
+  const palette = getInterfacePalette(interfaceStyle, isDark);
   // Grow control heights with the font size so text never outgrows its
   // control box. Clamp the multiplier at 1 so smaller sizes keep the shared
   // semantic control ladder (medium / small / large: 36 / 32 / 44).
   const controlScale = Math.max(1, fontSize / UI_FONT_SIZE_DEFAULT);
   return {
-    colorPrimary:
-      userTheme.dark?.accent && isDark
-        ? userTheme.dark.accent
-        : userTheme.accent ??
-          (isDark
-            ? DEFAULT_THEME_PRESET.theme.dark?.accent
-            : DEFAULT_THEME_PRESET.theme.accent),
-    colorBgLayout: isDark ? "#000000" : "#f8f8f8",
-    colorBgContainer: isDark ? userTheme.dark?.surface ?? "#1c1b1e" : "#ffffff",
-    colorBgElevated: isDark ? "#252528" : "#ffffff",
-    colorBorder: isDark ? "#323236" : "#e3e3e3",
+    colorPrimary: actionColors.background,
+    colorPrimaryHover: actionColors.hover,
+    colorPrimaryActive: actionColors.active,
+    colorTextLightSolid: actionColors.foreground,
+    colorBgLayout: palette?.background ?? (isDark ? "#000000" : "#f8f8f8"),
+    colorBgContainer:
+      palette?.surface ??
+      (isDark ? userTheme.dark?.surface ?? "#1c1b1e" : "#ffffff"),
+    colorBgElevated: palette?.raised ?? (isDark ? "#252528" : "#ffffff"),
+    colorBorder: palette?.border ?? (isDark ? "#323236" : "#e3e3e3"),
+    ...(palette
+      ? {
+          colorText: palette.text,
+          colorTextSecondary: palette.secondary,
+        }
+      : {}),
     fontFamily:
       'Geist, -apple-system, BlinkMacSystemFont, "Segoe UI Variable Display", "Segoe UI", Roboto, "Helvetica Neue", Arial, "HarmonyOS Sans SC", "PingFang SC", "Microsoft YaHei UI", sans-serif',
     fontFamilyCode:
@@ -128,7 +150,9 @@ export function getAppThemeToken(
     controlHeight: Math.round(36 * controlScale),
     controlHeightSM: Math.round(32 * controlScale),
     controlHeightLG: Math.round(44 * controlScale),
-    ...(userTheme.radius
+    ...(pageStyle !== "classic"
+      ? { borderRadius: 7 }
+      : userTheme.radius
       ? { borderRadius: Number.parseFloat(userTheme.radius) }
       : { borderRadius: 8 }),
   };
@@ -405,7 +429,12 @@ function AppInner({
   const hubMode = backendInfo.mode === "hub";
   const basename = getRouterBasename(window.location.pathname);
   const { i18n } = useTranslation();
-  const { isDark, previewTheme: userTheme } = useTheme();
+  const {
+    isDark,
+    previewTheme: userTheme,
+    interfaceStyle = "classic",
+    pageStyle = "classic",
+  } = useTheme();
   const uiFontSize = useSyncExternalStore(subscribeUiFontSize, getUiFontSize);
   const osActive = isOsPath(window.location.pathname);
   // The console font-size setting is intentionally scoped to the classic
@@ -443,32 +472,6 @@ function AppInner({
     }
     useUploadLimitStore.getState().fetch();
   }, []);
-
-  useEffect(() => {
-    const darkTheme = isDark ? userTheme.dark : undefined;
-    const accent = darkTheme?.accent ?? userTheme.accent;
-    const accentHover = userTheme.accent_hover;
-    const accentBg = darkTheme?.accent_bg ?? userTheme.accent_bg;
-    const root = document.documentElement;
-    const setOrRemove = (
-      name: string,
-      value: string | undefined,
-      validateColor = false,
-    ) => {
-      if (value === undefined) {
-        root.style.removeProperty(name);
-      } else if (!validateColor || isSafeCssColor(value)) {
-        root.style.setProperty(name, value);
-      }
-    };
-
-    setOrRemove("--app-accent", accent);
-    setOrRemove("--app-accent-hover", accentHover);
-    setOrRemove("--app-accent-soft", accentBg, true);
-    setOrRemove("--app-surface", darkTheme?.surface, true);
-    setOrRemove("--app-radius", userTheme.radius);
-    setOrRemove("--border-radius", userTheme.radius);
-  }, [isDark, userTheme]);
 
   useEffect(() => {
     const handleLanguageChanged = (lng: string) => {
@@ -567,6 +570,11 @@ function AppInner({
   return (
     <>
       <GlobalStyle />
+      <style data-appearance="legacy">
+        {interfaceStyle === "classic" && pageStyle === "classic"
+          ? legacyAppearance
+          : ""}
+      </style>
       <PressFeedback />
       <ConfigProvider
         {...selectedTheme}
@@ -580,7 +588,13 @@ function AppInner({
           algorithm: isDark
             ? antdTheme.darkAlgorithm
             : antdTheme.defaultAlgorithm,
-          token: getAppThemeToken(userTheme, isDark, effectiveFontSize),
+          token: getAppThemeToken(
+            userTheme,
+            isDark,
+            effectiveFontSize,
+            interfaceStyle,
+            pageStyle,
+          ),
           components: getAppComponentTokens(
             sparkTheme?.components,
             effectiveFontSize,

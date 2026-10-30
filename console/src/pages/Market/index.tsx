@@ -59,7 +59,9 @@ export default function MarketplacePage() {
     content = (
       <>
         <MarketplaceHeader activeSection={extension.id} />
-        <ExtensionComponent />
+        <div data-themed-card="true">
+          <ExtensionComponent />
+        </div>
       </>
     );
   }

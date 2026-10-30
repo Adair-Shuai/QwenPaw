@@ -154,6 +154,12 @@ describe("Header update entry", () => {
     mocks.desktop.componentUpdateCount = 0;
     mocks.desktop.version = "";
     mocks.desktop.body = "";
+    mocks.desktop.downloaded = 0;
+    mocks.desktop.total = null;
+    mocks.desktop.error = null;
+    mocks.desktop.startBackgroundDownload
+      .mockReset()
+      .mockResolvedValue(undefined);
     mocks.desktop.checkWarning = null;
     mocks.desktop.refreshUpdates.mockReset().mockImplementation(async () =>
       mocks.desktop.hasCoreUpdate
@@ -174,7 +180,7 @@ describe("Header update entry", () => {
     clearResumeComponentUpdatesAfterCore();
   });
 
-  it("always renders the unified update button next to the version", async () => {
+  it("uses the version as the only update entry", async () => {
     render(<AppBrand />);
 
     const button = screen.getByRole("button", {
@@ -183,13 +189,53 @@ describe("Header update entry", () => {
     const version = await screen.findByText("v2.1.1b7");
 
     expect(button).toBeVisible();
-    expect(
-      button.querySelector("svg.lucide-cloud-download"),
-    ).toBeInTheDocument();
+    expect(button.querySelector("svg")).not.toBeInTheDocument();
     expect(version).toBeVisible();
-    expect(version.closest("[class*='appBrandVersionArea']")).toContainElement(
-      button,
+    expect(version).toBe(button);
+    expect(
+      version
+        .closest("[class*='appBrandVersionArea']")
+        ?.querySelectorAll("button"),
+    ).toHaveLength(1);
+  });
+
+  it("shows background progress on the version and retries a failed download from it", async () => {
+    mocks.isDesktop = true;
+    mocks.desktop.isBackground = true;
+    mocks.desktop.phase = "downloading";
+    mocks.desktop.total = 100;
+    mocks.desktop.downloaded = 42;
+    const view = render(<AppBrand version="2.3.0" />);
+    expect(
+      screen.getByRole("button", { name: /backgroundDownloading/ }),
+    ).toHaveTextContent("v2.3.0 · 42%");
+    mocks.desktop.phase = "failed";
+    view.rerender(<AppBrand version="2.3.0" />);
+    const version = screen.getByRole("button", { name: /backgroundFailed/ });
+    expect(version).toHaveAttribute("data-update-state", "failed");
+    fireEvent.click(version);
+    await waitFor(() =>
+      expect(mocks.desktop.startBackgroundDownload).toHaveBeenCalledOnce(),
     );
+    expect(mocks.desktop.refreshUpdates).not.toHaveBeenCalled();
+  });
+
+  it("opens a downloaded update from the version and installs it only after confirmation", async () => {
+    mocks.isDesktop = true;
+    mocks.desktop.phase = "downloaded";
+    mocks.desktop.hasCoreUpdate = true;
+    mocks.desktop.version = "2.4.0";
+    render(<AppBrand version="2.3.0" />);
+    fireEvent.click(screen.getByRole("button", { name: /readyToInstall/ }));
+    await screen.findByRole("dialog");
+    expect(mocks.desktop.installDownloaded).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: "sidebar.updateModal.installUpdate" }),
+    );
+    await waitFor(() =>
+      expect(mocks.desktop.installDownloaded).toHaveBeenCalledOnce(),
+    );
+    expect(mocks.desktop.startInstall).not.toHaveBeenCalled();
   });
 
   it.each([

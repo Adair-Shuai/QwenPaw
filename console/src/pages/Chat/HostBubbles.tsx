@@ -51,6 +51,8 @@ import type {
 import { DownloadableAudios } from "../../components/Chat/MediaDownload";
 import { ToolCallTurnBoundary } from "./turnEndedProvider";
 import ResponseArtifactList from "../../features/files-workspace/ResponseArtifactList";
+import TurnFileSummary from "../../features/files-workspace/TurnFileSummary";
+import { useTurnFilesScope } from "../../features/files-workspace/TurnFilesScope";
 import { isToolLikeResponseMessageType } from "./responseMessageTypes";
 import {
   countCollapsedSteps,
@@ -208,6 +210,7 @@ function DefaultHostResponseCard({
   contentAppend?: React.ReactNode;
 }) {
   const { t } = useTranslation();
+  const fileScope = useTurnFilesScope();
   const avatar = useChatAnywhereOptions((options) => options.welcome?.avatar);
   const nick = useChatAnywhereOptions((options) => options.welcome?.nick);
   const nickNode =
@@ -305,7 +308,25 @@ function DefaultHostResponseCard({
       ) : null}
       {contentAppend}
       {AgentScopeRuntimeResponseBuilder.maybeDone(data) ? (
-        <ResponseArtifactList messages={messages} />
+        fileScope ? (
+          <TurnFileSummary
+            scope={fileScope}
+            responseId={data.id}
+            clientMessageId={
+              (
+                data as IAgentScopeRuntimeResponse & {
+                  client_message_id?: string;
+                }
+              ).client_message_id
+            }
+            completed
+            fallback={
+              <ResponseArtifactList messages={messages} scope={fileScope} />
+            }
+          />
+        ) : (
+          <ResponseArtifactList messages={messages} />
+        )
       ) : null}
       <ResponseActions data={data} messageId={messageId} isLast={isLast} />
     </>

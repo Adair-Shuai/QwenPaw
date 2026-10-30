@@ -1639,12 +1639,11 @@
   max-width: calc(100vw - 24px);
   :global(.ant-popover-inner),
   :global(.qwenpaw-popover-inner) {
-    padding: 12px;
-    border-radius: 20px;
-    background: var(--app-surface);
-    box-shadow:
-      0 8px 32px rgb(0 0 0 / 12%),
-      0 0 0 1px var(--app-border-subtle, rgb(0 0 0 / 8%));
+    padding: 8px;
+    border: 1px solid var(--app-border);
+    border-radius: 12px;
+    background: var(--app-surface-raised);
+    box-shadow: var(--app-shadow-panel);
   }
 }
 .pickerViewport {

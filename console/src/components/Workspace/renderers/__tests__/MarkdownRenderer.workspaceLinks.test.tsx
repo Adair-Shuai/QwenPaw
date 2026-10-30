@@ -91,7 +91,7 @@ describe("MarkdownRenderer workspace resources", () => {
     );
   });
 
-  it("renders Mermaid fenced blocks with the upstream diagram component", () => {
+  it("renders Mermaid fenced blocks with the upstream diagram component", async () => {
     const context = makeContext();
     context.artifact.textContent = [
       "```mermaid",
@@ -102,8 +102,14 @@ describe("MarkdownRenderer workspace resources", () => {
 
     render(<MarkdownRenderer {...context} />);
 
-    expect(screen.getByTestId("mermaid-diagram")).toHaveTextContent(
+    expect(await screen.findByTestId("mermaid-diagram")).toHaveTextContent(
       "graph TD A --> B",
     );
+    const tabs = screen.getAllByRole("tab");
+    expect(tabs).toHaveLength(2);
+    expect(screen.getByLabelText("common.copy")).toBeInTheDocument();
+    expect(screen.getByLabelText("common.download")).toBeInTheDocument();
+    fireEvent.click(tabs[1]);
+    expect(screen.getByRole("tabpanel")).toHaveTextContent("graph TD A --> B");
   });
 });

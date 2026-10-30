@@ -1,5 +1,5 @@
 /** Unified read-only preview adapter for the files workspace renderer registry. */
-import { useMemo } from "react";
+import { Component, useMemo, useState, type ReactNode } from "react";
 import { useTranslation } from "react-i18next";
 import { ExternalLink } from "lucide-react";
 import { openHtmlFile } from "../../utils/openHtmlFile";
@@ -15,6 +15,68 @@ import { useAgentStore } from "../../stores/agentStore";
 import { mimeFromExtension } from "../../utils/mimeForPreview";
 
 registerBuiltinRenderers();
+
+function PreviewFailure({
+  content,
+  onRetry,
+}: {
+  content: string;
+  onRetry: () => void;
+}) {
+  const { t } = useTranslation();
+  const [showText, setShowText] = useState(false);
+  return (
+    <div className={styles.previewError}>
+      <div className={styles.previewErrorActions}>
+        <span role="alert">
+          {t("files.previewFailed", "预览失败，原文件内容保持不变。")}
+        </span>
+        <button
+          type="button"
+          className={styles.htmlOpenButton}
+          onClick={onRetry}
+        >
+          {t("common.retry", "重试")}
+        </button>
+        {!!content && !showText && (
+          <button
+            type="button"
+            className={styles.htmlOpenButton}
+            onClick={() => setShowText(true)}
+          >
+            {t("files.showOriginalText", "查看原始文本")}
+          </button>
+        )}
+      </div>
+      {showText && <pre className={styles.textFallback}>{content}</pre>}
+    </div>
+  );
+}
+
+class PreviewBoundary extends Component<
+  {
+    children: ReactNode;
+    content: string;
+  },
+  { failed: boolean }
+> {
+  state = { failed: false };
+
+  static getDerivedStateFromError() {
+    return { failed: true };
+  }
+
+  render() {
+    return this.state.failed ? (
+      <PreviewFailure
+        content={this.props.content}
+        onRetry={() => this.setState({ failed: false })}
+      />
+    ) : (
+      this.props.children
+    );
+  }
+}
 
 export type PreviewType =
   | "image"
@@ -57,7 +119,10 @@ export interface FilePreviewProps {
   mimeType?: string;
   size?: number;
   artifact?: WorkspaceArtifact;
+  /** Workspace hosts may own artifact patches and protect unsaved buffers. */
+  listenForArtifactUpdates?: boolean;
   onOpenWorkspaceFile?: (path: string) => void;
+  onMemoryTagClick?: (tag: string) => void;
 }
 
 export default function FilePreview({
@@ -71,7 +136,9 @@ export default function FilePreview({
   mimeType,
   size,
   artifact: artifactProp,
+  listenForArtifactUpdates = true,
   onOpenWorkspaceFile,
+  onMemoryTagClick,
 }: FilePreviewProps) {
   const { t } = useTranslation();
   const selectedAgent = useAgentStore((state) => state.selectedAgent);
@@ -149,18 +216,32 @@ export default function FilePreview({
   ]);
 
   const preview = (
-    <ArtifactPreview
-      artifact={artifact}
-      hostControls
-      onOpenArtifact={
-        onOpenWorkspaceFile
-          ? (target) => {
-              if (target.workspacePath)
-                onOpenWorkspaceFile(target.workspacePath);
-            }
-          : undefined
-      }
-    />
+    <PreviewBoundary
+      key={JSON.stringify([
+        artifact.agentId ?? selectedAgent,
+        artifact.chatId ?? chatId,
+        artifact.projectDirOverride ?? projectDirOverride,
+        artifact.workspaceRoot ?? root,
+        artifact.workspacePath ?? filePath,
+        artifact.id,
+      ])}
+      content={artifact.textContent ?? content}
+    >
+      <ArtifactPreview
+        artifact={artifact}
+        listenForUpdates={listenForArtifactUpdates}
+        onMemoryTagClick={onMemoryTagClick}
+        hostControls
+        onOpenArtifact={
+          onOpenWorkspaceFile
+            ? (target) => {
+                if (target.workspacePath)
+                  onOpenWorkspaceFile(target.workspacePath);
+              }
+            : undefined
+        }
+      />
+    </PreviewBoundary>
   );
 
   if (getPreviewType(filePath) !== "html") return preview;

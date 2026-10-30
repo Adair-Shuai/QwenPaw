@@ -2,6 +2,7 @@
  * Domain engine detail drawer component.
  */
 
+import { CapabilityDetail } from "../capability/CapabilityDetail";
 import { getHost } from "../core/runtime";
 import type { DependencyStatusItem, DomainEngineView } from "./types";
 import { STATUS_COLORS, STATUS_LABELS } from "./runtimeStatus";
@@ -35,8 +36,7 @@ export function DomainEngineDetail({
   } | null;
 }) {
   const React = getHost().React;
-  const { Drawer, Descriptions, Tag, Typography, Button, Divider } =
-    getHost().antd;
+  const { Descriptions, Tag, Typography, Button, Divider } = getHost().antd;
   const { Text, Paragraph } = Typography;
 
   if (!view) return null;
@@ -47,7 +47,7 @@ export function DomainEngineDetail({
   const domainLabel = businessGroupFor(def.domain, def.id).title;
 
   return React.createElement(
-    Drawer,
+    CapabilityDetail,
     {
       title: React.createElement(
         "div",
@@ -168,8 +168,7 @@ export function DomainEngineDetail({
                 key: dep.name,
                 style: {
                   padding: "8px 0",
-                  borderBottom:
-                    "1px solid var(--ant-color-border-secondary, #f0f0f0)",
+                  borderBottom: "1px solid var(--app-border-subtle, #f0f0f0)",
                 },
               },
               React.createElement(

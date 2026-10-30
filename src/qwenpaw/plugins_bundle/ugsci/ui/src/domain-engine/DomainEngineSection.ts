@@ -413,7 +413,7 @@ export function DomainEngineSection({
 
   return React.createElement(
     "div",
-    null,
+    { className: "ugsci-capability-section", "data-focused": drawerOpen },
     // Action bar
     React.createElement(
       "div",

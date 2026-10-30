@@ -8,7 +8,10 @@ import type { FileTarget } from "./types";
 import { useBackgroundTasksStore } from "../../stores/backgroundTasksStore";
 import { useCodingTabsStore } from "../../stores/codingTabsStore";
 import type { FilesDrawerState } from "./types";
-import { createRef } from "react";
+import { createRef, useEffect } from "react";
+import { slotRegistry } from "../../plugins/registry/store";
+import { ThemeProvider, useTheme } from "../../contexts/ThemeContext";
+import { PAGE_STYLES } from "../../utils/pageStyle";
 
 vi.mock("../../monacoSetup", () => ({}));
 vi.mock("@monaco-editor/react", () => ({
@@ -327,6 +330,82 @@ describe("FilesDrawer", () => {
     ).not.toBeInTheDocument();
   });
 
+  it("clears closed file actions instead of falling back to the opening request", async () => {
+    renderWithProviders(
+      <FilesDrawer
+        state={{
+          kind: "preview",
+          target: { source: "workspace", path: "closed.txt" },
+          trigger: null,
+        }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    await screen.findByRole("tab", { name: /closed.txt/ });
+    fireEvent.click(
+      screen.getByRole("button", { name: /(?:close|关闭).*closed.txt/i }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("tab", { name: /closed.txt/ }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(screen.queryByText("closed.txt")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", {
+        name: /mentionInChat|在聊天中引用|Mention in chat/i,
+      }),
+    ).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", {
+        name: /expandWorkspace|展开工作区|Expand workspace/i,
+      }),
+    ).toBeEnabled();
+  });
+
+  it("retains browser history, address drafts and the iframe across tool switches", async () => {
+    const props = {
+      state: { kind: "workspace" as const, trigger: null },
+      dispatch: vi.fn(),
+      scope: interactionScope,
+    };
+    const { rerender } = renderWithProviders(<FilesDrawer {...props} />);
+    fireEvent.click(screen.getByRole("button", { name: "浏览器" }));
+    const address = screen.getByRole("textbox", {
+      name: /浏览器地址|Browser address/,
+    });
+    for (const url of [
+      "https://example.com/first",
+      "https://example.com/second",
+    ]) {
+      fireEvent.change(address, { target: { value: url } });
+      fireEvent.keyDown(address, { key: "Enter" });
+    }
+    const frame = screen.getByTitle(/工作台浏览器|Workbench browser/);
+    fireEvent.change(address, { target: { value: "unfinished address" } });
+    fireEvent.click(screen.getByRole("button", { name: "文件与预览" }));
+    expect(frame).not.toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "浏览器" }));
+    expect(screen.getByTitle(/工作台浏览器|Workbench browser/)).toBe(frame);
+    expect(address).toHaveValue("unfinished address");
+    fireEvent.click(screen.getByRole("button", { name: /^(后退|Back)$/ }));
+    expect(screen.getByTitle(/工作台浏览器|Workbench browser/)).toHaveAttribute(
+      "src",
+      "https://example.com/first",
+    );
+    rerender(
+      <FilesDrawer
+        {...props}
+        scope={{ ...interactionScope, sessionId: "other-browser-session" }}
+      />,
+    );
+    expect(frame).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: /^(后退|Back)$/ }),
+    ).toBeDisabled();
+  });
+
   it("retains unsaved edits across closing and reopening the workspace", async () => {
     const props = {
       state: {
@@ -350,6 +429,173 @@ describe("FilesDrawer", () => {
     expect(await screen.findByTestId("monaco-editor")).toHaveValue(
       "unsaved draft",
     );
+  });
+
+  it("restores per-style file widths without replacing the active editor or its unsaved draft", async () => {
+    localStorage.setItem("qwenpaw-files-preview-width", "480");
+    localStorage.setItem("qwenpaw-files-preview-width:openai", "600");
+    function Controls() {
+      const { setPageStyle } = useTheme();
+      return (
+        <>
+          {PAGE_STYLES.map(({ id }) => (
+            <button key={id} onClick={() => setPageStyle(id)}>
+              {id}
+            </button>
+          ))}
+        </>
+      );
+    }
+    renderWithProviders(
+      <ThemeProvider syncRemote={false}>
+        <Controls />
+        <FilesDrawer
+          state={{
+            kind: "preview",
+            target: { source: "workspace", path: "draft.py" },
+            trigger: null,
+          }}
+          dispatch={vi.fn()}
+          scope={interactionScope}
+        />
+      </ThemeProvider>,
+    );
+    await screen.findByTestId("monaco-editor");
+    fireEvent.click(
+      screen.getByRole("button", { name: /^(Edit|编辑|files\.edit)$/i }),
+    );
+    const editing = screen.getByTestId("monaco-editor");
+    fireEvent.change(editing, {
+      target: { value: "style-independent unsaved draft" },
+    });
+    const drawer = screen.getByRole("region", { name: /files|文件/i });
+    expect(drawer).toHaveStyle({ width: "480px" });
+    fireEvent.click(screen.getByRole("button", { name: "openai" }));
+    expect(drawer).toHaveStyle({ width: "600px" });
+    fireEvent.click(screen.getByRole("button", { name: "deepseek" }));
+    expect(drawer.style.width).toBe("");
+    fireEvent.click(screen.getByRole("button", { name: "classic" }));
+    expect(drawer).toHaveStyle({ width: "480px" });
+    expect(screen.getByTestId("monaco-editor")).toBe(editing);
+    expect(editing).toHaveValue("style-independent unsaved draft");
+  });
+
+  it("keeps native files usable after a compute plugin is removed", async () => {
+    const registration = slotRegistry.fill(
+      "workspace-test",
+      "chat.workbench.compute",
+      () => <div>Registered computation</div>,
+    );
+    try {
+      renderWithProviders(
+        <FilesDrawer
+          scope={interactionScope}
+          dispatch={vi.fn()}
+          state={{ kind: "workspace", mode: "compute", trigger: null }}
+        />,
+      );
+      await waitFor(() =>
+        expect(screen.getByText("Registered computation")).toBeVisible(),
+      );
+      act(() => registration.dispose());
+      expect(
+        screen.queryByText("Registered computation"),
+      ).not.toBeInTheDocument();
+      expect(screen.getByText(/暂无推导记录/)).toBeVisible();
+      fireEvent.click(screen.getByRole("button", { name: "文件与预览" }));
+      expect(await screen.findByTestId("file-navigator")).toBeVisible();
+    } finally {
+      act(() => registration.dispose());
+    }
+  });
+
+  it("releases the simulation view on hide and reflects provider removal", async () => {
+    const namespace = ((
+      window as unknown as {
+        QwenPaw?: { runCenter?: { SimulationMonitor?: () => React.ReactNode } };
+      }
+    ).QwenPaw ??= {});
+    const previous = namespace.runCenter;
+    const released = vi.fn();
+    function Monitor() {
+      useEffect(() => released, []);
+      return <div>Live simulation view</div>;
+    }
+    namespace.runCenter = { SimulationMonitor: Monitor };
+    try {
+      renderWithProviders(
+        <FilesDrawer
+          scope={interactionScope}
+          dispatch={vi.fn()}
+          state={{
+            kind: "workspace",
+            mode: "simulation",
+            simulationRunId: "sim_smoke",
+            trigger: null,
+          }}
+        />,
+      );
+      await waitFor(() =>
+        expect(screen.getByText("Live simulation view")).toBeVisible(),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "文件与预览" }));
+      expect(released).toHaveBeenCalledOnce();
+      fireEvent.click(screen.getByRole("button", { name: "数模监测" }));
+      await waitFor(() =>
+        expect(screen.getByText("Live simulation view")).toBeVisible(),
+      );
+      act(() => {
+        delete namespace.runCenter;
+        window.dispatchEvent(new Event("qwenpaw:simulation-monitor-ready"));
+      });
+      expect(
+        screen.queryByText("Live simulation view"),
+      ).not.toBeInTheDocument();
+      expect(screen.getByRole("status")).toHaveTextContent("尚未加载");
+      expect(released).toHaveBeenCalledTimes(2);
+    } finally {
+      namespace.runCenter = previous;
+    }
+  });
+
+  it("shows native file size and keeps expansion available after a load failure", async () => {
+    const { rerender } = renderWithProviders(
+      <FilesDrawer
+        scope={interactionScope}
+        dispatch={vi.fn()}
+        state={{
+          kind: "preview",
+          target: { source: "workspace", path: "size.txt" },
+          trigger: null,
+        }}
+      />,
+    );
+    await screen.findByRole("tab", { name: /size.txt/ });
+    await waitFor(() =>
+      expect(
+        screen.getByText(/(?:预览|Preview).*5.*(?:字节|bytes)/i),
+      ).toBeVisible(),
+    );
+    vi.mocked(workspaceApi.loadFileText).mockRejectedValueOnce(
+      new Error("missing"),
+    );
+    rerender(
+      <FilesDrawer
+        scope={{ ...interactionScope, sessionId: "missing" }}
+        dispatch={vi.fn()}
+        state={{
+          kind: "preview",
+          target: { source: "workspace", path: "missing.txt" },
+          trigger: null,
+        }}
+      />,
+    );
+    await screen.findByRole("alert");
+    expect(
+      screen.getByRole("button", {
+        name: /expandWorkspace|展开工作区|Expand workspace/i,
+      }),
+    ).toBeEnabled();
   });
 
   it("restores focus to its connected opener when closed", async () => {

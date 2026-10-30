@@ -2,6 +2,7 @@
  * Skill pool tab — browse and manage the shared skill pool.
  */
 
+import { CapabilityDetail } from "../capability/CapabilityDetail";
 import { getHost } from "../core/runtime";
 import { PRIMARY_BTN_STYLE, renderMarkdown } from "../core/shared";
 import type {
@@ -44,7 +45,6 @@ export function SkillPoolTab({
     Card,
     Tag,
     Typography,
-    Drawer,
     Descriptions,
     List,
     Modal,
@@ -66,7 +66,7 @@ export function SkillPoolTab({
   const [installedAgents, setInstalledAgents] = useState<string[]>([]);
   const [contentLoading, setContentLoading] = useState(false);
   const [displayCount, setDisplayCount] = useState(24);
-  const [hoveredSkill, setHoveredSkill] = useState<string | null>(null);
+  const contentGeneration = useRef(0);
   const [actionLoading, setActionLoading] = useState(false);
   const scrollTopRef = useRef(0);
   const loadMoreSentinelRef = useRef<HTMLDivElement | null>(null);
@@ -172,7 +172,9 @@ export function SkillPoolTab({
 
   const handleCardClick = useCallback(
     async (skill: PoolSkillSpec) => {
+      const generation = ++contentGeneration.current;
       setActiveSkill(skill);
+      setContentLoading(false);
       setInstalledAgents(computeInstalledAgents(skill.name));
       setDrawerOpen(true);
       // Lazy-load full content if not already present
@@ -180,11 +182,13 @@ export function SkillPoolTab({
         setContentLoading(true);
         try {
           const content = await fetchPoolSkillContent(skill.name);
-          setActiveSkill({ ...skill, content });
+          if (generation === contentGeneration.current)
+            setActiveSkill({ ...skill, content });
         } catch {
           // keep empty content on error
         } finally {
-          setContentLoading(false);
+          if (generation === contentGeneration.current)
+            setContentLoading(false);
         }
       }
     },
@@ -250,7 +254,7 @@ export function SkillPoolTab({
 
   return React.createElement(
     "div",
-    null,
+    { className: "ugsci-capability-section", "data-focused": drawerOpen },
     React.createElement(
       "div",
       {
@@ -320,16 +324,15 @@ export function SkillPoolTab({
             ...visibleSkills.map((skill) =>
               React.createElement(
                 Col,
-                { key: skill.name, xs: 24, sm: 12, md: 8, lg: 6 },
+                { key: skill.name, xs: 24, sm: 12, md: 12, lg: 8, xxl: 6 },
                 React.createElement(
                   Card,
                   {
                     hoverable: true,
                     size: "small",
+                    className: "ugsci-capability-card",
                     style: { cursor: "pointer", height: "100%" },
                     onClick: () => handleCardClick(skill),
-                    onMouseEnter: () => setHoveredSkill(skill.name),
-                    onMouseLeave: () => setHoveredSkill(null),
                   },
                   React.createElement(
                     "div",
@@ -338,26 +341,37 @@ export function SkillPoolTab({
                         display: "flex",
                         alignItems: "center",
                         gap: 8,
-                        marginBottom: 8,
+                        marginBottom: 0,
                       },
                     },
                     skill.emoji
                       ? React.createElement(
                           "span",
-                          { style: { fontSize: 18 } },
+                          { className: "ugsci-capability-avatar" },
                           skill.emoji,
                         )
                       : React.createElement(
                           "span",
-                          { style: { fontSize: 18 } },
+                          { className: "ugsci-capability-avatar" },
                           "⚡",
                         ),
                     React.createElement(
-                      Text,
+                      "button",
                       {
-                        strong: true,
+                        type: "button",
+                        onClick: (event: any) => {
+                          event.stopPropagation();
+                          handleCardClick(skill);
+                        },
                         style: {
-                          fontSize: 13,
+                          fontSize: 15,
+                          border: 0,
+                          padding: 0,
+                          background: "transparent",
+                          color: "inherit",
+                          textAlign: "left",
+                          fontWeight: 600,
+                          cursor: "pointer",
                           flex: 1,
                           overflow: "hidden",
                           textOverflow: "ellipsis",
@@ -379,7 +393,7 @@ export function SkillPoolTab({
                         Paragraph,
                         {
                           type: "secondary",
-                          style: { fontSize: 11, margin: 0, lineHeight: 1.4 },
+                          style: { fontSize: 12, margin: 0, lineHeight: 1.5 },
                           ellipsis: { rows: 2 },
                         },
                         skill.description,
@@ -412,58 +426,56 @@ export function SkillPoolTab({
                         ),
                       ),
                   ),
-                  // Hover action footer
-                  hoveredSkill === skill.name
-                    ? React.createElement(
-                        "div",
-                        {
-                          style: {
-                            marginTop: 8,
-                            paddingTop: 8,
-                            borderTop: "1px solid #f0f0f0",
-                            display: "flex",
-                            gap: 8,
-                            justifyContent: "flex-end",
-                          },
+                  // Actions stay available for keyboard and touch use.
+                  React.createElement(
+                    "div",
+                    {
+                      style: {
+                        marginTop: "auto",
+                        paddingTop: 4,
+
+                        display: "flex",
+                        gap: 8,
+                        justifyContent: "flex-end",
+                      },
+                    },
+                    React.createElement(
+                      Button,
+                      {
+                        size: "small",
+                        type: "primary",
+                        icon: PlusOutlined
+                          ? React.createElement(PlusOutlined)
+                          : undefined,
+                        disabled:
+                          actionLoading ||
+                          installedForCurrentAgent.has(skill.name),
+                        onClick: (e: any) => {
+                          e.stopPropagation();
+                          handleInstallToAgent(skill);
                         },
-                        React.createElement(
-                          Button,
-                          {
-                            size: "small",
-                            type: "primary",
-                            icon: PlusOutlined
-                              ? React.createElement(PlusOutlined)
-                              : undefined,
-                            disabled:
-                              actionLoading ||
-                              installedForCurrentAgent.has(skill.name),
-                            onClick: (e: any) => {
-                              e.stopPropagation();
-                              handleInstallToAgent(skill);
-                            },
-                          },
-                          installedForCurrentAgent.has(skill.name)
-                            ? "已加载"
-                            : "加载到当前Agent",
-                        ),
-                        React.createElement(
-                          Button,
-                          {
-                            size: "small",
-                            danger: true,
-                            icon: DeleteOutlined
-                              ? React.createElement(DeleteOutlined)
-                              : undefined,
-                            disabled: actionLoading || skill.protected,
-                            onClick: (e: any) => {
-                              e.stopPropagation();
-                              handleDeleteFromPool(skill);
-                            },
-                          },
-                          "删除",
-                        ),
-                      )
-                    : null,
+                      },
+                      installedForCurrentAgent.has(skill.name)
+                        ? "已加载"
+                        : "添加到当前专家",
+                    ),
+                    React.createElement(
+                      Button,
+                      {
+                        size: "small",
+                        danger: true,
+                        icon: DeleteOutlined
+                          ? React.createElement(DeleteOutlined)
+                          : undefined,
+                        disabled: actionLoading || skill.protected,
+                        onClick: (e: any) => {
+                          e.stopPropagation();
+                          handleDeleteFromPool(skill);
+                        },
+                      },
+                      "删除",
+                    ),
+                  ),
                 ),
               ),
             ),
@@ -495,7 +507,7 @@ export function SkillPoolTab({
     // Skill detail drawer
     activeSkill
       ? React.createElement(
-          Drawer,
+          CapabilityDetail,
           {
             title: React.createElement(
               "div",
@@ -508,7 +520,10 @@ export function SkillPoolTab({
               React.createElement("span", null, activeSkill.name),
             ),
             open: drawerOpen,
-            onClose: () => setDrawerOpen(false),
+            onClose: () => {
+              contentGeneration.current++;
+              setDrawerOpen(false);
+            },
             width: 520,
             extra: React.createElement(
               Button,
@@ -660,7 +675,7 @@ export function SkillPoolTab({
                       maxHeight: 300,
                       overflow: "auto",
                       padding: 12,
-                      background: "var(--ant-color-fill-secondary, #f5f5f5)",
+                      background: "var(--app-fill, #f5f5f5)",
                       borderRadius: 6,
                       fontSize: 12,
                       whiteSpace: "pre-wrap",

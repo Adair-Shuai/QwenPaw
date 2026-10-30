@@ -1,0 +1,16 @@
+{
+  "id": "matrix",
+  "name": "Matrix",
+  "version": "0.1.0.dev1",
+  "type": "channel",
+  "description": "Matrix homeserver transport with optional matrix-nio E2EE.",
+  "author": "QwenPaw Team",
+  "entry": {
+    "descriptor": "channel.json"
+  },
+  "qwenpaw_version": {
+    "min": "2.2.2b4",
+    "max": "3.0.0"
+  },
+  "publish": false
+}

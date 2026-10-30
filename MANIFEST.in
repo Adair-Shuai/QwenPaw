@@ -2,3 +2,7 @@
 prune .codex-tmp
 prune plugins/bundle/ugsci/visualization/data
 prune src/qwenpaw/plugins_bundle/ugsci/visualization/data
+include scripts/pack/generate_plugin_metadata.py
+include scripts/pack/validate_channel_contracts.py
+include scripts/pack/channel-contract-requirements.txt
+global-exclude __pycache__ *.py[cod] .DS_Store

@@ -90,6 +90,7 @@ interface TabbedEditorProps {
   onTabDirtyChange: (path: string, dirty: boolean) => void;
   onTabContentChange: (path: string, content: string) => void;
   onFileSaved?: (path: string) => void;
+  onMemoryTagClick?: (tag: string) => void;
   onLoadFile?: (path: string) => Promise<string>;
   onSaveFile?: (path: string, content: string) => Promise<void>;
   onDownloadFile?: (path: string) => Promise<void>;
@@ -97,6 +98,10 @@ interface TabbedEditorProps {
   headerActions?: ReactNode;
   chatId?: string;
   projectDirOverride?: string;
+  /** Keep editor state while suspending resource-heavy previews in hidden panels. */
+  previewActive?: boolean;
+  /** Disable local artifact subscriptions only when the host owns updates. */
+  previewManagedUpdates?: boolean;
   navigation?: {
     path: string;
     line: number;
@@ -205,6 +210,7 @@ export default function TabbedEditor({
   onTabDirtyChange,
   onTabContentChange,
   onFileSaved,
+  onMemoryTagClick,
   onLoadFile,
   onSaveFile,
   onDownloadFile,
@@ -212,6 +218,8 @@ export default function TabbedEditor({
   headerActions,
   chatId,
   projectDirOverride,
+  previewActive = true,
+  previewManagedUpdates = false,
   navigation,
 }: TabbedEditorProps) {
   const { t } = useTranslation();
@@ -1445,7 +1453,7 @@ export default function TabbedEditor({
                 <Tooltip
                   title={
                     isGeneratedArtifact
-                      ? t("files.saveToWorkspace")
+                      ? t("files.saveToWorkspace", "保存到工作区")
                       : t("common.save")
                   }
                 >
@@ -1454,7 +1462,7 @@ export default function TabbedEditor({
                     className={styles.iconBtn}
                     aria-label={
                       isGeneratedArtifact
-                        ? t("files.saveToWorkspace")
+                        ? t("files.saveToWorkspace", "保存到工作区")
                         : t("common.save")
                     }
                     onClick={handleSave}
@@ -1479,17 +1487,30 @@ export default function TabbedEditor({
           /* ── Preview mode (image / markdown / pdf / csv) ─────────────── */
           isPreviewable(activeDisplayPath) ||
           activeTab.previewKind === "binary" ? (
-            <FilePreview
-              key={`${activeTab.path}:${previewRevision}`}
-              filePath={activeDisplayPath}
-              content={activeRenderedContent}
-              chatId={chatId}
-              binaryUrl={activeTab.artifactUrl}
-              root={activeTab.workspaceRoot}
-              projectDirOverride={projectDirOverride}
-              workspaceBacked={activeTab.source === "workspace"}
-              artifact={activeTab.artifact}
-            />
+            previewActive && (
+              <FilePreview
+                key={`${activeTab.path}:${previewRevision}`}
+                filePath={activeDisplayPath}
+                content={activeRenderedContent}
+                chatId={chatId}
+                binaryUrl={activeTab.artifactUrl}
+                root={activeTab.workspaceRoot}
+                projectDirOverride={projectDirOverride}
+                workspaceBacked={activeTab.source === "workspace"}
+                artifact={activeTab.artifact}
+                listenForArtifactUpdates={!previewManagedUpdates}
+                onMemoryTagClick={
+                  !activeTab.artifactUrl &&
+                  (activeTab.source === "memory" ||
+                    activeTab.source === "daily" ||
+                    activeTab.source === "digest" ||
+                    (activeTab.source === "workspace" &&
+                      activeTab.workspaceRoot === "workspace"))
+                    ? onMemoryTagClick
+                    : undefined
+                }
+              />
+            )
           ) : (
             <pre className={styles.textPreview}>{activeRenderedContent}</pre>
           )

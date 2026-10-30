@@ -17,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
+from contextlib import aclosing
 from typing import Any, AsyncGenerator
 
 from ..agents.acp.meta import ACP_EPHEMERAL_META_KEY
@@ -55,12 +56,24 @@ class Runtime:
     ) -> AsyncGenerator[Any, None]:
         """8-phase lifecycle orchestration."""
         request = self._normalize(request)
+        from ..schemas import AgentRequest
+
+        if (
+            isinstance(request, AgentRequest)
+            and request._channel_control_state
+            is not None  # pylint: disable=protected-access
+        ):
+            # Runtime owns this non-serialized channel authorization state.
+            request._channel_control_state.resolution = (
+                None  # pylint: disable=protected-access
+            )
         ctx = self._build_context(request)
         hooks = self.workspace.plugins.hook_registry
 
         envelope = Envelope(session_id=ctx.session_id)
         ctx._envelope = envelope  # pylint: disable=protected-access
         skip_agent = False
+        file_tracker = None
 
         try:
             # --- [phase 1] PRE_DISPATCH ---
@@ -122,6 +135,21 @@ class Runtime:
 
             if not skip_agent:
                 self._apply_context_injections(ctx)
+                from ..config.context import (
+                    get_all_project_dir_paths,
+                    get_tool_base_dir,
+                )
+                from ..turn_files.lifecycle import begin_turn_files
+
+                if getattr(ctx, "workspace_dir", None) is not None:
+                    file_tracker = await begin_turn_files(
+                        workspace_dir=ctx.workspace_dir,
+                        request=request,
+                        agent_id=ctx.agent_id,
+                        response_id=envelope.response.id,
+                        project_dirs=get_all_project_dir_paths()
+                        or [get_tool_base_dir()],
+                    )
                 # --- [fixed 3] execute agent ---
                 async for ev in envelope.emit_response_created():
                     yield ev
@@ -134,11 +162,26 @@ class Runtime:
                     or "(empty)",
                 )
                 await record_agent_activity()
-                async for ev in executor.run(ctx.input_msgs):
-                    yield ev
+                from ..providers.model_selection import runtime_model_context
+
+                exhausted = object()
+                async with aclosing(executor.run(ctx.input_msgs)) as events:
+                    while True:
+                        # Reset before yielding: consumers and finalizers may
+                        # resume/close this generator in a different task.
+                        with runtime_model_context(
+                            getattr(ctx.agent, "model", None),
+                        ):
+                            ev = await anext(events, exhausted)
+                        if ev is exhausted:
+                            break
+                        yield ev
 
             # --- [phase 6] POST_RESPONSE ---
             await hooks.run(Phase.POST_RESPONSE, ctx)
+
+            if file_tracker is not None:
+                await file_tracker.finish("completed")
 
             # Finalize envelope (complete message + response).
             async for ev in envelope.finalize():
@@ -212,6 +255,10 @@ class Runtime:
                 yield ev
             raise
         finally:
+            if file_tracker is not None:
+                from ..turn_files.lifecycle import terminal_status
+
+                await file_tracker.finish(terminal_status(ctx.error))
             # Close agent first so governor can flush audit log and persist
             # policy before downstream FINALLY hooks observe the context.
             # See ``QwenPawAgent.close`` (agents/react_agent.py).
@@ -225,7 +272,13 @@ class Runtime:
                         getattr(ctx, "session_id", ""),
                         exc_info=True,
                     )
-            await hooks.run(Phase.FINALLY, ctx)
+            try:
+                await hooks.run(Phase.FINALLY, ctx)
+            finally:
+                if isinstance(request, AgentRequest):
+                    request._channel_control_state = (
+                        None  # pylint: disable=protected-access
+                    )
 
     # ----------------------------------------------------------------- helpers
 
@@ -327,6 +380,11 @@ class Runtime:
                     else "failed"
                 ),
                 ctx.error,
+                response_id=getattr(
+                    getattr(envelope, "response", None),
+                    "id",
+                    None,
+                ),
             )
             user_id = getattr(request, "user_id", "") or ctx.session_id
             channel = getattr(request, "channel", "") or ""
@@ -553,7 +611,12 @@ class Runtime:
             request = AgentRequest(**request)
         if not getattr(request, "session_id", None):
             request.session_id = uuid.uuid4().hex
-        if not getattr(request, "user_id", None):
+        if not getattr(request, "user_id", None) and not (
+            isinstance(request, AgentRequest)
+            and request._channel_actor_unknown
+            is True  # pylint: disable=protected-access
+            and request.user_id == ""
+        ):
             request.user_id = request.session_id
         return request
 

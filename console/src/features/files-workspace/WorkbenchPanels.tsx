@@ -4,6 +4,7 @@ import {
   useEffect,
   useState,
   useSyncExternalStore,
+  type ComponentType,
 } from "react";
 import { message } from "antd";
 import {
@@ -23,7 +24,7 @@ import {
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { Slot } from "../../plugins/registry/Slot";
-import ArtifactPreview from "../../components/Workspace/ArtifactPreview";
+import FilePreview from "../../pages/Coding/FilePreview";
 import type { WorkspaceArtifact } from "../../components/Workspace/types";
 import { mimeFromExtension } from "../../utils/mimeForPreview";
 import { fileExtension, openVisualizationCenter } from "./fileOpenModes";
@@ -72,8 +73,8 @@ export function WorkbenchBrowserPanel({ active }: WorkbenchBrowserPanelProps) {
   })();
 
   useEffect(() => {
-    if (active) setInput(currentUrl);
-  }, [active, currentUrl]);
+    setInput(currentUrl);
+  }, [currentUrl]);
 
   const navigate = (rawValue: string) => {
     const value = rawValue.trim();
@@ -106,7 +107,7 @@ export function WorkbenchBrowserPanel({ active }: WorkbenchBrowserPanelProps) {
   };
 
   return (
-    <div className={styles.workbenchPanel}>
+    <div className={styles.workbenchPanel} aria-hidden={!active}>
       <form className={styles.browserToolbar} onSubmit={submit}>
         <button
           type="button"
@@ -371,7 +372,7 @@ export function WorkbenchGenUiPanel({
             能力中心
           </button>
           <div>
-            <strong>三维网格预览</strong>
+            <strong>{t("files.preview")}</strong>
             <span>{fileName}</span>
           </div>
           <button
@@ -389,7 +390,15 @@ export function WorkbenchGenUiPanel({
           </button>
         </div>
         <div className={styles.genUiPreviewSurface}>
-          <ArtifactPreview artifact={artifact} readOnly hostControls />
+          <FilePreview
+            filePath={target.path}
+            content={target.artifact?.textContent ?? ""}
+            artifact={artifact}
+            chatId={scope.chatId}
+            root={target.root}
+            projectDirOverride={scope.projectDirOverride}
+            workspaceBacked={target.source === "workspace"}
+          />
         </div>
       </div>
     );
@@ -500,7 +509,18 @@ export function WorkbenchSimulationPanel({
     return () =>
       window.removeEventListener("qwenpaw:simulation-monitor-ready", changed);
   }, []);
-  const Monitor = (window as any).QwenPaw?.runCenter?.SimulationMonitor;
+  const Monitor = (
+    window as unknown as {
+      QwenPaw?: {
+        runCenter?: {
+          SimulationMonitor?: ComponentType<{
+            runId: string;
+            scope: { agentId: string; chatId: string };
+          }>;
+        };
+      };
+    }
+  ).QwenPaw?.runCenter?.SimulationMonitor;
   return (
     <div className={`${styles.workbenchPanel} ${styles.genUiPanel}`}>
       {!runId ? (

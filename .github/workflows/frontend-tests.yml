@@ -5,7 +5,9 @@ on:
     branches: [main, master, dev, develop, lobehub-style, "release/**"]
     paths:
       - 'console/**'
-      - 'plugins/bundle/ugsci/ui/**'
+      - 'plugins/bundle/**'
+      - 'plugins/apps/**'
+      - 'src/qwenpaw/plugins_bundle/**'
       - 'scripts/check_console_bundle_budget.mjs'
       - 'src/qwenpaw/plugins/frontend/**'
       - 'scripts/check_plugin_sdk_frontend.py'
@@ -45,7 +47,9 @@ jobs:
           filters: |
             code:
               - 'console/**'
-              - 'plugins/bundle/ugsci/ui/**'
+              - 'plugins/bundle/**'
+              - 'plugins/apps/**'
+              - 'src/qwenpaw/plugins_bundle/**'
               - 'scripts/check_console_bundle_budget.mjs'
               - 'src/qwenpaw/plugins/frontend/**'
               - 'scripts/check_plugin_sdk_frontend.py'

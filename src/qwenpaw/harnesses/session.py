@@ -96,6 +96,14 @@ class HarnessSessionBridge:
         proxy = StateProxy()
         agent_data["state"] = state
         proxy.data = agent_data
+        from ..runtime.console_turn_state import stamp_console_turn
+
+        stamp_console_turn(
+            proxy.data,
+            request,
+            self._enum_value(response.status),
+            response_id=response.id,
+        )
         await self._session.save_session_state(
             session_id=session_id,
             user_id=user_id,
@@ -138,6 +146,7 @@ class HarnessSessionBridge:
                     role=role,
                     content=blocks,
                     backend=backend,
+                    extra=dict(getattr(item, "metadata", None) or {}),
                 ),
             )
         return messages

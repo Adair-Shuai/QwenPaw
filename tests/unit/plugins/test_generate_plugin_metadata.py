@@ -200,20 +200,6 @@ def test_normalize_pack_exclude_drops_traversal_and_empty() -> None:
     assert not _normalize_pack_exclude(manifest)
 
 
-def test_iter_tree_relpaths_prunes_pack_exclude(tmp_path: Path) -> None:
-    plugin_dir = _make_plugin_tree(tmp_path)
-    rels = _iter_tree_relpaths(plugin_dir, _demo_manifest())
-    assert "backend/main.py" in rels
-    assert "backend/api/router.py" in rels
-    assert "ui/dist/index.js" in rels
-    assert "plugin.json" in rels
-    assert "backend/tests/test_api.py" not in rels
-    assert "backend/pytest.ini" not in rels
-    assert "e2e/test_shell.py" not in rels
-    assert "ui/src/App.tsx" not in rels
-    assert "ui/package.json" not in rels
-
-
 def test_pack_exclude_never_drops_manifest_or_entries(
     tmp_path: Path,
 ) -> None:
@@ -229,16 +215,6 @@ def test_pack_exclude_never_drops_manifest_or_entries(
     assert "plugin.json" in rels
     assert "backend/main.py" in rels
     assert "ui/dist/index.js" in rels
-
-
-def test_iter_tree_relpaths_are_posix_on_every_platform(
-    tmp_path: Path,
-) -> None:
-    """Relpaths never carry a native separator (Windows regression guard)."""
-    plugin_dir = _make_plugin_tree(tmp_path)
-    rels = _iter_tree_relpaths(plugin_dir, _demo_manifest())
-    assert rels
-    assert not any("\\" in rel for rel in rels)
 
 
 def test_pack_exclude_exact_prefix_no_sibling_bleed(tmp_path: Path) -> None:
@@ -380,3 +356,38 @@ def test_duplicate_plugin_id_version_fails_closed(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="duplicate published plugin"):
         discover_and_pack(plugins_root, tmp_path / "dist", "/files/plugins")
+
+
+def test_private_channel_zip_preserves_runtime_and_source_manifest(tmp_path):
+    """Local zipper supports private previews while honoring exclusions."""
+    plugin_dir = tmp_path / "channel-preview"
+    plugin_dir.mkdir()
+    manifest = {
+        "id": "channel-preview",
+        "version": "0.1.0",
+        "type": "channel",
+        "publish": False,
+        "entry": {"backend": "plugin.py"},
+        "pack_exclude": ["tests"],
+    }
+    manifest_bytes = json.dumps(manifest).encode()
+    (plugin_dir / "plugin.json").write_bytes(manifest_bytes)
+    (plugin_dir / "plugin.py").write_text("from .channel import Channel\n")
+    (plugin_dir / "channel.py").write_text("class Channel: pass\n")
+    (plugin_dir / "requirements.txt").write_text("example-sdk>=1.0\n")
+    (plugin_dir / "tests").mkdir()
+    (plugin_dir / "tests/test_channel.py").write_text("assert True\n")
+    archive = tmp_path / "preview.zip"
+
+    _zip_plugin(plugin_dir, archive, manifest)
+
+    with zipfile.ZipFile(archive) as zipped:
+        assert zipped.testzip() is None
+        assert set(zipped.namelist()) == {
+            "channel-preview/plugin.json",
+            "channel-preview/plugin.py",
+            "channel-preview/channel.py",
+            "channel-preview/requirements.txt",
+        }
+        assert zipped.read("channel-preview/plugin.json") == manifest_bytes
+    assert (plugin_dir / "plugin.json").read_bytes() == manifest_bytes

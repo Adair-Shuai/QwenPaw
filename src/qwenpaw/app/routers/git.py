@@ -66,6 +66,7 @@ tool_result/
 tool_results/
 skills/
 checkpoints/
+.turn-files/
 
 # QwenPaw runtime files
 chats.json

@@ -29,6 +29,9 @@ export function filesDrawerReducer(
         ...(event.simulationRunId
           ? { simulationRunId: event.simulationRunId }
           : {}),
+        ...(event.interactionRequestId
+          ? { interactionRequestId: event.interactionRequestId }
+          : {}),
       };
     case "EXPAND_WORKSPACE":
       return state.kind === "preview"

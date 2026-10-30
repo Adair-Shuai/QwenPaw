@@ -1,6 +1,10 @@
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { SettingsDrawer as Drawer } from "@/components/interaction/SettingsDrawer";
 import {
+  CapabilityConfig,
+  useCapabilityWorkspace,
+} from "@/components/interaction/CapabilityWorkspace";
+import {
   Collapse,
   Form,
   Input,
@@ -86,6 +90,8 @@ export function ACPDrawer({
   onDelete,
 }: ACPDrawerProps) {
   const { t, i18n } = useTranslation();
+  const focused = useCapabilityWorkspace();
+  const Editor = focused ? CapabilityConfig : Drawer;
   const { schedule, requestClose } = useAutoSave(async () => {
     if (isCreateMode) return;
     const values = form.getFieldsValue(true);
@@ -98,7 +104,7 @@ export function ACPDrawer({
   });
 
   return (
-    <Drawer
+    <Editor
       surfaceId={surfaceId}
       title={
         isCreateMode
@@ -109,6 +115,12 @@ export function ACPDrawer({
       }
       open={open}
       onClose={() => void requestClose(onClose)}
+      {...(focused
+        ? {
+            onCancel: () => void requestClose(onClose),
+            autoSave: !isCreateMode,
+          }
+        : {})}
       width={640}
       footer={
         canDelete || isCreateMode ? (
@@ -290,6 +302,6 @@ export function ACPDrawer({
           ]}
         />
       </Form>
-    </Drawer>
+    </Editor>
   );
 }
