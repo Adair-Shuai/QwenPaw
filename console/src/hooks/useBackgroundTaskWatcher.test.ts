@@ -600,3 +600,74 @@ describe("hydrateBackgroundTasksForSession", () => {
     expect(task?.startTime).toBeLessThanOrEqual(before - 9_900);
   });
 });
+
+describe("session-scoped background task recovery", () => {
+  it("isolates equal tool call ids when an older session is removed", async () => {
+    vi.useFakeTimers();
+    mocks.getInfo.mockResolvedValue({ status: "running" });
+    const {
+      registerBackgroundTask,
+      startBackgroundTaskStream,
+      stopBackgroundWatchersNotInSession,
+      useBackgroundTasksStore,
+    } = await loadModule();
+    const streams = new Map<string, StreamHandlers>();
+    mocks.subscribe.mockImplementation(
+      (sid: string, _id: string, h: StreamHandlers) => {
+        streams.set(sid, h);
+        return vi.fn();
+      },
+    );
+    for (const sid of ["old", "selected"]) {
+      registerBackgroundTask({
+        sessionId: sid,
+        toolCallId: "same",
+        toolName: "shell",
+      });
+      startBackgroundTaskStream(sid, "same");
+    }
+    expect(mocks.subscribe).toHaveBeenCalledTimes(2);
+    streams.get("old")!.onChunk({ data: "old output" });
+    expect(
+      useBackgroundTasksStore
+        .getState()
+        .tasks.find((t) => t.sessionId === "selected")?.liveOutput,
+    ).toBe("");
+    stopBackgroundWatchersNotInSession("selected");
+    streams.get("old")!.onChunk({ data: "late output" });
+    streams.get("selected")!.onChunk({ data: "selected output" });
+    expect(useBackgroundTasksStore.getState().tasks).toHaveLength(1);
+    expect(useBackgroundTasksStore.getState().tasks[0].liveOutput).toBe(
+      "selected output",
+    );
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(mocks.getInfo).toHaveBeenCalledTimes(1);
+    expect(mocks.getInfo).toHaveBeenCalledWith("selected", "same");
+  });
+
+  it("retries unavailable final output before completing the task", async () => {
+    vi.useFakeTimers();
+    mocks.getInfo.mockResolvedValue({ status: "done", end_state: "completed" });
+    mocks.getOutput
+      .mockRejectedValueOnce(new Error("network down"))
+      .mockResolvedValue({ final_state: "completed" });
+    mocks.extractOutputText.mockReturnValue("persisted output");
+    const { registerBackgroundTask, useBackgroundTasksStore } =
+      await loadModule();
+    registerBackgroundTask({
+      sessionId: "s",
+      toolCallId: "retry",
+      toolName: "shell",
+    });
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(useBackgroundTasksStore.getState().tasks[0].status).toBe("running");
+    expect(mocks.message.success).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(6000);
+    expect(mocks.getOutput).toHaveBeenCalledTimes(2);
+    expect(useBackgroundTasksStore.getState().tasks[0].status).toBe("done");
+    expect(useBackgroundTasksStore.getState().tasks[0].result).toBe(
+      "persisted output",
+    );
+    expect(mocks.message.success).toHaveBeenCalledTimes(1);
+  });
+});

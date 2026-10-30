@@ -68,6 +68,7 @@ const suites = {
     "src/pages/Chat/components/ChatSenderTabsPanel.test.tsx",
     "src/hooks/useAgentProcessTracking.test.tsx",
     "src/stores/backgroundTasksStore.test.ts",
+    "src/hooks/useBackgroundTaskWatcher.test.ts",
     "src/components/Chat/ToolCards/shared/ToolCardShell.test.tsx",
     "src/pages/Chat/chatRunLifecycle.test.ts",
     "src/pages/Chat/sdkHostIntegration.test.tsx",
@@ -722,6 +723,11 @@ requireCases("src/plugins/expertPresentation.test.tsx", [
   "preserves advanced drafts and unknown running configuration fields when saving",
   "retains failed saves and confirms discarding an unsaved draft",
 ]);
+requireCases("src/hooks/useBackgroundTaskWatcher.test.ts", [
+  "isolates equal tool call ids when an older session is removed",
+  "retries unavailable final output before completing the task",
+]);
+
 console.log(`Fork feature inventory verified: ${files.length} suites.`);
 if (!process.argv.includes("--check")) {
   const result = spawnSync(

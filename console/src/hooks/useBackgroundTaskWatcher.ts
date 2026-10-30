@@ -20,7 +20,31 @@ type AbortFn = () => void;
 
 const activeStatusWatchers = new Map<string, AbortFn>();
 const activeOutputStreams = new Map<string, AbortFn>();
-const finalizedIds = new Set<string>();
+const finalizedIds = new Map<string, number>();
+const FINALIZED_TTL_MS = 60 * 60 * 1000;
+const FINALIZED_MAX = 2000;
+
+function watcherKey(sessionId: string, toolCallId: string): string {
+  return `${sessionId}\u0000${toolCallId}`;
+}
+function isFinalized(sessionId: string, toolCallId: string): boolean {
+  const key = watcherKey(sessionId, toolCallId);
+  const at = finalizedIds.get(key);
+  if (at === undefined) return false;
+  if (Date.now() - at > FINALIZED_TTL_MS) {
+    finalizedIds.delete(key);
+    return false;
+  }
+  return true;
+}
+function markFinalized(sessionId: string, toolCallId: string): void {
+  finalizedIds.set(watcherKey(sessionId, toolCallId), Date.now());
+  while (finalizedIds.size > FINALIZED_MAX) {
+    const oldest = finalizedIds.keys().next().value;
+    if (oldest === undefined) break;
+    finalizedIds.delete(oldest);
+  }
+}
 
 function chunkToText(payload: unknown): string {
   if (!payload || typeof payload !== "object") return "";
@@ -60,8 +84,7 @@ async function finalizeFromOutput(
   fallbackLive: string,
   cancelled: boolean,
 ): Promise<void> {
-  if (finalizedIds.has(toolCallId)) return;
-  finalizedIds.add(toolCallId);
+  if (isFinalized(sessionId, toolCallId)) return;
 
   const store = useBackgroundTasksStore.getState();
   let resultText = fallbackLive;
@@ -77,20 +100,40 @@ async function finalizeFromOutput(
     ) {
       status = "cancelled";
     }
-  } catch {
-    // Cache miss / race — keep liveOutput
+  } catch (error) {
+    const notFound =
+      (error as { status?: number })?.status === 404 ||
+      (error instanceof Error && /\b404\b/.test(error.message));
+    if (!notFound) {
+      // Retry persisted output before announcing completion.
+      setTimeout(() => {
+        const task = useBackgroundTasksStore
+          .getState()
+          .tasks.find(
+            (item) =>
+              item.sessionId === sessionId && item.toolCallId === toolCallId,
+          );
+        if (task?.status === "running")
+          startBackgroundTaskWatcher(sessionId, toolCallId);
+      }, POLL_INTERVAL_MS);
+      return;
+    }
   }
+  if (isFinalized(sessionId, toolCallId)) return;
+  markFinalized(sessionId, toolCallId);
 
   if (resultText.length > LIVE_OUTPUT_MAX) {
     resultText = resultText.slice(resultText.length - LIVE_OUTPUT_MAX);
   }
 
-  const task = store.tasks.find((t) => t.toolCallId === toolCallId);
+  const task = store.tasks.find(
+    (t) => t.sessionId === sessionId && t.toolCallId === toolCallId,
+  );
   // Skip toast if already terminal (e.g. user cancelled from panel)
   const alreadyTerminal =
     task?.status === "done" || task?.status === "cancelled";
 
-  store.updateTask(toolCallId, {
+  store.updateTaskForSession(sessionId, toolCallId, {
     status,
     result: resultText || null,
   });
@@ -120,11 +163,14 @@ async function finishBackgroundTask(
   toolCallId: string,
   cancelled: boolean,
 ): Promise<void> {
-  stopBackgroundTaskWatcher(toolCallId);
+  stopBackgroundTaskWatcher(toolCallId, sessionId);
   const liveOutput =
     useBackgroundTasksStore
       .getState()
-      .tasks.find((task) => task.toolCallId === toolCallId)?.liveOutput || "";
+      .tasks.find(
+        (task) =>
+          task.sessionId === sessionId && task.toolCallId === toolCallId,
+      )?.liveOutput || "";
   await finalizeFromOutput(sessionId, toolCallId, liveOutput, cancelled);
 }
 
@@ -262,10 +308,16 @@ export function startBackgroundTaskWatcher(
   sessionId: string,
   toolCallId: string,
 ): void {
-  if (activeStatusWatchers.has(toolCallId) || finalizedIds.has(toolCallId)) {
+  if (
+    activeStatusWatchers.has(watcherKey(sessionId, toolCallId)) ||
+    isFinalized(sessionId, toolCallId)
+  ) {
     return;
   }
-  activeStatusWatchers.set(toolCallId, startPolling(sessionId, toolCallId));
+  activeStatusWatchers.set(
+    watcherKey(sessionId, toolCallId),
+    startPolling(sessionId, toolCallId),
+  );
 }
 
 /** Open live output for a visible task. Idempotent per toolCallId. */
@@ -273,7 +325,10 @@ export function startBackgroundTaskStream(
   sessionId: string,
   toolCallId: string,
 ): void {
-  if (activeOutputStreams.has(toolCallId) || finalizedIds.has(toolCallId)) {
+  if (
+    activeOutputStreams.has(watcherKey(sessionId, toolCallId)) ||
+    isFinalized(sessionId, toolCallId)
+  ) {
     return;
   }
 
@@ -289,40 +344,59 @@ export function startBackgroundTaskStream(
       if (!active) return;
       const text = chunkToText(payload);
       if (text) {
-        useBackgroundTasksStore.getState().appendLiveOutput(toolCallId, text);
+        useBackgroundTasksStore
+          .getState()
+          .appendLiveOutputForSession(sessionId, toolCallId, text);
       }
     },
     onDone: () => {
       if (!active) return;
       active = false;
-      activeOutputStreams.delete(toolCallId);
+      activeOutputStreams.delete(watcherKey(sessionId, toolCallId));
       void finishBackgroundTask(sessionId, toolCallId, false);
     },
     onError: () => {
       if (!active) return;
       active = false;
-      activeOutputStreams.delete(toolCallId);
+      activeOutputStreams.delete(watcherKey(sessionId, toolCallId));
     },
   });
-  activeOutputStreams.set(toolCallId, stop);
+  activeOutputStreams.set(watcherKey(sessionId, toolCallId), stop);
 }
 
 /** Stop live output without changing the task or its status polling. */
-export function stopBackgroundTaskStream(toolCallId: string): void {
-  const abort = activeOutputStreams.get(toolCallId);
-  if (!abort) return;
-  activeOutputStreams.delete(toolCallId);
-  abort();
+export function stopBackgroundTaskStream(
+  toolCallId: string,
+  sessionId?: string,
+): void {
+  for (const [key, abort] of activeOutputStreams) {
+    if (
+      sessionId !== undefined
+        ? key === watcherKey(sessionId, toolCallId)
+        : key.endsWith(`\u0000${toolCallId}`)
+    ) {
+      activeOutputStreams.delete(key);
+      abort();
+    }
+  }
 }
 
-/** Stop all tracking without changing task status (e.g. row removal). */
-export function stopBackgroundTaskWatcher(toolCallId: string): void {
-  const abort = activeStatusWatchers.get(toolCallId);
-  if (abort) {
-    abort();
-    activeStatusWatchers.delete(toolCallId);
+/** Stop tracking a task, optionally limited to its session. */
+export function stopBackgroundTaskWatcher(
+  toolCallId: string,
+  sessionId?: string,
+): void {
+  for (const [key, abort] of activeStatusWatchers) {
+    if (
+      sessionId !== undefined
+        ? key === watcherKey(sessionId, toolCallId)
+        : key.endsWith(`\u0000${toolCallId}`)
+    ) {
+      activeStatusWatchers.delete(key);
+      abort();
+    }
   }
-  stopBackgroundTaskStream(toolCallId);
+  stopBackgroundTaskStream(toolCallId, sessionId);
 }
 
 /**
@@ -343,12 +417,12 @@ export async function cancelBackgroundTask(
     );
     throw new Error("Missing backend session id for cancel");
   }
-  const hadOutputStream = activeOutputStreams.has(toolCallId);
-  stopBackgroundTaskWatcher(toolCallId);
+  const hadOutputStream = activeOutputStreams.has(watcherKey(sid, toolCallId));
+  stopBackgroundTaskWatcher(toolCallId, sessionId);
   try {
     await toolCallsApi.cancel(sid, toolCallId);
   } catch (err) {
-    finalizedIds.delete(toolCallId);
+    finalizedIds.delete(watcherKey(sid, toolCallId));
     startBackgroundTaskWatcher(sid, toolCallId);
     if (hadOutputStream) {
       startBackgroundTaskStream(sid, toolCallId);
@@ -361,12 +435,14 @@ export async function cancelBackgroundTask(
     );
     throw err;
   }
-  finalizedIds.add(toolCallId);
+  markFinalized(sid, toolCallId);
   const live =
     useBackgroundTasksStore
       .getState()
-      .tasks.find((t) => t.toolCallId === toolCallId)?.liveOutput || "";
-  useBackgroundTasksStore.getState().updateTask(toolCallId, {
+      .tasks.find(
+        (t) => t.sessionId === sessionId && t.toolCallId === toolCallId,
+      )?.liveOutput || "";
+  useBackgroundTasksStore.getState().updateTaskForSession(sid, toolCallId, {
     status: "cancelled",
     result: live || null,
   });
@@ -382,17 +458,16 @@ export function stopBackgroundWatchersNotInSession(
   backendSessionId: string,
 ): void {
   const store = useBackgroundTasksStore.getState();
-  const staleIds = !backendSessionId
-    ? store.tasks.map((t) => t.toolCallId)
-    : store.tasks
-        .filter((t) => !t.sessionId || t.sessionId !== backendSessionId)
-        .map((t) => t.toolCallId);
-  for (const id of staleIds) {
-    stopBackgroundTaskWatcher(id);
+  const staleTasks = store.tasks.filter(
+    (task) =>
+      !backendSessionId ||
+      !task.sessionId ||
+      task.sessionId !== backendSessionId,
+  );
+  for (const task of staleTasks) {
+    stopBackgroundTaskWatcher(task.toolCallId, task.sessionId);
   }
-  if (staleIds.length > 0) {
-    store.removeTasks(staleIds);
-  }
+  store.removeTasksForSession(staleTasks);
 }
 
 /**
