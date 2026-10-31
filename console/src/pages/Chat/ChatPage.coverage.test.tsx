@@ -864,6 +864,8 @@ describe("ChatPage coverage", () => {
       initialEntries: ["/chat/test-session"],
     });
     const sender = await screen.findByTestId("mention-sender");
+    // The real session surface fades in before the user can edit the sender.
+    await waitFor(() => expect(sender).toBeVisible());
     fireEvent.input(sender, {
       target: { value: "Keep the unsent research notes" },
     });
