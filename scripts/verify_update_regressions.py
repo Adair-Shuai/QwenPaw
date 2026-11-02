@@ -33,8 +33,20 @@ SUITES = (
     "tests/unit/tauri/test_layered_channel_bootstrap.py",
     "tests/unit/tauri/test_channel_runtime_component_updates.py",
     "tests/unit/tauri/test_channel_runtime_portable.py",
+    "tests/unit/tauri/test_channel_support_wheel.py",
+    "tests/unit/scripts/test_macos_packaging.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/scripts/test_macos_packaging.py": {
+        "test_signing_skips_debug_symbols_and_keeps_native_signatures",
+        "test_launcher_uses_real_top_level_app",
+    },
+    "tests/unit/tauri/test_channel_support_wheel.py": {
+        "test_channel_support_wheel_preserves_recorded_host_and_official_resources",
+        "test_channel_support_derivation_rejects_changed_source_record",
+        "test_channel_support_derivation_rejects_unrecorded_source_payload",
+        "test_derived_channel_runtime_keeps_final_plugin_archive_single_owner",
+    },
     "tests/unit/tauri/test_channel_runtime_portable.py": {
         "test_compact_channel_payload_passes_real_portable_path_guard",
         "test_compact_manifest_missing_never_falls_back",

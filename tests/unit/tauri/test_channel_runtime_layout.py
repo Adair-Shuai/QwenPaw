@@ -80,7 +80,7 @@ def _host_wheel(tmp_path):
     return wheel
 
 
-def _staged_resources(tmp_path, target):
+def _staged_resources(tmp_path, target, *, wheel=None):
     resources = tmp_path / "Resources"
     binaries = resources / "binaries"
     runtime = binaries / "python-runtime"
@@ -97,7 +97,7 @@ def _staged_resources(tmp_path, target):
     )
     manifest = stage.stage_channel_runtime(
         python=executable,
-        wheel=_host_wheel(tmp_path),
+        wheel=_host_wheel(tmp_path) if wheel is None else wheel,
         resource_dir=resources,
         python_runtime_release="3.11.0+layout",
     )

@@ -117,7 +117,7 @@ while IFS= read -r contents_dir; do
         codesign_bundle "${bundle_dir}"
         signed_bundles=$((signed_bundles + 1))
     fi
-done < <(find "${TARGET}" -type d -name "Contents" | sort -r)
+done < <(find "${TARGET}" -name '*.dSYM' -prune -o -type d -name "Contents" -print | sort -r)
 
 if [[ "${TARGET}" == *.app ]]; then
     codesign_bundle "${TARGET}"

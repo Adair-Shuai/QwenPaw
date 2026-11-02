@@ -776,6 +776,7 @@ def test_qq_bot_prefix_message_is_skipped(
     unregister_mock_provider(app_server, MOCK_LLM_PROVIDER_ID)
     qq_channel_up.reset_identified()
     provider_id = register_mock_provider(app_server, mock_url)
+    reload_mark = len(app_server.logs)
     put = app_server.api_request(
         "PUT",
         "/api/config/channels/qq",
@@ -788,6 +789,7 @@ def test_qq_bot_prefix_message_is_skipped(
         timeout=_HTTP_TIMEOUT,
     )
     assert put.status_code == 200, app_server.logs_tail()
+    wait_for_agent_reload(app_server, reload_mark)
     assert qq_channel_up.wait_identified(timeout=60.0), app_server.logs_tail()[
         -2000:
     ]
@@ -809,7 +811,8 @@ def test_qq_bot_prefix_message_is_skipped(
     finally:
         unregister_mock_provider(app_server, provider_id)
         qq_channel_up.reset_identified()
-        app_server.api_request(
+        reload_mark = len(app_server.logs)
+        restore = app_server.api_request(
             "PUT",
             "/api/config/channels/qq",
             json={
@@ -820,7 +823,12 @@ def test_qq_bot_prefix_message_is_skipped(
             },
             timeout=_HTTP_TIMEOUT,
         )
-        qq_channel_up.wait_identified(timeout=60.0)
+        assert restore.status_code == 200, app_server.logs_tail()
+        wait_for_agent_reload(app_server, reload_mark)
+        assert qq_channel_up.wait_identified(timeout=60.0), (
+            "QQ channel did not reconnect after restoring bot prefix: "
+            + app_server.logs_tail()[-3000:]
+        )
 
 
 @pytest.mark.integration

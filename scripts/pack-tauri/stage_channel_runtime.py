@@ -29,6 +29,8 @@ from packaging.tags import parse_tag
 from packaging.utils import canonicalize_name
 from packaging.version import Version
 
+from build_channel_support_wheel import build_channel_support_wheel
+
 _SNAPSHOT = r"""
 import importlib.metadata as metadata
 import json, platform, sys
@@ -176,6 +178,16 @@ def _extract_wheel(path: Path, site: Path) -> None:
                 row[0] = relocated.get(row[0], row[0])
             with record.open("w", encoding="utf-8", newline="") as stream:
                 csv.writer(stream).writerows(rows)
+
+
+def _stage_host_wheel(wheel: Path, site: Path) -> str:
+    """Consume a complete internally owned wheel, never prune an installation."""
+    with tempfile.TemporaryDirectory(
+        prefix="qwenpaw-channel-wheel-",
+    ) as temporary:
+        support = build_channel_support_wheel(wheel, Path(temporary))
+        _extract_wheel(support, site)
+        return _digest(support)
 
 
 def _validate_closure(snapshot: dict, host_version: str) -> None:
@@ -411,7 +423,7 @@ def stage_channel_runtime(
     try:
         site = staged / "site"
         site.mkdir()
-        _extract_wheel(wheel, site)
+        host_wheel_sha256 = _stage_host_wheel(wheel, site)
         selected = {"qwenpaw"}
         for artifact in _dependency_wheels(wheelhouse):
             dependency, _version = _wheel_metadata(artifact)
@@ -435,7 +447,7 @@ def stage_channel_runtime(
             "dependency_paths": [support],
             "python": snapshot["python"],
             "python_runtime_release": python_runtime_release,
-            "host_wheel_sha256": _digest(wheel),
+            "host_wheel_sha256": host_wheel_sha256,
             "official_index_sha256": _digest(index),
         }
         (staged / "runtime.json").write_text(
