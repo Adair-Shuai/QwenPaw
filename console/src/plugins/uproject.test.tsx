@@ -131,6 +131,14 @@ describe("UProject shipped workspace", () => {
   }
 
   beforeEach(() => {
+    // Static messages do not inherit the rendered workspace's motion setting.
+    antd.ConfigProvider.config({
+      holderRender: (children) => (
+        <antd.ConfigProvider theme={{ token: { motion: false } }}>
+          {children}
+        </antd.ConfigProvider>
+      ),
+    });
     projects = [project("p1"), project("p2")];
     items = [
       item("i1"),
@@ -335,6 +343,12 @@ describe("UProject shipped workspace", () => {
       antd.Modal.destroyAll();
       antd.message.destroy();
     });
+    // Static messages own a separate React root. destroy() only schedules the
+    // exit; wait for its final container removal before jsdom is torn down.
+    await waitFor(() =>
+      expect(document.querySelector(".ant-message")).toBeNull(),
+    );
+    antd.ConfigProvider.config({ holderRender: undefined });
     vi.unstubAllGlobals();
     vi.restoreAllMocks();
     Reflect.deleteProperty(window, "QwenPaw");
@@ -739,10 +753,32 @@ describe("UProject shipped workspace", () => {
       await screen.findByRole("button", { name: /取\s*消/ }),
     );
     expect(writes("/demo/reset")).toHaveLength(0);
+    await waitFor(() => expect(screen.queryByRole("tooltip")).toBeNull());
+    let finishRefresh!: (res: Response) => void;
+    intercept = (route, init) =>
+      route === "/projects" && init.method === "GET"
+        ? new Promise((resolve) => {
+            finishRefresh = resolve;
+          })
+        : undefined;
     await userEvent.click(screen.getByRole("button", { name: "恢复演示" }));
     await userEvent.click(
       screen.getByRole("button", { name: "确认清空并恢复" }),
     );
     await waitFor(() => expect(writes("/demo/reset")).toHaveLength(1));
+    expect(await screen.findByText("已恢复演示场景")).toBeVisible();
+    expect(screen.getByRole("button", { name: /恢复演示$/ })).toBeDisabled();
+    await waitFor(() => expect(finishRefresh).toBeTypeOf("function"));
+    projects = [project("restored", { name: "恢复后的演示项目" })];
+    await act(async () => {
+      finishRefresh(response({ projects: projects.map(annotated) }));
+    });
+    expect(
+      await screen.findByRole("button", { name: "打开项目：恢复后的演示项目" }),
+    ).toBeVisible();
+    await waitFor(() => {
+      expect(screen.getByRole("button", { name: "恢复演示" })).toBeEnabled();
+      expect(screen.queryByRole("tooltip")).toBeNull();
+    });
   });
 });
