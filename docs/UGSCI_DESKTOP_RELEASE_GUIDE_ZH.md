@@ -259,6 +259,10 @@ b7 自动更新不得直接复用隐藏 PowerShell `Expand-Archive`。应由独�
 
 ### 6.3 macOS Apple Silicon
 
+生产构建固定使用 `macos-26` ARM runner，并保留 Apple Silicon 架构检查。`MACOSX_DEPLOYMENT_TARGET=14.0` 同时约束主程序与先于 Tauri 构建的原生 helper；runner 的 macOS 26 版本不表示安装包要求 macOS 26。Tauri 配置声明的最低版本 14.0 也不代表完整运行时已经在 macOS 14 验证：已有后端原生依赖实际要求 macOS 15.0。
+
+`verify_macos_compatibility.py` 分别扫描签名前的真实 `console/src-tauri/binaries` 和封装后的最终 `.app`，读取 ARM64 Mach-O 各 slice 的部署版本及已安装 wheel 的兼容标签，拒绝高于既有 macOS 15.0 依赖基线的产物。扫描只读，报告不能写入被签名的 payload；原有嵌套签名、最终 `.app` 严格验签、原生界面和实际启动验收继续阻断发布。切换 runner 不改变依赖解析、签名密钥、组件协议或最低核心版本，也不能以此宣称已经完成 macOS 14 实机兼容验收。
+
 产物包括首次安装 DMG/ZIP 与 Tauri updater archive。生产发布必须要求：
 
 - Tauri signing private key；

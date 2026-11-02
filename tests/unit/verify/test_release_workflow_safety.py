@@ -14,6 +14,86 @@ def _workflow(name: str) -> str:
     )
 
 
+def _condition_value(node, bindings):
+    """Interpret only the boolean syntax used by the actual finalize gate."""
+    import ast
+
+    if isinstance(node, ast.Expression):
+        return _condition_value(node.body, bindings)
+    if isinstance(node, ast.Constant):
+        assert isinstance(node.value, (bool, str))
+        return node.value
+    if isinstance(node, ast.Name):
+        return bindings[node.id]
+    if isinstance(node, ast.UnaryOp):
+        assert isinstance(node.op, ast.Not)
+        return not _condition_value(node.operand, bindings)
+    if isinstance(node, ast.BoolOp):
+        assert isinstance(node.op, (ast.And, ast.Or))
+        values = [_condition_value(value, bindings) for value in node.values]
+        return all(values) if isinstance(node.op, ast.And) else any(values)
+    assert isinstance(node, ast.Compare)
+    assert len(node.ops) == len(node.comparators) == 1
+    assert isinstance(node.ops[0], ast.Eq)
+    return _condition_value(node.left, bindings) == _condition_value(
+        node.comparators[0],
+        bindings,
+    )
+
+
+def test_finalize_requires_every_publish_gate_to_succeed() -> None:
+    import ast
+    import itertools
+    import re
+    import yaml
+
+    job = yaml.safe_load(_workflow("release-resume.yml"))["jobs"]["finalize"]
+    dependencies = (
+        "resolve",
+        "publish-desktop",
+        "publish-plugins",
+        "publish-components",
+        "full-test-gate",
+    )
+    assert set(job["needs"]) == set(dependencies)
+    expression = job["if"].removeprefix("${{").removesuffix("}}").strip()
+    for index, dependency in enumerate(dependencies):
+        expression = expression.replace(
+            f"needs.{dependency}.result",
+            f"result_{index}",
+        )
+    for original, replacement in (
+        ("inputs.dry_run", "dry_run"),
+        ("always()", "always_status"),
+        ("failure()", "failure_status"),
+        ("cancelled()", "cancelled_status"),
+    ):
+        expression = expression.replace(original, replacement)
+    expression = expression.replace("&&", " and ").replace("||", " or ")
+    expression = re.sub(r"!(?!=)", "not ", expression)
+    condition = ast.parse(expression.strip(), mode="eval")
+    # A cancelled reusable build can leave every direct publisher skipped.
+    # Evaluate the real gate for all 2,048 result/dry-run combinations.
+    for states in itertools.product(
+        ("success", "skipped", "cancelled", "failure"),
+        repeat=len(dependencies),
+    ):
+        for dry_run in (False, True):
+            bindings = {
+                **{f"result_{i}": state for i, state in enumerate(states)},
+                "dry_run": dry_run,
+                "always_status": True,
+                "failure_status": "failure" in states,
+                "cancelled_status": "cancelled" in states,
+            }
+            expected = not dry_run and all(s == "success" for s in states)
+            assert _condition_value(condition, bindings) is expected, (
+                states,
+                dry_run,
+                job["if"],
+            )
+
+
 def test_clean_release_and_frontend_checks_build_openui_runtime() -> None:
     for name, gate in (
         ("release-resume.yml", "Pack plugins and build index"),
@@ -453,6 +533,54 @@ def test_desktop_verification_has_production_startup_budget() -> None:
     desktop_build = _workflow("desktop-build.yml")
 
     assert desktop_build.count("timeout-minutes: 25") >= 2
+
+
+def test_macos_runner_preserves_native_deployment_and_payload_gates() -> None:
+    import yaml
+
+    jobs = yaml.safe_load(_workflow("desktop-build.yml"))["jobs"]
+    job = jobs["build-tauri-macos"]
+    assert job["runs-on"] == "macos-26"
+    assert job["env"]["MACOSX_DEPLOYMENT_TARGET"] == "14.0"
+    steps = job["steps"]
+    architecture = next(
+        step
+        for step in steps
+        if step["name"] == "Require Apple Silicon build runner"
+    )
+    assert 'test "$(uname -m)" = "arm64"' in architecture["run"]
+    assert not job.get("continue-on-error", False)
+    for name in (
+        "Require Apple Silicon build runner",
+        "Build Tauri macOS package",
+        "Require signed macOS updater assets for production",
+        "Verify desktop (Tauri macOS)",
+    ):
+        step = next(step for step in steps if step.get("name") == name)
+        assert not step.get("continue-on-error", False)
+    build = (
+        REPO_ROOT / "scripts/pack-tauri/build_macos_pyinstaller.sh"
+    ).read_text(encoding="utf-8")
+    deployment = build.index(
+        'export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"',
+    )
+    backend = build.index("bash scripts/pack-tauri/build_pyinstaller.sh")
+    assert deployment < backend
+    gate = "python scripts/pack-tauri/verify_macos_compatibility.py"
+    staged = build.index(gate)
+    signing = build.index('bash "${SIGN_MACOS_BUNDLE}"')
+    assert (
+        '--root "${REPO_ROOT}/console/src-tauri/binaries"'
+        in build[staged:signing]
+    )
+    final = build.index(gate + ' --root "${APP_PATH}"')
+    strict = build.index("codesign --verify --deep --strict --verbose=2")
+    archive = build.index("# Create ZIP archive")
+    assert backend < staged < signing < final < strict < archive
+    assert build.count(gate) == 2
+    assert "set -euo pipefail" in build[:deployment]
+    assert "verify_frozen_plugins.py" in build[final:]
+    assert "generate_update_manifest.py" in build[final:]
 
 
 def test_desktop_build_pins_and_smoke_tests_neqsim() -> None:

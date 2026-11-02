@@ -1,5 +1,7 @@
 self-hosted-runner:
-  labels: []
+  # Official hosted ARM64 label added after the pinned actionlint release.
+  # https://github.com/actions/runner-images#available-images
+  labels: [macos-26]
 config-variables:
   - tauri_updater_pubkey
   - tauri_updater_endpoints

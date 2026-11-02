@@ -1016,7 +1016,9 @@ jobs:
 
   finalize:
     needs: [resolve, publish-desktop, publish-plugins, publish-components, full-test-gate]
-    if: ${{ always() && !inputs.dry_run && !failure() && !cancelled() }}
+    # A skipped publisher is not a successful publication. Status functions
+    # alone can allow an empty release after an upstream reusable job is cancelled.
+    if: ${{ always() && !inputs.dry_run && needs.resolve.result == 'success' && needs.publish-desktop.result == 'success' && needs.publish-plugins.result == 'success' && needs.publish-components.result == 'success' && needs.full-test-gate.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

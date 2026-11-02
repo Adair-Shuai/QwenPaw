@@ -7,6 +7,10 @@
 
 set -euo pipefail
 
+# Apply to every native helper build as well as the final Tauri executable.
+# Delivered dependencies retain their separate macOS 15 compatibility gate.
+export MACOSX_DEPLOYMENT_TARGET="${MACOSX_DEPLOYMENT_TARGET:-14.0}"
+
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 cd "$REPO_ROOT"
 
@@ -132,6 +136,10 @@ python scripts/pack-tauri/verify_frozen_plugins.py "${BUNDLED_PLUGIN_ROOT}"
 echo "Bundled plugin payload verified"
 echo ""
 
+echo "== Verifying Staged macOS Runtime Compatibility =="
+python scripts/pack-tauri/verify_macos_compatibility.py \
+    --root "${REPO_ROOT}/console/src-tauri/binaries"
+
 echo "== Step 2b: Signing PyInstaller Backend =="
 if [[ "${QWENPAW_LAYERED_DESKTOP:-}" =~ ^(1|true|yes)$ ]]; then
     bash "${SIGN_MACOS_BUNDLE}" \
@@ -200,6 +208,9 @@ if [ ! -d "${APP_PLUGIN_ROOT}" ]; then
 fi
 python scripts/pack-tauri/verify_frozen_plugins.py "${APP_PLUGIN_ROOT}"
 echo "Final macOS app bundled plugin tree verified at ${APP_PLUGIN_ROOT}"
+
+echo "== Verifying Final macOS App Compatibility =="
+python scripts/pack-tauri/verify_macos_compatibility.py --root "${APP_PATH}"
 
 echo "== Step 3b: Verifying Final macOS App Signature =="
 # Tauri signs the outer .app after embedding the pre-signed native resources.

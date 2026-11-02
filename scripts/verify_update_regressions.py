@@ -39,8 +39,25 @@ SUITES = (
     "tests/unit/tauri/test_backend_archive_capacity.py",
     "tests/unit/pack/test_generate_plugin_metadata.py",
     "tests/unit/tauri/test_stage_bundled_plugins.py",
+    "tests/unit/tauri/test_macos_compatibility.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/tauri/test_macos_compatibility.py": {
+        "test_thin_arm64_deployment_target_is_checked",
+        "test_fat_checks_every_arm64_slice",
+        "test_fat_ignores_non_arm_deployment_target",
+        "test_malformed_macho_is_rejected",
+        "test_non_arm_thin_macho_is_not_arm_evidence",
+        "test_wheel_arm64_minimum_is_checked",
+        "test_wheel_internal_alias_cannot_hide_minimum",
+        "test_java_class_is_not_misidentified_as_fat_macho",
+        "test_class_suffix_does_not_bypass_binary_validation",
+        "test_payload_requires_arm64_binary",
+        "test_payload_paths_cannot_escape_root",
+        "test_internal_framework_alias_is_scanned_once",
+        "test_cli_checks_real_payload_and_writes_report",
+        "test_cli_rejects_report_inside_payload",
+    },
     "tests/unit/tauri/test_stage_bundled_plugins.py": {
         "test_software_staging_excludes_apps_and_preserves_explicit_app_release",
         "test_python_distributions_exclude_source_and_stale_application_mirrors",
@@ -119,6 +136,8 @@ REQUIRED_CASES = {
         "test_directory_candidate_snapshot_is_isolated",
     },
     "tests/unit/verify/test_release_workflow_safety.py": {
+        "test_macos_runner_preserves_native_deployment_and_payload_gates",
+        "test_finalize_requires_every_publish_gate_to_succeed",
         "test_unified_release_excludes_apps_and_uploads_every_selected_kind",
         "test_release_install_scope_preserves_full_test_gate",
         "test_clean_release_and_frontend_checks_build_openui_runtime",

@@ -393,6 +393,7 @@ jobs:
     needs: [check-updater-signing]
     if: ${{ inputs.platform == 'all' || inputs.platform == 'macos' }}
     env:
+      MACOSX_DEPLOYMENT_TARGET: "14.0"
       QWENPAW_LAYERED_DESKTOP: "true"
       QWENPAW_REQUIRE_RUNTIME_HASHES: ${{ inputs.require_updater_assets && 'true' || 'false' }}
       QWENPAW_NODE_SHA256: ${{ vars.QWENPAW_NODE_SHA256_MACOS || vars.QWENPAW_NODE_SHA256 }}
@@ -401,7 +402,7 @@ jobs:
       QWENPAW_JAVA_RELEASE: ${{ vars.QWENPAW_JAVA_RELEASE_MACOS || vars.QWENPAW_JAVA_RELEASE }}
       QWENPAW_PYTHON_BUILD_STANDALONE_RELEASE: "20261021"
       QWENPAW_PYTHON_RUNTIME_SHA256: "b5199d66966141fb6d5447512d2b2fe0398d417da37b1949f58db3792d314eac"
-    runs-on: macos-15
+    runs-on: macos-26
     timeout-minutes: 120
     steps:
       - name: Checkout
