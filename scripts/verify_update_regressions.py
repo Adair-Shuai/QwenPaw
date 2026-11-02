@@ -32,8 +32,14 @@ SUITES = (
     "tests/unit/tauri/test_channel_runtime_layout.py",
     "tests/unit/tauri/test_layered_channel_bootstrap.py",
     "tests/unit/tauri/test_channel_runtime_component_updates.py",
+    "tests/unit/tauri/test_channel_runtime_portable.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/tauri/test_channel_runtime_portable.py": {
+        "test_compact_channel_payload_passes_real_portable_path_guard",
+        "test_compact_manifest_missing_never_falls_back",
+        "test_refresh_preserves_legacy_layered_channel_paths",
+    },
     "tests/unit/tauri/test_desktop_workflows.py": {
         "test_shared_daemon_keeps_channel_runtime_environment",
     },

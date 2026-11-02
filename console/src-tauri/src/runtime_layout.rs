@@ -423,9 +423,9 @@ mod tests {
         let components = working.join("components");
         let old = components.join("managed").join("backend").join("2.3.0b3");
         let new = components.join("managed").join("backend").join("2.3.0b4");
-        for root in [&old, &new] {
-            std::fs::create_dir_all(root.join("channel-runtime").join("site")).unwrap();
-            std::fs::write(root.join("channel-runtime").join("runtime.json"), "{}").unwrap();
+        for (root, channel, site) in [(&old, "channel-runtime", "site"), (&new, "c", "s")] {
+            std::fs::create_dir_all(root.join(channel).join(site)).unwrap();
+            std::fs::write(root.join(channel).join("runtime.json"), "{}").unwrap();
         }
         std::fs::write(
             components.join("active.json"),
@@ -453,18 +453,32 @@ mod tests {
             None => std::env::remove_var("QWENPAW_WORKING_DIR"),
         }
         assert!(restored.unwrap());
-        for (environment, expected) in [(before, new), (after, old)] {
-            let actual = environment
-                .into_iter()
-                .find(|(key, _)| key == "QWENPAW_CHANNEL_RUNTIME_MANIFEST")
-                .unwrap()
-                .1;
+        for (environment, expected, channel, site) in [
+            (before, new, "c", "s"),
+            (after, old, "channel-runtime", "site"),
+        ] {
+            let environment: std::collections::HashMap<_, _> = environment.into_iter().collect();
             assert_eq!(
-                actual,
+                environment["QWENPAW_CHANNEL_RUNTIME_MANIFEST"],
                 expected
-                    .join("channel-runtime")
+                    .join(channel)
                     .join("runtime.json")
                     .to_string_lossy()
+            );
+            assert_eq!(
+                environment["QWENPAW_CHANNEL_SUPPORT_ROOT"],
+                expected.join(channel).join(site).to_string_lossy()
+            );
+            assert_eq!(
+                serde_json::from_str::<Vec<String>>(
+                    &environment["QWENPAW_CHANNEL_DEPENDENCY_PATHS"]
+                )
+                .unwrap(),
+                vec![expected
+                    .join(channel)
+                    .join(site)
+                    .to_string_lossy()
+                    .into_owned()]
             );
         }
     }

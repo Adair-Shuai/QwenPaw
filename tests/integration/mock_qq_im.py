@@ -30,6 +30,7 @@ from websockets.sync.server import serve as ws_serve
 OP_DISPATCH = 0
 OP_HEARTBEAT = 1
 OP_IDENTIFY = 2
+OP_RESUME = 6
 OP_HELLO = 10
 OP_HEARTBEAT_ACK = 11
 
@@ -48,7 +49,8 @@ class MockQQIM:
         self.api_calls: list[dict[str, Any]] = []
         # Latest connected WS session (one at a time is enough).
         self._ws_conn: Optional[Any] = None
-        self._identified = threading.Event()
+        self._identified = threading.Condition(self._lock)
+        self._ready_conn: Optional[Any] = None
         self._seq = 0
         self._http_server: Optional[ThreadingHTTPServer] = None
         self._ws_server: Optional[Any] = None
@@ -64,6 +66,20 @@ class MockQQIM:
             self._started = True
         self._start_http()
         self._start_ws()
+
+    def stop(self) -> None:
+        """Close real sockets and wait for the mock servers to shut down."""
+        with self._lock:
+            connection = self._ws_conn
+        if connection is not None:
+            connection.close()
+        if self._ws_server is not None:
+            self._ws_server.shutdown()
+        if self._http_server is not None:
+            self._http_server.shutdown()
+            self._http_server.server_close()
+        with self._lock:
+            self._started = False
 
     @property
     def token_url(self) -> str:
@@ -169,8 +185,10 @@ class MockQQIM:
         mock = self
 
         def handler(conn: Any) -> None:
-            with mock._lock:
+            with mock._identified:
                 mock._ws_conn = conn
+                mock._ready_conn = None
+                mock._identified.notify_all()
             hello = {"op": OP_HELLO, "d": {"heartbeat_interval": 45000}}
             conn.send(json.dumps(hello))
             try:
@@ -180,23 +198,41 @@ class MockQQIM:
                     except ValueError:
                         continue
                     op = payload.get("op")
-                    if op == OP_IDENTIFY:
+                    if op in {OP_IDENTIFY, OP_RESUME}:
+                        if (
+                            op == OP_RESUME
+                            and (payload.get("d") or {}).get(
+                                "session_id",
+                            )
+                            != "mock-session-1"
+                        ):
+                            conn.send(json.dumps({"op": 9, "d": False}))
+                            continue
                         ready = {
                             "op": OP_DISPATCH,
                             "s": mock._next_seq(),
-                            "t": "READY",
-                            "d": {"session_id": "mock-session-1"},
+                            "t": "RESUMED" if op == OP_RESUME else "READY",
+                            "d": (
+                                {}
+                                if op == OP_RESUME
+                                else {"session_id": "mock-session-1"}
+                            ),
                         }
                         conn.send(json.dumps(ready))
-                        mock._identified.set()
+                        with mock._identified:
+                            if mock._ws_conn is conn:
+                                mock._ready_conn = conn
+                                mock._identified.notify_all()
                     elif op == OP_HEARTBEAT:
                         conn.send(json.dumps({"op": OP_HEARTBEAT_ACK}))
             except Exception:  # noqa: BLE001 - client dropped; fine
                 pass
             finally:
-                with mock._lock:
+                with mock._identified:
                     if mock._ws_conn is conn:
                         mock._ws_conn = None
+                        mock._ready_conn = None
+                        mock._identified.notify_all()
 
         server = ws_serve(handler, "127.0.0.1", 0)
         self.ws_port = server.socket.getsockname()[1]
@@ -217,12 +253,18 @@ class MockQQIM:
     # -------------------------------------------------------------- #
 
     def wait_identified(self, timeout: float = 30.0) -> bool:
-        """Block until the channel completed HELLO->IDENTIFY->READY."""
-        return self._identified.wait(timeout)
+        """Wait for READY or RESUMED on the currently connected socket."""
+        with self._identified:
+            return self._identified.wait_for(
+                lambda: self._ws_conn is not None
+                and self._ready_conn is self._ws_conn,
+                timeout,
+            )
 
     def reset_identified(self) -> None:
         """Clear the IDENTIFY flag before triggering a channel reload."""
-        self._identified.clear()
+        with self._identified:
+            self._ready_conn = None
 
     def push_dispatch(self, event_type: str, d: dict) -> None:
         """Push an arbitrary DISPATCH event to the connected channel."""

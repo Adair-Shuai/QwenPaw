@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import os
 from pathlib import Path, PurePosixPath
 
 from stage_desktop_components import describe_component
@@ -53,10 +54,14 @@ def _refresh_channel_runtime(binaries: Path, active: dict) -> None:
         support_root = (resources / backend["path"]).resolve()
         if not support_root.is_relative_to(binaries.resolve()):
             raise ValueError("channel backend path escapes binaries directory")
-    manifest = support_root / "channel-runtime" / "runtime.json"
+    compact = support_root != resources and os.path.lexists(support_root / "c")
+    runtime = support_root / ("c" if compact else "channel-runtime")
+    manifest = runtime / "runtime.json"
     if support_root == resources:
         manifest = binaries / "channel-runtime" / "runtime.json"
     if not manifest.is_file():
+        if compact:
+            raise ValueError("compact channel runtime manifest is missing")
         return  # Desktop layouts predating readable channels have no manifest.
     if manifest.is_symlink() or not manifest.resolve().is_relative_to(
         binaries.resolve(),
@@ -65,9 +70,16 @@ def _refresh_channel_runtime(binaries: Path, active: dict) -> None:
     data = json.loads(manifest.read_text(encoding="utf-8"))
     if not isinstance(data, dict) or data.get("schema_version") != 1:
         raise ValueError("channel runtime manifest is invalid")
-    support = (manifest.parent / "site").relative_to(support_root).as_posix()
+    support = (
+        (manifest.parent / ("s" if compact else "site"))
+        .relative_to(support_root)
+        .as_posix()
+    )
     previous_support = data.get("support_root")
-    if previous_support not in {"binaries/channel-runtime/site", support}:
+    allowed_support = {"binaries/channel-runtime/site", support}
+    if compact:
+        allowed_support.add("channel-runtime/site")
+    if previous_support not in allowed_support:
         raise ValueError("channel support path is outside its backend")
     if data.get("dependency_paths") != [previous_support]:
         raise ValueError("channel dependency paths differ from its support")

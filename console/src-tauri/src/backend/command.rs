@@ -590,13 +590,18 @@ pub(super) fn rollback_managed_launcher(launcher: LauncherSelection) -> Result<(
 mod tests {
     use super::*;
 
-    fn write_layered_selection(resources: &Path, version: &str) -> PathBuf {
+    fn write_layered_selection(resources: &Path, version: &str, compact: bool) -> PathBuf {
         let backend_relative = format!("app/backend/{version}");
         let backend = resources.join("app").join("backend").join(version);
         std::fs::create_dir_all(backend.join("qwenpaw")).unwrap();
-        std::fs::create_dir_all(backend.join("channel-runtime/site")).unwrap();
+        let (channel, site) = if compact {
+            ("c", "s")
+        } else {
+            ("channel-runtime", "site")
+        };
+        std::fs::create_dir_all(backend.join(channel).join(site)).unwrap();
         std::fs::write(
-            backend.join("channel-runtime").join("runtime.json"),
+            backend.join(channel).join("runtime.json"),
             serde_json::json!({"host_version": version}).to_string(),
         )
         .unwrap();
@@ -635,7 +640,7 @@ mod tests {
             .map(|(_, value)| value.map(|value| value.to_string_lossy().into_owned()))
     }
 
-    fn assert_channel_root(command: &Command, backend: &Path) {
+    fn assert_channel_root(command: &Command, backend: &Path, channel: &str, site: &str) {
         assert_eq!(command.get_current_dir(), Some(backend));
         assert_eq!(
             command_environment(command, "QWENPAW_DESKTOP_PY_RUNTIME"),
@@ -649,11 +654,27 @@ mod tests {
             command_environment(command, "QWENPAW_CHANNEL_RUNTIME_MANIFEST"),
             Some(Some(
                 backend
-                    .join("channel-runtime")
+                    .join(channel)
                     .join("runtime.json")
                     .to_string_lossy()
                     .into_owned()
             ))
+        );
+        let support = backend
+            .join(channel)
+            .join(site)
+            .to_string_lossy()
+            .into_owned();
+        assert_eq!(
+            command_environment(command, "QWENPAW_CHANNEL_SUPPORT_ROOT"),
+            Some(Some(support.clone()))
+        );
+        let dependencies = command_environment(command, "QWENPAW_CHANNEL_DEPENDENCY_PATHS")
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            serde_json::from_str::<Vec<String>>(&dependencies).unwrap(),
+            vec![support]
         );
     }
 
@@ -661,27 +682,27 @@ mod tests {
     fn packaged_command_keeps_captured_backend_when_active_pointer_changes() {
         let temp = tempfile::tempdir().unwrap();
         let resources = temp.path();
-        let old = write_layered_selection(resources, "2.3.0b3");
+        let old = write_layered_selection(resources, "2.3.0b3", false);
         let captured = packaged_backend_launch(resources).unwrap();
         let old_python = captured.executable.clone();
-        let new = write_layered_selection(resources, "2.3.0b4");
+        let new = write_layered_selection(resources, "2.3.0b4", true);
         let (command, _) = command_for_packaged_launch(resources, captured).unwrap();
-        assert_channel_root(&command, &old);
+        assert_channel_root(&command, &old, "channel-runtime", "site");
         assert_eq!(command.get_program(), old_python.as_os_str());
         // The daemon's real command constructor picks up the next activation.
         let (command, _) = create_packaged(resources).unwrap();
-        assert_channel_root(&command, &new);
+        assert_channel_root(&command, &new, "c", "s");
         assert_ne!(command.get_program(), old_python.as_os_str());
-        write_layered_selection(resources, "2.3.0b3");
+        write_layered_selection(resources, "2.3.0b3", false);
         let (command, _) = create_packaged(resources).unwrap();
-        assert_channel_root(&command, &old);
+        assert_channel_root(&command, &old, "channel-runtime", "site");
     }
 
     #[test]
     fn packaged_frozen_fallback_removes_inherited_channel_component_root() {
         let temp = tempfile::tempdir().unwrap();
         let resources = temp.path();
-        write_layered_selection(resources, "2.3.0b4");
+        write_layered_selection(resources, "2.3.0b4", true);
         let (layered_command, _) = create_packaged(resources).unwrap();
         assert!(
             command_environment(&layered_command, "QWENPAW_CHANNEL_RESOURCE_DIR")

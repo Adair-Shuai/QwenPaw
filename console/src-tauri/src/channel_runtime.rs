@@ -38,10 +38,25 @@ fn environment_for_backend(resource_dir: &Path, backend: Option<&Path>) -> Vec<(
     // Support and its host-version manifest are owned by the selected signed
     // backend component, so activation and rollback select the same code set.
     // The frozen fallback retains its original fixed resource layout.
-    let root = backend
-        .map(|backend| backend.join("channel-runtime"))
-        .unwrap_or_else(|| resource_dir.join("binaries/channel-runtime"));
-    let site = root.join("site").to_string_lossy().to_string();
+    let (root, site_name) = match backend {
+        Some(backend) => {
+            // The compact layout keeps complete dependency paths within the
+            // Windows portable archive limit. Once present, a broken compact
+            // layer must fail validation rather than select stale support.
+            let compact = backend.join("c");
+            let compact_present = compact.symlink_metadata().map_or_else(
+                |error| error.kind() != std::io::ErrorKind::NotFound,
+                |_| true,
+            );
+            if compact_present {
+                (compact, "s")
+            } else {
+                (backend.join("channel-runtime"), "site")
+            }
+        }
+        None => (resource_dir.join("binaries/channel-runtime"), "site"),
+    };
+    let site = root.join(site_name).to_string_lossy().to_string();
     let mut environment = vec![
         (
             "QWENPAW_CHANNEL_RUNTIME_MANIFEST".into(),
@@ -111,6 +126,57 @@ mod tests {
                 .join("binaries/channel-runtime")
                 .join("runtime.json")
                 .to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn compact_support_prefers_the_same_selected_backend_over_legacy_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let backend = temp.path().join("managed/backend/2.3.0b3");
+        std::fs::create_dir_all(backend.join("c/s")).unwrap();
+        std::fs::create_dir_all(backend.join("channel-runtime/site")).unwrap();
+        for directory in ["c", "channel-runtime"] {
+            std::fs::write(backend.join(directory).join("runtime.json"), "{}").unwrap();
+        }
+        let environment: HashMap<_, _> =
+            environment_for_backend(&temp.path().join("Resources"), Some(&backend))
+                .into_iter()
+                .collect();
+        assert_eq!(
+            environment["QWENPAW_CHANNEL_RUNTIME_MANIFEST"],
+            backend.join("c").join("runtime.json").to_string_lossy()
+        );
+        assert_eq!(
+            environment["QWENPAW_CHANNEL_SUPPORT_ROOT"],
+            backend.join("c").join("s").to_string_lossy()
+        );
+        assert_eq!(
+            serde_json::from_str::<Vec<String>>(&environment["QWENPAW_CHANNEL_DEPENDENCY_PATHS"])
+                .unwrap(),
+            vec![backend.join("c").join("s").to_string_lossy().into_owned()]
+        );
+        assert_eq!(
+            environment["QWENPAW_CHANNEL_RESOURCE_DIR"],
+            backend.to_string_lossy()
+        );
+    }
+
+    #[test]
+    fn compact_support_missing_manifest_does_not_fall_back_to_legacy_files() {
+        let temp = tempfile::tempdir().unwrap();
+        let backend = temp.path().join("managed/backend/2.3.0b3");
+        std::fs::create_dir_all(backend.join("c/s")).unwrap();
+        std::fs::create_dir_all(backend.join("channel-runtime/site")).unwrap();
+        std::fs::write(backend.join("channel-runtime/runtime.json"), "{}").unwrap();
+        let environment: HashMap<_, _> = environment_for_backend(temp.path(), Some(&backend))
+            .into_iter()
+            .collect();
+        let manifest = std::path::PathBuf::from(&environment["QWENPAW_CHANNEL_RUNTIME_MANIFEST"]);
+        assert_eq!(manifest, backend.join("c").join("runtime.json"));
+        assert!(!manifest.exists());
+        assert_eq!(
+            environment["QWENPAW_CHANNEL_SUPPORT_ROOT"],
+            backend.join("c").join("s").to_string_lossy()
         );
     }
 }

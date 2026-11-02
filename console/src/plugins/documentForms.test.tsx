@@ -24,6 +24,10 @@ vi.mock("react-i18next", () => {
 });
 
 afterEach(() => {
+  // jsdom leaves a nested style sheet registered when its parent is removed.
+  // Detach the real page styles first so later cases do not scan stale rules.
+  for (const style of document.querySelectorAll(".df-app > style"))
+    style.remove();
   cleanup();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();

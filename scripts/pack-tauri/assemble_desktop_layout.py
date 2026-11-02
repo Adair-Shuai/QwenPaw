@@ -192,7 +192,10 @@ def assemble(
     if channel_runtime.is_dir():
         # Readable channel support follows the backend version through full
         # updates, deltas and rollback under its existing signed component.
-        _move(channel_runtime, backend_root / "channel-runtime")
+        # Keep wheel payloads intact while leaving Explorer extraction room
+        # for dependencies such as ModelScope's deeply nested dataset modules.
+        _move(channel_runtime, backend_root / "c")
+        _move(backend_root / "c/site", backend_root / "c/s")
 
     def entry(
         version: str,

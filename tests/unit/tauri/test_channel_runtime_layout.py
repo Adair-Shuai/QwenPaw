@@ -138,7 +138,7 @@ def test_assembled_channel_runtime_matches_launcher_and_runs(
     backend = binaries.parent / active["components"]["backend"]["path"]
     assert not path.exists()
     assert not (binaries / "channel-runtime").exists()
-    path = backend / "channel-runtime/runtime.json"
+    path = backend / "c/runtime.json"
     runtime = binaries.parent / active["components"]["python-runtime"]["path"]
     leaf = (
         "python/python.exe"
@@ -146,7 +146,7 @@ def test_assembled_channel_runtime_matches_launcher_and_runs(
         else "python/bin/python3"
     )
     executable = runtime / leaf
-    support = backend / "channel-runtime/site"
+    support = backend / "c/s"
     for name, value in {
         "QWENPAW_TAURI_RESOURCE_DIR": binaries.parent,
         "QWENPAW_CHANNEL_RESOURCE_DIR": backend,
@@ -178,8 +178,8 @@ def test_assembled_channel_runtime_matches_launcher_and_runs(
         == executable.relative_to(binaries.parent).as_posix()
     )
     original.pop("python_executable")
-    assert updated.pop("support_root") == "channel-runtime/site"
-    assert updated.pop("dependency_paths") == ["channel-runtime/site"]
+    assert updated.pop("support_root") == "c/s"
+    assert updated.pop("dependency_paths") == ["c/s"]
     original.pop("support_root")
     original.pop("dependency_paths")
     assert updated == original
@@ -201,9 +201,7 @@ def test_assembled_channel_runtime_matches_launcher_and_runs(
         (backend / "component.json").read_text(encoding="utf-8"),
     )
     assert descriptor == bundled
-    assert (
-        staging / "backend/channel-runtime/runtime.json"
-    ).read_bytes() == before
+    assert (staging / "backend/c/runtime.json").read_bytes() == before
 
 
 @pytest.mark.parametrize(

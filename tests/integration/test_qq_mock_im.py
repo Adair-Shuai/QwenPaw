@@ -28,11 +28,13 @@ API endpoints:
 """
 from __future__ import annotations
 
+import json
 import threading
 import time
 from http.server import HTTPServer
 
 import pytest
+from websockets.sync.client import connect
 from helpers import (
     MOCK_LLM_PROVIDER_ID,
     MOCK_LLM_RESPONSE,
@@ -635,6 +637,7 @@ def test_qq_access_control_dm_gates_unknown_sender(
     unregister_mock_provider(app_server, MOCK_LLM_PROVIDER_ID)
     qq_channel_up.reset_identified()
     provider_id = register_mock_provider(app_server, mock_url)
+    reload_mark = len(app_server.logs)
     put = app_server.api_request(
         "PUT",
         "/api/config/channels/qq",
@@ -647,6 +650,7 @@ def test_qq_access_control_dm_gates_unknown_sender(
         timeout=_HTTP_TIMEOUT,
     )
     assert put.status_code == 200, app_server.logs_tail()
+    wait_for_agent_reload(app_server, reload_mark)
     assert qq_channel_up.wait_identified(timeout=60.0), (
         "QQ channel did not reconnect after ACL config reload: "
         + app_server.logs_tail()[-3000:]
@@ -684,6 +688,7 @@ def test_qq_access_control_dm_gates_unknown_sender(
     finally:
         unregister_mock_provider(app_server, provider_id)
         qq_channel_up.reset_identified()
+        reload_mark = len(app_server.logs)
         restore = app_server.api_request(
             "PUT",
             "/api/config/channels/qq",
@@ -696,7 +701,11 @@ def test_qq_access_control_dm_gates_unknown_sender(
             timeout=_HTTP_TIMEOUT,
         )
         assert restore.status_code == 200
-        qq_channel_up.wait_identified(timeout=60.0)
+        wait_for_agent_reload(app_server, reload_mark)
+        assert qq_channel_up.wait_identified(timeout=60.0), (
+            "QQ channel did not reconnect after restoring ACL config: "
+            + app_server.logs_tail()[-3000:]
+        )
 
 
 @pytest.mark.integration
@@ -914,3 +923,44 @@ def test_qq_quoted_message_prefix(
         ), f"no quoted-message reply; calls={qq_channel_up.api_calls[-5:]}"
     finally:
         unregister_mock_provider(app_server, provider_id)
+
+
+@pytest.mark.integration
+@pytest.mark.p1
+def test_qq_mock_gateway_tracks_current_ready_and_resumed_connection():
+    """A retired socket cannot clear readiness of the real resumed gateway."""
+    gateway = MockQQIM()
+    gateway.start()
+    try:
+        with connect(f"ws://127.0.0.1:{gateway.ws_port}", proxy=None) as old:
+            assert json.loads(old.recv())["op"] == 10
+            old.send(json.dumps({"op": 2, "d": {"token": "QQBot test"}}))
+            ready = json.loads(old.recv())
+            assert ready["t"] == "READY"
+            assert gateway.wait_identified(timeout=1)
+            with connect(
+                f"ws://127.0.0.1:{gateway.ws_port}",
+                proxy=None,
+            ) as current:
+                assert json.loads(current.recv())["op"] == 10
+                assert not gateway.wait_identified(timeout=0)
+                current.send(
+                    json.dumps(
+                        {
+                            "op": 6,
+                            "d": {
+                                "session_id": ready["d"]["session_id"],
+                                "seq": ready["s"],
+                            },
+                        },
+                    ),
+                )
+                assert json.loads(current.recv())["t"] == "RESUMED"
+                assert gateway.wait_identified(timeout=1)
+                old.close()
+                current.send(json.dumps({"op": 1, "d": ready["s"]}))
+                assert json.loads(current.recv())["op"] == 11
+                assert gateway.wait_identified(timeout=1)
+    finally:
+        gateway.stop()
+    assert not gateway.wait_identified(timeout=0)

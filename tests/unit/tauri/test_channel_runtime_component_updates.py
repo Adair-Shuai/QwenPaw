@@ -37,9 +37,11 @@ def _helpers(monkeypatch):
     )
 
 
-def _backend(root, version):
+def _backend(root, version, compact=False):
     backend = root / "binaries/app/backend" / version
-    support = backend / "channel-runtime/site/qwenpaw"
+    runtime = "c" if compact else "channel-runtime"
+    site = f"{runtime}/{'s' if compact else 'site'}"
+    support = backend / site / "qwenpaw"
     support.mkdir(parents=True)
     (backend / "stable.bin").write_bytes(random.Random(17).randbytes(100_000))
     (backend / "qwenpaw").mkdir()
@@ -52,13 +54,13 @@ def _backend(root, version):
         f"HOST = {version!r}\n",
         encoding="utf-8",
     )
-    (backend / "channel-runtime/runtime.json").write_text(
+    (backend / runtime / "runtime.json").write_text(
         json.dumps(
             {
                 "schema_version": 1,
                 "host_version": version,
-                "support_root": "channel-runtime/site",
-                "dependency_paths": ["channel-runtime/site"],
+                "support_root": site,
+                "dependency_paths": [site],
             },
         ),
         encoding="utf-8",
@@ -83,10 +85,10 @@ def _backend(root, version):
     return backend
 
 
-def _release(tmp_path, monkeypatch, target, delta):
+def _release(tmp_path, monkeypatch, target, delta, layouts=(False, False)):
     stage, builder, verifier, host = _helpers(monkeypatch)
-    old = _backend(tmp_path / "old-resources", "2.3.0b3")
-    new = _backend(tmp_path / "new-resources", "2.3.0b4")
+    old = _backend(tmp_path / "old-resources", "2.3.0b3", layouts[0])
+    new = _backend(tmp_path / "new-resources", "2.3.0b4", layouts[1])
     bases, source = tmp_path / "bases/base", tmp_path / "source"
     stage.stage(old.parents[2], bases, "2.3.0b3")
     stage.stage(new.parents[2], source, "2.3.0b4")
@@ -128,13 +130,38 @@ def _release(tmp_path, monkeypatch, target, delta):
     return bases / "backend", source, output, manifest, private, public, host
 
 
+def _assert_channel_layout(backend, version, compact):
+    runtime = "c" if compact else "channel-runtime"
+    site = f"{runtime}/{'s' if compact else 'site'}"
+    descriptor = json.loads(
+        (backend / runtime / "runtime.json").read_text(encoding="utf-8"),
+    )
+    assert descriptor["host_version"] == version
+    assert descriptor["support_root"] == site
+    assert descriptor["dependency_paths"] == [site]
+    assert version in (
+        backend / site / "qwenpaw/channel_protocol/shared_worker.py"
+    ).read_text(encoding="utf-8")
+
+
 @pytest.mark.parametrize("target", ["windows-x86_64", "macos-aarch64"])
 @pytest.mark.parametrize("route", ["full", "delta"])
+@pytest.mark.parametrize(
+    "layouts",
+    [(False, False), (False, True), (True, False), (True, True)],
+    ids=[
+        "legacy-to-legacy",
+        "legacy-to-compact",
+        "compact-to-legacy",
+        "compact-to-compact",
+    ],
+)
 def test_signed_backend_update_switches_channel_support_atomically(
     tmp_path,
     monkeypatch,
     target,
     route,
+    layouts,
 ):
     # One real signed download/install transaction and its previous pointer.
     # pylint: disable=too-many-statements
@@ -143,6 +170,7 @@ def test_signed_backend_update_switches_channel_support_atomically(
         monkeypatch,
         target,
         route == "delta",
+        layouts,
     )
     service_module = importlib.import_module("qwenpaw.components.service")
     managed = tmp_path / "working/components/managed"
@@ -221,43 +249,28 @@ def test_signed_backend_update_switches_channel_support_atomically(
         payload = json.loads(active.read_text(encoding="utf-8"))
         selected = Path(payload["components"]["backend"]["path"])
         assert selected == managed / "backend/2.3.0b4"
-        assert (
-            json.loads(
-                (selected / "channel-runtime/runtime.json").read_text(
-                    encoding="utf-8",
-                ),
-            )["host_version"]
-            == "2.3.0b4"
-        )
-        assert "2.3.0b4" in (
-            selected / "channel-runtime/site/qwenpaw/"
-            "channel_protocol/shared_worker.py"
-        ).read_text(encoding="utf-8")
+        _assert_channel_layout(selected, "2.3.0b4", layouts[1])
         assert payload["previous_runtime_components"]["backend"][
             "path"
         ] == str(installed)
-        assert (
-            json.loads(
-                (installed / "channel-runtime/runtime.json").read_text(
-                    encoding="utf-8",
-                ),
-            )["host_version"]
-            == "2.3.0b3"
-        )
+        _assert_channel_layout(installed, "2.3.0b3", layouts[0])
         assert set(manifest["components"]) == {"backend"}
     finally:
         client.close()
 
 
+@pytest.mark.parametrize("compact", [False, True], ids=["legacy", "compact"])
 def test_signed_backend_gate_rejects_changed_channel_support(
     tmp_path,
     monkeypatch,
+    compact,
 ):
     _, _, output, manifest_path, private, public, _ = _release(
         tmp_path,
         monkeypatch,
         "windows-x86_64",
         False,
+        (False, compact),
     )
     verifier = importlib.import_module("verify_component_release")
     canonical = importlib.import_module("component_common").canonical_json
@@ -266,7 +279,10 @@ def test_signed_backend_gate_rejects_changed_channel_support(
     archive_path = output / artifact["url"].removeprefix(BASE_URL + "/")
     with zipfile.ZipFile(archive_path) as archive:
         entries = {name: archive.read(name) for name in archive.namelist()}
-    entries["channel-runtime/runtime.json"] = b'{"host_version":"wrong"}'
+    manifest_name = (
+        "c/runtime.json" if compact else "channel-runtime/runtime.json"
+    )
+    entries[manifest_name] = b'{"host_version":"wrong"}'
     with zipfile.ZipFile(archive_path, "w", zipfile.ZIP_DEFLATED) as archive:
         for name, content in entries.items():
             archive.writestr(name, content)

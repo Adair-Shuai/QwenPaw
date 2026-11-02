@@ -321,9 +321,18 @@ async def test_external_client_cannot_send_token_through_proxy(
         thread = Thread(target=proxy.serve_forever, daemon=True)
         thread.start()
         proxy_url = f"http://127.0.0.1:{proxy.server_port}"
-        for name in ("HTTP_PROXY", "HTTPS_PROXY", "ALL_PROXY"):
+        # Lowercase variables take precedence on case-sensitive platforms.
+        for name in (
+            "HTTP_PROXY",
+            "HTTPS_PROXY",
+            "ALL_PROXY",
+            "http_proxy",
+            "https_proxy",
+            "all_proxy",
+        ):
             monkeypatch.setenv(name, proxy_url)
-        monkeypatch.setenv("NO_PROXY", "")
+        for name in ("NO_PROXY", "no_proxy"):
+            monkeypatch.setenv(name, "")
         try:
             if asynchronous:
                 async with async_api_client("http://external.example") as api:
