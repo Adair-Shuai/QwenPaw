@@ -183,6 +183,8 @@ _MAX_ARCHIVE_MEMBERS = 10_000
 _MAX_ARCHIVE_BYTES = 768 * 1024 * 1024
 _MAX_MEMBER_BYTES = 128 * 1024 * 1024
 _LARGE_DIRECTORY_ARCHIVE_LIMITS = {
+    # Backend owns the signed channel support tree as well as the host code.
+    "backend": (50_000, 1024**3, _MAX_MEMBER_BYTES),
     # Scientific Python dependency layers legitimately contain tens of
     # thousands of small files. Keep a finite, component-scoped ceiling so
     # production artifacts fit without weakening plugin archive limits.

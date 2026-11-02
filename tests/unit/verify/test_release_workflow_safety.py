@@ -366,7 +366,8 @@ def test_component_release_stages_plugins_and_versioned_desktop_layers() -> (
 ):
     component_release = _workflow("component-release.yml")
 
-    assert "--plugin-roots bundle apps" in component_release
+    assert "--plugin-roots bundle\n" in component_release
+    assert "--plugin-roots bundle apps" not in component_release
     assert "stage_bundled_plugins.py" in component_release
     assert "stage_desktop_components.py" in component_release
     assert "desktop-components-${{ matrix.target }}" in component_release
@@ -734,3 +735,75 @@ def test_uproject_release_uses_parameterized_oss_bucket() -> None:
     assert "ui/dist/index.js" not in workflow
     assert "setup-node" not in workflow
     assert "npm --prefix" not in workflow
+
+
+def test_unified_release_excludes_apps_and_uploads_every_selected_kind() -> (
+    None
+):
+    import shlex
+    import yaml
+
+    expected = {"bundle", "tool", "memory", "channel", "hub"}
+    for name in ("release-resume.yml", "plugins-build.yml"):
+        jobs = yaml.safe_load(_workflow(name))["jobs"]
+        pack = next(
+            step["run"]
+            for step in jobs["build-plugins"]["steps"]
+            if "scripts/pack/generate_plugin_metadata.py"
+            in step.get("run", "")
+        )
+        arguments = shlex.split(pack.replace("\\\n", " "))
+        assert arguments[arguments.index("--exclude-kind") + 1] == "apps"
+        assert "--only" not in arguments
+        if name == "release-resume.yml":
+            upload = next(
+                step["run"]
+                for step in jobs["publish-plugins"]["steps"]
+                if "for kind in " in step.get("run", "")
+            )
+            selected = upload.split("for kind in ", 1)[1].split("; do", 1)[0]
+            assert set(selected.split()) == expected
+
+
+def test_release_install_scope_preserves_full_test_gate() -> None:
+    import json
+    import re
+    import yaml
+
+    release = yaml.safe_load(_workflow("release-resume.yml"))["jobs"]
+    assert release["verify-web"]["with"]["verify_linux"] is False
+    assert release["verify-web"]["with"]["verify_docker"] is False
+    verification = yaml.safe_load(_workflow("release-verify.yml"))
+    # PyYAML's YAML 1.1 parser treats the GitHub Actions `on` key as True.
+    inputs = verification[True]["workflow_call"]["inputs"]
+    assert inputs["verify_linux"]["default"] is True
+    for job, matrix_key, expected_count in (
+        ("verify-pip", "include", 4),
+        ("verify-script-install", "os", 3),
+    ):
+        expression = verification["jobs"][job]["strategy"]["matrix"][
+            matrix_key
+        ]
+        assert "fromJSON(inputs.verify_linux &&" in expression
+        alternatives = re.findall(r"'([^']+)'", expression)
+        assert len(alternatives) == 2
+        all_platforms, desktop = map(json.loads, alternatives)
+        assert len(all_platforms) == expected_count
+        desktop_os = {
+            row["os"] if isinstance(row, dict) else row for row in desktop
+        }
+        assert desktop_os == {"windows-latest", "macos-latest"}
+        linux = [
+            row
+            for row in all_platforms
+            if (row["os"] if isinstance(row, dict) else row) == "ubuntu-latest"
+        ]
+        assert len(linux) == expected_count - 2
+        assert [row for row in all_platforms if row not in linux] == desktop
+        assert not verification["jobs"][job].get("continue-on-error", False)
+    nightly = _workflow("full-tests-nightly.yml")
+    assert "ubuntu-latest" in nightly
+    assert "python scripts/verify_update_regressions.py --check" in nightly
+    assert "uses: ./.github/workflows/full-tests-nightly.yml" in _workflow(
+        "release-resume.yml",
+    )

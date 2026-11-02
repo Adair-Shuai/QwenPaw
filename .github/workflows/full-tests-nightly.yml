@@ -150,17 +150,24 @@ jobs:
         run: |
           python scripts/verify_update_regressions.py --check
           python scripts/verify_fork_regressions.py --check
+          # A failed release cannot publish. Print its first full traceback
+          # immediately instead of losing it if a long run is cancelled.
+          # Successful runs still execute the entire unit suite.
+          unit_args=()
+          if [ "${{ inputs.form }}" = "release" ]; then
+            unit_args+=(--maxfail=1)
+          fi
           # Coverage is collected only on the ubuntu/py3.13 entry so the
           # data file can be uploaded for coverage-report. Other matrix
           # entries only verify cross-platform compatibility.
           if [ "${{ matrix.os }}" = "ubuntu-latest" ] && \
              [ "${{ matrix.python-version }}" = "3.13" ]; then
-            pytest tests/unit -v \
+            pytest tests/unit -v "${unit_args[@]}" \
               --cov=src/qwenpaw \
               --cov-report=xml:coverage.unit.xml \
               --cov-fail-under=0
           else
-            pytest tests/unit -v
+            pytest tests/unit -v "${unit_args[@]}"
           fi
 
       - name: Verify document forms application contracts

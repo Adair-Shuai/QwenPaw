@@ -57,6 +57,7 @@ jobs:
             --dist dist/plugins \
             --metadata-out dist/plugins/index.json \
             --cdn-prefix /files/plugins \
+            --exclude-kind apps \
             --exclude qwenpaw-creator \
             --exclude uproject \
             --exclude datapaw \

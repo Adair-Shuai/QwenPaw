@@ -83,6 +83,6 @@ while IFS= read -r plugin_dir; do
         mkdir -p "$src_mirror"
         cp -R "$ui_dir/dist/"* "$src_mirror/"
     fi
-done < <("$python_cmd" "$PLUGIN_STAGE_SCRIPT" --repo "$REPO_ROOT" --list-sources)
+done < <("$python_cmd" "$PLUGIN_STAGE_SCRIPT" --repo "$REPO_ROOT" --plugin-roots bundle --list-sources)
 
 echo "[build_plugin_uis] Done: $built built, $skipped skipped."

@@ -62,7 +62,7 @@ function Sync-ChangedFiles {
 $built = 0
 $skipped = 0
 
-$pluginSources = python $PLUGIN_STAGE_SCRIPT --repo $REPO_ROOT --list-sources
+$pluginSources = python $PLUGIN_STAGE_SCRIPT --repo $REPO_ROOT --plugin-roots bundle --list-sources
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to discover bundled plugins"
 }

@@ -21,7 +21,8 @@ from pathlib import Path, PurePosixPath
 PLUGIN_DENYLIST = frozenset(
     {"cloudpaw", "qwenpaw-pet", "qwenpaw-creator", "azure-bot"},
 )
-DEFAULT_PLUGIN_ROOTS = ("bundle", "apps")
+# Applications retain their independent install/update lifecycle.
+DEFAULT_PLUGIN_ROOTS = ("bundle",)
 _IGNORED_NAMES = frozenset(
     {
         ".git",

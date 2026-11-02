@@ -44,11 +44,15 @@ def test_default_discovery_uses_desktop_managed_roots_and_denylist():
     }
     assert selected_ids == all_ids - helper.PLUGIN_DENYLIST
     assert {
-        "agent-kanban",
         "chrome",
         "flowforge",
         "omp-workflows",
     } <= selected_ids
+    assert helper.DEFAULT_PLUGIN_ROOTS == ("bundle",)
+    assert not selected_ids.intersection(
+        _manifest_id(path)
+        for path in (REPO_ROOT / "plugins/apps").glob("*/plugin.json")
+    )
     assert "azure-bot" not in selected_ids
     assert "qwenpaw-creator" not in selected_ids
     assert "middleware-demo-thinking-log" not in selected_ids
@@ -80,7 +84,7 @@ def test_staging_excludes_denied_plugins_and_build_trees(tmp_path):
     helper = _load_helper()
     repo = tmp_path / "repo"
     allowed = repo / "plugins" / "bundle" / "allowed"
-    denied = repo / "plugins" / "apps" / "cloud"
+    denied = repo / "plugins" / "bundle" / "cloud"
     allowed.mkdir(parents=True)
     denied.mkdir(parents=True)
     (allowed / "plugin.json").write_text(

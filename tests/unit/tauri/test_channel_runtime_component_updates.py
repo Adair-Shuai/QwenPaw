@@ -174,6 +174,17 @@ def test_signed_backend_update_switches_channel_support_atomically(
     )
     service_module = importlib.import_module("qwenpaw.components.service")
     managed = tmp_path / "working/components/managed"
+    independent_app = tmp_path / "working/plugins/document-forms"
+    independent_app.mkdir(parents=True)
+    retained = {
+        "plugin.json": b'{"id":"document-forms","version":"0.8.0"}',
+        "plugin.py": b"INDEPENDENT_APPLICATION = True\n",
+        "data/forms.json": b'{"user-entered":"preserve"}',
+    }
+    for relative, content in retained.items():
+        destination = independent_app / relative
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        destination.write_bytes(content)
     installed = managed / "backend/2.3.0b3"
     shutil.copytree(old, installed)
     active = managed.parent / "active.json"
@@ -255,6 +266,11 @@ def test_signed_backend_update_switches_channel_support_atomically(
         ] == str(installed)
         _assert_channel_layout(installed, "2.3.0b3", layouts[0])
         assert set(manifest["components"]) == {"backend"}
+        assert {
+            path.relative_to(independent_app).as_posix(): path.read_bytes()
+            for path in independent_app.rglob("*")
+            if path.is_file()
+        } == retained
     finally:
         client.close()
 

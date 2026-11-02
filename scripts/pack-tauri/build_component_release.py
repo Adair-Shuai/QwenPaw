@@ -41,6 +41,7 @@ _MAX_ARCHIVE_MEMBERS = 10_000
 _MAX_ARCHIVE_BYTES = 768 * 1024 * 1024
 _MAX_MEMBER_BYTES = 128 * 1024 * 1024
 _LARGE_DIRECTORY_ARCHIVE_LIMITS = {
+    "backend": (50_000, 1024**3, _MAX_MEMBER_BYTES),
     "python-packages": (150_000, 6 * 1024**3, 1024**3),
 }
 
@@ -221,12 +222,25 @@ def _validate_archive(path: Path, *, component: str) -> None:
     with zipfile.ZipFile(path) as archive:
         infos = archive.infolist()
         max_members, max_bytes, max_member_bytes = _archive_limits(component)
+        total_bytes = sum(info.file_size for info in infos)
+        details = (
+            f"{component}: members={len(infos)}/{max_members}, "
+            f"bytes={total_bytes}/{max_bytes}"
+        )
         if len(infos) > max_members:
-            raise ValueError("component archive contains too many members")
-        if sum(info.file_size for info in infos) > max_bytes:
-            raise ValueError("component archive is too large")
+            raise ValueError(
+                f"component archive contains too many members: {details}",
+            )
+        if total_bytes > max_bytes:
+            raise ValueError(
+                f"component archive is too large: {details}",
+            )
         if any(info.file_size > max_member_bytes for info in infos):
-            raise ValueError("component archive member is too large")
+            raise ValueError(
+                f"component archive member is too large: {details}, "
+                f"member_bytes={max(info.file_size for info in infos)}"
+                f"/{max_member_bytes}",
+            )
 
 
 def _full_zip(source: Path, output: Path) -> None:

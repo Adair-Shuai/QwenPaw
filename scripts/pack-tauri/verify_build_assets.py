@@ -131,6 +131,7 @@ def _check_plugins(repo: Path) -> list[str]:
     try:
         plugin_dirs = _plugin_packaging_helper(repo).discover_bundled_plugins(
             repo,
+            plugin_roots=("bundle",),
         )
     except Exception as exc:
         return [f"Failed to discover bundled plugins: {exc}"]

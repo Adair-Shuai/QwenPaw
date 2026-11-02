@@ -22,6 +22,13 @@ LEGACY_MACOS_PLUGIN_SUFFIX = PurePosixPath(
 )
 
 
+def _bundled_manifest(content: str) -> dict:
+    manifest = json.loads(content)
+    if manifest.get("type") == "app":
+        raise ValueError("applications must be installed independently")
+    return manifest
+
+
 def _safe_entry(root: Path, value: object, label: str) -> Path | None:
     if value in (None, ""):
         return None
@@ -51,7 +58,9 @@ def verify(root: Path) -> None:
                 f"duplicate plugin directory alias: {manifest_path}",
             )
         seen_dirs.add(real_plugin_root)
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        manifest = _bundled_manifest(
+            manifest_path.read_text(encoding="utf-8"),
+        )
         plugin_id = str(manifest.get("id") or "").strip()
         if not plugin_id or plugin_id in seen:
             raise ValueError(
@@ -207,7 +216,7 @@ def _verify_archive_files(
     seen: set[str] = set()
     for manifest_name in manifests:
         plugin_root = str(PurePosixPath(manifest_name).parent)
-        manifest = json.loads(read_file(manifest_name).decode("utf-8"))
+        manifest = _bundled_manifest(read_file(manifest_name).decode("utf-8"))
         plugin_id = str(manifest.get("id") or "").strip()
         if not plugin_id or plugin_id in seen:
             raise ValueError(

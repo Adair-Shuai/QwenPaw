@@ -552,6 +552,7 @@ jobs:
     with:
       verify_pip: true
       verify_docker: false
+      verify_linux: false
       verify_script_install: true
       ref: ${{ needs.resolve.outputs.sha }}
     secrets: inherit
@@ -617,6 +618,7 @@ jobs:
             --dist dist/plugins \
             --metadata-out dist/plugins/index.json \
             --cdn-prefix /files/plugins \
+            --exclude-kind apps \
             --exclude qwenpaw-creator \
             --exclude uproject \
             --exclude datapaw \
@@ -835,7 +837,7 @@ jobs:
               "${conflicts[@]}" >&2
             exit 1
           fi
-          for kind in bundle tool memory apps; do
+          for kind in bundle tool memory channel hub; do
             while IFS= read -r -d '' f; do
               rel="${f#dist/plugins/}"
               validate_relative_key "$rel"

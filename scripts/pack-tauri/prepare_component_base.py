@@ -43,6 +43,7 @@ _MAX_MEMBERS = 10_000
 _MAX_TOTAL_BYTES = 768 * 1024 * 1024
 _MAX_MEMBER_BYTES = 128 * 1024 * 1024
 _LARGE_DIRECTORY_ARCHIVE_LIMITS = {
+    "backend": (50_000, 1024**3, _MAX_MEMBER_BYTES),
     "python-packages": (150_000, 6 * 1024**3, 1024**3),
 }
 _RELEASE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")

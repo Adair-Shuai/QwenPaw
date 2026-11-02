@@ -36,8 +36,30 @@ SUITES = (
     "tests/unit/tauri/test_channel_support_wheel.py",
     "tests/unit/scripts/test_macos_packaging.py",
     "tests/unit/tauri/test_desktop_dependency_lock.py",
+    "tests/unit/tauri/test_backend_archive_capacity.py",
+    "tests/unit/pack/test_generate_plugin_metadata.py",
+    "tests/unit/tauri/test_stage_bundled_plugins.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/tauri/test_stage_bundled_plugins.py": {
+        "test_software_staging_excludes_apps_and_preserves_explicit_app_release",
+        "test_python_distributions_exclude_source_and_stale_application_mirrors",
+        "test_desktop_content_gate_rejects_bundled_application_payload",
+    },
+    "tests/unit/pack/test_generate_plugin_metadata.py": {
+        "test_cli_category_scope_preserves_independent_app_publication",
+        "test_cli_dry_run_uses_the_same_app_category_scope",
+        "test_scoped_release_merge_retains_independent_app_versions",
+    },
+    "tests/unit/tauri/test_backend_archive_capacity.py": {
+        "test_backend_archive_capacity_contract_is_consistent",
+        "test_large_backend_signed_full_delta_and_rollback",
+        "test_backend_archive_capacity_rejects_above_budget",
+        "test_backend_archive_capacity_does_not_relax_plugin_limit",
+        "test_large_backend_rejects_tampering_and_inventory_changes",
+        "test_backend_capacity_keeps_path_and_inventory_guards",
+        "test_large_backend_manifest_rejects_older_host_before_download",
+    },
     "tests/unit/tauri/test_desktop_dependency_lock.py": {
         "test_desktop_lock_satisfies_project_and_selected_extras",
         "test_desktop_lock_rejects_stale_reme_contract",
@@ -97,6 +119,8 @@ REQUIRED_CASES = {
         "test_directory_candidate_snapshot_is_isolated",
     },
     "tests/unit/verify/test_release_workflow_safety.py": {
+        "test_unified_release_excludes_apps_and_uploads_every_selected_kind",
+        "test_release_install_scope_preserves_full_test_gate",
         "test_clean_release_and_frontend_checks_build_openui_runtime",
         "test_reusable_plugin_build_matches_release_artifact_scope",
         "test_plugin_pack_job_installs_channel_contract_dependencies",

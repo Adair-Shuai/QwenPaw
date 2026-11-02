@@ -133,12 +133,12 @@ jobs:
       - name: Install release dependencies
         run: python -m pip install packaging cryptography
 
-      - name: Stage managed bundled plugins and apps
+      - name: Stage managed bundled plugins
         run: |
           python scripts/pack-tauri/stage_bundled_plugins.py \
             --repo . \
             --dest component-staging \
-            --plugin-roots bundle apps
+            --plugin-roots bundle
 
       - name: Resolve desktop component artifact source
         if: ${{ inputs.include_desktop_components }}

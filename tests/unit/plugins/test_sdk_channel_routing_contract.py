@@ -1210,10 +1210,27 @@ async def test_interrupt_reload_retains_blocked_terminal_until_public_retry(
                 )
             finally:
                 owner_release.set()
-                await asyncio.wait_for(
-                    asyncio.gather(retry, return_exceptions=True),
-                    WAIT_TIMEOUT,
-                )
+                released = False
+                try:
+                    # Bound the exact old request's release. The public retry
+                    # also unloads and starts a generation with its own budget.
+                    done, _ = await asyncio.wait(
+                        {owner_task},
+                        timeout=WAIT_TIMEOUT,
+                    )
+                    released = owner_task in done
+                    assert (
+                        released
+                    ), "The real request did not finish after release"
+                finally:
+                    if not released:
+                        retry.cancel()
+                        await asyncio.wait_for(
+                            asyncio.gather(retry, return_exceptions=True),
+                            WAIT_TIMEOUT,
+                        )
+                    else:
+                        await asyncio.gather(retry, return_exceptions=True)
             assert (await retry).ok
 
         finally:

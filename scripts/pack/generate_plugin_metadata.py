@@ -740,6 +740,7 @@ def discover_and_pack(
     cdn_prefix: str,
     only: list[str] | None = None,
     exclude: list[str] | None = None,
+    exclude_kinds: list[str] | None = None,
 ) -> tuple[dict[str, Any], list[str]]:
     """Scan, validate, zip, and assemble the plugins index.
 
@@ -763,6 +764,8 @@ def discover_and_pack(
         return index, failed
 
     for kind in KIND_DIRS:
+        if exclude_kinds and kind in exclude_kinds:
+            continue
         kind_dir = plugins_root / kind
         if not kind_dir.is_dir():
             continue
@@ -830,9 +833,12 @@ def _dry_run_scan(
     plugins_root: Path,
     only: list[str] | None,
     exclude: list[str] | None,
+    exclude_kinds: list[str] | None = None,
 ) -> None:
     """List what would be packed without writing anything."""
     for kind in KIND_DIRS:
+        if exclude_kinds and kind in exclude_kinds:
+            continue
         kind_dir = plugins_root / kind
         if not kind_dir.is_dir():
             continue
@@ -905,6 +911,13 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--exclude-kind",
+        action="append",
+        choices=KIND_DIRS,
+        default=None,
+        help="Skip a plugin category (repeatable; default: include all).",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Scan + plan only; do not write zips or index.",
@@ -921,14 +934,18 @@ def main() -> int:
 
     print(f"Scanning plugins under: {plugins_root}")
     if args.dry_run:
-        _dry_run_scan(plugins_root, args.only, args.exclude)
+        _dry_run_scan(
+            plugins_root, args.only, args.exclude, args.exclude_kind,
+        )
         return 0
 
     project_root = plugins_root.parent
     inventory_path = (
         project_root / "src/qwenpaw/plugins/official_channel_catalog.py"
     )
-    if inventory_path.is_file():
+    if inventory_path.is_file() and "channel" not in (
+        args.exclude_kind or []
+    ):
         inventory = runpy.run_path(str(inventory_path))["OFFICIAL_CHANNELS"]
         if any(
             _selected(
@@ -973,6 +990,7 @@ def main() -> int:
         args.cdn_prefix,
         only=args.only,
         exclude=args.exclude,
+        exclude_kinds=args.exclude_kind,
     )
 
     metadata_out.parent.mkdir(parents=True, exist_ok=True)

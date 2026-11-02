@@ -2,12 +2,47 @@
 """Setuptools hooks for the dormant official channel resources."""
 
 from pathlib import Path
+import json
 import runpy
 import shutil
 
 from setuptools import find_namespace_packages, setup
 from setuptools.command.build_py import build_py
 from setuptools.command.sdist import sdist
+
+
+def application_payload_names(directory):
+    """Identify application mirrors without changing installed data."""
+    root = Path(__file__).resolve().parent
+    sources = list((root / "plugins/apps").glob("*/plugin.json"))
+    names = {path.parent.name for path in sources}
+    identifiers = {
+        json.loads(path.read_text(encoding="utf-8"))["id"] for path in sources
+    }
+    for manifest in directory.glob("*/plugin.json"):
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        if data.get("type") == "app" or data.get("id") in identifiers:
+            names.add(manifest.parent.name)
+    return names
+
+
+def exclude_application_payloads(directory):
+    """Remove application copies only from a builder-owned artifact tree."""
+    root = directory.resolve()
+    source = (
+        Path(__file__).resolve().parent / "src/qwenpaw/plugins_bundle"
+    ).resolve()
+    if root == source:
+        raise ValueError("application filtering cannot modify source mirrors")
+    for name in application_payload_names(directory):
+        target = directory / name
+        if not target.exists():
+            continue
+        if target.is_symlink() or not target.resolve().is_relative_to(root):
+            raise ValueError(
+                "application artifact path escapes its build tree",
+            )
+        shutil.rmtree(target)
 
 
 def bundle(destination, version):
@@ -21,6 +56,21 @@ def bundle(destination, version):
 class BuildPy(build_py):
     """Generate resources where the installed package resolves them."""
 
+    def find_data_files(self, package, src_dir):
+        paths = super().find_data_files(package, src_dir)
+        mirrors = Path(self.get_package_dir("qwenpaw")) / "plugins_bundle"
+        applications = application_payload_names(mirrors)
+        selected = []
+        for path in paths:
+            try:
+                relative = Path(path).resolve().relative_to(mirrors.resolve())
+            except ValueError:
+                selected.append(path)
+                continue
+            if relative.parts[0] not in applications:
+                selected.append(path)
+        return selected
+
     def run(self):
         super().run()
         package_dir = (
@@ -28,6 +78,8 @@ class BuildPy(build_py):
             if getattr(self, "editable_mode", False)
             else Path(self.build_lib) / "qwenpaw"
         )
+        if not getattr(self, "editable_mode", False):
+            exclude_application_payloads(package_dir / "plugins_bundle")
         bundle(
             package_dir / "official_channels",
             self.distribution.get_version(),
@@ -68,6 +120,9 @@ class SDist(sdist):
 
     def make_release_tree(self, base_dir, files):
         super().make_release_tree(base_dir, files)
+        exclude_application_payloads(
+            Path(base_dir) / "src/qwenpaw/plugins_bundle",
+        )
         root = Path(__file__).resolve().parent
         builder = runpy.run_path(
             str(root / "scripts/pack/generate_plugin_metadata.py"),
@@ -102,6 +157,16 @@ packages = find_namespace_packages(
         "*.__pycache__.*",
         "qwenpaw.plugins_bundle.ugsci.visualization.data",
         "qwenpaw.plugins_bundle.ugsci.visualization.data.*",
+        *(
+            pattern
+            for name in application_payload_names(
+                Path(__file__).resolve().parent / "src/qwenpaw/plugins_bundle",
+            )
+            for pattern in (
+                f"qwenpaw.plugins_bundle.{name}",
+                f"qwenpaw.plugins_bundle.{name}.*",
+            )
+        ),
     ),
 )
 packages += find_namespace_packages("packages/qwenpawmail-mcp/src")
