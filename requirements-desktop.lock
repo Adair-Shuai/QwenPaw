@@ -3985,20 +3985,20 @@ regex==2026.7.19 \
     --hash=sha256:fe31f28c94402043161876a258a9c6f757cb485905c7614ce8d6cd40e6b7bdc1 \
     --hash=sha256:ffd8893ccc1c2fce6e0d6ca402d716fe1b29db70c7132609a05955e31b2aa8f2
     # via transformers
-reme-ai==0.4.1.11 \
-    --hash=sha256:9b66301fc06b11205b9d03f10c6ec74e207fd611af5380cdd7a9ab11403866aa \
-    --hash=sha256:d3c6852d7dfc6ae5793e8bc914adb4d59871eeaf8857cf959f8a6b46e421dab4
+reme-ai==0.4.2.0 \
+    --hash=sha256:46ca0b1107ecdf9db7d82151f712e3bedc47f1dc2f1ad17b4673704c8bff7489 \
+    --hash=sha256:8abc1476b569b95c6b5f466a16713c3c0c63ea76c157d5ce5ce23d4d83c15109
     # via
     #   qwenpaw
     #   reme-auto-fin
     #   reme-daily-paper
-reme-auto-fin==0.1.2 \
-    --hash=sha256:d8a3cf1699b7fbeb42db817efa3ad5ed93ea9684c892db573b564879472be6fc \
-    --hash=sha256:e5027fc2389fc5b884aa2329ecec9d4e8fac5548e364e00d346487e9a964cb52
+reme-auto-fin==0.1.3 \
+    --hash=sha256:12bc751a0623b2a2909962b52df0da3d4f4927a992a1c94fe214508c64d25cb1 \
+    --hash=sha256:dd4ed7bd604dac16d29078c36a68b2f942b0099b28ecdb18d1da3a5ac64f8ee1
     # via qwenpaw
-reme-daily-paper==0.1.2 \
-    --hash=sha256:732b6ac17b01e1af2fe3040217a19c58c07d7873b49e438f04967762da0bcf94 \
-    --hash=sha256:8ffdfb59788c96acbb65de1d42e825382d4407e8b802bf83b02ad9853bbe63d2
+reme-daily-paper==0.1.3 \
+    --hash=sha256:2eeb24a9653893a871bc9a32278797ffe96f2eeb1cfed505d4f5b1c9a8676972 \
+    --hash=sha256:e1237babefcf421ef224da04d986e23cbbcc1eb350ef0e5f1ce19ae59152516a
     # via qwenpaw
 requests==2.34.2 \
     --hash=sha256:2a0d60c172f83ac6ab31e4554906c0f3b3588d37b5cb939b1c061f4907e278e0 \

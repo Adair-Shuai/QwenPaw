@@ -51,6 +51,18 @@ def _sha256(path: Path) -> str:
     return digest.hexdigest()
 
 
+def _validate_desktop_lock(repo: Path) -> None:
+    spec = importlib.util.spec_from_file_location(
+        "qwenpaw_desktop_dependencies",
+        Path(__file__).with_name("validate_desktop_dependencies.py"),
+    )
+    if spec is None or spec.loader is None:
+        raise RuntimeError("Cannot load desktop dependency validator")
+    validator = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(validator)
+    validator.validate_project_lock(repo)
+
+
 def _dependency_version(lock_hash: str) -> str:
     """Return a stable PEP 440 version for a dependency lock digest."""
     if len(lock_hash) < 16 or any(
@@ -227,6 +239,8 @@ def build_layers(
             f"standalone Python is missing: {runtime_python}",
         )
 
+    _validate_desktop_lock(repo)
+
     lock_hash = _sha256(lock)
     # Component versions are parsed with packaging.version.Version at runtime.
     # A raw digest may begin with a letter, so encode it as valid PEP 440 local
@@ -297,6 +311,25 @@ def build_layers(
                 "--target",
                 str(backend),
                 str(wheel),
+            ],
+            cwd=repo,
+        )
+        _run(
+            [
+                str(runtime_python),
+                "-I",
+                "-B",
+                str(
+                    Path(__file__).with_name(
+                        "validate_desktop_dependencies.py",
+                    ),
+                ),
+                "--repo",
+                str(repo),
+                "--backend",
+                str(backend),
+                "--dependencies",
+                str(dependencies),
             ],
             cwd=repo,
         )

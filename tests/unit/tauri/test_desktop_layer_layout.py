@@ -8,12 +8,19 @@ from pathlib import Path
 import sys
 import tomllib
 
+import pytest
 from packaging.requirements import Requirement
 from packaging.version import Version
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HELPER = REPO_ROOT / "scripts" / "pack-tauri" / "assemble_desktop_layout.py"
 PYTHON_LAYERS = REPO_ROOT / "scripts" / "pack-tauri" / "build_python_layers.py"
+
+
+@pytest.fixture(autouse=True)
+def _script_module_search_path(monkeypatch):
+    """Match real script execution with a test-scoped module search path."""
+    monkeypatch.syspath_prepend(str(HELPER.parent))
 
 
 def test_desktop_lock_tracks_the_declared_classifier_sdk():

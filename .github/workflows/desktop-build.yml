@@ -224,6 +224,23 @@ jobs:
         with:
           dashscope-api-key: ${{ secrets.QWENPAW_DASHSCOPE_API_KEY }}
 
+      - name: Print failed Windows backend initialization diagnostics
+        if: ${{ failure() }}
+        shell: pwsh
+        run: |
+          $diagnosticLogs = @(
+            (Join-Path $env:USERPROFILE '.qwenpaw/runtime/shared/launcher.log'),
+            (Join-Path $env:USERPROFILE '.qwenpaw/desktop.log')
+          )
+          foreach ($diagnosticLog in $diagnosticLogs) {
+            Write-Host "Backend diagnostic log: $diagnosticLog"
+            if (Test-Path -LiteralPath $diagnosticLog -PathType Leaf) {
+              Get-Content -LiteralPath $diagnosticLog -Encoding utf8 -Tail 500
+            } else {
+              Write-Host 'Diagnostic log was not created'
+            }
+          }
+
       - name: Stop desktop server (Tauri Windows)
         if: always()
         shell: pwsh
@@ -479,6 +496,21 @@ jobs:
         uses: ./.github/actions/verify-tauri-macos
         with:
           dashscope-api-key: ${{ secrets.QWENPAW_DASHSCOPE_API_KEY }}
+
+      - name: Print failed macOS backend initialization diagnostics
+        if: ${{ failure() }}
+        run: |
+          set -euo pipefail
+          for diagnostic_log in \
+            "$HOME/.qwenpaw/runtime/shared/launcher.log" \
+            "$HOME/.qwenpaw/desktop.log"; do
+            printf '\nBackend diagnostic log: %s\n' "$diagnostic_log"
+            if [ -f "$diagnostic_log" ]; then
+              tail -n 500 "$diagnostic_log"
+            else
+              echo "Diagnostic log was not created"
+            fi
+          done
 
       - name: Stop desktop server (Tauri macOS)
         if: always()

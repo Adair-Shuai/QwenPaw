@@ -35,8 +35,19 @@ SUITES = (
     "tests/unit/tauri/test_channel_runtime_portable.py",
     "tests/unit/tauri/test_channel_support_wheel.py",
     "tests/unit/scripts/test_macos_packaging.py",
+    "tests/unit/tauri/test_desktop_dependency_lock.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/tauri/test_desktop_dependency_lock.py": {
+        "test_desktop_lock_satisfies_project_and_selected_extras",
+        "test_desktop_lock_rejects_stale_reme_contract",
+        "test_desktop_lock_reads_new_selected_extras",
+        "test_layer_build_rejects_stale_lock_before_install_or_cleanup",
+        "test_installed_layer_cannot_use_host_distribution_to_hide_missing_provider",
+        "test_isolated_target_validator_rejects_stale_and_accepts_matching_metadata",
+        "test_installed_layer_checks_wheel_extra_requirements",
+        "test_layer_build_checks_installed_wheel_before_smoke_or_descriptors",
+    },
     "tests/unit/scripts/test_macos_packaging.py": {
         "test_signing_skips_debug_symbols_and_keeps_native_signatures",
         "test_launcher_uses_real_top_level_app",
