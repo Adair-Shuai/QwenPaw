@@ -150,9 +150,9 @@ def test_shared_daemon_keeps_channel_runtime_environment() -> None:
     runtime = (native / "backend/runtime.rs").read_text(encoding="utf-8")
     daemon = (native / "backend/daemon.rs").read_text(encoding="utf-8")
 
-    # Both development and packaged command factories must use the shared
-    # contributor boundary; collecting Computer Use client metadata in
-    # runtime::connect alone never delivers these paths to Python.
+    # Keep generic contributors in both factories. Packaged channels must
+    # instead use the captured launch on every daemon restart, so a pointer
+    # change cannot pair a backend with another version's support paths.
     factories = re.findall(
         r"pub\(super\) fn create\(.*?(?=\n#\[cfg|\Z)",
         commands,
@@ -164,11 +164,25 @@ def test_shared_daemon_keeps_channel_runtime_environment() -> None:
     contributor = commands.split("fn apply_contributed_environment(", 1)[1]
     assert "crate::runtime_env::collect(app)" in contributor
     assert "command.env(key, value)" in contributor
-    assert "crate::channel_runtime::backend_environment(app)" in collector
+    assert "crate::channel_runtime::" not in collector
+    packaged = commands.split("fn create_packaged(", 1)[1].split(
+        "fn command_for_packaged_launch(",
+        1,
+    )
+    assert (
+        "let launch = packaged_backend_launch(&resource_dir)?" in packaged[0]
+    )
+    assert "command_for_packaged_launch(&resource_dir, launch)" in packaged[0]
+    assert "crate::channel_runtime::apply_backend_environment(" in packaged[1]
+    assert "launch.channel_backend_root.as_deref()" in packaged[1]
+    assert "command.env_remove(key)" in channels
+    assert "command.env(key, value)" in channels
+    assert "super::command::create_packaged(" in daemon
     for key in (
         "QWENPAW_CHANNEL_RUNTIME_MANIFEST",
         "QWENPAW_CHANNEL_SUPPORT_ROOT",
         "QWENPAW_CHANNEL_DEPENDENCY_PATHS",
+        "QWENPAW_CHANNEL_RESOURCE_DIR",
     ):
         assert f'"{key}"' in channels
 

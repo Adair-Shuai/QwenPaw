@@ -34,6 +34,9 @@ SUITES = (
     "tests/unit/tauri/test_channel_runtime_component_updates.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/tauri/test_desktop_workflows.py": {
+        "test_shared_daemon_keeps_channel_runtime_environment",
+    },
     "tests/unit/tauri/test_channel_runtime_component_updates.py": {
         "test_signed_backend_update_switches_channel_support_atomically",
         "test_signed_backend_gate_rejects_changed_channel_support",
