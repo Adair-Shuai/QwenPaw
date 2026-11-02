@@ -51,6 +51,8 @@ class AzureBotDriver(SharedResponseDriver):
             raise
 
     async def _state_changed(self, state):
+        # Driver and platform share this channel private transport lifecycle.
+        # pylint: disable=protected-access
         connected = state == "connected" and not self._stopping
         if connected != self._connected:
             self._connection_generation += 1
@@ -136,6 +138,8 @@ class AzureBotDriver(SharedResponseDriver):
         )
 
     async def _open(self, params, request):
+        # SharedResponseDriver passes the complete public request contract.
+        # pylint: disable=unused-argument
         self._identity(params)
         platform = self._require_connected()
         target = decode_reply_target(str(params["to_handle"]))

@@ -234,7 +234,8 @@ class WeComPlatform(InboundDecoder):
         except asyncio.QueueFull:
             self._connected = False
             self._schedule_state("failed", epoch)
-            # Stop admission rather than silently claiming a dropped event was accepted.
+            # Stop admission rather than silently claiming a dropped event was
+            # accepted.
             if self._ws_loop and self._client:
                 self._ws_loop.call_soon_threadsafe(self._client.disconnect)
 
@@ -257,8 +258,6 @@ class WeComPlatform(InboundDecoder):
                         },
                     )
                 self._check_epoch(epoch)
-            except asyncio.CancelledError:
-                raise
             except Exception as exc:
                 logger.error(
                     "WeCom native callback failed: %s",
@@ -279,7 +278,10 @@ class WeComPlatform(InboundDecoder):
         return tracked
 
     async def _sdk_main(self):
-        # Construct the emitter, client and asyncio primitives on their owning loop.
+        # Construct the emitter, client and asyncio primitives on their owning
+        # loop.
+        # This adapter owns SDK heartbeat, socket cleanup and pending sends.
+        # pylint: disable=protected-access
         from aibot import WSClient, WSClientOptions
 
         self._ws_stop_event = asyncio.Event()
@@ -310,10 +312,14 @@ class WeComPlatform(InboundDecoder):
                 original_raw(frame)
 
         manager.on_message = raw
-        # Preserve the historical close-only heartbeat fix: receive owns reconnect.
+        # Preserve the historical close-only heartbeat fix: receive owns
+        # reconnect.
         heartbeat = manager._send_heartbeat
 
         async def send_heartbeat():
+            # This adapter owns SDK heartbeat, socket cleanup and pending
+            # sends.
+            # pylint: disable=protected-access
             if manager._missed_pong_count >= manager._max_missed_pong:
                 if manager._ws:
                     await manager._ws.close()
@@ -325,6 +331,9 @@ class WeComPlatform(InboundDecoder):
         cleanup = manager._cleanup_ws
 
         async def cleanup_ws():
+            # This adapter owns SDK heartbeat, socket cleanup and pending
+            # sends.
+            # pylint: disable=protected-access
             if manager._receive_task is asyncio.current_task():
                 manager._receive_task = None
             await cleanup()
@@ -393,11 +402,14 @@ class WeComPlatform(InboundDecoder):
             self._post(self._schedule_state, "failed", self._epoch)
         finally:
             self._sdk_initialized.set()
-            # The loop remains available as evidence if a live task could not settle.
+            # The loop remains available as evidence if a live task could not
+            # settle.
             if not asyncio.all_tasks(ws_loop):
                 ws_loop.close()
 
     async def _shutdown_sdk(self):
+        # This adapter owns SDK heartbeat, socket cleanup and pending sends.
+        # pylint: disable=protected-access
         if self._client is not None:
             manager = self._client._ws_manager
             manager._is_manual_close = True
@@ -428,6 +440,9 @@ class WeComPlatform(InboundDecoder):
             await self._stop_owned()
 
     async def _stop_owned(self):
+        # Keep ordered transport effects and ownership cleanup in one
+        # transaction.
+        # pylint: disable=too-many-branches
         self._stopping = True
         self._connected = False
         self._epoch += 1
@@ -530,7 +545,8 @@ class WeComPlatform(InboundDecoder):
         wrapped = asyncio.wrap_future(bridge)
         completed = False
         try:
-            # A cancelled RPC waits for the platform effect instead of abandoning it.
+            # A cancelled RPC waits for the platform effect instead of
+            # abandoning it.
             result = await _settle(wrapped)
             completed = True
             self._check_epoch(epoch)
@@ -542,8 +558,6 @@ class WeComPlatform(InboundDecoder):
                     side_effect_possible=True,
                 )
             return result
-        except asyncio.CancelledError:
-            raise
         except WeComDeliveryError as exc:
             if completed and effect and not exc.side_effect_possible:
                 raise WeComDeliveryError(
@@ -587,6 +601,9 @@ class WeComPlatform(InboundDecoder):
         self._upload_ack_futures[req_id] = (epoch, future)
 
         async def send():
+            # This adapter owns SDK heartbeat, socket cleanup and pending
+            # sends.
+            # pylint: disable=protected-access
             self._check_epoch(epoch)
             await self._client._ws_manager.send(
                 {"cmd": cmd, "headers": {"req_id": req_id}, "body": body},
@@ -611,8 +628,6 @@ class WeComPlatform(InboundDecoder):
                     side_effect_possible=True,
                 )
             return body
-        except asyncio.CancelledError:
-            raise
         except WeComDeliveryError:
             raise
         except Exception as exc:
@@ -805,6 +820,8 @@ class WeComPlatform(InboundDecoder):
         interval=_PROCESSING_REFRESH_INTERVAL,
         max_duration=_PROCESSING_MAX_DURATION,
     ):
+        # Retain the existing callable signature for channel integrations.
+        # pylint: disable=unused-argument
         elapsed = 0.0
         try:
             while elapsed + interval <= max_duration:
@@ -821,8 +838,6 @@ class WeComPlatform(InboundDecoder):
                     self._processing_effect(route, state, True),
                 ),
             )
-        except asyncio.CancelledError:
-            raise
         except Exception:
             state["unknown"] = True
         finally:
@@ -895,6 +910,9 @@ class WeComPlatform(InboundDecoder):
         )
 
     async def send_parts(self, route, parts, source=None):
+        # Keep ordered transport effects and ownership cleanup in one
+        # transaction.
+        # pylint: disable=too-many-branches
         source = getattr(source, "value", source) or "content_parts"
         text = "\n".join(
             p.get("text") or p.get("refusal") or ""
@@ -1058,7 +1076,8 @@ class WeComPlatform(InboundDecoder):
                 session_ctx={"bid": nonce},
             )
         except ValueError:
-            # Preserve the old oversized-key text path before any native card effect.
+            # Preserve the old oversized-key text path before any native card
+            # effect.
             return await self.send_parts(
                 route,
                 params.content_parts,
@@ -1105,6 +1124,8 @@ class WeComPlatform(InboundDecoder):
             self._cards[binding["nonce"]] = binding
 
     async def _handle_card(self, frame):
+        # Preserve the existing native protocol dispatch and rejection order.
+        # pylint: disable=too-many-return-statements
         if not isinstance(frame, dict):
             return False
         body = frame.get("body") or {}
@@ -1161,7 +1182,9 @@ class WeComPlatform(InboundDecoder):
             "content_parts": [
                 {
                     "type": "text",
-                    "text": f"/approval {parsed['action']} {parsed['request_id']}",
+                    "text": (
+                        f"/approval {parsed['action']} {parsed['request_id']}"
+                    ),
                 },
             ],
         }
@@ -1206,7 +1229,8 @@ class WeComPlatform(InboundDecoder):
             action=action,
             operator_display=result.actor_user_id,
         )
-        # This is reached solely from the typed, source/actor-bound host outcome.
+        # This is reached solely from the typed, source/actor-bound host
+        # outcome.
         binding["resolved"] = True
         await self._call("update_template_card", self._frame(route), card)
         binding["resolution_acknowledged"] = True

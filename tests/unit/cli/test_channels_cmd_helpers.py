@@ -22,8 +22,8 @@ from qwenpaw.config import utils as config_utils
 from qwenpaw.plugins.registry import PluginRegistry
 
 
-@pytest.fixture
-def isolated_channel_catalog(monkeypatch, tmp_path):
+@pytest.fixture(name="isolated_channel_catalog")
+def _fixture_isolated_channel_catalog(monkeypatch, tmp_path):
     """Discover real bundled metadata without installed plugins or settings."""
     monkeypatch.setattr(PluginRegistry, "_instance", None)
     monkeypatch.setattr(config_utils, "WORKING_DIR", tmp_path)
@@ -47,6 +47,8 @@ def isolated_channel_catalog(monkeypatch, tmp_path):
 
     class SDKImportGuard(importlib.abc.MetaPathFinder):
         def find_spec(self, fullname, path=None, target=None):
+            # Keep the fixture or vendor callback signature used by the caller.
+            # pylint: disable=unused-argument
             if guarded_module(fullname):
                 raise AssertionError("Passive discovery imported " + fullname)
 

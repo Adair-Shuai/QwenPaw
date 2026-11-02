@@ -53,6 +53,8 @@ class MatrixDriver(SharedResponseDriver):
             raise
 
     async def _state_changed(self, state):
+        # Driver and platform share this channel private transport lifecycle.
+        # pylint: disable=protected-access
         connected = state == "connected"
         if connected != self._connected:
             self._connection_generation += 1
@@ -106,6 +108,8 @@ class MatrixDriver(SharedResponseDriver):
         }
 
     async def _open(self, params, request):
+        # SharedResponseDriver passes the complete public request contract.
+        # pylint: disable=unused-argument
         self._identity(params)
         self._require_connected()
         handle = "matrix:reply:" + uuid.uuid4().hex

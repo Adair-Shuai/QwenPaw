@@ -39,6 +39,10 @@ class InboundDecoder:
 
     async def _on_message(self, frame: Any) -> None:
         """Parse and enqueue one incoming message."""
+        # Preserve the existing native protocol dispatch and rejection order.
+        # pylint: disable=too-many-branches
+        # pylint: disable=too-many-nested-blocks
+        # pylint: disable=too-many-statements
         epoch = self._epoch
         try:
             body = frame.get("body") or {}
@@ -97,10 +101,7 @@ class InboundDecoder:
                     )
                     if path:
                         content_parts.append(
-                            dict(
-                                type="image",
-                                image_url=path,
-                            ),
+                            {"type": "image", "image_url": path},
                         )
                     else:
                         text_parts.append("[image: download failed]")
@@ -129,11 +130,11 @@ class InboundDecoder:
                     )
                     if path:
                         content_parts.append(
-                            dict(
-                                type="file",
-                                file_url=path,
-                                filename=filename,
-                            ),
+                            {
+                                "type": "file",
+                                "file_url": path,
+                                "filename": filename,
+                            },
                         )
                     else:
                         text_parts.append("[file: download failed]")
@@ -152,10 +153,7 @@ class InboundDecoder:
                     )
                     if path:
                         content_parts.append(
-                            dict(
-                                type="video",
-                                video_url=path,
-                            ),
+                            {"type": "video", "video_url": path},
                         )
                     else:
                         text_parts.append("[video: download failed]")
@@ -183,10 +181,7 @@ class InboundDecoder:
                             )
                             if path:
                                 content_parts.append(
-                                    dict(
-                                        type="image",
-                                        image_url=path,
-                                    ),
+                                    {"type": "image", "image_url": path},
                                 )
                             else:
                                 text_parts.append("[image: download failed]")
@@ -203,11 +198,11 @@ class InboundDecoder:
                             )
                             if path:
                                 content_parts.append(
-                                    dict(
-                                        type="file",
-                                        file_url=path,
-                                        filename=filename,
-                                    ),
+                                    {
+                                        "type": "file",
+                                        "file_url": path,
+                                        "filename": filename,
+                                    },
                                 )
                             else:
                                 text_parts.append("[file: download failed]")
@@ -286,7 +281,7 @@ class InboundDecoder:
             if text:
                 content_parts.insert(
                     0,
-                    dict(type="text", text=text),
+                    {"type": "text", "text": text},
                 )
             if not content_parts:
                 return

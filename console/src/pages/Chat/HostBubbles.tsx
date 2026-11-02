@@ -65,8 +65,7 @@ import {
   getResponseMessageDisplayMode,
   groupResponseMessages,
 } from "./messageDisplay";
-import styles from "./HostBubbles.module.less";
-import LazyAccordion from "./LazyAccordion";
+import ExecutionProcess from "./components/ExecutionProcess";
 import {
   getAssistantMessageDisplayPreference,
   getShowThinkingPreference,
@@ -284,21 +283,16 @@ function DefaultHostResponseCard({
           );
         }
         return (
-          <LazyAccordion
-            className={styles.collapsedSteps}
+          <ExecutionProcess
             key={getCollapsedStepRenderKey(
               firstId,
               messageDisplayMode,
               presentation.status,
             )}
             status={presentation.status}
-            title={t(presentation.titleKey, {
-              count: stepCount,
-            })}
             defaultOpen={presentation.defaultOpen}
-            renderChildren={() => (
-              <>{block.messages.map(renderResponseMessage)}</>
-            )}
+            messages={block.messages}
+            renderMessage={renderResponseMessage}
           />
         );
       })}

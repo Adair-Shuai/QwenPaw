@@ -26,9 +26,58 @@ export interface ChatStatusResponse {
   status: "idle" | "running";
 }
 
+export interface SteeringReceipt {
+  request_id: string;
+  run_id: string;
+  text: string;
+  status: "pending" | "applied" | "returned";
+  error?: string | null;
+}
+
+export interface ChatSteeringState {
+  active_run_id: string | null;
+  supported: boolean;
+  receipts: SteeringReceipt[];
+}
+
 const FILES_PREVIEW = "/files/preview";
 
 export const chatApi = {
+  getSteeringState: (chatId: string, agentId: string, signal?: AbortSignal) =>
+    request<ChatSteeringState>(
+      `/chats/${encodeURIComponent(chatId)}/steering`,
+      {
+        headers: { "X-Agent-Id": agentId },
+        signal,
+      },
+    ),
+
+  getSteeringReceipt: (
+    chatId: string,
+    agentId: string,
+    requestId: string,
+    signal?: AbortSignal,
+  ) =>
+    request<SteeringReceipt>(
+      `/chats/${encodeURIComponent(chatId)}/steering/${encodeURIComponent(
+        requestId,
+      )}`,
+      { headers: { "X-Agent-Id": agentId }, signal },
+    ),
+
+  steer: (
+    chatId: string,
+    agentId: string,
+    input: { expected_run_id: string; request_id: string; text: string },
+    signal?: AbortSignal,
+  ) =>
+    request<SteeringReceipt>(`/chats/${encodeURIComponent(chatId)}/steer`, {
+      method: "POST",
+      headers: { "X-Agent-Id": agentId },
+      body: JSON.stringify(input),
+      signal,
+    }),
+
   resolveChat: (
     chatId: string,
     options?: { currentAgentId?: string; signal?: AbortSignal },

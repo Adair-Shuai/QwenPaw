@@ -23,7 +23,6 @@ from telegram.error import (
     InvalidToken,
     NetworkError,
     RetryAfter,
-    TimedOut,
 )
 from telegram.ext import (
     Application,
@@ -209,6 +208,8 @@ async def _build_content_parts_from_message(
 
     Returns (content_parts, has_bot_command, is_bot_mentioned).
     """
+    # Preserve the existing native protocol dispatch and rejection order.
+    # pylint: disable=too-many-branches
     message = getattr(update, "message", None) or getattr(
         update,
         "edited_message",
@@ -703,12 +704,16 @@ class TelegramPlatform:
                 self._seen_updates.popitem(last=False)
 
     async def _native_callback(self, update, context):
+        # Keep the native SDK callback parameter names and signature.
+        # pylint: disable=unused-argument
         if not self._stopping and update.callback_query is not None:
             await self._card_handler.handle_callback_query(
                 update.callback_query,
             )
 
     async def _request_polling_reconnect(self, app, reason):
+        # Keep the native SDK callback parameter names and signature.
+        # pylint: disable=unused-argument
         if self._stopping or self._reconnect_reason is not None:
             return
         self._reconnect_reason = reason
@@ -822,8 +827,6 @@ class TelegramPlatform:
             except InvalidToken:
                 await self.on_state("failed")
                 raise
-            except asyncio.CancelledError:
-                raise
             except Exception:
                 await self.on_state("disconnected")
                 logger.exception("Telegram polling connection failed")
@@ -928,8 +931,6 @@ class TelegramPlatform:
     async def _effect(self, awaitable):
         try:
             return await awaitable
-        except asyncio.CancelledError:
-            raise
         except (BadRequest, Forbidden, RetryAfter) as exc:
             raise TelegramDeliveryError("PLATFORM_REJECTED") from exc
         except Exception as exc:
@@ -951,8 +952,6 @@ class TelegramPlatform:
             except (BadRequest, EndPointNotFound) as exc:
                 if not _rich_rejection(exc):
                     raise TelegramDeliveryError("PLATFORM_REJECTED") from exc
-            except asyncio.CancelledError:
-                raise
             except Exception as exc:
                 raise TelegramDeliveryError(
                     "PLATFORM_RESULT_UNKNOWN",
@@ -977,8 +976,6 @@ class TelegramPlatform:
                 value = await self._effect(
                     bot.send_message(**kwargs, text=plain),
                 )
-            except asyncio.CancelledError:
-                raise
             except Exception as exc:
                 raise TelegramDeliveryError(
                     "PLATFORM_RESULT_UNKNOWN",
@@ -1177,6 +1174,9 @@ class TelegramPlatform:
         }
 
     async def update_stream(self, resource, text, *, final=False):
+        # Keep ordered transport effects and ownership cleanup in one
+        # transaction.
+        # pylint: disable=too-many-branches
         last = float(resource.get("last_edit", "0"))
         if not final:
             await asyncio.sleep(
@@ -1228,8 +1228,6 @@ class TelegramPlatform:
                         raise TelegramDeliveryError(
                             "PLATFORM_REJECTED",
                         ) from exc
-                except asyncio.CancelledError:
-                    raise
                 except Exception as exc:
                     raise TelegramDeliveryError(
                         "PLATFORM_RESULT_UNKNOWN",
@@ -1264,8 +1262,6 @@ class TelegramPlatform:
                         raise TelegramDeliveryError(
                             "PLATFORM_REJECTED",
                         ) from exc
-            except asyncio.CancelledError:
-                raise
             except Exception as exc:
                 raise TelegramDeliveryError(
                     "PLATFORM_RESULT_UNKNOWN",
@@ -1334,6 +1330,8 @@ class TelegramPlatform:
         return self._receipt(route, [ident])
 
     def complete_card_delivery(self, delivery_id, acknowledged):
+        # Native approval callbacks share the owning card delivery state.
+        # pylint: disable=protected-access
         staged = self._staged_cards.pop(delivery_id, None)
         if staged is None or not acknowledged:
             return
@@ -1356,6 +1354,8 @@ class TelegramPlatform:
         ] = binding
 
     async def _handle_callback(self, query):
+        # Native approval callbacks share the owning card delivery state.
+        # pylint: disable=protected-access
         from .cards.tool_guard import ApprovalCardBinding, _parse_callback_data
 
         parsed = _parse_callback_data(query.data or "")
@@ -1435,6 +1435,8 @@ class TelegramPlatform:
         )
 
     async def resolve_approval(self, route, params):
+        # Native approval callbacks share the owning card delivery state.
+        # pylint: disable=protected-access
         from .cards.tool_guard import build_resolved_text
 
         result = params.approval_resolution

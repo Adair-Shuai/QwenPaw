@@ -5,10 +5,10 @@ import json
 from types import SimpleNamespace as NS
 
 import pytest
-from tests.channel_support.driver import bind, module
 from qwenpaw.channel_protocol import shared_response_driver
 from qwenpaw.channel_protocol.response_lifecycle import ResponseStateError
 from qwenpaw.channel_protocol.response_receipts import receipt_key
+from tests.channel_support.driver import bind, module
 from tests.channel_support.protocol import eventually, finish, open_route, send
 
 
@@ -38,7 +38,7 @@ class Client:
         return NS(
             rc=0,
             mid=self._last_mid,
-            wait_for_publish=lambda timeout: self.waits.append(timeout),
+            wait_for_publish=self.waits.append,
             is_published=lambda: self.confirmed,
         )
 
@@ -49,32 +49,36 @@ class Client:
         return 0
 
 
-@pytest.fixture
-async def mqtt(tmp_path, monkeypatch):
+@pytest.fixture(name="mqtt")
+async def _fixture_mqtt(tmp_path, monkeypatch):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     native = module("mqtt", "platform")
     monkeypatch.setattr(native.mqtt, "Client", Client)
     driver = module("mqtt").MQTTDriver()
     peer, identity = bind("mqtt", driver, tmp_path)
     await driver.start(
-        dict(
-            host="broker.invalid",
-            subscribe_topic="request/+/text",
-            publish_topic="reply/{client_id}",
-            qos=2,
-        ),
+        {
+            "host": "broker.invalid",
+            "subscribe_topic": "request/+/text",
+            "publish_topic": "reply/{client_id}",
+            "qos": 2,
+        },
     )
     yield driver, peer, identity, driver._platform.client
     await driver.stop()
 
 
 async def inbound(value, payload, topic="request/device-A/text"):
-    driver, peer, _, client = value
+    _driver, peer, _, client = value
     client.on_message(client, None, NS(payload=payload, topic=topic))
     await eventually(lambda: bool(peer.batches))
     return peer.batches[-1]["events"][0]
 
 
 async def test_start_subscribes_with_configured_qos(mqtt):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, _, _, client = mqtt
     assert client.connection == ("broker.invalid", 1883, 60)
     assert client.subscriptions == [("request/+/text", 2)]
@@ -98,7 +102,7 @@ async def test_payload_and_topic_resolve_native_reply_destination(
     sender,
     text,
 ):
-    driver, peer, identity, client = mqtt
+    _driver, peer, identity, client = mqtt
     event = await inbound(mqtt, payload)
     assert event["sender_id"] == event["acl_sender_id"] == sender
     assert event["conversation"] == {
@@ -120,6 +124,8 @@ async def test_publish_confirmation_unknown_is_not_replayed(
     tmp_path,
     monkeypatch,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, peer, identity, client = mqtt
     event = await inbound(mqtt, b"hello")
     client.confirmed = False
@@ -178,7 +184,7 @@ async def test_publish_confirmation_unknown_is_not_replayed(
 
 
 async def test_malformed_payload_is_filtered_before_valid_barrier(mqtt):
-    driver, peer, _, client = mqtt
+    _driver, peer, _, client = mqtt
     for payload in (b"[]", b"\xff", b'{"text":12}', b'{"text":""}'):
         client.on_message(
             client,
@@ -194,6 +200,8 @@ async def test_stop_disconnects_and_is_idempotent_without_connection(
     mqtt,
     tmp_path,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, _, _, client = mqtt
     platform = driver._platform
     await driver.stop()

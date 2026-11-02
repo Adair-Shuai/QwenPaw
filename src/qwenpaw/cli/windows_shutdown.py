@@ -8,7 +8,6 @@ import signal
 import sys
 import threading
 
-
 _EVENT_MODIFY_STATE = 0x0002
 _INFINITE = 0xFFFFFFFF
 _WAIT_OBJECT_0 = 0x00000000
@@ -125,7 +124,9 @@ def _signal_exact_shutdown_event(pid: int) -> bool:
 
 
 def signal_shutdown_event(pid: int) -> bool:
-    """Signal the app, including an interpreter behind a Windows venv launcher."""
+    """
+    Signal the app, including an interpreter behind a Windows venv launcher.
+    """
     if sys.platform != "win32":
         return False
     if _signal_exact_shutdown_event(pid):

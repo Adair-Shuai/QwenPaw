@@ -24,12 +24,13 @@ from urllib.parse import quote
 
 import httpx
 
+from qwenpaw.exceptions import ChannelError
+
 from .utils import (
     aes_ecb_decrypt,
     aes_ecb_encrypt,
     make_headers,
 )
-from qwenpaw.exceptions import ChannelError
 
 logger = logging.getLogger(__name__)
 

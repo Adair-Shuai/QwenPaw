@@ -75,7 +75,9 @@ def list_cmd(scope, limit, offset):
 )
 @click.pass_obj
 def resolve_cmd(scope, handle, note):
-    """Record an operator note while preserving the unknown result and fence."""
+    """
+    Record an operator note while preserving the unknown result and fence.
+    """
     store, namespace = scope
     try:
         row = store.resolve(receipt_key(namespace, handle), note)

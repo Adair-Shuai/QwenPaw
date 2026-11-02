@@ -14,8 +14,10 @@ from qwenpaw.app._app import app as production_app
 from qwenpaw.app.routers import mcp_oauth, provider_oauth, terminal
 
 
-@pytest.fixture
-def proxy_config(monkeypatch):
+@pytest.fixture(name="proxy_config")
+def _fixture_proxy_config(monkeypatch):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     """Configure middleware trust without constructing API routes."""
     networks = auth._parse_networks(["127.0.0.1/32"])
     config = SimpleNamespace(
@@ -25,8 +27,8 @@ def proxy_config(monkeypatch):
     return SimpleNamespace(networks=networks, config=config)
 
 
-@pytest.fixture
-def proxy_app(monkeypatch, proxy_config):
+@pytest.fixture(name="proxy_app")
+def _fixture_proxy_app(monkeypatch, proxy_config):
     """Use production middleware registration without agent startup."""
     monkeypatch.delenv("QWENPAW_RUNTIME_INTERNAL_TOKEN", raising=False)
     monkeypatch.setattr(auth, "is_auth_enabled", lambda: True)
@@ -53,6 +55,8 @@ def proxy_app(monkeypatch, proxy_config):
 
     @app.get("/api/proxy-probe")
     async def probe(request: Request):
+        # Regression assertions inspect owned lifecycle and transport state.
+        # pylint: disable=protected-access
         return {
             "scheme": request.url.scheme,
             "peer": request.client.host,
@@ -202,6 +206,8 @@ async def test_scheme_restoration_preserves_real_auth_ip_gate(
     peer,
     forwarded_ip,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     proxy_app.config.security.allow_no_auth_hosts = ["127.0.0.1", "::1"]
     proxy_app.networks[:] = auth._parse_networks([peer])
     headers = {"X-Forwarded-Proto": "https", "X-Forwarded-For": forwarded_ip}
@@ -260,6 +266,8 @@ async def test_scheme_only_changes_in_copied_scope(
     value,
     expected,
 ):
+    # Keep the fixture or vendor callback signature used by the caller.
+    # pylint: disable=unused-argument
     scope = _scope(kind, [value])
     original = scope.copy()
     downstream, receive, send = await _invoke(scope)
@@ -295,6 +303,8 @@ async def test_scheme_only_changes_in_copied_scope(
     ],
 )
 async def test_trusted_malformed_proto_rejected(proxy_config, values):
+    # Keep the fixture or vendor callback signature used by the caller.
+    # pylint: disable=unused-argument
     downstream, _, send = await _invoke(_scope(values=values))
     downstream.assert_not_awaited()
     first = send.call_args_list[0].args[0]
@@ -308,6 +318,8 @@ async def test_websocket_malformed_proto_closes_connection(
     proxy_config,
     values,
 ):
+    # Keep the fixture or vendor callback signature used by the caller.
+    # pylint: disable=unused-argument
     downstream, _, send = await _invoke(_scope("websocket", values))
     downstream.assert_not_awaited()
     assert send.call_args_list[0].args[0] == {
@@ -318,6 +330,8 @@ async def test_websocket_malformed_proto_closes_connection(
 
 @pytest.mark.parametrize("value", [b"ws", b"wss"])
 async def test_http_rejects_websocket_only_schemes(proxy_config, value):
+    # Keep the fixture or vendor callback signature used by the caller.
+    # pylint: disable=unused-argument
     downstream, _, send = await _invoke(_scope(values=[value]))
     downstream.assert_not_awaited()
     assert send.call_args_list[0].args[0]["status"] == 400
@@ -325,6 +339,8 @@ async def test_http_rejects_websocket_only_schemes(proxy_config, value):
 
 @pytest.mark.parametrize("kind", ["http", "websocket", "lifespan"])
 async def test_no_forwarded_proto_passes_scope_untouched(proxy_config, kind):
+    # Keep the fixture or vendor callback signature used by the caller.
+    # pylint: disable=unused-argument
     scope = _scope(kind)
     downstream, receive, send = await _invoke(scope)
     downstream.assert_awaited_once_with(scope, receive, send)
@@ -333,6 +349,8 @@ async def test_no_forwarded_proto_passes_scope_untouched(proxy_config, kind):
 
 
 async def test_missing_peer_does_not_trust_forwarded_proto(proxy_config):
+    # Keep the fixture or vendor callback signature used by the caller.
+    # pylint: disable=unused-argument
     scope = _scope(values=[b"https"])
     scope["client"] = None
     downstream, _, send = await _invoke(scope)
@@ -345,6 +363,8 @@ async def test_untrusted_or_non_request_invalid_headers_pass_through(
     proxy_config,
     kind,
 ):
+    # Keep the fixture or vendor callback signature used by the caller.
+    # pylint: disable=unused-argument
     scope = _scope(kind, [b"https\r\n", b"invalid"], peer="198.51.100.2")
     downstream, receive, send = await _invoke(scope)
     downstream.assert_awaited_once_with(scope, receive, send)

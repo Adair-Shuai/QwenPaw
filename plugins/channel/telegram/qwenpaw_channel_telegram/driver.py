@@ -101,6 +101,8 @@ class TelegramDriver(SharedResponseDriver):
         }
 
     async def _open(self, params, request):
+        # SharedResponseDriver passes the complete public request contract.
+        # pylint: disable=unused-argument
         self._identity(params)
         self._require_connected()
         handle = "telegram:reply:" + uuid.uuid4().hex

@@ -320,7 +320,9 @@ class OneBotPlatform:
         await self.close()
 
     async def stop_accepting(self):
-        """Close only this listener's entrance, retaining established sockets."""
+        """
+        Close only this listener's entrance, retaining established sockets.
+        """
         self._stopping = True
         self._accepting = False
         task = self._watchdog_task
@@ -336,7 +338,9 @@ class OneBotPlatform:
             self._site = None
 
     async def close(self, *, deadline=None):
-        """Drain owned work; cleanup failure preserves resources for a retry."""
+        """
+        Drain owned work; cleanup failure preserves resources for a retry.
+        """
         self._stopping = True
         self._accepting = False
         if self._close_task is None or self._close_task.done():
@@ -387,7 +391,7 @@ class OneBotPlatform:
             await self._cleanup_failed_bind()
             await self._report_endpoint(operation, "degraded")
             logger.warning(
-                f"onebot: bind failed for "
+                "onebot: bind failed for "
                 f"{self._bind_host}:{self._ws_port}; watchdog will retry",
             )
             return
@@ -403,7 +407,7 @@ class OneBotPlatform:
             ),
         )
         logger.info(
-            f"onebot: reverse WS server listening on "
+            "onebot: reverse WS server listening on "
             f"{self._bind_host}:{self.listen_port}",
         )
 
@@ -494,7 +498,8 @@ class OneBotPlatform:
                 )
             except Exception as exc:
                 failures.append(exc)
-        # A deadline does not prove that a cancelled coroutine or socket exited.
+        # A deadline does not prove that a cancelled coroutine or socket
+        # exited.
         if any(not task.done() for task in self._cleanup_tasks):
             failures.append(RuntimeError("ONEBOT_CLEANUP_TASKS_REMAIN"))
         if failures:
@@ -504,6 +509,9 @@ class OneBotPlatform:
         self._session_queues.clear()
 
     async def _stop_ws_server(self, deadline=None):
+        # Keep ordered transport effects and ownership cleanup in one
+        # transaction.
+        # pylint: disable=too-many-branches,too-many-statements
         self._accepting = False
         if deadline is None:
             deadline = (
@@ -595,7 +603,8 @@ class OneBotPlatform:
                         setattr(self, name, None)
         if self._site is None and self._runner is None:
             self._app = None
-        # Completed tasks can be discarded only after their result was inspected.
+        # Completed tasks can be discarded only after their result was
+        # inspected.
         self._cleanup_tasks = {
             task for task in self._cleanup_tasks if not task.done()
         }
@@ -628,7 +637,8 @@ class OneBotPlatform:
         for task in pending:
             task.cancel()
         if pending:
-            # Give cooperative cancellation one loop turn. Stubborn tasks retain
+            # Give cooperative cancellation one loop turn.
+            # Stubborn tasks retain
             # their references and fail shutdown rather than becoming orphans.
             await asyncio.sleep(0)
         if any(not task.done() for task in tasks):
@@ -719,17 +729,19 @@ class OneBotPlatform:
             )
             if "access_token" in request.query:
                 logger.warning(
-                    "onebot: use the Authorization header, not access_token in the query",
+                    "onebot: use the Authorization header, not access_token in"
+                    " the query",
                 )
             return web.Response(status=401, text="Unauthorized")
         if self._access_token and not self._token_authorized(request):
             logger.warning(
-                f"onebot: rejected connection from "
+                "onebot: rejected connection from "
                 f"{_log_remote(request)} (bad token)",
             )
             if "access_token" in request.query:
                 logger.warning(
-                    "onebot: use the Authorization header, not access_token in the query",
+                    "onebot: use the Authorization header, not access_token in"
+                    " the query",
                 )
             return web.Response(status=401, text="Unauthorized")
         if not self._accepting:
@@ -838,7 +850,7 @@ class OneBotPlatform:
             self._runner_event_dropped_total += 1
             coro.close()
             logger.warning(
-                f"onebot: event task cap "
+                "onebot: event task cap "
                 f"{self._event_task_hard_cap} reached; event dropped",
             )
             return
@@ -946,7 +958,12 @@ class OneBotPlatform:
         content_parts,
         content_source=None,
     ):
-        """Keep native text/media/file order; never reconstruct host-lost order."""
+        """
+        Keep native text/media/file order; never reconstruct host-lost order.
+        """
+        # Keep ordered transport effects and ownership cleanup in one
+        # transaction.
+        # pylint: disable=too-many-branches,too-many-statements
         if self._stopping:
             raise OneBotPlatformError("ONEBOT_STOPPING")
         is_group, target = self._resolve_target(to_handle)
@@ -1017,9 +1034,11 @@ class OneBotPlatform:
                 )
                 if kind == "file":
                     await invoke(
-                        "upload_group_file"
-                        if is_group
-                        else "upload_private_file",
+                        (
+                            "upload_group_file"
+                            if is_group
+                            else "upload_private_file"
+                        ),
                         {
                             key: target,
                             "file": ref,

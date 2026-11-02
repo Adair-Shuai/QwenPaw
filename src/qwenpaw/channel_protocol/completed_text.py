@@ -66,12 +66,15 @@ class RawCompletedTextSources:
         if self.getter_state != "values" and self.getter_texts:
             raise ProtocolValidationError("Unexpected accessor values")
         if (
-            (self.getter_texts and (self.top_texts or self.nested_texts))
+            self.getter_texts
+            and (self.top_texts or self.nested_texts)
             or (self.top_texts and self.nested_texts)
-            or (
-                self.error_source
-                and (self.getter_texts or self.top_texts or self.nested_texts)
+        ):
+            raise ProtocolValidationError(
+                "Completed text sources violate precedence",
             )
+        if self.error_source and (
+            self.getter_texts or self.top_texts or self.nested_texts
         ):
             raise ProtocolValidationError(
                 "Completed text sources violate precedence",
@@ -145,13 +148,15 @@ def project_completed_text(event, mode="content"):
     The content projection never accesses a text accessor or nested message.
     Text-source projection evaluates fallbacks lazily and records failures.
     """
+    # Keep accessor, top-level, and nested text precedence in one projection.
+    # pylint: disable=R0912
     budget = _Budget()
     if mode == "content":
         parts = []
         for part in budget.items(getattr(event, "content", None) or ()):
             kind = getattr(part, "type", None)
             kind = getattr(kind, "value", kind)
-            if kind != "text" and kind != "refusal":
+            if kind not in ("text", "refusal"):
                 continue
             value = getattr(part, kind, None)
             if value is not None:

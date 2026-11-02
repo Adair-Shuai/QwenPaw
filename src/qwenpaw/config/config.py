@@ -875,9 +875,7 @@ class RerankerConfig(BaseModel):
 
     enabled: bool = Field(
         default=False,
-        description=(
-            "Whether to enable reranker for memory search reordering"
-        ),
+        description="Whether to enable reranker for memory search reordering",
     )
     api_key: str = Field(
         default="",
@@ -969,11 +967,13 @@ class ReMeLightMemoryConfig(BaseModel):
 
     auto_memory_interval: int | None = Field(
         default=5,
-        description="Auto memory every N user queries. 1 means auto "
-        "memory after every user query, 2 means every 2 queries, etc. "
-        "None or <= 0 disables periodic auto memory. WARNING: Setting "
-        "too small (e.g., 1-3) may cause high token usage and heavy "
-        "background task burden.",
+        description=(
+            "Auto memory every N user queries. 1 means auto "
+            "memory after every user query, 2 means every 2 queries, etc. "
+            "None or <= 0 disables periodic auto memory. WARNING: Setting "
+            "too small (e.g., 1-3) may cause high token usage and heavy "
+            "background task burden."
+        ),
     )
 
     auto_memory_include_images: bool = Field(
@@ -1219,8 +1219,10 @@ class ToolResultPruningConfig(BaseModel):
 
     tool_results_cache: str = Field(
         default="tool_results",
-        description="Directory name for tool result cache files "
-        "relative to working_dir",
+        description=(
+            "Directory name for tool result cache files "
+            "relative to working_dir"
+        ),
     )
 
     exempt_file_extensions: List[str] = Field(
@@ -1372,8 +1374,10 @@ class LightContextConfig(BaseModel):
 
     dialog_path: str = Field(
         default="dialog",
-        description="Path for dialog persistence to jsonl files "
-        "relative to working_dir.",
+        description=(
+            "Path for dialog persistence to jsonl files "
+            "relative to working_dir."
+        ),
     )
 
     token_count_estimate_divisor: float = Field(
@@ -1455,15 +1459,15 @@ class DoomLoopStageConfig(BaseModel):
 
     after: int = Field(
         ge=1,
-        description=("Trigger after N consecutive repetitions"),
+        description="Trigger after N consecutive repetitions",
     )
     action: str = Field(
         default="modify_prompt",
-        description=("Action when triggered: " "'modify_prompt' or 'stop'"),
+        description="Action when triggered: 'modify_prompt' or 'stop'",
     )
     prompt: str = Field(
         default="",
-        description=("Warning text (modify_prompt) " "or stop reason (stop)"),
+        description="Warning text (modify_prompt) or stop reason (stop)",
     )
 
 
@@ -1477,15 +1481,13 @@ class DoomLoopConfig(BaseModel):
     window_size: int = Field(
         default=3,
         ge=2,
-        description=("Sliding window size for " "repetition detection"),
+        description="Sliding window size for repetition detection",
     )
     similarity_threshold: float = Field(
         default=1.0,
         ge=0.0,
         le=1.0,
-        description=(
-            "Similarity threshold to consider " "calls as repetitive"
-        ),
+        description="Similarity threshold to consider calls as repetitive",
     )
     stages: List[DoomLoopStageConfig] = Field(
         default_factory=lambda: [
@@ -1504,17 +1506,15 @@ class DoomLoopConfig(BaseModel):
                 after=4,
                 action="stop",
                 prompt=(
-                    "Doom loop: agent stuck "
-                    "after 4 consecutive "
-                    "repetitions"
+                    "Doom loop: agent stuck after 4 consecutive repetitions"
                 ),
             ),
         ],
-        description=("Escalation stages (sorted by after)"),
+        description="Escalation stages (sorted by after)",
     )
     in_loop_modes: bool = Field(
         default=False,
-        description=("Also run during /goal and " "/mission loop modes"),
+        description="Also run during /goal and /mission loop modes",
     )
 
 
@@ -1559,7 +1559,7 @@ class RubricGateConfig(BaseModel):
             "continue working with tool calls."
         ),
         description=(
-            "Prompt injected when the agent " "produces a text-only response"
+            "Prompt injected when the agent produces a text-only response"
         ),
     )
     max_interventions: int = Field(
@@ -1567,12 +1567,12 @@ class RubricGateConfig(BaseModel):
         ge=1,
         le=10,
         description=(
-            "Max times to re-prompt per loop " "turn to avoid infinite retries"
+            "Max times to re-prompt per loop turn to avoid infinite retries"
         ),
     )
     in_loop_modes: bool = Field(
         default=False,
-        description=("Also run during /goal and " "/mission loop modes"),
+        description="Also run during /goal and /mission loop modes",
     )
 
 
@@ -2202,9 +2202,7 @@ class AdvisorModeConfig(BaseModel):
     )
     plan_enabled: bool = Field(
         default=True,
-        description=(
-            "Ask the advisor for a plan before the agent's first step"
-        ),
+        description="Ask the advisor for a plan before the agent's first step",
     )
     followup_enabled: bool = Field(
         default=True,
@@ -2743,14 +2741,18 @@ class MCPClientConfig(BaseModel):
     http_timeout: Optional[float] = Field(
         default=None,
         gt=0,
-        description="HTTP MCP connect/write/pool timeout in seconds; "
-        "raises the read (sse_read_timeout) budget to at least this value. "
-        "None keeps the client default (30s / 300s).",
+        description=(
+            "HTTP MCP connect/write/pool timeout in seconds; raises the read"
+            " (sse_read_timeout) budget to at least this value. None keeps the"
+            " client default (30s / 300s)."
+        ),
     )
     tools: Optional[List[str]] = Field(
         default=None,
-        description="Tool whitelist. Only listed tools will be loaded. "
-        "None means load all tools from the server.",
+        description=(
+            "Tool whitelist. Only listed tools will be loaded. "
+            "None means load all tools from the server."
+        ),
     )
     oauth: Optional[MCPOAuthConfig] = None
 
@@ -3182,8 +3184,10 @@ class SkillScannerWhitelistEntry(BaseModel):
     skill_name: str
     content_hash: str = Field(
         default="",
-        description="SHA-256 of concatenated file contents at whitelist time. "
-        "Empty string means any content is allowed.",
+        description=(
+            "SHA-256 of concatenated file contents at whitelist time. "
+            "Empty string means any content is allowed."
+        ),
     )
     added_at: str = Field(
         default="",
@@ -3265,9 +3269,9 @@ class SecurityConfig(BaseModel):
             entry = entry.strip()
             if entry in _DENY:
                 raise ValueError(
-                    f"trusted_proxies must not contain"
+                    "trusted_proxies must not contain"
                     f" '{entry}' (equivalent to disabling"
-                    f" the security fix)",
+                    " the security fix)",
                 )
             net = _ipaddress.ip_network(entry, strict=False)
             cleaned.append(str(net))
@@ -3507,20 +3511,26 @@ class Config(BaseModel):
     show_tool_details: bool = True
     user_timezone: str = Field(
         default_factory=detect_system_timezone,
-        description="User IANA timezone (e.g. Asia/Shanghai). "
-        "Defaults to the system timezone.",
+        description=(
+            "User IANA timezone (e.g. Asia/Shanghai). "
+            "Defaults to the system timezone."
+        ),
     )
     plugins: Dict[str, Dict[str, Any]] = Field(
         default_factory=dict,
-        description="Plugin configurations. Key is plugin_id, "
-        "value is plugin-specific config dict.",
+        description=(
+            "Plugin configurations. Key is plugin_id, "
+            "value is plugin-specific config dict."
+        ),
     )
     skill_paths: List[str] = Field(
         default_factory=list,
-        description="Additional read-only skill pool roots, scanned after "
-        "the primary skill_pool in order. Paths support ~ expansion. "
-        "Skills found here are read-only (no edit/create); they can be "
-        "listed, downloaded to a workspace, and deleted.",
+        description=(
+            "Additional read-only skill pool roots, scanned after "
+            "the primary skill_pool in order. Paths support ~ expansion. "
+            "Skills found here are read-only (no edit/create); they can be "
+            "listed, downloaded to a workspace, and deleted."
+        ),
     )
 
     @field_validator("channel_send_timeouts", mode="before")
@@ -3659,7 +3669,7 @@ def _migrate_access_control_fields(  # pylint: disable=too-many-branches
                 except Exception:
                     migration_succeeded = False
                     logger.exception(
-                        f"Failed to migrate access control for channel "
+                        "Failed to migrate access control for channel "
                         f"{ch_key}",
                     )
             if migration_succeeded:
@@ -3680,7 +3690,7 @@ def _migrate_access_control_fields(  # pylint: disable=too-many-branches
                 except Exception:
                     migration_succeeded = False
                     logger.exception(
-                        f"Failed to migrate group access control for channel "
+                        "Failed to migrate group access control for channel "
                         f"{ch_key}",
                     )
             if migration_succeeded:
@@ -3828,7 +3838,9 @@ def load_agent_config(  # pylint: disable=too-many-branches,too-many-statements
         except OSError as exc:
             raise ConfigurationException(
                 config_key="agent",
-                message=f"Agent '{agent_id}' config is temporarily unavailable",
+                message=(
+                    f"Agent '{agent_id}' config is temporarily unavailable"
+                ),
             ) from exc
         cached_entry = _agent_config_cache.get(agent_id)
         if (
@@ -3886,7 +3898,7 @@ def load_agent_config(  # pylint: disable=too-many-branches,too-many-statements
             except Exception:
                 last_dispatch_migration_failed = True
                 logger.exception(
-                    f"Failed to migrate last dispatch state for agent "
+                    "Failed to migrate last dispatch state for agent "
                     f"{agent_id}",
                 )
             else:
@@ -3959,8 +3971,7 @@ def load_agent_config(  # pylint: disable=too-many-branches,too-many-statements
             except OSError:
                 migration_write_failed = True
                 logger.exception(
-                    f"Failed to persist agent config migration for "
-                    f"{agent_id}",
+                    f"Failed to persist agent config migration for {agent_id}",
                 )
 
         # Normalize legacy ~/.copaw-bound paths to current WORKING_DIR.

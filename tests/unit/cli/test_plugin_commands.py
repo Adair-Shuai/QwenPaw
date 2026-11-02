@@ -24,8 +24,8 @@ import qwenpaw.cli.plugin_commands as pc
 import qwenpaw.config.utils as config_utils
 
 
-@pytest.fixture(autouse=True)
-def _isolated_plugin_registry():
+@pytest.fixture(autouse=True, name="_isolated_plugin_registry")
+def _fixture__isolated_plugin_registry():
     """Each CLI invocation test gets its own trusted runtime configuration."""
     from qwenpaw.plugins.registry import PluginRegistry
 
@@ -591,7 +591,10 @@ class TestInstallCommandOffline:
 
         monkeypatch.setattr(PluginLoader, "create", create)
         monkeypatch.setattr(
-            "qwenpaw.plugins.channel_bootstrap.resolve_default_channel_runtime",
+            (
+                "qwenpaw.plugins.channel_bootstrap.resolve_default_channe"
+                "l_runtime"
+            ),
             lambda: None,
         )
         cleanup_attempts = []

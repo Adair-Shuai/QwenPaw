@@ -74,7 +74,10 @@ def dependency_http_error(exc):
             "code": exc.reason_code or "DEPENDENCY_PLAN_UNVERIFIED",
             "message": str(exc),
             "instructions": [
-                "Resolve the shared dependency requirements, then retry installation.",
+                (
+                    "Resolve the shared dependency requirements, then retry"
+                    " installation."
+                ),
             ],
         },
     )
@@ -790,7 +793,7 @@ async def _post_load_setup(  # pylint: disable=too-many-branches
                 )
             except Exception as exc:
                 logger.warning(
-                    f"Could not register control command "
+                    "Could not register control command "
                     f"'{cmd_reg.handler.command_name}': {exc}",
                 )
     except Exception as exc:
@@ -1054,12 +1057,12 @@ def _post_unload_cleanup(
                     command_registry.unregister_command(f"/{cmd_name}")
                 except Exception as exc:
                     logger.warning(
-                        f"Could not unregister priority for"
+                        "Could not unregister priority for"
                         f" '/{cmd_name}': {exc}",
                     )
         except Exception as exc:
             logger.warning(
-                f"Command cleanup skipped for plugin "
+                "Command cleanup skipped for plugin "
                 f"'{_log_safe(plugin_id)}': {exc}",
             )
 
@@ -1350,7 +1353,7 @@ async def replace_installed_plugin(
                 raise HTTPException(
                     status_code=500,
                     detail=(
-                        f"Plugin upgrade failed and rollback also failed: "
+                        "Plugin upgrade failed and rollback also failed: "
                         f"{rollback_exc}"
                     ),
                 ) from exc
@@ -1361,8 +1364,7 @@ async def replace_installed_plugin(
             raise HTTPException(
                 status_code=500,
                 detail=(
-                    "Plugin upgrade failed; previous version restored: "
-                    f"{exc}"
+                    f"Plugin upgrade failed; previous version restored: {exc}"
                 ),
             ) from exc
         if isinstance(exc, (ValueError, zipfile.BadZipFile)):
@@ -2147,7 +2149,7 @@ async def _async_download(url: str, dest: Path) -> None:
                     total += len(chunk)
                     if total > _MAX_DOWNLOAD_BYTES:
                         raise RuntimeError(
-                            f"Download aborted: response exceeds "
+                            "Download aborted: response exceeds "
                             f"{_MAX_DOWNLOAD_BYTES // (1024 * 1024)} MB",
                         )
                     fh.write(chunk)

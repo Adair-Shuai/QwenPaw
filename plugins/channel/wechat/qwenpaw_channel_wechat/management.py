@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-"""One bounded explicit management operation; never runtime authentication files."""
+"""
+One bounded explicit management operation; never runtime authentication files.
+"""
 
 import asyncio
 
@@ -34,48 +36,7 @@ async def manage(request):
     )
     operation = str(request.operation)
     if operation == "connection.verify":
-        level = request.parameters["level"]
-        if level == "credentials":
-            return _result(
-                request,
-                {
-                    "level": level,
-                    "verdict": "unsupported",
-                    "reason_code": "VERIFICATION_UNSUPPORTED",
-                    "notes": [],
-                },
-            )
-        url = (
-            config.get("base_url") or "https://api.weixin.qq.com"
-        ).strip().rstrip("/") + "/"
-        try:
-            async with asyncio.timeout(request.timeout_ms / 1000):
-                async with httpx.AsyncClient(
-                    timeout=request.timeout_ms / 1000,
-                ) as client:
-                    response = await client.get(url)
-                    response.raise_for_status()
-        except (httpx.HTTPError, TimeoutError):
-            return _result(
-                request,
-                {
-                    "level": level,
-                    "verdict": "failed",
-                    "reason_code": "PLATFORM_REQUEST_FAILED",
-                    "notes": [],
-                },
-            )
-        return _result(
-            request,
-            {
-                "level": level,
-                "verdict": "passed",
-                "reason_code": None,
-                "notes": [
-                    "HTTP reachability only; credentials were not verified.",
-                ],
-            },
-        )
+        return await _verify_connection(request, config)
 
     client = ILinkClient(base_url=base_url)
     try:
@@ -123,3 +84,48 @@ async def manage(request):
             return _result(request, reason="MANAGEMENT_UNSUPPORTED")
     finally:
         await client.stop()
+
+
+async def _verify_connection(request, config):
+    level = request.parameters["level"]
+    if level == "credentials":
+        return _result(
+            request,
+            {
+                "level": level,
+                "verdict": "unsupported",
+                "reason_code": "VERIFICATION_UNSUPPORTED",
+                "notes": [],
+            },
+        )
+    url = (
+        config.get("base_url") or "https://api.weixin.qq.com"
+    ).strip().rstrip("/") + "/"
+    try:
+        async with asyncio.timeout(request.timeout_ms / 1000):
+            async with httpx.AsyncClient(
+                timeout=request.timeout_ms / 1000,
+            ) as client:
+                response = await client.get(url)
+                response.raise_for_status()
+    except (httpx.HTTPError, TimeoutError):
+        return _result(
+            request,
+            {
+                "level": level,
+                "verdict": "failed",
+                "reason_code": "PLATFORM_REQUEST_FAILED",
+                "notes": [],
+            },
+        )
+    return _result(
+        request,
+        {
+            "level": level,
+            "verdict": "passed",
+            "reason_code": None,
+            "notes": [
+                "HTTP reachability only; credentials were not verified.",
+            ],
+        },
+    )

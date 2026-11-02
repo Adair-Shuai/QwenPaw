@@ -1,7 +1,10 @@
 import CSS from "./workbench.css";
+import toolbarCSS from "./toolbar.css";
 import OfficeServicePreview from "./office-preview.jsx";
 import ResponseReview from "./response-review.jsx";
 import RightWorkspace from "./right-workspace.jsx";
+import WorkflowTabs from "./workflow-tabs.jsx";
+import { ToolbarIcon } from "./toolbar.jsx";
 
 const Q = window.QwenPaw;
 const React = Q.host.React;
@@ -247,6 +250,8 @@ export default function ProjectWorkspace({ Editor, services }) {
   const [profileDirty, setProfileDirty] = useState(false);
   const [editorBusy, setEditorBusy] = useState("");
   const [editRequest, setEditRequest] = useState(0);
+  const [nodeTab, setNodeTab] = useState("form");
+  const [toolbarTarget, setToolbarTarget] = useState(null);
   const [busy, setBusy] = useState(""),
     [error, setError] = useState(""),
     [notice, setNotice] = useState("");
@@ -411,6 +416,7 @@ export default function ProjectWorkspace({ Editor, services }) {
       setEditorDirty(false);
       setProfileDirty(false);
       setTab("overview");
+      setNodeTab("form");
       await reload(id, true);
       setEditor(null);
       setEditorDirty(false);
@@ -424,6 +430,7 @@ export default function ProjectWorkspace({ Editor, services }) {
   async function changeTab(id) {
     if (!canLeave()) return;
     setTab(id);
+    setNodeTab("form");
     setEditor(null);
     setEditorDirty(false);
     setProfileDirty(false);
@@ -525,6 +532,13 @@ export default function ProjectWorkspace({ Editor, services }) {
     });
   }
   const base = project ? `/projects/${project.id}` : "";
+  const nodeTabs = [
+    { id: "form", label: "内容填写" },
+    ...(stage?.id === "negotiation"
+      ? [{ id: "response", label: "响应文件核查" }]
+      : []),
+    { id: "materials", label: "审批资料" },
+  ];
   const saveMaterial = (e) => {
     e.preventDefault();
     run("保存材料信息", () =>
@@ -554,7 +568,7 @@ export default function ProjectWorkspace({ Editor, services }) {
       }
       data-theme={theme}
     >
-      <style>{CSS}</style>
+      <style>{CSS + toolbarCSS}</style>
       <input
         ref={excel}
         type="file"
@@ -651,7 +665,10 @@ export default function ProjectWorkspace({ Editor, services }) {
               <button onClick={() => setQuery("")}>清除搜索</button>
             </div>
           )}
-        <div className="df-sidebar-foot">
+        <div
+          className="df-sidebar-foot"
+          hidden={!!(project?.single_form && stage && editor)}
+        >
           <button
             disabled={!!busy || !!editorBusy}
             onClick={() =>
@@ -882,84 +899,99 @@ export default function ProjectWorkspace({ Editor, services }) {
               {stage && (
                 <>
                   <section className="df-paper df-stage-header">
-                    <div>
-                      <h2>{stage.title}</h2>
+                    <div className="df-stage-top-row">
+                      <div className="df-stage-heading">
+                        <h2>{stage.title}</h2>
+                        {!project.single_form && (
+                          <details className="df-stage-help">
+                            <summary>本阶段办理说明</summary>
+                            <p>
+                              {project.single_form && stage.id === "plan"
+                                ? "已接入科研计划填报表与外协必要性说明，可直接填写并生成。"
+                                : stage.id === "selection"
+                                ? "已接入论证意见及签字表与非招标方案填报表，可先准备论证材料，论证结束后核对系统填报信息。"
+                                : stage.id === "negotiation"
+                                ? "五份标准模板已接入，可直接填写，也可导入现有 Excel。"
+                                : "统一模板待补充，可上传阶段材料，或导入 Excel 与 Word 模板。"}
+                            </p>
+                          </details>
+                        )}
+                      </div>
+                      <div
+                        className="df-stage-toolbar"
+                        role="toolbar"
+                        aria-label="阶段工具栏"
+                      >
+                        <div
+                          className="df-stage-tool-slot"
+                          ref={setToolbarTarget}
+                        />
+                        {(!project.single_form ||
+                          !editor ||
+                          !Q.host.ReactDOM?.createPortal) && (
+                          <div className="df-toolbar-file-actions">
+                            <button
+                              aria-label="下载本阶段材料"
+                              title="下载本阶段材料"
+                              onClick={() => bundledDownload(stage.id)}
+                            >
+                              <ToolbarIcon name="download" />
+                              阶段材料
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="df-stage-bottom-row">
+                      <WorkflowTabs
+                        id="df-node"
+                        label="阶段办理流程"
+                        items={nodeTabs}
+                        value={nodeTab}
+                        onChange={(value) => {
+                          setNodeTab(value);
+                          if (value === "form" && nodeTab === "form")
+                            setEditRequest((current) => current + 1);
+                          document
+                            .getElementById("df-node-tab-" + value)
+                            ?.closest(".df-stage-header")
+                            ?.scrollIntoView?.({ block: "start" });
+                        }}
+                      />
                       <div className="df-node-status" aria-label="节点办理概况">
-                        <span className={"df-state df-state-" + stage.status}>
+                        <button
+                          className={
+                            "df-stage-state df-state df-state-" + stage.status
+                          }
+                          disabled={editorDirty}
+                          aria-label="办理信息与状态"
+                          title={
+                            editorDirty
+                              ? "请先保存填写内容，再更新办理状态"
+                              : "办理信息与状态"
+                          }
+                          onClick={() =>
+                            openDialog("stage", { ...stage, confirmed: false })
+                          }
+                        >
+                          <span className="df-state-dot" aria-hidden="true" />
                           {STATUS[stage.status]}
-                        </span>
+                          <ToolbarIcon name="chevron" />
+                        </button>
                         <span
                           className={
                             "df-deadline " + deadline(stage, today).kind
                           }
                         >
+                          <ToolbarIcon name="calendar" />
                           {deadline(stage, today).text}
                         </span>
-                        <span>
+                        <span className="df-stage-approval-count">
                           审批资料{" "}
                           {stage.materials.filter((m) => m.files.length).length}
                           /{stage.materials.length}
                         </span>
                       </div>
-                      {!project.single_form && (
-                        <details className="df-stage-help">
-                          <summary>本阶段办理说明</summary>
-                          <p>
-                            {project.single_form && stage.id === "plan"
-                              ? "已接入科研计划填报表与外协必要性说明，可直接填写并生成。"
-                              : stage.id === "selection"
-                              ? "已接入论证意见及签字表与非招标方案填报表，可先准备论证材料，论证结束后核对系统填报信息。"
-                              : stage.id === "negotiation"
-                              ? "五份标准模板已接入，可直接填写，也可导入现有 Excel。"
-                              : "统一模板待补充，可上传阶段材料，或导入 Excel 与 Word 模板。"}
-                          </p>
-                        </details>
-                      )}
-                    </div>
-                    <div className="df-actions">
-                      {editor && (
-                        <button
-                          onClick={() => {
-                            setEditRequest((value) => value + 1);
-                            document
-                              .getElementById("df-node-form")
-                              ?.scrollIntoView?.({
-                                behavior: "smooth",
-                                block: "start",
-                              });
-                          }}
-                        >
-                          填写内容
-                        </button>
-                      )}
-                      <button
-                        onClick={() =>
-                          document
-                            .getElementById("df-node-materials")
-                            ?.scrollIntoView?.({
-                              behavior: "smooth",
-                              block: "start",
-                            })
-                        }
-                      >
-                        审批资料
-                      </button>
-                      <button onClick={() => bundledDownload(stage.id)}>
-                        下载本阶段材料
-                      </button>
-                      <button
-                        disabled={editorDirty}
-                        title={
-                          editorDirty
-                            ? "请先保存填写内容，再更新办理状态"
-                            : undefined
-                        }
-                        onClick={() =>
-                          openDialog("stage", { ...stage, confirmed: false })
-                        }
-                      >
-                        办理信息与状态
-                      </button>
                     </div>
                   </section>
                   {(stage.upstream_changed.length > 0 ||
@@ -1017,133 +1049,153 @@ export default function ProjectWorkspace({ Editor, services }) {
                       {stage.notes && <p>{stage.notes}</p>}
                     </section>
                   )}
-                  <div id="df-node-form">
-                    {editor && (
-                      <Editor
-                        key={
-                          project.id +
-                          ":" +
-                          editor.id +
-                          ":" +
-                          tab +
-                          ":" +
-                          (editor.revision || "")
-                        }
-                        project={project}
-                        workflowStage={stage}
-                        initialCaseId={editor.id}
-                        initialView={editor.view}
-                        editRequest={editRequest}
-                        initialDraft={editor.initialDraft}
-                        onDirtyChange={setEditorDirty}
-                        onBusyChange={setEditorBusy}
-                        onViewChange={() =>
-                          document
-                            .getElementById("df-node-form")
-                            ?.scrollIntoView?.({ block: "start" })
-                        }
-                        onBack={() => {
-                          setEditor(null);
-                          setEditorDirty(false);
-                          reload().catch((e) => setError(e.message));
-                        }}
-                        onChanged={() => reload()}
-                        docked={project.single_form}
-                        onEditBasics={() => {
-                          setEditor(null);
-                          setEditorDirty(false);
-                          setEditorBusy("");
-                          setTab("profile");
-                        }}
-                        onStageStatus={() =>
-                          openDialog("stage", { ...stage, confirmed: false })
-                        }
-                        onPreview={(item) => {
-                          setSelection(item);
-                          setPreview(null);
-                          setDockMode("preview");
-                        }}
-                      />
-                    )}
-                  </div>
-                  {!editor && (
-                    <section className="df-paper df-stage-forms">
-                      <div className="df-section-head">
-                        <div>
-                          <h2>
-                            {project.single_form ? "项目表单" : "填写与生成"}
-                          </h2>
-                          <p className="df-muted">
-                            表单沿用项目底稿，核对后生成。已有批次保留生成时的内容。
-                          </p>
-                        </div>
-                        <div className="df-actions">
-                          {(stage.id === "negotiation" ||
-                            project.single_form) && (
-                            <button
-                              className="df-primary"
-                              onClick={() => createForm()}
-                            >
-                              {project.single_form
-                                ? "打开项目表单"
-                                : "填写谈判材料"}
+                  <div
+                    id="df-node-panel-form"
+                    role="tabpanel"
+                    aria-labelledby="df-node-tab-form"
+                    hidden={nodeTab !== "form"}
+                  >
+                    <div id="df-node-form">
+                      {editor && (
+                        <Editor
+                          key={
+                            project.id +
+                            ":" +
+                            editor.id +
+                            ":" +
+                            tab +
+                            ":" +
+                            (editor.revision || "")
+                          }
+                          project={project}
+                          workflowStage={stage}
+                          initialCaseId={editor.id}
+                          initialView={editor.view}
+                          editRequest={editRequest}
+                          initialDraft={editor.initialDraft}
+                          onDirtyChange={setEditorDirty}
+                          onBusyChange={setEditorBusy}
+                          onViewChange={() =>
+                            document
+                              .getElementById("df-node-form")
+                              ?.scrollIntoView?.({ block: "start" })
+                          }
+                          onBack={() => {
+                            setEditor(null);
+                            setEditorDirty(false);
+                            reload().catch((e) => setError(e.message));
+                          }}
+                          onChanged={() => reload()}
+                          docked={project.single_form}
+                          toolbarTarget={toolbarTarget}
+                          onShowForm={() => setNodeTab("form")}
+                          onDownloadStageMaterials={() =>
+                            bundledDownload(stage.id)
+                          }
+                          onEditBasics={() => {
+                            setEditor(null);
+                            setEditorDirty(false);
+                            setEditorBusy("");
+                            setTab("profile");
+                          }}
+                          onStageStatus={() =>
+                            openDialog("stage", { ...stage, confirmed: false })
+                          }
+                          onPreview={(item) => {
+                            setSelection(item);
+                            setPreview(null);
+                            setDockMode("preview");
+                          }}
+                        />
+                      )}
+                    </div>
+                    {!editor && (
+                      <section className="df-paper df-stage-forms">
+                        <div className="df-section-head">
+                          <div>
+                            <h2>
+                              {project.single_form ? "项目表单" : "填写与生成"}
+                            </h2>
+                            <p className="df-muted">
+                              表单沿用项目底稿，核对后生成。已有批次保留生成时的内容。
+                            </p>
+                          </div>
+                          <div className="df-actions">
+                            {(stage.id === "negotiation" ||
+                              project.single_form) && (
+                              <button
+                                className="df-primary"
+                                onClick={() => createForm()}
+                              >
+                                {project.single_form
+                                  ? "打开项目表单"
+                                  : "填写谈判材料"}
+                              </button>
+                            )}
+                            <button onClick={() => excel.current.click()}>
+                              导入 Excel 表单
                             </button>
-                          )}
-                          <button onClick={() => excel.current.click()}>
-                            导入 Excel 表单
-                          </button>
+                          </div>
                         </div>
-                      </div>
-                      {project.single_form ? (
-                        <p className="df-muted">
-                          每个项目共用一份表单，七个阶段各办理一次。已有文书与历史底稿可在右侧查看。
-                        </p>
-                      ) : forms.length ? (
-                        <div className="df-project-forms">
-                          {forms.map((f) => (
-                            <div key={f.case_id}>
-                              <div>
-                                <b>{f.name}</b>
-                                <small>
-                                  {stamp(f.updated_at)} ·{" "}
-                                  {f.outputs ? f.outputs + " 份文件" : "填写中"}
-                                  {f.shared_changes.length > 0 &&
-                                    " · 基础信息有更新"}
-                                </small>
-                              </div>
-                              <div className="df-actions">
-                                <button
-                                  onClick={() =>
-                                    setEditor({ id: f.case_id, view: "edit" })
-                                  }
-                                >
-                                  打开表单
-                                </button>
-                                {f.outputs > 0 && (
+                        {project.single_form ? (
+                          <p className="df-muted">
+                            每个项目共用一份表单，七个阶段各办理一次。已有文书与历史底稿可在右侧查看。
+                          </p>
+                        ) : forms.length ? (
+                          <div className="df-project-forms">
+                            {forms.map((f) => (
+                              <div key={f.case_id}>
+                                <div>
+                                  <b>{f.name}</b>
+                                  <small>
+                                    {stamp(f.updated_at)} ·{" "}
+                                    {f.outputs
+                                      ? f.outputs + " 份文件"
+                                      : "填写中"}
+                                    {f.shared_changes.length > 0 &&
+                                      " · 基础信息有更新"}
+                                  </small>
+                                </div>
+                                <div className="df-actions">
                                   <button
                                     onClick={() =>
-                                      setEditor({
-                                        id: f.case_id,
-                                        view: "files",
-                                      })
+                                      setEditor({ id: f.case_id, view: "edit" })
                                     }
                                   >
-                                    查看生成文件
+                                    打开表单
                                   </button>
-                                )}
+                                  {f.outputs > 0 && (
+                                    <button
+                                      onClick={() =>
+                                        setEditor({
+                                          id: f.case_id,
+                                          view: "files",
+                                        })
+                                      }
+                                    >
+                                      查看生成文件
+                                    </button>
+                                  )}
+                                </div>
                               </div>
-                            </div>
-                          ))}
-                        </div>
-                      ) : (
-                        <p className="df-empty">
-                          本阶段还没有表单。已有成品文件可直接上传到下面的材料清单。
-                        </p>
-                      )}
-                    </section>
-                  )}
+                            ))}
+                          </div>
+                        ) : (
+                          <p className="df-empty">
+                            本阶段还没有表单。已有成品文件可直接上传到下面的材料清单。
+                          </p>
+                        )}
+                      </section>
+                    )}
+                  </div>
                   {stage.id === "negotiation" && (
-                    <section className="df-paper df-review-entry">
+                    <section
+                      className="df-paper df-review-entry"
+                      role="tabpanel"
+                      id="df-node-panel-response"
+                      aria-labelledby="df-node-tab-response"
+                      hidden={nodeTab !== "response"}
+                    >
                       <div>
                         <h2>响应文件核查</h2>
                         <p className="df-muted">
@@ -1161,204 +1213,219 @@ export default function ProjectWorkspace({ Editor, services }) {
                       </button>
                     </section>
                   )}
-                  {stage.id === "plan" && (
-                    <section className="df-paper df-approval-entry">
-                      <div className="df-section-head">
-                        <div>
-                          <h2>计划审批结果核对</h2>
-                          <p className="df-muted">
-                            上传正式审批 PDF
-                            后，按明确字段与当前资料比对。更正前会逐项确认。
-                          </p>
-                        </div>
-                        <div className="df-actions">
-                          {latestApproval?.approval_review?.status ===
-                            "ready" && (
-                            <button
-                              onClick={() => {
-                                const changed =
-                                  latestApproval.approval_review.fields
-                                    .filter((item) => item.changed)
-                                    .map((item) => item.key);
-                                setApprovalKeys(changed);
-                                setDialog("approval");
-                              }}
-                            >
-                              查看比对结果 →
-                            </button>
-                          )}
-                          <button
-                            disabled={!planApprovalMaterial}
-                            onClick={() => {
-                              uploadTarget.current = planApprovalMaterial.id;
-                              attachment.current.click();
-                            }}
-                          >
-                            上传审批文件
-                          </button>
-                        </div>
-                      </div>
-                      {!latestApproval ? (
-                        <p>请在下方“计划批复或系统回执”中上传审批文件。</p>
-                      ) : latestApproval.approval_review.status === "ready" ? (
-                        <p>
-                          批复日期 {latestApproval.approval_review.approved_at}{" "}
-                          · 已识别{" "}
-                          {latestApproval.approval_review.fields.length} 项 ·
-                          {latestApproval.approval_review.change_count
-                            ? `发现 ${latestApproval.approval_review.change_count} 项差异`
-                            : "与当前资料一致"}
-                        </p>
-                      ) : (
-                        <p role="status">
-                          {latestApproval.approval_review.message}
-                        </p>
-                      )}
-                    </section>
-                  )}
-                  <section
-                    className="df-paper df-material-panel"
-                    id="df-node-materials"
+                  <div
+                    role="tabpanel"
+                    id="df-node-panel-materials"
+                    aria-labelledby="df-node-tab-materials"
+                    hidden={nodeTab !== "materials"}
                   >
-                    <div className="df-section-head">
-                      <div>
-                        <h2>
-                          {project.single_form ? "审批资料与附件" : "材料清单"}{" "}
-                          <small>{stage.materials.length}</small>
-                        </h2>
-                        <p className="df-muted">
-                          上传审批件、签章件和回执；文件仅归档，不自动修改表单。
-                        </p>
-                      </div>
-                      <button
-                        onClick={() =>
-                          openDialog("material", {
-                            name: "",
-                            status: "pending",
-                            required: false,
-                            note: "",
-                          })
-                        }
-                      >
-                        ＋ 添加材料
-                      </button>
-                    </div>
-                    <div className="df-materials">
-                      {stage.materials.map((m) => {
-                        const generated = forms.reduce(
-                          (n, f) =>
-                            n +
-                            (f.generations[0]?.files.filter((file) =>
-                              file.name.includes(m.name),
-                            ).length || 0),
-                          0,
-                        );
-                        return (
-                          <article className="df-material-row" key={m.id}>
-                            <div className="df-material-name">
-                              <b>{m.name}</b>
-                              {m.required && (
-                                <span className="df-required-tag">必备</span>
-                              )}
-                              <span
-                                className={
-                                  "df-state df-material-state-" + m.status
-                                }
-                              >
-                                {MATERIAL[m.status]}
-                              </span>
-                              {generated > 0 && (
-                                <small>
-                                  已有 {generated} 份生成稿 · 在上方表单查看
-                                </small>
-                              )}
-                              {m.note && <p>{m.note}</p>}
-                            </div>
-                            <div className="df-material-files">
-                              {m.files.length > 0 ? (
-                                <details>
-                                  <summary>
-                                    {m.files.length} 份文件 / 版本 · 最新：
-                                    {m.files[m.files.length - 1].name}
-                                  </summary>
-                                  {[...m.files].reverse().map((file, index) => (
-                                    <div
-                                      className="df-material-file"
-                                      key={file.id}
-                                    >
-                                      <div>
-                                        <b>
-                                          V{m.files.length - index} ·{" "}
-                                          {file.name}
-                                        </b>
-                                        <small>
-                                          {stamp(file.uploaded_at)} ·{" "}
-                                          {Math.max(
-                                            1,
-                                            Math.round(file.size / 1024),
-                                          )}{" "}
-                                          KB
-                                        </small>
-                                      </div>
-                                      <button
-                                        onClick={() => {
-                                          setPreview(file);
-                                          setSelection({
-                                            artifact: { title: file.name },
-                                            reference: { file_id: file.id },
-                                          });
-                                          setDockMode("preview");
-                                        }}
-                                      >
-                                        预览
-                                      </button>
-                                      <button
-                                        aria-label={
-                                          "下载" +
-                                          file.name +
-                                          "版本" +
-                                          (m.files.length - index)
-                                        }
-                                        onClick={() =>
-                                          run("下载材料", () =>
-                                            download(
-                                              `${base}/files/${file.id}`,
-                                              file.name,
-                                            ),
-                                          )
-                                        }
-                                      >
-                                        下载
-                                      </button>
-                                    </div>
-                                  ))}
-                                </details>
-                              ) : (
-                                <span className="df-muted">尚未上传文件</span>
-                              )}
-                            </div>
-                            <div className="df-actions">
+                    {stage.id === "plan" && (
+                      <section className="df-paper df-approval-entry">
+                        <div className="df-section-head">
+                          <div>
+                            <h2>计划审批结果核对</h2>
+                            <p className="df-muted">
+                              上传正式审批 PDF
+                              后，按明确字段与当前资料比对。更正前会逐项确认。
+                            </p>
+                          </div>
+                          <div className="df-actions">
+                            {latestApproval?.approval_review?.status ===
+                              "ready" && (
                               <button
-                                aria-label={"上传" + m.name}
                                 onClick={() => {
-                                  uploadTarget.current = m.id;
-                                  attachment.current.click();
+                                  const changed =
+                                    latestApproval.approval_review.fields
+                                      .filter((item) => item.changed)
+                                      .map((item) => item.key);
+                                  setApprovalKeys(changed);
+                                  setDialog("approval");
                                 }}
                               >
-                                上传文件
+                                查看比对结果 →
                               </button>
-                              <button
-                                aria-label={"编辑" + m.name}
-                                onClick={() => openDialog("material", { ...m })}
-                              >
-                                编辑
-                              </button>
-                            </div>
-                          </article>
-                        );
-                      })}
-                    </div>
-                  </section>
+                            )}
+                            <button
+                              disabled={!planApprovalMaterial}
+                              onClick={() => {
+                                uploadTarget.current = planApprovalMaterial.id;
+                                attachment.current.click();
+                              }}
+                            >
+                              上传审批文件
+                            </button>
+                          </div>
+                        </div>
+                        {!latestApproval ? (
+                          <p>请在下方“计划批复或系统回执”中上传审批文件。</p>
+                        ) : latestApproval.approval_review.status ===
+                          "ready" ? (
+                          <p>
+                            批复日期{" "}
+                            {latestApproval.approval_review.approved_at} ·
+                            已识别{" "}
+                            {latestApproval.approval_review.fields.length} 项 ·
+                            {latestApproval.approval_review.change_count
+                              ? `发现 ${latestApproval.approval_review.change_count} 项差异`
+                              : "与当前资料一致"}
+                          </p>
+                        ) : (
+                          <p role="status">
+                            {latestApproval.approval_review.message}
+                          </p>
+                        )}
+                      </section>
+                    )}
+                    <section
+                      className="df-paper df-material-panel"
+                      id="df-node-materials"
+                    >
+                      <div className="df-section-head">
+                        <div>
+                          <h2>
+                            {project.single_form
+                              ? "审批资料与附件"
+                              : "材料清单"}{" "}
+                            <small>{stage.materials.length}</small>
+                          </h2>
+                          <p className="df-muted">
+                            上传审批件、签章件和回执；文件仅归档，不自动修改表单。
+                          </p>
+                        </div>
+                        <button
+                          onClick={() =>
+                            openDialog("material", {
+                              name: "",
+                              status: "pending",
+                              required: false,
+                              note: "",
+                            })
+                          }
+                        >
+                          ＋ 添加材料
+                        </button>
+                      </div>
+                      <div className="df-materials">
+                        {stage.materials.map((m) => {
+                          const generated = forms.reduce(
+                            (n, f) =>
+                              n +
+                              (f.generations[0]?.files.filter((file) =>
+                                file.name.includes(m.name),
+                              ).length || 0),
+                            0,
+                          );
+                          return (
+                            <article className="df-material-row" key={m.id}>
+                              <div className="df-material-name">
+                                <b>{m.name}</b>
+                                {m.required && (
+                                  <span className="df-required-tag">必备</span>
+                                )}
+                                <span
+                                  className={
+                                    "df-state df-material-state-" + m.status
+                                  }
+                                >
+                                  {MATERIAL[m.status]}
+                                </span>
+                                {generated > 0 && (
+                                  <small>
+                                    已有 {generated} 份生成稿 · 在上方表单查看
+                                  </small>
+                                )}
+                                {m.note && <p>{m.note}</p>}
+                              </div>
+                              <div className="df-material-files">
+                                {m.files.length > 0 ? (
+                                  <details>
+                                    <summary>
+                                      {m.files.length} 份文件 / 版本 · 最新：
+                                      {m.files[m.files.length - 1].name}
+                                    </summary>
+                                    {[...m.files]
+                                      .reverse()
+                                      .map((file, index) => (
+                                        <div
+                                          className="df-material-file"
+                                          key={file.id}
+                                        >
+                                          <div>
+                                            <b>
+                                              V{m.files.length - index} ·{" "}
+                                              {file.name}
+                                            </b>
+                                            <small>
+                                              {stamp(file.uploaded_at)} ·{" "}
+                                              {Math.max(
+                                                1,
+                                                Math.round(file.size / 1024),
+                                              )}{" "}
+                                              KB
+                                            </small>
+                                          </div>
+                                          <button
+                                            onClick={() => {
+                                              setPreview(file);
+                                              setSelection({
+                                                artifact: { title: file.name },
+                                                reference: { file_id: file.id },
+                                              });
+                                              setDockMode("preview");
+                                            }}
+                                          >
+                                            预览
+                                          </button>
+                                          <button
+                                            aria-label={
+                                              "下载" +
+                                              file.name +
+                                              "版本" +
+                                              (m.files.length - index)
+                                            }
+                                            onClick={() =>
+                                              run("下载材料", () =>
+                                                download(
+                                                  `${base}/files/${file.id}`,
+                                                  file.name,
+                                                ),
+                                              )
+                                            }
+                                          >
+                                            下载
+                                          </button>
+                                        </div>
+                                      ))}
+                                  </details>
+                                ) : (
+                                  <span className="df-muted">尚未上传文件</span>
+                                )}
+                              </div>
+                              <div className="df-actions">
+                                <button
+                                  aria-label={"上传" + m.name}
+                                  onClick={() => {
+                                    uploadTarget.current = m.id;
+                                    attachment.current.click();
+                                  }}
+                                >
+                                  上传文件
+                                </button>
+                                <button
+                                  aria-label={"编辑" + m.name}
+                                  onClick={() =>
+                                    openDialog("material", { ...m })
+                                  }
+                                >
+                                  编辑
+                                </button>
+                              </div>
+                            </article>
+                          );
+                        })}
+                      </div>
+                    </section>
+                  </div>
                   {!project.single_form && (
                     <div className="df-stage-tail">
                       <p>

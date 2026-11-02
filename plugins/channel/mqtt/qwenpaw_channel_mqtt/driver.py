@@ -76,6 +76,8 @@ class MQTTDriver(SharedResponseDriver):
         )
 
     async def _open(self, params, request):
+        # SharedResponseDriver passes the complete public request contract.
+        # pylint: disable=unused-argument
         self._identity(params)
         self._require_connected()
         meta = dict(params.get("meta") or {})

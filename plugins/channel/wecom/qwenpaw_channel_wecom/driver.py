@@ -139,6 +139,8 @@ class WeComDriver(SharedResponseDriver):
         return route
 
     async def _open(self, params, request):
+        # SharedResponseDriver passes the complete public request contract.
+        # pylint: disable=unused-argument
         self._identity(params)
         self._require_connected()
         handle = "wecom:reply:" + uuid.uuid4().hex
@@ -243,10 +245,11 @@ class WeComDriver(SharedResponseDriver):
                 self._routes.record_delivery(handle, previous)
                 await self._checkpoint()
             raise
-        else:
-            await self._mark_processing(handle, final=True)
+        await self._mark_processing(handle, final=True)
 
     async def _perform_prepare(self, params):
+        # Driver and platform share this channel private transport lifecycle.
+        # pylint: disable=protected-access
         platform = self._require_connected()
         route = self._route_attrs(params.to_handle)
         async with platform.delivery():
@@ -300,6 +303,9 @@ class WeComDriver(SharedResponseDriver):
         )
 
     async def _perform_send(self, params):
+        # Keep ordered transport effects and ownership cleanup in one
+        # transaction.
+        # pylint: disable=too-many-branches
         platform = self._require_connected()
         route = self._route_attrs(params.to_handle)
         operation = params.operation.value
@@ -559,8 +565,10 @@ class WeComDriver(SharedResponseDriver):
                     ),
                 ),
             )
-        # Ephemeral native targets cannot be reconstructed after reconnect/restart.
-        # Unknown stream references remain evidence, never a replay instruction.
+        # Ephemeral native targets cannot be reconstructed after
+        # reconnect/restart.
+        # Unknown stream references remain evidence, never a replay
+        # instruction.
         if any(
             dict(ref.attributes).get("state") == "unknown"
             for ref in compact.resource_refs

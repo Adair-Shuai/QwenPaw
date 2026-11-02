@@ -317,7 +317,9 @@ def _parse_record_entries(record):
 
 
 def _record_names(entries, *, allow_external=False):
-    """Index bounded relative RECORD names without resolving unrelated files."""
+    """
+    Index bounded relative RECORD names without resolving unrelated files.
+    """
     if entries is None:
         return None
     names = set()
@@ -378,7 +380,8 @@ def _provides_loaded_modules(
                 and "/".join(parts[:-1]) in module_ancestors
             )
         ):
-            # A regular ancestor package (or module) blocks namespace traversal.
+            # A regular ancestor package (or module) blocks namespace
+            # traversal.
             return True
         for index in range(1, len(parts)):
             if "/".join(parts[:index]) in module_paths:
@@ -473,6 +476,8 @@ def _read_installed_metadata(
     record_reads=None,
 ):
     """Read metadata headers and invalid names without importing code."""
+    # Distribution metadata and RECORD validation form one evidence snapshot.
+    # pylint: disable=R0912,R0915
     # pylint: disable=protected-access
     from ..dependency_maintenance import authorized, check_admission
 

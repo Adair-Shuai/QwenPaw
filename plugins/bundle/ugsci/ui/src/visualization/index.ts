@@ -61,6 +61,8 @@ export function registerVisualizationFrontend(QP: any, React: any): void {
       id: "ugsci.visualization",
       name: "UGSci 油气可视化",
       component: OilGasWorkspaceRenderer,
+      // Generic CSV belongs to the native table preview. Pipeline/network
+      // CSV remains available through an explicit visualization import.
       extensions: [
         "egrid",
         "grid",
@@ -84,7 +86,6 @@ export function registerVisualizationFrontend(QP: any, React: any): void {
         "pvtu",
         "vti",
         "xdmf",
-        "csv",
         "arrow",
         "parquet",
         "well.json",
@@ -106,7 +107,6 @@ export function registerVisualizationFrontend(QP: any, React: any): void {
         "application/x-vtu",
         "application/x-pvtu",
         "application/x-xdmf",
-        "text/csv",
         "application/vnd.apache.arrow.file",
       ],
       priority: 200,

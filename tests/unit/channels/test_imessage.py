@@ -4,7 +4,6 @@
 import asyncio
 import json
 import os
-from pathlib import Path
 import sqlite3
 import sys
 
@@ -17,8 +16,8 @@ from tests.channel_support.protocol import (
 )
 
 
-@pytest.fixture
-async def imessage(tmp_path, monkeypatch):
+@pytest.fixture(name="imessage")
+async def _fixture_imessage(tmp_path, monkeypatch):
     db = tmp_path / "messages.sqlite"
     with sqlite3.connect(db) as conn:
         conn.executescript(
@@ -62,13 +61,13 @@ print('sent')
     monkeypatch.setattr(native.sys, "platform", "darwin")
     driver = module("imessage").IMessageDriver()
     peer, identity = bind("imessage", driver, tmp_path)
-    config = dict(
-        enabled=True,
-        db_path=str(db),
-        poll_sec=0.01,
-        workspace_dir=str(tmp_path),
-        media_dir=str(tmp_path / "media"),
-    )
+    config = {
+        "enabled": True,
+        "db_path": str(db),
+        "poll_sec": 0.01,
+        "workspace_dir": str(tmp_path),
+        "media_dir": str(tmp_path / "media"),
+    }
     await driver.start(config)
     yield driver, peer, identity, db, tmp_path
     await driver.stop()
@@ -89,6 +88,8 @@ def insert(db, text, own=0, sender="+15550001111"):
 
 
 async def receive(value, text="hello", **fields):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, peer, _, db, _ = value
     row = insert(db, text, **fields)
     await eventually(lambda: driver._platform._last_rowid >= row)
@@ -113,7 +114,9 @@ async def test_only_new_sqlite_rows_enter_host_with_native_identity(imessage):
     assert result["state"] == "acknowledged"
     commands = [
         json.loads(line)
-        for line in (root / "commands.jsonl").read_text().splitlines()
+        for line in (root / "commands.jsonl")
+        .read_text(encoding="utf-8")
+        .splitlines()
     ]
     assert commands == [
         ["send", "--to", "+15550001111", "--text", "native answer"],
@@ -130,14 +133,20 @@ async def test_outgoing_and_empty_rows_advance_cursor_without_admission(
 
 
 async def test_proactive_session_resolves_native_destination(imessage):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, peer, identity, _, root = imessage
     handle = await open_route(peer, identity, "imessage:+15559990000")
     assert driver._route_attrs(handle)["sender"] == "+15559990000"
     assert (await send(peer, identity, handle))["state"] == "acknowledged"
-    assert "+15559990000" in (root / "commands.jsonl").read_text()
+    assert "+15559990000" in (root / "commands.jsonl").read_text(
+        encoding="utf-8",
+    )
 
 
 async def test_stop_closes_sqlite_and_owned_watcher(imessage):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, _, _, _, _ = imessage
     platform = driver._platform
     connection, watcher, http = (

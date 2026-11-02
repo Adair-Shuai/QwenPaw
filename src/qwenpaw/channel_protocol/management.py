@@ -295,6 +295,9 @@ class ManagementResult(_ManagementIdentity):
 
     @classmethod
     def from_mapping(cls, value: object) -> ManagementResult:
+        # Validate every closed management result variant before constructing
+        # it.
+        # pylint: disable=R0912
         try:
             data = _packet(
                 value,

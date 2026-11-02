@@ -9,7 +9,6 @@ import pytest
 
 from qwenpaw.config import context
 from qwenpaw.runtime.hooks import HookResult
-from qwenpaw.runtime.phases import Phase
 from qwenpaw.runtime.runtime import Runtime
 from qwenpaw.turn_files.store import get_store
 
@@ -58,6 +57,8 @@ async def test_native_turn_archives_real_files_on_all_exit_paths(
     agent = SimpleNamespace(close=AsyncMock())
 
     async def hooks(phase, ctx):
+        # Keep the fixture or vendor callback signature used by the caller.
+        # pylint: disable=unused-argument
         return HookResult()
 
     class Executor:
@@ -161,12 +162,12 @@ async def test_successful_send_freezes_delivered_bytes_before_later_overwrite(
     path.write_text("later", encoding="utf-8")
     await tracker.finish("completed")
     store = get_store(tmp_path)
-    scope = dict(
-        session_id="session",
-        user_id="user",
-        channel="console",
-        agent_id="agent",
-    )
+    scope = {
+        "session_id": "session",
+        "user_id": "user",
+        "channel": "console",
+        "agent_id": "agent",
+    }
     turn = store.list_turns(**scope)[0]
     delivered = next(item for item in turn["files"] if item["delivered"])
     assert (
@@ -228,6 +229,8 @@ async def test_third_party_turn_has_same_durable_file_contract(
     tmp_path,
     outcome,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     from qwenpaw.harnesses.runtime import HarnessRuntime
     from qwenpaw.harnesses.events import HarnessEvent, HarnessEventKind
     from qwenpaw.schemas import AgentRequest, Message, TextContent
@@ -316,6 +319,8 @@ async def test_harness_captures_bound_additional_project_roots(
     tmp_path,
     monkeypatch,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     from qwenpaw.harnesses.runtime import HarnessRuntime
     from qwenpaw.config import config
 

@@ -4,10 +4,11 @@
 from __future__ import annotations
 from collections.abc import Mapping
 from copy import deepcopy
-from ...channel_protocol.artifacts import code_root_digest
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any
+from ...channel_protocol.artifacts import code_root_digest
+
 from ...plugins.execution.bootstrap import validate_private_environment
 from ...plugins.execution.process import (  # pylint: disable=unused-import
     PluginProcess,
@@ -87,7 +88,9 @@ class ChannelProcess(PluginProcess):
     failed_reason = "PLATFORM_START_FAILED"
 
     def endpoint_observation(self) -> dict[str, Any]:
-        """Read current run/handshake custody without exposing launch secrets."""
+        """
+        Read current run/handshake custody without exposing launch secrets.
+        """
         ready = self._ready
         hello = self.observed_hello
         spec = self._spec

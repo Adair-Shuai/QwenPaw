@@ -537,6 +537,9 @@ class PluginLifecycle:
         **kwargs,
     ):
         """Check execution eligibility before destructive lifecycle changes."""
+        # Lifecycle preflight shares backend dependency admission and
+        # registration.
+        # pylint: disable=W0212
         async with self._loader._dependency_registration(
             binding,
             attach=False,

@@ -339,6 +339,8 @@ async def test_stream_from_queue_yields_until_sentinel_and_detaches():
 
 @pytest.mark.parametrize("owns_run", [False, True])
 async def test_cancel_stream_only_stops_owned_producer_after_cleanup(owns_run):
+    # Keep this lifecycle scenario and its cleanup in one test scope.
+    # pylint: disable=too-many-statements
     tracker = TaskTracker()
     started, release, cleaning, finish, interrupted = (
         asyncio.Event() for _ in range(5)

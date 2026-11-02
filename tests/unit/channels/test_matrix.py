@@ -2,15 +2,15 @@
 """Local Matrix API transport; actual nio/client/platform remain unmocked."""
 import asyncio
 import json
-from nio import AsyncClient
 from pathlib import Path
+from aiohttp import web
+from nio import AsyncClient
 import pytest
+import pytest_asyncio
 from qwenpaw.channel_protocol.models import SendParams
 from qwenpaw.utils.media_paths import file_url_to_path
 from tests.channel_support.driver import bind, module
 
-from aiohttp import web
-import pytest_asyncio
 
 MatrixPlatform = module("matrix", "platform").MatrixPlatform
 
@@ -65,8 +65,6 @@ class LocalMatrixAPI:
     async def handle(self, request):
         raw = await request.read()
         try:
-            import json
-
             body = json.loads(raw) if raw else {}
         except ValueError:
             body = raw
@@ -138,8 +136,10 @@ class LocalMatrixAPI:
         return [r for r in self.requests if r["path"].endswith(suffix)]
 
 
-@pytest_asyncio.fixture
-async def hs():
+@pytest_asyncio.fixture(name="hs")
+async def _fixture_hs():
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     server = LocalMatrixAPI()
     app = web.Application()
     app.router.add_route("*", "/{path:.*}", server.handle)
@@ -157,8 +157,8 @@ async def hs():
         await runner.cleanup()
 
 
-@pytest_asyncio.fixture
-async def platform_factory(tmp_path, hs):
+@pytest_asyncio.fixture(name="platform_factory")
+async def _fixture_platform_factory(tmp_path, hs):
     made = []
 
     def make(**extra):
@@ -205,6 +205,8 @@ async def test_password_precedes_token_and_server_identity_is_persisted(
     hs,
     platform_factory,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     platform = platform_factory(
         password="explicit-password",
         device_name="  named-device  ",
@@ -221,7 +223,7 @@ async def test_password_precedes_token_and_server_identity_is_persisted(
     assert platform.device_id == "SERVER-DEVICE"
     assert platform.observed_states == ["connected"]
     assert json.loads(
-        (platform._state.directory / "auth.json").read_text(),
+        (platform._state.directory / "auth.json").read_text(encoding="utf-8"),
     ) == {
         "access_token": "password-result-token",
         "user_id": BOT,
@@ -234,6 +236,8 @@ async def test_token_whoami_and_catchup_suppress_only_old_events_then_resume(
     hs,
     platform_factory,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     hs.sync.put_nowait(
         (sync_payload("batch-old", [text_event("old", "$old")]), 200),
     )
@@ -275,6 +279,8 @@ async def test_saved_sync_token_resumes_and_stop_closes_typing(
     hs,
     platform_factory,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     first = platform_factory()
     await first.start()
     first._state.save_sync("saved-batch")
@@ -363,6 +369,8 @@ async def test_driver_native_text_roundtrip_reaches_original_room(
     hs,
     tmp_path,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver = module("matrix").MatrixDriver()
     peer, identity = bind("matrix", driver, tmp_path)
     hs.sync.put_nowait((sync_payload("catchup"), 200))
@@ -431,6 +439,9 @@ async def test_unknown_typing_stop_retires_only_its_local_owner(
     tmp_path,
     monkeypatch,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # Keep this lifecycle scenario and its cleanup in one test scope.
+    # pylint: disable=protected-access,too-many-statements
     import hashlib
     from tests.channel_support.protocol import finish, open_route
 

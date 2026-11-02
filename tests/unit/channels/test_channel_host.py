@@ -9,6 +9,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
@@ -26,20 +27,22 @@ from tests.channel_support.host import (
 from tests.channel_support.process import alive, eventually
 
 
-@pytest_asyncio.fixture
-async def host(tmp_path, monkeypatch):
+@pytest_asyncio.fixture(name="host")
+async def _fixture_host(tmp_path, monkeypatch):
     case = await Host.create(tmp_path, monkeypatch)
     yield case
     await case.close()
 
 
-@pytest.fixture
-def static_channel_guard(host, monkeypatch):
+@pytest.fixture(name="static_channel_guard")
+def _fixture_static_channel_guard(host, monkeypatch):
     """Guard each discovery/admission run against SDK and worker startup."""
     attempts = []
 
     class Guard(importlib.abc.MetaPathFinder):
         def find_spec(self, fullname, path=None, target=None):
+            # Keep the fixture or vendor callback signature used by the caller.
+            # pylint: disable=unused-argument
             if fullname.startswith(
                 (
                     "lark_oapi",
@@ -67,6 +70,9 @@ def test_official_discovery_and_descriptor_snapshot_are_static(
     monkeypatch,
     static_channel_guard,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # Keep the fixture or vendor callback signature used by the caller.
+    # pylint: disable=protected-access,unused-argument
     from dataclasses import replace
     from qwenpaw.app.channels.catalog import get_configurable_channel_catalog
 
@@ -176,6 +182,8 @@ async def test_channel_catalog_admission_preserves_config_without_runtime(
     enabled,
     runtime,
 ):
+    # Keep the fixture or vendor callback signature used by the caller.
+    # pylint: disable=unused-argument
     from dataclasses import replace
     from qwenpaw.plugins.settings import persist_plugin_settings
     from qwenpaw.plugins.channel_adapter import (
@@ -321,6 +329,9 @@ async def test_execution_preparation_yields_and_consumes_session_snapshot(
     monkeypatch,
     mode,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # Keep this lifecycle scenario and its cleanup in one test scope.
+    # pylint: disable=protected-access,too-many-statements
     import threading
     from dataclasses import replace
     from qwenpaw.__version__ import __version__
@@ -332,19 +343,18 @@ async def test_execution_preparation_yields_and_consumes_session_snapshot(
     if mode == "manage":
         with (source / "sample.py").open("a") as stream:
             stream.write(
-                "\nasync def manage(request):\n"
-                "    result = request.to_mapping()\n"
-                "    result.pop('parameters')\n"
-                "    result.pop('timeout_ms')\n"
-                "    return dict(result, outcome='ok', reason_code=None,\n"
-                "                result={'scan_url': 'https://example.test/scan',\n"
-                "                        'continuation': 'opaque'})\n"
-                "Driver.manage = staticmethod(manage)\n",
+                "\nasync def manage(request):\n    result ="
+                " request.to_mapping()\n    result.pop('parameters')\n   "
+                " result.pop('timeout_ms')\n    return dict(result,"
+                " outcome='ok', reason_code=None,\n               "
+                " result={'scan_url': 'https://example.test/scan',\n          "
+                "              'continuation': 'opaque'})\nDriver.manage ="
+                " staticmethod(manage)\n",
             )
     description = describe_channel(
         source,
         PluginManifest.from_dict(
-            json.loads((source / "plugin.json").read_text()),
+            json.loads((source / "plugin.json").read_text(encoding="utf-8")),
         ),
     )
     prepared = description.prepare_proxy_config({"enabled": True})
@@ -362,7 +372,8 @@ async def test_execution_preparation_yields_and_consumes_session_snapshot(
     process = ChannelProcess()
     entered, release = threading.Event(), threading.Event()
     loop_thread = threading.get_ident()
-    read_text, open_worker = Path.read_text, process._open
+    reader = SimpleNamespace(read_text=Path.read_text)
+    open_worker = process._open
     metadata = {source / "channel.json", source / "requirements.txt"}
     opened = False
 
@@ -374,7 +385,7 @@ async def test_execution_preparation_yields_and_consumes_session_snapshot(
             ), "metadata read on event loop"
             entered.set()
             assert release.wait(5), "preparation barrier was not released"
-        return read_text(path, *args, **kwargs)
+        return reader.read_text(path, *args, **kwargs)
 
     async def open_session(*args, **kwargs):
         nonlocal opened
@@ -449,10 +460,13 @@ async def test_execution_preparation_yields_and_consumes_session_snapshot(
 
 
 @pytest.mark.asyncio
-async def test_preparation_cancellation_retains_custody_and_rejects_changed_source(
+async def test_preparation_cancellation_retains_custody_and_rejects_changed_source(  # noqa: E501
     host,
     monkeypatch,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # Keep this lifecycle scenario and its cleanup in one test scope.
+    # pylint: disable=protected-access,too-many-statements
     import threading
     from qwenpaw.__version__ import __version__
     from qwenpaw.app.channels.process_supervisor import ChannelProcess
@@ -463,7 +477,7 @@ async def test_preparation_cancellation_retains_custody_and_rejects_changed_sour
     description = describe_channel(
         source,
         PluginManifest.from_dict(
-            json.loads((source / "plugin.json").read_text()),
+            json.loads((source / "plugin.json").read_text(encoding="utf-8")),
         ),
     )
     prepared = description.prepare_proxy_config({"enabled": True})
@@ -503,12 +517,12 @@ async def test_preparation_cancellation_retains_custody_and_rejects_changed_sour
         assert stopped.exited and not stopped.residual
         assert process._process is None
         code = source / "sample.py"
-        original = code.read_text()
+        original = code.read_text(encoding="utf-8")
         for path, replacement in (
             (code, original + "\n# changed after approval\n"),
             (source / "requirements.txt", "unexpected-dependency==1\n"),
         ):
-            previous = path.read_text()
+            previous = path.read_text(encoding="utf-8")
             entered.clear()
             release.clear()
             pending = asyncio.create_task(process.start(spec))
@@ -542,6 +556,8 @@ async def test_local_install_enable_uses_installed_code_and_offline_dependency(
     host,
     monkeypatch,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     from qwenpaw.config.utils import load_config
     from qwenpaw.plugins.settings import persist_plugin_settings
 
@@ -635,6 +651,8 @@ async def test_workspace_messages_sessions_reply_targets_and_acl_are_isolated(
     host,
     monkeypatch,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     from qwenpaw.app.channels.access_control import get_access_control_store
 
     one = await host.workspace("one")
@@ -724,6 +742,8 @@ async def test_workspace_messages_sessions_reply_targets_and_acl_are_isolated(
 async def test_config_read_save_restart_preserves_fields_and_exits_old_worker(
     host,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     from qwenpaw.config.config import load_agent_config, save_agent_config
 
     ws = await host.workspace("configured")
@@ -745,6 +765,8 @@ async def test_config_read_save_restart_preserves_fields_and_exits_old_worker(
 async def test_update_replaces_worker_and_preserves_data(
     host,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     ws = await host.workspace("updating")
     await host.loader.load_plugin_from_path(host.artifact())
     await host.loader.lifecycle.update_config(KEY, {"custom": "keep"})
@@ -772,7 +794,7 @@ async def test_update_replaces_worker_and_preserves_data(
         ),
     )
     assert host.loader.lifecycle.get_instance(KEY).config == {"custom": "keep"}
-    assert data.read_text() == '{"retained":true}'
+    assert data.read_text(encoding="utf-8") == '{"retained":true}'
 
 
 @pytest.mark.asyncio
@@ -798,11 +820,13 @@ async def test_disable_reenable_uninstall_reaps_only_owned_resources(host):
         KEY,
     )
     assert await ws.channel_manager.get_channel(KEY) is None
-    assert business.read_text() == "keep"
+    assert business.read_text(encoding="utf-8") == "keep"
     assert not host.installed.exists()
     assert user_config.read_bytes() == config_before
     assert (
-        json.loads(user_config.read_text())["channels"][KEY]["app_secret"]
+        json.loads(user_config.read_text(encoding="utf-8"))["channels"][KEY][
+            "app_secret"
+        ]
         == "local-only"
     )
 
@@ -821,12 +845,10 @@ async def test_application_shutdown_reaps_workers_and_preserves_installed_code(
     assert all(not alive(pid) for pid in pids)
     assert not host.registry.runtime_owners.leases(KEY)
     assert (host.installed / "sample.py").is_file()
-    assert all(
-        [
-            await ws.channel_manager.get_channel(KEY) is None
-            for ws in workspaces
-        ],
-    )
+    remaining = [
+        await ws.channel_manager.get_channel(KEY) for ws in workspaces
+    ]
+    assert all(channel is None for channel in remaining)
 
 
 @pytest.mark.asyncio
@@ -855,6 +877,8 @@ async def test_failed_worker_update_restores_usable_source_and_config(host):
 
 @pytest.mark.asyncio
 async def test_pending_host_state_stop_blocks_replacement_until_cleanup(host):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     ws = await host.workspace("blocked-stop")
     await host.loader.load_plugin_from_path(host.artifact())
     channel, before = await host.identity(ws)
@@ -917,6 +941,8 @@ async def test_real_approval_card_and_inbound_operator_decision(
     host,
     monkeypatch,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     from qwenpaw.app.approvals import service
     from qwenpaw.app.approvals.models import ApprovalRequestSummary
     from qwenpaw.app.approvals.service import ApprovalIdentityPolicy
@@ -972,10 +998,11 @@ async def test_real_approval_card_and_inbound_operator_decision(
     assert ws.requests[-1].user_id == "alice" and not ws.model_calls
 
 
-@pytest.fixture
-def legacy_start(request, host, tmp_path, monkeypatch):
+@pytest.fixture(name="legacy_start")
+def _fixture_legacy_start(request, host, tmp_path, monkeypatch):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     from dataclasses import replace
-    from types import SimpleNamespace
     from qwenpaw.app.channels.manager import ChannelManager
     from qwenpaw.plugins.architecture import PluginManifest
     from qwenpaw.plugins.channel_adapter import describe_channel
@@ -1054,6 +1081,8 @@ def legacy_start(request, host, tmp_path, monkeypatch):
     manager._process = lambda _: None
 
     async def start(channel):
+        # Keep the fixture or vendor callback signature used by the caller.
+        # pylint: disable=unused-argument
         pass
 
     monkeypatch.setattr(manager, "_start_owned", start)
@@ -1082,6 +1111,8 @@ async def test_legacy_start_preparation_yields_and_keeps_authorization(
     legacy_start,
     monkeypatch,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     import threading
 
     case = legacy_start
@@ -1159,6 +1190,8 @@ async def test_legacy_preparation_does_not_publish_stale_start(
     monkeypatch,
     action,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     import threading
 
     case = legacy_start
@@ -1238,9 +1271,11 @@ async def test_qr_session_rechecks_source_after_scope_read(
     monkeypatch,
     action,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # Keep this lifecycle scenario and its cleanup in one test scope.
+    # pylint: disable=protected-access,too-many-statements
     import threading
     from dataclasses import replace
-    from types import SimpleNamespace
     from qwenpaw.app.channels import qrcode_sessions as qr
     from qwenpaw.app.channels.management import (
         ChannelManagementService,
@@ -1280,6 +1315,8 @@ async def test_qr_session_rechecks_source_after_scope_read(
     baseline = tuple(host.registry.runtime_owners.leases())
 
     def read_scope(*args):
+        # Keep the fixture or vendor callback signature used by the caller.
+        # pylint: disable=unused-argument
         entered.set()
         assert release.wait(3)
         return scope
@@ -1291,6 +1328,8 @@ async def test_qr_session_rechecks_source_after_scope_read(
         parameters,
         **kwargs,
     ):
+        # Keep the fixture or vendor callback signature used by the caller.
+        # pylint: disable=unused-argument
         operations.append(operation)
         payload = (
             {"scan_url": "https://scan.test", "continuation": "private-scan"}

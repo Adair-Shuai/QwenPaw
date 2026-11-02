@@ -7,14 +7,20 @@ import {
   type ReactNode,
 } from "react";
 import {
+  AlertCircle,
   ChevronDown,
   ChevronUp,
   Download,
+  FileCode2,
+  FileImage,
+  FileSpreadsheet,
   FileText,
   FolderOpen,
   GitCompareArrows,
+  LoaderCircle,
   Package,
 } from "lucide-react";
+import prettyBytes from "pretty-bytes";
 import { useTranslation } from "react-i18next";
 import {
   TURN_FILES_UPDATED_EVENT,
@@ -34,6 +40,45 @@ import styles from "./TurnFileSummary.module.less";
 const DiffViewer = lazy(() => import("./TurnFileDiffViewer"));
 const RETRY_DELAYS = [400, 800, 1600, 2500, 4000];
 const COLLAPSED_FILES = 6;
+const IMAGE_FILE = /\.(?:png|jpe?g|gif|webp|avif|bmp|svg)$/i;
+
+function DeliveredImage({
+  scope,
+  turn,
+  file,
+}: {
+  scope: SessionFilesScope;
+  turn: TurnFileManifest;
+  file: TurnFileEntry;
+}) {
+  const { t } = useTranslation();
+  const [failed, setFailed] = useState(false);
+  if (failed)
+    return (
+      <p className={styles.imageError}>{t("turnFiles.imagePreviewFailed")}</p>
+    );
+  return (
+    <button
+      type="button"
+      className={styles.imagePreview}
+      aria-label={`${t("turnFiles.previewImage")} ${file.name}`}
+      onClick={(event) =>
+        openFilePreview(
+          turnFileTarget(scope, turn, file),
+          event.currentTarget,
+          scope,
+        )
+      }
+    >
+      <img
+        src={turnFilesApi.fileUrl(scope, turn.id, file.id, "after")}
+        alt={file.name}
+        loading="lazy"
+        onError={() => setFailed(true)}
+      />
+    </button>
+  );
+}
 
 export interface TurnFileSummaryProps {
   scope: SessionFilesScope;
@@ -69,6 +114,7 @@ function SummaryContent({
 }) {
   const { t } = useTranslation();
   const [expanded, setExpanded] = useState(false);
+  const [otherExpanded, setOtherExpanded] = useState(false);
   const [busy, setBusy] = useState<string>();
   const [error, setError] = useState("");
   const [diffId, setDiffId] = useState<string>();
@@ -83,7 +129,14 @@ function SummaryContent({
       diffRequest.current += 1;
     };
   }, []);
-  const files = expanded ? turn.files : turn.files.slice(0, COLLAPSED_FILES);
+  // A failed archive remains a visible delivery, with its actions disabled.
+  const deliveries = turn.files.filter(
+    (file) => file.delivered && file.status !== "deleted",
+  );
+  const otherFiles = turn.files.filter(
+    (file) => !file.delivered || file.status === "deleted",
+  );
+  const primaryFiles = deliveries.length > 0 ? deliveries : turn.files;
   const changed = turn.files.filter((file) => file.status !== "delivered");
   const additions = changed.reduce(
     (sum, file) => sum + (file.additions ?? 0),
@@ -101,6 +154,36 @@ function SummaryContent({
     (file) => file.additions != null || file.deletions != null,
   );
   const archiveScope = { ...scope, sessionId: turn.session_id };
+  // These are shortcuts to real archived siblings, not inferred deliveries.
+  // Keep delivery counts and the complete change list faithful to the manifest.
+  const imageDirectories = new Set(
+    deliveries
+      .filter((file) => IMAGE_FILE.test(file.name))
+      .map((file) =>
+        JSON.stringify([
+          file.root,
+          file.path.slice(0, file.path.lastIndexOf("/") + 1),
+        ]),
+      ),
+  );
+  const relatedPages = otherFiles
+    .filter(
+      (file) =>
+        file.status !== "deleted" &&
+        file.after_available &&
+        /\.html?$/i.test(file.name) &&
+        imageDirectories.has(
+          JSON.stringify([
+            file.root,
+            file.path.slice(0, file.path.lastIndexOf("/") + 1),
+          ]),
+        ),
+    )
+    .sort(
+      (a, b) =>
+        Number(/^index\.html?$/i.test(b.name)) -
+        Number(/^index\.html?$/i.test(a.name)),
+    );
 
   const download = async (id: string, operation: () => Promise<void>) => {
     setBusy(id);
@@ -133,91 +216,56 @@ function SummaryContent({
     }
   };
 
-  if (turn.files.length === 0 && !turn.incomplete && !turn.overlap) return null;
-  return (
-    <section
-      className={styles.summary}
-      aria-label={t("turnFiles.title")}
-      data-turn-id={turn.id}
-    >
-      <header className={styles.header}>
-        <span className={styles.heading}>
-          <FileText size={16} />
-          <strong>{t("turnFiles.title")}</strong>
-          <span>{turn.files.length}</span>
-        </span>
-        {hasLineCounts && (
-          <span
-            className={styles.counts}
-            aria-label={t("turnFiles.lineChanges")}
-          >
-            <span className={styles.added}>+{additions}</span>
-            <span className={styles.removed}>−{deletions}</span>
-          </span>
-        )}
-        {delivered > 0 && (
-          <span className={styles.deliveryCount}>
-            <Package size={13} />
-            {t("turnFiles.deliveredCount", { count: delivered })}
-          </span>
-        )}
-        <button
-          className={styles.bundle}
-          type="button"
-          disabled={
-            Boolean(busy) ||
-            !turn.files.some(
-              (file) => file.before_available || file.after_available,
-            )
-          }
-          onClick={() =>
-            void download("bundle", () =>
-              turnFilesApi.downloadBundle(archiveScope, turn.id),
-            )
-          }
-        >
-          <Download size={14} />
-          {t("turnFiles.downloadTurn")}
-        </button>
-      </header>
-      <p className={styles.caption}>{t("turnFiles.archiveHint")}</p>
-      {turn.status !== "completed" &&
-        turn.status !== "success" &&
-        turn.status !== "running" && (
-          <p className={styles.notice}>{t("turnFiles.interrupted")}</p>
-        )}
-      {turn.overlap && (
-        <p className={styles.notice}>{t("turnFiles.overlap")}</p>
-      )}
-      {turn.incomplete && (
-        <p className={styles.notice}>{t("turnFiles.incomplete")}</p>
-      )}
-      {turn.warnings?.length > 0 && (
-        <details className={styles.warnings}>
-          <summary>{t("turnFiles.captureDetails")}</summary>
-          <ul>
-            {turn.warnings.map((warning, index) => (
-              <li key={`${index}:${warning}`}>{warning}</li>
-            ))}
-          </ul>
-        </details>
-      )}
-      <ul className={styles.files}>
-        {files.map((file) => {
-          const version = file.status === "deleted" ? "before" : "after";
-          const available =
-            version === "before" ? file.before_available : file.after_available;
-          const canDiff =
-            !file.binary &&
-            file.status !== "delivered" &&
-            (file.status === "created" || file.before_available) &&
-            (file.status === "deleted" || file.after_available);
-          return (
-            <li key={file.id} className={styles.file}>
-              <div className={styles.row}>
-                <span className={styles.status} data-status={file.status}>
-                  {t(`turnFiles.status.${file.status}`)}
-                </span>
+  const renderFiles = (files: TurnFileEntry[], featured = false) => (
+    <ul className={styles.files}>
+      {files.map((file) => {
+        const version = file.status === "deleted" ? "before" : "after";
+        const available =
+          version === "before" ? file.before_available : file.after_available;
+        const canDiff =
+          !file.binary &&
+          file.status !== "delivered" &&
+          (file.status === "created" || file.before_available) &&
+          (file.status === "deleted" || file.after_available);
+        const extension =
+          file.name.match(/\.([^.]+)$/)?.[1].toLowerCase() || "";
+        const kind = /^(csv|tsv|xlsx?|ods)$/.test(extension)
+          ? "table"
+          : /^(png|jpe?g|gif|webp|svg|ico)$/.test(extension)
+          ? "image"
+          : /^(json|py|[cm]?[jt]sx?|html|css|ya?ml|sh)$/.test(extension)
+          ? "code"
+          : "document";
+        const FileIcon = {
+          table: FileSpreadsheet,
+          image: FileImage,
+          code: FileCode2,
+          document: FileText,
+        }[kind];
+        const size = version === "before" ? file.before_size : file.size;
+        return (
+          <li key={file.id} className={styles.file} data-featured={featured}>
+            {featured &&
+              file.delivered &&
+              available &&
+              version === "after" &&
+              IMAGE_FILE.test(file.name) && (
+                <DeliveredImage
+                  key={`${turn.id}:${file.id}`}
+                  scope={archiveScope}
+                  turn={turn}
+                  file={file}
+                />
+              )}
+            <div className={styles.row}>
+              <span
+                className={styles.fileIcon}
+                data-kind={kind}
+                aria-hidden="true"
+              >
+                <FileIcon size={22} strokeWidth={1.6} />
+              </span>
+              <div className={styles.fileInfo}>
                 <button
                   className={styles.fileName}
                   type="button"
@@ -233,19 +281,18 @@ function SummaryContent({
                   }
                 >
                   <strong>{file.name}</strong>
-                  <small>
-                    {file.root} / {file.path}
-                  </small>
                 </button>
                 <div className={styles.fileMeta}>
-                  {file.delivered && file.status !== "deleted" && (
-                    <span className={styles.deliveryTag}>
-                      {t("turnFiles.delivery")}
-                    </span>
-                  )}
-                  {file.binary ? (
-                    <span>{t("turnFiles.binary")}</span>
-                  ) : (
+                  <span className={styles.fileType}>
+                    {extension && extension.length <= 6
+                      ? extension.toUpperCase()
+                      : t("turnFiles.file")}
+                  </span>
+                  {size != null && <span>{prettyBytes(size)}</span>}
+                  <span className={styles.status} data-status={file.status}>
+                    {t(`turnFiles.status.${file.status}`)}
+                  </span>
+                  {!file.binary &&
                     (file.additions != null || file.deletions != null) && (
                       <span>
                         <span className={styles.added}>
@@ -255,119 +302,190 @@ function SummaryContent({
                           −{file.deletions ?? 0}
                         </span>
                       </span>
-                    )
-                  )}
+                    )}
                 </div>
-                <div className={styles.actions}>
-                  {canDiff && (
-                    <button
-                      type="button"
-                      aria-expanded={diffId === file.id}
-                      aria-label={`${t("turnFiles.diff")} ${file.name}`}
-                      title={t("turnFiles.diff")}
-                      onClick={() => void showDiff(file)}
-                    >
-                      <GitCompareArrows size={15} />
-                    </button>
-                  )}
-                  {file.status !== "deleted" && (
-                    <button
-                      type="button"
-                      aria-label={`${t("turnFiles.openCurrent")} ${file.name}`}
-                      title={t("turnFiles.openCurrent")}
-                      onClick={(event) =>
-                        openFilePreview(
-                          {
-                            source: "workspace",
-                            path: file.path,
-                            root: file.root,
-                          },
-                          event.currentTarget,
-                          scope,
-                        )
-                      }
-                    >
-                      <FolderOpen size={15} />
-                    </button>
-                  )}
+                <div
+                  className={styles.filePath}
+                  title={`${file.root}/${file.path}`}
+                >
+                  {file.root} / {file.path}
+                </div>
+              </div>
+              <div className={styles.actions}>
+                {canDiff && (
                   <button
                     type="button"
-                    disabled={!available || Boolean(busy)}
-                    aria-label={`${t(
-                      version === "before"
-                        ? "turnFiles.downloadBefore"
-                        : "turnFiles.download",
-                    )} ${file.name}`}
-                    title={t(
-                      version === "before"
-                        ? "turnFiles.downloadBefore"
-                        : "turnFiles.download",
-                    )}
-                    onClick={() =>
-                      void download(file.id, () =>
-                        turnFilesApi.downloadFile(
-                          archiveScope,
-                          turn.id,
-                          file,
-                          version,
-                        ),
+                    aria-expanded={diffId === file.id}
+                    aria-label={`${t("turnFiles.diff")} ${file.name}`}
+                    title={t("turnFiles.diff")}
+                    onClick={() => void showDiff(file)}
+                  >
+                    <GitCompareArrows size={15} />
+                  </button>
+                )}
+                {file.status !== "deleted" && (
+                  <button
+                    type="button"
+                    aria-label={`${t("turnFiles.openCurrent")} ${file.name}`}
+                    title={t("turnFiles.openCurrent")}
+                    onClick={(event) =>
+                      openFilePreview(
+                        {
+                          source: "workspace",
+                          path: file.path,
+                          root: file.root,
+                        },
+                        event.currentTarget,
+                        scope,
                       )
                     }
                   >
-                    <Download size={15} />
+                    <FolderOpen size={15} />
                   </button>
-                </div>
-              </div>
-              {!available && (
-                <span className={styles.unavailable}>
-                  {t("turnFiles.unavailable")}
-                </span>
-              )}
-              {version === "before" && available && (
-                <span className={styles.version}>
-                  {t("turnFiles.beforeVersion")}
-                </span>
-              )}
-              {diffId === file.id && (
-                <div className={styles.diff}>
-                  <div className={styles.diffHeading}>
-                    {t("turnFiles.diffHint")}
-                  </div>
-                  {diffError ? (
-                    <p role="alert">
-                      {t("turnFiles.diffFailed")}{" "}
-                      <button
-                        type="button"
-                        onClick={() => void showDiff(file, true)}
-                      >
-                        {t("turnFiles.retry")}
-                      </button>
-                    </p>
-                  ) : !diff ? (
-                    <p role="status">{t("turnFiles.loadingDiff")}</p>
-                  ) : (
-                    <>
-                      {diff.truncated && (
-                        <p className={styles.notice}>
-                          {t("turnFiles.diffTruncated")}
-                        </p>
-                      )}
-                      <Suspense
-                        fallback={
-                          <p role="status">{t("turnFiles.loadingDiff")}</p>
-                        }
-                      >
-                        <DiffViewer diff={diff} />
-                      </Suspense>
-                    </>
+                )}
+                <button
+                  className={styles.download}
+                  type="button"
+                  aria-busy={busy === file.id}
+                  disabled={!available || Boolean(busy)}
+                  aria-label={`${t(
+                    version === "before"
+                      ? "turnFiles.downloadBefore"
+                      : "turnFiles.download",
+                  )} ${file.name}`}
+                  title={t(
+                    version === "before"
+                      ? "turnFiles.downloadBefore"
+                      : "turnFiles.download",
                   )}
+                  onClick={() =>
+                    void download(file.id, () =>
+                      turnFilesApi.downloadFile(
+                        archiveScope,
+                        turn.id,
+                        file,
+                        version,
+                      ),
+                    )
+                  }
+                >
+                  {busy === file.id ? (
+                    <LoaderCircle size={15} className={styles.spinner} />
+                  ) : (
+                    <Download size={15} />
+                  )}
+                  <span>{t("turnFiles.downloadAction")}</span>
+                </button>
+              </div>
+            </div>
+            {!available && (
+              <span className={styles.unavailable}>
+                {t("turnFiles.unavailable")}
+              </span>
+            )}
+            {version === "before" && available && (
+              <span className={styles.version}>
+                {t("turnFiles.beforeVersion")}
+              </span>
+            )}
+            {diffId === file.id && (
+              <div className={styles.diff}>
+                <div className={styles.diffHeading}>
+                  {t("turnFiles.diffHint")}
                 </div>
-              )}
-            </li>
-          );
-        })}
-      </ul>
-      {turn.files.length > COLLAPSED_FILES && (
+                {diffError ? (
+                  <p role="alert">
+                    {t("turnFiles.diffFailed")}{" "}
+                    <button
+                      type="button"
+                      onClick={() => void showDiff(file, true)}
+                    >
+                      {t("turnFiles.retry")}
+                    </button>
+                  </p>
+                ) : !diff ? (
+                  <p role="status">{t("turnFiles.loadingDiff")}</p>
+                ) : (
+                  <>
+                    {diff.truncated && (
+                      <p className={styles.notice}>
+                        {t("turnFiles.diffTruncated")}
+                      </p>
+                    )}
+                    <Suspense
+                      fallback={
+                        <p role="status">{t("turnFiles.loadingDiff")}</p>
+                      }
+                    >
+                      <DiffViewer diff={diff} />
+                    </Suspense>
+                  </>
+                )}
+              </div>
+            )}
+          </li>
+        );
+      })}
+    </ul>
+  );
+
+  if (turn.files.length === 0 && !turn.incomplete && !turn.overlap) return null;
+  return (
+    <section
+      className={styles.summary}
+      aria-label={t("turnFiles.title")}
+      data-turn-id={turn.id}
+    >
+      <header className={styles.header}>
+        <span className={styles.headingIcon} aria-hidden="true">
+          <Package size={19} strokeWidth={1.6} />
+        </span>
+        <div className={styles.heading}>
+          <strong>
+            {t(
+              deliveries.length > 0
+                ? "turnFiles.deliveryTitle"
+                : "turnFiles.title",
+            )}
+          </strong>
+          <div className={styles.subtitle}>
+            {delivered > 0 && (
+              <span>{t("turnFiles.deliveredCount", { count: delivered })}</span>
+            )}
+            <span>
+              {t("turnFiles.fileCount", { count: turn.files.length })}
+            </span>
+          </div>
+        </div>
+        <button
+          className={styles.bundle}
+          type="button"
+          aria-busy={busy === "bundle"}
+          disabled={
+            Boolean(busy) ||
+            !turn.files.some(
+              (file) => file.before_available || file.after_available,
+            )
+          }
+          onClick={() =>
+            void download("bundle", () =>
+              turnFilesApi.downloadBundle(archiveScope, turn.id),
+            )
+          }
+        >
+          {busy === "bundle" ? (
+            <LoaderCircle size={14} className={styles.spinner} />
+          ) : (
+            <Download size={14} />
+          )}
+          {t("turnFiles.downloadTurn")}
+        </button>
+      </header>
+      {renderFiles(
+        expanded ? primaryFiles : primaryFiles.slice(0, COLLAPSED_FILES),
+        deliveries.length > 0,
+      )}
+      {primaryFiles.length > COLLAPSED_FILES && (
         <button
           className={styles.expand}
           type="button"
@@ -377,9 +495,112 @@ function SummaryContent({
           {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
           {expanded
             ? t("turnFiles.collapse")
-            : t("turnFiles.showAll", { count: turn.files.length })}
+            : t("turnFiles.showAll", { count: primaryFiles.length })}
         </button>
       )}
+      {relatedPages.length > 0 && (
+        <nav
+          className={styles.relatedPages}
+          aria-label={t("turnFiles.relatedPages")}
+        >
+          <span>{t("turnFiles.relatedPages")}</span>
+          {relatedPages.map((file) => (
+            <button
+              key={file.id}
+              type="button"
+              title={`${file.root}/${file.path}`}
+              aria-label={`${t("turnFiles.openRelatedPage")} ${file.name}`}
+              onClick={(event) =>
+                openFilePreview(
+                  turnFileTarget(archiveScope, turn, file),
+                  event.currentTarget,
+                  scope,
+                )
+              }
+            >
+              <FileCode2 size={14} aria-hidden="true" />
+              {file.name}
+            </button>
+          ))}
+        </nav>
+      )}
+      {deliveries.length > 0 && otherFiles.length > 0 && (
+        <details className={styles.otherFiles}>
+          <summary>
+            <ChevronDown
+              size={14}
+              className={styles.chevron}
+              aria-hidden="true"
+            />
+            <span>{t("turnFiles.otherChanges")}</span>
+            <span className={styles.badge}>{otherFiles.length}</span>
+          </summary>
+          {renderFiles(
+            otherExpanded ? otherFiles : otherFiles.slice(0, COLLAPSED_FILES),
+          )}
+          {otherFiles.length > COLLAPSED_FILES && (
+            <button
+              className={styles.expand}
+              type="button"
+              aria-expanded={otherExpanded}
+              onClick={() => setOtherExpanded(!otherExpanded)}
+            >
+              {otherExpanded ? (
+                <ChevronUp size={14} />
+              ) : (
+                <ChevronDown size={14} />
+              )}
+              {otherExpanded
+                ? t("turnFiles.collapse")
+                : t("turnFiles.showAll", { count: otherFiles.length })}
+            </button>
+          )}
+        </details>
+      )}
+      <footer className={styles.footer}>
+        <div className={styles.archiveNote}>
+          <span>{t("turnFiles.archiveHint")}</span>
+          {hasLineCounts && (
+            <span
+              className={styles.counts}
+              aria-label={t("turnFiles.lineChanges")}
+            >
+              <span className={styles.added}>+{additions}</span>
+              <span className={styles.removed}>−{deletions}</span>
+            </span>
+          )}
+        </div>
+        {turn.status !== "completed" &&
+          turn.status !== "success" &&
+          turn.status !== "running" && (
+            <p className={styles.notice}>
+              <AlertCircle size={13} />
+              {t("turnFiles.interrupted")}
+            </p>
+          )}
+        {turn.overlap && (
+          <p className={styles.notice}>
+            <AlertCircle size={13} />
+            {t("turnFiles.overlap")}
+          </p>
+        )}
+        {turn.incomplete && (
+          <p className={styles.notice}>
+            <AlertCircle size={13} />
+            {t("turnFiles.incomplete")}
+          </p>
+        )}
+        {turn.warnings?.length > 0 && (
+          <details className={styles.warnings}>
+            <summary>{t("turnFiles.captureDetails")}</summary>
+            <ul>
+              {turn.warnings.map((warning, index) => (
+                <li key={`${index}:${warning}`}>{warning}</li>
+              ))}
+            </ul>
+          </details>
+        )}
+      </footer>
       {error && (
         <p role="alert" className={styles.notice}>
           {error}

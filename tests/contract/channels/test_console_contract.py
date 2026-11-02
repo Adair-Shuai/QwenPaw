@@ -38,8 +38,8 @@ async def reply(_request):
 class TestConsoleChannelContract(ChannelContractTest):
     """Ensure ConsoleChannel satisfies the common and Console contracts."""
 
-    @pytest.fixture(autouse=True)
-    def isolated_media(self, tmp_path):
+    @pytest.fixture(autouse=True, name="isolated_media")
+    def _fixture_isolated_media(self, tmp_path):
         self.media = tmp_path / "media"
 
     def create_instance(self):
@@ -58,6 +58,8 @@ class TestConsoleChannelContract(ChannelContractTest):
         )
 
     def test_default_config_and_policy(self):
+        # Regression assertions inspect owned lifecycle and transport state.
+        # pylint: disable=protected-access
         from qwenpaw.app.channels.console.channel import ConsoleChannel
         from qwenpaw.config.config import ConsoleConfig
 
@@ -145,6 +147,8 @@ class TestConsoleChannelContract(ChannelContractTest):
         )
 
     def test_parts_text_and_prefix_override(self, instance):
+        # Regression assertions inspect owned lifecycle and transport state.
+        # pylint: disable=protected-access
         instance.bot_prefix = ""
         assert instance._parts_to_text([]) == ""
         parts = [TextContent(text="hello"), TextContent(text="world")]
@@ -166,6 +170,8 @@ class TestConsoleChannelContract(ChannelContractTest):
         )
 
     async def test_content_parts_are_output(self, instance, capsys):
+        # Regression assertions inspect owned lifecycle and transport state.
+        # pylint: disable=protected-access
         instance._safe_print("hello-print")
         assert "hello-print" in capsys.readouterr().out
         instance._print_parts(
@@ -207,6 +213,8 @@ class TestConsoleChannelContract(ChannelContractTest):
         ids=["text", "image", "file", "audio"],
     )
     def test_complete_submissions_bypass_debounce(self, instance, part):
+        # Regression assertions inspect owned lifecycle and transport state.
+        # pylint: disable=protected-access
         parts = [part]
         ok, merged = instance._apply_no_text_debounce("console:u1", parts)
         assert ok is True

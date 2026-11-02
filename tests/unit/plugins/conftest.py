@@ -44,7 +44,9 @@ def fresh_registry():
 
 @pytest.fixture()
 def sdk_component(tmp_path):
-    """Real SDK activation/disposal, retaining Host's process isolation only."""
+    """
+    Real SDK activation/disposal, retaining Host's process isolation only.
+    """
     from contextlib import asynccontextmanager
 
     from qwenpaw.plugins.api import PluginApi
@@ -90,7 +92,9 @@ def sdk_component(tmp_path):
                 async with instance.activity.mutation():
                     report = await instance.dispose(UnloadMode.UNLOAD)
                 assert report.clean and report.quiescent
-                assert ctx.resources.snapshot()["resources"] == ()
+                resources = ctx.resources.snapshot()["resources"]
+                assert isinstance(resources, tuple)
+                assert not resources
                 assert not instance.activity.tasks
                 assert not instance.activity.cleanup_tasks
                 assert not loader.registry.leftover_registrations(plugin_id)

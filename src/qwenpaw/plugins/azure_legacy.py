@@ -61,17 +61,15 @@ def _validate(capture):
     if (
         not isinstance(capture, Mapping)
         or set(capture)
-        != {
-            "schema_version",
-            "capture_id",
-            "entries",
-            "unresolved",
-        }
+        != {"schema_version", "capture_id", "entries", "unresolved"}
         or type(capture["schema_version"]) is not int
-        or capture["schema_version"] != 1
-        or not _hex(capture["capture_id"], 32)
-        or not isinstance(capture["entries"], list)
-        or not isinstance(capture["unresolved"], list)
+        or (capture["schema_version"] != 1)
+        or (not _hex(capture["capture_id"], 32))
+    ):
+        raise AzureLegacyError(_INVALID)
+    if not isinstance(capture["entries"], list) or not isinstance(
+        capture["unresolved"],
+        list,
     ):
         raise AzureLegacyError(_INVALID)
     owners = []
@@ -79,22 +77,18 @@ def _validate(capture):
         if (
             not isinstance(entry, dict)
             or set(entry)
-            != {
-                "owner",
-                "source",
-                "config_source",
-                "refs",
-                "refs_sha256",
-            }
-            or not _owner_valid(entry["owner"])
-            or entry["owner"] in owners
-            or not isinstance(entry["refs"], dict)
-            or any(
+            != {"owner", "source", "config_source", "refs", "refs_sha256"}
+            or (not _owner_valid(entry["owner"]))
+            or (entry["owner"] in owners)
+            or (not isinstance(entry["refs"], dict))
+        ):
+            raise AzureLegacyError(_INVALID)
+        if any(
+            (
                 not isinstance(key, str) or not isinstance(route, dict)
                 for key, route in entry["refs"].items()
             )
-            or entry["refs_sha256"] != _digest(entry["refs"])
-        ):
+        ) or entry["refs_sha256"] != _digest(entry["refs"]):
             raise AzureLegacyError(_INVALID)
         owners.append(entry["owner"])
         for key in ("source", "config_source"):
@@ -112,15 +106,13 @@ def _validate(capture):
             not isinstance(item, dict)
             or set(item) != {"reason_code", "source_path", "workspace_dir"}
             or item["reason_code"] != "AZURE_LEGACY_OWNER_UNVERIFIED"
-            or not isinstance(item["source_path"], str)
-            or not Path(item["source_path"]).is_absolute()
-            or (
-                item["workspace_dir"] is not None
-                and (
-                    not isinstance(item["workspace_dir"], str)
-                    or not Path(item["workspace_dir"]).is_absolute()
-                )
-            )
+            or (not isinstance(item["source_path"], str))
+            or (not Path(item["source_path"]).is_absolute())
+        ):
+            raise AzureLegacyError(_INVALID)
+        if item["workspace_dir"] is not None and (
+            not isinstance(item["workspace_dir"], str)
+            or not Path(item["workspace_dir"]).is_absolute()
         ):
             raise AzureLegacyError(_INVALID)
     return capture
@@ -266,7 +258,9 @@ def _capture_sources(capture, global_snapshot, root, absolute):
 
 
 def project_azure_legacy(capture: Mapping | None, owner: dict) -> dict:
-    """Select bounded launch authority; the snapshot never enters launch JSON."""
+    """
+    Select bounded launch authority; the snapshot never enters launch JSON.
+    """
     try:
         if capture is None:
             return {

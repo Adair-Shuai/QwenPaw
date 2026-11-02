@@ -4,6 +4,7 @@
 Pluggable message renderer: Message -> sendable parts (runtime Content).
 Style/capabilities control markdown, emoji, code fence.
 """
+
 from __future__ import annotations
 
 import json
@@ -182,7 +183,9 @@ class MessageRenderer:
         self,
         message: Any,
     ) -> List[SemanticContentPart]:
-        """Preserve semantic roles without adding a platform's native layout."""
+        """
+        Preserve semantic roles without adding a platform's native layout.
+        """
         return self._message_to_presented_parts(message, semantic=True)
 
     def _message_to_presented_parts(
@@ -191,6 +194,9 @@ class MessageRenderer:
         *,
         semantic: bool,
     ) -> List[SemanticContentPart]:
+        # Preserve ordered multimodal projection and per-part fallback
+        # handling.
+        # pylint: disable=R1702
         from qwenpaw.agents.context.scroll.serialize import strip_headline
         from qwenpaw.schemas import MessageType
 

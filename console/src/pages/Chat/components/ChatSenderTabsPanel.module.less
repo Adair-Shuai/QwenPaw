@@ -1,0 +1,28 @@
+.panel {
+  min-width: 0;
+  button {
+    font-family: inherit;
+  }
+  button:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 2px;
+  }
+  > div:first-child {
+    row-gap: 8px;
+  }
+  > div:first-child > div {
+    min-width: 0;
+    flex-wrap: wrap;
+  }
+  > div:first-child > div > div {
+    flex-wrap: wrap;
+  }
+  @media (max-width: 600px) {
+    > div:first-child > div {
+      flex-shrink: 1 !important;
+    }
+    > div:first-child > div > div {
+      row-gap: 8px !important;
+    }
+  }
+}

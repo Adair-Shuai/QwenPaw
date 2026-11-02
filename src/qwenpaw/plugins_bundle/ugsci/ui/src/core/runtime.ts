@@ -18,6 +18,8 @@ export interface QwenPawHost {
   useLocation?: () => { pathname: string; search: string; hash: string };
   refreshAgents?: (options?: { force?: boolean }) => Promise<void>;
   useSelectedAgent?: () => { id: string };
+  /** Host-owned localized labels; older hosts keep their raw Agent names. */
+  useAgentDisplayName?: () => (agent: { id: string; name: string }) => string;
   getCurrentSessionId?: () => string;
   getSelectedAgentId?: () => string;
   openExternalLink?: (url: string) => void;

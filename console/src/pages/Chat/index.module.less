@@ -903,9 +903,9 @@
   }
   .qwenpaw-chat-anywhere-input-wrapper:has([data-composer-metadata] button)
     .qwenpaw-sender {
-    border-bottom-left-radius: 0 !important;
-    border-bottom-right-radius: 0 !important;
-    border-bottom-color: transparent !important;
+    border-top-left-radius: 0 !important;
+    border-top-right-radius: 0 !important;
+    border-top: 0 !important;
   }
   .qwenpaw-sender-content {
     padding: 15px 12px 10px !important;
@@ -976,6 +976,21 @@
     background: transparent;
     border-radius: 8px;
     min-height: 32px;
+    font-weight: 400;
+    &:hover,
+    &[aria-expanded="true"] {
+      background: var(--app-fill);
+      color: var(--app-text);
+    }
+  }
+  .qwenpaw-sender-content-bottom .lucide {
+    stroke-width: 1.6;
+  }
+  [data-composer-mode] button > .lucide:not(.lucide-chevron-down),
+  [data-composer-model] button > .lucide-layers-2 {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
   }
   [data-qwenpaw-composer-submit="true"] {
     border-radius: 9px !important;
@@ -986,15 +1001,28 @@
   position: relative;
   padding: 6px 12px;
   border: 1px solid var(--app-border);
-  border-top-color: var(--app-border-subtle);
-  border-radius: 0 0 16px 16px;
-  background: var(--app-composer-bg, var(--app-surface));
+  border-bottom-color: var(--app-border-subtle);
+  border-radius: 16px 16px 0 0;
+  background: color-mix(
+    in srgb,
+    var(--app-composer-bg, var(--app-surface)) 88%,
+    var(--app-fill)
+  );
   color: var(--app-text);
   &:not(:has(button)) {
     display: none;
   }
   .senderContextAffix {
     display: inline-flex !important;
+  }
+  :global(.lucide) {
+    stroke-width: 1.6;
+    flex-shrink: 0;
+  }
+  .senderProjectControl :global(.lucide):not(:global(.lucide-chevron-down)),
+  .senderApprovalControl :global(.lucide):not(:global(.lucide-chevron-down)) {
+    width: 16px;
+    height: 16px;
   }
   .senderProjectControl,
   .senderApprovalControl {
@@ -1010,6 +1038,12 @@
     &:hover {
       background: var(--app-fill) !important;
     }
+  }
+}
+@media (pointer: coarse) {
+  .chatPageRoot :global(.qwenpaw-sender-content-bottom) button,
+  .composerMetadata button {
+    min-height: 44px !important;
   }
 }
 .composerQueueNotice {

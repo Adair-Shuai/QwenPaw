@@ -431,12 +431,12 @@ class TestLoadAllPluginsIsolation:
         self,
         loader,
         tmp_path,
-        monkeypatch,
     ):
         slow_dir = tmp_path / "aaa-slow"
         _write_plugin(
             slow_dir,
-            "class Plugin:\n    def register(self, api): pass\nplugin = Plugin()\n",
+            "class Plugin:\n    def register(self, api): pass\nplugin ="
+            " Plugin()\n",
         )
         (slow_dir / "requirements.txt").write_text(
             "large-runtime-dependency==1.0.0\n",
@@ -445,12 +445,14 @@ class TestLoadAllPluginsIsolation:
         fast_dir = tmp_path / "zzz-fast"
         _write_plugin(
             fast_dir,
-            "class Plugin:\n    def register(self, api): pass\nplugin = Plugin()\n",
+            "class Plugin:\n    def register(self, api): pass\nplugin ="
+            " Plugin()\n",
         )
         comment_only_dir = tmp_path / "bbb-comment-only"
         _write_plugin(
             comment_only_dir,
-            "class Plugin:\n    def register(self, api): pass\nplugin = Plugin()\n",
+            "class Plugin:\n    def register(self, api): pass\nplugin ="
+            " Plugin()\n",
         )
         (comment_only_dir / "requirements.txt").write_text(
             "# No mandatory runtime dependencies.\n",

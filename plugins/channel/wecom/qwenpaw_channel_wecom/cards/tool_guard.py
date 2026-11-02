@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=protected-access
-"""Native approval-card builders and button parser, independent of host execution."""
+"""
+Native approval-card builders and button parser, independent of host execution.
+"""
 
 from __future__ import annotations
 

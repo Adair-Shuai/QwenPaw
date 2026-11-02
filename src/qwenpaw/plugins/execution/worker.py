@@ -137,6 +137,8 @@ async def run(
     *,
     input_handle: Any,
 ) -> None:
+    # Worker bootstrap and teardown share the same isolated runtime lifetime.
+    # pylint: disable=R0912,R0915
     from .errors import ProtocolValidationError
     from .framing import FramedTransport
     from .payloads import PayloadStore

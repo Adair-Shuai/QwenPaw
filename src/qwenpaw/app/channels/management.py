@@ -115,19 +115,24 @@ class ChannelManagementService:
         *,
         timeout: float,
     ) -> ManagementResult:
+        # Management admission and result validation share one leased
+        # operation.
+        # pylint: disable=R0912,R0915
         if self._closed:
             raise ManagementError("MANAGEMENT_CLOSED")
         if (
             any(
-                not isinstance(value, str) or not value
-                for value in (workspace_id, channel_key)
+                (
+                    not isinstance(value, str) or not value
+                    for value in (workspace_id, channel_key)
+                )
             )
             or not isinstance(operation, str)
             or operation not in MANAGEMENT_CAPABILITIES
-            or type(timeout) not in (int, float)
-            or not math.isfinite(timeout)
-            or not 0.001 <= timeout <= 65
+            or (type(timeout) not in (int, float))
         ):
+            raise ManagementError("MANAGEMENT_INVALID_REQUEST")
+        if not math.isfinite(timeout) or not 0.001 <= timeout <= 65:
             raise ManagementError("MANAGEMENT_INVALID_REQUEST")
         owners = self._loader.registry.runtime_owners
         usage = self._loader.registry.dependency_usage

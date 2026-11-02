@@ -8,7 +8,10 @@ all early-return paths), ``PluginApi._get_workspace_from_info``
 ``register_prompt_section`` (registry delegation + condition wrapping).
 """
 
-# pylint: disable=protected-access,redefined-outer-name,unused-argument,use-implicit-booleaness-not-comparison  # noqa: E501
+# pylint: disable=protected-access
+# pylint: disable=redefined-outer-name
+# pylint: disable=unused-argument
+# pylint: disable=use-implicit-booleaness-not-comparison  # noqa: E501
 from __future__ import annotations
 
 from unittest.mock import MagicMock, patch

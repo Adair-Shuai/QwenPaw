@@ -167,7 +167,9 @@ def live_channel_managers() -> list[Any]:
 
 @dataclass
 class _ChannelStartContext:
-    """One immutable input baseline, retained until start or cleanup finishes."""
+    """
+    One immutable input baseline, retained until start or cleanup finishes.
+    """
 
     key: str
     config: Any
@@ -273,22 +275,31 @@ class _ChannelStartContext:
             row is None
             or self.settings is None
             or self.description is None
-            or registry.get_channel_catalog_entry(self.key) is not row
-            or row.description_record is not self.description
-            or row.runtime_settings is not self.settings
+            or (registry.get_channel_catalog_entry(self.key) is not row)
+            or (row.description_record is not self.description)
+        ):
+            raise RuntimeError(error)
+        if (
+            row.runtime_settings is not self.settings
             or self.settings != self.settings_snapshot
-            or not row.global_enabled
-            or not self.settings.allows(self.key)
-            or self.key not in selected_process_channels()
-            or self.key not in get_available_channels()
+            or (not row.global_enabled)
+            or (not self.settings.allows(self.key))
+            or (self.key not in selected_process_channels())
+        ):
+            raise RuntimeError(error)
+        if (
+            self.key not in get_available_channels()
             or self.config_ref is None
             or channel_cfg_for_key(self.config, self.key, raw=True)
             is not self.config_ref
-            or channel_cfg_for_key(self.config, self.key)
-            != self.config_snapshot
-            or not channel_enabled(self.config_snapshot)
-            or getattr(self.config, "id", None) != self.configured_id
+            or (
+                channel_cfg_for_key(self.config, self.key)
+                != self.config_snapshot
+            )
+            or (not channel_enabled(self.config_snapshot))
         ):
+            raise RuntimeError(error)
+        if getattr(self.config, "id", None) != self.configured_id:
             raise RuntimeError(error)
         if self.workspace_dir is None:
             raise RuntimeError(
@@ -301,18 +312,20 @@ class _ChannelStartContext:
             manager._stopping
             or manager._defer_channel_start
             or manager._workspace_config is not self.manager_config
-            or manager._workspace_dir != self.manager_dir
-            or (
-                self.workspace_binding is not None
-                and manager._workspace is not self.workspace_binding[0]
-            )
+            or (manager._workspace_dir != self.manager_dir)
+        ):
+            raise RuntimeError("CHANNEL_PREPARATION_STALE")
+        if (
+            self.workspace_binding is not None
+            and manager._workspace is not self.workspace_binding[0]
             or directory is None
             or Path(directory).expanduser().resolve() != self.workspace_dir
-            or constant.WORKING_DIR != self.state_root
-            or (
-                self.prepared is not None
-                and self.prepared.description is not self.description
-            )
+            or (constant.WORKING_DIR != self.state_root)
+        ):
+            raise RuntimeError("CHANNEL_PREPARATION_STALE")
+        if (
+            self.prepared is not None
+            and self.prepared.description is not self.description
             or not registry.projector.start_allowed(
                 "channel",
                 self.key,
@@ -321,16 +334,27 @@ class _ChannelStartContext:
             )
         ):
             raise RuntimeError("CHANNEL_PREPARATION_STALE")
-        if channel is not None and (
+        if channel is not None:
+            self._validate_channel(manager, channel, row, registry)
+
+    def _validate_channel(self, manager, channel, row, registry):
+        """Recheck the constructed candidate against its captured owner."""
+        if (
             channel is not self.candidate
             or manager._start_contexts.get(channel) is not self
             or channel.channel != self.key
-            or channel._registration is not row
-            or channel._launch_spec != self.execution
+            or (channel._registration is not row)
+        ):
+            raise RuntimeError("CHANNEL_PREPARATION_STALE")
+        if (
+            channel._launch_spec != self.execution
             or channel._workspace_dir != self.workspace_dir
             or channel._identity() != self.identity
-            or channel._owner_registry is not registry
-            or channel._runtime_lease is not self.owner
+            or (channel._owner_registry is not registry)
+        ):
+            raise RuntimeError("CHANNEL_PREPARATION_STALE")
+        if (
+            channel._runtime_lease is not self.owner
             or self.owner not in registry.runtime_owners.leases()
             or manager._find_channel(self.key) not in (None, channel)
         ):
@@ -349,6 +373,9 @@ def instantiate_channel(
     manager=None,
 ) -> BaseChannel:
     """Build one channel instance from workspace config (three-gate caller)."""
+    # Keep the three channel-admission gates in one ordered construction
+    # path.
+    # pylint: disable=R0915
     from ...plugins.registry import PluginRegistry
     from .registry import selected_process_channels
 
@@ -749,7 +776,6 @@ class ChannelManager:  # pylint: disable=too-many-public-methods
         """
         available = get_available_channels()
         registry = get_channel_registry()
-        import os
         from types import SimpleNamespace
         from ...config.channel_env import read_channel_env
         from ...config.utils import get_config_path
@@ -781,8 +807,8 @@ class ChannelManager:  # pylint: disable=too-many-public-methods
         manager._workspace_dir = workspace_dir
         manager._workspace_config = env_config
         try:
-            for key in env_channels:
-                if not channel_enabled(env_channels[key]):
+            for key, channel_config in env_channels.items():
+                if not channel_enabled(channel_config):
                     continue
                 context = _ChannelStartContext.capture(
                     manager,
@@ -1160,6 +1186,9 @@ class ChannelManager:  # pylint: disable=too-many-public-methods
         Note:
             Preserves original batch merging logic (drain + merge)
         """
+        # Queue custody, retry, and cancellation branches share one task
+        # lifetime.
+        # pylint: disable=R0912
         logger.info(
             f"Consumer started: channel={channel_id} "
             f"session={session_id[:30]} "
@@ -1562,14 +1591,15 @@ class ChannelManager:  # pylint: disable=too-many-public-methods
         ``BaseChannel`` — callers must treat it as opaque.
         """
         existing = self._find_channel(key)
-        if (
+        reuse_existing = (
             existing is not None
             and not isinstance(existing, IsolatedChannelProxy)
             and self._pending_channel_starts(existing)
             and not self._stopping
             and key not in self._failed_channels
             and key not in self._prepared_stop_channels
-        ):
+        )
+        if reuse_existing:
             # Boot already owns this instance. Publish its token so unload can
             # cancel its tracked startup instead of waiting for SDK readiness.
             from ...plugins.registry import PluginRegistry
@@ -1601,6 +1631,9 @@ class ChannelManager:  # pylint: disable=too-many-public-methods
         *,
         replace_from=None,
     ) -> ChannelHandle:
+        # Startup admission and rollback execute under the same lifecycle
+        # lock.
+        # pylint: disable=R0912,R0915
         from ...plugins.registry import PluginRegistry
 
         registry = PluginRegistry()
@@ -1746,6 +1779,9 @@ class ChannelManager:  # pylint: disable=too-many-public-methods
             return await run_async_to_completion(self._stop_one_unlocked(key))
 
     async def _stop_one_unlocked(self, key: str) -> StopReceipt:
+        # Each stop outcome preserves its distinct custody and restart
+        # receipt.
+        # pylint: disable=R0911
         async with self._lock:
             channel = self._find_channel(key)
         if channel is None:
@@ -1951,6 +1987,9 @@ class ChannelManager:  # pylint: disable=too-many-public-methods
         workspace_config=None,
     ) -> None:
         """Drain and stop the old owner before constructing its successor."""
+        # Replacement holds the lifecycle lock through preparation and
+        # rollback.
+        # pylint: disable=R0912
         from ...plugins.lifecycle import QuiescenceError
         from ...utils.io_utils import run_async_to_completion
 

@@ -1,9 +1,11 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=undefined-all-variable
-"""Public SDK and legacy exports, resolved lazily for execution workers.
+"""
+Public SDK and legacy exports, resolved lazily for execution workers.
 
-The supported versioned author API is the whitelist in ``compliance.PUBLIC_API``.
-Legacy exports such as PluginApi and PluginLoader remain compatibility APIs.
+The supported versioned author API is the whitelist in
+``compliance.PUBLIC_API``. Legacy exports such as PluginApi and PluginLoader
+remain compatibility APIs.
 """
 
 from importlib import import_module

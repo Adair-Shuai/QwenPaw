@@ -259,6 +259,7 @@ export default function FilePreview({
               projectDirOverride: artifact.projectDirOverride,
               root: artifact.workspaceRoot ?? root,
               workspaceBacked,
+              artifact,
             })
           }
         >

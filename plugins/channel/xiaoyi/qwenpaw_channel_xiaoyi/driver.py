@@ -55,6 +55,8 @@ class XiaoYiDriver(SharedResponseDriver):
             raise
 
     async def _state_changed(self, state):
+        # Driver and platform share this channel private transport lifecycle.
+        # pylint: disable=protected-access
         connected = state == "connected" and not self._stopping
         if connected != self._connected:
             self._connection_generation += 1
@@ -101,6 +103,8 @@ class XiaoYiDriver(SharedResponseDriver):
         return ResponsePolicy(continue_on_delivery_error=True)
 
     async def _open(self, params, request):
+        # SharedResponseDriver passes the complete public request contract.
+        # pylint: disable=unused-argument
         self._identity(params)
         platform = self._require_connected()
         meta = dict(params.get("meta") or {})

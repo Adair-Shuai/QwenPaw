@@ -34,8 +34,10 @@ class Socket:
             await self.inbox.put(json.dumps({"seq_reply": 1, "status": "OK"}))
 
 
-@pytest.fixture
-async def mattermost(tmp_path, monkeypatch):
+@pytest.fixture(name="mattermost")
+async def _fixture_mattermost(tmp_path, monkeypatch):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     native = module("mattermost", "platform")
     socket, requests = Socket(), []
 
@@ -84,12 +86,12 @@ async def mattermost(tmp_path, monkeypatch):
     driver = module("mattermost").MattermostDriver()
     peer, identity = bind("mattermost", driver, tmp_path)
     await driver.start(
-        dict(
-            url="https://mm.invalid",
-            bot_token="local-token",
-            workspace_dir=str(tmp_path),
-            media_dir=str(tmp_path / "media"),
-        ),
+        {
+            "url": "https://mm.invalid",
+            "bot_token": "local-token",
+            "workspace_dir": str(tmp_path),
+            "media_dir": str(tmp_path / "media"),
+        },
     )
     await eventually(lambda: driver._connected)
     yield driver, peer, identity, socket, requests, tmp_path
@@ -104,7 +106,7 @@ async def receive(
     ident="post-A",
     files=(),
 ):
-    driver, peer, _, socket, _, _ = value
+    _driver, peer, _, socket, _, _ = value
     await socket.inbox.put(
         json.dumps(
             {
@@ -130,6 +132,8 @@ async def receive(
 
 
 async def test_start_authenticates_rest_identity_and_websocket(mattermost):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, _, _, socket, requests, _ = mattermost
     assert requests[0].url.path == "/api/v4/users/me"
     assert socket.sent == [
@@ -157,7 +161,7 @@ async def test_dm_group_mention_and_thread_preserve_reply_root(
     text,
     expected_root,
 ):
-    driver, peer, identity, _, requests, _ = mattermost
+    _driver, peer, identity, _, requests, _ = mattermost
     event = await receive(mattermost, kind, root, text)
     assert event["acl_sender_id"] == "human-id"
     expected_parts = [{"type": "text", "text": "hello"}]
@@ -221,6 +225,8 @@ async def test_attachment_download_and_upload_preserve_bytes(
 async def test_unmentioned_group_is_filtered_and_stop_closes_socket_http(
     mattermost,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, peer, _, socket, _, _ = mattermost
     await socket.inbox.put(
         json.dumps(

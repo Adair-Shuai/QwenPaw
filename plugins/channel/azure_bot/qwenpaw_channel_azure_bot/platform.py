@@ -54,14 +54,9 @@ def _group(activity):
 
 def _service_url(value):
     parsed = urlsplit(value)
-    if (
-        parsed.scheme != "https"
-        or not parsed.hostname
-        or parsed.username
-        or parsed.password
-        or parsed.fragment
-        or parsed.query
-    ):
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username:
+        raise ValueError("AZURE_SERVICE_URL_INVALID")
+    if parsed.password or parsed.fragment or parsed.query:
         raise ValueError("AZURE_SERVICE_URL_INVALID")
     return value.rstrip("/")
 
@@ -140,6 +135,9 @@ class AzureBotPlatform:
         self.watchdog = asyncio.create_task(self._watchdog())
 
     async def _listen(self):
+        # Read the bound aiohttp socket after startup to register the actual
+        # port.
+        # pylint: disable=protected-access
         site = web.TCPSite(self.runner, self.host, self.port)
         self.site = site
         try:
@@ -232,6 +230,8 @@ class AzureBotPlatform:
         self.store.close()
 
     async def _handle_messages(self, request):
+        # Preserve the existing native protocol dispatch and rejection order.
+        # pylint: disable=too-many-return-statements
         task = asyncio.current_task()
         self._tasks.add(task)
         try:
@@ -304,7 +304,7 @@ class AzureBotPlatform:
         return route
 
     async def _message(self, activity):
-        sender, name, session, display, target, route = self._route(activity)
+        sender, name, session, display, _target, route = self._route(activity)
         if not sender or not route["conversation_id"]:
             return True
         bot_ids = {self.config["app_id"], route["bot_channel_id"]}
@@ -509,8 +509,6 @@ class AzureBotPlatform:
                     )
                 data = await response.read()
                 return json.loads(data) if data else {}
-        except AzureBotDeliveryError:
-            raise
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
             raise AzureBotDeliveryError(
                 "PLATFORM_RESULT_UNKNOWN",
@@ -595,6 +593,9 @@ class AzureBotPlatform:
             self._tasks.discard(task)
 
     async def _send_parts(self, route, parts, source):
+        # Keep ordered transport effects and ownership cleanup in one
+        # transaction.
+        # pylint: disable=too-many-branches
         if not self.connected or self._stopping:
             raise AzureBotDeliveryError("NOT_CONNECTED")
         token = await self._get_bot_token()
@@ -656,8 +657,6 @@ class AzureBotPlatform:
                 receipts.append(
                     receipt.get("id", "") if isinstance(receipt, dict) else "",
                 )
-        except asyncio.CancelledError:
-            raise
         except Exception as exc:
             if isinstance(exc, AzureBotDeliveryError):
                 if effect:

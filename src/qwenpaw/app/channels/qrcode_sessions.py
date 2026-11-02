@@ -88,7 +88,9 @@ def _read_scope(workspace_id, channel_key, principal_id=None):
 
 
 async def resolve_channel_management_scope_async(request, channel_key):
-    """Capture request values on-loop; resolve disk-backed scope in a worker."""
+    """
+    Capture request values on-loop; resolve disk-backed scope in a worker.
+    """
     workspace_id = getattr(
         request.state,
         "agent_id",
@@ -221,9 +223,11 @@ class ChannelQRCodeSessions:
         config.update({k: v for k, v in (credentials or {}).items() if v})
         configured = config.get("bot_token_file")
         config["bot_token_file"] = str(
-            Path(configured).expanduser()
-            if configured
-            else (WORKING_DIR / "wechat_bot_token").expanduser(),
+            (
+                Path(configured).expanduser()
+                if configured
+                else (WORKING_DIR / "wechat_bot_token").expanduser()
+            ),
         )
         return absolute_execution_paths(
             config,
@@ -247,6 +251,9 @@ class ChannelQRCodeSessions:
             raise _SessionExpired()
 
     async def _scan_session(self, session, source=None):
+        # The session coordinator authenticates the management-owned source
+        # snapshot.
+        # pylint: disable=W0212
         self._check_session(session)
         row, description = await self._source(session.scope, source)
         record = self._loader.get_loaded_plugin(row.plugin_id)
@@ -490,13 +497,15 @@ class ChannelQRCodeSessions:
         if (
             session.scope.channel_key == "wechat"
             and operation == "qrcode.poll"
-            and payload["status"] in {"confirmed", "success"}
-            and payload["credentials"]
-            and any(payload["credentials"].values())
-            and "fail_reason" not in payload["credentials"]
         ):
-            await self._reserve_auth(session, payload["credentials"])
-            self._check_session(session)
+            if (
+                payload["status"] in {"confirmed", "success"}
+                and payload["credentials"]
+                and any(payload["credentials"].values())
+                and ("fail_reason" not in payload["credentials"])
+            ):
+                await self._reserve_auth(session, payload["credentials"])
+                self._check_session(session)
         return payload
 
     async def _wait_operation(self, session):
@@ -514,6 +523,11 @@ class ChannelQRCodeSessions:
                     pass
 
     async def fetch(self, scope, options: Mapping[str, str]) -> QRCodeResult:
+        # QR fetch owns the session reservation through worker admission and
+        # rollback.
+        # The session coordinator records the authenticated management source
+        # snapshot.
+        # pylint: disable=R0912,R0915,W0212
         self._check_admission(scope)
         row = self._loader.registry.get_channel_catalog_entry(
             scope.channel_key,
@@ -640,6 +654,9 @@ class ChannelQRCodeSessions:
             raise
 
     async def poll(self, scope, token: str) -> PollResult:
+        # Polling outcomes settle one session and preserve cancellation
+        # custody.
+        # pylint: disable=R0911,R0912,R0915
         session = self._lookup(scope, token)
         if session.status == "expired":
             return PollResult("expired", {})
@@ -817,7 +834,11 @@ class ChannelQRCodeSessions:
             raise errors[0]
 
     async def save_confirmed(self, scope, token, values, persist):
-        """Authorize once, then retain custody until the real commit settles."""
+        """
+        Authorize once, then retain custody until the real commit settles.
+        """
+        # Credential persistence rechecks the same session before committing.
+        # pylint: disable=R0912
         session = self._lookup(scope, token)
         if session.commit is not None:
             raise HTTPException(409, "QR save is already in progress")

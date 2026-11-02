@@ -1,5 +1,8 @@
 # -*- coding: utf-8 -*-
-# pylint: disable=protected-access,redefined-outer-name,unnecessary-lambda,unused-argument  # noqa: E501
+# pylint: disable=protected-access
+# pylint: disable=redefined-outer-name
+# pylint: disable=unnecessary-lambda
+# pylint: disable=unused-argument  # noqa: E501
 """Unit tests for plugins/loader.py helper functions.
 
 Coverage-driven backfill (batch 4, coverage-first per the 2026-08-24

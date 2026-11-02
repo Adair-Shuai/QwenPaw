@@ -602,6 +602,15 @@ export default function FilesWorkspace({
           });
         }
         if (existing) {
+          if (
+            existing.source === "artifact" &&
+            !existing.artifact &&
+            resolvedTarget.artifact
+          )
+            openTab(scopeKey, {
+              ...existing,
+              artifact: resolvedTarget.artifact,
+            });
           if (existing.source === "artifact" && existing.artifact)
             targetsByTab.current.delete(tabPath);
           activateTab(tabPath);

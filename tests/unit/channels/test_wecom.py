@@ -149,8 +149,8 @@ class WeComExternal:
             assert not self.thread.is_alive()
 
 
-@pytest.fixture
-def wecom_external(tmp_path, monkeypatch):
+@pytest.fixture(name="wecom_external")
+def _fixture_wecom_external(tmp_path, monkeypatch):
     import certifi
     import certifi.core
 
@@ -194,7 +194,7 @@ def text_frame(mid="native-msg", *, group=False, actor="sender-A"):
 
 
 async def ingress(native, frame=None):
-    driver, peer, identity, server = native
+    _driver, peer, _identity, server = native
     previous = len(peer.batches)
     server.push(frame or text_frame())
     await eventually(lambda: len(peer.batches) > previous)
@@ -209,7 +209,7 @@ async def send(
     operation="message.create",
     **fields,
 ):
-    driver, peer, identity, server = native
+    _driver, peer, identity, _server = native
     params = SendParams.from_mapping(
         {
             **identity,
@@ -223,7 +223,7 @@ async def send(
 
 
 async def prepare(native, handle):
-    driver, peer, identity, server = native
+    _driver, peer, identity, _server = native
     return await peer.methods["channel.response.prepare"](
         {
             **identity,
@@ -236,8 +236,10 @@ async def prepare(native, handle):
     )
 
 
-@pytest_asyncio.fixture
-async def wecom_native(wecom_external, tmp_path):
+@pytest_asyncio.fixture(name="wecom_native")
+async def _fixture_wecom_native(wecom_external, tmp_path):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver = module("wecom").WeComDriver()
     peer, identity = bind("wecom", driver, tmp_path)
     try:
@@ -260,7 +262,9 @@ async def wecom_native(wecom_external, tmp_path):
 async def test_native_subscribe_processing_first_stream_sid_and_final(
     wecom_native,
 ):
-    driver, peer, identity, server = wecom_native
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
+    driver, peer, _identity, server = wecom_native
     assert server.rows("aibot_subscribe")[0]["body"] == {
         "bot_id": "native-bot",
         "secret": "native-secret",
@@ -311,7 +315,9 @@ async def test_native_upload_init_chunks_finish_ack_and_reply(
     wecom_native,
     tmp_path,
 ):
-    driver, peer, identity, server = wecom_native
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
+    driver, _peer, _identity, server = wecom_native
     event = await ingress(wecom_native)
     data = b"ordinary-file\x00" * 10
     path = tmp_path / "upload.bin"
@@ -357,7 +363,9 @@ async def test_native_upload_init_chunks_finish_ack_and_reply(
 async def test_native_stop_settles_owned_sdk_thread_loop_and_keepalive(
     wecom_native,
 ):
-    driver, peer, identity, server = wecom_native
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
+    driver, _peer, _identity, server = wecom_native
     event = await ingress(wecom_native)
     await prepare(wecom_native, event["response_handle"])
     platform = driver._platform
@@ -383,7 +391,7 @@ async def test_native_stop_settles_owned_sdk_thread_loop_and_keepalive(
     )
     assert client._ws_manager._ws is None
     assert driver._platform is None
-    await eventually(lambda: server.closed.is_set())
+    await eventually(server.closed.is_set)
 
 
 @pytest.mark.parametrize(

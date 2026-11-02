@@ -625,6 +625,8 @@ def evaluate_shared_dependencies(
     inventory=None,
 ) -> GateDecision:
     """Validate each consumer in its own observed environment."""
+    # Evaluate consumer pins within their environment and distribution scope.
+    # pylint: disable=R1702
     from packaging.utils import canonicalize_name
     from packaging.version import Version
     from .execution.dependencies import (
@@ -1239,7 +1241,9 @@ async def _publish_additions(audit, evaluate, target, files):
                 GateDecision(
                     False,
                     False,
-                    reason="Dependency publication failed; repair is required.",
+                    reason=(
+                        "Dependency publication failed; repair is required."
+                    ),
                     reason_code="DEPENDENCY_REPAIR_REQUIRED",
                     require_restart=True,
                 ),

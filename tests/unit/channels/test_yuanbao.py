@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Yuanbao signs HTTP credentials and uses native protobuf WebSocket frames."""
 
-import asyncio
 import hashlib
 import hmac
 import json
@@ -17,13 +16,17 @@ from tests.channel_support.protocol import eventually, finish, send
 
 
 def decode(codec, name, data):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     message = codec._get_message_class(name)()
     message.ParseFromString(data)
     return json_format.MessageToDict(message, preserving_proto_field_name=True)
 
 
-@pytest.fixture
-async def yuanbao(tmp_path):
+@pytest.fixture(name="yuanbao")
+async def _fixture_yuanbao(tmp_path):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     codec = module("yuanbao", "codec")
     frames, sends, signatures, connections = [], [], [], []
 
@@ -99,6 +102,8 @@ async def yuanbao(tmp_path):
         return ws
 
     async def image(request):
+        # Keep the fixture or vendor callback signature used by the caller.
+        # pylint: disable=unused-argument
         return web.Response(body=b"native-image", content_type="image/png")
 
     app = web.Application()
@@ -115,15 +120,15 @@ async def yuanbao(tmp_path):
     peer, identity = bind("yuanbao", driver, tmp_path)
     try:
         await driver.start(
-            dict(
-                enabled=True,
-                app_id="local-app",
-                app_secret="local-secret",
-                api_domain=base,
-                ws_url=f"ws://127.0.0.1:{port}/ws",
-                workspace_dir=str(tmp_path),
-                media_dir=str(tmp_path / "media"),
-            ),
+            {
+                "enabled": True,
+                "app_id": "local-app",
+                "app_secret": "local-secret",
+                "api_domain": base,
+                "ws_url": f"ws://127.0.0.1:{port}/ws",
+                "workspace_dir": str(tmp_path),
+                "media_dir": str(tmp_path / "media"),
+            },
         )
         await eventually(lambda: driver._connected)
         yield (
@@ -182,6 +187,8 @@ async def receive(value, group=None, media=False):
 
 
 async def test_signed_token_and_binary_authenticate_before_connected(yuanbao):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, _, _, codec, frames, _, signatures, _, _ = yuanbao
     assert len(signatures) == 1
     assert (
@@ -199,6 +206,8 @@ async def test_dm_group_identity_and_reply_target_retain_full_native_id(
     yuanbao,
     group,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, peer, identity, _, _, sends, _, _, _ = yuanbao
     event = await receive(yuanbao, group)
     assert (
@@ -228,6 +237,8 @@ async def test_dm_group_identity_and_reply_target_retain_full_native_id(
 async def test_group_typing_sends_running_and_finish_native_heartbeats(
     yuanbao,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, peer, identity, codec, frames, _, _, _, _ = yuanbao
     handle = (await receive(yuanbao, "native-group"))["response_handle"]
     result = await peer.methods["channel.response.prepare"](
@@ -264,6 +275,8 @@ async def test_group_typing_sends_running_and_finish_native_heartbeats(
 
 
 async def test_native_image_download_keeps_bytes_in_workspace(yuanbao):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, _, _, _, _, _, _, _, _ = yuanbao
     event = await receive(yuanbao, media=True)
     part = event["content_parts"][1]
@@ -275,6 +288,8 @@ async def test_native_image_download_keeps_bytes_in_workspace(yuanbao):
 
 
 async def test_stop_closes_binary_socket_sessions_and_owned_tasks(yuanbao):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, _, _, _, _, _, _, _, _ = yuanbao
     platform = driver._platform
     ws, session = platform._ws, platform._session

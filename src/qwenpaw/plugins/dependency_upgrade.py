@@ -79,6 +79,9 @@ def install_result(record):
 
 def dependency_upgrades(loader):
     """One manager and operation namespace for HTTP and CLI callers."""
+    # Cache the manager on the loader without extending its public plugin
+    # API.
+    # pylint: disable=W0212
     manager = getattr(loader, "_dependency_upgrade_manager", None)
     if manager is None:
         manager = DependencyUpgradeManager(loader)
@@ -125,7 +128,9 @@ async def stage_dependency_refusal(loader, source_path, error, *, force=False):
 
 
 class DependencyUpgradeManager:
-    """Stage immutable wheels; publish only an explicitly approved operation."""
+    """
+    Stage immutable wheels; publish only an explicitly approved operation.
+    """
 
     def __init__(self, loader):
         from ..config.utils import get_config_path
@@ -209,6 +214,8 @@ class DependencyUpgradeManager:
             return self._public(operation)
 
     async def _binding(self, source):
+        # The manager reuses loader compatibility admission before staging.
+        # pylint: disable=W0212
         _, manifest = await run_sync_io(
             self.loader.read_source_manifest,
             source,
@@ -293,6 +300,7 @@ class DependencyUpgradeManager:
         from .install_lock import environment_observation
 
         prepared = await self._prepare_consumer_targets()
+        usage_snapshot = self.loader.registry.dependency_usage.snapshot()
         roots = tuple(
             dict.fromkeys(
                 (
@@ -300,7 +308,7 @@ class DependencyUpgradeManager:
                     *(root for row in prepared for root in row.targets),
                     *(
                         site
-                        for use in self.loader.registry.dependency_usage.snapshot().uses
+                        for use in usage_snapshot.uses
                         if use.environment is not None
                         for site in use.environment.sites
                     ),
@@ -350,11 +358,12 @@ class DependencyUpgradeManager:
         from .dependency_gate import complete_read_uses
         from .install_lock import observation_inputs
 
+        usage_snapshot = self.loader.registry.dependency_usage.snapshot()
         uses = await run_sync_io(
             complete_read_uses,
             tuple(
                 use
-                for use in self.loader.registry.dependency_usage.snapshot().uses
+                for use in usage_snapshot.uses
                 if (use.plugin_id != plugin_id or use.origin == "host")
                 and (
                     use.environment is None
@@ -505,15 +514,16 @@ class DependencyUpgradeManager:
             reviewed = operation["reviewed_usage"]
         matches = all(
             (
-                set(current[key]) <= set(reviewed[key])
+                set(consumer) <= set(reviewed[key])
                 if allow_stopped
-                else current[key] == reviewed[key]
+                else consumer == reviewed[key]
             )
-            for key in current
+            for key, consumer in current.items()
         )
         if not matches:
             raise RuntimeError(
-                "DEPENDENCY_PLAN_STALE: shared consumers changed after review; prepare a new confirmation.",
+                "DEPENDENCY_PLAN_STALE: shared consumers changed after review;"
+                " prepare a new confirmation.",
             )
 
     @staticmethod
@@ -531,7 +541,8 @@ class DependencyUpgradeManager:
                 ):
                     _refuse(
                         "DEPENDENCY_CONFLICT",
-                        f"Shared requirements cannot be satisfied: {requirement}.",
+                        "Shared requirements cannot be satisfied:"
+                        f" {requirement}.",
                     )
         except (ValueError, TypeError, KeyError):
             _refuse(
@@ -549,7 +560,8 @@ class DependencyUpgradeManager:
         if _source_hash(source) != revision:
             _refuse(
                 "DEPENDENCY_PLAN_STALE",
-                "Plugin source changed during preparation; retry installation.",
+                "Plugin source changed during preparation; retry"
+                " installation.",
             )
         return revision
 
@@ -756,15 +768,16 @@ class DependencyUpgradeManager:
         )
         destinations = {}
         changes = []
-        for name in changed:
-            old, row = changed[name], proposed.distributions[name]
+        for name, old in changed.items():
+            row = proposed.distributions[name]
             site = canonical(
                 Path(old["metadata_path"]).parent if old else target,
             )
             if context is not None and context.protected(site):
                 _refuse(
                     "DEPENDENCY_ENVIRONMENT_PROTECTED",
-                    "Bundled dependencies cannot be replaced; update the desktop app.",
+                    "Bundled dependencies cannot be replaced; update the"
+                    " desktop app.",
                 )
             destinations[name] = str(site)
             proposed.distributions[name]["metadata_path"] = str(
@@ -827,6 +840,9 @@ class DependencyUpgradeManager:
         cls._save(directory, operation)
 
     async def stage(self, source_path, force=False):
+        # The manager owns the loader subprocess used to stage dependency
+        # wheels.
+        # pylint: disable=W0212
         operation_id = uuid4().hex
         directory = self.root / operation_id
         try:
@@ -892,7 +908,8 @@ class DependencyUpgradeManager:
             if result.returncode:
                 _refuse(
                     "DEPENDENCY_CONFLICT",
-                    "A complete compatible wheel plan could not be prepared; check the plugin and shared requirements.",
+                    "A complete compatible wheel plan could not be prepared;"
+                    " check the plugin and shared requirements.",
                 )
             changed, changes, inventory, payload = await run_sync_io(
                 self._prepare_payload,
@@ -956,7 +973,10 @@ class DependencyUpgradeManager:
                 ],
                 "requires_restart": requires_restart,
                 "result": None,
-                "message": "Review and apply the shared dependency upgrade to continue installation.",
+                "message": (
+                    "Review and apply the shared dependency upgrade to"
+                    " continue installation."
+                ),
                 "error": None,
                 "retryable": True,
                 "instructions": [],
@@ -1092,7 +1112,11 @@ def run_native_continuation(directory, phase):
 
 
 def schedule_maintenance(manager, directory, operation, *, loop=None):
-    """Explicit apply persists approval before handing off to a fresh worker."""
+    """
+    Explicit apply persists approval before handing off to a fresh worker.
+    """
+    # Maintenance publishes the manager journal before detaching its worker.
+    # pylint: disable=W0212
     import shlex
     import subprocess
 
@@ -1100,7 +1124,10 @@ def schedule_maintenance(manager, directory, operation, *, loop=None):
     operation.update(
         status="waiting_restart",
         requires_restart=True,
-        message="The backend must exit before this shared dependency upgrade can apply.",
+        message=(
+            "The backend must exit before this shared dependency upgrade can"
+            " apply."
+        ),
         backend_pid=os.getpid(),
     )
     shutdown = getattr(manager.loader, "dependency_upgrade_shutdown", None)
@@ -1109,17 +1136,25 @@ def schedule_maintenance(manager, directory, operation, *, loop=None):
     script = worker / "dependency_worker.py"
     command = [operation["worker_python"], "-I", "-B", "-S", str(script)]
     operation["instructions"] = [
-        "Stop this backend and its channel processes through their service manager, "
-        "and keep them stopped during maintenance. For Supervisor's app program: "
-        "supervisorctl -c /path/to/supervisord.conf stop app "
-        "(use your actual config and program name).",
+        (
+            "Stop this backend and its channel processes through their service"
+            " manager, and keep them stopped during maintenance. For"
+            " Supervisor's app program: supervisorctl -c"
+            " /path/to/supervisord.conf stop app (use your actual config and"
+            " program name)."
+        ),
         "Then run the retained worker: " + shlex.join(command),
-        "The worker applies the retained plan and resumes installation. After success "
-        "or confirmed safe rollback, restart through the original launcher or service "
-        "manager. For Supervisor: supervisorctl -c /path/to/supervisord.conf start app.",
-        "If DEPENDENCY_REPAIR_REQUIRED is reported, keep the backend stopped and "
-        "recover using the same retained worker. Never edit operation.json or run "
-        "pip outside the retained transaction.",
+        (
+            "The worker applies the retained plan and resumes installation."
+            " After success or confirmed safe rollback, restart through the"
+            " original launcher or service manager. For Supervisor:"
+            " supervisorctl -c /path/to/supervisord.conf start app."
+        ),
+        (
+            "If DEPENDENCY_REPAIR_REQUIRED is reported, keep the backend"
+            " stopped and recover using the same retained worker. Never edit"
+            " operation.json or run pip outside the retained transaction."
+        ),
     ]
     manager._save(directory, operation)
     if shutdown is not None and restart is not None:
@@ -1134,8 +1169,9 @@ def schedule_maintenance(manager, directory, operation, *, loop=None):
                 ),
             }
         )
-        log = (directory / "worker.log").open("ab")
-        try:
+        with (directory / "worker.log").open("ab") as log:
+            # The maintenance worker retains the log and outlives this request.
+            # pylint: disable-next=consider-using-with
             process = subprocess.Popen(
                 command,
                 stdin=subprocess.DEVNULL,
@@ -1143,12 +1179,11 @@ def schedule_maintenance(manager, directory, operation, *, loop=None):
                 stderr=subprocess.STDOUT,
                 **options,
             )
-        finally:
-            log.close()
         operation["worker_pid"] = process.pid
-        operation[
-            "message"
-        ] = "Restarting the backend to apply shared dependencies and resume installation."
+        operation["message"] = (
+            "Restarting the backend to apply shared dependencies and resume"
+            " installation."
+        )
         operation["instructions"] = []
         manager._save(directory, operation)
         if loop is None:
@@ -1158,7 +1193,11 @@ def schedule_maintenance(manager, directory, operation, *, loop=None):
 
 
 async def continue_operation(directory, *, preflight=False):
-    """Fresh-process verification and offline source publication for a worker."""
+    """
+    Fresh-process verification and offline source publication for a worker.
+    """
+    # Continuation rechecks the manager internal reviewed-consumer bindings.
+    # pylint: disable=W0212
     from .channel_adapter import ChannelRuntimeSettings
     from .loader import PluginLoader
     from .lifecycle import UnloadMode
@@ -1269,5 +1308,6 @@ async def continue_operation(directory, *, preflight=False):
             for report in reports
         ):
             raise RuntimeError(
-                "DEPENDENCY_REPAIR_REQUIRED: continuation child cleanup failed.",
+                "DEPENDENCY_REPAIR_REQUIRED: continuation child cleanup"
+                " failed.",
             )

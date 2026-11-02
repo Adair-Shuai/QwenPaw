@@ -159,6 +159,7 @@ async def test_url_install_rolls_back_when_adoption_write_fails(
 ):
     request = MagicMock()
     loader = MagicMock()
+    loader.cleanup_preparation_source = AsyncMock()
     request.app.state.plugin_loader = loader
     extracted = tmp_path / "extracted"
     extracted.mkdir()

@@ -480,6 +480,9 @@ class FramedTransport:
         on_write_deferred: Callable[[], None] | None = None,
     ) -> None:
         """Enqueue one frame and wait until the OS stream accepts it."""
+        # Frame publication keeps reservation and cancellation settlement
+        # together.
+        # pylint: disable=R0912,R0915
         if self._closed:
             raise FrameClosedError("stdio transport is closed")
         deadline, token = None, None

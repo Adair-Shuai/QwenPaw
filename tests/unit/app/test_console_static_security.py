@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Console static serving enforces resolved filesystem containment."""
+
 from __future__ import annotations
 
 import os
@@ -37,17 +38,28 @@ def test_console_static_symlinks_stay_within_build(tmp_path):
                 from qwenpaw.app import _app
 
                 endpoint = next(
-                    route.endpoint for route in _app.app.routes
+                    route.endpoint
+                    for route in _app.app.routes
                     if getattr(route, "name", None)
                     == "qwenpaw_console_spa_catchall"
                 )
                 root = Path(_app._CONSOLE_STATIC_DIR)
                 for name in ("logo.svg", "public-link.svg"):
-                    assert Path(endpoint(name).path).resolve() == root / "logo.svg"
-                assert Path(endpoint("private-link.svg").path) == root / "index.html"
-                for name in ("../auth.json", "missing.svg", "directory", "loop.svg"):
+                    assert (
+                        Path(endpoint(name).path).resolve()
+                        == root / "logo.svg"
+                    )
+                assert (
+                    Path(endpoint("private-link.svg").path)
+                    == root / "index.html"
+                )
+                for name in (
+                    "../auth.json",
+                    "missing.svg",
+                    "directory",
+                    "loop.svg",
+                ):
                     assert Path(endpoint(name).path) == root / "index.html"
-
                 """,
             ),
         ],

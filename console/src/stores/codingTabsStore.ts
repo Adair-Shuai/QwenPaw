@@ -272,7 +272,21 @@ export const useCodingTabsStore = create<CodingTabsState>()(
       openTab: (agentId, tab) =>
         set((state) => {
           const existing = state.tabsByAgent[agentId] ?? [];
-          if (existing.some((t) => t.path === tab.path)) return state;
+          const found = existing.find((t) => t.path === tab.path);
+          if (found) {
+            // Older persisted tabs retained the URL but lost source identity.
+            // Repair metadata on explicit reopen without replacing any buffer.
+            if (found.source !== "artifact" || found.artifact || !tab.artifact)
+              return state;
+            return {
+              tabsByAgent: {
+                ...state.tabsByAgent,
+                [agentId]: existing.map((item) =>
+                  item === found ? { ...item, artifact: tab.artifact } : item,
+                ),
+              },
+            };
+          }
           return {
             tabsByAgent: {
               ...state.tabsByAgent,
@@ -513,6 +527,31 @@ export const useCodingTabsStore = create<CodingTabsState>()(
                 source: t.source,
                 workspaceRoot: t.workspaceRoot,
                 artifactUrl: t.artifactUrl,
+                artifact: t.artifact
+                  ? {
+                      id: t.artifact.id,
+                      title: t.artifact.title,
+                      source: t.artifact.source,
+                      mimeType: t.artifact.mimeType,
+                      extension: t.artifact.extension,
+                      workspacePath: t.artifact.workspacePath,
+                      workspaceRoot: t.artifact.workspaceRoot,
+                      agentId: t.artifact.agentId,
+                      chatId: t.artifact.chatId,
+                      sessionId: t.artifact.sessionId,
+                      projectDirOverride: t.artifact.projectDirOverride,
+                      meta:
+                        t.artifact.meta?.turnFileArchive === true
+                          ? {
+                              turnFileArchive: true,
+                              turnId: t.artifact.meta.turnId,
+                              turnSessionId: t.artifact.meta.turnSessionId,
+                              fileId: t.artifact.meta.fileId,
+                              version: t.artifact.meta.version,
+                            }
+                          : undefined,
+                    }
+                  : undefined,
                 previewKind: t.previewKind,
                 preferredView: t.preferredView,
                 readOnly: t.readOnly,

@@ -230,10 +230,8 @@ def _validate_closure(snapshot: dict, host_version: str) -> None:
                 pending.append(child)
 
 
-# Closed identity guards are kept together for auditability.
-# pylint: disable=too-many-boolean-expressions
-def _validate_official_resources(site: Path, host_version: str) -> None:
-    """Authenticate dormant sources without importing staged code or SDKs."""
+def _read_official_inventory(site: Path) -> list[dict]:
+    """Read the single literal inventory without executing staged code."""
     inventory_file = site / "qwenpaw/plugins/official_channel_catalog.py"
     tree = ast.parse(inventory_file.read_text(encoding="utf-8"))
     declarations = []
@@ -254,7 +252,16 @@ def _validate_official_resources(site: Path, host_version: str) -> None:
             declarations.append(node.value)
     if len(declarations) != 1:
         raise ValueError("Bundled official inventory missing or ambiguous")
-    inventory = ast.literal_eval(declarations[0])
+    return ast.literal_eval(declarations[0])
+
+
+# Closed identity guards are kept together for auditability.
+# pylint: disable=too-many-boolean-expressions
+
+
+def _validate_official_resources(site: Path, host_version: str) -> None:
+    """Authenticate dormant sources without importing staged code or SDKs."""
+    inventory = _read_official_inventory(site)
     owners = {row["plugin_id"]: row["channel_key"] for row in inventory}
     if len(owners) != len(inventory):
         raise ValueError("Bundled official inventory duplicate owner")

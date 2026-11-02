@@ -5,7 +5,10 @@ Covers the static helpers that decide whether a requirement is already
 satisfied (metadata probe + import probe) and enforce installer security.
 """
 
-# pylint: disable=protected-access,redefined-outer-name,unused-argument,use-implicit-booleaness-not-comparison  # noqa: E501
+# pylint: disable=protected-access
+# pylint: disable=redefined-outer-name
+# pylint: disable=unused-argument
+# pylint: disable=use-implicit-booleaness-not-comparison  # noqa: E501
 from __future__ import annotations
 
 from functools import partial
@@ -16,6 +19,7 @@ import subprocess
 
 import pytest
 
+from qwenpaw.plugins.architecture import PluginManifest
 from qwenpaw.plugins.loader import PluginLoader
 from qwenpaw.plugins.execution.dependencies import canonical_environment_path
 
@@ -501,6 +505,8 @@ async def test_preparation_and_admission_keep_only_required_real_audits(
     monkeypatch,
     case,
 ):
+    # Assert preparation, admission and audit reuse in their actual order.
+    # pylint: disable=too-many-statements
     import sys
     from qwenpaw.plugins.dependency_gate import GateDecision
     from qwenpaw.plugins.dependency_usage import (
@@ -535,7 +541,7 @@ async def test_preparation_and_admission_keep_only_required_real_audits(
 
     backend = PythonBackend(SimpleNamespace(ensure_dependencies=ensure))
     description = PluginDescription(
-        SimpleNamespace(id="audit-count", sdk=None),
+        PluginManifest(id="audit-count", version="1.0.0"),
         source,
         None,
         None,
@@ -637,6 +643,9 @@ async def test_existing_dependency_read_admission_keeps_safety_boundaries(
     monkeypatch,
     case,
 ):
+    # Keep rejection and read-admission cases beside their real custody
+    # assertions.
+    # pylint: disable=too-many-branches,too-many-statements
     import sys
     from qwenpaw.plugins.dependency_gate import SharedDependencyError
     from qwenpaw.plugins.dependency_usage import (
@@ -677,7 +686,7 @@ async def test_existing_dependency_read_admission_keeps_safety_boundaries(
     if case == "missing_package":
         requirements = ("absent>=1",)
     description = PluginDescription(
-        SimpleNamespace(id="read-consumer", sdk=None),
+        PluginManifest(id="read-consumer", version="1.0.0"),
         source,
         None,
         None,
@@ -731,9 +740,11 @@ async def test_existing_dependency_read_admission_keeps_safety_boundaries(
             )
             stamp = changed.stat()
             changed.write_text(
-                "Name: sample\nVersion: 0.5\n"
-                if case == "fresh_metadata"
-                else "sample.py,,not-a-size\n",
+                (
+                    "Name: sample\nVersion: 0.5\n"
+                    if case == "fresh_metadata"
+                    else "sample.py,,not-a-size\n"
+                ),
             )
             os.utime(changed, ns=(stamp.st_atime_ns, stamp.st_mtime_ns))
             fresh_token = usage.declare(declaration)
@@ -933,6 +944,8 @@ def test_dependency_sites_classify_batch_once(tmp_path, monkeypatch):
 
 
 def test_host_delta_skips_own_source_inventory(tmp_path, monkeypatch):
+    # Compare host-delta observation with the unchanged source inventory.
+    # pylint: disable=too-many-statements
     import json
     from collections import Counter
     from pathlib import PureWindowsPath
@@ -1046,9 +1059,11 @@ def test_host_delta_skips_own_source_inventory(tmp_path, monkeypatch):
     monkeypatch.setattr(
         backend,
         "Path",
-        lambda path: WindowsOrigin(path)
-        if str(path).replace("\\", "/") in {"C:/sdk.py", "C:/SDK.py"}
-        else Path(path),
+        lambda path: (
+            WindowsOrigin(path)
+            if str(path).replace("\\", "/") in {"C:/sdk.py", "C:/SDK.py"}
+            else Path(path)
+        ),
     )
     _, imported = backend._observe_host_delta(
         source,
@@ -1087,6 +1102,8 @@ async def test_host_observation_reuses_only_scoped_raw_inputs(
     tmp_path,
     monkeypatch,
 ):
+    # Keep scoped cache reuse and invalidation assertions together.
+    # pylint: disable=too-many-statements
     import asyncio
     import os
     from collections import Counter
@@ -1220,6 +1237,9 @@ async def test_host_observation_reuses_only_scoped_raw_inputs(
 
 
 def test_host_dependency_record_retains_loaded_ownership(tmp_path):
+    # Verify loaded-provider ownership across each dependency-record
+    # transition.
+    # pylint: disable=too-many-statements
     import os
     import sys
     from importlib.metadata import PathDistribution
@@ -1340,6 +1360,8 @@ async def test_host_dependency_boundaries_keep_preexisting_and_removed_imports(
     monkeypatch,
     layout,
 ):
+    # Follow preexisting and removed imports through the same host observation.
+    # pylint: disable=too-many-branches,too-many-statements
     import sys
     from types import ModuleType
     from qwenpaw.plugins.dependency_usage import (
@@ -1508,9 +1530,6 @@ async def test_host_dependency_boundaries_keep_preexisting_and_removed_imports(
         assert other_host.snapshot is not None
         assert other_host.environment is not None
         assert other_host.snapshot.distributions[remaining]["version"] == "1.0"
-        from qwenpaw.plugins.execution.dependencies import (
-            canonical_environment_path,
-        )
 
         assert (
             str(canonical_environment_path(future))
@@ -1618,9 +1637,11 @@ async def test_dependency_directory_classification_retains_provider_ownership(
     layout,
     monkeypatch,
 ):
+    # Keep directory classifications beside their installed-provider
+    # assertions.
+    # pylint: disable=too-many-branches,too-many-statements
     from qwenpaw.plugins.execution.dependencies import (
         _installed_metadata,
-        canonical_environment_path,
         dependency_sites,
         observe_dependencies,
     )
@@ -1744,8 +1765,9 @@ async def test_dependency_directory_classification_retains_provider_ownership(
             )
     else:
         assert "sample-sdk" not in snapshot.distributions
-        assert _installed_metadata(classified)[1]["sample-sdk"] == (
-            "DEPENDENCY_ENVIRONMENT_AMBIGUOUS"
+        assert (
+            _installed_metadata(classified)[1]["sample-sdk"]
+            == "DEPENDENCY_ENVIRONMENT_AMBIGUOUS"
         )
         return
     observed, imported = _observe_host_dependencies(
@@ -1882,8 +1904,10 @@ async def test_dependency_directory_classification_retains_provider_ownership(
             )
             assert decision.require_restart
             assert decision.host_conflicts == [
-                "host loaded-owner: sample-sdk shadows a loaded "
-                "embedded module",
+                (
+                    "host loaded-owner: sample-sdk shadows a loaded "
+                    "embedded module"
+                ),
             ]
         # The next gate must reread the same provider's changed RECORD.
         (public_info / "RECORD").write_text("shared_namespace/two.py,,\n")
@@ -1895,8 +1919,7 @@ async def test_dependency_directory_classification_retains_provider_ownership(
         )
         assert decision.require_restart
         assert decision.host_conflicts == [
-            "host loaded-other: sample-sdk shadows a loaded "
-            "embedded module",
+            "host loaded-other: sample-sdk shadows a loaded embedded module",
         ]
 
 
@@ -1927,6 +1950,8 @@ async def test_dependency_import_resolution_rejects_changed_module(
     change,
     expected,
 ):
+    # Follow module mutation through real resolution and rejection.
+    # pylint: disable=too-many-branches,too-many-statements
     import asyncio
     import sys
     import threading
@@ -2193,6 +2218,8 @@ async def test_load_waits_for_dependency_writer(
     leave_marker,
 ):
     """Classify a publication marker only after its real writer exits."""
+    # Keep writer lock release and subsequent plugin admission in one scenario.
+    # pylint: disable=too-many-statements
     import asyncio
     import json
     import os
@@ -2235,7 +2262,9 @@ spec.loader.exec_module(m)
 site = Path(sys.argv[2])
 with m.file_lock(m._gate(site)), m.file_lock(m._admission_gate(site)):
     marker = m.repair_marker(site)
-    marker.write_text('Shared dependency publication requires verification.\\n')
+    marker.write_text(
+        'Shared dependency publication requires verification.\\n'
+    )
     sys.stdout.buffer.write(b'READY\\n')
     sys.stdout.buffer.flush()
     assert sys.stdin.readline().strip() == 'RELEASE'

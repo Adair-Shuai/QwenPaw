@@ -14,7 +14,7 @@ import {
   Check,
   CheckCircle,
   ChevronDown,
-  Shield,
+  ShieldCheck,
   X,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -34,7 +34,10 @@ const LEVEL_META: Record<
   STRICT: { color: "#ff4d4f", icon: <Ban size={12} /> },
   SMART: { color: "#faad14", icon: <AlertTriangle size={12} /> },
   JEV: { color: "#722ed1", icon: <AlertTriangle size={12} /> },
-  AUTO: { color: "var(--app-accent-text)", icon: <Shield size={12} /> },
+  AUTO: {
+    color: "var(--app-accent-text)",
+    icon: <ShieldCheck size={16} strokeWidth={1.6} />,
+  },
   OFF: { color: "#52c41a", icon: <CheckCircle size={12} /> },
 };
 

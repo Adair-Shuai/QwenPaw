@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Connector JWT authentication; no untrusted tenant/issuer substring matching."""
+"""
+Connector JWT authentication; no untrusted tenant/issuer substring matching.
+"""
 
 import asyncio
 import json
@@ -16,8 +18,10 @@ class AzureBotTokenValidator:
     _VALID_ISSUERS = (
         ISSUER,
         "https://sts.windows.net/d6d49420-f39b-4df7-a1dc-d59a935871db/",
-        "https://login.microsoftonline.com/"
-        "d6d49420-f39b-4df7-a1dc-d59a935871db/v2.0",
+        (
+            "https://login.microsoftonline.com/"
+            "d6d49420-f39b-4df7-a1dc-d59a935871db/v2.0"
+        ),
     )
 
     def __init__(self, app_id, session):
@@ -51,9 +55,9 @@ class AzureBotTokenValidator:
                     or parsed.scheme != "https"
                     or parsed.hostname != "login.botframework.com"
                     or parsed.username
-                    or parsed.password
-                    or parsed.port not in (None, 443)
                 ):
+                    raise ValueError("AUTH_METADATA_INVALID")
+                if parsed.password or parsed.port not in (None, 443):
                     raise ValueError("AUTH_METADATA_INVALID")
                 keys = (await self._json(uri))["keys"]
                 if not isinstance(keys, list):

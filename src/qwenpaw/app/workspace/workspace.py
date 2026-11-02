@@ -913,6 +913,9 @@ class Workspace:  # pylint: disable=too-many-public-methods
             preserve_reused: Keep services borrowed from another workspace
                 alive while cleaning up this workspace.
         """
+        # Workspace shutdown settles each owned resource even after earlier
+        # failures.
+        # pylint: disable=R0912
         if not self._started and not self._start_attempted:
             logger.debug(
                 f"Workspace not started: {sanitize_log_value(self.agent_id)}",

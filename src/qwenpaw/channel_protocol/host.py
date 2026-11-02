@@ -184,7 +184,9 @@ class SharedEndpointAuthority:
         )
 
     def fence(self):
-        """Revoke routing synchronously; never release a process/resource owner."""
+        """
+        Revoke routing synchronously; never release a process/resource owner.
+        """
         observation = self.process.endpoint_observation()
         generation = observation["generation"]
         if self._slot is not None:
@@ -228,10 +230,13 @@ class SharedEndpointAuthority:
         if (
             observation["mode"] != "run"
             or not observation["run_requested"]
-            or not observation["enabled"]
-            or not observation["process_alive"]
-            or not observation["transport_open"]
-            or not observation["ready_confirmed"]
+            or (not observation["enabled"])
+            or (not observation["process_alive"])
+            or (not observation["transport_open"])
+        ):
+            return None
+        if (
+            not observation["ready_confirmed"]
             or observation["state"] not in {"starting", "ready"}
             or generation <= self._fenced_generation
         ):
@@ -310,10 +315,12 @@ class SharedEndpointAuthority:
     def generation_error(self, generation):
         self._current()
         return self._error(
-            "GENERATION_REVOKED"
-            if generation
-            <= max(self._highest_generation, self._fenced_generation)
-            else "GENERATION_UNKNOWN",
+            (
+                "GENERATION_REVOKED"
+                if generation
+                <= max(self._highest_generation, self._fenced_generation)
+                else "GENERATION_UNKNOWN"
+            ),
         )
 
 
@@ -355,6 +362,8 @@ class SharedEndpointService:
         for operation in ("register", "update", "unregister"):
 
             async def handle(params, request, operation=operation):
+                # The peer callback always supplies its request context.
+                del request
                 return await getattr(self, operation)(params)
 
             peer.register_method("ingress.endpoint." + operation, handle)
@@ -401,15 +410,17 @@ class SharedEndpointService:
         host = endpoint.host
         if (
             host != host.strip()
-            or any(c.isspace() or ord(c) < 32 for c in host)
-            or any(c in host for c in "/\\?#@%")
-            or ("[" in host or "]" in host)
-            and not (
+            or any((c.isspace() or ord(c) < 32 for c in host))
+            or any((c in host for c in "/\\?#@%"))
+        ):
+            raise cls._invalid("ENDPOINT_HOST_INVALID")
+        if ("[" in host or "]" in host) and (
+            not (
                 host.startswith("[")
                 and host.endswith("]")
-                and "[" not in host[1:-1]
-                and "]" not in host[1:-1]
-                and ":" in host[1:-1]
+                and ("[" not in host[1:-1])
+                and ("]" not in host[1:-1])
+                and (":" in host[1:-1])
             )
         ):
             raise cls._invalid("ENDPOINT_HOST_INVALID")
@@ -428,11 +439,14 @@ class SharedEndpointService:
             or parts.netloc
             or parts.query
             or parts.fragment
-            or any(c in decoded for c in ("?", "#", "\\", "%"))
-            or any(c.isspace() or ord(c) < 32 for c in decoded)
+            or any((c in decoded for c in ("?", "#", "\\", "%")))
+        ):
+            raise cls._invalid("ENDPOINT_PATH_INVALID")
+        if (
+            any((c.isspace() or ord(c) < 32 for c in decoded))
             or decoded.startswith("//")
             or ".." in decoded
-            or any(segment == "." for segment in decoded.split("/"))
+            or any((segment == "." for segment in decoded.split("/")))
         ):
             raise cls._invalid("ENDPOINT_PATH_INVALID")
         if is_external_host(host) and not endpoint.auth_required:

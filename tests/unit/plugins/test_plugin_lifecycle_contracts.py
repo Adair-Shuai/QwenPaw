@@ -14,7 +14,6 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
-from qwenpaw.plugins.safe_fs import same_location
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -28,6 +27,7 @@ from qwenpaw.plugins.lifecycle import (
     UnloadReport,
 )
 from qwenpaw.plugins.loader import PluginLoader
+from qwenpaw.plugins.safe_fs import same_location
 from qwenpaw.plugins.updates import marker_path
 from qwenpaw.plugins.workspace_projector import WorkspaceProjector
 from qwenpaw.runtime.slash_command_registry import SlashCommandRegistry
@@ -512,6 +512,8 @@ async def test_interrupt_waits_for_actual_command_exit(
     ignore_cancel,
     kind,
 ):
+    # Keep interruption ordering and process-exit assertions together.
+    # pylint: disable=too-many-statements
     from qwenpaw.plugins.activity import PluginBusyError
     from qwenpaw.runtime.commands.control import handle_control_command
 

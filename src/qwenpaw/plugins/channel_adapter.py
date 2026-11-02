@@ -104,7 +104,9 @@ class ChannelRuntimeSettings:
 
 @dataclass(frozen=True)
 class PreparedProxyConfig:
-    """Detached execution values prepared before reserving runtime resources."""
+    """
+    Detached execution values prepared before reserving runtime resources.
+    """
 
     description: Any
     config: dict[str, Any]
@@ -228,7 +230,11 @@ class ChannelDescription:
         send_timeout: float = DEFAULT_SEND_TIMEOUT,
         prepared_config: PreparedProxyConfig,
     ):
-        """Construct an unstarted proxy from explicitly prepared host values."""
+        """
+        Construct an unstarted proxy from explicitly prepared host values.
+        """
+        # Prepared configuration owns these retained public compatibility args.
+        del config, no_text_debounce, config_source
         from ..app.channels.isolated_proxy import IsolatedChannelProxy
         from ..app.channels.process_supervisor import LaunchSpec
 

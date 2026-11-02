@@ -184,6 +184,9 @@ def read_file(path: Path, snapshot: Snapshot, display: str) -> FileState:
 
 
 def scan(roots: tuple[Root, ...]) -> Snapshot:
+    # Traverse files with consistent symlink, ownership, and capacity
+    # rejection rules.
+    # pylint: disable=R0912
     snapshot = Snapshot()
     visited = 0
     for root in roots:

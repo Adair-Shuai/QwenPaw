@@ -15,7 +15,9 @@ _AUTH_KEYS = {"schema_version", "capture_id", "owner", "auth_sha256"}
 
 
 class MatrixLegacyError(ValueError):
-    """Fixed diagnostics without passwords, cached tokens or source contents."""
+    """
+    Fixed diagnostics without passwords, cached tokens or source contents.
+    """
 
 
 def _hex(value, length):
@@ -48,12 +50,13 @@ def _validate(capture):
         not isinstance(capture, Mapping)
         or set(capture) != _AUTH_KEYS | {"config_sources", "reason_code"}
         or type(capture["schema_version"]) is not int
-        or capture["schema_version"] != 1
-        or not _hex(capture["capture_id"], 32)
-        or (
-            capture["auth_sha256"] is not None
-            and not _hex(capture["auth_sha256"], 64)
-        )
+        or (capture["schema_version"] != 1)
+        or (not _hex(capture["capture_id"], 32))
+    ):
+        raise MatrixLegacyError(_INVALID)
+    if (
+        capture["auth_sha256"] is not None
+        and (not _hex(capture["auth_sha256"], 64))
         or (
             capture["owner"] is not None
             and (
@@ -61,8 +64,11 @@ def _validate(capture):
                 or capture["auth_sha256"] is None
             )
         )
-        or capture["reason_code"] not in (None, _UNVERIFIED)
-        or not isinstance(capture["config_sources"], list)
+    ):
+        raise MatrixLegacyError(_INVALID)
+    if capture["reason_code"] not in (None, _UNVERIFIED) or not isinstance(
+        capture["config_sources"],
+        list,
     ):
         raise MatrixLegacyError(_INVALID)
     for source in capture["config_sources"]:
@@ -87,6 +93,9 @@ def load_matrix_legacy(*, legacy_state_dir: Path) -> dict | None:
 
 
 def _capture(config_path, root, absolute):
+    # Capture all legacy owner evidence before publishing the one-time
+    # attestation.
+    # pylint: disable=R0912
     result = {
         "schema_version": 1,
         "capture_id": uuid.uuid4().hex,
@@ -228,7 +237,9 @@ def project_matrix_legacy(capture, *, homeserver, workspace_dir):
 
 
 def verify_matrix_legacy(capture, authorization, owner, *, legacy_state_dir):
-    """Require live authenticated identity plus unchanged captured auth bytes."""
+    """
+    Require live authenticated identity plus unchanged captured auth bytes.
+    """
     try:
         if (
             not isinstance(authorization, Mapping)

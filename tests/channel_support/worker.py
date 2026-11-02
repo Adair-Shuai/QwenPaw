@@ -22,7 +22,7 @@ class Worker:
         mode = config.get("mode")
         marker = Path(config["marker"])
         if mode == "blocked":
-            marker.write_text(str(os.getpid()))
+            marker.write_text(str(os.getpid()), encoding="utf-8")
             threading.Event().wait()
         if mode == "tree":
             signal.signal(signal.SIGTERM, signal.SIG_IGN)
@@ -41,7 +41,7 @@ class Worker:
             )
             while not Path(ready).exists():
                 await asyncio.sleep(0.005)
-            marker.write_text(str(child.pid))
+            marker.write_text(str(child.pid), encoding="utf-8")
         print("sample SDK connected", flush=True)
         print("sample SDK diagnostic", file=sys.stderr, flush=True)
         self.started.set()

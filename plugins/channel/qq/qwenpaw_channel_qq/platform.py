@@ -104,7 +104,9 @@ class _WSState:
 
 
 class _HeartbeatController:
-    """Retain timers until their actual thread exit, including a racing ping."""
+    """
+    Retain timers until their actual thread exit, including a racing ping.
+    """
 
     def __init__(self, ws, stop_event, state):
         self._ws, self._stop_event, self._state = ws, stop_event, state
@@ -311,13 +313,13 @@ class QQPlatform:
                     for key in ("msg_id", "msg_seq", "msg_type", "file_type"):
                         if key in body:
                             native[key] = str(body[key])
-                # Freeze the exact built native bytes before effects. Only digests,
-                # never secrets or large base64 payloads, go in durable receipts.
+                # Freeze the exact built native bytes before
+                # effects. Only digests,
+                # never secrets or large base64 payloads, go in durable
+                # receipts.
                 plan.attempts.append((native, content))
                 try:
                     await plan.record(len(plan.attempts), native)
-                except asyncio.CancelledError:
-                    raise
                 except Exception as exc:
                     raise QQDeliveryError("LOCAL_ADMISSION_FAILED") from exc
             response = await self._owned(self._http.send(request), self._tasks)
@@ -683,6 +685,8 @@ class QQPlatform:
         return route
 
     async def _handle_approval(self, event, parsed):
+        # Native approval callbacks share the owning card delivery state.
+        # pylint: disable=protected-access
         actor = self._operator(event)
         if not actor:
             await self._ack_interaction(str(event.get("id") or ""), 4)
@@ -744,7 +748,9 @@ class QQPlatform:
             "content_parts": [
                 {
                     "type": "text",
-                    "text": f"/approval {parsed['action']} {parsed['request_id']}",
+                    "text": (
+                        f"/approval {parsed['action']} {parsed['request_id']}"
+                    ),
                 },
             ],
         }
@@ -753,6 +759,8 @@ class QQPlatform:
         return await self.on_callback(value)
 
     async def resolve_approval(self, route, params):
+        # Native approval callbacks share the owning card delivery state.
+        # pylint: disable=protected-access
         result = params.approval_resolution
         nonce = route.get("approval_binding_id")
         binding = self._cards.bindings.get(nonce)
@@ -794,7 +802,8 @@ class QQPlatform:
             action,
             route.get("operator_display") or result.actor_user_id[-6:],
         )
-        # The decision stays committed even if this separate presentation is unknown.
+        # The decision stays committed even if this separate presentation is
+        # unknown.
         return await self.send_parts(
             {**source, "response_handle": params.to_handle},
             [{"type": "text", "text": text}],
@@ -802,6 +811,8 @@ class QQPlatform:
         )
 
     async def _message(self, event_type, data, epoch):
+        # Preserve the existing native protocol dispatch and rejection order.
+        # pylint: disable=too-many-branches
         self._check_epoch(epoch)
         data = dict(data)
         sequence = data.pop("_qq_seq", None)
@@ -948,6 +959,9 @@ class QQPlatform:
                 self._bridges.discard(future)
 
     def _handle_ws_payload(self, payload, ws, token, state, hb, epoch):
+        # Keep ordered transport effects and ownership cleanup in one
+        # transaction.
+        # pylint: disable=too-many-branches
         self._check_epoch(epoch)
         op, data, seq, event_type = (
             payload.get("op"),
@@ -1087,6 +1101,9 @@ class QQPlatform:
         return not self._stop_event.wait(delay)
 
     def _ws_connect_once(self, state, websocket):
+        # Keep ordered transport effects and ownership cleanup in one
+        # transaction.
+        # pylint: disable=too-many-branches,too-many-statements
         if self._stop_event.is_set():
             return False
         if state.should_refresh_token:
@@ -1207,6 +1224,9 @@ class QQPlatform:
         return await self._settle(self._stop_task)
 
     async def _stop_owned(self):
+        # Keep ordered transport effects and ownership cleanup in one
+        # transaction.
+        # pylint: disable=too-many-branches
         self._stopping = True
         self._stop_event.set()
         self._epoch += 1
@@ -1223,7 +1243,8 @@ class QQPlatform:
                 task.cancel()
         if self._ws is not None:
             try:
-                # Public abort interrupts native recv; close completes handshake.
+                # Public abort interrupts native recv; close completes
+                # handshake.
                 self._ws.abort()
             except Exception as exc:
                 self._close_errors.append(exc)

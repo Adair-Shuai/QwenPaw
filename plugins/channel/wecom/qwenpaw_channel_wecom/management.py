@@ -29,11 +29,9 @@ def _result(request, payload=None, reason=None, unsupported=False):
     return ManagementResult.from_mapping(
         {
             **identity,
-            "outcome": "unsupported"
-            if unsupported
-            else "failed"
-            if reason
-            else "ok",
+            "outcome": (
+                "unsupported" if unsupported else "failed" if reason else "ok"
+            ),
             "reason_code": reason,
             "result": payload,
         },
@@ -72,9 +70,15 @@ async def _execute(request):
     fetch = request.operation == "qrcode.fetch"
     if fetch:
         state = secrets.token_urlsafe(16)
-        url = f"{_AUTH_ORIGIN}/ai/qc/gen?source={_SOURCE}&state={state}&timestamp={int(time.time() * 1000)}"
+        url = (
+            f"{_AUTH_ORIGIN}/ai/qc/gen?source={_SOURCE}&state={state}&"
+            f"timestamp={int(time.time() * 1000)}"
+        )
     else:
-        url = f"{_AUTH_ORIGIN}/ai/qc/query_result?scode={quote(request.parameters['continuation'])}"
+        url = (
+            f"{_AUTH_ORIGIN}/ai/qc/query_result?scode="
+            f"{quote(request.parameters['continuation'])}"
+        )
     try:
         async with asyncio.timeout(request.timeout_ms / 1000):
             async with httpx.AsyncClient(

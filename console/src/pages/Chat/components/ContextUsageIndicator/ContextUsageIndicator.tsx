@@ -2,7 +2,7 @@ import React, { useEffect, useState } from "react";
 import { useOverlayVisibility } from "@/contexts/OverlayVisibilityContext";
 import { Button, Popover, Space } from "antd";
 import { useTranslation } from "react-i18next";
-import { ChartPie } from "lucide-react";
+import { Gauge } from "lucide-react";
 import { formatCompact } from "../../../../utils/formatNumber";
 import { cacheHitRate, formatPercent } from "../../../../utils/cacheUsage";
 import { useTurnUsageStore } from "../../turnUsageStore";
@@ -320,7 +320,7 @@ const ContextUsageIndicator: React.FC<{
         {maxInputLength ? (
           <FusionUsageDial contextRate={contextRate} cacheRate={cacheRate} />
         ) : (
-          <ChartPie size={16} />
+          <Gauge size={16} strokeWidth={1.6} />
         )}
         {showValue && (
           <span>{maxInputLength ? formatPercent(contextRate) : "—"}</span>

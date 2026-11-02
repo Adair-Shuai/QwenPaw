@@ -101,7 +101,7 @@ export function InstalledPluginList({
         <div className={toolbarStyles.controlActions}>
           {updates.size > 0 && (
             <Button
-              type="primary"
+              type="default"
               icon={<Upload size={14} />}
               loading={updatingAll}
               disabled={updatesLoading || updatingId !== null}

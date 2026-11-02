@@ -158,7 +158,7 @@ class TestEnqueueAndCreate:
 
 class TestStartStop:
     @pytest.mark.asyncio
-    async def test_stop_timeout_retains_consumer_for_retry_without_recancelling(
+    async def test_stop_timeout_retains_consumer_for_retry_without_recancelling(  # noqa: E501
         self,
     ):
         started, cleaning, release, interrupted = (

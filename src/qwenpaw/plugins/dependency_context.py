@@ -116,12 +116,16 @@ class DependencyEnvironmentContext:
             ),
             canonical(target) if target is not None else None,
             immutable,
-            json.loads(json.dumps(dict(runtime.runtime_identity)))
-            if runtime.runtime_identity is not None
-            else None,
-            dependency_metadata_identity(immutable, "immutable")
-            if immutable
-            else None,
+            (
+                json.loads(json.dumps(dict(runtime.runtime_identity)))
+                if runtime.runtime_identity is not None
+                else None
+            ),
+            (
+                dependency_metadata_identity(immutable, "immutable")
+                if immutable
+                else None
+            ),
         )
 
     @classmethod
@@ -264,7 +268,8 @@ class DependencyEnvironmentContext:
         )
         if result.returncode:
             raise RuntimeError(
-                "DEPENDENCY_INSTALLER_UNAVAILABLE: installer inspection failed.",
+                "DEPENDENCY_INSTALLER_UNAVAILABLE: installer inspection"
+                " failed.",
             )
         evidence = SimpleNamespace(**json.loads(result.stdout))
         if (

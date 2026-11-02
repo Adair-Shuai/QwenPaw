@@ -5,7 +5,7 @@ import importlib.util
 import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
-from pathlib import Path
+from pathlib import Path, PureWindowsPath
 
 import pytest
 from fastapi import FastAPI
@@ -15,9 +15,10 @@ ROOT = Path(__file__).resolve().parents[4]
 
 
 @pytest.fixture(
+    name="setup",
     params=["plugins/bundle/ugsci", "src/qwenpaw/plugins_bundle/ugsci"],
 )
-def setup(request, tmp_path, monkeypatch):
+def _setup_expert_presentation(request, tmp_path, monkeypatch):
     spec = importlib.util.spec_from_file_location(
         "expert_presentation_under_test",
         ROOT / request.param / "expert_presentation.py",
@@ -146,3 +147,42 @@ def test_display_metadata_corruption_is_not_silently_overwritten(setup):
         == 500
     )
     assert path.read_text("utf-8") == "broken-json"
+
+
+@pytest.mark.parametrize(
+    ("root", "target", "allowed"),
+    [
+        ("C:/work/a", "//?/C:/work/a/ugsci/expert-card.json", True),
+        ("//?/C:/work/a", "C:/work/a/ugsci/expert-card.json", True),
+        (
+            "//server/share/work",
+            "//?/UNC/server/share/work/ugsci/expert-card.json",
+            True,
+        ),
+        ("C:/work/a", "//?/C:/work/ab/expert-card.json", False),
+        ("C:/work/a", "//?/D:/work/a/expert-card.json", False),
+        (
+            "//server/share/work",
+            "//?/UNC/server/other/work/expert-card.json",
+            False,
+        ),
+        ("C:/work/a", "//?/GLOBALROOT/device/expert-card.json", False),
+    ],
+)
+def test_windows_prefix_comparison_preserves_workspace_containment(
+    setup,
+    root,
+    target,
+    allowed,
+):
+    # This regression directly checks the plugin's path comparison boundary.
+    # pylint: disable=protected-access
+    # Both packaged implementations must normalize only equivalent spellings.
+    assert setup[0].get("/experts/a/presentation").status_code == 200
+    module = sys.modules["expert_presentation_under_test"]
+    assert (
+        module._comparison_path(PureWindowsPath(target)).is_relative_to(
+            module._comparison_path(PureWindowsPath(root)),
+        )
+        is allowed
+    )

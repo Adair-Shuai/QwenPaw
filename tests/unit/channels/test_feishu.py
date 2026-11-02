@@ -29,6 +29,8 @@ def ok(**values):
 
 class WebSocket:
     def __init__(self, *args, **kwargs):
+        # Keep the fixture or vendor callback signature used by the caller.
+        # pylint: disable=unused-argument
         self._conn = None
 
     async def _connect(self):
@@ -77,6 +79,8 @@ class Api:
         return ok(message_id="reply")
 
     async def aget(self, request):
+        # Keep the fixture or vendor callback signature used by the caller.
+        # pylint: disable=unused-argument
         return NS(success=lambda: True, file=io.BytesIO(b"inbound-image"))
 
     async def acontent(self, request):
@@ -100,8 +104,8 @@ class Api:
         return ok()
 
 
-@pytest_asyncio.fixture
-async def native(tmp_path, monkeypatch):
+@pytest_asyncio.fixture(name="native")
+async def _fixture_native(tmp_path, monkeypatch):
     if not isinstance(
         getattr(sys.modules.get("lark_oapi"), "__file__", None),
         str,
@@ -216,6 +220,8 @@ def message(
 
 
 async def ingress(rt, value):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     await rt.driver._platform._dispatch_native_message(
         namespace(value),
         rt.driver._message,
@@ -343,6 +349,8 @@ async def test_stream_finalizes_same_card(native):
 
 
 async def test_legitimate_approval_action_maps_authenticated_actor(native):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     rt = native
     event = await ingress(rt, message("approval", group=True, mentioned=True))
     assert (
@@ -383,6 +391,8 @@ async def test_legitimate_approval_action_maps_authenticated_actor(native):
 
 
 async def test_stop_joins_sdk_thread_and_closes_http(native):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     platform = native.driver._platform
     thread, client = platform._ws_thread, platform._http_client
     await native.driver.stop()

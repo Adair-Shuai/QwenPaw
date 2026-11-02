@@ -77,7 +77,9 @@ def _result(request, payload=None, *, reason=None, unsupported=False):
 
 
 async def manage(request):
-    """Cancel the one native operation once, then settle its real HTTP cleanup."""
+    """
+    Cancel the one native operation once, then settle its real HTTP cleanup.
+    """
     task = asyncio.create_task(_execute(request))
     try:
         return await asyncio.shield(task)
@@ -107,7 +109,8 @@ async def _execute(request):
             unsupported=True,
         )
     host = os.getenv("QQ_PORTAL_HOST", "q.qq.com")
-    # This is the historical trusted environment override, never browser config.
+    # This is the historical trusted environment override, never browser
+    # config.
     if any(c in host for c in "/?#@\\") or not host:
         return _result(request, reason="MANAGEMENT_INVALID_REQUEST")
     continuation = None
@@ -123,87 +126,12 @@ async def _execute(request):
             async with httpx.AsyncClient(
                 timeout=min(15, request.timeout_ms / 1000),
             ) as client:
-                if request.operation == "qrcode.fetch":
-                    key = _generate_bind_key()
-                    response = await client.post(
-                        f"https://{host}/lite/create_bind_task",
-                        json={"key": key},
-                    )
-                    response.raise_for_status()
-                    value = response.json()
-                    task_id = value.get("data", {}).get("task_id")
-                    if value.get("retcode") != 0:
-                        return _result(request, reason="PLATFORM_REJECTED")
-                    if not isinstance(task_id, str) or not task_id:
-                        raise ProtocolValidationError(
-                            "uncertain Portal operation",
-                            reason_code="PLATFORM_RESULT_UNKNOWN",
-                        )
-                    query = urlencode(
-                        {"task_id": task_id, "_wv": "2", "source": "QwenPaw"},
-                    )
-                    return _result(
-                        request,
-                        {
-                            "scan_url": f"https://{host}/qqbot/openclaw/connect.html?{query}",
-                            "continuation": _encode_poll_token(task_id, key),
-                        },
-                    )
-                task_id, key = continuation
-                response = await client.post(
-                    f"https://{host}/lite/poll_bind_result",
-                    json={"task_id": task_id},
+                operation = (
+                    _fetch(request, client, host)
+                    if request.operation == "qrcode.fetch"
+                    else _poll(request, client, host, continuation)
                 )
-                response.raise_for_status()
-                value = response.json()
-                if value.get("retcode") != 0:
-                    return _result(
-                        request,
-                        {
-                            "status": "fail",
-                            "credentials": {
-                                "fail_reason": str(
-                                    value.get("msg", "unknown"),
-                                ),
-                            },
-                        },
-                    )
-                data = value.get("data", {})
-                status, credentials = "waiting", {}
-                if data.get("status", -1) == 3:
-                    status = "expired"
-                elif data.get("status", -1) == 2:
-                    status = "fail"
-                    if not data.get("bot_appid") or not data.get(
-                        "bot_encrypt_secret",
-                    ):
-                        credentials = {
-                            "fail_reason": "Missing app_id or secret",
-                        }
-                    else:
-                        try:
-                            secret = _decrypt_secret(
-                                data["bot_encrypt_secret"],
-                                key,
-                            )
-                        except Exception:
-                            credentials = {
-                                "fail_reason": "Secret decryption failed",
-                            }
-                        else:
-                            status = "success"
-                            credentials = {
-                                "app_id": str(data["bot_appid"]),
-                                "client_secret": secret,
-                            }
-                result = {"status": status, "credentials": credentials}
-                if status == "success":
-                    result["metadata"] = {
-                        "user_openid": str(data.get("user_openid", "")),
-                    }
-                return _result(request, result)
-    except asyncio.CancelledError:
-        raise
+                return await operation
     except TimeoutError:
         raise
     except httpx.HTTPStatusError as exc:
@@ -223,3 +151,89 @@ async def _execute(request):
             "uncertain Portal operation",
             reason_code="PLATFORM_RESULT_UNKNOWN",
         ) from None
+
+
+async def _fetch(request, client, host):
+    key = _generate_bind_key()
+    response = await client.post(
+        f"https://{host}/lite/create_bind_task",
+        json={"key": key},
+    )
+    response.raise_for_status()
+    value = response.json()
+    task_id = value.get("data", {}).get("task_id")
+    if value.get("retcode") != 0:
+        return _result(request, reason="PLATFORM_REJECTED")
+    if not isinstance(task_id, str) or not task_id:
+        raise ProtocolValidationError(
+            "uncertain Portal operation",
+            reason_code="PLATFORM_RESULT_UNKNOWN",
+        )
+    query = urlencode(
+        {"task_id": task_id, "_wv": "2", "source": "QwenPaw"},
+    )
+    return _result(
+        request,
+        {
+            "scan_url": (
+                f"https://{host}/qqbot/openclaw/connect.ht" f"ml?{query}"
+            ),
+            "continuation": _encode_poll_token(task_id, key),
+        },
+    )
+
+
+async def _poll(request, client, host, continuation):
+    task_id, key = continuation
+    response = await client.post(
+        f"https://{host}/lite/poll_bind_result",
+        json={"task_id": task_id},
+    )
+    response.raise_for_status()
+    value = response.json()
+    if value.get("retcode") != 0:
+        return _result(
+            request,
+            {
+                "status": "fail",
+                "credentials": {
+                    "fail_reason": str(
+                        value.get("msg", "unknown"),
+                    ),
+                },
+            },
+        )
+    data = value.get("data", {})
+    status, credentials = "waiting", {}
+    if data.get("status", -1) == 3:
+        status = "expired"
+    elif data.get("status", -1) == 2:
+        status = "fail"
+        if not data.get("bot_appid") or not data.get(
+            "bot_encrypt_secret",
+        ):
+            credentials = {
+                "fail_reason": "Missing app_id or secret",
+            }
+        else:
+            try:
+                secret = _decrypt_secret(
+                    data["bot_encrypt_secret"],
+                    key,
+                )
+            except Exception:
+                credentials = {
+                    "fail_reason": "Secret decryption failed",
+                }
+            else:
+                status = "success"
+                credentials = {
+                    "app_id": str(data["bot_appid"]),
+                    "client_secret": secret,
+                }
+    result = {"status": status, "credentials": credentials}
+    if status == "success":
+        result["metadata"] = {
+            "user_openid": str(data.get("user_openid", "")),
+        }
+    return _result(request, result)

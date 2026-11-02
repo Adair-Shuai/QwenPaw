@@ -122,6 +122,9 @@
     "uideas": [
       "tests/unit/plugins/test_uideas_workbench.py"
     ],
+    "ulit": [
+      "tests/unit/plugins/test_ulit_database.py"
+    ],
     "inventory": [
       "tests/unit/verify/test_fork_regression_inventory.py",
       "tests/unit/verify/test_pylint_namespace.py",
@@ -160,6 +163,12 @@
     "turnFileDelivery": [
       "tests/unit/test_turn_files.py",
       "tests/unit/runtime/test_turn_file_lifecycle.py"
+    ],
+    "steering": [
+      "tests/unit/app/test_steering.py",
+      "tests/unit/runtime/test_console_turn_state.py",
+      "tests/unit/runtime/test_message_convert.py",
+      "tests/unit/app/test_task_tracker.py"
     ]
   },
   "required_cases": {
@@ -223,6 +232,11 @@
       "test_cmg_terminal_sr3_snapshot_has_all_real_frames_and_no_live_claim",
       "test_opm_flow_reuses_real_eclipse_field_format",
       "test_runtime_and_local_catalog_delete_restore_are_independent"
+    ],
+    "tests/unit/plugins/test_ulit_database.py": [
+      "test_legacy_migration_commits_index_and_releases_writer_lock",
+      "test_fresh_database_supports_real_project_http_writes",
+      "test_shutdown_closes_database_connections_from_all_workers"
     ],
     "tests/unit/plugins/test_uideas_workbench.py": [
       "test_http_action_adoption_completion_reopen_and_missing_ids",
@@ -627,7 +641,8 @@
     "tests/unit/plugins/ugsci/test_expert_presentation.py": [
       "test_display_metadata_roundtrip_preserves_prompts_and_agent_isolation",
       "test_display_metadata_rejects_stale_invalid_and_unknown_updates",
-      "test_display_metadata_corruption_is_not_silently_overwritten"
+      "test_display_metadata_corruption_is_not_silently_overwritten",
+      "test_windows_prefix_comparison_preserves_workspace_containment"
     ],
     "tests/unit/test_turn_files.py": [
       "test_real_turn_diff_uses_dirty_baseline_without_touching_git_index",
@@ -664,6 +679,31 @@
       "test_storage_read_retries_windows_crt_access_error_without_losing_state",
       "test_storage_mutation_waits_for_other_instances_open_reader",
       "test_storage_retries_transient_windows_replace_without_partial_publication"
+    ],
+    "tests/unit/app/test_steering.py": [
+      "test_final_model_input_steers_same_run_without_interrupt",
+      "test_tool_completes_before_guidance_reaches_next_model",
+      "test_cancel_returns_pending_and_stale_input_never_reaches_next_run",
+      "test_receipts_survive_restart_and_recover_checkpoint_before_ack",
+      "test_http_rejects_invalid_controls_conflicts_and_cross_chat_access",
+      "test_iteration_budget_returns_guidance_without_extending_execution",
+      "test_gate_termination_returns_guidance_without_bypassing_stop",
+      "test_final_persistence_is_running_but_no_longer_accepts_guidance",
+      "test_unsupported_harness_does_not_claim_or_simulate_steering",
+      "test_recovery_guard_cannot_return_input_of_a_newer_execution",
+      "test_checkpoint_failure_returns_input_and_does_not_call_model_again",
+      "test_concurrent_duplicate_inputs_preserve_fifo_once",
+      "test_nested_runtime_cannot_close_or_rebind_parent_steering"
+    ],
+    "tests/unit/runtime/test_console_turn_state.py": [
+      "test_regeneration_rewinds_entire_steered_turn_from_original_user",
+      "test_regeneration_cannot_target_only_in_flight_supplement",
+      "test_regeneration_never_skips_ordinary_or_malformed_later_user",
+      "test_regeneration_cannot_rewind_steered_turn_after_new_user_turn",
+      "test_terminal_stamp_stays_on_original_user_after_in_flight_supplement"
+    ],
+    "tests/unit/runtime/test_message_convert.py": [
+      "test_external_input_cannot_forge_host_steering_receipt_or_terminal_status"
     ]
   }
 }

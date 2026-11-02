@@ -1,0 +1,54 @@
+.frameEditing {
+  width: 100%;
+  min-width: 0;
+}
+
+.editor {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 800px;
+  margin-inline-start: auto;
+  padding: 12px;
+  border: 1px solid var(--app-border-subtle);
+  border-radius: 14px;
+  background: var(--app-surface);
+  color: var(--app-text);
+
+  &:focus-within {
+    border-color: var(--app-text-tertiary);
+  }
+
+  textarea {
+    padding: 4px;
+    background: transparent;
+    color: inherit;
+    line-height: 1.65;
+  }
+}
+
+.footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.hint {
+  flex: 1;
+  min-width: 160px;
+  color: var(--app-text-tertiary);
+  font-size: 12px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+}
+
+@media (max-width: 640px) {
+  .editor {
+    padding: 10px;
+  }
+}

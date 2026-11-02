@@ -6,6 +6,7 @@ import type { WorkspaceRoot } from "../features/files-workspace/types";
 import { isDesktopTauriRuntime } from "./openExternalLink";
 import { getPyWebViewApi } from "./pywebview";
 import { STORAGE_POLYFILL } from "./htmlPreviewStorage";
+import type { WorkspaceArtifact } from "../components/Workspace/types";
 
 interface OpenHtmlFileOptions {
   content: string;
@@ -14,6 +15,7 @@ interface OpenHtmlFileOptions {
   projectDirOverride?: string;
   root?: WorkspaceRoot;
   workspaceBacked?: boolean;
+  artifact?: WorkspaceArtifact;
 }
 
 function workspaceHeaders(
@@ -29,7 +31,7 @@ function workspaceHeaders(
   };
 }
 
-function openBlobHtml(content: string): void {
+function openBlobHtml(content: string, target?: Window): void {
   // Only the trusted wrapper shares the application origin. User scripts run
   // in an opaque origin, including when they navigate within the frame.
   const preview = new DOMParser().parseFromString(content, "text/html");
@@ -52,7 +54,11 @@ function openBlobHtml(content: string): void {
       type: "text/html;charset=utf-8",
     }),
   );
-  window.open(url, "_blank", "noopener,noreferrer");
+  if (target) {
+    if (!target.closed) target.location.replace(url);
+  } else {
+    window.open(url, "_blank", "noopener,noreferrer");
+  }
   window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
 }
 
@@ -85,5 +91,46 @@ export function openHtmlFile(options: OpenHtmlFileOptions): void {
     return;
   }
 
+  if (
+    options.artifact &&
+    /<(?:link|img|script)\b[^>]*(?:href|src)\s*=/i.test(content)
+  ) {
+    // Reserve the window during the click, before resource fetching consumes
+    // user activation. No user HTML runs in this temporary host document.
+    const target = window.open("about:blank", "_blank");
+    if (!target) return;
+    target.opener = null;
+    target.document.title = "HTML preview";
+    target.document.body.textContent = "加载中 / Loading…";
+    const artifact = options.artifact;
+    void import("./htmlPreviewResources")
+      .then(({ prepareHtmlPreviewResources }) =>
+        prepareHtmlPreviewResources(content, artifact),
+      )
+      .then((preview) => {
+        if (preview.missing.length) {
+          const doc = new DOMParser().parseFromString(
+            preview.content,
+            "text/html",
+          );
+          const notice = doc.createElement("p");
+          notice.textContent = `部分页面资源无法加载 / Missing resources: ${preview.missing.join(
+            ", ",
+          )}`;
+          doc.body.prepend(notice);
+          openBlobHtml(
+            "<!doctype html>" + doc.documentElement.outerHTML,
+            target,
+          );
+        } else openBlobHtml(preview.content, target);
+      })
+      .catch((error) => {
+        console.warn("[html-preview] Resource preparation failed", error);
+        if (!target.closed)
+          target.document.body.textContent =
+            "预览加载失败 / Preview unavailable";
+      });
+    return;
+  }
   openBlobHtml(content);
 }

@@ -91,6 +91,8 @@ class SlackDriver(SharedResponseDriver):
         }
 
     async def _open(self, params, request):
+        # SharedResponseDriver passes the complete public request contract.
+        # pylint: disable=unused-argument
         self._identity(params)
         self._require_connected()
         route = self._target(params["to_handle"], params.get("meta") or {})

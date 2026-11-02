@@ -373,6 +373,8 @@ def collect_deep_channel_connectivity_notes(
     timeout: float,
 ) -> list[str]:
     """Run reachability probes for each enabled channel (per agent profile)."""
+    # Keep channel-specific diagnostic ordering stable in the public report.
+    # pylint: disable=R0915
     managed, notes = asyncio.run(_managed_connectivity_notes(cfg, timeout))
     reg = get_channel_registry()
     from ..plugins.registry import PluginRegistry

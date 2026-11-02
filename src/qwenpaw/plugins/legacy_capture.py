@@ -10,7 +10,9 @@ from .install_lock import plugin_install_lock
 
 
 def read_json_snapshot(path):
-    """Return original JSON, provenance and physical identity without writes."""
+    """
+    Return original JSON, provenance and physical identity without writes.
+    """
     path = Path(path)
     if not path.exists():
         return None
@@ -33,7 +35,9 @@ def read_json_snapshot(path):
 
 
 def capture_once(path, *, load, build):
-    """Serialize first capture; domain readers validate both old and new data."""
+    """
+    Serialize first capture; domain readers validate both old and new data.
+    """
     from ..utils.io_utils import write_json_atomic
 
     with plugin_install_lock(path.with_suffix(".lock")):

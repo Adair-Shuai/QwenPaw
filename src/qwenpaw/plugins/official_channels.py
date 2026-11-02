@@ -203,6 +203,8 @@ async def async_bundled_channel_source(plugin_id, *, retain=None):
 @lru_cache(maxsize=64)
 def _metadata_slot(root_identity, plugin_id):
     """Keep the most recent passive snapshot for this resource and channel."""
+    # Both arguments partition lru_cache entries without entering the value.
+    del root_identity, plugin_id
     return {}
 
 
@@ -259,6 +261,10 @@ def _persisted_channel_enabled(data, key):
 
 async def prepare_channel_upgrade():
     """Prepare only persisted enabled channels during an explicit upgrade."""
+    # Channel upgrade staging retains source custody through admission
+    # checks.
+    # Official staging reuses loader manifest and host-version admission.
+    # pylint: disable=R0912,R0915,W0212
     from ..utils.io_utils import run_sync_io
 
     from ..constant import EnvVarLoader

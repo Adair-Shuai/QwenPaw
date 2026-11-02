@@ -10,9 +10,6 @@ import os
 import sys
 import threading
 
-import pytest
-import pytest_asyncio
-
 import csv
 from contextlib import contextmanager
 import py_compile
@@ -21,6 +18,9 @@ import stat
 import subprocess
 from types import SimpleNamespace
 import zipfile
+
+import pytest
+import pytest_asyncio
 
 from packaging.markers import default_environment
 from qwenpaw.plugins import dependency_maintenance as maintenance
@@ -33,6 +33,7 @@ from qwenpaw.plugins.dependency_transaction import (
     verify_payload,
 )
 from qwenpaw.plugins.dependency_upgrade import DependencyUpgradeManager
+from qwenpaw.plugins.execution import CallUnknown, PluginProcess
 from qwenpaw.plugins.execution.dependencies import (
     DependencySnapshot,
     _installed_metadata,
@@ -44,7 +45,6 @@ from tests.channel_support.host import (
     local_wheel,
 )
 
-from qwenpaw.plugins.execution import CallUnknown, PluginProcess
 from tests.channel_support.process import (
     ROOT,
     alive,
@@ -69,16 +69,16 @@ def worker_belongs_to(launcher_pid, worker_pid):
     }
 
 
-@pytest_asyncio.fixture
-async def process():
+@pytest_asyncio.fixture(name="process")
+async def worker_process():
     worker = PluginProcess()
     yield worker
     result = await worker.stop(timeout=0.5)
     assert result.exited and not result.residual
 
 
-@pytest.fixture
-def worker_logs(caplog, monkeypatch):
+@pytest.fixture(name="worker_logs")
+def capture_worker_logs(caplog, monkeypatch):
     logger = logging.getLogger("qwenpaw.plugins.worker")
     monkeypatch.setattr(logger, "propagate", False)
     logger.addHandler(caplog.handler)
@@ -131,7 +131,7 @@ async def test_lifecycle_bidirectional_ipc_logs_and_repeated_stop(
     assert not alive(probe["pid"])
     assert (await process.stop()).exited
     for marker in ("sample SDK connected", "sample SDK diagnostic"):
-        await eventually(lambda: marker in worker_logs.text)
+        await eventually(lambda marker=marker: marker in worker_logs.text)
         record = next(r for r in worker_logs.records if marker in r.message)
         assert record.name == "qwenpaw.plugins.worker"
         assert record.levelno == logging.WARNING
@@ -152,6 +152,11 @@ async def test_log_flood_is_bounded_redacted_and_keeps_ipc_responsive(
     worker_logs,
     monkeypatch,
 ):
+    # Assert redaction, bounded storage and responsive IPC on the same flooded
+    # worker.
+    # Inspect real worker custody and cleanup state at this integration
+    # boundary.
+    # pylint: disable=too-many-statements,protected-access
     from qwenpaw.plugins.execution import worker_logs as log_bridge
 
     # Keep one rate window even when a CI machine reads the pipe slowly.
@@ -171,11 +176,12 @@ async def test_log_flood_is_bounded_redacted_and_keeps_ipc_responsive(
     monkeypatch.setattr(log_bridge, "_clean", observe_clean)
     complex_line = "a-b." * 1024
     diagnostic = (
-        "credential-check \x1b[31mAuthorization: Bearer bearer-secret\x1b[0m\r\n"
+        "credential-check \x1b[31mAuthorization: Bearer"
+        " bearer-secret\x1b[0m\r\n"
         "https://api.telegram.org/bot123456:telegram-secret/sendMessage\n"
-        "https://example.test/?token=query-secret&ok=yes\n"
-        "Authorization: token ghp_secretvalue\n"
-        "Cookie: session=first_secret; auth=second_secret\n"
+        "https://example.test/?token=query-secret&ok=yes\nAuthorization:"
+        " token ghp_secretvalue\nCookie: session=first_secret;"
+        " auth=second_secret\n"
     )
     diagnostic += complex_line + "\n"
     diagnostic += "a-b." * 900 + ' api_token="complex-secret"\n'
@@ -279,7 +285,7 @@ async def test_crash_restarts_generation_and_retains_host_handler(
     assert seen == [fresh["identity"]]
     for generation in (1, 2):
         await eventually(
-            lambda: any(
+            lambda generation=generation: any(
                 "sample SDK diagnostic" in r.getMessage()
                 and f"generation={generation}" in r.getMessage()
                 and spec.instance_id in r.getMessage()
@@ -464,6 +470,9 @@ async def test_large_text_and_attachment_payload_roundtrip_is_exact(
 async def test_cancelled_payload_write_retains_cleanup_until_retry(
     monkeypatch,
 ):
+    # Inspect real worker custody and cleanup state at this integration
+    # boundary.
+    # pylint: disable=protected-access
     from qwenpaw.plugins.execution.payloads import PayloadStore
 
     store = await PayloadStore.acreate()
@@ -521,6 +530,9 @@ async def test_cancelled_payload_write_retains_cleanup_until_retry(
 
 @pytest.mark.asyncio
 async def test_payload_quota_waits_for_confirmed_discard(monkeypatch):
+    # Inspect real worker custody and cleanup state at this integration
+    # boundary.
+    # pylint: disable=protected-access
     from qwenpaw.plugins.execution.errors import FrameLimitError
     from qwenpaw.plugins.execution.payloads import PayloadLimits, PayloadStore
 
@@ -585,6 +597,9 @@ async def test_runtime_roots_interpreter_and_dependency_visible_in_worker(
     process,
     layout,
 ):
+    # Inspect real worker custody and cleanup state at this integration
+    # boundary.
+    # pylint: disable=protected-access
     from qwenpaw.plugins.channel_bootstrap import (
         resolve_default_channel_runtime,
     )
@@ -618,7 +633,6 @@ async def test_runtime_roots_interpreter_and_dependency_visible_in_worker(
         source_revision=digest(spec.code_root),
     )
     from qwenpaw.envs import store
-    from qwenpaw.plugins import dependency_maintenance as maintenance
 
     selected_root = maintenance.state_root()
     if layout == "source":
@@ -725,8 +739,8 @@ def test_dependency_site_permission_follows_real_target(
     )
 
 
-@pytest.fixture
-def dependency_files(tmp_path):
+@pytest.fixture(name="dependency_files")
+def prepare_dependency_files(tmp_path):
     """Small installed tree shared by preparation and transaction checks."""
 
     prefix, site = tmp_path / "python", tmp_path / "plugin_runtime/site"
@@ -931,6 +945,9 @@ def test_namespace_additions_preserve_file_ownership(
 
 def _prepare_dependency_operation(files, context=None):
     """Prepare the same reviewed payload for the separate publish checks."""
+    # Inspect real worker custody and cleanup state at this integration
+    # boundary.
+    # pylint: disable=protected-access
 
     snapshot = _dependency_snapshot(files)
     context = context or DependencyEnvironmentContext(
@@ -975,6 +992,9 @@ def test_dependency_preparation_rejects_protected_environment(
     dependency_files,
     layout,
 ):
+    # Inspect real worker custody and cleanup state at this integration
+    # boundary.
+    # pylint: disable=protected-access
     files = dependency_files
     if layout == "sibling-target":
         files.site.rename(tmp_path / "host-selected")
@@ -1037,6 +1057,9 @@ def test_overlay_rejects_record_outside_target(
     dependency_files,
     scripts,
 ):
+    # Inspect real worker custody and cleanup state at this integration
+    # boundary.
+    # pylint: disable=protected-access
     files = dependency_files
     launcher = files.prefix / scripts / "sdk"
     launcher.parent.mkdir()
@@ -1112,7 +1135,6 @@ def test_policy_change_blocks_verify_and_publish(tmp_path, dependency_files):
 
 @pytest.mark.parametrize("scripts", ["bin", "Scripts"])
 def test_native_launcher_publish_and_exact_rollback(
-    tmp_path,
     dependency_files,
     scripts,
 ):
@@ -1208,6 +1230,7 @@ def test_pip_record_cache_publish_and_exact_rollback(
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert installed.returncode == 0, installed.stderr
     record = files.site / "sample_shared_sdk-0.5.dist-info/RECORD"
@@ -1264,8 +1287,17 @@ def test_record_rejects_duplicate_installed_ownership(dependency_files):
         _owned(row, files.prefix)
 
 
-@pytest_asyncio.fixture
-async def staged_upgrade(tmp_path, monkeypatch, request):
+def _required_match(values):
+    """Assert required inputs before the upgrade transaction."""
+    value = next(values, None)
+    assert value is not None, "Required dependency fixture input is missing"
+    return value
+
+
+@pytest_asyncio.fixture(name="staged_upgrade")
+async def prepare_staged_upgrade(tmp_path, monkeypatch, request):
+    # Build the real reader and writer environments under one cleanup boundary.
+    # pylint: disable=too-many-statements
     scenario = getattr(request, "param", False)
     broken_source = scenario is True
     shared_reader = scenario == "shared_reader"
@@ -1312,7 +1344,7 @@ async def staged_upgrade(tmp_path, monkeypatch, request):
         "plugin = Plugin()\n",
     )
     assert (independent_site.resolve() == site.resolve()) is shared_reader
-    independent_manifest, _ = next(
+    independent_manifest, _ = _required_match(
         (manifest, path)
         for manifest, path in host.loader.discover_plugins()
         if manifest.id == "independent-consumer"
@@ -1333,14 +1365,14 @@ async def staged_upgrade(tmp_path, monkeypatch, request):
         )
         is None
     )
-    read_use = next(
+    read_use = _required_match(
         use
         for use in usage.snapshot().uses
         if use.plugin_id == "independent-consumer"
     )
     assert read_use.snapshot is None and read_use.environment is not None
     old = local_wheel(tmp_path / "old", version="0.5", value="0.5")
-    with zipfile.ZipFile(next(old.glob("*.whl"))) as archive:
+    with zipfile.ZipFile(_required_match(old.glob("*.whl"))) as archive:
         archive.extractall(site)
     module = site / "sample_shared_sdk.py"
     module.chmod(0o640)
@@ -1356,10 +1388,12 @@ async def staged_upgrade(tmp_path, monkeypatch, request):
             "    sdk.VALUE + '\\n' + Path(sdk.__file__).read_text())\n"
             "raise RuntimeError('new source cannot initialize')\n",
         )
-    wheel = next(local_wheel(tmp_path / "new", value="1.0").glob("*.whl"))
+    wheel = _required_match(
+        local_wheel(tmp_path / "new", value="1.0").glob("*.whl"),
+    )
     certifi_wheel = local_certifi_wheel(wheel.parent)
 
-    def resolve(command, **kwargs):
+    def resolve(command, **_kwargs):
         assert "wheel" in command and "install" not in command
         target = Path(command[command.index("--wheel-dir") + 1])
         shutil.copy2(wheel, target / wheel.name)
@@ -1438,9 +1472,9 @@ async def test_shared_upgrade_replaces_provider_or_restores_exact_old_tree(
             source / "sample.py"
         ).read_bytes()
         assert (await manager.apply(operation["id"])) == result
-    assert (site / "neighbor.txt").read_bytes() == (
-        b"preserve unrelated bytes\x00"
-    )
+    assert (
+        site / "neighbor.txt"
+    ).read_bytes() == b"preserve unrelated bytes\x00"
     from qwenpaw.plugins.dependency_usage import DependencyDeclaration
 
     usage = host.registry.dependency_usage
@@ -1536,17 +1570,16 @@ async def test_frozen_ordinary_loader_gate_installs_missing_sdk_in_overlay(
     tmp_path,
     monkeypatch,
 ):
+    # Compare the signed resource inventory before and after real overlay
+    # installation.
+    # Inspect real worker custody and cleanup state at this integration
+    # boundary.
+    # pylint: disable=too-many-statements,protected-access
     import importlib
     import json
-    import shutil
 
     from qwenpaw.plugins.channel_bootstrap import (
         resolve_default_channel_runtime,
-    )
-    from tests.channel_support.host import (
-        Host,
-        local_certifi_wheel,
-        local_wheel,
     )
 
     monkeypatch.setattr(sys, "path", sys.path.copy())
@@ -1601,7 +1634,6 @@ async def test_frozen_ordinary_loader_gate_installs_missing_sdk_in_overlay(
     }.items():
         monkeypatch.setenv(name, value)
     from qwenpaw.plugins.dependency_maintenance import marker, repair_marker
-    from qwenpaw.plugins.dependency_context import DependencyEnvironmentContext
     from qwenpaw.plugins.install_lock import environment_install_lock_path
 
     resources = support.parent
@@ -1632,7 +1664,10 @@ async def test_frozen_ordinary_loader_gate_installs_missing_sdk_in_overlay(
     native_site = Path(runtime.python_executable).parent.parent / (
         "Lib/site-packages"
         if os.name == "nt"
-        else f"lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages"
+        else (
+            f"lib/python{sys.version_info.major}."
+            f"{sys.version_info.minor}/site-packages"
+        )
     )
     context = DependencyEnvironmentContext.from_runtime(runtime)
     assert context.protected(native_site)
@@ -1655,7 +1690,7 @@ async def test_frozen_ordinary_loader_gate_installs_missing_sdk_in_overlay(
         assert Path(sdk.__file__).parent == runtime.dependency_install_target
         assert (
             runtime.dependency_install_target
-            / ("sample_shared_sdk-1.0.dist-info/RECORD")
+            / "sample_shared_sdk-1.0.dist-info/RECORD"
         ).is_file()
         checked = await host.loader._ensure_dependencies_installed(
             source,
@@ -1682,9 +1717,7 @@ async def test_frozen_ordinary_loader_gate_installs_missing_sdk_in_overlay(
 
 
 def test_executor_inspection_preserves_immutable_support_tree(tmp_path):
-    import shutil
     import packaging
-    from qwenpaw.plugins.dependency_context import DependencyEnvironmentContext
 
     support = tmp_path / "Bundle.app/Contents/Resources/site"
     support.mkdir(parents=True)

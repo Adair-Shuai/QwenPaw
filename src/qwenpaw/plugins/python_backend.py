@@ -227,6 +227,9 @@ def _observe_host_dependencies(
     _module_owners=None,
 ):
     """Read metadata and RECORD ownership using only detached origins."""
+    # Observe loaded origins and installed distributions as one evidence
+    # snapshot.
+    # pylint: disable=R0912,R0915
     from importlib.metadata import PathDistribution
     from .execution.dependencies import (
         _provides_loaded_modules,
@@ -435,7 +438,12 @@ def _observe_host_delta(
     inventory=None,
     _module_owners=None,
 ):
-    """Resolve only changed modules; uncertain providers use the old observer."""
+    """
+    Resolve only changed modules; uncertain providers use the old observer.
+    """
+    # Delta observation preserves the same origin and distribution ownership
+    # rules.
+    # pylint: disable=R0912
     from .execution.dependencies import read_dependency_inventory
 
     root = Path(code_root).resolve()
@@ -487,7 +495,7 @@ def _observe_host_delta(
             if not path.is_relative_to(parent):
                 continue
             first = path.relative_to(parent).parts[0].split(".", 1)[0]
-            for top in {first, name.split(".", 1)[0]}:
+            for top in (first, name.split(".", 1)[0]):
                 candidates = index.get(top, {})
                 rows.update(candidates)
                 matched = matched or bool(candidates)
@@ -808,7 +816,10 @@ class PythonBackend:
                         GateDecision(
                             False,
                             False,
-                            reason="DEPENDENCY_PLAN_UNVERIFIED: admission roots changed",
+                            reason=(
+                                "DEPENDENCY_PLAN_UNVERIFIED: admission roots"
+                                " changed"
+                            ),
                             reason_code="DEPENDENCY_PLAN_UNVERIFIED",
                         ),
                     )
@@ -822,7 +833,9 @@ class PythonBackend:
                         GateDecision(
                             False,
                             False,
-                            reason="DEPENDENCY_PLAN_UNVERIFIED: imports changed",
+                            reason=(
+                                "DEPENDENCY_PLAN_UNVERIFIED: imports changed"
+                            ),
                             reason_code="DEPENDENCY_PLAN_UNVERIFIED",
                         ),
                     )
@@ -948,6 +961,8 @@ class PythonBackend:
     @staticmethod
     async def observe_host_dependencies(description, usage, token):
         """Retain value-only import history; resolve changed sources only."""
+        # Register and schedule one weakly owned observer per runtime lease.
+        # pylint: disable=R0915
         import weakref
         from ..utils.io_utils import run_async_to_completion, run_sync_io
         from .execution.dependencies import _inventory_sites, dependency_sites
@@ -969,6 +984,9 @@ class PythonBackend:
             }
 
         async def observe():
+            # An observation retries against one baseline and publication
+            # custody.
+            # pylint: disable=R0912,R0915
             if not valid():
                 return
             try:
@@ -980,7 +998,9 @@ class PythonBackend:
                     )
                     key = (
                         await run_sync_io(
-                            lambda: str(Path(code_root).resolve()),
+                            lambda code_root=code_root: str(
+                                Path(code_root).resolve(),
+                            ),
                         ),
                         paths,
                     )
@@ -1212,7 +1232,7 @@ class PythonBackend:
         if backend_entry_file is None and frontend_entry_file is None:
             raise _EntryPointNotFoundError(
                 f"Plugin '{plugin_id}' has no entry points declared "
-                f"(entry.backend or entry.frontend)",
+                "(entry.backend or entry.frontend)",
             )
 
         backend_exists = (

@@ -51,6 +51,8 @@ class YuanbaoDriver(SharedResponseDriver):
             raise
 
     async def _state_changed(self, state):
+        # Driver and platform share this channel private transport lifecycle.
+        # pylint: disable=protected-access
         connected = state == "connected"
         if connected != self._connected:
             self._connection_generation += 1
@@ -82,6 +84,8 @@ class YuanbaoDriver(SharedResponseDriver):
         )
 
     async def _open(self, params, request):
+        # SharedResponseDriver passes the complete public request contract.
+        # pylint: disable=unused-argument
         self._identity(params)
         platform = self._require_connected()
         meta = dict(params.get("meta") or {})

@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Generic Mattermost Driver with authenticated connection and scoped typing."""
+"""
+Generic Mattermost Driver with authenticated connection and scoped typing.
+"""
 
 from __future__ import annotations
 
@@ -78,6 +80,8 @@ class MattermostDriver(SharedResponseDriver):
         )
 
     async def _open(self, params, request):
+        # SharedResponseDriver passes the complete public request contract.
+        # pylint: disable=unused-argument
         self._identity(params)
         self._require_connected()
         target, root = self._target(

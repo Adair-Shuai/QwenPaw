@@ -195,12 +195,12 @@ async def test_config_write_failure_restores_runtime_and_allows_retry(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("save_succeeds", [False, True])
+@pytest.mark.usefixtures("bounded_dependency_environment")
 async def test_cancel_during_config_save_keeps_runtime_and_disk_consistent(
     tmp_path: Path,
     fresh_registry,
     monkeypatch,
     save_succeeds,
-    bounded_dependency_environment,
 ):
     config_path = tmp_path / "config.json"
     monkeypatch.setattr(

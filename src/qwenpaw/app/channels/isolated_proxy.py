@@ -145,16 +145,16 @@ class _ResponseOpenDeliveryError(RpcError):
             or set(data)
             != {"operation", "result", "continue_on_delivery_error"}
             or data["operation"] != "channel.response.open"
-            or type(data["continue_on_delivery_error"]) is not bool
-            or not isinstance(data["result"], dict)
-            or set(data["result"])
-            != {
-                "delivery_id",
-                "state",
-                "reason_code",
-                "retryable",
-            }
+            or (type(data["continue_on_delivery_error"]) is not bool)
+            or (not isinstance(data["result"], dict))
         ):
+            raise ProtocolValidationError("Invalid response open failure")
+        if set(data["result"]) != {
+            "delivery_id",
+            "state",
+            "reason_code",
+            "retryable",
+        }:
             raise ProtocolValidationError("Invalid response open failure")
         result = OutboundResult.from_mapping(data["result"])
         if (
@@ -172,6 +172,9 @@ class _ResponseOpenDeliveryError(RpcError):
 
 class IsolatedChannelProxy(BaseChannel):
     """Keep queue, policy and Agent execution in the parent process."""
+
+    # Implements the complete BaseChannel and channel management host contract.
+    # pylint: disable=too-many-public-methods
 
     @property
     def enabled(self):
@@ -586,11 +589,12 @@ class IsolatedChannelProxy(BaseChannel):
         if (
             AUTH_QRCODE_CAPABILITY not in self.descriptor.capabilities
             or not self.enabled
-            or not self._ingress_open
+            or (not self._ingress_open)
             or self._text_merge_stopping
-            or snapshot["state"] != "ready"
-            or snapshot["platform_state"] != "connecting"
+            or (snapshot["state"] != "ready")
         ):
+            return
+        if snapshot["platform_state"] != "connecting":
             return
         print(
             f"{self.channel} login: scan {params.scan_url}",
@@ -607,6 +611,9 @@ class IsolatedChannelProxy(BaseChannel):
         return await run_async_to_completion(self._admit_batch(params))
 
     async def _admit_batch(self, params):
+        # Batch admission keeps reservation rollback paired with ownership
+        # checks.
+        # pylint: disable=R0912,R0915
         batch = (
             params
             if isinstance(params, EventBatchParams)
@@ -814,6 +821,8 @@ class IsolatedChannelProxy(BaseChannel):
         return {"stored": True}
 
     def _state_operation(self, operation, params):
+        # State RPC outcomes must settle the same owner-scoped operation.
+        # pylint: disable=R0912
         path = self._state_path()
         if path is not None:
             try:
@@ -930,6 +939,9 @@ class IsolatedChannelProxy(BaseChannel):
         }
 
     def build_agent_request_from_native(self, native_payload):
+        # Host custody markers remain private and never cross the worker
+        # protocol.
+        # pylint: disable=W0212
         meta = dict(native_payload.get("meta") or {})
         actor_unknown = native_payload.get("actor_unknown") is True
         if actor_unknown and (
@@ -1201,7 +1213,7 @@ class IsolatedChannelProxy(BaseChannel):
         if _format_entry is not None:
             response_policy = await self._response_policy(to_handle, meta)
             policy = response_policy.send_format or SendFormatPolicy()
-            if (
+            format_on_flush = (
                 TEXT_MERGE_CAPABILITY in self.descriptor.capabilities
                 and response_policy.text_merge_delay_ms is not None
                 and response_policy.text_merge_format_on_flush
@@ -1215,7 +1227,8 @@ class IsolatedChannelProxy(BaseChannel):
                     part.get("type") == "text"
                     for part in fields["content_parts"]
                 )
-            ):
+            )
+            if format_on_flush:
                 deferred_format = policy
             else:
                 fields = self._format_send_fields(
@@ -1375,6 +1388,9 @@ class IsolatedChannelProxy(BaseChannel):
         separator_newlines=1,
         format_policy=None,
     ):
+        # Merge state, capacity, and timer transitions are one locked
+        # operation.
+        # pylint: disable=R0912,R0915
         handle = meta["response_handle"]
         if meta.get("_reply_unknown"):
             raise ChannelDeliveryError(
@@ -1497,8 +1513,6 @@ class IsolatedChannelProxy(BaseChannel):
         try:
             await asyncio.sleep(delay)
             await self._flush_response_text(handle)
-        except asyncio.CancelledError:
-            raise
         except Exception as exc:
             # Timer errors are rethrown by the next send/finish, never lost.
             state.error = exc
@@ -2312,6 +2326,9 @@ class IsolatedChannelProxy(BaseChannel):
             )
 
     def _control_result(self, request, send_meta):
+        # Read host-only authorization state before returning a control
+        # response.
+        # pylint: disable=W0212
         from qwenpaw._control_state import ControlCommandState
 
         if not isinstance(request, AgentRequest):
@@ -2331,17 +2348,23 @@ class IsolatedChannelProxy(BaseChannel):
             binding.channel_key != identity.channel_key
             or binding.instance_id != identity.instance_id
             or binding.generation != identity.generation
-            or binding.response_handle != send_meta.get("response_handle")
-            or binding.session_id != request.session_id
-            or binding.root_session_id != request.root_session_id
+            or (binding.response_handle != send_meta.get("response_handle"))
+            or (binding.session_id != request.session_id)
+        ):
+            return None
+        if (
+            binding.root_session_id != request.root_session_id
             or binding.user_id != request.user_id
             or result.actor_user_id != binding.user_id
-            or binding.agent_id
-            != (getattr(self._workspace, "agent_id", None) or "default")
             or (
-                binding.source_request_id
-                and binding.source_request_id != result.request_id
+                binding.agent_id
+                != (getattr(self._workspace, "agent_id", None) or "default")
             )
+        ):
+            return None
+        if (
+            binding.source_request_id
+            and binding.source_request_id != result.request_id
         ):
             return None
         return state
@@ -2458,6 +2481,8 @@ class IsolatedChannelProxy(BaseChannel):
 
     @asynccontextmanager
     async def _response_scope(self, meta):
+        # Scope teardown must preserve response custody through cancellation.
+        # pylint: disable=R0912
         scope = {"meta": meta}
         token = self._response_context.set(scope)
         outcome = "completed"

@@ -325,8 +325,7 @@ class VoicePlatform:  # pylint: disable=too-many-instance-attributes
         self._public_wss_url: str | None = None
         self._last_endpoint: VoiceEndpoint | None = None
         self._forwarding: dict[str, Any] | None = None
-        self._runner_backpressure_total = 0
-        self._connection_overload_total = 0
+        self._runner_backpressure_total = self._connection_overload_total = 0
         self._unknown_status_total = 0
         self._initialize_startup_transaction()
 
@@ -918,7 +917,10 @@ class VoicePlatform:  # pylint: disable=too-many-instance-attributes
             or value.get("route_query_key") != "_qp_endpoint"
             or type(value.get("host_port")) is not int
             or not 1 <= value["host_port"] <= 65535
-            or not isinstance(value.get("paths"), list)
+        ):
+            raise VoicePlatformError("VOICE_HOST_FORWARDING_UNAVAILABLE")
+        if (
+            not isinstance(value.get("paths"), list)
             or any(not isinstance(path, str) for path in value["paths"])
             or len(value["paths"]) != 3
             or set(value["paths"]) != paths
@@ -946,6 +948,8 @@ class VoicePlatform:  # pylint: disable=too-many-instance-attributes
         )
 
     def _forwarded_url(self, request: web.Request) -> str | None:
+        # Preserve the existing native protocol dispatch and rejection order.
+        # pylint: disable=too-many-return-statements
         binding = self._forwarding
         if binding is None:
             return None
@@ -1485,8 +1489,9 @@ class VoicePlatform:  # pylint: disable=too-many-instance-attributes
             or connection.close_enqueued
             or connection.websocket.closed
             or self._stopping
-            or connection.generation != self._generation
         ):
+            raise VoicePlatformError("CALL_CLOSED")
+        if connection.generation != self._generation:
             raise VoicePlatformError("CALL_CLOSED")
         return connection
 

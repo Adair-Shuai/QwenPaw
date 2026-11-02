@@ -10,7 +10,7 @@ import {
   Play as SparkPlayFill,
   CircleStop as SparkStopCircleLine,
 } from "lucide-react";
-import { useTheme } from "../../../contexts/ThemeContext";
+import styles from "./ChatSenderTabsPanel.module.less";
 import {
   selectTasksForSession,
   useBackgroundTasksStore,
@@ -38,6 +38,9 @@ interface ChatSenderTabsPanelProps {
   onEdit: (id: string, text: string) => void;
   onReorder: (items: QueueItem[]) => void;
   onInterruptAndSend: (item: QueueItem) => void;
+  onSteer?: (item: QueueItem) => void;
+  steeringRunId?: string | null;
+  steeringAgentId?: string;
   onClear: () => void;
   onPauseResume: () => void;
   onRetry: (id: string) => void;
@@ -51,13 +54,15 @@ export default function ChatSenderTabsPanel({
   onEdit,
   onReorder,
   onInterruptAndSend,
+  onSteer,
+  steeringRunId,
+  steeringAgentId,
   onClear,
   onPauseResume,
   onRetry,
   onSkip,
 }: ChatSenderTabsPanelProps) {
   const { t } = useTranslation();
-  const { isDark } = useTheme();
   const tasks = useBackgroundTasksStore((s) => s.tasks);
   const removeTasks = useBackgroundTasksStore((s) => s.removeTasks);
   // Self-subscribe so queue/run-state updates don't invalidate ChatPage options.
@@ -143,25 +148,21 @@ export default function ChatSenderTabsPanel({
 
   if (!hasBg && !hasQueue) return null;
 
-  const borderColor = isDark ? "rgba(255,255,255,0.08)" : "rgba(0,0,0,0.06)";
-  const tabInactiveBg = isDark ? "rgba(255,255,255,0.04)" : "rgba(0,0,0,0.03)";
-  const tabActiveBg = isDark ? "rgba(255,255,255,0.08)" : "#fff";
-  const textColor = isDark ? "#bbb" : "#555";
-  const activeText = isDark ? "#eee" : "#222";
-  const mutedColor = isDark ? "#888" : "#999";
+  const borderColor = "var(--app-border-subtle)";
+  const tabInactiveBg = "transparent";
+  const tabActiveBg = "var(--app-surface)";
+  const textColor = "var(--app-text-secondary)";
+  const activeText = "var(--app-text)";
+  const mutedColor = "var(--app-text-tertiary)";
 
-  const bgBadgeBg = hasRunningBg
-    ? isDark
-      ? "rgba(250,173,20,0.2)"
-      : "rgba(250,173,20,0.15)"
-    : isDark
-    ? "rgba(114,46,209,0.25)"
-    : "rgba(114,46,209,0.12)";
-  const bgBadgeColor = hasRunningBg ? "#d48806" : "#722ed1";
+  const bgBadgeBg = "var(--app-fill)";
+  const bgBadgeColor = hasRunningBg
+    ? "var(--app-warning-text)"
+    : "var(--app-text-secondary)";
 
   const chipBtnStyle = {
     border: `1px solid ${borderColor}`,
-    background: isDark ? "rgba(255,255,255,0.06)" : "rgba(255,255,255,0.9)",
+    background: "var(--app-surface)",
     color: textColor,
     fontSize: 11,
     padding: "2px 10px",
@@ -288,7 +289,7 @@ export default function ChatSenderTabsPanel({
         >
           <SparkStopCircleLine
             size="1em"
-            style={{ ...chipIconStyle, color: "#ff4d4f" }}
+            style={{ ...chipIconStyle, color: "var(--app-error-text)" }}
           />
           <span style={chipLabelStyle}>
             {t("tool.control.bgQueue.cancelAll", "Cancel all")}
@@ -319,7 +320,13 @@ export default function ChatSenderTabsPanel({
     ) : activeTab === "queue" && hasQueue ? (
       <div style={{ display: "inline-flex", alignItems: "center", gap: 4 }}>
         {runState === "paused" && (
-          <span style={{ fontSize: 11, color: "#faad14", marginRight: 2 }}>
+          <span
+            style={{
+              fontSize: 11,
+              color: "var(--app-warning-text)",
+              marginRight: 2,
+            }}
+          >
             {t("chat.queue.paused")}
           </span>
         )}
@@ -330,7 +337,7 @@ export default function ChatSenderTabsPanel({
               alignItems: "center",
               gap: 3,
               fontSize: 11,
-              color: "#ff4d4f",
+              color: "var(--app-error-text)",
               marginRight: 2,
             }}
           >
@@ -358,12 +365,12 @@ export default function ChatSenderTabsPanel({
             {isPausedOrError ? (
               <SparkPlayFill
                 size="1em"
-                style={{ ...chipIconStyle, color: "#52c41a" }}
+                style={{ ...chipIconStyle, color: "var(--app-success-text)" }}
               />
             ) : (
               <SparkPauseLine
                 size="1em"
-                style={{ ...chipIconStyle, color: "#faad14" }}
+                style={{ ...chipIconStyle, color: "var(--app-warning-text)" }}
               />
             )}
             <span style={chipLabelStyle}>
@@ -392,12 +399,13 @@ export default function ChatSenderTabsPanel({
 
   return (
     <div
+      className={styles.panel}
       style={{
         display: "flex",
         flexDirection: "column",
-        marginBottom: 4,
+        marginBottom: 8,
         borderRadius: 8,
-        background: isDark ? "rgba(255,255,255,0.02)" : "rgba(0,0,0,0.01)",
+        background: "var(--app-surface)",
         border: `1px solid ${borderColor}`,
         overflow: "hidden",
       }}
@@ -410,7 +418,7 @@ export default function ChatSenderTabsPanel({
           padding: collapsed ? "6px 10px" : "6px 10px 0",
           flexWrap: "wrap",
           borderBottom: collapsed ? undefined : `1px solid ${borderColor}`,
-          background: isDark ? "rgba(0,0,0,0.15)" : "rgba(0,0,0,0.02)",
+          background: "var(--app-surface-subtle)",
         }}
       >
         <div
@@ -428,7 +436,7 @@ export default function ChatSenderTabsPanel({
               "queue",
               t("chat.queue.title", "Message queue"),
               queueItems.length,
-              isDark ? "rgba(24,144,255,0.2)" : "rgba(24,144,255,0.12)",
+              "var(--app-accent-faint)",
               "var(--app-accent-text)",
             )}
           {hasBg &&
@@ -490,6 +498,9 @@ export default function ChatSenderTabsPanel({
               onEdit={onEdit}
               onReorder={onReorder}
               onInterruptAndSend={onInterruptAndSend}
+              onSteer={onSteer}
+              steeringRunId={steeringRunId}
+              steeringAgentId={steeringAgentId}
               onClear={onClear}
               onPauseResume={onPauseResume}
               onRetry={onRetry}

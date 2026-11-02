@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """Telegram native Update parsing, topic routing and final stream delivery."""
 
-import asyncio
 from types import SimpleNamespace as NS
 
 import pytest
@@ -92,19 +91,21 @@ class Builder:
         return Application()
 
 
-@pytest.fixture
-async def telegram(tmp_path, monkeypatch):
+@pytest.fixture(name="telegram")
+async def _fixture_telegram(tmp_path, monkeypatch):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     native = module("telegram", "platform")
     monkeypatch.setattr(native, "Application", Application)
     driver = module("telegram").TelegramDriver()
     peer, identity = bind("telegram", driver, tmp_path)
     await driver.start(
-        dict(
-            bot_token="123:test",
-            workspace_dir=str(tmp_path),
-            media_dir=str(tmp_path / "media"),
-            streaming_enabled=True,
-        ),
+        {
+            "bot_token": "123:test",
+            "workspace_dir": str(tmp_path),
+            "media_dir": str(tmp_path / "media"),
+            "streaming_enabled": True,
+        },
     )
     yield driver, peer, identity, driver._platform._application
     await driver.stop()
@@ -132,7 +133,7 @@ def update(chat_type="private", topic=None, ident=1):
 
 
 async def receive(value, **kwargs):
-    driver, peer, _, app = value
+    _driver, peer, _, app = value
     await app.handlers[0].callback(update(**kwargs), NS(bot=app.bot))
     return peer.batches[-1]["events"][0]
 
@@ -146,7 +147,7 @@ async def test_native_update_keeps_chat_and_topic_reply_target(
     kind,
     topic,
 ):
-    driver, peer, identity, app = telegram
+    _driver, peer, identity, app = telegram
     event = await receive(telegram, chat_type=kind, topic=topic)
     chat = "42" if kind == "private" else "-100"
     assert event["conversation"] == {
@@ -229,6 +230,8 @@ async def test_stream_end_edits_placeholder_to_complete_text(telegram):
 async def test_duplicate_update_is_not_repeated_and_stop_closes_polling(
     telegram,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, peer, _, app = telegram
     await receive(telegram)
     await receive(telegram)

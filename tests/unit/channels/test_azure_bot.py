@@ -77,8 +77,8 @@ class Credentials:
         return {"access_token": "connector-token", "expires_in": 3600}
 
 
-@pytest.fixture
-async def azure(tmp_path, monkeypatch):
+@pytest.fixture(name="azure")
+async def _fixture_azure(tmp_path, monkeypatch):
     private = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     key = {
         **json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(private.public_key())),
@@ -105,16 +105,16 @@ async def azure(tmp_path, monkeypatch):
     peer, identity = bind("azure_bot", driver, tmp_path)
     try:
         await driver.start(
-            dict(
-                enabled=True,
-                app_id=APP_ID,
-                app_password="local-secret",
-                workspace_dir=str(tmp_path),
-                http_host="127.0.0.1",
-                http_port=port,
-                require_mention=True,
-                share_session_in_group=True,
-            ),
+            {
+                "enabled": True,
+                "app_id": APP_ID,
+                "app_password": "local-secret",
+                "workspace_dir": str(tmp_path),
+                "http_host": "127.0.0.1",
+                "http_port": port,
+                "require_mention": True,
+                "share_session_in_group": True,
+            },
         )
         yield driver, peer, identity, private, external
     finally:
@@ -168,6 +168,8 @@ def token(private, **changes):
 
 
 async def post(value, body, auth=None):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, _, _, private, _ = value
     async with REAL_SESSION() as client:
         async with client.post(
@@ -256,6 +258,8 @@ async def test_invalid_audience_or_service_binding_never_admits(azure):
 
 
 async def test_stop_releases_webhook_watchdog_and_unregisters_endpoint(azure):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, peer, _, _, external = azure
     platform = driver._platform
     watchdog, port = platform.watchdog, platform.port

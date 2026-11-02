@@ -216,7 +216,9 @@ def _save_channel_updates(agent_id: str, updates: dict) -> ChannelConfig:
 
 
 async def _save_channel_updates_async(request, agent_id, updates):
-    """Finish publication and captured-agent reload before caller cancellation."""
+    """
+    Finish publication and captured-agent reload before caller cancellation.
+    """
 
     async def persist():
         saved = await run_sync_io(_save_channel_updates, agent_id, updates)
@@ -298,6 +300,9 @@ async def list_channel_types(request: Request) -> List[str]:
 
 @router.get("/channels/schemas", summary="Get editable channel schemas")
 async def list_channel_schemas(request: Request) -> dict:
+    # Preserve bundled and installed channel schema precedence in one
+    # projection.
+    # pylint: disable=R0912
     from ...channel_protocol.management import MANAGEMENT_CAPABILITIES
     from ..agent_context import get_agent_for_request
 
@@ -516,7 +521,7 @@ async def restart_channel(
     except Exception as exc:
         raise HTTPException(
             status_code=500,
-            detail=(f"Failed to restart channel '{channel_name}': {exc}"),
+            detail=f"Failed to restart channel '{channel_name}': {exc}",
         ) from exc
 
 
@@ -1461,8 +1466,9 @@ class DenyPathsProtectionResponse(BaseModel):
         description="Paths that failed to have ACLs applied/removed.",
     )
     platform_supported: bool = Field(
-        description="Whether this feature is available on the "
-        "current platform.",
+        description=(
+            "Whether this feature is available on the current platform."
+        ),
     )
     message: Optional[str] = Field(
         default=None,
@@ -1484,8 +1490,9 @@ async def get_deny_paths_protection() -> DenyPathsProtectionResponse:
             protected_paths=[],
             failed_paths=[],
             platform_supported=False,
-            message="Deny paths protection via ACLs is only "
-            "available on Windows.",
+            message=(
+                "Deny paths protection via ACLs is only available on Windows."
+            ),
         )
 
     from ...sandbox.windows_unelevated_sandbox import DenyPathsProtection
@@ -1516,8 +1523,9 @@ async def put_deny_paths_protection(
             protected_paths=[],
             failed_paths=[],
             platform_supported=False,
-            message="Deny paths protection via ACLs is only "
-            "available on Windows.",
+            message=(
+                "Deny paths protection via ACLs is only available on Windows."
+            ),
         )
 
     from ...governance.policy import DEFAULT_SANDBOX_DENY_PATHS

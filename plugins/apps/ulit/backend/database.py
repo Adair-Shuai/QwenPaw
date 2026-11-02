@@ -326,25 +326,29 @@ class Database:
     def __init__(self, db_path: Path):
         self._db_path = db_path
         self._local = threading.local()
+        self._connections: list[sqlite3.Connection] = []
+        self._connection_lock = threading.Lock()
         db_path.parent.mkdir(parents=True, exist_ok=True)
         # Run migration on first init
         self._migrate()
 
     def _get_conn(self) -> sqlite3.Connection:
         """Get a thread-local connection."""
-        conn = getattr(self._local, "conn", None)
-        if conn is None:
-            conn = sqlite3.connect(
-                str(self._db_path),
-                timeout=30.0,
-                check_same_thread=False,
-            )
-            conn.row_factory = sqlite3.Row
-            conn.execute("PRAGMA journal_mode=WAL")
-            conn.execute("PRAGMA foreign_keys=ON")
-            conn.execute("PRAGMA busy_timeout=30000")
-            self._local.conn = conn
-        return conn
+        with self._connection_lock:
+            conn = getattr(self._local, "conn", None)
+            if conn is None:
+                conn = sqlite3.connect(
+                    str(self._db_path),
+                    timeout=30.0,
+                    check_same_thread=False,
+                )
+                conn.row_factory = sqlite3.Row
+                conn.execute("PRAGMA journal_mode=WAL")
+                conn.execute("PRAGMA foreign_keys=ON")
+                conn.execute("PRAGMA busy_timeout=30000")
+                self._local.conn = conn
+                self._connections.append(conn)
+            return conn
 
     def _migrate(self) -> None:
         """Run schema migration."""
@@ -368,13 +372,14 @@ class Database:
                    JOIN files f ON f.id = d.file_id
                    WHERE f.paper_id IS NOT NULL""",
             )
-            current = 2
         if current != _SCHEMA_VERSION:
             conn.execute(
                 "UPDATE schema_meta SET value=? WHERE key='version'",
                 (str(_SCHEMA_VERSION),),
             )
-            conn.commit()
+        # Commit the rebuilt FTS index and its version together. Leaving this
+        # transaction open blocks writes from asyncio.to_thread workers.
+        conn.commit()
         logger.info(
             "[ulit] Database ready at %s (schema v%d)",
             self._db_path,
@@ -414,10 +419,12 @@ class Database:
         return cur.fetchone()
 
     def close(self) -> None:
-        conn = getattr(self._local, "conn", None)
-        if conn is not None:
-            conn.close()
-            self._local.conn = None
+        """Release worker connections when the hosted app has quiesced."""
+        with self._connection_lock:
+            for conn in self._connections:
+                conn.close()
+            self._connections.clear()
+            self._local = threading.local()
 
 
 # ── Data root management ────────────────────────────────────────────

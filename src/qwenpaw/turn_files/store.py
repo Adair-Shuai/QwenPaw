@@ -333,6 +333,9 @@ class TurnFileStore:
                     _ACTIVE.pop(capture.id, None)
 
     def _finish(self, capture: Capture, status: str) -> dict:
+        # Capture completion pairs immutable blobs with manifest publication
+        # under lock.
+        # pylint: disable=R0912,R0915,R1702
         with self._lock:
             if capture.finished:
                 return _public(capture.manifest)
@@ -526,8 +529,8 @@ class TurnFileStore:
                     ]
         return value
 
-    def get_turn(self, turn_id: str, **scope) -> dict:
-        return _public(self._load(turn_id, **scope))
+    def get_turn(self, turn_id: str, *, session_id: str, **scope) -> dict:
+        return _public(self._load(turn_id, session_id=session_id, **scope))
 
     def list_turns(
         self,

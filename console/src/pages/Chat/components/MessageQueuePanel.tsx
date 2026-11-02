@@ -14,7 +14,9 @@ import {
   Bell as SparkAlertLine,
   CircleAlert as SparkErrorCircleLine,
   Eraser as SparkClearLine,
+  ArrowUp,
 } from "lucide-react";
+import { queueSteeringBlockReason } from "../queueSteering";
 import {
   type QueueItem,
   type QueueRunState,
@@ -29,6 +31,9 @@ interface MessageQueuePanelProps {
   onEdit: (id: string, text: string) => void;
   onReorder: (items: QueueItem[]) => void;
   onInterruptAndSend: (item: QueueItem) => void;
+  onSteer?: (item: QueueItem) => void;
+  steeringRunId?: string | null;
+  steeringAgentId?: string;
   onClear: () => void;
   onPauseResume: () => void;
   onRetry: (id: string) => void;
@@ -44,6 +49,9 @@ export default function MessageQueuePanel({
   onEdit,
   onReorder,
   onInterruptAndSend,
+  onSteer,
+  steeringRunId,
+  steeringAgentId = "default",
   onClear,
   onPauseResume,
   onRetry,
@@ -56,8 +64,10 @@ export default function MessageQueuePanel({
   const [dragOverId, setDragOverId] = useState<string | null>(null);
   const [hoveredId, setHoveredId] = useState<string | null>(null);
   const dragItemRef = useRef<string | null>(null);
+  const editComposingRef = useRef(false);
 
   const startEdit = useCallback((item: QueueItem) => {
+    editComposingRef.current = false;
     setEditingId(item.id);
     setEditText(item.text);
   }, []);
@@ -66,11 +76,13 @@ export default function MessageQueuePanel({
     if (editingId && editText.trim()) {
       onEdit(editingId, editText.trim());
     }
+    editComposingRef.current = false;
     setEditingId(null);
     setEditText("");
   }, [editingId, editText, onEdit]);
 
   const cancelEdit = useCallback(() => {
+    editComposingRef.current = false;
     setEditingId(null);
     setEditText("");
   }, []);
@@ -124,6 +136,7 @@ export default function MessageQueuePanel({
 
   if (items.length === 0) return null;
 
+  const hasSteering = items.some((item) => item.status === "steering");
   const isPausedOrError = runState === "paused" || runState === "error";
   const borderColor = "var(--app-border-subtle)";
   const rowBg = "var(--app-fill-faint)";
@@ -228,6 +241,9 @@ export default function MessageQueuePanel({
                     />
                   )
                 }
+                aria-label={t(
+                  isPausedOrError ? "chat.queue.resume" : "chat.queue.pause",
+                )}
                 onClick={onPauseResume}
               />
             </Tooltip>
@@ -242,6 +258,7 @@ export default function MessageQueuePanel({
                       style={{ fontSize: 14, color: mutedColor }}
                     />
                   }
+                  aria-label={t("chat.queue.clear")}
                   onClick={onClear}
                 />
               </Tooltip>
@@ -252,10 +269,15 @@ export default function MessageQueuePanel({
 
       {/* Queue rows */}
       {items.map((item) => {
+        const isSteering = item.status === "steering";
+        const locked = isSteering || item.status === "sending";
+        const steerBlocked =
+          queueSteeringBlockReason(item, steeringAgentId) ||
+          (!steeringRunId ? "chat.queue.steerUnavailable" : undefined);
         const statusColor =
           item.status === "failed"
             ? "var(--app-error-text)"
-            : item.status === "sending"
+            : locked
             ? "var(--app-accent-text)"
             : "var(--app-success-text)";
         const isHovered = hoveredId === item.id;
@@ -264,7 +286,7 @@ export default function MessageQueuePanel({
         return (
           <div
             key={item.id}
-            draggable={!isEditing && item.status !== "sending"}
+            draggable={!isEditing && !locked}
             onDragStart={() => handleDragStart(item.id)}
             onDragOver={(e) => handleDragOver(e, item.id)}
             onDrop={() => handleDrop(item.id)}
@@ -273,6 +295,11 @@ export default function MessageQueuePanel({
             onMouseLeave={() =>
               setHoveredId((prev) => (prev === item.id ? null : prev))
             }
+            onFocusCapture={() => setHoveredId(item.id)}
+            onBlurCapture={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null))
+                setHoveredId(null);
+            }}
             style={{
               display: "flex",
               alignItems: "center",
@@ -329,10 +356,32 @@ export default function MessageQueuePanel({
                 autoFocus
                 value={editText}
                 onChange={(e) => setEditText(e.target.value)}
-                onPressEnter={confirmEdit}
+                onCompositionStart={() => {
+                  editComposingRef.current = true;
+                }}
+                onCompositionEnd={() => {
+                  editComposingRef.current = false;
+                }}
+                onPressEnter={(e) => {
+                  // rc-input invokes onPressEnter before onKeyDown, so this
+                  // callback must independently protect candidate confirmation.
+                  if (
+                    editComposingRef.current ||
+                    e.nativeEvent.isComposing ||
+                    e.keyCode === 229
+                  )
+                    return;
+                  confirmEdit();
+                }}
                 onBlur={confirmEdit}
                 onKeyDown={(e) => {
-                  if (e.key === "Escape") cancelEdit();
+                  if (
+                    e.key === "Escape" &&
+                    !editComposingRef.current &&
+                    !e.nativeEvent.isComposing &&
+                    e.keyCode !== 229
+                  )
+                    cancelEdit();
                 }}
                 style={{ flex: 1, fontSize: 12 }}
               />
@@ -348,10 +397,10 @@ export default function MessageQueuePanel({
                     color:
                       item.status === "failed"
                         ? "var(--app-error-text)"
-                        : item.status === "sending"
+                        : locked
                         ? "var(--app-accent-text)"
                         : "var(--app-text)",
-                    fontWeight: item.status === "sending" ? 500 : 400,
+                    fontWeight: locked ? 500 : 400,
                   }}
                 >
                   {item.text}
@@ -434,100 +483,161 @@ export default function MessageQueuePanel({
                   </span>
                 )}
 
-                {/* Row action buttons — always reserve space for layout stability */}
-                <span
-                  style={{
-                    display: "inline-flex",
-                    alignItems: "center",
-                    gap: 2,
-                    flexShrink: 0,
-                    opacity: isHovered ? 1 : 0,
-                    transition: "opacity 0.15s ease",
-                    pointerEvents: isHovered ? "auto" : "none",
-                  }}
-                >
-                  <Tooltip title={t("chat.queue.edit")} mouseEnterDelay={0.5}>
-                    <IconButton
-                      bordered={false}
-                      size="small"
-                      icon={
-                        <SparkEditLine size="1em" style={{ fontSize: 13 }} />
-                      }
-                      onClick={() => startEdit(item)}
-                    />
-                  </Tooltip>
-
-                  {item.status === "failed" && (
-                    <>
-                      <Tooltip
-                        title={t("chat.queue.retry")}
-                        mouseEnterDelay={0.5}
-                      >
-                        <IconButton
-                          bordered={false}
-                          size="small"
-                          icon={
-                            <SparkRefreshLine
-                              size="1em"
-                              style={{
-                                fontSize: 13,
-                                color: "var(--app-accent-text)",
-                              }}
-                            />
-                          }
-                          onClick={() => onRetry(item.id)}
-                        />
-                      </Tooltip>
-                      <Tooltip
-                        title={t("chat.queue.skip")}
-                        mouseEnterDelay={0.5}
-                      >
-                        <IconButton
-                          bordered={false}
-                          size="small"
-                          icon={
-                            <SparkNextSentenceLine
-                              size="1em"
-                              style={{ fontSize: 13, color: mutedColor }}
-                            />
-                          }
-                          onClick={() => onSkip(item.id)}
-                        />
-                      </Tooltip>
-                    </>
-                  )}
-
+                {isSteering ? (
                   <Tooltip
-                    title={t("chat.queue.interruptAndSend")}
-                    mouseEnterDelay={0.5}
+                    title={item.errorMessage || t("chat.queue.steerHint")}
                   >
-                    <IconButton
-                      bordered={false}
-                      size="small"
-                      icon={
-                        <SparkSendLine size="1em" style={{ fontSize: 13 }} />
-                      }
-                      onClick={() => onInterruptAndSend(item)}
-                    />
+                    <span
+                      role="status"
+                      style={{ color: "var(--app-accent-text)", flexShrink: 0 }}
+                    >
+                      {t(
+                        item.errorMessage
+                          ? "chat.queue.steerConfirming"
+                          : "chat.queue.steerPending",
+                      )}
+                    </span>
                   </Tooltip>
+                ) : onSteer && item.status === "pending" ? (
+                  <Tooltip title={t(steerBlocked || "chat.queue.steerHint")}>
+                    <span>
+                      <button
+                        type="button"
+                        aria-label={t("chat.queue.steer")}
+                        disabled={Boolean(steerBlocked)}
+                        onClick={() => onSteer(item)}
+                        style={{
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: 3,
+                          minHeight: 28,
+                          padding: "2px 6px",
+                          border: "1px solid var(--app-border-subtle)",
+                          borderRadius: 6,
+                          background: "var(--app-surface)",
+                          fontSize: 12,
+                          color: steerBlocked ? mutedColor : "var(--app-text)",
+                          cursor: steerBlocked ? "not-allowed" : "pointer",
+                        }}
+                      >
+                        <ArrowUp size={13} />
+                        {t("chat.queue.steerShort")}
+                      </button>
+                    </span>
+                  </Tooltip>
+                ) : null}
 
-                  <Tooltip title={t("chat.queue.delete")} mouseEnterDelay={0.5}>
-                    <IconButton
-                      bordered={false}
-                      size="small"
-                      icon={
-                        <SparkDeleteLine
-                          size="1em"
-                          style={{
-                            fontSize: 13,
-                            color: "var(--app-error-text)",
-                          }}
-                        />
-                      }
-                      onClick={() => onRemove(item.id)}
-                    />
-                  </Tooltip>
-                </span>
+                {/* Owned steering input cannot be edited, deleted or sent again. */}
+                {!isSteering && (
+                  <span
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 2,
+                      flexShrink: 0,
+                      opacity: isHovered ? 1 : 0,
+                      transition: "opacity 0.15s ease",
+                      pointerEvents: isHovered ? "auto" : "none",
+                    }}
+                  >
+                    <Tooltip title={t("chat.queue.edit")} mouseEnterDelay={0.5}>
+                      <IconButton
+                        bordered={false}
+                        size="small"
+                        icon={
+                          <SparkEditLine size="1em" style={{ fontSize: 13 }} />
+                        }
+                        aria-label={t("chat.queue.edit")}
+                        onClick={() => startEdit(item)}
+                        disabled={locked}
+                      />
+                    </Tooltip>
+
+                    {item.status === "failed" && (
+                      <>
+                        <Tooltip
+                          title={t("chat.queue.retry")}
+                          mouseEnterDelay={0.5}
+                        >
+                          <IconButton
+                            bordered={false}
+                            size="small"
+                            icon={
+                              <SparkRefreshLine
+                                size="1em"
+                                style={{
+                                  fontSize: 13,
+                                  color: "var(--app-accent-text)",
+                                }}
+                              />
+                            }
+                            aria-label={t("chat.queue.retry")}
+                            onClick={() => onRetry(item.id)}
+                          />
+                        </Tooltip>
+                        <Tooltip
+                          title={t("chat.queue.skip")}
+                          mouseEnterDelay={0.5}
+                        >
+                          <IconButton
+                            bordered={false}
+                            size="small"
+                            icon={
+                              <SparkNextSentenceLine
+                                size="1em"
+                                style={{ fontSize: 13, color: mutedColor }}
+                              />
+                            }
+                            aria-label={t("chat.queue.skip")}
+                            onClick={() => onSkip(item.id)}
+                          />
+                        </Tooltip>
+                      </>
+                    )}
+
+                    <Tooltip
+                      title={t(
+                        hasSteering
+                          ? "chat.queue.steerPending"
+                          : "chat.queue.interruptAndSend",
+                      )}
+                      mouseEnterDelay={0.5}
+                    >
+                      <IconButton
+                        bordered={false}
+                        size="small"
+                        icon={
+                          <SparkSendLine size="1em" style={{ fontSize: 13 }} />
+                        }
+                        onClick={() => onInterruptAndSend(item)}
+                        disabled={locked || hasSteering}
+                        aria-label={t("chat.queue.interruptAndSend")}
+                      />
+                    </Tooltip>
+
+                    <Tooltip
+                      title={t("chat.queue.delete")}
+                      mouseEnterDelay={0.5}
+                    >
+                      <IconButton
+                        bordered={false}
+                        size="small"
+                        icon={
+                          <SparkDeleteLine
+                            size="1em"
+                            style={{
+                              fontSize: 13,
+                              color: "var(--app-error-text)",
+                            }}
+                          />
+                        }
+                        aria-label={t("chat.queue.delete")}
+                        onClick={() => onRemove(item.id)}
+                        disabled={locked}
+                      />
+                    </Tooltip>
+                  </span>
+                )}
               </>
             )}
           </div>

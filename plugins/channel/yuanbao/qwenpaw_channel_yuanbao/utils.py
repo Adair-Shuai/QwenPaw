@@ -35,6 +35,9 @@ async def download_media(
     Returns:
         Local file path on success, None on failure.
     """
+    # Each early return rejects a failed or oversized download before file
+    # publication.
+    # pylint: disable=too-many-return-statements
     media_dir.mkdir(parents=True, exist_ok=True)
 
     try:

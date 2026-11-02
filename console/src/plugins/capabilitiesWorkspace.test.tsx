@@ -1,6 +1,9 @@
 import fs from "node:fs";
 import path from "node:path";
 import React from "react";
+import { createInstance, type i18n } from "i18next";
+import { I18nextProvider } from "react-i18next";
+import { useHostAgentDisplayName } from "./hostSdk/hooks";
 import * as antd from "antd";
 import {
   act,
@@ -170,7 +173,7 @@ describe.each([
     routeRegistry.__resetForTests();
     Reflect.deleteProperty(window, "QwenPaw");
   });
-  async function mountPage(tab = "engines") {
+  async function mountPage(tab = "engines", translations?: i18n) {
     window.history.replaceState({}, "", `/ugsci-tools-skills?tab=${tab}`);
     await act(async () => {
       new Function(
@@ -180,14 +183,86 @@ describe.each([
     const Page = routeRegistry
       .snapshot()
       .find((route) => route.id === "ugsci.tools-skills")!.Component;
-    render(
+    const content = (
       <antd.ConfigProvider theme={{ token: { motion: false } }}>
         <antd.App>
           <Page />
         </antd.App>
-      </antd.ConfigProvider>,
+      </antd.ConfigProvider>
+    );
+    render(
+      translations ? (
+        <I18nextProvider i18n={translations}>{content}</I18nextProvider>
+      ) : (
+        content
+      ),
     );
   }
+
+  it("localizes configuration agent labels live while preserving custom names and selected IDs", async () => {
+    selectedAgent = "default";
+    window.QwenPaw!.host.useAgentDisplayName = useHostAgentDisplayName;
+    const translations = createInstance();
+    await translations.init({
+      lng: "zh",
+      fallbackLng: "zh",
+      resources: {
+        zh: { translation: { agent: { defaultDisplayName: "默认智能体" } } },
+        en: { translation: { agent: { defaultDisplayName: "Default Agent" } } },
+      },
+    });
+    const originalFetch = fetchHost.getMockImplementation()!;
+    let resolveAgents!: (response: Response) => void;
+    fetchHost.mockImplementation((url: string, init?: RequestInit) =>
+      url === "/agents"
+        ? new Promise<Response>((resolve) => {
+            resolveAgents = resolve;
+          })
+        : originalFetch(url, init),
+    );
+    await mountPage("tools", translations);
+    const selector = screen.getByRole("combobox", { name: "配置对象" });
+    const selection = selector.closest(".ant-select")!;
+    expect(
+      within(selection as HTMLElement).getByTitle("默认智能体"),
+    ).toBeVisible();
+    await act(async () =>
+      resolveAgents(
+        json({
+          agents: [
+            { id: "default", name: "Default Agent" },
+            { id: "expert-a", name: "专家 A" },
+            { id: "qa", name: "QA Agent" },
+          ],
+        }),
+      ),
+    );
+    await act(async () => {
+      await translations.changeLanguage("en");
+    });
+    expect(
+      within(selection as HTMLElement).getByTitle("Default Agent"),
+    ).toBeVisible();
+    expect(selectedAgent).toBe("default");
+    expect(screen.getByRole("combobox", { name: "配置对象" })).toBe(selector);
+    await userEvent.click(selector);
+    await userEvent.click(await screen.findByText("QA Agent"));
+    expect(selectedAgent).toBe("qa");
+    await act(async () => {
+      await translations.changeLanguage("zh");
+    });
+    expect(
+      within(selection as HTMLElement).getByTitle("QA Agent"),
+    ).toBeVisible();
+    expect(selectedAgent).toBe("qa");
+    await userEvent.click(selector);
+    await waitFor(() => expect(screen.getByText("专家 A")).toBeVisible());
+    await userEvent.click(screen.getByText("默认智能体"));
+    expect(selectedAgent).toBe("default");
+    expect(
+      within(selection as HTMLElement).getByTitle("默认智能体"),
+    ).toBeVisible();
+  });
 
   it("configures a real engine from its compact icon card and preserves advanced values after a failed save", async () => {
     await mountPage();

@@ -1397,7 +1397,8 @@ class TestUploadPluginRoute:
         from qwenpaw.plugins.python_backend import PythonBackend
 
         async def validate_source(loader, request, source_path, **kwargs):
-            # Real disk manifest reader and backend entry validator; no error stub.
+            # Real disk manifest reader and backend entry validator; no error
+            # stub.
             _, manifest = PluginLoader.__new__(
                 PluginLoader,
             ).read_source_manifest(
@@ -1405,12 +1406,16 @@ class TestUploadPluginRoute:
             )
             PythonBackend.validate_entry_points(
                 manifest.id,
-                source_path / manifest.entry.backend
-                if manifest.entry.backend
-                else None,
-                source_path / manifest.entry.frontend
-                if manifest.entry.frontend
-                else None,
+                (
+                    source_path / manifest.entry.backend
+                    if manifest.entry.backend
+                    else None
+                ),
+                (
+                    source_path / manifest.entry.frontend
+                    if manifest.entry.frontend
+                    else None
+                ),
             )
             pytest.fail("Entry-less manifest was accepted")
 
@@ -1511,8 +1516,9 @@ class TestSearchMarketPlugins:
             result = await search_market_plugins()
         assert result == {"ok": True}
         assert _FakeAsyncClient.last["timeout"] == 15
-        assert _FakeAsyncClient.last["url"] == (
-            "https://platform.agentscope.io/openapi/v1/plugins"
+        assert (
+            _FakeAsyncClient.last["url"]
+            == "https://platform.agentscope.io/openapi/v1/plugins"
         )
         assert _FakeAsyncClient.last["params"] == {
             "page_number": 1,

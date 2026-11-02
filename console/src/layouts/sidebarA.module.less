@@ -549,9 +549,9 @@
   .surface .newTask {
     order: 1;
     justify-content: flex-start;
-    min-height: 36px;
-    padding: 7px 9px;
-    margin: 0 0 5px;
+    min-height: 32px;
+    padding: 5px 9px;
+    margin: 0 0 2px;
     border: 0;
     background: transparent;
     border-radius: 7px;
@@ -563,7 +563,7 @@
   }
   .toolFrame {
     order: 0;
-    margin: 0 0 8px;
+    margin: 0 0 4px;
   }
   .toolPanel {
     border: 0;
@@ -595,6 +595,13 @@
     width: 25px;
     height: 25px;
     flex-basis: 25px;
+  }
+}
+@media (any-pointer: coarse) {
+  :global(html[data-page-style]:not([data-page-style="classic"]))
+    .surface
+    .newTask {
+    min-height: var(--app-hit-touch);
   }
 }
 :global(html[data-page-style="openai"]) .surface.surface {

@@ -4,6 +4,7 @@
 The pure projection does not authorize a plugin. Automatic callers must first
 match their trusted description's owner against the delivered official catalog.
 """
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -31,7 +32,9 @@ def project_official_execution(
     legacy_references: Mapping | None = None,
     matrix_binding: Mapping | None = None,
 ) -> tuple[dict, dict[str, str]]:
-    """Detach known old paths/credentials without reading ambient host state."""
+    """
+    Detach known old paths/credentials without reading ambient host state.
+    """
     values = dict(config)
     legacy_state_dir = Path(legacy_state_dir).expanduser()
     if not legacy_state_dir.is_absolute():

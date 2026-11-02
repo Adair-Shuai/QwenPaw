@@ -68,7 +68,9 @@ def _hex(value, length):
 
 
 class PayloadStore:
-    """One side's outbox quota; only the creating host disposes the run root."""
+    """
+    One side's outbox quota; only the creating host disposes the run root.
+    """
 
     def __init__(self, root, run_id, limits, side, *, owner=False):
         self.root, self.run_id, self.limits = root, run_id, limits
@@ -147,15 +149,19 @@ class PayloadStore:
             not isinstance(context, Mapping)
             or set(context) != {"version", "root", "run_id", "limits"}
             or type(context["version"]) is not int
-            or context["version"] != 1
-            or side not in {"host", "worker"}
-            or not _hex(context["run_id"], 32)
-            or not isinstance(context["root"], str)
-            or "\0" in context["root"]
-            or not Path(context["root"]).is_absolute()
-            or not isinstance(context["limits"], Mapping)
-            or set(context["limits"]) != set(asdict(PayloadLimits()))
+            or (context["version"] != 1)
+            or (side not in {"host", "worker"})
         ):
+            raise FrameProtocolError("invalid payload context")
+        if (
+            not _hex(context["run_id"], 32)
+            or not isinstance(context["root"], str)
+            or "\x00" in context["root"]
+            or (not Path(context["root"]).is_absolute())
+            or (not isinstance(context["limits"], Mapping))
+        ):
+            raise FrameProtocolError("invalid payload context")
+        if set(context["limits"]) != set(asdict(PayloadLimits())):
             raise FrameProtocolError("invalid payload context")
         try:
             limits = PayloadLimits(**context["limits"])
@@ -510,16 +516,21 @@ class PayloadStore:
             set(reference) != _REFERENCE_KEYS
             or type(reference[_MARKER]) is not int
             or reference[_MARKER] != 1
-            or reference["run_id"] != self.run_id
-            or reference["direction"] != self._incoming
-            or not _hex(reference["id"], 32)
+            or (reference["run_id"] != self.run_id)
+            or (reference["direction"] != self._incoming)
+        ):
+            raise FrameProtocolError("invalid payload reference")
+        if (
+            not _hex(reference["id"], 32)
             or not _hex(reference["sha256"], 64)
             or type(reference["byte_length"]) is not int
-            or not 0
-            < reference["byte_length"]
-            <= min(
-                self.limits.max_message_bytes,
-                self.limits.max_pending_bytes,
+            or (
+                not 0
+                < reference["byte_length"]
+                <= min(
+                    self.limits.max_message_bytes,
+                    self.limits.max_pending_bytes,
+                )
             )
         ):
             raise FrameProtocolError("invalid payload reference")
@@ -569,7 +580,9 @@ class PayloadStore:
         return await self._io(load, deadline)
 
     def close(self):
-        """Fence new I/O; possibly unread files remain owned until tree exit."""
+        """
+        Fence new I/O; possibly unread files remain owned until tree exit.
+        """
         self._closed = True
         for abort in self._jobs.values():
             abort.set()
@@ -580,6 +593,9 @@ class PayloadStore:
             self._directories.pop(name)
 
     def _cleanup_files(self, deadline, abort):
+        # Cleanup must validate file identity before deletion under payload
+        # custody.
+        # pylint: disable=R0912,R1702
         closed = []
         try:
             self._check_deadline(deadline, abort)
@@ -630,6 +646,9 @@ class PayloadStore:
 
     async def cleanup(self, *, deadline):
         """Fence admission, drain every successor, then exclusively dispose."""
+        # Each cleanup outcome retains its distinct process and payload
+        # ownership.
+        # pylint: disable=R0911
         if self._disposed:
             return True
         self.close()

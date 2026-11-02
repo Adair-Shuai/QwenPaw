@@ -84,6 +84,8 @@ class MQTTPlatform:
         reason_code,
         properties=None,
     ):
+        # Keep the native SDK callback parameter names and signature.
+        # pylint: disable=unused-argument
         if not self._owns(client):
             return
         if reason_code != 0:
@@ -133,6 +135,8 @@ class MQTTPlatform:
         reason_code,
         properties=None,
     ):
+        # Keep the native SDK callback parameter names and signature.
+        # pylint: disable=unused-argument
         if not self._owns(client):
             return
         if (
@@ -156,6 +160,9 @@ class MQTTPlatform:
         self._schedule(lambda: self._reconnect(client, epoch), client, epoch)
 
     async def _reconnect(self, client, epoch):
+        # Reserve Paho message IDs within the owned client connection
+        # generation.
+        # pylint: disable=protected-access
         token = (client, epoch)
         try:
             if not self._owns(client, epoch):
@@ -184,9 +191,7 @@ class MQTTPlatform:
                     self._ready.clear()
                     await self.start()
                     return
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
+                except Exception as exc:
                     if self.client is not None:
                         failed = self.client
                         failed.disconnect()
@@ -195,7 +200,9 @@ class MQTTPlatform:
                             rc != mqtt.MQTT_ERR_SUCCESS
                             and getattr(failed, "_thread", None) is not None
                         ):
-                            raise RuntimeError("MQTT_LOOP_STOP_FAILED")
+                            raise RuntimeError(
+                                "MQTT_LOOP_STOP_FAILED",
+                            ) from exc
                         if self.client is failed:
                             self.client = None
                     delay = min(delay * 2, 10)
@@ -204,6 +211,8 @@ class MQTTPlatform:
                 self._reconnect_pending = None
 
     def _on_message(self, client, userdata, msg):
+        # Keep the native SDK callback parameter names and signature.
+        # pylint: disable=unused-argument
         if not self._owns(client) or not self.connected:
             return
         epoch = self._epoch
@@ -243,6 +252,9 @@ class MQTTPlatform:
         self._schedule(receive, client, epoch)
 
     async def start(self):
+        # Reserve Paho message IDs within the owned client connection
+        # generation.
+        # pylint: disable=protected-access
         for key in ("host", "subscribe_topic", "publish_topic"):
             if not self.config.get(key):
                 raise ValueError("MQTT " + key + " is required")

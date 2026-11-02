@@ -414,8 +414,9 @@ def test_provisioner_launches_through_injected_isolator(
 
     assert isolator.called is True
     assert started.state is RuntimeState.RUNNING
-    assert isolator.environment["QWENPAW_RUNTIME_API_URL"] == (
-        f"http://{started.host}:{started.port}"
+    assert (
+        isolator.environment["QWENPAW_RUNTIME_API_URL"]
+        == f"http://{started.host}:{started.port}"
     )
     provisioner.close()
 
@@ -440,8 +441,9 @@ def test_windows_runtime_uses_outbound_reverse_tunnel(
 
     command = isolator.command
     separator = command.index("--")
-    assert command[command.index("-m") + 1] == (
-        "qwenpaw.hub.windows_runtime_bridge"
+    assert (
+        command[command.index("-m") + 1]
+        == "qwenpaw.hub.windows_runtime_bridge"
     )
     assert command[command.index("--control-port") + 1] == "9100"
     assert command[command.index("--token") + 1] == "tunnel-token"
@@ -453,8 +455,9 @@ def test_windows_runtime_uses_outbound_reverse_tunnel(
     ]
     assert command[command.index("--host", separator) + 1] == "127.0.0.1"
     internal_port = command[command.index("--target-port") + 1]
-    assert isolator.environment["QWENPAW_RUNTIME_API_URL"] == (
-        f"http://127.0.0.1:{internal_port}"
+    assert (
+        isolator.environment["QWENPAW_RUNTIME_API_URL"]
+        == f"http://127.0.0.1:{internal_port}"
     )
     assert started.port == 9001
     assert _TunnelBroker.instances[0].started is True
@@ -505,9 +508,7 @@ def test_local_readiness_ignores_optional_integration_health(
     )
 
     assert requests[0].full_url == "http://127.0.0.1:9001/api/version"
-    assert requests[0].get_header("X-qwenpaw-runtime-token") == (
-        "runtime-token"
-    )
+    assert requests[0].get_header("X-qwenpaw-runtime-token") == "runtime-token"
 
 
 def test_runtime_parent_thread_survives_request_worker(
@@ -573,6 +574,8 @@ def test_runtime_parent_thread_survives_request_worker(
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="Requires Seatbelt")
 def test_macos_sandbox_cli_can_reach_only_its_runtime(tmp_path, monkeypatch):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     """Run the actual CLI inside its server's native sandbox."""
     from qwenpaw.plugins import dependency_maintenance as maintenance
     from qwenpaw.plugins.channel_bootstrap import plugin_runtime_site
@@ -636,13 +639,17 @@ def test_macos_sandbox_cli_can_reach_only_its_runtime(tmp_path, monkeypatch):
             protected = {protected!r}
             for name in protected:
                 path = Path(name)
-                for mutate in (lambda: path.write_text("tampered"), path.unlink):
+                for mutate in (
+                    lambda: path.write_text("tampered"), path.unlink
+                ):
                     try:
                         mutate()
                     except PermissionError:
                         pass
                     else:
-                        raise AssertionError("shared custody writable: " + name)
+                        raise AssertionError(
+                            "shared custody writable: " + name
+                        )
             shared = Path({str(shared)!r})
             assert maintenance.live_readers([shared]) == []
             own_shared_directory = maintenance._readers_dir(shared) / scope

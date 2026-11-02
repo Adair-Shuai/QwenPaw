@@ -34,6 +34,9 @@ RESPONSE_FIELDS = frozenset(
 
 def config_fields(schema, names=None):
     """Adapt scalar schema fields to the Console's existing widgets."""
+    # Project all schema field kinds together so their public order is
+    # stable.
+    # pylint: disable=R0912
     properties = schema.get("properties", {})
     requested = [
         name
@@ -154,7 +157,9 @@ def get_configurable_channel_catalog(saved_keys=()):
 
 
 async def get_configurable_channel_catalog_async(saved_keys=()):
-    """Read passive files off-loop, then merge current runtime registrations."""
+    """
+    Read passive files off-loop, then merge current runtime registrations.
+    """
     from ...utils.io_utils import run_sync_io
 
     saved_keys = tuple(saved_keys)

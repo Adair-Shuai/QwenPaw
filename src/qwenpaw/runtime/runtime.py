@@ -55,6 +55,8 @@ class Runtime:
         request: Any,
     ) -> AsyncGenerator[Any, None]:
         """8-phase lifecycle orchestration."""
+        # Runtime owns AgentRequest's non-serialized authorization handoff.
+        # pylint: disable=protected-access
         request = self._normalize(request)
         from ..schemas import AgentRequest
 
@@ -74,6 +76,10 @@ class Runtime:
         ctx._envelope = envelope  # pylint: disable=protected-access
         skip_agent = False
         file_tracker = None
+        from ..app.steering import CURRENT_STEERING
+
+        steering_candidate = CURRENT_STEERING.get()
+        steering = None
 
         try:
             # --- [phase 1] PRE_DISPATCH ---
@@ -135,6 +141,10 @@ class Runtime:
 
             if not skip_agent:
                 self._apply_context_injections(ctx)
+                if steering_candidate is not None and steering_candidate.bind(
+                    ctx,
+                ):
+                    steering = steering_candidate
                 from ..config.context import (
                     get_all_project_dir_paths,
                     get_tool_base_dir,
@@ -178,6 +188,8 @@ class Runtime:
                         yield ev
 
             # --- [phase 6] POST_RESPONSE ---
+            if steering is not None:
+                await steering.close()
             await hooks.run(Phase.POST_RESPONSE, ctx)
 
             if file_tracker is not None:
@@ -255,6 +267,17 @@ class Runtime:
                 yield ev
             raise
         finally:
+            if steering is not None:
+                from ..utils.io_utils import run_async_to_completion
+
+                try:
+                    await run_async_to_completion(steering.close())
+                except asyncio.CancelledError:
+                    # Receipt finalization completed before re-cancellation;
+                    # retain the rest of the original resource cleanup.
+                    pass
+                except Exception:
+                    logger.exception("Could not finalize steering receipts")
             if file_tracker is not None:
                 from ..turn_files.lifecycle import terminal_status
 
@@ -605,6 +628,8 @@ class Runtime:
 
     @staticmethod
     def _normalize(request: Any) -> Any:
+        # Preserve the private actor marker while normalizing channel input.
+        # pylint: disable=protected-access
         from ..schemas import AgentRequest
 
         if isinstance(request, dict):

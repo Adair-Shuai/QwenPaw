@@ -140,8 +140,6 @@ class XiaoYiConnection:
             return False
         try:
             await self._ws.send_json(data)
-        except asyncio.CancelledError:
-            raise
         except Exception as exc:
             # A write exception does not prove that the remote missed it.
             raise XiaoYiDeliveryError(
@@ -177,8 +175,6 @@ class XiaoYiConnection:
                     },
                 ):
                     break
-        except asyncio.CancelledError:
-            raise
         except Exception:
             logger.warning("xiaoyi [%s]: heartbeat failed", self.server_name)
         if self._current(generation) and self._ws is not None:
@@ -216,8 +212,6 @@ class XiaoYiConnection:
                     aiohttp.WSMsgType.CLOSE,
                 }:
                     break
-        except asyncio.CancelledError:
-            raise
         except Exception:
             logger.warning("xiaoyi [%s]: receive failed", self.server_name)
         finally:

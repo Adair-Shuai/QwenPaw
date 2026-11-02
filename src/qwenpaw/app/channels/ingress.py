@@ -129,6 +129,9 @@ class _HTTPResponse(Response):
 
 def route_is_unowned(registry, method, path, *, service=None):
     """Read host custody without selecting, forwarding or starting a route."""
+    # The ingress index owns these private route and retired-binding
+    # snapshots.
+    # pylint: disable=W0212
     if service is None and registry is not None:
         service = getattr(registry, "channel_ingress_service", None)
     routes = DEFAULT_ROUTES
@@ -275,7 +278,9 @@ class ChannelIngressService:
         return None
 
     def endpoint_changed(self, service, reference):
-        """Synchronous registration callback; starting is allowed, routing isn't."""
+        """
+        Synchronous registration callback; starting is allowed, routing isn't.
+        """
         self._sweep()
         routes = self.routes.get(
             (reference.plugin_id, reference.endpoint.channel_key),
@@ -445,16 +450,23 @@ class ChannelIngressService:
                 parsed.scheme not in {"http", "https"}
                 or not parsed.hostname
                 or parsed.username is not None
-                or parsed.password is not None
-                or parsed.path not in {"", "/"}
-                or parsed.query
+                or (parsed.password is not None)
+                or (parsed.path not in {"", "/"})
+            ):
+                raise ValueError()
+            if (
+                parsed.query
                 or parsed.fragment
                 or "?" in origin
-                or "#" in origin
-                or any(ord(c) < 33 or ord(c) > 126 for c in origin)
-                or any(c in parsed.netloc for c in "\\%?#")
-                or parsed.port is not None
-                and not 1 <= parsed.port <= 65535
+                or ("#" in origin)
+            ):
+                raise ValueError()
+            if (
+                any((ord(c) < 33 or ord(c) > 126 for c in origin))
+                or any((c in parsed.netloc for c in "\\%?#"))
+                or (
+                    parsed.port is not None and (not 1 <= parsed.port <= 65535)
+                )
             ):
                 raise ValueError()
         except ValueError:
@@ -499,10 +511,11 @@ class ChannelIngressService:
                 or parsed.password
                 or parsed.path
                 or parsed.query
-                or parsed.fragment
             ):
                 raise ValueError()
-            parsed.port
+            if parsed.fragment:
+                raise ValueError()
+            _ = parsed.port
         except ValueError:
             raise _Unavailable(400) from None
         canonical = self._canonical_origin(reference)
@@ -553,6 +566,9 @@ class ChannelIngressService:
         )
 
     def _session(self):
+        # The HTTP session adapter owns the transport retry and request
+        # methods.
+        # pylint: disable=W0212
         if self._client is None:
             self._client = aiohttp.ClientSession(
                 trust_env=False,
@@ -576,7 +592,8 @@ class ChannelIngressService:
             original = self._client._request
 
             async def no_redirect(method, url, **kwargs):
-                # ws_connect doesn't expose allow_redirects on supported aiohttp.
+                # ws_connect doesn't expose allow_redirects on supported
+                # aiohttp.
                 kwargs["allow_redirects"] = False
                 return await original(method, url, **kwargs)
 
@@ -690,6 +707,8 @@ class ChannelIngressService:
                 await self._finish_forward(forward)
 
     async def forward_websocket(self, websocket):
+        # The websocket adapter consumes the session-owned upstream response.
+        # pylint: disable=W0212
         forward = None
         try:
             forward = self._select(websocket, "WEBSOCKET")
@@ -809,9 +828,11 @@ class ChannelIngressService:
                 aiohttp.WSMsgType.BINARY,
             }:
                 size = len(
-                    message.data.encode("utf-8")
-                    if message.type is aiohttp.WSMsgType.TEXT
-                    else message.data,
+                    (
+                        message.data.encode("utf-8")
+                        if message.type is aiohttp.WSMsgType.TEXT
+                        else message.data
+                    ),
                 )
                 if size > self.limits.ws_frame_bytes:
                     forward.close_code, forward.close_reason = (

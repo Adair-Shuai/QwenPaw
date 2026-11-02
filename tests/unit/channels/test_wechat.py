@@ -29,8 +29,8 @@ def message(number, *, group="", text="hello"):
     }
 
 
-@pytest_asyncio.fixture
-async def runtime(tmp_path, monkeypatch):
+@pytest_asyncio.fixture(name="runtime")
+async def _fixture_runtime(tmp_path, monkeypatch):
     requests, clients = [], []
     real_client = httpx.AsyncClient
     polling, qr_release = asyncio.Event(), asyncio.Event()
@@ -141,6 +141,8 @@ async def send(rt, handle, parts):
 
 
 async def test_existing_login_connects_without_qr(runtime):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     rt = await runtime.start()
     assert rt.driver._connected
     assert rt.driver._platform._client.bot_token == "existing-token"
@@ -151,6 +153,8 @@ async def test_first_scan_transitions_from_auth_required_to_connected(
     runtime,
     tmp_path,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     starting = asyncio.create_task(runtime.start(token=""))
     async with asyncio.timeout(2):
         while not any(
@@ -161,7 +165,7 @@ async def test_first_scan_transitions_from_auth_required_to_connected(
     runtime.qr_release.set()
     rt = await starting
     assert rt.driver._connected
-    assert (tmp_path / "token").read_text() == "fresh-token"
+    assert (tmp_path / "token").read_text(encoding="utf-8") == "fresh-token"
     assert rt.driver._platform._client.base_url == "https://assigned.test"
     notices = [
         params
@@ -184,6 +188,8 @@ async def test_native_dm_and_group_routes_send_with_context(
     session,
     kind,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     rt = await runtime.start()
     await rt.driver._platform._message(message(1, group=group))
     event = rt.peer.batches[0]["events"][0]
@@ -209,6 +215,8 @@ async def test_outbound_image_encrypts_and_sends_native_media(
     runtime,
     tmp_path,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     rt = await runtime.start()
     await rt.driver._platform._message(message(2))
     event = rt.peer.batches[0]["events"][0]
@@ -238,6 +246,8 @@ async def test_outbound_image_encrypts_and_sends_native_media(
 
 
 async def test_stop_cancels_poll_and_closes_clients(runtime):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     rt = await runtime.start()
     platform = rt.driver._platform
     poll = platform._poll_task
@@ -256,9 +266,11 @@ async def test_auth_admission_scans_off_loop_and_releases_claims(
     monkeypatch,
     entry,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # Keep this lifecycle scenario and its cleanup in one test scope.
+    # pylint: disable=protected-access,too-many-branches,too-many-statements
     import threading
     import sys
-    from types import SimpleNamespace
 
     from qwenpaw.app.channels import wechat_auth_custody as custody
     from qwenpaw.app.channels.isolated_proxy import IsolatedChannelProxy
@@ -304,6 +316,8 @@ async def test_auth_admission_scans_off_loop_and_releases_claims(
         return scan(*args)
 
     async def start(channel):
+        # Regression assertions inspect owned lifecycle and transport state.
+        # pylint: disable=protected-access
         assert channel._wechat_auth_claims
         started.append(channel)
 
@@ -313,7 +327,7 @@ async def test_auth_admission_scans_off_loop_and_releases_claims(
     description = describe_channel(
         source,
         PluginManifest.from_dict(
-            json.loads((source / "plugin.json").read_text()),
+            json.loads((source / "plugin.json").read_text(encoding="utf-8")),
         ),
     )
     case.registry.register_channel_descriptor(
@@ -328,7 +342,8 @@ async def test_auth_admission_scans_off_loop_and_releases_claims(
     )
 
     async def process(request):
-        if False:
+        # An empty async stream is the real processor used for admission only.
+        for _ in ():
             yield request
 
     async def build(name):
@@ -362,6 +377,8 @@ async def test_auth_admission_scans_off_loop_and_releases_claims(
         return manager, config
 
     async def launch(manager, config):
+        # Regression assertions inspect owned lifecycle and transport state.
+        # pylint: disable=protected-access
         await manager.start_all()
         if dynamic:
             return await manager.start_one("wechat", config)

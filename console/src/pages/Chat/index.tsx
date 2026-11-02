@@ -3,9 +3,12 @@ import {
   ChatSessionTransition,
   ReadyChatWelcome,
 } from "./components/ChatSessionTransition";
-import { ChatWelcome } from "./components/ChatWelcome";
+import ChatHome from "./components/ChatHome";
 import { useChatRouteResolution } from "./hooks/useChatRouteResolution";
 import { useAdvisorDecisionAvailability } from "./hooks/useAdvisorDecisionAvailability";
+import { useQueueSteering } from "./hooks/useQueueSteering";
+import { useMessageEditResend } from "./hooks/useMessageEditResend";
+import { recoverQueuedSteering } from "./queueSteeringRecovery";
 import { loadSessionModel } from "../../features/session-settings/sessionModel";
 import {
   migratePendingSessionSettings,
@@ -284,6 +287,7 @@ import {
 } from "../../utils/sessionRoute";
 import { useUploadLimitStore } from "../../stores/uploadLimitStore";
 import ChatSenderTabsPanel from "./components/ChatSenderTabsPanel";
+import { useSubmissionAdmission } from "./hooks/useSubmissionAdmission";
 import ComposerAccessibilityLabels from "./components/ComposerAccessibilityLabels";
 import ApprovalQueueOverlay from "./components/ApprovalQueueOverlay";
 import {
@@ -430,6 +434,37 @@ async function startBackgroundQueue(
         // foreground page mounting again.
         const current = useMessageQueueStore.getState().getQueue(queueKey);
         if (current.length === 0) return false;
+
+        // Navigation does not abandon accepted user input, nor allow a later
+        // queued task to overtake an uncertain steering request.
+        const steeringItem = current.find((item) => item.status === "steering");
+        if (steeringItem) {
+          await recoverQueuedSteering(
+            chatIdForStatus,
+            queueKey,
+            steeringItem,
+            ctrl.signal,
+          );
+          if (ctrl.signal.aborted) return false;
+          if (
+            useMessageQueueStore
+              .getState()
+              .getQueue(queueKey)
+              .some((item) => item.status === "steering")
+          ) {
+            await new Promise<void>((resolve) => {
+              const done = () => {
+                clearTimeout(timer);
+                ctrl.signal.removeEventListener("abort", done);
+                resolve();
+              };
+              const timer = setTimeout(done, 1500);
+              ctrl.signal.addEventListener("abort", done, { once: true });
+              if (ctrl.signal.aborted) done();
+            });
+          }
+          return !ctrl.signal.aborted;
+        }
 
         // Respect pause/error state.
         const rs = useMessageQueueStore.getState().getRunState(queueKey);
@@ -689,12 +724,19 @@ function startAllBackgroundQueues(excludeSessionId?: string) {
       if (!items || items.length === 0) continue;
       // Only start if there are actionable items
       const hasPending = items.some(
-        (it) => it.status === "pending" || it.status === "sending",
+        (it) =>
+          it.status === "pending" ||
+          it.status === "sending" ||
+          it.status === "steering",
       );
       if (!hasPending) continue;
       // Check runState: respect paused queues
       const runState = Array.isArray(parsed) ? "idle" : parsed.runState;
-      if (runState === "paused") continue;
+      if (
+        runState === "paused" &&
+        !items.some((item) => item.status === "steering")
+      )
+        continue;
     } catch {
       continue;
     }
@@ -723,6 +765,9 @@ function startAllBackgroundQueues(excludeSessionId?: string) {
     }
     const chatIdForStatus =
       sessionApi.getRealIdForSession(sessionId) || sessionId;
+    // A reload has no in-memory run state. Restore the complete persisted
+    // queue (especially pause/error) before a receipt can remove a claim.
+    useMessageQueueStore.getState().loadFromStorage(sessionId);
     startBackgroundQueue(sessionId, backendSessionId, chatIdForStatus);
   }
 }
@@ -1279,6 +1324,8 @@ export default function ChatPage() {
     isSessionTransition || routeChatId === "new" ? undefined : routeChatId;
   // The explicit /chat route is a fresh draft, even if history remembers an
   // older active Chat. Storage identity must follow the same route as the SDK.
+  const [approvalContainer, setApprovalContainer] =
+    useState<HTMLDivElement | null>(null);
   const queueSessionId = chatId ?? "new";
   const queueKey = getQueueKey(selectedAgent, queueSessionId);
   const sdkSessionAdapter = useMemo(
@@ -1512,6 +1559,8 @@ export default function ChatPage() {
   const queueVisit = useMemo(() => ({}), [queueKey, selectedAgent]);
   const queueVisitRef = useRef(queueVisit);
   queueVisitRef.current = queueVisit;
+  const { begin: beginAdmission, isPending: isAdmissionPending } =
+    useSubmissionAdmission();
   const queueExecutionScopeRef = useRef(new AbortController());
   useEffect(() => {
     const controller = new AbortController();
@@ -1624,7 +1673,15 @@ export default function ChatPage() {
         );
       const initialQueueId = locateQueue();
       const execution = chatRef.current?.execution;
-      if (!initialQueueId || !execution) return false;
+      if (
+        !initialQueueId ||
+        !execution ||
+        useMessageQueueStore
+          .getState()
+          .getQueue(initialQueueId)
+          .some((entry) => entry.status === "steering")
+      )
+        return false;
 
       const agentId = item.agentId || selectedAgent;
       const runtimeSessionId =
@@ -1672,11 +1729,13 @@ export default function ChatPage() {
         const store = useMessageQueueStore.getState();
         const freshQueueId = locateQueue();
         if (!canSend() || !freshQueueId) return false;
-        const freshItem = store
-          .getQueue(freshQueueId)
-          .find((entry) => entry.id === item.id);
+        const freshQueue = store.getQueue(freshQueueId);
+        const freshItem = freshQueue.find((entry) => entry.id === item.id);
         const runState = store.getRunState(freshQueueId);
         if (
+          // A receipt anywhere in this queue must settle before a new turn
+          // can overtake it, including after reconnecting to an idle backend.
+          freshQueue.some((entry) => entry.status === "steering") ||
           !freshItem ||
           freshItem.status !== "pending" ||
           runState === "error" ||
@@ -1926,7 +1985,8 @@ export default function ChatPage() {
       const state = useMessageQueueStore.getState().getRunState(queueKey);
       if (state === "paused" || state === "error") return;
       const q = messageQueueRef.current;
-      if (q.length === 0) return;
+      if (q.length === 0 || q.some((item) => item.status === "steering"))
+        return;
       const next = q[0];
       if (!["pending", "sending"].includes(next.status)) return;
       // Acquire the per-session send lock so concurrent tabs don't both fire
@@ -1998,6 +2058,65 @@ export default function ChatPage() {
   const [chatLoading, setChatLoading] = useState<boolean | string>(false);
   const chatLoadingRef = useRef<boolean | string>(false);
   chatLoadingRef.current = chatLoading;
+  const queueSteering = useQueueSteering({
+    chatId: backendChatId ?? undefined,
+    queueKey,
+    agentId: selectedAgent,
+    enabled: usesQwenPawBackend && !isSessionTransition,
+    isOwner,
+  });
+  const { steer: handleQueueSteer, activeRunId: steeringRunId } = queueSteering;
+  const refreshedSteeringHistory = useRef(0);
+  useEffect(() => {
+    if (
+      !queueSteering.historyRevision ||
+      queueSteering.historyRevision === refreshedSteeringHistory.current ||
+      chatLoading ||
+      !isOwner ||
+      !backendChatId ||
+      isSessionTransition
+    )
+      return;
+    const revision = queueSteering.historyRevision;
+    const ctrl = new AbortController();
+    void (async () => {
+      const idle = await waitForChatIdle(
+        backendChatId,
+        ctrl.signal,
+        selectedAgent,
+        queueKey,
+      );
+      if (!idle || ctrl.signal.aborted || chatLoadingRef.current) return;
+      const recovered = await sessionApi.refreshSession(
+        queueSessionId,
+        ctrl.signal,
+      );
+      if (
+        ctrl.signal.aborted ||
+        chatLoadingRef.current ||
+        !recovered ||
+        recovered.generating
+      )
+        return;
+      chatRef.current?.messages.setSessionMessages(
+        queueSessionId,
+        recovered.messages,
+      );
+      refreshedSteeringHistory.current = revision;
+    })().catch(() => {
+      /* The next normal history load also restores the instruction. */
+    });
+    return () => ctrl.abort();
+  }, [
+    queueSteering.historyRevision,
+    chatLoading,
+    isOwner,
+    backendChatId,
+    isSessionTransition,
+    selectedAgent,
+    queueKey,
+    queueSessionId,
+  ]);
   const prevChatLoadingRef = useRef<boolean | string>(false);
   const pendingHandoffRefreshRef = useRef<string | null>(null);
   useEffect(() => {
@@ -2550,6 +2669,21 @@ export default function ChatPage() {
     t,
   ]);
 
+  const editResend = useMessageEditResend({
+    visit: queueVisit,
+    queueKey,
+    agentId: selectedAgent,
+    enabled: isChatActivePage && !isSessionTransition,
+    supportsAttachments,
+    agents,
+    displayName: (agent) => getAgentDisplayName(agent, t),
+    isReady: () => sdkSessionAdapter.isReady(chatIdRef.current),
+    getIdentity: () => sessionApi.getSessionIdentity(queueSessionId),
+    prepareQuery: (text) =>
+      usesQwenPawBackend ? prepareLoopModeMessage(text) : text,
+    captureContext: captureRequestContext,
+  });
+
   // Intercept Enter to enqueue:
   //  - Ctrl/Meta+Enter: always enqueue (even when idle)
   //  - Plain Enter while loading: enqueue (SDK blocks triggerSend when loading)
@@ -2559,6 +2693,11 @@ export default function ChatPage() {
   //    idle window between two queued items.
   useEffect(() => {
     const handleEnterEnqueue = (e: KeyboardEvent) => {
+      if (
+        e.target instanceof Element &&
+        e.target.closest("[data-message-edit-resend]")
+      )
+        return;
       if (!isChatActive() || e.key !== "Enter" || e.shiftKey) return;
       if (!sdkSessionAdapter.isReady(chatIdRef.current) || isSessionTransition)
         return;
@@ -2577,6 +2716,14 @@ export default function ChatPage() {
       if (!val && pendingFileListRef.current.length === 0) return;
       e.preventDefault();
       e.stopPropagation();
+      if (
+        isAdmissionPending(queueVisitRef.current, {
+          text: val,
+          attachments: pendingFileListRef.current,
+          mentionModes: getAgentMentionModesSnapshot(),
+        })
+      )
+        return;
       const currentQ = useMessageQueueStore.getState().getQueue(queueKey);
       if (currentQ.length >= MAX_QUEUE_SIZE) {
         message.warning(t("chat.queue.queueFull", { max: MAX_QUEUE_SIZE }));
@@ -2623,6 +2770,7 @@ export default function ChatPage() {
     queueKey,
     sdkSessionAdapter,
     isSessionTransition,
+    isAdmissionPending,
   ]);
 
   const handleQueueRemove = useCallback(
@@ -2670,11 +2818,27 @@ export default function ChatPage() {
   const handleQueueInterruptAndSend = useCallback(
     (item: QueueItem) => {
       if (!isOwnerRef.current) return;
+      const freshQueue = useMessageQueueStore.getState().getQueue(queueKey);
+      const fresh = freshQueue.find((entry) => entry.id === item.id);
+      if (
+        freshQueue.some((entry) => entry.status === "steering") ||
+        !fresh ||
+        fresh.status === "sending"
+      )
+        return;
       const signal = queueExecutionScopeRef.current.signal;
       const agentId = item.agentId || selectedAgent;
       const sessionId = chatIdRef.current;
       void withSendLock(queueKey, async () => {
         if (signal.aborted || queueSessionIdRef.current !== queueSessionId)
+          return;
+        const lockedQueue = useMessageQueueStore.getState().getQueue(queueKey);
+        const lockedItem = lockedQueue.find((entry) => entry.id === item.id);
+        if (
+          lockedQueue.some((entry) => entry.status === "steering") ||
+          !lockedItem ||
+          lockedItem.status === "sending"
+        )
           return;
         try {
           if (sessionId) {
@@ -3730,7 +3894,7 @@ export default function ChatPage() {
         value: skill.name,
         description: "",
       }));
-    const handleBeforeSubmit = async (
+    const resolveSubmission = async (
       data: IAgentScopeRuntimeWebUIInputData,
     ): Promise<boolean | IAgentScopeRuntimeWebUISenderBeforeSubmitResult> => {
       if (
@@ -3875,6 +4039,28 @@ export default function ChatPage() {
       };
     };
 
+    const handleBeforeSubmit = async (
+      data: IAgentScopeRuntimeWebUIInputData,
+    ): Promise<boolean | IAgentScopeRuntimeWebUISenderBeforeSubmitResult> => {
+      const submittedAttachments = getSubmissionAttachments(data);
+      const release = beginAdmission(queueVisitRef.current, {
+        text:
+          data.query.trim() || getActiveSenderTextarea()?.value.trim() || "",
+        attachments:
+          submittedAttachments.length > 0
+            ? submittedAttachments
+            : pendingFileListRef.current,
+        mentionModes: getAgentMentionModesSnapshot(),
+      });
+      // Keep the input intact: the first admission owns its exact cleanup.
+      if (!release) return false;
+      try {
+        return await resolveSubmission(data);
+      } finally {
+        release();
+      }
+    };
+
     // ── Resolve plugin extension snapshots ────────────────────────────────
     const locale = i18n.language;
     const extGreeting = resolveLocalized(
@@ -4010,24 +4196,26 @@ export default function ChatPage() {
     const requestRenderEntry = extScalar[ChatScalar.requestRender];
     const requestRender = requestRenderEntry?.value;
     const requestOptions: IAgentScopeRuntimeWebUIOptions["request"] = {
-      render:
-        requestRenderEntry && requestRender
-          ? ({ data, fallback }) => {
-              const fallbackNode = fallback();
-              return (
-                <PluginSlotBoundary
-                  slot={ChatScalar.requestRender}
-                  pluginId={requestRenderEntry.pluginId}
-                  fallback={fallbackNode}
-                >
-                  {requestRender({
-                    data: data as unknown as ChatRequestData,
-                    fallback: () => fallbackNode,
-                  })}
-                </PluginSlotBoundary>
-              );
-            }
-          : undefined,
+      render: ({ data, fallback }) =>
+        editResend.renderRequest({
+          data,
+          fallback: () => {
+            if (!(requestRenderEntry && requestRender)) return fallback();
+            const fallbackNode = fallback();
+            return (
+              <PluginSlotBoundary
+                slot={ChatScalar.requestRender}
+                pluginId={requestRenderEntry.pluginId}
+                fallback={fallbackNode}
+              >
+                {requestRender({
+                  data: data as unknown as ChatRequestData,
+                  fallback: () => fallbackNode,
+                })}
+              </PluginSlotBoundary>
+            );
+          },
+        }),
       prepend: sortByOrder(extLists[ChatList.requestPrepend]).map((entry) => ({
         id: entry.item.id,
         order: entry.item.order,
@@ -4199,7 +4387,12 @@ export default function ChatPage() {
             {wrappedWelcomeRender ? (
               wrappedWelcomeRender(props)
             ) : (
-              <ChatWelcome {...props} />
+              <ChatHome
+                {...props}
+                agentId={selectedAgent}
+                currentSessionId={chatId}
+                customGreeting={extGreeting !== undefined}
+              />
             )}
           </ReadyChatWelcome>
         ),
@@ -4221,6 +4414,7 @@ export default function ChatPage() {
                 ...activePluginSuggestions,
               ].map((item) => item.value)}
             />
+            <div ref={setApprovalContainer} data-execution-approvals />
             {showSenderBeforeUI && (
               <>
                 {isQueueOnlyTab && (
@@ -4239,6 +4433,9 @@ export default function ChatPage() {
                   onEdit={handleQueueEdit}
                   onReorder={handleQueueReorder}
                   onInterruptAndSend={handleQueueInterruptAndSend}
+                  onSteer={handleQueueSteer}
+                  steeringRunId={steeringRunId}
+                  steeringAgentId={selectedAgent}
                   onClear={handleQueueClear}
                   onPauseResume={handleQueuePauseResume}
                   onRetry={handleQueueRetry}
@@ -4246,6 +4443,56 @@ export default function ChatPage() {
                 />
               </>
             )}
+            <div className={styles.composerMetadata} data-composer-metadata>
+              <ComposerOptions enabled={false} persistent>
+                {usesQwenPawBackend && !isSessionTransition && (
+                  <ComposerOptionRow label={t("chat.composer.workspaceLabel")}>
+                    <SessionProjectDirectory
+                      scope={sessionScope}
+                      className={styles.senderProjectControl}
+                    />
+                  </ComposerOptionRow>
+                )}
+                {(usesQwenPawBackend || backendCapabilities?.context_usage) && (
+                  <ComposerOptionRow
+                    label={t("chat.composer.contextLabel", "Context usage")}
+                  >
+                    <span className={styles.senderContextAffix}>
+                      <ContextUsageIndicator
+                        showValue
+                        onCompact={handleCompactCommand}
+                        onNew={handleNewCommand}
+                      />
+                    </span>
+                  </ComposerOptionRow>
+                )}
+                {usesQwenPawBackend ? (
+                  <ComposerOptionRow>
+                    <ApprovalLevelToggle
+                      sessionId={queueKey}
+                      runningConfigApprovalLevel={runningConfigApprovalLevel}
+                      decisionModelEnabled={decisionModelEnabled}
+                      className={styles.senderApprovalControl}
+                      onChange={(sessionOverride) => {
+                        sessionApprovalLevelRef.current = sessionOverride;
+                      }}
+                    />
+                  </ComposerOptionRow>
+                ) : approvalPresets.length > 0 ? (
+                  <ComposerOptionRow>
+                    <HarnessApprovalToggle
+                      backend={selectedAgentBackend}
+                      sessionId={queueKey}
+                      presets={approvalPresets}
+                      className={styles.senderApprovalControl}
+                      onChange={(settings) => {
+                        backendControlsRef.current = settings;
+                      }}
+                    />
+                  </ComposerOptionRow>
+                ) : null}
+              </ComposerOptions>
+            </div>
           </>
         ),
         prefix: (
@@ -4294,58 +4541,6 @@ export default function ChatPage() {
             </span>
             {pluginSenderPrefix}
           </>
-        ),
-        afterUI: (
-          <div className={styles.composerMetadata} data-composer-metadata>
-            <ComposerOptions enabled={false} persistent>
-              {usesQwenPawBackend && !isSessionTransition && (
-                <ComposerOptionRow label={t("chat.composer.workspaceLabel")}>
-                  <SessionProjectDirectory
-                    scope={sessionScope}
-                    className={styles.senderProjectControl}
-                  />
-                </ComposerOptionRow>
-              )}
-              {(usesQwenPawBackend || backendCapabilities?.context_usage) && (
-                <ComposerOptionRow
-                  label={t("chat.composer.contextLabel", "Context usage")}
-                >
-                  <span className={styles.senderContextAffix}>
-                    <ContextUsageIndicator
-                      showValue
-                      onCompact={handleCompactCommand}
-                      onNew={handleNewCommand}
-                    />
-                  </span>
-                </ComposerOptionRow>
-              )}
-              {usesQwenPawBackend ? (
-                <ComposerOptionRow>
-                  <ApprovalLevelToggle
-                    sessionId={queueKey}
-                    runningConfigApprovalLevel={runningConfigApprovalLevel}
-                    decisionModelEnabled={decisionModelEnabled}
-                    className={styles.senderApprovalControl}
-                    onChange={(sessionOverride) => {
-                      sessionApprovalLevelRef.current = sessionOverride;
-                    }}
-                  />
-                </ComposerOptionRow>
-              ) : approvalPresets.length > 0 ? (
-                <ComposerOptionRow>
-                  <HarnessApprovalToggle
-                    backend={selectedAgentBackend}
-                    sessionId={queueKey}
-                    presets={approvalPresets}
-                    className={styles.senderApprovalControl}
-                    onChange={(settings) => {
-                      backendControlsRef.current = settings;
-                    }}
-                  />
-                </ComposerOptionRow>
-              ) : null}
-            </ComposerOptions>
-          </div>
         ),
         ...(supportsAttachments
           ? {
@@ -4685,6 +4880,7 @@ export default function ChatPage() {
               }
             },
           },
+          { render: editResend.renderAction },
           ...pluginRequestActions,
         ],
       },
@@ -4692,6 +4888,8 @@ export default function ChatPage() {
   }, [
     customFetch,
     copyResponse,
+    editResend.renderAction,
+    editResend.renderRequest,
     handleFileUpload,
     t,
     i18n.language,
@@ -4718,6 +4916,7 @@ export default function ChatPage() {
     supportsAttachments,
     runningConfigApprovalLevel,
     captureRequestContext,
+    beginAdmission,
     queueSessionId,
     onFileCardClick,
     whisperChecked,
@@ -4731,6 +4930,8 @@ export default function ChatPage() {
     handleQueueEdit,
     handleQueueReorder,
     handleQueueInterruptAndSend,
+    handleQueueSteer,
+    steeringRunId,
     handleQueueClear,
     handleQueuePauseResume,
     handleQueueRetry,
@@ -4773,6 +4974,7 @@ export default function ChatPage() {
       setOpen={setTerminalOpen}
     >
       <div
+        data-chat-home-host
         className={`${styles.chatPageRoot} ${filesDrawerClass}`}
         onClickCapture={handleInternalFileLink}
       >
@@ -4872,8 +5074,11 @@ export default function ChatPage() {
           )}
 
           <ApprovalQueueOverlay
+            container={approvalContainer}
             items={Array.from(
-              chatId && !isSessionTransition ? approvalRequests.values() : [],
+              chatId && !isSessionTransition && isChatActivePage
+                ? approvalRequests.values()
+                : [],
             )}
             renderItem={(request) => {
               const renderer = approvalRenderers.get(request.sourceType);

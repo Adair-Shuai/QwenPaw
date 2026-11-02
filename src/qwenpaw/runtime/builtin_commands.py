@@ -178,6 +178,9 @@ def _make_control_adapter(
     plugin_owner = owner if owner and owner != "core" else ""
 
     async def _handler(ctx: Any, args: str) -> "Msg | None":
+        # Control commands consume host-only authorization and actor custody
+        # markers.
+        # pylint: disable=W0212
         from .commands.control import parse_args
         from .commands.control.base import ControlContext
         from agentscope.message import Msg, TextBlock
@@ -192,8 +195,10 @@ def _make_control_adapter(
                 content=[
                     TextBlock(
                         type="text",
-                        text="**Error**\n\nControl command "
-                        "unavailable (workspace not initialized)",
+                        text=(
+                            "**Error**\n\nControl command "
+                            "unavailable (workspace not initialized)"
+                        ),
                     ),
                 ],
             )
@@ -264,7 +269,8 @@ def _make_control_adapter(
                 DenyCommandHandler,
             ),
         ):
-            # Host-private state binds this reply to its original channel actor.
+            # Host-private state binds this reply to its original channel
+            # actor.
             state = (
                 request._channel_control_state
             )  # pylint: disable=protected-access
@@ -274,7 +280,8 @@ def _make_control_adapter(
                     ctrl_ctx,
                 )  # pylint: disable=protected-access
                 binding = state.binding
-                # Verify every identity field together before recording resolution.
+                # Verify every identity field together before recording
+                # resolution.
                 if (  # pylint: disable=too-many-boolean-expressions
                     binding.channel_key == actor.channel
                     and binding.user_id == actor.user_id
@@ -716,19 +723,19 @@ def _build_skill_injection(
     """
     return (
         f"{original_text}\n\n"
-        f"<skill>\n"
+        "<skill>\n"
         f"<name>{display_name}</name>\n"
         f"<description>{description}</description>\n"
         f"<dir>{skill_dir}</dir>\n"
-        f"<content>\n"
-        f"This skill has already been loaded because the user invoked "
-        f"it directly above. Do not call the Skill tool to read it "
-        f"again. Follow the skill instructions to fulfill the user's "
-        f"request above. Relative paths inside the skill (e.g. "
-        f"`scripts/`) resolve against the directory above.\n\n"
+        "<content>\n"
+        "This skill has already been loaded because the user invoked "
+        "it directly above. Do not call the Skill tool to read it "
+        "again. Follow the skill instructions to fulfill the user's "
+        "request above. Relative paths inside the skill (e.g. "
+        "`scripts/`) resolve against the directory above.\n\n"
         f"{skill_body.strip()}\n"
-        f"</content>\n"
-        f"</skill>"
+        "</content>\n"
+        "</skill>"
     )
 
 

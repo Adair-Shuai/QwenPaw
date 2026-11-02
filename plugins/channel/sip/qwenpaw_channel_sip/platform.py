@@ -97,8 +97,9 @@ class SIPPlatform:
             or call.closing
             or call.connection_epoch != route.get("connection_epoch")
             or str(call.turn_id) != route.get("turn_id")
-            or call.abort.is_set()
         ):
+            raise SIPPlatformError("CALL_CLOSED")
+        if call.abort.is_set():
             raise SIPPlatformError("CALL_CLOSED")
         return call
 
@@ -139,7 +140,7 @@ class SIPPlatform:
         if (
             not self._accepting
             or call_id in self._calls
-            or (limit > 0 and len(self._calls) >= limit)
+            or (0 < limit <= len(self._calls))
         ):
             await self.backend.hangup(call_id)
             return
@@ -186,8 +187,6 @@ class SIPPlatform:
                         await self._diagnostic("SIP_WELCOME_FAILED")
             if self._calls.get(call_id) is call and not call.closing:
                 self._reset_timeout(call)
-        except asyncio.CancelledError:
-            raise
         except Exception:
             await self._fatal(call, "SIP_CALL_SETUP_FAILED")
         finally:
@@ -233,8 +232,6 @@ class SIPPlatform:
                 )
                 await call.stt.feed_audio(pcm)
                 errors = 0
-            except asyncio.CancelledError:
-                raise
             except Exception:
                 errors += 1
                 if errors >= 20:
@@ -273,6 +270,9 @@ class SIPPlatform:
         await self._end_call(call, hangup=True)
 
     async def play(self, route, text):
+        # Keep ordered transport effects and ownership cleanup in one
+        # transaction.
+        # pylint: disable=too-many-statements
         from .helpers import _clean_for_tts, _pcm16_to_pyvoip
         from .stt_tts import synthesize_tts_stream
 

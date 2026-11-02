@@ -225,6 +225,9 @@ class VoiceDriver(SharedResponseDriver):
             raise VoicePlatformError("VOICE_HOST_ADMISSION_FAILED")
 
     async def _open(self, params, request):
+        # Driver and platform share this channel private transport lifecycle.
+        # SharedResponseDriver passes the complete public request contract.
+        # pylint: disable=protected-access,unused-argument
         self._identity(params)
         platform = self._require_connected()
         target = decode_reply_target(str(params["to_handle"]))

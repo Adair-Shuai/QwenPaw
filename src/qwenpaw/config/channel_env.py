@@ -9,6 +9,9 @@ def read_channel_env(
     environ: Mapping[str, str],
 ) -> dict | None:
     """Parse the old entry exactly; never construct or import a channel."""
+    # Keep each channel environment contract explicit without changing
+    # defaults.
+    # pylint: disable=R0911,R0912
     if channel_key == "telegram":
         return {
             "enabled": environ.get("TELEGRAM_CHANNEL_ENABLED", "0") == "1",

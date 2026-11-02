@@ -112,7 +112,9 @@ class QQMedia:
         return path
 
     def _read_file(self, value):
-        """Recheck authorization in the I/O thread; refuse replaced symlinks."""
+        """
+        Recheck authorization in the I/O thread; refuse replaced symlinks.
+        """
         path = self._safe_path(value)
         flags = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0)
         directory = None
@@ -145,6 +147,9 @@ class QQMedia:
                 os.close(directory)
 
     async def _download(self, url, filename):
+        # Media operations share the owning QQ transport HTTP and sequence
+        # state.
+        # pylint: disable=protected-access
         if not filename:
             return None
         name = Path(filename.replace("\\", "/")).name
@@ -154,7 +159,8 @@ class QQMedia:
             directory = self._safe_path(self.directory, exists=False)
             directory.mkdir(parents=True, exist_ok=True)
             target = directory / name
-            # Reject an existing escaped symlink instead of reading or replacing it.
+            # Reject an existing escaped symlink instead of reading or
+            # replacing it.
             self._safe_path(target, exists=False)
             response = await self.platform._request("GET", url)
             if response.status_code != 200:
@@ -215,6 +221,11 @@ class QQMedia:
         return parts
 
     async def send(self, route, part, *, reply=False, inline=False):
+        # Media operations share the owning QQ transport HTTP and sequence
+        # state.
+        # Keep ordered transport effects and ownership cleanup in one
+        # transaction.
+        # pylint: disable=protected-access,too-many-branches
         kind = part.get("type")
         if kind not in {"image", "video", "audio", "file"}:
             raise QQDeliveryError("MEDIA_TYPE_UNSUPPORTED")
@@ -300,6 +311,9 @@ class QQMedia:
         *,
         inline=False,
     ):
+        # Media operations share the owning QQ transport HTTP and sequence
+        # state.
+        # pylint: disable=protected-access
         media_type = _content_type_to_media_type(kind, url or local or "")
         message_type = route["message_type"]
         if message_type == "group" and media_type == 4:

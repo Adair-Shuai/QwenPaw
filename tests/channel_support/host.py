@@ -10,14 +10,17 @@ import sys
 from types import SimpleNamespace as NS
 import zipfile
 
-from tests.channel_support.process import ROOT, alive, eventually
+from tests.channel_support.process import ROOT, alive
 
 KEY = "feishu"
 
 
 def rows(path, kind=None):
     values = (
-        [json.loads(line) for line in path.read_text().splitlines()]
+        [
+            json.loads(line)
+            for line in path.read_text(encoding="utf-8").splitlines()
+        ]
         if path.exists()
         else []
     )
@@ -61,6 +64,8 @@ async def saved_texts(ws, room, user="alice"):
 class Host:
     @classmethod
     async def create(cls, directory, monkeypatch):
+        # Regression assertions inspect owned lifecycle and transport state.
+        # pylint: disable=protected-access
         self = cls()
         from qwenpaw.__version__ import __version__
         from qwenpaw.plugins.channel_adapter import ChannelRuntimeSettings
@@ -158,6 +163,8 @@ class Host:
         return source
 
     async def workspace(self, name, **settings):
+        # Regression assertions inspect owned lifecycle and transport state.
+        # pylint: disable=protected-access
         from qwenpaw.app.channels.manager import ChannelManager
         from qwenpaw.app.chats.manager import ChatManager
         from qwenpaw.app.chats.repo.json_repo import JsonChatRepository
@@ -246,6 +253,8 @@ class Host:
         )
 
     async def close(self):
+        # Regression assertions inspect owned lifecycle and transport state.
+        # pylint: disable=protected-access
         from qwenpaw.plugins.registry import PluginRegistry
 
         try:
@@ -259,6 +268,9 @@ class Host:
             PluginRegistry._instance = self.previous
 
     async def real_agent(self, ws, *, reply="actual agent answer"):
+        # Regression assertions inspect owned lifecycle and transport state.
+        # Keep this lifecycle scenario and its cleanup in one test scope.
+        # pylint: disable=protected-access,too-many-statements
         from agentscope.formatter import OpenAIChatFormatter
         from agentscope.message import TextBlock
         from agentscope.model import ChatModelBase

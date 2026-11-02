@@ -6,6 +6,7 @@ import {
   render,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type {
@@ -116,6 +117,186 @@ afterEach(() => {
 });
 
 describe("TurnFileSummary", () => {
+  it("shows delivered images inline and links archived sibling pages without inventing deliveries", async () => {
+    const image = {
+      ...manifest().files[0],
+      id: "image",
+      name: "preview.png",
+      path: "design/preview.png",
+      binary: true,
+    };
+    const page = {
+      ...image,
+      id: "html",
+      name: "index.html",
+      path: "design/index.html",
+      binary: false,
+      delivered: false,
+    };
+    const unrelated = { ...page, id: "unrelated", path: "another/index.html" };
+    const missing = {
+      ...page,
+      id: "missing",
+      name: "missing.html",
+      path: "design/missing.html",
+      after_available: false,
+    };
+    mocks.list.mockResolvedValue({
+      turns: [manifest({ files: [image, page, unrelated, missing] })],
+    });
+    const open = vi.fn();
+    window.addEventListener("qwenpaw:open-file-preview", open);
+    try {
+      renderSummary();
+      const thumbnail = await screen.findByRole("img", { name: "preview.png" });
+      expect(thumbnail).toHaveAttribute(
+        "src",
+        expect.stringContaining("turn-a/files/image?version=after"),
+      );
+      expect(screen.getByText("turnFiles.deliveredCount:1")).toBeVisible();
+      const pages = screen.getByRole("navigation", {
+        name: "turnFiles.relatedPages",
+      });
+      expect(within(pages).getAllByRole("button")).toHaveLength(1);
+      fireEvent.click(
+        within(pages).getByRole("button", {
+          name: "turnFiles.openRelatedPage index.html",
+        }),
+      );
+      expect(open.mock.calls[0][0].detail.target.artifact.meta).toMatchObject({
+        turnFileArchive: true,
+        fileId: "html",
+        turnSessionId: "runtime-a",
+      });
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: "turnFiles.previewImage preview.png",
+        }),
+      );
+      expect(open.mock.calls[1][0].detail.target.artifact.meta.fileId).toBe(
+        "image",
+      );
+      fireEvent.error(thumbnail);
+      expect(screen.getByText("turnFiles.imagePreviewFailed")).toBeVisible();
+      expect(
+        screen.getByRole("button", {
+          name: "turnFiles.openArchive preview.png",
+        }),
+      ).toBeEnabled();
+      expect(
+        screen.getByRole("button", { name: "turnFiles.download preview.png" }),
+      ).toBeEnabled();
+    } finally {
+      window.removeEventListener("qwenpaw:open-file-preview", open);
+    }
+  });
+
+  it("prioritizes deliveries and keeps secondary archived changes accessible after expansion", async () => {
+    const delivered = manifest().files[0];
+    const removed = {
+      ...delivered,
+      id: "removed",
+      name: "old.md",
+      path: "old.md",
+      status: "deleted" as const,
+      delivered: false,
+      after_available: false,
+    };
+    mocks.list.mockResolvedValue({
+      turns: [manifest({ files: [removed, delivered] })],
+    });
+    mocks.diff.mockResolvedValue({
+      before: "old",
+      after: "",
+      truncated: false,
+    });
+    renderSummary();
+    const primary = await screen.findByRole("button", {
+      name: "turnFiles.openArchive report.md",
+    });
+    expect(primary).toBeVisible();
+    const secondary = screen
+      .getByText("turnFiles.otherChanges")
+      .closest("details")!;
+    const before = within(secondary).getByText("old.md");
+    expect(before).not.toBeVisible();
+    fireEvent.click(within(secondary).getByText("turnFiles.otherChanges"));
+    expect(before).toBeVisible();
+    expect(
+      within(secondary).queryByRole("button", {
+        name: "turnFiles.openCurrent old.md",
+      }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      within(secondary).getByRole("button", { name: "turnFiles.diff old.md" }),
+    );
+    expect(await screen.findByTestId("read-only-diff")).toHaveTextContent(
+      "old →",
+    );
+    fireEvent.click(within(secondary).getByText("turnFiles.otherChanges"));
+    expect(screen.getByTestId("read-only-diff")).not.toBeVisible();
+    fireEvent.click(within(secondary).getByText("turnFiles.otherChanges"));
+    expect(screen.getByTestId("read-only-diff")).toBeVisible();
+    expect(mocks.diff).toHaveBeenCalledTimes(1);
+    fireEvent.click(
+      within(secondary).getByRole("button", {
+        name: "turnFiles.downloadBefore old.md",
+      }),
+    );
+    await waitFor(() =>
+      expect(mocks.downloadFile).toHaveBeenCalledWith(
+        { ...scope, sessionId: "runtime-a" },
+        "turn-a",
+        removed,
+        "before",
+      ),
+    );
+  });
+
+  it("expands delivery and change lists independently without hiding unavailable deliveries", async () => {
+    const file = manifest().files[0];
+    const changes = Array.from({ length: 7 }, (_, index) => ({
+      ...file,
+      id: `change-${index}`,
+      name: `change-${index}.md`,
+      delivered: false,
+    }));
+    const deliveries = Array.from({ length: 7 }, (_, index) => ({
+      ...file,
+      id: `delivery-${index}`,
+      name: `delivery-${index}.md`,
+      after_available: index !== 0,
+    }));
+    mocks.list.mockResolvedValue({
+      turns: [manifest({ files: [...changes, ...deliveries] })],
+    });
+    renderSummary();
+    expect(
+      await screen.findByRole("button", {
+        name: "turnFiles.openArchive delivery-0.md",
+      }),
+    ).toBeDisabled();
+    expect(screen.getByText("turnFiles.unavailable")).toBeVisible();
+    expect(screen.queryByText("delivery-6.md")).not.toBeInTheDocument();
+    const expandDeliveries = screen
+      .getAllByRole("button", { name: "turnFiles.showAll:7" })
+      .find((button) => !button.closest("details"))!;
+    fireEvent.click(expandDeliveries);
+    expect(screen.getByText("delivery-6.md")).toBeVisible();
+    const secondary = screen
+      .getByText("turnFiles.otherChanges")
+      .closest("details")!;
+    fireEvent.click(within(secondary).getByText("turnFiles.otherChanges"));
+    expect(screen.queryByText("change-6.md")).not.toBeInTheDocument();
+    fireEvent.click(
+      within(secondary).getByRole("button", { name: "turnFiles.showAll:7" }),
+    );
+    expect(screen.getByText("change-6.md")).toBeVisible();
+    fireEvent.click(expandDeliveries);
+    expect(screen.queryByText("delivery-6.md")).not.toBeInTheDocument();
+    expect(screen.getByText("change-6.md")).toBeVisible();
+  });
+
   it("does not represent unknown line counts as zero changes", async () => {
     const turn = manifest();
     turn.files[0] = {

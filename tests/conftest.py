@@ -419,6 +419,17 @@ def pytest_configure(config: pytest.Config) -> None:
     """Disable telemetry in tests and the real app subprocesses they spawn."""
     patch = pytest.MonkeyPatch()
     patch.setenv("QWENPAW_TELEMETRY_DISABLED", "1")
+    # Local wire fixtures must not inherit a system HTTP/WebSocket proxy.
+    # Keep the user's exclusions for any other hosts used by a test.
+    exclusions = ",".join(
+        filter(None, (os.environ.get("NO_PROXY"), os.environ.get("no_proxy"))),
+    )
+    loopback = "localhost,127.0.0.1,::1"
+    for name in ("NO_PROXY", "no_proxy"):
+        patch.setenv(
+            name,
+            f"{exclusions},{loopback}" if exclusions else loopback,
+        )
     config.add_cleanup(patch.undo)
 
 

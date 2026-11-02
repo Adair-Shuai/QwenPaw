@@ -56,10 +56,12 @@ def _echo_dependency_operation(operation):
         click.echo(instruction)
     if operation["status"] == "needs_confirmation":
         click.echo(
-            f"Review/apply: qwenpaw plugin dependency-upgrade apply {operation['id']}",
+            "Review/apply: qwenpaw plugin dependency-upgrade apply"
+            f" {operation['id']}",
         )
         click.echo(
-            f"Cancel: qwenpaw plugin dependency-upgrade cancel {operation['id']}",
+            "Cancel: qwenpaw plugin dependency-upgrade cancel"
+            f" {operation['id']}",
         )
 
 
@@ -182,7 +184,7 @@ def _api_upload_plugin(zip_path: Path, force: bool = False) -> bool:
                 follow_redirects=True,
                 headers={
                     "Content-Type": (
-                        "multipart/form-data; " f"boundary={boundary}"
+                        f"multipart/form-data; boundary={boundary}"
                     ),
                 },
             )
@@ -364,7 +366,7 @@ def _safe_extract_zip(zip_ref: zipfile.ZipFile, extract_path: Path):
         if not member_path.is_relative_to(extract_resolved):
             raise ValueError(
                 f"Zip Slip detected: {member} attempts to extract "
-                f"outside target directory",
+                "outside target directory",
             )
     zip_ref.extractall(extract_path)
 
@@ -743,9 +745,6 @@ def uninstall(plugin_id: str):
         click.echo("Cancelled.")
         return
 
-    from ..plugins.lifecycle import UnloadMode
-    from ..plugins.loader import PluginLoader
-
     # Mark as uninstalled so bundled plugins don't get re-installed
     # on next startup (hot-pluggable behavior)
     try:
@@ -805,7 +804,7 @@ def validate(path: str):
             if not frontend_path.exists():
                 click.echo(
                     f"⚠️  Frontend entry not found: {frontend_entry} "
-                    f"(build may be required)",
+                    "(build may be required)",
                 )
 
         click.echo("✅ Plugin validation passed")
@@ -923,7 +922,8 @@ def _dependency_operation(action, operation_id):
             if action == "apply" and operation["status"] == "waiting_restart":
                 import subprocess
 
-                # Offline maintenance consumes the manager's authenticated record.
+                # Offline maintenance consumes the manager's
+                # authenticated record.
                 # pylint: disable=protected-access
                 script = (
                     manager._directory(operation_id)
@@ -952,9 +952,10 @@ def _dependency_operation(action, operation_id):
                         stderr=subprocess.STDOUT,
                         **options,
                     )
-                operation[
-                    "message"
-                ] = "Maintenance starts when this CLI exits. Query this operation for its result."
+                operation["message"] = (
+                    "Maintenance starts when this CLI exits. Query this"
+                    " operation for its result."
+                )
         except Exception as exc:
             raise click.ClickException(str(exc)) from exc
     _echo_dependency_operation(operation)

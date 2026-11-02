@@ -20,6 +20,8 @@ from qwenpaw.app.workspace.service_manager import (
     [(True, False), (False, True), (False, False)],
 )
 async def test_service_shutdown_escapes_agent_id(caplog, reusable, reused):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     agent_id = "agent\r\nFORGED"
     manager = ServiceManager(SimpleNamespace(agent_id=agent_id))
     service = SimpleNamespace(stop=AsyncMock())
@@ -49,6 +51,8 @@ async def test_service_shutdown_escapes_agent_id(caplog, reusable, reused):
 
 @pytest.mark.parametrize("reason", ["removed", "config_changed"])
 async def test_discard_reload_escapes_agent_id(caplog, reason):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     candidate = SimpleNamespace(stop=AsyncMock())
     with caplog.at_level(logging.INFO):
         await MultiAgentManager._discard_reload_candidate(

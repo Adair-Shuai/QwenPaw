@@ -12,6 +12,7 @@ import asyncio
 import json
 import logging
 import weakref
+from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import (
@@ -22,6 +23,7 @@ from typing import (
     Callable,
     Optional,
 )
+from uuid import uuid4
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +51,8 @@ class _RunState:
     owner: object | None = None
     channel_id: str | None = None
     stream_done: asyncio.Event = field(default_factory=asyncio.Event)
+    run_id: str = field(default_factory=lambda: uuid4().hex)
+    steering: Any = None
 
 
 async def _broadcast_stream(
@@ -72,6 +76,29 @@ async def _broadcast_stream(
         close = getattr(stream, "aclose", None)
         if close is not None:
             await close()
+
+
+async def _broadcast_error(tracker_ref, run: _RunState) -> None:
+    error = f"data: {json.dumps({'error': 'internal server error'})}\n\n"
+    tracker = tracker_ref()
+    if tracker is not None:
+        async with tracker.lock:
+            run.buffer.append(error)
+            for queue in run.queues:
+                queue.put_nowait(error)
+
+
+async def _close_steering(steering: Any) -> None:
+    if steering is None:
+        return
+    try:
+        from ..utils.io_utils import run_async_to_completion
+
+        await run_async_to_completion(steering.close())
+    except asyncio.CancelledError:
+        pass
+    except Exception:
+        logger.exception("Could not finalize steering receipts")
 
 
 class TaskTracker:
@@ -100,6 +127,28 @@ class TaskTracker:
         if state is None or state.task.done():
             return "idle"
         return "running"
+
+    async def get_steering_state(self, run_key: str) -> tuple[str | None, Any]:
+        """Return the exact execution identity, never a next-turn identity."""
+        async with self._lock:
+            run = self._runs.get(run_key)
+            if run is None or run.task.done() or run.stream_done.is_set():
+                return None, None
+            return run.run_id, run.steering
+
+    @asynccontextmanager
+    async def steering_state_guard(self, run_key: str):
+        """Hold a run identity stable during durable receipt recovery.
+
+        Lock order is tracker before controller. Consumption only acquires
+        the controller lock, so waiting for a checkpoint cannot deadlock.
+        """
+        async with self._lock:
+            run = self._runs.get(run_key)
+            if run is None or run.task.done() or run.stream_done.is_set():
+                yield None, None
+            else:
+                yield run.run_id, run.steering
 
     async def get_global_status(self) -> dict:
         """Get global agent status summary.
@@ -182,7 +231,10 @@ class TaskTracker:
         channel_id: str,
         timeout: float,
     ) -> bool:
-        """Drain channel resources while host persistence finishes separately."""
+        """Drain channel resources while host persistence finishes.
+
+        Host persistence can finish separately from the channel stream.
+        """
         async with self._lock:
             streams = [
                 state.stream_done
@@ -322,6 +374,7 @@ class TaskTracker:
         owner: object | None = None,
         on_finished: Callable[[str, datetime], Awaitable[Any]] | None = None,
         channel_id: str | None = None,
+        steering: Any = None,
     ) -> tuple[asyncio.Queue, bool]:
         """Attach to an existing run or start a new one.
 
@@ -343,12 +396,18 @@ class TaskTracker:
                 buffer=[],
                 owner=owner,
                 channel_id=channel_id,
+                steering=steering,
             )
+            if steering is not None:
+                run.run_id = steering.run_id
 
             tracker_ref = weakref.ref(self)
 
             async def _producer() -> None:
                 start_time = datetime.now(timezone.utc)
+                from .steering import CURRENT_STEERING
+
+                steering_token = CURRENT_STEERING.set(steering)
 
                 try:
                     tracker = tracker_ref()
@@ -367,17 +426,10 @@ class TaskTracker:
                     logger.debug("run cancelled run_key=%s", run_key)
                 except Exception:
                     logger.exception("run error run_key=%s", run_key)
-                    err_sse = (
-                        "data: "
-                        f"{json.dumps({'error': 'internal server error'})}\n\n"
-                    )
-                    tracker = tracker_ref()
-                    if tracker is not None:
-                        async with tracker.lock:
-                            run.buffer.append(err_sse)
-                            for q in run.queues:
-                                q.put_nowait(err_sse)
+                    await _broadcast_error(tracker_ref, run)
                 finally:
+                    await _close_steering(steering)
+                    CURRENT_STEERING.reset(steering_token)
                     # Stream resources belong to the channel invocation;
                     # host persistence may continue after that invocation ends.
                     run.stream_done.set()

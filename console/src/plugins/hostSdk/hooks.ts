@@ -7,6 +7,7 @@
  * to be mounted.
  */
 import { useTranslation } from "react-i18next";
+import { getAgentDisplayName } from "../../utils/agentDisplayName";
 import { useChatAnywhereSessionsState } from "@agentscope-ai/chat";
 import { useTheme as useThemeCtx } from "../../contexts/ThemeContext";
 import { useAgentStore } from "../../stores/agentStore";
@@ -31,6 +32,13 @@ export function useHostTheme(): HostThemeMode {
 
 export function useHostLocale(): string {
   return useTranslation().i18n.language;
+}
+
+/** Use the same localized labels as the native Agent selector. */
+export function useHostAgentDisplayName() {
+  const { t } = useTranslation();
+  return (agent: Parameters<typeof getAgentDisplayName>[0]) =>
+    getAgentDisplayName(agent, t);
 }
 
 export function useHostSelectedAgent(): HostAgentInfo {

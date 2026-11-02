@@ -1,7 +1,7 @@
 import { ModelPickerPopover } from "../../pages/Chat/ModelSelector/ModelPickerPopover";
 import { useEffect, useRef, useState } from "react";
 import { Collapse, Flex, Spin, Switch, Tooltip } from "antd";
-import { ChevronDown, ArrowLeft, RotateCcw, Plug } from "lucide-react";
+import { ChevronDown, ArrowLeft, RotateCcw, Layers2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAppMessage } from "@/hooks/useAppMessage";
 import { ThinkingIndicator } from "./ThinkingIndicator";
@@ -23,7 +23,6 @@ import {
 } from "../session-settings/sessionModel";
 import { isSessionModelChangedFor } from "../session-settings/sessionModelEvents";
 import ModelSelector from "../../pages/Chat/ModelSelector";
-import { ProviderIcon } from "../../pages/Settings/Models/components/ProviderIconComponent";
 import { useTurnUsageStore } from "../../pages/Chat/turnUsageStore";
 import {
   enqueueSessionThinkingWrite,
@@ -322,10 +321,7 @@ export function SessionThinking({
         aria-expanded={open}
         aria-label={t("thinkingControl.title")}
       >
-        {view?.provider_id && (
-          <ProviderIcon providerId={view.provider_id} size={16} />
-        )}
-        {view && !view.model && <Plug size={16} aria-hidden="true" />}
+        <Layers2 size={18} strokeWidth={1.6} aria-hidden="true" />
         <span>
           {view?.model_name ||
             (view?.provider_id !== "hub-managed" ? view?.model : undefined) ||

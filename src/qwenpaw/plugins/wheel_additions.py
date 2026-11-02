@@ -378,7 +378,9 @@ def _check_installed_tree(
 
 
 # Whole-set archive and collision validation is deliberately fail-closed.
-# pylint: disable=too-many-branches,too-many-boolean-expressions,too-many-statements
+# pylint: disable=too-many-branches
+# pylint: disable=too-many-boolean-expressions
+# pylint: disable=too-many-statements
 def validate_additions(
     additions: tuple[WheelAddition, ...],
     snapshot: DependencySnapshot,

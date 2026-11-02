@@ -35,10 +35,11 @@ def _namespace(key):
         not separator
         or not namespace
         or "/" in namespace
-        or "\\" in namespace
+        or ("\\" in namespace)
         or namespace.startswith(".")
-        or re.fullmatch(r"[0-9a-f]{64}", digest) is None
     ):
+        raise ValueError("RESPONSE_RECEIPT_KEY")
+    if re.fullmatch("[0-9a-f]{64}", digest) is None:
         raise ValueError("RESPONSE_RECEIPT_KEY")
     return namespace
 
@@ -107,9 +108,9 @@ class ResponseReceiptStore:
         try:
             connection.execute("PRAGMA synchronous=FULL")
             connection.execute(
-                "CREATE TABLE IF NOT EXISTS receipts ("
-                "key TEXT PRIMARY KEY, namespace TEXT NOT NULL, "
-                "value TEXT NOT NULL, resolution_note TEXT, resolved_at_ms INTEGER)",
+                "CREATE TABLE IF NOT EXISTS receipts (key TEXT PRIMARY KEY,"
+                " namespace TEXT NOT NULL, value TEXT NOT NULL,"
+                " resolution_note TEXT, resolved_at_ms INTEGER)",
             )
             connection.execute(
                 "CREATE INDEX IF NOT EXISTS receipts_namespace "
@@ -138,26 +139,28 @@ class ResponseReceiptStore:
 
     def put(self, key, value):
         namespace, raw = validate_receipt(key, value)
-        with closing(self._connect()) as connection, connection:
-            connection.execute(
-                "INSERT OR IGNORE INTO receipts(key,namespace,value) VALUES(?,?,?)",
-                (key, namespace, raw),
-            )
-            previous = connection.execute(
-                "SELECT value FROM receipts WHERE key=?",
-                (key,),
-            ).fetchone()[0]
-            if previous != raw:
-                raise ValueError("RESPONSE_RECEIPT_CONFLICT")
+        with closing(self._connect()) as connection:
+            with connection:
+                connection.execute(
+                    "INSERT OR IGNORE INTO receipts(key,namespace,value)"
+                    " VALUES(?,?,?)",
+                    (key, namespace, raw),
+                )
+                previous = connection.execute(
+                    "SELECT value FROM receipts WHERE key=?",
+                    (key,),
+                ).fetchone()[0]
+                if previous != raw:
+                    raise ValueError("RESPONSE_RECEIPT_CONFLICT")
 
     @staticmethod
     def _row(row):
-        return dict(
-            key=row[0],
-            value=json.loads(row[1]),
-            resolution_note=row[2],
-            resolved_at_ms=row[3],
-        )
+        return {
+            "key": row[0],
+            "value": json.loads(row[1]),
+            "resolution_note": row[2],
+            "resolved_at_ms": row[3],
+        }
 
     def list(self, namespace=None, *, limit=100, offset=0):
         if (
@@ -174,9 +177,8 @@ class ResponseReceiptStore:
         )
         with closing(self._connect()) as connection:
             rows = connection.execute(
-                "SELECT key,value,resolution_note,resolved_at_ms FROM receipts "
-                + where
-                + " ORDER BY key LIMIT ? OFFSET ?",
+                "SELECT key,value,resolution_note,resolved_at_ms FROM"
+                " receipts " + where + " ORDER BY key LIMIT ? OFFSET ?",
                 (*args, limit, offset),
             ).fetchall()
         return [self._row(row) for row in rows]
@@ -187,15 +189,20 @@ class ResponseReceiptStore:
             raise ValueError("RESPONSE_RECEIPT_NOTE")
         if not self.path.exists():
             raise ValueError("RESPONSE_RECEIPT_UNKNOWN")
-        with closing(self._connect()) as connection, connection:
-            cursor = connection.execute(
-                "UPDATE receipts SET resolution_note=?,resolved_at_ms=? WHERE key=?",
-                (note.strip(), time.time_ns() // 1_000_000, key),
-            )
-            if cursor.rowcount != 1:
-                raise ValueError("RESPONSE_RECEIPT_UNKNOWN")
-            row = connection.execute(
-                "SELECT key,value,resolution_note,resolved_at_ms FROM receipts WHERE key=?",
-                (key,),
-            ).fetchone()
+        with closing(self._connect()) as connection:
+            with connection:
+                cursor = connection.execute(
+                    "UPDATE receipts SET resolution_note=?,resolved_at_ms=?"
+                    " WHERE"
+                    " key=?",
+                    (note.strip(), time.time_ns() // 1_000_000, key),
+                )
+                if cursor.rowcount != 1:
+                    raise ValueError("RESPONSE_RECEIPT_UNKNOWN")
+                row = connection.execute(
+                    "SELECT key,value,resolution_note,resolved_at_ms"
+                    " FROM receipts"
+                    " WHERE key=?",
+                    (key,),
+                ).fetchone()
         return self._row(row)

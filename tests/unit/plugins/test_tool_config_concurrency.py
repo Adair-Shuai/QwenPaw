@@ -14,10 +14,13 @@ from .test_sdk_entry_contract import write_plugin
 from .timing import WAIT_TIMEOUT
 
 
-async def test_concurrent_legacy_activations_preserve_both_tools_and_user_config(
+async def test_concurrent_legacy_activations_preserve_both_tools_and_user_config(  # noqa: E501
     tmp_path,
     monkeypatch,
 ):
+    # Keep both concurrent activations and their persisted configuration
+    # assertions together.
+    # pylint: disable=too-many-statements
     from qwenpaw.agents import tools
     from qwenpaw.config import config as configs
     from qwenpaw.plugins import api
@@ -161,6 +164,9 @@ async def test_tool_cleanup_transaction_preserves_concurrent_registration(
     monkeypatch,
     operation,
 ):
+    # Track cleanup and concurrent registration against the same transaction
+    # state.
+    # pylint: disable=too-many-statements
     from qwenpaw.config import config as configs
     from qwenpaw.plugins import api
     from qwenpaw.plugins.testing import PluginTestHost

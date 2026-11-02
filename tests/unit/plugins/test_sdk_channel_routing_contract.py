@@ -438,24 +438,18 @@ async def test_channel_boolean_config_survives_registry_and_start(
 ):
     source = SOURCE.replace(
         "async def start(self, ctx):\n                pass",
-        (
-            "async def start(self, ctx):\n                "
-            "plugin.storage.write_json('boolean.json',ctx.config."
-            "get('feature_enabled'))"
-        ),
+        "async def start(self, ctx):\n                "
+        "plugin.storage.write_json('boolean.json',ctx.config."
+        "get('feature_enabled'))",
     )
     source = source.replace(
-        (
-            "ChannelSpec(\n                "
-            '"contract-routed-channel",\n                "Routing '
-            'contract",\n                Backend,\n            )'
-        ),
-        (
-            "ChannelSpec('contract-routed-channel','Routing "
-            "contract',Backend,config_fields=({'name':'feature_en"
-            "abled','type':'boolean','label':'Feature','default':"
-            "False},))"
-        ),
+        "ChannelSpec(\n                "
+        '"contract-routed-channel",\n                "Routing '
+        'contract",\n                Backend,\n            )',
+        "ChannelSpec('contract-routed-channel','Routing "
+        "contract',Backend,config_fields=({'name':'feature_en"
+        "abled','type':'boolean','label':'Feature','default':"
+        "False},))",
     )
     async with PluginTestHost(tmp_path / "host") as host:
         ctx = await host.load(
@@ -487,22 +481,16 @@ async def test_same_session_senders_keep_stream_terminal_and_run_ids(
     )
     source = source.replace(
         '                if "hold-first" in text:',
-        (
-            "                yield ModelChunk((ContentBlock(text="
-            "'begin:'+text+';'),))\n                if "
-            "'hold-first' in text:"
-        ),
+        "                yield ModelChunk((ContentBlock(text="
+        "'begin:'+text+';'),))\n                if "
+        "'hold-first' in text:",
     )
     source = source.replace(
-        (
-            "ChannelSpec(\n                "
-            '"contract-routed-channel",\n                "Routing '
-            'contract",\n                Backend,\n            )'
-        ),
-        (
-            "ChannelSpec('contract-routed-channel','Routing "
-            "contract',Backend,streaming=True)"
-        ),
+        "ChannelSpec(\n                "
+        '"contract-routed-channel",\n                "Routing '
+        'contract",\n                Backend,\n            )',
+        "ChannelSpec('contract-routed-channel','Routing "
+        "contract',Backend,streaming=True)",
     )
     async with PluginTestHost(tmp_path / "host") as host:
         ctx = await host.load(
@@ -1021,11 +1009,9 @@ async def test_lifecycle_terminal_callback_cannot_start_new_model_work(
 
     source = SOURCE.replace(
         "from qwenpaw.plugins.messages import ContentBlock",
-        (
-            "from qwenpaw.plugins.messages import ContentBlock, "
-            "Message\nfrom qwenpaw.plugins import SDKError, "
-            "PluginBusyError"
-        ),
+        "from qwenpaw.plugins.messages import ContentBlock, "
+        "Message\nfrom qwenpaw.plugins import SDKError, "
+        "PluginBusyError",
     ).replace(
         '                if fault == "raise":',
         """                if event.phase=='end':
@@ -1075,11 +1061,15 @@ async def test_lifecycle_terminal_callback_cannot_start_new_model_work(
         assert len(json.loads((data / "model.json").read_text())) == 1
 
 
+@pytest.mark.usefixtures("bounded_dependency_environment")
 async def test_interrupt_reload_retains_blocked_terminal_until_public_retry(
     tmp_path,
     monkeypatch,
-    bounded_dependency_environment,
 ):
+    # Track the same blocked terminal across interruption, reload and public
+    # retry.
+    # Inspect the actual tracker custody across interrupt and reload.
+    # pylint: disable=too-many-statements,protected-access
     from qwenpaw.app.channels.base import BaseChannel
     from qwenpaw.plugins import PluginBusyError
 
@@ -1128,9 +1118,9 @@ async def test_interrupt_reload_retains_blocked_terminal_until_public_retry(
     )
     source = source.replace(
         "            async def stop(self, ctx):\n                return True",
-        "            async def stop(self, ctx):\n"
-        "                plugin.storage.write_json('transport-stopped.json', True)\n"
-        "                return True",
+        "            async def stop(self, ctx):\n               "
+        " plugin.storage.write_json('transport-stopped.json', True)\n         "
+        "       return True",
     )
     async with PluginTestHost(tmp_path / "host") as host:
         ctx = await host.load(
@@ -1199,7 +1189,8 @@ async def test_interrupt_reload_retains_blocked_terminal_until_public_retry(
             try:
                 await wait_for(lambda: retry.done() or retry_waiting.is_set())
                 if retry.done():
-                    await retry  # Surface an unexpected Busy instead of a timeout.
+                    # Surface an unexpected Busy instead of a timeout.
+                    await retry
                 assert (
                     not retry.done()
                 ), "Reload must wait for the real request"
@@ -1254,10 +1245,8 @@ async def test_lifecycle_interrupt_closes_started_stream_once(
         )
         .replace(
             '"Routing contract",\n                Backend,\n            )',
-            (
-                '"Routing contract",\n                Backend, '
-                "streaming=True,\n            )"
-            ),
+            '"Routing contract",\n                Backend, '
+            "streaming=True,\n            )",
         )
     )
     root = tmp_path / "host"

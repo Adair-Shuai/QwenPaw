@@ -640,6 +640,8 @@ async def test_observation_child_custody_is_temporary(
     exit_case,
 ):
     """Inspection children start under held gates without permanent readers."""
+    # Keep child-lock handoff and the later cleanup assertions in one scenario.
+    # pylint: disable=too-many-statements
     import asyncio
     import sys
 
@@ -676,7 +678,8 @@ m._close_readers()
                     timeout=0,
                 ):
                     pytest.fail("observation admitted a competing writer")
-            # The parent custody is scoped, never inserted into lifetime leases.
+            # The parent custody is scoped, never inserted into lifetime
+            # leases.
             assert str(site.resolve()) not in maintenance._READERS
             assert [
                 row["pid"] for row in maintenance.live_readers([site])

@@ -129,6 +129,8 @@ class QQDriver(SharedResponseDriver):
         return route
 
     async def _open(self, params, request):
+        # SharedResponseDriver passes the complete public request contract.
+        # pylint: disable=unused-argument
         self._identity(params)
         self._require_connected()
         handle = "qq:reply:" + uuid.uuid4().hex

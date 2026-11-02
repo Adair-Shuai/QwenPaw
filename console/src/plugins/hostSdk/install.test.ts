@@ -156,9 +156,10 @@ describe("window.QwenPaw.chat.requestPayload", () => {
 });
 
 describe("window.QwenPaw.host.* hooks attached", () => {
-  it("attaches the four hooks + fetch + imperative getters", () => {
+  it("attaches host hooks + fetch + imperative getters", () => {
     expect(typeof window.QwenPaw.host.useTheme).toBe("function");
     expect(typeof window.QwenPaw.host.useLocale).toBe("function");
+    expect(typeof window.QwenPaw.host.useAgentDisplayName).toBe("function");
     expect(typeof window.QwenPaw.host.useSelectedAgent).toBe("function");
     expect(typeof window.QwenPaw.host.useCurrentSession).toBe("function");
     expect(typeof window.QwenPaw.host.getSelectedAgentId).toBe("function");

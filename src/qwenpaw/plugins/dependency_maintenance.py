@@ -408,7 +408,7 @@ def _lease_environment(sites, parent_pid=None, timeout=5):
         permitted = authorized(root)
 
         @contextmanager
-        def admission():
+        def admission(root=root, permitted=permitted):
             # An existing parent lease already excludes maintenance. This
             # also permits its inspection child while its writer gate is held.
             if permitted or (
@@ -498,6 +498,8 @@ def host_sites():
 
 
 def live_readers(sites, ignore_pid=None):
+    # Lease inspection and stale-reader reclamation share the same file lock.
+    # pylint: disable=R0912
     readers = []
     for root in sites:
         directory = _readers_dir(root)

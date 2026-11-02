@@ -9,6 +9,8 @@ class QQCardHandler:
         self._platform = platform
 
     async def handle_interaction_event(self, event_data):
+        # The card dispatcher delegates to its owning platform callback.
+        # pylint: disable=protected-access
         parsed = parse_interaction_event(event_data)
         if parsed is None:
             return True

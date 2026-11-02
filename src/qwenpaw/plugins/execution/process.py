@@ -567,6 +567,9 @@ class PluginProcess:
             raise self.error_type(self._last_error) from None
 
     async def _open(self, spec: PluginLaunchSpec) -> None:
+        # Process startup checks and failure settlement share one launch
+        # lifetime.
+        # pylint: disable=R0912
         async def create_payloads():
             self._payloads = await PayloadStore.acreate(self._payload_limits)
 
@@ -967,6 +970,9 @@ class PluginProcess:
         *,
         graceful: bool,
     ) -> StopResult:
+        # Process cleanup preserves ownership until exit and artifact
+        # settlement.
+        # pylint: disable=R0912
         if self._spawn_task is not None and not self._spawn_task.done():
             try:
                 await asyncio.wait_for(

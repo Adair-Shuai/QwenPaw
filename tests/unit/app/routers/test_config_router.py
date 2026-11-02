@@ -113,7 +113,9 @@ def patch_get_agent(fake_agent_workspace):
 
 @pytest.fixture
 def isolated_channel_persistence(tmp_path, monkeypatch, fake_agent_workspace):
-    """Give channel PUTs real durable state, separate from the running agent."""
+    """
+    Give channel PUTs real durable state, separate from the running agent.
+    """
     from qwenpaw.config import utils as config_utils
 
     root_path = tmp_path / "config.json"

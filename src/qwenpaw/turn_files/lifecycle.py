@@ -160,6 +160,9 @@ async def begin_turn_files(
 
 async def record_delivered_file(path: str | Path) -> None:
     """Called only after send_file's content checks succeeded."""
+    # Delivery lifecycle schedules the capture-owned manifest completion
+    # task.
+    # pylint: disable=W0212
     tracker = _current.get()
     if tracker is None or tracker._finish_task is not None:
         return

@@ -249,7 +249,9 @@ class PluginTestHost:  # pylint: disable=too-many-public-methods
         await self.close()
 
     async def close(self) -> None:
-        """Retry cleanup after a failed close; ownership stays until it succeeds."""
+        """
+        Retry cleanup after a failed close; ownership stays until it succeeds.
+        """
         from .lifecycle import QuiescenceError, UnloadMode
 
         if _ACTIVE_HOST is not self:
@@ -278,7 +280,7 @@ class PluginTestHost:  # pylint: disable=too-many-public-methods
             ):
                 raise SDKError(
                     f"Workspace {workspace_id!r} task completion has not "
-                    f"stopped; retry close()",
+                    "stopped; retry close()",
                 )
             if "memory_manager" in workspace._service_manager.services:
                 await self.stop_memory(workspace_id=workspace_id)
@@ -814,7 +816,9 @@ class PluginTestHost:  # pylint: disable=too-many-public-methods
         *,
         workspace_id="test",
     ):
-        """Persist declared tool settings through the normal agent.json writer."""
+        """
+        Persist declared tool settings through the normal agent.json writer.
+        """
         from ..config.config import (
             load_agent_config,
             save_agent_config,
@@ -1386,7 +1390,8 @@ class PluginTestHost:  # pylint: disable=too-many-public-methods
         decision = await tool.check_permissions(arguments)
         if decision.behavior is not PermissionBehavior.ALLOW:
             raise SDKError(f"Tool invocation denied: {decision.message}")
-        # __new__ returns a dynamic FunctionTool subclass with __call__ installed.
+        # __new__ returns a dynamic FunctionTool subclass with __call__
+        # installed.
         normalized = await tool(**arguments)  # pylint: disable=not-callable
         try:
             while True:

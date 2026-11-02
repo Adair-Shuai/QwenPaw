@@ -22,12 +22,13 @@ from urllib.parse import unquote, urlparse
 
 import aiohttp
 
+from qwenpaw.app.channels.utils import materialize_data_url
+
 from .constants import (
     SLACK_TEXT_LIMIT,
 )
 from .format import chunk_slack_text, markdown_to_slack_mrkdwn
 from .utils import SlackDeliveryError, is_slack_host, with_retry
-from qwenpaw.app.channels.utils import materialize_data_url
 
 if TYPE_CHECKING:
     from slack_sdk.web.async_client import AsyncWebClient

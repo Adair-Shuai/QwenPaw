@@ -157,6 +157,9 @@ class MatrixStateStore:
         legacy_verified=False,
         encryption_enabled=False,
     ):
+        # Keep ordered transport effects and ownership cleanup in one
+        # transaction.
+        # pylint: disable=too-many-branches
         if not self._begun or not user_id:
             raise MatrixStateError("MATRIX_STATE_IDENTITY_REQUIRED")
         owner = {
@@ -185,7 +188,8 @@ class MatrixStateStore:
             raise MatrixStateError("MATRIX_CRYPTO_FILENAME_UNSAFE")
         # Across workspaces, the same account/device must not acquire two key
         # stores concurrently. OS locks release on crash; files are never used
-        # as a PID/existence-only lock or deleted while another process owns it.
+        # as a PID/existence-only lock or deleted while another process owns
+        # it.
         claim_root = (
             self.legacy / "matrix_plugin_claims"
             if self.legacy

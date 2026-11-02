@@ -1,4 +1,10 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  fireEvent,
+  render,
+  screen,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
 import ComposedProvider from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/ChatAnywhere/ComposedProvider";
@@ -88,19 +94,6 @@ vi.mock(
     ),
   }),
 );
-vi.mock("./LazyAccordion", () => ({
-  default: ({
-    renderChildren,
-    defaultOpen,
-  }: {
-    renderChildren: () => ReactNode;
-    defaultOpen: boolean;
-  }) => (
-    <section data-testid="steps" data-open={String(defaultOpen)}>
-      {renderChildren()}
-    </section>
-  ),
-}));
 
 function provider(children: ReactNode, nick?: string) {
   return (
@@ -174,6 +167,18 @@ it("mounts the persisted turn file summary in the real response and opens an imm
             after_available: true,
             delivered: true,
           },
+          {
+            id: "image",
+            root: "workspace",
+            path: "output/preview.png",
+            name: "preview.png",
+            status: "created",
+            size: 100,
+            binary: true,
+            before_available: false,
+            after_available: true,
+            delivered: true,
+          },
         ],
       },
     ],
@@ -199,6 +204,10 @@ it("mounts the persisted turn file summary in the real response and opens an imm
     const report = await screen.findByRole("button", {
       name: "turnFiles.openArchive report.txt",
     });
+    expect(screen.getByRole("img", { name: "preview.png" })).toHaveAttribute(
+      "src",
+      expect.stringContaining("turn/files/image"),
+    );
     await act(async () => report.click());
     expect(list).toHaveBeenCalledWith(scope, expect.anything());
     expect(open).toHaveBeenCalledOnce();
@@ -357,7 +366,9 @@ describe("merged host bubbles behavior", () => {
     );
     expect(screen.getByText("reasoning content")).toBeInTheDocument();
     expect(screen.getByText("tool content")).toBeInTheDocument();
-    expect(screen.queryByTestId("steps")).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("list", { name: "chat.execution.title" }),
+    ).not.toBeInTheDocument();
     await act(async () => {
       setShowThinkingPreference(false);
     });
@@ -365,7 +376,9 @@ describe("merged host bubbles behavior", () => {
     await act(async () => {
       setAssistantMessageDisplayPreference("process-collapsed");
     });
-    expect(screen.getByTestId("steps")).toHaveAttribute("data-open", "false");
+    expect(
+      screen.getByRole("button", { name: /chat.execution.complete/ }),
+    ).toHaveAttribute("aria-expanded", "false");
     expect(screen.getByTestId("response-actions")).toHaveTextContent(
       "sdk-message-id",
     );
@@ -424,4 +437,98 @@ describe("merged host bubbles behavior", () => {
       /prepend-early[\s\S]*prepend-late[\s\S]*original request content[\s\S]*append-content[\s\S]*request-actions/,
     );
   });
+});
+
+it("shows real execution transitions in the mounted response without mistaking delivered arguments for completion", async () => {
+  setAssistantMessageDisplayPreference("result-collapsed");
+  const call = {
+    id: "call-message",
+    type: AgentScopeRuntimeMessageType.FUNCTION_CALL,
+    role: "assistant",
+    status: AgentScopeRuntimeRunStatus.Completed,
+    content: [
+      {
+        type: "data",
+        data: {
+          name: "read_file",
+          call_id: "call-1",
+          arguments: { path: "test.txt" },
+        },
+      },
+    ],
+  };
+  const output = {
+    id: "result-message",
+    type: AgentScopeRuntimeMessageType.FUNCTION_CALL_OUTPUT,
+    role: "tool",
+    status: AgentScopeRuntimeRunStatus.Completed,
+    content: [
+      { type: "data", data: { call_id: "call-1", output: "File content" } },
+    ],
+  };
+  const view = (status: any, messages: any[]) =>
+    provider(
+      <HostResponseCard
+        id="response"
+        isLast
+        data={{ id: "response", status, output: messages }}
+      />,
+    );
+  const { container, rerender } = render(
+    view(AgentScopeRuntimeRunStatus.InProgress, [call]),
+  );
+  expect(
+    container.querySelector('[data-execution-state="running"]'),
+  ).toBeTruthy();
+  expect(
+    screen.getByRole("button", { name: /chat.execution.active/ }),
+  ).toHaveAttribute("aria-expanded", "true");
+  expect(screen.queryByText("tool content")).not.toBeInTheDocument();
+  fireEvent.click(
+    screen.getByRole("button", { name: /chat.execution.actions.readFile/ }),
+  );
+  await act(async () =>
+    fireEvent.click(screen.getByText("chat.execution.viewRecord")),
+  );
+  expect(await screen.findByText("tool content")).toBeVisible();
+  rerender(view(AgentScopeRuntimeRunStatus.Completed, [call, output]));
+  const complete = screen.getByRole("button", {
+    name: /chat.execution.complete/,
+  });
+  expect(complete).toHaveAttribute("aria-expanded", "false");
+  expect(screen.queryByText("tool content")).not.toBeInTheDocument();
+  fireEvent.click(complete);
+  expect(
+    container.querySelectorAll('[data-execution-state="returned"]'),
+  ).toHaveLength(1);
+  rerender(
+    view(AgentScopeRuntimeRunStatus.Failed, [
+      call,
+      {
+        ...output,
+        content: [
+          {
+            type: "data",
+            data: { call_id: "call-1", state: "error", output: "Failed" },
+          },
+        ],
+      },
+    ]),
+  );
+  fireEvent.click(
+    screen.getByRole("button", { name: /chat.execution.failedCount/ }),
+  );
+  expect(
+    container.querySelector('[data-execution-state="failed"]'),
+  ).toBeTruthy();
+  rerender(view(AgentScopeRuntimeRunStatus.Canceled, [call]));
+  fireEvent.click(
+    screen.getByRole("button", { name: /chat.execution.interruptedCount/ }),
+  );
+  expect(
+    container.querySelector('[data-execution-state="interrupted"]'),
+  ).toBeTruthy();
+  expect(
+    container.querySelector('[data-execution-state="running"]'),
+  ).toBeNull();
 });

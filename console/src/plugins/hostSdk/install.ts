@@ -38,6 +38,7 @@ import type {
 import {
   useHostTheme,
   useHostLocale,
+  useHostAgentDisplayName,
   useHostSelectedAgent,
   useHostCurrentSession,
   getSelectedAgentId,
@@ -428,6 +429,8 @@ export function installHostSdk(): void {
   const host = ns.host ?? (ns.host = {});
   if (!host.useTheme) host.useTheme = useHostTheme;
   if (!host.useLocale) host.useLocale = useHostLocale;
+  if (!host.useAgentDisplayName)
+    host.useAgentDisplayName = useHostAgentDisplayName;
   if (!host.useSelectedAgent) host.useSelectedAgent = useHostSelectedAgent;
   if (!host.useCurrentSession) host.useCurrentSession = useHostCurrentSession;
   if (!host.getSelectedAgentId) host.getSelectedAgentId = getSelectedAgentId;

@@ -455,6 +455,8 @@ class SharedHelloParams(IdentityParams):
 
 def validate_channel_contract(channel_key: str, capabilities) -> None:
     """Reject unimplemented contracts before candidate activation."""
+    # Keep the channel identity parameter in the public validation contract.
+    del channel_key
     from .models import (
         CONTENT_SOURCE_CAPABILITY,
         SEMANTIC_PARTS_CAPABILITY,

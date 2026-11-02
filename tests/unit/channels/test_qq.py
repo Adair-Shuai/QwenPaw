@@ -116,8 +116,10 @@ class Gateway:
             assert not thread.is_alive()
 
 
-@pytest_asyncio.fixture
-async def native_driver(tmp_path, monkeypatch):
+@pytest_asyncio.fixture(name="native_driver")
+async def _fixture_native_driver(tmp_path, monkeypatch):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     server = Gateway().start()
     monkeypatch.setenv("QQ_API_BASE", server.base)
     monkeypatch.setenv("QQ_TOKEN_URL", server.base + "/token")
@@ -185,7 +187,7 @@ TEXT = [{"type": "text", "text": "  exact answer  "}]
     ],
 )
 async def test_native_text_targets(native_driver, target, path):
-    driver, peer, identity, server = native_driver
+    _driver, peer, identity, server = native_driver
     handle = await open_route(
         peer,
         identity,
@@ -270,6 +272,8 @@ async def test_native_events_map_sender_and_conversation(
     session,
     conversation,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, peer, _, server = native_driver
     server.push(
         {
@@ -310,6 +314,8 @@ async def test_native_events_map_sender_and_conversation(
 async def test_heartbeat_and_stop_close_native_resources(
     native_driver,
 ):
+    # Regression assertions inspect owned lifecycle and transport state.
+    # pylint: disable=protected-access
     driver, _, _, server = native_driver
     platform = driver._platform
     await eventually(lambda: any(frame["op"] == 1 for frame in server.frames))

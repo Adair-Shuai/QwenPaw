@@ -1,0 +1,296 @@
+.df-stage-toolbar {
+  display: flex;
+  flex: 1;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  min-width: 0;
+}
+.df-stage-tool-slot {
+  display: contents;
+}
+.df-toolbar-file-actions,
+.df-toolbar-save {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.df-toolbar-save {
+  position: absolute;
+  top: 14px;
+  right: 16px;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-left: auto;
+}
+.df-stage-toolbar button,
+.df-toolbar-menu > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 6px 9px;
+  font-size: 13px;
+  line-height: 18px;
+  border: 1px solid var(--df-line);
+  border-radius: 6px;
+  background: var(--df-paper);
+  color: var(--df-text);
+  cursor: pointer;
+}
+.df-stage-toolbar .df-toolbar-icon-button {
+  width: 32px;
+  min-width: 32px;
+  height: 32px;
+  padding: 0;
+}
+.df-stage-toolbar button:hover,
+.df-toolbar-menu > summary:hover {
+  border-color: var(--df-accent);
+}
+.df-toolbar-menu > summary[aria-disabled="true"] {
+  opacity: 0.45;
+  cursor: default;
+}
+.df-toolbar-icon {
+  display: block;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+.df-toolbar-menu {
+  position: relative;
+}
+.df-toolbar-menu-more > .df-toolbar-popover {
+  left: auto;
+  right: 0;
+  width: 280px;
+}
+.df-toolbar-menu > summary {
+  list-style: none;
+}
+.df-toolbar-menu > summary::-webkit-details-marker {
+  display: none;
+}
+.df-toolbar-menu > summary:focus-visible {
+  outline: 2px solid var(--df-accent);
+  outline-offset: 2px;
+}
+.df-toolbar-popover {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 8px);
+  left: 0;
+  width: min(420px, calc(100vw - 48px));
+  max-height: min(460px, 65vh);
+  overflow-y: auto;
+  padding: 12px;
+  border: 1px solid var(--df-line);
+  border-radius: 10px;
+  background: var(--df-paper);
+  box-shadow: 0 10px 28px #18203320;
+}
+.df-toolbar-popover > .df-field {
+  margin-bottom: 12px;
+}
+.df-toolbar-popover > button {
+  margin: 0 6px 6px 0;
+}
+.df-toolbar-popover .df-template-panel {
+  border: 0;
+  box-shadow: none;
+  margin: 8px 0 0;
+  padding: 0;
+}
+.df-toolbar-popover .df-section-head {
+  margin-bottom: 12px;
+}
+.df-toolbar-popover .df-template-actions {
+  flex-wrap: wrap;
+}
+.df-toolbar-popover .df-template {
+  font-size: 13px;
+  padding-top: 12px;
+  padding-bottom: 12px;
+}
+.df-toolbar-popover .df-template > b {
+  overflow-wrap: anywhere;
+}
+.df-save-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--df-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+.df-save-state::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.df-save-state.is-dirty {
+  color: var(--df-accent);
+}
+.df-stage-header {
+  position: relative;
+}
+.df-stage-header,
+.df-three-column .df-stage-header {
+  container-type: inline-size;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 14px 16px 0;
+  border: 1px solid var(--df-line);
+  border-radius: 10px;
+  box-shadow: none;
+  gap: 12px;
+}
+.df-stage-top-row,
+.df-three-column .df-stage-header > div.df-stage-top-row {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex-wrap: nowrap;
+  gap: 20px;
+  min-width: 0;
+}
+.df-stage-header:has(.df-toolbar-save) > .df-stage-top-row {
+  padding-right: 180px;
+}
+.df-stage-heading {
+  flex-shrink: 0;
+}
+.df-stage-header h2,
+.df-three-column .df-stage-header h2 {
+  margin: 0;
+  font-size: 18px;
+  line-height: 26px;
+  white-space: nowrap;
+}
+.df-stage-bottom-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0 16px;
+  min-height: 46px;
+  border-top: 1px solid var(--df-line);
+}
+.df-stage-bottom-row > .df-workflow-tabs {
+  margin: 0;
+  padding: 0;
+  gap: 20px;
+  border: 0;
+}
+.df-stage-bottom-row > .df-workflow-tabs > button {
+  padding: 11px 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+}
+.df-stage-bottom-row > .df-workflow-tabs > button[aria-selected="true"] {
+  border-bottom-color: var(--df-accent);
+  color: var(--df-accent);
+}
+.df-stage-bottom-row .df-node-status {
+  align-items: center;
+  justify-content: flex-end;
+  margin: 0 0 0 auto;
+  padding: 8px 0;
+  gap: 8px 12px;
+  font-size: 12px;
+}
+.df-app .df-stage-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 6px;
+  background: color-mix(in srgb, currentColor 8%, var(--df-paper));
+  color: var(--df-stage-state-color, var(--df-muted));
+  font-size: 12px;
+  line-height: 20px;
+}
+.df-app .df-stage-state:hover {
+  background: color-mix(in srgb, currentColor 13%, var(--df-paper));
+}
+.df-stage-state.df-state-in_progress {
+  --df-stage-state-color: var(--df-accent);
+}
+.df-stage-state.df-state-completed {
+  --df-stage-state-color: #327555;
+}
+.df-stage-state.df-state-submitted {
+  --df-stage-state-color: #8a6932;
+}
+.df-app[data-theme="dark"] .df-stage-state.df-state-completed {
+  --df-stage-state-color: #81d4b0;
+}
+.df-app[data-theme="dark"] .df-stage-state.df-state-submitted {
+  --df-stage-state-color: #e5c38a;
+}
+.df-stage-state .df-toolbar-icon {
+  width: 12px;
+  height: 12px;
+}
+.df-state-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: currentColor;
+}
+.df-node-status .df-deadline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  white-space: nowrap;
+}
+.df-node-status .df-deadline .df-toolbar-icon {
+  width: 14px;
+  height: 14px;
+}
+.df-stage-approval-count {
+  padding-left: 12px;
+  border-left: 1px solid var(--df-line);
+  white-space: nowrap;
+}
+.df-three-column .df-embedded-editor > .df-main {
+  padding: 0;
+}
+.df-three-column .df-embedded-editor .df-edit-footer {
+  border-top: 1px solid var(--df-line);
+}
+.df-three-column .df-embedded-editor .df-edit-footer p {
+  margin: 0;
+}
+@container (max-width: 630px) {
+  .df-stage-top-row,
+  .df-three-column .df-stage-header > div.df-stage-top-row {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+  .df-stage-header:has(.df-toolbar-save) > .df-stage-top-row {
+    padding-right: 0;
+  }
+  .df-stage-header:has(.df-toolbar-save) .df-stage-heading {
+    width: 100%;
+    min-height: 32px;
+    padding-right: 180px;
+  }
+  .df-stage-toolbar {
+    flex-basis: 100%;
+  }
+}
+@media (max-width: 600px) {
+  .df-toolbar-popover {
+    width: min(340px, calc(100vw - 48px));
+  }
+}

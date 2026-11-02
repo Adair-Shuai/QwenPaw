@@ -5,6 +5,7 @@
  * blob fallback must always carry the content.
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from "vitest";
+import { waitFor } from "@testing-library/react";
 
 vi.mock("@tauri-apps/api/core", () => ({
   invoke: vi.fn(() => Promise.resolve(undefined)),
@@ -12,6 +13,10 @@ vi.mock("@tauri-apps/api/core", () => ({
 
 vi.mock("../api/authHeaders", () => ({
   buildAuthHeaders: () => ({ Authorization: "Bearer test" }),
+  buildWorkspaceScopeHeaders: () => ({
+    Authorization: "Bearer test",
+    "X-Chat-Id": "chat-1",
+  }),
 }));
 
 vi.mock("../api/modules/workspace", () => ({
@@ -19,6 +24,7 @@ vi.mock("../api/modules/workspace", () => ({
     getHtmlFileUriUrl: vi.fn(
       (path: string, root: string) => `/api/html?path=${path}&root=${root}`,
     ),
+    getFileDownloadUrl: vi.fn((path: string) => `/api/files/${path}`),
   },
 }));
 
@@ -59,6 +65,7 @@ describe("openHtmlFile", () => {
 
   afterEach(() => {
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     URL.createObjectURL = createObjectURL as typeof URL.createObjectURL;
     URL.revokeObjectURL = revokeObjectURL as typeof URL.revokeObjectURL;
   });
@@ -101,6 +108,60 @@ describe("openHtmlFile", () => {
   it("falls back to a blob URL when workspace backed but no native shell", () => {
     openHtmlFile({ ...baseOptions, workspaceBacked: true });
     expect(URL.createObjectURL).toHaveBeenCalled();
+  });
+
+  it("reserves a browser window before loading relative HTML resources", async () => {
+    const target = {
+      opener: window,
+      closed: false,
+      document: document.implementation.createHTMLDocument(),
+      location: { replace: vi.fn() },
+    };
+    openSpy.mockReturnValue(target as unknown as Window);
+    let finish!: (value: Response) => void;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        () =>
+          new Promise<Response>((resolve) => {
+            finish = resolve;
+          }),
+      ),
+    );
+    openHtmlFile({
+      ...baseOptions,
+      content: '<link rel="stylesheet" href="styles.css"><h1>hello</h1>',
+      artifact: {
+        id: "page",
+        title: "report.html",
+        source: "generated",
+        mimeType: "text/html",
+        workspacePath: "design/report.html",
+        workspaceRoot: "workspace",
+        chatId: "chat-1",
+      },
+    });
+    expect(openSpy).toHaveBeenCalledWith("about:blank", "_blank");
+    expect(target.opener).toBeNull();
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+    await vi.dynamicImportSettled();
+    await waitFor(() => expect(fetch).toHaveBeenCalledOnce());
+    finish(new Response("h1 { color: green }"));
+    await waitFor(() =>
+      expect(target.location.replace).toHaveBeenCalledWith("blob:preview"),
+    );
+    expect(openSpy).toHaveBeenCalledOnce();
+    const blob = vi.mocked(URL.createObjectURL).mock.calls[0][0] as Blob;
+    const html = await new Promise<string>((resolve) => {
+      const reader = new FileReader();
+      reader.onload = () => resolve(String(reader.result));
+      reader.readAsText(blob);
+    });
+    const wrapper = new DOMParser().parseFromString(html, "text/html");
+    const frame = wrapper.querySelector("iframe")!;
+    expect(frame.getAttribute("sandbox")).toBe("allow-scripts");
+    expect(frame.getAttribute("srcdoc")).toContain("data:text/css");
+    expect(html).not.toContain("Bearer test");
   });
 
   it("uses the pywebview bridge when workspace backed and available", async () => {

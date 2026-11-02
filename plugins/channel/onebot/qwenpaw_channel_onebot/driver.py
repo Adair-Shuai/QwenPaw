@@ -3,8 +3,8 @@
 
 from __future__ import annotations
 
-from collections import OrderedDict
 import hashlib
+from collections import OrderedDict
 from collections.abc import Mapping
 import uuid
 
@@ -95,7 +95,8 @@ class OneBotDriver(SharedResponseDriver):
             )
         except Exception as exc:
             # This specific JSON-RPC error proves there was no handler/effect.
-            # It remains a startup failure, never a substitute registration ACK.
+            # It remains a startup failure, never a substitute registration
+            # ACK.
             if (
                 getattr(exc, "code", None) == -32601
                 and operation == "register"
@@ -115,6 +116,8 @@ class OneBotDriver(SharedResponseDriver):
             await self._state_changed("connected")
 
     def _require_connected(self):
+        # Driver and platform share this channel private transport lifecycle.
+        # pylint: disable=protected-access
         if (
             self._stopping
             or not self._connected
@@ -197,6 +200,8 @@ class OneBotDriver(SharedResponseDriver):
         return {"to_handle": "group:" + number if group else number}
 
     async def _open(self, params, request):
+        # SharedResponseDriver passes the complete public request contract.
+        # pylint: disable=unused-argument
         self._identity(params)
         self._require_connected()
         route = self._target(
@@ -247,6 +252,8 @@ class OneBotDriver(SharedResponseDriver):
                 self._admissions.popitem(last=False)
 
     async def _normalize_message(self, value):
+        # Driver and platform share this channel private transport lifecycle.
+        # pylint: disable=protected-access
         platform = self._require_connected()
         user = str(value.get("user_id") or "")
         group = str(value.get("group_id") or "")
@@ -365,9 +372,11 @@ class OneBotDriver(SharedResponseDriver):
             event_id=event_id,
             event_kind="message",
             conversation={
-                "id": meta["group_id"]
-                if meta["is_group"]
-                else payload["sender_id"],
+                "id": (
+                    meta["group_id"]
+                    if meta["is_group"]
+                    else payload["sender_id"]
+                ),
                 "type": "group" if meta["is_group"] else "dm",
                 "thread_id": None,
             },

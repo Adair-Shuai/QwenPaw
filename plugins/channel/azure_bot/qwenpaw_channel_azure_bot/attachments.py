@@ -24,16 +24,17 @@ def _public_address(host):
         or address.is_multicast
         or address.is_reserved
         or getattr(address, "is_site_local", False)
-        or getattr(address, "ipv4_mapped", None)
+    ):
+        raise ValueError("AZURE_ATTACHMENT_URL_UNSAFE")
+    if (
+        getattr(address, "ipv4_mapped", None)
         or getattr(address, "sixtofour", None)
         or getattr(address, "teredo", None)
-        or (
-            address.version == 6
-            and (
-                address in ipaddress.ip_network("64:ff9b::/96")
-                or address in ipaddress.ip_network("64:ff9b:1::/48")
-            )
-        )
+    ):
+        raise ValueError("AZURE_ATTACHMENT_URL_UNSAFE")
+    if address.version == 6 and (
+        address in ipaddress.ip_network("64:ff9b::/96")
+        or address in ipaddress.ip_network("64:ff9b:1::/48")
     ):
         raise ValueError("AZURE_ATTACHMENT_URL_UNSAFE")
 
@@ -53,20 +54,24 @@ def attachment_url(value):
         or "@" in urlsplit(value).netloc
         or url.user is not None
         or url.password is not None
-        or url.port != 443
+    ):
+        raise ValueError("AZURE_ATTACHMENT_URL_UNSAFE")
+    if (
+        url.port != 443
         or url.fragment
         or "%" in host
         or host.rstrip(".") == "localhost"
-        or host.rstrip(".").endswith((".localhost", ".local", ".internal"))
     ):
+        raise ValueError("AZURE_ATTACHMENT_URL_UNSAFE")
+    if host.rstrip(".").endswith((".localhost", ".local", ".internal")):
         raise ValueError("AZURE_ATTACHMENT_URL_UNSAFE")
     try:
         ipaddress.ip_address(host)
-    except ValueError:
+    except ValueError as exc:
         # Older aiohttp connectors bypass the resolver for padded IPv4 forms
         # that ipaddress rejects but the OS can interpret as private addresses.
         if ":" in host or all(c in "0123456789." for c in host):
-            raise ValueError("AZURE_ATTACHMENT_URL_UNSAFE")
+            raise ValueError("AZURE_ATTACHMENT_URL_UNSAFE") from exc
         # The connector's resolver checks every DNS answer for other names.
     else:
         _public_address(host)

@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import json
 import uuid
-from pathlib import Path
+from pathlib import Path, PurePath, PureWindowsPath
 from typing import Callable, Literal
 
 from fastapi import APIRouter, HTTPException
@@ -34,6 +34,24 @@ def registered_workspace(agent_id: str) -> Path | None:
     )
 
 
+def _comparison_path(path: PurePath) -> PurePath:
+    """Compare equivalent Windows spellings without changing I/O paths."""
+    if not isinstance(path, PureWindowsPath):
+        return path
+    value = str(path)
+    if value[:8].upper() == "\\\\?\\UNC\\":
+        return PureWindowsPath("\\\\" + value[8:])
+    drive = path.drive
+    if (
+        len(drive) == 6
+        and drive.startswith("\\\\?\\")
+        and drive[4].isalpha()
+        and drive[5] == ":"
+    ):
+        return PureWindowsPath(value[4:])
+    return path
+
+
 def build_expert_presentation_router(
     resolve_workspace: Callable[[str], Path | None] = registered_workspace,
 ) -> APIRouter:
@@ -45,7 +63,9 @@ def build_expert_presentation_router(
             raise HTTPException(404, "专家不存在")
         root = root.resolve()
         target = root / "ugsci" / "expert-card.json"
-        if not target.resolve().is_relative_to(root):
+        if not _comparison_path(target.resolve()).is_relative_to(
+            _comparison_path(root),
+        ):
             raise HTTPException(400, "专家显示配置路径无效")
         return target
 

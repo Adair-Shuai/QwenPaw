@@ -211,6 +211,9 @@ class PyVoIPBackend:
         await run_native(call.write_audio, audio)
 
     def _on_call(self, call):
+        # Keep ordered transport effects and ownership cleanup in one
+        # transaction.
+        # pylint: disable=too-many-branches
         from pyVoIP.VoIP import CallState, InvalidStateError
 
         call_id = self._extract_call_id(call)

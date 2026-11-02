@@ -134,6 +134,9 @@ class SlackPlatform:
         )
 
     async def _configure_request_client(self, client, next):
+        # Slack Bolt injects the middleware continuation by the parameter name
+        # next.
+        # pylint: disable=redefined-builtin
         _apply_slack_proxy(client, self._proxy_url)
         return await next()
 
@@ -252,8 +255,6 @@ class SlackPlatform:
         while self._running and handler is self._handler:
             try:
                 connected = await handler.client.is_connected()
-            except asyncio.CancelledError:
-                raise
             except Exception:
                 connected = False
             if connected != self.connected:
@@ -288,6 +289,8 @@ class SlackPlatform:
         )
 
     async def _restart_socket_mode(self, reason):
+        # Retain the existing callable signature for channel integrations.
+        # pylint: disable=unused-argument
         async with self._socket_reconnect_lock:
             if not self._running:
                 return
@@ -413,6 +416,8 @@ class SlackPlatform:
             raise SlackDeliveryError("MEDIA_PATH_OUTSIDE_WORKSPACE")
 
     async def download_file(self, url, filename):
+        # Driver and platform share this channel private transport lifecycle.
+        # pylint: disable=protected-access
         if self._event_handler is None:
             self._event_handler = SlackEventHandler(
                 self,

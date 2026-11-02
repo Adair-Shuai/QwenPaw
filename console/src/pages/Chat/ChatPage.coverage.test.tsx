@@ -12,10 +12,19 @@ import {
   useEffect,
 } from "react";
 import { Upload } from "antd";
-import { screen, waitFor, act, fireEvent } from "@testing-library/react";
+import {
+  screen,
+  waitFor,
+  act,
+  fireEvent,
+  within,
+} from "@testing-library/react";
 import { useNavigate } from "react-router-dom";
 import { renderWithProviders } from "@/test/common_setup";
-import { useMessageQueueStore } from "@/stores/messageQueueStore";
+import {
+  MAX_QUEUE_SIZE,
+  useMessageQueueStore,
+} from "@/stores/messageQueueStore";
 import { useBackgroundTasksStore } from "@/stores/backgroundTasksStore";
 import ChatPage from "./index";
 import i18n, { i18nReady } from "../../i18n";
@@ -25,12 +34,14 @@ import { PAGE_STYLES } from "@/utils/pageStyle";
 import { INTERFACE_STYLES } from "@/utils/interfaceStyle";
 import { ChatRunLifecycle } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Execution/runLifecycle";
 import sessionApi from "./sessionApi";
+import { getDraftStorageKey } from "./chatInputDraft";
 import { stopBackgroundQueue } from "./backgroundQueueRegistry";
 import { chatExtensions } from "@/plugins/registry/chatExtensions";
 import { useSessionFilesDrawer } from "@/stores/filesSurfaceStore";
 import { useStoppedTurnsStore } from "./stoppedTurns";
 import {
   clearAgentMentionModes,
+  getAgentMentionModesSnapshot,
   setAgentMentionMode,
 } from "./components/agentMentionModes";
 
@@ -44,6 +55,10 @@ const {
   mockUploadFile,
   mockFilePreviewUrl,
   mockGetChatStatus,
+  mockGetSteeringState,
+  mockGetSteeringReceipt,
+  mockSteer,
+  mockCancelExecution,
   mockRuntimeSubmit,
   mockGetApiUrl,
   mockSelectedAgent,
@@ -59,8 +74,11 @@ const {
   mockApprovalLevelToggle,
   mockHydrateBackgroundTasksForSession,
   mockRenderSender,
+  mockRenderWelcome,
+  mockPendingApprovals,
   mockUseActualTheme,
   mockAgentList,
+  mockHistoryRequests,
 } = vi.hoisted(() => ({
   mockListProviders: vi.fn(),
   mockPreviewModelInfo: vi.fn(),
@@ -68,6 +86,10 @@ const {
   mockUploadFile: vi.fn(),
   mockFilePreviewUrl: vi.fn((f: string) => `/preview/${f}`),
   mockGetChatStatus: vi.fn(),
+  mockGetSteeringState: vi.fn(),
+  mockGetSteeringReceipt: vi.fn(),
+  mockSteer: vi.fn(),
+  mockCancelExecution: vi.fn(async () => ({ status: "not-found" })),
   mockRuntimeSubmit: vi.fn(),
   mockGetApiUrl: vi.fn((p: string) => `http://localhost:3000${p}`),
   mockSelectedAgent: vi.fn(() => "default"),
@@ -83,8 +105,11 @@ const {
   mockApprovalLevelToggle: vi.fn(),
   mockHydrateBackgroundTasksForSession: vi.fn(() => Promise.resolve()),
   mockRenderSender: vi.fn(() => false),
+  mockRenderWelcome: vi.fn(() => false),
+  mockPendingApprovals: vi.fn(() => [] as any[]),
   mockUseActualTheme: vi.fn(() => false),
   mockAgentList: vi.fn(),
+  mockHistoryRequests: vi.fn((_sessionId?: string): unknown[] => []),
 }));
 
 let capturedOptions: any = null;
@@ -100,7 +125,7 @@ vi.mock("../../hooks/useAppMessage", () => ({
 
 vi.mock("../../contexts/ApprovalContext", () => ({
   useApprovalContext: () => ({
-    approvals: [] as any[],
+    approvals: mockPendingApprovals(),
     setApprovals: vi.fn(),
   }),
 }));
@@ -139,14 +164,63 @@ vi.mock("@agentscope-ai/chat", () => ({
       },
       execution: {
         execute: mockRuntimeSubmit,
-        cancel: vi.fn(async () => ({ status: "not-found" })),
+        cancel: mockCancelExecution,
       },
     }));
     return (
       <div data-testid="chat-ui">
+        {mockRenderWelcome() &&
+          props.options?.welcome?.render?.({
+            ...props.options.welcome,
+            onSubmit: mockRuntimeSubmit,
+          })}
+        {mockHistoryRequests(props.options?.session?.currentSessionId).map(
+          (data, index) => {
+            const request = data as {
+              input: Array<{
+                role: string;
+                content: Array<{ type: string; text?: string }>;
+              }>;
+            };
+            const fallback = () => (
+              <>
+                <p data-testid={`historical-user-text-${index}`}>
+                  {request.input
+                    .filter((entry) => entry.role === "user")
+                    .flatMap((entry) => entry.content)
+                    .filter((part) => part.type === "text")
+                    .map((part) => part.text)
+                    .join("\n")}
+                </p>
+                <div data-testid={`historical-user-actions-${index}`}>
+                  {(props.options?.requestActions?.list ?? []).map(
+                    (action: any, actionIndex: number) =>
+                      action.render ? (
+                        createElement(action.render, { key: actionIndex, data })
+                      ) : action.onClick ? (
+                        <button
+                          key={actionIndex}
+                          onClick={() => action.onClick({ data })}
+                        >
+                          {action.icon}
+                        </button>
+                      ) : null,
+                  )}
+                </div>
+              </>
+            );
+            return (
+              <section data-testid={`historical-user-${index}`} key={index}>
+                {props.options?.request?.render
+                  ? props.options.request.render({ data, fallback })
+                  : fallback()}
+              </section>
+            );
+          },
+        )}
+        {props.options?.sender?.beforeUI}
         {mockRenderSender() && (
           <div className="test-sender qwenpaw-sender">
-            {props.options?.sender?.beforeUI}
             {props.options?.sender?.attachments?.trigger && (
               <Upload
                 {...props.options.sender.attachments}
@@ -220,6 +294,9 @@ vi.mock("@/api/modules/chat", () => ({
     uploadFile: mockUploadFile,
     filePreviewUrl: mockFilePreviewUrl,
     getChatStatus: mockGetChatStatus,
+    getSteeringState: mockGetSteeringState,
+    getSteeringReceipt: mockGetSteeringReceipt,
+    steer: mockSteer,
     stopChat: vi.fn(() => Promise.resolve()),
   },
 }));
@@ -453,7 +530,9 @@ vi.mock("./components/ContextUsageIndicator", () => ({
 }));
 
 vi.mock("../../components/ApprovalCard/ApprovalCard", () => ({
-  ApprovalCard: () => null,
+  ApprovalCard: ({ requestId }: { requestId: string }) => (
+    <div data-testid="scoped-approval">{requestId}</div>
+  ),
 }));
 
 vi.mock("../../hooks/useIsMobile", () => ({
@@ -601,7 +680,9 @@ vi.mock("./utils", async () => {
     getSenderTextareaFromTarget: vi.fn((target: EventTarget | null) =>
       mockRenderSender() ? actual.getSenderTextareaFromTarget(target) : null,
     ),
-    setTextareaValue: vi.fn(),
+    setTextareaValue: vi.fn((input: HTMLTextAreaElement, value: string) => {
+      if (mockRenderWelcome()) actual.setTextareaValue(input, value);
+    }),
   };
 });
 
@@ -617,6 +698,9 @@ describe("ChatPage coverage", () => {
     );
     vi.mocked(sessionApi.getRealIdForSession).mockReturnValue(null);
     mockRenderSender.mockReturnValue(false);
+    mockRenderWelcome.mockReturnValue(false);
+    mockHistoryRequests.mockReset().mockReturnValue([]);
+    mockPendingApprovals.mockReturnValue([]);
     mockUseActualTheme.mockReturnValue(false);
     mockAgentList.mockReturnValue([
       { id: "default", name: "Default", backend: "qwenpaw" },
@@ -626,6 +710,14 @@ describe("ChatPage coverage", () => {
     capturedOptions = null;
     mockCopyText.mockClear();
     mockGetChatStatus.mockReset();
+    mockGetSteeringState.mockReset().mockResolvedValue({
+      active_run_id: null,
+      supported: false,
+      receipts: [],
+    });
+    mockGetSteeringReceipt.mockReset();
+    mockSteer.mockReset();
+    mockCancelExecution.mockClear();
     mockGetChatStatus.mockResolvedValue({ status: "idle" });
     mockRuntimeSubmit.mockReset();
     mockRuntimeMount.mockReset();
@@ -777,7 +869,7 @@ describe("ChatPage coverage", () => {
     const approval = screen.getByTestId("approval-toggle");
     const usage = screen.getByTestId("context-usage");
     for (const [style, accent] of [
-      ["warm-minimal", "#485440"],
+      ["warm-minimal", "#292826"],
       ["cool-workspace", "#4269cc"],
       ["soft-focus", "#45685a"],
     ]) {
@@ -800,6 +892,13 @@ describe("ChatPage coverage", () => {
       expect(approval).toBeVisible();
       expect(usage).toBeVisible();
       expect(project.closest("[data-composer-metadata]")).not.toBeNull();
+      const metadata = project.closest("[data-composer-metadata]")!;
+      expect(metadata.contains(approval)).toBe(true);
+      expect(metadata.contains(usage)).toBe(true);
+      expect(
+        metadata.compareDocumentPosition(sender) &
+          Node.DOCUMENT_POSITION_FOLLOWING,
+      ).toBeTruthy();
       expect(
         screen.queryByRole("button", { name: "Chat options" }),
       ).not.toBeInTheDocument();
@@ -1493,6 +1592,463 @@ describe("ChatPage coverage", () => {
     }
   });
 
+  it("UGSci fork feature: historical edit resend preserves the composer draft and attachments in a fresh queued turn", async () => {
+    const chatId = "ed170000-0000-4000-8000-000000000001";
+    const draft = "Keep my unrelated composer draft";
+    const original = {
+      created_at: 1700000000,
+      input: [
+        {
+          role: "user",
+          type: "message",
+          content: [
+            { type: "text", text: "Inspect the original evidence" },
+            {
+              type: "file",
+              file_url: "/files/evidence.csv",
+              file_name: "evidence.csv",
+              file_size: 42,
+            },
+          ],
+          metadata: { qwenpaw_client_message_id: "historical-client-id" },
+        },
+      ],
+    };
+    const snapshot = structuredClone(original);
+    mockHistoryRequests.mockReturnValue([original]);
+    mockRenderSender.mockReturnValue(true);
+    mockGetChatStatus.mockResolvedValue({ status: "running" });
+    useMessageQueueStore.getState().setRunState(chatId, "paused");
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    const composer = await screen.findByTestId("mention-sender");
+    await act(async () => {});
+    fireEvent.input(composer, { target: { value: draft } });
+    localStorage.setItem(getDraftStorageKey("default", chatId), draft);
+    const bubble = screen.getByTestId("historical-user-0");
+    await waitFor(() =>
+      expect(
+        within(bubble).getByText("Inspect the original evidence"),
+      ).toBeVisible(),
+    );
+    expect(capturedOptions.requestActions.list[2].render).toBeTypeOf(
+      "function",
+    );
+    fireEvent.click(
+      within(bubble).getByRole("button", {
+        name: i18n.t("chat.editResend.action"),
+      }),
+    );
+    const editing = await within(bubble).findByRole("group", {
+      name: i18n.t("chat.editResend.action"),
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const editor = within(editing).getByRole("textbox");
+    expect(editor).toHaveValue("Inspect the original evidence");
+    expect(
+      within(bubble).getByTestId("historical-user-text-0"),
+    ).not.toBeVisible();
+    expect(within(editing).getByText("evidence.csv")).toBeVisible();
+    expect(composer).toHaveValue(draft);
+    expect(useMessageQueueStore.getState().getQueue(chatId)).toEqual([]);
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+    fireEvent.change(editor, {
+      target: { value: "Inspect the revised evidence" },
+    });
+    const resend = within(editing).getByRole("button", {
+      name: i18n.t("chat.editResend.send"),
+    });
+    fireEvent.click(resend);
+    fireEvent.click(resend);
+    await waitFor(() =>
+      expect(
+        within(bubble).queryByRole("group", {
+          name: i18n.t("chat.editResend.action"),
+        }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(
+      within(bubble).getByText("Inspect the original evidence"),
+    ).toBeVisible();
+    const queue = useMessageQueueStore.getState().getQueue(chatId);
+    expect(queue).toHaveLength(1);
+    expect(queue[0]).toMatchObject({
+      text: "Inspect the revised evidence",
+      status: "pending",
+      agentId: "default",
+      backendSessionId: "test-session",
+      userId: "test-user",
+      channel: "console",
+      attachments: [
+        { url: "/files/evidence.csv", name: "evidence.csv", size: 42 },
+      ],
+    });
+    expect(queue[0].clientMessageId).toEqual(expect.any(String));
+    expect(queue[0].clientMessageId).not.toBe("historical-client-id");
+    expect(queue[0].requestContext).not.toHaveProperty(
+      "qwenpaw_regenerate_from",
+    );
+    expect(original).toEqual(snapshot);
+    expect(composer).toHaveValue(draft);
+    expect(localStorage.getItem(getDraftStorageKey("default", chatId))).toBe(
+      draft,
+    );
+    expect(sessionApi.discardLastUserMessage).not.toHaveBeenCalled();
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+    const { chatApi } = await import("../../api/modules/chat");
+    expect(chatApi.stopChat).not.toHaveBeenCalled();
+    expect(mockCancelExecution).not.toHaveBeenCalled();
+    expect(useMessageQueueStore.getState().getRunState(chatId)).toBe("paused");
+  });
+
+  it("UGSci fork feature: historical edit resend isolates Agent mention modes from the main composer and snapshots its own collaboration choice", async () => {
+    const chatId = "ed170000-0000-4000-8000-000000000006";
+    const store = useMessageQueueStore.getState();
+    store.setRunState(chatId, "paused");
+    mockAgentList.mockReturnValue([
+      { id: "default", name: "Default", enabled: true, backend: "qwenpaw" },
+      { id: "reviewer", name: "Reviewer", enabled: true, backend: "qwenpaw" },
+    ]);
+    mockHistoryRequests.mockReturnValue([
+      {
+        input: [
+          {
+            role: "user",
+            content: [{ type: "text", text: "@Reviewer check this result" }],
+            metadata: {
+              qwenpaw_agent_mention_dispatch: {
+                requestText: "check this result",
+                targetAgentId: "reviewer",
+                coordinationRequested: false,
+                modes: { reviewer: "delegate" },
+              },
+            },
+          },
+        ],
+      },
+    ]);
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    await screen.findByTestId("chat-ui");
+    await act(async () => {});
+    act(() => setAgentMentionMode("reviewer", "collaborate"));
+    const composerModes = getAgentMentionModesSnapshot();
+    const bubble = screen.getByTestId("historical-user-0");
+    fireEvent.click(
+      within(bubble).getByRole("button", {
+        name: i18n.t("chat.editResend.action"),
+      }),
+    );
+    const editing = await within(bubble).findByRole("group", {
+      name: i18n.t("chat.editResend.action"),
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const mode = within(editing).getByRole("combobox", {
+      name: i18n.t("chat.editResend.mentionMode", { agent: "Reviewer" }),
+    });
+    expect(mode.closest(".ant-select")).toHaveTextContent(
+      i18n.t("chat.editResend.delegate"),
+    );
+    expect(getAgentMentionModesSnapshot()).toEqual(composerModes);
+    fireEvent.mouseDown(mode);
+    fireEvent.click(
+      await screen.findByText(i18n.t("chat.editResend.collaborate")),
+    );
+    fireEvent.click(
+      within(editing).getByRole("button", {
+        name: i18n.t("chat.editResend.send"),
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        within(bubble).queryByRole("group", {
+          name: i18n.t("chat.editResend.action"),
+        }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(store.getQueue(chatId)).toHaveLength(1);
+    expect(store.getQueue(chatId)[0]).toMatchObject({
+      text: "@Reviewer check this result",
+      requestContext: {
+        qwenpaw_agent_mention_dispatch: {
+          coordinationRequested: true,
+          modes: { reviewer: "collaborate" },
+        },
+      },
+    });
+    expect(getAgentMentionModesSnapshot()).toEqual(composerModes);
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+  });
+
+  it("UGSci fork feature: historical edit resend retains its draft when the queue is full and submits once space is available", async () => {
+    const chatId = "ed170000-0000-4000-8000-000000000002";
+    const store = useMessageQueueStore.getState();
+    store.setRunState(chatId, "paused");
+    for (let index = 0; index < MAX_QUEUE_SIZE; index += 1)
+      store.enqueue(chatId, {
+        text: `Existing queued task ${index}`,
+        agentId: "default",
+      });
+    mockHistoryRequests.mockReturnValue([
+      {
+        input: [
+          {
+            role: "user",
+            content: [{ type: "text", text: "Historical task" }],
+          },
+        ],
+      },
+    ]);
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    await screen.findByTestId("chat-ui");
+    await act(async () => {});
+    const bubble = screen.getByTestId("historical-user-0");
+    fireEvent.click(
+      within(bubble).getByRole("button", {
+        name: i18n.t("chat.editResend.action"),
+      }),
+    );
+    const editing = await within(bubble).findByRole("group", {
+      name: i18n.t("chat.editResend.action"),
+    });
+    const editor = within(editing).getByRole("textbox");
+    fireEvent.change(editor, {
+      target: { value: "Do not lose this revised task" },
+    });
+    fireEvent.click(
+      within(editing).getByRole("button", {
+        name: i18n.t("chat.editResend.send"),
+      }),
+    );
+    await act(async () => {});
+    expect(
+      within(bubble).getByRole("group", {
+        name: i18n.t("chat.editResend.action"),
+      }),
+    ).toBeVisible();
+    expect(editor).toHaveValue("Do not lose this revised task");
+    expect(store.getQueue(chatId)).toHaveLength(MAX_QUEUE_SIZE);
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+    act(() => store.remove(chatId, store.getQueue(chatId)[0].id));
+    fireEvent.click(
+      within(editing).getByRole("button", {
+        name: i18n.t("chat.editResend.send"),
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        within(bubble).queryByRole("group", {
+          name: i18n.t("chat.editResend.action"),
+        }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(store.getQueue(chatId)).toHaveLength(MAX_QUEUE_SIZE);
+    expect(store.getQueue(chatId)[MAX_QUEUE_SIZE - 1].text).toBe(
+      "Do not lose this revised task",
+    );
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+  });
+
+  it("UGSci fork feature: navigation invalidates a historical edit dialog and its retained action even after returning to the same Chat", async () => {
+    const sourceChatId = "ed170000-0000-4000-8000-000000000003";
+    const targetChatId = "ed170000-0000-4000-8000-000000000004";
+    const store = useMessageQueueStore.getState();
+    store.setRunState(sourceChatId, "paused");
+    store.setRunState(targetChatId, "paused");
+    const original = {
+      input: [
+        { role: "user", content: [{ type: "text", text: "Source-only task" }] },
+      ],
+    };
+    mockHistoryRequests.mockImplementation((id) =>
+      id === sourceChatId ? [original] : [],
+    );
+    function ChatHarness() {
+      const navigate = useNavigate();
+      return (
+        <>
+          <button onClick={() => navigate(`/chat/${targetChatId}`)}>
+            Visit other Chat
+          </button>
+          <button onClick={() => navigate(`/chat/${sourceChatId}`)}>
+            Return to source Chat
+          </button>
+          <ChatPage />
+        </>
+      );
+    }
+    renderWithProviders(<ChatHarness />, {
+      initialEntries: [`/chat/${sourceChatId}`],
+    });
+    await screen.findByTestId("chat-ui");
+    await act(async () => {});
+    const oldAction = capturedOptions.requestActions.list[2];
+    const bubble = screen.getByTestId("historical-user-0");
+    fireEvent.click(
+      within(bubble).getByRole("button", {
+        name: i18n.t("chat.editResend.action"),
+      }),
+    );
+    const editing = await within(bubble).findByRole("group", {
+      name: i18n.t("chat.editResend.action"),
+    });
+    fireEvent.change(within(editing).getByRole("textbox"), {
+      target: { value: "Still belongs to source" },
+    });
+    const staleSubmit = within(editing).getByRole("button", {
+      name: i18n.t("chat.editResend.send"),
+    });
+    // Keep an old SDK footer mounted independently to exercise a retained
+    // action closure after the live user-message surface has been replaced.
+    renderWithProviders(
+      <aside data-testid="retained-history-action">
+        {createElement(oldAction.render, { data: original })}
+      </aside>,
+    );
+    const retainedButton = within(
+      screen.getByTestId("retained-history-action"),
+    ).getByRole("button", { name: i18n.t("chat.editResend.action") });
+    await act(async () =>
+      fireEvent.click(screen.getByRole("button", { name: "Visit other Chat" })),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("group", { name: i18n.t("chat.editResend.action") }),
+      ).not.toBeInTheDocument(),
+    );
+    fireEvent.click(staleSubmit);
+    fireEvent.click(retainedButton);
+    await act(async () => {});
+    expect(
+      screen.queryByRole("group", { name: i18n.t("chat.editResend.action") }),
+    ).not.toBeInTheDocument();
+    expect(store.getQueue(sourceChatId)).toEqual([]);
+    expect(store.getQueue(targetChatId)).toEqual([]);
+    await act(async () =>
+      fireEvent.click(
+        screen.getByRole("button", { name: "Return to source Chat" }),
+      ),
+    );
+    fireEvent.click(retainedButton);
+    await act(async () => {});
+    expect(
+      screen.queryByRole("group", { name: i18n.t("chat.editResend.action") }),
+    ).not.toBeInTheDocument();
+    expect(store.getQueue(sourceChatId)).toEqual([]);
+    expect(store.getQueue(targetChatId)).toEqual([]);
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+    expect(mockCancelExecution).not.toHaveBeenCalled();
+  });
+
+  it.each(["ctrlKey", "metaKey"] as const)(
+    "UGSci fork feature: historical edit %s Enter never sends or clears the separate composer draft",
+    async (modifier) => {
+      const chatId = "ed170000-0000-4000-8000-000000000005";
+      const draft = "Unsubmitted main composer content";
+      const store = useMessageQueueStore.getState();
+      store.setRunState(chatId, "paused");
+      mockRenderSender.mockReturnValue(true);
+      mockHistoryRequests.mockReturnValue([
+        {
+          input: [
+            {
+              role: "user",
+              content: [{ type: "text", text: "Revisable history" }],
+            },
+          ],
+        },
+      ]);
+      renderWithProviders(<ChatPage />, {
+        initialEntries: [`/chat/${chatId}`],
+      });
+      const composer = await screen.findByTestId("mention-sender");
+      fireEvent.input(composer, { target: { value: draft } });
+      localStorage.setItem(getDraftStorageKey("default", chatId), draft);
+      const bubble = screen.getByTestId("historical-user-0");
+      fireEvent.click(
+        within(bubble).getByRole("button", {
+          name: i18n.t("chat.editResend.action"),
+        }),
+      );
+      const editing = await within(bubble).findByRole("group", {
+        name: i18n.t("chat.editResend.action"),
+      });
+      const editor = within(editing).getByRole("textbox");
+      const utils = await import("./utils");
+      vi.mocked(utils.getActiveSenderTextarea).mockReturnValue(
+        composer as HTMLTextAreaElement,
+      );
+      try {
+        fireEvent.keyDown(editor, {
+          key: "Enter",
+          code: "Enter",
+          [modifier]: true,
+        });
+        await act(async () => {});
+        expect(
+          store.getQueue(chatId).every((item) => item.text !== draft),
+        ).toBe(true);
+        expect(composer).toHaveValue(draft);
+        expect(
+          localStorage.getItem(getDraftStorageKey("default", chatId)),
+        ).toBe(draft);
+        expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+      } finally {
+        vi.mocked(utils.getActiveSenderTextarea).mockReturnValue(null);
+      }
+    },
+  );
+
+  it("UGSci fork feature: historical edit replaces only its original bubble inline and cancel restores that bubble without a dialog", async () => {
+    const chatId = "ed170000-0000-4000-8000-000000000007";
+    const original = "An identical historical user request";
+    mockHistoryRequests.mockReturnValue(
+      ["first", "second"].map((id) => ({
+        input: [
+          {
+            role: "user",
+            content: [{ type: "text", text: original }],
+            metadata: { qwenpaw_client_message_id: id },
+          },
+        ],
+      })),
+    );
+    useMessageQueueStore.getState().setRunState(chatId, "paused");
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    await screen.findByTestId("chat-ui");
+    const first = screen.getByTestId("historical-user-0");
+    const second = screen.getByTestId("historical-user-1");
+    await waitFor(() =>
+      expect(within(first).getByText(original)).toBeVisible(),
+    );
+    expect(within(second).getByText(original)).toBeVisible();
+    fireEvent.click(
+      within(first).getByRole("button", {
+        name: i18n.t("chat.editResend.action"),
+      }),
+    );
+    const editing = await within(first).findByRole("group", {
+      name: i18n.t("chat.editResend.action"),
+    });
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    expect(
+      within(first).getByTestId("historical-user-text-0"),
+    ).not.toBeVisible();
+    expect(within(editing).getByRole("textbox")).toHaveValue(original);
+    expect(within(second).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(within(second).getByText(original)).toBeVisible();
+    fireEvent.change(within(editing).getByRole("textbox"), {
+      target: { value: "A draft to cancel" },
+    });
+    fireEvent.click(
+      within(editing).getByRole("button", { name: i18n.t("common.cancel") }),
+    );
+    expect(within(first).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(within(first).getByText(original)).toBeVisible();
+    expect(within(second).getByText(original)).toBeVisible();
+    expect(within(second).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(useMessageQueueStore.getState().getQueue(chatId)).toEqual([]);
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+  });
+
   // ── requestActions: timestamp render ───────────────────────────────────
   it("requestActions timestamp render returns element", async () => {
     renderWithProviders(<ChatPage />, {
@@ -1787,6 +2343,1024 @@ describe("ChatPage coverage", () => {
     expect(mockBeginLoopModeSubmission).not.toHaveBeenCalled();
   });
 
+  it("UGSci fork feature: mounted normal queue editing sorting deletion and clearing update persisted items while paused", async () => {
+    const chatId = "fc710000-0000-4000-8000-000000000001";
+    const store = useMessageQueueStore.getState();
+    store.enqueue(chatId, {
+      text: "First editable queued task",
+      agentId: "default",
+      backendSessionId: "test-session",
+      attachments: [
+        { url: "/files/queued.csv", name: "queued.csv", type: "text/csv" },
+      ],
+    });
+    store.enqueue(chatId, {
+      text: "Second removable queued task",
+      agentId: "default",
+      backendSessionId: "test-session",
+    });
+    store.enqueue(chatId, {
+      text: "Third sortable queued task",
+      agentId: "default",
+      backendSessionId: "test-session",
+    });
+    const [first, second, third] = store.getQueue(chatId);
+    store.setRunState(chatId, "paused");
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    const firstLabel = await screen.findByText(first.text);
+    const firstRow = firstLabel.closest("[draggable]") as HTMLElement;
+    await waitFor(() => expect(firstRow).toBeVisible());
+    fireEvent.mouseEnter(firstRow);
+    const editButton = firstRow
+      .querySelector("svg.lucide-pencil")
+      ?.closest("button");
+    expect(editButton).toBeInstanceOf(HTMLButtonElement);
+    fireEvent.click(editButton!);
+    const editor = within(firstRow).getByRole("textbox");
+    fireEvent.change(editor, { target: { value: "Edited first queued task" } });
+    fireEvent.keyDown(editor, { key: "Enter", code: "Enter" });
+    await waitFor(() =>
+      expect(store.getQueue(chatId)[0].text).toBe("Edited first queued task"),
+    );
+    expect(store.getQueue(chatId)[0]).toMatchObject({
+      id: first.id,
+      clientMessageId: first.clientMessageId,
+      attachments: first.attachments,
+    });
+    const thirdRow = screen
+      .getByText(third.text)
+      .closest("[draggable]") as HTMLElement;
+    fireEvent.dragStart(thirdRow);
+    fireEvent.dragOver(firstRow);
+    fireEvent.drop(firstRow);
+    expect(store.getQueue(chatId).map((item) => item.id)).toEqual([
+      third.id,
+      first.id,
+      second.id,
+    ]);
+    expect(
+      thirdRow.compareDocumentPosition(firstRow) &
+        Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+    const secondRow = screen
+      .getByText(second.text)
+      .closest("[draggable]") as HTMLElement;
+    fireEvent.mouseEnter(secondRow);
+    const removeButton = secondRow
+      .querySelector("svg.lucide-trash-2")
+      ?.closest("button");
+    expect(removeButton).toBeInstanceOf(HTMLButtonElement);
+    fireEvent.click(removeButton!);
+    expect(store.getQueue(chatId).map((item) => item.id)).toEqual([
+      third.id,
+      first.id,
+    ]);
+    expect(screen.queryByText(second.text)).not.toBeInTheDocument();
+    expect(
+      JSON.parse(
+        localStorage.getItem(`qwenpaw:message-queue:${chatId}`) || "null",
+      ),
+    ).toMatchObject({
+      runState: "paused",
+      items: [
+        { id: third.id },
+        {
+          id: first.id,
+          text: "Edited first queued task",
+          attachments: first.attachments,
+        },
+      ],
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("chat.queue.clear") }),
+    );
+    expect(store.getQueue(chatId)).toEqual([]);
+    expect(
+      screen.queryByText("Edited first queued task"),
+    ).not.toBeInTheDocument();
+    expect(localStorage.getItem(`qwenpaw:message-queue:${chatId}`)).toBeNull();
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+    expect(mockCancelExecution).not.toHaveBeenCalled();
+  });
+
+  it("UGSci fork feature: mounted normal queue pause and resume drain accepted turns once in FIFO order", async () => {
+    const chatId = "fc710000-0000-4000-8000-000000000002";
+    const store = useMessageQueueStore.getState();
+    for (const text of ["First FIFO task", "Second FIFO task"])
+      store.enqueue(chatId, {
+        text,
+        agentId: "default",
+        backendSessionId: "test-session",
+        userId: "test-user",
+        channel: "console",
+      });
+    const [first, second] = store.getQueue(chatId);
+    store.setRunState(chatId, "paused");
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      headers: new Headers({ "Content-Type": "application/json" }),
+      json: async () => ({ status: "idle", messages: [] }),
+    } as Response);
+    let acceptFirst!: () => void;
+    mockRuntimeSubmit.mockImplementation(async (_data, options) => {
+      const lifecycle = new ChatRunLifecycle({
+        runId: options.clientRequestId,
+        clientRequestId: options.clientRequestId,
+        source: "host-queue",
+        sessionId: options.sessionId,
+        cancel: vi.fn(),
+      });
+      if (options.clientRequestId === first.clientMessageId)
+        acceptFirst = () => lifecycle.markAccepted(options.sessionId);
+      else lifecycle.markAccepted(options.sessionId);
+      return lifecycle.handle;
+    });
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    const resume = await screen.findByRole("button", {
+      name: i18n.t("chat.queue.resume"),
+    });
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+    fireEvent.click(resume);
+    await waitFor(() => expect(mockRuntimeSubmit).toHaveBeenCalledTimes(1));
+    expect(store.getQueue(chatId)).toMatchObject([
+      { id: first.id, status: "sending" },
+      { id: second.id, status: "pending" },
+    ]);
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("chat.queue.pause") }),
+    );
+    expect(store.getRunState(chatId)).toBe("paused");
+    await act(async () => acceptFirst());
+    await waitFor(() =>
+      expect(store.getQueue(chatId)).toMatchObject([
+        { id: second.id, status: "pending" },
+      ]),
+    );
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 750));
+    });
+    expect(mockRuntimeSubmit).toHaveBeenCalledTimes(1);
+    expect(mockCancelExecution).not.toHaveBeenCalled();
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("chat.queue.resume") }),
+    );
+    await waitFor(() => expect(store.getQueue(chatId)).toEqual([]));
+    expect(mockRuntimeSubmit).toHaveBeenCalledTimes(2);
+    expect(mockRuntimeSubmit.mock.calls.map(([data]) => data.query)).toEqual([
+      first.text,
+      second.text,
+    ]);
+    expect(
+      mockRuntimeSubmit.mock.calls.map(
+        ([, options]) => options.clientRequestId,
+      ),
+    ).toEqual([first.clientMessageId, second.clientMessageId]);
+    for (const [data, options] of mockRuntimeSubmit.mock.calls) {
+      expect(data).toMatchObject({
+        session_id: "test-session",
+        agent_id: "default",
+        user_id: "test-user",
+        channel: "console",
+      });
+      expect(options).toMatchObject({
+        source: "host-queue",
+        sessionId: chatId,
+      });
+    }
+  });
+
+  it.each(["retry", "skip"] as const)(
+    "UGSci fork feature: mounted failed queue %s advances through real persisted state and SDK acceptance",
+    async (action) => {
+      const chatId =
+        action === "retry"
+          ? "fc710000-0000-4000-8000-000000000003"
+          : "fc710000-0000-4000-8000-000000000004";
+      const store = useMessageQueueStore.getState();
+      for (const text of [
+        "Previously failed task",
+        "Independent following task",
+      ])
+        store.enqueue(chatId, {
+          text,
+          agentId: "default",
+          backendSessionId: "test-session",
+        });
+      const [failed, following] = store.getQueue(chatId);
+      store.setItemStatus(
+        chatId,
+        failed.id,
+        "failed",
+        "Synthetic previous failure",
+      );
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "Content-Type": "application/json" }),
+        json: async () => ({ status: "idle", messages: [] }),
+      } as Response);
+      mockRuntimeSubmit.mockImplementation(async (_data, options) => {
+        const lifecycle = new ChatRunLifecycle({
+          runId: options.clientRequestId,
+          clientRequestId: options.clientRequestId,
+          source: "host-queue",
+          sessionId: options.sessionId,
+          cancel: vi.fn(),
+        });
+        lifecycle.markAccepted(options.sessionId);
+        return lifecycle.handle;
+      });
+      renderWithProviders(<ChatPage />, {
+        initialEntries: [`/chat/${chatId}`],
+      });
+      const label = await screen.findByText(failed.text, { exact: false });
+      const row = label.closest("[draggable]") as HTMLElement;
+      await waitFor(() => expect(row).toBeVisible());
+      expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+      fireEvent.mouseEnter(row);
+      const icon =
+        action === "retry"
+          ? "svg.lucide-refresh-cw"
+          : "svg.lucide-skip-forward";
+      const button = row.querySelector(icon)?.closest("button");
+      expect(button).toBeInstanceOf(HTMLButtonElement);
+      fireEvent.click(button!);
+      await waitFor(() => expect(store.getQueue(chatId)).toEqual([]), {
+        timeout: 3000,
+      });
+      const expected = action === "retry" ? [failed, following] : [following];
+      expect(mockRuntimeSubmit.mock.calls.map(([data]) => data.query)).toEqual(
+        expected.map((item) => item.text),
+      );
+      expect(
+        mockRuntimeSubmit.mock.calls.map(
+          ([, options]) => options.clientRequestId,
+        ),
+      ).toEqual(expected.map((item) => item.clientMessageId));
+      expect(sessionApi.discardLastUserMessage).toHaveBeenCalledWith(
+        expect.any(Array),
+        failed.clientMessageId,
+      );
+      expect(
+        localStorage.getItem(`qwenpaw:message-queue:${chatId}`),
+      ).toBeNull();
+      expect(mockCancelExecution).not.toHaveBeenCalled();
+      const { chatApi } = await import("../../api/modules/chat");
+      expect(chatApi.stopChat).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["sdk", "backend-fallback"] as const)(
+    "UGSci fork feature: mounted interrupt and send waits for %s cancellation and backend idle before dispatch",
+    async (cancelPath) => {
+      const chatId =
+        cancelPath === "sdk"
+          ? "fc710000-0000-4000-8000-000000000005"
+          : "fc710000-0000-4000-8000-000000000006";
+      const store = useMessageQueueStore.getState();
+      for (const text of [
+        "Ordinary head stays paused",
+        "Explicit priority task",
+      ])
+        store.enqueue(chatId, {
+          text,
+          agentId: "default",
+          backendSessionId: "test-session",
+          userId: "test-user",
+          channel: "console",
+        });
+      const [head, priority] = store.getQueue(chatId);
+      store.setRunState(chatId, "paused");
+      let finishCancel!: (result: { status: string }) => void;
+      mockCancelExecution.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            finishCancel = resolve;
+          }),
+      );
+      const { chatApi } = await import("../../api/modules/chat");
+      let finishStop!: () => void;
+      if (cancelPath === "backend-fallback")
+        vi.mocked(chatApi.stopChat).mockImplementationOnce(
+          () =>
+            new Promise((resolve) => {
+              finishStop = resolve;
+            }),
+        );
+      let finishIdle!: (value: { status: "idle"; messages: never[] }) => void;
+      const idle = new Promise((resolve) => {
+        finishIdle = resolve;
+      });
+      let idleReads = 0;
+      global.fetch = vi.fn(
+        async (input: RequestInfo | URL) =>
+          ({
+            ok: true,
+            status: 200,
+            headers: new Headers({ "Content-Type": "application/json" }),
+            json: async () => {
+              if (String(input).includes(`/chats/${chatId}`)) {
+                idleReads += 1;
+                return idle;
+              }
+              return {};
+            },
+          }) as Response,
+      );
+      mockRuntimeSubmit.mockImplementation(async (_data, options) => {
+        const lifecycle = new ChatRunLifecycle({
+          runId: options.clientRequestId,
+          clientRequestId: options.clientRequestId,
+          source: "host-queue",
+          sessionId: options.sessionId,
+          cancel: vi.fn(),
+        });
+        lifecycle.markAccepted(options.sessionId);
+        return lifecycle.handle;
+      });
+      renderWithProviders(<ChatPage />, {
+        initialEntries: [`/chat/${chatId}`],
+      });
+      const row = (await screen.findByText(priority.text)).closest(
+        "[draggable]",
+      ) as HTMLElement;
+      await waitFor(() => expect(row).toBeVisible());
+      fireEvent.mouseEnter(row);
+      fireEvent.click(
+        within(row).getByRole("button", {
+          name: i18n.t("chat.queue.interruptAndSend"),
+        }),
+      );
+      await waitFor(() =>
+        expect(mockCancelExecution).toHaveBeenCalledWith({ sessionId: chatId }),
+      );
+      expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+      expect(idleReads).toBe(0);
+      expect(store.getQueue(chatId).map((item) => item.id)).toEqual([
+        head.id,
+        priority.id,
+      ]);
+      await act(async () =>
+        finishCancel({
+          status: cancelPath === "sdk" ? "canceled" : "not-found",
+        }),
+      );
+      if (cancelPath === "backend-fallback") {
+        await waitFor(() =>
+          expect(chatApi.stopChat).toHaveBeenCalledWith(chatId, "default"),
+        );
+        expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+        expect(idleReads).toBe(0);
+        await act(async () => finishStop());
+      } else expect(chatApi.stopChat).not.toHaveBeenCalled();
+      await waitFor(() => expect(idleReads).toBeGreaterThan(0));
+      expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+      await act(async () => finishIdle({ status: "idle", messages: [] }));
+      await waitFor(() =>
+        expect(store.getQueue(chatId).map((item) => item.id)).toEqual([
+          head.id,
+        ]),
+      );
+      expect(mockRuntimeSubmit).toHaveBeenCalledTimes(1);
+      expect(mockRuntimeSubmit).toHaveBeenCalledWith(
+        expect.objectContaining({
+          query: priority.text,
+          session_id: "test-session",
+          agent_id: "default",
+          user_id: "test-user",
+          channel: "console",
+        }),
+        expect.objectContaining({
+          source: "host-queue",
+          sessionId: chatId,
+          clientRequestId: priority.clientMessageId,
+        }),
+      );
+      expect(store.getQueue(chatId)[0]).toMatchObject({
+        id: head.id,
+        status: "pending",
+      });
+      expect(store.getRunState(chatId)).toBe("paused");
+    },
+  );
+
+  it("UGSci fork feature: the mounted queue steers the current run without cancelling or starting another turn", async () => {
+    const chatId = "55555555-1111-4111-8111-111111111111";
+    mockGetChatStatus.mockResolvedValue({ status: "running" });
+    mockGetSteeringState.mockResolvedValue({
+      active_run_id: "run-current",
+      supported: true,
+      receipts: [],
+    });
+    mockSteer.mockImplementation(async (_chat, _agent, input) => ({
+      request_id: input.request_id,
+      run_id: input.expected_run_id,
+      text: input.text,
+      status: "pending",
+    }));
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    await screen.findByTestId("chat-ui");
+    await act(async () => {});
+    await act(async () => {
+      await capturedOptions.sender.beforeSubmit({
+        query: "Check data quality first",
+      });
+    });
+    act(() => useMessageQueueStore.getState().setRunState(chatId, "paused"));
+    const button = await screen.findByRole("button", {
+      name: i18n.t("chat.queue.steer"),
+    });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+    await waitFor(() => expect(mockSteer).toHaveBeenCalledTimes(1));
+    expect(mockSteer.mock.calls[0].slice(0, 3)).toEqual([
+      chatId,
+      "default",
+      {
+        expected_run_id: "run-current",
+        request_id: expect.stringMatching(/^steer-/),
+        text: "Check data quality first",
+      },
+    ]);
+    expect(useMessageQueueStore.getState().getQueue(chatId)[0]).toMatchObject({
+      status: "steering",
+      text: "Check data quality first",
+    });
+    expect(
+      await screen.findByText(i18n.t("chat.queue.steerPending")),
+    ).toBeVisible();
+    expect(mockCancelExecution).not.toHaveBeenCalled();
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+    const { chatApi } = await import("../../api/modules/chat");
+    expect(chatApi.stopChat).not.toHaveBeenCalled();
+  });
+
+  it("UGSci fork feature: steering preserves attachments and Agent assignments in the normal queue", async () => {
+    const chatId = "55555555-2222-4222-8222-222222222222";
+    mockGetChatStatus.mockResolvedValue({ status: "running" });
+    mockGetSteeringState.mockResolvedValue({
+      active_run_id: "run-current",
+      supported: true,
+      receipts: [],
+    });
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    await screen.findByTestId("chat-ui");
+    await act(async () => {});
+    act(() => {
+      const store = useMessageQueueStore.getState();
+      store.enqueue(chatId, {
+        text: "inspect file",
+        agentId: "default",
+        attachments: [{ url: "/files/evidence.csv" }],
+      });
+      store.enqueue(chatId, {
+        text: "@Reviewer inspect",
+        agentId: "default",
+        agentDispatch: {
+          requestText: "inspect",
+          targetAgentId: "reviewer",
+          coordinationRequested: false,
+        },
+      });
+      store.setRunState(chatId, "paused");
+    });
+    await waitFor(() => expect(mockGetSteeringState).toHaveBeenCalled());
+    const buttons = await screen.findAllByRole("button", {
+      name: i18n.t("chat.queue.steer"),
+    });
+    buttons.forEach((button) => {
+      expect(button).toBeDisabled();
+      fireEvent.click(button);
+    });
+    expect(mockSteer).not.toHaveBeenCalled();
+    expect(useMessageQueueStore.getState().getQueue(chatId)).toEqual([
+      expect.objectContaining({
+        status: "pending",
+        attachments: [{ url: "/files/evidence.csv" }],
+      }),
+      expect.objectContaining({
+        status: "pending",
+        agentDispatch: expect.objectContaining({ targetAgentId: "reviewer" }),
+      }),
+    ]);
+  });
+
+  it("UGSci fork feature: mounting recovers a paused other-chat steering receipt behind a pending head without sending it", async () => {
+    const activeChatId = "55555555-3333-4333-8333-333333333333";
+    const pausedChatId = "55555555-4444-4444-8444-444444444444";
+    const store = useMessageQueueStore.getState();
+    store.enqueue(pausedChatId, {
+      text: "Keep this ordinary head paused",
+      agentId: "default",
+      backendSessionId: "runtime-paused",
+    });
+    store.enqueue(pausedChatId, {
+      text: "Check dates during the original run",
+      agentId: "default",
+      backendSessionId: "runtime-paused",
+    });
+    const [head, instruction] = store.getQueue(pausedChatId);
+    store.beginSteering(pausedChatId, instruction.id, "run-before-reload");
+    const claimed = store.getQueue(pausedChatId)[1];
+    store.setRunState(pausedChatId, "paused");
+    // Simulate a reload: only persisted queues survive before ChatPage mounts.
+    useMessageQueueStore.setState({ queues: {}, runStates: {} });
+    mockGetSteeringReceipt.mockResolvedValue({
+      request_id: claimed.steering!.requestId,
+      run_id: "run-before-reload",
+      text: instruction.text,
+      status: "applied",
+    });
+
+    renderWithProviders(<ChatPage />, {
+      initialEntries: [`/chat/${activeChatId}`],
+    });
+    await screen.findByTestId("chat-ui");
+    await waitFor(() =>
+      expect(mockGetSteeringReceipt).toHaveBeenCalledWith(
+        pausedChatId,
+        "default",
+        claimed.steering!.requestId,
+        expect.any(AbortSignal),
+      ),
+    );
+    await waitFor(() => expect(store.getQueue(pausedChatId)).toEqual([head]));
+    expect(store.getRunState(pausedChatId)).toBe("paused");
+    expect(mockSteer).not.toHaveBeenCalled();
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+    expect(
+      vi
+        .mocked(fetch)
+        .mock.calls.filter(
+          ([url, options]) =>
+            String(url).endsWith("/console/chat") && options?.method === "POST",
+        ),
+    ).toHaveLength(0);
+  });
+
+  it("UGSci fork feature: navigation hands pending steering to background recovery before its original POST resolves", async () => {
+    const sourceChatId = "55555555-5555-4555-8555-555555555555";
+    const targetChatId = "55555555-6666-4666-8666-666666666666";
+    const queueModule = await import("@/stores/messageQueueStore");
+    const actualQueue = await vi.importActual<
+      typeof import("@/stores/messageQueueStore")
+    >("@/stores/messageQueueStore");
+    const originalLocks = navigator.locks;
+    let sendHeld = false;
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: {
+        request: async (
+          name: string,
+          _options: unknown,
+          callback: (lock: unknown) => Promise<unknown>,
+        ) => {
+          const sending = name.startsWith("qwenpaw:queue-send:");
+          if (sending && sendHeld) return callback(null);
+          if (sending) sendHeld = true;
+          try {
+            return await callback({ name });
+          } finally {
+            if (sending) sendHeld = false;
+          }
+        },
+      },
+    });
+    vi.mocked(queueModule.withSendLock).mockImplementation(
+      actualQueue.withSendLock,
+    );
+    mockGetChatStatus.mockResolvedValue({ status: "running" });
+    mockGetSteeringState.mockImplementation(async (id) => ({
+      active_run_id: id === sourceChatId ? "run-before-navigation" : null,
+      supported: true,
+      receipts: [],
+    }));
+    let resolvePost!: (value: {
+      request_id: string;
+      run_id: string;
+      text: string;
+      status: "pending";
+    }) => void;
+    const delayedPost = new Promise((resolve) => {
+      resolvePost = resolve;
+    });
+    mockSteer.mockReturnValue(delayedPost);
+    let serverStatus = "pending";
+    mockGetSteeringReceipt.mockImplementation(
+      async (_chat, _agent, requestId) => ({
+        request_id: requestId,
+        run_id: "run-before-navigation",
+        text: "Inspect dates without interrupting",
+        status: serverStatus,
+      }),
+    );
+    function SteeringNavigationHarness() {
+      const navigate = useNavigate();
+      return (
+        <>
+          <button onClick={() => navigate(`/chat/${targetChatId}`)}>
+            Switch steering session
+          </button>
+          <ChatPage />
+        </>
+      );
+    }
+    const view = renderWithProviders(<SteeringNavigationHarness />, {
+      initialEntries: [`/chat/${sourceChatId}`],
+    });
+    try {
+      await screen.findByTestId("chat-ui");
+      await act(async () => {
+        await capturedOptions.sender.beforeSubmit({
+          query: "Inspect dates without interrupting",
+        });
+      });
+      act(() =>
+        useMessageQueueStore.getState().setRunState(sourceChatId, "paused"),
+      );
+      const button = await screen.findByRole("button", {
+        name: i18n.t("chat.queue.steer"),
+      });
+      await waitFor(() => expect(button).toBeEnabled());
+      fireEvent.click(button);
+      await waitFor(() => expect(mockSteer).toHaveBeenCalledTimes(1));
+      const claimed = useMessageQueueStore.getState().getQueue(sourceChatId)[0];
+      await act(async () => {
+        fireEvent.click(
+          screen.getByRole("button", { name: "Switch steering session" }),
+        );
+      });
+      // The first POST is still unresolved. Recovery must be able to acquire
+      // the real send lock, read the receipt and continue in the original chat.
+      await waitFor(() =>
+        expect(mockGetSteeringReceipt).toHaveBeenCalledWith(
+          sourceChatId,
+          "default",
+          claimed.steering!.requestId,
+          expect.any(AbortSignal),
+        ),
+      );
+      expect(
+        useMessageQueueStore.getState().getQueue(sourceChatId)[0].status,
+      ).toBe("steering");
+      serverStatus = "applied";
+      await act(async () =>
+        resolvePost({
+          request_id: claimed.steering!.requestId,
+          run_id: "run-before-navigation",
+          text: claimed.text,
+          status: "pending",
+        }),
+      );
+      await waitFor(
+        () =>
+          expect(
+            useMessageQueueStore.getState().getQueue(sourceChatId),
+          ).toEqual([]),
+        { timeout: 4000 },
+      );
+      expect(useMessageQueueStore.getState().getQueue(targetChatId)).toEqual(
+        [],
+      );
+      expect(mockSteer).toHaveBeenCalledTimes(1);
+      expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+      expect(mockCancelExecution).not.toHaveBeenCalled();
+    } finally {
+      view.unmount();
+      stopBackgroundQueue();
+      Object.defineProperty(navigator, "locks", {
+        configurable: true,
+        value: originalLocks,
+      });
+      vi.mocked(queueModule.withSendLock).mockImplementation(async (_key, fn) =>
+        fn(),
+      );
+    }
+  });
+
+  it("UGSci fork feature: steering yields an automatic idle wait after reconnect without cancelling the active answer", async () => {
+    const chatId = "55555555-7777-4777-8777-777777777777";
+    const queueModule = await import("@/stores/messageQueueStore");
+    const actualQueue = await vi.importActual<
+      typeof import("@/stores/messageQueueStore")
+    >("@/stores/messageQueueStore");
+    const originalLocks = navigator.locks;
+    const locks = new Map<string, Promise<void>>();
+    Object.defineProperty(navigator, "locks", {
+      configurable: true,
+      value: {
+        request: async (
+          name: string,
+          options: { ifAvailable?: boolean },
+          callback: (lock: unknown) => Promise<unknown>,
+        ) => {
+          if (options.ifAvailable && locks.has(name)) return callback(null);
+          const previous = locks.get(name) ?? Promise.resolve();
+          let release!: () => void;
+          const own = new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          locks.set(name, own);
+          await previous;
+          try {
+            return await callback({ name });
+          } finally {
+            release();
+            if (locks.get(name) === own) locks.delete(name);
+          }
+        },
+      },
+    });
+    vi.mocked(queueModule.withSendLock).mockImplementation(
+      actualQueue.withSendLock,
+    );
+    mockGetChatStatus.mockResolvedValue({ status: "running" });
+    mockGetSteeringState.mockResolvedValue({
+      active_run_id: "reconnected-run",
+      supported: true,
+      receipts: [],
+    });
+    mockSteer.mockImplementation(async (_chat, _agent, input) => ({
+      request_id: input.request_id,
+      run_id: input.expected_run_id,
+      text: input.text,
+      status: "pending",
+    }));
+    let historyReadSignal: AbortSignal | undefined;
+    let finishHistory!: (value: Response) => void;
+    const historyReply = new Promise<Response>((resolve) => {
+      finishHistory = resolve;
+    });
+    global.fetch = vi.fn(
+      async (input: RequestInfo | URL, options?: RequestInit) => {
+        if (String(input).endsWith(`/chats/${chatId}`)) {
+          historyReadSignal = options?.signal ?? undefined;
+          return historyReply;
+        }
+        return {
+          ok: true,
+          status: 200,
+          headers: new Headers({ "Content-Type": "application/json" }),
+          json: async () => ({}),
+        } as Response;
+      },
+    );
+    const view = renderWithProviders(<ChatPage />, {
+      initialEntries: [`/chat/${chatId}`],
+    });
+    try {
+      await screen.findByTestId("chat-ui");
+      await act(async () => {
+        await capturedOptions.sender.beforeSubmit({
+          query: "Use the latest report while continuing",
+        });
+      });
+      // The SDK fixture reports loading=false, as during reconnection, while
+      // the backend is still running. The ordinary queue now waits under its
+      // real send lock with a history GET that has not returned.
+      await waitFor(() => expect(historyReadSignal).toBeDefined(), {
+        timeout: 2500,
+      });
+      expect(locks.has(`qwenpaw:queue-send:${chatId}`)).toBe(true);
+      expect(historyReadSignal!.aborted).toBe(false);
+      const blockedHistoryReadSignal = historyReadSignal;
+      const button = await screen.findByRole("button", {
+        name: i18n.t("chat.queue.steer"),
+      });
+      await waitFor(() => expect(button).toBeEnabled());
+      fireEvent.click(button);
+      await waitFor(() => expect(mockSteer).toHaveBeenCalledTimes(1));
+      expect(blockedHistoryReadSignal!.aborted).toBe(true);
+      expect(mockSteer.mock.calls[0].slice(0, 3)).toEqual([
+        chatId,
+        "default",
+        {
+          expected_run_id: "reconnected-run",
+          request_id: expect.stringMatching(/^steer-/),
+          text: "Use the latest report while continuing",
+        },
+      ]);
+      expect(useMessageQueueStore.getState().getQueue(chatId)[0]).toMatchObject(
+        { status: "steering", text: "Use the latest report while continuing" },
+      );
+      expect(mockCancelExecution).not.toHaveBeenCalled();
+      expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+      const { chatApi } = await import("../../api/modules/chat");
+      expect(chatApi.stopChat).not.toHaveBeenCalled();
+      expect(
+        vi
+          .mocked(fetch)
+          .mock.calls.some(
+            ([url, options]) =>
+              String(url).endsWith("/console/chat") &&
+              options?.method === "POST",
+          ),
+      ).toBe(false);
+    } finally {
+      view.unmount();
+      stopBackgroundQueue();
+      finishHistory({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "Content-Type": "application/json" }),
+        json: async () => ({ status: "idle", messages: [] }),
+      } as Response);
+      Object.defineProperty(navigator, "locks", {
+        configurable: true,
+        value: originalLocks,
+      });
+      vi.mocked(queueModule.withSendLock).mockImplementation(async (_key, fn) =>
+        fn(),
+      );
+    }
+  });
+
+  it.each(["applied", "returned"] as const)(
+    "UGSci fork feature: unresolved steering behind the head blocks foreground sending through an idle transition until %s",
+    async (terminal) => {
+      const chatId =
+        terminal === "applied"
+          ? "55555555-8888-4888-8888-888888888888"
+          : "55555555-9999-4999-8999-999999999999";
+      const sdk = await import("@agentscope-ai/chat");
+      const inputMock = vi.mocked(sdk.useChatAnywhereInput);
+      const originalInput = inputMock.getMockImplementation()!;
+      let localLoading = true;
+      inputMock.mockImplementation((select) =>
+        originalInput((state) => select({ ...state, loading: localLoading })),
+      );
+      const store = useMessageQueueStore.getState();
+      store.enqueue(chatId, {
+        text: "Ordinary pending head",
+        agentId: "default",
+        backendSessionId: "runtime-foreground",
+      });
+      store.enqueue(chatId, {
+        text: "Guidance whose delivery is still unknown",
+        agentId: "default",
+        backendSessionId: "runtime-foreground",
+      });
+      const [head, guide] = store.getQueue(chatId);
+      store.beginSteering(chatId, guide.id, "previous-run");
+      const claimed = store.getQueue(chatId)[1];
+      let finishReceipt!: (receipt: {
+        request_id: string;
+        run_id: string;
+        text: string;
+        status: "applied" | "returned";
+      }) => void;
+      const receipt = new Promise((resolve) => {
+        finishReceipt = resolve;
+      });
+      mockGetSteeringState.mockResolvedValue({
+        active_run_id: null,
+        supported: true,
+        receipts: [],
+      });
+      mockGetSteeringReceipt.mockReturnValue(receipt);
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "Content-Type": "application/json" }),
+        json: async () => ({ status: "idle", messages: [] }),
+      } as Response);
+      mockRuntimeSubmit.mockImplementation(async (_data, options) => {
+        const lifecycle = new ChatRunLifecycle({
+          runId: "next-ordinary-run",
+          source: "host-queue",
+          sessionId: options.sessionId,
+          cancel: vi.fn(),
+        });
+        lifecycle.markAccepted(options.sessionId);
+        return lifecycle.handle;
+      });
+      const view = renderWithProviders(<ChatPage />, {
+        initialEntries: [`/chat/${chatId}`],
+      });
+      try {
+        await screen.findByTestId("chat-ui");
+        await waitFor(() =>
+          expect(mockGetSteeringReceipt).toHaveBeenCalledWith(
+            chatId,
+            "default",
+            claimed.steering!.requestId,
+            expect.any(AbortSignal),
+          ),
+        );
+        localLoading = false;
+        view.rerender(<ChatPage />);
+        // Cross the actual 500ms auto-send timer after loading becomes idle.
+        // Authoritative chat history is also idle, but B's receipt is unknown.
+        await act(async () => {
+          await new Promise((resolve) => setTimeout(resolve, 750));
+        });
+        expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+        expect(store.getQueue(chatId)).toMatchObject([
+          { id: head.id, status: "pending" },
+          { id: guide.id, status: "steering" },
+        ]);
+        await act(async () =>
+          finishReceipt({
+            request_id: claimed.steering!.requestId,
+            run_id: "previous-run",
+            text: guide.text,
+            status: terminal,
+          }),
+        );
+        if (terminal === "applied") {
+          await waitFor(
+            () => expect(mockRuntimeSubmit).toHaveBeenCalledTimes(1),
+            { timeout: 2500 },
+          );
+          expect(mockRuntimeSubmit.mock.calls[0][0]).toMatchObject({
+            query: head.text,
+          });
+          await waitFor(() => expect(store.getQueue(chatId)).toEqual([]));
+        } else {
+          await waitFor(() => expect(store.getRunState(chatId)).toBe("error"));
+          // A delayed pre-return broadcast carries both the old running state
+          // and the old claimed item. Neither may reopen this queue's head.
+          act(() => {
+            store.applyRemoteRunState(chatId, "running");
+            store.applyRemoteItems(chatId, [head, claimed]);
+          });
+          expect(store.getRunState(chatId)).toBe("error");
+          expect(useMessageQueueStore.getState().runStates[chatId]).toBe(
+            "error",
+          );
+          await act(async () => {
+            await new Promise((resolve) => setTimeout(resolve, 750));
+          });
+          expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+          expect(store.getQueue(chatId)).toMatchObject([
+            { id: head.id, text: head.text, status: "pending" },
+            {
+              id: guide.id,
+              text: guide.text,
+              status: "failed",
+              errorMessage: i18n.t("chat.queue.steerReturned"),
+            },
+          ]);
+        }
+        expect(mockCancelExecution).not.toHaveBeenCalled();
+        const { chatApi } = await import("../../api/modules/chat");
+        expect(chatApi.stopChat).not.toHaveBeenCalled();
+      } finally {
+        view.unmount();
+        stopBackgroundQueue();
+        inputMock.mockImplementation(originalInput);
+      }
+    },
+  );
+
+  it("UGSci fork feature: another queued row cannot interrupt the current answer while any steering receipt is unresolved", async () => {
+    const chatId = "55555555-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    const store = useMessageQueueStore.getState();
+    store.enqueue(chatId, {
+      text: "Ordinary row selected for immediate send",
+      agentId: "default",
+    });
+    store.enqueue(chatId, {
+      text: "Already claimed guidance",
+      agentId: "default",
+    });
+    const [head, guide] = store.getQueue(chatId);
+    store.beginSteering(chatId, guide.id, "still-running-turn");
+    store.setRunState(chatId, "paused");
+    mockGetSteeringState.mockResolvedValue({
+      active_run_id: "still-running-turn",
+      supported: true,
+      receipts: [],
+    });
+    mockGetSteeringReceipt.mockImplementation(
+      async (_chat, _agent, requestId) => ({
+        request_id: requestId,
+        run_id: "still-running-turn",
+        text: guide.text,
+        status: "pending",
+      }),
+    );
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    await screen.findByTestId("chat-ui");
+    await waitFor(() => expect(mockGetSteeringReceipt).toHaveBeenCalled());
+    const interrupt = await screen.findByRole("button", {
+      name: i18n.t("chat.queue.interruptAndSend"),
+    });
+    expect(interrupt).toBeDisabled();
+    fireEvent.focus(interrupt);
+    fireEvent.click(interrupt);
+    await act(async () => {});
+    const { chatApi } = await import("../../api/modules/chat");
+    expect(chatApi.stopChat).not.toHaveBeenCalled();
+    expect(mockCancelExecution).not.toHaveBeenCalled();
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+    expect(store.getQueue(chatId)).toMatchObject([
+      { id: head.id, status: "pending" },
+      { id: guide.id, status: "steering" },
+    ]);
+  });
+
   it("queues an attachment submission while the backend chat is running", async () => {
     const chatId = "11111111-1111-4111-8111-111111111111";
     mockGetChatStatus.mockResolvedValue({ status: "running" });
@@ -1852,6 +3426,178 @@ describe("ChatPage coverage", () => {
       agentId: "default",
     });
     expect(useMessageQueueStore.getState().getQueue(chatId)).toEqual([]);
+  });
+
+  it("UGSci fork feature: concurrent submission of one composer revision cannot create a second queued turn", async () => {
+    const chatId = "33322222-2222-4222-8222-222222222226";
+    let resolveStatus!: (value: { status: "idle" }) => void;
+    mockGetChatStatus.mockResolvedValue({ status: "running" });
+    mockGetChatStatus.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveStatus = resolve;
+        }),
+    );
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    await screen.findByTestId("chat-ui");
+    await act(async () => {});
+    const input = { query: "use OpenUI for the design" };
+    const first = capturedOptions.sender.beforeSubmit(input);
+    await waitFor(() => expect(mockGetChatStatus).toHaveBeenCalledTimes(1));
+    let duplicate: unknown;
+    await act(async () => {
+      duplicate = await capturedOptions.sender.beforeSubmit({ ...input });
+    });
+    // A repeated Enter/click during async admission must neither send nor queue.
+    expect(duplicate).toBe(false);
+    expect(mockGetChatStatus).toHaveBeenCalledTimes(1);
+    expect(useMessageQueueStore.getState().getQueue(chatId)).toEqual([]);
+    let original: unknown;
+    await act(async () => {
+      resolveStatus({ status: "idle" });
+      original = await first;
+    });
+    expect(original).toMatchObject({ proceed: true, query: input.query });
+    expect(useMessageQueueStore.getState().getQueue(chatId)).toEqual([]);
+    // This is admission protection, not permanent deduplication by message text.
+    mockGetChatStatus.mockResolvedValue({ status: "idle" });
+    expect(await capturedOptions.sender.beforeSubmit(input)).toMatchObject({
+      proceed: true,
+      query: input.query,
+    });
+  });
+
+  it.each(["Control", "Meta"])(
+    "UGSci fork feature: %s Enter cannot enqueue the unchanged input while SDK admission is pending",
+    async (modifier) => {
+      const chatId = "33322222-2222-4222-8222-222222222227";
+      let resolveStatus!: (value: { status: "idle" }) => void;
+      mockGetChatStatus.mockImplementationOnce(
+        () =>
+          new Promise((resolve) => {
+            resolveStatus = resolve;
+          }),
+      );
+      mockRenderSender.mockReturnValue(true);
+      renderWithProviders(<ChatPage />, {
+        initialEntries: [`/chat/${chatId}`],
+      });
+      const textarea = await screen.findByTestId("mention-sender");
+      const utils = await import("./utils");
+      vi.mocked(utils.getActiveSenderTextarea).mockReturnValue(
+        textarea as HTMLTextAreaElement,
+      );
+      try {
+        fireEvent.input(textarea, { target: { value: "one request" } });
+        await act(async () => {});
+        const first = capturedOptions.sender.beforeSubmit({
+          query: "one request",
+        });
+        await waitFor(() => expect(mockGetChatStatus).toHaveBeenCalledTimes(1));
+        fireEvent.keyDown(textarea, {
+          key: "Enter",
+          ctrlKey: modifier === "Control",
+          metaKey: modifier === "Meta",
+        });
+        expect(useMessageQueueStore.getState().getQueue(chatId)).toEqual([]);
+        expect(textarea).toHaveValue("one request");
+        let result: unknown;
+        await act(async () => {
+          resolveStatus({ status: "idle" });
+          result = await first;
+        });
+        expect(result).toMatchObject({ proceed: true, query: "one request" });
+        expect(useMessageQueueStore.getState().getQueue(chatId)).toEqual([]);
+      } finally {
+        vi.mocked(utils.getActiveSenderTextarea).mockReturnValue(null);
+      }
+    },
+  );
+
+  it("UGSci fork feature: a retyped identical draft remains a distinct submission during admission", async () => {
+    const chatId = "33322222-2222-4222-8222-222222222228";
+    let resolveStatus!: (value: { status: "idle" }) => void;
+    mockGetChatStatus.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveStatus = resolve;
+        }),
+    );
+    mockRenderSender.mockReturnValue(true);
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    const textarea = await screen.findByTestId("mention-sender");
+    fireEvent.input(textarea, { target: { value: "same words" } });
+    await act(async () => {});
+    const first = capturedOptions.sender.beforeSubmit({ query: "same words" });
+    await waitFor(() => expect(mockGetChatStatus).toHaveBeenCalledTimes(1));
+    // Editing produces a new composer revision even if the final text repeats.
+    fireEvent.input(textarea, { target: { value: "" } });
+    fireEvent.input(textarea, { target: { value: "same words" } });
+    mockGetChatStatus.mockResolvedValue({ status: "running" });
+    let second: unknown;
+    await act(async () => {
+      second = await capturedOptions.sender.beforeSubmit({
+        query: "same words",
+      });
+      useMessageQueueStore.getState().setRunState(chatId, "paused");
+    });
+    expect(second).toEqual({ proceed: false, clear: true });
+    expect(useMessageQueueStore.getState().getQueue(chatId)).toHaveLength(1);
+    await act(async () => {
+      resolveStatus({ status: "idle" });
+      await first;
+    });
+    const items = useMessageQueueStore.getState().getQueue(chatId);
+    expect(items).toHaveLength(2);
+    expect(items.map((item) => item.text)).toEqual([
+      "same words",
+      "same words",
+    ]);
+    expect(items[0].clientMessageId).not.toBe(items[1].clientMessageId);
+  });
+
+  it("UGSci fork feature: repeated attachment-only admission queues one immutable attachment snapshot", async () => {
+    const chatId = "33322222-2222-4222-8222-222222222229";
+    let resolveStatus!: (value: { status: "running" }) => void;
+    mockGetChatStatus.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveStatus = resolve;
+        }),
+    );
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    await screen.findByTestId("chat-ui");
+    await act(async () => {});
+    const input = {
+      query: "",
+      fileList: [
+        {
+          uid: "attachment-1",
+          name: "design.html",
+          type: "text/html",
+          response: { url: "/files/design.html" },
+        },
+      ],
+    };
+    const first = capturedOptions.sender.beforeSubmit(input);
+    await waitFor(() => expect(mockGetChatStatus).toHaveBeenCalledTimes(1));
+    expect(
+      await capturedOptions.sender.beforeSubmit(structuredClone(input)),
+    ).toBe(false);
+    await act(async () => {
+      resolveStatus({ status: "running" });
+      await first;
+      useMessageQueueStore.getState().setRunState(chatId, "paused");
+    });
+    expect(mockGetChatStatus).toHaveBeenCalledTimes(1);
+    expect(useMessageQueueStore.getState().getQueue(chatId)).toMatchObject([
+      {
+        text: "",
+        attachments: [{ name: "design.html", url: "/files/design.html" }],
+        status: "pending",
+      },
+    ]);
+    expect(useMessageQueueStore.getState().getQueue(chatId)).toHaveLength(1);
   });
 
   it("rechecks the host queue after a pending idle status result", async () => {
@@ -2512,6 +4258,72 @@ describe("ChatPage coverage", () => {
     expect(capturedOptions?.session?.multiple).toBe(true);
     expect(capturedOptions?.session?.hideBuiltInSessionList).toBe(true);
     expect(capturedOptions?.session?.api).toBeTruthy();
+  });
+
+  it("UGSci fork feature: home common tasks fill the mounted composer without starting execution", async () => {
+    mockRenderSender.mockReturnValue(true);
+    mockRenderWelcome.mockReturnValue(true);
+    renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
+    const task = await screen.findByRole("button", {
+      name: i18n.t("chat.home.actions.check"),
+    });
+    const input = screen.getByTestId("mention-sender");
+    fireEvent.change(input, { target: { value: "Existing draft" } });
+    fireEvent.click(task);
+    expect(input).toHaveValue(
+      `Existing draft\n${i18n.t("chat.home.prompts.check")}`,
+    );
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+    expect(sessionApi.createSession).not.toHaveBeenCalled();
+  });
+
+  it("UGSci fork feature: composer approvals follow the active session and disappear on the home route", async () => {
+    mockRenderSender.mockReturnValue(true);
+    mockPendingApprovals.mockReturnValue([
+      {
+        request_id: "visible-request",
+        agent_id: "child",
+        owner_agent_id: "default",
+        root_session_id: "test-session",
+        session_id: "child-session",
+        tool_name: "read_file",
+      },
+      {
+        request_id: "other-session",
+        agent_id: "default",
+        root_session_id: "another-session",
+        session_id: "another-session",
+        tool_name: "read_file",
+      },
+      {
+        request_id: "other-agent",
+        agent_id: "other",
+        root_session_id: "test-session",
+        session_id: "test-session",
+        tool_name: "read_file",
+      },
+    ]);
+    function Navigation() {
+      const navigate = useNavigate();
+      return <button onClick={() => navigate("/chat")}>Go home</button>;
+    }
+    const { container } = renderWithProviders(
+      <>
+        <Navigation />
+        <ChatPage />
+      </>,
+      { initialEntries: ["/chat/test-session"] },
+    );
+    const card = await screen.findByTestId("scoped-approval");
+    expect(card).toHaveTextContent("visible-request");
+    expect(
+      container.querySelector("[data-execution-approvals]"),
+    ).toContainElement(card);
+    expect(screen.getAllByTestId("scoped-approval")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("button", { name: "Go home" }));
+    await waitFor(() =>
+      expect(screen.queryByTestId("scoped-approval")).toBeNull(),
+    );
   });
 
   // ── welcome config ─────────────────────────────────────────────────────

@@ -43,8 +43,8 @@ async def voice_incoming(request: Request) -> Response:
     if _legacy_unowned(request, service):
         return Response(
             content=(
-                '<?xml version="1.0" encoding="UTF-8"?>'
-                "<Response><Say>Voice channel is not available.</Say></Response>"
+                '<?xml version="1.0" encoding="UTF-8"?><Response><Say>Voice'
+                " channel is not available.</Say></Response>"
             ),
             media_type="application/xml",
         )

@@ -49,6 +49,7 @@ export function turnFileTarget(
       meta: {
         turnFileArchive: true,
         turnId: turn.id,
+        turnSessionId: turn.session_id,
         fileId: file.id,
         version,
         startedAt: turn.started_at,

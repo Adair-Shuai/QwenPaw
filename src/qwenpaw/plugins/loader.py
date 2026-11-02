@@ -1070,8 +1070,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                     from .errors import SDKRestartRequiredError
 
                     raise SDKRestartRequiredError(
-                        f"Plugin '{plugin_id}' cannot safely replace loaded "
-                        f"distributions ({', '.join(conflicts)}). Restart the backend.",
+                        f"Plugin '{plugin_id}' cannot safely replace loaded"
+                        f" distributions ({', '.join(conflicts)}). Restart the"
+                        " backend.",
                     )
                 if missing:
                     asyncio.run(
@@ -1092,6 +1093,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         source_path: Path | None = None,
     ):
         """Stage explicit legacy wheel installs through the shared gate."""
+        # Dependency preparation retains its admission lease through final
+        # observation.
+        # pylint: disable=R0912
         from .dependency_gate import (
             SharedDependencyError,
             prepare_shared_dependencies,
@@ -1340,9 +1344,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 )
             self._after_successful_install()
             return GateDecision(False, True, reason="already satisfied")
-        except Exception:
+        except Exception as exc:
             if identity_error is not None:
-                raise identity_error
+                raise identity_error from exc
             raise
         finally:
             try:
@@ -1369,6 +1373,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         dependency_context=None,
     ):
         """Build/stage wheels; the shared gate owns actual package writes."""
+        # Wheel acquisition validates all staged artifacts before
+        # publication.
+        # pylint: disable=R0915
         import hashlib
         from packaging.utils import parse_wheel_filename
         from .dependency_gate import (
@@ -2696,8 +2703,10 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                         or ["hosted resources did not go quiescent"]
                     )
                     + [
-                        "New version was not enabled; "
-                        "stopping the previous service was incomplete",
+                        (
+                            "New version was not enabled; "
+                            "stopping the previous service was incomplete"
+                        ),
                     ],
                     generation=old_generation,
                 )
@@ -3640,9 +3649,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                     )
                 raise
 
-    # Keep the existing lifecycle complexity exemption before its signature.
-    # pylint: disable=too-many-statements,too-many-branches
-    async def _load_plugin_from_path_unlocked(
+    # Keep activation and rollback in one locked lifecycle transaction.
+    async def _load_plugin_from_path_unlocked(  # pylint: disable=R0912,R0915
         self,
         source_path: Path,
         manifest: PluginManifest,
@@ -3659,7 +3667,6 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         """Install+load from path; caller must hold lifecycle for id."""
         from ..utils.io_utils import run_sync_io
 
-        # pylint: disable=too-many-statements,too-many-branches
         plugin_id = manifest.id
         if not self.lifecycle.delegate.owns_commit(plugin_id):
             raise RuntimeError(
@@ -3799,8 +3806,7 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
             target_exists = await asyncio.to_thread(target_dir.exists)
             if target_exists and not replace_files:
                 raise ValueError(
-                    f"Plugin installation target already exists: "
-                    f"{target_dir}",
+                    f"Plugin installation target already exists: {target_dir}",
                 )
             if target_exists and replace_files:
                 swapped = await self._swap_plugin_dir(
@@ -4596,8 +4602,7 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                     )
                 except Exception as unbridge_exc:  # noqa: BLE001
                     logger.debug(
-                        "Runtime unbridge failed for '%s' "
-                        "(plugin '%s'): %s",
+                        "Runtime unbridge failed for '%s' (plugin '%s'): %s",
                         tool_name,
                         plugin_id,
                         unbridge_exc,
@@ -4618,8 +4623,7 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 )
         except Exception as exc:
             logger.warning(
-                f"Failed to clean up tools for plugin '{plugin_id}': "
-                f"{exc}",
+                f"Failed to clean up tools for plugin '{plugin_id}': {exc}",
             )
 
     async def _run_shutdown_hooks(
@@ -5390,8 +5394,7 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
             if hook.plugin_id in failed:
                 continue
             logger.debug(
-                "Executing startup hook '%s' from plugin '%s' "
-                "(priority=%s)",
+                "Executing startup hook '%s' from plugin '%s' (priority=%s)",
                 hook.hook_name,
                 hook.plugin_id,
                 hook.priority,
@@ -5469,8 +5472,7 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 record.enabled = False
                 record.diagnostics = list(instance.diagnostics)
             logger.error(
-                "Plugin '%s' marked FAILED after startup "
-                "(not quiescent): %s",
+                "Plugin '%s' marked FAILED after startup (not quiescent): %s",
                 plugin_id,
                 reason,
             )

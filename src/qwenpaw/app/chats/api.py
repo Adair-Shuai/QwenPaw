@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Literal, Optional
 from uuid import uuid4
 from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from agentscope.message import Msg
 from agentscope.state import AgentState
@@ -106,6 +106,22 @@ class ChatStatusResponse(BaseModel):
     """Lightweight TaskTracker status for one chat."""
 
     status: Literal["idle", "running"]
+
+
+class SteeringRequest(BaseModel):
+    """Only text may supplement an existing execution's fixed controls."""
+
+    model_config = ConfigDict(extra="forbid")
+    expected_run_id: str = Field(min_length=1, max_length=128)
+    request_id: str = Field(min_length=1, max_length=128)
+    text: str = Field(min_length=1, max_length=32000)
+
+    @field_validator("text")
+    @classmethod
+    def validate_text(cls, value: str) -> str:
+        if not value.strip() or value.lstrip().startswith("/"):
+            raise ValueError("Steering requires nonempty text, not a command")
+        return value
 
 
 class ProjectDirEntryPayload(BaseModel):
@@ -856,6 +872,110 @@ async def get_chat_status(
     """Return agent-scoped run status without reading chat persistence."""
     status = await workspace.task_tracker.get_status(chat_id)
     return ChatStatusResponse(status=status)
+
+
+async def _steering_context(chat_id: str, workspace):
+    from ..steering import applied_ids_from_state, get_steering_store
+
+    chat = await workspace.chat_manager.get_chat(chat_id)
+    if chat is None or _is_app_owned_chat(chat) or chat.channel != "console":
+        raise HTTPException(status_code=404, detail="Console chat not found")
+    store = get_steering_store(workspace)
+
+    async def reconcile(run_id, controller):
+        state = await workspace.session.get_session_state_dict(
+            chat.session_id,
+            chat.user_id,
+            chat.channel,
+        )
+        active = (
+            run_id
+            if controller is not None and not controller.closed
+            else None
+        )
+        await run_sync_io(
+            store.reconcile,
+            chat_id,
+            active,
+            applied_ids_from_state(state or {}),
+        )
+
+    # Lock lifecycle then intake: no stale snapshot can return new-run input
+    # or incorrectly acknowledge a checkpoint that is still being written.
+    async with workspace.task_tracker.steering_state_guard(chat_id) as (
+        run_id,
+        controller,
+    ):
+        if controller is None:
+            await reconcile(run_id, controller)
+        else:
+            async with controller.lock:
+                await reconcile(run_id, controller)
+    return run_id, controller, store
+
+
+@router.get("/{chat_id}/steering")
+async def get_chat_steering(chat_id: str, workspace=Depends(get_workspace)):
+    """Discover capability and recover durable receipts after reconnect."""
+    run_id, controller, store = await _steering_context(chat_id, workspace)
+    return {
+        "active_run_id": run_id,
+        "supported": bool(controller is not None and controller.accepting),
+        "receipts": await run_sync_io(store.list, chat_id),
+    }
+
+
+@router.get("/{chat_id}/steering/{request_id}")
+async def get_chat_steering_receipt(
+    chat_id: str,
+    request_id: str,
+    workspace=Depends(get_workspace),
+):
+    """Exact lookup never treats a receipt omitted from a list as absent."""
+    _run_id, _controller, store = await _steering_context(chat_id, workspace)
+    receipt = await run_sync_io(store.get, chat_id, request_id)
+    if receipt is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Steering receipt not found",
+        )
+    return receipt
+
+
+@router.post("/{chat_id}/steer")
+async def steer_chat(
+    chat_id: str,
+    body: SteeringRequest,
+    workspace=Depends(get_workspace),
+):
+    """Accept input for exactly one active run without invoking stop."""
+    from ..steering import SteeringConflict
+
+    _run_id, controller, store = await _steering_context(chat_id, workspace)
+    existing = await run_sync_io(store.get, chat_id, body.request_id)
+    if existing is not None:
+        if (
+            existing["run_id"] != body.expected_run_id
+            or existing["text"] != body.text
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail="Steering request ID was reused",
+            )
+        return existing
+    if controller is None:
+        raise HTTPException(
+            status_code=409,
+            detail="No supported active execution",
+        )
+    try:
+        return await controller.submit(
+            body.expected_run_id,
+            body.request_id,
+            body.text,
+        )
+    except SteeringConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @router.get("/{chat_id}", response_model=ChatHistory)

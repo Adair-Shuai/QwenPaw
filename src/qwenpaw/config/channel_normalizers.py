@@ -20,7 +20,9 @@ _NORMALIZERS = MappingProxyType({"strip_trailing_slash": strip_trailing_slash})
 
 
 def field_normalizer(schema):
-    """Resolve an explicit string-field declaration or reject unknown claims."""
+    """
+    Resolve an explicit string-field declaration or reject unknown claims.
+    """
     if not isinstance(schema, Mapping) or NORMALIZER_MARKER not in schema:
         return None
     name = schema[NORMALIZER_MARKER]

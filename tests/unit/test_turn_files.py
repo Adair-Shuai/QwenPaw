@@ -7,7 +7,6 @@ import io
 import json
 import subprocess
 import zipfile
-from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -20,21 +19,21 @@ from qwenpaw.app.routers import turn_files as router
 
 
 def start(store, project, **overrides):
-    values = dict(
-        session_id="session-a",
-        user_id="user-a",
-        channel="console",
-        agent_id="agent-a",
-        client_message_id="client-a",
-        response_id="response-a",
-        roots=[(f"project:{project}", project)],
-    )
+    values = {
+        "session_id": "session-a",
+        "user_id": "user-a",
+        "channel": "console",
+        "agent_id": "agent-a",
+        "client_message_id": "client-a",
+        "response_id": "response-a",
+        "roots": [(f"project:{project}", project)],
+    }
     values.update(overrides)
     return store.start(**values)
 
 
-@pytest.fixture
-def directories(tmp_path):
+@pytest.fixture(name="directories")
+def _fixture_directories(tmp_path):
     workspace, project = tmp_path / "workspace", tmp_path / "project"
     workspace.mkdir()
     project.mkdir()
@@ -211,12 +210,12 @@ async def test_history_pagination_filters_scope_before_page_boundaries(
         )
         expected_ids.add(result["id"])
         store.finish(start(store, project, session_id="other-session"))
-    scope = dict(
-        session_id="session-a",
-        agent_id="agent-a",
-        user_id="user-a",
-        channel="console",
-    )
+    scope = {
+        "session_id": "session-a",
+        "agent_id": "agent-a",
+        "user_id": "user-a",
+        "channel": "console",
+    }
     expected = [item["id"] for item in store.list_turns(**scope)]
     assert set(expected) == expected_ids
     assert [

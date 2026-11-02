@@ -101,7 +101,9 @@ class SharedResponseDriver:
             raise RuntimeError("STALE_CONNECTION_CALLBACK")
 
     def diagnostics(self) -> dict[str, int]:
-        """Return a detached snapshot of this Driver's Core admission counts."""
+        """
+        Return a detached snapshot of this Driver's Core admission counts.
+        """
         return {
             "core_batch_backpressure_total": (
                 self._core_batch_backpressure_total
@@ -241,6 +243,8 @@ class SharedResponseDriver:
             )
 
     def _outbound_handler(self, handler):
+        # The driver owns the nonserialized per-RPC side-effect budget.
+        # pylint: disable=W0212
         async def execute(params, request):
             with send_budget(
                 getattr(self._context, "send_timeout", DEFAULT_SEND_TIMEOUT),
@@ -260,7 +264,9 @@ class SharedResponseDriver:
 
     @contextmanager
     def target_resolution(self):
-        """Classify only a determinate target refusal, before route allocation."""
+        """
+        Classify only a determinate target refusal, before route allocation.
+        """
         try:
             yield
         except self.delivery_error as exc:
@@ -285,7 +291,9 @@ class SharedResponseDriver:
                 data={
                     "operation": "channel.response.open",
                     "result": result.to_mapping(),
-                    "continue_on_delivery_error": policy.continue_on_delivery_error,
+                    "continue_on_delivery_error": (
+                        policy.continue_on_delivery_error
+                    ),
                 },
             ) from exc
 
@@ -611,6 +619,9 @@ class SharedResponseDriver:
         return self._locks[handle]
 
     async def _admit_event(self, event, created):
+        # Admission retries preserve one response reservation and cleanup
+        # lifetime.
+        # pylint: disable=R0912
         if getattr(
             event,
             "actor_unknown",
@@ -1148,7 +1159,8 @@ class SharedResponseDriver:
         return False
 
     async def _perform_stream_cleanup(self, ref, resource, sequence):
-        raise NotImplementedError
+        # Optional hook: transports opt in with _needs_stream_cleanup.
+        raise RuntimeError("STREAM_CLEANUP_UNSUPPORTED")
 
     async def _before_cleanup_complete(self, snapshot):
         return snapshot

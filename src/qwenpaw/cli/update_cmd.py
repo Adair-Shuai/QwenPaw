@@ -636,6 +636,8 @@ def _load_worker_plan(plan_path: str | Path) -> dict[str, Any]:
 
 def run_update_worker(plan_path: str | Path) -> int:
     """Run the update worker and stream installer output."""
+    # Update installation and rollback share the worker exit-status boundary.
+    # pylint: disable=R0912
     path = Path(plan_path)
     plan = _load_worker_plan(path)
     commands = [plan["command"]]

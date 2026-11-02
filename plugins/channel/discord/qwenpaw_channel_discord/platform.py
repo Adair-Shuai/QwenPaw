@@ -19,11 +19,8 @@ from qwenpaw.app.channels.utils import (
     materialize_data_url,
 )
 from .formatting import (
-    build_stream_display_text,
     chunk_text,
     classify_attachment,
-    resolve_session_id,
-    route_from_handle,
 )
 
 logger = logging.getLogger(__name__)
@@ -116,8 +113,6 @@ class DiscordPlatform:
     async def _gateway(self):
         try:
             await self._client.start(self.config["bot_token"], reconnect=True)
-        except asyncio.CancelledError:
-            raise
         except Exception:
             logger.exception("Discord Gateway failed")
             if not self._stopping:
@@ -156,6 +151,8 @@ class DiscordPlatform:
                 self._message_locks.pop(message_id, None)
 
     async def _on_message(self, message, epoch):
+        # Preserve the existing native protocol dispatch and rejection order.
+        # pylint: disable=too-many-branches
         async with self._message_lock(str(message.id)):
             if not self._current(epoch):
                 return
@@ -329,8 +326,6 @@ class DiscordPlatform:
                 side_effect_possible=not rejected,
                 retryable=exc.status == 429,
             ) from exc
-        except asyncio.CancelledError:
-            raise
         except Exception as exc:
             raise DiscordDeliveryError(
                 "DISCORD_RESULT_UNKNOWN",
@@ -396,6 +391,8 @@ class DiscordPlatform:
             attachment.close()
 
     async def _send_media(self, target, part):
+        # Preserve the existing native protocol dispatch and rejection order.
+        # pylint: disable=too-many-return-statements
         url = (
             part.get("image_url")
             or part.get("video_url")

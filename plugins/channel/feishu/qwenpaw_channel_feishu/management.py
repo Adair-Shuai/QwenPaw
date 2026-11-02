@@ -35,9 +35,9 @@ def _decode(value):
         or set(data) != {"device_code", "domain"}
         or not isinstance(data["domain"], str)
         or data["domain"] not in _ORIGINS
-        or not isinstance(data["device_code"], str)
-        or not data["device_code"]
     ):
+        raise ValueError("invalid continuation")
+    if not isinstance(data["device_code"], str) or not data["device_code"]:
         raise ValueError("invalid continuation")
     return data["device_code"], data["domain"]
 
@@ -74,92 +74,20 @@ async def manage(request):
                 timeout=min(15 if fetch else 10, request.timeout_ms / 1000),
             ) as client:
                 if fetch:
-                    response = await client.post(
+                    return await _fetch(
+                        request,
+                        client,
                         endpoint,
-                        content=urlencode({"action": "init"}),
-                        headers=headers,
+                        headers,
+                        domain,
                     )
-                    response.raise_for_status()
-                    if "client_secret" not in response.json().get(
-                        "supported_auth_methods",
-                        [],
-                    ):
-                        return management_result(
-                            request,
-                            reason="PLATFORM_REJECTED",
-                        )
-                    response = await client.post(
-                        endpoint,
-                        content=urlencode(
-                            {
-                                "action": "begin",
-                                "archetype": "PersonalAgent",
-                                "auth_method": "client_secret",
-                                "request_user_info": "open_id",
-                            },
-                        ),
-                        headers=headers,
-                    )
-                    response.raise_for_status()
-                    value = response.json()
-                    uri = value.get("verification_uri_complete")
-                    if not isinstance(uri, str) or not uri:
-                        raise ValueError("QR URL missing")
-                    result = {
-                        "scan_url": uri
-                        + ("&" if "?" in uri else "?")
-                        + "source=QwenPaw",
-                        "continuation": _continuation(
-                            value.get("device_code"),
-                            domain,
-                        ),
-                    }
-                    if "expires_in" in value:
-                        result["expires_in_seconds"] = value["expires_in"]
-                    return management_result(request, result)
-                response = await client.post(
+                return await _poll(
+                    request,
+                    client,
                     endpoint,
-                    content=urlencode(
-                        {"action": "poll", "device_code": device_code},
-                    ),
-                    headers=headers,
+                    headers,
+                    device_code,
                 )
-                # OAuth errors can be useful JSON on HTTP400; preserve that path.
-                value = response.json()
-                if value.get("client_id") and value.get("client_secret"):
-                    info = value.get("user_info", {})
-                    result = {
-                        "status": "success",
-                        "credentials": {
-                            "app_id": value["client_id"],
-                            "app_secret": value["client_secret"],
-                        },
-                        "metadata": {
-                            "open_id": info.get("open_id", ""),
-                            "tenant_brand": info.get("tenant_brand", "feishu"),
-                        },
-                    }
-                else:
-                    error = value.get("error", "")
-                    status, reason = "waiting", None
-                    if error in {"expired_token", "invalid_grant"}:
-                        status, reason = "expired", "QR code expired"
-                    elif error == "access_denied":
-                        status, reason = "fail", "User denied authorization"
-                    elif error and error not in {
-                        "authorization_pending",
-                        "slow_down",
-                    }:
-                        status, reason = "fail", error
-                    result = {
-                        "status": status,
-                        "credentials": (
-                            {"fail_reason": reason}
-                            if reason is not None
-                            else {}
-                        ),
-                    }
-                return management_result(request, result)
     except (asyncio.CancelledError, TimeoutError):
         raise
     except httpx.HTTPStatusError as error:
@@ -174,3 +102,92 @@ async def manage(request):
             "uncertain authorization operation",
             reason_code="PLATFORM_RESULT_UNKNOWN",
         ) from None
+
+
+async def _fetch(request, client, endpoint, headers, domain):
+    response = await client.post(
+        endpoint,
+        content=urlencode({"action": "init"}),
+        headers=headers,
+    )
+    response.raise_for_status()
+    if "client_secret" not in response.json().get(
+        "supported_auth_methods",
+        [],
+    ):
+        return management_result(
+            request,
+            reason="PLATFORM_REJECTED",
+        )
+    response = await client.post(
+        endpoint,
+        content=urlencode(
+            {
+                "action": "begin",
+                "archetype": "PersonalAgent",
+                "auth_method": "client_secret",
+                "request_user_info": "open_id",
+            },
+        ),
+        headers=headers,
+    )
+    response.raise_for_status()
+    value = response.json()
+    uri = value.get("verification_uri_complete")
+    if not isinstance(uri, str) or not uri:
+        raise ValueError("QR URL missing")
+    result = {
+        "scan_url": uri + ("&" if "?" in uri else "?") + "source=QwenPaw",
+        "continuation": _continuation(
+            value.get("device_code"),
+            domain,
+        ),
+    }
+    if "expires_in" in value:
+        result["expires_in_seconds"] = value["expires_in"]
+    return management_result(request, result)
+
+
+async def _poll(request, client, endpoint, headers, device_code):
+    response = await client.post(
+        endpoint,
+        content=urlencode(
+            {"action": "poll", "device_code": device_code},
+        ),
+        headers=headers,
+    )
+    # OAuth errors can be useful JSON on HTTP400; preserve that
+    # path.
+    value = response.json()
+    if value.get("client_id") and value.get("client_secret"):
+        info = value.get("user_info", {})
+        result = {
+            "status": "success",
+            "credentials": {
+                "app_id": value["client_id"],
+                "app_secret": value["client_secret"],
+            },
+            "metadata": {
+                "open_id": info.get("open_id", ""),
+                "tenant_brand": info.get("tenant_brand", "feishu"),
+            },
+        }
+    else:
+        error = value.get("error", "")
+        status, reason = "waiting", None
+        if error in {"expired_token", "invalid_grant"}:
+            status, reason = "expired", "QR code expired"
+        elif error == "access_denied":
+            status, reason = "fail", "User denied authorization"
+        elif error and error not in {
+            "authorization_pending",
+            "slow_down",
+        }:
+            status, reason = "fail", error
+        result = {
+            "status": status,
+            "credentials": (
+                {"fail_reason": reason} if reason is not None else {}
+            ),
+        }
+    return management_result(request, result)

@@ -18,6 +18,11 @@ def test_local_runtime_rejects_dependency_installation(tmp_path, monkeypatch):
         "_run_subprocess_with_streaming_log",
         installer,
     )
+    requirements = tmp_path / "requirements.txt"
+    requirements.write_text(
+        "qwenpaw-test-uninstalled-sdk==1.0\n",
+        encoding="utf-8",
+    )
     with pytest.raises(RuntimeError, match="administrator"):
-        loader._install_requirements(tmp_path / "requirements.txt", "app")
+        loader._install_requirements(requirements, "app")
     installer.assert_not_called()

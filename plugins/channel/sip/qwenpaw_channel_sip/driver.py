@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-"""SIP transcription and speech through the normal shared response lifecycle."""
+"""
+SIP transcription and speech through the normal shared response lifecycle.
+"""
 
 from __future__ import annotations
 
@@ -58,6 +60,8 @@ class SIPDriver(SharedResponseDriver):
         await self._context.set_platform_state(state)
 
     def _require_connected(self):
+        # Driver and platform share this channel private transport lifecycle.
+        # pylint: disable=protected-access
         if (
             self._stopping
             or not self._connected
@@ -93,6 +97,8 @@ class SIPDriver(SharedResponseDriver):
         return handle
 
     async def _open(self, params, request):
+        # SharedResponseDriver passes the complete public request contract.
+        # pylint: disable=unused-argument
         self._identity(params)
         platform = self._require_connected()
         decoded = decode_reply_target(params["to_handle"])

@@ -1,0 +1,183 @@
+.process {
+  width: 100%;
+  margin: 0 0 21px;
+  overflow-anchor: none;
+  color: var(--app-text);
+  font-size: var(--app-font-body);
+  line-height: 1.65;
+
+  button {
+    font: inherit;
+    cursor: pointer;
+    border: 0;
+    background: transparent;
+    text-align: left;
+    color: inherit;
+    border-radius: 4px;
+    &:focus-visible {
+      outline: 2px solid var(--app-focus-ring);
+      outline-offset: 3px;
+    }
+  }
+
+  // Execution chrome owns semantic colors; native cards keep their dark rules.
+  .summaryTitle,
+  .meta,
+  .stepLabel,
+  .status {
+    color: inherit !important;
+  }
+}
+.summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-width: 100%;
+  min-height: max(36px, var(--app-icon-button));
+  padding: 6px 0;
+  overflow-wrap: anywhere;
+  .summaryIcon {
+    color: var(--app-text-secondary);
+  }
+  .meta {
+    color: var(--app-text-secondary) !important;
+    font-size: var(--app-font-caption);
+  }
+  &[aria-expanded="true"] .chevron {
+    transform: rotate(180deg);
+  }
+}
+.summaryTitle {
+  font-weight: 500;
+  min-width: 0;
+}
+.summaryIcon,
+.chevron,
+.marker > svg,
+.issue > svg {
+  width: var(--app-icon-md);
+  height: var(--app-icon-md);
+  flex-shrink: 0;
+}
+.chevron {
+  color: var(--app-text-secondary);
+  transition: transform 180ms;
+}
+.process .issue {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0;
+  margin-top: 2px;
+  color: var(--app-warning-text);
+  font-size: var(--app-font-caption);
+  min-height: var(--app-icon-button);
+}
+.steps {
+  list-style: none;
+  margin: 0;
+  padding: 10px 0 0;
+  color: var(--app-text);
+}
+.step {
+  position: relative;
+  padding: 0 0 0 25px;
+  min-width: 0;
+  &:not(:last-child)::before {
+    content: "";
+    position: absolute;
+    left: 7px;
+    top: 26px;
+    bottom: -1px;
+    width: 1px;
+    background: var(--app-border);
+  }
+  &[data-execution-state="failed"] .marker,
+  &[data-execution-state="failed"] .status {
+    color: var(--app-error-text) !important;
+  }
+  &[data-execution-state="interrupted"] .marker,
+  &[data-execution-state="interrupted"] .status {
+    color: var(--app-warning-text) !important;
+  }
+}
+.marker {
+  position: absolute;
+  left: 0;
+  top: 11px;
+  display: flex;
+  color: var(--app-text-secondary) !important;
+}
+.stepHeader {
+  width: 100%;
+  min-height: max(39px, var(--app-icon-button));
+  padding: 8px 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  .status {
+    color: var(--app-text-secondary) !important;
+    font-size: var(--app-font-caption);
+    flex-shrink: 0;
+  }
+  &[aria-expanded="true"] .stepChevron {
+    transform: rotate(90deg);
+  }
+}
+.stepLabel {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.stepChevron {
+  width: var(--app-icon-sm);
+  height: var(--app-icon-sm);
+  flex-shrink: 0;
+  color: var(--app-text-secondary);
+}
+.detail {
+  padding: 2px 0 14px;
+  color: var(--app-text-secondary);
+  overflow-wrap: anywhere;
+  > p {
+    margin: 0 0 8px;
+  }
+}
+.rawRecord > summary {
+  cursor: pointer;
+  font-size: var(--app-font-caption);
+  width: fit-content;
+}
+.recordBody {
+  margin-top: 8px;
+  min-width: 0;
+  max-width: 100%;
+  color: var(--app-text);
+}
+.intermediateMessage {
+  list-style: none;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+@media (max-width: 480px) {
+  .summary {
+    column-gap: 6px;
+  }
+  .stepHeader {
+    gap: 6px;
+  }
+}
+@media (pointer: coarse) {
+  .process .summary,
+  .process .stepHeader,
+  .process .issue,
+  .rawRecord > summary {
+    min-height: var(--app-hit-touch);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .chevron {
+    transition: none;
+  }
+}
