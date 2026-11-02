@@ -75,6 +75,31 @@ def test_clean_release_and_frontend_checks_build_openui_runtime() -> None:
             )
 
 
+def test_plugin_pack_job_installs_channel_contract_dependencies():
+    import yaml
+
+    for name in ("release-resume.yml", "plugins-build.yml"):
+        job = yaml.safe_load(_workflow(name))["jobs"]["build-plugins"]
+        steps = job["steps"]
+        pack = next(
+            index
+            for index, step in enumerate(steps)
+            if "scripts/pack/generate_plugin_metadata.py"
+            in step.get("run", "")
+        )
+        install = next(
+            index
+            for index, step in enumerate(steps)
+            if "python -m pip install -r "
+            "scripts/pack/channel-contract-requirements.txt"
+            in step.get("run", "")
+        )
+        assert install < pack
+        assert "if" not in steps[install]
+        assert not steps[install].get("continue-on-error", False)
+        assert not job.get("continue-on-error", False)
+
+
 def test_reusable_plugin_build_matches_release_artifact_scope() -> None:
     for name in ("release-resume.yml", "plugins-build.yml"):
         workflow = _workflow(name)

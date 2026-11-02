@@ -9,6 +9,7 @@ Flow: start -> token whoami -> /sync long poll -> pushed
 m.room.message -> agent (mock LLM) -> rooms/{id}/send captured.
 
 API endpoints:
+  - POST /api/plugins/install (bundled:matrix)
   - PUT /api/config/channels/matrix
   - GET /api/config/channels/matrix
 """
@@ -24,6 +25,7 @@ from helpers import (
     MOCK_LLM_PROVIDER_ID,
     MOCK_LLM_RESPONSE,
     MockLLMHandler,
+    PLUGIN_HTTP_TIMEOUT,
     default_http_timeout,
     register_mock_provider,
     unregister_mock_provider,
@@ -51,8 +53,19 @@ def mock_llm():
 
 @pytest.fixture(scope="module")
 def matrix_channel_up(app_server):
-    """Enable the Matrix channel against the mock homeserver."""
+    """Install the real official worker, then connect to the mock server."""
     _MOCK_HS.start()
+    installed = app_server.api_request(
+        "POST",
+        "/api/plugins/install",
+        json={"source": "bundled:matrix", "force": False},
+        timeout=PLUGIN_HTTP_TIMEOUT,
+    )
+    assert installed.status_code == 200, (
+        installed.text + app_server.logs_tail()
+    )
+    assert installed.json().get("loaded") is True, installed.json()
+    assert installed.json().get("enabled") is True, installed.json()
     reload_mark = len(app_server.logs)
     put = app_server.api_request(
         "PUT",
@@ -68,6 +81,10 @@ def matrix_channel_up(app_server):
     )
     assert put.status_code == 200, app_server.logs_tail()
     wait_for_agent_reload(app_server, reload_mark)
+    assert _MOCK_HS.wait_connected(timeout=60.0), (
+        "Matrix worker never performed whoami and sync against the mock: "
+        + app_server.logs_tail()
+    )
     yield _MOCK_HS
     app_server.api_request(
         "PUT",

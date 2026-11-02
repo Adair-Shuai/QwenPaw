@@ -96,6 +96,10 @@ uninstall_python_package() {
     fi
 }
 
+# Contract validation imports retained host models, even in layered builds.
+echo "== Installing channel contract validation dependencies =="
+install_python_packages -r "${REPO_ROOT}/scripts/pack/channel-contract-requirements.txt"
+
 if [ "$LAYERED_DESKTOP" = false ]; then
 # Install PyInstaller if not present
 echo "== Installing PyInstaller =="
@@ -241,6 +245,19 @@ if [ "$LAYERED_DESKTOP" = false ]; then
         lasio welly bruges simpeg dlisio xtgeo pvtlib
 fi
 echo ""
+
+if [ "$LAYERED_DESKTOP" = true ]; then
+    # The legacy wheel pool is skipped in this mode. Resolve only the channel
+    # closure into the freshly created build venv for the readable runtime.
+    echo "== Preparing layered channel dependency wheels =="
+    DESKTOP_WHEELS="${BUILD_VENV}/channel-source-wheels"
+    mkdir -p "$DESKTOP_WHEELS"
+    "$PYTHON_BIN" -m pip wheel --prefer-binary --wheel-dir "$DESKTOP_WHEELS" ".[channels]"
+    HOST_WHEELS=("$DESKTOP_WHEELS"/qwenpaw-*.whl)
+    [ "${#HOST_WHEELS[@]}" -eq 1 ] && [ -f "${HOST_WHEELS[0]}" ] || \
+        { echo "Expected one host wheel"; exit 1; }
+    HOST_WHEEL="${HOST_WHEELS[0]}"
+fi
 
 echo "== Building readable channel runtime =="
 "$PYTHON_BIN" "${REPO_ROOT}/scripts/pack/validate_channel_contracts.py" --project-root "$REPO_ROOT"

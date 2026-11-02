@@ -415,6 +415,60 @@ mod tests {
 
     static ENV_LOCK: Mutex<()> = Mutex::new(());
 
+    #[test]
+    fn channel_support_rolls_back_with_the_previous_backend_runtime_set() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        let temp = tempfile::tempdir().unwrap();
+        let working = temp.path().join("working");
+        let components = working.join("components");
+        let old = components.join("managed").join("backend").join("2.3.0b3");
+        let new = components.join("managed").join("backend").join("2.3.0b4");
+        for root in [&old, &new] {
+            std::fs::create_dir_all(root.join("channel-runtime").join("site")).unwrap();
+            std::fs::write(root.join("channel-runtime").join("runtime.json"), "{}").unwrap();
+        }
+        std::fs::write(
+            components.join("active.json"),
+            serde_json::json!({
+                "schema_version": 1,
+                "target": current_target(),
+                "components": {"backend": {
+                    "version": "2.3.0b4", "path": new, "kind": "python"
+                }},
+                "previous_runtime_components": {"backend": {
+                    "version": "2.3.0b3", "path": old, "kind": "python"
+                }}
+            })
+            .to_string(),
+        )
+        .unwrap();
+        let previous = std::env::var_os("QWENPAW_WORKING_DIR");
+        std::env::set_var("QWENPAW_WORKING_DIR", &working);
+        let resources = temp.path().join("Resources");
+        let before = crate::channel_runtime::selected_backend_environment(&resources);
+        let restored = restore_previous_runtime_set();
+        let after = crate::channel_runtime::selected_backend_environment(&resources);
+        match previous {
+            Some(value) => std::env::set_var("QWENPAW_WORKING_DIR", value),
+            None => std::env::remove_var("QWENPAW_WORKING_DIR"),
+        }
+        assert!(restored.unwrap());
+        for (environment, expected) in [(before, new), (after, old)] {
+            let actual = environment
+                .into_iter()
+                .find(|(key, _)| key == "QWENPAW_CHANNEL_RUNTIME_MANIFEST")
+                .unwrap()
+                .1;
+            assert_eq!(
+                actual,
+                expected
+                    .join("channel-runtime")
+                    .join("runtime.json")
+                    .to_string_lossy()
+            );
+        }
+    }
+
     fn write_layout(root: &Path, json: &str) {
         std::fs::create_dir_all(root.join("state")).unwrap();
         std::fs::write(root.join("state/active.json"), json).unwrap();

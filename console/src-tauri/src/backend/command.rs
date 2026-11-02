@@ -95,10 +95,22 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
 /// Python backend layer plus independent interpreter/dependency layers through
 /// `state/active.json`. An invalid or incomplete selection falls back to the
 /// frozen executable so a failed migration cannot brick startup.
-#[cfg(not(debug_assertions))]
+#[cfg(any(not(debug_assertions), test))]
 pub(super) fn create_packaged(resource_dir: &Path) -> Result<(Command, LauncherSelection), String> {
     let resource_dir = resource_dir.to_path_buf();
     let launch = packaged_backend_launch(&resource_dir)?;
+    command_for_packaged_launch(&resource_dir, launch)
+}
+
+#[cfg(any(not(debug_assertions), test))]
+fn command_for_packaged_launch(
+    resource_dir: &Path,
+    launch: PackagedBackendLaunch,
+) -> Result<(Command, LauncherSelection), String> {
+    let captured_python = launch
+        .channel_backend_root
+        .as_ref()
+        .map(|_| launch.executable.clone());
     let backend = launch.executable;
     let backend_args = launch.args;
     let backend_dir = launch.working_directory;
@@ -118,6 +130,11 @@ pub(super) fn create_packaged(resource_dir: &Path) -> Result<(Command, LauncherS
         log::warn!("[backend] bundled officecli not found");
     }
     let mut command = Command::new(backend);
+    crate::channel_runtime::apply_backend_environment(
+        &mut command,
+        resource_dir,
+        launch.channel_backend_root.as_deref(),
+    );
     command
         .args(backend_args)
         .current_dir(&backend_dir)
@@ -166,7 +183,8 @@ pub(super) fn create_packaged(resource_dir: &Path) -> Result<(Command, LauncherS
     }
     // Bundled standalone Python used by the backend to install third-party
     // plugin dependencies (sys.executable is the frozen backend, not Python).
-    if let Some(python) = packaged_python_runtime(&resource_dir) {
+    command.env_remove("QWENPAW_DESKTOP_PY_RUNTIME");
+    if let Some(python) = captured_python.or_else(|| packaged_python_runtime(resource_dir)) {
         log::info!("[backend] bundled python runtime: {}", python.display());
         command.env(
             "QWENPAW_DESKTOP_PY_RUNTIME",
@@ -228,12 +246,12 @@ pub(super) fn create_packaged(resource_dir: &Path) -> Result<(Command, LauncherS
     ))
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(any(not(debug_assertions), test))]
 fn packaged_python_runtime(resource_dir: &Path) -> Option<PathBuf> {
     packaged_python_runtime_selection(&resource_dir).map(|(path, _managed)| path)
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(any(not(debug_assertions), test))]
 fn packaged_python_runtime_selection(resource_dir: &Path) -> Option<(PathBuf, bool)> {
     let resource_dir = resource_dir.to_path_buf();
     let selected = crate::runtime_layout::resolve_component(&resource_dir, "python-runtime");
@@ -270,7 +288,7 @@ fn packaged_python_runtime_selection(resource_dir: &Path) -> Option<(PathBuf, bo
     found
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(any(not(debug_assertions), test))]
 fn packaged_java_runtime(resource_dir: &Path) -> Option<PathBuf> {
     // The JRE root is <resource_dir>/binaries/java-runtime.  The Python
     // side (_bundled_java_exe in neqsim.py) handles both the flat layout
@@ -301,7 +319,7 @@ fn packaged_java_runtime(resource_dir: &Path) -> Option<PathBuf> {
     None
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(any(not(debug_assertions), test))]
 fn packaged_neqsim_jar(resource_dir: &Path) -> Option<PathBuf> {
     let resource_dir = resource_dir.to_path_buf();
     let root = crate::runtime_layout::resolve_component(&resource_dir, "neqsim")
@@ -322,7 +340,7 @@ fn apply_contributed_environment(app: &tauri::AppHandle, mut command: Command) -
     command
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(any(not(debug_assertions), test))]
 fn packaged_node_runtime(resource_dir: &Path) -> Option<PathBuf> {
     let resource_dir = resource_dir.to_path_buf();
     let root = crate::runtime_layout::resolve_component(&resource_dir, "node-runtime")
@@ -336,7 +354,7 @@ fn packaged_node_runtime(resource_dir: &Path) -> Option<PathBuf> {
     node.is_file().then_some(root)
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(any(not(debug_assertions), test))]
 fn packaged_officecli_dir(resource_dir: &Path) -> Option<PathBuf> {
     let resource_dir = resource_dir.to_path_buf();
     let dir = crate::runtime_layout::resolve_component(&resource_dir, "officecli")
@@ -350,7 +368,7 @@ fn packaged_officecli_dir(resource_dir: &Path) -> Option<PathBuf> {
     binary.is_file().then_some(dir)
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(any(not(debug_assertions), test))]
 fn packaged_backend_executable(resource_dir: &Path) -> Result<PathBuf, String> {
     let executable_name = if cfg!(windows) {
         "qwenpaw-backend.exe"
@@ -382,18 +400,19 @@ fn packaged_backend_executable(resource_dir: &Path) -> Result<PathBuf, String> {
     }
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(any(not(debug_assertions), test))]
 struct PackagedBackendLaunch {
     executable: PathBuf,
     args: Vec<String>,
     working_directory: PathBuf,
     python_paths: Vec<PathBuf>,
+    channel_backend_root: Option<PathBuf>,
     managed_backend: bool,
     managed_python_runtime: bool,
     managed_python_packages: bool,
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(any(not(debug_assertions), test))]
 fn packaged_backend_launch(resource_dir: &Path) -> Result<PackagedBackendLaunch, String> {
     let resource_dir = resource_dir.to_path_buf();
     if let Some(backend) = crate::runtime_layout::resolve_component(&resource_dir, "backend") {
@@ -421,6 +440,7 @@ fn packaged_backend_launch(resource_dir: &Path) -> Result<PackagedBackendLaunch,
                 return Ok(PackagedBackendLaunch {
                     executable: python,
                     args: vec!["-m".to_string(), "qwenpaw.tauri.entry".to_string()],
+                    channel_backend_root: Some(backend.root.clone()),
                     working_directory: backend.root,
                     python_paths,
                     managed_backend: backend.managed,
@@ -448,13 +468,14 @@ fn packaged_backend_launch(resource_dir: &Path) -> Result<PackagedBackendLaunch,
         args: Vec::new(),
         working_directory,
         python_paths: Vec::new(),
+        channel_backend_root: None,
         managed_backend: false,
         managed_python_runtime: false,
         managed_python_packages: false,
     })
 }
 
-#[cfg(not(debug_assertions))]
+#[cfg(any(not(debug_assertions), test))]
 fn packaged_path(
     resource_dir: &Path,
     backend_dir: &Path,
@@ -482,12 +503,12 @@ fn packaged_path(
         .map_err(|_| "packaged PATH contains non-Unicode data".to_string())
 }
 
-#[cfg(all(not(debug_assertions), windows))]
+#[cfg(all(any(not(debug_assertions), test), windows))]
 fn path_env_key() -> &'static str {
     "Path"
 }
 
-#[cfg(all(not(debug_assertions), not(windows)))]
+#[cfg(all(any(not(debug_assertions), test), not(windows)))]
 fn path_env_key() -> &'static str {
     "PATH"
 }
@@ -562,5 +583,155 @@ pub(super) fn rollback_managed_launcher(launcher: LauncherSelection) -> Result<(
         Ok(())
     } else {
         Err(failures.join("; "))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn write_layered_selection(resources: &Path, version: &str) -> PathBuf {
+        let backend_relative = format!("app/backend/{version}");
+        let backend = resources.join("app").join("backend").join(version);
+        std::fs::create_dir_all(backend.join("qwenpaw")).unwrap();
+        std::fs::create_dir_all(backend.join("channel-runtime/site")).unwrap();
+        std::fs::write(
+            backend.join("channel-runtime").join("runtime.json"),
+            serde_json::json!({"host_version": version}).to_string(),
+        )
+        .unwrap();
+        let python_root = resources
+            .join("runtimes")
+            .join("python")
+            .join(version)
+            .join("python");
+        let python = if cfg!(windows) {
+            python_root.join("python.exe")
+        } else {
+            python_root.join("bin/python3")
+        };
+        std::fs::create_dir_all(python.parent().unwrap()).unwrap();
+        std::fs::write(python, "test interpreter").unwrap();
+        std::fs::create_dir_all(resources.join("state")).unwrap();
+        std::fs::write(
+            resources.join("state/active.json"),
+            serde_json::json!({
+                "schemaVersion": 1,
+                "components": {
+                    "backend": {"version": version, "path": backend_relative, "kind": "python"},
+                    "python-runtime": {"version": version, "path": format!("runtimes/python/{version}")}
+                }
+            })
+            .to_string(),
+        )
+        .unwrap();
+        backend
+    }
+
+    fn command_environment(command: &Command, key: &str) -> Option<Option<String>> {
+        command
+            .get_envs()
+            .find(|(name, _)| *name == std::ffi::OsStr::new(key))
+            .map(|(_, value)| value.map(|value| value.to_string_lossy().into_owned()))
+    }
+
+    fn assert_channel_root(command: &Command, backend: &Path) {
+        assert_eq!(command.get_current_dir(), Some(backend));
+        assert_eq!(
+            command_environment(command, "QWENPAW_DESKTOP_PY_RUNTIME"),
+            Some(Some(command.get_program().to_string_lossy().into_owned()))
+        );
+        assert_eq!(
+            command_environment(command, "QWENPAW_CHANNEL_RESOURCE_DIR"),
+            Some(Some(backend.to_string_lossy().into_owned()))
+        );
+        assert_eq!(
+            command_environment(command, "QWENPAW_CHANNEL_RUNTIME_MANIFEST"),
+            Some(Some(
+                backend
+                    .join("channel-runtime")
+                    .join("runtime.json")
+                    .to_string_lossy()
+                    .into_owned()
+            ))
+        );
+    }
+
+    #[test]
+    fn packaged_command_keeps_captured_backend_when_active_pointer_changes() {
+        let temp = tempfile::tempdir().unwrap();
+        let resources = temp.path();
+        let old = write_layered_selection(resources, "2.3.0b3");
+        let captured = packaged_backend_launch(resources).unwrap();
+        let old_python = captured.executable.clone();
+        let new = write_layered_selection(resources, "2.3.0b4");
+        let (command, _) = command_for_packaged_launch(resources, captured).unwrap();
+        assert_channel_root(&command, &old);
+        assert_eq!(command.get_program(), old_python.as_os_str());
+        // The daemon's real command constructor picks up the next activation.
+        let (command, _) = create_packaged(resources).unwrap();
+        assert_channel_root(&command, &new);
+        assert_ne!(command.get_program(), old_python.as_os_str());
+        write_layered_selection(resources, "2.3.0b3");
+        let (command, _) = create_packaged(resources).unwrap();
+        assert_channel_root(&command, &old);
+    }
+
+    #[test]
+    fn packaged_frozen_fallback_removes_inherited_channel_component_root() {
+        let temp = tempfile::tempdir().unwrap();
+        let resources = temp.path();
+        write_layered_selection(resources, "2.3.0b4");
+        let (layered_command, _) = create_packaged(resources).unwrap();
+        assert!(
+            command_environment(&layered_command, "QWENPAW_CHANNEL_RESOURCE_DIR")
+                .unwrap()
+                .is_some()
+        );
+        std::fs::remove_file(resources.join("state/active.json")).unwrap();
+        let frozen = resources.join("binaries").join("qwenpaw-backend");
+        std::fs::create_dir_all(&frozen).unwrap();
+        let executable = frozen.join(if cfg!(windows) {
+            "qwenpaw-backend.exe"
+        } else {
+            "qwenpaw-backend"
+        });
+        std::fs::write(&executable, "test frozen backend").unwrap();
+        let (command, _) = create_packaged(resources).unwrap();
+        assert_eq!(command.get_program(), executable.as_os_str());
+        assert_eq!(
+            command_environment(&command, "QWENPAW_DESKTOP_PY_RUNTIME"),
+            Some(None)
+        );
+        // A None override actively removes daemon inheritance from the child.
+        assert_eq!(
+            command_environment(&command, "QWENPAW_CHANNEL_RESOURCE_DIR"),
+            Some(None)
+        );
+        assert_eq!(
+            command_environment(&command, "QWENPAW_CHANNEL_RUNTIME_MANIFEST"),
+            Some(Some(
+                resources
+                    .join("binaries/channel-runtime")
+                    .join("runtime.json")
+                    .to_string_lossy()
+                    .into_owned()
+            ))
+        );
+        assert_eq!(
+            command_environment(&command, "QWENPAW_CHANNEL_SUPPORT_ROOT"),
+            Some(Some(
+                resources
+                    .join("binaries/channel-runtime")
+                    .join("site")
+                    .to_string_lossy()
+                    .into_owned()
+            ))
+        );
+        assert!(
+            command_environment(&command, "QWENPAW_CHANNEL_DEPENDENCY_PATHS")
+                .unwrap()
+                .is_some()
+        );
     }
 }

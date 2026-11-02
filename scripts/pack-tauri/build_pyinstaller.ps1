@@ -136,6 +136,11 @@ function Uninstall-PythonPackage {
     }
 }
 
+# Contract validation imports retained host models, even in layered builds.
+Write-Host "== Installing channel contract validation dependencies ==" -ForegroundColor Yellow
+$CHANNEL_CONTRACT_REQUIREMENTS = Join-Path $REPO_ROOT "scripts/pack/channel-contract-requirements.txt"
+Install-PythonPackages -Packages @("-r", $CHANNEL_CONTRACT_REQUIREMENTS)
+
 if (-not $LAYERED_DESKTOP) {
 # Install PyInstaller if not present
 Write-Host "== Installing PyInstaller ==" -ForegroundColor Yellow
@@ -292,6 +297,19 @@ Assert-LastExit "Failed to install Chrome Native Messaging host dependencies"
 Assert-LastExit "Bundled Python runtime cannot run the Native Messaging host"
 }
 Write-Host ""
+
+if ($LAYERED_DESKTOP) {
+    # The legacy wheel pool is skipped in this mode. Resolve only the channel
+    # closure into the freshly created build venv for the readable runtime.
+    Write-Host "== Preparing layered channel dependency wheels ==" -ForegroundColor Yellow
+    $DESKTOP_WHEELS = Join-Path $BUILD_VENV "channel-source-wheels"
+    New-Item -ItemType Directory -Force -Path $DESKTOP_WHEELS | Out-Null
+    & $PYTHON_BIN -m pip wheel --prefer-binary --wheel-dir $DESKTOP_WHEELS ".[channels]"
+    Assert-LastExit "Layered channel dependency wheel build failed"
+    $HOST_WHEELS = @(Get-ChildItem $DESKTOP_WHEELS -Filter "qwenpaw-*.whl")
+    if ($HOST_WHEELS.Count -ne 1) { throw "Expected one host wheel" }
+    $HOST_WHEEL = $HOST_WHEELS[0].FullName
+}
 
 Write-Host "== Building readable channel runtime ==" -ForegroundColor Yellow
 & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts/pack/validate_channel_contracts.py") --project-root $REPO_ROOT

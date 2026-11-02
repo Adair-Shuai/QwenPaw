@@ -16,6 +16,13 @@ from packaging.tags import parse_tag
 from .channel_adapter import ChannelRuntimeSettings
 
 
+def is_desktop_runtime():
+    """Require authenticated channel resources for both desktop host modes."""
+    return bool(getattr(sys, "frozen", False)) or (
+        os.environ.get("QWENPAW_DESKTOP_APP") == "1"
+    )
+
+
 def _resource_path(root, value):
     if (
         not isinstance(value, str)
@@ -41,10 +48,16 @@ def _runtime_resource_context():
         "QWENPAW_CHANNEL_DEPENDENCY_PATHS",
     )
     values = tuple(os.environ.get(key) for key in keys)
-    if any(value is not None for value in values):
+    channel_root = os.environ.get("QWENPAW_CHANNEL_RESOURCE_DIR")
+    if channel_root is not None or any(value is not None for value in values):
         if any(value is None or not value.strip() for value in values):
             raise ValueError("CHANNEL_RUNTIME_MANIFEST_INVALID")
-        return Path(values[0]), Path(values[1]), values[2:]
+        if channel_root is not None and not channel_root.strip():
+            raise ValueError("CHANNEL_RUNTIME_MANIFEST_INVALID")
+        # Layered channels travel with their signed backend component, which
+        # may be a managed update outside the installed Tauri resource tree.
+        root = channel_root if channel_root is not None else values[0]
+        return Path(root), Path(values[1]), values[2:]
     executable = Path(sys.executable)
     if not getattr(sys, "frozen", False) or not executable.is_absolute():
         raise ValueError("CHANNEL_RUNTIME_MANIFEST_INVALID")
@@ -56,6 +69,39 @@ def _runtime_resource_context():
         raise ValueError("CHANNEL_RUNTIME_MANIFEST_INVALID")
     root = executable.parent.parent.parent
     return root, root / "binaries/channel-runtime/runtime.json", None
+
+
+def _selected_desktop_python(data, launcher_paths):
+    """Bind an independently selected runtime to its recorded release."""
+    resources = Path(os.environ["QWENPAW_TAURI_RESOURCE_DIR"])
+    if not resources.is_absolute():
+        raise ValueError("CHANNEL_RUNTIME_MANIFEST_INVALID")
+    # The recorded packaged path remains closed and resource-relative, even
+    # when the launcher selects a signed managed runtime component instead.
+    _resource_path(resources.resolve(), data["python_executable"])
+    executable = Path(launcher_paths[0])
+    if not executable.is_absolute():
+        raise ValueError("CHANNEL_RUNTIME_MANIFEST_INVALID")
+    executable = executable.resolve()
+    python_root = executable.parent
+    if python_root.name == "bin":
+        python_root = python_root.parent
+    if python_root.name != "python":
+        raise ValueError("CHANNEL_RUNTIME_IDENTITY_MISMATCH")
+    marker = python_root.parent / ".python-runtime-version"
+    release = data["python_runtime_release"]
+    if not isinstance(release, str) or not release:
+        raise ValueError("CHANNEL_RUNTIME_IDENTITY_MISMATCH")
+    try:
+        if (
+            marker.is_symlink()
+            or marker.stat().st_size > 4096
+            or marker.read_text(encoding="utf-8").strip() != release
+        ):
+            raise ValueError("CHANNEL_RUNTIME_IDENTITY_MISMATCH")
+    except OSError as exc:
+        raise ValueError("CHANNEL_RUNTIME_IDENTITY_MISMATCH") from exc
+    return executable
 
 
 def runtime_manifest():
@@ -102,13 +148,21 @@ def runtime_manifest():
             or any(char not in "0123456789abcdef" for char in digest)
         ):
             raise ValueError("CHANNEL_RUNTIME_MANIFEST_INVALID")
-    executable = _resource_path(root, data["python_executable"])
+    split_roots = os.environ.get("QWENPAW_CHANNEL_RESOURCE_DIR") is not None
+    executable = (
+        _selected_desktop_python(data, launcher_paths)
+        if split_roots
+        else _resource_path(root, data["python_executable"])
+    )
     support = _resource_path(root, data["support_root"])
     sites = tuple(
         _resource_path(root, value) for value in data["dependency_paths"]
     )
     if launcher_paths is not None and (
-        str(executable) != str(Path(launcher_paths[0]).resolve())
+        (
+            not split_roots
+            and str(executable) != str(Path(launcher_paths[0]).resolve())
+        )
         or str(support) != str(Path(launcher_paths[1]).resolve())
         or sites
         != tuple(
@@ -176,7 +230,7 @@ def runtime_manifest():
 
 def default_channel_preset():
     """Use trusted deployment defaults only when initializing policy."""
-    if getattr(sys, "frozen", False):
+    if is_desktop_runtime():
         return runtime_manifest()[-1]
     preset = os.environ.get("QWENPAW_CHANNEL_PRESET", "light")
     if preset not in {"light", "channels-full"}:
@@ -222,7 +276,7 @@ def dependency_metadata_identity(sites, identity):
 
 def plugin_runtime_site(runtime_root: Path, runtime=None) -> Path:
     """Share an ABI site, isolated by bundled wheel identity on desktop."""
-    if runtime is None and getattr(sys, "frozen", False):
+    if runtime is None and is_desktop_runtime():
         runtime = runtime_manifest()
     identity = (
         runtime[3]
@@ -273,7 +327,7 @@ def resolve_default_channel_runtime(*, provision=True):
     )
 
     runtime = None
-    if getattr(sys, "frozen", False):
+    if is_desktop_runtime():
         runtime = runtime_manifest()
         executable, support, sites, identity, _preset = runtime
     else:
@@ -333,7 +387,7 @@ def resolve_default_channel_runtime(*, provision=True):
             )
         ),
         dependency_install_target=selected,
-        runtime_identity=identity if getattr(sys, "frozen", False) else None,
+        runtime_identity=identity if runtime is not None else None,
         send_timeouts=send_timeouts,
     )
 

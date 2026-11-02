@@ -12,7 +12,6 @@ import io
 import json
 import logging
 import shutil
-import sys
 from pathlib import Path
 import tempfile
 from types import SimpleNamespace
@@ -23,6 +22,7 @@ from .official_channel_catalog import (
     official_channel_for_plugin,
 )
 from .channel_bootstrap import (
+    is_desktop_runtime,
     resolve_default_channel_runtime,
 )
 
@@ -36,7 +36,7 @@ __all__ = [
 
 
 def _resource_root():
-    if getattr(sys, "frozen", False):
+    if is_desktop_runtime():
         from .channel_bootstrap import runtime_manifest
 
         return runtime_manifest()[1] / "qwenpaw/official_channels"

@@ -20,6 +20,7 @@ Coverage targets (``src/qwenpaw/app/channels/qq/channel.py``):
   _dispatch_text/_send_message_async/_get_access_token_{sync,async}.
 
 API endpoints:
+  - POST /api/plugins/install (bundled:qq)
   - PUT  /api/config/channels/qq
   - POST /api/config/channels/qq/restart
   - GET  /api/config/channels/qq
@@ -36,6 +37,7 @@ from helpers import (
     MOCK_LLM_PROVIDER_ID,
     MOCK_LLM_RESPONSE,
     MockLLMHandler,
+    PLUGIN_HTTP_TIMEOUT,
     default_http_timeout,
     register_mock_provider,
     unregister_mock_provider,
@@ -79,13 +81,24 @@ def mock_llm():
 
 @pytest.fixture(scope="module")
 def qq_channel_up(app_server):
-    """Enable the QQ channel against the mock IM; yield after READY.
+    """Install and enable the real official worker; yield after READY.
 
     ``PUT /api/config/channels/qq`` triggers a zero-downtime agent
     reload which starts the newly-enabled channel; the ``/restart``
     endpoint only applies to already-running channels (404 otherwise),
     so we simply wait for the mock gateway to observe IDENTIFY.
     """
+    installed = app_server.api_request(
+        "POST",
+        "/api/plugins/install",
+        json={"source": "bundled:qq", "force": False},
+        timeout=PLUGIN_HTTP_TIMEOUT,
+    )
+    assert installed.status_code == 200, (
+        installed.text + app_server.logs_tail()
+    )
+    assert installed.json().get("loaded") is True, installed.json()
+    assert installed.json().get("enabled") is True, installed.json()
     reload_mark = len(app_server.logs)
     put = app_server.api_request(
         "PUT",

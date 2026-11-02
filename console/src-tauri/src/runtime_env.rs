@@ -11,6 +11,8 @@
 //! `Vec<(String, String)>`, and [`collect`] gathers them. The launch path
 //! depends on this aggregator, never on a feature module directly, so adding
 //! the next contributor is a line here rather than an edit to `command.rs`.
+//! Component-bound paths are applied by the packaged command using its captured
+//! launch selection, so daemon restarts cannot inherit an earlier selection.
 
 /// Gather every feature's backend environment into one set of variables.
 ///
@@ -19,6 +21,5 @@
 pub(crate) fn collect(app: &tauri::AppHandle) -> Vec<(String, String)> {
     let mut environment = Vec::new();
     environment.extend(crate::computer_use_runtime::backend_environment(app));
-    environment.extend(crate::channel_runtime::backend_environment(app));
     environment
 }

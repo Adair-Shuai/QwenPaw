@@ -188,6 +188,11 @@ def assemble(
     ):
         raise ValueError("exactly one Python dependency layer must be staged")
     dependencies = dependency_candidates[0]
+    channel_runtime = root / "channel-runtime"
+    if channel_runtime.is_dir():
+        # Readable channel support follows the backend version through full
+        # updates, deltas and rollback under its existing signed component.
+        _move(channel_runtime, backend_root / "channel-runtime")
 
     def entry(
         version: str,

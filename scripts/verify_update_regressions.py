@@ -28,8 +28,31 @@ SUITES = (
     "tests/unit/tauri/test_ugsci_release_data.py",
     "tests/unit/tauri/test_storage_capacity_publication.py",
     "tests/unit/tauri/test_backend_guard.py",
+    "tests/unit/tauri/test_desktop_channel_build.py",
+    "tests/unit/tauri/test_channel_runtime_layout.py",
+    "tests/unit/tauri/test_layered_channel_bootstrap.py",
+    "tests/unit/tauri/test_channel_runtime_component_updates.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/tauri/test_channel_runtime_component_updates.py": {
+        "test_signed_backend_update_switches_channel_support_atomically",
+        "test_signed_backend_gate_rejects_changed_channel_support",
+        "test_channel_launcher_changes_host_fingerprint_and_blocks_old_desktop",
+    },
+    "tests/unit/tauri/test_channel_runtime_layout.py": {
+        "test_assembled_channel_runtime_matches_launcher_and_runs",
+    },
+    "tests/unit/tauri/test_layered_channel_bootstrap.py": {
+        "test_layered_channel_bootstrap_uses_authenticated_manifest",
+        "test_layered_official_sources_use_authenticated_runtime",
+        "test_layered_channel_bootstrap_rejects_manifest_drift",
+        "test_source_channel_bootstrap_keeps_development_runtime",
+    },
+    "tests/unit/tauri/test_desktop_channel_build.py": {
+        "test_channel_contract_dependencies_install_before_layout_branch",
+        "test_layered_channel_wheels_are_prepared_before_runtime_resolution",
+        "test_desktop_channel_gate_rejects_retained_model_drift",
+    },
     "tests/unit/tauri/test_backend_guard.py": {
         "test_runtime_lock_rejects_a_second_owner",
         "test_runtime_lock_is_released_after_process_death",
@@ -44,6 +67,7 @@ REQUIRED_CASES = {
     "tests/unit/verify/test_release_workflow_safety.py": {
         "test_clean_release_and_frontend_checks_build_openui_runtime",
         "test_reusable_plugin_build_matches_release_artifact_scope",
+        "test_plugin_pack_job_installs_channel_contract_dependencies",
     },
     "tests/unit/tauri/test_stage_officecli.py": {
         "test_reviewed_pin_does_not_query_latest",
