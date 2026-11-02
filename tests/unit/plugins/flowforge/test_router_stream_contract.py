@@ -5,10 +5,11 @@ import asyncio
 import importlib
 import json
 import time
-from contextlib import suppress
+from contextlib import AsyncExitStack, suppress
 from types import SimpleNamespace
 
 import pytest
+import pytest_asyncio
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -91,6 +92,45 @@ class _Socket:
         await asyncio.wait_for(self.task, timeout=3)
 
 
+class _ReceiveProbe:
+    """Observe real ASGI reads, optionally pausing a consumed control frame."""
+
+    def __init__(self, app, *, pause_ping=None):
+        self.app = app
+        self.pause_ping = pause_ping
+        self.pings = 0
+        self.ping_dequeued = asyncio.Event()
+        self.release_ping = asyncio.Event()
+        self.idle_read_started = asyncio.Event()
+        self.pending_reads = set()
+        self.cancelled_reads = []
+
+    async def __call__(self, scope, receive, send):
+        async def observed_receive():
+            task = asyncio.current_task()
+            self.pending_reads.add(task)
+            if self.pings:
+                self.idle_read_started.set()
+            try:
+                frame = await receive()
+                if (
+                    frame.get("type") == "websocket.receive"
+                    and json.loads(frame["text"]).get("type") == "ping"
+                ):
+                    self.pings += 1
+                    if self.pings == self.pause_ping:
+                        self.ping_dequeued.set()
+                        await self.release_ping.wait()
+                return frame
+            except asyncio.CancelledError:
+                self.cancelled_reads.append(task)
+                raise
+            finally:
+                self.pending_reads.remove(task)
+
+        await self.app(scope, observed_receive, send)
+
+
 def _wait(handle):
     deadline = time.monotonic() + 5
     while not handle.is_done and time.monotonic() < deadline:
@@ -99,32 +139,30 @@ def _wait(handle):
     return handle
 
 
-@pytest.fixture(
+@pytest_asyncio.fixture(
     name="environment",
     params=["plugins.bundle", "qwenpaw.plugins_bundle"],
 )
-def load_environment(request, tmp_path):
+async def load_environment(request, tmp_path):
     prefix = request.param + ".flowforge"
     router = importlib.import_module(prefix + ".router")
     service_module = importlib.import_module(prefix + ".service")
     progress = importlib.import_module(prefix + ".engine.progress")
-    services = []
 
-    def create(name):
-        service = service_module.WorkflowService(flows_dir=tmp_path / name)
-        services.append(service)
-        app = FastAPI()
-        app.include_router(router.build_router(service))
-        return service, app
+    async def close_service(service):
+        await service.aclose(timeout=3)
+        assert service.closed
 
-    yield SimpleNamespace(create=create, progress=progress)
-    for service in services:
-        for record in service.list_runs():
-            handle = service.get_run(record["run_id"])
-            if handle is not None and not handle.is_done:
-                service.cancel_run(handle.run_id)
-                _wait(handle)
-        service.__del__()
+    async with AsyncExitStack() as cleanup:
+
+        def create(name):
+            service = service_module.WorkflowService(flows_dir=tmp_path / name)
+            cleanup.push_async_callback(close_service, service)
+            app = FastAPI()
+            app.include_router(router.build_router(service))
+            return service, app
+
+        yield SimpleNamespace(create=create, progress=progress)
 
 
 def _run(service, *, wait=False):
@@ -357,3 +395,86 @@ def test_router_sse_and_missing_run_http_contract(environment):
         assert actual == [
             event.to_dict() for event in handle.progress.history()
         ]
+
+
+@pytest.mark.asyncio
+async def test_socket_resubscription_preserves_control_frame_across_poll(
+    environment,
+    monkeypatch,
+):
+    service, app = environment.create("delayed-control")
+    first = _run(service, wait=True)
+    second = _run(service, wait=True)
+    first_added, first_removed = _observe_handlers(monkeypatch, first)
+    second_added, second_removed = _observe_handlers(monkeypatch, second)
+    probe = _ReceiveProbe(app, pause_ping=2)
+    socket = await _Socket(probe).open()
+    try:
+        await socket.send({"type": "subscribe", "run_id": first.run_id})
+        await socket.send({"type": "ping"})
+        await socket.until("pong")
+        await socket.send({"type": "subscribe", "run_id": second.run_id})
+        await socket.send({"type": "ping"})
+        await asyncio.wait_for(probe.ping_dequeued.wait(), timeout=3)
+        # A valid ASGI receive can suspend after consuming its frame. Cross
+        # the router's real 0.5s progress poll without replacing the router.
+        await asyncio.sleep(0.6)
+        probe.release_ping.set()
+        await socket.until("pong")
+        assert not probe.cancelled_reads
+        assert first_added == first_removed
+        first.progress.emit(
+            environment.progress.ProgressEvent(
+                type="stale_marker",
+                prompt_id=first.run_id,
+            ),
+        )
+        second.progress.emit(
+            environment.progress.ProgressEvent(
+                type="current_marker",
+                prompt_id=second.run_id,
+            ),
+        )
+        messages = await socket.until("current_marker")
+        assert not any(
+            message["type"] == "stale_marker" for message in messages
+        )
+    finally:
+        probe.release_ping.set()
+        await socket.close()
+    assert len(first_added) == len(first_removed) == 1
+    assert len(second_added) == len(second_removed) == 1
+    assert first_added[0] is first_removed[0]
+    assert second_added[0] is second_removed[0]
+    assert not probe.pending_reads
+
+
+@pytest.mark.asyncio
+async def test_socket_terminal_cancels_pending_receive(
+    environment,
+    monkeypatch,
+):
+    service, app = environment.create("terminal-read")
+    handle = _run(service, wait=True)
+    added, removed = _observe_handlers(monkeypatch, handle)
+    probe = _ReceiveProbe(app)
+    socket = await _Socket(probe).open()
+    try:
+        await socket.send({"type": "subscribe", "run_id": handle.run_id})
+        await socket.send({"type": "ping"})
+        await socket.until("pong")
+        await asyncio.wait_for(probe.idle_read_started.wait(), timeout=3)
+        pending_reads = set(probe.pending_reads)
+        assert len(pending_reads) == 1
+        assert service.cancel_run(handle.run_id)
+        await asyncio.to_thread(_wait, handle)
+        messages = await socket.until("run_finished")
+        assert messages[-1]["status"] == "cancelled"
+        await asyncio.wait_for(socket.task, timeout=3)
+        assert not probe.pending_reads
+        assert set(probe.cancelled_reads) == pending_reads
+        assert all(task.done() for task in pending_reads)
+    finally:
+        await socket.close()
+    assert len(added) == len(removed) == 1
+    assert added[0] is removed[0]

@@ -407,7 +407,9 @@
       "test_socket_persisted_replay_retains_all_events",
       "test_socket_history_boundary_delivers_each_event_once",
       "test_socket_cancel_drains_events_before_terminal",
-      "test_router_sse_and_missing_run_http_contract"
+      "test_router_sse_and_missing_run_http_contract",
+      "test_socket_resubscription_preserves_control_frame_across_poll",
+      "test_socket_terminal_cancels_pending_receive"
     ],
     "tests/unit/plugins/run_center/test_research.py": [
       "test_sobol_design_uses_seed_for_reproducible_scrambling",

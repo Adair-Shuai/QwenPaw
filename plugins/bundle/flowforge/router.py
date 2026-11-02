@@ -519,6 +519,32 @@ class _WebSocketSubscription:
         return False
 
 
+class _WebSocketReader:
+    """Own one receive across progress polls until its frame is consumed."""
+
+    def __init__(self, websocket: WebSocket) -> None:
+        self.websocket = websocket
+        self.task: asyncio.Task[str] | None = None
+
+    async def poll(self) -> str | None:
+        if self.task is None:
+            self.task = asyncio.create_task(self.websocket.receive_text())
+        # A receive may already have consumed its ASGI frame when progress
+        # polling expires. Keep that read across polls rather than cancel it.
+        done, _ = await asyncio.wait((self.task,), timeout=0.5)
+        if self.task not in done:
+            return None
+        raw = self.task.result()
+        self.task = None
+        return raw
+
+    async def close(self) -> None:
+        if self.task is not None:
+            self.task.cancel()
+            await asyncio.gather(self.task, return_exceptions=True)
+            self.task = None
+
+
 def _register_websocket_route(
     router: APIRouter,
     service: WorkflowService,
@@ -527,16 +553,11 @@ def _register_websocket_route(
     async def websocket_endpoint(websocket: WebSocket) -> None:
         await websocket.accept()
         subscription = _WebSocketSubscription(service)
+        reader = _WebSocketReader(websocket)
         try:
             while True:
                 # Drain incoming control messages (subscribe / cancel / ping).
-                try:
-                    raw = await asyncio.wait_for(
-                        websocket.receive_text(),
-                        timeout=0.5,
-                    )
-                except asyncio.TimeoutError:
-                    raw = None
+                raw = await reader.poll()
                 if raw:
                     try:
                         msg = json.loads(raw)
@@ -559,6 +580,7 @@ def _register_websocket_route(
             pass
         finally:
             subscription.detach()
+            await reader.close()
 
 
 def _sse_pack(payload: dict[str, Any]) -> str:
