@@ -40,8 +40,15 @@ SUITES = (
     "tests/unit/pack/test_generate_plugin_metadata.py",
     "tests/unit/tauri/test_stage_bundled_plugins.py",
     "tests/unit/tauri/test_macos_compatibility.py",
+    "tests/unit/verify/test_desktop_promotion.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/verify/test_desktop_promotion.py": {
+        "test_four_role_aliases_preserve_each_canonical_artifact",
+        "test_alias_promotion_replaces_stale_metadata_and_is_repeatable",
+        "test_canonical_metadata_is_validated_before_alias_write",
+        "test_selected_artifact_must_match_canonical_file",
+    },
     "tests/unit/tauri/test_macos_compatibility.py": {
         "test_thin_arm64_deployment_target_is_checked",
         "test_fat_checks_every_arm64_slice",

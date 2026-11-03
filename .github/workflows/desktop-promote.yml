@@ -297,18 +297,50 @@ jobs:
             # The versioned metadata points at the immutable versioned object.
             # Rewrite the alias metadata so consumers following `url` download
             # the same latest object that was just promoted.
-            versioned_metadata="${RUNNER_TEMP}/${platform}-versioned-metadata.json"
-            latest_metadata="${RUNNER_TEMP}/${platform}-latest-metadata.json"
+            versioned_metadata="${RUNNER_TEMP}/${versioned_name}-versioned-metadata.json"
+            latest_metadata="${RUNNER_TEMP}/${versioned_name}-latest-metadata.json"
             ossutil cp \
               "oss://${OSS_BUCKET}/metadata/apps/desktop/${platform}/${versioned_name}.json" \
-              "$versioned_metadata"
-            python -c 'import json,sys; from pathlib import Path; source,destination,latest_name,platform=sys.argv[1:]; doc=json.loads(Path(source).read_text(encoding="utf-8")); doc["filename"]=latest_name; doc["url"]=f"/files/apps/desktop/{platform}/{latest_name}"; Path(destination).write_text(json.dumps(doc, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")' \
-              "$versioned_metadata" "$latest_metadata" "$latest_name" "$platform"
+              "$versioned_metadata" --force
+            python - "$versioned_metadata" "$latest_metadata" \
+              "$versioned_name" "$platform" "$VERSION" "$artifact" "$latest_name" <<'PY'
+          import hashlib
+          import json
+          import sys
+          from pathlib import Path
+
+          source, destination, filename, platform, version, artifact_path, latest_name = sys.argv[1:]
+          artifact = Path(artifact_path)
+          if artifact.name != filename:
+              raise SystemExit(f"selected artifact does not match canonical filename: {artifact.name} != {filename}")
+          doc = json.loads(Path(source).read_text(encoding="utf-8"))
+          expected = {
+              "product": "desktop",
+              "platform": platform,
+              "version": version,
+              "filename": filename,
+              "url": f"/files/apps/desktop/{platform}/{filename}",
+          }
+          for field, value in expected.items():
+              if doc.get(field) != value:
+                  raise SystemExit(f"canonical metadata mismatch for {filename}: {field}")
+          if type(doc.get("size_bytes")) is not int or doc["size_bytes"] != artifact.stat().st_size:
+              raise SystemExit(f"canonical metadata size mismatch for {filename}")
+          digest = hashlib.sha256()
+          with artifact.open("rb") as stream:
+              for chunk in iter(lambda: stream.read(4 * 1024 * 1024), b""):
+                  digest.update(chunk)
+          if doc.get("sha256") != digest.hexdigest():
+              raise SystemExit(f"canonical metadata SHA-256 mismatch for {filename}")
+          doc["filename"] = latest_name
+          doc["url"] = f"/files/apps/desktop/{platform}/{latest_name}"
+          Path(destination).write_text(json.dumps(doc, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+          PY
             ossutil cp \
               "oss://${OSS_BUCKET}/files/apps/desktop/${platform}/${versioned_name}" \
               "$latest_tmp" \
-              --acl public-read
-            ossutil cp "$latest_metadata" "$metadata_tmp" --acl public-read
+              --acl public-read --force
+            ossutil cp "$latest_metadata" "$metadata_tmp" --acl public-read --force
             ossutil ls "$latest_tmp" >/dev/null
             ossutil ls "$metadata_tmp" >/dev/null
             ossutil cp "$latest_tmp" "$latest_uri" --acl public-read --force
