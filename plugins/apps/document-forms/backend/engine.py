@@ -666,6 +666,10 @@ def checks(case):
         )
 
     for f in fields:
+        if f.get("opinion_required") and (
+            f.get("opinion_empty") or not f["value"].strip()
+        ):
+            add(f["label"], "missing", "请填写实际论证或审查意见", f["key"])
         if f.get("options") and f["value"] and f["value"] not in f["options"]:
             add(f["label"], "error", "请从下拉选项中选择", f["key"])
         if (

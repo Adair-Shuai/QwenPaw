@@ -104,8 +104,13 @@ def _verify_binary(path: Path, asset: str, version: str) -> None:
         errors="replace",
         timeout=30,
         check=False,
+        env=dict(os.environ, OFFICECLI_SKIP_UPDATE="1"),
         creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
     )
+    if _sha256_file(path) != expected:
+        raise SystemExit(
+            f"OfficeCLI checksum changed during verification: {asset}",
+        )
     output = (result.stdout or "") + (result.stderr or "")
     reported = re.search(r"\b(\d+\.\d+\.\d+)\b", output)
     if (

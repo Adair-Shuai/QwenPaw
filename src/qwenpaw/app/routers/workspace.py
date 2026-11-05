@@ -71,6 +71,7 @@ from ...constant import (
     WORKING_DIR,
 )
 from ...services.fs_name_rules import NameRules, probe_name_rules
+from ...officecli_runtime import officecli_environment
 from ...services.reveal_file import reveal_workspace_path
 from ...services.workspace_files import (
     DEFAULT_CHUNK_SIZE,
@@ -1459,6 +1460,7 @@ def _is_officecli_available() -> bool:
             errors="replace",
             timeout=5,
             check=False,
+            env=officecli_environment(),
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         _officecli_ok = False
@@ -1506,6 +1508,7 @@ def _convert_with_officecli(file_path: str) -> str | None:
             capture_output=True,
             timeout=_OFFICECLI_TIMEOUT,
             check=False,
+            env=officecli_environment(),
         )
     except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
         logger.warning(
@@ -1583,6 +1586,7 @@ def _get_officecli_page_count(file_path: str) -> int:
             errors="replace",
             timeout=_OFFICECLI_TIMEOUT,
             check=False,
+            env=officecli_environment(),
         )
     except (FileNotFoundError, subprocess.TimeoutExpired):
         return 0
@@ -2336,6 +2340,7 @@ async def office_screenshot(
             capture_output=True,
             timeout=60,
             check=False,
+            env=officecli_environment(),
         )
 
     try:
@@ -2417,6 +2422,7 @@ async def office_outline(
             errors="replace",
             timeout=_OFFICECLI_TIMEOUT,
             check=False,
+            env=officecli_environment(),
         )
         if result.returncode != 0:
             raise HTTPException(
@@ -2477,6 +2483,7 @@ async def office_issues(
             errors="replace",
             timeout=_OFFICECLI_TIMEOUT,
             check=False,
+            env=officecli_environment(),
         )
         if result.returncode != 0:
             raise HTTPException(

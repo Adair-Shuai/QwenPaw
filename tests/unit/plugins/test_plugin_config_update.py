@@ -59,6 +59,33 @@ def _slash_workspace():
     )
 
 
+@pytest.mark.asyncio
+@pytest.mark.parametrize("enabled", [False, True])
+async def test_failed_startup_preserves_explicit_enable_intent(
+    tmp_path,
+    fresh_registry,
+    monkeypatch,
+    enabled,
+):
+    """A backend discovery failure must not overwrite the user's setting."""
+    _write_plugin(tmp_path / "failed-config", "failed-config")
+    loader = PluginLoader([tmp_path])
+    loader.registry = fresh_registry
+
+    def reject_backend(*_args):
+        raise RuntimeError("backend discovery failed")
+
+    monkeypatch.setattr(loader.backend_resolver, "resolve", reject_backend)
+    records = await loader.load_all_plugins(
+        configs={"failed-config": {"enabled": enabled}},
+    )
+    record = records["failed-config"]
+    assert record.status == "failed"
+    assert record.enabled is False
+    assert record.global_enabled is enabled
+    assert "backend discovery failed" in record.diagnostics
+
+
 async def _load_with_workspace(
     tmp_path: Path,
     fresh_registry,

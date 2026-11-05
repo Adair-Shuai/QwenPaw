@@ -796,7 +796,10 @@ html.dark-mode [class*="sender-actions"] button:hover {
 
 /* Chat message bubble text in dark mode */
 html.dark-mode [class*="message-item"] [class*="content"],
-html.dark-mode [class*="chat-anywhere"] [class*="message"] p,
+html.dark-mode
+  [class*="chat-anywhere"]
+  [class*="message"]
+  p:not(:where([data-execution-chrome])),
 html.dark-mode [class*="chat-anywhere"] [class*="message"] li,
 html.dark-mode [class*="chat-anywhere"] [class*="message"] h1,
 html.dark-mode [class*="chat-anywhere"] [class*="message"] h2,
@@ -807,11 +810,13 @@ html.dark-mode [class*="chat-anywhere"] [class*="message"] h6,
 html.dark-mode
   [class*="chat-anywhere"]
   [class*="message"]
-  span:not(.qwenpaw-code-block span):not([class*="diffAddBadge"]):not(
-    [class*="diffDelBadge"]
-  ):not([class*="lineReadBadge"]):not([class*="lineSearchBadge"]):not(
-    [class*="jsonKey"]
-  ):not([class*="jsonStr"]):not([class*="jsonNum"]):not([class*="jsonNull"]),
+  span:not(:where([data-execution-chrome])):not(.qwenpaw-code-block span):not(
+    [class*="diffAddBadge"]
+  ):not([class*="diffDelBadge"]):not([class*="lineReadBadge"]):not(
+    [class*="lineSearchBadge"]
+  ):not([class*="jsonKey"]):not([class*="jsonStr"]):not([class*="jsonNum"]):not(
+    [class*="jsonNull"]
+  ),
 html.dark-mode [class*="chat-anywhere"] [class*="message"] blockquote,
 html.dark-mode [class*="chat-anywhere"] [class*="message"] td,
 html.dark-mode [class*="chat-anywhere"] [class*="message"] th {

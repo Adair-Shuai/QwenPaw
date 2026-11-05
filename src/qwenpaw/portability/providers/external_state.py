@@ -20,7 +20,11 @@ from ..models import (
     SourceSkill,
 )
 from ..qoder_plugin_adapter import discover_qoder_custom_skill_adapter
-from ..skill_transfer import read_bounded_tree, read_regular_file
+from ..skill_transfer import (
+    read_bounded_tree,
+    read_regular_file,
+    reject_source_aliases,
+)
 from ._utils import find_nested_value
 
 _CODEX_BUILTIN_MARKETPLACES = {
@@ -46,9 +50,22 @@ def _read_json(path: Path) -> Any:
         return None
 
 
-def _markdown_files(root: Path) -> list[SourceMemoryFile]:
+def _unsafe_source(path: Path, *, root: Path | None = None) -> bool:
+    """Check alias evidence before discovery resolves a path away."""
+    try:
+        reject_source_aliases(path, root=root)
+    except (OSError, ValueError):
+        return True
+    return False
+
+
+def _markdown_files(
+    root: Path,
+    *,
+    source_root: Path | None = None,
+) -> list[SourceMemoryFile]:
     files: list[SourceMemoryFile] = []
-    if not root.is_dir() or root.is_symlink():
+    if not root.is_dir() or _unsafe_source(root, root=source_root):
         return files
     resolved_root = root.resolve()
     try:
@@ -73,7 +90,7 @@ def _markdown_files(root: Path) -> list[SourceMemoryFile]:
 
 def _codex_stage1_count(codex_home: Path) -> int:
     database = codex_home / "memories_1.sqlite"
-    if database.is_symlink() or not database.is_file():
+    if _unsafe_source(database, root=codex_home) or not database.is_file():
         return 0
     try:
         uri = f"{database.resolve().as_uri()}?mode=ro"
@@ -95,14 +112,16 @@ def codex_memory_status(codex_home: Path) -> dict[str, Any]:
     curated = [
         name
         for name in _CODEX_CURATED_MEMORY_FILES
-        if not (root / name).is_symlink() and (root / name).is_file()
+        if not _unsafe_source(root / name, root=codex_home)
+        and (root / name).is_file()
     ]
     notes_root = root / "extensions" / "ad_hoc" / "notes"
-    note_count = len(_markdown_files(notes_root))
+    note_count = len(_markdown_files(notes_root, source_root=codex_home))
     internal = [
         name
         for name in _CODEX_INTERNAL_MEMORY_FILES
-        if not (root / name).is_symlink() and (root / name).is_file()
+        if not _unsafe_source(root / name, root=codex_home)
+        and (root / name).is_file()
     ]
     stage1_count = _codex_stage1_count(codex_home)
     if curated:
@@ -136,14 +155,17 @@ def discover_codex_memory(codex_home: Path) -> list[SourceMemoryProject]:
     codex_home = codex_home.expanduser()
     memories_root = codex_home / "memories"
     projects: list[SourceMemoryProject] = []
-    if not memories_root.is_dir():
+    if not memories_root.is_dir() or _unsafe_source(
+        memories_root,
+        root=codex_home,
+    ):
         return projects
 
     status = codex_memory_status(codex_home)
     global_files: list[SourceMemoryFile] = []
     for name in _CODEX_CURATED_MEMORY_FILES:
         path = memories_root / name
-        if path.is_symlink() or not path.is_file():
+        if _unsafe_source(path, root=codex_home) or not path.is_file():
             continue
         global_files.append(
             SourceMemoryFile(
@@ -168,7 +190,7 @@ def discover_codex_memory(codex_home: Path) -> list[SourceMemoryProject]:
     # Avoid duplicating notes after Codex has consolidated them.
     if not global_files:
         notes_root = memories_root / "extensions" / "ad_hoc" / "notes"
-        note_files = _markdown_files(notes_root)
+        note_files = _markdown_files(notes_root, source_root=codex_home)
         if note_files:
             projects.append(
                 SourceMemoryProject(
@@ -187,12 +209,17 @@ def discover_codex_memory(codex_home: Path) -> list[SourceMemoryProject]:
         return projects
     for extension in sorted(extensions_root.iterdir()):
         resources = extension / "resources"
-        if extension.is_symlink() or not resources.is_dir():
+        if (
+            _unsafe_source(resources, root=codex_home)
+            or not resources.is_dir()
+        ):
             continue
         for project_root in sorted(resources.iterdir()):
-            if project_root.is_symlink() or not project_root.is_dir():
+            if _unsafe_source(project_root, root=codex_home) or not (
+                project_root.is_dir()
+            ):
                 continue
-            files = _markdown_files(project_root)
+            files = _markdown_files(project_root, source_root=codex_home)
             if not files:
                 continue
             scope = _read_json(project_root / "scope.json")
@@ -273,14 +300,23 @@ def _project_cwd_from_transcripts(project_root: Path) -> str:
 
 def discover_project_memory(agent_home: Path) -> list[SourceMemoryProject]:
     """Discover Qoder/Claude-style ``projects/*/memory/**/*.md`` stores."""
-    projects_root = agent_home.expanduser() / "projects"
+    agent_home = agent_home.expanduser()
+    projects_root = agent_home / "projects"
     projects: list[SourceMemoryProject] = []
-    if not projects_root.is_dir():
+    if not projects_root.is_dir() or _unsafe_source(
+        projects_root,
+        root=agent_home,
+    ):
         return projects
     for project_root in sorted(projects_root.iterdir()):
-        if project_root.is_symlink() or not project_root.is_dir():
+        if _unsafe_source(project_root, root=agent_home) or not (
+            project_root.is_dir()
+        ):
             continue
-        files = _markdown_files(project_root / "memory")
+        files = _markdown_files(
+            project_root / "memory",
+            source_root=agent_home,
+        )
         if not files:
             continue
         projects.append(
@@ -299,14 +335,19 @@ def _qoder_project_cwds(qoder_home: Path) -> dict[str, str]:
     """Map Qoder's encoded project keys back to transcript CWDs."""
     projects_root = qoder_home.expanduser() / "projects"
     mapping: dict[str, str] = {}
-    if not projects_root.is_dir() or projects_root.is_symlink():
+    if not projects_root.is_dir() or _unsafe_source(
+        projects_root,
+        root=qoder_home,
+    ):
         return mapping
     try:
         project_roots = sorted(projects_root.iterdir())
     except OSError:
         return mapping
     for project_root in project_roots:
-        if project_root.is_symlink() or not project_root.is_dir():
+        if _unsafe_source(project_root, root=qoder_home) or not (
+            project_root.is_dir()
+        ):
             continue
         cwd = _project_cwd_from_transcripts(project_root)
         if not cwd:
@@ -331,7 +372,7 @@ def _match_qoder_path(base: Path, encoded: str, depth: int = 0) -> str:
         children = [
             child
             for child in base.iterdir()
-            if child.is_dir() and not child.is_symlink()
+            if child.is_dir() and not _unsafe_source(child)
         ]
     except OSError:
         return ""
@@ -371,7 +412,10 @@ def discover_qoder_memory(qoder_home: Path) -> list[SourceMemoryProject]:
     """Discover current ``memories/<account>/{global,projects}`` stores."""
     qoder_home = qoder_home.expanduser()
     memories_root = qoder_home / "memories"
-    if not memories_root.is_dir() or memories_root.is_symlink():
+    if not memories_root.is_dir() or _unsafe_source(
+        memories_root,
+        root=qoder_home,
+    ):
         return discover_project_memory(qoder_home)
     cwd_map = _qoder_project_cwds(qoder_home)
     projects: list[SourceMemoryProject] = []
@@ -380,9 +424,12 @@ def discover_qoder_memory(qoder_home: Path) -> list[SourceMemoryProject]:
     except OSError:
         return projects
     for account in accounts:
-        if account.is_symlink() or not account.is_dir():
+        if _unsafe_source(account, root=qoder_home) or not account.is_dir():
             continue
-        global_files = _markdown_files(account / "global")
+        global_files = _markdown_files(
+            account / "global",
+            source_root=qoder_home,
+        )
         if global_files:
             projects.append(
                 SourceMemoryProject(
@@ -397,16 +444,19 @@ def discover_qoder_memory(qoder_home: Path) -> list[SourceMemoryProject]:
                 ),
             )
         scoped_root = account / "projects"
-        if not scoped_root.is_dir() or scoped_root.is_symlink():
+        if not scoped_root.is_dir() or _unsafe_source(
+            scoped_root,
+            root=qoder_home,
+        ):
             continue
         try:
             scoped_projects = sorted(scoped_root.iterdir())
         except OSError:
             continue
         for source in scoped_projects:
-            if source.is_symlink() or not source.is_dir():
+            if _unsafe_source(source, root=qoder_home) or not source.is_dir():
                 continue
-            files = _markdown_files(source)
+            files = _markdown_files(source, source_root=qoder_home)
             if not files:
                 continue
             source_id = f"qoder-memory:{account.name}:project:"
@@ -429,8 +479,12 @@ def discover_qoder_memory(qoder_home: Path) -> list[SourceMemoryProject]:
     return projects
 
 
-def _skill_directories(root: Path) -> list[Path]:
-    if not root.is_dir() or root.is_symlink():
+def _skill_directories(
+    root: Path,
+    *,
+    source_root: Path | None = None,
+) -> list[Path]:
+    if not root.is_dir() or _unsafe_source(root, root=source_root):
         return []
     if (root / "SKILL.md").is_file():
         return [root]
@@ -440,7 +494,7 @@ def _skill_directories(root: Path) -> list[Path]:
         return []
     skill_dirs = []
     for child in children:
-        if child.is_dir() and not child.is_symlink():
+        if child.is_dir() and not _unsafe_source(child, root=root):
             if (child / "SKILL.md").is_file():
                 skill_dirs.append(child)
     return skill_dirs
@@ -449,13 +503,15 @@ def _skill_directories(root: Path) -> list[Path]:
 def discover_qoder_skills(qoder_home: Path) -> list[SourceSkill]:
     """Discover standalone global/project Skills, excluding plugin caches."""
     qoder_home = qoder_home.expanduser()
-    roots: list[tuple[Path, str]] = [(qoder_home / "skills", "user")]
+    roots: list[tuple[Path, str, Path]] = [
+        (qoder_home / "skills", "user", qoder_home),
+    ]
     for cwd in sorted(set(_qoder_project_cwds(qoder_home).values())):
-        roots.append((Path(cwd) / ".qoder" / "skills", "project"))
+        roots.append((Path(cwd) / ".qoder" / "skills", "project", Path(cwd)))
     skills: list[SourceSkill] = []
     seen: set[Path] = set()
-    for root, scope in roots:
-        for directory in _skill_directories(root):
+    for root, scope, source_root in roots:
+        for directory in _skill_directories(root, source_root=source_root):
             try:
                 resolved = directory.resolve(strict=True)
             except OSError:

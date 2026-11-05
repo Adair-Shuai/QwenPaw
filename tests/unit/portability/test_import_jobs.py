@@ -444,25 +444,27 @@ async def test_cancel_keeps_draining_mission_job_active(
         task=asyncio.create_task(worker()),
     )
     manager._jobs[(workspace.agent_id, job_id)] = live
-    await asyncio.sleep(0)
-    monkeypatch.setattr(
-        "qwenpaw.portability.import_jobs._CANCEL_GRACE_SECONDS",
-        0.01,
-    )
-    monkeypatch.setattr(
-        "qwenpaw.portability.import_jobs.has_draining_workers",
-        lambda _workspace: True,
-    )
+    try:
+        await asyncio.sleep(0)
+        monkeypatch.setattr(
+            "qwenpaw.portability.import_jobs._CANCEL_GRACE_SECONDS",
+            0.01,
+        )
+        monkeypatch.setattr(
+            "qwenpaw.portability.import_jobs.has_draining_workers",
+            lambda _workspace: True,
+        )
 
-    snapshot = await manager.cancel(workspace, job_id)
+        snapshot = await manager.cancel(workspace, job_id)
 
-    assert snapshot.state == "cancelling"
-    assert not live.task.done()
-    with pytest.raises(RuntimeError, match="compatibility worker"):
-        await manager.create(workspace, ["codex"])
-    release.set()
-    live.task.cancel()
-    await live.task
+        assert snapshot.state == "cancelling"
+        assert not live.task.done()
+        with pytest.raises(RuntimeError, match="compatibility worker"):
+            await manager.create(workspace, ["codex"])
+    finally:
+        release.set()
+        live.task.cancel()
+        await live.task
     assert (await manager.cancel(workspace, job_id)).state == "interrupted"
 
 
@@ -492,23 +494,27 @@ async def test_cancel_of_uncooperative_job_is_bounded_and_keeps_ownership(
     )
     manager._jobs[(workspace.agent_id, live.snapshot.job_id)] = live
     manager._spawn(live, worker)
-    await asyncio.sleep(0)
-    monkeypatch.setattr(
-        "qwenpaw.portability.import_jobs._CANCEL_GRACE_SECONDS",
-        0.01,
-    )
+    try:
+        await asyncio.sleep(0)
+        monkeypatch.setattr(
+            "qwenpaw.portability.import_jobs._CANCEL_GRACE_SECONDS",
+            0.01,
+        )
 
-    snapshot = await asyncio.wait_for(
-        manager.cancel(workspace, live.snapshot.job_id),
-        timeout=0.2,
-    )
+        snapshot = await asyncio.wait_for(
+            manager.cancel(workspace, live.snapshot.job_id),
+            timeout=0.2,
+        )
 
-    assert snapshot.state == "cancelling"
-    with pytest.raises(RuntimeError, match="already active"):
-        await manager.create(workspace, ["codex"])
-    release.set()
-    live.task.cancel()
-    await live.task
+        assert snapshot.state == "cancelling"
+        with pytest.raises(RuntimeError, match="already active"):
+            await manager.create(workspace, ["codex"])
+    finally:
+        # A failed bound/ownership assertion must also release this deliberate
+        # cancellation-resistant worker, or the event-loop teardown hangs.
+        release.set()
+        live.task.cancel()
+        await live.task
     assert (await manager.snapshot(workspace, live.snapshot.job_id)).state == (
         "interrupted"
     )
@@ -540,21 +546,23 @@ async def test_shutdown_of_uncooperative_job_is_bounded(
     )
     manager._jobs[(workspace.agent_id, live.snapshot.job_id)] = live
     manager._spawn(live, worker)
-    await asyncio.sleep(0)
-    monkeypatch.setattr(
-        "qwenpaw.portability.import_jobs._CANCEL_GRACE_SECONDS",
-        0.01,
-    )
+    try:
+        await asyncio.sleep(0)
+        monkeypatch.setattr(
+            "qwenpaw.portability.import_jobs._CANCEL_GRACE_SECONDS",
+            0.01,
+        )
 
-    assert not await asyncio.wait_for(
-        manager.shutdown(drain_timeout=0.01),
-        timeout=0.2,
-    )
+        assert not await asyncio.wait_for(
+            manager.shutdown(drain_timeout=0.01),
+            timeout=0.2,
+        )
 
-    assert live.snapshot.state == "cancelling"
-    release.set()
-    live.task.cancel()
-    await live.task
+        assert live.snapshot.state == "cancelling"
+    finally:
+        release.set()
+        live.task.cancel()
+        await live.task
     assert await manager.drain(timeout=0.01)
 
 

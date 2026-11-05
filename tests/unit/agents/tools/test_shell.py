@@ -1514,6 +1514,7 @@ class TestExecuteShellCommand:
         assert effective_config.env_vars == {
             "PATH": configured_path,
             "MASKED_SECRET": "",
+            "OFFICECLI_SKIP_UPDATE": "1",
         }
         assert effective_config.timeout_seconds == 12
         assert config.env_vars == {
@@ -1581,11 +1582,13 @@ async def test_sandbox_under_ctx_does_not_freeze_original_timeout(tmp_path):
 
 @pytest.mark.asyncio
 async def test_sandbox_extend_kill_survives_then_cancel_stops(tmp_path):
-    """extend_kill keeps sandbox past original timeout; cancel calls stop()."""
+    """Extending the real process deadline survives; cancel reaps its tree."""
     import asyncio
+    import json
     from dataclasses import dataclass, field
-    from typing import Any, AsyncGenerator
+    from typing import Any
 
+    import psutil
     from agentscope.message import TextBlock
     from agentscope.tool import ToolResponse
 
@@ -1598,92 +1601,107 @@ async def test_sandbox_extend_kill_survives_then_cancel_stops(tmp_path):
         name: str = "execute_shell_command"
         input: dict[str, Any] = field(default_factory=dict)
 
+    marker, command = _sandbox_process_tree_command(tmp_path)
     coordinator = ToolCoordinator(offload_on_deadline=False)
-    tool_call = _ToolCall()
-    started = asyncio.Event()
-    release = asyncio.Event()
-    stop_mock = AsyncMock()
+    entered = asyncio.Event()
+    processes = []
+    sandboxes = []
 
-    async def next_handler(
-        tool_call: _ToolCall,
-    ) -> AsyncGenerator[Any, None]:
+    class ObservedSandbox(NoneSandbox):
+        async def execute(self, cmd, cwd=None):
+            entered.set()
+            return await super().execute(cmd, cwd=cwd)
+
+    def create(config):
+        sandbox = ObservedSandbox(config)
+        sandboxes.append(sandbox)
+        return sandbox
+
+    async def next_handler(tool_call):
         config = SandboxConfig(
             mode=SandboxMode.NONE,
             workspace_dir=str(tmp_path),
-            timeout_seconds=60,
+            shell_executable=(
+                os.environ.get("COMSPEC", "cmd.exe")
+                if os.name == "nt"
+                else "/bin/sh"
+            ),
         )
-        sandbox = NoneSandbox(config)
-        proc = MagicMock()
-        proc.returncode = None
-        proc.pid = 4243
-
-        async def hang_communicate():
-            started.set()
-            await release.wait()
-            return b"survived\n", b""
-
-        proc.communicate = hang_communicate
-        context_manager = MagicMock()
-        context_manager.__aenter__ = AsyncMock(return_value=sandbox)
-        context_manager.__aexit__ = AsyncMock(return_value=None)
-
-        with (
-            patch(
-                "qwenpaw.sandbox.create_sandbox",
-                return_value=context_manager,
-            ),
-            patch(
-                "asyncio.create_subprocess_exec",
-                new=AsyncMock(return_value=proc),
-            ),
-            patch.object(sandbox, "stop", new=stop_mock),
-        ):
-            result = await _execute_in_sandbox(
-                "sleep 1",
-                config,
-                0.08,
-                str(tmp_path),
-                {"PATH": "/bin"},
-            )
+        result = await _execute_in_sandbox(
+            command,
+            config,
+            0.08,
+            str(tmp_path),
+            dict(os.environ),
+        )
         yield ToolResponse(
             content=[TextBlock(type="text", text=result.stdout or "")],
             id=tool_call.id,
         )
 
-    async def extend_then_cancel() -> None:
-        await started.wait()
-        await asyncio.sleep(0.04)
-        ok = await coordinator.extend_kill_deadline(
+    async def extend_then_cancel():
+        await asyncio.wait_for(entered.wait(), 3)
+        # Signal at execute entry so native process startup does not race the
+        # original 80 ms deadline before its extension can be requested.
+        assert await coordinator.extend_kill_deadline(
             "call-sandbox-ext",
             seconds=1.0,
         )
-        assert ok is True
-        # Past original 0.08s — must still be running (not returned yet).
-        await asyncio.sleep(0.08)
-        assert release.is_set() is False
-        assert stop_mock.await_count == 0
-        cancelled = await coordinator.cancel("call-sandbox-ext")
-        assert cancelled is True
-        await asyncio.sleep(0.05)
-        stop_mock.assert_awaited()
+        await asyncio.sleep(0.12)
+        deadline = asyncio.get_running_loop().time() + 0.8
+        while not marker.exists():
+            assert asyncio.get_running_loop().time() < deadline
+            await asyncio.sleep(0.01)
+        processes.extend(
+            psutil.Process(pid) for pid in json.loads(marker.read_text())
+        )
+        assert all(process.is_running() for process in processes)
+        assert sandboxes[0]._process.returncode is None
+        assert await coordinator.cancel("call-sandbox-ext")
 
-    ctrl = asyncio.create_task(extend_then_cancel())
-    events = await asyncio.wait_for(
-        _collect_sandbox_events(
-            coordinator.execute(
-                tool_call=tool_call,
-                next_handler=next_handler,
-                session_id="session-sandbox-ext",
-                agent_id="agent-1",
-                root_session_id="root-1",
+    controller = stream = None
+    try:
+        with patch("qwenpaw.sandbox.create_sandbox", side_effect=create):
+            controller = asyncio.create_task(extend_then_cancel())
+            stream = asyncio.create_task(
+                _collect_sandbox_events(
+                    coordinator.execute(
+                        tool_call=_ToolCall(),
+                        next_handler=next_handler,
+                        session_id="session-sandbox-ext",
+                        agent_id="agent-1",
+                        root_session_id="root-1",
+                    ),
+                ),
+            )
+            # The lifecycle bound includes the unchanged production grace;
+            # deadline extension is still asserted after the original 80 ms.
+            events = await asyncio.wait_for(
+                stream,
+                timeout=coordinator._cancel_grace + 1,
+            )
+            await asyncio.wait_for(controller, timeout=3)
+        assert events and processes
+        await _assert_test_processes_stopped(processes)
+        assert sandboxes[0]._process.returncode is not None
+    finally:
+        for sandbox in sandboxes:
+            await asyncio.wait_for(sandbox.stop(), 6)
+        # Only process objects captured from this test's private ready file
+        # are eligible for cleanup; psutil checks creation time on kill.
+        for process in reversed(processes):
+            if process.is_running():
+                process.kill()
+        for task in (controller, stream):
+            if task is not None and not task.done():
+                task.cancel()
+        await asyncio.wait_for(
+            asyncio.gather(
+                *(task for task in (controller, stream) if task is not None),
+                return_exceptions=True,
             ),
-        ),
-        timeout=3,
-    )
-    await ctrl
-    # Cancel may surface as interrupted; key assertion is stop().
-    assert events
-    assert stop_mock.await_count >= 1
+            6,
+        )
 
 
 async def _collect_sandbox_events(iterator):
@@ -1695,43 +1713,95 @@ async def _collect_sandbox_events(iterator):
 
 @pytest.mark.asyncio
 async def test_none_sandbox_execute_cancel_calls_stop(tmp_path):
-    """CancelledError in sandbox.execute must call stop()."""
+    """Cancelling a real execution must reap both shell and descendants."""
     import asyncio
+    import json
+
+    import psutil
 
     from qwenpaw.sandbox.local_sandbox import NoneSandbox
 
+    marker, command = _sandbox_process_tree_command(tmp_path)
     config = SandboxConfig(
         mode=SandboxMode.NONE,
         workspace_dir=str(tmp_path),
         timeout_seconds=60,
+        shell_executable=(
+            os.environ.get("COMSPEC", "cmd.exe")
+            if os.name == "nt"
+            else "/bin/sh"
+        ),
     )
     sandbox = NoneSandbox(config)
-    proc = MagicMock()
-    proc.returncode = None
-    proc.pid = 4242
-
-    async def hang_communicate():
-        await asyncio.sleep(60)
-        return b"", b""
-
-    proc.communicate = hang_communicate
-    stop_mock = AsyncMock()
-
-    with (
-        patch(
-            "asyncio.create_subprocess_exec",
-            new=AsyncMock(return_value=proc),
-        ),
-        patch.object(sandbox, "stop", new=stop_mock),
-    ):
-        task = asyncio.create_task(
-            sandbox.execute("sleep 1", cwd=str(tmp_path)),
+    processes = []
+    task = asyncio.create_task(sandbox.execute(command, cwd=str(tmp_path)))
+    try:
+        deadline = asyncio.get_running_loop().time() + 3
+        while not marker.exists():
+            assert not task.done()
+            assert asyncio.get_running_loop().time() < deadline
+            await asyncio.sleep(0.01)
+        processes.extend(
+            psutil.Process(pid) for pid in json.loads(marker.read_text())
         )
-        await asyncio.sleep(0.05)
+        assert all(process.is_running() for process in processes)
         task.cancel()
         with pytest.raises(asyncio.CancelledError):
-            await task
-        stop_mock.assert_awaited()
+            # Native tree termination has a five-second subprocess bound.
+            await asyncio.wait_for(task, 6)
+        await _assert_test_processes_stopped(processes)
+        assert sandbox._process.returncode is not None
+    finally:
+        await asyncio.wait_for(sandbox.stop(), 6)
+        for process in reversed(processes):
+            if process.is_running():
+                process.kill()
+        if not task.done():
+            task.cancel()
+        await asyncio.wait_for(
+            asyncio.gather(task, return_exceptions=True),
+            6,
+        )
+
+
+def _sandbox_process_tree_command(tmp_path):
+    marker = tmp_path / "ready.json"
+    script = tmp_path / "tree.py"
+    script.write_text(
+        "import json,os,subprocess,sys,time\nfrom pathlib import Path\n"
+        "child=subprocess.Popen([sys.executable,'-c',"
+        "'import time;time.sleep(60)'])\n"
+        "Path(sys.argv[1]).write_text(json.dumps([os.getpid(),child.pid]))\n"
+        "time.sleep(60)\n",
+        encoding="utf-8",
+    )
+    arguments = [sys.executable, str(script), str(marker)]
+    command = (
+        subprocess.list2cmdline(arguments)
+        if os.name == "nt"
+        else shlex.join(arguments)
+    )
+    return marker, command
+
+
+async def _assert_test_processes_stopped(processes):
+    import asyncio
+
+    import psutil
+
+    def live(process):
+        try:
+            return (
+                process.is_running()
+                and process.status() != psutil.STATUS_ZOMBIE
+            )
+        except psutil.NoSuchProcess:
+            return False
+
+    deadline = asyncio.get_running_loop().time() + 3
+    while any(live(process) for process in processes):
+        assert asyncio.get_running_loop().time() < deadline
+        await asyncio.sleep(0.01)
 
 
 @pytest.mark.asyncio
@@ -2697,3 +2767,68 @@ async def test_non_dataclass_sandbox_config_ignored(
         "Expected a WARNING about discarding dict sandbox_config, "
         f"got: {[r.message for r in caplog.records]}"
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("sandboxed", [False, True])
+async def test_shell_keeps_managed_officecli_updates_disabled(
+    tmp_path,
+    monkeypatch,
+    sandboxed,
+):
+    from qwenpaw.agents.tools import shell
+
+    monkeypatch.setenv("OFFICECLI_SKIP_UPDATE", "0")
+    monkeypatch.setenv("QWENPAW_OFFICECLI_ENV_PROBE", "host")
+    executable = (
+        os.environ.get("COMSPEC", "cmd.exe") if os.name == "nt" else "/bin/sh"
+    )
+    monkeypatch.setattr(
+        shell,
+        "get_current_shell_command_executable",
+        lambda: executable,
+    )
+    monkeypatch.setattr(
+        shell,
+        "get_current_shell_command_timeout",
+        lambda: None,
+    )
+    script = tmp_path / "probe.py"
+    script.write_text(
+        "import json,os\nprint(json.dumps({"
+        "'skip':os.environ.get('OFFICECLI_SKIP_UPDATE'),"
+        "'probe':os.environ.get('QWENPAW_OFFICECLI_ENV_PROBE')}))\n",
+        encoding="utf-8",
+    )
+    command = (
+        subprocess.list2cmdline([sys.executable, str(script)])
+        if os.name == "nt"
+        else shlex.join([sys.executable, str(script)])
+    )
+    policy_environment = {
+        "OFFICECLI_SKIP_UPDATE": "0",
+        "officecli_skip_update": "0",
+        "QWENPAW_OFFICECLI_ENV_PROBE": "policy",
+    }
+    config = (
+        SandboxConfig(
+            mode=SandboxMode.NONE,
+            workspace_dir=str(tmp_path),
+            env_vars=policy_environment,
+        )
+        if sandboxed
+        else None
+    )
+    result = await shell.execute_shell_command(
+        command,
+        cwd=tmp_path,
+        timeout=20,
+        sandbox_config=config,
+    )
+    text = result.content[0].text
+    assert '"skip": "1"' in text, text
+    expected = "policy" if sandboxed else "host"
+    assert f'"probe": "{expected}"' in text, text
+    assert os.environ["OFFICECLI_SKIP_UPDATE"] == "0"
+    assert policy_environment["OFFICECLI_SKIP_UPDATE"] == "0"
+    assert policy_environment["officecli_skip_update"] == "0"

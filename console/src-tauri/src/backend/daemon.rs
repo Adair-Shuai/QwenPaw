@@ -79,6 +79,8 @@ pub(crate) fn run() -> Result<(), String> {
             command.args(&arguments);
             command
         };
+        let receipt = directory.join(format!("startup-{}.json", uuid::Uuid::new_v4()));
+        command.env("QWENPAW_STARTUP_RECEIPT", &receipt);
         command.stdin(Stdio::null());
         let previous_instance = published_instance(&directory);
         #[cfg(unix)]
@@ -106,21 +108,41 @@ pub(crate) fn run() -> Result<(), String> {
             }
         };
         let mut ready = false;
+        let mut restart_requested = false;
+        let mut initializing = false;
         let status = loop {
-            ready |= backend_is_ready(&directory, previous_instance.as_deref());
+            let outcome = startup_outcome(&receipt)
+                .unwrap_or_else(|| backend_startup_state(&directory, previous_instance.as_deref()));
+            ready |= outcome == StartupOutcome::Ready;
+            restart_requested |= outcome == StartupOutcome::Restart;
+            initializing |= outcome == StartupOutcome::Starting;
+            if !ready && outcome == StartupOutcome::Failed {
+                terminate_owned_child(child.id())?;
+                break child.wait().map_err(|err| err.to_string())?;
+            }
             if let Some(status) = child.try_wait().map_err(|err| err.to_string())? {
                 break status;
             }
-            if !ready && started.elapsed() >= Duration::from_secs(60) {
-                // Startup has not published an endpoint. Kill only this owned
-                // child and its descendants before switching component roots.
+            let timeout = if initializing { 30 * 60 } else { 60 };
+            if !ready && started.elapsed() >= Duration::from_secs(timeout) {
+                // A live startup may prepare offline packages for several minutes.
+                // Bound hung initialization, but do not confuse it with no endpoint.
+                // Kill only this owned child before switching component roots.
                 terminate_owned_child(child.id())?;
                 break child.wait().map_err(|err| err.to_string())?;
             }
             std::thread::sleep(Duration::from_millis(100));
         };
+        // Read once more after exit: a fast apply-and-restart may happen
+        // entirely between polls. Its freshly published pointers must survive.
+        restart_requested |= startup_outcome(&receipt) == Some(StartupOutcome::Restart);
+        let _ = std::fs::remove_file(&receipt);
         if stop_request.exists() {
             return Ok(());
+        }
+        if restart_requested {
+            failures = 0;
+            continue;
         }
         #[cfg(not(debug_assertions))]
         if !ready && selection.has_managed_components() {
@@ -153,28 +175,67 @@ fn published_instance(directory: &std::path::Path) -> Option<String> {
     value.get("instance")?.as_str().map(str::to_owned)
 }
 
-fn backend_is_ready(directory: &std::path::Path, previous: Option<&str>) -> bool {
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StartupOutcome {
+    Unavailable,
+    Starting,
+    Ready,
+    Failed,
+    Restart,
+}
+
+fn startup_outcome(receipt: &std::path::Path) -> Option<StartupOutcome> {
+    let bytes = std::fs::read(receipt).ok()?;
+    let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    Some(match value.get("status")?.as_str()? {
+        "starting" => StartupOutcome::Starting,
+        "ready" => StartupOutcome::Ready,
+        "failed" => StartupOutcome::Failed,
+        "restart" => StartupOutcome::Restart,
+        _ => return None,
+    })
+}
+
+fn http_status(port: u16, path: &str) -> Option<u16> {
     use std::io::{Read, Write};
-    let probe = || -> Option<bool> {
+    let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
+    let timeout = Duration::from_millis(250);
+    let mut stream = std::net::TcpStream::connect_timeout(&address, timeout).ok()?;
+    stream.set_read_timeout(Some(timeout)).ok()?;
+    stream.set_write_timeout(Some(timeout)).ok()?;
+    stream
+        .write_all(
+            format!("GET {path} HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
+                .as_bytes(),
+        )
+        .ok()?;
+    let mut status = [0u8; 12];
+    stream.read_exact(&mut status).ok()?;
+    if !status.starts_with(b"HTTP/1.1 ") && !status.starts_with(b"HTTP/1.0 ") {
+        return None;
+    }
+    std::str::from_utf8(&status[9..12]).ok()?.parse().ok()
+}
+
+fn backend_startup_state(directory: &std::path::Path, previous: Option<&str>) -> StartupOutcome {
+    let probe = || -> Option<StartupOutcome> {
         let bytes = std::fs::read(directory.join("runtime.json")).ok()?;
         let value: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
         if value.get("instance")?.as_str()? == previous.unwrap_or_default() {
-            return Some(false);
+            return None;
         }
         let port = u16::try_from(value.get("port")?.as_u64()?).ok()?;
-        let address = std::net::SocketAddr::from(([127, 0, 0, 1], port));
-        let timeout = Duration::from_millis(250);
-        let mut stream = std::net::TcpStream::connect_timeout(&address, timeout).ok()?;
-        stream.set_read_timeout(Some(timeout)).ok()?;
-        stream.set_write_timeout(Some(timeout)).ok()?;
-        stream
-            .write_all(b"GET /api/version HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\n\r\n")
-            .ok()?;
-        let mut status = [0u8; 12];
-        stream.read_exact(&mut status).ok()?;
-        Some(status.starts_with(b"HTTP/1.1 200") || status.starts_with(b"HTTP/1.0 200"))
+        Some(match http_status(port, "/api/healthz")? {
+            200 => StartupOutcome::Ready,
+            503 => StartupOutcome::Starting,
+            500 => StartupOutcome::Failed,
+            // Old runtimes without readiness support retain their original
+            // version probe. Never fall back when a readiness probe says no.
+            404 if http_status(port, "/api/version") == Some(200) => StartupOutcome::Ready,
+            _ => StartupOutcome::Unavailable,
+        })
     };
-    probe().unwrap_or(false)
+    probe().unwrap_or(StartupOutcome::Unavailable)
 }
 
 fn terminate_owned_child(pid: u32) -> Result<(), String> {
@@ -207,7 +268,11 @@ mod tests {
 
     #[test]
     fn published_record_requires_a_new_healthy_backend() {
-        for (status, expected) in [("200 OK", true), ("503 Unavailable", false)] {
+        for (status, expected) in [
+            ("200 OK", StartupOutcome::Ready),
+            ("503 Unavailable", StartupOutcome::Starting),
+            ("500 Error", StartupOutcome::Failed),
+        ] {
             let root = tempfile::tempdir().unwrap();
             let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
             let port = listener.local_addr().unwrap().port();
@@ -216,7 +281,10 @@ mod tests {
                 serde_json::json!({"instance": "new", "port": port}).to_string(),
             )
             .unwrap();
-            assert!(!backend_is_ready(root.path(), Some("new")));
+            assert_eq!(
+                backend_startup_state(root.path(), Some("new")),
+                StartupOutcome::Unavailable
+            );
             let server = std::thread::spawn(move || {
                 let (mut socket, _) = listener.accept().unwrap();
                 let mut request = [0u8; 256];
@@ -225,7 +293,7 @@ mod tests {
                     .write_all(format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\n\r\n").as_bytes())
                     .unwrap();
             });
-            assert_eq!(backend_is_ready(root.path(), Some("old")), expected);
+            assert_eq!(backend_startup_state(root.path(), Some("old")), expected);
             server.join().unwrap();
         }
     }
@@ -233,8 +301,64 @@ mod tests {
     #[test]
     fn missing_or_corrupt_discovery_does_not_confirm_startup() {
         let root = tempfile::tempdir().unwrap();
-        assert!(!backend_is_ready(root.path(), None));
+        assert_eq!(
+            backend_startup_state(root.path(), None),
+            StartupOutcome::Unavailable
+        );
         std::fs::write(root.path().join("runtime.json"), b"incomplete").unwrap();
-        assert!(!backend_is_ready(root.path(), None));
+        assert_eq!(
+            backend_startup_state(root.path(), None),
+            StartupOutcome::Unavailable
+        );
+    }
+
+    #[test]
+    fn launch_receipt_distinguishes_slow_failure_and_requested_restart() {
+        let root = tempfile::tempdir().unwrap();
+        let receipt = root.path().join("this-launch.json");
+        assert_eq!(startup_outcome(&receipt), None);
+        for (status, expected) in [
+            ("starting", StartupOutcome::Starting),
+            ("ready", StartupOutcome::Ready),
+            ("failed", StartupOutcome::Failed),
+            ("restart", StartupOutcome::Restart),
+        ] {
+            std::fs::write(&receipt, serde_json::json!({"status": status}).to_string()).unwrap();
+            assert_eq!(startup_outcome(&receipt), Some(expected));
+        }
+        assert_eq!(startup_outcome(&root.path().join("next-launch.json")), None);
+    }
+
+    #[test]
+    fn only_absent_legacy_health_endpoint_falls_back_to_version() {
+        let root = tempfile::tempdir().unwrap();
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        std::fs::write(
+            root.path().join("runtime.json"),
+            serde_json::json!({"instance": "old-runtime", "port": port}).to_string(),
+        )
+        .unwrap();
+        let server = std::thread::spawn(move || {
+            for (path, status) in [
+                ("/api/healthz", "404 Not Found"),
+                ("/api/version", "200 OK"),
+            ] {
+                let (mut socket, _) = listener.accept().unwrap();
+                let mut request = [0u8; 256];
+                let size = socket.read(&mut request).unwrap();
+                assert!(
+                    String::from_utf8_lossy(&request[..size]).starts_with(&format!("GET {path} "))
+                );
+                socket
+                    .write_all(format!("HTTP/1.1 {status}\r\nContent-Length: 0\r\n\r\n").as_bytes())
+                    .unwrap();
+            }
+        });
+        assert_eq!(
+            backend_startup_state(root.path(), None),
+            StartupOutcome::Ready
+        );
+        server.join().unwrap();
     }
 }

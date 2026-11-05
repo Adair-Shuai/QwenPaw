@@ -1,5 +1,10 @@
 import OfficeServicePreview, { OfficePrintPreview } from "./office-preview.jsx";
 import ProjectWorkspace from "./project-workspace.jsx";
+import WorkflowTabs, { fieldTab, negotiationTabs } from "./workflow-tabs.jsx";
+import { ToolbarIcon, ToolbarMenu } from "./toolbar.jsx";
+import FieldLabel from "./field-label.jsx";
+import LinkedOpinion from "./linked-opinion.jsx";
+import { refreshLinkedFields } from "./linked-fields.js";
 const Q = window.QwenPaw,
   React = Q.host.React;
 const { useState, useEffect, useLayoutEffect, useRef } = React;
@@ -89,7 +94,7 @@ function PlanPartnersField({ field, onChange }) {
       role="group"
       aria-label={field.label}
     >
-      <span>{field.label}</span>
+      <FieldLabel field={field} />
       {names.map((name, index) => (
         <label className="df-field" key={index}>
           <span>单位{index + 1}</span>
@@ -116,8 +121,10 @@ function PlanPartnersField({ field, onChange }) {
   );
 }
 function Field({ field, displayValue, onChange }) {
+  const inputId = "df-input-" + field.key;
   const multiline = field.key !== "plan.notes" && isParagraph(field);
-  const compact = compactParagraph(field);
+  const linked = field.linked_template !== undefined;
+  const compact = compactParagraph(field) || linked;
   const value = ["date", "datetime-local"].includes(field.kind)
     ? field.value
     : displayValue ?? field.value;
@@ -133,7 +140,7 @@ function Field({ field, displayValue, onChange }) {
   if (field.key === "plan.partners")
     return <PlanPartnersField field={field} onChange={onChange} />;
   return (
-    <label
+    <div
       className={
         "df-field" +
         (multiline ? " df-field-paragraph" : "") +
@@ -141,13 +148,14 @@ function Field({ field, displayValue, onChange }) {
       }
       id={"df-" + field.key}
     >
-      <span>
-        {field.label}
-        {field.required && <em>必填</em>}
-      </span>
-      {field.options ? (
+      <FieldLabel field={field} inputId={inputId} />
+      {linked ? (
+        <LinkedOpinion field={field} inputId={inputId} onChange={onChange} />
+      ) : field.options ? (
         <select
+          id={inputId}
           aria-label={field.label}
+          aria-required={field.required || undefined}
           value={value}
           onChange={(e) => onChange(e.target.value)}
         >
@@ -165,15 +173,19 @@ function Field({ field, displayValue, onChange }) {
         </select>
       ) : multiline ? (
         <textarea
+          id={inputId}
           ref={textarea}
           aria-label={field.label}
+          aria-required={field.required || undefined}
           rows={compact ? 3 : 8}
           value={value}
           onChange={(e) => onChange(e.target.value)}
         />
       ) : (
         <input
+          id={inputId}
           aria-label={field.label}
+          aria-required={field.required || undefined}
           type={field.key === "plan.notes" ? "text" : field.kind}
           readOnly={!!field.read_only}
           step={field.kind === "number" ? "any" : undefined}
@@ -181,16 +193,10 @@ function Field({ field, displayValue, onChange }) {
           onChange={(e) => onChange(e.target.value)}
         />
       )}
-      {field.help && (
-        <details className="df-field-help">
-          <summary>填写说明</summary>
-          <p>{field.help}</p>
-        </details>
-      )}
-    </label>
+    </div>
   );
 }
-function SelectionMembers({ fields, onChange }) {
+function SelectionMembers({ fields, onChange, compact = false }) {
   const members = fields.filter((f) =>
     /^selection\.member\d+_name$/.test(f.key),
   );
@@ -218,10 +224,12 @@ function SelectionMembers({ fields, onChange }) {
   };
   return (
     <section className="df-group df-selection-members" aria-label="论证成员">
-      <h3>论证成员</h3>
-      <p className="df-muted">
-        每人一行。单位、职务/职称和类别可选择，也可直接输入。
-      </p>
+      {!compact && <h3>论证成员</h3>}
+      {!compact && (
+        <p className="df-muted">
+          每人一行。单位、职务/职称和类别可选择，也可直接输入。
+        </p>
+      )}
       <div className="df-member-scroll">
         <table className="df-member-table">
           <thead>
@@ -261,7 +269,7 @@ function SelectionMembers({ fields, onChange }) {
                           ];
                     const list = "df-options-" + field.key;
                     return (
-                      <td key={column}>
+                      <td key={column} id={"df-" + field.key}>
                         <input
                           aria-label={field.label}
                           value={field.value}
@@ -304,8 +312,12 @@ function Workbench({
   onPreview,
   onStageStatus,
   onEditBasics,
+  toolbarTarget,
+  onShowForm,
+  onDownloadStageMaterials,
 }) {
   const [draft, setDraft] = useState(null);
+  const [formTab, setFormTab] = useState("");
   const [comparison, setComparison] = useState(null);
   const [selectedKeys, setSelectedKeys] = useState([]);
   const [stage, setStage] = useState("import"),
@@ -323,6 +335,7 @@ function Workbench({
     alive = useRef(true);
   const theme = Q.host.useTheme?.() || "light";
   const refresh = () => onChanged?.() || Promise.resolve();
+  const compact = docked && toolbarTarget && Q.host.ReactDOM?.createPortal;
   useEffect(() => {
     alive.current = true;
     (initialDraft
@@ -391,7 +404,10 @@ function Workbench({
     try {
       await action();
     } catch (e) {
-      if (alive.current && ticket === seq.current) setError(e.message);
+      if (alive.current && ticket === seq.current) {
+        setError(e.message);
+        onShowForm?.();
+      }
     } finally {
       if (alive.current && ticket === seq.current) setBusy("");
     }
@@ -406,11 +422,12 @@ function Workbench({
       ),
     });
     setDirty(false);
+    setStage((current) => (current === "review" ? "edit" : current));
     setReview(null);
     setConfirmed(false);
   }
   function edit(update) {
-    setDraft(update);
+    setDraft({ ...update, fields: refreshLinkedFields(update.fields) });
     setDirty(true);
     setReview(null);
     setConfirmed(false);
@@ -435,6 +452,11 @@ function Workbench({
       name: draft.name.trim() || "未命名填报",
       values: Object.fromEntries(draft.fields.map((f) => [f.key, f.value])),
       recipients: draft.recipients,
+      opinion_templates: Object.fromEntries(
+        draft.fields
+          .filter((f) => f.linked_template !== undefined)
+          .map((f) => [f.key, f.linked_template]),
+      ),
     };
     const data = await request("/cases/" + draft.id, {
       ...json(body),
@@ -450,11 +472,48 @@ function Workbench({
   const isSelection =
     draft?.stage_id === "selection" && draft?.selection_schema === 1;
   const isContract = draft?.stage_id === "contract";
+  const isNegotiation =
+    (workflowStage?.id || draft?.stage_id) === "negotiation";
+  const tabFor = (field) =>
+    fieldTab(field, isNegotiation ? "negotiation" : undefined);
+  const recipientsTab = isNegotiation ? negotiationTabs[2] : "recipients";
   const hasSharedReferences = isPlan || isSelection || isContract;
   const templateLabel = hasSharedReferences ? "文书模板" : "Word 模板";
   const editableFields = hasSharedReferences
     ? draft.fields.filter((f) => f.scope !== "shared")
     : draft?.fields || [];
+  const fieldTabs = [
+    ...new Set([
+      ...(isNegotiation ? negotiationTabs : []),
+      ...editableFields.map(tabFor),
+    ]),
+  ];
+  if (isSelection) {
+    const order = [
+      "论证安排",
+      "候选单位",
+      "论证成员",
+      "论证意见",
+      "非招标方案",
+    ];
+    fieldTabs.sort((a, b) => {
+      const position = (name) => {
+        const index = order.indexOf(name);
+        return index < 0 ? order.length : index;
+      };
+      return position(a) - position(b);
+    });
+  }
+  const formTabs = [
+    ...fieldTabs.map((label) => ({ id: label, label })),
+    ...(!hasSharedReferences && !isNegotiation
+      ? [{ id: "recipients", label: "受邀单位" }]
+      : []),
+    { id: "generate", label: docked ? "文件生成" : "模板与生成", align: "end" },
+  ];
+  const activeFormTab = formTabs.some((item) => item.id === formTab)
+    ? formTab
+    : formTabs[0].id;
   const templates = draft?.templates || [];
   const outputCount = templates.reduce(
     (n, t) => n + (t.per_recipient ? draft.recipients.length : 1),
@@ -495,7 +554,9 @@ function Workbench({
       );
       receive(data);
       setPreview(null);
+      setFormTab("");
       setStage("edit");
+      onShowForm?.();
       await refresh();
       setNotice(
         data.templates.length
@@ -558,11 +619,23 @@ function Workbench({
     });
   }
   function focusField(key) {
+    const field = draft.fields.find((item) => item.key === key);
+    if (field?.scope === "shared" && hasSharedReferences && onEditBasics) {
+      onEditBasics();
+      return;
+    }
+    setFormTab(
+      field
+        ? tabFor(field)
+        : key.startsWith("recipient-")
+        ? recipientsTab
+        : "generate",
+    );
     setStage("edit");
     requestAnimationFrame(() => {
       const el = document.getElementById("df-" + key);
-      el?.scrollIntoView({ behavior: "smooth", block: "center" });
-      el?.querySelector("input,textarea")?.focus();
+      el?.scrollIntoView?.({ behavior: "smooth", block: "center" });
+      el?.querySelector("input,textarea,select")?.focus();
     });
   }
   const filePath = (g, f) =>
@@ -606,6 +679,339 @@ function Workbench({
         },
       });
   }, [stage, preview?.generation.id, preview?.file.name]);
+  async function exportExcel() {
+    await run("导出 Excel", async () => {
+      const data = await saveDraft();
+      await download(
+        "/cases/" + data.id + "/excel",
+        (data.fields.find((f) => f.key === "project.name")?.value || data.name)
+          .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+          .slice(0, 80) + "_填写数据.xlsx",
+      );
+    });
+  }
+  const templatePanel = (
+    <section className="df-paper df-template-panel" aria-label={templateLabel}>
+      <div className="df-section-head">
+        {!compact && <h2>{templateLabel}</h2>}
+        <div className="df-template-actions">
+          {templates.length > 0 ? (
+            <button
+              onClick={() =>
+                run("保存默认模板", async () => {
+                  const data = await saveDraft();
+                  await request(
+                    `/cases/${data.id}/defaults`,
+                    json({ revision: data.revision }),
+                  );
+                  setNotice(
+                    workflowStage.id === "negotiation"
+                      ? "已设为本机默认模板，以后新建填报会自动载入。"
+                      : "已设为本阶段默认模板，以后新建该阶段表单会自动载入。",
+                  );
+                })
+              }
+            >
+              {workflowStage.id === "negotiation"
+                ? "设为默认模板"
+                : "设为本阶段默认模板"}
+            </button>
+          ) : (
+            <button
+              onClick={() =>
+                run("载入默认模板", async () => {
+                  const data = await saveDraft();
+                  receive(
+                    await request(
+                      `/cases/${data.id}/defaults/apply`,
+                      json({ revision: data.revision }),
+                    ),
+                  );
+                  setNotice("已载入默认 Word 模板。");
+                })
+              }
+            >
+              使用默认模板
+            </button>
+          )}
+          {!compact && (
+            <button onClick={() => wordInput.current.click()}>＋ 添加</button>
+          )}
+        </div>
+      </div>
+      {!compact && !templates.length && (
+        <p className="df-muted">添加与你的变量表对应的 .docx 或 .xlsx 模板。</p>
+      )}
+      {templates.map((t) => (
+        <div className="df-template" key={t.id}>
+          <b>{t.name}</b>
+          {t.from_builtin && <small>应用自带模板</small>}
+          <span>
+            {t.per_recipient ? "按受邀单位分别生成" : "共用文件 · 生成一份"}
+          </span>
+          {t.print_copies > 1 && (
+            <small>
+              建议打印 {t.print_copies} 份 · {t.print_note}
+            </small>
+          )}
+          <button
+            aria-label={"移除模板" + t.name}
+            onClick={() =>
+              run("移除模板", async () => {
+                const data = await saveDraft();
+                receive(
+                  await request(
+                    `/cases/${data.id}/templates/${t.id}?revision=${data.revision}`,
+                    { method: "DELETE" },
+                  ),
+                );
+              })
+            }
+          >
+            移除
+          </button>
+        </div>
+      ))}
+    </section>
+  );
+  const recipientsPanel = draft && !hasSharedReferences && (
+    <section
+      className={isNegotiation ? "df-recipient-section" : "df-paper"}
+      role={isNegotiation ? undefined : "tabpanel"}
+      id="df-form-panel-recipients"
+      aria-labelledby={`df-form-tab-${recipientsTab}`}
+      hidden={activeFormTab !== recipientsTab}
+    >
+      <div className="df-section-head">
+        <div>
+          <h2>
+            受邀单位 <span className="df-count">{draft.recipients.length}</span>
+          </h2>
+          <p>按单位文书分别生成，共用项目与落款信息。</p>
+        </div>
+        <button
+          onClick={() =>
+            edit({
+              ...draft,
+              recipients: recipientDefaults([
+                ...draft.recipients,
+                { name: "", start: "", end: "" },
+              ]),
+            })
+          }
+          disabled={draft.recipients.length >= 200}
+        >
+          ＋ 添加单位
+        </button>
+      </div>
+      {draft.recipients.map((r, i) => (
+        <div className="df-recipient" key={i} id={"df-recipient-" + i}>
+          <div className="df-recipient-title">
+            <b>{String(i + 1).padStart(2, "0")}</b>
+            <button
+              aria-label={`移除第${i + 1}家单位`}
+              onClick={() =>
+                edit({
+                  ...draft,
+                  recipients: recipientDefaults(
+                    draft.recipients.filter((_, j) => j !== i),
+                  ),
+                })
+              }
+            >
+              移除
+            </button>
+          </div>
+          <div className="df-fields">
+            {[
+              ["name", "单位名称"],
+              ["start", "领取开始时间"],
+              ["end", "领取结束时间"],
+            ].map(([key, label]) => (
+              <label
+                className={"df-field " + (key === "name" ? "df-span" : "")}
+                key={key}
+              >
+                <span>{label}</span>
+                <input
+                  aria-label={`第${i + 1}家${label}`}
+                  type={key === "name" ? "text" : "datetime-local"}
+                  value={key === "name" ? r[key] : r[key].replace(" ", "T")}
+                  onChange={(e) => editRecipient(i, key, e.target.value)}
+                />
+                {i > 0 && key !== "name" && (
+                  <small className="df-follow-state">
+                    {r["follow_" + key] ? "跟随第1家" : "已单独设置"}
+                    {!r["follow_" + key] && (
+                      <button
+                        type="button"
+                        aria-label={`第${i + 1}家${label}恢复跟随`}
+                        onClick={(e) => {
+                          e.preventDefault();
+                          editRecipient(i, key, draft.recipients[0][key], true);
+                        }}
+                      >
+                        恢复跟随
+                      </button>
+                    )}
+                  </small>
+                )}
+              </label>
+            ))}
+          </div>
+        </div>
+      ))}
+    </section>
+  );
+  const toolbarContent = (
+    <>
+      <div className="df-toolbar-file-actions">
+        <ToolbarMenu label="模板" icon="template" disabled={!!busy || !draft}>
+          <button
+            className="df-toolbar-template-import"
+            disabled={!!busy}
+            onClick={() => wordInput.current.click()}
+          >
+            <ToolbarIcon name="import" />
+            导入模板
+          </button>
+          <button
+            aria-label="下载配套模板"
+            disabled={!!busy}
+            onClick={() =>
+              run("下载配套模板", () =>
+                download("/starter", "文书填报_配套模板.zip"),
+              )
+            }
+          >
+            <ToolbarIcon name="download" />
+            下载模板
+          </button>
+          {templatePanel}
+        </ToolbarMenu>
+        {stage !== "edit" && (
+          <button
+            disabled={!!busy}
+            onClick={() => {
+              setStage("edit");
+              setConfirmed(false);
+              onShowForm?.();
+            }}
+          >
+            <ToolbarIcon name="back" />
+            返回填写
+          </button>
+        )}
+        {generation && stage !== "files" && (
+          <button
+            title="查看生成文件"
+            aria-label="查看生成文件"
+            disabled={!!busy}
+            onClick={() => {
+              setStage("files");
+              onShowForm?.();
+            }}
+          >
+            <ToolbarIcon name="file" />
+            生成文件
+          </button>
+        )}
+        <button
+          aria-label="下载本阶段材料"
+          title="下载本阶段材料"
+          disabled={!!busy}
+          onClick={onDownloadStageMaterials}
+        >
+          <ToolbarIcon name="download" />
+          阶段材料
+        </button>
+        <ToolbarMenu
+          label="更多操作"
+          icon="more"
+          iconOnly
+          disabled={!!busy || !draft}
+        >
+          <label className="df-field">
+            <span>表单名称</span>
+            <input
+              aria-label="表单名称"
+              maxLength={120}
+              value={draft?.name || ""}
+              onChange={(event) => edit({ ...draft, name: event.target.value })}
+            />
+          </label>
+          <button
+            disabled={!!busy}
+            onClick={() => {
+              setComparison("adopt");
+              setSelectedKeys([]);
+              onShowForm?.();
+            }}
+          >
+            核对项目资料差异
+          </button>
+          <button
+            disabled={!!busy}
+            onClick={() => {
+              setComparison("publish");
+              setSelectedKeys([]);
+              onShowForm?.();
+            }}
+          >
+            存入项目底稿
+          </button>
+        </ToolbarMenu>
+      </div>
+      <div className="df-toolbar-save">
+        {draft && (
+          <span
+            className={"df-save-state" + (dirty ? " is-dirty" : "")}
+            title={
+              dirty
+                ? "有未保存的修改"
+                : "草稿已保存 · " + time(draft.updated_at)
+            }
+            role="status"
+          >
+            {dirty ? "未保存" : "已保存"}
+          </span>
+        )}
+        <button
+          className="df-toolbar-icon-button"
+          title="导入 Excel"
+          aria-label="导入 Excel"
+          disabled={!!busy || !draft}
+          onClick={() => excelInput.current.click()}
+        >
+          <ToolbarIcon name="import" />
+        </button>
+        <button
+          className="df-toolbar-icon-button"
+          title="导出当前 Excel"
+          aria-label="导出当前 Excel"
+          disabled={!!busy || !draft}
+          onClick={exportExcel}
+        >
+          <ToolbarIcon name="export" />
+        </button>
+        <button
+          className="df-primary df-toolbar-icon-button"
+          aria-label="保存草稿"
+          title="保存草稿"
+          disabled={!!busy || !draft || !dirty}
+          onClick={() =>
+            run("保存草稿", async () => {
+              await saveDraft();
+              await refresh();
+              setNotice("草稿已保存");
+            })
+          }
+        >
+          <ToolbarIcon name="save" />
+        </button>
+      </div>
+    </>
+  );
   return (
     <div className="df-app df-embedded-editor" data-theme={theme}>
       <input
@@ -678,40 +1084,44 @@ function Workbench({
             )}
           </div>
         )}
-        <header className="df-header">
-          <div>
-            {!docked && (
-              <span className="df-eyebrow">
-                {workflowStage.title} / 填写与生成
-              </span>
+        {!compact && (
+          <header className="df-header">
+            <div>
+              {!docked && (
+                <span className="df-eyebrow">
+                  {workflowStage.title} / 填写与生成
+                </span>
+              )}
+              <h1>
+                {draft ? (docked ? "填写内容" : draft.name) : "填写项目资料"}
+              </h1>
+              <p>
+                {draft
+                  ? dirty
+                    ? "有未保存的修改"
+                    : `草稿已保存 · ${time(draft.updated_at)}`
+                  : "导入变量表与 Word 模板，填写、核对，再生成文书。"}
+              </p>
+            </div>
+            {draft && (
+              <button
+                disabled={!!busy || !dirty}
+                onClick={() =>
+                  run("保存草稿", async () => {
+                    await saveDraft();
+                    await refresh();
+                    setNotice("草稿已保存");
+                  })
+                }
+              >
+                保存草稿
+              </button>
             )}
-            <h1>
-              {draft ? (docked ? "填写内容" : draft.name) : "填写项目资料"}
-            </h1>
-            <p>
-              {draft
-                ? dirty
-                  ? "有未保存的修改"
-                  : `草稿已保存 · ${time(draft.updated_at)}`
-                : "导入变量表与 Word 模板，填写、核对，再生成文书。"}
-            </p>
-          </div>
-          {draft && (
-            <button
-              disabled={!!busy || !dirty}
-              onClick={() =>
-                run("保存草稿", async () => {
-                  await saveDraft();
-                  await refresh();
-                  setNotice("草稿已保存");
-                })
-              }
-            >
-              保存草稿
-            </button>
-          )}
-        </header>
-        {docked ? (
+          </header>
+        )}
+        {compact ? (
+          Q.host.ReactDOM.createPortal(toolbarContent, toolbarTarget)
+        ) : docked ? (
           <div className="df-node-tools" aria-label="表单操作">
             {stage !== "edit" && (
               <button
@@ -854,370 +1264,182 @@ function Workbench({
           )}
           {draft && stage === "edit" && (
             <div className="df-edit-layout">
-              <section className="df-paper">
-                <div className="df-section-head">
-                  {!docked && <h2>填写信息</h2>}
-                  <button
-                    onClick={() =>
-                      run("导出 Excel", async () => {
-                        const data = await saveDraft();
-                        await download(
-                          `/cases/${data.id}/excel`,
-                          (
-                            data.fields.find((f) => f.key === "project.name")
-                              ?.value || data.name
-                          )
-                            .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
-                            .slice(0, 80) + "_填写数据.xlsx",
-                        );
-                      })
-                    }
-                  >
-                    导出当前 Excel
-                  </button>
-                </div>
-                <label className="df-field df-title-field">
-                  <span>表单名称</span>
-                  <input
-                    aria-label="表单名称"
-                    maxLength={120}
-                    value={draft.name}
-                    onChange={(e) => edit({ ...draft, name: e.target.value })}
-                  />
-                </label>
-                {hasSharedReferences && (
-                  <section
-                    className="df-plan-reference"
-                    aria-label="引用的基础信息"
-                  >
-                    <div className="df-section-head">
-                      <div>
-                        <h3>
-                          {isContract ? "合同审查引用资料" : "引用的基础信息"}
-                        </h3>
-                        <p className="df-muted">
-                          {isContract
-                            ? "自动引用基础信息及计划、论证、谈判阶段资料。请在原阶段更正，返回本阶段后会同步引用；这里只核对合同，不重复填写。"
-                            : "这些资料由基础信息填报维护，核对后用于本次生成。"}
-                        </p>
-                      </div>
-                      {onEditBasics && (
-                        <button
-                          onClick={() =>
-                            run("保存并打开基础信息", async () => {
-                              await saveDraft();
-                              onEditBasics();
-                            })
-                          }
-                        >
-                          编辑基础信息
-                        </button>
-                      )}
-                    </div>
-                    <details>
-                      <summary>查看引用的项目资料</summary>
-                      <dl>
-                        {draft.fields
-                          .filter((f) => f.scope === "shared")
-                          .map((f) => (
-                            <div key={f.key} id={"df-" + f.key}>
-                              <dt>{f.label}</dt>
-                              <dd>
-                                {f.value || "尚未填写，请到基础信息填报补充"}
-                              </dd>
-                            </div>
-                          ))}
-                      </dl>
-                    </details>
-                  </section>
-                )}
-                {[
-                  ...new Set(
-                    editableFields
-                      .filter((f) => !/^selection\.member\d+_/.test(f.key))
-                      .map((f) => f.group),
-                  ),
-                ].map((group) => (
-                  <section className="df-group" key={group}>
-                    <h3>{group}</h3>
-                    {group === "日期安排" && (
-                      <p className="df-muted">
-                        文书统一使用中文日期，例如“2026年10月22日下午14:30”。日期选择器保留原来的填写方式。
-                      </p>
-                    )}
-                    <div className="df-fields">
-                      {editableFields
-                        .filter(
-                          (f) =>
-                            f.group === group &&
-                            !/^selection\.member\d+_/.test(f.key),
-                        )
-                        .map((field) => (
-                          <Field
-                            key={field.key}
-                            field={field}
-                            displayValue={
-                              draft.presentation_sources?.[field.key] ===
-                              field.value
-                                ? draft.document_values?.[field.key]
-                                : undefined
-                            }
-                            onChange={(value) =>
-                              edit({
-                                ...draft,
-                                fields: draft.fields.map((f) =>
-                                  f.key === field.key ? { ...f, value } : f,
-                                ),
-                              })
-                            }
-                          />
-                        ))}
-                    </div>
-                  </section>
-                ))}
-                <SelectionMembers
-                  fields={editableFields}
-                  onChange={(key, value) =>
-                    edit({
-                      ...draft,
-                      fields: draft.fields.map((f) =>
-                        f.key === key ? { ...f, value } : f,
-                      ),
-                    })
-                  }
-                />
-              </section>
-              {!hasSharedReferences && (
-                <section className="df-paper">
+              {!compact && (
+                <section className="df-paper df-form-heading">
                   <div className="df-section-head">
-                    <div>
-                      <h2>
-                        受邀单位{" "}
-                        <span className="df-count">
-                          {draft.recipients.length}
-                        </span>
-                      </h2>
-                      <p>按单位文书分别生成，共用项目与落款信息。</p>
-                    </div>
+                    {!docked && <h2>填写信息</h2>}
                     <button
                       onClick={() =>
-                        edit({
-                          ...draft,
-                          recipients: recipientDefaults([
-                            ...draft.recipients,
-                            { name: "", start: "", end: "" },
-                          ]),
-                        })
-                      }
-                      disabled={draft.recipients.length >= 200}
-                    >
-                      ＋ 添加单位
-                    </button>
-                  </div>
-                  {draft.recipients.map((r, i) => (
-                    <div
-                      className="df-recipient"
-                      key={i}
-                      id={"df-recipient-" + i}
-                    >
-                      <div className="df-recipient-title">
-                        <b>{String(i + 1).padStart(2, "0")}</b>
-                        <button
-                          aria-label={`移除第${i + 1}家单位`}
-                          onClick={() =>
-                            edit({
-                              ...draft,
-                              recipients: recipientDefaults(
-                                draft.recipients.filter((_, j) => j !== i),
-                              ),
-                            })
-                          }
-                        >
-                          移除
-                        </button>
-                      </div>
-                      <div className="df-fields">
-                        {[
-                          ["name", "单位名称"],
-                          ["start", "领取开始时间"],
-                          ["end", "领取结束时间"],
-                        ].map(([key, label]) => (
-                          <label
-                            className={
-                              "df-field " + (key === "name" ? "df-span" : "")
-                            }
-                            key={key}
-                          >
-                            <span>{label}</span>
-                            <input
-                              aria-label={`第${i + 1}家${label}`}
-                              type={key === "name" ? "text" : "datetime-local"}
-                              value={
-                                key === "name"
-                                  ? r[key]
-                                  : r[key].replace(" ", "T")
-                              }
-                              onChange={(e) =>
-                                editRecipient(i, key, e.target.value)
-                              }
-                            />
-                            {i > 0 && key !== "name" && (
-                              <small className="df-follow-state">
-                                {r["follow_" + key]
-                                  ? "跟随第1家"
-                                  : "已单独设置"}
-                                {!r["follow_" + key] && (
-                                  <button
-                                    type="button"
-                                    aria-label={`第${i + 1}家${label}恢复跟随`}
-                                    onClick={(e) => {
-                                      e.preventDefault();
-                                      editRecipient(
-                                        i,
-                                        key,
-                                        draft.recipients[0][key],
-                                        true,
-                                      );
-                                    }}
-                                  >
-                                    恢复跟随
-                                  </button>
-                                )}
-                              </small>
-                            )}
-                          </label>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </section>
-              )}
-              <section
-                className="df-paper df-template-panel"
-                aria-label={templateLabel}
-              >
-                <div className="df-section-head">
-                  <h2>{templateLabel}</h2>
-                  <div className="df-template-actions">
-                    {templates.length > 0 ? (
-                      <button
-                        onClick={() =>
-                          run("保存默认模板", async () => {
-                            const data = await saveDraft();
-                            await request(
-                              `/cases/${data.id}/defaults`,
-                              json({ revision: data.revision }),
-                            );
-                            setNotice(
-                              workflowStage.id === "negotiation"
-                                ? "已设为本机默认模板，以后新建填报会自动载入。"
-                                : "已设为本阶段默认模板，以后新建该阶段表单会自动载入。",
-                            );
-                          })
-                        }
-                      >
-                        {workflowStage.id === "negotiation"
-                          ? "设为默认模板"
-                          : "设为本阶段默认模板"}
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() =>
-                          run("载入默认模板", async () => {
-                            const data = await saveDraft();
-                            receive(
-                              await request(
-                                `/cases/${data.id}/defaults/apply`,
-                                json({ revision: data.revision }),
-                              ),
-                            );
-                            setNotice("已载入默认 Word 模板。");
-                          })
-                        }
-                      >
-                        使用默认模板
-                      </button>
-                    )}
-                    <button onClick={() => wordInput.current.click()}>
-                      ＋ 添加
-                    </button>
-                  </div>
-                </div>
-                {!templates.length && (
-                  <p className="df-muted">
-                    添加与你的变量表对应的 .docx 或 .xlsx 模板。
-                  </p>
-                )}
-                {templates.map((t) => (
-                  <div className="df-template" key={t.id}>
-                    <b>{t.name}</b>
-                    {t.from_builtin && <small>应用自带模板</small>}
-                    <span>
-                      {t.per_recipient
-                        ? "按受邀单位分别生成"
-                        : "共用文件 · 生成一份"}
-                    </span>
-                    {t.print_copies > 1 && (
-                      <small>
-                        建议打印 {t.print_copies} 份 · {t.print_note}
-                      </small>
-                    )}
-                    <button
-                      aria-label={"移除模板" + t.name}
-                      onClick={() =>
-                        run("移除模板", async () => {
+                        run("导出 Excel", async () => {
                           const data = await saveDraft();
-                          receive(
-                            await request(
-                              `/cases/${data.id}/templates/${t.id}?revision=${data.revision}`,
-                              { method: "DELETE" },
-                            ),
+                          await download(
+                            `/cases/${data.id}/excel`,
+                            (
+                              data.fields.find((f) => f.key === "project.name")
+                                ?.value || data.name
+                            )
+                              .replace(/[<>:"/\\|?*\x00-\x1f]/g, "_")
+                              .slice(0, 80) + "_填写数据.xlsx",
                           );
                         })
                       }
                     >
-                      移除
+                      导出当前 Excel
                     </button>
                   </div>
-                ))}
-              </section>
-              <section
-                className="df-paper df-edit-footer"
-                aria-label="核对与生成"
+                  <label className="df-field df-title-field">
+                    <span>表单名称</span>
+                    <input
+                      aria-label="表单名称"
+                      maxLength={120}
+                      value={draft.name}
+                      onChange={(e) => edit({ ...draft, name: e.target.value })}
+                    />
+                  </label>
+                </section>
+              )}
+              <WorkflowTabs
+                id="df-form"
+                label="填写内容分组"
+                items={formTabs}
+                value={activeFormTab}
+                onChange={setFormTab}
+              />
+              {fieldTabs.map((tab) => (
+                <section
+                  className="df-paper df-form-panel"
+                  key={tab}
+                  role="tabpanel"
+                  id={`df-form-panel-${tab}`}
+                  aria-labelledby={`df-form-tab-${tab}`}
+                  hidden={activeFormTab !== tab}
+                >
+                  {isNegotiation && tab === recipientsTab && recipientsPanel}
+                  {[
+                    ...new Set(
+                      editableFields
+                        .filter(
+                          (f) =>
+                            tabFor(f) === tab &&
+                            !/^selection\.member\d+_/.test(f.key),
+                        )
+                        .map((f) => f.group),
+                    ),
+                  ].map((group) => (
+                    <section className="df-group" key={group}>
+                      {!isNegotiation && (!compact || group !== tab) && (
+                        <h3>{group}</h3>
+                      )}
+                      {!compact && group === "日期安排" && (
+                        <p className="df-muted">
+                          文书统一使用中文日期，例如“2026年10月22日下午14:30”。日期选择器保留原来的填写方式。
+                        </p>
+                      )}
+                      <div className="df-fields">
+                        {editableFields
+                          .filter(
+                            (f) =>
+                              f.group === group &&
+                              tabFor(f) === tab &&
+                              !/^selection\.member\d+_/.test(f.key),
+                          )
+                          .map((field) => (
+                            <Field
+                              key={field.key}
+                              field={field}
+                              displayValue={
+                                draft.presentation_sources?.[field.key] ===
+                                field.value
+                                  ? draft.document_values?.[field.key]
+                                  : undefined
+                              }
+                              onChange={(value, template) =>
+                                edit({
+                                  ...draft,
+                                  fields: draft.fields.map((f) =>
+                                    f.key === field.key
+                                      ? {
+                                          ...f,
+                                          value,
+                                          ...(template !== undefined
+                                            ? { linked_template: template }
+                                            : {}),
+                                        }
+                                      : f,
+                                  ),
+                                })
+                              }
+                            />
+                          ))}
+                      </div>
+                    </section>
+                  ))}
+                  {tab === "论证成员" && (
+                    <SelectionMembers
+                      fields={editableFields}
+                      compact={!!compact}
+                      onChange={(key, value) =>
+                        edit({
+                          ...draft,
+                          fields: draft.fields.map((f) =>
+                            f.key === key ? { ...f, value } : f,
+                          ),
+                        })
+                      }
+                    />
+                  )}
+                </section>
+              ))}
+              {!isNegotiation && recipientsPanel}
+              <div
+                role="tabpanel"
+                id="df-form-panel-generate"
+                aria-labelledby="df-form-tab-generate"
+                hidden={activeFormTab !== "generate"}
               >
-                <div className="df-generation-plan">
-                  <h2>核对与生成</h2>
-                  <p>
-                    本次计划生成 <b>{outputCount}</b> 份文书
-                  </p>
-                  <small>
-                    {isSelection ? (
-                      "生成论证意见及签字表，以及论证结束后上传的非招标方案。签字盖章后，在阶段材料中留存扫描件。"
-                    ) : isPlan ? (
-                      "按本次填写内容生成 Word 说明与 Excel 计划表。"
-                    ) : (
-                      <>
-                        {templates.filter((t) => !t.per_recipient).length}{" "}
-                        份共用文件 ·{" "}
-                        {templates.filter((t) => t.per_recipient).length}{" "}
-                        类按单位文书 × {draft.recipients.length} 家单位
-                      </>
+                {!compact && templatePanel}
+                <section
+                  className="df-paper df-edit-footer"
+                  aria-label="核对与生成"
+                >
+                  <div className="df-generation-plan">
+                    {!compact && <h2>核对与生成</h2>}
+                    <p>
+                      本次计划生成 <b>{outputCount}</b> 份文书
+                    </p>
+                    {!compact && (
+                      <small>
+                        {isSelection ? (
+                          "生成论证意见及签字表，以及论证结束后上传的非招标方案。签字盖章后，在阶段材料中留存扫描件。"
+                        ) : isPlan ? (
+                          "按本次填写内容生成 Word 说明与 Excel 计划表。"
+                        ) : (
+                          <>
+                            {templates.filter((t) => !t.per_recipient).length}{" "}
+                            份共用文件 ·{" "}
+                            {templates.filter((t) => t.per_recipient).length}{" "}
+                            类按单位文书 × {draft.recipients.length} 家单位
+                          </>
+                        )}
+                      </small>
                     )}
-                  </small>
-                </div>
-                <div className="df-next-action">
-                  <button className="df-primary" onClick={reviewDraft}>
-                    核对填写内容 →
-                  </button>
-                  <small>
-                    {isSelection
-                      ? "核对论证意见、三家单位与成员信息，再确认生成"
-                      : isPlan
-                      ? "先核对基础信息与申报经费，再确认生成"
-                      : "先核对缺项与日期，再确认生成"}
-                  </small>
-                </div>
-              </section>
+                  </div>
+                  <div className="df-next-action">
+                    <button className="df-primary" onClick={reviewDraft}>
+                      核对填写内容 →
+                    </button>
+                    {!compact && (
+                      <small>
+                        {isSelection
+                          ? "核对论证意见、三家单位与成员信息，再确认生成"
+                          : isPlan
+                          ? "先核对基础信息与申报经费，再确认生成"
+                          : "先核对缺项与日期，再确认生成"}
+                      </small>
+                    )}
+                  </div>
+                </section>
+              </div>
             </div>
           )}
           {draft && stage === "review" && review && (

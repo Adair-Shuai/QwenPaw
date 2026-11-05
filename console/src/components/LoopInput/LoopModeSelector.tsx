@@ -7,6 +7,7 @@ import {
   MessageCircleQuestion,
   Rocket,
   Settings2,
+  SlidersHorizontal,
   Sparkles,
   Target,
   X,
@@ -41,7 +42,7 @@ function ModeIcon({ mode, size = 14 }: { mode: LoopModeInfo; size?: number }) {
   if (mode.id === "mission") return <Rocket size={size} />;
   if (mode.source === "custom") return <Sparkles size={size} />;
   if (mode.source === "plugin") return <Boxes size={size} />;
-  return <CircleDot size={size} />;
+  return <SlidersHorizontal size={size} />;
 }
 
 interface LoopModeSelectorProps {

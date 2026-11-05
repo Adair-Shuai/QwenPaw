@@ -33,6 +33,45 @@ def _load_workflow(name: str) -> dict:
     )
 
 
+@pytest.mark.parametrize(
+    ("permission_id", "command"),
+    [
+        ("desktop-updater-check", "check_desktop_update"),
+        ("desktop-updater-check", "check_cached_update"),
+        ("desktop-updater-install", "download_desktop_update"),
+        ("desktop-updater-install", "install_desktop_update"),
+        ("desktop-updater-install", "install_downloaded_update"),
+        ("desktop-updater-install", "confirm_desktop_update"),
+        ("desktop-updater-install", "restart_for_component_updates"),
+    ],
+)
+def test_desktop_update_commands_are_allowed_by_main_window_acl(
+    permission_id: str,
+    command: str,
+) -> None:
+    """Registered update commands also need an enabled frontend permission."""
+    native = REPO_ROOT / "console/src-tauri"
+    capability = json.loads(
+        (native / "capabilities/default.json").read_text(encoding="utf-8"),
+    )
+    permissions = tomllib.loads(
+        (native / "permissions/desktop-updater.toml").read_text(
+            encoding="utf-8",
+        ),
+    )["permission"]
+    permission = next(
+        item for item in permissions if item["identifier"] == permission_id
+    )
+
+    assert "main" in capability["windows"]
+    assert "http://127.0.0.1:*" in capability["remote"]["urls"]
+    assert permission_id in capability["permissions"]
+    assert command in permission["commands"]["allow"]
+    assert command not in permission["commands"].get("deny", [])
+    registration = (native / "src/lib.rs").read_text(encoding="utf-8")
+    assert re.search(rf"\b{command},", registration)
+
+
 def test_fork_desktop_build_uses_supported_python() -> None:
     """Both platform builders must bootstrap a project-supported Python."""
     project = tomllib.loads(

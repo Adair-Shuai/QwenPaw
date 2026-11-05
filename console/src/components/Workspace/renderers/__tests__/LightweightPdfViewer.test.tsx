@@ -133,6 +133,7 @@ vi.mock("@/features/pdf-reader/lightweightPdf", () => ({
 
 import LightweightPdfViewer from "../LightweightPdfViewer";
 import { constrainCanvasScale } from "../pdfViewerLimits";
+import { BundledPdfBinaryDataFactory } from "../../../../features/pdf-reader/pdfBinaryAssets";
 
 class ResizeObserverMock {
   callback: ResizeObserverCallback;
@@ -198,6 +199,9 @@ describe("LightweightPdfViewer", () => {
         disableRange: false,
         disableStream: true,
         disableAutoFetch: true,
+        BinaryDataFactory: BundledPdfBinaryDataFactory,
+        useWorkerFetch: false,
+        useSystemFonts: true,
       }),
     );
     expect(getPage).toHaveBeenCalledWith(1);
@@ -273,5 +277,25 @@ describe("LightweightPdfViewer", () => {
 
     expect(constrained.outputScale).toBeLessThan(2);
     expect(pixels).toBeLessThanOrEqual(8_000_001);
+  });
+
+  it("loads bundled Chinese CMaps on demand and reuses independent font buffers", async () => {
+    const fetchAsset = vi
+      .fn()
+      .mockResolvedValue(new Response(new Uint8Array([1, 2, 3])));
+    vi.stubGlobal("fetch", fetchAsset);
+    const factory = new BundledPdfBinaryDataFactory();
+    const request = { kind: "cMapUrl", filename: "UniGB-UCS2-H.bcmap" };
+    const first = await factory.fetch(request);
+    const second = await factory.fetch(request);
+    expect(fetchAsset).toHaveBeenCalledTimes(1);
+    expect(fetchAsset.mock.calls[0][0]).toContain("UniGB-UCS2-H");
+    expect(first).toEqual(new Uint8Array([1, 2, 3]));
+    expect(second).toEqual(first);
+    expect(second.buffer).not.toBe(first.buffer);
+    await expect(
+      factory.fetch({ kind: "cMapUrl", filename: "../../private" }),
+    ).rejects.toThrow("Unsupported PDF font resource");
+    expect(fetchAsset).toHaveBeenCalledTimes(1);
   });
 });

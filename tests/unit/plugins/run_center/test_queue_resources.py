@@ -11,6 +11,7 @@ from pathlib import Path
 
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import pytest
 
 _PLUGIN_ROOT = (
     Path(__file__).parents[4] / "plugins" / "bundle" / "qwenpaw-run-center"
@@ -34,7 +35,6 @@ def _runtime_module():
 
 
 runtime = _runtime_module()
-build_router = sys.modules["test_queue_resources_runtime.api"].build_router
 RunExecutorService = runtime.RunExecutorService
 RunRepository = runtime.RunRepository
 
@@ -86,10 +86,23 @@ def test_project_queue_policy_and_resource_lease_lifecycle(tmp_path) -> None:
     assert second and second["run_id"] == "r2"
 
 
-def test_queue_policy_http_contract(tmp_path) -> None:
-    repository = RunRepository(tmp_path / "run-center")
+@pytest.mark.parametrize("clear_runtime_modules", [False, True])
+def test_queue_policy_http_contract(tmp_path, clear_runtime_modules) -> None:
+    # A preceding real loader unload may remove this plugin's modules.
+    # Resolve the test runtime when using it, rather than keeping a stale API.
+    if clear_runtime_modules:
+        for name in tuple(sys.modules):
+            if name == runtime.__name__ or name.startswith(
+                runtime.__name__ + ".",
+            ):
+                sys.modules.pop(name)
+    current_runtime = _runtime_module()
+    repository = current_runtime.RunRepository(tmp_path / "run-center")
     app = FastAPI()
-    app.include_router(build_router(repository), prefix="/api/run-center")
+    app.include_router(
+        current_runtime.build_router(repository),
+        prefix="/api/run-center",
+    )
     with TestClient(app) as client:
         created = client.put(
             "/api/run-center/queue/policies/project-a",

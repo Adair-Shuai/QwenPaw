@@ -448,6 +448,9 @@ def app_server(  # pylint: disable=too-many-statements,too-many-branches
 
     env["QWENPAW_WORKING_DIR"] = str(working_dir)
     env["QWENPAW_SECRET_DIR"] = str(secret_dir)
+    # Each module launches an independent host installation. Its dependency
+    # coordination must not contend with other modules or the developer host.
+    env["QWENPAW_DEPENDENCY_STATE_DIR"] = str(tmp_path / "dependency-state")
     env["QWENPAW_BACKUP_DIR"] = str(backups_dir)
     env["QWENPAW_AUTH_ENABLED"] = "false"
     # Set the upload size limit used by /api/.../upload-limit and the

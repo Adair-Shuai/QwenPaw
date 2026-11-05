@@ -1,182 +1,216 @@
 # -*- coding: utf-8 -*-
-"""Unit tests for Feishu and DingTalk QR Code Auth Handlers."""
-# pylint: disable=redefined-outer-name,protected-access
+"""QR authorization through plugin Drivers and closed management RPC."""
+
+# pylint: disable=redefined-outer-name
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, MagicMock, patch
+import base64
+import importlib
+import inspect
+import json
+from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
+from uuid import uuid4
 
+import httpx
 import pytest
-from fastapi import HTTPException
+
+from qwenpaw.channel_protocol.errors import ProtocolValidationError
+from qwenpaw.channel_protocol.management import (
+    MANAGEMENT_CAPABILITIES,
+    ManagementRequest,
+)
+from qwenpaw.channel_protocol.shared import SharedChannelDescriptor
+from qwenpaw.plugins.official_channel_catalog import OFFICIAL_CHANNELS
+
+ROOT = Path(__file__).resolve().parents[3]
+FEISHU = "https://accounts.feishu.cn/oauth/v1/app/registration"
+DINGTALK = "https://oapi.dingtalk.com/app/registration"
 
 
-@pytest.fixture
-def mock_request():
-    """Mock FastAPI Request object."""
-    return MagicMock()
-
-
-@pytest.fixture
-def feishu_handler():
-    """Create Feishu handler instance."""
-    from qwenpaw.app.channels.qrcode_auth_handler import (
-        FeishuQRCodeAuthHandler,
+def _driver(channel, monkeypatch):
+    row = next(
+        row for row in OFFICIAL_CHANNELS if row["channel_key"] == channel
     )
-
-    return FeishuQRCodeAuthHandler()
-
-
-@pytest.fixture
-def dingtalk_handler():
-    """Create DingTalk handler instance."""
-    from qwenpaw.app.channels.qrcode_auth_handler import (
-        DingtalkQRCodeAuthHandler,
-    )
-
-    return DingtalkQRCodeAuthHandler()
+    source = ROOT / "plugins/channel" / row["source_dir"]
+    descriptor = SharedChannelDescriptor.load(source / "channel.json")
+    monkeypatch.syspath_prepend(str(source))
+    module = importlib.import_module(descriptor.entrypoint.module)
+    driver = module
+    for part in descriptor.entrypoint.qualname.split("."):
+        driver = getattr(driver, part)
+    return descriptor, driver
 
 
 @pytest.fixture
-def mock_httpx_client():
-    """Create mock httpx.AsyncClient context manager."""
+def feishu_handler(monkeypatch):
+    return _driver("feishu", monkeypatch)[1].manage
 
-    def _create_mock(responses):
-        """Create mock with given responses.
 
-        Args:
-            responses: Single response or list of responses for side_effect
-        """
-        mock_client = MagicMock()
-        if isinstance(responses, list):
-            mock_client.post = AsyncMock(side_effect=responses)
-        else:
-            mock_client.post = AsyncMock(return_value=responses)
+@pytest.fixture
+def dingtalk_handler(monkeypatch):
+    return _driver("dingtalk", monkeypatch)[1].manage
 
-        mock_async_client = MagicMock()
-        mock_async_client.return_value.__aenter__ = AsyncMock(
-            return_value=mock_client,
+
+def _request(channel, operation="qrcode.poll", **parameters):
+    parameters.setdefault("config", {})
+    if operation == "qrcode.poll":
+        continuation = (
+            base64.urlsafe_b64encode(
+                json.dumps(
+                    {"device_code": "device_123", "domain": "feishu"},
+                ).encode(),
+            ).decode()
+            if channel == "feishu"
+            else "device_123"
         )
-        mock_async_client.return_value.__aexit__ = AsyncMock(return_value=None)
-        return mock_async_client
+        parameters.setdefault("continuation", continuation)
+    return ManagementRequest.from_mapping(
+        {
+            "request_id": str(uuid4()),
+            "plugin_id": channel,
+            "workspace_id": "authorization-test",
+            "channel_key": channel,
+            "instance_id": "authorization-instance",
+            "generation": 1,
+            "source_revision": "a" * 64,
+            "operation": operation,
+            "timeout_ms": 2000,
+            "parameters": parameters,
+        },
+    )
 
-    return _create_mock
 
-
-def _mock_response(json_data):
-    """Create mock HTTP response with JSON data."""
-    response = MagicMock()
-    response.raise_for_status = MagicMock()
-    response.json.return_value = json_data
-    return response
+def _fetch_route(respx_mock, endpoint=FEISHU):
+    return respx_mock.post(endpoint).mock(
+        side_effect=[
+            httpx.Response(
+                200,
+                json={
+                    "supported_auth_methods": ["client_secret"],
+                },
+            ),
+            httpx.Response(
+                200,
+                json={
+                    "device_code": "device_123",
+                    "verification_uri_complete": (
+                        "https://example.test/" "qr?code=abc"
+                    ),
+                },
+            ),
+        ],
+    )
 
 
 class TestFeishuQRCodeAuthHandler:
-    """Tests for FeishuQRCodeAuthHandler."""
+    """Exercise the real descriptor-selected Feishu static management hook."""
 
     @pytest.mark.asyncio
-    async def test_get_domain_default_feishu(
-        self,
-        feishu_handler,
-        mock_request,
-    ):
-        """Should default to feishu domain."""
-        domain = await feishu_handler._get_domain(mock_request)
-        assert domain == "feishu"
-
-    def test_get_accounts_domain(self, feishu_handler):
-        """Should return correct accounts domain."""
-        assert (
-            feishu_handler._get_accounts_domain("feishu")
-            == "https://accounts.feishu.cn"
-        )
-        assert (
-            feishu_handler._get_accounts_domain("lark")
-            == "https://accounts.larksuite.com"
-        )
+    async def test_get_domain_default_feishu(self, feishu_handler, respx_mock):
+        route = _fetch_route(respx_mock)
+        result = await feishu_handler(_request("feishu", "qrcode.fetch"))
+        assert result.outcome == "ok"
+        assert route.call_count == 2
+        assert all(str(call.request.url) == FEISHU for call in route.calls)
 
     @pytest.mark.asyncio
-    async def test_fetch_qrcode_success(
+    @pytest.mark.parametrize("domain", ["feishu", "lark"])
+    async def test_get_accounts_domain(
         self,
         feishu_handler,
-        mock_request,
-        mock_httpx_client,
+        respx_mock,
+        domain,
     ):
-        """Should successfully fetch QR code."""
-        init_resp = _mock_response(
-            {"supported_auth_methods": ["client_secret"]},
+        host = "feishu.cn" if domain == "feishu" else "larksuite.com"
+        route = _fetch_route(
+            respx_mock,
+            f"https://accounts.{host}/oauth/v1/app/registration",
         )
-        begin_resp = _mock_response(
-            {
-                "device_code": "device_123",
-                "verification_uri_complete": "https://example.com/qr?code=abc",
-            },
+        result = await feishu_handler(
+            _request(
+                "feishu",
+                "qrcode.fetch",
+                options={"domain": domain},
+            ),
         )
+        assert result.outcome == "ok" and route.call_count == 2
+        state = json.loads(
+            base64.urlsafe_b64decode(
+                result.result["continuation"],
+            ),
+        )
+        assert state == {"device_code": "device_123", "domain": domain}
 
-        with patch(
-            "httpx.AsyncClient",
-            mock_httpx_client([init_resp, begin_resp]),
-        ):
-            result = await feishu_handler.fetch_qrcode(mock_request)
+    @pytest.mark.asyncio
+    async def test_fetch_qrcode_success(self, feishu_handler, respx_mock):
+        _fetch_route(respx_mock)
+        request = _request("feishu", "qrcode.fetch")
+        result = await feishu_handler(request)
+        result.validate_for(request, credential_keys=())
+        assert result.outcome == "ok"
+        query = parse_qs(urlsplit(result.result["scan_url"]).query)
+        from qwenpaw.constant import PROJECT_NAME
 
-            assert result.poll_token == "device_123"
-            from qwenpaw.constant import PROJECT_NAME
-
-            assert f"source={PROJECT_NAME}" in result.scan_url
-            assert "code=abc" in result.scan_url
+        assert query["source"] == [PROJECT_NAME]
+        assert query["code"] == ["abc"]
+        assert (
+            json.loads(
+                base64.urlsafe_b64decode(
+                    result.result["continuation"],
+                ),
+            )["device_code"]
+            == "device_123"
+        )
 
     @pytest.mark.asyncio
     async def test_fetch_qrcode_unsupported_auth_method(
         self,
         feishu_handler,
-        mock_request,
-        mock_httpx_client,
+        respx_mock,
     ):
-        """Should raise error for unsupported auth methods."""
-        init_resp = _mock_response(
-            {"supported_auth_methods": ["other_method"]},
+        route = respx_mock.post(FEISHU).respond(
+            200,
+            json={
+                "supported_auth_methods": ["other_method"],
+            },
         )
-
-        with patch("httpx.AsyncClient", mock_httpx_client(init_resp)):
-            with pytest.raises(HTTPException) as exc:
-                await feishu_handler.fetch_qrcode(mock_request)
-
-            assert exc.value.status_code == 502
-            assert "unsupported auth methods" in str(exc.value.detail)
+        result = await feishu_handler(_request("feishu", "qrcode.fetch"))
+        assert result.outcome == "failed"
+        assert result.reason_code == "PLATFORM_REJECTED"
+        assert result.result is None and route.call_count == 1
 
     @pytest.mark.asyncio
     async def test_fetch_qrcode_missing_device_code(
         self,
         feishu_handler,
-        mock_request,
-        mock_httpx_client,
+        respx_mock,
     ):
-        """Should raise error when device_code is missing."""
-        init_resp = _mock_response(
-            {"supported_auth_methods": ["client_secret"]},
+        respx_mock.post(FEISHU).mock(
+            side_effect=[
+                httpx.Response(
+                    200,
+                    json={
+                        "supported_auth_methods": ["client_secret"],
+                    },
+                ),
+                httpx.Response(
+                    200,
+                    json={
+                        "verification_uri_complete": "https://example.test/qr",
+                    },
+                ),
+            ],
         )
-        begin_resp = _mock_response(
-            {"verification_uri_complete": "https://example.com/qr"},
-        )
-
-        with patch(
-            "httpx.AsyncClient",
-            mock_httpx_client([init_resp, begin_resp]),
-        ):
-            with pytest.raises(HTTPException) as exc:
-                await feishu_handler.fetch_qrcode(mock_request)
-
-            assert exc.value.status_code == 502
-            assert "missing device_code" in str(exc.value.detail)
+        with pytest.raises(ProtocolValidationError) as caught:
+            await feishu_handler(_request("feishu", "qrcode.fetch"))
+        assert caught.value.reason_code == "PLATFORM_RESULT_UNKNOWN"
 
     @pytest.mark.asyncio
-    async def test_poll_status_success(
-        self,
-        feishu_handler,
-        mock_request,
-        mock_httpx_client,
-    ):
-        """Should return success when credentials are ready."""
-        response = _mock_response(
-            {
+    async def test_poll_status_success(self, feishu_handler, respx_mock):
+        route = respx_mock.post(FEISHU).respond(
+            200,
+            json={
                 "client_id": "cli_abc123",
                 "client_secret": "secret_xyz789",
                 "user_info": {
@@ -185,17 +219,22 @@ class TestFeishuQRCodeAuthHandler:
                 },
             },
         )
-
-        with patch("httpx.AsyncClient", mock_httpx_client(response)):
-            result = await feishu_handler.poll_status(
-                "device_123",
-                mock_request,
-            )
-
-            assert result.status == "success"
-            assert result.credentials["app_id"] == "cli_abc123"
-            assert result.credentials["app_secret"] == "secret_xyz789"
-            assert result.credentials["open_id"] == "ou_user123"
+        request = _request("feishu")
+        result = await feishu_handler(request)
+        result.validate_for(request, credential_keys={"app_id", "app_secret"})
+        assert result.result["status"] == "success"
+        assert result.result["credentials"] == {
+            "app_id": "cli_abc123",
+            "app_secret": "secret_xyz789",
+        }
+        assert result.result["metadata"] == {
+            "open_id": "ou_user123",
+            "tenant_brand": "feishu",
+        }
+        assert parse_qs(route.calls[0].request.content.decode()) == {
+            "action": ["poll"],
+            "device_code": ["device_123"],
+        }
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
@@ -211,64 +250,38 @@ class TestFeishuQRCodeAuthHandler:
     async def test_poll_status_errors(
         self,
         feishu_handler,
-        mock_request,
-        mock_httpx_client,
+        respx_mock,
         error,
         expected_status,
     ):
-        """Should handle various error responses correctly."""
-        response = _mock_response({"error": error})
-
-        with patch("httpx.AsyncClient", mock_httpx_client(response)):
-            result = await feishu_handler.poll_status(
-                "device_123",
-                mock_request,
-            )
-            assert result.status == expected_status
+        # OAuth400 payloads still carry authoritative pending/denied states.
+        respx_mock.post(FEISHU).respond(400, json={"error": error})
+        result = await feishu_handler(_request("feishu"))
+        assert result.outcome == "ok"
+        assert result.result["status"] == expected_status
 
     @pytest.mark.asyncio
-    async def test_poll_status_network_error(
-        self,
-        feishu_handler,
-        mock_request,
-    ):
-        """Should raise HTTPException on network error."""
-        mock_client = MagicMock()
-        mock_client.post = AsyncMock(side_effect=Exception("Network error"))
-
-        mock_async_client = MagicMock()
-        mock_async_client.return_value.__aenter__ = AsyncMock(
-            return_value=mock_client,
-        )
-        mock_async_client.return_value.__aexit__ = AsyncMock(return_value=None)
-
-        with patch("httpx.AsyncClient", mock_async_client):
-            with pytest.raises(HTTPException) as exc:
-                await feishu_handler.poll_status("device_123", mock_request)
-
-            assert exc.value.status_code == 502
-            assert "status check failed" in str(exc.value.detail)
+    async def test_poll_status_network_error(self, feishu_handler, respx_mock):
+        respx_mock.post(FEISHU).mock(side_effect=httpx.ConnectError("offline"))
+        with pytest.raises(ProtocolValidationError) as caught:
+            await feishu_handler(_request("feishu"))
+        assert caught.value.reason_code == "PLATFORM_RESULT_UNKNOWN"
 
 
 class TestDingtalkQRCodeAuthHandler:
-    """Tests for DingtalkQRCodeAuthHandler."""
+    """Credentials are accepted by the delivered DingTalk management hook."""
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("status", ["APPROVING", "SUCCESS"])
     async def test_poll_status_returns_credentials_once_issued(
         self,
         dingtalk_handler,
-        mock_request,
-        mock_httpx_client,
+        respx_mock,
         status,
     ):
-        """Credentials should be accepted regardless of the status name.
-
-        DingTalk issues them at ``APPROVING`` (org approval still
-        pending) as well as at ``SUCCESS``.
-        """
-        response = _mock_response(
-            {
+        respx_mock.post(DINGTALK + "/poll").respond(
+            200,
+            json={
                 "errcode": 0,
                 "errmsg": "ok",
                 "status": status,
@@ -278,15 +291,17 @@ class TestDingtalkQRCodeAuthHandler:
                 "mode": "STREAM",
             },
         )
-
-        with patch("httpx.AsyncClient", mock_httpx_client(response)):
-            result = await dingtalk_handler.poll_status(
-                "device_123",
-                mock_request,
-            )
-
-        assert result.status == "success"
-        assert result.credentials == {
+        request = _request("dingtalk")
+        result = await dingtalk_handler(request)
+        result.validate_for(
+            request,
+            credential_keys={
+                "client_id",
+                "client_secret",
+            },
+        )
+        assert result.result["status"] == "success"
+        assert result.result["credentials"] == {
             "client_id": "ding6qfjtrjlehq3rmee",
             "client_secret": "secret-value",
         }
@@ -296,34 +311,29 @@ class TestDingtalkQRCodeAuthHandler:
     async def test_poll_status_without_credentials_keeps_waiting(
         self,
         dingtalk_handler,
-        mock_request,
-        mock_httpx_client,
+        respx_mock,
         status,
     ):
-        """Known and unknown pending statuses should keep polling."""
-        response = _mock_response(
-            {"errcode": 0, "errmsg": "ok", "status": status},
+        respx_mock.post(DINGTALK + "/poll").respond(
+            200,
+            json={
+                "errcode": 0,
+                "errmsg": "ok",
+                "status": status,
+            },
         )
-
-        with patch("httpx.AsyncClient", mock_httpx_client(response)):
-            result = await dingtalk_handler.poll_status(
-                "device_123",
-                mock_request,
-            )
-
-        assert result.status == "waiting"
-        assert result.credentials == {}
+        result = await dingtalk_handler(_request("dingtalk"))
+        assert result.result == {"status": "waiting", "credentials": {}}
 
     @pytest.mark.asyncio
     async def test_poll_status_null_credentials_keeps_waiting(
         self,
         dingtalk_handler,
-        mock_request,
-        mock_httpx_client,
+        respx_mock,
     ):
-        """JSON null must not become the literal string "None"."""
-        response = _mock_response(
-            {
+        respx_mock.post(DINGTALK + "/poll").respond(
+            200,
+            json={
                 "errcode": 0,
                 "errmsg": "ok",
                 "status": "WAITING",
@@ -331,26 +341,18 @@ class TestDingtalkQRCodeAuthHandler:
                 "client_secret": None,
             },
         )
-
-        with patch("httpx.AsyncClient", mock_httpx_client(response)):
-            result = await dingtalk_handler.poll_status(
-                "device_123",
-                mock_request,
-            )
-
-        assert result.status == "waiting"
-        assert result.credentials == {}
+        result = await dingtalk_handler(_request("dingtalk"))
+        assert result.result == {"status": "waiting", "credentials": {}}
 
     @pytest.mark.asyncio
     async def test_poll_status_partial_credentials_keeps_waiting(
         self,
         dingtalk_handler,
-        mock_request,
-        mock_httpx_client,
+        respx_mock,
     ):
-        """A half-filled payload must not be written back."""
-        response = _mock_response(
-            {
+        respx_mock.post(DINGTALK + "/poll").respond(
+            200,
+            json={
                 "errcode": 0,
                 "errmsg": "ok",
                 "status": "SUCCESS",
@@ -358,75 +360,61 @@ class TestDingtalkQRCodeAuthHandler:
                 "client_secret": "",
             },
         )
-
-        with patch("httpx.AsyncClient", mock_httpx_client(response)):
-            result = await dingtalk_handler.poll_status(
-                "device_123",
-                mock_request,
-            )
-
-        assert result.status == "waiting"
-        assert result.credentials == {}
+        result = await dingtalk_handler(_request("dingtalk"))
+        assert result.result == {"status": "waiting", "credentials": {}}
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "status,expected_status",
-        [("FAIL", "fail"), ("EXPIRED", "expired")],
+        [
+            ("FAIL", "fail"),
+            ("EXPIRED", "expired"),
+        ],
     )
     async def test_poll_status_terminal_failures(
         self,
         dingtalk_handler,
-        mock_request,
-        mock_httpx_client,
+        respx_mock,
         status,
         expected_status,
     ):
-        """Terminal failures should stop polling and keep the reason."""
-        response = _mock_response(
-            {
+        respx_mock.post(DINGTALK + "/poll").respond(
+            200,
+            json={
                 "errcode": 0,
                 "errmsg": "ok",
                 "status": status,
                 "fail_reason": "user denied",
             },
         )
-
-        with patch("httpx.AsyncClient", mock_httpx_client(response)):
-            result = await dingtalk_handler.poll_status(
-                "device_123",
-                mock_request,
-            )
-
-        assert result.status == expected_status
-        assert result.credentials == {"fail_reason": "user denied"}
+        result = await dingtalk_handler(_request("dingtalk"))
+        assert result.result == {
+            "status": expected_status,
+            "credentials": {"fail_reason": "user denied"},
+        }
 
 
 class TestQRCodeAuthHandlerRegistry:
-    """Tests for the global handler registry."""
+    """The real delivered descriptors replace the retired core registry."""
 
     def test_registry_contains_all_channels(self):
-        """Should contain handlers for all supported channels."""
-        from qwenpaw.app.channels.qrcode_auth_handler import (
-            QRCODE_AUTH_HANDLERS,
-        )
+        qr_channels = {
+            row["channel_key"]
+            for row in OFFICIAL_CHANNELS
+            if MANAGEMENT_CAPABILITIES["qrcode.fetch"]
+            in SharedChannelDescriptor.load(
+                ROOT / "plugins/channel" / row["source_dir"] / "channel.json",
+            ).capabilities
+        }
+        assert qr_channels == {"wechat", "wecom", "dingtalk", "feishu", "qq"}
 
-        expected_channels = {"wechat", "wecom", "dingtalk", "feishu", "qq"}
-        assert set(QRCODE_AUTH_HANDLERS.keys()) == expected_channels
-
-    def test_registry_handlers_are_correct_type(self):
-        """Should contain FeishuQRCodeAuthHandler for feishu."""
-        from qwenpaw.app.channels.qrcode_auth_handler import (
-            QRCODE_AUTH_HANDLERS,
-            FeishuQRCodeAuthHandler,
-            QRCodeAuthHandler,
-        )
-
-        # All handlers should be QRCodeAuthHandler instances
-        for handler in QRCODE_AUTH_HANDLERS.values():
-            assert isinstance(handler, QRCodeAuthHandler)
-
-        # Feishu handler should be FeishuQRCodeAuthHandler
-        assert isinstance(
-            QRCODE_AUTH_HANDLERS["feishu"],
-            FeishuQRCodeAuthHandler,
-        )
+    def test_registry_handlers_are_correct_type(self, monkeypatch):
+        for channel in ("wechat", "wecom", "dingtalk", "feishu", "qq"):
+            descriptor, driver = _driver(channel, monkeypatch)
+            assert descriptor.channel_key == channel
+            assert MANAGEMENT_CAPABILITIES["qrcode.fetch"] in (
+                descriptor.capabilities
+            )
+            method = inspect.getattr_static(driver, "manage")
+            assert isinstance(method, staticmethod)
+            assert inspect.iscoroutinefunction(method.__func__)

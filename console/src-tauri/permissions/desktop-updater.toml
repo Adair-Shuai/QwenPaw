@@ -7,10 +7,11 @@ commands.allow = ["check_desktop_update", "check_cached_update"]
 
 [[permission]]
 identifier = "desktop-updater-install"
-description = "Allows the frontend to download, install, and restart into desktop updates."
+description = "Allows the frontend to download and install desktop updates, and restart for desktop or component updates."
 commands.allow = [
     "download_desktop_update",
     "install_desktop_update",
     "install_downloaded_update",
     "confirm_desktop_update",
+    "restart_for_component_updates",
 ]

@@ -245,7 +245,13 @@ describe("AppMarket", () => {
             },
           ],
         });
-        return { version: "2.0.0" };
+        return {
+          id: "demo",
+          name: "Demo",
+          version: "2.0.0",
+          loaded: true,
+          restart_required: false,
+        };
       });
       hoisted.upgradeInstalledUGSciPlugin.mockImplementation(async () => {
         fetchCatalog.mockResolvedValue({
@@ -258,10 +264,11 @@ describe("AppMarket", () => {
             },
           ],
         });
-        return { method: "replaced", version: "2.0.0" };
+        return { method: "replaced", version: "2.0.0", loaded: true };
       });
 
-      render(<AppMarket channel={channel} onInstalled={vi.fn()} />);
+      const onInstalled = vi.fn();
+      render(<AppMarket channel={channel} onInstalled={onInstalled} />);
       const action = await screen.findByRole("button", {
         name: wasInstalled ? "appCenter.update" : "appCenter.install",
       });
@@ -274,6 +281,18 @@ describe("AppMarket", () => {
         }),
       ).toBeDisabled();
       expect(fetchCatalog).toHaveBeenCalledTimes(2);
+      if (wasInstalled) {
+        await waitFor(() =>
+          expect(onInstalled).toHaveBeenCalledWith(
+            expect.objectContaining({
+              id: "demo",
+              version: "2.0.0",
+              loaded: true,
+              method: "replaced",
+            }),
+          ),
+        );
+      }
       expect(
         screen.queryByRole("button", { name: "appCenter.update" }),
       ).not.toBeInTheDocument();
@@ -291,7 +310,8 @@ describe("AppMarket", () => {
       ],
     });
     hoisted.upgradeInstalledUGSciPlugin.mockResolvedValue({ method: "queued" });
-    render(<AppMarket channel="ugsci" onInstalled={vi.fn()} />);
+    const onInstalled = vi.fn();
+    render(<AppMarket channel="ugsci" onInstalled={onInstalled} />);
     const update = await screen.findByRole("button", {
       name: "appCenter.update",
     });
@@ -303,6 +323,7 @@ describe("AppMarket", () => {
     expect(queued).toBeDisabled();
     fireEvent.click(queued);
     expect(hoisted.upgradeInstalledUGSciPlugin).toHaveBeenCalledTimes(1);
+    expect(onInstalled).not.toHaveBeenCalled();
     expect(
       screen.queryByRole("button", { name: "appCenter.installedStatus" }),
     ).not.toBeInTheDocument();

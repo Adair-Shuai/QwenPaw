@@ -287,8 +287,39 @@ def unregister_namespace(module_name: str) -> None:
         _finder.unregister(module_name)
 
 
+def _comparison_spelling(path: str) -> str:
+    """Use one Windows spelling for already-resolved comparison paths."""
+    if os.name == "nt" and not path.startswith(("\\\\?\\", "\\\\.\\")):
+        if path.startswith("\\\\"):
+            path = "\\\\?\\UNC\\" + path[2:]
+        elif os.path.isabs(path):
+            path = "\\\\?\\" + path
+    return os.path.normcase(path)
+
+
 def _norm(path: Any) -> str:
-    return os.path.normcase(os.path.realpath(str(path)))
+    raw = str(path)
+    final_path = getattr(os.path, "_getfinalpathname", None)
+    if os.name == "nt" and callable(final_path):
+        candidate = os.path.normpath(raw)
+        if os.path.normcase(candidate) != os.path.normcase(os.devnull):
+            if not candidate.startswith("\\\\?\\") and not os.path.isabs(
+                candidate,
+            ):
+                candidate = os.path.join(os.getcwd(), candidate)
+            try:
+                # Resolve the entire path, including file and directory links,
+                # on every call. realpath resolves existing Windows paths twice
+                # to decide whether it can drop the extended prefix. These are
+                # private comparisons, so retain that prefix instead.
+                # Native Windows API is optional in platform type stubs.
+                # pylint: disable-next=not-callable
+                return _comparison_spelling(final_path(candidate))
+            except (OSError, ValueError):
+                # Keep realpath's non-strict missing/invalid path handling,
+                # including unavailable devices and inaccessible paths.
+                pass
+    return _comparison_spelling(os.path.realpath(raw))
 
 
 def strip_plugin_sys_path(source_path: Any) -> None:

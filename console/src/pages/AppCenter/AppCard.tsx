@@ -3,7 +3,7 @@ import { InteractiveCard } from "@/components/interaction/InteractiveCard";
 /**
  * AppCard.tsx — Individual app card for the App Center grid.
  */
-import { Button, Card, Dropdown, Typography } from "antd";
+import { Button, Card, Dropdown, Typography, Tag } from "antd";
 import { AppWindow, Play, Trash2, MoreHorizontal } from "lucide-react";
 import type { FC, KeyboardEvent } from "react";
 import { useEffect, useState } from "react";
@@ -28,6 +28,19 @@ export interface AppCardData {
   entry_page: string;
   launch_scope?: string;
   status: string;
+  enabled?: boolean;
+  loaded?: boolean;
+  diagnostics?: string[];
+}
+
+export function canOpenApp(
+  app: Pick<AppCardData, "status" | "enabled" | "loaded">,
+): boolean {
+  return (
+    app.enabled !== false &&
+    app.loaded !== false &&
+    !["failed", "disabled", "pending"].includes(app.status)
+  );
 }
 
 interface AppCardProps {
@@ -39,6 +52,10 @@ interface AppCardProps {
 
 export const AppCard: FC<AppCardProps> = ({ app, onClick, onUninstall }) => {
   const { t, i18n } = useTranslation();
+  const available = canOpenApp(app);
+  const open = () => {
+    if (available) onClick(app);
+  };
   const [iconFailed, setIconFailed] = useState(false);
   // icon_url points to an image while icon stays a legacy glyph. plugin.json
   // is developer-controlled, but reject script-like schemes anyway and fall
@@ -88,7 +105,7 @@ export const AppCard: FC<AppCardProps> = ({ app, onClick, onUninstall }) => {
     if (event.target !== event.currentTarget) return;
     if (event.key !== "Enter" && event.key !== " ") return;
     event.preventDefault();
-    onClick(app);
+    open();
   };
 
   return (
@@ -99,10 +116,11 @@ export const AppCard: FC<AppCardProps> = ({ app, onClick, onUninstall }) => {
       >
         <div
           className={styles.cardOpenButton}
-          onClick={() => onClick(app)}
+          onClick={open}
           onKeyDown={handleKeyDown}
           role="button"
-          tabIndex={0}
+          tabIndex={available ? 0 : -1}
+          aria-disabled={!available}
           aria-label={app.name}
         >
           <div className={styles.cardIcon}>
@@ -134,6 +152,29 @@ export const AppCard: FC<AppCardProps> = ({ app, onClick, onUninstall }) => {
               {pickAppDescription(app, i18n.language) ||
                 t("appCenter.noDescription", "No description")}
             </Paragraph>
+            {!available && (
+              <Tag color={app.status === "failed" ? "error" : "default"}>
+                {t(
+                  `appCenter.status.${
+                    app.status === "failed"
+                      ? "failed"
+                      : app.enabled === false || app.status === "disabled"
+                      ? "disabled"
+                      : "pending"
+                  }`,
+                  app.status === "failed"
+                    ? "加载失败"
+                    : app.enabled === false || app.status === "disabled"
+                    ? "已禁用"
+                    : "等待加载",
+                )}
+              </Tag>
+            )}
+            {app.diagnostics?.length ? (
+              <Paragraph type="secondary" title={app.diagnostics.join("\n")}>
+                {app.diagnostics.join("; ")}
+              </Paragraph>
+            ) : null}
             <div className={styles.cardFooter}>
               {app.category && (
                 <span className={styles.cardMeta}>{app.category}</span>
@@ -142,7 +183,11 @@ export const AppCard: FC<AppCardProps> = ({ app, onClick, onUninstall }) => {
           </div>
         </div>
         <div className={styles.cardActions}>
-          <Button icon={<Play size={14} />} onClick={() => onClick(app)}>
+          <Button
+            disabled={!available}
+            icon={<Play size={14} />}
+            onClick={open}
+          >
             {t("appCenter.openApp", "打开应用")}
           </Button>
           {onUninstall && (

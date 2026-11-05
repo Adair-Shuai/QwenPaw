@@ -218,6 +218,7 @@ export function ToolsSkillsCenterPage({
   const { RocketOutlined, ToolOutlined, ThunderboltOutlined } =
     getHost().antdIcons || {};
   const selected = getHost().useSelectedAgent?.();
+  const displayAgentName = getHost().useAgentDisplayName?.();
   const agentId = selected?.id || "default";
   const [agents, setAgents] = useState<AgentSummary[]>([]);
   useEffect(() => {
@@ -287,9 +288,14 @@ export function ToolsSkillsCenterPage({
         options: agents.length
           ? agents.map((agent) => ({
               value: agent.id,
-              label: agent.name || agent.id,
+              label: displayAgentName?.(agent) || agent.name || agent.id,
             }))
-          : [{ value: agentId, label: agentId }],
+          : [
+              {
+                value: agentId,
+                label: displayAgentName?.({ id: agentId, name: "" }) || agentId,
+              },
+            ],
         onChange: (id: string) => getHost().setSelectedAgent?.(id),
       }),
     ),

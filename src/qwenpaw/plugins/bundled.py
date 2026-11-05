@@ -401,17 +401,31 @@ _HASH_EXCLUDED_SUFFIXES = (".pyc", ".pyo")
 
 def _copy_bundle(source: Path, target: Path) -> None:
     """Copy only runtime files; development dependencies never reach users."""
+    source_io = io_path(source)
+    manifest = _read_manifest(source)
+    is_ugsci = isinstance(manifest, dict) and manifest.get("id") == "ugsci"
+    visualization = Path(source_io) / "visualization"
+    ignore_generated = shutil.ignore_patterns(
+        "node_modules",
+        "__pycache__",
+        ".git",
+        "*.pyc",
+        "*.pyo",
+        "*.map",
+    )
+
+    def ignore(directory: str, names: list[str]) -> set[str]:
+        excluded = ignore_generated(directory, names)
+        if is_ugsci and Path(directory) == visualization:
+            excluded.update(
+                name for name in names if Path(name) == Path("data")
+            )
+        return excluded
+
     shutil.copytree(
-        io_path(source),
+        source_io,
         io_path(target),
-        ignore=shutil.ignore_patterns(
-            "node_modules",
-            "__pycache__",
-            ".git",
-            "*.pyc",
-            "*.pyo",
-            "*.map",
-        ),
+        ignore=ignore,
     )
 
 
@@ -697,6 +711,24 @@ def _stage_and_replace_bundle(
 _PRESERVE_ON_UPDATE_DIRS = frozenset(DEFAULT_PRESERVE_PATHS)
 
 
+def _bundle_content_files(plugin_dir: Path) -> list[Path]:
+    """Collect the original hash inputs without entering excluded trees."""
+    all_files: list[Path] = []
+    for directory, directories, names in os.walk(plugin_dir):
+        directories[:] = [
+            name for name in directories if name not in _HASH_EXCLUDED_NAMES
+        ]
+        for name in names:
+            path = Path(directory) / name
+            if (
+                name not in _HASH_EXCLUDED_NAMES
+                and path.suffix not in _HASH_EXCLUDED_SUFFIXES
+                and path.is_file()
+            ):
+                all_files.append(path)
+    return sorted(all_files)
+
+
 def _compute_bundle_hash(plugin_dir: Path, manifest: dict[str, Any]) -> str:
     """Compute a content hash for a plugin directory.
 
@@ -715,25 +747,7 @@ def _compute_bundle_hash(plugin_dir: Path, manifest: dict[str, Any]) -> str:
     manifest_text = json.dumps(manifest, sort_keys=True, ensure_ascii=False)
     h.update(manifest_text.encode("utf-8"))
 
-    # Collect every file in the plugin directory, sorted for determinism.
-    all_files: list[Path] = []
-    for f in plugin_dir.rglob("*"):
-        if not f.is_file():
-            continue
-        rel = f.relative_to(plugin_dir)
-        # Skip files inside excluded directories (e.g. __pycache__/x.pyc)
-        if any(part in _HASH_EXCLUDED_NAMES for part in rel.parts[:-1]):
-            continue
-        # Skip excluded file names and suffixes
-        if f.name in _HASH_EXCLUDED_NAMES:
-            continue
-        if f.suffix in _HASH_EXCLUDED_SUFFIXES:
-            continue
-        all_files.append(f)
-
-    all_files.sort()
-
-    for f in all_files:
+    for f in _bundle_content_files(plugin_dir):
         relative_name = f.relative_to(plugin_dir).as_posix()
         h.update(relative_name.encode("utf-8"))
         h.update(f.read_bytes())
@@ -763,17 +777,8 @@ def _read_bundle_revision(plugin_dir: Path) -> str | None:
 
 def _bundle_runtime_files(source: Path) -> list[str]:
     files: list[str] = []
-    for path in source.rglob("*"):
-        if not path.is_file():
-            continue
+    for path in _bundle_content_files(source):
         relative = path.relative_to(source)
-        if any(part in _HASH_EXCLUDED_NAMES for part in relative.parts[:-1]):
-            continue
-        if (
-            path.name in _HASH_EXCLUDED_NAMES
-            or path.suffix in _HASH_EXCLUDED_SUFFIXES
-        ):
-            continue
         if path.suffix == ".map":
             continue
         files.append(relative.as_posix())

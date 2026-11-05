@@ -18,6 +18,7 @@ from unittest.mock import patch
 import pytest
 
 from qwenpaw.plugins import install_lock as lock_mod
+from tests.fs_alias_support import directory_alias
 
 _WINDOWS = os.name == "nt"
 _POSIX_FLOCK = pytest.mark.skipif(
@@ -715,7 +716,7 @@ class TestEnvironmentIdentity:
         alias = tmp_path / "caseparent" / "casesite"
         if alias_kind == "symlink":
             alias = tmp_path / "alias"
-            alias.symlink_to(site, target_is_directory=True)
+            directory_alias(site, alias)
         elif alias_kind == "case":
             if not alias.exists() or not alias.samefile(site):
                 pytest.skip("requires a case-insensitive filesystem")

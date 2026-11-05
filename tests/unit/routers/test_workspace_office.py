@@ -12,9 +12,11 @@ Covers:
 # pylint: disable=protected-access,unused-argument
 
 import json
+import os
 import subprocess
+import sys
 from pathlib import Path
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch, MagicMock, AsyncMock
 
 import pytest
 
@@ -257,7 +259,6 @@ class TestConvertWithOfficecli:
     def test_no_temp_file_created(self):
         """Verify no temp file is created (stdout-based approach)."""
         import tempfile
-        import os
 
         from qwenpaw.app.routers.workspace import _convert_with_officecli
 
@@ -651,7 +652,6 @@ class TestConvertDocxToHtmlFallback:
         """
         # Create a temporary .docx file to avoid FileNotFoundError
         import tempfile
-        import os
 
         fd, tmp_path = tempfile.mkstemp(suffix=".docx")
         try:
@@ -687,3 +687,104 @@ class TestConvertDocxToHtmlFallback:
                     pass
         finally:
             os.unlink(tmp_path)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "entry",
+    ["probe", "html", "stats", "screenshot", "outline", "issues"],
+)
+async def test_managed_office_preview_passes_update_guard_to_real_child(
+    entry,
+    tmp_path,
+    monkeypatch,
+):
+    import qwenpaw.app.routers.workspace as ws
+
+    monkeypatch.setenv("OFFICECLI_SKIP_UPDATE", "0")
+    monkeypatch.setenv("QWENPAW_OFFICECLI_ENV_PROBE", "preserved")
+    monkeypatch.setattr(ws, "_officecli_bin", lambda: "officecli-fixture")
+    monkeypatch.setattr(
+        ws,
+        "_bundled_officecli_path",
+        lambda: "officecli-fixture",
+    )
+    monkeypatch.setattr(ws, "_officecli_checked", False)
+    monkeypatch.setattr(ws, "_officecli_ok", False)
+    original_run = subprocess.run
+    calls = []
+    png = b"\x89PNG\r\n\x1a\n"
+
+    def execute(command, **kwargs):
+        guard = original_run(
+            [
+                sys.executable,
+                "-I",
+                "-c",
+                "import os; assert os.environ['OFFICECLI_SKIP_UPDATE']=='1'; "
+                "assert os.environ['QWENPAW_OFFICECLI_ENV_PROBE']"
+                "=='preserved'",
+            ],
+            env=kwargs["env"],
+            capture_output=True,
+            check=False,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+        assert guard.returncode == 0, guard.stderr
+        calls.append(command)
+        if entry == "probe":
+            stdout = "Commands: view"
+        elif entry == "html":
+            stdout = b"<html>Preview</html>"
+        elif entry == "stats":
+            stdout = '{"pageCount":2}'
+        else:
+            stdout = '{"ok":true}'
+            if entry == "screenshot":
+                Path(command[command.index("-o") + 1]).write_bytes(png)
+        return subprocess.CompletedProcess(command, 0, stdout, b"")
+
+    monkeypatch.setattr(ws.subprocess, "run", execute)
+    if entry == "probe":
+        assert ws._is_officecli_available()
+    elif entry == "html":
+        assert (
+            ws._convert_with_officecli("preview.docx")
+            == "<html>Preview</html>"
+        )
+    elif entry == "stats":
+        ws._page_count_cache.clear()
+        assert ws._get_officecli_page_count("preview.docx") == 2
+    else:
+        monkeypatch.setattr(ws, "_is_officecli_available", lambda: True)
+        monkeypatch.setattr(
+            ws,
+            "get_agent_for_request",
+            AsyncMock(return_value=object()),
+        )
+        monkeypatch.setattr(
+            ws,
+            "_resolve_office_file_path",
+            AsyncMock(return_value=tmp_path / "preview.docx"),
+        )
+        if entry == "screenshot":
+            monkeypatch.setattr(
+                ws,
+                "_get_officecli_page_count",
+                lambda _path: 2,
+            )
+            response = await ws.office_screenshot(
+                None,
+                ws.OfficeViewRequest(url="preview.docx", page=1),
+            )
+            assert Path(response.path).read_bytes() == png
+            assert response.headers["X-Total-Pages"] == "2"
+            await response.background()
+        else:
+            response = await getattr(ws, "office_" + entry)(
+                None,
+                ws.ConvertOfficeRequest(url="preview.docx"),
+            )
+            assert response == {"ok": True}
+    assert len(calls) == 1
+    assert os.environ["OFFICECLI_SKIP_UPDATE"] == "0"

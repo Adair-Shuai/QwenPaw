@@ -1,0 +1,198 @@
+.home {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--app-chat-max-width, 796px);
+  flex: 0 0 auto;
+  margin: auto;
+  padding: 24px 28px;
+  color: var(--app-text);
+  min-width: 0;
+  h2 {
+    font-size: calc(24px * var(--app-font-scale));
+    font-weight: 500;
+    line-height: 1.4;
+    margin: 14px 0 9px;
+  }
+  h3 {
+    font-size: var(--app-font-caption);
+    font-weight: 500;
+    color: var(--app-text-secondary);
+    margin: 0 0 10px;
+  }
+  button {
+    cursor: pointer;
+    font: inherit;
+  }
+  button:focus-visible {
+    outline: 2px solid var(--app-accent);
+    outline-offset: 3px;
+  }
+}
+.intro {
+  margin-bottom: 24px;
+  p {
+    font-size: var(--app-font-secondary);
+    line-height: 1.7;
+    color: var(--app-text-secondary);
+    margin: 0;
+    overflow-wrap: anywhere;
+  }
+}
+.avatar {
+  display: flex;
+  align-items: center;
+  width: fit-content;
+  &:empty {
+    display: none;
+  }
+  > img,
+  > svg {
+    display: block;
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    object-fit: contain;
+  }
+}
+.recent {
+  margin: 0 0 24px;
+}
+.recentGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+.resumeCard {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+  min-height: 108px;
+  text-align: left;
+  background: var(--app-surface);
+  border: 1px solid var(--app-border-subtle);
+  border-radius: 12px;
+  padding: 15px;
+  color: var(--app-text);
+  transition:
+    background 0.15s,
+    border-color 0.15s;
+  &:hover {
+    background: var(--app-state-hover-bg);
+    border-color: var(--app-accent-border);
+  }
+  strong {
+    font-size: var(--app-font-secondary);
+    font-weight: 500;
+    max-width: 100%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  &[data-status="approval"] .status {
+    color: var(--app-warning-text);
+  }
+  &[data-status="running"] .status {
+    color: var(--app-accent-text);
+  }
+}
+.status,
+.resumeAction {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: var(--app-font-caption);
+  color: var(--app-text-secondary);
+}
+.resumeAction {
+  justify-content: space-between;
+  width: 100%;
+}
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    max-width: 100%;
+    min-height: 36px;
+    padding: 7px 12px;
+    border: 1px solid var(--app-border-subtle);
+    border-radius: 8px;
+    background: transparent;
+    color: var(--app-text);
+    font-size: var(--app-font-secondary);
+    &:hover {
+      background: var(--app-fill);
+    }
+  }
+}
+.hint {
+  display: block;
+  margin-top: 9px;
+  font-size: var(--app-font-caption);
+  color: var(--app-text-tertiary);
+}
+.capabilities {
+  margin-top: 22px;
+  > section {
+    padding: 0 !important;
+    margin: 0 !important;
+    max-width: 100% !important;
+    text-align: left;
+    align-items: flex-start;
+  }
+  :global([role="heading"]):empty {
+    display: none;
+  }
+  > section > div:last-child {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start !important;
+    margin-top: 0 !important;
+    gap: 6px;
+    max-width: 100%;
+  }
+  button {
+    max-width: 100%;
+    white-space: normal;
+    min-height: 30px !important;
+    border-radius: 20px !important;
+    padding: 5px 10px !important;
+    font-size: var(--app-font-caption) !important;
+    gap: 6px !important;
+    background: transparent !important;
+  }
+  button > svg:last-child {
+    display: none;
+  }
+}
+:global(html[data-page-style="classic"]) .resumeCard {
+  border-radius: 8px;
+}
+@container chat-home (max-width: 540px) {
+  .home {
+    padding: 20px 12px;
+  }
+  .intro {
+    margin-bottom: 20px;
+  }
+  .recentGrid {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+  .resumeCard {
+    gap: 6px;
+    padding: 12px;
+  }
+  .actions button {
+    min-height: 40px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .resumeCard {
+    transition: none;
+  }
+}

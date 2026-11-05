@@ -14,6 +14,11 @@ router = APIRouter(tags=["healthz"])
 async def get_healthz(request: Request):
     """Return 200 after core agents are ready, otherwise return 503."""
     state = request.app.state
+    if getattr(state, "startup_failed", False):
+        return JSONResponse(
+            status_code=500,
+            content={"status": "failed", "detail": "Core startup failed"},
+        )
     ready: asyncio.Event = getattr(state, "startup_ready", None)
     if ready is None or not ready.is_set():
         return JSONResponse(

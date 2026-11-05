@@ -6,8 +6,10 @@ from __future__ import annotations
 import importlib.util
 import hashlib
 import json
+import os
 from pathlib import Path
 from types import SimpleNamespace
+import sys
 
 import pytest
 
@@ -141,6 +143,78 @@ def test_matching_marker_cannot_bypass_cached_binary_validation(
     monkeypatch.setattr(helper.sys, "argv", ["stage", "--dest", str(tmp_path)])
     with pytest.raises(SystemExit, match="checksum mismatch"):
         helper.main()
+
+
+def test_binary_verification_disables_engine_self_updates(
+    tmp_path,
+    monkeypatch,
+):
+    helper = _load_helper()
+    binary = tmp_path / "engine"
+    binary.write_bytes(b"verified test engine")
+    lock = tmp_path / "release.json"
+    lock.write_text(
+        json.dumps(
+            {
+                "sha256": {
+                    "asset": hashlib.sha256(binary.read_bytes()).hexdigest(),
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(helper, "LOCK_PATH", lock)
+    monkeypatch.setenv("OFFICECLI_SKIP_UPDATE", "0")
+    original_run = helper.subprocess.run
+
+    def run(command, **kwargs):
+        assert command == [str(binary), "--version"]
+        return original_run(
+            [
+                sys.executable,
+                "-I",
+                "-c",
+                "import os; assert os.environ['OFFICECLI_SKIP_UPDATE']=='1'; "
+                "print('1.0.157')",
+            ],
+            **kwargs,
+        )
+
+    monkeypatch.setattr(helper.subprocess, "run", run)
+    helper._verify_binary(binary, "asset", "v1.0.157")
+    assert os.environ["OFFICECLI_SKIP_UPDATE"] == "0"
+
+
+def test_binary_verification_rejects_mutation_during_probe(
+    tmp_path,
+    monkeypatch,
+):
+    helper = _load_helper()
+    binary = tmp_path / "engine"
+    binary.write_bytes(b"verified test engine")
+    lock = tmp_path / "release.json"
+    lock.write_text(
+        json.dumps(
+            {
+                "sha256": {
+                    "asset": hashlib.sha256(binary.read_bytes()).hexdigest(),
+                },
+            },
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(helper, "LOCK_PATH", lock)
+
+    def mutate(*_args, **_kwargs):
+        binary.write_bytes(b"unreviewed replacement")
+        return SimpleNamespace(returncode=0, stdout="1.0.157", stderr="")
+
+    monkeypatch.setattr(helper.subprocess, "run", mutate)
+    with pytest.raises(
+        SystemExit,
+        match="checksum changed during verification",
+    ):
+        helper._verify_binary(binary, "asset", "v1.0.157")
 
 
 @pytest.mark.parametrize("failure", ["checksum", "version"])

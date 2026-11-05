@@ -1,4 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
+import { createPortal } from "react-dom";
+import styles from "./ApprovalQueueOverlay.module.less";
 import { useTranslation } from "react-i18next";
 import { IconButton } from "@agentscope-ai/design";
 import { ChevronLeft, ChevronRight } from "lucide-react";
@@ -8,6 +10,7 @@ interface ApprovalQueueItem {
 }
 
 interface ApprovalQueueOverlayProps<T extends ApprovalQueueItem> {
+  container?: HTMLElement | null;
   items: readonly T[];
   renderItem: (item: T) => ReactNode;
   focusedRequestId?: string | null;
@@ -19,6 +22,7 @@ export default function ApprovalQueueOverlay<T extends ApprovalQueueItem>({
   renderItem,
   focusedRequestId,
   focusKey,
+  container,
 }: ApprovalQueueOverlayProps<T>) {
   const { t } = useTranslation();
   const [activeRequestId, setActiveRequestId] = useState<string | null>(null);
@@ -85,21 +89,26 @@ export default function ApprovalQueueOverlay<T extends ApprovalQueueItem>({
     total: items.length,
   });
 
-  return (
+  const panel = (
     <section
+      className={container ? styles.inline : undefined}
       role="region"
       aria-label={t("approval.queue.title")}
-      style={{
-        position: "fixed",
-        bottom: 80,
-        right: 24,
-        zIndex: 1000,
-        display: "flex",
-        width: "calc(100vw - 48px)",
-        maxWidth: 480,
-        flexDirection: "column",
-        gap: 8,
-      }}
+      style={
+        container
+          ? undefined
+          : {
+              position: "fixed",
+              bottom: 80,
+              right: 24,
+              zIndex: 1000,
+              display: "flex",
+              width: "calc(100vw - 48px)",
+              maxWidth: 480,
+              flexDirection: "column",
+              gap: 8,
+            }
+      }
     >
       <div
         style={{
@@ -165,4 +174,5 @@ export default function ApprovalQueueOverlay<T extends ApprovalQueueItem>({
       </div>
     </section>
   );
+  return container ? createPortal(panel, container) : panel;
 }

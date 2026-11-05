@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Iterator
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from ..skill_transfer import read_regular_file
+from ..skill_transfer import read_regular_file, reject_source_aliases
 from .schedule_fields import (
     contains_control as _contains_control,
     encoded as _encoded,
@@ -245,7 +245,11 @@ def _read_project_roots(
 ) -> dict[str, list[str]]:
     path = codex_home / ".codex-global-state.json"
     try:
-        encoded = read_regular_file(path, max_bytes=_MAX_STATE_BYTES)
+        encoded = read_regular_file(
+            path,
+            max_bytes=_MAX_STATE_BYTES,
+            root=codex_home,
+        )
         payload = json.loads(encoded.decode("utf-8"))
     except FileNotFoundError:
         return {}
@@ -382,6 +386,15 @@ def _toml_record(document: dict[str, Any], fallback_id: str) -> dict[str, Any]:
     }
 
 
+def _unsafe_source_alias(path: Path, *, root: Path) -> bool:
+    """Check the declared source boundary before any directory traversal."""
+    try:
+        reject_source_aliases(path, root=root)
+    except (OSError, ValueError):
+        return True
+    return False
+
+
 # pylint: disable-next=too-many-locals
 def _read_toml_candidates(
     codex_home: Path,
@@ -392,7 +405,7 @@ def _read_toml_candidates(
     discovered_ids: set[str] = set()
     if not root.exists():
         return records, discovered_ids
-    if root.is_symlink() or not root.is_dir():
+    if _unsafe_source_alias(root, root=codex_home) or not root.is_dir():
         warnings.append(
             "Skipped unsafe Codex automations path (expected a directory).",
         )
@@ -406,7 +419,10 @@ def _read_toml_candidates(
         )
         return records, discovered_ids
     for directory in directories:
-        if directory.is_symlink() or not directory.is_dir():
+        if (
+            _unsafe_source_alias(directory, root=codex_home)
+            or not directory.is_dir()
+        ):
             continue
         path = directory / "automation.toml"
         raw_candidate_id = directory.name
@@ -417,7 +433,11 @@ def _read_toml_candidates(
         )
         display_id = candidate_id or "<unsafe-id>"
         try:
-            encoded = read_regular_file(path, max_bytes=_MAX_TOML_BYTES)
+            encoded = read_regular_file(
+                path,
+                max_bytes=_MAX_TOML_BYTES,
+                root=codex_home,
+            )
         except FileNotFoundError:
             continue
         except (OSError, ValueError) as exc:
@@ -481,6 +501,7 @@ def _quoted_identifier(value: str) -> str:
 
 def _regular_file_signature(path: Path, maximum_bytes: int) -> tuple[int, ...]:
     """Return a change-detection signature for a bounded regular file."""
+    reject_source_aliases(path)
     info = path.lstat()
     if not stat.S_ISREG(info.st_mode):
         raise ValueError(f"{path.name} is not a regular file")
@@ -776,7 +797,7 @@ def _read_sqlite_candidates(
     candidates: dict[str, tuple[dict[str, Any], Path]] = {}
     discovered_ids: set[str] = set()
     run_thread_ids: set[str] = set()
-    if not root.is_dir() or root.is_symlink():
+    if not root.is_dir() or _unsafe_source_alias(root, root=codex_home):
         return candidates, discovered_ids, run_thread_ids
     try:
         databases = sorted(root.glob("*.db"), key=lambda item: item.name)
@@ -793,7 +814,10 @@ def _read_sqlite_candidates(
             )
             or "<unsafe-name>"
         )
-        if database.is_symlink() or not database.is_file():
+        if (
+            _unsafe_source_alias(database, root=codex_home)
+            or not database.is_file()
+        ):
             warnings.append(
                 f"Skipped unsafe Codex SQLite path {database_name!r}.",
             )

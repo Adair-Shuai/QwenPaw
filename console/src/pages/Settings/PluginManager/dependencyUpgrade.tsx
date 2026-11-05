@@ -349,5 +349,5 @@ export async function runPluginUpgrade(
 ): Promise<UGSciUpgradeResult | null> {
   const result = await runPluginInstall(upgrade, t);
   if (result === null || "method" in result) return result;
-  return { method: "replaced", version: result.version };
+  return { method: "replaced", version: result.version, loaded: result.loaded };
 }

@@ -9,6 +9,7 @@ import logging
 import os
 import re
 import shlex
+import stat
 import sys
 import tempfile
 from contextlib import asynccontextmanager, contextmanager
@@ -1285,9 +1286,19 @@ async def _publish_additions(audit, evaluate, target, files):
 def _write_additions(target: Path, files: dict[str, bytes]) -> None:
     """Publish the exact validated bytes while the site lock remains held."""
 
+    def linked(path):
+        try:
+            info = path.lstat()
+        except FileNotFoundError:
+            return False
+        return stat.S_ISLNK(info.st_mode) or bool(
+            getattr(info, "st_file_attributes", 0)
+            & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400),
+        )
+
     def validate_path(path):
         if not path.resolve().is_relative_to(target) or any(
-            parent.is_symlink()
+            linked(parent)
             for parent in (path, *path.parents)
             if parent.is_relative_to(target)
         ):

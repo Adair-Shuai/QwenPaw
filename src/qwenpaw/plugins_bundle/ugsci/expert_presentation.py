@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+import os
 import uuid
 from pathlib import Path
 from typing import Callable, Literal
@@ -13,6 +14,18 @@ from filelock import FileLock
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 
 Category = Literal["油气工程", "数据与研究", "通用助手", "应用专家"]
+
+
+def _containment_path(path: Path) -> Path:
+    """Compare resolved Windows paths with the same extended-path spelling."""
+    if os.name != "nt":
+        return path
+    value = str(path)
+    if value.startswith("\\\\?\\"):
+        return path
+    if value.startswith("\\\\"):
+        return Path("\\\\?\\UNC\\" + value[2:])
+    return Path("\\\\?\\" + value)
 
 
 class ExpertPresentation(BaseModel):
@@ -45,7 +58,12 @@ def build_expert_presentation_router(
             raise HTTPException(404, "专家不存在")
         root = root.resolve()
         target = root / "ugsci" / "expert-card.json"
-        if not target.resolve().is_relative_to(root):
+        # A concurrent mkdir can make Python's non-strict Windows realpath
+        # retain its extended prefix for the missing file but not its root.
+        # Keep real resolution and containment; normalize only their spelling.
+        if not _containment_path(target.resolve()).is_relative_to(
+            _containment_path(root),
+        ):
             raise HTTPException(400, "专家显示配置路径无效")
         return target
 

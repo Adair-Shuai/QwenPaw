@@ -11,6 +11,22 @@ from urllib.request import url2pathname
 CLIENT_ID = "qwenpaw_client_message_id"
 TURN_STATE = "qwenpaw_turn_state"
 REGENERATE_FROM = "qwenpaw_regenerate_from"
+STEERING = "qwenpaw_steering"
+
+
+def _is_steering_message(message: dict) -> bool:
+    """Recognize host-created supplements inside an existing user turn.
+
+    Ordinary request conversion strips this reserved marker. A partial or
+    malformed historical marker must not make a real later turn disappear
+    from the regeneration boundary check.
+    """
+    metadata = message.get("metadata")
+    steering = metadata.get(STEERING) if isinstance(metadata, dict) else None
+    return isinstance(steering, dict) and all(
+        isinstance(steering.get(key), str) and steering[key].strip()
+        for key in ("request_id", "run_id")
+    )
 
 
 def repair_invalid_history_images(data: dict) -> None:
@@ -93,8 +109,11 @@ def stamp_console_turn(
 def prepare_console_regeneration(data: dict, request: Any) -> None:
     """Rewind only the explicitly requested last user turn, in memory.
 
-    Nothing is written until the replacement succeeds. Never infer a target
-    from matching text: identical consecutive user messages are legitimate.
+    In-flight steering supplements belong to their original user turn, so
+    they do not become independently regeneratable turns. Rewinding the root
+    removes its complete response and supplements. Nothing is written until
+    the replacement succeeds. Never infer a target from matching text:
+    identical consecutive user messages are legitimate.
     """
     target = (getattr(request, "request_context", None) or {}).get(
         REGENERATE_FROM,
@@ -108,6 +127,8 @@ def prepare_console_regeneration(data: dict, request: Any) -> None:
     for index in range(len(context) - 1, -1, -1):
         message = context[index]
         if message.get("role") != "user":
+            continue
+        if _is_steering_message(message):
             continue
         matches = (
             message.get("id") == target.get("message_id")

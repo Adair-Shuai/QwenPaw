@@ -442,7 +442,8 @@ describe("plugin module", () => {
           id: "ugsci",
           name: "UGSci",
           version: "2.0.0",
-          restart_required: true,
+          restart_required: false,
+          loaded: true,
         },
       }),
     );
@@ -455,7 +456,12 @@ describe("plugin module", () => {
         sha256: "b".repeat(64),
         upgrade_available: true,
       }),
-    ).resolves.toEqual({ method: "replaced", version: "2.0.0" });
+    ).resolves.toEqual({
+      method: "replaced",
+      version: "2.0.0",
+      loaded: true,
+      restart_required: false,
+    });
 
     const [url, init] = (fetch as ReturnType<typeof vi.fn>).mock.calls[0] as [
       string,
@@ -539,7 +545,8 @@ describe("plugin module", () => {
           id: "ugsci",
           name: "UGSci",
           version: "2.0.0",
-          restart_required: true,
+          restart_required: false,
+          loaded: true,
         },
       }),
     );
@@ -552,7 +559,12 @@ describe("plugin module", () => {
         sha256: "b".repeat(64),
         upgrade_available: true,
       }),
-    ).resolves.toEqual({ method: "replaced", version: "2.0.0" });
+    ).resolves.toEqual({
+      method: "replaced",
+      version: "2.0.0",
+      loaded: true,
+      restart_required: false,
+    });
   });
 
   it("upgradeInstalledUGSciPlugin maps core_below_minimum to core-update-required", async () => {

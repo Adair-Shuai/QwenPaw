@@ -1235,7 +1235,7 @@ export default function Sidebar({
                     <img src={localAvatar ?? DEFAULT_AVATAR} alt="UGSci" />
                   </span>
                   <span className={skin.identityText}>
-                    <strong>
+                    <strong title={authUsername || t("sidebar.localWorkspace")}>
                       {authUsername || t("sidebar.localWorkspace")}
                     </strong>
                     <small>

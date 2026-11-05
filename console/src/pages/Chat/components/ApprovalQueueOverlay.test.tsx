@@ -31,6 +31,51 @@ const requests = [
 ];
 
 describe("ApprovalQueueOverlay", () => {
+  it("mounts real approval controls in the composer anchor and removes them when resolved", async () => {
+    const user = userEvent.setup();
+    const resolved = vi.fn();
+    function Harness() {
+      const [anchor, setAnchor] = useState<HTMLDivElement | null>(null);
+      const [items, setItems] = useState(requests);
+      return (
+        <>
+          <div data-testid="composer-anchor" ref={setAnchor} />
+          <ApprovalQueueOverlay
+            container={anchor}
+            items={items}
+            renderItem={(item) => (
+              <button
+                onClick={() => {
+                  resolved(item.requestId);
+                  setItems((current) =>
+                    current.filter((i) => i.requestId !== item.requestId),
+                  );
+                }}
+              >
+                Resolve {item.label}
+              </button>
+            )}
+          />
+        </>
+      );
+    }
+    render(<Harness />);
+    const anchor = screen.getByTestId("composer-anchor");
+    expect(anchor).toContainElement(
+      screen.getByRole("region", { name: "Pending approvals" }),
+    );
+    expect(screen.getByRole("region")).not.toHaveStyle({ position: "fixed" });
+    await user.click(
+      screen.getByRole("button", { name: "Resolve First approval" }),
+    );
+    expect(resolved).toHaveBeenCalledWith("first");
+    expect(resolved).toHaveBeenCalledTimes(1);
+    await user.click(
+      screen.getByRole("button", { name: "Resolve Second approval" }),
+    );
+    expect(anchor).toBeEmptyDOMElement();
+  });
+
   it("shows one discoverable approval at a time with N/M navigation", async () => {
     const user = userEvent.setup();
     render(

@@ -12,6 +12,7 @@ import pytest
 from qwenpaw.components.service import (
     ComponentUpdateService,
     configured_service,
+    finalize_booted_runtime,
     queue_all_component_updates,
     queue_component_update,
     resolve_component_destination,
@@ -64,6 +65,9 @@ def test_runtime_cleanup_is_once_per_boot_and_retries_next_boot(
             "updated": [],
             "errors": [],
         }
+    assert calls == []  # Importing/serving HTTP is not a successful boot.
+    for _ in range(2):
+        finalize_booted_runtime()
     assert calls == ["configure", "finalize", "close"] * 2
 
 
@@ -1455,3 +1459,91 @@ def test_startup_core_below_minimum_preserves_pending_attempts(
     payload = json.loads(pending.read_text(encoding="utf-8"))
     assert list(payload["components"]) == ["demo"]
     assert payload["components"]["demo"]["attempts"] == 0
+
+
+@pytest.mark.parametrize("same_component", [False, True])
+def test_startup_ack_preserves_requests_queued_during_install(
+    monkeypatch,
+    tmp_path,
+    same_component,
+):
+    from qwenpaw.components import service as module
+
+    monkeypatch.setattr(
+        module,
+        "_PENDING_UPDATES_PATH",
+        tmp_path / "pending.json",
+    )
+    module._write_pending_components({"first"})
+    original = module._load_pending_records()["first"]["operation_id"]
+    queued = "first" if same_component else "second"
+
+    def install(component, _manifest):
+        module._write_pending_components({queued})
+        return {"component": component, "updated": True}
+
+    service = SimpleNamespace(
+        snapshot=lambda: ({}, [{"component": "first"}]),
+        install_from_manifest=install,
+        client=SimpleNamespace(close=lambda: None),
+    )
+    monkeypatch.setattr(module, "configured_service", lambda: service)
+    assert run_startup_updates()["updated"] == [
+        {"component": "first", "updated": True},
+    ]
+    pending = module._load_pending_records()
+    assert set(pending) == {queued}
+    assert pending[queued]["operation_id"] != original
+    assert pending[queued]["attempts"] == 0
+
+
+def test_startup_consumer_lock_does_not_block_queue_admission(
+    monkeypatch,
+    tmp_path,
+):
+    from qwenpaw.components import service as module
+    from qwenpaw.plugins.install_lock import plugin_install_lock
+
+    path = tmp_path / "pending.json"
+    monkeypatch.setattr(module, "_PENDING_UPDATES_PATH", path)
+    module._write_pending_components({"first"})
+    with plugin_install_lock(path.with_suffix(".consumer.lock")):
+        module._write_pending_components({"second"})
+        result = run_startup_updates()
+    assert not result["updated"]
+    assert result["errors"]
+    assert set(module._load_pending_records()) == {"first", "second"}
+    assert all(
+        row["attempts"] == 0 for row in module._load_pending_records().values()
+    )
+
+
+def test_pending_queue_serializes_independent_process_writers(tmp_path):
+    import subprocess
+    import sys
+    from contextlib import ExitStack
+
+    path = tmp_path / "pending.json"
+    script = (
+        "import sys; from pathlib import Path; "
+        "from qwenpaw.components import service; "
+        "service._PENDING_UPDATES_PATH=Path(sys.argv[1]); "
+        "service._write_pending_components(set(sys.argv[2:]))"
+    )
+    with ExitStack() as stack:
+        processes = [
+            stack.enter_context(
+                subprocess.Popen(
+                    [sys.executable, "-c", script, str(path), *group],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                ),
+            )
+            for group in (("first", "second"), ("third", "fourth"))
+        ]
+        for process in processes:
+            stdout, stderr = process.communicate(timeout=60)
+            assert process.returncode == 0, (stdout, stderr)
+    rows = json.loads(path.read_text(encoding="utf-8"))["components"]
+    assert set(rows) == {"first", "second", "third", "fourth"}
+    assert len({row["operation_id"] for row in rows.values()}) == 4

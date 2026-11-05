@@ -234,10 +234,20 @@ export function useChatInputDraft(
     // Ignore a pre-#8351 per-agent entry instead of restoring it (#8351).
     discardLegacyDraft(agentId);
 
-    const getTextarea = (): HTMLTextAreaElement | null => {
-      const sender = document.querySelector('[class*="sender"]');
-      return sender?.querySelector("textarea") as HTMLTextAreaElement | null;
-    };
+    const getTextarea = (): HTMLTextAreaElement | null =>
+      document.querySelector<HTMLTextAreaElement>(
+        'textarea[data-sender-input="true"]',
+      ) ??
+      document.querySelector<HTMLTextAreaElement>('[class*="sender"] textarea');
+
+    // Read before listening so a session switch cannot capture the previous
+    // conversation's value. New SDK nodes re-read authoritative storage below.
+    const storedDraft = parseDraft(localStorage.getItem(storageKey));
+    let restoring = false;
+    let disposed = false;
+    const restoredTextareas = new WeakSet<HTMLTextAreaElement>();
+    const editedTextareas = new WeakSet<HTMLTextAreaElement>();
+    const selectionFrames = new Set<number>();
 
     const saveDraft = (textarea: HTMLTextAreaElement) => {
       const draft: DraftState = {
@@ -256,9 +266,15 @@ export function useChatInputDraft(
     const handleInput = (e: Event) => {
       const target = e.target as HTMLElement;
       if (target?.tagName !== "TEXTAREA") return;
-      if (!target?.closest('[class*="sender"]')) return;
+      if (target !== getTextarea()) return;
 
-      saveDraft(target as HTMLTextAreaElement);
+      if (!restoring) {
+        const textarea = target as HTMLTextAreaElement;
+        // Even an intentional empty edit wins over an older stored snapshot.
+        restoredTextareas.add(textarea);
+        editedTextareas.add(textarea);
+        saveDraft(textarea);
+      }
 
       // Minimal loop mode detection: sync indicator with availableModes
       const val = (target as HTMLTextAreaElement).value.trimStart();
@@ -272,50 +288,63 @@ export function useChatInputDraft(
       if (match) useLoopStore.getState().setSelectedMode(match.id);
     };
 
-    // Read once, before the input listener, so a session switch cannot save
-    // the previous conversation's text into this session's slot (#8351).
-    const storedDraft = parseDraft(localStorage.getItem(storageKey));
-    const applyStoredDraft = (textarea: HTMLTextAreaElement) => {
-      if (storedDraft) {
-        setTextareaValue(textarea, storedDraft.value);
-        requestAnimationFrame(() => {
-          textarea.selectionStart = storedDraft.selectionStart;
-          textarea.selectionEnd = storedDraft.selectionEnd;
-        });
-        return;
+    const applyStoredDraft = (
+      textarea: HTMLTextAreaElement,
+      replacePreviousSession = false,
+    ) => {
+      if (disposed || restoredTextareas.has(textarea)) return;
+      restoredTextareas.add(textarea);
+      // A late-mounted sender may already contain a newer user revision.
+      if (!replacePreviousSession && textarea.value) return;
+      // Admission can remove the persisted draft without dispatching input;
+      // another window can also update it. Never resurrect a cached snapshot.
+      const draft = replacePreviousSession
+        ? storedDraft
+        : parseDraft(localStorage.getItem(storageKey));
+      if (!draft && (!replacePreviousSession || !textarea.value)) return;
+
+      // Sync SDK state through its real input event without re-saving the
+      // temporary end-of-text cursor created by setTextareaValue.
+      restoring = true;
+      try {
+        setTextareaValue(textarea, draft?.value ?? "");
+      } finally {
+        restoring = false;
       }
-      if (textarea.value) setTextareaValue(textarea, "");
+      if (!draft) return;
+      const frame = requestAnimationFrame(() => {
+        selectionFrames.delete(frame);
+        if (
+          disposed ||
+          !textarea.isConnected ||
+          editedTextareas.has(textarea) ||
+          textarea.value !== draft.value
+        )
+          return;
+        textarea.setSelectionRange(draft.selectionStart, draft.selectionEnd);
+      });
+      selectionFrames.add(frame);
     };
 
     document.addEventListener("input", handleInput, true);
 
-    // The sender textarea can already be mounted when the session changes.
-    // Replace its value before the browser handles another keystroke.
-    // setTextareaValue dispatches input only after the new value is in place,
-    // so this save records the session's own draft (or clears an empty one).
+    // Session navigation reuses the existing sender; replace the previous
+    // session's content before another keystroke can reach it.
     const existingTextarea = getTextarea();
-    if (existingTextarea) applyStoredDraft(existingTextarea);
+    if (existingTextarea) applyStoredDraft(existingTextarea, true);
 
-    // Restore draft on mount with polling for textarea readiness.
-    let restoreAttempts = 0;
-    const maxRestoreAttempts = 20;
-    const restoreInterval = setInterval(() => {
-      restoreAttempts++;
+    // SDK initialization and remounts have no fixed time limit. Discover each
+    // new input once; DOM updates on an existing input never rewrite its draft.
+    const observer = new MutationObserver(() => {
       const textarea = getTextarea();
-      if (textarea) {
-        clearInterval(restoreInterval);
-        // A node that mounts later starts empty. Fill it from this session
-        // only; do not wipe text the user already typed into it.
-        if (textarea !== existingTextarea && !textarea.value && storedDraft) {
-          applyStoredDraft(textarea);
-        }
-      } else if (restoreAttempts >= maxRestoreAttempts) {
-        clearInterval(restoreInterval);
-      }
-    }, 100);
+      if (textarea) applyStoredDraft(textarea);
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
 
     return () => {
-      clearInterval(restoreInterval);
+      disposed = true;
+      observer.disconnect();
+      for (const frame of selectionFrames) cancelAnimationFrame(frame);
       document.removeEventListener("input", handleInput, true);
 
       // Input events already saved the draft. Cleanup must not overwrite it

@@ -1,10 +1,8 @@
 # -*- coding: utf-8 -*-
 """PawApp API router - List, manage, and serve installed PawApps.
 
-Delegates to the PluginRegistry for app listing. Any plugin with
-``meta.pawapp`` fields is automatically recognized as a PawApp.
-Falls back to scanning the plugins directory for ``plugin.json`` files
-with ``meta.pawapp`` when the PluginRegistry is not yet ready.
+Combines installed manifests with runtime records so failed and disabled
+applications remain visible alongside successfully loaded applications.
 """
 
 import json
@@ -38,13 +36,22 @@ def _get_apps_dir() -> Path:
 # ─── Shared helpers ────────────────────────────────────────────────────
 
 
+def _is_app_manifest(manifest: Dict[str, Any]) -> bool:
+    meta = manifest.get("meta")
+    return manifest.get("type", manifest.get("plugin_type")) == "app" or (
+        isinstance(meta, dict) and bool(meta.get("pawapp"))
+    )
+
+
 def _build_app_info(
     manifest: Dict[str, Any],
     fallback_id: str = "",
 ) -> Dict[str, Any]:
     """Build a normalised app-info dict from a manifest."""
-    meta = manifest.get("meta", {}) or {}
-    pawapp_meta = meta.get("pawapp", {})
+    meta = manifest.get("meta")
+    meta = meta if isinstance(meta, dict) else {}
+    pawapp_meta = meta.get("pawapp")
+    pawapp_meta = pawapp_meta if isinstance(pawapp_meta, dict) else {}
     return {
         "id": manifest.get("id", fallback_id),
         "name": manifest.get("name", fallback_id),
@@ -84,8 +91,7 @@ def _get_pawapps_from_registry(
     for plugin_id, manifest in registry.get_all_plugin_manifests().items():
         if not isinstance(manifest, dict):
             continue
-        meta = manifest.get("meta", {})
-        if not meta.get("pawapp"):
+        if not _is_app_manifest(manifest):
             continue
         apps.append(_build_app_info(manifest, plugin_id))
 
@@ -104,7 +110,8 @@ def _load_plugin_json(
         return None
     try:
         with open(manifest_path, "r", encoding="utf-8") as f:
-            return json.load(f)
+            manifest = json.load(f)
+            return manifest if isinstance(manifest, dict) else None
     except Exception as e:
         logger.warning(
             "Failed to load plugin.json from %s: %s",
@@ -115,27 +122,95 @@ def _load_plugin_json(
 
 
 def _scan_installed_apps_fallback() -> List[Dict[str, Any]]:
-    """Scan plugins dir for app-type plugins (startup fallback).
+    """Read installed apps, excluding backups and uninstall tombstones."""
+    from ...plugins.architecture import PluginManifest
+    from ...plugins.bundled import is_plugin_uninstalled, validate_plugin_id
 
-    Used only before the PluginRegistry is populated.
-    """
     apps_dir = _get_apps_dir()
     if not apps_dir.exists():
         return []
 
     apps = []
     for item in apps_dir.iterdir():
-        if not item.is_dir():
+        if item.name.startswith(".") or not item.is_dir():
             continue
         manifest = _load_plugin_json(item)
         if not manifest:
             continue
-        meta = manifest.get("meta", {}) or {}
-        if not meta.get("pawapp"):
+        if not _is_app_manifest(manifest):
             continue
-        apps.append(_build_app_info(manifest, item.name))
+        try:
+            plugin_id = manifest.get("id", item.name)
+            if not isinstance(plugin_id, str):
+                continue
+            normalized = PluginManifest.from_dict(
+                {**manifest, "id": validate_plugin_id(plugin_id)},
+            ).model_dump()
+            if is_plugin_uninstalled(
+                plugin_id,
+                plugins_dir=apps_dir,
+                plugin_dir=item,
+            ):
+                continue
+        except ValueError:
+            continue
+        apps.append(_build_app_info(normalized, item.name))
 
     return apps
+
+
+async def _installed_apps_with_runtime(
+    request: Request,
+) -> List[Dict[str, Any]]:
+    from ...config import load_config
+    from ...plugins.settings import is_plugin_enabled
+
+    installed = await asyncio.to_thread(_scan_installed_apps_fallback)
+    apps = {item["id"]: item for item in installed}
+    apps.update(
+        (item["id"], item) for item in _get_pawapps_from_registry(request)
+    )
+    loader = getattr(request.app.state, "plugin_loader", None)
+    records = loader.get_all_loaded_plugins() if loader is not None else {}
+    for plugin_id, record in records.items():
+        manifest = record.manifest.model_dump()
+        if _is_app_manifest(manifest):
+            apps[plugin_id] = _build_app_info(manifest, plugin_id)
+
+    config = await asyncio.to_thread(load_config)
+    for plugin_id, app in apps.items():
+        record = records.get(plugin_id)
+        intent = getattr(record, "global_enabled", None)
+        enabled = (
+            is_plugin_enabled(config.plugins[plugin_id])
+            if plugin_id in config.plugins
+            else intent
+            if intent is not None
+            else True
+        )
+        status = getattr(record, "status", "pending")
+        loaded = bool(
+            enabled
+            and getattr(record, "enabled", False)
+            and status == "active",
+        )
+        app.update(
+            enabled=enabled,
+            loaded=loaded,
+            status=(
+                "failed"
+                if status == "failed"
+                else (
+                    "disabled"
+                    if not enabled
+                    else "active"
+                    if loaded
+                    else "pending"
+                )
+            ),
+            diagnostics=list(getattr(record, "diagnostics", None) or []),
+        )
+    return list(apps.values())
 
 
 # ─── API Endpoints ────────────────────────────────────────────────────
@@ -143,25 +218,15 @@ def _scan_installed_apps_fallback() -> List[Dict[str, Any]]:
 
 @router.get("")
 async def list_pawapps(request: Request) -> Dict[str, Any]:
-    """List all installed PawApps.
-
-    Prefers PluginRegistry data; falls back to directory scan when
-    the registry is not yet populated (e.g. during early startup).
-    """
-    apps = _get_pawapps_from_registry(request)
-    if not apps:
-        # Run blocking directory scan in thread pool
-        apps = await asyncio.to_thread(_scan_installed_apps_fallback)
+    """List installed apps with independent enable and runtime state."""
+    apps = await _installed_apps_with_runtime(request)
     return {"apps": apps, "total": len(apps)}
 
 
 @router.get("/{app_id}")
 async def get_pawapp(app_id: str, request: Request) -> Dict[str, Any]:
     """Get details of a specific PawApp."""
-    apps = _get_pawapps_from_registry(request)
-    if not apps:
-        # Run blocking directory scan in thread pool
-        apps = await asyncio.to_thread(_scan_installed_apps_fallback)
+    apps = await _installed_apps_with_runtime(request)
     for app in apps:
         if app["id"] == app_id:
             registry = getattr(request.app.state, "plugin_registry", None)
@@ -259,10 +324,7 @@ async def uninstall_pawapp(
 @router.get("/{app_id}/settings")
 async def get_pawapp_settings(app_id: str, request: Request) -> Dict[str, Any]:
     """Get settings schema for a PawApp."""
-    apps = _get_pawapps_from_registry(request)
-    if not apps:
-        # Run blocking directory scan in thread pool
-        apps = await asyncio.to_thread(_scan_installed_apps_fallback)
+    apps = await _installed_apps_with_runtime(request)
     for app in apps:
         if app["id"] == app_id:
             return {"app_id": app_id, "settings": app.get("settings", [])}

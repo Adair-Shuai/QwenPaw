@@ -22,6 +22,8 @@ import logging
 import threading
 import zipfile
 import subprocess
+import uuid
+from contextlib import contextmanager
 from urllib.parse import urlparse
 
 import httpx
@@ -481,6 +483,7 @@ def _pending_now() -> datetime:
 
 def _new_pending_record() -> dict[str, Any]:
     return {
+        "operation_id": uuid.uuid4().hex,
         "queued_at": _pending_now().isoformat(),
         "attempts": 0,
         "last_error": None,
@@ -515,6 +518,9 @@ def _load_pending_records() -> dict[str, dict[str, Any]]:
         if not component_id or not isinstance(raw, dict):
             continue
         record = _new_pending_record()
+        record["operation_id"] = str(
+            raw.get("operation_id") or record["operation_id"],
+        )
         queued_at = raw.get("queued_at")
         if isinstance(queued_at, str) and queued_at.strip():
             record["queued_at"] = queued_at.strip()
@@ -571,13 +577,57 @@ def _store_pending_records(records: dict[str, dict[str, Any]]) -> None:
         os.replace(temporary, _PENDING_UPDATES_PATH)
 
 
+@contextmanager
+def _pending_transaction():
+    """Serialize short queue read/modify/write operations across processes."""
+    with _PENDING_LOCK, plugin_install_lock(
+        _PENDING_UPDATES_PATH.with_suffix(".lock"),
+        timeout=30,
+    ):
+        yield
+
+
+def _pending_snapshot():
+    with _pending_transaction():
+        records = {
+            key: value
+            for key, value in _load_pending_records().items()
+            if not _pending_expired(value)
+        }
+        # Persist IDs for legacy queue entries before releasing exclusion.
+        _store_pending_records(records)
+        return records
+
+
+def _acknowledge_pending(snapshot, remaining):
+    with _pending_transaction():
+        current = _load_pending_records()
+        for component, original in snapshot.items():
+            if (
+                current.get(component, {}).get("operation_id")
+                != original["operation_id"]
+            ):
+                continue
+            result = remaining.get(component)
+            if result is None or _pending_expired(result):
+                current.pop(component, None)
+            else:
+                current[component] = result
+        # A runtime transaction may discover companion components. Preserve
+        # their failures too, without overwriting a newly queued operation.
+        for component, result in remaining.items():
+            if component not in snapshot and not _pending_expired(result):
+                current.setdefault(component, result)
+        _store_pending_records(current)
+
+
 def _write_pending_components(components: set[str]) -> None:
     if not components:
         return
-    with _PENDING_LOCK:
+    with _pending_transaction():
         records = _load_pending_records()
         for component in components:
-            records.setdefault(str(component), _new_pending_record())
+            records[str(component)] = _new_pending_record()
         _store_pending_records(records)
 
 
@@ -1240,7 +1290,7 @@ publishing."""
         )
 
 
-def _finalize_booted_runtime() -> None:
+def finalize_booted_runtime() -> None:
     """Finalize a healthy runtime once per boot, retaining failure retries."""
     if os.environ.get("QWENPAW_COMPONENT_PROTOCOL") == "2":
         healthy_service = configured_service()
@@ -1286,18 +1336,35 @@ def _install_runtime_candidates(
 
 
 def run_startup_updates() -> dict[str, Any]:
+    """Allow one consumer while leaving queue admission available."""
+    from ..plugins.install_lock import InstallLockError
+
+    try:
+        with plugin_install_lock(
+            _PENDING_UPDATES_PATH.with_suffix(".consumer.lock"),
+            timeout=0,
+        ):
+            return _run_startup_updates()
+    except InstallLockError:
+        return {
+            "enabled": True,
+            "updated": [],
+            "errors": [
+                {
+                    "component": "startup",
+                    "error": "updates already in progress",
+                },
+            ],
+        }
+
+
+def _run_startup_updates() -> dict[str, Any]:
     """Activate only updates explicitly queued by the desktop update UI.
 
     Startup must never perform a fresh remote update on its own. The version
     icon owns discovery and consent; restart merely consumes its durable queue.
     """
-    _finalize_booted_runtime()
-    pending_records = {
-        component: record
-        for component, record in _load_pending_records().items()
-        if not _pending_expired(record)
-    }
-    _store_pending_records(pending_records)
+    pending_records = _pending_snapshot()
     pending_components = sorted(pending_records)
     if not pending_components:
         return {"enabled": False, "updated": [], "errors": []}
@@ -1308,13 +1375,7 @@ def run_startup_updates() -> dict[str, Any]:
                 record,
                 "component updates are not configured",
             )
-        _store_pending_records(
-            {
-                component: record
-                for component, record in pending_records.items()
-                if not _pending_expired(record)
-            },
-        )
+        _acknowledge_pending(pending_records, pending_records)
         return {
             "enabled": False,
             "updated": [],
@@ -1412,11 +1473,5 @@ def run_startup_updates() -> dict[str, Any]:
             )
     finally:
         service.client.close()
-        _store_pending_records(
-            {
-                component: record
-                for component, record in remaining_pending.items()
-                if not _pending_expired(record)
-            },
-        )
+        _acknowledge_pending(pending_records, remaining_pending)
     return {"enabled": True, "updated": updated, "errors": errors}

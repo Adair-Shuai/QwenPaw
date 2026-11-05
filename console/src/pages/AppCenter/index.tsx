@@ -44,17 +44,24 @@ import {
 import { MarketplaceHeader } from "@/pages/Market/components/MarketplaceHeader";
 import { useAppMessage } from "@/hooks/useAppMessage";
 import { pawappApi } from "../../api/modules/pawapp";
+import { useAgentStore } from "@/stores/agentStore";
+import { resumePendingPluginInstalls } from "../Settings/PluginManager/dependencyUpgrade";
 import { subscribeToPluginChanges } from "@/utils/pluginChangeEvents";
-import type { InstallPluginResult } from "../../api/modules/plugin";
+import type { AppMarketInstallResult } from "./AppMarket";
 import { useRoutes } from "../../plugins/registry/hooks";
 import { PawAppAccessGate } from "../../plugins/PawAppAccessGate";
-import { loadPawApp, reloadPawApp } from "../../plugins/usePluginLoader";
+import {
+  loadPawApp,
+  reloadPawApp,
+  reloadFrontendPlugin,
+  unloadFrontendPlugin,
+} from "../../plugins/usePluginLoader";
 import { removePluginAppState } from "../../os/osCleanup";
 import {
   getPawAppIdFromPath,
   setActivePawAppId,
 } from "../../plugins/pawapp-sdk/context";
-import { AppCard, type AppCardData } from "./AppCard";
+import { AppCard, canOpenApp, type AppCardData } from "./AppCard";
 import { pickAppDescription } from "./appDescription";
 import { ChunkErrorBoundary } from "@/components/ChunkErrorBoundary";
 import {
@@ -91,6 +98,7 @@ export default function AppCenterPage() {
   const { appId } = useParams();
   const { message } = useAppMessage();
   const routes = useRoutes();
+  const selectedAgent = useAgentStore((state) => state.selectedAgent);
   const [searchParams, setSearchParams] = useSearchParams();
   const [apps, setApps] = useState<AppCardData[]>([]);
   const [loading, setLoading] = useState(true);
@@ -100,6 +108,8 @@ export default function AppCenterPage() {
   const [loadError, setLoadError] = useState(false);
   const [publisherOpen, setPublisherOpen] = useState(false);
   const appsRequestId = useRef(0);
+  const appsRef = useRef(apps);
+  appsRef.current = apps;
 
   // View state is URL-driven so refresh / back / forward keep working.
   // Unknown `view` values safely fall back to the installed-apps view.
@@ -123,6 +133,9 @@ export default function AppCenterPage() {
     try {
       const data = await pawappApi.list();
       if (requestId !== appsRequestId.current) return;
+      for (const app of data.apps) {
+        if (!canOpenApp(app)) void unloadFrontendPlugin(app.id);
+      }
       setApps(
         data.apps.map((app) => ({
           id: app.id,
@@ -137,6 +150,9 @@ export default function AppCenterPage() {
           entry_page: app.entry_page ?? "",
           launch_scope: app.launch_scope ?? "page",
           status: app.status,
+          enabled: app.enabled,
+          loaded: app.loaded,
+          diagnostics: app.diagnostics,
         })),
       );
     } catch (err) {
@@ -148,19 +164,34 @@ export default function AppCenterPage() {
     }
   }, []);
 
-  const handleMarketInstalled = async (result?: InstallPluginResult) => {
-    if (!result) {
+  const handleMarketInstalled = async (result?: AppMarketInstallResult) => {
+    if (!result || result.method === "queued" || result.loaded === false) {
       await fetchApps();
       return;
     }
-    const wasInstalled = apps.some((app) => app.id === result.id);
+    const wasInstalled =
+      result.method === "replaced" || apps.some((app) => app.id === result.id);
     const appLoad = wasInstalled
       ? reloadPawApp(result.id)
       : loadPawApp(result.id);
     const appsRefresh = fetchApps();
-    await appLoad;
-    await appsRefresh;
+    await Promise.all([appLoad, appsRefresh]);
   };
+
+  const installCallbacks = useRef({ t, message });
+  installCallbacks.current = { t, message };
+  useEffect(
+    () =>
+      resumePendingPluginInstalls(
+        installCallbacks.current.t,
+        async (result) => {
+          // The shared recovery queue can also contain non-app plugins.
+          await Promise.all([reloadFrontendPlugin(result.id), fetchApps()]);
+        },
+        (error) => installCallbacks.current.message.error(error.message),
+      ),
+    [selectedAgent, fetchApps],
+  );
 
   useEffect(() => {
     void fetchApps();
@@ -177,13 +208,22 @@ export default function AppCenterPage() {
   useEffect(() => {
     if (!appId) return;
     const found = apps.find((a) => a.id === appId);
-    if (found) setActiveApp(found);
+    setActiveApp(found && canOpenApp(found) ? found : null);
   }, [appId, apps]);
 
   useEffect(() => {
     setActivePawAppId(activeApp?.id ?? null);
     return () => setActivePawAppId(null);
   }, [activeApp?.id]);
+
+  // A refresh can disable or fail an app that is currently open.
+  useEffect(() => {
+    setActiveApp((current) => {
+      if (!current) return null;
+      const latest = apps.find((app) => app.id === current.id);
+      return latest && canOpenApp(latest) ? latest : null;
+    });
+  }, [apps]);
 
   // Compute available categories
   const categories = useMemo(() => {
@@ -224,6 +264,7 @@ export default function AppCenterPage() {
   }, [activeApp, routes]);
 
   const handleAppClick = async (app: AppCardData) => {
+    if (!canOpenApp(app)) return;
     const target = appTarget(app);
     try {
       await loadPawApp(app.id, target);
@@ -235,6 +276,8 @@ export default function AppCenterPage() {
       );
       return;
     }
+    const latest = appsRef.current.find((item) => item.id === app.id);
+    if (!latest || !canOpenApp(latest)) return;
     if (isOsPath(window.location.pathname)) {
       window.history.pushState(
         withOsPawAppHistoryState(window.history.state, app.id),
@@ -248,7 +291,7 @@ export default function AppCenterPage() {
         addRouterBasename(window.location.pathname, target),
       );
     }
-    setActiveApp(app);
+    setActiveApp(latest);
   };
 
   const handleBack = () => {
@@ -292,7 +335,7 @@ export default function AppCenterPage() {
       onOk: async () => {
         try {
           await pawappApi.uninstall(app.id);
-          removePluginAppState(app.id);
+          await removePluginAppState(app.id);
           message.success(t("appCenter.uninstallSuccess", "App uninstalled"));
           await fetchApps();
         } catch (err) {
@@ -317,7 +360,8 @@ export default function AppCenterPage() {
         setActiveApp(null);
         return;
       }
-      setActiveApp(apps.find((app) => app.id === appId) ?? null);
+      const found = apps.find((app) => app.id === appId);
+      setActiveApp(found && canOpenApp(found) ? found : null);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);

@@ -35,6 +35,22 @@ INTERNAL = {
 }
 
 
+def author_environment() -> dict[str, str]:
+    """Keep standalone author checks independent of the caller's test run."""
+    env = {
+        key: value
+        for key, value in os.environ.items()
+        if not key.startswith("PYTEST_")
+        and not any(
+            part in key.upper()
+            for part in ("TOKEN", "SECRET", "API_KEY", "APP_KEY", "PASSWORD")
+        )
+    }
+    for name in ("PYTHONPATH", "PYTHONHOME", "PYTHONDONTWRITEBYTECODE"):
+        env.pop(name, None)
+    return env
+
+
 def prepare_author_tests(source: Path, root: Path) -> list[str]:
     """Copy the standalone author suite and its local helpers."""
     suite = root / "author_tests"
@@ -73,16 +89,7 @@ def main():
     root.mkdir(parents=True)
     interpreter = str(args.python.absolute())
     report = {"artifacts": {}, "steps": [], "tests": []}
-    env = {
-        key: value
-        for key, value in os.environ.items()
-        if not any(
-            part in key.upper()
-            for part in ("TOKEN", "SECRET", "API_KEY", "APP_KEY", "PASSWORD")
-        )
-    }
-    for name in ("PYTHONPATH", "PYTHONHOME", "PYTHONDONTWRITEBYTECODE"):
-        env.pop(name, None)
+    env = author_environment()
     env.update(
         PATH=str(args.python.absolute().parent)
         + os.pathsep
@@ -163,9 +170,11 @@ print(json.dumps({{
         "-m",
         "pytest",
         str(root / "author_tests"),
-        "-q",
+        "-v",
         "--tb=short",
         "--timeout=45",
+        "--junitxml",
+        str(root / "public-author-tests.xml"),
     )
     template, frontend = root / "template", root / "frontend"
     run(

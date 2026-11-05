@@ -30,6 +30,8 @@ if (!existsSync(teamArtifactsSuite))
 // Keep this inventory separate from Vitest discovery: deleting a feature's
 // tests during a merge must fail verification instead of silently reducing it.
 const suites = {
+  deploymentConfiguration: ["vite.config.test.ts"],
+  skillImport: ["src/pages/Agent/Skills/useSkills.paths.test.ts"],
   turnFileDelivery: [
     "src/api/modules/turnFiles.test.ts",
     "src/features/files-workspace/TurnFileSummary.test.tsx",
@@ -41,6 +43,8 @@ const suites = {
     "src/pages/Chat/sessionApi/sessionApi.test.ts",
   ],
   interfaceAppearance: [
+    "src/pages/Chat/components/ChatHome.test.tsx",
+    "src/pages/Chat/components/ExecutionProcess.test.tsx",
     "src/pages/Chat/components/ComposerAddMenu.test.tsx",
     "src/utils/actionColors.test.ts",
     "src/pages/Market/index.test.tsx",
@@ -65,6 +69,15 @@ const suites = {
     "src/pages/Chat/components/ComposerTokenHighlights.test.tsx",
   ],
   submission: [
+    "src/pages/Chat/requestEditSnapshot.test.ts",
+    "src/pages/Chat/chatInputDraft.test.ts",
+    "src/pages/Chat/useChatInputDraft.test.tsx",
+    "src/pages/Chat/chatInputDraft.sdk.test.tsx",
+    "src/pages/Chat/components/MessageEditResend.inline.test.tsx",
+    "src/pages/Chat/components/ComposerKeyboard.integration.test.tsx",
+    "src/pages/Chat/hooks/useQueueSteering.test.tsx",
+    "src/pages/Chat/components/MessageQueuePanel.test.tsx",
+    "src/pages/Chat/components/MessageQueuePanel.keyboard.test.tsx",
     "src/pages/Chat/components/ChatSenderTabsPanel.test.tsx",
     "src/hooks/useAgentProcessTracking.test.tsx",
     "src/stores/backgroundTasksStore.test.ts",
@@ -85,6 +98,10 @@ const suites = {
     "src/pages/Settings/PluginManager/components/InstalledPluginList.test.tsx",
     "src/pages/AppCenter/AppMarket.test.tsx",
     "src/pages/AppCenter/index.test.tsx",
+    "src/pages/AppCenter/AppCenter.updates.test.tsx",
+    "src/pages/AppCenter/AppCard.test.tsx",
+    "src/plugins/usePluginLoader.test.ts",
+    "src/os/osCleanup.test.ts",
     "src/contexts/DesktopUpdateContext.test.tsx",
     "src/layouts/Header.test.tsx",
     "src/layouts/constants.test.ts",
@@ -105,6 +122,7 @@ const suites = {
     "src/plugins/oilgasViewerUi.test.ts",
     "src/plugins/visualizationEngine.test.ts",
     "src/utils/openExternalLink.test.ts",
+    "src/utils/openHtmlFile.test.ts",
     "src/layouts/SidebarSessionList.test.tsx",
     "src/components/SessionItem/SessionItem.test.tsx",
     "src/pages/Chat/HostBubbles.render.test.tsx",
@@ -127,6 +145,7 @@ const suites = {
     "src/features/files-workspace/filesDrawerState.test.ts",
     "src/components/Workspace/renderers/__tests__/OfficeDocRenderer.test.tsx",
     "src/components/Workspace/renderers/__tests__/OfficePreviewRenderer.test.tsx",
+    "src/components/Workspace/renderers/__tests__/LightweightPdfViewer.test.tsx",
     "src/components/Workspace/store/__tests__/builtinRenderers.boundaries.test.ts",
     "src/stores/filesSurfaceStore.test.ts",
     "src/stores/codingTabsStore.test.ts",
@@ -166,6 +185,27 @@ for (const file of files) {
   requireCases(file, []);
 }
 for (const [file, titles] of [
+  [
+    "vite.config.test.ts",
+    [
+      "keeps assets at the root when the basename is %j",
+      "uses %j as the asset prefix %j",
+    ],
+  ],
+  [
+    "src/pages/Agent/Skills/useSkills.paths.test.ts",
+    [
+      "importFromHub: an empty task id exits the poll loop with success:false",
+      "cancelImport: tolerates a start request that has not resolved yet",
+    ],
+  ],
+  [
+    "src/components/Workspace/renderers/__tests__/LightweightPdfViewer.test.tsx",
+    [
+      "uses authenticated strict Range loading for large workspace PDFs",
+      "loads bundled Chinese CMaps on demand and reuses independent font buffers",
+    ],
+  ],
   [
     "src/features/user-input/InteractionPanel.integration.test.tsx",
     [
@@ -341,6 +381,8 @@ for (const [file, titles] of [
     [
       "mounts the registered page and disposes its own viewer without reloading the host",
       "opens the imported dataset with captured workspace scope through host navigation",
+      "previews ordinary delivered CSV through the native table with the real visualization bundle installed",
+      "retains explicit network CSV imports through the professional workspace viewer",
       "does not execute a late command after the viewer is disposed",
     ],
   ],
@@ -479,6 +521,15 @@ for (const title of [
   "keeps a single project form in the middle while questions and Office preview stay in the right column",
   "fills plan-specific information, keeps common fields in the basic profile and previews generated Excel through Office",
   "fills selection opinion and upload fields with shared project references and previews generated files",
+  "links selection opinion facts to approval and candidate fields while preserving authored findings",
+  "edits inline opinion prose and pastes plain text without detached reference blocks or HTML",
+  "groups negotiation content into five ordered tabs without duplicating fields and keeps recipients, drafts and issue navigation",
+  "uses workflow tabs in %s without shared reference blocks and preserves drafts through validation and attachments",
+  "keeps template management, Excel transfers and saving in the live stage toolbar without losing drafts",
+  "restores the live stage header and its actions after returning from overview and basic information",
+  "imports shared information from the existing Excel template into a reviewed profile draft and preserves blank and unselected values",
+  "separates approval documents from other attachments and lazily reuses direct PDF and image previews with retry",
+  "deletes only the confirmed approval version, preserves numbering and preview state, and supports retry and undo",
 ]) {
   if (
     !inspectForkTestSource("documentForms.test.tsx", documentFormsTests).has(
@@ -540,6 +591,7 @@ for (const title of [
     );
 }
 requireCases("src/plugins/capabilitiesWorkspace.test.tsx", [
+  "localizes configuration agent labels live while preserving custom names and selected IDs",
   "configures a real engine from its compact icon card and preserves advanced values after a failed save",
   "keeps built-in tools separate and embeds the original MCP and runtime managers",
   "shows skill controls without hovering and returns from focused details to the updated agent card",
@@ -558,6 +610,7 @@ requireCases(
   [
     "opens text decks in the native editor and preserves explicit preview intent",
     "keeps different same-name artifacts in independent tabs",
+    "repairs a restored artifact identity on reopen without replacing the buffer",
     "releases a hidden file preview while preserving its tab and unsaved buffer",
     "saves actual artifact bytes with session and root scope and opens the returned conflict-renamed path",
     "keeps the artifact and retries a failed save using a new session's pending project directory",
@@ -578,7 +631,14 @@ requireCases("src/features/files-workspace/FilesDrawer.test.tsx", [
   "releases the simulation view on hide and reflects provider removal",
   "shows native file size and keeps expansion available after a load failure",
 ]);
+requireCases("src/utils/openHtmlFile.test.ts", [
+  "contains untrusted markup only inside an opaque sandbox",
+  "reserves a browser window before loading relative HTML resources",
+]);
 requireCases("src/pages/Coding/FilePreview.test.tsx", [
+  "resolves scoped sibling stylesheets without giving credentials to HTML",
+  "does not read nonasset local dependencies requested by HTML",
+  "keeps archived HTML dependencies immutable when captured=%s",
   "keeps math code blocks in the renderable code block controls",
   "renders inline and display math through the registered Markdown renderer",
   "renders ICO through the registered image renderer after authenticated loading",
@@ -647,10 +707,18 @@ requireCases("src/layouts/Sidebar.render.test.tsx", [
   "groups More shortcuts and keeps settings in the account menu",
 ]);
 requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
+  "UGSci fork feature: home common tasks fill the mounted composer without starting execution",
+  "UGSci fork feature: composer approvals follow the active session and disappear on the home route",
   "UGSci fork feature: prototype Agent action opens real mention choices without submitting the draft",
 ]);
 requireCases("src/pages/Chat/HostBubbles.render.test.tsx", [
+  "shows real execution transitions in the mounted response without mistaking delivered arguments for completion",
   "mounts the persisted turn file summary in the real response and opens an immutable scoped version",
+]);
+requireCases("src/pages/Chat/components/ExecutionProcess.test.tsx", [
+  "lazily opens real native plugin records and preserves their live props and actions",
+  "keeps a failed call visible after a later successful call and focuses its real record",
+  "supports keyboard disclosure and never counts delivered arguments as completed execution",
 ]);
 requireCases("src/pages/Chat/sessionApi/sessionApi.test.ts", [
   "restores the exact response attempt and client identity for persisted turn files",
@@ -662,6 +730,9 @@ requireCases(
   ],
 );
 requireCases("src/features/files-workspace/TurnFileSummary.test.tsx", [
+  "shows delivered images inline and links archived sibling pages without inventing deliveries",
+  "prioritizes deliveries and keeps secondary archived changes accessible after expansion",
+  "expands delivery and change lists independently without hiding unavailable deliveries",
   "opens the immutable version and current file through distinct scoped native targets",
   "never matches another attempt, agent, or session by a shared client message ID",
   "replaces misleading legacy hints even when the captured turn has no file changes",
@@ -736,6 +807,168 @@ requireCases("src/pages/Coding/MarkdownFileNavigation.integration.test.tsx", [
   "loads relative images with the file's root and chat headers",
   "releases image blobs and cancels requests on replacement and unmount",
 ]);
+requireCases("src/pages/Chat/components/ChatHome.test.tsx", [
+  "resumes real recent sessions and updates scoped approval and running states",
+  "inserts common tasks into the current composer without sending or replacing its draft",
+]);
+requireCases("src/pages/Chat/components/ApprovalQueueOverlay.test.tsx", [
+  "mounts real approval controls in the composer anchor and removes them when resolved",
+]);
+
+requireCases("src/pages/Chat/hooks/useQueueSteering.test.tsx", [
+  "steers explicitly without stopping and waits for adoption before removing the queued text",
+  "quarantines an uncertain transport result and retries the identical request before receipt recovery",
+  "preserves a refused run as a failed queue head without sending later messages",
+  "restores an unresolved delivery after reload and adopts its receipt after the original run ends",
+  "never retargets a delayed send receipt after navigating to a different agent and chat",
+  "does not accept another run's receipt and a non-owner never retries an unknown delivery",
+]);
+requireCases("src/stores/messageQueueStore.test.ts", [
+  "claims steering with a distinct persisted request identity and preserves the original FIFO",
+  "keeps uncertain steering immutable through reload until the matching server receipt arrives",
+  "returns unapplied steering as an explicit failed head and ignores receipts from an earlier attempt",
+  "does not mistake a normal user history receipt for an applied steering receipt",
+  "pins unresolved steering while allowing unrelated queue items to reorder",
+  "preserves an already persisted steering claim when a stale tab calls %s",
+  "does not resurrect a once-steered message from late pending or steering snapshots after %s",
+  "ignores late receipt callbacks after an applied item removed its persisted queue",
+  "retains the pending text and refuses steering when %s persistence fails",
+  "does not erase unresolved steering through the legacy storage cleanup helper",
+  "preserves authoritative %s before and after a late remote running snapshot for a steered queue",
+  "does not write stale running over a returned steering error when a stale tab calls %s",
+  "keeps a durable pause when a stale steering tab calls %s",
+  "allows explicit retry and resume after steering returns while ignoring an older remote error snapshot",
+  "keeps remote run-state updates unchanged for queues that never used steering",
+]);
+requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
+  "UGSci fork feature: the mounted queue steers the current run without cancelling or starting another turn",
+  "UGSci fork feature: steering preserves attachments and Agent assignments in the normal queue",
+  "UGSci fork feature: concurrent submission of one composer revision cannot create a second queued turn",
+  "UGSci fork feature: %s Enter cannot enqueue the unchanged input while SDK admission is pending",
+  "UGSci fork feature: a retyped identical draft remains a distinct submission during admission",
+  "UGSci fork feature: repeated attachment-only admission queues one immutable attachment snapshot",
+]);
+
+requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
+  "UGSci fork feature: mounting recovers a paused other-chat steering receipt behind a pending head without sending it",
+  "UGSci fork feature: navigation hands pending steering to background recovery before its original POST resolves",
+  "UGSci fork feature: steering yields an automatic idle wait after reconnect without cancelling the active answer",
+  "UGSci fork feature: unresolved steering behind the head blocks foreground sending through an idle transition until %s",
+  "UGSci fork feature: another queued row cannot interrupt the current answer while any steering receipt is unresolved",
+]);
+requireCases("src/pages/Chat/chatRunLifecycle.test.ts", [
+  "releases a pending readiness GET and gives the explicit steering claim the next send lock",
+  "yields only the requested queue and unregisters completed readiness scopes",
+  "releases the polling delay immediately and permits the next independent idle check",
+  "leaves an unresolved sending marker intact when steering yields its receipt readiness wait",
+]);
+requireCases("src/pages/Chat/hooks/useQueueSteering.test.tsx", [
+  "keeps the original history dirty when another tab adopts and removes the shared receipt first",
+  "resolves an applied receipt while paused and preserves the remaining FIFO and agent identity",
+  "retries an unknown background receipt using the original run id and request id without interrupting",
+  "keeps uncertain background delivery quarantined and preserves a refused instruction as a failed head",
+  "ignores a late background receipt after cancellation and rejects mismatched receipt text",
+]);
+
+requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
+  "UGSci fork feature: historical edit resend preserves the composer draft and attachments in a fresh queued turn",
+  "UGSci fork feature: historical edit resend isolates Agent mention modes from the main composer and snapshots its own collaboration choice",
+  "UGSci fork feature: historical edit resend retains its draft when the queue is full and submits once space is available",
+  "UGSci fork feature: navigation invalidates a historical edit dialog and its retained action even after returning to the same Chat",
+  "UGSci fork feature: historical edit %s Enter never sends or clears the separate composer draft",
+]);
+requireCases("src/pages/Chat/requestEditSnapshot.test.ts", [
+  "reads native live builder content and keeps repeated text and attachments in order",
+  "joins history text and labeled steering supplements without copying history metadata",
+  "rebuilds native audio/video through fileList without changing their URLs or audio format",
+  "keeps valid mixed attachments while declaring unsupported content instead of silently dropping it",
+  "copies only validated mention modes from root metadata and strips all old request controls",
+  "returns independent attachment and mode snapshots, preserving duplicate references",
+]);
+
+requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
+  "UGSci fork feature: historical edit replaces only its original bubble inline and cancel restores that bubble without a dialog",
+]);
+requireCases("src/pages/Chat/components/MessageEditResend.inline.test.tsx", [
+  "edits at the original bubble while retaining plugin fallback, slots and footer instances through cancellation",
+  "keeps one focused textarea while typing and edits only the selected identity among identical messages",
+  "retains a draft across durable-identity refreshes and cancels a vanished legacy editor instead of moving it",
+]);
+requireCases("src/pages/Chat/requestEditSnapshot.test.ts", [
+  "keeps a client identity across live/history clones and prefers it over original IDs",
+  "uses outer or wrapped original metadata IDs with a separate namespace",
+  "never matches different ID-less objects by identical text or second timestamps",
+  "retains an opaque key for the same object and isolates each resolver closure",
+]);
+
+requireCases(
+  "src/pages/Chat/components/ComposerKeyboard.integration.test.tsx",
+  [
+    "never admits or submits a composing Chinese Enter and submits the committed text on the next Enter",
+    "keeps Shift Enter as an editable newline and sends the complete multiline draft only on plain Enter",
+    "retains an inline Chinese edit during composing Enter and Escape, then cancels without queuing and restores action focus",
+    "keeps a full-queue inline draft on %s Enter and enqueues exactly once after capacity returns without clearing the main input",
+    "appends an inline keyboard resend without resolving or replacing an unconfirmed steering item",
+  ],
+);
+
+requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
+  "UGSci fork feature: mounted normal queue editing sorting deletion and clearing update persisted items while paused",
+  "UGSci fork feature: mounted normal queue pause and resume drain accepted turns once in FIFO order",
+  "UGSci fork feature: mounted failed queue %s advances through real persisted state and SDK acceptance",
+  "UGSci fork feature: mounted interrupt and send waits for %s cancellation and backend idle before dispatch",
+]);
+
+requireCases("src/pages/Chat/components/MessageQueuePanel.keyboard.test.tsx", [
+  "keeps candidate confirmation Enter in the queue editor (%s) and saves only the committed legitimate Enter",
+  "keeps the editor during composing Escape and cancels only a legitimate Escape without persisting its draft",
+  "saves one ordinary Enter edit without changing identity, attachments or pause state",
+  "gives every queue action a localized accessible button name and updates pause or resume with its run state",
+  "preserves explicit blur saving and resets composition state before the next edit",
+]);
+
+requireCases("src/pages/Chat/chatInputDraft.sdk.test.tsx", [
+  "restores a typed draft and its selection after a complete remount with the real metadata toolbar before the sender",
+  "restores after a sender mounts beyond the old polling window without repeatedly rewriting an already mounted input",
+  "restores the latest user revision into a replaced SDK sender and never resurrects a deliberately cleared draft",
+  "does not resurrect a %s draft when host admission clears storage without a native input event",
+  "uses the current stored revision for a replacement without rewriting the input still being edited",
+]);
+
+requireCases("src/plugins/usePluginLoader.test.ts", [
+  "cleans partial registrations after evaluation failure without executing fallback",
+  "serializes startup and deduplicates concurrent forced reloads",
+  "removes a disabled plugin after an in-flight startup and rejects stale manifests",
+  "does not remove a newly loaded app when an older manifest arrives late",
+  "preserves a new load requested after an intervening unload",
+]);
+requireCases("src/pages/AppCenter/AppCenter.updates.test.tsx", [
+  "updates through the real market and replacement API and opens the new registered UI",
+  "keeps unavailable installed apps visible and never mounts their stale route",
+  "follows dependency confirmation from the app market (apply=%s)",
+  "updates an unavailable app without falsely activating its frontend",
+]);
+requireCases("src/pages/AppCenter/AppCard.test.tsx", [
+  "keeps %s apps inspectable without opening them",
+]);
+
+requireCases("src/os/osCleanup.test.ts", [
+  "awaits an in-flight bundle and removes its late route and desktop state",
+]);
+requireCases(
+  "src/pages/Settings/PluginManager/hooks/usePluginManager.test.ts",
+  ["updates disabled apps successfully without activating their UI (%s)"],
+);
+
+requireCases(
+  "src/pages/Settings/PluginManager/hooks/useOfficialPlugins.test.ts",
+  ["preserves the disabled runtime state when an official update completes"],
+);
+requireCases(
+  "src/pages/Settings/PluginManager/hooks/useMarketPlugins.state.test.ts",
+  ["preserves the disabled runtime state when a community update completes"],
+);
+
 console.log(`Fork feature inventory verified: ${files.length} suites.`);
 if (!process.argv.includes("--check")) {
   const result = spawnSync(

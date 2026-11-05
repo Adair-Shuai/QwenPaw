@@ -20,6 +20,7 @@ import { useTurnUsageStore } from "../turnUsageStore";
 import { extractClientMessageId } from "../../../utils/clientMessageId";
 import { useMessageQueueStore } from "../../../stores/messageQueueStore";
 import { syncSessionsGlobal } from "../../../stores/sessionListStore";
+import i18n from "../../../i18n";
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -242,9 +243,45 @@ const toOutputMessage = (msg: Message): OutputMessage => ({
   metadata: msg.metadata ?? null,
 });
 
-/** Build a user card (AgentScopeRuntimeRequestCard) from a user message. */
-function buildUserCard(msg: Message): IAgentScopeRuntimeWebUIMessage {
+function historyMessageMetadata(msg: Message): Record<string, unknown> {
+  const raw = msg.metadata as Record<string, unknown> | undefined;
+  const metadata = raw?.metadata ?? raw;
+  return metadata && typeof metadata === "object"
+    ? (metadata as Record<string, unknown>)
+    : {};
+}
+
+function steeringMarker(msg: Message): Record<string, unknown> | undefined {
+  const marker = historyMessageMetadata(msg).qwenpaw_steering;
+  if (!marker || typeof marker !== "object") return undefined;
+  const value = marker as Record<string, unknown>;
+  return ["request_id", "run_id"].every(
+    (key) => typeof value[key] === "string" && value[key].trim(),
+  )
+    ? value
+    : undefined;
+}
+
+/** Build one user card for a root request and its in-flight supplements.
+ * Keep one native input: SDK regeneration sends the last input, so emitting
+ * separate inputs would retry only the last supplement and lose the task and
+ * attachments. The transcript remains explicit through labeled text blocks.
+ */
+function buildUserCard(
+  msg: Message,
+  supplements: Message[] = [],
+): IAgentScopeRuntimeWebUIMessage {
   const contentParts = contentToRequestParts(msg.content);
+  for (const supplement of supplements) {
+    contentParts.push(
+      {
+        type: "text",
+        text: i18n.t("chat.queue.steerHistoryLabel"),
+        status: "created",
+      },
+      ...contentToRequestParts(supplement.content),
+    );
+  }
   return {
     id: (msg.id as string) || generateId(),
     role: "user",
@@ -253,6 +290,15 @@ function buildUserCard(msg: Message): IAgentScopeRuntimeWebUIMessage {
         code: "AgentScopeRuntimeRequestCard",
         data: {
           created_at: parseTimestamp(msg),
+          ...(supplements.length
+            ? {
+                qwenpaw_steering_supplements: supplements.map((supplement) => ({
+                  id: supplement.id,
+                  content: supplement.content,
+                  metadata: supplement.metadata,
+                })),
+              }
+            : {}),
           input: [
             {
               role: "user",
@@ -330,9 +376,10 @@ const buildResponseCard = (
  * Convert flat backend messages into the card-based format expected by
  * the @agentscope-ai/chat component.
  *
- * - User messages → AgentScopeRuntimeRequestCard
- * - Consecutive non-user messages (assistant / system / tool) → grouped
- *   into a single AgentScopeRuntimeResponseCard with all output messages.
+ * - Root user messages → AgentScopeRuntimeRequestCard
+ * - In-flight supplements stay in that root input, preserving native retry.
+ * - All output segments of that root, including those before a supplement,
+ *   share the original response identity and terminal status.
  */
 const convertMessages = (
   messages: Message[],
@@ -346,16 +393,36 @@ const convertMessages = (
       | { status?: string; error?: unknown; response_id?: string }
       | undefined;
     let clientMessageId: string | undefined;
+    let user: Message | undefined;
     if (messages[i].role === ROLE_USER) {
-      const user = messages[i++];
-      const meta = user.metadata as Record<string, any> | undefined;
-      terminal = (meta?.metadata ?? meta)?.qwenpaw_turn_state;
-      clientMessageId = (meta?.metadata ?? meta)?.qwenpaw_client_message_id;
-      result.push(buildUserCard(user));
+      user = messages[i++];
+      const metadata = historyMessageMetadata(user);
+      terminal = metadata.qwenpaw_turn_state as typeof terminal;
+      const identity = metadata.qwenpaw_client_message_id;
+      clientMessageId = typeof identity === "string" ? identity : undefined;
     }
-    const startIdx = i;
-    while (i < len && messages[i].role !== ROLE_USER) i++;
-    const outputMsgs = messages.slice(startIdx, i).map(toOutputMessage);
+    const supplements: Message[] = [];
+    const outputMsgs: OutputMessage[] = [];
+    let steeringRunId: unknown;
+    while (i < len) {
+      const message = messages[i];
+      if (message.role !== ROLE_USER) {
+        outputMsgs.push(toOutputMessage(message));
+        i++;
+        continue;
+      }
+      const marker = user ? steeringMarker(message) : undefined;
+      if (
+        !marker ||
+        (steeringRunId !== undefined && marker.run_id !== steeringRunId)
+      ) {
+        break;
+      }
+      steeringRunId = marker.run_id;
+      supplements.push(message);
+      i++;
+    }
+    if (user) result.push(buildUserCard(user, supplements));
     if (
       outputMsgs.length ||
       terminal?.status === "failed" ||

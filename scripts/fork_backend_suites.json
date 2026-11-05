@@ -143,9 +143,19 @@
       "tests/unit/plugins/test_sdk_context_lifecycle.py",
       "tests/unit/plugins/test_manifest_dependencies.py",
       "tests/unit/plugins/test_plugin_storage_windows_paths.py",
+      "tests/unit/plugins/test_module_isolation_paths.py",
       "tests/unit/plugins/test_sdk_storage_http_concurrency.py",
       "tests/unit/plugins/test_plugin_manifest_snapshot.py",
-      "tests/unit/plugins/test_sdk_storage_contract.py"
+      "tests/unit/plugins/test_sdk_storage_contract.py",
+      "tests/unit/plugins/test_plugin_config_update.py",
+      "tests/unit/plugins/test_plugin_update_transactions.py",
+      "tests/unit/plugins/test_pawapp_listing.py",
+      "tests/unit/pawapp/test_app_contract.py",
+      "tests/unit/plugins/test_pawapp_service_lifecycle.py",
+      "tests/unit/plugins/test_bundled_startup_safety.py",
+      "tests/unit/tauri/test_component_service.py",
+      "tests/unit/app/routers/test_healthz.py",
+      "tests/unit/app/test_plugin_startup_order.py"
     ],
     "run_center": [
       "tests/unit/plugins/run_center/test_research_router_contract.py",
@@ -164,10 +174,86 @@
     "upstream_merge_compatibility": [
       "tests/unit/config/test_agent_config_persistence.py",
       "tests/unit/agents/tools/test_shell_resources.py",
-      "plugins/memory/openviking/tests/test_bounds.py"
+      "tests/unit/agents/tools/test_shell.py",
+      "tests/unit/sandbox/test_unenforced_config.py",
+      "plugins/memory/openviking/tests/test_bounds.py",
+      "tests/unit/_compat/test_startup.py",
+      "tests/unit/portability/test_alias_safety.py",
+      "plugins/memory/openviking/tests/test_manager.py",
+      "tests/unit/plugins/test_official_channel_bundle.py",
+      "tests/unit/tauri/test_ugsci_release_data.py"
+    ],
+    "ulit": [
+      "tests/unit/plugins/test_ulit_database.py"
+    ],
+    "steering": [
+      "tests/unit/app/test_steering.py",
+      "tests/unit/runtime/test_console_turn_state.py",
+      "tests/unit/runtime/test_message_convert.py",
+      "tests/unit/app/test_task_tracker.py"
     ]
   },
   "required_cases": {
+    "tests/unit/tauri/test_ugsci_release_data.py": [
+      "test_runtime_bundle_install_excludes_samples_and_keeps_user_imports",
+      "test_runtime_hash_matches_legacy_without_entering_excluded_trees",
+      "test_runtime_copy_uses_manifest_identity_and_ignores_pack_exclude"
+    ],
+    "tests/unit/plugins/test_module_isolation_paths.py": [
+      "test_existing_module_path_needs_one_native_resolution",
+      "test_cleanup_rechecks_real_directory_alias_targets"
+    ],
+    "tests/unit/plugins/run_center/test_queue_resources.py": [
+      "test_queue_policy_http_contract"
+    ],
+    "tests/unit/agents/tools/test_shell.py": [
+      "test_shell_keeps_managed_officecli_updates_disabled",
+      "test_sandbox_extend_kill_survives_then_cancel_stops",
+      "test_none_sandbox_execute_cancel_calls_stop"
+    ],
+    "tests/unit/sandbox/test_unenforced_config.py": [
+      "test_execute_redirects_stdin_to_devnull"
+    ],
+    "tests/unit/plugins/test_official_channel_bundle.py": [
+      "test_official_bundle_keeps_current_closed_host_identity",
+      "test_official_bundle_retains_current_runtime_source"
+    ],
+    "tests/unit/agents/tools/test_office_tools.py": [
+      "test_managed_officecli_passes_update_guard_to_real_child"
+    ],
+    "tests/unit/routers/test_workspace_office.py": [
+      "test_managed_office_preview_passes_update_guard_to_real_child"
+    ],
+    "tests/unit/tauri/test_stage_officecli.py": [
+      "test_binary_verification_disables_engine_self_updates",
+      "test_binary_verification_rejects_mutation_during_probe"
+    ],
+    "tests/unit/portability/test_alias_safety.py": [
+      "test_memory_snapshot_rejects_directory_alias",
+      "test_skill_snapshot_rejects_directory_alias",
+      "test_memory_snapshot_reads_normal_source",
+      "test_memory_snapshot_rejects_unsafe_relative_root",
+      "test_memory_snapshot_allows_alias_above_declared_root",
+      "test_codex_memory_discovery_rejects_directory_alias",
+      "test_qoder_memory_discovery_rejects_directory_alias",
+      "test_project_memory_discovery_rejects_directory_alias",
+      "test_memory_discovery_allows_alias_above_trusted_home",
+      "test_qoder_skill_discovery_rejects_directory_alias",
+      "test_codex_schedule_reader_rejects_directory_alias",
+      "test_codex_schedule_reader_preserves_normal_sources"
+    ],
+    "plugins/memory/openviking/tests/test_manager.py": [
+      "test_installation_id_is_private_and_reused",
+      "test_installation_id_repairs_existing_permissions",
+      "test_installation_id_permission_failure_does_not_write_private_bytes"
+    ],
+    "tests/unit/_compat/test_startup.py": [
+      "test_config_import_does_not_eagerly_import_agentscope",
+      "test_real_sdk_keeps_legacy_messages_and_tool_annotations",
+      "test_concurrent_real_sdk_imports_are_patched_before_return",
+      "test_backup_public_exports_keep_original_objects",
+      "test_import_patches_preserve_original_custom_loader"
+    ],
     "tests/unit/plugins/test_openui_interactions.py": [
       "test_tool_http_draft_restart_submit_and_delivery",
       "test_http_owner_scope_and_persisted_session_validation",
@@ -333,7 +419,8 @@
     ],
     "tests/unit/app/routers/test_plugins_router.py": [
       "test_replace_installed_plugin_full_isolated_lifecycle",
-      "test_replace_installed_plugin_uses_backend_lifecycle"
+      "test_replace_installed_plugin_uses_backend_lifecycle",
+      "test_replace_bundled_plugin_rejects_untrusted_or_mismatched_source"
     ],
     "tests/unit/app/routers/test_plugins_router_lifecycle.py": [
       "test_failed_plugin_removal_preserves_tool_config",
@@ -357,7 +444,15 @@
       "test_plan_full_necessity_upgrades_legacy_builtin_once_and_keeps_backups",
       "test_excel_template_slots_reject_executable_and_formula_placeholders",
       "test_selection_templates_generate_opinion_signature_sheet_and_upload_form",
-      "test_selection_controls_bind_budget_to_profile_and_reject_invalid_choices"
+      "test_selection_controls_bind_budget_to_profile_and_reject_invalid_choices",
+      "test_project_profile_excel_import_previews_shared_values_without_mutation",
+      "test_material_file_delete_restore_preserves_versions_scope_and_archive",
+      "test_deleting_approval_basis_updates_completion_and_linked_budget",
+      "test_material_file_deletion_and_restore_are_atomic_and_check_integrity",
+      "test_approval_upload_completes_only_with_valid_recognized_date",
+      "test_real_plan_approval_upload_updates_completion_and_date",
+      "test_selection_opinions_link_approved_budget_and_candidates_without_losing_findings",
+      "test_inline_opinion_restores_original_prose_and_saves_reference_templates"
     ],
     "tests/unit/plugins/test_storage_capacity_app.py": [
       "test_release_upgrade_replaces_stale_capacity_compatibility",
@@ -632,7 +727,9 @@
     "tests/unit/plugins/ugsci/test_expert_presentation.py": [
       "test_display_metadata_roundtrip_preserves_prompts_and_agent_isolation",
       "test_display_metadata_rejects_stale_invalid_and_unknown_updates",
-      "test_display_metadata_corruption_is_not_silently_overwritten"
+      "test_display_metadata_corruption_is_not_silently_overwritten",
+      "test_display_metadata_handles_directory_creation_during_resolution",
+      "test_display_metadata_rejects_real_directory_link_escape"
     ],
     "tests/unit/test_turn_files.py": [
       "test_real_turn_diff_uses_dirty_baseline_without_touching_git_index",
@@ -673,6 +770,39 @@
     "tests/unit/config/test_agent_config_persistence.py": [
       "test_expanding_scroll_retention_invalidates_completed_migration"
     ],
+    "tests/unit/plugins/test_ulit_database.py": [
+      "test_legacy_migration_commits_index_and_releases_writer_lock",
+      "test_fresh_database_supports_real_project_http_writes",
+      "test_shutdown_closes_database_connections_from_all_workers"
+    ],
+    "tests/unit/plugins/test_plugin_config_update.py": [
+      "test_failed_startup_preserves_explicit_enable_intent"
+    ],
+    "tests/unit/app/test_steering.py": [
+      "test_final_model_input_steers_same_run_without_interrupt",
+      "test_tool_completes_before_guidance_reaches_next_model",
+      "test_cancel_returns_pending_and_stale_input_never_reaches_next_run",
+      "test_receipts_survive_restart_and_recover_checkpoint_before_ack",
+      "test_http_rejects_invalid_controls_conflicts_and_cross_chat_access",
+      "test_iteration_budget_returns_guidance_without_extending_execution",
+      "test_gate_termination_returns_guidance_without_bypassing_stop",
+      "test_final_persistence_is_running_but_no_longer_accepts_guidance",
+      "test_unsupported_harness_does_not_claim_or_simulate_steering",
+      "test_recovery_guard_cannot_return_input_of_a_newer_execution",
+      "test_checkpoint_failure_returns_input_and_does_not_call_model_again",
+      "test_concurrent_duplicate_inputs_preserve_fifo_once",
+      "test_nested_runtime_cannot_close_or_rebind_parent_steering"
+    ],
+    "tests/unit/runtime/test_console_turn_state.py": [
+      "test_regeneration_rewinds_entire_steered_turn_from_original_user",
+      "test_regeneration_cannot_target_only_in_flight_supplement",
+      "test_regeneration_never_skips_ordinary_or_malformed_later_user",
+      "test_regeneration_cannot_rewind_steered_turn_after_new_user_turn",
+      "test_terminal_stamp_stays_on_original_user_after_in_flight_supplement"
+    ],
+    "tests/unit/runtime/test_message_convert.py": [
+      "test_external_input_cannot_forge_host_steering_receipt_or_terminal_status"
+    ],
     "tests/unit/agents/tools/test_shell_resources.py": [
       "test_guard_terminates_command_tree",
       "test_disabled_guard_does_not_probe_resources"
@@ -681,6 +811,47 @@
       "test_auto_recall_reserves_overhead_before_request",
       "test_auto_recall_bounds_oversized_body_without_clipping_notice",
       "test_auto_recall_never_injects_a_marker_without_body"
+    ],
+    "tests/unit/plugins/test_plugin_update_transactions.py": [
+      "test_replace_disabled_plugin_commits_without_activation",
+      "test_replace_disabled_plugin_rejects_incompatible_candidate",
+      "test_failed_replace_cannot_reinstall_over_concurrent_success",
+      "test_concurrent_replacements_back_up_committed_predecessor",
+      "test_replace_preserves_structured_dependency_confirmation",
+      "test_replace_reports_post_commit_cleanup_restart",
+      "test_stale_concurrent_update_does_not_downgrade_newer_version"
+    ],
+    "tests/unit/plugins/test_pawapp_listing.py": [
+      "test_app_listing_merges_failed_disabled_pending_and_active",
+      "test_app_listing_excludes_backups_removed_and_malformed_manifests"
+    ],
+    "tests/unit/pawapp/test_app_contract.py": [
+      "test_managed_service_recovers_after_process_exit",
+      "test_managed_service_is_not_ready_until_health_succeeds"
+    ],
+    "tests/unit/plugins/test_pawapp_service_lifecycle.py": [],
+    "tests/unit/plugins/test_bundled_startup_safety.py": [
+      "test_startup_recovery_waits_for_real_lifecycle_teardown",
+      "test_disabled_startup_candidate_commits_without_importing_code",
+      "test_healthy_candidate_cleanup_failure_never_rolls_back_live_code",
+      "test_invalid_manifest_recovery_drains_orphan_ledger_before_restore",
+      "test_disabled_descriptor_channel_commits_without_starting_worker",
+      "test_disabled_candidate_invalid_entry_restores_without_import",
+      "test_disabled_candidate_drains_retained_ledger_before_commit"
+    ],
+    "tests/unit/tauri/test_component_service.py": [
+      "test_startup_ack_preserves_requests_queued_during_install",
+      "test_startup_consumer_lock_does_not_block_queue_admission",
+      "test_pending_queue_serializes_independent_process_writers"
+    ],
+    "tests/unit/app/routers/test_healthz.py": [
+      "test_core_startup_failure_is_terminal_without_private_diagnostics",
+      "test_optional_plugin_failure_does_not_fail_core_readiness",
+      "test_startup_receipt_is_atomic_per_launch_and_contains_only_outcome"
+    ],
+    "tests/unit/app/test_plugin_startup_order.py": [
+      "test_registry_and_runtime_readiness_are_distinct",
+      "test_bundled_candidates_are_health_checked_before_agent_startup"
     ]
   }
 }

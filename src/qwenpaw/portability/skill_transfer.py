@@ -46,13 +46,40 @@ def _identity(info: os.stat_result) -> tuple[int, ...]:
     )
 
 
+def reject_source_aliases(path: Path, *, root: Path | None = None) -> None:
+    """Reject aliases from a declared source root through the leaf.
+
+    Ancestors above that root may be normal system aliases, such as macOS
+    /var. Without a declared root, check only the explicitly supplied entry.
+    """
+    path = Path(os.path.abspath(path.expanduser()))
+    root = Path(os.path.abspath(root.expanduser())) if root else None
+    if root is not None and not path.is_relative_to(root):
+        raise ValueError("portable source escapes its declared root")
+    # A Windows junction is not reported as a symlink. Inspect the entire
+    # supplied path before opening, including directories above the leaf.
+    for component in (path, *path.parents):
+        info = component.lstat()
+        if stat.S_ISLNK(info.st_mode) or (
+            getattr(info, "st_file_attributes", 0)
+            & getattr(stat, "FILE_ATTRIBUTE_REPARSE_POINT", 0x400)
+        ):
+            raise ValueError(
+                "portable source traverses a link or reparse point",
+            )
+        if root is None or component == root:
+            return
+
+
 def read_regular_file(
     path: Path,
     *,
     expected: os.stat_result | None = None,
     max_bytes: int | None = None,
+    root: Path | None = None,
 ) -> bytes:
     """Read one stable bounded regular file without following links."""
+    reject_source_aliases(path, root=root)
     before = expected or path.lstat()
     if stat.S_ISLNK(before.st_mode) or not stat.S_ISREG(before.st_mode):
         raise ValueError("portable source is not a regular file")
@@ -92,6 +119,7 @@ def read_bounded_tree(  # pylint: disable=too-many-branches
     source = source.expanduser()
     if source.is_symlink():
         raise ValueError("portable source is a symbolic link")
+    reject_source_aliases(source)
     root = source.resolve(strict=True)
     if not root.is_dir():
         raise ValueError("portable source is not a directory")
@@ -112,13 +140,15 @@ def read_bounded_tree(  # pylint: disable=too-many-branches
                 if entries > MAX_SKILL_ENTRIES:
                     raise ValueError("source exceeds the entry safety limit")
                 path = Path(item.path)
-                if item.is_symlink():
+                try:
+                    reject_source_aliases(path, root=root)
+                except ValueError as exc:
                     if reject_unsafe:
                         raise ValueError(
                             "source contains a symbolic link: "
                             f"{path.relative_to(root).as_posix()}；"
                             "请移除链接，或将需要的内容整理为普通文件后重试",
-                        )
+                        ) from exc
                     continue
                 if not path.resolve(strict=True).is_relative_to(root):
                     raise ValueError("source entry escapes its root")
@@ -143,7 +173,7 @@ def read_bounded_tree(  # pylint: disable=too-many-branches
                     relative,
                     before.st_mode,
                     (
-                        read_regular_file(path, expected=before)
+                        read_regular_file(path, expected=before, root=root)
                         if read_data
                         else b""
                     ),

@@ -57,6 +57,8 @@ vi.mock("@/plugins/registry/hooks", () => ({
 vi.mock("@/plugins/usePluginLoader", () => ({
   loadPawApp: hoisted.loadPawApp,
   reloadPawApp: hoisted.reloadPawApp,
+  unloadFrontendPlugin: vi.fn().mockResolvedValue(undefined),
+  reloadFrontendPlugin: vi.fn().mockResolvedValue(true),
 }));
 
 vi.mock("@/os/osCleanup", () => ({

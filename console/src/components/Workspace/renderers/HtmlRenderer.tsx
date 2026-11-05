@@ -33,6 +33,7 @@ import {
 import { useTranslation } from "react-i18next";
 import type { RendererContext } from "../types";
 import { STORAGE_POLYFILL } from "../../../utils/htmlPreviewStorage";
+import { useHtmlPreviewResources } from "../../../hooks/useHtmlPreviewResources";
 
 const HtmlRenderer: React.FC<RendererContext> = ({
   artifact,
@@ -43,7 +44,7 @@ const HtmlRenderer: React.FC<RendererContext> = ({
   const { t } = useTranslation();
   const [viewMode, setViewMode] = useState<"preview" | "code">("preview");
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const content = artifact.textContent ?? "";
+  const { content, missing, loading } = useHtmlPreviewResources(artifact);
 
   const handleDownload = useCallback(() => {
     if (workspace.download) workspace.download(artifact);
@@ -140,7 +141,7 @@ const HtmlRenderer: React.FC<RendererContext> = ({
     if (!content) {
       return (
         <div style={{ padding: "24px", textAlign: "center", color: "#999" }}>
-          {artifact.isStreaming ? (
+          {artifact.isStreaming || loading ? (
             <Spin tip={t("workspace.streaming")}>
               <div style={{ minHeight: 48 }} />
             </Spin>
@@ -166,10 +167,37 @@ const HtmlRenderer: React.FC<RendererContext> = ({
         }}
       />
     );
-  }, [processedContent, artifact.isStreaming, artifact.title, theme, t]);
+  }, [
+    content,
+    processedContent,
+    artifact.isStreaming,
+    artifact.title,
+    loading,
+    theme,
+    t,
+  ]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", height: "100%" }}>
+      {missing.length > 0 && (
+        <div
+          role="status"
+          style={{
+            padding: "8px 12px",
+            color: "var(--app-warning-text)",
+            fontSize: 12,
+          }}
+        >
+          {t(
+            "files.htmlResourcesMissing",
+            "部分页面资源无法加载，预览可能不完整。",
+          )}
+          <details>
+            <summary>{t("turnFiles.warningDetails", "查看详情")}</summary>
+            {missing.join("、")}
+          </details>
+        </div>
+      )}
       {!hostControls && (
         <div
           style={{
@@ -239,7 +267,7 @@ const HtmlRenderer: React.FC<RendererContext> = ({
               whiteSpace: "pre-wrap",
             }}
           >
-            {content}
+            {artifact.textContent ?? ""}
           </pre>
         )}
       </div>

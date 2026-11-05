@@ -3,6 +3,15 @@ html[data-interface-style]:not([data-interface-style="classic"]) {
   --app-shadow-panel: 0 8px 28px rgb(0 0 0 / 12%);
 }
 
+/* Spark's text-on-primary token can override Ant's solid foreground. */
+html[data-interface-style]:not([data-interface-style="classic"])
+  :is(.ant-btn-primary, .qwenpaw-btn-primary):not(:disabled):not(
+    .ant-btn-dangerous,
+    .qwenpaw-btn-dangerous
+  ) {
+  color: var(--app-action-fg) !important;
+}
+
 html[data-interface-style]:not([data-interface-style="classic"])
   :is(
     .ant-layout,

@@ -469,6 +469,10 @@ export interface RuntimePluginReplaceResult {
   name: string;
   version: string;
   restart_required: boolean;
+  loaded?: boolean;
+  enabled?: boolean;
+  status?: string;
+  diagnostics?: string[];
   backup_path?: string;
 }
 
@@ -518,7 +522,12 @@ export interface UGSciUpgradeSource {
 
 export type UGSciUpgradeResult =
   | { method: "queued" }
-  | { method: "replaced"; version: string }
+  | {
+      method: "replaced";
+      version: string;
+      loaded?: boolean;
+      restart_required?: boolean;
+    }
   | { method: "up-to-date" }
   | { method: "core-update-required" };
 
@@ -590,7 +599,12 @@ export async function upgradeInstalledUGSciPlugin(
     version: entry.version,
     sha256: requireUGSciUpgradeDigest(entry.sha256),
   });
-  return { method: "replaced", version: replaced.version };
+  return {
+    method: "replaced",
+    version: replaced.version,
+    loaded: replaced.loaded,
+    restart_required: replaced.restart_required,
+  };
 }
 
 /** Keep every catalog upgrade on the verified update path. */
@@ -613,7 +627,12 @@ export async function upgradeInstalledPlugin(
     version: update.version,
     sha256: update.sha256,
   });
-  return { method: "replaced", version: replaced.version };
+  return {
+    method: "replaced",
+    version: replaced.version,
+    loaded: replaced.loaded,
+    restart_required: replaced.restart_required,
+  };
 }
 
 export async function installPlugin(

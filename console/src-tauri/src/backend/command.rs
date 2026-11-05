@@ -62,7 +62,7 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
     );
     command.env("NO_PROXY", "localhost,127.0.0.1,::1,0.0.0.0");
     Ok((
-        apply_contributed_environment(app, command),
+        pin_managed_officecli(apply_contributed_environment(app, command)),
         LauncherSelection {
             packaged: false,
             managed_backend: false,
@@ -86,7 +86,10 @@ pub(super) fn expected_backend_version(app: &tauri::AppHandle) -> Result<String,
 pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelection), String> {
     let resource_dir = app.path().resource_dir().map_err(|err| err.to_string())?;
     let (command, selection) = create_packaged(&resource_dir)?;
-    Ok((apply_contributed_environment(app, command), selection))
+    Ok((
+        pin_managed_officecli(apply_contributed_environment(app, command)),
+        selection,
+    ))
 }
 
 /// Builds the command used to start the packaged Python backend sidecar.
@@ -218,7 +221,7 @@ pub(super) fn create_packaged(resource_dir: &Path) -> Result<(Command, LauncherS
         log::debug!("[backend] bundled neqsim jar not found");
     }
     Ok((
-        command,
+        pin_managed_officecli(command),
         LauncherSelection {
             packaged: true,
             managed_backend: launch.managed_backend,
@@ -226,6 +229,47 @@ pub(super) fn create_packaged(resource_dir: &Path) -> Result<(Command, LauncherS
             managed_python_packages: launch.managed_python_packages,
         },
     ))
+}
+
+// Backend and daemon descendants share the reviewed engine. Apply this after
+// contributed environment variables so extensions cannot re-enable its updater.
+fn pin_managed_officecli(mut command: Command) -> Command {
+    command.env("OFFICECLI_SKIP_UPDATE", "1");
+    command
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pin_managed_officecli;
+    use std::process::Command;
+
+    #[test]
+    fn backend_child_cannot_reenable_managed_officecli_updates() {
+        let mut command = if cfg!(windows) {
+            let mut command = Command::new("cmd");
+            command.args(["/D", "/C", "set OFFICECLI_SKIP_UPDATE"]);
+            command
+        } else {
+            let mut command = Command::new("sh");
+            command.args(["-c", "printf '%s' \"$OFFICECLI_SKIP_UPDATE\""]);
+            command
+        };
+        command
+            .env("OFFICECLI_SKIP_UPDATE", "0")
+            .env("QWENPAW_TEST_OTHER_ENV", "preserved");
+        let mut command = pin_managed_officecli(command);
+        assert!(command.get_envs().any(|(key, value)| {
+            key == "QWENPAW_TEST_OTHER_ENV" && value == Some("preserved".as_ref())
+        }));
+        let output = command.output().expect("start an isolated backend child");
+        assert!(output.status.success());
+        let expected = if cfg!(windows) {
+            "OFFICECLI_SKIP_UPDATE=1"
+        } else {
+            "1"
+        };
+        assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), expected);
+    }
 }
 
 #[cfg(not(debug_assertions))]

@@ -565,12 +565,21 @@ async def post_console_chat(
         # ContextVarsSetupHook (from the chat meta persisted above);
         # the router no longer pre-resolves or injects them.
 
+        from ..steering import SteeringController
+
+        steering = None
+        if (
+            getattr(getattr(workspace, "config", None), "backend", None)
+            == "qwenpaw"
+        ):
+            steering = SteeringController(workspace, chat)
         queue, is_new_run = await tracker.attach_or_start(
             chat.id,
             native_payload,
             console_channel.stream_one,
             owner=workspace,
             on_finished=workspace.chat_manager.mark_chat_finished,
+            steering=steering,
         )
         if not is_new_run:
             await tracker.detach_subscriber(chat.id, queue)

@@ -287,3 +287,4 @@ class PluginRecord:
         repr=False,
     )
     global_enabled: Optional[bool] = None
+    update_needs_restart: bool = False

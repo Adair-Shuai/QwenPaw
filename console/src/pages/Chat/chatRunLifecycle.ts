@@ -58,6 +58,17 @@ function waitForPoll(signal: AbortSignal): Promise<void> {
   });
 }
 
+/** These scopes own only history GETs and polling delays, never the active
+ * SDK run or its POST. Steering may yield readiness waits to claim its queued
+ * text while the backend continues producing the current answer. */
+const queueReadinessWaits = new Map<string, Set<AbortController>>();
+
+export function yieldQueueReadinessWaits(queueKey: string): void {
+  for (const controller of queueReadinessWaits.get(queueKey) ?? []) {
+    controller.abort();
+  }
+}
+
 /** Only an explicit backend idle state permits a subsequent queued turn. */
 export async function waitForChatIdle(
   chatId: string,
@@ -65,27 +76,45 @@ export async function waitForChatIdle(
   agentId: string,
   queueKey = chatId,
 ): Promise<boolean> {
-  while (!signal.aborted) {
-    try {
-      const chat = await request<ChatHistory>(
-        `/chats/${encodeURIComponent(chatId)}`,
-        { headers: { "X-Agent-Id": agentId }, signal },
-      );
-      if (signal.aborted) return false;
-      useMessageQueueStore
-        .getState()
-        .reconcileHistory(queueKey, agentId, chat.messages || []);
-      if (chat.status === "idle") return true;
-      if (chat.status !== "running") {
-        throw new Error("Unable to confirm chat status");
+  const readiness = new AbortController();
+  const abortReadiness = () => readiness.abort();
+  signal.addEventListener("abort", abortReadiness, { once: true });
+  if (signal.aborted) readiness.abort();
+  const waits = queueReadinessWaits.get(queueKey) ?? new Set<AbortController>();
+  waits.add(readiness);
+  queueReadinessWaits.set(queueKey, waits);
+  try {
+    while (!readiness.signal.aborted) {
+      try {
+        const chat = await awaitInChatScope(
+          request<ChatHistory>(`/chats/${encodeURIComponent(chatId)}`, {
+            headers: { "X-Agent-Id": agentId },
+            signal: readiness.signal,
+          }),
+          readiness.signal,
+        );
+        if (readiness.signal.aborted) return false;
+        useMessageQueueStore
+          .getState()
+          .reconcileHistory(queueKey, agentId, chat.messages || []);
+        if (chat.status === "idle") return true;
+        if (chat.status !== "running") {
+          throw new Error("Unable to confirm chat status");
+        }
+      } catch (error) {
+        if (readiness.signal.aborted) return false;
+        throw error;
       }
-    } catch (error) {
-      if (signal.aborted) return false;
-      throw error;
+      await waitForPoll(readiness.signal);
     }
-    await waitForPoll(signal);
+    return false;
+  } finally {
+    signal.removeEventListener("abort", abortReadiness);
+    waits.delete(readiness);
+    if (!waits.size && queueReadinessWaits.get(queueKey) === waits) {
+      queueReadinessWaits.delete(queueKey);
+    }
   }
-  return false;
 }
 
 /** Call only while holding the queue's send lock. A persisted `sending`

@@ -20,10 +20,51 @@ Covers:
 
 import asyncio
 import json
+import os
 import subprocess
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["async", "selector", "sync"])
+async def test_managed_officecli_passes_update_guard_to_real_child(
+    mode,
+    monkeypatch,
+):
+    from qwenpaw.agents.tools import office_tools as office
+
+    monkeypatch.setenv("OFFICECLI_SKIP_UPDATE", "0")
+    monkeypatch.setenv("QWENPAW_OFFICECLI_ENV_PROBE", "preserved")
+    command = [
+        sys.executable,
+        "-I",
+        "-c",
+        "import json,os; print(json.dumps({"
+        "'skip':os.environ.get('OFFICECLI_SKIP_UPDATE'),"
+        "'probe':os.environ.get('QWENPAW_OFFICECLI_ENV_PROBE')}))",
+    ]
+    if mode == "selector":
+
+        async def unavailable(*_args, **_kwargs):
+            raise NotImplementedError("Windows Selector event loop")
+
+        monkeypatch.setattr(
+            office.asyncio,
+            "create_subprocess_exec",
+            unavailable,
+        )
+    result = (
+        office._run_officecli_sync(command, 10)
+        if mode == "sync"
+        else await office._communicate_officecli(command, 10)
+    )
+    assert result.returncode == 0, result.stderr
+    assert json.loads(result.stdout) == {"skip": "1", "probe": "preserved"}
+    assert os.environ["OFFICECLI_SKIP_UPDATE"] == "0"
+
 
 # ---------------------------------------------------------------------------
 # _officecli_available / _not_installed_error / _json_toolchunk

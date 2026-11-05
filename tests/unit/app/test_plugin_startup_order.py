@@ -56,9 +56,8 @@ def test_frontend_plugins_are_published_before_agent_startup() -> None:
     activation_reconcile_lines = [
         node.lineno
         for node in ast.walk(startup)
-        if isinstance(node, ast.Call)
-        and isinstance(node.func, ast.Attribute)
-        and node.func.attr in {"finalize_activation", "rollback_activation"}
+        if isinstance(node, ast.Attribute)
+        and node.attr in {"finalize_activation", "rollback_activation"}
     ]
 
     assert agent_start_lines, "agent startup call was not found"
@@ -134,10 +133,9 @@ def test_directory_components_skip_plugin_health_check_rollback() -> None:
         "rollback": [],
     }
     for node in ast.walk(startup):
-        if not isinstance(node, ast.Call):
+        if not isinstance(node, ast.Attribute):
             continue
-        func = node.func
-        attr = func.attr if isinstance(func, ast.Attribute) else None
+        attr = node.attr
         if attr == "is_directory_component":
             loop_lines["guard"].append(node.lineno)
         elif attr == "rollback_activation":
@@ -164,14 +162,11 @@ def test_bundled_candidates_are_health_checked_before_agent_startup() -> None:
         "start_all_configured_agents": [],
     }
     for node in ast.walk(startup):
-        if not isinstance(node, ast.Call):
-            continue
-        func = node.func
         name = (
-            func.attr
-            if isinstance(func, ast.Attribute)
-            else func.id
-            if isinstance(func, ast.Name)
+            node.attr
+            if isinstance(node, ast.Attribute)
+            else node.id
+            if isinstance(node, ast.Name)
             else None
         )
         if name in calls:

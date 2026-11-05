@@ -48,7 +48,7 @@ interface DerivedToolStatus {
  * turn streams. Once the turn ends nothing more can arrive, so the call is
  * reported as interrupted instead of spinning forever.
  */
-function deriveToolStatus(
+export function deriveToolStatus(
   resultItem: Record<string, unknown> | undefined,
   data: Record<string, unknown>,
   turnEnded: boolean,

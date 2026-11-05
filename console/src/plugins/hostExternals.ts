@@ -69,6 +69,8 @@ export interface HostExternals {
   // ── Hooks + helpers attached later by installHostSdk() ─────────────────────
   useTheme?: () => HostThemeMode;
   useLocale?: () => string;
+  /** Reactive Agent labels, sharing native localization and custom-name rules. */
+  useAgentDisplayName?: () => (agent: { id: string; name: string }) => string;
   useSelectedAgent?: () => HostAgentInfo;
   useCurrentSession?: () => HostSessionInfo | null;
   getSelectedAgentId?: () => string;

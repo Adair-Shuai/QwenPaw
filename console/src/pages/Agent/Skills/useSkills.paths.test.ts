@@ -569,30 +569,25 @@ describe("useSkills importFromHub polling paths", () => {
     expect(ret).toEqual({ success: false });
   });
 
-  // Known regression, pinned with .fails — see the comment on the sibling
-  // "tolerates a start request" case below for the full write-up. The desired
-  // contract is kept here verbatim so this case turns red (and the marker gets
-  // removed) as soon as the empty-task-id guard is restored.
-  it.fails(
-    "importFromHub: an empty task id exits the poll loop with success:false",
-    async () => {
-      apiMocks.startHubSkillInstall.mockResolvedValue(hubTask("pending", null));
-      apiMocks.startHubSkillInstall.mockResolvedValueOnce({
-        ...hubTask("pending", null),
-        task_id: "",
-      });
+  // A malformed start response has no target to poll and must finish cleanly.
+  it("importFromHub: an empty task id exits the poll loop with success:false", async () => {
+    apiMocks.startHubSkillInstall.mockResolvedValue(hubTask("pending", null));
+    apiMocks.startHubSkillInstall.mockResolvedValueOnce({
+      ...hubTask("pending", null),
+      task_id: "",
+    });
 
-      const { result } = await renderIdle();
-      let ret: { success: boolean } | undefined;
-      await act(async () => {
-        ret = await result.current.importFromHub("https://example.com/x");
-      });
+    const { result } = await renderIdle();
+    let ret: { success: boolean } | undefined;
+    await act(async () => {
+      ret = await result.current.importFromHub("https://example.com/x");
+    });
 
-      expect(apiMocks.getHubSkillInstallStatus).not.toHaveBeenCalled();
-      expect(result.current.importing).toBe(false);
-      expect(ret).toEqual({ success: false });
-    },
-  );
+    expect(apiMocks.getHubSkillInstallStatus).not.toHaveBeenCalled();
+    expect(result.current.importing).toBe(false);
+    expect(ret).toEqual({ success: false });
+    expect(messageMock.error).toHaveBeenCalledWith("skills.importFailed");
+  });
 
   it("importFromHub: a non-terminal status keeps polling until completion", async () => {
     let polls = 0;
@@ -828,57 +823,39 @@ describe("useSkills cancelImport paths", () => {
     expect(ret).toEqual({ success: false });
   });
 
-  // Known regression introduced by #8332, pinned with .fails.
-  //
-  // Before #8332 the poll loop was guarded by truthiness — `while
-  // (importTaskIdRef.current)` — so a start response carrying an empty
-  // task_id left the loop immediately and importFromHub returned
-  // {success:false} without ever calling the status endpoint. The refactor
-  // moved the ref to a `{taskId, mutation}` object and changed the guard to
-  // an equality test (`while (ref.current?.taskId === task.task_id && ...)`),
-  // which an empty task_id satisfies ("" === ""), so the loop is now entered
-  // and the status endpoint is polled with an empty id.
-  //
-  // The end result is still {success:false}, but it now costs one bogus API
-  // call and surfaces a confusing import error instead of exiting cleanly.
-  //
-  // Deliberately NOT rewritten to match the new behaviour: the assertions
-  // below are the desired contract, and this case turning red is the signal
-  // to drop the .fails marker once the guard is restored. Note that .fails
-  // covers the whole case, so the earlier cancelImport-is-a-no-op assertion
-  // is masked while this marker is in place.
-  it.fails(
-    "cancelImport: tolerates a start request that has not resolved yet",
-    async () => {
-      let releaseStart: (value: unknown) => void = () => {};
-      apiMocks.startHubSkillInstall.mockImplementation(
-        () =>
-          new Promise((resolve) => {
-            releaseStart = resolve;
-          }),
-      );
+  // A pending start has no cancellation target. Its late empty task identity
+  // must not restart polling after the no-op cancellation attempt.
+  it("cancelImport: tolerates a start request that has not resolved yet", async () => {
+    let releaseStart: (value: unknown) => void = () => {};
+    apiMocks.startHubSkillInstall.mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          releaseStart = resolve;
+        }),
+    );
 
-      const { result } = await renderIdle();
-      let pending: Promise<{ success: boolean }> | undefined;
-      await act(async () => {
-        pending = result.current.importFromHub("https://example.com/x");
-        await flushMicrotasks();
-      });
-      expect(result.current.importing).toBe(true);
+    const { result } = await renderIdle();
+    let pending: Promise<{ success: boolean }> | undefined;
+    await act(async () => {
+      pending = result.current.importFromHub("https://example.com/x");
+      await flushMicrotasks();
+    });
+    expect(result.current.importing).toBe(true);
 
-      act(() => {
-        result.current.cancelImport();
-      });
-      expect(apiMocks.cancelHubSkillInstall).not.toHaveBeenCalled();
+    act(() => {
+      result.current.cancelImport();
+    });
+    expect(apiMocks.cancelHubSkillInstall).not.toHaveBeenCalled();
 
-      releaseStart({ ...hubTask("pending", null), task_id: "" });
-      let ret: { success: boolean } | undefined;
-      await act(async () => {
-        ret = await pending;
-      });
+    releaseStart({ ...hubTask("pending", null), task_id: "" });
+    let ret: { success: boolean } | undefined;
+    await act(async () => {
+      ret = await pending;
+    });
 
-      expect(apiMocks.getHubSkillInstallStatus).not.toHaveBeenCalled();
-      expect(ret).toEqual({ success: false });
-    },
-  );
+    expect(apiMocks.getHubSkillInstallStatus).not.toHaveBeenCalled();
+    expect(ret).toEqual({ success: false });
+    expect(result.current.importing).toBe(false);
+    expect(messageMock.error).toHaveBeenCalledWith("skills.importFailed");
+  });
 });

@@ -20,6 +20,10 @@ model calls, and exposes a governed `memory_search` tool.
 - QwenPaw hashes the OpenViking identity, this installation's private ID, the
   Agent ID, and the QwenPaw chat ID to form an OpenViking session ID. This
   separates conversations; it is not an authorization boundary.
+- The installation ID is written only after its file is private: mode `0600`
+  on POSIX, or a protected Windows DACL granting the current account access.
+  Reusing an existing ID repairs its permissions; permission failures stop
+  startup instead of writing private state with inherited access.
 
 ## Prepare an OpenViking server
 

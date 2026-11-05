@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """The exported author suite collects without repository test helpers."""
 
-import os
 from pathlib import Path
 import runpy
 import subprocess
@@ -12,7 +11,13 @@ import pytest
 pytestmark = pytest.mark.p1
 
 
-def test_exported_author_suite_collects_outside_checkout(tmp_path):
+def test_exported_author_suite_collects_outside_checkout(
+    tmp_path,
+    monkeypatch,
+):
+    # A parent run's basetemp would be an ancestor of the standalone cwd.
+    # Pytest correctly refuses it; the author runner must isolate its options.
+    monkeypatch.setenv("PYTEST_ADDOPTS", f"--basetemp={tmp_path.parent} -v")
     source = Path(__file__).resolve().parents[3]
     checker = runpy.run_path(
         str(source / "scripts/check_plugin_sdk_artifacts.py"),
@@ -42,7 +47,7 @@ raise SystemExit(pytest.main([
 """
     env = {
         key: value
-        for key, value in os.environ.items()
+        for key, value in checker["author_environment"]().items()
         if not key.startswith(("PYTHON", "QWENPAW_"))
     }
     env.update(

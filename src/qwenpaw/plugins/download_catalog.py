@@ -318,23 +318,57 @@ def _build_remote_plugin_catalog() -> dict[str, Any]:
     return result
 
 
-def build_plugin_catalog() -> dict[str, Any]:
-    """Combine CDN releases with bundled plugins available for reinstall."""
+def _bundled_catalog_manifests() -> list[Path]:
+    """Enumerate only the package-owned templates exposed by the catalog."""
     from ..market.builtin import get_builtin_hub_plugins_dir
 
-    result = _build_remote_plugin_catalog()
-    plugins = {
-        (entry["plugin_id"], entry["version"]): entry
-        for entry in result["plugins"]
-    }
-    installed = _installed_plugin_ids()
     bundled_dir = Path(__file__).resolve().parent / "bundled"
     manifests = (
         bundled_dir.glob("*/*/plugin.json")
         if bundled_dir.is_dir()
         else get_builtin_hub_plugins_dir().glob("*/plugin.json")
     )
-    for path in sorted(manifests):
+    return sorted(manifests)
+
+
+def resolve_bundled_catalog_source(
+    source: str,
+    plugin_id: str,
+    version: str | None,
+) -> Path:
+    """Resolve a catalog template without accepting arbitrary local paths."""
+    requested = Path(source)
+    for path in _bundled_catalog_manifests():
+        candidate = path.parent.resolve()
+        if requested != candidate:
+            continue
+        manifest = PluginManifest.from_dict(
+            json.loads(path.read_text(encoding="utf-8")),
+        )
+        if manifest.id != plugin_id:
+            raise ValueError(
+                "Plugin id does not match the bundled catalog entry",
+            )
+        if version and manifest.version != version.strip():
+            raise ValueError(
+                "Plugin version does not match the bundled catalog entry",
+            )
+        compatible, reason = check_plugin_version_compat(manifest)
+        if not compatible:
+            raise ValueError(reason)
+        return candidate
+    raise ValueError("Plugin source is not an approved bundled catalog entry")
+
+
+def build_plugin_catalog() -> dict[str, Any]:
+    """Combine CDN releases with bundled plugins available for reinstall."""
+    result = _build_remote_plugin_catalog()
+    plugins = {
+        (entry["plugin_id"], entry["version"]): entry
+        for entry in result["plugins"]
+    }
+    installed = _installed_plugin_ids()
+    for path in _bundled_catalog_manifests():
         manifest = PluginManifest.from_dict(
             json.loads(path.read_text(encoding="utf-8")),
         )

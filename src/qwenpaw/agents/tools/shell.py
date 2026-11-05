@@ -29,6 +29,7 @@ from ...config.context import (
     get_tool_base_dir,
 )
 from ...runtime.tool_registry import tool_descriptor
+from ...officecli_runtime import officecli_environment
 from ...sandbox import ExecutionResult
 from ...sandbox.config import SandboxConfig
 from ...utils.io_utils import run_sync_io
@@ -1108,7 +1109,7 @@ async def _execute_in_sandbox(
 
     # Sandbox backends rebuild their environment from os.environ. Carry over
     # the PATH adjusted by the shell entrypoint unless policy set one itself.
-    sandbox_env = dict(sandbox_config.env_vars)
+    sandbox_env = officecli_environment(sandbox_config.env_vars)
     if not any(key.upper() == "PATH" for key in sandbox_env):
         path_key = next(
             (key for key in env if key.upper() == "PATH"),
@@ -1522,7 +1523,7 @@ async def execute_shell_command(
     # Ensure the venv Python is on PATH for subprocesses.  User-level bins
     # (``~/.local/bin`` etc.) are added first so that daemon subprocesses can
     # locate user-installed CLIs — see ``_ensure_user_bins_on_path``.
-    env = _ensure_user_bins_on_path(os.environ.copy())
+    env = _ensure_user_bins_on_path(officecli_environment())
     env["PATH"] = shell_execution_path(env.get("PATH"))
 
     if sandbox_config is not None and not isinstance(

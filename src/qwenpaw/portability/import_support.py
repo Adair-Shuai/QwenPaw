@@ -108,6 +108,7 @@ def _prepare_memory_payloads(
             relative = item.relative_path
             if (
                 relative.is_absolute()
+                or relative.anchor
                 or ".." in relative.parts
                 or relative.suffix.lower() != ".md"
                 or relative in payload
@@ -121,10 +122,14 @@ def _prepare_memory_payloads(
                     "migration limit.",
                 )
             source = Path(os.path.abspath(item.source_path.expanduser()))
+            source_root = source
+            for _ in relative.parts:
+                source_root = source_root.parent
             try:
                 data = read_regular_file(
                     source,
                     max_bytes=_MAX_MEMORY_BYTES - total,
+                    root=source_root,
                 )
             except (OSError, ValueError) as exc:
                 raise ValueError(

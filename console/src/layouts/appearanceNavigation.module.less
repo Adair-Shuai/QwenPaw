@@ -2,7 +2,7 @@
   display: flex;
   flex-direction: column;
   flex-shrink: 0;
-  gap: 3px;
+  gap: 2px;
 }
 
 .navigation > button,
@@ -34,6 +34,11 @@
     outline: 2px solid var(--app-focus-ring);
     outline-offset: -2px;
   }
+}
+
+.navigation > button {
+  min-height: 32px;
+  padding-block: 5px;
 }
 
 .popover {

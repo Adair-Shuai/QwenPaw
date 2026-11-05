@@ -18,8 +18,11 @@ import {
 } from "@/api/modules/pluginMarket";
 import { compareVersions } from "@/layouts/constants";
 import { marketPluginMatches } from "@/utils/marketPluginIdentity";
-import { reloadFrontendPlugin, reloadPawApp } from "@/plugins/usePluginLoader";
-import { removePluginRuntime } from "@/plugins/pluginRuntimeCleanup";
+import {
+  reloadFrontendPlugin,
+  reloadPawApp,
+  unloadFrontendPlugin,
+} from "@/plugins/usePluginLoader";
 import { removePluginAppState } from "@/os/osCleanup";
 import { isUGSciCatalogPlugin } from "@/distribution";
 import { runPluginUpgrade } from "../dependencyUpgrade";
@@ -201,7 +204,8 @@ export function usePluginManager() {
           setQueuedIds(new Set(queuedVersions.current.keys()));
           message.success(t("pluginManager.ugsciUpgradeQueued"));
         } else if (result.method === "replaced") {
-          await reloadInstalledPluginRuntime(plugin);
+          if (result.loaded === false) await unloadFrontendPlugin(plugin.id);
+          else await reloadInstalledPluginRuntime(plugin);
           message.success(t("pluginManager.updateSuccess"));
         } else {
           message.info(t("pluginManager.catalogLatest"));
@@ -250,7 +254,8 @@ export function usePluginManager() {
             queuedVersions.current.set(plugin.id, update.version);
             setQueuedIds(new Set(queuedVersions.current.keys()));
           } else if (result.method === "replaced") {
-            await reloadInstalledPluginRuntime(plugin);
+            if (result.loaded === false) await unloadFrontendPlugin(plugin.id);
+            else await reloadInstalledPluginRuntime(plugin);
           }
           completedIds.add(plugin.id);
           setUpdates((current) => {
@@ -314,9 +319,9 @@ export function usePluginManager() {
           try {
             await uninstallPlugin(plugin.id);
             if (plugin.plugin_type === "app") {
-              removePluginAppState(plugin.id);
+              await removePluginAppState(plugin.id);
             } else {
-              removePluginRuntime(plugin.id);
+              await unloadFrontendPlugin(plugin.id);
             }
             message.success(t("pluginManager.uninstallSuccess"));
             await refresh();

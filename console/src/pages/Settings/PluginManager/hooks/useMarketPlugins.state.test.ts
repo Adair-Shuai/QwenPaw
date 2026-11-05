@@ -745,4 +745,29 @@ describe("useMarketPlugins install flow", () => {
 
     expect(result.current.installingId).toBeNull();
   });
+  it("preserves the disabled runtime state when a community update completes", async () => {
+    hoisted.fetchPlugins.mockResolvedValue([
+      { id: "package", author: "owner", version: "0.9.0" },
+    ]);
+    hoisted.replaceInstalledPlugin.mockResolvedValue({
+      version: "1.0.0",
+      loaded: false,
+    });
+    const onInstalled = vi.fn();
+    const { result } = renderHook(() => useMarketPlugins({ onInstalled }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await result.current.handleInstall(
+        makeEntry("@owner/package", { installed: true }),
+      );
+    });
+    expect(onInstalled).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: "package",
+        version: "1.0.0",
+        loaded: false,
+      }),
+    );
+    expect(hoisted.message.error).not.toHaveBeenCalled();
+  });
 });

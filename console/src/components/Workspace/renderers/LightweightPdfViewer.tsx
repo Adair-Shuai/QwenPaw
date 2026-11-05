@@ -25,6 +25,7 @@ import type {
   RenderTask,
 } from "pdfjs-dist";
 import { loadLightweightPdfJs } from "../../../features/pdf-reader/lightweightPdf";
+import { BundledPdfBinaryDataFactory } from "../../../features/pdf-reader/pdfBinaryAssets";
 import { constrainCanvasScale } from "./pdfViewerLimits";
 
 const RANGE_CHUNK_BYTES = 256 * 1024;
@@ -320,6 +321,9 @@ const LightweightPdfViewer: React.FC<LightweightPdfViewerProps> = ({
           disableStream: useStrictRange,
           disableAutoFetch: useStrictRange,
           useWasm: false,
+          BinaryDataFactory: BundledPdfBinaryDataFactory,
+          useWorkerFetch: false,
+          useSystemFonts: true,
           verbosity: 0,
         });
         loadingTaskRef.current = task;

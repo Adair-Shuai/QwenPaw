@@ -8,7 +8,12 @@ import {
 // Types
 // ---------------------------------------------------------------------------
 
-export type QueueItemStatus = "pending" | "sending" | "failed" | "sent";
+export type QueueItemStatus =
+  | "pending"
+  | "sending"
+  | "steering"
+  | "failed"
+  | "sent";
 
 export type QueueRunState = "idle" | "running" | "paused" | "error";
 
@@ -64,6 +69,9 @@ export interface QueueItem {
   channel?: string;
   requestContext?: Record<string, unknown>;
   bizParams?: Record<string, unknown>;
+  /** Unresolved delivery to a specific running turn. Only its receipt may
+   * release this claim; ordinary retries must never send it a second time. */
+  steering?: { requestId: string; runId: string };
   status: QueueItemStatus;
   retryCount: number;
   errorMessage?: string;
@@ -215,11 +223,119 @@ function readQueueFromStorage(sessionId: string): PersistedQueue | null {
   return null;
 }
 
+const STEERING_CLAIMS_PREFIX = "qwenpaw:queue-steering-claims:";
+
+/** Keep once-steered item identities after application removes their queue row.
+ * A delayed pre-claim pending snapshot must not resurrect a delivered message. */
+function readSteeringClaims(
+  sessionId: string,
+): Record<string, string> | undefined {
+  try {
+    const raw = localStorage.getItem(`${STEERING_CLAIMS_PREFIX}${sessionId}`);
+    if (!raw) return {};
+    const parsed: unknown = JSON.parse(raw);
+    if (
+      !parsed ||
+      typeof parsed !== "object" ||
+      Array.isArray(parsed) ||
+      Object.values(parsed).some((value) => typeof value !== "string")
+    )
+      return undefined;
+    return parsed as Record<string, string>;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Once a queue has steering receipts, item and run-state snapshots must
+ * agree. Sources persist before broadcasting, so the stored state also orders
+ * a user's explicit retry/resume after an older remote pause/error event. */
+function readSteeringRunState(sessionId: string): QueueRunState | undefined {
+  const claims = readSteeringClaims(sessionId);
+  if (!claims || Object.keys(claims).length === 0) return undefined;
+  const runState = readQueueFromStorage(sessionId)?.runState;
+  return ["idle", "running", "paused", "error"].includes(runState ?? "")
+    ? runState
+    : undefined;
+}
+
+function preserveSteeringRunStates(
+  sessionId: string,
+  runStates: Record<string, QueueRunState>,
+): Record<string, QueueRunState> {
+  const authoritative = readSteeringRunState(sessionId);
+  return authoritative !== undefined && authoritative !== runStates[sessionId]
+    ? { ...runStates, [sessionId]: authoritative }
+    : runStates;
+}
+
+function writeSteeringClaim(
+  sessionId: string,
+  id: string,
+  requestId: string,
+): boolean {
+  const claims = readSteeringClaims(sessionId);
+  if (!claims) return false;
+  try {
+    localStorage.setItem(
+      `${STEERING_CLAIMS_PREFIX}${sessionId}`,
+      JSON.stringify({ ...claims, [id]: requestId }),
+    );
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** Undefined means storage cannot be read; [] means it confirms no queue. */
+function readAuthoritativeQueueItems(
+  sessionId: string,
+): QueueItem[] | undefined {
+  const saved = readQueueFromStorage(sessionId);
+  if (saved) return saved.items;
+  try {
+    if (localStorage.getItem(getStorageKey(sessionId)) === null) return [];
+  } catch {
+    // Storage is unavailable; do not infer a terminal receipt from its absence.
+  }
+  return undefined;
+}
+
+/** Canonicalize once-steered rows before public mutations or remote updates.
+ * Persisted queue state wins over delayed pending/steering snapshots, including
+ * after a receipt returned an item, a retry began, or application removed it. */
+function preserveStoredSteering(
+  sessionId: string,
+  current: QueueItem[],
+): QueueItem[] {
+  const saved = readAuthoritativeQueueItems(sessionId);
+  if (!saved) return current;
+  const claims = readSteeringClaims(sessionId) ?? {};
+  if (
+    !saved.some((item) => item.status === "steering") &&
+    !current.some((item) => item.status === "steering" || claims[item.id])
+  )
+    return current;
+  const canonical = new Map(saved.map((item) => [item.id, item]));
+  const items = current.flatMap((item) => {
+    if (!claims[item.id] && item.status !== "steering") return [item];
+    const latest = canonical.get(item.id);
+    return latest ? [latest] : [];
+  });
+  saved.forEach((item, savedIndex) => {
+    if (item.status !== "steering") return;
+    const index = items.findIndex((candidate) => candidate.id === item.id);
+    if (index >= 0) items[index] = item;
+    else items.splice(Math.min(savedIndex, items.length), 0, item);
+  });
+  return items;
+}
+
 function writeQueueToStorage(
   sessionId: string,
   items: QueueItem[],
   runState: QueueRunState,
-) {
+): boolean {
   try {
     if (items.length > 0) {
       localStorage.setItem(
@@ -229,12 +345,20 @@ function writeQueueToStorage(
     } else {
       localStorage.removeItem(getStorageKey(sessionId));
     }
+    return true;
   } catch {
-    // ignore storage errors
+    return false;
   }
 }
 
 export function removeQueueFromStorage(sessionId: string) {
+  if (
+    readQueueFromStorage(sessionId)?.items.some(
+      (item) => item.status === "steering",
+    )
+  )
+    return;
+  // Keep the claim journal: late cross-tab snapshots can outlive queue removal.
   try {
     localStorage.removeItem(getStorageKey(sessionId));
   } catch {
@@ -317,6 +441,7 @@ function getLockManager(): LockLike | null {
 export async function withSendLock<T>(
   sessionId: string,
   fn: () => Promise<T> | T,
+  options?: { wait?: boolean },
 ): Promise<T | null> {
   const locks = getLockManager();
   if (!locks) {
@@ -326,7 +451,7 @@ export async function withSendLock<T>(
   try {
     const result = (await locks.request(
       `qwenpaw:queue-send:${sessionId}`,
-      { ifAvailable: true },
+      options?.wait ? { mode: "exclusive" } : { ifAvailable: true },
       async (lock: unknown) => {
         if (!lock) return null;
         return await fn();
@@ -473,6 +598,23 @@ interface MessageQueueStore {
     status: QueueItemStatus,
     errorMessage?: string,
   ) => void;
+  /** Claim a pending item under the caller's per-session send lock. */
+  beginSteering: (sessionId: string, id: string, runId: string) => boolean;
+  /** Resolve only the exact steering attempt acknowledged by the server. */
+  resolveSteering: (
+    sessionId: string,
+    id: string,
+    requestId: string,
+    status: "applied" | "returned",
+    errorMessage?: string,
+  ) => boolean;
+  /** Unknown transport outcome stays claimed until its server receipt arrives. */
+  setSteeringError: (
+    sessionId: string,
+    id: string,
+    requestId: string,
+    errorMessage?: string,
+  ) => boolean;
   /** Set run state for a specific session (persists to localStorage). */
   setRunState: (sessionId: string, state: QueueRunState) => void;
   /** Get run state for a specific session (defaults to "idle"). */
@@ -507,7 +649,10 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
   lastMigratedTo: null,
 
   enqueue: (sessionId: string, input: QueueItemInput) => {
-    const current = get().queues[sessionId] ?? [];
+    const current = preserveStoredSteering(
+      sessionId,
+      get().queues[sessionId] ?? [],
+    );
     if (current.length >= MAX_QUEUE_SIZE) {
       // Queue is full, reject
       return;
@@ -556,28 +701,31 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
     set((state) => {
       const nextItems = [...current, item];
       const next = { ...state.queues, [sessionId]: nextItems };
-      writeQueueToStorage(
-        sessionId,
-        nextItems,
-        get().runStates[sessionId] ?? "idle",
-      );
+      writeQueueToStorage(sessionId, nextItems, get().getRunState(sessionId));
       broadcast({ type: "enqueue", sessionId, items: nextItems });
-      return { queues: next };
+      return {
+        queues: next,
+        runStates: preserveSteeringRunStates(sessionId, state.runStates),
+      };
     });
   },
 
   remove: (sessionId: string, id: string) => {
     set((state) => {
-      const current = state.queues[sessionId] ?? [];
-      const nextItems = current.filter((it) => it.id !== id);
-      const next = { ...state.queues, [sessionId]: nextItems };
-      writeQueueToStorage(
+      const current = preserveStoredSteering(
         sessionId,
-        nextItems,
-        get().runStates[sessionId] ?? "idle",
+        state.queues[sessionId] ?? [],
       );
+      const nextItems = current.filter(
+        (it) => it.id !== id || it.status === "steering",
+      );
+      const next = { ...state.queues, [sessionId]: nextItems };
+      writeQueueToStorage(sessionId, nextItems, get().getRunState(sessionId));
       broadcast({ type: "remove", sessionId, items: nextItems });
-      return { queues: next };
+      return {
+        queues: next,
+        runStates: preserveSteeringRunStates(sessionId, state.runStates),
+      };
     });
   },
 
@@ -590,9 +738,12 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
     requestContext?: Record<string, unknown>,
   ) => {
     set((state) => {
-      const current = state.queues[sessionId] ?? [];
+      const current = preserveStoredSteering(
+        sessionId,
+        state.queues[sessionId] ?? [],
+      );
       const nextItems = current.map((it) =>
-        it.id === id
+        it.id === id && it.status !== "steering"
           ? {
               ...it,
               text,
@@ -603,37 +754,73 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
           : it,
       );
       const next = { ...state.queues, [sessionId]: nextItems };
-      writeQueueToStorage(
-        sessionId,
-        nextItems,
-        get().runStates[sessionId] ?? "idle",
-      );
+      writeQueueToStorage(sessionId, nextItems, get().getRunState(sessionId));
       broadcast({ type: "edit", sessionId, items: nextItems });
-      return { queues: next };
+      return {
+        queues: next,
+        runStates: preserveSteeringRunStates(sessionId, state.runStates),
+      };
     });
   },
 
   reorder: (sessionId: string, items: QueueItem[]) => {
     set((state) => {
-      const next = { ...state.queues, [sessionId]: items };
-      writeQueueToStorage(
+      const current = preserveStoredSteering(
         sessionId,
-        items,
-        get().runStates[sessionId] ?? "idle",
+        state.queues[sessionId] ?? [],
       );
+      items = preserveStoredSteering(sessionId, items);
+      if (current.some((item) => item.status === "steering")) {
+        // A reorder is only a permutation. In-flight entries remain pinned and
+        // retain the canonical request metadata even if the UI snapshot is old.
+        const proposedIds = new Set(items.map((item) => item.id));
+        if (
+          current.length !== items.length ||
+          proposedIds.size !== current.length ||
+          current.some(
+            (item, index) =>
+              !proposedIds.has(item.id) ||
+              (item.status === "steering" && items[index]?.id !== item.id),
+          )
+        ) {
+          return { queues: { ...state.queues, [sessionId]: current } };
+        }
+        const protectedItems = new Map(
+          current
+            .filter((item) => item.status === "steering")
+            .map((item) => [item.id, item]),
+        );
+        items = items.map((item) => protectedItems.get(item.id) ?? item);
+      }
+      const next = { ...state.queues, [sessionId]: items };
+      writeQueueToStorage(sessionId, items, get().getRunState(sessionId));
       broadcast({ type: "reorder", sessionId, items });
-      return { queues: next };
+      return {
+        queues: next,
+        runStates: preserveSteeringRunStates(sessionId, state.runStates),
+      };
     });
   },
 
   clear: (sessionId: string) => {
     set((state) => {
+      const retained = preserveStoredSteering(
+        sessionId,
+        state.queues[sessionId] ?? [],
+      ).filter((item) => item.status === "steering");
       const queues = { ...state.queues };
-      delete queues[sessionId];
       const runStates = { ...state.runStates };
-      delete runStates[sessionId];
-      writeQueueToStorage(sessionId, [], "idle");
-      broadcast({ type: "clear", sessionId, items: [] });
+      if (retained.length) queues[sessionId] = retained;
+      else {
+        delete queues[sessionId];
+        delete runStates[sessionId];
+      }
+      const runState = retained.length
+        ? readSteeringRunState(sessionId) ?? runStates[sessionId] ?? "idle"
+        : "idle";
+      if (retained.length) runStates[sessionId] = runState;
+      writeQueueToStorage(sessionId, retained, runState);
+      broadcast({ type: "clear", sessionId, items: retained, runState });
       return { queues, runStates };
     });
   },
@@ -645,15 +832,24 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
   ) => {
     if (fromSessionId === toSessionId) return;
     set((state) => {
-      const fromItems = state.queues[fromSessionId] ?? [];
-      const moving = agentId
-        ? fromItems.filter((item) => (item.agentId || "default") === agentId)
-        : fromItems;
+      const fromItems = preserveStoredSteering(
+        fromSessionId,
+        state.queues[fromSessionId] ?? [],
+      );
+      // A steering receipt belongs to its original backend conversation.
+      const moving = fromItems.filter(
+        (item) =>
+          item.status !== "steering" &&
+          (!agentId || (item.agentId || "default") === agentId),
+      );
       if (moving.length === 0 && (agentId || !state.runStates[fromSessionId]))
         return state;
       const movingIds = new Set(moving.map((item) => item.id));
       const remaining = fromItems.filter((item) => !movingIds.has(item.id));
-      const toItems = state.queues[toSessionId] ?? [];
+      const toItems = preserveStoredSteering(
+        toSessionId,
+        state.queues[toSessionId] ?? [],
+      );
       // Preserve order: existing destination items first, migrated source items appended.
       const existingIds = new Set(toItems.map((item) => item.id));
       const merged = [
@@ -664,7 +860,12 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
       if (remaining.length) queues[fromSessionId] = remaining;
       else delete queues[fromSessionId];
       // Carry over the from-session's runState to the destination if not already set.
-      const runStates = { ...state.runStates };
+      const runStates = {
+        ...preserveSteeringRunStates(
+          fromSessionId,
+          preserveSteeringRunStates(toSessionId, state.runStates),
+        ),
+      };
       if (!runStates[toSessionId] && runStates[fromSessionId]) {
         runStates[toSessionId] = runStates[fromSessionId];
       }
@@ -695,9 +896,15 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
     errorMessage?: string,
   ) => {
     set((state) => {
-      const current = state.queues[sessionId] ?? [];
+      const current = preserveStoredSteering(
+        sessionId,
+        state.queues[sessionId] ?? [],
+      );
+      if (status === "steering") {
+        return { queues: { ...state.queues, [sessionId]: current } };
+      }
       const nextItems = current.map((it) =>
-        it.id === id
+        it.id === id && it.status !== "steering"
           ? {
               ...it,
               status,
@@ -707,8 +914,10 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
           : it,
       );
       const next = { ...state.queues, [sessionId]: nextItems };
-      const failed = status === "failed" && current.some((it) => it.id === id);
-      const runState = failed ? "error" : state.runStates[sessionId] ?? "idle";
+      const failed =
+        status === "failed" &&
+        current.some((it) => it.id === id && it.status !== "steering");
+      const runState = failed ? "error" : get().getRunState(sessionId);
       const runStates = { ...state.runStates, [sessionId]: runState };
       writeQueueToStorage(sessionId, nextItems, runState);
       broadcast({
@@ -721,12 +930,116 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
     });
   },
 
+  beginSteering: (sessionId, id, runId) => {
+    if (!runId.trim() || isDraftQueueKey(sessionId)) return false;
+    let claimed = false;
+    set((state) => {
+      const current = preserveStoredSteering(
+        sessionId,
+        state.queues[sessionId] ?? [],
+      );
+      const item = current.find((candidate) => candidate.id === id);
+      if (item?.status !== "pending") return state;
+      const requestId = `steer-${createClientMessageId()}`;
+      if (!writeSteeringClaim(sessionId, id, requestId)) return state;
+      const items = current.map((candidate) =>
+        candidate.id === id
+          ? {
+              ...candidate,
+              status: "steering" as const,
+              steering: { requestId, runId },
+              errorMessage: undefined,
+            }
+          : candidate,
+      );
+      const runState = get().getRunState(sessionId);
+      if (!writeQueueToStorage(sessionId, items, runState)) return state;
+      broadcast({ type: "setItemStatus", sessionId, items, runState });
+      claimed = true;
+      return {
+        queues: { ...state.queues, [sessionId]: items },
+        runStates: { ...state.runStates, [sessionId]: runState },
+      };
+    });
+    return claimed;
+  },
+
+  resolveSteering: (sessionId, id, requestId, status, errorMessage) => {
+    let resolved = false;
+    set((state) => {
+      // A terminal response in another tab may already have returned this
+      // item or started a newer attempt before its storage event reaches us.
+      const current =
+        readAuthoritativeQueueItems(sessionId) ?? state.queues[sessionId] ?? [];
+      const item = current.find((candidate) => candidate.id === id);
+      if (item?.status !== "steering" || item.steering?.requestId !== requestId)
+        return state;
+      const items = current.flatMap((candidate) => {
+        if (candidate.id !== id) return [candidate];
+        if (status === "applied") return [];
+        const returned = { ...candidate };
+        delete returned.steering;
+        return [
+          {
+            ...returned,
+            status: "failed" as const,
+            retryCount: candidate.retryCount + 1,
+            errorMessage,
+          },
+        ];
+      });
+      const runState =
+        status === "returned" ? "error" : get().getRunState(sessionId);
+      if (!writeQueueToStorage(sessionId, items, runState)) return state;
+      broadcast({ type: "setItemStatus", sessionId, items, runState });
+      resolved = true;
+      return {
+        queues: { ...state.queues, [sessionId]: items },
+        runStates: { ...state.runStates, [sessionId]: runState },
+      };
+    });
+    return resolved;
+  },
+
+  setSteeringError: (sessionId, id, requestId, errorMessage) => {
+    let updated = false;
+    set((state) => {
+      // A terminal response in another tab may already have returned this
+      // item or started a newer attempt before its storage event reaches us.
+      const current =
+        readAuthoritativeQueueItems(sessionId) ?? state.queues[sessionId] ?? [];
+      const item = current.find((candidate) => candidate.id === id);
+      if (
+        item?.status !== "steering" ||
+        item.steering?.requestId !== requestId ||
+        item.errorMessage === errorMessage
+      )
+        return state;
+      const items = current.map((candidate) =>
+        candidate.id === id ? { ...candidate, errorMessage } : candidate,
+      );
+      const runState = get().getRunState(sessionId);
+      if (!writeQueueToStorage(sessionId, items, runState)) return state;
+      broadcast({ type: "setItemStatus", sessionId, items, runState });
+      updated = true;
+      return {
+        queues: { ...state.queues, [sessionId]: items },
+        runStates: { ...state.runStates, [sessionId]: runState },
+      };
+    });
+    return updated;
+  },
+
   setRunState: (sessionId: string, runState: QueueRunState) => {
+    const items = preserveStoredSteering(
+      sessionId,
+      get().queues[sessionId] ?? [],
+    );
     set((state) => ({
+      queues: { ...state.queues, [sessionId]: items },
       runStates: { ...state.runStates, [sessionId]: runState },
     }));
     // Always persist with the correct session key.
-    const items = get().queues[sessionId] ?? [];
     writeQueueToStorage(sessionId, items, runState);
     broadcast({
       type: "runState",
@@ -736,7 +1049,9 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
   },
 
   getRunState: (sessionId: string): QueueRunState => {
-    return get().runStates[sessionId] ?? "idle";
+    return (
+      readSteeringRunState(sessionId) ?? get().runStates[sessionId] ?? "idle"
+    );
   },
 
   setCurrentSendingId: (currentSendingId: string | null) => {
@@ -750,7 +1065,9 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
   },
 
   getQueue: (sessionId: string) => {
-    return get().queues[sessionId] ?? [];
+    // Auto-senders re-read through this getter under their send lock. Do not
+    // expose an old pending row while its cross-tab receipt event is delayed.
+    return preserveStoredSteering(sessionId, get().queues[sessionId] ?? []);
   },
 
   reconcileHistory: (sessionId, agentId, messages) => {
@@ -762,15 +1079,23 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
     );
     if (received.size === 0) return;
     const saved = readQueueFromStorage(sessionId);
-    const current = get().queues[sessionId] ?? saved?.items ?? [];
+    const current = preserveStoredSteering(
+      sessionId,
+      get().queues[sessionId] ?? saved?.items ?? [],
+    );
     const items = current.filter(
       (item) =>
+        item.status === "steering" ||
         (item.agentId || "default") !== agentId ||
         !item.clientMessageId ||
         !received.has(item.clientMessageId),
     );
     if (items.length === current.length) return;
-    const previous = get().runStates[sessionId] ?? saved?.runState ?? "idle";
+    const previous =
+      readSteeringRunState(sessionId) ??
+      get().runStates[sessionId] ??
+      saved?.runState ??
+      "idle";
     const runState =
       previous === "error" && !items.some((item) => item.status === "failed")
         ? "idle"
@@ -784,8 +1109,11 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
   },
 
   persistToStorage: (sessionId: string) => {
-    const items = get().queues[sessionId] ?? [];
-    writeQueueToStorage(sessionId, items, get().runStates[sessionId] ?? "idle");
+    const items = preserveStoredSteering(
+      sessionId,
+      get().queues[sessionId] ?? [],
+    );
+    writeQueueToStorage(sessionId, items, get().getRunState(sessionId));
   },
 
   loadFromStorage: (sessionId: string) => {
@@ -819,19 +1147,24 @@ export const useMessageQueueStore = create<MessageQueueStore>((set, get) => ({
 
   applyRemoteItems: (sessionId: string, items: QueueItem[]) => {
     set((state) => {
+      items = preserveStoredSteering(sessionId, items);
       const queues = { ...state.queues };
       if (items.length === 0) {
         delete queues[sessionId];
       } else {
         queues[sessionId] = items.map(restoreQueueIdentity);
       }
-      return { queues };
+      return {
+        queues,
+        runStates: preserveSteeringRunStates(sessionId, state.runStates),
+      };
     });
   },
 
   applyRemoteRunState: (sessionId: string, runState: QueueRunState) => {
+    const authoritative = readSteeringRunState(sessionId) ?? runState;
     set((state) => ({
-      runStates: { ...state.runStates, [sessionId]: runState },
+      runStates: { ...state.runStates, [sessionId]: authoritative },
     }));
   },
 }));

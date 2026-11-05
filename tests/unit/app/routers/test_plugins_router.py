@@ -177,6 +177,11 @@ def test_replace_installed_plugin_uses_backend_lifecycle(
         if busy and not interrupt_tasks:
             raise PluginBusyError("external-plugin", 1, can_interrupt=True)
         return SimpleNamespace(
+            enabled=True,
+            global_enabled=True,
+            status="active",
+            diagnostics=[],
+            update_needs_restart=False,
             manifest=SimpleNamespace(
                 id="external-plugin",
                 name="External Plugin",
@@ -193,7 +198,7 @@ def test_replace_installed_plugin_uses_backend_lifecycle(
         "_load_plugin_with_optional_force_reinstall",
         fake_load,
     )
-    loader = object()
+    loader = PluginLoader([plugins_dir])
     request = SimpleNamespace(
         app=SimpleNamespace(state=SimpleNamespace(plugin_loader=loader)),
     )
@@ -226,7 +231,7 @@ def test_replace_installed_plugin_uses_backend_lifecycle(
 
     assert result["id"] == "external-plugin"
     assert result["version"] == "2.0.0"
-    assert result["restart_required"] is True
+    assert result["restart_required"] is False
     assert len(calls) == 1
     assert calls[0][3] is True
     assert calls[0][4] is interrupt_tasks
@@ -280,13 +285,207 @@ def test_replace_installed_plugin_rejects_unapproved_host():
     assert "approved external catalog" in caught.value.detail
 
 
-@pytest.mark.parametrize("active_invocation", [False, True])
+@pytest.mark.parametrize(
+    "invalid_source",
+    ["outside", "nested", "parent", "id", "version", "incompatible"],
+)
+def test_replace_bundled_plugin_rejects_untrusted_or_mismatched_source(
+    monkeypatch,
+    tmp_path,
+    invalid_source,
+):
+    """Reject untrusted local updates before any runtime mutation."""
+    from unittest.mock import AsyncMock
+
+    from qwenpaw.plugins import download_catalog
+
+    source = tmp_path / "bundled/tool/catalog-plugin"
+    source.mkdir(parents=True)
+    manifest = {
+        "id": "catalog-plugin",
+        "version": "1.1.0",
+        "qwenpaw_version": {
+            "min": "2.0.0",
+            "max": "1.0.0" if invalid_source == "incompatible" else "3.0.0",
+        },
+    }
+    (source / "plugin.json").write_text(json.dumps(manifest), encoding="utf-8")
+    monkeypatch.setattr(
+        download_catalog,
+        "__file__",
+        str(tmp_path / "download_catalog.py"),
+    )
+    requested = source
+    if invalid_source == "outside":
+        requested = tmp_path / "untrusted"
+        shutil.copytree(source, requested)
+    elif invalid_source == "nested":
+        requested = source / "nested"
+        requested.mkdir()
+        (requested / "plugin.json").write_text(json.dumps(manifest))
+    elif invalid_source == "parent":
+        requested = source.parent
+    download = AsyncMock()
+    install = AsyncMock()
+    monkeypatch.setattr(plugin_router, "_async_download", download)
+    monkeypatch.setattr(
+        plugin_router,
+        "_load_plugin_with_optional_force_reinstall",
+        install,
+    )
+    request = SimpleNamespace(
+        app=SimpleNamespace(state=SimpleNamespace(plugin_loader=object())),
+    )
+    with pytest.raises(HTTPException) as caught:
+        asyncio.run(
+            plugin_router.replace_installed_plugin(
+                plugin_router.ReplacePluginRequest(
+                    source=str(requested.resolve()),
+                    plugin_id=(
+                        "wrong-id"
+                        if invalid_source == "id"
+                        else "catalog-plugin"
+                    ),
+                    version="9.0.0"
+                    if invalid_source == "version"
+                    else "1.1.0",
+                ),
+                request,
+            ),
+        )
+    assert caught.value.status_code == 400
+    download.assert_not_called()
+    install.assert_not_called()
+
+
+def _catalog_upgrade_source(
+    monkeypatch,
+    tmp_path,
+    source_kind,
+    plugin_id,
+    archive,
+):
+    """Select the real offline catalog row or verified remote fixture."""
+    source = (
+        "https://download.qwenpaw.agentscope.io/"
+        "isolated-upgrade-lifecycle-1.1.0.zip"
+    )
+    if source_kind.startswith("bundled"):
+        from qwenpaw.plugins import download_catalog
+
+        catalog_root = tmp_path / "catalog"
+        bundled_source = catalog_root / "bundled/tool" / plugin_id
+        with zipfile.ZipFile(archive) as bundle:
+            bundle.extractall(bundled_source.parent)
+        monkeypatch.setattr(
+            download_catalog,
+            "__file__",
+            str(catalog_root / "download_catalog.py"),
+        )
+        monkeypatch.setattr(
+            download_catalog,
+            "_build_remote_plugin_catalog",
+            lambda: {"plugins": [], "error": "offline"},
+        )
+        catalog = asyncio.run(plugin_router.get_plugin_catalog())
+        entry = next(
+            item
+            for item in catalog["plugins"]
+            if item["plugin_id"] == plugin_id
+        )
+        assert entry["upgrade_available"] is True
+        source = entry["install_url"]
+
+        async def reject_download(*_args):
+            pytest.fail("Bundled catalog updates must not download an archive")
+
+        monkeypatch.setattr(plugin_router, "_async_download", reject_download)
+
+    return source
+
+
+async def _upgrade_while_active(body, request, installed):
+    """Exercise busy rejection and explicit interruption on a real loader."""
+    loader = request.app.state.plugin_loader
+    plugin_id = body.plugin_id
+    entered = asyncio.Event()
+
+    async def invoke():
+        with loader.lifecycle.activity(plugin_id).invocation():
+            entered.set()
+            await asyncio.Future()
+
+    task = asyncio.create_task(invoke())
+    try:
+        await entered.wait()
+        with pytest.raises(HTTPException) as caught:
+            await plugin_router.replace_installed_plugin(body, request)
+        assert caught.value.status_code == 409
+        assert caught.value.detail["can_interrupt"] is True
+        assert not task.done()
+        assert loader.get_loaded_plugin(plugin_id).manifest.version == "1.0.0"
+        assert (
+            json.loads((installed / "plugin.json").read_text())["version"]
+            == "1.0.0"
+        )
+        body.interrupt_tasks = True
+        result = await plugin_router.replace_installed_plugin(
+            body,
+            request,
+        )
+        assert task.cancelled()
+        return result
+    finally:
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+
+
+def _write_upgrade_archive(archive, plugin_id, source_kind):
+    """Build a real candidate ZIP, including an invalid activation fixture."""
+    candidate_manifest = {
+        "id": plugin_id,
+        "name": "Isolated Upgrade Lifecycle",
+        "version": "1.1.0",
+        "type": "general",
+        "qwenpaw_version": {"min": "2.0.0", "max": "3.0.0"},
+        "entry": {"frontend": "dist/index.js"},
+    }
+    if source_kind == "bundled-broken":
+        candidate_manifest["entry"]["backend"] = "plugin.py"
+    with zipfile.ZipFile(archive, "w") as bundle:
+        bundle.writestr(
+            f"{plugin_id}/plugin.json",
+            json.dumps(candidate_manifest),
+        )
+        bundle.writestr(
+            f"{plugin_id}/dist/index.js",
+            "export const version = '1.1.0';\n",
+        )
+        if source_kind == "bundled-broken":
+            bundle.writestr(
+                f"{plugin_id}/plugin.py",
+                "raise RuntimeError('broken bundled candidate')\n",
+            )
+
+
+@pytest.mark.parametrize(
+    "source_kind,active_invocation",
+    [
+        ("external", False),
+        ("external", True),
+        ("bundled", False),
+        ("bundled", True),
+        ("bundled-failed", False),
+        ("bundled-broken", False),
+    ],
+)
 def test_replace_installed_plugin_full_isolated_lifecycle(
     monkeypatch,
     tmp_path,
+    source_kind,
     active_invocation,
 ):
-    """Exercise ZIP verification, backup, disk swap and real hot reload."""
+    """Catalog updates use real backup, disk swap, busy gates and reload."""
     plugin_id = "isolated-upgrade-lifecycle"
     plugins_dir = tmp_path / "plugins"
     installed = plugins_dir / plugin_id
@@ -298,7 +497,12 @@ def test_replace_installed_plugin_full_isolated_lifecycle(
                 "name": "Isolated Upgrade Lifecycle",
                 "version": "1.0.0",
                 "type": "general",
-                "qwenpaw_version": {"min": "2.0.0", "max": "3.0.0"},
+                "qwenpaw_version": {
+                    "min": "2.0.0",
+                    "max": "2.2.0"
+                    if source_kind == "bundled-failed"
+                    else "3.0.0",
+                },
                 "entry": {"frontend": "dist/index.js"},
             },
         ),
@@ -309,24 +513,7 @@ def test_replace_installed_plugin_full_isolated_lifecycle(
         encoding="utf-8",
     )
     archive = tmp_path / "upgrade.zip"
-    with zipfile.ZipFile(archive, "w") as bundle:
-        bundle.writestr(
-            f"{plugin_id}/plugin.json",
-            json.dumps(
-                {
-                    "id": plugin_id,
-                    "name": "Isolated Upgrade Lifecycle",
-                    "version": "1.1.0",
-                    "type": "general",
-                    "qwenpaw_version": {"min": "2.0.0", "max": "3.0.0"},
-                    "entry": {"frontend": "dist/index.js"},
-                },
-            ),
-        )
-        bundle.writestr(
-            f"{plugin_id}/dist/index.js",
-            "export const version = '1.1.0';\n",
-        )
+    _write_upgrade_archive(archive, plugin_id, source_kind)
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
 
     async def fake_download(_source, destination):
@@ -349,63 +536,63 @@ def test_replace_installed_plugin_full_isolated_lifecycle(
     )
     monkeypatch.setattr(plugin_router, "_post_load_setup", no_post_load)
     loader = PluginLoader([plugins_dir])
-    initial = asyncio.run(
-        loader.load_plugin_from_path(installed, install_dir=plugins_dir),
-    )
+    if source_kind == "bundled-failed":
+        from qwenpaw.plugins.architecture import PluginManifest
+
+        manifest = PluginManifest.from_dict(
+            json.loads((installed / "plugin.json").read_text()),
+        )
+        initial = asyncio.run(loader.load_plugin(manifest, installed))
+    else:
+        initial = asyncio.run(
+            loader.load_plugin_from_path(installed, install_dir=plugins_dir),
+        )
     assert initial.manifest.version == "1.0.0"
+    if source_kind == "bundled-failed":
+        assert initial.status == "failed"
     request = SimpleNamespace(
         app=SimpleNamespace(state=SimpleNamespace(plugin_loader=loader)),
     )
 
+    source = _catalog_upgrade_source(
+        monkeypatch,
+        tmp_path,
+        source_kind,
+        plugin_id,
+        archive,
+    )
+
     async def upgrade():
         body = plugin_router.ReplacePluginRequest(
-            source=(
-                "https://download.qwenpaw.agentscope.io/"
-                "isolated-upgrade-lifecycle-1.1.0.zip"
-            ),
+            source=source,
             plugin_id=plugin_id,
             version="1.1.0",
-            sha256=digest,
+            sha256=digest if source_kind == "external" else None,
         )
         if not active_invocation:
             return await plugin_router.replace_installed_plugin(body, request)
-        entered = asyncio.Event()
+        return await _upgrade_while_active(body, request, installed)
 
-        async def invoke():
-            with loader.lifecycle.activity(plugin_id).invocation():
-                entered.set()
-                await asyncio.Future()
-
-        task = asyncio.create_task(invoke())
-        try:
-            await entered.wait()
-            with pytest.raises(HTTPException) as caught:
-                await plugin_router.replace_installed_plugin(body, request)
-            assert caught.value.status_code == 409
-            assert caught.value.detail["can_interrupt"] is True
-            assert not task.done()
-            assert (
-                loader.get_loaded_plugin(plugin_id).manifest.version == "1.0.0"
-            )
-            assert (
-                json.loads((installed / "plugin.json").read_text())["version"]
-                == "1.0.0"
-            )
-            body.interrupt_tasks = True
-            result = await plugin_router.replace_installed_plugin(
-                body,
-                request,
-            )
-            assert task.cancelled()
-            return result
-        finally:
-            task.cancel()
-            await asyncio.gather(task, return_exceptions=True)
+    if source_kind == "bundled-broken":
+        with pytest.raises(HTTPException) as caught:
+            asyncio.run(upgrade())
+        assert caught.value.status_code == 500
+        assert "broken bundled candidate" in caught.value.detail
+        restored = loader.get_loaded_plugin(plugin_id)
+        assert restored.manifest.version == "1.0.0"
+        assert restored.status == "active"
+        assert (
+            json.loads((installed / "plugin.json").read_text())["version"]
+            == "1.0.0"
+        )
+        assert "1.0.0" in (installed / "dist/index.js").read_text()
+        return
 
     result = asyncio.run(upgrade())
 
     assert result["version"] == "1.1.0"
     assert loader.get_loaded_plugin(plugin_id).manifest.version == "1.1.0"
+    assert loader.get_loaded_plugin(plugin_id).status == "active"
     assert (
         json.loads((installed / "plugin.json").read_text(encoding="utf-8"))[
             "version"

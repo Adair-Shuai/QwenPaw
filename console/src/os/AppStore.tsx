@@ -29,7 +29,7 @@ import {
   type InstallPluginResult,
   type PluginInfo,
 } from "../api/modules/plugin";
-import { reloadPawApp } from "../plugins/usePluginLoader";
+import { reloadPawApp, unloadFrontendPlugin } from "../plugins/usePluginLoader";
 import { OS_APPS } from "./osApps";
 import { useOsPlugins } from "./osPluginStore";
 import { purgeAppState, removePluginAppState } from "./osCleanup";
@@ -83,8 +83,12 @@ export default function AppStore() {
   };
 
   const syncInstalledApp = async (result: InstallPluginResult) => {
-    await reloadPawApp(result.id);
-    await refreshInstalledApps();
+    try {
+      if (result.loaded === false) await unloadFrontendPlugin(result.id);
+      else await reloadPawApp(result.id);
+    } finally {
+      await refreshInstalledApps();
+    }
   };
 
   const {
@@ -125,7 +129,7 @@ export default function AppStore() {
       onOk: async () => {
         try {
           await uninstallPlugin(p.id);
-          removePluginAppState(p.id);
+          await removePluginAppState(p.id);
           await refreshInstalledApps();
           message.success(
             t("os.uninstalledApp", {

@@ -2,6 +2,8 @@
 """Regression coverage for damaged history image repair."""
 
 from unittest.mock import MagicMock
+from copy import deepcopy
+from types import SimpleNamespace
 import nturl2path
 
 import pytest
@@ -86,7 +88,134 @@ def test_windows_file_uri_reaches_image_validation(monkeypatch, url, expected):
     image_open.assert_called_once_with(path_factory.return_value)
     message = data["state"]["context"][0]
     assert message["content"][0]["type"] == "text"
-    assert (
-        message["metadata"]["qwenpaw_invalid_images"][0]["source"]["url"]
-        == url
+    assert message["metadata"]["qwenpaw_invalid_images"][0]["source"]["url"] == url
+
+
+def _regeneration_request(target):
+    return SimpleNamespace(
+        channel="console",
+        request_context={console_turn_state.REGENERATE_FROM: target},
     )
+
+
+def _steered_turn():
+    return {
+        "state": {
+            "context": [
+                {"id": "earlier", "role": "user", "content": "earlier"},
+                {"id": "earlier-answer", "role": "assistant", "content": "ok"},
+                {
+                    "id": "root",
+                    "role": "user",
+                    "content": [{"type": "text", "text": "original task"}],
+                    "metadata": {console_turn_state.CLIENT_ID: "root-client"},
+                },
+                {"id": "first-step", "role": "assistant", "content": "working"},
+                {
+                    "id": "supplement",
+                    "role": "user",
+                    "content": "check completeness first",
+                    "metadata": {
+                        console_turn_state.CLIENT_ID: "supplement-client",
+                        console_turn_state.STEERING: {
+                            "request_id": "steering-request",
+                            "run_id": "active-run",
+                        },
+                    },
+                },
+                {"id": "answer", "role": "assistant", "content": "done"},
+            ],
+        },
+        "scroll": {"summary": "original response and supplement"},
+    }
+
+
+@pytest.mark.parametrize("target", ["root-client", {"message_id": "root"}])
+def test_regeneration_rewinds_entire_steered_turn_from_original_user(target):
+    data = _steered_turn()
+    earlier = deepcopy(data["state"]["context"][:2])
+
+    console_turn_state.prepare_console_regeneration(
+        data,
+        _regeneration_request(target),
+    )
+
+    assert data["state"]["context"] == earlier
+    assert "scroll" not in data
+
+
+@pytest.mark.parametrize(
+    "target",
+    ["supplement-client", {"message_id": "supplement"}],
+)
+def test_regeneration_cannot_target_only_in_flight_supplement(target):
+    data = _steered_turn()
+    original = deepcopy(data)
+
+    with pytest.raises(ValueError, match="no longer the last turn"):
+        console_turn_state.prepare_console_regeneration(
+            data,
+            _regeneration_request(target),
+        )
+
+    assert data == original
+
+
+@pytest.mark.parametrize(
+    "marker",
+    [None, True, {}, {"run_id": "active-run"}, {"request_id": "r", "run_id": " "}],
+)
+def test_regeneration_never_skips_ordinary_or_malformed_later_user(marker):
+    data = _steered_turn()
+    data["state"]["context"][4]["metadata"][console_turn_state.STEERING] = marker
+    original = deepcopy(data)
+
+    with pytest.raises(ValueError, match="no longer the last turn"):
+        console_turn_state.prepare_console_regeneration(
+            data,
+            _regeneration_request("root-client"),
+        )
+
+    assert data == original
+
+
+def test_regeneration_cannot_rewind_steered_turn_after_new_user_turn():
+    data = _steered_turn()
+    data["state"]["context"].append(
+        {
+            "id": "next-user",
+            "role": "user",
+            "metadata": {console_turn_state.CLIENT_ID: "next-client"},
+            "content": "next task",
+        },
+    )
+    original = deepcopy(data)
+
+    with pytest.raises(ValueError, match="no longer the last turn"):
+        console_turn_state.prepare_console_regeneration(
+            data,
+            _regeneration_request("root-client"),
+        )
+
+    assert data == original
+
+
+def test_terminal_stamp_stays_on_original_user_after_in_flight_supplement():
+    data = _steered_turn()
+    request = SimpleNamespace(
+        channel="console",
+        input=[SimpleNamespace(metadata={console_turn_state.CLIENT_ID: "root-client"})],
+    )
+
+    console_turn_state.stamp_console_turn(
+        data,
+        request,
+        "completed",
+        response_id="same-response",
+    )
+
+    assert data["state"]["context"][2]["metadata"][console_turn_state.TURN_STATE] == {
+        "status": "completed",
+        "response_id": "same-response",
+    }
+    assert console_turn_state.TURN_STATE not in data["state"]["context"][4]["metadata"]

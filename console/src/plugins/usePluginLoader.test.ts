@@ -1,11 +1,12 @@
 // @vitest-environment jsdom
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { routeRegistry } from "./registry/store";
+import { menuRegistry, slotRegistry, routeRegistry } from "./registry/store";
 import {
   loadAllPlugins,
   loadPawApp,
   reloadPawApp,
+  unloadFrontendPlugin,
   resetPawAppLoaderForTests,
 } from "./usePluginLoader";
 
@@ -32,6 +33,8 @@ describe("frontend plugin loader", () => {
   beforeEach(() => {
     resetPawAppLoaderForTests();
     routeRegistry.__resetForTests();
+    menuRegistry.__resetForTests();
+    slotRegistry.__resetForTests();
     vi.restoreAllMocks();
     URL.createObjectURL = vi.fn(
       () => `data:text/javascript,${encodeURIComponent("export default true")}`,
@@ -201,5 +204,215 @@ describe("frontend plugin loader", () => {
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(routeRegistry.snapshot()[0].Component).toBe(newComponent);
     expect(routeRegistry.snapshot()[0].Component).not.toBe(oldComponent);
+  });
+  it("cleans partial registrations after evaluation failure without executing fallback", async () => {
+    let executions = 0;
+    const runtime = globalThis as typeof globalThis & {
+      __partialPlugin?: () => void;
+    };
+    runtime.__partialPlugin = () => {
+      executions += 1;
+      routeRegistry.add("broken", {
+        id: "broken.page",
+        path: "/apps/broken",
+        component: () => null,
+      });
+      menuRegistry.add("broken", { id: "broken.menu", label: "Broken" });
+      slotRegistry.fill("broken", "header.left", () => null);
+      throw new Error("registration failed midway");
+    };
+    URL.createObjectURL = vi.fn(
+      () =>
+        `data:text/javascript,${encodeURIComponent(
+          "globalThis.__partialPlugin()",
+        )}`,
+    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockImplementation(async (url) =>
+        String(url).endsWith("/frontend_plugin")
+          ? jsonResponse([plugin("broken", "app")])
+          : new Response("bundle"),
+      );
+    try {
+      const summary = await loadAllPlugins();
+      expect(summary.failed).toEqual([
+        expect.stringContaining("registration failed midway"),
+      ]);
+      expect(summary.loaded).toBe(0);
+      expect(executions).toBe(1);
+      expect(menuRegistry.snapshot()).toEqual([]);
+      expect(slotRegistry.snapshot("header.left")).toEqual([]);
+      expect(fetchMock).toHaveBeenCalledTimes(2);
+      expect(routeRegistry.snapshot()).toEqual([]);
+      runtime.__partialPlugin = () => {
+        executions += 1;
+        routeRegistry.add("broken", {
+          id: "broken.page",
+          path: "/apps/broken",
+          component: () => null,
+        });
+      };
+      URL.createObjectURL = vi.fn(
+        () =>
+          `data:text/javascript,${encodeURIComponent(
+            "globalThis.__partialPlugin(); // retry",
+          )}`,
+      );
+      await expect(loadPawApp("broken")).resolves.toBeUndefined();
+      expect(routeRegistry.snapshot()).toHaveLength(1);
+      expect(executions).toBe(2);
+    } finally {
+      delete runtime.__partialPlugin;
+    }
+  });
+
+  it("serializes startup and deduplicates concurrent forced reloads", async () => {
+    let executions = 0;
+    let ready!: () => void;
+    const hostReady = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    const runtime = globalThis as typeof globalThis & {
+      __queuedPlugin?: () => void;
+    };
+    runtime.__queuedPlugin = () => {
+      executions += 1;
+      routeRegistry.add("notes", {
+        id: "notes.page",
+        path: "/apps/notes",
+        component: () => null,
+      });
+    };
+    let blob = 0;
+    URL.createObjectURL = vi.fn(
+      () =>
+        `data:text/javascript,${encodeURIComponent(
+          `globalThis.__queuedPlugin(); // ${++blob}`,
+        )}`,
+    );
+    vi.spyOn(globalThis, "fetch").mockImplementation(async (url) =>
+      String(url).endsWith("/frontend_plugin")
+        ? jsonResponse([plugin("notes", "app")])
+        : new Response("bundle"),
+    );
+    try {
+      const startup = loadAllPlugins(hostReady);
+      await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
+      const first = reloadPawApp("notes");
+      expect(reloadPawApp("notes")).toBe(first);
+      expect(executions).toBe(0);
+      ready();
+      await Promise.all([startup, first]);
+      expect(executions).toBe(2);
+      expect(routeRegistry.snapshot()).toHaveLength(1);
+      await loadPawApp("notes");
+      expect(executions).toBe(2);
+    } finally {
+      delete runtime.__queuedPlugin;
+    }
+  });
+
+  it("removes a disabled plugin after an in-flight startup and rejects stale manifests", async () => {
+    let ready!: () => void;
+    const hostReady = new Promise<void>((resolve) => {
+      ready = resolve;
+    });
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockResolvedValueOnce(jsonResponse([plugin("notes", "app")]))
+      .mockResolvedValueOnce(new Response("bundle"))
+      .mockResolvedValueOnce(jsonResponse([]));
+    const old = loadAllPlugins(hostReady);
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+    const latest = loadAllPlugins();
+    await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(3));
+    ready();
+    await Promise.all([old, latest]);
+    expect(URL.createObjectURL).not.toHaveBeenCalled();
+    expect(routeRegistry.snapshot()).toEqual([]);
+  });
+  it("does not remove a newly loaded app when an older manifest arrives late", async () => {
+    let oldManifest!: (response: Response) => void;
+    const runtime = globalThis as typeof globalThis & {
+      __freshApp?: () => void;
+    };
+    runtime.__freshApp = () =>
+      routeRegistry.add("notes", {
+        id: "notes.page",
+        path: "/apps/notes",
+        component: () => null,
+      });
+    URL.createObjectURL = vi.fn(
+      () =>
+        `data:text/javascript,${encodeURIComponent("globalThis.__freshApp()")}`,
+    );
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    fetchMock
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          oldManifest = resolve;
+        }),
+      )
+      .mockResolvedValueOnce(jsonResponse([plugin("notes", "app")]))
+      .mockResolvedValueOnce(new Response("bundle"));
+    try {
+      const startup = loadAllPlugins();
+      await loadPawApp("notes");
+      oldManifest(jsonResponse([]));
+      await startup;
+      expect(routeRegistry.snapshot()).toHaveLength(1);
+    } finally {
+      delete runtime.__freshApp;
+    }
+  });
+  it("preserves a new load requested after an intervening unload", async () => {
+    let release!: (response: Response) => void;
+    const runtime = globalThis as typeof globalThis & {
+      __lifecycleApp?: () => void;
+    };
+    let executions = 0;
+    runtime.__lifecycleApp = () => {
+      executions += 1;
+      routeRegistry.add("notes", {
+        id: "notes.page",
+        path: "/apps/notes",
+        component: () => null,
+      });
+    };
+    let blob = 0;
+    URL.createObjectURL = vi.fn(
+      () =>
+        `data:text/javascript,${encodeURIComponent(
+          `globalThis.__lifecycleApp(); // ${++blob}`,
+        )}`,
+    );
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      )
+      .mockImplementation(async (url) =>
+        String(url).endsWith("/frontend_plugin")
+          ? jsonResponse([plugin("notes", "app")])
+          : new Response("bundle"),
+      );
+    try {
+      const initial = loadPawApp("notes");
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+      const removal = unloadFrontendPlugin("notes");
+      const latest = loadPawApp("notes");
+      expect(latest).not.toBe(initial);
+      release(jsonResponse([plugin("notes", "app")]));
+      await Promise.all([initial, removal, latest]);
+      expect(executions).toBe(2);
+      expect(routeRegistry.snapshot()).toMatchObject([
+        { source: "notes", path: "/apps/notes" },
+      ]);
+    } finally {
+      delete runtime.__lifecycleApp;
+    }
   });
 });

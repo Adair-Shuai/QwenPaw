@@ -3,8 +3,11 @@
 """Behavioral tests for the OpenViking memory plugin manager."""
 
 import asyncio
+import json
+import os
 import re
 import stat
+import subprocess
 import threading
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
@@ -101,6 +104,49 @@ async def _wait_for_memory_task(manager, task_id):
     )
 
 
+def _assert_private_file(marker):
+    if os.name != "nt":
+        assert stat.S_IMODE(marker.stat().st_mode) == 0o600
+        return
+    # Read the real descriptor independently of the plugin's Win32 code.
+    script = """
+$ErrorActionPreference = 'Stop'
+$acl = [IO.File]::GetAccessControl($env:QWENPAW_TEST_PRIVATE_FILE)
+$sid = [Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+$rules = @($acl.GetAccessRules($true, $true,
+    [Security.Principal.SecurityIdentifier]) | ForEach-Object {
+    @{ sid = $_.IdentityReference.Value; inherited = $_.IsInherited;
+       rights = [int]$_.FileSystemRights;
+       allow = ($_.AccessControlType -eq 'Allow') }
+})
+@{ protected = $acl.AreAccessRulesProtected; sid = $sid;
+   rules = $rules } | ConvertTo-Json -Depth 4 -Compress
+"""
+    result = subprocess.run(
+        [
+            "powershell.exe",
+            "-NoProfile",
+            "-NonInteractive",
+            "-Command",
+            script,
+        ],
+        env={**os.environ, "QWENPAW_TEST_PRIVATE_FILE": str(marker)},
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    descriptor = json.loads(result.stdout)
+    assert descriptor["protected"] is True
+    assert descriptor["rules"] == [
+        {
+            "sid": descriptor["sid"],
+            "inherited": False,
+            "rights": 0x1F01FF,
+            "allow": True,
+        },
+    ]
+
+
 def test_installation_id_is_private_and_reused(tmp_path):
     installation_id = manager_module.get_or_create_installation_id(tmp_path)
     marker = (
@@ -109,12 +155,40 @@ def test_installation_id_is_private_and_reused(tmp_path):
 
     assert re.fullmatch(r"[0-9a-f]{32}", installation_id)
     assert marker.read_text(encoding="utf-8") == installation_id
-    assert stat.S_IMODE(marker.stat().st_mode) == 0o600
+    _assert_private_file(marker)
     assert (
         manager_module.get_or_create_installation_id(tmp_path)
         == installation_id
     )
     assert not list(marker.parent.glob(".installation-id-*"))
+
+
+def test_installation_id_repairs_existing_permissions(tmp_path):
+    marker = tmp_path / "plugin-state/memory-openviking/installation-id"
+    marker.parent.mkdir(parents=True)
+    marker.write_text("a" * 32, encoding="utf-8")
+    if os.name != "nt":
+        marker.chmod(0o644)
+    assert manager_module.get_or_create_installation_id(tmp_path) == "a" * 32
+    _assert_private_file(marker)
+
+
+def test_installation_id_permission_failure_does_not_write_private_bytes(
+    tmp_path,
+    monkeypatch,
+):
+    def refuse(path):
+        if path.exists():
+            assert path.read_bytes() == b""
+            raise PermissionError("Private file permissions unavailable")
+        raise FileNotFoundError(path)
+
+    monkeypatch.setattr(manager_module, "restrict_private_file", refuse)
+    with pytest.raises(PermissionError, match="Private file permissions"):
+        manager_module.get_or_create_installation_id(tmp_path)
+    state = tmp_path / "plugin-state/memory-openviking"
+    assert not (state / "installation-id").exists()
+    assert not list(state.glob(".installation-id-*"))
 
 
 @pytest.mark.parametrize("existing", ["", "invalid", "A" * 32])

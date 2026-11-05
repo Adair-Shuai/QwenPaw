@@ -283,7 +283,7 @@ export function useMarketPlugins({ onInstalled }: UseMarketPluginsOptions) {
             name: entry.display_name,
             version: result.version,
             description: "",
-            loaded: true,
+            loaded: result.loaded ?? true,
             message: "",
           });
           message.success(tRef.current("pluginManager.updateSuccess"));

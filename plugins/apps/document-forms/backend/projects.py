@@ -7,6 +7,7 @@ import io
 import json
 import mimetypes
 import re
+from decimal import Decimal, InvalidOperation
 import tempfile
 import uuid
 from datetime import date, datetime, timezone
@@ -353,6 +354,14 @@ def approval_from_pdf(content):
             "status": "unsupported",
             "message": "未识别到标准计划审批表，请人工核对审批结果。",
         }
+    try:
+        approved_at = date(*(int(value) for value in date_match.groups()))
+    except ValueError:
+        return {
+            "parser_version": 1,
+            "status": "unsupported",
+            "message": "批复日期无效，请人工核对审批结果。",
+        }
     body = [item for item in parts if 330 <= item[0] <= 410]
     columns = {
         "project.name": (60, 160),
@@ -395,10 +404,7 @@ def approval_from_pdf(content):
     return {
         "parser_version": 1,
         "status": "ready",
-        "approved_at": "-".join(
-            f"{int(value):02d}" if index else value
-            for index, value in enumerate(date_match.groups())
-        ),
+        "approved_at": approved_at.isoformat(),
         "title": next(
             (line.strip() for line in layout.splitlines() if "实施计划" in line),
             "计划审批结果",
@@ -870,11 +876,51 @@ templates."""
         case["revision"] += 1
         self.host.save(root, case)
 
+    def selection_references(self, project):
+        references = values(project["fields"])
+        plan = self.stage(project, "plan")
+        files = sorted(
+            (
+                file
+                for material in plan["materials"]
+                for file in material["files"]
+            ),
+            key=lambda file: file.get("uploaded_at", ""),
+            reverse=True,
+        )
+        for file in files:
+            approval = file.get("approval", {})
+            if approval.get("status") != "ready":
+                continue
+            try:
+                approved_at = date.fromisoformat(
+                    approval.get("approved_at", "")
+                )
+                budget = next(
+                    f["value"]
+                    for f in approval.get("fields", [])
+                    if f["key"] == "plan.budget_wan"
+                )
+                amount = Decimal(budget)
+                if not amount.is_finite() or amount < 0 or len(budget) > 50:
+                    continue
+            except (TypeError, ValueError, InvalidOperation, StopIteration):
+                continue
+            references.update(
+                approved_budget=budget,
+                approval_date=approved_at.isoformat(),
+            )
+            break
+        return references
+
     def prepare_selection(self, root, project, case):
         if case.get("selection_schema") == 1:
             self.sync_selection_fields(root, project, case)
             return
-        fixed = self.host.builtin.selection_fields(project["fields"])
+        fixed = self.host.builtin.selection_fields(
+            project["fields"],
+            references=self.selection_references(project),
+        )
         old = values(case["fields"])
         # Custom forms keep their own schema and templates.
         if case["templates"] and not any(
@@ -891,7 +937,13 @@ templates."""
             backup.write_bytes(source.read_bytes())
         for field in fixed:
             if field["key"] in old and not field.get("read_only"):
+                previous = next(
+                    f for f in case["fields"] if f["key"] == field["key"]
+                )
                 field["value"] = old[field["key"]]
+                if field.get("linked_parts"):
+                    field.pop("linked_template", None)
+        self.host.builtin.refresh_selection_opinions(fixed)
         case["fields"] = fixed
         case["selection_schema"] = 1
         case["review_token"] = None
@@ -936,9 +988,47 @@ form."""
         """Refresh protected fields without touching historical generations."""
         definitions = {
             f["key"]: f
-            for f in self.host.builtin.selection_fields(project["fields"])
+            for f in self.host.builtin.selection_fields(
+                project["fields"],
+                references=self.selection_references(project),
+            )
         }
         before = copy.deepcopy(case["fields"])
+        history = self.path(root, project["id"]) / "form-history"
+        for field in case["fields"]:
+            if (
+                not field.get("linked_prefix")
+                or field.get("linked_schema") == 2
+            ):
+                continue
+            notes = self.host.builtin.selection_opinion_notes(
+                field,
+                field["value"],
+                field["linked_prefix"],
+            )
+            backups = sorted(
+                history.glob(
+                    f"{case['id']}_before_selection_controls_r*.json"
+                ),
+                key=lambda path: int(path.stem.rsplit("r", 1)[-1]),
+                reverse=True,
+            )
+            for backup in backups:
+                saved = json.loads(backup.read_text(encoding="utf-8"))
+                original = next(
+                    (f for f in saved["fields"] if f["key"] == field["key"]),
+                    None,
+                )
+                if not original or original.get("linked_parts"):
+                    continue
+                old_notes = self.host.builtin.selection_opinion_notes(
+                    original,
+                    original["value"],
+                    "",
+                )
+                if old_notes == notes:
+                    field["value"] = original["value"]
+                break
         for field in case["fields"]:
             definition = definitions.get(field["key"], {})
             if "options" in definition:
@@ -950,6 +1040,10 @@ form."""
                         for key in ("read_only", "value", "help")
                     },
                 )
+        self.host.builtin.link_selection_opinions(
+            case["fields"],
+            self.selection_references(project),
+        )
         if before == case["fields"]:
             return
         history = self.path(root, project["id"]) / "form-history"
@@ -1150,7 +1244,8 @@ class _ProjectArchive(_ProjectStorage):
                         raise HTTPException(422, "材料文件缺失或校验失败，请补充后再打包")
                     archive.write(
                         source,
-                        entry + f"/V{index:02d}_{file['name']}",
+                        entry
+                        + f"/V{file.get('version', index):02d}_{file['name']}",
                     )
 
     def _archive_forms(self, archive, root, project, titles, stage_id):
@@ -1459,6 +1554,9 @@ class ProjectStore(_ProjectForms, _ProjectArchive):
                 if m["required"] and m["status"] not in {"done", "na"}
             ]
             for material in stage["materials"]:
+                self.ensure_file_versions(material)
+                material.pop("deleted_files", None)
+                material.pop("file_sequence", None)
                 for file in material["files"]:
                     approval = file.get("approval")
                     if approval:
@@ -1501,6 +1599,80 @@ class ProjectStore(_ProjectForms, _ProjectArchive):
             )
         review["change_count"] = sum(f["changed"] for f in review["fields"])
         return review
+
+    @staticmethod
+    def ensure_file_versions(material):
+        for index, file in enumerate(material["files"], 1):
+            file.setdefault("version", index)
+        versions = [f["version"] for f in material["files"]]
+        versions.extend(
+            item["file"]["version"]
+            for item in material.get("deleted_files", [])
+        )
+        material["file_sequence"] = max(
+            [material.get("file_sequence", 0), *versions],
+        )
+
+    def update_file_state(
+        self,
+        root,
+        project,
+        stage,
+        removed_id=None,
+        restored=None,
+    ):
+        previous_id = stage.get("completion_file_id")
+        previous_time = stage.get("completed_at")
+        automatic = stage["status"] == "completed" and previous_id
+        self.touch(project, stage, root)
+        if previous_id == removed_id or automatic:
+            stage.pop("approval_date", None)
+            stage.pop("completion_file_id", None)
+        if stage["id"] != "plan" or not (
+            automatic
+            or restored
+            and restored.get("approval", {}).get("status") == "ready"
+        ):
+            return
+        candidates = [(m, f) for m in stage["materials"] for f in m["files"]]
+        candidates.sort(
+            key=lambda pair: (
+                bool(
+                    automatic
+                    and restored is None
+                    and pair[1]["id"] == previous_id,
+                ),
+                pair[1].get("uploaded_at", ""),
+                pair[1].get("version", 0),
+            ),
+            reverse=True,
+        )
+        for material, file in candidates:
+            if self.complete_approval(root, project, stage, material, file):
+                if file["id"] == previous_id and previous_time:
+                    stage["completed_at"] = previous_time
+                break
+
+    def complete_approval(self, root, project, stage, material, file):
+        approval = file.get("approval", {})
+        if stage["id"] != "plan" or approval.get("status") != "ready":
+            return False
+        try:
+            approved_at = date.fromisoformat(approval.get("approved_at", ""))
+        except (TypeError, ValueError):
+            return False
+        material["status"] = "done"
+        stage["status"] = "completed"
+        stage["approval_date"] = approved_at.isoformat()
+        stage["completion_file_id"] = file["id"]
+        stage["completed_at"] = now()
+        stage["acknowledged"] = self.dependencies(project, stage["id"], root)
+        stage["confirmed_forms"] = self.form_fingerprint(
+            root,
+            project,
+            stage["id"],
+        )
+        return True
 
     def apply_approval(self, root, project, file_id, keys):
         file = next(
@@ -1554,7 +1726,17 @@ class ProjectStore(_ProjectForms, _ProjectArchive):
             project["shared_revision"] += 1
         file["approval"]["applied_at"] = now()
         file["approval"]["applied_keys"] = sorted(set(keys))
-        self.touch(project, self.stage(project, "plan"), root)
+        stage = self.stage(project, "plan")
+        keep_completed = (
+            stage["status"] == "completed"
+            and stage.get("completion_file_id") == file_id
+        )
+        self.touch(project, stage, root)
+        if keep_completed:
+            material = next(
+                m for m in stage["materials"] if file in m["files"]
+            )
+            self.complete_approval(root, project, stage, material, file)
         self.save(root, project)
         return self.public(root, project)
 
@@ -1709,6 +1891,65 @@ def register_project_routes(router, scope, lock, store):
             store.save(root, project)
             return store.public(root, project)
 
+    @router.post("/projects/{project_id}/profile/import")
+    def import_profile(
+        project_id: str,
+        revision: int = Form(...),
+        workbook: UploadFile = File(...),
+        root=Depends(scope),
+    ):
+        """Preview known shared values; saving uses the normal profile route."""
+        with lock:
+            project = store.load(root, project_id)
+            store.check(project, revision)
+            try:
+                imported = store.host.read_excel(
+                    store.host.upload(workbook, ".xlsx"),
+                )
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(422, f"Excel 无法读取：{exc}") from exc
+            known = {field["key"]: field for field in project["fields"]}
+            incoming = {
+                field["key"]: field["value"]
+                for field in shared_fields(imported["fields"])
+                if field["value"].strip()
+            }
+            aliases = {
+                "organization.name": "org.name",
+                "organization.address": "org.address",
+                "contact.phone": (
+                    "contact.mobile_phone"
+                    if re.fullmatch(
+                        r"1[3-9]\d{9}",
+                        incoming.get("contact.phone", ""),
+                    )
+                    else "contact.office_phone"
+                ),
+            }
+            matched = {
+                key: value for key, value in incoming.items() if key in known
+            }
+            for old, key in aliases.items():
+                if old in incoming and old not in known and key in known:
+                    matched.setdefault(key, incoming[old])
+            fields = [
+                {**known[key], "value": value}
+                for key, value in matched.items()
+            ]
+            if not fields:
+                raise HTTPException(422, "Excel 中没有可导入的已填写基础信息")
+            if any(len(field["value"]) > 20000 for field in fields):
+                raise HTTPException(422, "基础信息内容过长")
+            for field in fields:
+                limit = {"project.name": 120, "project.code": 100}.get(
+                    field["key"],
+                )
+                if limit and len(field["value"]) > limit:
+                    raise HTTPException(422, f"{field['label']}内容过长")
+            return {"revision": project["revision"], "fields": fields}
+
 
 def register_stage_routes(router, scope, lock, store):
     @router.put("/projects/{project_id}/stages/{stage_id}")
@@ -1858,6 +2099,8 @@ def register_file_routes(router, scope, lock, store):
             stage, material = store.material(project, stage_id, material_id)
             if len(material["files"]) >= 50:
                 raise HTTPException(422, "单项材料最多保留 50 个文件版本")
+            store.ensure_file_versions(material)
+            material["file_sequence"] += 1
             file_id = uuid.uuid4().hex
             storage = file_id + suffix
             path = store.path(root, project_id) / "files" / storage
@@ -1866,6 +2109,7 @@ def register_file_routes(router, scope, lock, store):
             material["files"].append(
                 {
                     "id": file_id,
+                    "version": material["file_sequence"],
                     "name": host.name_only(Path(file.filename).stem)[:85]
                     + suffix,
                     "storage": storage,
@@ -1880,11 +2124,99 @@ def register_file_routes(router, scope, lock, store):
                 material["files"][-1]["approval"] = approval_from_pdf(content)
             material["status"] = "preparing"
             store.touch(project, stage, root)
+            store.complete_approval(
+                root,
+                project,
+                stage,
+                material,
+                material["files"][-1],
+            )
             try:
                 store.save(root, project)
             except OSError:
                 path.unlink(missing_ok=True)
                 raise
+            return store.public(root, project)
+
+    @router.delete(
+        "/projects/{project_id}/stages/{stage_id}/materials/{material_id}/files/{file_id}",
+    )
+    def delete_file(
+        project_id: str,
+        stage_id: str,
+        material_id: str,
+        file_id: str,
+        body: Revision,
+        root=Depends(scope),
+    ):
+        with lock:
+            project = store.load(root, project_id)
+            store.check(project, body.revision)
+            stage, material = store.material(project, stage_id, material_id)
+            store.ensure_file_versions(material)
+            file = next(
+                (f for f in material["files"] if f["id"] == file_id), None
+            )
+            if not file:
+                raise HTTPException(404, "材料文件不存在")
+            material.setdefault("deleted_files", []).append(
+                {
+                    "file": file,
+                    "deleted_at": now(),
+                    "material_status": material["status"],
+                },
+            )
+            material["files"].remove(file)
+            if not material["files"]:
+                material["status"] = "pending"
+            elif stage.get("completion_file_id") == file_id:
+                material["status"] = "preparing"
+            store.update_file_state(root, project, stage, removed_id=file_id)
+            store.save(root, project)
+            return store.public(root, project)
+
+    @router.post(
+        "/projects/{project_id}/stages/{stage_id}/materials/{material_id}/files/{file_id}/restore",
+    )
+    def restore_file(
+        project_id: str,
+        stage_id: str,
+        material_id: str,
+        file_id: str,
+        body: Revision,
+        root=Depends(scope),
+    ):
+        with lock:
+            project = store.load(root, project_id)
+            store.check(project, body.revision)
+            stage, material = store.material(project, stage_id, material_id)
+            deleted = next(
+                (
+                    item
+                    for item in material.get("deleted_files", [])
+                    if item["file"]["id"] == file_id
+                ),
+                None,
+            )
+            if not deleted:
+                raise HTTPException(404, "已删除的材料文件不存在")
+            if len(material["files"]) >= 50:
+                raise HTTPException(422, "单项材料最多保留 50 个文件版本")
+            file = deleted["file"]
+            source = store.path(root, project_id) / "files" / file["storage"]
+            if (
+                not source.is_file()
+                or hashlib.sha256(source.read_bytes()).hexdigest()
+                != file["sha256"]
+            ):
+                raise HTTPException(422, "材料文件缺失或校验失败，无法恢复")
+            material["files"].append(file)
+            material["files"].sort(key=lambda item: item["version"])
+            material["deleted_files"].remove(deleted)
+            if len(material["files"]) == 1:
+                material["status"] = deleted["material_status"]
+            store.update_file_state(root, project, stage, restored=file)
+            store.save(root, project)
             return store.public(root, project)
 
     @router.post(

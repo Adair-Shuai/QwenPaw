@@ -1188,12 +1188,15 @@ class QwenPawAgent(Agent):
 
         # ── Inject background-tool results before each reasoning step ──
         await self._inject_pending_hints()
+        steering = getattr(self, "_user_steering", None)
 
         # ── Pre-check: pending gate actions from previous iter ──
         from ..loop.gates.runner import check_pending_gates
 
         pending_stop = check_pending_gates(self)
         if pending_stop is not None:
+            if steering is not None:
+                await steering.close()
             stop_text = pending_stop.reason or "Stopped by loop gate."
             block_id = uuid.uuid4().hex
             yield TextBlockStartEvent(
@@ -1217,6 +1220,9 @@ class QwenPawAgent(Agent):
                 ],
             )
             return
+
+        if steering is not None:
+            await steering.consume()
 
         # ModelInfo controls per-model request normalization. Only learned
         # rejections belong here; a global lookup can misclassify fallbacks.
@@ -1460,6 +1466,13 @@ class QwenPawAgent(Agent):
             return  # outer loop continues
 
         outgoing_msg = stop_result.final_message or final_msg
+        if steering is not None:
+            if stop_result.reason or stop_result.final_message is not None:
+                # Explicit gate/mode stops retain priority over supplements.
+                await steering.close()
+            elif await steering.consume(final=True):
+                # Keep the response/task and enter another reasoning step.
+                return
         self._attach_fallback_notices(outgoing_msg, fallback_sink)
         yield outgoing_msg
 

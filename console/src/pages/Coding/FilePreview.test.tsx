@@ -9,6 +9,15 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import FilePreview, { getPreviewType, isPreviewable } from "./FilePreview";
 import { openHtmlFile } from "../../utils/openHtmlFile";
 import { rendererRegistry } from "../../components/Workspace/store/rendererRegistry";
+import {
+  turnFilesApi,
+  type TurnFileManifest,
+} from "../../api/modules/turnFiles";
+import { turnFileTarget } from "../../features/files-workspace/turnFileTarget";
+
+vi.mock("../Chat/sessionApi", () => ({
+  default: { getSessionIdentity: (id: string) => ({ sessionId: id }) },
+}));
 
 vi.mock("../../utils/openHtmlFile", () => ({
   openHtmlFile: vi.fn(),
@@ -314,6 +323,158 @@ describe("FilePreview", () => {
 describe("FilePreview interactive HTML", () => {
   const dynamicContent = '<div id="root"></div><script>draw()</script>';
 
+  it("resolves scoped sibling stylesheets without giving credentials to HTML", async () => {
+    const fetcher = vi
+      .fn()
+      .mockResolvedValue(new Response(".app { display: grid; color: green }"));
+    vi.stubGlobal("fetch", fetcher);
+    render(
+      <FilePreview
+        filePath="designs/chat/index.html"
+        chatId="chat-design"
+        root="workspace"
+        workspaceBacked
+        content={
+          '<!doctype html><html><head><link rel="stylesheet" href="styles.css"><link rel="stylesheet" href="https://example.org/theme.css"></head><body><div class="app">Styled</div></body></html>'
+        }
+      />,
+    );
+    const frame = await screen.findByTitle(
+      "index.html",
+      {},
+      { timeout: LAZY_RENDER_TIMEOUT },
+    );
+    const doc = new DOMParser().parseFromString(
+      frame.getAttribute("srcdoc")!,
+      "text/html",
+    );
+    const local = doc.querySelector("link")!.getAttribute("href")!;
+    expect(local).toMatch(/^data:text\/css/);
+    expect(atob(local.split(",")[1])).toContain("display: grid");
+    expect(doc.querySelectorAll("link")[1].getAttribute("href")).toBe(
+      "https://example.org/theme.css",
+    );
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(String(fetcher.mock.calls[0][0])).toBe(
+      "/api/files/designs/chat/styles.css",
+    );
+    expect(fetcher.mock.calls[0][1].headers).toMatchObject({
+      "X-Chat-Id": "chat-design",
+    });
+    expect(frame).toHaveAttribute("sandbox", "allow-scripts");
+    expect(frame.getAttribute("srcdoc")).not.toContain("token=");
+  });
+
+  it("does not read nonasset local dependencies requested by HTML", async () => {
+    const fetcher = vi.fn();
+    vi.stubGlobal("fetch", fetcher);
+    render(
+      <FilePreview
+        filePath="design/index.html"
+        root="workspace"
+        workspaceBacked
+        content={
+          '<link rel="stylesheet" href="config.json"><img src="../.env"><script src="secret.py"></script>'
+        }
+      />,
+    );
+    const frame = await screen.findByTitle(
+      "index.html",
+      {},
+      { timeout: LAZY_RENDER_TIMEOUT },
+    );
+    expect(frame).toHaveAttribute("sandbox", "allow-scripts");
+    expect(fetcher).not.toHaveBeenCalled();
+    expect(screen.getByRole("status")).toHaveTextContent("config.json");
+    expect(screen.getByRole("status")).toHaveTextContent(".env");
+    expect(screen.getByRole("status")).toHaveTextContent("secret.py");
+  });
+
+  it.each([true, false])(
+    "keeps archived HTML dependencies immutable when captured=%s",
+    async (available) => {
+      const scope = {
+        kind: "session" as const,
+        agentId: "owner",
+        sessionId: "runtime",
+        chatId: "chat",
+      };
+      const html = {
+        id: "html",
+        name: "index.html",
+        path: "design/index.html",
+        root: "workspace" as const,
+        status: "created" as const,
+        delivered: true,
+        size: 80,
+        binary: false,
+        before_available: false,
+        after_available: true,
+      };
+      const turn: TurnFileManifest = {
+        id: "saved-turn",
+        session_id: "runtime",
+        agent_id: "owner",
+        status: "completed",
+        started_at: "2026-11-01",
+        incomplete: !available,
+        overlap: false,
+        warnings: [],
+        files: [
+          html,
+          {
+            ...html,
+            id: "css",
+            name: "styles.css",
+            path: "design/styles.css",
+            delivered: false,
+            after_available: available,
+          },
+        ],
+      };
+      vi.spyOn(turnFilesApi, "get").mockResolvedValue(turn);
+      const fetcher = vi
+        .fn()
+        .mockResolvedValue(new Response("body { color: purple }"));
+      vi.stubGlobal("fetch", fetcher);
+      const target = turnFileTarget(scope, turn, html);
+      render(
+        <FilePreview
+          filePath={html.path}
+          content={'<link rel="stylesheet" href="styles.css"><h1>Archived</h1>'}
+          artifact={target.artifact}
+        />,
+      );
+      const frame = await screen.findByTitle(
+        "index.html",
+        {},
+        { timeout: LAZY_RENDER_TIMEOUT },
+      );
+      expect(frame).toHaveAttribute("sandbox", "allow-scripts");
+      if (available) {
+        expect(fetcher).toHaveBeenCalledOnce();
+        expect(String(fetcher.mock.calls[0][0])).toContain(
+          "saved-turn/files/css",
+        );
+        expect(fetcher.mock.calls[0][1].headers).toMatchObject({
+          "X-Agent-Id": "owner",
+          "X-Chat-Id": "chat",
+        });
+        const href = new DOMParser()
+          .parseFromString(frame.getAttribute("srcdoc")!, "text/html")
+          .querySelector("link")!
+          .getAttribute("href")!;
+        expect(atob(href.split(",")[1])).toContain("purple");
+      } else {
+        expect(fetcher).not.toHaveBeenCalled();
+        expect(screen.getByRole("status")).toHaveTextContent(
+          "部分页面资源无法加载",
+        );
+        expect(frame.getAttribute("srcdoc")).toContain('href="data:text/css,"');
+      }
+    },
+  );
+
   it.each(["scene.html", "scene.htm"])(
     "preserves script-generated %s in the unified renderer",
     async (filePath) => {
@@ -345,7 +506,12 @@ describe("FilePreview interactive HTML", () => {
     fireEvent.click(
       screen.getByRole("button", { name: "files.openHtmlInBrowser" }),
     );
-    expect(openHtmlFile).toHaveBeenCalledWith(options);
+    expect(openHtmlFile).toHaveBeenCalledWith(expect.objectContaining(options));
+    expect(openHtmlFile).toHaveBeenCalledWith(
+      expect.objectContaining({
+        artifact: expect.objectContaining({ workspacePath: "scene.html" }),
+      }),
+    );
   });
 
   it("updates HTML without losing interactive controls", async () => {

@@ -13,6 +13,7 @@ import logging
 import os
 import shutil
 import signal
+import subprocess
 import sys
 import time
 from abc import ABC, abstractmethod
@@ -93,6 +94,20 @@ def _shell_argv(shell: str, cmd: str) -> List[str]:
     return [shell, "-c", cmd]
 
 
+def _terminate_windows_process_tree(pid: int) -> None:
+    """Run the native tree termination utility without blocking asyncio."""
+    system_root = os.environ.get("SystemRoot", r"C:\Windows")
+    taskkill = os.path.join(system_root, "System32", "taskkill.exe")
+    subprocess.run(
+        [taskkill, "/F", "/T", "/PID", str(pid)],
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        timeout=5,
+        check=False,
+        creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+    )
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 # Abstract base
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -153,13 +168,23 @@ class LocalSandbox(ABC):
                 # die with it, not just the shell.
                 os.killpg(os.getpgid(self._process.pid), signal.SIGKILL)
             else:
-                # Windows has neither killpg nor SIGKILL -- calling them
-                # raises AttributeError, which the handler below does not
-                # catch. Terminating the shell is the best this backend
-                # can do there.
-                self._process.kill()
+                # Killing cmd.exe alone leaves its children holding output
+                # pipes open. Terminate the tree before reaping the shell.
+                try:
+                    await asyncio.to_thread(
+                        _terminate_windows_process_tree,
+                        self._process.pid,
+                    )
+                except (OSError, subprocess.TimeoutExpired):
+                    logger.warning("Could not terminate sandbox process tree")
+                if self._process.returncode is None:
+                    self._process.kill()
         except (ProcessLookupError, OSError):
             pass
+        try:
+            await asyncio.wait_for(self._process.wait(), timeout=5)
+        except asyncio.TimeoutError:
+            logger.warning("Sandbox process did not release its output pipes")
 
     async def __aenter__(self):
         return self

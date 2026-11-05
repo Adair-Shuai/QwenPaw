@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 from __future__ import annotations
 
+import asyncio
 import sys
 from pathlib import Path
 from types import SimpleNamespace
@@ -60,6 +61,75 @@ def _route_paths(router) -> set[str]:
         if original_router is not None:
             paths.update(_route_paths(original_router))
     return paths
+
+
+@pytest.mark.asyncio
+async def test_managed_service_recovers_after_process_exit():
+    service = ManagedService(
+        ManagedServiceSpec(
+            name="restart-fixture",
+            command=(
+                sys.executable,
+                "-c",
+                _LOOPBACK_SERVER_SCRIPT,
+                "{host}",
+                "{port}",
+            ),
+            startup_timeout=10,
+        ),
+    )
+    try:
+        await service.start()
+        previous = service._process  # pylint: disable=protected-access
+        previous.terminate()
+        await asyncio.wait_for(previous.wait(), timeout=10)
+        assert not service.is_ready
+        assert service.status()["ready"] is False
+        assert not await service.check_health()
+        with pytest.raises(
+            service_module.ManagedServiceNotReady,
+        ) as unavailable:
+            _ = service.base_url
+        assert unavailable.value.detail["code"] == "SERVICE_EXITED"
+
+        await asyncio.gather(service.start(), service.start())
+        current = service._process  # pylint: disable=protected-access
+        assert current is not previous
+        assert current.returncode is None
+        assert service.is_ready
+        assert await service.check_health()
+    finally:
+        await service.aclose()
+
+
+@pytest.mark.asyncio
+async def test_managed_service_is_not_ready_until_health_succeeds(monkeypatch):
+    service = ManagedService(
+        ManagedServiceSpec(
+            name="starting-fixture",
+            command=(sys.executable, "-c", "import time; time.sleep(60)"),
+        ),
+    )
+    checking = asyncio.Event()
+    allow_health = asyncio.Event()
+
+    async def wait_for_health():
+        checking.set()
+        await allow_health.wait()
+
+    monkeypatch.setattr(service, "_wait_until_healthy", wait_for_health)
+    starting = asyncio.create_task(service.start())
+    try:
+        await asyncio.wait_for(checking.wait(), timeout=10)
+        assert not service.is_ready
+        with pytest.raises(RuntimeError, match="not ready"):
+            _ = service.base_url
+        allow_health.set()
+        await asyncio.wait_for(starting, timeout=10)
+        assert service.is_ready
+    finally:
+        await service.aclose()
+        await asyncio.gather(starting, return_exceptions=True)
 
 
 @pytest.mark.asyncio

@@ -7,7 +7,6 @@ import hashlib
 import io
 import json
 import logging
-import os
 import re
 import shutil
 import subprocess
@@ -32,6 +31,7 @@ from fastapi import (
 from fastapi.responses import FileResponse, Response, JSONResponse
 from pydantic import BaseModel, Field
 from qwenpaw.constant import WORKING_DIR
+from qwenpaw.officecli_runtime import officecli_environment
 from qwenpaw.pawapp import PawApp
 
 from .backend import builtin  # pylint: disable=relative-beyond-top-level
@@ -230,7 +230,7 @@ def print_document(source, cache, page=None):
         # The resident in older OfficeCLI builds drops page-range arguments.
         # Use an isolated read copy with auto-resident disabled. Native page
         # stitching retains full resolution; contact sheets shrink long files.
-        environment = dict(os.environ, OFFICECLI_NO_AUTO_RESIDENT="1")
+        environment = officecli_environment(OFFICECLI_NO_AUTO_RESIDENT="1")
         try:
             shutil.copyfile(source, working)
             if count is None:
@@ -433,6 +433,7 @@ class DraftBody(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     values: dict[str, str]
     recipients: list[Recipient] = Field(max_length=200)
+    opinion_templates: dict[str, str] = Field(default_factory=dict)
 
 
 class ReviewBody(BaseModel):
@@ -559,8 +560,31 @@ def update_case(case_id: str, body: DraftBody, root=Depends(scope)):
                 "引用资料不能在本阶段修改，请返回基础信息填报或对应的前序阶段修改",
             )
         case["name"] = body.name
+        linked = {
+            f["key"]: f for f in case["fields"] if f.get("linked_variables")
+        }
+        if set(body.opinion_templates) - set(linked) or any(
+            len(text) > 20000
+            or any(
+                match.group(1).partition("|")[0]
+                not in builtin.OPINION_VARIABLES
+                for match in builtin.OPINION_TOKEN.finditer(text)
+            )
+            for text in body.opinion_templates.values()
+        ):
+            raise HTTPException(422, "论证意见引用变量无效或内容过长")
         for field in case["fields"]:
             field["value"] = body.values[field["key"]]
+            if field["key"] in body.opinion_templates:
+                field["linked_template"] = body.opinion_templates[field["key"]]
+                field["linked_rendered"] = field["value"]
+        if (
+            case.get("stage_id") == "selection"
+            and case.get("selection_schema") == 1
+        ):
+            builtin.refresh_selection_opinions(case["fields"])
+            if any(len(f["value"]) > 20000 for f in case["fields"]):
+                raise HTTPException(422, "论证意见内容过长")
         case["recipients"] = recipient_defaults(
             [r.model_dump(exclude_none=True) for r in body.recipients],
         )

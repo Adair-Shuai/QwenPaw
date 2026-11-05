@@ -356,12 +356,14 @@
 }
 .identity {
   --identity-action-space: calc(var(--app-hit-desktop) + 8px);
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   gap: 10px;
-  width: 100%;
+  width: calc(100% - var(--identity-action-space));
   padding: 8px 12px 8px 8px;
-  min-height: 52px;
+  height: var(--sidebar-footer-height, 56px);
+  min-height: var(--sidebar-footer-height, 56px);
   border: 1px solid var(--app-border-subtle);
   border-radius: 20px;
   background: var(--app-surface);
@@ -372,6 +374,14 @@
     margin-left: auto;
     color: var(--app-text-tertiary);
     flex-shrink: 0;
+  }
+  &:hover,
+  &[aria-expanded="true"] {
+    background: var(--app-state-hover-bg);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--app-focus-ring);
+    outline-offset: 2px;
   }
 }
 .avatar {
@@ -386,8 +396,6 @@
   font-weight: 600;
 }
 .identityText {
-  // The floating/docking grip sits outside this button, over its trailing edge.
-  margin-right: var(--identity-action-space);
   flex: 1 1 0;
   min-width: 0;
   text-align: left;
@@ -400,25 +408,26 @@
     display: block;
     min-width: 0;
     margin: 0;
-    white-space: normal;
-    overflow-wrap: anywhere;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
     text-align: left;
   }
   strong {
-    font-size: 12px;
+    font-size: var(--app-font-secondary);
     font-weight: 550;
-    line-height: 16px;
+    line-height: 1.4;
   }
   small {
-    font-size: 10px;
-    line-height: 14px;
+    font-size: var(--app-font-caption);
+    line-height: 1.35;
     color: var(--app-text-tertiary);
   }
 }
 :global([data-sidebar-placement="floating"]) .identity {
   --identity-action-space: calc(var(--app-hit-desktop) * 2 + 8px);
 }
-@media (pointer: coarse) {
+@media (any-pointer: coarse) {
   .identity {
     --identity-action-space: calc(var(--app-hit-touch) + 8px);
   }
@@ -431,8 +440,8 @@
 }
 
 @media (max-width: 768px) {
-  .identityText {
-    margin-right: 0;
+  .identity {
+    --identity-action-space: 0px;
   }
 }
 .toolButton[aria-expanded="true"] {
@@ -453,8 +462,8 @@
   min-height: 40px;
   border: 1px solid color-mix(in srgb, var(--app-accent) 12%, transparent);
   border-radius: 14px;
-  background: var(--app-accent);
-  color: #fff;
+  background: var(--app-action-bg, var(--app-accent));
+  color: var(--app-action-fg, #fff);
   box-shadow: 0 3px 8px color-mix(in srgb, var(--app-accent) 18%, transparent);
   font: inherit;
   font-size: 13px;
@@ -462,7 +471,7 @@
   text-align: left;
   cursor: pointer;
   &:hover {
-    background: color-mix(in srgb, var(--app-accent) 90%, #000);
+    background: var(--app-action-hover, var(--app-accent-hover));
   }
   &:active {
     box-shadow: inset 0 1px 3px rgb(0 0 0 / 10%);
@@ -476,8 +485,8 @@
   object-fit: cover;
 }
 .surface .identity {
-  height: auto;
-  min-height: 52px;
+  height: var(--sidebar-footer-height, 56px);
+  min-height: var(--sidebar-footer-height, 56px);
 }
 .surface .navGrid.navDetailed {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -549,21 +558,26 @@
   .surface .newTask {
     order: 1;
     justify-content: flex-start;
-    min-height: 36px;
-    padding: 7px 9px;
-    margin: 0 0 5px;
+    min-height: 32px;
+    padding: 5px 9px;
+    margin: 0 0 2px;
     border: 0;
     background: transparent;
+    color: var(--app-text);
     border-radius: 7px;
     font-size: var(--app-font-secondary);
     font-weight: 500;
+    &:hover {
+      background: var(--app-fill-subtle);
+      color: var(--app-text);
+    }
   }
   .surface nav[aria-label] {
     order: 2;
   }
   .toolFrame {
     order: 0;
-    margin: 0 0 8px;
+    margin: 0 0 4px;
   }
   .toolPanel {
     border: 0;
@@ -588,13 +602,20 @@
   }
   .identity {
     padding: 8px;
-    min-height: 48px;
+    min-height: var(--sidebar-footer-height, 56px);
     gap: 8px;
   }
   .avatar {
     width: 25px;
     height: 25px;
     flex-basis: 25px;
+  }
+}
+@media (any-pointer: coarse) {
+  :global(html[data-page-style]:not([data-page-style="classic"]))
+    .surface
+    .newTask {
+    min-height: var(--app-hit-touch);
   }
 }
 :global(html[data-page-style="openai"]) .surface.surface {

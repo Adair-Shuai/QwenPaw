@@ -1,0 +1,38 @@
+.inline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  max-height: min(42vh, 380px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  margin-bottom: 10px;
+  border-radius: 12px;
+  color: var(--app-text);
+  background: var(--app-surface);
+  > div {
+    flex-shrink: 0;
+  }
+  > div:first-child {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  > div[data-approval-id] {
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  :global(.ant-card),
+  :global(.qwenpaw-card) {
+    box-shadow: none;
+    animation: none;
+  }
+  @media (max-width: 600px) {
+    max-height: 36vh;
+    :global(.ant-card-body),
+    :global(.qwenpaw-card-body) {
+      padding: 12px;
+    }
+  }
+}

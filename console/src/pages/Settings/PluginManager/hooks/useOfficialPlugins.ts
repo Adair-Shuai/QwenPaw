@@ -89,7 +89,7 @@ export function useOfficialPlugins({ onInstalled }: UseOfficialPluginsOptions) {
               name: entry.name,
               version: result.version,
               description: entry.description,
-              loaded: true,
+              loaded: result.loaded ?? true,
               message: "",
             });
             message.success(t("pluginManager.updateSuccess"));

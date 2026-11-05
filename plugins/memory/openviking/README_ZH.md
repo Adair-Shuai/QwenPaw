@@ -17,6 +17,9 @@
   固定提示，要求模型不要执行检索内容内的指令。
 - QwenPaw 将 OpenViking 身份、安装实例 ID、Agent ID 与 QwenPaw 对话 ID 哈希为
   OpenViking Session ID。这用于隔离会话，不构成权限控制边界。
+- 安装实例 ID 先设置私有权限再写入：POSIX 使用 `0600`，Windows 使用只授予
+  当前账户访问的受保护 DACL。复用已有 ID 时也修复权限；权限设置失败会停止
+  启动，不会在继承的宽松权限下继续写入私有状态。
 
 ## 准备 OpenViking 服务
 

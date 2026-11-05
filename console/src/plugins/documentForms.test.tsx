@@ -1,6 +1,7 @@
 import fs from "node:fs";
 import path from "node:path";
 import React from "react";
+import ReactDOM from "react-dom";
 import {
   act,
   cleanup,
@@ -51,6 +52,633 @@ const reply = (value: unknown) =>
   new Response(JSON.stringify(structuredClone(value)), {
     headers: { "Content-Type": "application/json" },
   });
+
+async function exerciseWorkflowTabs(
+  stageId: string,
+  exerciseToolbar = false,
+  exerciseReturn = false,
+) {
+  const user = userEvent.setup();
+  let Page: React.ComponentType = () => null;
+  const state: any = {
+    id: "tabbed-form",
+    name: "流程表单",
+    revision: 1,
+    stage_id: stageId,
+    plan_schema: 1,
+    selection_schema: 1,
+    updated_at: "2026-10-31T10:00:00Z",
+    fields: [
+      {
+        key: "step.first",
+        label: "流程字段一",
+        group: "第一项",
+        kind: "text",
+        value: "初始内容",
+        required: true,
+        help: "填写当前阶段的第一项内容，其他标签页的草稿会保留。",
+      },
+      {
+        key: "step.second",
+        label: "流程字段二",
+        group: "第二项",
+        kind: "textarea",
+        value: "",
+        required: true,
+      },
+      {
+        key: "project.name",
+        label: "共用项目名称",
+        group: "共用资料",
+        kind: "text",
+        value: "标签页测试项目",
+        scope: "shared",
+      },
+    ],
+    recipients: [],
+    generations: [],
+    rules: [],
+    document_values: {},
+    templates: [
+      { id: "t1", name: "阶段模板.docx", keys: [], per_recipient: false },
+    ],
+  };
+  const material = {
+    id: "approval",
+    name: "审批回执",
+    required: false,
+    status: "pending",
+    note: "",
+    files: [] as any[],
+  };
+  const project: any = {
+    id: "tabs-project",
+    name: "标签页测试项目",
+    revision: 1,
+    code: "TAB",
+    single_form: true,
+    form_id: state.id,
+    fields: [],
+    forms: [],
+    stages: stageIds.map((id, index) => ({
+      id,
+      title: stageNames[index],
+      status: "pending",
+      purpose: "阶段材料",
+      materials: id === stageId ? [material] : [],
+      upstream_changed: [],
+      missing_required: [],
+      notes: "",
+      due_date: "",
+      system_url: "",
+      system_name: "",
+      submission_ref: "",
+    })),
+  };
+  const saves: any[] = [];
+  const downloads: string[] = [];
+  const createToolbarUrl = vi.fn((_blob: Blob) => "blob:toolbar-download");
+  const excelImports: FormData[] = [];
+  const templateImports: File[][] = [];
+  const defaultRevisions: number[] = [];
+  let exportFails = exerciseToolbar;
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
+    this: HTMLAnchorElement,
+  ) {
+    downloads.push(this.download);
+  });
+  vi.stubGlobal(
+    "URL",
+    Object.assign(class extends URL {}, {
+      createObjectURL: createToolbarUrl,
+      revokeObjectURL: vi.fn(),
+    }),
+  );
+  let failSave = true;
+  const hostFetch = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === "/document-forms/projects") return reply([project]);
+    if (url === "/document-forms/projects/tabs-project") return reply(project);
+    if (url.endsWith("/assistant")) return reply({ messages: [] });
+    if (url.endsWith("/form")) return reply(state);
+    if (url.endsWith("/materials/approval/files")) {
+      const file = (init?.body as FormData).get("file") as File;
+      material.files.push({
+        id: "uploaded",
+        name: file.name,
+        size: file.size,
+        uploaded_at: state.updated_at,
+      });
+      project.revision++;
+      return reply(project);
+    }
+    if (url === "/document-forms/starter") return new Response("template-kit");
+    if (url.endsWith("/excel")) {
+      if (exportFails) {
+        exportFails = false;
+        return new Response("retry", { status: 503 });
+      }
+      return new Response("saved-excel-data");
+    }
+    if (url.endsWith("/form/import")) {
+      const data = init?.body as FormData;
+      expect(data.get("stage_id")).toBe(stageId);
+      expect(String(data.get("revision"))).toBe(String(project.revision));
+      excelImports.push(data);
+      state.fields[0].value = "Excel 导入内容";
+      state.fields[1].value = "Excel 完整内容";
+      state.revision++;
+      return reply(state);
+    }
+    if (url === "/document-forms/cases/tabbed-form/templates") {
+      const data = init?.body as FormData;
+      const files = data.getAll("files") as File[];
+      templateImports.push(files);
+      state.templates.push(
+        ...files.map((file, index) => ({
+          id: "imported-" + index,
+          name: file.name,
+          keys: [],
+          per_recipient: false,
+        })),
+      );
+      state.revision++;
+      return reply(state);
+    }
+    if (url.includes("/templates/") && init?.method === "DELETE") {
+      const id = url.split("/templates/")[1].split("?")[0];
+      state.templates = state.templates.filter((item: any) => item.id !== id);
+      state.revision++;
+      return reply(state);
+    }
+    if (url.endsWith("/defaults")) {
+      const data = JSON.parse(String(init?.body));
+      expect(data.revision).toBe(state.revision);
+      defaultRevisions.push(data.revision);
+      return reply({ ok: true });
+    }
+    if (url.endsWith("/defaults/apply")) {
+      state.templates = [
+        {
+          id: "restored",
+          name: "恢复的默认模板.docx",
+          keys: [],
+          per_recipient: false,
+        },
+      ];
+      state.revision++;
+      return reply(state);
+    }
+    if (url === "/document-forms/cases/tabbed-form") {
+      if (init?.method === "PUT") {
+        const body = JSON.parse(String(init.body));
+        saves.push(body);
+        state.name = body.name;
+        if (failSave) {
+          failSave = false;
+          return new Response(JSON.stringify({ detail: "保存失败，请重试" }), {
+            status: 503,
+          });
+        }
+        state.fields = state.fields.map((field: any) => ({
+          ...field,
+          value: body.values[field.key],
+        }));
+        state.revision++;
+      }
+      return reply(state);
+    }
+    if (url.endsWith("/review"))
+      return reply({
+        checks: state.fields[1].value
+          ? []
+          : [
+              {
+                field: "step.second",
+                label: "流程字段二",
+                status: "missing",
+                detail: "请填写流程字段二",
+              },
+            ],
+        can_generate: !!state.fields[1].value,
+        review_token: "toolbar-review",
+        revision: state.revision,
+      });
+    throw new Error("Unexpected workflow request: " + url);
+  });
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  Object.defineProperty(window, "QwenPaw", {
+    configurable: true,
+    value: {
+      host: {
+        React,
+        ReactDOM,
+        fetch: hostFetch,
+        useTheme: () => "light",
+        getSelectedAgentId: () => "default",
+      },
+      workspace: {},
+      registerRoutes: (_id: string, routes: any[]) => {
+        Page = routes[0].component;
+      },
+    },
+  });
+  await act(async () => {
+    new Function(
+      "window",
+      fs.readFileSync(
+        path.resolve(
+          process.cwd(),
+          "../plugins/apps/document-forms/ui/index.js",
+        ),
+        "utf8",
+      ),
+    )(window);
+  });
+  renderWithProviders(<Page />);
+  await user.click(
+    await screen.findByRole("button", {
+      name: new RegExp(
+        `^0${stageIds.indexOf(stageId) + 1} ${
+          stageNames[stageIds.indexOf(stageId)]
+        }`,
+      ),
+    }),
+  );
+  if (stageId === "negotiation")
+    await user.click(await screen.findByRole("tab", { name: "第一项" }));
+  const first = await screen.findByLabelText("流程字段一");
+  expect(first).toBeVisible();
+  expect(first).toHaveAttribute("aria-required", "true");
+  if (exerciseToolbar) {
+    const help = screen.getByRole("button", { name: "流程字段一：填写说明" });
+    expect(help.closest(".df-field-label")).toBeTruthy();
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    await user.hover(help);
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "填写当前阶段的第一项内容",
+    );
+    await user.hover(screen.getByRole("tooltip"));
+    expect(screen.getByRole("tooltip")).toBeVisible();
+    await user.unhover(screen.getByRole("tooltip"));
+    await waitFor(() =>
+      expect(screen.queryByRole("tooltip")).not.toBeInTheDocument(),
+    );
+    await user.click(help);
+    expect(screen.getByRole("tooltip")).toHaveTextContent(
+      "填写当前阶段的第一项内容，其他标签页的草稿会保留。",
+    );
+    expect(first).toHaveValue("初始内容");
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    expect(help).toHaveFocus();
+    await user.click(help);
+    await user.click(first);
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+    await user.click(help);
+    await user.tab();
+    expect(first).toHaveFocus();
+    expect(screen.queryByRole("tooltip")).not.toBeInTheDocument();
+  }
+  const toolbar = screen.getByRole("toolbar", { name: "阶段工具栏" });
+  const stageHeader = toolbar.closest(".df-stage-header") as HTMLElement;
+  expect(stageHeader).toBeTruthy();
+  expect(toolbar.closest(".df-stage-top-row")).toBeTruthy();
+  for (const name of [
+    "导入 Excel",
+    "导出当前 Excel",
+    "保存草稿",
+    "下载本阶段材料",
+  ]) {
+    expect(within(toolbar).getByRole("button", { name })).toBeInTheDocument();
+  }
+  const statusButton = within(stageHeader).getByRole("button", {
+    name: "办理信息与状态",
+  });
+  expect(statusButton.closest(".df-stage-bottom-row")).toBeTruthy();
+  expect(statusButton).toHaveTextContent("未开始");
+  for (const name of ["导入 Excel", "导出当前 Excel", "保存草稿"]) {
+    const action = within(toolbar).getByRole("button", { name });
+    expect(action.closest(".df-toolbar-save")).toBeTruthy();
+    expect(action).not.toHaveTextContent(/导入|导出|保存/);
+  }
+  expect(
+    within(toolbar)
+      .getByRole("button", { name: "下载本阶段材料" })
+      .closest(".df-toolbar-file-actions"),
+  ).toBeTruthy();
+  if (exerciseToolbar) {
+    await user.click(statusButton);
+    const statusDialog = screen.getByRole("dialog", {
+      name: stageNames[stageIds.indexOf(stageId)] + "办理信息",
+    });
+    expect(statusDialog).toBeVisible();
+    expect(within(statusDialog).getByLabelText("阶段状态")).toHaveValue(
+      "pending",
+    );
+    await user.click(
+      within(statusDialog).getByRole("button", { name: "取消" }),
+    );
+  }
+  expect(within(toolbar).getByLabelText("模板")).toBeInTheDocument();
+  expect(document.querySelector(".df-node-tools")).toBeNull();
+  expect(document.querySelector(".df-form-heading")).toBeNull();
+  expect(
+    screen.queryByRole("heading", { name: "填写内容" }),
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("heading", { name: "第一项" }),
+  ).not.toBeInTheDocument();
+  expect(screen.queryByText("引用的基础信息")).not.toBeInTheDocument();
+  expect(screen.queryByText("合同审查引用资料")).not.toBeInTheDocument();
+  expect(screen.queryByText("查看引用的项目资料")).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("heading", { name: /^审批资料$/ }),
+  ).not.toBeInTheDocument();
+  if (exerciseReturn) {
+    const stageName = stageNames[stageIds.indexOf(stageId)];
+    for (const destination of ["项目总览", "基础信息填报", "项目总览"]) {
+      const previousHeader = screen
+        .getByRole("toolbar", { name: "阶段工具栏" })
+        .closest(".df-stage-header");
+      await user.click(screen.getByRole("button", { name: destination }));
+      expect(previousHeader?.isConnected).toBe(false);
+      expect(
+        screen.queryByRole("toolbar", { name: "阶段工具栏" }),
+      ).not.toBeInTheDocument();
+      await user.click(
+        screen.getByRole("button", {
+          name: new RegExp(
+            "^0" + (stageIds.indexOf(stageId) + 1) + " " + stageName,
+          ),
+        }),
+      );
+      expect(await screen.findByLabelText("流程字段一")).toHaveValue(
+        "初始内容",
+      );
+      const currentToolbar = screen.getByRole("toolbar", {
+        name: "阶段工具栏",
+      });
+      const currentHeader = currentToolbar.closest(
+        ".df-stage-header",
+      ) as HTMLElement;
+      expect(currentHeader).not.toBe(previousHeader);
+      expect(currentHeader).toBeVisible();
+      expect(
+        within(currentHeader).getByRole("heading", { name: stageName }),
+      ).toBeVisible();
+      expect(
+        within(currentHeader).getByRole("tab", { name: "内容填写" }),
+      ).toBeVisible();
+      expect(
+        within(currentHeader).getByRole("button", { name: "办理信息与状态" }),
+      ).toBeVisible();
+      expect(
+        getComputedStyle(currentHeader).getPropertyValue("container-type"),
+      ).toBe("normal");
+      expect(
+        getComputedStyle(
+          currentHeader.closest(".df-project-main") as Element,
+        ).getPropertyValue("container-type"),
+      ).toBe("inline-size");
+      for (const name of ["导入 Excel", "导出当前 Excel", "保存草稿"]) {
+        expect(
+          within(currentToolbar).getAllByRole("button", { name }),
+        ).toHaveLength(1);
+      }
+      const input = screen.getByLabelText("导入 Excel 变量表");
+      const picker = vi.spyOn(input, "click");
+      await user.click(
+        within(currentToolbar).getByRole("button", { name: "导入 Excel" }),
+      );
+      expect(picker).toHaveBeenCalledOnce();
+      picker.mockRestore();
+      await user.click(screen.getByRole("tab", { name: "审批资料" }));
+      expect(currentToolbar).toBeVisible();
+      await user.click(screen.getByRole("tab", { name: "内容填写" }));
+      expect(screen.getByLabelText("流程字段一")).toHaveValue("初始内容");
+    }
+    return;
+  }
+  await user.clear(first);
+  await user.type(first, "跨标签保留的草稿");
+  expect(statusButton).toBeDisabled();
+  const groupTabs = screen.getByRole("tablist", { name: "填写内容分组" });
+  await user.click(within(groupTabs).getByRole("tab", { name: "第二项" }));
+  expect(first).not.toBeVisible();
+  const second = screen.getByLabelText("流程字段二");
+  expect(second).toHaveAttribute("aria-required", "true");
+  await user.type(second, "第二页草稿");
+  await user.click(screen.getByRole("tab", { name: "审批资料" }));
+  expect(second).not.toBeVisible();
+  expect(screen.getByRole("heading", { name: /^审批资料$/ })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "上传审批回执" }));
+  await user.upload(
+    screen.getByLabelText("上传阶段材料"),
+    new File(["approval"], "审批回执.pdf", { type: "application/pdf" }),
+  );
+  await screen.findByText(/材料已保存，原有版本继续保留/);
+  await user.click(screen.getByRole("tab", { name: "内容填写" }));
+  expect(screen.getByLabelText("流程字段二")).toBe(second);
+  expect(second).toBeVisible();
+  expect(second).toHaveValue("第二页草稿");
+  await user.clear(second);
+  await user.click(screen.getByRole("button", { name: "保存草稿" }));
+  await screen.findByRole("alert");
+  expect(first).toHaveValue("跨标签保留的草稿");
+  expect(screen.getByRole("button", { name: "保存草稿" })).toBeEnabled();
+  await user.click(screen.getByRole("button", { name: "保存草稿" }));
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "保存草稿" })).toBeDisabled(),
+  );
+  expect(saves).toHaveLength(2);
+  expect(statusButton).toBeEnabled();
+  expect(saves[1].values["step.first"]).toBe("跨标签保留的草稿");
+  await user.click(within(groupTabs).getByRole("tab", { name: "第一项" }));
+  await user.keyboard("{End}");
+  expect(
+    within(groupTabs).getByRole("tab", { name: /^(模板与生成|文件生成)$/ }),
+  ).toHaveFocus();
+  expect(screen.getByRole("region", { name: "核对与生成" })).toBeVisible();
+  await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
+  await screen.findByText("请填写流程字段二");
+  await user.click(screen.getByRole("button", { name: "修改" }));
+  await waitFor(() =>
+    expect(screen.getByLabelText("流程字段二")).toHaveFocus(),
+  );
+  expect(screen.getByRole("tab", { name: "第二项" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  expect(screen.getByLabelText("流程字段一")).toHaveValue("跨标签保留的草稿");
+  expect(confirm).not.toHaveBeenCalled();
+  if (exerciseToolbar) {
+    const templateMenu = within(toolbar).getByLabelText("模板");
+    const moreMenu = within(toolbar).getByLabelText("更多操作");
+    await user.type(screen.getByLabelText("流程字段二"), "工具栏当前草稿");
+    await user.click(moreMenu);
+    await user.clear(screen.getByLabelText("表单名称"));
+    await user.type(screen.getByLabelText("表单名称"), "工具栏表单");
+    await user.keyboard("{Escape}");
+    expect(moreMenu).toHaveFocus();
+    expect(moreMenu.parentElement).not.toHaveAttribute("open");
+    for (const action of ["核对项目资料差异", "存入项目底稿"]) {
+      await user.click(screen.getByRole("tab", { name: "审批资料" }));
+      await user.click(moreMenu);
+      await user.click(within(toolbar).getByRole("button", { name: action }));
+      const comparison = screen.getByRole("dialog", { name: "核对共用资料" });
+      expect(comparison).toBeVisible();
+      expect(screen.getByRole("tab", { name: "内容填写" })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      expect(screen.getByLabelText("流程字段二")).toHaveValue("工具栏当前草稿");
+      await user.click(
+        within(comparison).getByRole("button", { name: "取消" }),
+      );
+    }
+    const exportButton = within(toolbar).getByRole("button", {
+      name: "导出当前 Excel",
+    });
+    await user.click(screen.getByRole("tab", { name: "审批资料" }));
+    await user.click(exportButton);
+    expect(await screen.findByRole("alert")).toBeVisible();
+    expect(screen.getByRole("tab", { name: "内容填写" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(downloads).toHaveLength(0);
+    expect(saves[saves.length - 1].values["step.second"]).toBe(
+      "工具栏当前草稿",
+    );
+    expect(saves[saves.length - 1].name).toBe("工具栏表单");
+    await waitFor(() => expect(exportButton).toBeEnabled());
+    await user.click(exportButton);
+    await waitFor(() =>
+      expect(downloads).toContain("标签页测试项目_填写数据.xlsx"),
+    );
+    expect(await (createToolbarUrl.mock.calls[0][0] as Blob).text()).toBe(
+      "saved-excel-data",
+    );
+    async function openTemplates() {
+      await waitFor(() =>
+        expect(templateMenu).not.toHaveAttribute("aria-disabled", "true"),
+      );
+      if (!templateMenu.parentElement?.hasAttribute("open"))
+        await user.click(templateMenu);
+    }
+    await openTemplates();
+    expect(screen.getByText("阶段模板.docx")).toBeVisible();
+    const picker = screen.getByLabelText("导入 Word 模板");
+    const pickFiles = vi.spyOn(picker, "click");
+    await user.click(within(toolbar).getByRole("button", { name: "导入模板" }));
+    expect(pickFiles).toHaveBeenCalledOnce();
+    await user.upload(picker, [
+      new File(["docx"], "额外模板.docx", {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      }),
+      new File(["xlsx"], "额外表格.xlsx", {
+        type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+      }),
+    ]);
+    await screen.findByText("Word 模板已添加，生成时会保留原有排版。");
+    expect(templateImports[0].map((file) => file.name)).toEqual([
+      "额外模板.docx",
+      "额外表格.xlsx",
+    ]);
+    expect(picker).toHaveValue("");
+    await openTemplates();
+    expect(screen.getByText("额外模板.docx")).toBeVisible();
+    expect(screen.getByText("额外表格.xlsx")).toBeVisible();
+    await user.click(
+      within(toolbar).getByRole("button", { name: "设为本阶段默认模板" }),
+    );
+    await waitFor(() => expect(defaultRevisions).toHaveLength(1));
+    for (const name of ["阶段模板.docx", "额外模板.docx", "额外表格.xlsx"]) {
+      await openTemplates();
+      await user.click(
+        within(toolbar).getByRole("button", { name: "移除模板" + name }),
+      );
+      await waitFor(() =>
+        expect(screen.queryByText(name)).not.toBeInTheDocument(),
+      );
+    }
+    await openTemplates();
+    await user.click(
+      within(toolbar).getByRole("button", { name: "使用默认模板" }),
+    );
+    await screen.findByText("已载入默认 Word 模板。");
+    await openTemplates();
+    expect(screen.getByText("恢复的默认模板.docx")).toBeVisible();
+    await user.keyboard("{Escape}");
+    await user.click(screen.getByRole("tab", { name: "文件生成" }));
+    await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
+    await user.click(await screen.findByRole("checkbox", { name: /我已核对/ }));
+    await openTemplates();
+    await user.upload(
+      picker,
+      new File(["docx"], "核对后模板.docx", {
+        type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+      }),
+    );
+    await screen.findByText("Word 模板已添加，生成时会保留原有排版。");
+    expect(
+      screen.queryByRole("checkbox", { name: /我已核对/ }),
+    ).not.toBeInTheDocument();
+    expect(screen.getByRole("region", { name: "核对与生成" })).toBeVisible();
+    await openTemplates();
+    await user.click(
+      within(toolbar).getByRole("button", { name: "下载配套模板" }),
+    );
+    await waitFor(() => expect(downloads).toContain("文书填报_配套模板.zip"));
+    await user.keyboard("{Escape}");
+    await openTemplates();
+    await user.click(screen.getByRole("tab", { name: "第二项" }));
+    expect(templateMenu.parentElement).not.toHaveAttribute("open");
+    await user.type(screen.getByLabelText("流程字段二"), "尚未保存");
+    await user.click(screen.getByRole("tab", { name: "审批资料" }));
+    expect(exportButton).toBeVisible();
+    const importButton = within(toolbar).getByRole("button", {
+      name: "导入 Excel",
+    });
+    const excelPicker = screen.getByLabelText("导入 Excel 变量表");
+    const pickExcel = vi.spyOn(excelPicker, "click");
+    await user.click(importButton);
+    expect(pickExcel).toHaveBeenCalledOnce();
+    const workbook = new File(["xlsx"], "阶段数据.xlsx", {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
+    await user.upload(excelPicker, workbook);
+    expect(confirm).toHaveBeenCalled();
+    expect(excelImports).toHaveLength(0);
+    expect(screen.getByLabelText("流程字段二")).toHaveValue(
+      "工具栏当前草稿尚未保存",
+    );
+    confirm.mockReturnValueOnce(true);
+    await user.upload(excelPicker, workbook);
+    await waitFor(() => expect(excelImports).toHaveLength(1));
+    await waitFor(() =>
+      expect(screen.getByLabelText("流程字段一")).toBeVisible(),
+    );
+    expect(screen.getByLabelText("流程字段一")).toHaveValue("Excel 导入内容");
+    expect(screen.getByLabelText("流程字段二")).toHaveValue("Excel 完整内容");
+    expect(excelPicker).toHaveValue("");
+  }
+}
+
+it.each(stageIds)(
+  "uses workflow tabs in %s without shared reference blocks and preserves drafts through validation and attachments",
+  async (stageId) => {
+    await exerciseWorkflowTabs(stageId);
+  },
+  30000,
+);
+it("keeps template management, Excel transfers and saving in the live stage toolbar without losing drafts", async () => {
+  await exerciseWorkflowTabs("plan", true);
+}, 45000);
+
+it("restores the live stage header and its actions after returning from overview and basic information", async () => {
+  await exerciseWorkflowTabs("plan", false, true);
+}, 30000);
 
 function formProjectApi(getCase: () => any) {
   let imported = false;
@@ -221,10 +849,21 @@ it("organizes projects into seven stages and keeps material versions and submiss
           change_count: 2,
         };
       material.files.push(uploaded);
-      material.status = "preparing";
+      material.status = uploaded.approval_review ? "done" : "preparing";
+      if (uploaded.approval_review) {
+        Object.assign(project.stages[0], {
+          status: "completed",
+          approval_date: uploaded.approval_review.approved_at,
+          completion_file_id: uploaded.id,
+        });
+      }
       project.revision++;
       return reply(project);
     }
+    if (url.startsWith("/document-forms/projects/project-new/files/"))
+      return new Response("%PDF-1.4 approval", {
+        headers: { "Content-Type": "application/pdf" },
+      });
     if (url.endsWith("/stages/plan/approval/apply")) {
       project.name = "批复项目名称";
       project.fields[0].value = project.name;
@@ -260,6 +899,7 @@ it("organizes projects into seven stages and keeps material versions and submiss
     value: {
       host: {
         React,
+        ReactDOM,
         fetch: hostFetch,
         useTheme: () => "light",
         getSelectedAgentId: () => "default",
@@ -317,7 +957,8 @@ it("organizes projects into seven stages and keeps material versions and submiss
       within(nav).getByRole("button", { name: new RegExp(label) }),
     ).toBeInTheDocument();
   await user.click(within(nav).getByRole("button", { name: /上报计划/ }));
-  await screen.findByRole("heading", { name: "材料清单 1" });
+  await user.click(screen.getByRole("tab", { name: "审批资料" }));
+  await screen.findByRole("heading", { name: "审批资料" });
   expect(screen.getByText(/统一模板待补充/)).toBeInTheDocument();
   expect(
     screen.queryByRole("button", { name: "填写谈判材料" }),
@@ -342,7 +983,7 @@ it("organizes projects into seven stages and keeps material versions and submiss
       type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     }),
   );
-  await user.click(await screen.findByText(/2 份文件.*最新/));
+  await screen.findByText(/2 份文件.*最新/);
   expect(screen.getByText("V2 · 计划材料.docx")).toBeInTheDocument();
   expect(screen.getByText("V1 · 计划材料.docx")).toBeInTheDocument();
   await user.click(screen.getAllByRole("button", { name: "预览" })[0]);
@@ -353,7 +994,9 @@ it("organizes projects into seven stages and keeps material versions and submiss
     ).toBe(true),
   );
   await user.click(screen.getByRole("button", { name: "关闭预览" }));
-  await user.click(screen.getByRole("button", { name: "上传审批文件" }));
+  await user.click(
+    screen.getByRole("button", { name: "上传计划批复或系统回执" }),
+  );
   await user.upload(
     upload,
     new File(["approval"], "计划审批单.pdf", {
@@ -361,6 +1004,27 @@ it("organizes projects into seven stages and keeps material versions and submiss
     }),
   );
   await screen.findByText(/发现 2 项差异/);
+  expect(
+    screen.getByRole("button", { name: "办理信息与状态" }),
+  ).toHaveTextContent("已完成");
+  expect(
+    within(nav).getByRole("button", { name: /上报计划/ }),
+  ).toHaveTextContent("已完成");
+  expect(
+    within(document.querySelector(".df-stage-header") as HTMLElement).getByText(
+      "批复日期 2026-08-06",
+    ),
+  ).toBeInTheDocument();
+  expect(
+    await screen.findByText(/本阶段已自动标记为已完成，批复日期 2026-08-06/),
+  ).toBeInTheDocument();
+  expect(
+    calls.some(
+      (call) =>
+        call.url.endsWith("/stages/plan") && call.body?.status === "completed",
+    ),
+  ).toBe(false);
+  expect(project.name).toBe("储气库项目");
   await user.click(screen.getByRole("button", { name: /查看比对结果/ }));
   const approval = await screen.findByRole("dialog", {
     name: "核对计划审批结果",
@@ -475,6 +1139,7 @@ it("opens the response review agent only in negotiation and starts with explicit
     value: {
       host: {
         React,
+        ReactDOM,
         fetch: hostFetch,
         useTheme: () => "light",
         getSelectedAgentId: () => "default",
@@ -504,6 +1169,7 @@ it("opens the response review agent only in negotiation and starts with explicit
     screen.queryByRole("button", { name: /打开核查智能体/ }),
   ).not.toBeInTheDocument();
   await user.click(within(nav).getByRole("button", { name: /商务谈判/ }));
+  await user.click(screen.getByRole("tab", { name: "响应文件核查" }));
   await user.click(screen.getByRole("button", { name: /打开核查智能体/ }));
   let dialog = await screen.findByRole("dialog", { name: "响应文件核查" });
   await within(dialog).findByLabelText("核查依据");
@@ -762,6 +1428,7 @@ it("keeps a single project form in the middle while questions and Office preview
     value: {
       host: {
         React,
+        ReactDOM,
         fetch: hostFetch,
         useTheme: () => "light",
         getSelectedAgentId: () => "default",
@@ -805,11 +1472,12 @@ it("keeps a single project form in the middle while questions and Office preview
   ).not.toBeInTheDocument();
   expect(screen.getByLabelText("节点办理概况")).toHaveTextContent("今天到期");
   expect(
-    screen.getByRole("heading", { name: /^审批资料与附件/ }),
-  ).toBeVisible();
+    screen.queryByRole("heading", { name: /^审批资料$/ }),
+  ).not.toBeInTheDocument();
 
   await user.clear(field);
   await user.type(field, "正在填写的内容");
+  await user.click(screen.getByRole("tab", { name: "审批资料" }));
   await user.click(screen.getByRole("button", { name: "上传审批回执" }));
   await user.upload(
     screen.getByLabelText("上传阶段材料"),
@@ -821,6 +1489,7 @@ it("keeps a single project form in the middle while questions and Office preview
   expect(screen.getByLabelText("节点办理概况")).toHaveTextContent(
     "审批资料 1/1",
   );
+  await user.click(screen.getByRole("tab", { name: "内容填写" }));
 
   await user.type(
     within(right).getByLabelText("向项目智能体提问"),
@@ -1152,6 +1821,7 @@ it("fills plan-specific information, keeps common fields in the basic profile an
     value: {
       host: {
         React,
+        ReactDOM,
         fetch,
         useTheme: () => "light",
         getSelectedAgentId: () => "default",
@@ -1189,17 +1859,26 @@ it("fills plan-specific information, keeps common fields in the basic profile an
   renderWithProviders(<Page />);
   await user.click(await screen.findByRole("button", { name: /01 上报计划/ }));
   const amount = await screen.findByLabelText("本次申报外协经费（万元）");
+  await user.click(screen.getByRole("tab", { name: "外协必要性" }));
   expect(screen.getByLabelText("外协必要性说明")).toHaveValue(
     "完整背景与外协理由，由这一段直接生成。",
   );
-  expect(screen.getByText(/填写外协必要性说明的完整段落/)).toBeInTheDocument();
+  await user.click(
+    screen.getByRole("button", { name: "外协必要性说明：填写说明" }),
+  );
+  expect(screen.getByRole("tooltip")).toHaveTextContent(
+    /填写外协必要性说明的完整段落/,
+  );
+  await user.keyboard("{Escape}");
   expect(screen.getByLabelText("申报备注").tagName).toBe("INPUT");
   expect(screen.getByLabelText("单位1")).toHaveValue("计划甲单位");
   expect(screen.getByLabelText("单位2")).toHaveValue("计划乙单位");
   expect(screen.getByLabelText("单位3")).toHaveValue("计划丙单位");
+  await user.click(screen.getByRole("tab", { name: "拟合作单位" }));
   await user.clear(screen.getByLabelText("单位1"));
   await user.clear(screen.getByLabelText("单位2"));
   await user.type(screen.getByLabelText("单位2"), "计划乙单位（修改）");
+  await user.click(screen.getByRole("tab", { name: "申报信息" }));
   await user.type(screen.getByLabelText("申报备注"), "按计划申报");
   expect(screen.queryByLabelText("研究内容")).not.toBeInTheDocument();
   expect(
@@ -1207,7 +1886,9 @@ it("fills plan-specific information, keeps common fields in the basic profile an
   ).not.toBeInTheDocument();
   await user.clear(amount);
   await user.type(amount, "48.5");
-  await user.click(screen.getByRole("button", { name: "编辑基础信息" }));
+  await user.click(screen.getByRole("button", { name: "保存草稿" }));
+  await waitFor(() => expect(saved).toHaveLength(1));
+  await user.click(screen.getByRole("button", { name: "基础信息填报" }));
   await screen.findByRole("heading", { name: "基础信息填报" });
   expect(saved[0].values["plan.budget_wan"]).toBe("48.5");
   expect(saved[0].values["plan.partners"]).toBe(
@@ -1223,13 +1904,22 @@ it("fills plan-specific information, keeps common fields in the basic profile an
   expect(screen.getByLabelText("单位2")).toHaveValue("计划乙单位（修改）");
   expect(screen.getByLabelText("单位3")).toHaveValue("计划丙单位");
   expect(screen.getByLabelText("申报备注")).toHaveValue("按计划申报");
+  await user.click(screen.getByRole("tab", { name: "拟合作单位" }));
   await user.type(screen.getByLabelText("单位1"), "计划甲单位");
+  await user.click(
+    screen.getByRole("tab", { name: /^(模板与生成|文件生成)$/ }),
+  );
   expect(
-    screen.getByText("按本次填写内容生成 Word 说明与 Excel 计划表。"),
+    within(screen.getByRole("region", { name: "核对与生成" })).getByText(
+      /本次计划生成/,
+    ),
   ).toBeInTheDocument();
   expect(screen.queryByText(/0 类按单位文书/)).not.toBeInTheDocument();
   await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
   await user.click(await screen.findByRole("checkbox", { name: /我已核对/ }));
+  await user.click(screen.getByRole("tab", { name: "审批资料" }));
+  await user.click(screen.getByRole("tab", { name: "内容填写" }));
+  expect(screen.getByRole("checkbox", { name: /我已核对/ })).toBeChecked();
   await user.click(screen.getByRole("button", { name: "确认并生成 2 份文书" }));
   const dock = screen.getByRole("complementary", {
     name: "项目智能体与文件预览",
@@ -1384,6 +2074,7 @@ it("reviews shared project differences before selectively updating a stage form 
     value: {
       host: {
         React,
+        ReactDOM,
         fetch: hostFetch,
         useTheme: () => "light",
         getSelectedAgentId: () => "default",
@@ -1432,7 +2123,10 @@ it("reviews shared project differences before selectively updating a stage form 
   );
   await screen.findByText("所选资料已同步，请重新核对后生成新版文书。");
   expect(screen.getByLabelText("项目名称")).toHaveValue("项目统一名称");
-  expect(screen.getByLabelText("研究内容")).toHaveValue("原有研究内容");
+  await user.click(screen.getByRole("tab", { name: "项目研究内容" }));
+  expect(screen.getByRole("textbox", { name: "研究内容" })).toHaveValue(
+    "原有研究内容",
+  );
   expect(calls.filter((call) => call.url.endsWith("/sync"))).toHaveLength(1);
 }, 30000);
 
@@ -1501,6 +2195,7 @@ it("automatically loads the five bundled templates and downloads their blank Exc
     value: {
       host: {
         React,
+        ReactDOM,
         fetch: hostFetch,
         useTheme: () => "light",
         getSelectedAgentId: () => "default",
@@ -1760,6 +2455,7 @@ describe.each(["embedded", "compatible"])(
         value: {
           host: {
             React,
+            ReactDOM,
             fetch: hostFetch,
             useTheme: () => "light",
             useSelectedAgent: () => ({ id: "default" }),
@@ -1805,6 +2501,7 @@ describe.each(["embedded", "compatible"])(
       expect(screen.getByLabelText("谈判时段")).toHaveValue(
         "2026年10月22日下午14:30至17:30",
       );
+      await user.click(screen.getByRole("tab", { name: "项目研究内容" }));
       const paragraphs = screen.getByRole("textbox", {
         name: "研究内容（整段）",
       });
@@ -1812,6 +2509,7 @@ describe.each(["embedded", "compatible"])(
       expect(paragraphs).toHaveValue("第一项\n第二项");
       expect(paragraphs).toHaveAttribute("rows", "3");
       await user.type(paragraphs, "\n第三项");
+      await user.click(screen.getByRole("tab", { name: "受邀单位与资格要求" }));
       await user.click(screen.getByRole("button", { name: "＋ 添加单位" }));
       await user.click(screen.getByRole("button", { name: "＋ 添加单位" }));
       expect(screen.getByLabelText("第2家领取开始时间")).toHaveValue(
@@ -1862,6 +2560,9 @@ describe.each(["embedded", "compatible"])(
           type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         }),
       ]);
+      await user.click(
+        screen.getByRole("tab", { name: /^(模板与生成|文件生成)$/ }),
+      );
       await screen.findByText("按受邀单位分别生成");
       expect(screen.getByText("02_综合评分表_模板.docx")).toBeInTheDocument();
       expect(
@@ -1871,8 +2572,12 @@ describe.each(["embedded", "compatible"])(
       expect(state.recipients[1].follow_end).toBe(false);
       await user.click(screen.getByRole("button", { name: "设为默认模板" }));
       await screen.findByText("已设为本机默认模板，以后新建填报会自动载入。");
+      await user.click(screen.getByRole("tab", { name: "受邀单位与资格要求" }));
       await user.click(screen.getByRole("button", { name: "移除第3家单位" }));
       await user.click(screen.getByRole("button", { name: "移除第2家单位" }));
+      await user.click(
+        screen.getByRole("tab", { name: /^(模板与生成|文件生成)$/ }),
+      );
       const generationFooter = screen.getByRole("region", {
         name: "核对与生成",
       });
@@ -1888,8 +2593,12 @@ describe.each(["embedded", "compatible"])(
           .compareDocumentPosition(generationFooter) &
           Node.DOCUMENT_POSITION_FOLLOWING,
       ).toBeTruthy();
+      await user.click(screen.getByRole("tab", { name: "项目研究内容" }));
       await user.clear(screen.getByLabelText("项目名称"));
       await user.type(screen.getByLabelText("项目名称"), "新项目");
+      await user.click(
+        screen.getByRole("tab", { name: /^(模板与生成|文件生成)$/ }),
+      );
       await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
       await screen.findByText("资料已齐备，请确认本次内容。");
       expect(
@@ -2016,7 +2725,7 @@ describe.each(["embedded", "compatible"])(
     }, 45000);
   },
 );
-it("fills selection opinion and upload fields with shared project references and previews generated files", async () => {
+async function exerciseSelectionPage(linked = false, paste = false) {
   const user = userEvent.setup();
   let Page: React.ComponentType = () => null;
   const common = [
@@ -2113,6 +2822,71 @@ it("fills selection opinion and upload fields with shared project references and
       },
     ],
   };
+  const savedValues: any[] = [];
+  const reliabilityPrefix =
+    "《论证测试项目》为2026年审查通过的技术服务实施计划，计划金额为45万元。依托《依托主项目》，WBS编码WBS-001，依托项目经费为200万元，";
+  const reliabilityTemplate =
+    "《【project.name】》为2026年审查通过的技术服务实施计划，计划金额为【selection.budget_wan】万元。依托《【funding.project_name】》，WBS编码【funding.wbs】，依托项目经费为【funding.amount_wan】万元，可靠性保留意见。";
+  const candidateTemplate =
+    "通过调研优选三家单位，分别为【selection.partner1_name】、【selection.partner2_name】、【selection.partner3_name】。需补充资质证据。";
+  const linkedVariables = {
+    "project.name": "论证测试项目",
+    "selection.budget_wan": "45",
+    "funding.project_name": "依托主项目",
+    "funding.wbs": "WBS-001",
+    "funding.amount_wan": "200",
+    "selection.partner1_name": "候选甲",
+    "selection.partner2_name": "候选乙",
+    "selection.partner3_name": "论证第三家",
+  };
+  const makeLinkedParts = (
+    template: string,
+    variables: Record<string, string>,
+  ) =>
+    template.split(/【([^】]+)】/g).map((text, index) =>
+      index % 2
+        ? {
+            field: text,
+            label: text === "project.name" ? "项目名称" : "引用资料",
+            value: variables[text],
+          }
+        : text,
+    );
+  if (linked) {
+    state.fields.push(
+      ...[1, 2].map((index) => ({
+        key: "selection.partner" + index + "_name",
+        label: "单位" + index,
+        group: "候选单位 " + index,
+        kind: "text",
+        value: index === 1 ? "候选甲" : "候选乙",
+        required: true,
+      })),
+      {
+        key: "selection.reliability",
+        label: "计划和依托项目的可靠性",
+        group: "论证意见",
+        kind: "textarea",
+        required: true,
+        linked_parts: makeLinkedParts(reliabilityTemplate, linkedVariables),
+        linked_template: reliabilityTemplate,
+        linked_variables: linkedVariables,
+        value: reliabilityPrefix + "可靠性保留意见。",
+      },
+      {
+        key: "selection.qualification_review",
+        label: "候选单位调研与资质审查意见",
+        group: "论证意见",
+        kind: "textarea",
+        required: true,
+        linked_parts: makeLinkedParts(candidateTemplate, linkedVariables),
+        linked_template: candidateTemplate,
+        linked_variables: linkedVariables,
+        value:
+          "通过调研优选三家单位，分别为候选甲、候选乙、论证第三家。需补充资质证据。",
+      },
+    );
+  }
   for (let index = 1; index <= 5; index++) {
     for (const [column, label, value] of [
       ["name", "姓名", "测试成员"],
@@ -2175,21 +2949,47 @@ it("fills selection opinion and upload fields with shared project references and
     if (url === "/document-forms/cases/selection-case") {
       if (init?.method === "PUT") {
         const body = JSON.parse(String(init.body));
+        savedValues.push(body.values);
         state.fields = state.fields.map((f: any) => ({
           ...f,
           value: body.values[f.key],
         }));
+        if (linked) {
+          for (const field of state.fields.filter(
+            (f: any) => f.linked_template,
+          )) {
+            expect(body.opinion_templates[field.key]).toBeDefined();
+            field.linked_template = body.opinion_templates[field.key];
+            field.linked_parts = makeLinkedParts(field.linked_template, {
+              ...linkedVariables,
+              "selection.partner3_name": "新第三家",
+            });
+          }
+        }
         state.revision++;
       }
       return reply(state);
     }
-    if (url.endsWith("/review"))
+    if (url.endsWith("/review")) {
+      const memberName = state.fields.find(
+        (f: any) => f.key === "selection.member1_name",
+      ).value;
       return reply({
-        checks: [],
-        can_generate: true,
+        checks: memberName
+          ? []
+          : [
+              {
+                status: "missing",
+                field: "selection.member1_name",
+                label: "成员1姓名",
+                detail: "请补充成员姓名",
+              },
+            ],
+        can_generate: !!memberName,
         review_token: "selection-token",
         revision: state.revision,
       });
+    }
     if (url.endsWith("/generate")) {
       expect(JSON.parse(String(init?.body))).toMatchObject({
         confirmed: true,
@@ -2232,6 +3032,7 @@ it("fills selection opinion and upload fields with shared project references and
     value: {
       host: {
         React,
+        ReactDOM,
         fetch,
         useTheme: () => "light",
         getSelectedAgentId: () => "default",
@@ -2265,6 +3066,41 @@ it("fills selection opinion and upload fields with shared project references and
   await user.click(await screen.findByRole("button", { name: /02 选商论证/ }));
   expect(await screen.findByLabelText("本次论证预算（万元）")).toHaveValue(45);
   expect(screen.getByLabelText("单位3")).toHaveValue("论证第三家");
+  if (linked) {
+    await user.click(screen.getByRole("tab", { name: "候选单位" }));
+    await user.clear(screen.getByLabelText("单位3"));
+    await user.type(screen.getByLabelText("单位3"), "新第三家");
+    await user.click(screen.getByRole("tab", { name: "论证意见" }));
+    const reliability = screen.getByRole("textbox", {
+      name: "计划和依托项目的可靠性",
+    });
+    expect(reliability).toHaveTextContent(
+      "《【论证测试项目】》为2026年审查通过的技术服务实施计划，计划金额为【45】万元。",
+    );
+    expect(reliability).toHaveTextContent("可靠性保留意见。");
+    expect(
+      screen.queryByLabelText("计划和依托项目的可靠性引用资料"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(reliability).getByLabelText("项目名称：论证测试项目"),
+    ).toHaveAttribute("contenteditable", "false");
+    const opinion = screen.getByRole("textbox", {
+      name: "候选单位调研与资质审查意见",
+    });
+    expect(opinion).toHaveTextContent(
+      "通过调研优选三家单位，分别为【候选甲】、【候选乙】、【新第三家】。需补充资质证据。",
+    );
+    await user.click(opinion);
+    const caret = document.createRange();
+    caret.setStart(opinion.lastChild!, opinion.lastChild!.textContent!.length);
+    caret.collapse(true);
+    window.getSelection()!.removeAllRanges();
+    window.getSelection()!.addRange(caret);
+    await user.keyboard("另需确认授权。");
+    expect(opinion).toHaveTextContent("需补充资质证据。另需确认授权。");
+  }
+
+  await user.click(screen.getByRole("tab", { name: "论证成员" }));
   const memberTable = screen.getByRole("table");
   expect(within(memberTable).getAllByRole("row")).toHaveLength(6);
   expect(
@@ -2274,6 +3110,8 @@ it("fills selection opinion and upload fields with shared project references and
   expect(unit).toHaveAttribute("list", "df-options-selection.member1_unit");
   await user.clear(unit);
   await user.type(unit, "自填单位");
+  await user.clear(within(memberTable).getByLabelText("成员1姓名"));
+  await user.click(screen.getByRole("tab", { name: "非招标方案" }));
   expect(screen.getByLabelText("本次论证预算（万元）")).toHaveAttribute(
     "readonly",
   );
@@ -2308,8 +3146,24 @@ it("fills selection opinion and upload fields with shared project references and
     screen.queryByRole("heading", { name: /受邀单位/ }),
   ).not.toBeInTheDocument();
   expect(screen.queryByLabelText("项目名称")).not.toBeInTheDocument();
+  await user.click(screen.getByRole("tab", { name: "论证意见" }));
   await user.clear(screen.getByLabelText("项目概况"));
   await user.type(screen.getByLabelText("项目概况"), "核对后的项目概况");
+  await user.click(
+    screen.getByRole("tab", { name: /^(模板与生成|文件生成)$/ }),
+  );
+  await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
+  await screen.findByText("请补充成员姓名");
+  await user.click(screen.getByRole("button", { name: "修改" }));
+  await waitFor(() => expect(screen.getByLabelText("成员1姓名")).toHaveFocus());
+  expect(screen.getByRole("tab", { name: "论证成员" })).toHaveAttribute(
+    "aria-selected",
+    "true",
+  );
+  await user.type(screen.getByLabelText("成员1姓名"), "测试成员");
+  await user.click(
+    screen.getByRole("tab", { name: /^(模板与生成|文件生成)$/ }),
+  );
   await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
   expect(
     screen.getByRole("button", { name: "确认并生成 2 份文书" }),
@@ -2333,7 +3187,8 @@ it("fills selection opinion and upload fields with shared project references and
     "非招标方案填报",
   );
   expect(previews[previews.length - 1]).toMatchObject({ extension: "xlsx" });
-  await user.click(screen.getByRole("button", { name: "填写内容" }));
+  await user.click(screen.getByRole("tab", { name: "内容填写" }));
+  await user.click(screen.getByRole("tab", { name: "非招标方案" }));
   expect(screen.getByLabelText("项目概况")).toHaveValue("核对后的项目概况");
   expect(screen.getByLabelText("成员1单位")).toHaveValue("自填单位");
   expect(screen.getByRole("combobox", { name: "依托计划类型" })).toHaveValue(
@@ -2347,8 +3202,747 @@ it("fills selection opinion and upload fields with shared project references and
     screen.queryByRole("button", { name: "← 返回选商论证" }),
   ).not.toBeInTheDocument();
   expect(screen.queryByLabelText("填写流程")).not.toBeInTheDocument();
-  expect(
-    screen.getByRole("heading", { name: /^审批资料与附件/ }),
-  ).toBeVisible();
+  await user.click(screen.getByRole("tab", { name: "审批资料" }));
+  expect(screen.getByRole("heading", { name: /^审批资料$/ })).toBeVisible();
+  await user.click(screen.getByRole("tab", { name: "内容填写" }));
   expect(screen.getByLabelText("项目概况")).toHaveValue("核对后的项目概况");
+  if (linked) {
+    expect(savedValues[0]["selection.reliability"]).toBe(
+      reliabilityPrefix + "可靠性保留意见。",
+    );
+    expect(savedValues[0]["selection.qualification_review"]).toBe(
+      "通过调研优选三家单位，分别为候选甲、候选乙、新第三家。需补充资质证据。另需确认授权。",
+    );
+    await user.click(screen.getByRole("tab", { name: "论证意见" }));
+    expect(
+      screen.getByRole("textbox", { name: "候选单位调研与资质审查意见" }),
+    ).toHaveTextContent(
+      "通过调研优选三家单位，分别为【候选甲】、【候选乙】、【新第三家】。需补充资质证据。另需确认授权。",
+    );
+    expect(
+      state.fields.find((f: any) => f.key === "selection.budget_wan").value,
+    ).toBe("45");
+    if (paste) {
+      const editor = screen.getByRole("textbox", {
+        name: "候选单位调研与资质审查意见",
+      });
+      await user.click(editor);
+      const selected = document.createRange();
+      selected.selectNodeContents(editor);
+      window.getSelection()!.removeAllRanges();
+      window.getSelection()!.addRange(selected);
+      await user.paste(
+        "保留我的原句。\n<img src=x onerror=alert(1)>仅作为文字。",
+      );
+      expect(editor.textContent).toBe(
+        "保留我的原句。\n<img src=x onerror=alert(1)>仅作为文字。",
+      );
+      expect(editor.querySelector("img")).toBeNull();
+      await user.click(screen.getByRole("button", { name: "保存草稿" }));
+      expect(
+        savedValues[savedValues.length - 1]["selection.qualification_review"],
+      ).toBe("保留我的原句。\n<img src=x onerror=alert(1)>仅作为文字。");
+    }
+  }
+}
+
+it("fills selection opinion and upload fields with shared project references and previews generated files", async () => {
+  await exerciseSelectionPage();
+}, 30000);
+it("links selection opinion facts to approval and candidate fields while preserving authored findings", async () => {
+  await exerciseSelectionPage(true);
+}, 30000);
+// This runs the full selection/generation workflow before testing inline
+// editing, plain-text paste and saving; individual waits retain their budgets.
+it("edits inline opinion prose and pastes plain text without detached reference blocks or HTML", async () => {
+  await exerciseSelectionPage(true, true);
+}, 45000);
+
+it("imports shared information from the existing Excel template into a reviewed profile draft and preserves blank and unselected values", async () => {
+  const user = userEvent.setup();
+  let Page: React.ComponentType = () => null;
+  const project: any = {
+    id: "profile-import",
+    name: "原项目",
+    code: "P001",
+    owner: "经办人",
+    revision: 1,
+    fields: [
+      {
+        key: "project.name",
+        label: "项目名称",
+        group: "项目资料",
+        kind: "text",
+        value: "原项目",
+      },
+      {
+        key: "project.code",
+        label: "项目编号",
+        group: "项目资料",
+        kind: "text",
+        value: "P001",
+      },
+      {
+        key: "contact.name",
+        label: "项目联系人",
+        group: "单位与联系",
+        kind: "text",
+        value: "原联系人",
+      },
+      {
+        key: "contact.phone",
+        label: "办公电话",
+        group: "单位与联系",
+        kind: "text",
+        value: "010-12345678",
+      },
+    ],
+    stages: [],
+    forms: [],
+    single_form: true,
+  };
+  let fail = true;
+  const saves: any[] = [];
+  const hostFetch = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === "/document-forms/projects") return reply([project]);
+    if (url.endsWith("/assistant")) return reply({ messages: [] });
+    if (url === "/document-forms/projects/profile-import/profile/import") {
+      expect(init?.body).toBeInstanceOf(FormData);
+      expect((init?.body as FormData).get("revision")).toBe("1");
+      expect(((init?.body as FormData).get("workbook") as File).name).toBe(
+        "之前的模板.xlsx",
+      );
+      if (fail) {
+        fail = false;
+        return new Response(JSON.stringify({ detail: "Excel 缺少变量配置" }), {
+          status: 422,
+        });
+      }
+      return reply({
+        revision: 1,
+        fields: [
+          { ...project.fields[0], value: "Excel 项目" },
+          { ...project.fields[2], value: "Excel 联系人" },
+        ],
+      });
+    }
+    if (url === "/document-forms/projects/profile-import") {
+      if (init?.method === "PUT") {
+        const body = JSON.parse(String(init.body));
+        saves.push(body);
+        project.name = body.name;
+        project.code = body.code;
+        project.owner = body.owner;
+        project.fields = project.fields.map((f: any) => ({
+          ...f,
+          value: body.values[f.key],
+        }));
+        project.revision++;
+      }
+      return reply(project);
+    }
+    throw new Error("Unexpected profile import request: " + url);
+  });
+  Object.defineProperty(window, "QwenPaw", {
+    configurable: true,
+    value: {
+      host: {
+        React,
+        ReactDOM,
+        fetch: hostFetch,
+        useTheme: () => "light",
+        getSelectedAgentId: () => "default",
+      },
+      workspace: {},
+      registerRoutes: (_id: string, routes: any[]) => {
+        Page = routes[0].component;
+      },
+    },
+  });
+  await act(async () => {
+    new Function(
+      "window",
+      fs.readFileSync(
+        path.resolve(
+          process.cwd(),
+          "../plugins/apps/document-forms/ui/index.js",
+        ),
+        "utf8",
+      ),
+    )(window);
+  });
+  renderWithProviders(<Page />);
+  await user.click(await screen.findByRole("button", { name: "基础信息填报" }));
+  const phone = screen.getByLabelText("办公电话");
+  await user.clear(phone);
+  await user.type(phone, "010-87654321");
+  const file = new File(["xlsx"], "之前的模板.xlsx", {
+    type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  });
+  await user.upload(screen.getByLabelText("导入基础信息 Excel"), file);
+  expect(await screen.findByRole("alert")).toHaveTextContent(
+    "Excel 缺少变量配置",
+  );
+  expect(phone).toHaveValue("010-87654321");
+  await user.upload(screen.getByLabelText("导入基础信息 Excel"), file);
+  const preview = await screen.findByRole("dialog", { name: "导入基础信息" });
+  expect(preview).toHaveTextContent("Excel 项目");
+  expect(saves).toHaveLength(0);
+  await user.click(within(preview).getByRole("button", { name: "取消" }));
+  expect(screen.getByLabelText("项目名称")).toHaveValue("原项目");
+  await user.upload(screen.getByLabelText("导入基础信息 Excel"), file);
+  const dialog = await screen.findByRole("dialog", { name: "导入基础信息" });
+  await user.click(
+    within(dialog).getByRole("checkbox", { name: "导入项目联系人" }),
+  );
+  await user.click(
+    within(dialog).getByRole("button", { name: "应用到基础信息" }),
+  );
+  expect(screen.getByLabelText("项目名称")).toHaveValue("Excel 项目");
+  expect(screen.getByLabelText("项目联系人")).toHaveValue("原联系人");
+  expect(phone).toHaveValue("010-87654321");
+  expect(saves).toHaveLength(0);
+  await user.click(screen.getAllByRole("button", { name: "保存基础信息" })[0]);
+  await waitFor(() => expect(saves).toHaveLength(1));
+  expect(saves[0]).toMatchObject({
+    name: "Excel 项目",
+    code: "P001",
+    owner: "经办人",
+    values: { "contact.name": "原联系人", "contact.phone": "010-87654321" },
+  });
+}, 30000);
+
+async function exerciseApprovalViewer(deleting = false) {
+  const user = userEvent.setup();
+  let Page: React.ComponentType = () => null;
+  const files = [
+    {
+      id: "approval-pdf",
+      name: "批复.pdf",
+      mime: "application/pdf",
+      size: 10,
+      uploaded_at: "2026-11-02T00:00:00Z",
+    },
+    {
+      id: "approval-image",
+      name: "签章.png",
+      mime: "image/png",
+      size: 10,
+      uploaded_at: "2026-11-02T01:00:00Z",
+    },
+  ];
+  files.forEach((file, index) => Object.assign(file, { version: index + 1 }));
+  const project: any = {
+    id: "approval-project",
+    name: "审批预览项目",
+    code: "",
+    owner: "",
+    revision: 1,
+    fields: [],
+    forms: [],
+    stages: [
+      {
+        id: "plan",
+        title: "上报计划",
+        status: "pending",
+        upstream_changed: [],
+        missing_required: [],
+        due_date: "",
+        notes: "",
+        system_name: "",
+        system_url: "",
+        submission_ref: "",
+        materials: [
+          {
+            id: "approval",
+            name: "计划批复或系统回执",
+            required: false,
+            status: "preparing",
+            note: "",
+            files,
+          },
+          {
+            id: "other",
+            name: "科研计划填报表",
+            required: false,
+            status: "preparing",
+            note: "",
+            files: [
+              {
+                id: "other-excel",
+                name: "计划填报.xlsx",
+                mime: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                size: 10,
+                uploaded_at: "2026-11-02T00:00:00Z",
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  };
+  let failPdf = true;
+  const loadPreview = vi.fn();
+  const loadPdfPreview = vi.fn(async () => ({ url }: { url: string }) => (
+    <div data-testid="inline-pdf-reader">{url}</div>
+  ));
+  const binaryCalls: string[] = [];
+  let deleteCalls = 0,
+    restoreCalls = 0;
+  const trash = new Map<string, any>();
+  const hostFetch = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === "/document-forms/projects") return reply([project]);
+    if (url === "/document-forms/projects/approval-project")
+      return reply(project);
+    if (url.endsWith("/assistant")) return reply({ messages: [] });
+    if (init?.method === "DELETE") {
+      deleteCalls++;
+      expect(JSON.parse(String(init.body)).revision).toBe(project.revision);
+      if (deleteCalls === 1)
+        return new Response(JSON.stringify({ detail: "删除失败，请重试" }), {
+          status: 503,
+        });
+      const id = url.split("/").slice(-1)[0] as string;
+      const material = project.stages[0].materials[0];
+      const file = material.files.find((f: any) => f.id === id);
+      expect(file).toBeTruthy();
+      trash.set(id, file);
+      material.files = material.files.filter((f: any) => f.id !== id);
+      if (!material.files.length) material.status = "pending";
+      project.revision++;
+      return reply(project);
+    }
+    if (url.endsWith("/restore")) {
+      restoreCalls++;
+      expect(JSON.parse(String(init?.body)).revision).toBe(project.revision);
+      if (restoreCalls === 1)
+        return new Response(JSON.stringify({ detail: "恢复失败，请重试" }), {
+          status: 503,
+        });
+      const id = url.split("/").slice(-2)[0] as string;
+      const material = project.stages[0].materials[0];
+      material.files.push(trash.get(id));
+      trash.delete(id);
+      material.files.sort((a: any, b: any) => a.version - b.version);
+      project.revision++;
+      return reply(project);
+    }
+    if (url.includes("/files/")) {
+      expect(init?.headers).toEqual({ "X-Agent-Id": "default" });
+      expect(init?.signal).toBeInstanceOf(AbortSignal);
+      binaryCalls.push(url);
+      if (url.endsWith("approval-pdf") && failPdf) {
+        failPdf = false;
+        return new Response("retry", { status: 503 });
+      }
+      return new Response("bytes", {
+        headers: {
+          "Content-Type": url.endsWith("approval-pdf")
+            ? "application/pdf"
+            : "image/png",
+        },
+      });
+    }
+    throw new Error("Unexpected approval viewer request: " + url);
+  });
+  let created = 0;
+  const revoke = vi.fn();
+  vi.stubGlobal(
+    "URL",
+    Object.assign(class extends URL {}, {
+      createObjectURL: () => "blob:approval-" + ++created,
+      revokeObjectURL: revoke,
+    }),
+  );
+  Object.defineProperty(window, "QwenPaw", {
+    configurable: true,
+    value: {
+      host: {
+        React,
+        ReactDOM,
+        fetch: hostFetch,
+        useTheme: () => "light",
+        getSelectedAgentId: () => "default",
+      },
+      workspace: { loadPreview, loadPdfPreview },
+      registerRoutes: (_id: string, routes: any[]) => {
+        Page = routes[0].component;
+      },
+    },
+  });
+  await act(async () =>
+    new Function(
+      "window",
+      fs.readFileSync(
+        path.resolve(
+          process.cwd(),
+          "../plugins/apps/document-forms/ui/index.js",
+        ),
+        "utf8",
+      ),
+    )(window),
+  );
+  const view = renderWithProviders(<Page />);
+  await user.click(await screen.findByRole("button", { name: /01 上报计划/ }));
+  expect(binaryCalls).toHaveLength(0);
+  await user.click(screen.getByRole("tab", { name: "审批资料" }));
+  expect(await screen.findByRole("img", { name: "签章.png" })).toBeVisible();
+  expect(binaryCalls).toEqual([
+    "/document-forms/projects/approval-project/files/approval-image",
+  ]);
+  expect(loadPreview).not.toHaveBeenCalled();
+  expect(screen.queryByText("科研计划填报表")).not.toBeVisible();
+  await user.click(screen.getByRole("tab", { name: "其他附件" }));
+  expect(screen.getByRole("heading", { name: "其他附件 1" })).toBeVisible();
+  expect(screen.getByText("科研计划填报表")).toBeVisible();
+  expect(
+    screen.queryByRole("img", { name: "签章.png" }),
+  ).not.toBeInTheDocument();
+  expect(binaryCalls).toHaveLength(1);
+  await user.click(screen.getByRole("tab", { name: "审批资料" }));
+  expect(screen.getByRole("img", { name: "签章.png" })).toBeVisible();
+  expect(binaryCalls).toHaveLength(1);
+  await user.selectOptions(
+    screen.getByRole("combobox", { name: "审批文件版本" }),
+    "approval-pdf",
+  );
+  expect(await screen.findByRole("alert")).toHaveTextContent("文件未能打开");
+  await user.click(screen.getByRole("button", { name: "重新加载审批文件" }));
+  expect(await screen.findByTestId("inline-pdf-reader")).toHaveTextContent(
+    "blob:approval-2",
+  );
+  expect(loadPdfPreview).toHaveBeenCalledTimes(1);
+  expect(typeof (await createWorkspaceNamespace().loadPdfPreview())).toBe(
+    "function",
+  );
+  await user.selectOptions(
+    screen.getByRole("combobox", { name: "审批文件版本" }),
+    "approval-image",
+  );
+  expect(screen.getByRole("img", { name: "签章.png" })).toHaveAttribute(
+    "src",
+    "blob:approval-1",
+  );
+  expect(binaryCalls).toHaveLength(3);
+  expect(loadPreview).not.toHaveBeenCalled();
+  if (deleting) {
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "审批文件版本" }),
+      "approval-pdf",
+    );
+    await user.click(screen.getByRole("button", { name: "删除批复.pdf版本1" }));
+    let dialog = screen.getByRole("dialog", { name: "删除审批文件" });
+    expect(dialog).toHaveTextContent("V1 · 批复.pdf");
+    expect(deleteCalls).toBe(0);
+    await user.click(within(dialog).getByRole("button", { name: "取消" }));
+    expect(deleteCalls).toBe(0);
+    expect(screen.getByTestId("inline-pdf-reader")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "删除批复.pdf版本1" }));
+    dialog = screen.getByRole("dialog", { name: "删除审批文件" });
+    await user.click(within(dialog).getByRole("button", { name: "确认删除" }));
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "删除失败，请重试",
+    );
+    expect(screen.getByTestId("inline-pdf-reader")).toBeInTheDocument();
+    expect(revoke).not.toHaveBeenCalledWith("blob:approval-2");
+    await user.click(within(dialog).getByRole("button", { name: "确认删除" }));
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    expect(screen.getByRole("img", { name: "签章.png" })).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "审批文件版本" })).toHaveValue(
+      "approval-image",
+    );
+    expect(
+      screen.getByRole("option", { name: "V2 · 签章.png" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("option", { name: "V1 · 批复.pdf" }),
+    ).not.toBeInTheDocument();
+    expect(revoke).toHaveBeenCalledWith("blob:approval-2");
+    await user.click(screen.getByRole("button", { name: "撤销删除" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "恢复失败，请重试",
+    );
+    expect(screen.getByRole("button", { name: "撤销删除" })).toBeEnabled();
+    await user.click(screen.getByRole("button", { name: "撤销删除" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("option", { name: "V1 · 批复.pdf" }),
+      ).toBeInTheDocument(),
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "审批文件版本" }),
+      "approval-pdf",
+    );
+    expect(await screen.findByTestId("inline-pdf-reader")).toHaveTextContent(
+      "blob:approval-3",
+    );
+    expect(binaryCalls).toHaveLength(4);
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "审批文件版本" }),
+      "approval-image",
+    );
+    await user.click(screen.getByRole("button", { name: "删除签章.png版本2" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "删除审批文件" })).getByRole(
+        "button",
+        { name: "确认删除" },
+      ),
+    );
+    await waitFor(() =>
+      expect(screen.queryByRole("dialog")).not.toBeInTheDocument(),
+    );
+    await user.click(screen.getByRole("button", { name: "删除批复.pdf版本1" }));
+    await user.click(
+      within(screen.getByRole("dialog", { name: "删除审批文件" })).getByRole(
+        "button",
+        { name: "确认删除" },
+      ),
+    );
+    expect(await screen.findByText("尚未上传审批文件")).toBeVisible();
+    expect(
+      screen.queryByRole("combobox", { name: "审批文件版本" }),
+    ).not.toBeInTheDocument();
+    expect(screen.queryByTestId("inline-pdf-reader")).not.toBeInTheDocument();
+    expect(revoke).toHaveBeenCalledWith("blob:approval-3");
+    await user.click(screen.getByRole("button", { name: "撤销删除" }));
+    expect(await screen.findByTestId("inline-pdf-reader")).toHaveTextContent(
+      "blob:approval-4",
+    );
+    expect(
+      screen.getByRole("option", { name: "V1 · 批复.pdf" }),
+    ).toBeInTheDocument();
+    expect(deleteCalls).toBe(4);
+  }
+  view.unmount();
+  expect(revoke).toHaveBeenCalledWith("blob:approval-1");
+  expect(revoke).toHaveBeenCalledWith("blob:approval-2");
+}
+
+it("separates approval documents from other attachments and lazily reuses direct PDF and image previews with retry", async () => {
+  await exerciseApprovalViewer();
+}, 30000);
+it("deletes only the confirmed approval version, preserves numbering and preview state, and supports retry and undo", async () => {
+  await exerciseApprovalViewer(true);
+}, 30000);
+
+it("groups negotiation content into five ordered tabs without duplicating fields and keeps recipients, drafts and issue navigation", async () => {
+  const user = userEvent.setup();
+  let Page: React.ComponentType = () => null;
+  const definitions = [
+    ["project.name", "项目名称", "项目资料"],
+    ["project.background", "项目背景", "项目资料"],
+    ["project.task", "项目任务", "项目资料"],
+    ["research.contents", "研究内容", "研究内容"],
+    ["research.technical_requirements", "技术要求", "研究内容"],
+    ["deliverables.results", "预期成果", "成果与考核"],
+    ["metrics.criteria", "考核指标", "成果与考核"],
+    ["workload.items", "实物工作量", "研究内容"],
+    ["milestones.schedule", "进度安排", "进度安排"],
+    ["qualification.start_year", "资质起始年份", "资格要求"],
+    ["events.negotiation_time", "谈判时间", "日期安排"],
+    ["place.negotiation", "谈判地点", "地点安排"],
+    ["contact.name", "联系人", "单位与联系"],
+    ["budget.ceiling_number", "最高限价", "费用信息"],
+    ["implementation.year", "实施年度", "服务选商实施方案"],
+  ];
+  const state: any = {
+    id: "grouped-case",
+    name: "商务谈判",
+    stage_id: "negotiation",
+    revision: 1,
+    updated_at: "2026-11-02T10:00:00Z",
+    fields: definitions.map(([key, label, group]) => ({
+      key,
+      label,
+      group,
+      kind: "text",
+      value: key === "qualification.start_year" ? "2020" : label + "原文",
+      required: true,
+    })),
+    recipients: [
+      { name: "甲单位", start: "2026-11-03T09:00", end: "2026-11-03T10:00" },
+    ],
+    templates: [
+      { id: "t", name: "谈判模板.docx", keys: [], per_recipient: false },
+    ],
+    generations: [],
+    rules: [],
+  };
+  const project: any = {
+    id: "grouped-project",
+    name: "分组项目",
+    code: "",
+    owner: "",
+    revision: 1,
+    single_form: true,
+    form_id: state.id,
+    fields: [],
+    forms: [],
+    stages: stageIds.map((id, i) => ({
+      id,
+      title: stageNames[i],
+      status: "pending",
+      purpose: "",
+      materials: [],
+      upstream_changed: [],
+      missing_required: [],
+      due_date: "",
+      notes: "",
+      system_name: "",
+      system_url: "",
+      submission_ref: "",
+    })),
+  };
+  const saves: any[] = [];
+  const hostFetch = vi.fn(async (url: string, init?: RequestInit) => {
+    if (url === "/document-forms/projects") return reply([project]);
+    if (url === "/document-forms/projects/grouped-project")
+      return reply(project);
+    if (url.endsWith("/assistant")) return reply({ messages: [] });
+    if (url.endsWith("/form")) return reply(state);
+    if (url === "/document-forms/cases/grouped-case") {
+      if (init?.method === "PUT") {
+        const body = JSON.parse(String(init.body));
+        saves.push(body);
+        state.fields = state.fields.map((f: any) => ({
+          ...f,
+          value: body.values[f.key],
+        }));
+        state.recipients = body.recipients;
+        state.revision++;
+      }
+      return reply(state);
+    }
+    if (url.endsWith("/review"))
+      return reply({
+        checks: [
+          {
+            field: "workload.items",
+            label: "实物工作量",
+            status: "missing",
+            detail: "请补充实物工作量",
+          },
+        ],
+        can_generate: false,
+      });
+    throw new Error("Unexpected grouping request: " + url);
+  });
+  Object.defineProperty(window, "QwenPaw", {
+    configurable: true,
+    value: {
+      host: {
+        React,
+        ReactDOM,
+        fetch: hostFetch,
+        useTheme: () => "light",
+        getSelectedAgentId: () => "default",
+      },
+      workspace: {},
+      registerRoutes: (_id: string, routes: any[]) => {
+        Page = routes[0].component;
+      },
+    },
+  });
+  await act(async () =>
+    new Function(
+      "window",
+      fs.readFileSync(
+        path.resolve(
+          process.cwd(),
+          "../plugins/apps/document-forms/ui/index.js",
+        ),
+        "utf8",
+      ),
+    )(window),
+  );
+  renderWithProviders(<Page />);
+  await user.click(await screen.findByRole("button", { name: /03 商务谈判/ }));
+  const tabs = await screen.findByRole("tablist", { name: "填写内容分组" });
+  expect(
+    within(tabs)
+      .getAllByRole("tab")
+      .map((t) => t.textContent),
+  ).toEqual([
+    "项目研究内容",
+    "考核指标与进度安排",
+    "受邀单位与资格要求",
+    "谈判要求",
+    "实施方案",
+    "文件生成",
+  ]);
+  const expected = [
+    ["项目研究内容", definitions.slice(0, 5)],
+    ["考核指标与进度安排", definitions.slice(5, 9)],
+    ["受邀单位与资格要求", definitions.slice(9, 10)],
+    ["谈判要求", definitions.slice(10, 14)],
+    ["实施方案", definitions.slice(14)],
+  ] as const;
+  const controls = new Map(
+    definitions.map(([key, label]) => {
+      const matches = screen.getAllByLabelText(label, { exact: true });
+      expect(matches).toHaveLength(1);
+      return [key, matches[0]];
+    }),
+  );
+  for (const [tab, fields] of expected) {
+    fireEvent.click(within(tabs).getByRole("tab", { name: tab }));
+    const panel = screen.getByRole("tabpanel", { name: tab });
+    expect(panel).toBeVisible();
+    for (const [key] of definitions) {
+      expect(panel.contains(controls.get(key)!)).toBe(
+        fields.some((f) => f[0] === key),
+      );
+    }
+    if (tab === "受邀单位与资格要求") {
+      expect(screen.getByLabelText("第1家单位名称")).toBeVisible();
+      fireEvent.change(screen.getByLabelText("第1家单位名称"), {
+        target: { value: "甲单位（保留）" },
+      });
+      await user.click(screen.getByRole("button", { name: "＋ 添加单位" }));
+      fireEvent.change(screen.getByLabelText("第2家单位名称"), {
+        target: { value: "乙单位" },
+      });
+    }
+  }
+  await user.click(within(tabs).getByRole("tab", { name: "项目研究内容" }));
+  fireEvent.change(screen.getByLabelText("项目背景"), {
+    target: { value: "项目背景原文追加原句。" },
+  });
+  await user.click(
+    within(screen.getByRole("tablist", { name: "填写内容分组" })).getByRole(
+      "tab",
+      { name: "考核指标与进度安排" },
+    ),
+  );
+  fireEvent.change(screen.getByLabelText("实物工作量"), {
+    target: { value: "实物工作量原文新增工作量。" },
+  });
+  await user.click(screen.getByRole("tab", { name: "审批资料" }));
+  await user.click(screen.getByRole("tab", { name: "内容填写" }));
+  expect(screen.getByLabelText("实物工作量")).toBeVisible();
+  expect(screen.getByLabelText("实物工作量")).toHaveValue(
+    "实物工作量原文新增工作量。",
+  );
+  await user.click(within(tabs).getByRole("tab", { name: "文件生成" }));
+  await user.click(screen.getByRole("button", { name: "核对填写内容 →" }));
+  await screen.findByText("请补充实物工作量");
+  expect(saves).toHaveLength(1);
+  expect(saves[0].values["project.background"]).toBe("项目背景原文追加原句。");
+  expect(saves[0].values["workload.items"]).toBe("实物工作量原文新增工作量。");
+  expect(saves[0].recipients.map((r: any) => r.name)).toEqual([
+    "甲单位（保留）",
+    "乙单位",
+  ]);
+  await user.click(screen.getByRole("button", { name: "修改" }));
+  expect(
+    within(screen.getByRole("tablist", { name: "填写内容分组" })).getByRole(
+      "tab",
+      { name: "考核指标与进度安排" },
+    ),
+  ).toHaveAttribute("aria-selected", "true");
+  await waitFor(() =>
+    expect(screen.getByLabelText("实物工作量")).toHaveFocus(),
+  );
 }, 30000);

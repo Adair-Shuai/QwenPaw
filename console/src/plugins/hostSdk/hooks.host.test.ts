@@ -4,8 +4,8 @@
  *
  * Division of labour with the existing hooks.test.ts (left byte-for-byte
  * untouched): that file covers the three PawApp-scoping paths of
- * getCurrentSessionId. This file covers the five remaining exports
- * (useHostTheme / useHostLocale / useHostSelectedAgent /
+ * getCurrentSessionId. This file covers the remaining exports
+ * (useHostTheme / useHostLocale / useHostAgentDisplayName / useHostSelectedAgent /
  * useHostCurrentSession / getSelectedAgentId) plus the fallback arms of
  * getCurrentSessionId that the existing file never reaches.
  *
@@ -54,6 +54,7 @@ vi.mock("../../pages/Chat/sessionApi", () => ({ default: sessionApiMock }));
 import {
   getCurrentSessionId,
   getSelectedAgentId,
+  useHostAgentDisplayName,
   useHostCurrentSession,
   useHostLocale,
   useHostSelectedAgent,
@@ -91,6 +92,23 @@ describe("hostSdk/hooks", () => {
       localeMock.language = "zh-CN";
 
       expect(renderHook(() => useHostLocale()).result.current).toBe("zh-CN");
+    });
+  });
+
+  describe("useHostAgentDisplayName", () => {
+    it("shares native default localization and preserves custom names and fallback IDs", () => {
+      const { result } = renderHook(() => useHostAgentDisplayName());
+      expect(result.current({ id: "default", name: "Default Agent" })).toBe(
+        "agent.defaultDisplayName",
+      );
+      expect(result.current({ id: "default", name: "" })).toBe(
+        "agent.defaultDisplayName",
+      );
+      expect(result.current({ id: "default", name: "我的专家" })).toBe(
+        "我的专家",
+      );
+      expect(result.current({ id: "qa", name: "QA Agent" })).toBe("QA Agent");
+      expect(result.current({ id: "unnamed", name: "" })).toBe("unnamed");
     });
   });
 

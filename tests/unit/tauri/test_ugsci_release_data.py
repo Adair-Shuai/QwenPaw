@@ -6,7 +6,9 @@
 from __future__ import annotations
 
 import importlib.util
+import hashlib
 import json
+import os
 from pathlib import Path
 import shutil
 import subprocess
@@ -498,4 +500,173 @@ def test_updates_preserve_user_imports_without_shipping_visualization_data(
     assert (
         json.loads((installed / "plugin.json").read_text())["version"]
         == "0.7.7"
+    )
+
+
+@pytest.mark.parametrize("development", [False, True])
+def test_runtime_bundle_install_excludes_samples_and_keeps_user_imports(
+    tmp_path,
+    monkeypatch,
+    development,
+):
+    from qwenpaw.plugins import bundled
+
+    # Identity comes from the manifest, including when the source is renamed.
+    source = tmp_path / "renamed-source"
+    manifest = _plugin(source)
+    local_sample = source / "visualization/data/gullfaks.json"
+    original_sample = local_sample.read_bytes()
+    installed = tmp_path / "installed/ugsci"
+    monkeypatch.setattr(
+        bundled,
+        "_is_development_environment",
+        lambda: development,
+    )
+    assert bundled._install_or_update_plugin(
+        source,
+        installed,
+        "ugsci",
+        manifest,
+    )
+    assert not (installed / "visualization/data").exists()
+    assert bundled._has_bundle_complete_marker(installed)
+    assert not bundled._install_or_update_plugin(
+        source,
+        installed,
+        "ugsci",
+        manifest,
+    )
+    user_import = _write(
+        installed,
+        "visualization/data/imports/unique.bin",
+        b"user import",
+    )
+    # A local example must never overwrite even an identically named user file.
+    user_collision = _write(
+        installed,
+        "visualization/data/gullfaks.json",
+        b"user dataset",
+    )
+    local_only = _write(
+        source,
+        "visualization/data/new-example.bin",
+        b"local example",
+    )
+    assert not bundled._install_or_update_plugin(
+        source,
+        installed,
+        "ugsci",
+        manifest,
+    )
+    (source / "plugin.py").write_bytes(b"VALUE = 2\n")
+    if not development:
+        manifest["version"] = "0.7.7"
+        (source / "plugin.json").write_text(json.dumps(manifest), "utf8")
+    assert bundled._install_or_update_plugin(
+        source,
+        installed,
+        "ugsci",
+        manifest,
+    )
+    assert (installed / "plugin.py").read_bytes() == b"VALUE = 2\n"
+    assert user_import.read_bytes() == b"user import"
+    assert user_collision.read_bytes() == b"user dataset"
+    assert not (installed / "visualization/data/new-example.bin").exists()
+    assert bundled._has_bundle_complete_marker(installed)
+    assert local_sample.read_bytes() == original_sample
+    assert local_only.read_bytes() == b"local example"
+
+
+def _legacy_bundle_hash(source, manifest, bundled):
+    """Keep the original rglob/hash stream as a compatibility oracle."""
+    digest = hashlib.md5()
+    digest.update(
+        json.dumps(manifest, sort_keys=True, ensure_ascii=False).encode(),
+    )
+    files = []
+    for path in source.rglob("*"):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(source)
+        if any(p in bundled._HASH_EXCLUDED_NAMES for p in relative.parts[:-1]):
+            continue
+        if path.name in bundled._HASH_EXCLUDED_NAMES:
+            continue
+        if path.suffix in bundled._HASH_EXCLUDED_SUFFIXES:
+            continue
+        files.append(path)
+    for path in sorted(files):
+        digest.update(path.relative_to(source).as_posix().encode())
+        digest.update(path.read_bytes())
+    return digest.hexdigest()
+
+
+@pytest.mark.parametrize("plugin_id", ["ugsci", "ordinary-plugin"])
+def test_runtime_hash_matches_legacy_without_entering_excluded_trees(
+    tmp_path,
+    monkeypatch,
+    plugin_id,
+):
+    from qwenpaw.plugins import bundled
+
+    source = tmp_path / "source"
+    manifest = _plugin(source)
+    manifest["id"] = plugin_id
+    (source / "plugin.json").write_text(json.dumps(manifest), "utf8")
+    for relative in (
+        "ui/node_modules/package/nested/file.js",
+        "nested/__pycache__/module.pyc",
+        "nested/data/local.bin",
+        ".git/objects/blob",
+        "nested/runtime.py",
+        "nested/runtime.js.map",
+        "nested/stray.pyc",
+        "nested/目录/runtime.txt",
+    ):
+        _write(source, relative)
+    expected = _legacy_bundle_hash(source, manifest, bundled)
+    original_scandir = os.scandir
+    scanned = []
+
+    def observe_scandir(directory):
+        path = Path(directory)
+        if path.is_relative_to(source):
+            relative = path.relative_to(source)
+            scanned.append(relative.as_posix())
+            assert not any(
+                part in bundled._HASH_EXCLUDED_NAMES for part in relative.parts
+            ), f"Entered excluded tree: {relative}"
+        return original_scandir(directory)
+
+    monkeypatch.setattr(os, "scandir", observe_scandir)
+    assert bundled._compute_bundle_hash(source, manifest) == expected
+    assert "nested" in scanned and "visualization" in scanned
+    _write(source, "visualization/data/another-local.bin", b"changed sample")
+    assert bundled._compute_bundle_hash(source, manifest) == expected
+    (source / "nested/runtime.py").write_bytes(b"changed runtime code")
+    assert bundled._compute_bundle_hash(source, manifest) != expected
+    assert not any(
+        name.startswith("visualization/data/")
+        for name in bundled._bundle_runtime_files(source)
+    )
+
+
+@pytest.mark.parametrize("plugin_id", ["ugsci", "ordinary-plugin"])
+def test_runtime_copy_uses_manifest_identity_and_ignores_pack_exclude(
+    tmp_path,
+    plugin_id,
+):
+    from qwenpaw.plugins import bundled
+
+    source = tmp_path / ("renamed" if plugin_id == "ugsci" else "ugsci")
+    manifest = _plugin(source)
+    manifest["id"] = plugin_id
+    manifest["pack_exclude"] = ["plugin.py", "visualization/data"]
+    (source / "plugin.json").write_text(json.dumps(manifest), "utf8")
+    installed = tmp_path / "installed"
+    bundled._copy_bundle(source, installed)
+    assert (installed / "plugin.py").read_bytes() == b"VALUE = 1\n"
+    assert (source / "visualization/data/gullfaks.json").is_file()
+    assert (installed / "visualization/data").exists() is (
+        plugin_id != "ugsci"
     )

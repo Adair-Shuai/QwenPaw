@@ -65,6 +65,188 @@ def selection_budget(common):
         return ""
 
 
+def selection_linked_prefix(parts, values):
+    return "".join(
+        (
+            part
+            if isinstance(part, str)
+            else values.get(part["field"], "").strip()
+            or f"（{part['label']}待填写）"
+        )
+        for part in parts
+    )
+
+
+def selection_opinion_notes(field, value, prefix):
+    """Retain authored findings while replacing only the linked fact block."""
+    for previous in (field.get("linked_prefix"), prefix):
+        if previous and value.startswith(previous):
+            return value[len(previous) :]
+    if not field.get("linked_parts"):
+        if field["key"] == "selection.reliability":
+            match = re.match(
+                r"^\s*《.+?》.*?计划金额为[^。]+。\s*依托《.+?》.*?"
+                r"依托项目经费为[^，。]+万元[，。]\s*",
+                value,
+                re.S,
+            )
+            if match:
+                return value[match.end() :]
+        elif field["key"] == "selection.qualification_review":
+            match = re.search(r"分别为[^。；\n]+[。；]?", value)
+            if match:
+                before = value[: match.start()].rstrip("，,：: ")
+                return (before + "。" if before else "") + value[match.end() :]
+    return value
+
+
+OPINION_VARIABLES = {
+    "project.name": "项目名称",
+    "selection.year": "计划年度",
+    "selection.budget_wan": "计划批复金额（万元）",
+    "funding.project_name": "依托项目名称",
+    "funding.wbs": "依托项目 WBS 编码",
+    "funding.amount_wan": "依托项目经费（万元）",
+    **{f"selection.partner{i}_name": f"候选单位{i}" for i in range(1, 4)},
+}
+OPINION_DEFAULTS = {
+    "selection.reliability": "《【project.name】》为【selection.year】年审查通过的技术服务实施计划，计划金额为【selection.budget_wan】万元。依托《【funding.project_name】》，WBS编码【funding.wbs】，依托项目经费为【funding.amount_wan】万元，",
+    "selection.qualification_review": "通过调研业内情况，综合对比了多家单位的优势技术、专业特色及历史业绩等，优选三家单位开展论证与资质审查，分别为【selection.partner1_name】、【selection.partner2_name】、【selection.partner3_name】。",
+}
+OPINION_TOKEN = re.compile(r"【([a-z][a-z0-9_.]*(?:\|[0-6])?)】")
+
+
+def opinion_variable(key, values):
+    base, _, precision = key.partition("|")
+    value = values.get(base, "").strip()
+    if precision and value:
+        try:
+            number = Decimal(value)
+            text = format(number, "f")
+            whole, dot, fraction = text.partition(".")
+            value = whole + "." + fraction.ljust(int(precision), "0")
+        except InvalidOperation:
+            pass
+    return value or f"（{OPINION_VARIABLES[base]}待填写）"
+
+
+def opinion_template(field, text):
+    """Replace variable values in place without rewriting authored prose."""
+    if field["key"] == "selection.reliability":
+        patterns = [
+            (r"^\s*《([^》]+)》", "project.name"),
+            (r"为(\d{4})(?=年审查通过)", "selection.year"),
+            (
+                r"(?:计划金额为|批复金额为|本次论证预算为)([\d.,]+)(?=万元)",
+                "selection.budget_wan",
+            ),
+            (r"依托《([^》]+)》", "funding.project_name"),
+            (r"WBS编码(?:为)?([^，。\s]+)", "funding.wbs"),
+            (r"依托项目经费为([\d.,]+)(?=万元)", "funding.amount_wan"),
+        ]
+        for pattern, key in patterns:
+
+            def replace(match):
+                original = match.group(1)
+                precision = (
+                    len(original.partition(".")[2])
+                    if key in {"selection.budget_wan", "funding.amount_wan"}
+                    else 0
+                )
+                token = key + (f"|{precision}" if 0 < precision <= 6 else "")
+                offset = match.start(1) - match.start()
+                return (
+                    match.group()[:offset]
+                    + "【"
+                    + token
+                    + "】"
+                    + match.group()[offset + len(original) :]
+                )
+
+            text = re.sub(pattern, replace, text, count=1)
+    else:
+        match = re.search(r"分别为([^。；\n]+)", text)
+        if match and "【selection.partner" not in match.group(1):
+            names = re.split(r"([、，,])", match.group(1))
+            if len(names) == 5:
+                for i in range(3):
+                    names[i * 2] = f"【selection.partner{i+1}_name】"
+                text = (
+                    text[: match.start(1)]
+                    + "".join(names)
+                    + text[match.end(1) :]
+                )
+    # Existing inline references are also retained when only prose was edited.
+    return text
+
+
+def refresh_selection_opinions(fields):
+    current = {f["key"]: f["value"] for f in fields}
+    for field in fields:
+        if field["key"] not in OPINION_DEFAULTS or not field.get(
+            "linked_variables",
+        ):
+            continue
+        variables = dict(field["linked_variables"])
+        variables.update(
+            {k: v for k, v in current.items() if k in OPINION_VARIABLES},
+        )
+        if "linked_template" not in field or field["value"] != field.get(
+            "linked_rendered",
+            field["value"],
+        ):
+            text = field["value"]
+            field["linked_template"] = (
+                opinion_template(field, text)
+                if text
+                else OPINION_DEFAULTS[field["key"]]
+            )
+        parts, cursor = [], 0
+        for match in OPINION_TOKEN.finditer(field["linked_template"]):
+            key = match.group(1)
+            if key.partition("|")[0] not in OPINION_VARIABLES:
+                continue
+            parts.append(field["linked_template"][cursor : match.start()])
+            parts.append(
+                {
+                    "field": key,
+                    "label": OPINION_VARIABLES[key.partition("|")[0]],
+                    "value": opinion_variable(key, variables),
+                },
+            )
+            cursor = match.end()
+        parts.append(field["linked_template"][cursor:])
+        rendered = "".join(
+            part if isinstance(part, str) else part["value"] for part in parts
+        )
+        field.update(
+            linked_parts=parts,
+            linked_variables=variables,
+            linked_rendered=rendered,
+            value=rendered,
+            linked_schema=2,
+        )
+        field.pop("linked_prefix", None)
+        field["opinion_empty"] = (
+            not field["linked_template"].strip()
+            or field["linked_template"] == OPINION_DEFAULTS[field["key"]]
+        )
+
+
+def link_selection_opinions(fields, references):
+    common = {f["key"]: f["value"] for f in fields}
+    common.update(references)
+    for field in fields:
+        if field["key"] not in OPINION_DEFAULTS:
+            continue
+        field.update(
+            linked_variables={k: common.get(k, "") for k in OPINION_VARIABLES},
+            opinion_required=True,
+            help="【】内的资料自动关联前面填写的变量；可以直接编辑正文，引用随来源更新。",
+        )
+    refresh_selection_opinions(fields)
+
+
 def additional_shared_fields():
     definitions = (
         (
@@ -210,7 +392,7 @@ def plan_fields(common=()):
     return fields
 
 
-def selection_fields(common=()):
+def selection_fields(common=(), references=None):
     """Selection has its own budget, candidates and signed opinion content."""
     basic = {f["key"]: f for f in blank_fields() + additional_shared_fields()}
     current = {f["key"]: f for f in common}
@@ -338,9 +520,11 @@ def selection_fields(common=()):
             "required": True,
             "value": current.get("selection." + key, {}).get(
                 "value",
-                current.get("funding.source", {}).get("value", "")
-                if key == "funding_source"
-                else "",
+                (
+                    current.get("funding.source", {}).get("value", "")
+                    if key == "funding_source"
+                    else ""
+                ),
             ),
         }
         for key, label, group, kind, help_text in definitions
@@ -350,6 +534,23 @@ def selection_fields(common=()):
             field["options"] = list(SELECTION_CHOICES[field["key"]])
         if field["key"] == "selection.budget_wan":
             field.update(value=selection_budget(common), read_only=True)
+            if references and references.get("approved_budget"):
+                field.update(
+                    value=references["approved_budget"],
+                    help="自动引用计划批复金额；未上传有效批复时，按基础信息中的最高限价换算为万元。",
+                )
+        if references is not None and field["key"] in {
+            "project.name",
+            "funding.project_name",
+            "funding.amount_wan",
+        }:
+            field.update(
+                read_only=True,
+                value=references.get(field["key"], ""),
+                help="自动引用基础信息填报中的资料。",
+            )
+    if references is not None:
+        link_selection_opinions(fields, references)
     return fields
 
 

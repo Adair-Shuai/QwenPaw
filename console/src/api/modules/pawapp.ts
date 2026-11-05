@@ -15,6 +15,9 @@ export interface PawAppInfo {
   icon: string;
   icon_url?: string;
   status: string;
+  enabled?: boolean;
+  loaded?: boolean;
+  diagnostics?: string[];
   home_page: string | null;
   entry_page?: string;
   launch_scope?: string;

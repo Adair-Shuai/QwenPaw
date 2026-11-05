@@ -76,3 +76,57 @@ class TestHealthzReady:
         body = resp.json()
         assert body["status"] == "ok"
         assert body["agents_loaded"] == []
+
+
+@pytest.mark.parametrize("ready", [False, True])
+def test_core_startup_failure_is_terminal_without_private_diagnostics(
+    app,
+    client,
+    ready,
+):
+    app.state.startup_ready = asyncio.Event()
+    if ready:
+        app.state.startup_ready.set()
+    app.state.startup_failed = True
+    app.state.bundled_plugins_status = {"error": "private configuration"}
+    response = client.get("/api/healthz")
+    assert response.status_code == 500
+    assert response.json() == {
+        "status": "failed",
+        "detail": "Core startup failed",
+    }
+
+
+def test_optional_plugin_failure_does_not_fail_core_readiness(app, client):
+    app.state.startup_ready = asyncio.Event()
+    app.state.startup_ready.set()
+    app.state.bundled_plugins_status = {
+        "state": "error",
+        "error": "optional failed",
+    }
+    assert client.get("/api/healthz").status_code == 200
+
+
+def test_startup_receipt_is_atomic_per_launch_and_contains_only_outcome(
+    tmp_path,
+    monkeypatch,
+):
+    import json
+    from qwenpaw.app.startup_receipt import publish_startup_outcome
+
+    receipt = tmp_path / "current-launch.json"
+    monkeypatch.setenv("QWENPAW_STARTUP_RECEIPT", str(receipt))
+    for status in ("starting", "restart", "starting", "failed", "ready"):
+        publish_startup_outcome(status)
+        assert json.loads(receipt.read_text(encoding="utf-8")) == {
+            "status": status,
+        }
+        assert not receipt.with_suffix(".tmp").exists()
+    next_launch = tmp_path / "next-launch.json"
+    monkeypatch.setenv("QWENPAW_STARTUP_RECEIPT", str(next_launch))
+    publish_startup_outcome("starting")
+    assert json.loads(receipt.read_text(encoding="utf-8"))["status"] == "ready"
+    assert (
+        json.loads(next_launch.read_text(encoding="utf-8"))["status"]
+        == "starting"
+    )

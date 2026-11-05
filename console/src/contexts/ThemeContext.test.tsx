@@ -109,7 +109,7 @@ describe("ThemeProvider + useTheme", () => {
     });
     expect(
       document.documentElement.style.getPropertyValue("--app-accent"),
-    ).toBe("#485440");
+    ).toBe("#292826");
     expect(result.current.previewTheme).toBe(custom);
     expect(
       document.documentElement.style.getPropertyValue("--app-text-inverse"),
@@ -117,10 +117,10 @@ describe("ThemeProvider + useTheme", () => {
     act(() => result.current.setThemeMode("dark"));
     expect(
       document.documentElement.style.getPropertyValue("--app-accent"),
-    ).toBe("#b4c6a7");
+    ).toBe("#e6e1d9");
     expect(
       document.documentElement.style.getPropertyValue("--app-text-inverse"),
-    ).toBe("#1b1c19");
+    ).toBe("#1c1b19");
     act(() => result.current.setInterfaceStyle("classic"));
     expect(result.current.themeMode).toBe("dark");
     expect(

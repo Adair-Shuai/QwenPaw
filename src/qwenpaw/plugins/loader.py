@@ -1962,8 +1962,12 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         manifest: PluginManifest,
         source_path: Path,
         exc: BaseException,
+        *,
+        config: Optional[Dict] = None,
     ) -> PluginRecord:
         """Persist a failed record so cancel is visible to reload/repair."""
+        from .settings import is_plugin_enabled
+
         plugin_id = manifest.id
         live = self.lifecycle.ensure_instance(plugin_id)
         live.mark_failed(str(exc) or type(exc).__name__)
@@ -1975,6 +1979,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
             manifest=manifest,
             source_path=source_path,
             enabled=False,
+            global_enabled=(
+                is_plugin_enabled(config) if config is not None else None
+            ),
             diagnostics=[reason]
             + [item for item in live.diagnostics if item != reason],
             status="failed",
@@ -2120,6 +2127,7 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 manifest,
                 source_path,
                 RuntimeError(message),
+                config=config,
             )
             record.backend_binding = binding
             return record
@@ -2219,10 +2227,16 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                         manifest,
                         source_path,
                         exc,
+                        config=config,
                     )
                     record.backend_binding = binding
                 raise
-            record = self._record_failed_backend(manifest, source_path, exc)
+            record = self._record_failed_backend(
+                manifest,
+                source_path,
+                exc,
+                config=config,
+            )
             record.backend_binding = binding
             if isinstance(exc, asyncio.CancelledError):
                 raise
@@ -2414,7 +2428,12 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                         manifest,
                     )
                 except Exception as exc:
-                    self._record_failed_backend(manifest, plugin_dir, exc)
+                    self._record_failed_backend(
+                        manifest,
+                        plugin_dir,
+                        exc,
+                        config=config if config is not None else {},
+                    )
                     continue
                 if not is_plugin_enabled(config) and not discovers_disabled(
                     binding,
@@ -2663,6 +2682,16 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 unchanged=True,
                 errors=["Plugin identity changed"],
             )
+        compatible, message = self._check_version_compatibility(
+            incoming_manifest,
+        )
+        if not compatible:
+            return ReloadReport(
+                plugin_id=plugin_id,
+                ok=False,
+                unchanged=True,
+                errors=[message],
+            )
         from .settings import is_plugin_enabled
 
         old_enabled = (
@@ -2735,6 +2764,10 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                     candidate_admission.snapshot,
                 )
         except Exception as exc:
+            from .dependency_gate import SharedDependencyError
+
+            if isinstance(exc, SharedDependencyError):
+                raise
             return ReloadReport(
                 plugin_id=plugin_id,
                 ok=False,
@@ -2941,14 +2974,25 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
             return True
         instance = self.lifecycle.get_instance(plugin_id)
         current = self._loaded_plugins.get(plugin_id)
-        return bool(
-            instance is not None
-            and instance is not previous_instance
-            and instance.generation == generation
-            and instance.state is PluginState.ACTIVE
+        if (
+            instance is None
+            or instance is previous_instance
+            or instance.generation != generation
+            or current is None
+        ):
+            return False
+        # Disabled installs commit their validated files without activating
+        # runtime hooks. Legacy Python definitions may remain registered.
+        if current.global_enabled is False and not current.enabled:
+            return (
+                current.status in {"inactive", "registered"}
+                and not instance.activated
+                and instance.state is not PluginState.FAILED
+            )
+        return (
+            instance.state is PluginState.ACTIVE
             and instance.activated
-            and current is not None
-            and current.status == "active",
+            and current.status == "active"
         )
 
     def _install_already_committed(self, plugin_id: str) -> bool:
@@ -2962,6 +3006,24 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         from .updates import STATUS_COMMITTED, update_marker_status
 
         return update_marker_status(plugin_id) == STATUS_COMMITTED
+
+    async def _run_committed_cleanup(
+        self,
+        record,
+        callback,
+        *args,
+        **kwargs,
+    ) -> None:
+        """Report filesystem cleanup failures after publication as warnings."""
+        from ..utils.io_utils import run_sync_io
+
+        try:
+            await run_sync_io(callback, *args, **kwargs)
+        except OSError as exc:
+            record.update_needs_restart = True
+            diagnostic = f"post-commit cleanup: {callback.__name__}: {exc}"
+            record.diagnostics.append(diagnostic)
+            logger.warning("Plugin %s %s", record.manifest.id, diagnostic)
 
     async def _finish_committed_reload(
         self,
@@ -3648,6 +3710,12 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                         raise SDKRestartRequiredError(detail)
                     raise RuntimeError(detail)
                 record = self._loaded_plugins[plugin_id]
+                record.update_needs_restart = report.needs_restart
+                record.diagnostics.extend(
+                    error
+                    for error in report.errors
+                    if error not in record.diagnostics
+                )
                 if after_load is not None:
                     maybe_loaded = after_load(record)
                     if inspect.isawaitable(maybe_loaded):
@@ -3659,7 +3727,11 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                     )
                 from .settings import clear_channel_tombstone
 
-                await asyncio.to_thread(clear_channel_tombstone, plugin_id)
+                await self._run_committed_cleanup(
+                    record,
+                    clear_channel_tombstone,
+                    plugin_id,
+                )
                 return record
             record = None
             from ..config import load_config
@@ -3696,7 +3768,11 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                     )
                 from .settings import clear_channel_tombstone
 
-                await asyncio.to_thread(clear_channel_tombstone, plugin_id)
+                await self._run_committed_cleanup(
+                    record,
+                    clear_channel_tombstone,
+                    plugin_id,
+                )
                 return record
             except BaseException:
                 already_committed = self._install_already_committed(plugin_id)
@@ -3740,6 +3816,10 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
     ) -> PluginRecord:
         """Install+load from path; caller must hold lifecycle for id."""
         from ..utils.io_utils import run_sync_io
+
+        compatible, reason = self._check_version_compatibility(manifest)
+        if not compatible:
+            raise ValueError(reason)
 
         plugin_id = manifest.id
         if not self.lifecycle.delegate.owns_commit(plugin_id):
@@ -3979,10 +4059,20 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                     swapped,
                 )
                 if cleanup_errors:
-                    raise RuntimeError("; ".join(cleanup_errors))
+                    from .updates import marker_path, update_is_committed
+
+                    durable = await run_sync_io(
+                        lambda: update_is_committed(plugin_id)
+                        or not marker_path(plugin_id).is_file(),
+                    )
+                    if not durable:
+                        raise RuntimeError("; ".join(cleanup_errors))
+                    record.update_needs_restart = True
+                    record.diagnostics.extend(cleanup_errors)
             from .bundled import clear_uninstalled_marker
 
-            await run_sync_io(
+            await self._run_committed_cleanup(
+                record,
                 clear_uninstalled_marker,
                 plugin_id,
                 plugins_dir=install_base,
@@ -4127,6 +4217,39 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
             delete_files=delete_files,
             interrupt_tasks=interrupt_tasks,
         )
+
+    async def quiesce_for_recovery(self, plugin_id: str) -> UnloadReport:
+        """Drain even an orphaned startup instance before restoring files.
+
+        Ordinary unload retains its missing-plugin error contract. Recovery
+        also encounters invalid manifests and interrupted registration, where
+        runtime custody can outlive the public record.
+        """
+        async with self.plugin_lifecycle(plugin_id):
+            if self.get_loaded_plugin(plugin_id) is not None:
+                return await self.unload_plugin(plugin_id)
+            report = UnloadReport(plugin_id=plugin_id, mode=UnloadMode.UNLOAD)
+            try:
+                await self._stop_preparation(plugin_id)
+                instance = self.lifecycle.get_instance(plugin_id)
+                if instance is not None:
+                    report.absorb(await instance.dispose(UnloadMode.UNLOAD))
+                if not report.clean or not report.quiescent:
+                    return report
+                report.absorb(
+                    await self._shutdown_runtime_owners(
+                        plugin_id,
+                        UnloadMode.UNLOAD,
+                    ),
+                )
+                if report.clean and report.quiescent:
+                    self.registry.unregister_plugin(plugin_id)
+                    self.lifecycle.drop_instance(plugin_id)
+            except Exception as exc:
+                report.clean = report.quiescent = False
+                report.needs_restart = True
+                report.errors.append(str(exc))
+            return report
 
     async def repair_dependencies(
         self,

@@ -14,6 +14,8 @@ import api, { type ChatHistory, type ChatSpec } from "../../../api";
 import { createSdkSessionAdapter } from "../sdkSessionAdapter";
 import { groupChatsByDate } from "../../../utils/chatGroups";
 import type { ExtendedSession } from "../../../stores/sessionListStore";
+import NativeRequestBuilder from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Request/Builder";
+import i18n from "../../../i18n";
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -331,6 +333,181 @@ const msg = (over: Record<string, unknown> = {}) => ({
   content: "hello",
   metadata: null,
   ...over,
+});
+
+describe("steered history turn grouping", () => {
+  const supplement = (id: string, text: string, runId = "run-one") =>
+    msg({
+      id,
+      role: "user",
+      content: [{ type: "text", text }],
+      metadata: {
+        original_id: `native-${id}`,
+        metadata: {
+          qwenpaw_client_message_id: `client-${id}`,
+          qwenpaw_steering: { request_id: `receipt-${id}`, run_id: runId },
+        },
+      },
+    });
+
+  it.each(["completed", "canceled", "failed"])(
+    "keeps %s status and native retry payload on the original root with all supplements",
+    async (status) => {
+      await i18n.changeLanguage("en");
+      const rootMetadata = {
+        original_id: "native-root",
+        metadata: {
+          qwenpaw_client_message_id: "client-root",
+          qwenpaw_turn_state: {
+            status,
+            response_id: "root-response",
+            ...(status === "failed"
+              ? { error: { code: "TestError", message: "synthetic failure" } }
+              : {}),
+          },
+        },
+      };
+      const messages = [
+        msg({
+          id: "root",
+          content: [
+            { type: "text", text: "original task" },
+            {
+              type: "file",
+              file_url: "/files/source.csv",
+              file_name: "source.csv",
+            },
+          ],
+          metadata: rootMetadata,
+        }),
+        msg({ id: "before-guidance", role: "assistant", content: "working" }),
+        supplement("one", "check completeness first"),
+        msg({ id: "tool-result", role: "system", type: "plugin_call_output" }),
+        // Repeated guidance is a legitimate separate instruction, not deduped by text.
+        supplement("two", "check completeness first"),
+        msg({ id: "final-answer", role: "assistant", content: "done" }),
+        msg({ id: "next-root", content: "next task" }),
+        msg({ id: "next-answer", role: "assistant", content: "next done" }),
+      ];
+      const before = structuredClone(messages);
+
+      const cards = T.convertMessages(messages as never);
+
+      expect(cards).toHaveLength(4);
+      expect(cards.map((card) => card.role)).toEqual([
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+      ]);
+      expect(cards[0].id).toBe("root");
+      const request = cards[0].cards![0].data;
+      expect(request.input).toHaveLength(1);
+      expect(request.input[0].metadata).toEqual(rootMetadata);
+      expect(request.qwenpaw_steering_supplements).toEqual([
+        {
+          id: "one",
+          content: messages[2].content,
+          metadata: messages[2].metadata,
+        },
+        {
+          id: "two",
+          content: messages[4].content,
+          metadata: messages[4].metadata,
+        },
+      ]);
+      expect(
+        request.input[0].content
+          .filter((part: { type: string }) => part.type === "text")
+          .map((part: { text: string }) => part.text),
+      ).toEqual([
+        "original task",
+        "Additional instruction:",
+        "check completeness first",
+        "Additional instruction:",
+        "check completeness first",
+      ]);
+      expect(request.input[0].content[1]).toMatchObject({
+        type: "file",
+        file_name: "source.csv",
+      });
+      expect(
+        decodeURIComponent(request.input[0].content[1].file_url),
+      ).toContain("/files/source.csv");
+      const response = cards[1].cards![0].data;
+      expect(response).toMatchObject({
+        id: "root-response",
+        client_message_id: "client-root",
+        status,
+      });
+      expect(response.output.map((part: { id: string }) => part.id)).toEqual([
+        "before-guidance",
+        "tool-result",
+        "final-answer",
+      ]);
+      if (status === "failed") {
+        expect(response.error).toEqual({
+          code: "TestError",
+          message: "synthetic failure",
+        });
+      }
+      // Use the actual SDK history flattener that feeds native regeneration.
+      const retryHistory = NativeRequestBuilder.getHistoryMessages(
+        cards.slice(0, 1),
+      );
+      expect(retryHistory).toHaveLength(1);
+      expect(retryHistory[0]).toEqual(request.input[0]);
+      expect(messages).toEqual(before);
+    },
+  );
+
+  it("labels supplements in Chinese while preserving their original text", async () => {
+    await i18n.changeLanguage("zh");
+    const cards = T.convertMessages([
+      msg({ id: "root", content: "原始任务" }),
+      supplement("one", "先检查数据"),
+      msg({ role: "assistant", content: "完成" }),
+    ] as never);
+
+    expect(
+      cards[0].cards![0].data.input[0].content.map(
+        (part: { text: string }) => part.text,
+      ),
+    ).toEqual(["原始任务", "补充要求：", "先检查数据"]);
+    await i18n.changeLanguage("en");
+  });
+
+  it.each([undefined, {}, { request_id: "r", run_id: " " }])(
+    "preserves ordinary or malformed later user turns as independent requests (%j)",
+    (marker) => {
+      const cards = T.convertMessages([
+        msg({ id: "root", content: "task" }),
+        msg({ id: "answer-one", role: "assistant" }),
+        msg({ id: "next-user", metadata: { qwenpaw_steering: marker } }),
+        msg({ id: "answer-two", role: "assistant" }),
+      ] as never);
+
+      expect(cards).toHaveLength(4);
+      expect(cards[2].id).toBe("next-user");
+      expect(cards[0].cards![0].data.input[0].content).toHaveLength(1);
+    },
+  );
+
+  it("does not merge a different run's supplement into the previous root", () => {
+    const cards = T.convertMessages([
+      msg({ id: "root", content: "task" }),
+      supplement("one", "same run"),
+      msg({ id: "answer-one", role: "assistant" }),
+      supplement("two", "different run", "run-two"),
+      msg({ id: "answer-two", role: "assistant" }),
+    ] as never);
+
+    expect(cards).toHaveLength(4);
+    expect(cards[0].cards![0].data.qwenpaw_steering_supplements).toHaveLength(
+      1,
+    );
+    expect(cards[2].id).toBe("two");
+  });
 });
 
 describe("parseTimestamp / parseFinishedAt", () => {

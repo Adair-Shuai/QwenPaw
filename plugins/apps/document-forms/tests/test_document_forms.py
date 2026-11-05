@@ -1344,6 +1344,267 @@ def test_project_attachments_retain_versions_scope_and_real_archive(client):
     )
 
 
+def test_material_file_delete_restore_preserves_versions_scope_and_archive(
+    client,
+):
+    project = client.post(
+        "/api/document-forms/projects",
+        json={"name": "删除版本测试"},
+    ).json()
+    base = f"/api/document-forms/projects/{project['id']}"
+    material = project["stages"][1]["materials"][2]
+    url = base + f"/stages/selection/materials/{material['id']}/files"
+    payloads = [b"%PDF-version-1", b"%PDF-version-2", b"%PDF-version-3"]
+    for content in payloads[:2]:
+        result = client.post(
+            url,
+            data={"revision": project["revision"]},
+            files={"file": ("审批.pdf", content, "application/pdf")},
+        )
+        assert result.status_code == 200, result.text
+        project = result.json()
+    files = project["stages"][1]["materials"][2]["files"]
+    first, second = files
+    assert [f["version"] for f in files] == [1, 2]
+    path = url + "/" + first["id"]
+    stale = project["revision"]
+    assert (
+        client.request(
+            "DELETE",
+            path,
+            json={"revision": stale},
+            headers={"X-Agent-Id": "other-agent"},
+        ).status_code
+        == 404
+    )
+    wrong = (
+        base + f"/stages/plan/materials/{material['id']}/files/{first['id']}"
+    )
+    assert (
+        client.request("DELETE", wrong, json={"revision": stale}).status_code
+        == 404
+    )
+    response = client.request("DELETE", path, json={"revision": stale})
+    assert response.status_code == 200, response.text
+    project = response.json()
+    remaining = project["stages"][1]["materials"][2]
+    assert [f["id"] for f in remaining["files"]] == [second["id"]]
+    assert remaining["files"][0]["version"] == 2
+    assert "deleted_files" not in remaining
+    assert client.get(base + "/files/" + first["id"]).status_code == 404
+    assert client.get(base + "/files/" + second["id"]).content == payloads[1]
+    assert (
+        client.request("DELETE", path, json={"revision": stale}).status_code
+        == 409
+    )
+    assert (
+        client.request(
+            "DELETE",
+            path,
+            json={"revision": project["revision"]},
+        ).status_code
+        == 404
+    )
+    archive = client.get(base + "/bundle?stage_id=selection")
+    assert archive.status_code == 200, archive.text
+    with ZipFile(io.BytesIO(archive.content)) as bundle:
+        names = [name for name in bundle.namelist() if name.endswith("审批.pdf")]
+        assert len(names) == 1 and "/V02_" in names[0]
+        assert bundle.read(names[0]) == payloads[1]
+        manifest = next(
+            name for name in bundle.namelist() if name.endswith(".json")
+        )
+        assert first["id"] not in bundle.read(manifest).decode("utf-8")
+    project = client.post(
+        url,
+        data={"revision": project["revision"]},
+        files={"file": ("审批.pdf", payloads[2], "application/pdf")},
+    ).json()
+    assert [
+        f["version"] for f in project["stages"][1]["materials"][2]["files"]
+    ] == [2, 3]
+    response = client.post(
+        path + "/restore",
+        json={"revision": project["revision"]},
+    )
+    assert response.status_code == 200, response.text
+    project = response.json()
+    assert [
+        f["version"] for f in project["stages"][1]["materials"][2]["files"]
+    ] == [1, 2, 3]
+    assert client.get(base + "/files/" + first["id"]).content == payloads[0]
+    assert (
+        client.post(
+            path + "/restore",
+            json={"revision": project["revision"]},
+        ).status_code
+        == 404
+    )
+    for file in list(project["stages"][1]["materials"][2]["files"]):
+        project = client.request(
+            "DELETE",
+            url + "/" + file["id"],
+            json={"revision": project["revision"]},
+        ).json()
+    assert project["stages"][1]["materials"][2]["files"] == []
+    assert project["stages"][1]["materials"][2]["status"] == "pending"
+    assert client.get(base).json() == project
+
+
+def test_deleting_approval_basis_updates_completion_and_linked_budget(client):
+    project = client.post(
+        "/api/document-forms/projects",
+        json={"name": "批复删除测试"},
+    ).json()
+    base = f"/api/document-forms/projects/{project['id']}"
+    profile = values_for(project)
+    profile["budget.ceiling_number"] = "470000"
+    project = client.put(
+        base,
+        json={
+            key: project[key] for key in ("revision", "name", "code", "owner")
+        }
+        | {"values": profile},
+    ).json()
+    material = next(
+        m for m in project["stages"][0]["materials"] if "批复" in m["name"]
+    )
+    url = base + f"/stages/plan/materials/{material['id']}/files"
+    pdf = (Path(__file__).parent / "fixtures/plan-approval.pdf").read_bytes()
+    newer = pdf.replace(
+        "45".encode("utf-16-be").hex().encode(),
+        "44".encode("utf-16-be").hex().encode(),
+    )
+    newer = newer.replace(
+        "2026年08月06日".encode("utf-16-be").hex().encode(),
+        "2026年08月12日".encode("utf-16-be").hex().encode(),
+    )
+    for content in (pdf, newer):
+        project = client.post(
+            url,
+            data={"revision": project["revision"]},
+            files={"file": ("批复.pdf", content, "application/pdf")},
+        ).json()
+    plan = project["stages"][0]
+    files = next(m for m in plan["materials"] if m["id"] == material["id"])[
+        "files"
+    ]
+    first, second = files
+    completed_at = plan["completed_at"]
+    case = client.post(
+        base + "/form",
+        json={"revision": project["revision"], "stage_id": "selection"},
+    ).json()
+    route = f"/api/document-forms/cases/{case['id']}"
+    assert values_for(case)["selection.budget_wan"] == "44"
+    project = client.get(base).json()
+    # Removing an older version leaves the current approval basis intact.
+    project = client.request(
+        "DELETE",
+        url + "/" + first["id"],
+        json={"revision": project["revision"]},
+    ).json()
+    assert project["stages"][0]["status"] == "completed"
+    assert project["stages"][0]["approval_date"] == "2026-08-12"
+    assert project["stages"][0]["completed_at"] == completed_at
+    project = client.post(
+        url + "/" + first["id"] + "/restore",
+        json={"revision": project["revision"]},
+    ).json()
+    assert project["stages"][0]["approval_date"] == "2026-08-12"
+    # Removing the current basis falls back to the older valid approval.
+    project = client.request(
+        "DELETE",
+        url + "/" + second["id"],
+        json={"revision": project["revision"]},
+    ).json()
+    assert project["stages"][0]["approval_date"] == "2026-08-06"
+    assert project["stages"][0]["completion_file_id"] == first["id"]
+    assert values_for(client.get(route).json())["selection.budget_wan"] == "45"
+    project = client.request(
+        "DELETE",
+        url + "/" + first["id"],
+        json={"revision": project["revision"]},
+    ).json()
+    plan = project["stages"][0]
+    assert plan["status"] == "in_progress" and plan["completed_at"] is None
+    assert not plan.get("approval_date") and not plan.get("completion_file_id")
+    assert values_for(client.get(route).json())["selection.budget_wan"] == "47"
+    project = client.post(
+        url + "/" + second["id"] + "/restore",
+        json={"revision": project["revision"]},
+    ).json()
+    assert project["stages"][0]["status"] == "completed"
+    assert project["stages"][0]["approval_date"] == "2026-08-12"
+    assert values_for(client.get(route).json())["selection.budget_wan"] == "44"
+
+
+def test_material_file_deletion_and_restore_are_atomic_and_check_integrity(
+    client,
+    monkeypatch,
+    tmp_path,
+):
+    project = client.post(
+        "/api/document-forms/projects",
+        json={"name": "删除原子保存测试"},
+    ).json()
+    base = f"/api/document-forms/projects/{project['id']}"
+    material = project["stages"][1]["materials"][2]
+    url = base + f"/stages/selection/materials/{material['id']}/files"
+    project = client.post(
+        url,
+        data={"revision": project["revision"]},
+        files={"file": ("审批.pdf", b"PDF-original", "application/pdf")},
+    ).json()
+    file = project["stages"][1]["materials"][2]["files"][0]
+    path = url + "/" + file["id"]
+
+    def fail(*_args, **_kwargs):
+        raise OSError("synthetic persistence failure")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(main.project_store, "save", fail)
+        with pytest.raises(OSError, match="synthetic persistence failure"):
+            client.request(
+                "DELETE",
+                path,
+                json={"revision": project["revision"]},
+            )
+    assert client.get(base).json() == project
+    assert client.get(base + "/files/" + file["id"]).content == b"PDF-original"
+    project = client.request(
+        "DELETE",
+        path,
+        json={"revision": project["revision"]},
+    ).json()
+    with monkeypatch.context() as patch:
+        patch.setattr(main.project_store, "save", fail)
+        with pytest.raises(OSError, match="synthetic persistence failure"):
+            client.post(
+                path + "/restore",
+                json={"revision": project["revision"]},
+            )
+    assert client.get(base).json() == project
+    assert client.get(base + "/files/" + file["id"]).status_code == 404
+    source = next(tmp_path.rglob(file["id"] + ".pdf"))
+    source.write_bytes(b"tampered")
+    assert (
+        client.post(
+            path + "/restore",
+            json={"revision": project["revision"]},
+        ).status_code
+        == 422
+    )
+    assert client.get(base).json() == project
+    source.write_bytes(b"PDF-original")
+    restored = client.post(
+        path + "/restore",
+        json={"revision": project["revision"]},
+    )
+    assert restored.status_code == 200, restored.text
+    assert client.get(base + "/files/" + file["id"]).content == b"PDF-original"
+
+
 def test_plan_approval_pdf_compares_and_applies_selected_changes(
     client,
     monkeypatch,
@@ -1399,6 +1660,23 @@ def test_plan_approval_pdf_compares_and_applies_selected_changes(
     assert review["approved_at"] == "2026-08-06"
     assert review["change_count"] == 3
     assert all("current" in item for item in review["fields"])
+    plan = next(s for s in project["stages"] if s["id"] == "plan")
+    assert plan["status"] == "completed"
+    assert plan["approval_date"] == "2026-08-06"
+    assert plan["completion_file_id"] == file["id"]
+    assert plan["completed_at"]
+    assert not plan["documents_changed"] and not plan["upstream_changed"]
+    assert (
+        next(m for m in plan["materials"] if m["id"] == material["id"])[
+            "status"
+        ]
+        == "done"
+    )
+    assert client.get(base).json()["stages"][0] == plan
+    assert project["name"] != "批复项目名"
+    assert (
+        client.get("/api/document-forms/projects").json()[0]["completed"] == 1
+    )
     applied = client.post(
         base + "/stages/plan/approval/apply",
         json={
@@ -1410,6 +1688,10 @@ def test_plan_approval_pdf_compares_and_applies_selected_changes(
     assert applied.status_code == 200, applied.text
     project = applied.json()
     assert project["name"] == "批复项目名"
+    plan = project["stages"][0]
+    assert plan["status"] == "completed"
+    assert plan["approval_date"] == "2026-08-06"
+    assert not plan["documents_changed"] and not plan["upstream_changed"]
     file = next(
         file
         for stage in project["stages"]
@@ -1425,6 +1707,126 @@ def test_plan_approval_pdf_compares_and_applies_selected_changes(
         client.get(f"/api/document-forms/cases/{case['id']}").status_code
         == 200
     )
+
+
+@pytest.mark.parametrize(
+    "approval",
+    [
+        {"status": "unreadable"},
+        {"status": "unsupported"},
+        {"status": "ready", "approved_at": ""},
+        {"status": "ready", "approved_at": "2026-02-30"},
+        {"status": "ready", "approved_at": None},
+    ],
+)
+def test_approval_upload_completes_only_with_valid_recognized_date(
+    client,
+    monkeypatch,
+    approval,
+):
+    project, _case = project_case(client)
+    base = f"/api/document-forms/projects/{project['id']}"
+    project = client.put(
+        base + "/stages/plan",
+        json={
+            "revision": project["revision"],
+            "status": "in_progress",
+            "due_date": "2026-09-01",
+        },
+    ).json()
+    plan = project["stages"][0]
+    material = next(m for m in plan["materials"] if "批复" in m["name"])
+    parsed = dict(approval, parser_version=1, fields=[])
+    monkeypatch.setattr(
+        sys.modules[PACKAGE + ".backend.projects"],
+        "approval_from_pdf",
+        lambda _content: json.loads(json.dumps(parsed)),
+    )
+    url = base + f"/stages/plan/materials/{material['id']}/files"
+
+    def upload(revision, content=b"%PDF-1.4 approval"):
+        return client.post(
+            url,
+            data={"revision": revision},
+            files={"file": ("计划审批单.pdf", content, "application/pdf")},
+        )
+
+    result = upload(project["revision"])
+    assert result.status_code == 200, result.text
+    project = result.json()
+    plan = project["stages"][0]
+    assert plan["status"] == "in_progress"
+    assert not plan.get("approval_date") and not plan["completed_at"]
+    assert plan["due_date"] == "2026-09-01"
+
+    parsed.update(status="ready", approved_at="2026-08-06")
+    previous_revision = project["revision"]
+    result = upload(previous_revision)
+    assert result.status_code == 200, result.text
+    project = result.json()
+    plan = project["stages"][0]
+    assert plan["status"] == "completed"
+    assert plan["approval_date"] == "2026-08-06"
+    assert plan["due_date"] == "2026-09-01"  # Original plan remains available.
+    assert project["revision"] == previous_revision + 1
+    assert upload(previous_revision).status_code == 409
+
+    parsed["approved_at"] = "2026-08-12"
+    result = upload(project["revision"], b"%PDF-1.4 revised approval")
+    assert result.status_code == 200, result.text
+    plan = result.json()["stages"][0]
+    stored = client.get(base).json()["stages"][0]
+    assert stored == plan
+    assert plan["status"] == "completed"
+    assert plan["approval_date"] == "2026-08-12"
+    files = next(m for m in plan["materials"] if m["id"] == material["id"])[
+        "files"
+    ]
+    assert len(files) == 3
+    assert plan["completion_file_id"] == files[-1]["id"]
+    assert files[1]["approval_review"]["approved_at"] == "2026-08-06"
+    assert len({f["id"] for f in files}) == 3
+
+
+@pytest.mark.parametrize("invalid_date", [False, True])
+def test_real_plan_approval_upload_updates_completion_and_date(
+    client,
+    invalid_date,
+):
+    # Synthetic text PDF with a ToUnicode map; no private approval content.
+    content = (
+        Path(__file__).parent / "fixtures/plan-approval.pdf"
+    ).read_bytes()
+    if invalid_date:
+        original = "2026年08月06日".encode("utf-16-be").hex().encode()
+        invalid = "2026年02月30日".encode("utf-16-be").hex().encode()
+        assert original in content
+        content = content.replace(original, invalid)
+    project, _case = project_case(client)
+    base = f"/api/document-forms/projects/{project['id']}"
+    material = next(
+        m for m in project["stages"][0]["materials"] if "批复" in m["name"]
+    )
+    response = client.post(
+        base + f"/stages/plan/materials/{material['id']}/files",
+        data={"revision": project["revision"]},
+        files={"file": ("计划批复.pdf", content, "application/pdf")},
+    )
+    assert response.status_code == 200, response.text
+    plan = client.get(base).json()["stages"][0]
+    assert plan == response.json()["stages"][0]
+    saved = next(m for m in plan["materials"] if m["id"] == material["id"])
+    review = saved["files"][0]["approval_review"]
+    if invalid_date:
+        assert review["status"] == "unsupported"
+        assert "批复日期无效" in review["message"]
+        assert plan["status"] == "in_progress"
+        assert not plan.get("approval_date")
+    else:
+        assert review["status"] == "ready" and len(review["fields"]) == 8
+        assert review["approved_at"] == plan["approval_date"] == "2026-08-06"
+        assert plan["status"] == "completed" and saved["status"] == "done"
+        assert not plan["documents_changed"]
 
 
 def test_project_generated_batch_changes_prompt_downstream_review(
@@ -1785,6 +2187,7 @@ def test_office_print_preview_all_pages_scope_cache_and_failure(
     sources,
     monkeypatch,
 ):
+    monkeypatch.setenv("OFFICECLI_SKIP_UPDATE", "0")
     case = create(client, sources)
     base = f"/api/document-forms/cases/{case['id']}"
     review = client.post(
@@ -1811,6 +2214,7 @@ def test_office_print_preview_all_pages_scope_cache_and_failure(
     def run(args, **kwargs):
         assert kwargs["timeout"] == 90
         assert kwargs["env"]["OFFICECLI_NO_AUTO_RESIDENT"] == "1"
+        assert kwargs["env"]["OFFICECLI_SKIP_UPDATE"] == "1"
         assert Path(args[2]).is_file()
         calls.append(args)
         if "stats" in args:
@@ -1859,6 +2263,7 @@ def test_office_print_preview_all_pages_scope_cache_and_failure(
 
 
 def test_print_preview_per_page_cache_and_bounds(client, sources, monkeypatch):
+    monkeypatch.setenv("OFFICECLI_SKIP_UPDATE", "0")
     case = create(client, sources)
     base = f"/api/document-forms/cases/{case['id']}"
     review = client.post(
@@ -1880,6 +2285,7 @@ def test_print_preview_per_page_cache_and_bounds(client, sources, monkeypatch):
 
     def page_run(args, **kwargs):
         assert kwargs["env"]["OFFICECLI_NO_AUTO_RESIDENT"] == "1"
+        assert kwargs["env"]["OFFICECLI_SKIP_UPDATE"] == "1"
         calls.append(args)
         if "stats" in args:
             return types.SimpleNamespace(returncode=0, stdout=b'{"pages":2}')
@@ -3020,7 +3426,10 @@ def test_selection_templates_generate_opinion_signature_sheet_and_upload_form(
             "selection.year": "2026",
             "selection.budget_wan": "45",
             "selection.overview": "完整的项目概况。",
-            "selection.reliability": "经批准的计划可靠性说明。",
+            "selection.reliability": (
+                "《论证测试项目》本次论证预算为45万元。依托《依托主项目》，"
+                "WBS编码为00123，依托项目经费为200万元。经批准的计划可靠性说明。"
+            ),
             "selection.relationship": "否",
             "selection.plan_type": "委托研发/技术服务计划",
             "selection.funding_source": "股份",
@@ -3042,6 +3451,12 @@ def test_selection_templates_generate_opinion_signature_sheet_and_upload_form(
         ).json()
 
     case = save(vals)
+    expected_reliability = (
+        "《论证测试项目》本次论证预算为45万元。依托《依托主项目》，"
+        "WBS编码为00123，依托项目经费为200万元。经批准的计划可靠性说明。"
+    )
+    assert values_for(case)["selection.reliability"] == expected_reliability
+    vals["selection.reliability"] = expected_reliability
     review = client.post(
         route + "/review",
         json={"revision": case["revision"]},
@@ -3106,6 +3521,306 @@ def test_selection_templates_generate_opinion_signature_sheet_and_upload_form(
         "selection.overview",
         "selection.year",
     } <= {c["field"] for c in blocked["checks"] if c["status"] == "error"}
+
+
+# Keep the complete persistent approval transition and protected case name.
+# pylint: disable-next=too-many-statements,line-too-long
+def test_selection_opinions_link_approved_budget_and_candidates_without_losing_findings(  # noqa: E501
+    client,
+    tmp_path,
+):
+    project = client.post(
+        "/api/document-forms/projects",
+        json={"name": "联动项目", "code": "L1"},
+    ).json()
+    base = f"/api/document-forms/projects/{project['id']}"
+    profile = values_for(project)
+    profile.update(
+        {
+            "funding.project_name": "当前依托项目",
+            "funding.amount_wan": "200",
+            "funding.wbs": "WBS-001",
+            "budget.ceiling_number": "470000",
+            "contact.department": "测试所",
+            "contact.name": "测试经办人",
+            "contact.office_phone": "010-12345678",
+        },
+    )
+    project = client.put(
+        base,
+        json={
+            key: project[key] for key in ("revision", "name", "code", "owner")
+        }
+        | {"values": profile},
+    ).json()
+    material = next(
+        m for m in project["stages"][0]["materials"] if "批复" in m["name"]
+    )
+    approval = (
+        Path(__file__).parent / "fixtures/plan-approval.pdf"
+    ).read_bytes()
+    upload = base + f"/stages/plan/materials/{material['id']}/files"
+    project = client.post(
+        upload,
+        data={"revision": project["revision"]},
+        files={
+            "file": ("计划批复.pdf", approval, "application/pdf"),
+        },
+    ).json()
+    case = client.post(
+        base + "/form",
+        json={
+            "revision": project["revision"],
+            "stage_id": "selection",
+        },
+    ).json()
+    route = f"/api/document-forms/cases/{case['id']}"
+    fields = {f["key"]: f for f in case["fields"]}
+    assert fields["selection.budget_wan"]["value"] == "45"
+    assert "计划金额为45万元" in fields["selection.reliability"]["value"]
+    assert "审查通过" not in fields["selection.qualification_review"]["value"]
+    assert {"selection.reliability", "selection.qualification_review"} <= {
+        c["field"] for c in engine.checks(case) if c["status"] == "missing"
+    }
+    # A real existing draft: replace only recognized repeated fact clauses.
+    legacy = json.loads(
+        next(tmp_path.rglob("draft.json")).read_text(encoding="utf-8"),
+    )
+    old = {
+        "selection.partner1_name": "候选甲",
+        "selection.partner2_name": "候选乙",
+        "selection.partner3_name": "候选丙",
+        "selection.reliability": (
+            "《旧名》为2026年审查通过的技术服务实施计划，计划金额为47万元。依托《旧依托》，WBS"
+            "编码旧码，依托项目经费为999万元，需补充资金落实证明。"
+        ),
+        "selection.qualification_review": "通过调研优选三家单位，分别为旧甲、旧乙、错误第三家。需补充资质证据。",
+    }
+    for field in legacy["fields"]:
+        if field["key"] in old:
+            field["value"] = old[field["key"]]
+        for key in ("linked_parts", "linked_prefix", "opinion_required"):
+            field.pop(key, None)
+    next(tmp_path.rglob("draft.json")).write_text(
+        json.dumps(legacy, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    case = client.get(route).json()
+    fields = {f["key"]: f for f in case["fields"]}
+    assert fields["selection.reliability"]["value"].endswith("需补充资金落实证明。")
+    assert "《联动项目》" in fields["selection.reliability"]["value"]
+    assert "《当前依托项目》" in fields["selection.reliability"]["value"]
+    assert "WBS-001" in fields["selection.reliability"]["value"]
+    assert "旧名" not in fields["selection.reliability"]["value"]
+    assert "候选甲、候选乙、候选丙" in fields["selection.qualification_review"]["value"]
+    assert "错误第三家" not in fields["selection.qualification_review"]["value"]
+    assert fields["selection.qualification_review"]["value"].endswith(
+        "需补充资质证据。",
+    )
+    assert any(
+        "错误第三家" in p.read_text(encoding="utf-8")
+        for p in tmp_path.rglob("*_before_selection_controls_*.json")
+    )
+    vals = values_for(case)
+    for field in case["fields"]:
+        if not vals[field["key"]]:
+            vals[field["key"]] = field["label"] + "测试内容"
+    vals.update(
+        {
+            "selection.partner3_name": "新候选丙",
+            "selection.date": "2026-08-31",
+            "selection.year": "2026",
+            "selection.plan_type": "委托研发/技术服务计划",
+            "selection.funding_source": "股份",
+            "selection.relationship": "否",
+        },
+    )
+    response = client.put(
+        route,
+        json={
+            "revision": case["revision"],
+            "name": case["name"],
+            "values": vals,
+            "recipients": [],
+        },
+    )
+    assert response.status_code == 200, response.text
+    case = response.json()
+    assert "候选甲、候选乙、新候选丙" in values_for(case)["selection.qualification_review"]
+    assert values_for(case)["selection.qualification_review"].endswith(
+        "需补充资质证据。",
+    )
+    review = client.post(
+        route + "/review",
+        json={"revision": case["revision"]},
+    ).json()
+    assert review["can_generate"], review
+    generated = client.post(
+        route + "/generate",
+        json={
+            "revision": case["revision"],
+            "confirmed": True,
+            "review_token": review["review_token"],
+        },
+    ).json()
+    batch = generated["generations"][0]
+    doc_file = next(f for f in batch["files"] if f["extension"] == "docx")
+    output_url = route + f"/outputs/{batch['id']}/{doc_file['name']}"
+    original = client.get(output_url).content
+    text = "\n".join(p.text for p in Document(io.BytesIO(original)).paragraphs)
+    assert "计划金额为45万元" in text and "新候选丙" in text
+    assert "错误第三家" not in text and "需补充资质证据。" in text
+    # Replacing approval refreshes facts and invalidates review,
+    # while preserving previously generated output bytes.
+    project = client.get(base).json()
+    revised = approval.replace(
+        "45".encode("utf-16-be").hex().encode(),
+        "44".encode("utf-16-be").hex().encode(),
+    )
+    client.post(
+        upload,
+        data={"revision": project["revision"]},
+        files={
+            "file": ("计划批复.pdf", revised, "application/pdf"),
+        },
+    ).raise_for_status()
+    refreshed = client.get(route).json()
+    assert values_for(refreshed)["selection.budget_wan"] == "44"
+    assert "计划金额为44万元" in values_for(refreshed)["selection.reliability"]
+    assert values_for(refreshed)["selection.reliability"].endswith(
+        "需补充资金落实证明。",
+    )
+    assert refreshed["revision"] > generated["revision"]
+    assert refreshed["generations"] == generated["generations"]
+    assert client.get(output_url).content == original
+    assert (
+        client.post(
+            route + "/generate",
+            json={
+                "revision": generated["revision"],
+                "confirmed": True,
+                "review_token": review["review_token"],
+            },
+        ).status_code
+        == 409
+    )
+
+
+# Keep the migration, edit and stored-output assertions in one transition.
+# pylint: disable-next=too-many-statements
+def test_inline_opinion_restores_original_prose_and_saves_reference_templates(
+    client,
+):
+    project = client.post(
+        "/api/document-forms/projects",
+        json={"name": "原文恢复项目"},
+    ).json()
+    case = client.post(
+        f"/api/document-forms/projects/{project['id']}/form",
+        json={"revision": project["revision"], "stage_id": "selection"},
+    ).json()
+    route = f"/api/document-forms/cases/{case['id']}"
+    root = next(main.ROOT.iterdir())
+    source = main.folder(root, case["id"]) / "draft.json"
+    old = json.loads(source.read_text(encoding="utf-8"))
+    original = (
+        "《旧名》为2026年审查通过的技术服务实施计划，计划金额为45.0万元。依托《旧依托》，W"
+        "BS编码旧码，依托项目经费为200.0万元，依托项目可靠性强。"
+    )
+    qualification = "通过调研优选三家单位，分别为旧甲、旧乙、旧丙。经论证，资质证明齐全。"
+    old_values = {
+        "selection.reliability": original,
+        "selection.qualification_review": qualification,
+    }
+    for field in old["fields"]:
+        if field["key"] in old_values:
+            field["value"] = old_values[field["key"]]
+            for key in list(field):
+                if key.startswith("linked_"):
+                    field.pop(key)
+    history = main.project_store.path(root, project["id"]) / "form-history"
+    history.mkdir(exist_ok=True)
+    backup = history / f"{case['id']}_before_selection_controls_r100.json"
+    backup.write_text(json.dumps(old, ensure_ascii=False), encoding="utf-8")
+    legacy = json.loads(json.dumps(old))
+    for field in legacy["fields"]:
+        if field["key"] in old_values:
+            notes = main.builtin.selection_opinion_notes(
+                field,
+                field["value"],
+                "",
+            )
+            field.update(
+                value="已改写的引用资料。" + notes,
+                linked_prefix="已改写的引用资料。",
+                linked_parts=["已改写的引用资料。"],
+            )
+        if field["key"] == "selection.year":
+            field["value"] = "2026"
+        if field["key"] == "selection.partner1_name":
+            field["value"] = "当前甲"
+        if field["key"] == "selection.partner2_name":
+            field["value"] = "当前乙"
+        if field["key"] == "selection.partner3_name":
+            field["value"] = "当前丙"
+    source.write_text(json.dumps(legacy, ensure_ascii=False), encoding="utf-8")
+    restored = client.get(route).json()
+    fields = {f["key"]: f for f in restored["fields"]}
+    template = fields["selection.reliability"]["linked_template"]
+    assert template == (
+        "《【project.name】》为【selection.year】年审查通过的技术服务实施"
+        "计划，计划金额为【selection.budget_wan|1】万元。依托《【fundin"
+        "g.project_name】》，WBS编码【funding.wbs】，依托项目经费为【f"
+        "unding.amount_wan|1】万元，依托项目可靠性强。"
+    )
+    assert (
+        fields["selection.qualification_review"]["value"]
+        == "通过调研优选三家单位，分别为当前甲、当前乙、当前丙。经论证，资质证明齐全。"
+    )
+    assert backup.read_text(encoding="utf-8") == json.dumps(
+        old,
+        ensure_ascii=False,
+    )
+    assert client.get(route).json()["revision"] == restored["revision"]
+    edited = template.replace(
+        "依托项目可靠性强。",
+        "经核实，依托项目可靠性强。\n保留我的第二段意见。",
+    )
+    payload = {
+        "revision": restored["revision"],
+        "name": restored["name"],
+        "recipients": [],
+        "values": values_for(restored),
+        "opinion_templates": {"selection.reliability": edited},
+    }
+    response = client.put(route, json=payload)
+    assert response.status_code == 200, response.text
+    saved = response.json()
+    field = next(
+        f for f in saved["fields"] if f["key"] == "selection.reliability"
+    )
+    assert field["linked_template"] == edited
+    assert "为2026年审查通过的技术服务实施计划，计划金额为" in field["value"]
+    assert field["value"].endswith("经核实，依托项目可靠性强。\n保留我的第二段意见。")
+    assert "【" not in field["value"] and "已改写" not in field["value"]
+    assert client.get(route).json() == saved
+    payload.update(
+        revision=saved["revision"],
+        values=values_for(saved),
+        opinion_templates={"selection.reliability": "【private.secret】"},
+    )
+    assert client.put(route, json=payload).status_code == 422
+    assert client.get(route).json() == saved
+    payload.update(opinion_templates={"selection.reliability": ""})
+    cleared = client.put(route, json=payload).json()
+    empty = next(
+        f for f in cleared["fields"] if f["key"] == "selection.reliability"
+    )
+    assert empty["value"] == "" and empty["opinion_empty"]
+    assert any(
+        c["field"] == "selection.reliability" and c["status"] == "missing"
+        for c in engine.checks(cleared)
+    )
 
 
 def test_selection_controls_bind_budget_to_profile_and_reject_invalid_choices(
@@ -3210,3 +3925,98 @@ def test_selection_controls_bind_budget_to_profile_and_reject_invalid_choices(
     assert refreshed["revision"] > case["revision"]
     assert values_for(refreshed)["selection.plan_type"] == "任意计划"
     assert refreshed["generations"] == case["generations"]
+
+
+def test_project_profile_excel_import_previews_shared_values_without_mutation(
+    client,
+    sources,
+):
+    project = client.post(
+        "/api/document-forms/projects",
+        json={"name": "原项目", "code": "P-01", "owner": "原经办人"},
+    ).json()
+    base = "/api/document-forms/projects/" + project["id"]
+    before = client.get(base).json()
+    response = client.post(
+        base + "/profile/import",
+        data={"revision": before["revision"]},
+        files={"workbook": ("旧变量模板.xlsx", sources["变量管理表.xlsx"])},
+    )
+    assert response.status_code == 200, response.text
+    imported = response.json()
+    incoming = values_for(imported)
+    assert incoming["project.name"] == "储气库 A & B <参数> 测试"
+    assert incoming["project.code"] == "0012"
+    assert incoming["contact.office_phone"] == "01234567890"
+    assert "dates.issue" not in incoming
+    assert "events.location" not in incoming
+    assert client.get(base).json() == before
+    saved = client.put(
+        base,
+        json={
+            "revision": before["revision"],
+            "name": incoming["project.name"],
+            "code": incoming["project.code"],
+            "owner": before["owner"],
+            "values": incoming,
+        },
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["owner"] == "原经办人"
+    assert values_for(saved.json())["contact.office_phone"] == "01234567890"
+    assert (
+        client.post(
+            base + "/profile/import",
+            data={"revision": before["revision"]},
+            files={"workbook": ("旧变量模板.xlsx", sources["变量管理表.xlsx"])},
+        ).status_code
+        == 409
+    )
+    current = client.get(base).json()
+    book = load_workbook(io.BytesIO(sources["变量管理表.xlsx"]))
+    for row in book["变量配置"].iter_rows(min_row=2):
+        row[2].value = (
+            ""
+            if row[0].value.startswith(
+                ("project.", "organization.", "contact."),
+            )
+            else row[2].value
+        )
+    content = io.BytesIO()
+    book.save(content)
+    blank = client.post(
+        base + "/profile/import",
+        data={"revision": current["revision"]},
+        files={"workbook": ("空白模板.xlsx", content.getvalue())},
+    )
+    assert blank.status_code == 422
+    for filename, payload in [
+        ("错误.xlsx", b"broken"),
+        ("错误.xls", sources["变量管理表.xlsx"]),
+    ]:
+        assert client.post(
+            base + "/profile/import",
+            data={"revision": current["revision"]},
+            files={"workbook": (filename, payload)},
+        ).status_code in {400, 422}
+    for row in book["变量配置"].iter_rows(min_row=2):
+        if row[0].value == "project.code":
+            row[2].value = "=1+1"
+    content = io.BytesIO()
+    book.save(content)
+    assert (
+        client.post(
+            base + "/profile/import",
+            data={"revision": current["revision"]},
+            files={"workbook": ("公式.xlsx", content.getvalue())},
+        ).status_code
+        == 422
+    )
+    assert client.get(base).json() == current
+    assert (
+        client.get(
+            base,
+            headers={"X-Agent-Id": "other-profile-import"},
+        ).status_code
+        == 404
+    )

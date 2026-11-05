@@ -18,6 +18,7 @@ import {
   awaitQueueAcceptance,
   recoverSendingQueueHead,
   waitForChatIdle,
+  yieldQueueReadinessWaits,
 } from "./chatRunLifecycle";
 import {
   clearBackgroundAbortIfCurrent,
@@ -101,6 +102,155 @@ describe("chat scope cancellation", () => {
     expect(remove).toHaveBeenCalledWith("abort", add.mock.calls[1][1]);
     add.mockRestore();
     remove.mockRestore();
+  });
+});
+
+describe("steering yields queue readiness without cancelling the active run", () => {
+  it("releases a pending readiness GET and gives the explicit steering claim the next send lock", async () => {
+    const locks = new Map<string, Promise<void>>();
+    vi.stubGlobal("navigator", {
+      locks: {
+        request: async (
+          name: string,
+          options: { ifAvailable?: boolean },
+          callback: (lock: unknown) => Promise<unknown>,
+        ) => {
+          if (options.ifAvailable && locks.has(name)) return callback(null);
+          const previous = locks.get(name) ?? Promise.resolve();
+          let release!: () => void;
+          const own = new Promise<void>((resolve) => {
+            release = resolve;
+          });
+          locks.set(name, own);
+          await previous;
+          try {
+            return await callback({ name });
+          } finally {
+            release();
+            if (locks.get(name) === own) locks.delete(name);
+          }
+        },
+      },
+    });
+    const reply = deferred<{ status: string; messages: never[] }>();
+    vi.mocked(request).mockReturnValue(reply.promise);
+    const caller = new AbortController();
+    const waiting = withSendLock(key, () =>
+      waitForChatIdle(key, caller.signal, "agent-a", key),
+    );
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    const querySignal = vi.mocked(request).mock.calls[0][1]!
+      .signal as AbortSignal;
+    expect(querySignal).not.toBe(caller.signal);
+    expect(await withSendLock(key, () => "automatic send")).toBeNull();
+
+    yieldQueueReadinessWaits(key);
+    const steeringClaim = withSendLock(key, () => "steering claimed", {
+      wait: true,
+    });
+    await expect(waiting).resolves.toBe(false);
+    await expect(steeringClaim).resolves.toBe("steering claimed");
+    expect(querySignal.aborted).toBe(true);
+    expect(caller.signal.aborted).toBe(false);
+    expect(locks.size).toBe(0);
+    reply.reject(new Error("late response after readiness was yielded"));
+    await Promise.resolve();
+  });
+
+  it("yields only the requested queue and unregisters completed readiness scopes", async () => {
+    const replyA = deferred<{ status: string; messages: never[] }>();
+    const replyB = deferred<{ status: string; messages: never[] }>();
+    vi.mocked(request)
+      .mockReturnValueOnce(replyA.promise)
+      .mockReturnValueOnce(replyB.promise);
+    const callerA = new AbortController();
+    const callerB = new AbortController();
+    const add = vi.spyOn(callerB.signal, "addEventListener");
+    const remove = vi.spyOn(callerB.signal, "removeEventListener");
+    const waitingA = waitForChatIdle(
+      "chat-a",
+      callerA.signal,
+      "agent-a",
+      "queue-a",
+    );
+    const waitingB = waitForChatIdle(
+      "chat-b",
+      callerB.signal,
+      "agent-b",
+      "queue-b",
+    );
+    const signalA = vi.mocked(request).mock.calls[0][1]!.signal as AbortSignal;
+    const signalB = vi.mocked(request).mock.calls[1][1]!.signal as AbortSignal;
+    yieldQueueReadinessWaits("queue-a");
+    await expect(waitingA).resolves.toBe(false);
+    expect(signalA.aborted).toBe(true);
+    expect(signalB.aborted).toBe(false);
+    replyB.resolve({ status: "idle", messages: [] });
+    await expect(waitingB).resolves.toBe(true);
+    yieldQueueReadinessWaits("queue-b");
+    expect(signalB.aborted).toBe(false);
+    expect(callerA.signal.aborted).toBe(false);
+    expect(callerB.signal.aborted).toBe(false);
+    expect(remove).toHaveBeenCalledWith("abort", add.mock.calls[0][1]);
+    add.mockRestore();
+    remove.mockRestore();
+    replyA.resolve({ status: "idle", messages: [] });
+  });
+
+  it("releases the polling delay immediately and permits the next independent idle check", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.mocked(request).mockResolvedValue({ status: "running", messages: [] });
+      const caller = new AbortController();
+      const waiting = waitForChatIdle(key, caller.signal, "agent-a", key);
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(vi.getTimerCount()).toBe(1);
+      yieldQueueReadinessWaits(key);
+      await expect(waiting).resolves.toBe(false);
+      expect(vi.getTimerCount()).toBe(0);
+      expect(caller.signal.aborted).toBe(false);
+      vi.mocked(request).mockResolvedValue({ status: "idle", messages: [] });
+      await expect(
+        waitForChatIdle(key, caller.signal, "agent-a", key),
+      ).resolves.toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("leaves an unresolved sending marker intact when steering yields its receipt readiness wait", async () => {
+    const head = sendingHead();
+    const reply = deferred<{ status: string; messages: unknown[] }>();
+    vi.mocked(request).mockReturnValue(reply.promise);
+    const caller = new AbortController();
+    const recovering = recoverSendingQueueHead(
+      key,
+      caller.signal,
+      "agent-a",
+      key,
+      "not a send failure",
+    );
+    yieldQueueReadinessWaits(key);
+    await recovering;
+    expect(useMessageQueueStore.getState().getQueue(key)[0]).toMatchObject({
+      id: head.id,
+      status: "sending",
+      retryCount: 0,
+    });
+    expect(useMessageQueueStore.getState().getRunState(key)).toBe("idle");
+    expect(caller.signal.aborted).toBe(false);
+    reply.resolve({
+      status: "idle",
+      messages: [
+        {
+          role: "user",
+          metadata: { qwenpaw_client_message_id: head.clientMessageId },
+        },
+      ],
+    });
+    await Promise.resolve();
+    expect(useMessageQueueStore.getState().getQueue(key)[0].id).toBe(head.id);
   });
 });
 

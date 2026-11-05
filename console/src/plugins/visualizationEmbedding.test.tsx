@@ -11,6 +11,16 @@ import {
   waitFor,
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import ArtifactPreview from "../components/Workspace/ArtifactPreview";
+import { rendererRegistry } from "../components/Workspace/store/rendererRegistry";
+import {
+  registerBuiltinRenderers,
+  unregisterBuiltinRenderers,
+} from "../components/Workspace/store/builtinRenderers";
+import type {
+  RendererRegistration,
+  WorkspaceArtifact,
+} from "../components/Workspace/types";
 import { ApiClient } from "../../../plugins/bundle/ugsci/ui/src/visualization/viewer/api/client";
 import { hostViewerOptions } from "../../../plugins/bundle/ugsci/ui/src/visualization/hostAdapter";
 import { waitForWorkspaceImport } from "../../../plugins/bundle/ugsci/ui/src/visualization/workspaceImport";
@@ -38,6 +48,7 @@ afterEach(() => {
 function fixture(bundle: string) {
   let page: React.ComponentType = () => null;
   let workspace: React.ComponentType<any> = () => null;
+  let renderer: RendererRegistration | undefined;
   const navigate = vi.fn();
   const dispose = vi.fn();
   const mount = vi.fn(
@@ -92,7 +103,10 @@ function fixture(bundle: string) {
       },
       workspace: {
         registerRenderer: (item: any) => {
-          if (item.id === "ugsci.visualization") workspace = item.component;
+          if (item.id === "ugsci.visualization") {
+            workspace = item.component;
+            renderer = item;
+          }
         },
       },
       menu: { add: vi.fn(), snapshot: () => [] },
@@ -116,6 +130,7 @@ function fixture(bundle: string) {
   return {
     Page: page,
     Workspace: workspace,
+    renderer,
     navigate,
     dispose,
     mount,
@@ -128,6 +143,84 @@ describe.each([
   "plugins/bundle/ugsci/ui/dist/index.js",
   "src/qwenpaw/plugins_bundle/ugsci/ui/dist/index.js",
 ])("visualization embedding: %s", (bundle) => {
+  it("previews ordinary delivered CSV through the native table with the real visualization bundle installed", async () => {
+    const { renderer, request, mount } = fixture(bundle);
+    unregisterBuiltinRenderers();
+    rendererRegistry.__resetForTests();
+    registerBuiltinRenderers();
+    const registration = rendererRegistry.register(renderer!);
+    const artifact: WorkspaceArtifact = {
+      id: "archived-csv",
+      title: "turn-files-demo-20261031.csv",
+      extension: "csv",
+      mimeType: "text/csv",
+      source: "tool_call",
+      textContent: "井号,日产气量\n演示井A,120\n演示井B,80\n演示井C,60\n",
+      workspacePath: "output/turn-files-demo-20261031.csv",
+      workspaceRoot: "workspace",
+      agentId: "agent-a",
+      chatId: "chat-a",
+      meta: { turnFileArchive: true },
+    };
+    try {
+      // Cover explicit CSV MIME and the extension-based fallback used by files
+      // downloaded with a generic media type.
+      for (const mimeType of ["text/csv", "application/octet-stream"]) {
+        expect(
+          rendererRegistry.match({ ...artifact, mimeType })?.renderer.id,
+        ).toBe("csv");
+      }
+      // Reservoir-specific formats still use the installed professional viewer.
+      expect(
+        rendererRegistry.match({
+          ...artifact,
+          title: "model.egrid",
+          extension: "egrid",
+          mimeType: "application/x-eclipse-grid",
+        })?.renderer.id,
+      ).toBe("ugsci.visualization");
+      render(<ArtifactPreview artifact={artifact} />);
+      const table = await screen.findByRole("table", {}, { timeout: 10000 });
+      expect(table).toHaveTextContent("井号");
+      expect(table).toHaveTextContent("演示井A");
+      expect(table).toHaveTextContent("120");
+      expect(table).toHaveTextContent("演示井C");
+      expect(table).toHaveTextContent("60");
+      expect(screen.queryByText(/预览失败|管段/)).not.toBeInTheDocument();
+      expect(
+        request.mock.calls.some(([url]) => url.endsWith("/imports/workspace")),
+      ).toBe(false);
+      expect(mount).not.toHaveBeenCalled();
+    } finally {
+      cleanup();
+      registration.dispose();
+      unregisterBuiltinRenderers();
+      rendererRegistry.__resetForTests();
+    }
+  });
+  it("retains explicit network CSV imports through the professional workspace viewer", async () => {
+    const { Workspace, request, mount } = fixture(bundle);
+    render(
+      <Workspace
+        artifact={{
+          title: "network.csv",
+          workspacePath: "network.csv",
+          workspaceRoot: "workspace",
+          agentId: "agent-a",
+          chatId: "chat-a",
+        }}
+      />,
+    );
+    await waitFor(() => expect(mount).toHaveBeenCalledOnce());
+    const imports = request.mock.calls.filter(([url]) =>
+      url.endsWith("/imports/workspace"),
+    );
+    expect(imports).toHaveLength(1);
+    expect(JSON.parse(String(imports[0][1]?.body))).toMatchObject({
+      path: "network.csv",
+      root: "workspace",
+    });
+  });
   it("exposes a reusable lazy application mount with independent command handling", async () => {
     const { mount, dispose } = fixture(bundle);
     const api = (window as any).QwenPaw.ugsci.visualization;

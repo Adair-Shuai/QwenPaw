@@ -25,6 +25,9 @@
   user-select: none;
 }
 .frame {
+  --sidebar-footer-height: max(56px, calc(56px * var(--app-font-scale, 1)));
+  --sidebar-footer-bottom: 8px;
+  --sidebar-transport-height: var(--sidebar-footer-height);
   position: relative;
   flex-shrink: 0;
   height: 100%;
@@ -39,9 +42,10 @@
 }
 .transport {
   position: absolute;
-  inset: auto 48px 20px;
-  height: var(--app-hit-desktop);
+  inset: auto 12px var(--sidebar-footer-bottom) auto;
+  height: var(--sidebar-transport-height);
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   z-index: 20;
   pointer-events: none;
@@ -67,7 +71,7 @@
 .handle {
   pointer-events: auto;
   width: var(--app-hit-desktop);
-  height: var(--app-hit-desktop);
+  height: var(--sidebar-transport-height);
   cursor: grab;
   touch-action: none;
   user-select: none;
@@ -77,7 +81,7 @@
   pointer-events: auto;
   right: var(--app-hit-desktop);
   width: var(--app-hit-desktop);
-  height: var(--app-hit-desktop);
+  height: var(--sidebar-transport-height);
   cursor: pointer;
 }
 .floating {
@@ -116,10 +120,12 @@
   pointer-events: none;
 }
 .rail {
+  --sidebar-transport-height: var(--app-hit-desktop);
   padding-top: 0;
   .transport {
     inset: auto 0 58px;
     height: 48px;
+    align-items: flex-start;
     justify-content: center;
   }
   .dockButton {
@@ -147,9 +153,18 @@
 }
 
 @media (any-pointer: coarse) {
+  .rail {
+    --sidebar-transport-height: var(--app-hit-touch);
+  }
+  .dockButton {
+    right: var(--app-hit-touch);
+  }
   .handle,
   .dockButton {
     width: var(--app-hit-touch);
-    height: var(--app-hit-touch);
   }
+}
+
+:global(html[data-page-style]:not([data-page-style="classic"])) .frame {
+  --sidebar-footer-bottom: 14px;
 }

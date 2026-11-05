@@ -602,6 +602,544 @@ describe("messageQueueStore", () => {
   });
 
   // ---------------------------------------------------------------------------
+  // Non-interrupting steering ownership and receipts
+  // ---------------------------------------------------------------------------
+
+  it("claims steering with a distinct persisted request identity and preserves the original FIFO", () => {
+    const store = useMessageQueueStore.getState();
+    store.enqueue(SESSION_ID, { text: "first", agentId: "agent-a" });
+    store.enqueue(SESSION_ID, { text: "guide this run", agentId: "agent-a" });
+    const [first, target] = store.getQueue(SESSION_ID);
+
+    expect(store.beginSteering(SESSION_ID, target.id, "run-a")).toBe(true);
+    expect(store.beginSteering(SESSION_ID, target.id, "run-b")).toBe(false);
+    expect(store.beginSteering(SESSION_ID, first.id, "")).toBe(false);
+    expect(store.beginSteering("draft:agent-a", first.id, "run-a")).toBe(false);
+    store.setItemStatus(SESSION_ID, first.id, "steering");
+    expect(store.getQueue(SESSION_ID)[0].status).toBe("pending");
+    store.setItemStatus(SESSION_ID, first.id, "sending");
+    expect(store.beginSteering(SESSION_ID, first.id, "run-a")).toBe(false);
+
+    const claimed = store.getQueue(SESSION_ID)[1];
+    expect(claimed).toMatchObject({
+      id: target.id,
+      clientMessageId: target.clientMessageId,
+      text: target.text,
+      agentId: target.agentId,
+      status: "steering",
+      steering: { runId: "run-a" },
+    });
+    expect(claimed.steering?.requestId).toMatch(/^steer-/);
+    expect(claimed.steering?.requestId).not.toBe(target.clientMessageId);
+    expect(store.getQueue(SESSION_ID).map((item) => item.id)).toEqual([
+      first.id,
+      target.id,
+    ]);
+    expect(
+      JSON.parse(localStorage.getItem(getStorageKey(SESSION_ID))!).items[1],
+    ).toEqual(JSON.parse(JSON.stringify(claimed)));
+  });
+
+  it("keeps uncertain steering immutable through reload until the matching server receipt arrives", () => {
+    const store = useMessageQueueStore.getState();
+    store.enqueue(SESSION_ID, { text: "keep analysing, check dates first" });
+    store.enqueue(SESSION_ID, { text: "ordinary next turn" });
+    const target = store.getQueue(SESSION_ID)[0];
+    store.beginSteering(SESSION_ID, target.id, "run-a");
+    const requestId = store.getQueue(SESSION_ID)[0].steering!.requestId;
+    expect(
+      store.setSteeringError(SESSION_ID, target.id, requestId, "offline"),
+    ).toBe(true);
+    expect(
+      store.setSteeringError(SESSION_ID, target.id, "old-request", "stale"),
+    ).toBe(false);
+
+    resetStore();
+    store.loadFromStorage(SESSION_ID);
+    const unresolved = store.getQueue(SESSION_ID)[0];
+    const onChange = vi.fn();
+    const unsubscribe = useMessageQueueStore.subscribe(onChange);
+    expect(
+      store.setSteeringError(SESSION_ID, target.id, requestId, "offline"),
+    ).toBe(false);
+    expect(onChange).not.toHaveBeenCalled();
+    unsubscribe();
+    expect(unresolved).toMatchObject({
+      status: "steering",
+      errorMessage: "offline",
+      retryCount: 0,
+      steering: { requestId, runId: "run-a" },
+    });
+    store.edit(SESSION_ID, target.id, "changed after delivery");
+    store.remove(SESSION_ID, target.id);
+    store.setItemStatus(SESSION_ID, target.id, "pending");
+    store.setItemStatus(SESSION_ID, target.id, "failed", "stale failure");
+    store.reorder(SESSION_ID, [...store.getQueue(SESSION_ID)].reverse());
+    expect(store.getQueue(SESSION_ID)[0]).toEqual(unresolved);
+    expect(store.getRunState(SESSION_ID)).toBe("idle");
+    store.clear(SESSION_ID);
+    expect(store.getQueue(SESSION_ID)).toEqual([unresolved]);
+    expect(
+      store.resolveSteering(SESSION_ID, target.id, "wrong-request", "applied"),
+    ).toBe(false);
+    expect(
+      store.resolveSteering(SESSION_ID, target.id, requestId, "applied"),
+    ).toBe(true);
+    expect(store.getQueue(SESSION_ID)).toEqual([]);
+    expect(localStorage.getItem(getStorageKey(SESSION_ID))).toBeNull();
+  });
+
+  it("returns unapplied steering as an explicit failed head and ignores receipts from an earlier attempt", () => {
+    const store = useMessageQueueStore.getState();
+    store.enqueue(SESSION_ID, { text: "guide current task" });
+    store.enqueue(SESSION_ID, { text: "wait behind the guide" });
+    const [target, later] = store.getQueue(SESSION_ID);
+    store.beginSteering(SESSION_ID, target.id, "run-a");
+    const firstAttempt = store.getQueue(SESSION_ID)[0];
+    const firstRequestId = firstAttempt.steering!.requestId;
+    expect(
+      store.resolveSteering(
+        SESSION_ID,
+        target.id,
+        firstRequestId,
+        "returned",
+        "turn already ended",
+      ),
+    ).toBe(true);
+    expect(store.getQueue(SESSION_ID)).toEqual([
+      {
+        ...target,
+        status: "failed",
+        retryCount: 1,
+        errorMessage: "turn already ended",
+      },
+      later,
+    ]);
+    expect(store.getRunState(SESSION_ID)).toBe("error");
+    // A second tab still polling the old claim must not overwrite the return.
+    useMessageQueueStore.setState({
+      queues: { [SESSION_ID]: [firstAttempt, later] },
+    });
+    expect(
+      store.setSteeringError(SESSION_ID, target.id, firstRequestId, "offline"),
+    ).toBe(false);
+    expect(
+      store.resolveSteering(SESSION_ID, target.id, firstRequestId, "applied"),
+    ).toBe(false);
+    resetStore();
+    store.loadFromStorage(SESSION_ID);
+    expect(store.getRunState(SESSION_ID)).toBe("error");
+    expect(store.getQueue(SESSION_ID)[0].steering).toBeUndefined();
+    store.setItemStatus(SESSION_ID, target.id, "pending");
+    store.setRunState(SESSION_ID, "running");
+    expect(store.beginSteering(SESSION_ID, target.id, "run-b")).toBe(true);
+    const secondRequestId = store.getQueue(SESSION_ID)[0].steering!.requestId;
+    expect(secondRequestId).not.toBe(firstRequestId);
+    expect(
+      store.resolveSteering(SESSION_ID, target.id, firstRequestId, "applied"),
+    ).toBe(false);
+    expect(store.getQueue(SESSION_ID)[0].clientMessageId).toBe(
+      target.clientMessageId,
+    );
+    expect(
+      store.resolveSteering(SESSION_ID, target.id, secondRequestId, "applied"),
+    ).toBe(true);
+    expect(store.getQueue(SESSION_ID)).toEqual([later]);
+  });
+
+  it("does not mistake a normal user history receipt for an applied steering receipt", () => {
+    const store = useMessageQueueStore.getState();
+    store.enqueue(SESSION_ID, { text: "guide", agentId: "agent-a" });
+    store.enqueue(SESSION_ID, { text: "normal", agentId: "agent-a" });
+    const [guide, normal] = store.getQueue(SESSION_ID);
+    store.beginSteering(SESSION_ID, guide.id, "run-a");
+    store.setItemStatus(SESSION_ID, normal.id, "sending");
+    store.reconcileHistory(
+      SESSION_ID,
+      "agent-a",
+      [guide, normal].map((item) => ({
+        role: "user",
+        metadata: {
+          metadata: { qwenpaw_client_message_id: item.clientMessageId },
+        },
+      })),
+    );
+    expect(store.getQueue(SESSION_ID)).toHaveLength(1);
+    expect(store.getQueue(SESSION_ID)[0]).toMatchObject({
+      id: guide.id,
+      status: "steering",
+      steering: { runId: "run-a" },
+    });
+  });
+
+  it("pins unresolved steering while allowing unrelated queue items to reorder", () => {
+    const store = useMessageQueueStore.getState();
+    for (const text of ["a", "guide", "b"]) store.enqueue(SESSION_ID, { text });
+    const stale = store.getQueue(SESSION_ID);
+    store.beginSteering(SESSION_ID, stale[1].id, "run-a");
+    const claimed = store.getQueue(SESSION_ID)[1];
+    store.reorder(SESSION_ID, [stale[2], stale[1], stale[0]]);
+    expect(store.getQueue(SESSION_ID)).toEqual([stale[2], claimed, stale[0]]);
+    store.reorder(SESSION_ID, [stale[2], stale[0]]);
+    expect(store.getQueue(SESSION_ID)).toEqual([stale[2], claimed, stale[0]]);
+    store.migrateQueue(SESSION_ID, "other-chat");
+    expect(store.getQueue(SESSION_ID)).toEqual([claimed]);
+    expect(store.getQueue("other-chat")).toEqual([stale[2], stale[0]]);
+  });
+
+  it.each([
+    "remove",
+    "edit",
+    "clear",
+    "reorder",
+    "setItemStatus",
+    "enqueue",
+    "setRunState",
+    "persistToStorage",
+    "applyRemoteItems",
+  ] as const)(
+    "preserves an already persisted steering claim when a stale tab calls %s",
+    (action) => {
+      const store = useMessageQueueStore.getState();
+      store.enqueue(SESSION_ID, { text: "steering draft" });
+      const stale = store.getQueue(SESSION_ID);
+      store.beginSteering(SESSION_ID, stale[0].id, "run-a");
+      const claimed = store.getQueue(SESSION_ID)[0];
+      // Simulate the other tab before its BroadcastChannel/storage event lands.
+      useMessageQueueStore.setState({ queues: { [SESSION_ID]: stale } });
+      switch (action) {
+        case "remove":
+          store.remove(SESSION_ID, stale[0].id);
+          break;
+        case "edit":
+          store.edit(SESSION_ID, stale[0].id, "rewritten");
+          break;
+        case "clear":
+          store.clear(SESSION_ID);
+          break;
+        case "reorder":
+          store.reorder(SESSION_ID, stale);
+          break;
+        case "setItemStatus":
+          store.setItemStatus(SESSION_ID, stale[0].id, "pending");
+          break;
+        case "enqueue":
+          store.enqueue(SESSION_ID, { text: "later" });
+          break;
+        case "setRunState":
+          store.setRunState(SESSION_ID, "paused");
+          break;
+        case "persistToStorage":
+          store.persistToStorage(SESSION_ID);
+          break;
+        case "applyRemoteItems":
+          store.applyRemoteItems(SESSION_ID, []);
+          break;
+      }
+      expect(
+        JSON.parse(localStorage.getItem(getStorageKey(SESSION_ID))!).items[0],
+      ).toEqual(claimed);
+      resetStore();
+      store.loadFromStorage(SESSION_ID);
+      expect(store.getQueue(SESSION_ID)[0]).toEqual(claimed);
+      expect(store.beginSteering(SESSION_ID, stale[0].id, "run-b")).toBe(false);
+    },
+  );
+
+  it.each(["applied", "returned", "new-attempt"] as const)(
+    "does not resurrect a once-steered message from late pending or steering snapshots after %s",
+    (terminal) => {
+      const store = useMessageQueueStore.getState();
+      store.enqueue(SESSION_ID, { text: "deliver this instruction only once" });
+      const beforeClaim = store.getQueue(SESSION_ID)[0];
+      store.beginSteering(SESSION_ID, beforeClaim.id, "run-a");
+      const oldClaim = store.getQueue(SESSION_ID)[0];
+      const requestId = oldClaim.steering!.requestId;
+      store.resolveSteering(
+        SESSION_ID,
+        oldClaim.id,
+        requestId,
+        terminal === "applied" ? "applied" : "returned",
+        "original turn ended",
+      );
+      if (terminal === "new-attempt") {
+        store.setItemStatus(SESSION_ID, oldClaim.id, "pending");
+        store.beginSteering(SESSION_ID, oldClaim.id, "run-b");
+      }
+      const canonical = store.getQueue(SESSION_ID);
+      // Reopen the tab before either delayed snapshot is delivered; protection
+      // must survive memory loss and application removing the queue key.
+      resetStore();
+      store.applyRemoteItems(SESSION_ID, [beforeClaim]);
+      expect(store.getQueue(SESSION_ID)).toEqual(canonical);
+      store.applyRemoteItems(SESSION_ID, [oldClaim]);
+      expect(store.getQueue(SESSION_ID)).toEqual(canonical);
+      store.reorder(SESSION_ID, [beforeClaim]);
+      expect(store.getQueue(SESSION_ID)).toEqual(canonical);
+      store.persistToStorage(SESSION_ID);
+      resetStore();
+      store.loadFromStorage(SESSION_ID);
+      expect(store.getQueue(SESSION_ID)).toEqual(canonical);
+    },
+  );
+
+  it("ignores late receipt callbacks after an applied item removed its persisted queue", () => {
+    const store = useMessageQueueStore.getState();
+    store.enqueue(SESSION_ID, { text: "once" });
+    const target = store.getQueue(SESSION_ID)[0];
+    store.beginSteering(SESSION_ID, target.id, "run-a");
+    const claimed = store.getQueue(SESSION_ID)[0];
+    const requestId = claimed.steering!.requestId;
+    store.resolveSteering(SESSION_ID, target.id, requestId, "applied");
+    useMessageQueueStore.setState({ queues: { [SESSION_ID]: [claimed] } });
+    expect(
+      store.resolveSteering(SESSION_ID, target.id, requestId, "returned"),
+    ).toBe(false);
+    expect(
+      store.setSteeringError(SESSION_ID, target.id, requestId, "old timeout"),
+    ).toBe(false);
+    store.enqueue(SESSION_ID, { text: "genuinely new work" });
+    expect(store.getQueue(SESSION_ID).map((item) => item.text)).toEqual([
+      "genuinely new work",
+    ]);
+  });
+
+  it.each(["journal", "claim"] as const)(
+    "retains the pending text and refuses steering when %s persistence fails",
+    (failure) => {
+      const store = useMessageQueueStore.getState();
+      store.enqueue(SESSION_ID, { text: "preserve on storage failure" });
+      const target = store.getQueue(SESSION_ID)[0];
+      const setItem = vi.mocked(localStorage.setItem);
+      const originalSetItem = setItem.getMockImplementation()!;
+      setItem.mockImplementation((key, value) => {
+        const isJournal = key === `qwenpaw:queue-steering-claims:${SESSION_ID}`;
+        const isClaim =
+          key === getStorageKey(SESSION_ID) &&
+          JSON.parse(value).items.some(
+            (item: QueueItem) => item.status === "steering",
+          );
+        if (
+          (failure === "journal" && isJournal) ||
+          (failure === "claim" && isClaim)
+        )
+          throw new DOMException(
+            "Storage quota exceeded",
+            "QuotaExceededError",
+          );
+        originalSetItem(key, value);
+      });
+      try {
+        expect(store.beginSteering(SESSION_ID, target.id, "run-a")).toBe(false);
+        expect(store.getQueue(SESSION_ID)).toEqual([target]);
+        resetStore();
+        store.loadFromStorage(SESSION_ID);
+        expect(store.getQueue(SESSION_ID)).toEqual([target]);
+      } finally {
+        setItem.mockImplementation(originalSetItem);
+      }
+    },
+  );
+
+  it("does not erase unresolved steering through the legacy storage cleanup helper", () => {
+    const store = useMessageQueueStore.getState();
+    store.enqueue(SESSION_ID, { text: "keep receipt ownership" });
+    const target = store.getQueue(SESSION_ID)[0];
+    store.beginSteering(SESSION_ID, target.id, "run-a");
+    const claimed = store.getQueue(SESSION_ID)[0];
+    removeQueueFromStorage(SESSION_ID);
+    resetStore();
+    store.loadFromStorage(SESSION_ID);
+    expect(store.getQueue(SESSION_ID)).toEqual([claimed]);
+  });
+
+  it.each(["error", "paused"] as const)(
+    "preserves authoritative %s before and after a late remote running snapshot for a steered queue",
+    (runState) => {
+      const store = useMessageQueueStore.getState();
+      store.enqueue(SESSION_ID, { text: "ordinary pending head" });
+      store.enqueue(SESSION_ID, { text: "guidance after the head" });
+      const guide = store.getQueue(SESSION_ID)[1];
+      store.beginSteering(SESSION_ID, guide.id, "run-a");
+      const staleItems = store.getQueue(SESSION_ID);
+      if (runState === "error")
+        store.resolveSteering(
+          SESSION_ID,
+          guide.id,
+          staleItems[1].steering!.requestId,
+          "returned",
+          "turn ended",
+        );
+      else store.setRunState(SESSION_ID, "paused");
+      const canonicalItems = store.getQueue(SESSION_ID);
+      // Before the delayed remote event even arrives, a stale tab's getter
+      // must honor the current durable pause/error instead of sending its head.
+      useMessageQueueStore.setState({ runStates: { [SESSION_ID]: "running" } });
+      expect(store.getRunState(SESSION_ID)).toBe(runState);
+      store.applyRemoteRunState(SESSION_ID, "running");
+      store.applyRemoteItems(SESSION_ID, staleItems);
+      expect(store.getRunState(SESSION_ID)).toBe(runState);
+      expect(useMessageQueueStore.getState().runStates[SESSION_ID]).toBe(
+        runState,
+      );
+      expect(store.getQueue(SESSION_ID)).toEqual(canonicalItems);
+      expect(
+        JSON.parse(localStorage.getItem(getStorageKey(SESSION_ID))!).runState,
+      ).toBe(runState);
+    },
+  );
+
+  it.each([
+    "enqueue",
+    "edit",
+    "remove",
+    "reorder",
+    "setItemStatus",
+    "persistToStorage",
+    "reconcileHistory",
+    "migrateQueue",
+  ] as const)(
+    "does not write stale running over a returned steering error when a stale tab calls %s",
+    (action) => {
+      const store = useMessageQueueStore.getState();
+      store.enqueue(SESSION_ID, { text: "ordinary head" });
+      store.enqueue(SESSION_ID, { text: "returned guide" });
+      const [head, guide] = store.getQueue(SESSION_ID);
+      store.beginSteering(SESSION_ID, guide.id, "run-a");
+      store.resolveSteering(
+        SESSION_ID,
+        guide.id,
+        store.getQueue(SESSION_ID)[1].steering!.requestId,
+        "returned",
+        "turn ended",
+      );
+      useMessageQueueStore.setState({ runStates: { [SESSION_ID]: "running" } });
+      switch (action) {
+        case "enqueue":
+          store.enqueue(SESSION_ID, { text: "new work" });
+          break;
+        case "edit":
+          store.edit(SESSION_ID, head.id, "edited ordinary head");
+          break;
+        case "remove":
+          store.remove(SESSION_ID, head.id);
+          break;
+        case "reorder":
+          store.reorder(SESSION_ID, [...store.getQueue(SESSION_ID)].reverse());
+          break;
+        case "setItemStatus":
+          store.setItemStatus(SESSION_ID, head.id, "sending");
+          break;
+        case "persistToStorage":
+          store.persistToStorage(SESSION_ID);
+          break;
+        case "reconcileHistory":
+          store.reconcileHistory(SESSION_ID, "default", [
+            {
+              role: "user",
+              metadata: { qwenpaw_client_message_id: head.clientMessageId },
+            },
+          ]);
+          break;
+        case "migrateQueue":
+          store.migrateQueue(SESSION_ID, "moved-steering-queue");
+          break;
+      }
+      const destination =
+        action === "migrateQueue" ? "moved-steering-queue" : SESSION_ID;
+      const saved = JSON.parse(
+        localStorage.getItem(getStorageKey(destination))!,
+      );
+      expect(saved.runState).toBe("error");
+      expect(saved.items).toContainEqual(
+        expect.objectContaining({ id: guide.id, status: "failed" }),
+      );
+      expect(store.getRunState(destination)).toBe("error");
+    },
+  );
+
+  it.each([
+    "setSteeringError",
+    "beginSteering",
+    "resolveSteering",
+    "clear",
+  ] as const)(
+    "keeps a durable pause when a stale steering tab calls %s",
+    (action) => {
+      const store = useMessageQueueStore.getState();
+      store.enqueue(SESSION_ID, { text: "ordinary head" });
+      store.enqueue(SESSION_ID, { text: "pending guidance" });
+      const [head, guide] = store.getQueue(SESSION_ID);
+      store.beginSteering(SESSION_ID, guide.id, "run-a");
+      const requestId = store.getQueue(SESSION_ID)[1].steering!.requestId;
+      store.setRunState(SESSION_ID, "paused");
+      useMessageQueueStore.setState({ runStates: { [SESSION_ID]: "running" } });
+      switch (action) {
+        case "setSteeringError":
+          store.setSteeringError(SESSION_ID, guide.id, requestId, "confirming");
+          break;
+        case "beginSteering":
+          store.beginSteering(SESSION_ID, head.id, "run-a");
+          break;
+        case "resolveSteering":
+          store.resolveSteering(SESSION_ID, guide.id, requestId, "applied");
+          break;
+        case "clear":
+          store.clear(SESSION_ID);
+          break;
+      }
+      expect(store.getRunState(SESSION_ID)).toBe("paused");
+      expect(
+        JSON.parse(localStorage.getItem(getStorageKey(SESSION_ID))!).runState,
+      ).toBe("paused");
+    },
+  );
+
+  it("allows explicit retry and resume after steering returns while ignoring an older remote error snapshot", () => {
+    const store = useMessageQueueStore.getState();
+    store.enqueue(SESSION_ID, { text: "ordinary head" });
+    store.enqueue(SESSION_ID, { text: "guide to retry" });
+    const guide = store.getQueue(SESSION_ID)[1];
+    store.beginSteering(SESSION_ID, guide.id, "run-a");
+    const firstRequest = store.getQueue(SESSION_ID)[1].steering!.requestId;
+    store.resolveSteering(
+      SESSION_ID,
+      guide.id,
+      firstRequest,
+      "returned",
+      "turn ended",
+    );
+    const oldErrorItems = store.getQueue(SESSION_ID);
+    store.setItemStatus(SESSION_ID, guide.id, "pending");
+    store.setRunState(SESSION_ID, "running");
+    store.applyRemoteRunState(SESSION_ID, "error");
+    store.applyRemoteItems(SESSION_ID, oldErrorItems);
+    expect(store.getRunState(SESSION_ID)).toBe("running");
+    expect(store.getQueue(SESSION_ID)[1]).toMatchObject({
+      id: guide.id,
+      status: "pending",
+    });
+    expect(store.beginSteering(SESSION_ID, guide.id, "run-b")).toBe(true);
+    const retry = store.getQueue(SESSION_ID)[1];
+    expect(retry.steering!.requestId).not.toBe(firstRequest);
+    store.setRunState(SESSION_ID, "paused");
+    store.setRunState(SESSION_ID, "running");
+    store.applyRemoteRunState(SESSION_ID, "paused");
+    expect(store.getRunState(SESSION_ID)).toBe("running");
+  });
+
+  it("keeps remote run-state updates unchanged for queues that never used steering", () => {
+    const store = useMessageQueueStore.getState();
+    store.enqueue(SESSION_ID, { text: "ordinary only" });
+    store.setRunState(SESSION_ID, "paused");
+    store.applyRemoteRunState(SESSION_ID, "running");
+    expect(store.getRunState(SESSION_ID)).toBe("running");
+    expect(
+      JSON.parse(localStorage.getItem(getStorageKey(SESSION_ID))!).runState,
+    ).toBe("paused");
+  });
+
+  // ---------------------------------------------------------------------------
   // setRunState / getRunState / persistToStorage
   // ---------------------------------------------------------------------------
 

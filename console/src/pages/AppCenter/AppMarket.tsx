@@ -40,8 +40,8 @@ import {
   replaceInstalledPlugin,
   upgradeInstalledUGSciPlugin,
   type OfficialPluginCatalogEntry,
-  type InstallPluginResult,
 } from "@/api/modules/plugin";
+import { runPluginInstall } from "../Settings/PluginManager/dependencyUpgrade";
 import { rootApi } from "@/api/modules/root";
 import { isMarketPluginCompatible } from "@/utils/pluginCompatibility";
 import { getMarketAppState } from "@/utils/marketAppState";
@@ -183,8 +183,15 @@ function pickDescription(entry: MarketPluginEntry, language: string): string {
   return Object.values(locales)[0]?.description ?? "";
 }
 
+export interface AppMarketInstallResult {
+  id: string;
+  version: string;
+  loaded?: boolean;
+  method?: "installed" | "replaced" | "queued";
+}
+
 interface AppMarketProps {
-  onInstalled: (result?: InstallPluginResult) => void | Promise<void>;
+  onInstalled: (result?: AppMarketInstallResult) => void | Promise<void>;
   installedAppVersions?: ReadonlyMap<string, string>;
   installedApps?: readonly InstalledPluginIdentity[];
   channel?: AppCatalogChannel;
@@ -397,97 +404,123 @@ export function AppMarket({
       });
 
       try {
-        if (
-          entry.installed &&
-          entry.catalog_channel === "ugsci" &&
-          entry.plugin_id
-        ) {
-          const upgrade = await upgradeInstalledUGSciPlugin({
-            plugin_id: entry.plugin_id,
-            version: entry.version,
-            install_url: entry.install_url,
-            sha256: entry.sha256,
-            upgrade_available: entry.upgrade_available,
-          });
-          if (upgrade.method === "queued") {
-            setQueuedUpdates((current) => new Set([...current, entry.id]));
-            message.success({
-              content: tRef.current("pluginManager.ugsciUpgradeQueued"),
-              key: loadingKey,
+        const resumed = await runPluginInstall(async () => {
+          if (
+            entry.installed &&
+            entry.catalog_channel === "ugsci" &&
+            entry.plugin_id
+          ) {
+            const upgrade = await upgradeInstalledUGSciPlugin({
+              plugin_id: entry.plugin_id,
+              version: entry.version,
+              install_url: entry.install_url,
+              sha256: entry.sha256,
+              upgrade_available: entry.upgrade_available,
             });
-          } else if (upgrade.method === "replaced") {
+            if (upgrade.method === "queued") {
+              setQueuedUpdates((current) => new Set([...current, entry.id]));
+              message.success({
+                content: tRef.current("pluginManager.ugsciUpgradeQueued"),
+                key: loadingKey,
+              });
+            } else if (upgrade.method === "replaced") {
+              setRefreshKey((key) => key + 1);
+              message.success({
+                content: tRef.current("pluginManager.externalUpgradeReady", {
+                  version: upgrade.version,
+                }),
+                key: loadingKey,
+              });
+              await onInstalled({
+                id: entry.plugin_id,
+                version: upgrade.version,
+                loaded: upgrade.loaded,
+                method: "replaced",
+              });
+            } else if (upgrade.method === "core-update-required") {
+              message.warning({
+                content: tRef.current("pluginManager.coreUpdateRequired"),
+                key: loadingKey,
+              });
+            } else {
+              message.info({
+                content: tRef.current("pluginManager.catalogLatest"),
+                key: loadingKey,
+              });
+            }
+            return;
+          }
+          if (
+            entry.installed &&
+            entry.catalog_channel === "qwenpaw" &&
+            entry.plugin_id
+          ) {
+            if (!entry.upgrade_available || !entry.install_url) {
+              message.info({
+                content: tRef.current("pluginManager.catalogLatest"),
+                key: loadingKey,
+              });
+              return;
+            }
+            const replacement = await replaceInstalledPlugin({
+              source: entry.install_url,
+              pluginId: entry.plugin_id,
+              version: entry.version,
+              sha256: entry.sha256,
+            });
             setRefreshKey((key) => key + 1);
+            await onInstalled({
+              ...replacement,
+              method: "replaced",
+            });
             message.success({
               content: tRef.current("pluginManager.externalUpgradeReady", {
-                version: upgrade.version,
+                version: replacement.version,
               }),
-              key: loadingKey,
-            });
-            await onInstalled();
-          } else if (upgrade.method === "core-update-required") {
-            message.warning({
-              content: tRef.current("pluginManager.coreUpdateRequired"),
-              key: loadingKey,
-            });
-          } else {
-            message.info({
-              content: tRef.current("pluginManager.catalogLatest"),
-              key: loadingKey,
-            });
-          }
-          return;
-        }
-        if (
-          entry.installed &&
-          entry.catalog_channel === "qwenpaw" &&
-          entry.plugin_id
-        ) {
-          if (!entry.upgrade_available || !entry.install_url) {
-            message.info({
-              content: tRef.current("pluginManager.catalogLatest"),
               key: loadingKey,
             });
             return;
           }
-          const replacement = await replaceInstalledPlugin({
-            source: entry.install_url,
-            pluginId: entry.plugin_id,
-            version: entry.version,
-            sha256: entry.sha256,
-          });
-          setRefreshKey((key) => key + 1);
-          await onInstalled();
-          message.success({
-            content: tRef.current("pluginManager.externalUpgradeReady", {
-              version: replacement.version,
-            }),
-            key: loadingKey,
-          });
-          return;
-        }
-        if (entry.catalog_channel && entry.install_url) {
-          const result = await installPlugin(entry.install_url);
+          if (entry.catalog_channel && entry.install_url) {
+            const result = await installPlugin(entry.install_url);
+            setRefreshKey((key) => key + 1);
+            message.success({
+              content: `${tRef.current("appCenter.installSuccess")}: ${
+                result.name
+              }`,
+              key: loadingKey,
+            });
+            await onInstalled(result);
+            return;
+          }
+          const result = await installPlugin(
+            entry.install_url || buildMarketDownloadUrl(entry),
+          );
           setRefreshKey((key) => key + 1);
           message.success({
-            content: `${tRef.current("appCenter.installSuccess")}: ${
-              result.name
-            }`,
+            content: `${tRef.current(
+              "appCenter.installSuccess",
+              "安装成功",
+            )}: ${result.name}`,
             key: loadingKey,
           });
           await onInstalled(result);
-          return;
+        }, tRef.current);
+        if (resumed) {
+          setRefreshKey((key) => key + 1);
+          await onInstalled({
+            ...resumed,
+            method: entry.installed ? "replaced" : "installed",
+          });
+          message.success({
+            content: `${tRef.current("appCenter.installSuccess")}: ${
+              resumed.name
+            }`,
+            key: loadingKey,
+          });
+        } else if (resumed === null) {
+          message.destroy(loadingKey);
         }
-        const result = await installPlugin(
-          entry.install_url || buildMarketDownloadUrl(entry),
-        );
-        setRefreshKey((key) => key + 1);
-        message.success({
-          content: `${tRef.current("appCenter.installSuccess", "安装成功")}: ${
-            result.name
-          }`,
-          key: loadingKey,
-        });
-        await onInstalled(result);
       } catch (err) {
         message.error({
           content:

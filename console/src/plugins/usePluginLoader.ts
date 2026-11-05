@@ -35,6 +35,34 @@ interface FrontendPluginInfo {
 const loadedPluginRevisions = new Map<string, string>();
 
 const loadingPlugins = new Map<string, Promise<void>>();
+const pendingRequests = new Map<
+  string,
+  { intent: number; promise: Promise<void> }
+>();
+let manifestRequest = 0;
+let intentSequence = 0;
+const pluginIntents = new Map<string, number>();
+
+function clearRuntime(pluginId: string): void {
+  removePluginRuntime(pluginId);
+  loadedPluginRevisions.delete(pluginId);
+}
+
+/** Startup, refresh and explicit reload share one lifecycle per plugin. */
+function enqueue(
+  pluginId: string,
+  operation: () => Promise<void>,
+): Promise<void> {
+  const previous = loadingPlugins.get(pluginId);
+  const next = (previous ? previous.catch(() => undefined) : Promise.resolve())
+    .then(operation)
+    .finally(() => {
+      if (loadingPlugins.get(pluginId) === next)
+        loadingPlugins.delete(pluginId);
+    });
+  loadingPlugins.set(pluginId, next);
+  return next;
+}
 
 function authHeaders(): Record<string, string> {
   const token = getApiToken();
@@ -55,25 +83,9 @@ async function fetchFrontendPlugins(): Promise<FrontendPluginInfo[]> {
   return response.json();
 }
 
-/**
- * Execute a plugin's frontend bundle via dynamic `import()`.
- *
- * Strategy (fetch + Blob URL first, direct import as fallback):
- *
- * 1. **Fetch + Blob URL `import()`** — preferred and most reliable.
- *    The plugin JS is fetched via `fetch()` (allowed by `connect-src`)
- *    and then imported via a `blob:` URL (allowed by `script-src blob:`).
- *    This works in Tauri desktop, web dev, and all modern browsers.
- *    The key reason this is preferred over direct `import(url)` is that
- *    in Tauri's WKWebView, `import()` of an HTTP URL can be silently
- *    blocked by CSP without throwing an error, causing the fallback
- *    to never execute.
- *
- * 2. **Direct `import(url)` fallback** — if the Blob URL approach fails
- *    (e.g. the webview doesn't support `import()` of blob: URLs), try
- *    a direct same-origin `import()`. This requires the HTTP origin
- *    to be in `script-src`.
- */
+/** Fetch authenticated scripts before evaluating them once. An evaluation
+ * error can follow partial registration, so it must never trigger a second
+ * import of the same code. Direct import is only a pre-evaluation fallback. */
 async function executePluginScript(
   entryUrl: string,
   version?: string,
@@ -98,22 +110,15 @@ async function executePluginScript(
   }
 
   if (response) {
+    const jsText = await response.text();
+    const blobUrl = URL.createObjectURL(
+      new Blob([jsText], { type: "text/javascript" }),
+    );
     try {
-      const jsText = await response.text();
-      const blobUrl = URL.createObjectURL(
-        new Blob([jsText], { type: "text/javascript" }),
-      );
-      try {
-        await import(/* @vite-ignore */ blobUrl);
-        return;
-      } finally {
-        URL.revokeObjectURL(blobUrl);
-      }
-    } catch (blobErr) {
-      console.warn(
-        `[PluginLoader] Blob URL import failed for ${entryUrl}, trying direct import:`,
-        blobErr,
-      );
+      await import(/* @vite-ignore */ blobUrl);
+      return;
+    } finally {
+      URL.revokeObjectURL(blobUrl);
     }
   }
 
@@ -138,10 +143,57 @@ function fetchPluginScript(
   });
 }
 
+interface LoadPluginOptions {
+  force?: boolean;
+  expectedType?: "app";
+  entryPage?: string;
+}
+
+function hasAppRoute(pluginId: string, entryPage?: string): boolean {
+  return routeRegistry
+    .snapshot()
+    .some(
+      (route) =>
+        route.source === pluginId &&
+        route.path.startsWith("/apps/") &&
+        (!entryPage || route.path === entryPage),
+    );
+}
+
+async function executeFrontendPlugin(
+  plugin: FrontendPluginInfo,
+  options: LoadPluginOptions = {},
+  prefetchedResponse?: Promise<Response | undefined>,
+): Promise<void> {
+  const revision = plugin.frontend_revision || plugin.version || "0";
+  try {
+    if (options.force || loadedPluginRevisions.get(plugin.id) !== revision) {
+      clearRuntime(plugin.id);
+      await executePluginScript(
+        resolveUrl(plugin.id, plugin.frontend_entry!),
+        revision,
+        prefetchedResponse,
+      );
+    }
+    if (
+      options.expectedType === "app" &&
+      !hasAppRoute(plugin.id, options.entryPage)
+    ) {
+      throw new Error(`PawApp ${plugin.id} did not register its app route`);
+    }
+    loadedPluginRevisions.set(plugin.id, revision);
+  } catch (error) {
+    clearRuntime(plugin.id);
+    throw error;
+  }
+}
+
 /** Load every installed frontend plugin during Console startup. */
 export async function loadAllPlugins(
   beforeExecute?: Promise<unknown>,
 ): Promise<PluginLoadSummary> {
+  const request = ++intentSequence;
+  manifestRequest = request;
   let plugins: FrontendPluginInfo[];
   try {
     plugins = await fetchFrontendPlugins();
@@ -149,50 +201,47 @@ export async function loadAllPlugins(
     console.warn("[PluginLoader] failed to fetch plugin list:", error);
     return { loaded: 0, failed: [] };
   }
-
-  // A disabled record can still carry a frontend entry, but its backend
-  // routes/tools were deliberately not registered. Never expose a UI that
-  // can only answer with 404s.
+  // A slow earlier manifest must not restore plugins removed by a newer one.
+  if (request !== manifestRequest) return { loaded: 0, failed: [] };
   const loadable = plugins.filter(
     (p) => p.frontend_entry && p.enabled !== false,
   );
   const loadableIds = new Set(loadable.map((plugin) => plugin.id));
-  for (const pluginId of loadedPluginRevisions.keys()) {
-    if (loadableIds.has(pluginId)) continue;
-    removePluginRuntime(pluginId);
-    loadedPluginRevisions.delete(pluginId);
-  }
-
-  // Fetch bundles while the host SDK is initializing. Their registration
-  // side effects still run only after the host is ready.
-  const prefetched = loadable.map((plugin) => {
+  const removals = [
+    ...new Set([...loadedPluginRevisions.keys(), ...loadingPlugins.keys()]),
+  ]
+    .filter(
+      (id) => !loadableIds.has(id) && (pluginIntents.get(id) ?? 0) <= request,
+    )
+    .map((id) => {
+      pluginIntents.set(id, request);
+      return enqueue(id, async () => {
+        if (pluginIntents.get(id) === request) clearRuntime(id);
+      });
+    });
+  const loads = loadable.map((plugin) => {
+    if ((pluginIntents.get(plugin.id) ?? 0) > request) return Promise.resolve();
+    pluginIntents.set(plugin.id, request);
     const revision = plugin.frontend_revision || plugin.version || "0";
-    if (loadedPluginRevisions.get(plugin.id) === revision) return undefined;
     const entryUrl = resolveUrl(plugin.id, plugin.frontend_entry!);
-    const versionedUrl = `${entryUrl}${
-      entryUrl.includes("?") ? "&" : "?"
-    }v=${encodeURIComponent(revision)}`;
-    return fetchPluginScript(versionedUrl);
+    const prefetched =
+      loadedPluginRevisions.get(plugin.id) === revision
+        ? undefined
+        : fetchPluginScript(
+            `${entryUrl}${
+              entryUrl.includes("?") ? "&" : "?"
+            }v=${encodeURIComponent(revision)}`,
+          );
+    return enqueue(plugin.id, async () => {
+      await beforeExecute;
+      if (request !== manifestRequest) return;
+      await executeFrontendPlugin(plugin, {}, prefetched);
+    });
   });
-  await beforeExecute;
-
-  const results = await Promise.allSettled(
-    loadable.map(async (p, index) => {
-      const revision = p.frontend_revision || p.version || "0";
-      const previousRevision = loadedPluginRevisions.get(p.id);
-      if (previousRevision === revision) return;
-      if (previousRevision !== undefined) {
-        removePluginRuntime(p.id);
-      }
-      await executePluginScript(
-        resolveUrl(p.id, p.frontend_entry!),
-        revision,
-        prefetched[index],
-      );
-      loadedPluginRevisions.set(p.id, revision);
-      console.info(`[PluginLoader] ✓ ${p.id}`);
-    }),
-  );
+  const [results] = await Promise.all([
+    Promise.allSettled(loads),
+    Promise.all(removals),
+  ]);
   const failed = results.flatMap((result, index) =>
     result.status === "rejected"
       ? [`${loadable[index].id}: ${result.reason}`]
@@ -201,67 +250,38 @@ export async function loadAllPlugins(
   return { loaded: loadable.length - failed.length, failed };
 }
 
-/** Load one newly installed PawApp without reloading the page. */
-interface LoadPluginOptions {
-  force?: boolean;
-  expectedType?: "app";
-  entryPage?: string;
-}
-
 function loadFrontendPlugin(
   pluginId: string,
   options: LoadPluginOptions = {},
 ): Promise<void> {
-  const registered = () =>
-    routeRegistry
-      .snapshot()
-      .some(
-        (route) =>
-          route.source === pluginId &&
-          route.path.startsWith("/apps/") &&
-          (!options.entryPage || route.path === options.entryPage),
-      );
-  if (!options.force && options.expectedType === "app" && registered()) {
-    return Promise.resolve();
-  }
-
-  const promise = (async () => {
+  const key = `${pluginId}:${!!options.force}:${options.expectedType || ""}:${
+    options.entryPage || ""
+  }`;
+  const pending = pendingRequests.get(key);
+  if (pending && pending.intent === pluginIntents.get(pluginId))
+    return pending.promise;
+  const intent = ++intentSequence;
+  pluginIntents.set(pluginId, intent);
+  const promise = enqueue(pluginId, async () => {
     const plugins = await fetchFrontendPlugins();
     const plugin = plugins.find((item) => item.id === pluginId);
     if (!plugin?.frontend_entry || plugin.enabled === false) {
+      clearRuntime(pluginId);
       if (options.expectedType === "app") {
         throw new Error(`PawApp frontend plugin not found: ${pluginId}`);
       }
       return;
     }
     if (options.expectedType && plugin.plugin_type !== options.expectedType) {
+      clearRuntime(pluginId);
       throw new Error(`PawApp frontend plugin not found: ${pluginId}`);
     }
-
-    try {
-      if (options.force) {
-        removePluginRuntime(pluginId);
-        loadedPluginRevisions.delete(pluginId);
-      }
-      const revision = plugin.frontend_revision || plugin.version || "0";
-      await executePluginScript(
-        resolveUrl(plugin.id, plugin.frontend_entry),
-        revision,
-      );
-      loadedPluginRevisions.set(plugin.id, revision);
-      if (options.expectedType === "app" && !registered()) {
-        throw new Error(`PawApp ${pluginId} did not register its app route`);
-      }
-    } catch (error) {
-      removePluginRuntime(pluginId);
-      loadedPluginRevisions.delete(pluginId);
-      throw error;
-    }
-  })().finally(() => {
-    loadingPlugins.delete(pluginId);
+    await executeFrontendPlugin(plugin, options);
+  }).finally(() => {
+    if (pendingRequests.get(key)?.promise === promise)
+      pendingRequests.delete(key);
   });
-
-  loadingPlugins.set(pluginId, promise);
+  pendingRequests.set(key, { intent, promise });
   return promise;
 }
 
@@ -271,10 +291,8 @@ export function loadPawApp(
   entryPage?: string,
   options: { force?: boolean } = {},
 ): Promise<void> {
-  if (options.force) return reloadPawApp(appId, entryPage);
-  const pending = loadingPlugins.get(appId);
-  if (pending) return pending;
   return loadFrontendPlugin(appId, {
+    ...options,
     expectedType: "app",
     entryPage,
   });
@@ -282,16 +300,6 @@ export function loadPawApp(
 
 /** Force reload an installed PawApp after an update. */
 export function reloadPawApp(appId: string, entryPage?: string): Promise<void> {
-  const pending = loadingPlugins.get(appId);
-  if (pending) {
-    return pending.then(() =>
-      loadFrontendPlugin(appId, {
-        expectedType: "app",
-        entryPage,
-        force: true,
-      }),
-    );
-  }
   return loadFrontendPlugin(appId, {
     expectedType: "app",
     entryPage,
@@ -301,17 +309,30 @@ export function reloadPawApp(appId: string, entryPage?: string): Promise<void> {
 
 /** Reload a frontend plugin after installation or update. */
 export function reloadFrontendPlugin(pluginId: string): Promise<boolean> {
-  const pending = loadingPlugins.get(pluginId);
-  if (pending) {
-    return pending.then(() =>
-      loadFrontendPlugin(pluginId, { force: true }).then(() => true),
-    );
-  }
   return loadFrontendPlugin(pluginId, { force: true }).then(() => true);
+}
+
+/** Revoke unavailable UI after an authoritative backend state change. */
+export function unloadFrontendPlugin(
+  pluginId: string,
+  beforeRemove?: () => void,
+): Promise<void> {
+  pluginIntents.set(pluginId, ++intentSequence);
+  return enqueue(pluginId, async () => {
+    try {
+      beforeRemove?.();
+    } finally {
+      clearRuntime(pluginId);
+    }
+  });
 }
 
 /** Reset pending loads between unit tests. */
 export function resetPawAppLoaderForTests(): void {
   loadingPlugins.clear();
+  pendingRequests.clear();
   loadedPluginRevisions.clear();
+  manifestRequest = 0;
+  intentSequence = 0;
+  pluginIntents.clear();
 }

@@ -17,7 +17,7 @@ import { useOsIcons } from "./osIconStore";
 import { useOsRoute } from "./osRouteStore";
 import { useOsDock } from "./osDockStore";
 import { appsBySource } from "./osAppRegistry";
-import { removePluginRuntime } from "../plugins/pluginRuntimeCleanup";
+import { unloadFrontendPlugin } from "../plugins/usePluginLoader";
 
 /** Purge desktop state for the given app route ids (confirmed removals). */
 export function purgeAppState(routeIds: Iterable<string>): void {
@@ -39,9 +39,10 @@ export function purgePluginAppState(source: string): void {
 }
 
 /** Remove a confirmed PawApp from persisted OS state and live routes. */
-export function removePluginAppState(source: string): void {
+export async function removePluginAppState(source: string): Promise<void> {
   purgePluginAppState(source);
-  removePluginRuntime(source);
+  // An in-flight bundle can register a new route before the queued removal.
+  await unloadFrontendPlugin(source, () => purgePluginAppState(source));
 }
 
 /** Purge one deleted agent's Space layout after a confirmed deletion. */

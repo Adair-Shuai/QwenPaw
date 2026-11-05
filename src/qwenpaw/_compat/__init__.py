@@ -9,13 +9,18 @@ Remaining contents:
   1.x session restore.  No live code constructs the legacy block names
   directly anymore.
 """
+
 from __future__ import annotations
 
+import sys
 
-def _install_msg_dict_shim() -> None:
-    try:
-        from agentscope.message import Msg
-    except Exception:
+from ._lazy import install_import_patches
+
+
+def _install_msg_dict_shim(module=None) -> None:
+    module = module or sys.modules.get("agentscope.message")
+    Msg = getattr(module, "Msg", None)
+    if Msg is None:
         return
 
     if not hasattr(Msg, "to_dict"):
@@ -49,10 +54,7 @@ def _install_msg_dict_shim() -> None:
         Msg.timestamp = property(_timestamp)
 
 
-_install_msg_dict_shim()
-
-
-def _install_agentscope_tool_utils_typing_fix() -> None:
+def _install_agentscope_tool_utils_typing_fix(module=None) -> None:
     """Ensure common ``typing`` names are resolvable in agentscope.tool._utils.
 
     agentscope's ``_utils.py`` creates a Pydantic model named
@@ -111,12 +113,13 @@ def _install_agentscope_tool_utils_typing_fix() -> None:
             "Protocol",
         )
 
-        import importlib
-
         for _mod_path in _target_modules:
-            try:
-                _mod = importlib.import_module(_mod_path)
-            except Exception:
+            _mod = (
+                module
+                if module is not None and module.__name__ == _mod_path
+                else sys.modules.get(_mod_path)
+            )
+            if _mod is None:
                 continue
             for _name in _typing_names:
                 if not hasattr(_mod, _name):
@@ -125,4 +128,20 @@ def _install_agentscope_tool_utils_typing_fix() -> None:
         pass
 
 
-_install_agentscope_tool_utils_typing_fix()
+def _apply_loaded_compat(module):
+    _install_msg_dict_shim(module)
+    _install_agentscope_tool_utils_typing_fix(module)
+
+
+# Keep config-only imports small; patch the real SDK modules before their
+# imports return, including SDK modules loaded before qwenpaw itself.
+install_import_patches(
+    (
+        "agentscope.message",
+        "agentscope.message._base",
+        "agentscope.tool._utils",
+        "agentscope.tool._toolkit",
+        "agentscope.tool._builtin._meta",
+    ),
+    _apply_loaded_compat,
+)

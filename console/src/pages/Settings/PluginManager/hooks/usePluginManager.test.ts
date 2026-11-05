@@ -1,5 +1,6 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import { renderHook, act, waitFor } from "@testing-library/react";
+import { routeRegistry } from "@/plugins/registry/store";
 import type { PluginInfo } from "@/api/modules/plugin";
 
 const hoisted = vi.hoisted(() => ({
@@ -459,6 +460,65 @@ describe("usePluginManager", () => {
       "pluginManager.updateAllResult",
     );
   });
+  it.each(["one", "all"])(
+    "updates disabled apps successfully without activating their UI (%s)",
+    async (mode) => {
+      const plugin = {
+        ...makePlugin(),
+        plugin_type: "app",
+        version: "1.0.0",
+        frontend_entry: "index.js",
+        enabled: false,
+      } as PluginInfo;
+      hoisted.pluginsData = [plugin];
+      hoisted.fetchPluginCatalogMock.mockResolvedValue({
+        plugins: [
+          {
+            plugin_id: "p1",
+            name: "demo",
+            version: "2.0.0",
+            install_url: "https://example.com/demo.zip",
+            upgrade_available: true,
+          },
+        ],
+      });
+      hoisted.upgradeInstalledPluginMock.mockResolvedValue({
+        method: "replaced",
+        version: "2.0.0",
+        loaded: false,
+      });
+      routeRegistry.add("p1", {
+        id: "p1.page",
+        path: "/apps/p1",
+        component: () => null,
+      });
+      const fetchMock = vi
+        .spyOn(globalThis, "fetch")
+        .mockRejectedValue(new Error("Disabled app must not be loaded"));
+      try {
+        const { result } = renderHook(() => usePluginManager());
+        await waitFor(() => expect(result.current.updates.size).toBe(1));
+        await act(async () => {
+          if (mode === "one") await result.current.updateOne(plugin);
+          else await result.current.updateAll();
+        });
+        expect(
+          routeRegistry.snapshot().some((route) => route.source === "p1"),
+        ).toBe(false);
+        expect(fetchMock).not.toHaveBeenCalled();
+        expect(messageMock.error).not.toHaveBeenCalled();
+        expect(messageMock.success).toHaveBeenCalledWith(
+          mode === "one"
+            ? "pluginManager.updateSuccess"
+            : "pluginManager.updateAllSuccess",
+        );
+        expect(refreshMock).toHaveBeenCalled();
+        expect(result.current.updates.size).toBe(0);
+      } finally {
+        fetchMock.mockRestore();
+      }
+    },
+  );
 });
 
 it("update-all includes the actionable conflict in its failure summary", async () => {

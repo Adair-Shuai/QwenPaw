@@ -494,6 +494,7 @@ export default function SidebarSettingsPanel({
   const rootContent = (
     <div ref={panelRef} className={styles.panel}>
       <LocalAvatarPicker />
+      <div className={styles.divider} />
       <FlyoutItem
         icon={<Palette size={16} />}
         label={t("sidebar.quickMenu.appearance", "Appearance")}
@@ -506,7 +507,7 @@ export default function SidebarSettingsPanel({
       />
       <button
         type="button"
-        className={styles.menuItem}
+        className={`${styles.menuItem} ${styles.settingsEntry}`}
         onClick={() => finishAction(onOpenSettings)}
       >
         <Settings size={16} />

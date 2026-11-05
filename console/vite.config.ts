@@ -109,7 +109,7 @@ export default defineConfig(({ command, mode }) => {
       },
     },
     test: {
-      include: ["src/**/*.{test,spec}.{ts,tsx}"],
+      include: ["src/**/*.{test,spec}.{ts,tsx}", "vite.config.test.ts"],
       globals: true,
       environment: "jsdom",
       testTimeout: 15_000,

@@ -46,6 +46,7 @@ from tests.channel_support.host import (
     local_certifi_wheel,
     local_wheel,
 )
+from tests.fs_alias_support import directory_alias
 from tests.channel_support.process import (
     ROOT,
     alive,
@@ -778,7 +779,7 @@ def test_dependency_site_permission_follows_real_target(
         managed = prefix
     elif layout == "conda-symlink":
         site = managed / "linked"
-        site.symlink_to(native, target_is_directory=True)
+        directory_alias(native, site)
     target = site.parent / "other" if layout.startswith("sibling") else site
     immutable = (site,) if layout.startswith(("immutable", "bundle")) else ()
     if layout.endswith("-alias"):
@@ -997,10 +998,7 @@ def test_namespace_additions_preserve_file_ownership(
         publication = tmp_path / "publication"
         real = publication / "real"
         real.mkdir(parents=True)
-        (publication / "sample_namespace").symlink_to(
-            real,
-            target_is_directory=True,
-        )
+        directory_alias(real, publication / "sample_namespace")
         with pytest.raises(RuntimeError, match="DEPENDENCY_REPAIR_REQUIRED"):
             _write_additions(publication, {second_path: files[second_path]})
         assert not list(real.iterdir())

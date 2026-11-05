@@ -171,7 +171,10 @@ describe("HubPage", () => {
   ])("opens %s with the keyboard", async (label, destination) => {
     const user = userEvent.setup();
     renderHubPage();
-    const card = await screen.findByRole("button", {
+    // Wait for the debounced overview data before traversing the full shell's
+    // accessible names; repeated role queries can starve its first paint.
+    await screen.findByText("hub.overview.title");
+    const card = screen.getByRole("button", {
       name: new RegExp(label),
     });
     card.focus();
@@ -202,7 +205,8 @@ describe("HubPage", () => {
       }),
     );
     renderHubPage();
-    fireEvent.click(await screen.findByRole("button", { name: /member-42/ }));
+    await screen.findByText("hub.overview.title");
+    fireEvent.click(screen.getByRole("button", { name: /member-42/ }));
     await waitFor(() =>
       expect(hubApi.listAuditEvents).toHaveBeenLastCalledWith(
         expect.objectContaining({ query: "member-42", action: undefined }),

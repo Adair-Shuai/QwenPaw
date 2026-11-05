@@ -32,6 +32,7 @@ from .client import (
     safe_openviking_exception_summary,
 )
 from .config import OpenVikingMemoryConfig
+from .private_file import restrict_private_file
 from .prompts import (
     OPENVIKING_MEMORY_GUIDANCE_EN,
     OPENVIKING_MEMORY_GUIDANCE_ZH,
@@ -62,6 +63,7 @@ def get_or_create_installation_id(host_working_dir: str | Path) -> str:
     root = Path(host_working_dir).expanduser().resolve()
     marker = root / "plugin-state" / "memory-openviking" / "installation-id"
     try:
+        restrict_private_file(marker)
         existing = marker.read_text(encoding="utf-8").strip()
         if re.fullmatch(r"[0-9a-f]{32}", existing):
             return existing
@@ -78,6 +80,7 @@ def get_or_create_installation_id(host_working_dir: str | Path) -> str:
     )
     try:
         with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
+            restrict_private_file(Path(temporary_path))
             stream.write(generated)
             stream.flush()
             os.fsync(stream.fileno())
@@ -86,6 +89,7 @@ def get_or_create_installation_id(host_working_dir: str | Path) -> str:
         try:
             os.link(temporary_path, marker)
         except FileExistsError as exc:
+            restrict_private_file(marker)
             existing = marker.read_text(encoding="utf-8").strip()
             if not re.fullmatch(r"[0-9a-f]{32}", existing):
                 raise ValueError(

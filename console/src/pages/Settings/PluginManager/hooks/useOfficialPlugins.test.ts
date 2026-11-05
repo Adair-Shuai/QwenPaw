@@ -333,4 +333,25 @@ describe("useOfficialPlugins state surface", () => {
       "plugins",
     ]);
   });
+  it("preserves the disabled runtime state when an official update completes", async () => {
+    h.upgradeInstalledPlugin.mockResolvedValue({
+      method: "replaced",
+      version: "2.0.0",
+      loaded: false,
+    });
+    const onInstalled = vi.fn();
+    const { result } = renderHook(() => useOfficialPlugins({ onInstalled }));
+    await waitFor(() => expect(result.current.loading).toBe(false));
+    await act(async () => {
+      await result.current.handleInstall({
+        ...ENTRY,
+        installed: true,
+        upgrade_available: true,
+      });
+    });
+    expect(onInstalled).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "p1", version: "2.0.0", loaded: false }),
+    );
+    expect(h.message.error).not.toHaveBeenCalled();
+  });
 });

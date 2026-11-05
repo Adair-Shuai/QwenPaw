@@ -159,6 +159,7 @@ async def test_url_install_rolls_back_when_adoption_write_fails(
 ):
     request = MagicMock()
     loader = MagicMock()
+    loader.cleanup_preparation_source = AsyncMock()
     request.app.state.plugin_loader = loader
     extracted = tmp_path / "extracted"
     extracted.mkdir()
@@ -181,6 +182,8 @@ async def test_url_install_rolls_back_when_adoption_write_fails(
         nonlocal installed
         installed = False
 
+    rollback = AsyncMock(side_effect=fake_rollback)
+
     monkeypatch.setattr(
         "qwenpaw.app.routers.plugins._async_download",
         AsyncMock(),
@@ -198,7 +201,7 @@ async def test_url_install_rolls_back_when_adoption_write_fails(
     )
     monkeypatch.setattr(
         "qwenpaw.app.routers.plugins._rollback_failed_remote_install",
-        AsyncMock(side_effect=fake_rollback),
+        rollback,
     )
     adoption_write = MagicMock(side_effect=[OSError("disk full"), None])
     monkeypatch.setattr(
@@ -214,6 +217,9 @@ async def test_url_install_rolls_back_when_adoption_write_fails(
 
     assert error.value.status_code == 500
     assert installed is False
+    adoption_write.assert_called_once_with("demo", True)
+    rollback.assert_awaited_once_with(loader, request, record)
+    loader.cleanup_preparation_source.assert_awaited_once()
 
     result = await install_plugin(
         InstallPluginRequest(source="https://example/plugin.zip"),
@@ -223,6 +229,8 @@ async def test_url_install_rolls_back_when_adoption_write_fails(
     assert result["id"] == "demo"
     assert installed is True
     assert adoption_write.call_count == 2
+    assert rollback.await_count == 1
+    assert loader.cleanup_preparation_source.await_count == 2
 
 
 @pytest.mark.asyncio

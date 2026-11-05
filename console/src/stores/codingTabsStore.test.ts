@@ -365,6 +365,27 @@ describe("codingTabsStore", () => {
       dirty: false,
       source: "artifact",
       artifactUrl: "/api/files/preview/report.md",
+      artifact: {
+        id: "saved-html",
+        title: "report.html",
+        source: "tool_call",
+        mimeType: "text/html",
+        workspacePath: "design/report.html",
+        workspaceRoot: "workspace",
+        agentId: "a1",
+        sessionId: "s1",
+        chatId: "chat1",
+        textContent: "large unsaved content",
+        jsonContent: { scratch: true },
+        meta: {
+          turnFileArchive: true,
+          turnId: "turn1",
+          turnSessionId: "runtime1",
+          fileId: "html1",
+          version: "after",
+          scratch: "do not persist",
+        },
+      },
     });
     store.setActiveTab("session:a1:s1", "artifact::report.md");
 
@@ -382,6 +403,18 @@ describe("codingTabsStore", () => {
     expect(sessionEnvelope.state.activeTabByAgent["session:a1:s1"]).toBe(
       "artifact::report.md",
     );
+    const saved =
+      sessionEnvelope.state.tabsByAgent["session:a1:s1"][0].artifact;
+    expect(saved.workspacePath).toBe("design/report.html");
+    expect(saved.meta).toEqual({
+      turnFileArchive: true,
+      turnId: "turn1",
+      turnSessionId: "runtime1",
+      fileId: "html1",
+      version: "after",
+    });
+    expect(saved).not.toHaveProperty("textContent");
+    expect(saved).not.toHaveProperty("jsonContent");
   });
 
   it("migrates a temporary Session scope to its backend id", () => {

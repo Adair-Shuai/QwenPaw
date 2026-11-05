@@ -292,6 +292,50 @@ describe("FilesWorkspace native editor integration", () => {
     expect(currentTabs()).toHaveLength(2);
   });
 
+  it("repairs a restored artifact identity on reopen without replacing the buffer", async () => {
+    const target = artifact("saved-html", "<p>Saved page</p>");
+    target.artifactUrl = "/archive/turn/html";
+    target.artifact!.workspacePath = "design/index.html";
+    target.artifact!.workspaceRoot = "workspace";
+    target.artifact!.meta = {
+      turnFileArchive: true,
+      turnId: "turn",
+      turnSessionId: "runtime",
+      fileId: "html",
+      version: "after",
+    };
+    const view = render(
+      <FilesWorkspace scope={scope} initialTarget={target} />,
+    );
+    await waitFor(() => expect(currentTabs()).toHaveLength(1));
+    const path = activeTab()!.path;
+    act(() =>
+      useCodingTabsStore.setState({
+        tabsByAgent: {
+          [key]: [
+            {
+              ...activeTab()!,
+              artifact: undefined,
+              content: "retained buffer",
+              dirty: true,
+            },
+          ],
+        },
+      }),
+    );
+    view.rerender(
+      <FilesWorkspace scope={scope} initialTarget={{ ...target }} />,
+    );
+    await waitFor(() =>
+      expect(activeTab()?.artifact?.workspacePath).toBe("design/index.html"),
+    );
+    expect(currentTabs()).toHaveLength(1);
+    expect(activeTab()?.path).toBe(path);
+    expect(activeTab()?.content).toBe("retained buffer");
+    expect(activeTab()?.dirty).toBe(true);
+    expect(activeTab()?.artifact?.meta?.turnSessionId).toBe("runtime");
+  });
+
   it("keeps streamed artifact previews, copy and saved bytes on the same current content", async () => {
     const first = artifact("response-1", "initial draft");
     first.artifact!.sessionId = "agent-a:session-a";

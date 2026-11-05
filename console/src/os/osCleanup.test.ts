@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import {
   purgeAppState,
   purgePluginAppState,
@@ -10,6 +10,10 @@ import { useOsIcons } from "./osIconStore";
 import { useOsRoute } from "./osRouteStore";
 import { useOsDock } from "./osDockStore";
 import { routeRegistry } from "../plugins/registry/store";
+import {
+  loadPawApp,
+  resetPawAppLoaderForTests,
+} from "../plugins/usePluginLoader";
 import type { Disposable } from "../plugins/registry/types";
 
 let disposables: Disposable[] = [];
@@ -94,7 +98,7 @@ describe("osCleanup (transactional)", () => {
     expect(w().order).toEqual(["core.chat"]);
   });
 
-  it("removePluginAppState also removes the live PawApp route", () => {
+  it("removePluginAppState also removes the live PawApp route", async () => {
     routeRegistry.add("office", {
       id: "plugin.office",
       path: "/apps/office",
@@ -102,7 +106,7 @@ describe("osCleanup (transactional)", () => {
     });
     w().open("plugin.office");
 
-    removePluginAppState("office");
+    await removePluginAppState("office");
 
     expect(w().windows["plugin.office"]).toBeUndefined();
     expect(
@@ -134,5 +138,63 @@ describe("osCleanup (transactional)", () => {
     purgePluginAppState("unknown-source");
 
     expect(w().saved["default"].windows["not.in.registry"]).toBeDefined();
+  });
+  it("awaits an in-flight bundle and removes its late route and desktop state", async () => {
+    resetPawAppLoaderForTests();
+    let release!: (response: Response) => void;
+    const runtime = globalThis as typeof globalThis & {
+      __lateOffice?: () => void;
+    };
+    const create = URL.createObjectURL;
+    const revoke = URL.revokeObjectURL;
+    runtime.__lateOffice = () => {
+      routeRegistry.add("late-office", {
+        id: "late-office.page",
+        path: "/apps/late-office",
+        component: () => null,
+      });
+      w().open("late-office.page");
+      useOsDock.getState().pin("late-office.page");
+    };
+    URL.createObjectURL = () =>
+      `data:text/javascript,${encodeURIComponent("globalThis.__lateOffice()")}`;
+    URL.revokeObjectURL = vi.fn();
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify([
+            {
+              id: "late-office",
+              plugin_type: "app",
+              frontend_entry: "index.js",
+            },
+          ]),
+        ),
+      )
+      .mockReturnValueOnce(
+        new Promise((resolve) => {
+          release = resolve;
+        }),
+      );
+    try {
+      const loading = loadPawApp("late-office");
+      await vi.waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+      const removing = removePluginAppState("late-office");
+      release(new Response("bundle"));
+      await Promise.all([loading, removing]);
+      expect(
+        routeRegistry
+          .snapshot()
+          .some((route) => route.source === "late-office"),
+      ).toBe(false);
+      expect(w().windows["late-office.page"]).toBeUndefined();
+      expect(useOsDock.getState().pinned).not.toContain("late-office.page");
+    } finally {
+      fetchMock.mockRestore();
+      URL.createObjectURL = create;
+      URL.revokeObjectURL = revoke;
+      delete runtime.__lateOffice;
+    }
   });
 });

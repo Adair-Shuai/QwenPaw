@@ -1,0 +1,17 @@
+{
+  "audited_at_utc": "2026-11-05T14:23:08.129312+00:00",
+  "head": "a5515320daf50385538d484701f19da7fe9d7bda",
+  "staged_files": [],
+  "freeze_manifest_sha256": "fb9b143265a564c6a9b2c3cc65acba64100556d029402902c5228d241201943e",
+  "frozen_source": {
+    "files": 234,
+    "missing": [],
+    "changed": []
+  },
+  "full_static_source": {
+    "files": 10855,
+    "missing": [],
+    "changed": []
+  },
+  "passed": true
+}

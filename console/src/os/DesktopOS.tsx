@@ -329,7 +329,7 @@ export default function DesktopOS() {
       const source = a.source;
       try {
         await uninstallPlugin(source);
-        removePluginAppState(source);
+        await removePluginAppState(source);
         message.success(
           t("os.uninstalledApp", { name, defaultValue: "Uninstalled" }),
         );

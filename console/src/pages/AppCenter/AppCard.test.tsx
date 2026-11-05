@@ -117,4 +117,38 @@ describe("AppCard", () => {
       screen.getByRole("button", { name: "appCenter.openApp" }),
     ).toBeInTheDocument();
   });
+  it.each(["failed", "disabled", "pending"])(
+    "keeps %s apps inspectable without opening them",
+    async (status) => {
+      const onClick = vi.fn();
+      const onUninstall = vi.fn();
+      render(
+        <AppCard
+          app={makeApp({
+            status,
+            loaded: false,
+            enabled: status !== "disabled",
+            diagnostics: ["App is unavailable"],
+          })}
+          onClick={onClick}
+          onUninstall={onUninstall}
+        />,
+      );
+      const card = screen.getByRole("button", { name: "Demo App" });
+      fireEvent.click(card);
+      fireEvent.keyDown(card, { key: "Enter" });
+      expect(onClick).not.toHaveBeenCalled();
+      expect(
+        screen.getByRole("button", { name: "appCenter.openApp" }),
+      ).toBeDisabled();
+      expect(screen.getByText("App is unavailable")).toBeVisible();
+      fireEvent.click(
+        screen.getByRole("button", { name: "appCenter.moreActions" }),
+      );
+      fireEvent.click(await screen.findByText("appCenter.uninstall"));
+      expect(onUninstall).toHaveBeenCalledWith(
+        expect.objectContaining({ status }),
+      );
+    },
+  );
 });

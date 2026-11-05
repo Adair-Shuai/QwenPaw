@@ -31,6 +31,9 @@ def _request_message_metadata(
     # keep the original user content separately for history rendering.
     result.pop(QWENPAW_USER_CONTENT_KEY, None)
     result.pop("qwenpaw_turn_state", None)
+    # Only the host can attach a real in-flight supplement to another turn.
+    # A forged marker would otherwise bypass the last-turn regeneration check.
+    result.pop("qwenpaw_steering", None)
     if any(
         getattr(part, "type", None) == "file"
         and getattr(part, "file_url", None)

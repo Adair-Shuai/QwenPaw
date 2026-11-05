@@ -1320,7 +1320,7 @@ async def install_plugin(
     "/replace",
     summary="Replace an installed plugin from an approved catalog",
     description=(
-        "Download and verify an official or marketplace plugin archive, "
+        "Verify an official archive or package-owned bundled catalog entry, "
         "then replace the installed copy under the plugin lifecycle lock."
     ),
 )
@@ -1328,7 +1328,7 @@ async def replace_installed_plugin(
     body: ReplacePluginRequest,
     request: Request,
 ):  # pylint: disable=too-many-statements
-    """Securely upgrade an installed external plugin with rollback."""
+    """Upgrade from an approved remote or bundled catalog with rollback."""
     loader = getattr(request.app.state, "plugin_loader", None)
     if loader is None:
         raise HTTPException(
@@ -1339,8 +1339,22 @@ async def replace_installed_plugin(
     plugin_id = body.plugin_id.strip()
     if not _PLUGIN_ID_PATTERN.fullmatch(plugin_id):
         raise HTTPException(status_code=400, detail="Invalid plugin id")
+    bundled_source = None
     try:
-        source = _validate_external_upgrade_source(body.source)
+        source = body.source.strip()
+        if Path(source).is_absolute():
+            from ...plugins.download_catalog import (
+                resolve_bundled_catalog_source,
+            )
+
+            bundled_source = await asyncio.to_thread(
+                resolve_bundled_catalog_source,
+                source,
+                plugin_id,
+                body.version,
+            )
+        else:
+            source = _validate_external_upgrade_source(source)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -1371,80 +1385,89 @@ async def replace_installed_plugin(
     temp_dir = Path(await asyncio.to_thread(tempfile.mkdtemp))
     zip_path = temp_dir / "plugin.zip"
     backup_path: Path | None = None
-    replacement_started = False
     try:
-        await _async_download(source, zip_path)
-        actual_sha256 = await asyncio.to_thread(_sha256_file, zip_path)
-        if expected_sha256 and actual_sha256 != expected_sha256:
-            raise ValueError("Plugin archive SHA256 verification failed")
-        await asyncio.to_thread(
-            _validate_upgrade_archive,
-            zip_path,
-            expected_plugin_id=plugin_id,
-            expected_version=(body.version or "").strip() or None,
-        )
-        source_path = await asyncio.to_thread(
-            _extract_downloaded_plugin_zip,
-            zip_path,
-            temp_dir,
-        )
+        if bundled_source is None:
+            await _async_download(source, zip_path)
+            actual_sha256 = await asyncio.to_thread(_sha256_file, zip_path)
+            if expected_sha256 and actual_sha256 != expected_sha256:
+                raise ValueError("Plugin archive SHA256 verification failed")
+            await asyncio.to_thread(
+                _validate_upgrade_archive,
+                zip_path,
+                expected_plugin_id=plugin_id,
+                expected_version=(body.version or "").strip() or None,
+            )
+            source_path = await asyncio.to_thread(
+                _extract_downloaded_plugin_zip,
+                zip_path,
+                temp_dir,
+            )
+        else:
+            source_path = bundled_source
 
-        backup_root = plugins_dir.parent / "plugin-upgrades" / "backups"
-        await asyncio.to_thread(backup_root.mkdir, parents=True, exist_ok=True)
-        concrete_backup_path = backup_root / f"{plugin_id}-{uuid.uuid4().hex}"
-        backup_path = concrete_backup_path
-        await asyncio.to_thread(
-            copy_tree,
-            destination,
-            concrete_backup_path,
-        )
+        from packaging.version import Version
+        from ...utils.io_utils import run_sync_io
 
-        replacement_started = True
-        record = await _load_plugin_with_optional_force_reinstall(
-            loader,
-            request,
-            source_path,
-            force=True,
-            **_interrupt_options(body.interrupt_tasks),
-        )
+        # Backup and replacement share one reentrant lifecycle lock.
+        async with loader.plugin_lifecycle(plugin_id):
+            if not await asyncio.to_thread(destination.is_dir):
+                raise HTTPException(status_code=404, detail="Plugin removed")
+            _, current_manifest = await run_sync_io(
+                loader.read_source_manifest,
+                destination,
+            )
+            _, candidate_manifest = await run_sync_io(
+                loader.read_source_manifest,
+                source_path,
+            )
+            if Version(candidate_manifest.version) < Version(
+                current_manifest.version,
+            ):
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "plugin_update_stale",
+                        "message": (
+                            "A newer plugin version is already installed."
+                        ),
+                        "current_version": current_manifest.version,
+                        "target_version": candidate_manifest.version,
+                    },
+                )
+            backup_root = plugins_dir.parent / "plugin-upgrades" / "backups"
+            await run_sync_io(
+                backup_root.mkdir,
+                parents=True,
+                exist_ok=True,
+            )
+            concrete_backup_path = (
+                backup_root / f"{plugin_id}-{uuid.uuid4().hex}"
+            )
+            backup_path = concrete_backup_path
+            await run_sync_io(
+                copy_tree,
+                destination,
+                concrete_backup_path,
+            )
+
+            record = await _load_plugin_with_optional_force_reinstall(
+                loader,
+                request,
+                source_path,
+                force=True,
+                **_interrupt_options(body.interrupt_tasks),
+            )
     except HTTPException:
         raise
+    except (DependencyUpgradeRequired, SharedDependencyError) as exc:
+        raise dependency_http_error(exc) from exc
     except PluginBusyError as exc:
         # Busy is raised before the lifecycle transaction mutates the plugin.
         # Preserve the confirmation contract and do not attempt a reinstall.
         raise HTTPException(status_code=409, detail=exc.detail) from exc
     except Exception as exc:
-        if replacement_started and backup_path is not None:
-            try:
-                await _load_plugin_with_optional_force_reinstall(
-                    loader,
-                    request,
-                    backup_path,
-                    force=True,
-                )
-            except Exception as rollback_exc:  # noqa: BLE001
-                logger.exception(
-                    "Plugin upgrade rollback failed for '%s'",
-                    _log_safe(plugin_id),
-                )
-                raise HTTPException(
-                    status_code=500,
-                    detail=(
-                        f"Plugin upgrade failed and rollback also failed: "
-                        f"{rollback_exc}"
-                    ),
-                ) from exc
-            logger.warning(
-                "Plugin upgrade failed for '%s'; restored previous version",
-                _log_safe(plugin_id),
-            )
-            raise HTTPException(
-                status_code=500,
-                detail=(
-                    "Plugin upgrade failed; previous version restored: "
-                    f"{exc}"
-                ),
-            ) from exc
+        # Only the loader may roll back its transaction under the lock.
+        # Retrying here can overwrite a later successful replacement.
         if isinstance(exc, (ValueError, zipfile.BadZipFile)):
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         logger.exception(
@@ -1463,7 +1486,15 @@ async def replace_installed_plugin(
         "id": record.manifest.id,
         "name": record.manifest.name,
         "version": record.manifest.version,
-        "restart_required": True,
+        "loaded": record.status == "active" and record.enabled,
+        "enabled": (
+            record.global_enabled
+            if record.global_enabled is not None
+            else record.enabled
+        ),
+        "status": record.status,
+        "diagnostics": list(record.diagnostics or []),
+        "restart_required": record.update_needs_restart,
         "backup_path": str(backup_path) if backup_path else None,
     }
 

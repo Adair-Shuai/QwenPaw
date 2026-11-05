@@ -21,6 +21,7 @@ import pytest
 from qwenpaw.plugins.architecture import PluginManifest
 from qwenpaw.plugins.loader import PluginLoader
 from qwenpaw.plugins.execution.dependencies import canonical_environment_path
+from tests.fs_alias_support import directory_alias
 
 # ---------------------------------------------------------------------------
 # _is_requirement_satisfied
@@ -1981,7 +1982,7 @@ async def test_dependency_directory_classification_retains_provider_ownership(
         paths = (site, nested, other)
     elif layout == "alias":
         alias = tmp_path / "site-alias"
-        alias.symlink_to(site, target_is_directory=True)
+        directory_alias(site, alias)
         paths = (site, alias, alias / "owner/_vendor")
     else:
         paths = (site, nested)

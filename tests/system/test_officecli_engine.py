@@ -6,12 +6,15 @@ Only disposable documents under pytest's temporary workspace are edited.
 """
 
 import json
+import hashlib
 from pathlib import Path
 import subprocess
 import sys
 import zipfile
 
 import pytest
+
+from qwenpaw.officecli_runtime import officecli_environment
 
 ROOT = Path(__file__).resolve().parents[2]
 BINARY = (
@@ -24,6 +27,23 @@ BINARY = (
 @pytest.fixture(name="cli")
 def _cli_fixture():
     assert BINARY.is_file(), "Stage the reviewed OfficeCLI engine first"
+    lock = json.loads(
+        (ROOT / "scripts/pack-tauri/officecli-release.json").read_text(
+            encoding="utf-8",
+        ),
+    )
+    platform = {"win32": "win", "darwin": "mac"}.get(sys.platform, "linux")
+    import platform as system_platform
+
+    architecture = system_platform.machine().lower()
+    architecture = {"amd64": "x64", "x86_64": "x64", "aarch64": "arm64"}.get(
+        architecture,
+        architecture,
+    )
+    asset = f"officecli-{platform}-{architecture}"
+    asset += ".exe" if platform == "win" else ""
+    expected = lock["sha256"][asset]
+    assert hashlib.sha256(BINARY.read_bytes()).hexdigest() == expected
 
     def run(*args):
         result = subprocess.run(
@@ -34,12 +54,14 @@ def _cli_fixture():
             timeout=60,
             creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             check=False,
+            env=officecli_environment(),
         )
         assert result.returncode == 0, result.stdout + result.stderr
         return result.stdout
 
     assert run("--version").strip() == "1.0.157"
-    return run
+    yield run
+    assert hashlib.sha256(BINARY.read_bytes()).hexdigest() == expected
 
 
 @pytest.mark.asyncio

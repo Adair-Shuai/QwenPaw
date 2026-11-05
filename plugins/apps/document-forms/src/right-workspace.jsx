@@ -205,6 +205,7 @@ export default function RightWorkspace({
     }
   }
   useEffect(() => {
+    if (mode !== "preview" || (!selection && !attachment) || Preview) return;
     let active = true;
     (Q.workspace?.loadPreview
       ? Q.workspace.loadPreview()
@@ -215,7 +216,7 @@ export default function RightWorkspace({
     return () => {
       active = false;
     };
-  }, []);
+  }, [mode, selection, attachment, Preview]);
   const files = project.forms.flatMap((f) =>
     f.generations.flatMap((g) =>
       stageId &&

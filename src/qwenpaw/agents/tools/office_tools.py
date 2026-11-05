@@ -52,6 +52,7 @@ from agentscope.tool import ToolChunk
 
 from ...config.context import get_current_workspace_dir
 from ...constant import WORKING_DIR
+from ...officecli_runtime import officecli_environment
 from ...runtime.tool_registry import tool_descriptor
 from .file_io import _path_to_file_url, _resolve_file_path
 
@@ -91,6 +92,7 @@ async def _communicate_officecli(
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             creationflags=_SUBPROCESS_FLAGS,
+            env=officecli_environment(),
         )
     except NotImplementedError:
         # Uvicorn's Windows Selector loop cannot create async subprocesses.
@@ -120,6 +122,7 @@ def _run_officecli_sync(
         stderr=subprocess.PIPE,
         timeout=timeout,
         creationflags=_SUBPROCESS_FLAGS,
+        env=officecli_environment(),
         check=False,
     )
 

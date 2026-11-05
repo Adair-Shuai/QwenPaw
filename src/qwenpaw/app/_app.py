@@ -73,6 +73,7 @@ from .routers.loops import router as loops_router
 from .routers.tool_calls import router as tool_calls_router
 from .routers.voice import voice_router
 from .startup_state import startup_state
+from .startup_receipt import publish_startup_outcome
 
 # Apply log level on load so reload child process gets same level as CLI.
 logger = setup_logger(os.environ.get(LOG_LEVEL_ENV, "info"))
@@ -266,6 +267,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
 ):
     startup_start_time = time.time()
     startup_state.reset()
+    publish_startup_outcome("starting")
     add_project_file_handler(LOG_FILE_PATH)
 
     # ================================================================
@@ -479,6 +481,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     app.state.get_agent_by_id = _get_agent_by_id
 
     app.state.startup_ready = asyncio.Event()
+    app.state.startup_failed = False
     app.state.bundled_plugins_status = {
         "state": "pending",
         "installed": [],
@@ -565,6 +568,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     server is not None
                     and os.environ.get("QWENPAW_COMPONENT_PROTOCOL") == "2"
                 ):
+                    publish_startup_outcome("restart")
                     print("QWENPAW_COMPONENTS_RESTART", flush=True)
                     server.should_exit = True
                     return
@@ -733,7 +737,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
 
             # Publish frontend registrations and validate newly activated
             # bundles before agents or the UI depend on them.
-            loaded_plugins = await plugin_loader.load_all_plugins(
+            await plugin_loader.load_all_plugins(
                 configs=plugin_configs,
             )
             plugin_loader.registry.set_runtime_helpers(
@@ -747,68 +751,37 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             }
             startup_state.update("resources", "正在准备扩展资源…", 50)
             await plugin_loader.activate_all_loaded()
+            from functools import partial
+            from .plugin_activation import reconcile_plugin_activation
+
             bundled_ready_ids = []
             bundled_health_errors = []
             for plugin_id in newly_installed:
-                record = loaded_plugins.get(plugin_id)
-                if record and record.enabled and record.status == "active":
-                    try:
-                        finalize_bundled_plugin_activation(
+                try:
+                    healthy = await reconcile_plugin_activation(
+                        plugin_loader,
+                        plugin_id,
+                        finalize=partial(
+                            finalize_bundled_plugin_activation,
                             plugin_id,
                             plugins_dir=get_plugins_dir(),
-                        )
+                        ),
+                        rollback=partial(
+                            rollback_bundled_plugin_activation,
+                            plugin_id,
+                            plugins_dir=get_plugins_dir(),
+                        ),
+                        config=plugin_configs.get(plugin_id),
+                    )
+                    if healthy:
                         bundled_ready_ids.append(plugin_id)
                         continue
-                    except Exception:
-                        logger.exception(
-                            "Failed to finalize bundled plugin %s",
-                            plugin_id,
-                        )
-                bundled_health_errors.append(plugin_id)
-                if plugin_loader.get_loaded_plugin(plugin_id) is not None:
-                    try:
-                        await plugin_loader.unload_plugin(
-                            plugin_id,
-                            delete_files=False,
-                        )
-                    except Exception:
-                        logger.warning(
-                            "Failed to unload unhealthy bundled plugin %s",
-                            plugin_id,
-                            exc_info=True,
-                        )
-                        # pylint: disable-next=protected-access
-                        plugin_loader._loaded_plugins.pop(plugin_id, None)
-                        plugin_loader.registry.unregister_plugin(plugin_id)
-                try:
-                    restored = rollback_bundled_plugin_activation(
-                        plugin_id,
-                        plugins_dir=get_plugins_dir(),
-                    )
                 except Exception:
                     logger.exception(
-                        "Failed to roll back bundled plugin %s",
+                        "Bundled plugin recovery deferred for %s",
                         plugin_id,
                     )
-                    continue
-                if restored:
-                    discovered = {
-                        manifest.id: (manifest, path)
-                        for manifest, path in plugin_loader.discover_plugins()
-                    }
-                    previous = discovered.get(plugin_id)
-                    if previous is not None:
-                        try:
-                            await plugin_loader.load_plugin(
-                                previous[0],
-                                previous[1],
-                                plugin_configs.get(plugin_id),
-                            )
-                        except Exception:
-                            logger.exception(
-                                "Restored bundled plugin %s failed to load",
-                                plugin_id,
-                            )
+                bundled_health_errors.append(plugin_id)
 
             if component_updated_ids:
                 try:
@@ -819,10 +792,10 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
 
                     recovery_service = configured_service()
                     if recovery_service is not None:
-                        recovery_updater = recovery_service.updater
+                        updater = recovery_service.updater
                         try:
                             for component_id in sorted(component_updated_ids):
-                                if recovery_updater.is_directory_component(
+                                if updater.is_directory_component(
                                     component_id,
                                 ):
                                     continue
@@ -830,43 +803,29 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                                     get_plugins_dir(),
                                     component_id,
                                 )
-                                record = loaded_plugins.get(component_id)
-                                if (
-                                    record
-                                    and record.enabled
-                                    and record.status == "active"
-                                ):
-                                    recovery_updater.finalize_activation(
+                                try:
+                                    await reconcile_plugin_activation(
+                                        plugin_loader,
                                         component_id,
-                                        destination,
+                                        finalize=partial(
+                                            updater.finalize_activation,
+                                            component_id,
+                                            destination,
+                                        ),
+                                        rollback=partial(
+                                            updater.rollback_activation,
+                                            component_id,
+                                            destination,
+                                        ),
+                                        config=plugin_configs.get(
+                                            component_id,
+                                        ),
                                     )
-                                    continue
-                                # pylint: disable-next=protected-access
-                                plugin_loader._loaded_plugins.pop(
-                                    component_id,
-                                    None,
-                                )
-                                plugin_loader.registry.unregister_plugin(
-                                    component_id,
-                                )
-                                recovery_service.updater.rollback_activation(
-                                    component_id,
-                                    destination,
-                                )
-                                if destination.is_dir():
-                                    discovered = {
-                                        manifest.id: (manifest, path)
-                                        for manifest, path in (
-                                            plugin_loader.discover_plugins()
-                                        )
-                                    }
-                                    previous = discovered.get(component_id)
-                                    if previous is not None:
-                                        await plugin_loader.load_plugin(
-                                            previous[0],
-                                            previous[1],
-                                            plugin_configs.get(component_id),
-                                        )
+                                except Exception:
+                                    logger.exception(
+                                        "Component recovery deferred for %s",
+                                        component_id,
+                                    )
                         finally:
                             recovery_service.client.close()
                 except Exception:
@@ -891,6 +850,14 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 core_elapsed = time.time() - startup_start_time
                 logger.info(f"Core agents ready in {core_elapsed:.3f}s")
                 startup_display.mark_core_ready(core_elapsed)
+                from ..components.service import finalize_booted_runtime
+
+                from ..utils.io_utils import run_sync_io
+
+                app.state.runtime_confirmation_task = asyncio.create_task(
+                    run_sync_io(finalize_booted_runtime),
+                )
+                publish_startup_outcome("ready")
                 app.state.startup_ready.set()
                 startup_state.mark_core_ready()
 
@@ -902,6 +869,9 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 )
             )
             if startup_results.get("default") is False:
+                app.state.startup_failed = True
+                publish_startup_outcome("failed")
+                startup_state.mark_error("Default agent failed to start")
                 startup_display.mark_failed(
                     "Default agent failed to start",
                 )
@@ -993,7 +963,10 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 startup_state.mark_ready()
 
         except Exception as exc:
-            startup_state.mark_error(str(exc))
+            if not app.state.startup_ready.is_set():
+                app.state.startup_failed = True
+                publish_startup_outcome("failed")
+                startup_state.mark_error(str(exc))
             app.state.bundled_plugins_status = {
                 "state": "error",
                 "installed": [],

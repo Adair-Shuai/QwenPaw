@@ -385,6 +385,9 @@ export function useSkills() {
       };
       const task = await api.startHubSkillInstall(payload, mutation.agentId);
       if (!ownsMutation(mutation)) return { success: false };
+      if (typeof task.task_id !== "string" || !task.task_id.trim()) {
+        throw new Error(t("skills.importFailed"));
+      }
       importTaskRef.current = { taskId: task.task_id, mutation };
 
       while (

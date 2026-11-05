@@ -165,6 +165,7 @@ class ManagedService:
         self.spec = spec
         self._process: asyncio.subprocess.Process | None = None
         self._base_url: str | None = None
+        self._ready = False
         self._log_tasks: list[asyncio.Task] = []
         self._recent_logs: deque[str] = deque(maxlen=30)
         self._external = False
@@ -174,11 +175,22 @@ class ManagedService:
 
     @property
     def base_url(self) -> str:
-        if self._base_url is None:
+        if self._base_url is None or not self.is_ready:
             if self.startup_error is not None:
                 raise ManagedServiceNotReady(
                     self.spec.name,
                     self.startup_error,
+                )
+            if (
+                self._process is not None
+                and self._process.returncode is not None
+            ):
+                raise ManagedServiceNotReady(
+                    self.spec.name,
+                    ManagedServiceUnavailable(
+                        "SERVICE_EXITED",
+                        "Service process has exited",
+                    ),
                 )
             raise RuntimeError(
                 f"managed service '{self.spec.name}' is not ready",
@@ -187,7 +199,17 @@ class ManagedService:
 
     @property
     def is_ready(self) -> bool:
-        return self._base_url is not None
+        return bool(
+            self._ready
+            and self._base_url is not None
+            and (
+                self._external
+                or (
+                    self._process is not None
+                    and self._process.returncode is None
+                )
+            ),
+        )
 
     @property
     def is_external(self) -> bool:
@@ -262,6 +284,12 @@ class ManagedService:
         if self.is_ready:
             return
 
+        # An exited process still owns its pipe readers and endpoint. Reap
+        # that generation before spawning another one; an address alone is
+        # neither a readiness check nor proof that the process is alive.
+        if self._process is not None or self._base_url is not None:
+            await self.stop()
+
         if self.spec.on_before_start is not None:
             await self.spec.on_before_start()
 
@@ -290,24 +318,7 @@ class ManagedService:
                     "external service mode requires "
                     f"{self.spec.external_url_env}",
                 )
-            try:
-                normalized_external_url = _normalize_external_url(external_url)
-            except ValueError as exc:
-                raise ManagedServiceConfigurationError(
-                    "SERVICE_CONFIGURATION_INVALID",
-                    str(exc),
-                ) from exc
-            self._external = True
-            self._base_url = normalized_external_url
-            try:
-                await self._wait_until_healthy()
-            except BaseException:
-                await self.stop()
-                raise
-            logger.info(
-                "PawApp service '%s' attached to external endpoint",
-                self.spec.name,
-            )
+            await self._attach_external(external_url)
             return
 
         port = _available_loopback_port(self.spec.host)
@@ -378,8 +389,30 @@ class ManagedService:
                     details,
                 )
             raise
+        self._ready = True
         logger.info(
             "PawApp service '%s' ready on a managed loopback endpoint",
+            self.spec.name,
+        )
+
+    async def _attach_external(self, external_url: str) -> None:
+        try:
+            normalized_external_url = _normalize_external_url(external_url)
+        except ValueError as exc:
+            raise ManagedServiceConfigurationError(
+                "SERVICE_CONFIGURATION_INVALID",
+                str(exc),
+            ) from exc
+        self._external = True
+        self._base_url = normalized_external_url
+        try:
+            await self._wait_until_healthy()
+        except BaseException:
+            await self.stop()
+            raise
+        self._ready = True
+        logger.info(
+            "PawApp service '%s' attached to external endpoint",
             self.spec.name,
         )
 
@@ -401,6 +434,7 @@ class ManagedService:
                 task.cancel()
             await asyncio.gather(task, return_exceptions=True)
         process = self._process
+        self._ready = False
         self._base_url = None
         self._external = False
         if process and process.returncode is None:
@@ -453,17 +487,19 @@ class ManagedService:
         """Run the configured readiness check without exposing its endpoint."""
         if not self.is_ready:
             return False
-        return await asyncio.to_thread(
+        healthy = await asyncio.to_thread(
             _health_request,
             f"{self.base_url}{self.spec.health_path}",
             1.0,
         )
+        return healthy and self.is_ready
 
     async def _wait_until_healthy(self) -> None:
         deadline = (
             asyncio.get_running_loop().time() + self.spec.startup_timeout
         )
-        health_url = f"{self.base_url}{self.spec.health_path}"
+        # The endpoint exists during startup but is not public-ready yet.
+        health_url = f"{self._base_url}{self.spec.health_path}"
         while asyncio.get_running_loop().time() < deadline:
             if self._process and self._process.returncode is not None:
                 raise ManagedServiceUnavailable(
