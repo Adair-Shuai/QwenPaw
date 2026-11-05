@@ -3,12 +3,14 @@ import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import FilesDrawer from "./FilesDrawer";
+import { filesDrawerReducer } from "./filesDrawerState";
 import { workspaceApi } from "../../api/modules/workspace";
+import { agentsApi } from "../../api/modules/agents";
 import type { FileTarget } from "./types";
 import { useBackgroundTasksStore } from "../../stores/backgroundTasksStore";
 import { useCodingTabsStore } from "../../stores/codingTabsStore";
 import type { FilesDrawerState } from "./types";
-import { createRef, useEffect } from "react";
+import { createRef, useEffect, useReducer } from "react";
 import { slotRegistry } from "../../plugins/registry/store";
 import { ThemeProvider, useTheme } from "../../contexts/ThemeContext";
 import { PAGE_STYLES } from "../../utils/pageStyle";
@@ -104,6 +106,21 @@ vi.mock("../../utils/downloadFileFromUrl", () => ({
 }));
 
 describe("FilesDrawer", () => {
+  beforeEach(() => {
+    vi.spyOn(agentsApi, "getAgent").mockResolvedValue({
+      id: "default",
+      name: "Default",
+      running: { memory_manager_backend: "remelight" },
+    });
+    useCodingTabsStore.setState({
+      tabsByAgent: {},
+      activeTabByAgent: {},
+      diffsByAgent: {},
+    });
+    vi.mocked(workspaceApi.loadFileText)
+      .mockReset()
+      .mockResolvedValue({ content: "hello", etag: "etag" });
+  });
   const interactionScope = {
     kind: "session" as const,
     agentId: "default",
@@ -124,6 +141,119 @@ describe("FilesDrawer", () => {
       screen.getByRole("region", { name: /files|文件/i }),
     );
   });
+
+  it("opens Markdown relatives in the same preview root", async () => {
+    vi.mocked(workspaceApi.loadFileText).mockResolvedValue({
+      content: "[next](./b.md)",
+      etag: "v1",
+    });
+    const dispatch = vi.fn();
+    renderWithProviders(
+      <FilesDrawer
+        state={{
+          kind: "preview",
+          target: {
+            source: "workspace",
+            root: "workspace",
+            path: "docs/a.md",
+          },
+          trigger: null,
+        }}
+        dispatch={dispatch}
+        scope={{
+          kind: "session",
+          agentId: "default",
+          sessionId: "session-1",
+          chatId: "chat-1",
+        }}
+      />,
+    );
+    fireEvent.click(
+      await screen.findByRole("link", { name: "next" }, { timeout: 12_000 }),
+    );
+    await waitFor(() =>
+      expect(
+        useCodingTabsStore.getState().tabsByAgent["session:default:session-1"],
+      ).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            displayPath: "docs/b.md",
+            workspaceRoot: "workspace",
+          }),
+        ]),
+      ),
+    );
+  });
+
+  it.each(["Escape", "close button"])(
+    "restores the original trigger after Markdown navigation and %s",
+    async (closeMethod) => {
+      vi.mocked(workspaceApi.loadFileText).mockImplementation(async (path) => ({
+        content: path === "docs/a.md" ? "[next](./b.md)" : "# Linked document",
+        etag: "v1",
+      }));
+      const user = userEvent.setup();
+
+      function PreviewHarness() {
+        const [state, dispatch] = useReducer(filesDrawerReducer, {
+          kind: "closed",
+        });
+        return (
+          <>
+            <button
+              type="button"
+              onClick={(event) =>
+                dispatch({
+                  type: "OPEN_PREVIEW",
+                  target: {
+                    source: "workspace",
+                    root: "workspace",
+                    path: "docs/a.md",
+                  },
+                  trigger: event.currentTarget,
+                })
+              }
+            >
+              Open preview
+            </button>
+            {state.kind !== "closed" && (
+              <FilesDrawer
+                state={state}
+                dispatch={dispatch}
+                scope={{
+                  kind: "session",
+                  agentId: "default",
+                  sessionId: "session-1",
+                  chatId: "chat-1",
+                }}
+              />
+            )}
+          </>
+        );
+      }
+
+      renderWithProviders(<PreviewHarness />);
+      const trigger = screen.getByRole("button", { name: "Open preview" });
+      await user.click(trigger);
+      await user.click(
+        await screen.findByRole("link", { name: "next" }, { timeout: 12_000 }),
+      );
+      expect(
+        await screen.findByRole("heading", { name: "Linked document" }),
+      ).toBeInTheDocument();
+
+      if (closeMethod === "Escape") {
+        await user.keyboard("{Escape}");
+      } else {
+        await user.click(
+          screen.getByRole("button", { name: /^(common.close|Close|关闭)$/ }),
+        );
+      }
+
+      await waitFor(() => expect(trigger).toHaveFocus());
+      expect(screen.queryByRole("region")).not.toBeInTheDocument();
+    },
+  );
 
   it("collapses a header-opened workspace using the actual active file", async () => {
     const target: FileTarget = {

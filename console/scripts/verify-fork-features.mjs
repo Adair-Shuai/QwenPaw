@@ -120,6 +120,7 @@ const suites = {
     "src/features/files-workspace/FilesWorkspace.pending-diff.test.tsx",
     "src/features/files-workspace/FilesWorkspace.revalidation.test.tsx",
     "src/pages/Coding/FilePreview.test.tsx",
+    "src/pages/Coding/MarkdownFileNavigation.integration.test.tsx",
     "src/pages/Coding/TabbedEditor.test.tsx",
     "src/components/RenderableCodeBlock/RenderableCodeBlock.test.tsx",
     "src/components/Workspace/renderers/__tests__/MarkdownRenderer.workspaceLinks.test.tsx",
@@ -730,6 +731,11 @@ requireCases("src/hooks/useBackgroundTaskWatcher.test.ts", [
   "resolves a first-turn session after the original five-second window",
 ]);
 
+requireCases("src/pages/Coding/MarkdownFileNavigation.integration.test.tsx", [
+  "keeps loaded images when the link callback changes: %s",
+  "loads relative images with the file's root and chat headers",
+  "releases image blobs and cancels requests on replacement and unmount",
+]);
 console.log(`Fork feature inventory verified: ${files.length} suites.`);
 if (!process.argv.includes("--check")) {
   const result = spawnSync(

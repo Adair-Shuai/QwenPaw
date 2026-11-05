@@ -30,6 +30,10 @@ SUITES = (
     "tests/unit/tauri/test_backend_guard.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/tauri/test_desktop_workflows.py": {
+        "test_artifact_selection_retains_fork_brand_and_newest_id",
+        "test_fork_beta_promotion_retains_checked_desktop_manifest",
+    },
     "tests/unit/tauri/test_backend_guard.py": {
         "test_runtime_lock_rejects_a_second_owner",
         "test_runtime_lock_is_released_after_process_death",

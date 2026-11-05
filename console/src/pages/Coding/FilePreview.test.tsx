@@ -106,6 +106,10 @@ describe("FilePreview renderer isolation", () => {
   });
 });
 
+vi.mock("../../utils/openExternalLink", () => ({
+  openExternalLink: vi.fn(),
+}));
+
 describe("FilePreview", () => {
   it.each([
     '"memory_tags": [Orion, Vega]',
@@ -429,11 +433,14 @@ vi.mock("@/stores/agentStore", () => ({
   ),
 }));
 vi.mock("@/api/authHeaders", () => ({
-  buildAuthHeaders: () => ({}),
+  buildAuthHeaders: () => ({
+    Authorization: "Bearer test-token",
+    "X-Agent-Id": "default",
+  }),
 }));
 vi.mock("@/api/modules/workspace", () => ({
   workspaceApi: {
-    getFileDownloadUrl: (path: string) => `/api/files/${path}`,
+    getFileDownloadUrl: vi.fn((path: string) => `/api/files/${path}`),
     getBinaryFileUrl: (path: string) => `/api/files/${path}`,
     loadFileChunk: vi.fn(),
   },

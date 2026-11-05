@@ -16,7 +16,7 @@ import { pluginSystem } from "../hostExternals";
 import { useAgentStore } from "../../stores/agentStore";
 import { createWorkspaceNamespace } from "../../components/Workspace/workspaceSdk";
 import { combineDisposables } from "../registry/types";
-import { ChatScalar } from "../registry/slotKeys";
+import { ChatScalar, ThemeTokens } from "../registry/slotKeys";
 import type {
   ChatActionSpec,
   ChatApprovalRendererItem,
@@ -33,6 +33,8 @@ import type {
   ChatSuggestionsItem,
   Disposable,
   OverrideRecord,
+  ThemeTokenKey,
+  ThemeTokenOverrides,
   WelcomeRenderFn,
 } from "../registry/types";
 import {
@@ -71,6 +73,47 @@ interface ThemePartial {
   colorPrimary?: ChatScalarValues["theme.colorPrimary"];
 }
 
+const THEME_TOKEN_KEYS: ReadonlySet<string> = new Set(
+  Object.values(ThemeTokens),
+);
+
+/**
+ * Reject anything the token layer cannot honour.
+ *
+ * Unknown keys are an error rather than being ignored: silently dropping a
+ * typo would leave the plugin author staring at an unchanged UI, and letting
+ * arbitrary `--app-*` names through would widen a deliberately closed API.
+ */
+function validateThemeTokens(
+  pluginId: string,
+  tokens: ThemeTokenOverrides,
+): ThemeTokenOverrides {
+  const validated: ThemeTokenOverrides = {};
+  for (const [key, value] of Object.entries(tokens)) {
+    if (!THEME_TOKEN_KEYS.has(key)) {
+      throw new Error(
+        `[QwenPaw] chat.theme.overrideTokens: unknown token "${key}" from plugin "${pluginId}". ` +
+          `Allowed tokens: ${Array.from(THEME_TOKEN_KEYS).join(", ")}.`,
+      );
+    }
+    const light = value?.light;
+    const dark = value?.dark;
+    if (
+      typeof light !== "string" ||
+      light === "" ||
+      typeof dark !== "string" ||
+      dark === ""
+    ) {
+      throw new Error(
+        `[QwenPaw] chat.theme.overrideTokens: token "${key}" from plugin "${pluginId}" ` +
+          `must provide both "light" and "dark" values.`,
+      );
+    }
+    validated[key as ThemeTokenKey] = { light, dark };
+  }
+  return validated;
+}
+
 interface SenderPartial {
   placeholder?: ChatScalarValues["sender.placeholder"];
   disclaimer?: ChatScalarValues["sender.disclaimer"];
@@ -96,6 +139,12 @@ export interface QwenPawChatNamespace {
   };
   theme: {
     set(pluginId: string, partial: ThemePartial): Disposable;
+    /**
+     * Override semantic theme roles for light and dark schemes at once.
+     * Keys are `styles/tokens.css` roles without the `--app-` prefix; each
+     * value must carry both schemes. Later registrations win per token.
+     */
+    overrideTokens(pluginId: string, tokens: ThemeTokenOverrides): Disposable;
   };
   leftHeader: {
     set(pluginId: string, partial: LeftHeaderPartial): Disposable;
@@ -294,6 +343,8 @@ function makeChatNamespace(): QwenPawChatNamespace {
     },
     theme: {
       set: (pid, partial) => applyPartial(pid, partial, themeFieldMap),
+      overrideTokens: (pid, tokens) =>
+        chatExtensions.setThemeTokens(pid, validateThemeTokens(pid, tokens)),
     },
     leftHeader: {
       set: (pid, partial) => applyPartial(pid, partial, leftHeaderFieldMap),

@@ -115,7 +115,9 @@ def _warn_db_size(db_path: Path) -> None:
     _DB_SIZE_WARNED.add(key)
     logger.warning(
         "scroll history at %s is %.1f GiB. Rows older than "
-        "history_retention_days auto-purge on startup and teardown only when "
+        "history_retention_days auto-purge on "
+        "background maintenance and teardown only "
+        "when "
         "you explicitly set a positive value. The default 0 keeps everything "
         "and grows without bound; set a positive retention window to trim it.",
         db_path,
@@ -217,6 +219,7 @@ def build_scroll_components(
                 offloader if getattr(sc, "offload_dialog", False) else None
             ),
             recall_loop_guard=recall_loop_guard,
+            summary_timeout_seconds=sc.summary_timeout_seconds,
         )
         tool = make_recall_history_python(
             history_db_path=str(history.path),

@@ -265,6 +265,61 @@ describe("usePluginManager", () => {
     expect(result.current.updates.get(plugin.id)?.version).toBe("2.9.0");
   });
 
+  it("detects community updates via recorded market id when the author differs", async () => {
+    // Real-world shape from #8176: the plugin.json author ("onesixth")
+    // does not equal the market owner login ("onesix"), so author-based
+    // matching never fires and "Update All" skipped third-party plugins.
+    const plugin = {
+      ...makePlugin(),
+      id: "qwenpaw-plugin-tool-wait_agent_task",
+      author: "onesixth",
+      version: "1.1.0",
+      market_id: "@onesix/qwenpaw-plugin-tool-wait_agent_task",
+    };
+    hoisted.pluginsData = [plugin];
+    hoisted.fetchMarketPluginsMock.mockResolvedValue({
+      plugins: [
+        {
+          id: "@onesix/qwenpaw-plugin-tool-wait_agent_task",
+          display_name: "Wait Agent Task",
+          developer: "ONESIX",
+          owner: "onesix",
+          version: "1.2.0",
+          logo_url: null,
+          downloads: 0,
+          view_count: 0,
+          details_url: null,
+          locales: {},
+        },
+      ],
+      total: 1,
+    });
+    hoisted.upgradeInstalledPluginMock.mockResolvedValue({
+      method: "replaced",
+      version: "1.2.0",
+    });
+
+    const { result } = renderHook(() => usePluginManager());
+
+    await waitFor(() => expect(result.current.updates.size).toBe(1));
+    expect(result.current.updates.get(plugin.id)?.version).toBe("1.2.0");
+
+    await act(async () => {
+      await result.current.updateAll();
+    });
+
+    expect(hoisted.upgradeInstalledPluginMock).toHaveBeenCalledWith(
+      plugin.id,
+      expect.objectContaining({
+        version: "1.2.0",
+        source: "https://example.com/plugin.zip",
+      }),
+    );
+    expect(messageMock.success).toHaveBeenCalledWith(
+      "pluginManager.updateAllSuccess",
+    );
+  });
+
   it("stops checking market updates after an empty page", async () => {
     hoisted.fetchMarketPluginsMock.mockResolvedValue({
       plugins: [],

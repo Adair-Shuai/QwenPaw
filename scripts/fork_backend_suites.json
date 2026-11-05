@@ -160,6 +160,9 @@
     "turnFileDelivery": [
       "tests/unit/test_turn_files.py",
       "tests/unit/runtime/test_turn_file_lifecycle.py"
+    ],
+    "upstream_merge_compatibility": [
+      "tests/unit/config/test_agent_config_persistence.py"
     ]
   },
   "required_cases": {
@@ -664,6 +667,9 @@
       "test_storage_read_retries_windows_crt_access_error_without_losing_state",
       "test_storage_mutation_waits_for_other_instances_open_reader",
       "test_storage_retries_transient_windows_replace_without_partial_publication"
+    ],
+    "tests/unit/config/test_agent_config_persistence.py": [
+      "test_expanding_scroll_retention_invalidates_completed_migration"
     ]
   }
 }

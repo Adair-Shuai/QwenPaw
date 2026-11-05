@@ -9,6 +9,10 @@ mod computer_use_protocol;
 mod computer_use_runtime;
 mod external_link;
 mod reveal;
+mod notifications;
+mod notification_delivery;
+#[cfg(all(target_os = "macos", debug_assertions))]
+mod macos_dev_bundle;
 mod runtime_env;
 mod runtime_layout;
 mod tray;
@@ -29,6 +33,15 @@ fn open_devtools(window: WebviewWindow) {
 
 fn build_desktop() -> tauri::Result<tauri::App> {
     let context = tauri::generate_context!();
+    #[cfg(all(target_os = "macos", debug_assertions))]
+    if let Err(error) = macos_dev_bundle::relaunch_if_needed(
+        &context.config().identifier,
+        context.config().product_name.as_deref().unwrap_or("QwenPaw Desktop"),
+        env!("CARGO_PKG_VERSION"),
+    ) {
+        eprintln!("[desktop] {error}");
+        std::process::exit(1);
+    }
     let registration = updates::coordination::register_desktop(&context.config().identifier)
         .map_err(|error| tauri::Error::Io(std::io::Error::other(error)))?;
     let registration = registration
@@ -43,6 +56,14 @@ fn build_desktop() -> tauri::Result<tauri::App> {
         )
         .invoke_handler(tauri::generate_handler![
             open_devtools,
+            notifications::start_console_polling,
+            notifications::stop_console_polling,
+            notifications::configure_approval_notifications,
+            notifications::get_notification_permission,
+            notifications::request_notification_permission,
+            notifications::configure_system_notifications,
+            notifications::open_notification_settings,
+            notification_delivery::take_notification_target,
             backend_download::download_backend_file,
             backend_download::read_workspace_binary_file,
             backend::agent_host_state,
@@ -73,10 +94,16 @@ fn build_desktop() -> tauri::Result<tauri::App> {
         .manage(backend::BackendState::default())
         .manage(computer_use_runtime::ComputerUseRuntimeState::default())
         .manage(tray::TrayState::default())
+        .manage(notifications::NotificationState::default())
+        .manage(notification_delivery::ActivationState::default())
         .setup(|app| {
             updates::coordination::setup(app.handle())?;
             backend::setup(app)?;
             tray::setup(app)?;
+            #[cfg(windows)]
+            if let Err(error) = notification_delivery::setup(app.handle()) {
+                log::error!("Could not register desktop notification activation: {error}");
+            }
             #[cfg(windows)]
             if let Some(window) = app.get_webview_window("main") {
                 if let Err(err) = webview_recovery::install(&window) {

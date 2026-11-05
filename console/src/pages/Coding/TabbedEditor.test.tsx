@@ -13,6 +13,7 @@ import TabbedEditor from "./TabbedEditor";
 import { useCodingTabsStore } from "../../stores/codingTabsStore";
 import { rendererRegistry } from "../../components/Workspace/store/rendererRegistry";
 import { updateArtifactPreview } from "../../features/files-workspace/openFilePreview";
+import type { FileTarget } from "../../features/files-workspace/types";
 
 const SCOPE_KEY = "agent:default";
 
@@ -65,11 +66,13 @@ vi.mock("../../hooks/useAppMessage", () => ({
 function Harness({
   onSaveFile,
   onDownloadFile,
+  onOpenFile,
   previewActive,
   previewManagedUpdates,
 }: {
   onSaveFile: (path: string, content: string) => Promise<void>;
   onDownloadFile?: (path: string) => Promise<void>;
+  onOpenFile?: (target: FileTarget) => void;
   previewActive?: boolean;
   previewManagedUpdates?: boolean;
 }) {
@@ -101,12 +104,42 @@ function Harness({
         store.setTabContent(SCOPE_KEY, path, content)
       }
       onDownloadFile={onDownloadFile}
+      onOpenFile={onOpenFile}
       onSaveFile={onSaveFile}
       previewActive={previewActive}
       previewManagedUpdates={previewManagedUpdates}
     />
   );
 }
+
+describe("TabbedEditor Markdown navigation (#8528)", () => {
+  it.each([
+    ["docs/a.md", undefined],
+    ["workspace-root::docs/a.md", "workspace"],
+    [
+      "project:C:/Projects/secondary::docs/a.md",
+      "project:C:/Projects/secondary",
+    ],
+  ] as const)("retains the root of persisted tab %s", async (path, root) => {
+    useCodingTabsStore.setState({
+      tabsByAgent: {
+        [SCOPE_KEY]: [{ path, content: "[next](./b.md)", dirty: false }],
+      },
+      activeTabByAgent: { [SCOPE_KEY]: path },
+      diffsByAgent: {},
+    });
+    const onOpenFile = vi.fn();
+    render(<Harness onSaveFile={vi.fn()} onOpenFile={onOpenFile} />);
+    fireEvent.click(
+      await screen.findByRole("link", { name: "next" }, { timeout: 12_000 }),
+    );
+    expect(onOpenFile).toHaveBeenCalledWith({
+      source: "workspace",
+      path: "docs/b.md",
+      root,
+    });
+  });
+});
 
 describe("TabbedEditor preview activity", () => {
   it("keeps legacy artifact subscriptions unless its host manages updates", async () => {

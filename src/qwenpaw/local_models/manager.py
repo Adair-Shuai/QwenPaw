@@ -16,7 +16,7 @@ from ..distribution import LLAMA_CPP_DOWNLOAD_BASE_URL
 from .llamacpp import LlamaCppBackend, LlamaCppServerSetupResult
 from .model_manager import LocalModelInfo as RecommendedLocalModelInfo
 from .model_manager import ModelManager, DownloadSource
-
+from .runtime_release import RELEASE
 
 logger = logging.getLogger(__name__)
 
@@ -44,9 +44,8 @@ class LocalModelManager:  # pylint: disable=too-many-public-methods
 
     _instance: LocalModelManager | None = None
 
-    # Mirror of llama.cpp releases download (fork endpoint, see distribution)
     DEFAULT_LLAMA_CPP_BASE_URL = LLAMA_CPP_DOWNLOAD_BASE_URL
-    DEFAULT_LLAMA_CPP_RELEASE_TAG = "b8744"
+    DEFAULT_LLAMA_CPP_RELEASE_TAG = RELEASE["release"]
     CONFIG_FILE_NAME = "config.json"
 
     def __init__(

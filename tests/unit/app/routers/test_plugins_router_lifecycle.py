@@ -383,6 +383,7 @@ class TestListPluginsRoute:
                 "plugin_type": "general",
                 "frontend_entry": None,
                 "frontend_revision": "9.9",
+                "market_id": None,
             },
         ]
 
@@ -409,6 +410,7 @@ class TestListPluginsRoute:
                 "diagnostics": [],
                 "plugin_type": "general",
                 "frontend_entry": "ui/index.js",
+                "market_id": None,
             },
         ]
 
@@ -1397,7 +1399,8 @@ class TestUploadPluginRoute:
         from qwenpaw.plugins.python_backend import PythonBackend
 
         async def validate_source(loader, request, source_path, **kwargs):
-            # Real disk manifest reader and backend entry validator; no error stub.
+            # Real disk manifest reader and backend entry validator; no error
+            # stub.
             _, manifest = PluginLoader.__new__(
                 PluginLoader,
             ).read_source_manifest(

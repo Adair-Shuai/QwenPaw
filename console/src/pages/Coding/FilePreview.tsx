@@ -122,6 +122,7 @@ export interface FilePreviewProps {
   /** Workspace hosts may own artifact patches and protect unsaved buffers. */
   listenForArtifactUpdates?: boolean;
   onOpenWorkspaceFile?: (path: string) => void;
+  onOpenFile?: (path: string) => void;
   onMemoryTagClick?: (tag: string) => void;
 }
 
@@ -138,8 +139,12 @@ export default function FilePreview({
   artifact: artifactProp,
   listenForArtifactUpdates = true,
   onOpenWorkspaceFile,
+  onOpenFile,
   onMemoryTagClick,
 }: FilePreviewProps) {
+  const openWorkspaceFile =
+    onOpenWorkspaceFile ??
+    (workspaceBacked && !binaryUrl ? onOpenFile : undefined);
   const { t } = useTranslation();
   const selectedAgent = useAgentStore((state) => state.selectedAgent);
   const artifact = useMemo<WorkspaceArtifact>(() => {
@@ -199,7 +204,10 @@ export default function FilePreview({
       projectDirOverride,
       agentId: selectedAgent,
       size,
-      meta: content ? { textSample: content.slice(0, 8192) } : undefined,
+      meta: {
+        ...(content ? { textSample: content.slice(0, 8192) } : {}),
+        ...(binaryUrl ? { workspaceReferences: false } : {}),
+      },
     };
   }, [
     artifactProp,
@@ -233,10 +241,10 @@ export default function FilePreview({
         onMemoryTagClick={onMemoryTagClick}
         hostControls
         onOpenArtifact={
-          onOpenWorkspaceFile
+          openWorkspaceFile
             ? (target) => {
                 if (target.workspacePath)
-                  onOpenWorkspaceFile(target.workspacePath);
+                  openWorkspaceFile(target.workspacePath);
               }
             : undefined
         }

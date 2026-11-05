@@ -3,6 +3,7 @@ import { chatExtensions } from "./registry/chatExtensions";
 import { menuRegistry, routeRegistry, slotRegistry } from "./registry/store";
 import { marketplaceExtensionRegistry } from "../pages/Market/marketplaceRegistry";
 import { memoryBackendRegistry } from "./memoryBackends";
+import { settingsSearchRegistry } from "./settingsSearch";
 
 /** Remove every host-managed registration owned by one frontend plugin. */
 export function removePluginRuntime(pluginId: string): void {
@@ -33,4 +34,5 @@ export function removePluginRuntime(pluginId: string): void {
   memoryBackendRegistry.removeBySource(pluginId);
   pluginSystem.removePlugin(pluginId);
   chatExtensions.disposeAll(pluginId);
+  settingsSearchRegistry.removeBySource(pluginId);
 }

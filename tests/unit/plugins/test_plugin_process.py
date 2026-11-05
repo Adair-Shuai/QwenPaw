@@ -1,28 +1,29 @@
 # -*- coding: utf-8 -*-
+# Worker fixtures inspect private custody and use normal pytest names.
+# pylint: disable=protected-access,redefined-outer-name,unused-argument
 """Normal generic plugin supervision through actual OS workers and IPC."""
 
 import asyncio
 import base64
-import logging
-from dataclasses import replace
-from pathlib import Path
-import os
-import sys
-import threading
-
-import pytest
-import pytest_asyncio
-
 import csv
-from contextlib import contextmanager
+import logging
+import os
 import py_compile
 import shutil
 import stat
 import subprocess
-from types import SimpleNamespace
+import sys
+import threading
 import zipfile
+from contextlib import contextmanager
+from dataclasses import replace
+from pathlib import Path
+from types import SimpleNamespace
 
+import pytest
+import pytest_asyncio
 from packaging.markers import default_environment
+
 from qwenpaw.plugins import dependency_maintenance as maintenance
 from qwenpaw.plugins.dependency_context import DependencyEnvironmentContext
 from qwenpaw.plugins.dependency_gate import SharedDependencyError
@@ -33,9 +34,11 @@ from qwenpaw.plugins.dependency_transaction import (
     verify_payload,
 )
 from qwenpaw.plugins.dependency_upgrade import DependencyUpgradeManager
+from qwenpaw.plugins.execution import CallUnknown, PluginProcess
 from qwenpaw.plugins.execution.dependencies import (
     DependencySnapshot,
     _installed_metadata,
+    canonical_environment_path,
 )
 from tests.channel_support.host import (
     Host,
@@ -43,8 +46,6 @@ from tests.channel_support.host import (
     local_certifi_wheel,
     local_wheel,
 )
-
-from qwenpaw.plugins.execution import CallUnknown, PluginProcess
 from tests.channel_support.process import (
     ROOT,
     alive,
@@ -131,7 +132,7 @@ async def test_lifecycle_bidirectional_ipc_logs_and_repeated_stop(
     assert not alive(probe["pid"])
     assert (await process.stop()).exited
     for marker in ("sample SDK connected", "sample SDK diagnostic"):
-        await eventually(lambda: marker in worker_logs.text)
+        await eventually(lambda marker=marker: marker in worker_logs.text)
         record = next(r for r in worker_logs.records if marker in r.message)
         assert record.name == "qwenpaw.plugins.worker"
         assert record.levelno == logging.WARNING
@@ -146,6 +147,8 @@ async def test_lifecycle_bidirectional_ipc_logs_and_repeated_stop(
 
 
 @pytest.mark.asyncio
+# Keep the transaction and verification boundary intact.
+# pylint: disable-next=R0915
 async def test_log_flood_is_bounded_redacted_and_keeps_ipc_responsive(
     tmp_path,
     process,
@@ -171,7 +174,8 @@ async def test_log_flood_is_bounded_redacted_and_keeps_ipc_responsive(
     monkeypatch.setattr(log_bridge, "_clean", observe_clean)
     complex_line = "a-b." * 1024
     diagnostic = (
-        "credential-check \x1b[31mAuthorization: Bearer bearer-secret\x1b[0m\r\n"
+        "credential-check \x1b[31mAuthorization: Bearer "
+        "bearer-secret\x1b[0m\r\n"
         "https://api.telegram.org/bot123456:telegram-secret/sendMessage\n"
         "https://example.test/?token=query-secret&ok=yes\n"
         "Authorization: token ghp_secretvalue\n"
@@ -279,7 +283,7 @@ async def test_crash_restarts_generation_and_retains_host_handler(
     assert seen == [fresh["identity"]]
     for generation in (1, 2):
         await eventually(
-            lambda: any(
+            lambda generation=generation: any(
                 "sample SDK diagnostic" in r.getMessage()
                 and f"generation={generation}" in r.getMessage()
                 and spec.instance_id in r.getMessage()
@@ -578,12 +582,18 @@ async def test_payload_quota_waits_for_confirmed_discard(monkeypatch):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("layout", ["source", "frozen"])
+@pytest.mark.parametrize(
+    ("layout", "supplied_snapshot"),
+    [("source", False), ("frozen", False), ("frozen", True)],
+)
+# Keep the transaction and verification boundary intact.
+# pylint: disable-next=R0915
 async def test_runtime_roots_interpreter_and_dependency_visible_in_worker(
     tmp_path,
     monkeypatch,
     process,
     layout,
+    supplied_snapshot,
 ):
     from qwenpaw.plugins.channel_bootstrap import (
         resolve_default_channel_runtime,
@@ -595,7 +605,25 @@ async def test_runtime_roots_interpreter_and_dependency_visible_in_worker(
     )
     if layout == "frozen":
         expected_support, site = runtime_layout(tmp_path, monkeypatch)
+        # Desktop staging shares support and configured dependency roots;
+        # the interpreter also contributes its own native site-packages.
+        import json
+
+        manifest = Path(os.environ["QWENPAW_CHANNEL_RUNTIME_MANIFEST"])
+        data = json.loads(manifest.read_text(encoding="utf-8"))
+        data["dependency_paths"] = ["support"]
+        manifest.write_text(json.dumps(data), encoding="utf-8")
+        monkeypatch.setenv(
+            "QWENPAW_CHANNEL_DEPENDENCY_PATHS",
+            json.dumps([str(expected_support)]),
+        )
         runtime = resolve_default_channel_runtime()
+        shutil.copytree(
+            site,
+            runtime.dependency_install_target,
+            dirs_exist_ok=True,
+        )
+        site = runtime.dependency_install_target
     else:
         site = dependency_site(tmp_path / "dependencies")
         runtime = resolve_default_channel_runtime()
@@ -618,7 +646,6 @@ async def test_runtime_roots_interpreter_and_dependency_visible_in_worker(
         source_revision=digest(spec.code_root),
     )
     from qwenpaw.envs import store
-    from qwenpaw.plugins import dependency_maintenance as maintenance
 
     selected_root = maintenance.state_root()
     if layout == "source":
@@ -633,6 +660,57 @@ async def test_runtime_roots_interpreter_and_dependency_visible_in_worker(
     store._apply_to_environ({key: str(tmp_path / "untrusted-state")})
     assert maintenance.state_root() == selected_root
     monkeypatch.setenv(key, str(tmp_path / "direct-mutation"))
+    from qwenpaw.plugins.dependency_gate import admit_shared_dependencies
+    from qwenpaw.plugins.dependency_usage import (
+        DependencyDeclaration,
+        DependencyUsageRegistry,
+    )
+    from qwenpaw.plugins.install_lock import environment_observation
+    from qwenpaw.plugins.ownership import RuntimeOwners
+
+    async def audit():
+        async with environment_observation(runtime.dependency_paths):
+            return (await process.audit(spec)).snapshot
+
+    usage = DependencyUsageRegistry(RuntimeOwners())
+    token = usage.declare(
+        DependencyDeclaration(
+            spec.plugin_id,
+            spec.source_revision,
+            ("sample-shared-sdk==1.0",),
+            None,
+        ),
+    )
+    snapshot = await audit() if supplied_snapshot else None
+    admitted = await admit_shared_dependencies(
+        audit,
+        plugin_id=spec.plugin_id,
+        requirements_file=requirements,
+        usage_registry=usage,
+        admission_token=token,
+        targets=runtime.dependency_paths,
+        snapshot=snapshot,
+        validate=lambda: None,
+    )
+    assert str(canonical_environment_path(site)) in admitted.dependency_sites
+    if layout == "frozen":
+        assert expected_support in runtime.dependency_paths
+        assert (
+            str(canonical_environment_path(expected_support))
+            not in admitted.dependency_sites
+        )
+        native = Path(admitted.prefix) / (
+            "Lib/site-packages"
+            if os.name == "nt"
+            else (
+                f"lib/python{sys.version_info.major}.{sys.version_info.minor}/"
+                "site-packages"
+            )
+        )
+        assert (
+            str(canonical_environment_path(native))
+            in admitted.dependency_sites
+        )
     await process.start(spec)
     probe = await process.call("sample.probe", {})
     assert Path(probe["dependency_state"]) == selected_root
@@ -809,8 +887,8 @@ def test_namespace_additions_preserve_file_ownership(
 ):
     import hashlib
 
-    from qwenpaw.plugins.dependency_transaction import prepare_payload
     from qwenpaw.plugins.dependency_gate import _write_additions
+    from qwenpaw.plugins.dependency_transaction import prepare_payload
     from qwenpaw.plugins.execution.errors import ProtocolValidationError
     from qwenpaw.plugins.wheel_additions import (
         WheelAddition,
@@ -1208,6 +1286,7 @@ def test_pip_record_cache_publish_and_exact_rollback(
         ],
         capture_output=True,
         text=True,
+        check=False,
     )
     assert installed.returncode == 0, installed.stderr
     record = files.site / "sample_shared_sdk-0.5.dist-info/RECORD"
@@ -1264,7 +1343,15 @@ def test_record_rejects_duplicate_installed_ownership(dependency_files):
         _owned(row, files.prefix)
 
 
+def _require_fixture_item(items):
+    item = next(items, None)
+    assert item is not None, "Expected fixture resource was not created"
+    return item
+
+
 @pytest_asyncio.fixture
+# Keep the transaction and verification boundary intact.
+# pylint: disable-next=R0915
 async def staged_upgrade(tmp_path, monkeypatch, request):
     scenario = getattr(request, "param", False)
     broken_source = scenario is True
@@ -1286,6 +1373,7 @@ async def staged_upgrade(tmp_path, monkeypatch, request):
     # Keep disjoint installed-consumer coverage and exercise a read consumer
     # sharing the writer environment without a prebuilt full snapshot.
     import json
+
     from qwenpaw.plugins import python_backend
 
     independent_site = site if shared_reader else tmp_path / "independent-site"
@@ -1312,7 +1400,7 @@ async def staged_upgrade(tmp_path, monkeypatch, request):
         "plugin = Plugin()\n",
     )
     assert (independent_site.resolve() == site.resolve()) is shared_reader
-    independent_manifest, _ = next(
+    independent_manifest, _ = _require_fixture_item(
         (manifest, path)
         for manifest, path in host.loader.discover_plugins()
         if manifest.id == "independent-consumer"
@@ -1333,14 +1421,14 @@ async def staged_upgrade(tmp_path, monkeypatch, request):
         )
         is None
     )
-    read_use = next(
+    read_use = _require_fixture_item(
         use
         for use in usage.snapshot().uses
         if use.plugin_id == "independent-consumer"
     )
     assert read_use.snapshot is None and read_use.environment is not None
     old = local_wheel(tmp_path / "old", version="0.5", value="0.5")
-    with zipfile.ZipFile(next(old.glob("*.whl"))) as archive:
+    with zipfile.ZipFile(_require_fixture_item(old.glob("*.whl"))) as archive:
         archive.extractall(site)
     module = site / "sample_shared_sdk.py"
     module.chmod(0o640)
@@ -1356,7 +1444,9 @@ async def staged_upgrade(tmp_path, monkeypatch, request):
             "    sdk.VALUE + '\\n' + Path(sdk.__file__).read_text())\n"
             "raise RuntimeError('new source cannot initialize')\n",
         )
-    wheel = next(local_wheel(tmp_path / "new", value="1.0").glob("*.whl"))
+    wheel = _require_fixture_item(
+        local_wheel(tmp_path / "new", value="1.0").glob("*.whl"),
+    )
     certifi_wheel = local_certifi_wheel(wheel.parent)
 
     def resolve(command, **kwargs):
@@ -1532,21 +1622,17 @@ async def test_cancelled_late_maintenance_entry_clears_own_marker(
 
 
 @pytest.mark.asyncio
+# Keep the transaction and verification boundary intact.
+# pylint: disable-next=R0915
 async def test_frozen_ordinary_loader_gate_installs_missing_sdk_in_overlay(
     tmp_path,
     monkeypatch,
 ):
     import importlib
     import json
-    import shutil
 
     from qwenpaw.plugins.channel_bootstrap import (
         resolve_default_channel_runtime,
-    )
-    from tests.channel_support.host import (
-        Host,
-        local_certifi_wheel,
-        local_wheel,
     )
 
     monkeypatch.setattr(sys, "path", sys.path.copy())
@@ -1601,7 +1687,6 @@ async def test_frozen_ordinary_loader_gate_installs_missing_sdk_in_overlay(
     }.items():
         monkeypatch.setenv(name, value)
     from qwenpaw.plugins.dependency_maintenance import marker, repair_marker
-    from qwenpaw.plugins.dependency_context import DependencyEnvironmentContext
     from qwenpaw.plugins.install_lock import environment_install_lock_path
 
     resources = support.parent
@@ -1632,7 +1717,10 @@ async def test_frozen_ordinary_loader_gate_installs_missing_sdk_in_overlay(
     native_site = Path(runtime.python_executable).parent.parent / (
         "Lib/site-packages"
         if os.name == "nt"
-        else f"lib/python{sys.version_info.major}.{sys.version_info.minor}/site-packages"
+        else (
+            f"lib/python{sys.version_info.major}."
+            f"{sys.version_info.minor}/site-packages"
+        )
     )
     context = DependencyEnvironmentContext.from_runtime(runtime)
     assert context.protected(native_site)
@@ -1682,9 +1770,7 @@ async def test_frozen_ordinary_loader_gate_installs_missing_sdk_in_overlay(
 
 
 def test_executor_inspection_preserves_immutable_support_tree(tmp_path):
-    import shutil
     import packaging
-    from qwenpaw.plugins.dependency_context import DependencyEnvironmentContext
 
     support = tmp_path / "Bundle.app/Contents/Resources/site"
     support.mkdir(parents=True)

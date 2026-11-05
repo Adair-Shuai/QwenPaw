@@ -18,7 +18,8 @@ export function resolveWorkspaceMarkdownTarget(
 ): WorkspaceMarkdownTarget {
   const value = href.trim();
   if (!value || value.includes("\0")) return { kind: "invalid" };
-  if (value.startsWith("#")) return { kind: "anchor", href: value };
+  if (value.startsWith("#") || value.startsWith("?"))
+    return { kind: "anchor", href: value };
   if (
     !WINDOWS_ABSOLUTE_PATH.test(value) &&
     (value.startsWith("//") || URI_SCHEME.test(value))

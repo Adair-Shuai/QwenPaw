@@ -210,6 +210,50 @@ def test_successful_save_updates_model_version(
     assert persisted["description"] == "second"
 
 
+@pytest.mark.parametrize(
+    "days,invalidated",
+    [(0, True), (60, True), (15, False), (30, False)],
+)
+def test_expanding_scroll_retention_invalidates_completed_migration(
+    tmp_path: Path,
+    monkeypatch,
+    days: int,
+    invalidated: bool,
+) -> None:
+    (
+        "A completed startup migration must not "
+        "hide recoverable older history."
+    )
+    from qwenpaw.agents.context.scroll.history import HistoryStore
+    from qwenpaw.agents.context.scroll.sync import (
+        MIGRATION_KEY,
+        PENDING_MIGRATION,
+    )
+
+    path, raw = _prepare_agent(tmp_path, monkeypatch)
+    light = raw["running"]["light_context_config"]
+    light["strategy"] = "scroll"
+    light["scroll_config"]["history_retention_days"] = 30
+    path.write_text(json.dumps(raw), encoding="utf-8")
+    history = HistoryStore(path.parent / "history.db")
+    try:
+        history.complete_migration("agent", MIGRATION_KEY)
+        loaded = load_agent_config("agent")
+        scroll = loaded.running.light_context_config.scroll_config
+        scroll.history_retention_days = days
+        config_module.save_agent_config("agent", loaded)
+        assert (path.parent / PENDING_MIGRATION).exists() is invalidated
+        assert history.migration_complete("agent", MIGRATION_KEY)
+        assert (
+            json.loads(path.read_text(encoding="utf-8"))["running"][
+                "light_context_config"
+            ]["scroll_config"]["history_retention_days"]
+            == days
+        )
+    finally:
+        history.close()
+
+
 def test_last_dispatch_migration_publishes_state_then_removes_legacy(
     tmp_path: Path,
     monkeypatch,

@@ -9,6 +9,7 @@ import threading
 import json
 import logging
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -102,6 +103,40 @@ def _pip_index_args() -> list[str]:
     if extra_index_url:
         args.extend(["--extra-index-url", extra_index_url])
     return args
+
+
+_DEPENDENCY_OUTPUT_SECRET = re.compile(
+    r"(?i)(?:authorization|bearer|basic|password|passwd|token|secret|"
+    r"credential|api[_-]?key|pip_[a-z0-9_]+)",
+)
+_DEPENDENCY_OUTPUT_URL = re.compile(r"(?i)\b[a-z][a-z0-9+.-]{0,31}://[^\s]+")
+
+
+def _log_dependency_subprocess_failure(plugin_id, returncode, output_lines):
+    """Promote only bounded, sanitized output; preserve the runner's result."""
+    plugin = ascii(str(plugin_id))[1:-1][:160]
+    logger.info(
+        "Dependency pip failed: plugin=%s returncode=%s",
+        plugin,
+        returncode,
+    )
+    prefix = f"Dependency pip output: plugin={plugin} "
+    budget = 16 * 1024
+    messages = []
+    for line in reversed(output_lines):
+        line = _DEPENDENCY_OUTPUT_URL.sub("[redacted-url]", line)
+        if _DEPENDENCY_OUTPUT_SECRET.search(line) or "://" in line:
+            line = "[redacted sensitive output]"
+        line = ascii(line)[1:-1]
+        content = line[-(1024 - len(prefix)) :]
+        message = prefix + content
+        size = len(message) + 1
+        if size > budget:
+            break
+        messages.append(message)
+        budget -= size
+    for message in reversed(messages):
+        logger.info("%s", message)
 
 
 def _is_frozen() -> bool:
@@ -1071,7 +1106,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
 
                     raise SDKRestartRequiredError(
                         f"Plugin '{plugin_id}' cannot safely replace loaded "
-                        f"distributions ({', '.join(conflicts)}). Restart the backend.",
+                        f"distributions ("
+                        f"{', '.join(conflicts)}"
+                        f"). Restart the backend.",
                     )
                 if missing:
                     asyncio.run(
@@ -1084,7 +1121,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
 
     # Audit, source custody and cleanup form one shared dependency transaction.
     # pylint: disable-next=too-many-statements
-    async def _prepare_python_dependencies(
+    # Keep dependency admission and rollback within their transaction.
+    # pylint: disable-next=too-many-branches
+    async def _prepare_python_dependencies(  # pylint: disable=R0912,R0915
         self,
         requirements_file: Path,
         plugin_id: str,
@@ -1340,9 +1379,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 )
             self._after_successful_install()
             return GateDecision(False, True, reason="already satisfied")
-        except Exception:
+        except Exception as exc:
             if identity_error is not None:
-                raise identity_error
+                raise identity_error from exc
             raise
         finally:
             try:
@@ -1355,7 +1394,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 finally:
                     usage.withdraw(token)
 
-    async def _acquire_dependency_wheels(
+    # Keep dependency admission and rollback within their transaction.
+    # pylint: disable-next=too-many-statements
+    async def _acquire_dependency_wheels(  # pylint: disable=R0915
         self,
         process,
         spec,
@@ -1481,6 +1522,11 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                     dependency_context is not None
                     and dependency_context.runtime_identity is not None
                 ):
+                    logger.info(
+                        "Dependency installer unavailable: plugin=%s "
+                        "code=DEPENDENCY_INSTALLER_UNAVAILABLE",
+                        ascii(str(plugin_id))[1:-1][:160],
+                    )
                     raise RuntimeError(
                         "DEPENDENCY_INSTALLER_UNAVAILABLE: bundled pip is "
                         "missing; update QwenPaw Desktop.",
@@ -1497,6 +1543,11 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                     spec.python_executable,
                     isolated=True,
                 ):
+                    logger.info(
+                        "Dependency installer unavailable: plugin=%s "
+                        "code=DEPENDENCY_INSTALLER_UNAVAILABLE",
+                        ascii(str(plugin_id))[1:-1][:160],
+                    )
                     raise SharedDependencyError(
                         GateDecision(
                             False,
@@ -1546,6 +1597,15 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                     if restart
                     else "DEPENDENCY_PLAN_UNVERIFIED"
                 )
+                logger.info(
+                    "Dependency solver failed: plugin=%s "
+                    "constrained_returncode=%s unconstrained_returncode=%s "
+                    "code=%s",
+                    ascii(str(plugin_id))[1:-1][:160],
+                    result.returncode,
+                    resolved.returncode,
+                    code,
+                )
                 raise SharedDependencyError(
                     GateDecision(
                         False,
@@ -1579,6 +1639,16 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 return wheels
 
             wheels = await run_sync_io(collect_wheels)
+            logger.info(
+                "Dependency pip prepared wheels: plugin=%s returncode=%s "
+                "stage=wheel-validation count=%s artifacts=%s",
+                ascii(str(plugin_id))[1:-1][:160],
+                result.returncode,
+                len(wheels),
+                ", ".join(
+                    ascii(item.path.name)[1:-1][:160] for item in wheels[:8]
+                ),
+            )
             await prepare_shared_dependencies(
                 process,
                 spec,
@@ -2407,9 +2477,20 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 proc.kill()
                 proc.wait()
                 reader.join(timeout=2)
+                _log_dependency_subprocess_failure(
+                    plugin_id,
+                    "timeout",
+                    output_lines,
+                )
                 raise
             reader.join(timeout=2)
 
+        if returncode:
+            _log_dependency_subprocess_failure(
+                plugin_id,
+                returncode,
+                output_lines,
+            )
         combined = "\n".join(output_lines)
         return subprocess.CompletedProcess(
             args=cmd,
@@ -3641,7 +3722,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 raise
 
     # Keep the existing lifecycle complexity exemption before its signature.
-    # pylint: disable=too-many-statements,too-many-branches
+    # Keep dependency admission and rollback within their transaction.
+    # pylint: disable-next=too-many-branches,too-many-statements
     async def _load_plugin_from_path_unlocked(
         self,
         source_path: Path,
@@ -3659,7 +3741,6 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
         """Install+load from path; caller must hold lifecycle for id."""
         from ..utils.io_utils import run_sync_io
 
-        # pylint: disable=too-many-statements,too-many-branches
         plugin_id = manifest.id
         if not self.lifecycle.delegate.owns_commit(plugin_id):
             raise RuntimeError(

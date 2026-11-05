@@ -1285,6 +1285,17 @@ class ScrollContextConfig(BaseModel):
         ),
     )
 
+    summary_timeout_seconds: float = Field(
+        default=300.0,
+        gt=0,
+        allow_inf_nan=False,
+        description=(
+            "Total continuation-summary timeout in seconds, including input "
+            "preparation, generation, validation and one quality retry. "
+            "Increase for slow reasoning models or long conversations."
+        ),
+    )
+
     history_retention_days: int = Field(
         default=0,
         ge=0,
@@ -1551,6 +1562,7 @@ class RubricGateConfig(BaseModel):
             "early stop on text-only responses"
         ),
     )
+    use_decision_model: bool = False
     prompt: str = Field(
         default=(
             "You did not call any tool in the "
@@ -2475,6 +2487,14 @@ class AgentProfileConfig(BaseModel):
     def record_source_digest(self, digest: bytes) -> None:
         """Record the content version represented by this model."""
         self._source_digest = digest
+
+    @property
+    def uses_scroll_history(self) -> bool:
+        """Whether this runtime writes through to durable Scroll history."""
+        return (
+            self.backend == "qwenpaw"
+            and self.running.light_context_config.strategy == "scroll"
+        )
 
     id: str = Field(..., description="Unique agent ID")
     name: str = Field(..., description="Human-readable agent name")
@@ -3828,7 +3848,11 @@ def load_agent_config(  # pylint: disable=too-many-branches,too-many-statements
         except OSError as exc:
             raise ConfigurationException(
                 config_key="agent",
-                message=f"Agent '{agent_id}' config is temporarily unavailable",
+                message=(
+                    f"Agent '"
+                    f"{agent_id}"
+                    f"' config is temporarily unavailable"
+                ),
             ) from exc
         cached_entry = _agent_config_cache.get(agent_id)
         if (
@@ -3998,6 +4022,31 @@ def load_agent_config(  # pylint: disable=too-many-branches,too-many-statements
         return agent_config.model_copy(deep=True)
 
 
+def _history_retention_expands(
+    path: Path,
+    candidate: AgentProfileConfig,
+) -> bool:
+    """Replay preserved session JSON when a saved retention window expands."""
+    try:
+        persisted = json.loads(path.read_text(encoding="utf-8"))
+        previous = (
+            persisted.get("running", {})
+            .get("light_context_config", {})
+            .get("scroll_config", {})
+            .get("history_retention_days", 0)
+        )
+    except (OSError, ValueError, TypeError, AttributeError):
+        return False
+    scroll = candidate.running.light_context_config.scroll_config
+    days = scroll.history_retention_days
+    return (
+        isinstance(previous, int)
+        and not isinstance(previous, bool)
+        and previous > 0
+        and (days == 0 or days > previous)
+    )
+
+
 def save_agent_config(  # pylint: disable=too-many-branches,too-many-statements
     agent_id: str,
     agent_config: AgentProfileConfig,
@@ -4078,6 +4127,18 @@ def save_agent_config(  # pylint: disable=too-many-branches,too-many-statements
 
             payload = candidate.model_dump(exclude_none=True)
             saved_digest = _json_payload_digest(payload)
+            if (
+                not candidate.uses_scroll_history
+                or _history_retention_expands(
+                    agent_config_path,
+                    candidate,
+                )
+            ):
+                from ..agents.context.scroll.sync import (
+                    invalidate_agent_migration,
+                )
+
+                invalidate_agent_migration(workspace_dir)
             write_json_atomic(agent_config_path, payload)
             _record_agent_config_publication()
             candidate.record_source_digest(saved_digest)

@@ -48,6 +48,10 @@ import {
   memoryBackendNamespace,
   type MemoryBackendNamespace,
 } from "./memoryBackends";
+import {
+  settingsSearchNamespace,
+  type SettingsSearchNamespace,
+} from "./settingsSearch";
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Public types
@@ -276,6 +280,8 @@ export interface WindowNamespace {
   paw?: PawSdkFactory;
   /** Memory backend configuration UI contributed by memory plugins. */
   memoryBackends?: MemoryBackendNamespace;
+  /** Searchable settings metadata contributed by plugins. */
+  settingsSearch?: SettingsSearchNamespace;
 }
 
 /** Sidebar-related plugin API (simple-mode whitelist, etc.). */
@@ -383,6 +389,9 @@ export function installHostExternals(): void {
   if (!window.QwenPaw.paw) window.QwenPaw.paw = pawSdkFactory;
   if (!window.QwenPaw.memoryBackends) {
     window.QwenPaw.memoryBackends = memoryBackendNamespace;
+  }
+  if (!window.QwenPaw.settingsSearch) {
+    window.QwenPaw.settingsSearch = settingsSearchNamespace;
   }
 
   // ── Sidebar simple-mode whitelist API ──────────────────────────────────

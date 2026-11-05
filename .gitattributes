@@ -11,3 +11,6 @@ plugins/apps/qwenpaw-data/ui/public/data-console/paw-bridge.js text eol=lf
 plugins/apps/qwenpaw-data/ui/public/data-console/assets/*.js text eol=lf
 plugins/apps/qwenpaw-data/ui/public/data-console/assets/*.css text eol=lf
 src/qwenpaw/providers/data/providers/*.json text eol=lf
+docs/patches/*.patch text eol=lf
+# Unified-diff context lines are checksummed runtime build inputs.
+docs/patches/piccolo-llama.cpp.patch -whitespace

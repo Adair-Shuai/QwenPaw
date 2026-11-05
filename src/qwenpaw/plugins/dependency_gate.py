@@ -465,29 +465,35 @@ async def admit_shared_dependencies(
     from .install_lock import ObservationRootsChanged
     from ..utils.io_utils import run_sync_io
 
-    keys = await run_sync_io(
-        _canonical_dependency_roots,
-        (
-            snapshot.dependency_sites
-            if isinstance(snapshot, DependencySnapshot)
-            and snapshot.dependency_sites is not None
-            else targets
-        ),
+    from .python_backend import PythonBackend
+
+    await PythonBackend.reconcile_host_observations(usage_registry)
+    configured_roots = await run_sync_io(_canonical_dependency_roots, targets)
+    evidence_roots = (
+        await run_sync_io(
+            _canonical_dependency_roots,
+            snapshot.dependency_sites,
+        )
+        if isinstance(snapshot, DependencySnapshot)
+        and snapshot.dependency_sites is not None
+        else None
     )
-    # Release before reacquiring one changed root set; never re-enter prepare.
+    lock_roots = configured_roots | (evidence_roots or set())
+    # Lock coverage can exceed the audited environment; only fresh evidence
+    # must stabilize. Release before reacquiring the complete ordered scope.
     for _attempt in range(2):
-        host_roots = await _usage_observation_roots(
+        lock_roots |= await _usage_observation_roots(
             usage_registry,
             admission_token,
-            keys,
+            evidence_roots if evidence_roots is not None else configured_roots,
         )
-        async with _shared_observation(keys | host_roots):
+        async with _shared_observation(lock_roots):
             if validate is not None:
                 validate()
             try:
                 observed = await audit()
             except ObservationRootsChanged as exc:
-                keys = set(exc.targets)
+                lock_roots |= set(exc.targets)
                 continue
             if validate is not None:
                 validate()
@@ -502,10 +508,10 @@ async def admit_shared_dependencies(
             )
             if validate is not None:
                 validate()
-            if actual != keys and not (
-                validate is not None and actual.issubset(keys)
-            ):
-                keys = actual
+            changed = evidence_roots is not None and actual != evidence_roots
+            evidence_roots = actual
+            if changed or not actual.issubset(lock_roots):
+                lock_roots |= actual
                 continue
             _refine_admission(
                 usage_registry,
@@ -521,7 +527,8 @@ async def admit_shared_dependencies(
                     usage_registry=usage_registry,
                     admission_token=admission_token,
                 )
-            except ObservationRootsChanged:
+            except ObservationRootsChanged as exc:
+                lock_roots |= set(exc.targets)
                 continue
             if validate is not None:
                 validate()
@@ -752,6 +759,8 @@ def evaluate_shared_dependencies(
             else installed_distributions
         ),
     )
+    # Keep origin validation inside the atomic admission walk.
+    # pylint: disable-next=too-many-nested-blocks
     for use in uses:
         environment, evidence = use.environment, use.snapshot
         visible = (
@@ -1030,6 +1039,10 @@ async def prepare_shared_dependencies(
     from .execution.dependencies import protected_dependency_target
     from ..utils.io_utils import run_sync_io
 
+    from .python_backend import PythonBackend
+
+    await PythonBackend.reconcile_host_observations(usage_registry)
+
     def inspect_target():
         target = (
             canonical(install_target) if install_target is not None else None
@@ -1187,6 +1200,14 @@ async def prepare_shared_dependencies(
             )
         except Exception as exc:
             code = getattr(exc, "reason_code", "DEPENDENCY_PLAN_UNVERIFIED")
+            logger.info(
+                "Dependency preparation failed: plugin=%s "
+                "stage=wheel-validation code=%s exception=%s errno=%s",
+                ascii(str(plugin_id))[1:-1][:160],
+                ascii(str(code))[1:-1][:160],
+                type(exc).__name__,
+                exc.errno if isinstance(exc, OSError) else None,
+            )
             raise SharedDependencyError(
                 GateDecision(
                     False,
@@ -1239,7 +1260,9 @@ async def _publish_additions(audit, evaluate, target, files):
                 GateDecision(
                     False,
                     False,
-                    reason="Dependency publication failed; repair is required.",
+                    reason=(
+                        "Dependency publication failed; repair is required."
+                    ),
                     reason_code="DEPENDENCY_REPAIR_REQUIRED",
                     require_restart=True,
                 ),

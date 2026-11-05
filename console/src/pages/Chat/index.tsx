@@ -67,6 +67,7 @@ import {
 } from "../../utils/clientMessageId";
 import defaultConfig, { getDefaultConfig } from "./OptionsPanel/defaultConfig";
 import { chatApi } from "../../api/modules/chat";
+import { ApiError } from "../../api/request";
 import { agentApi } from "../../api/modules/agent";
 import { skillApi } from "../../api/modules/skill";
 import { getApiUrl } from "../../api/config";
@@ -1255,6 +1256,14 @@ export default function ChatPage() {
     () => getSessionIdFromPath(location.pathname),
     [location.pathname],
   );
+  const approvalRequestId = useMemo(
+    () => new URLSearchParams(location.search).get("approval"),
+    [location.search],
+  );
+  const routeAgentId = useMemo(
+    () => new URLSearchParams(location.search).get("agent")?.trim(),
+    [location.search],
+  );
   const prevSelectedAgentRef = useRef(selectedAgent);
   const [agentTransitionTarget, setAgentTransitionTarget] = useState<{
     agentId: string;
@@ -1266,9 +1275,23 @@ export default function ChatPage() {
   const routeResolution = useChatRouteResolution(
     isAgentTransition ? undefined : routeChatId,
     selectedAgent,
+    routeAgentId || selectedAgent,
   );
   const { agentSwitchTarget, retry: retryRouteResolution } = routeResolution;
   const isSessionTransition = isAgentTransition || routeResolution.blocked;
+
+  useEffect(() => {
+    const error = routeResolution.error;
+    if (
+      !approvalRequestId ||
+      !(error instanceof ApiError) ||
+      ![404, 409].includes(error.status)
+    ) {
+      return;
+    }
+    navigate("/inbox?tab=approvals", { replace: true });
+  }, [approvalRequestId, navigate, routeResolution.error]);
+
   const isAgentTransitionRef = useRef(isAgentTransition);
   isAgentTransitionRef.current = isAgentTransition;
   // All host consumers, including Files and loop hooks, must wait for the
@@ -1305,15 +1328,15 @@ export default function ChatPage() {
   }`;
   const [decisionAvailability, setDecisionAvailability] = useState<{
     scope: string;
-    enabled: boolean | undefined;
+    configured: boolean | undefined;
   }>();
-  const decisionModelEnabled =
+  const decisionModelConfigured =
     decisionAvailability?.scope === decisionScope
-      ? decisionAvailability.enabled
+      ? decisionAvailability.configured
       : undefined;
-  const handleDecisionEnabledChange = useCallback(
-    (enabled: boolean | undefined) => {
-      setDecisionAvailability({ scope: decisionScope, enabled });
+  const handleDecisionConfiguredChange = useCallback(
+    (configured: boolean | undefined) => {
+      setDecisionAvailability({ scope: decisionScope, configured });
     },
     [decisionScope],
   );
@@ -1479,7 +1502,7 @@ export default function ChatPage() {
     agentId: selectedAgent,
     sessionId: queueSessionId,
     chatId: backendChatId,
-    onChange: handleDecisionEnabledChange,
+    onChange: handleDecisionConfiguredChange,
   });
   const backendCommands = backendCapabilities?.commands ?? [];
   const approvalPresets = backendCapabilities?.approval_presets ?? [];
@@ -1526,8 +1549,6 @@ export default function ChatPage() {
   const queueRunState = useMessageQueueStore((s) => s.runStates[queueKey]);
 
   const sessionApprovalLevelRef = useRef<ToolExecutionLevel | null>(null);
-  const decisionModelEnabledRef = useRef(decisionModelEnabled);
-  decisionModelEnabledRef.current = decisionModelEnabled;
   const backendControlsRef = useRef<Record<string, unknown>>({});
   const runningConfigApprovalLevel = useAgentRunningConfigApprovalLevel();
   const captureRequestContext = useCallback(
@@ -1549,11 +1570,7 @@ export default function ChatPage() {
       ...(usesQwenPawBackend
         ? {
             approval_level:
-              decisionModelEnabledRef.current === false &&
-              (sessionApprovalLevelRef.current ??
-                runningConfigApprovalLevel) === "JEV"
-                ? "AUTO"
-                : sessionApprovalLevelRef.current ?? runningConfigApprovalLevel,
+              sessionApprovalLevelRef.current ?? runningConfigApprovalLevel,
           }
         : Object.keys(backendControlsRef.current).length > 0
         ? { backend_controls: { ...backendControlsRef.current } }
@@ -2394,6 +2411,8 @@ export default function ChatPage() {
   const staleAutoSelectedIdRef = useRef<string | null>(null);
   const chatIdRef = useRef(chatId);
   const navigateRef = useRef(navigate);
+  const locationRef = useRef(location);
+  locationRef.current = location;
 
   useEffect(() => {
     const handler = () => {
@@ -3151,9 +3170,13 @@ export default function ChatPage() {
           setLastChatIdRef.current,
           selectedAgentRef.current,
         );
-        navigateRef.current(buildCurrentSessionPath(resolvedTarget), {
-          replace: true,
-        });
+        navigateRef.current(
+          {
+            pathname: buildCurrentSessionPath(resolvedTarget),
+            search: locationRef.current.search,
+          },
+          { replace: true },
+        );
       }
     };
 
@@ -3250,7 +3273,13 @@ export default function ChatPage() {
       sessionApi.preferredChatId = targetChatId ?? null;
       sessionApi.lastActiveChatId = targetChatId ?? null;
       navigateRef.current(
-        targetChatId ? buildChatPath(targetChatId) : CHAT_BASE_PATH,
+        targetChatId
+          ? `${buildChatPath(targetChatId)}${
+              approvalRequestId
+                ? `?approval=${encodeURIComponent(approvalRequestId)}`
+                : ""
+            }`
+          : CHAT_BASE_PATH,
         { replace: true },
       );
       // Mark the current session as stale so late-arriving onSessionSelected
@@ -3268,7 +3297,13 @@ export default function ChatPage() {
     if (prevAgent === undefined) {
       prevSelectedAgentRef.current = selectedAgent;
     }
-  }, [selectedAgent, setLastChatId, getLastChatId, agentSwitchTarget]);
+  }, [
+    selectedAgent,
+    setLastChatId,
+    getLastChatId,
+    agentSwitchTarget,
+    approvalRequestId,
+  ]);
 
   useEffect(() => {
     if (
@@ -3354,15 +3389,10 @@ export default function ChatPage() {
       // Every turn goes through this fetch, including the SDK's own regenerate.
       // Clear only this session: another session may still have a stopped turn.
       clearTurnStopped(entrySnapshot.sessionId);
-      const requestedApprovalLevel =
+      const approvalAtSubmission =
         typeof entrySnapshot.context.approval_level === "string"
           ? normalizeLevel(entrySnapshot.context.approval_level)
           : sessionApprovalLevelRef.current ?? runningConfigApprovalLevel;
-      const approvalAtSubmission =
-        requestedApprovalLevel === "JEV" &&
-        decisionModelEnabledRef.current === false
-          ? "AUTO"
-          : requestedApprovalLevel;
       const controlsAtSubmission = entrySnapshot.context.backend_controls ?? {
         ...backendControlsRef.current,
       };
@@ -4285,7 +4315,7 @@ export default function ChatPage() {
                     agentId={selectedAgent}
                     sessionId={queueSessionId}
                     chatId={backendChatId}
-                    onDecisionEnabledChange={handleDecisionEnabledChange}
+                    onDecisionConfiguredChange={handleDecisionConfiguredChange}
                   />
                 )
               ) : backendCapabilities?.model_selection ? (
@@ -4324,7 +4354,7 @@ export default function ChatPage() {
                   <ApprovalLevelToggle
                     sessionId={queueKey}
                     runningConfigApprovalLevel={runningConfigApprovalLevel}
-                    decisionModelEnabled={decisionModelEnabled}
+                    decisionModelConfigured={decisionModelConfigured}
                     className={styles.senderApprovalControl}
                     onChange={(sessionOverride) => {
                       sessionApprovalLevelRef.current = sessionOverride;
@@ -4706,8 +4736,8 @@ export default function ChatPage() {
     loopAvailableModes,
     advisorConversation,
     backendChatId,
-    decisionModelEnabled,
-    handleDecisionEnabledChange,
+    decisionModelConfigured,
+    handleDecisionConfiguredChange,
     selectedAgent,
     selectedAgentBackend,
     selectedAgentDisplayName,
@@ -4872,6 +4902,8 @@ export default function ChatPage() {
           )}
 
           <ApprovalQueueOverlay
+            focusedRequestId={approvalRequestId}
+            focusKey={location.key}
             items={Array.from(
               chatId && !isSessionTransition ? approvalRequests.values() : [],
             )}

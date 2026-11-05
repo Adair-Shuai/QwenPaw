@@ -4,7 +4,8 @@
  * The visual renderer follows pages/Coding/FilePreview while the adapter keeps
  * authenticated relative resources and workspace-internal file navigation.
  */
-import React, { useCallback, useEffect, useMemo, useRef } from "react";
+import React, { useEffect, useMemo, useRef } from "react";
+import { useMemoizedFn } from "ahooks";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import remarkMath from "remark-math";
@@ -119,81 +120,81 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
     }
   }, [artifact.isStreaming, content]);
 
-  const handleOpenWorkspaceFile = useCallback(
-    async (path: string) => {
-      const mimeType = mimeFromExtension(path) ?? "application/octet-stream";
-      const extension = path.includes(".") ? path.split(".").pop() : undefined;
-      const title = path.split("/").pop() || path;
-      const id = `${artifact.id}:workspace-file:${path}`;
-      const isAbsolutePath = isAbsoluteLocalFilePath(path);
-      const baseArtifact = {
-        id,
-        title,
-        source: artifact.source,
-        mimeType,
-        extension,
-        workspacePath: path,
-        agentId: artifact.agentId,
-        projectRoot: artifact.projectRoot,
-        workspaceRoot: artifact.workspaceRoot,
-        chatId: artifact.chatId,
-        projectDirOverride: artifact.projectDirOverride,
-        sessionId: artifact.sessionId,
-      } as const;
+  const handleOpenWorkspaceFile = useMemoizedFn(async (path: string) => {
+    const mimeType = mimeFromExtension(path) ?? "application/octet-stream";
+    const extension = path.includes(".") ? path.split(".").pop() : undefined;
+    const title = path.split("/").pop() || path;
+    const id = `${artifact.id}:workspace-file:${path}`;
+    const isAbsolutePath = isAbsoluteLocalFilePath(path);
+    const baseArtifact = {
+      id,
+      title,
+      source: artifact.source,
+      mimeType,
+      extension,
+      workspacePath: path,
+      agentId: artifact.agentId,
+      projectRoot: artifact.projectRoot,
+      workspaceRoot: artifact.workspaceRoot,
+      chatId: artifact.chatId,
+      projectDirOverride: artifact.projectDirOverride,
+      sessionId: artifact.sessionId,
+    } as const;
 
-      if (!isTextMime(mimeType)) {
-        workspace.openArtifact({
-          ...baseArtifact,
-          binaryUrl: isAbsolutePath
-            ? chatApi.filePreviewUrl(path)
-            : workspaceFileApi.getFileDownloadUrl(path, artifact.workspaceRoot),
-        });
-        return;
-      }
-
+    if (!isTextMime(mimeType)) {
       workspace.openArtifact({
         ...baseArtifact,
-        textContent: "",
-        isStreaming: true,
+        binaryUrl: isAbsolutePath
+          ? chatApi.filePreviewUrl(path)
+          : workspaceFileApi.getFileDownloadUrl(path, artifact.workspaceRoot),
       });
-      try {
-        const result = isAbsolutePath
-          ? await fetch(chatApi.filePreviewUrl(path), {
-              headers: buildWorkspaceScopeHeaders({
-                agentId: artifact.agentId,
-                chatId: artifact.chatId,
-                projectDirOverride: artifact.projectDirOverride,
-              }),
-            }).then(async (response) => {
-              if (!response.ok) throw new Error(`${response.status}`);
-              return { content: await response.text() };
-            })
-          : workspaceFileApi.loadFileText
-          ? await workspaceFileApi.loadFileText(
-              path,
-              artifact.chatId,
-              artifact.workspaceRoot,
-              artifact.projectDirOverride,
-            )
-          : await workspaceFileApi.loadCodeFile(path, {
-              agentId: artifact.agentId ?? "default",
-              projectRoot: artifact.projectRoot,
-            });
-        workspace.updateArtifact(id, {
-          textContent: result.content,
-          isStreaming: false,
-        });
-      } catch {
-        workspace.updateArtifact(id, {
-          textContent: `无法加载文件内容。文件路径: ${path}`,
-          isStreaming: false,
-        });
-      }
-    },
-    [artifact, workspace],
-  );
+      return;
+    }
+
+    workspace.openArtifact({
+      ...baseArtifact,
+      textContent: "",
+      isStreaming: true,
+    });
+    try {
+      const result = isAbsolutePath
+        ? await fetch(chatApi.filePreviewUrl(path), {
+            headers: buildWorkspaceScopeHeaders({
+              agentId: artifact.agentId,
+              chatId: artifact.chatId,
+              projectDirOverride: artifact.projectDirOverride,
+            }),
+          }).then(async (response) => {
+            if (!response.ok) throw new Error(`${response.status}`);
+            return { content: await response.text() };
+          })
+        : workspaceFileApi.loadFileText
+        ? await workspaceFileApi.loadFileText(
+            path,
+            artifact.chatId,
+            artifact.workspaceRoot,
+            artifact.projectDirOverride,
+          )
+        : await workspaceFileApi.loadCodeFile(path, {
+            agentId: artifact.agentId ?? "default",
+            projectRoot: artifact.projectRoot,
+          });
+      workspace.updateArtifact(id, {
+        textContent: result.content,
+        isStreaming: false,
+      });
+    } catch {
+      workspace.updateArtifact(id, {
+        textContent: `无法加载文件内容。文件路径: ${path}`,
+        isStreaming: false,
+      });
+    }
+  });
 
   const markdownComponents = useMemo(() => {
+    const workspaceReferences =
+      artifact.meta?.turnFileArchive !== true &&
+      artifact.meta?.workspaceReferences !== false;
     const markdownPath = artifact.workspacePath ?? artifact.title;
 
     const WorkspaceImage = ({
@@ -209,7 +210,7 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
         ? resolveWorkspaceMarkdownTarget(src, markdownPath)
         : { kind: "invalid" as const };
       const resource = useAuthenticatedWorkspaceBlob(
-        target.kind === "workspace" ? target.path : null,
+        workspaceReferences && target.kind === "workspace" ? target.path : null,
         artifact.chatId || artifact.projectDirOverride || artifact.workspaceRoot
           ? {
               agentId: artifact.agentId,
@@ -223,7 +224,8 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
       if (target.kind === "external") {
         return <img src={target.href} alt={alt} {...props} />;
       }
-      if (target.kind !== "workspace") return <span>{alt}</span>;
+      if (target.kind !== "workspace" || !workspaceReferences)
+        return <span>{alt}</span>;
       return resource.status === "ready" && resource.url ? (
         <img src={resource.url} alt={alt} {...props} />
       ) : null;
@@ -256,12 +258,34 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
         );
       }
       if (target.kind !== "workspace") return <span>{children}</span>;
+      if (!workspaceReferences) {
+        return (
+          <a
+            href={href}
+            aria-disabled="true"
+            onClick={(event) => event.preventDefault()}
+            {...props}
+          >
+            {children}
+          </a>
+        );
+      }
       return (
         <a
-          href={target.path}
+          href={workspaceFileApi.getFileDownloadUrl(
+            target.path,
+            artifact.workspaceRoot,
+          )}
           {...props}
           onClick={(event) => {
             event.preventDefault();
+            // Keep keyboard focus in the preview when navigation removes its link.
+            // External file requests still leave the chat input's focus alone.
+            if (document.activeElement === event.currentTarget) {
+              event.currentTarget
+                .closest<HTMLElement>('[role="region"][tabindex]')
+                ?.focus({ preventScroll: true });
+            }
             void handleOpenWorkspaceFile(target.path);
           }}
         >
@@ -277,6 +301,8 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
     };
   }, [
     artifact.agentId,
+    artifact.meta?.turnFileArchive,
+    artifact.meta?.workspaceReferences,
     artifact.chatId,
     artifact.projectDirOverride,
     artifact.title,

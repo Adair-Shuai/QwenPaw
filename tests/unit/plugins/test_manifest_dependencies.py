@@ -3,13 +3,13 @@
 
 # pylint: disable=protected-access
 import json
+import logging
 from importlib.metadata import version
 from pathlib import Path
 
 import pytest
 
 from qwenpaw.plugins import SDKError, SDKRestartRequiredError
-from qwenpaw.plugins import dependency_gate
 from qwenpaw.plugins.loader import PluginLoader
 from qwenpaw.plugins.testing import PluginTestHost
 
@@ -89,8 +89,8 @@ def write_wheel(
     files[f"{info}/RECORD"] = "".join(records) + f"{info}/RECORD,,\n"
     wheel = wheels / f"{module}-1.0-py3-none-any.whl"
     with zipfile.ZipFile(wheel, "w") as archive:
-        for name, body in files.items():
-            archive.writestr(name, body)
+        for member_name, member_body in files.items():
+            archive.writestr(member_name, member_body)
     return wheel
 
 
@@ -120,6 +120,7 @@ def write_wheel(
 )
 def test_wheel_identity_and_header_validation(
     tmp_path,
+    caplog,
     info,
     metadata_headers,
     wheel_headers,
@@ -169,11 +170,17 @@ def test_wheel_identity_and_header_validation(
             target / info,
         )
     else:
+        caplog.set_level(logging.INFO)
         with pytest.raises(
             ProtocolValidationError,
             match="^DEPENDENCY_PLAN_UNVERIFIED$",
         ):
             validate_additions(additions, snapshot, target)
+        assert wheel.name in caplog.text
+        if metadata_headers or wheel_headers:
+            assert "metadata headers invalid" in caplog.text
+        elif info in {"other-1.0.dist-info", "b01_probe-2.0.dist-info"}:
+            assert "distribution identity mismatch" in caplog.text
     assert not target.exists()
 
 
@@ -232,7 +239,7 @@ def test_installed_hidden_files_preserve_module_collision_checks(
 
 
 def install_case(tmp_path, source, expected, *, repair=False, tool=False):
-    """Run resolver, publication and admission in one disposable interpreter."""
+    """Run resolution, publication and admission in one fresh interpreter."""
     import os
     import subprocess
     import shutil
@@ -265,72 +272,95 @@ def install_case(tmp_path, source, expected, *, repair=False, tool=False):
 import asyncio, importlib, importlib.metadata, json, subprocess, sys
 import mcp.types
 from pathlib import Path
+
 sys.path.insert(0, sys.argv[1])
 from qwenpaw.plugins import SDKError
 from qwenpaw.plugins.testing import PluginTestHost
 from qwenpaw.utils.runtime_environment import CERTIFI_REQUIREMENT
+
 source, root = map(Path, sys.argv[2:4])
 expected = set(json.loads(sys.argv[4]))
 # Unrelated stale metadata must not block a real manifest dependency install.
-if sys.argv[6] == 'tool':
-    duplicates = root.parent / 'duplicate-metadata'
-    for version in ('1.0', '2.0'):
-        info = duplicates / f'unrelated_probe-{version}.dist-info'
+if sys.argv[6] == "tool":
+    duplicates = root.parent / "duplicate-metadata"
+    for version in ("1.0", "2.0"):
+        info = duplicates / f"unrelated_probe-{version}.dist-info"
         info.mkdir(parents=True)
-        (info / 'METADATA').write_text(
-            f'Metadata-Version: 2.1\nName: unrelated-probe\nVersion: {version}\n'
+        (info / "METADATA").write_text(
+            f"Metadata-Version: 2.1\nName: unrelated-probe\n"
+            f"Version: {version}\n"
         )
     sys.path.append(str(duplicates))
-    assert {d.version for d in importlib.metadata.distributions()
-            if d.metadata['Name'] == 'unrelated-probe'} == {'1.0', '2.0'}
+    assert {
+        d.version
+        for d in importlib.metadata.distributions()
+        if d.metadata["Name"] == "unrelated-probe"
+    } == {"1.0", "2.0"}
 commands, inputs = [], []
 spawn = subprocess.Popen
 
+
 def observe(args, *values, **kwargs):
-    if 'install' in args:
-        raise AssertionError('Dependency transaction attempted pip install')
-    if 'wheel' in args and 'pip' in args:
+    if "install" in args:
+        raise AssertionError("Dependency transaction attempted pip install")
+    if "wheel" in args and "pip" in args:
         assert args[0] == sys.executable
-        assert '--constraint' in args
-        requirements = Path(args[args.index('-r') + 1])
+        assert "--constraint" in args
+        requirements = Path(args[args.index("-r") + 1])
         commands.append(list(args))
         inputs.append(requirements.read_text())
     return spawn(args, *values, **kwargs)
 
+
 subprocess.Popen = observe
-before = {p.name:p.read_bytes() for p in source.iterdir()}
+before = {p.name: p.read_bytes() for p in source.iterdir()}
+
+
 async def main():
     async with PluginTestHost(root) as host:
-        if sys.argv[5] == 'repair':
+        if sys.argv[5] == "repair":
             try:
                 await host.load(source)
             except SDKError as exc:
                 assert next(iter(expected)) in str(exc)
             else:
-                raise AssertionError('Boot loaded unsatisfied manifest dependency')
+                raise AssertionError(
+                    "Boot loaded unsatisfied manifest dependency"
+                )
             assert not commands
-            result = await host._loader.repair_dependencies('extension-contract')
-            assert result.status == 'active'
+            result = await host._loader.repair_dependencies(
+                "extension-contract"
+            )
+            assert result.status == "active"
         else:
             assert (await host.install(source)).ok
         for name in expected:
-            assert importlib.metadata.version(name) == '1.0'
-            assert importlib.import_module(name.replace('-', '_')).ANSWER == 'installed from manifest'
-        if sys.argv[6] == 'tool':
-            result = await host.call_tool('dependency_answer', {})
-            assert result.content[0].text == 'installed from manifest'
+            assert importlib.metadata.version(name) == "1.0"
+            assert (
+                importlib.import_module(name.replace("-", "_")).ANSWER
+                == "installed from manifest"
+            )
+        if sys.argv[6] == "tool":
+            result = await host.call_tool("dependency_answer", {})
+            assert result.content[0].text == "installed from manifest"
     assert len(commands) == 1, commands
     assert all(name in inputs[0] for name in expected)
     assert all(CERTIFI_REQUIREMENT in text for text in inputs)
-    assert all(not Path(a[a.index('-r') + 1]).exists() for a in commands)
-    if 'requirements.txt' in before:
-        original_requirements = set(filter(None, before['requirements.txt'].decode().splitlines()))
+    assert all(not Path(a[a.index("-r") + 1]).exists() for a in commands)
+    if "requirements.txt" in before:
+        original_requirements = set(
+            filter(None, before["requirements.txt"].decode().splitlines())
+        )
         assert original_requirements <= set(inputs[0].splitlines())
-        assert (source / 'requirements.txt').is_file()
-        assert (source / 'requirements.txt').read_bytes() == before['requirements.txt']
-    if sys.argv[5] != 'repair':
-        assert {p.name:p.read_bytes() for p in source.iterdir()} == before
-    print(json.dumps({'commands':commands,'installed':sorted(expected)}))
+        assert (source / "requirements.txt").is_file()
+        assert (source / "requirements.txt").read_bytes() == before[
+            "requirements.txt"
+        ]
+    if sys.argv[5] != "repair":
+        assert {p.name: p.read_bytes() for p in source.iterdir()} == before
+    print(json.dumps({"commands": commands, "installed": sorted(expected)}))
+
+
 asyncio.run(main())
 """
     env = {
@@ -531,7 +561,7 @@ def test_repair_installs_manifest_dependency_after_boot_failure(tmp_path):
 def test_manifest_dependency_installs_offline_wheel_in_isolated_python(
     tmp_path,
 ):
-    """Real resolver/publication/import/tool call inside a disposable Python."""
+    """Resolve, publish, import and call the tool in a disposable Python."""
     source = package(tmp_path, ["b01-probe-real==1.0"])
     path = source / "plugin.json"
     manifest = json.loads(path.read_text())
@@ -552,8 +582,8 @@ class Plugin:
 plugin = Plugin()
 """,
     )
-    # The upstream transaction audits constrained wheels before atomic publication;
-    # exercise the real resolver and tool instead of requiring the old pip writer.
+    # The transaction audits constrained wheels before atomic publication.
+    # Exercise the real resolver and tool through the current writer.
     install_case(tmp_path, source, {"b01-probe-real"}, tool=True)
 
 
