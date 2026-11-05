@@ -470,7 +470,7 @@ def test_temperature_refusal_rebuilds_cached_model_without_it(
 
 
 @pytest.mark.parametrize(
-    ("protocol", "base_url"),
+    ("protocol", "provider_base_url"),
     [
         ("Anthropic Claude", "https://api.anthropic.com"),
         ("MiniMax", "https://api.minimaxi.com/anthropic"),
@@ -479,7 +479,7 @@ def test_temperature_refusal_rebuilds_cached_model_without_it(
 def test_anthropic_compatible_protocol_constructs_anthropic_chat_model(
     monkeypatch: pytest.MonkeyPatch,
     protocol: str,
-    base_url: str,
+    provider_base_url: str,
 ) -> None:
     from agentscope.model import AnthropicChatModel
 
@@ -487,7 +487,7 @@ def test_anthropic_compatible_protocol_constructs_anthropic_chat_model(
     monkeypatch.setattr(
         model_client.model_config,
         "get_text_base_url",
-        lambda: base_url,
+        lambda: provider_base_url,
     )
     assert isinstance(
         AgentScopeAgentChatClient()._configured_model(),

@@ -162,7 +162,9 @@
       "tests/unit/runtime/test_turn_file_lifecycle.py"
     ],
     "upstream_merge_compatibility": [
-      "tests/unit/config/test_agent_config_persistence.py"
+      "tests/unit/config/test_agent_config_persistence.py",
+      "tests/unit/agents/tools/test_shell_resources.py",
+      "plugins/memory/openviking/tests/test_bounds.py"
     ]
   },
   "required_cases": {
@@ -670,6 +672,15 @@
     ],
     "tests/unit/config/test_agent_config_persistence.py": [
       "test_expanding_scroll_retention_invalidates_completed_migration"
+    ],
+    "tests/unit/agents/tools/test_shell_resources.py": [
+      "test_guard_terminates_command_tree",
+      "test_disabled_guard_does_not_probe_resources"
+    ],
+    "plugins/memory/openviking/tests/test_bounds.py": [
+      "test_auto_recall_reserves_overhead_before_request",
+      "test_auto_recall_bounds_oversized_body_without_clipping_notice",
+      "test_auto_recall_never_injects_a_marker_without_body"
     ]
   }
 }

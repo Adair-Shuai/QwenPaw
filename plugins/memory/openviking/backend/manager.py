@@ -614,6 +614,8 @@ class OpenVikingMemoryManager(BaseMemoryManager):
         overhead = 0
         for block in message.content:
             overhead += len(str(getattr(block, "text", "")).encode("utf-8"))
+            # Automatic recall now travels in a HintBlock, hidden from chat.
+            overhead += len(str(getattr(block, "hint", "")).encode("utf-8"))
             overhead += len(
                 str(getattr(block, "thinking", "")).encode("utf-8"),
             )

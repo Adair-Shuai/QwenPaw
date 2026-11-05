@@ -987,7 +987,7 @@ def test_send_probe_rejects_a_response_from_a_metadata_peer() -> None:
 
 
 @pytest.mark.parametrize(
-    ("base_url", "model_name"),
+    ("probe_base_url", "model_name"),
     [
         ("https://dashscope.aliyuncs.com/api/v1", "wan2.7-r2v"),
         (
@@ -1001,20 +1001,22 @@ def test_send_probe_rejects_a_response_from_a_metadata_peer() -> None:
     ],
 )
 def test_bailian_video_probe_uses_configured_root_without_billing(
-    base_url,
+    probe_base_url,
     model_name,
 ) -> None:
     url, headers, payload = _probe_payload(
         _request(
             type="video",
-            base_url=base_url,
+            base_url=probe_base_url,
             model_name=model_name,
             protocol="DashScope（百炼）",
             provider=None,
         ),
     )
 
-    assert url == f"{base_url}/tasks/11111111-1111-4111-8111-111111111111"
+    assert (
+        url == f"{probe_base_url}/tasks/11111111-1111-4111-8111-111111111111"
+    )
     assert payload == {"_get_probe": True}
     assert "X-DashScope-Async" not in headers
 
@@ -1042,7 +1044,13 @@ def test_token_plan_probe_uses_models_endpoint(type_, model_name) -> None:
 
 
 @pytest.mark.parametrize(
-    ("protocol", "base_url", "model_name", "expected_url", "expected_params"),
+    (
+        "protocol",
+        "probe_base_url",
+        "model_name",
+        "expected_url",
+        "expected_params",
+    ),
     [
         (
             "Google Gemini（Veo）",
@@ -1077,7 +1085,7 @@ def test_token_plan_probe_uses_models_endpoint(type_, model_name) -> None:
 )
 def test_direct_video_probes_are_read_only_and_protocol_specific(
     protocol,
-    base_url,
+    probe_base_url,
     model_name,
     expected_url,
     expected_params,
@@ -1086,7 +1094,7 @@ def test_direct_video_probes_are_read_only_and_protocol_specific(
         _request(
             type="video",
             protocol=protocol,
-            base_url=base_url,
+            base_url=probe_base_url,
             model_name=model_name,
             provider=None,
         ),
@@ -2287,7 +2295,7 @@ def test_embedding_falls_back_to_the_origin_that_owns_the_key(
 
 
 @pytest.mark.parametrize(
-    "base_url",
+    "probe_base_url",
     [
         # UTS-46 would fold this into example.com; HTTPX refuses it outright.
         "https://exaｍple.com/v1",
@@ -2299,7 +2307,7 @@ def test_embedding_falls_back_to_the_origin_that_owns_the_key(
 def test_url_httpx_cannot_build_is_a_config_error_not_a_500(
     monkeypatch,
     tmp_path,
-    base_url: str,
+    probe_base_url: str,
 ) -> None:
     """The guard decides with HTTPX's own parser, so nothing escapes as 500."""
     _write_real_config(
@@ -2313,7 +2321,7 @@ def test_url_httpx_cannot_build_is_a_config_error_not_a_500(
         model_routes.test_model_connection(
             ModelConnectionTestRequest(
                 type="llm",
-                base_url=base_url,
+                base_url=probe_base_url,
                 model_name="glm-5",
                 protocol="OpenAI Chat",
                 api_key="sk-review-supplied-fake",

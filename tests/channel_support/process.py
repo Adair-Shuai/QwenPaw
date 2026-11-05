@@ -66,7 +66,7 @@ def launch(directory, *, mode="normal", **overrides):
                 "generation": 1,
                 "entrypoint": "worker:Worker",
                 "config": {"marker": str(marker), "mode": mode},
-                "startup_timeout": 2,
+                "startup_timeout": 30 if os.name == "nt" else 2,
                 "shutdown_timeout": 0.4,
                 **overrides,
             },

@@ -432,12 +432,7 @@ vi.mock("@/stores/agentStore", () => ({
         : { selectedAgent: "default" },
   ),
 }));
-vi.mock("@/api/authHeaders", () => ({
-  buildAuthHeaders: () => ({
-    Authorization: "Bearer test-token",
-    "X-Agent-Id": "default",
-  }),
-}));
+
 vi.mock("@/api/modules/workspace", () => ({
   workspaceApi: {
     getFileDownloadUrl: vi.fn((path: string) => `/api/files/${path}`),

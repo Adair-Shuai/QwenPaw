@@ -34,9 +34,14 @@ def _loaded_record(plugin_id: str):
     return SimpleNamespace(manifest=manifest, enabled=True)
 
 
-def test_partial_loader_merges_not_yet_loaded_disk_plugins(monkeypatch):
+def test_partial_loader_merges_not_yet_loaded_disk_plugins(
+    monkeypatch,
+    tmp_path,
+):
+    record = _loaded_record("loaded")
+    record.source_path = tmp_path
     loader = SimpleNamespace(
-        get_all_loaded_plugins=lambda: {"loaded": _loaded_record("loaded")},
+        get_all_loaded_plugins=lambda: {"loaded": record},
     )
     request = SimpleNamespace(
         app=SimpleNamespace(state=SimpleNamespace(plugin_loader=loader)),

@@ -18,6 +18,7 @@ vi.mock("@/api/modules/workspace", () => ({
   workspaceApi: {
     loadCodeFile,
     getBinaryFileUrl: (path: string) => `/binary/${path}`,
+    getFileDownloadUrl: (path: string) => `/download/${path}`,
   },
 }));
 vi.mock("@/hooks/useAuthenticatedWorkspaceBlob", () => ({

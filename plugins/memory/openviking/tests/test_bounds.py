@@ -20,7 +20,7 @@ from .test_manager import _assistant, _attach, _client, _manager, _user
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("budget", "remote_budget"),
-    [(64, None), (96, None), (128, None), (171, None), (172, 64), (173, 65)],
+    [(64, None), (96, None), (128, None), (164, None), (165, 64), (166, 65)],
 )
 async def test_auto_recall_reserves_overhead_before_request(
     tmp_path,
@@ -65,10 +65,10 @@ async def test_auto_recall_reserves_overhead_before_request(
 @pytest.mark.parametrize(
     ("query", "max_results", "divisor", "remote_budget"),
     [
-        ("hi", 3, 4.0, 1940),
-        ("x" * 50, 3, 4.0, 1928),
-        ("🧭" * 50, 20, 4.0, 1890),
-        ("hi", 3, 2.0, 1832),
+        ("hi", 3, 4.0, 1947),
+        ("x" * 50, 3, 4.0, 1935),
+        ("🧭" * 50, 20, 4.0, 1897),
+        ("hi", 3, 2.0, 1846),
     ],
 )
 async def test_auto_recall_request_budget_tracks_actual_message(
@@ -145,7 +145,7 @@ async def test_auto_recall_bounds_oversized_body_without_clipping_notice(
 ):
     manager = _manager(
         tmp_path,
-        config=OpenVikingMemoryConfig(retrieval_token_budget=172),
+        config=OpenVikingMemoryConfig(retrieval_token_budget=165),
     )
     client = _client()
     client.search_context.return_value = {field: body}
@@ -177,13 +177,13 @@ async def test_auto_recall_bounds_oversized_body_without_clipping_notice(
         total_bytes = sum(
             len(str(getattr(block, attr, "")).encode("utf-8"))
             for block in synthetic.content
-            for attr in ("text", "thinking", "name", "input")
+            for attr in ("text", "thinking", "hint", "name", "input")
         ) + sum(
             len(output.text.encode("utf-8"))
             for block in synthetic.content
             for output in getattr(block, "output", [])
         )
-        assert total_bytes <= 172 * 4
+        assert 0 < total_bytes <= 165 * 4
     finally:
         await manager.close()
 
@@ -191,7 +191,7 @@ async def test_auto_recall_bounds_oversized_body_without_clipping_notice(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("budget", "has_body"),
-    [(926, False), (944, False), (946, False), (952, True)],
+    [(872, False), (890, False), (892, False), (898, True)],
 )
 async def test_auto_recall_never_injects_a_marker_without_body(
     tmp_path,

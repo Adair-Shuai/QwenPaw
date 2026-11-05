@@ -823,7 +823,12 @@ finally:
 
     async def line():
         return (
-            (await asyncio.wait_for(peer.stdout.readline(), 5))
+            (
+                await asyncio.wait_for(
+                    peer.stdout.readline(),
+                    30 if os.name == "nt" else 5,
+                )
+            )
             .decode()
             .strip()
         )

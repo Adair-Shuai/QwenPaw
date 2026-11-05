@@ -31,6 +31,7 @@ from qwenpaw.governance.policy import GovernanceAction, GovernancePolicy
 from qwenpaw.governance.tool_registry import DEFAULT_REGISTRY
 from qwenpaw.memory import BaseMemoryManager, MemoryBackendContext
 from qwenpaw.runtime.builder import AgentBuilder
+from qwenpaw.config.config import AgentProfileConfig
 
 
 def _manager(
@@ -266,7 +267,7 @@ async def test_auto_recall_marks_remote_history_as_untrusted(tmp_path):
         query="what was the prior plan?",
         session_id=manager._map_session_id("chat-1"),
         max_results=3,
-        token_budget=1934,
+        token_budget=1941,
     )
 
 
@@ -387,7 +388,7 @@ async def test_runtime_builder_registers_search_as_network_tool(tmp_path):
     _attach(manager, _client())
 
     toolkit = await AgentBuilder().build_toolkit(
-        SimpleNamespace(),
+        AgentProfileConfig(id="agent-1", name="Memory test"),
         memory_tools=manager.list_memory_tools(),
     )
     tool = next(

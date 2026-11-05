@@ -18,6 +18,7 @@ import sys
 
 import pytest
 
+from qwenpaw.plugins.architecture import PluginManifest
 from qwenpaw.plugins.loader import PluginLoader
 from qwenpaw.plugins.execution.dependencies import canonical_environment_path
 
@@ -585,12 +586,13 @@ async def test_async_loader_leases_before_loop_registry_publication(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("case", ["stable", "changed", "preflight_invalid"])
+# Keep the complete real admission matrix in one regression.
+# pylint: disable-next=R0915
 async def test_preparation_and_admission_keep_only_required_real_audits(
     tmp_path,
     monkeypatch,
     case,
 ):
-    import sys
     from qwenpaw.plugins.dependency_gate import GateDecision
     from qwenpaw.plugins.dependency_usage import (
         DependencyUsageRegistry,
@@ -624,7 +626,7 @@ async def test_preparation_and_admission_keep_only_required_real_audits(
 
     backend = PythonBackend(SimpleNamespace(ensure_dependencies=ensure))
     description = PluginDescription(
-        SimpleNamespace(id="audit-count", sdk=None),
+        PluginManifest(id="audit-count", version="1.0", sdk=None),
         source,
         None,
         None,
@@ -721,12 +723,13 @@ async def test_preparation_and_admission_keep_only_required_real_audits(
         "child_record",
     ],
 )
+# Keep the complete real admission matrix in one regression.
+# pylint: disable-next=R0912,R0915
 async def test_existing_dependency_read_admission_keeps_safety_boundaries(
     tmp_path,
     monkeypatch,
     case,
 ):
-    import sys
     from qwenpaw.plugins.dependency_gate import SharedDependencyError
     from qwenpaw.plugins.dependency_usage import (
         DependencyUsageRegistry,
@@ -766,7 +769,7 @@ async def test_existing_dependency_read_admission_keeps_safety_boundaries(
     if case == "missing_package":
         requirements = ("absent>=1",)
     description = PluginDescription(
-        SimpleNamespace(id="read-consumer", sdk=None),
+        PluginManifest(id="read-consumer", version="1.0", sdk=None),
         source,
         None,
         None,
@@ -1021,6 +1024,8 @@ def test_dependency_sites_classify_batch_once(tmp_path, monkeypatch):
     assert deps.dependency_sites(distinct) == tuple(map(str, distinct))
 
 
+# Keep the complete real admission matrix in one regression.
+# pylint: disable-next=R0915
 def test_host_delta_skips_own_source_inventory(tmp_path, monkeypatch):
     import json
     from collections import Counter
@@ -1172,6 +1177,8 @@ def test_host_delta_skips_own_source_inventory(tmp_path, monkeypatch):
 
 
 @pytest.mark.asyncio
+# Keep the complete real admission matrix in one regression.
+# pylint: disable-next=R0915
 async def test_host_observation_reuses_only_scoped_raw_inputs(
     tmp_path,
     monkeypatch,
@@ -1308,9 +1315,10 @@ async def test_host_observation_reuses_only_scoped_raw_inputs(
         assert reads["METADATA"] == reads["RECORD"] == 3
 
 
+# Keep the complete real admission matrix in one regression.
+# pylint: disable-next=R0915
 def test_host_dependency_record_retains_loaded_ownership(tmp_path):
     import os
-    import sys
     from importlib.metadata import PathDistribution
     from pathlib import PurePosixPath
     from qwenpaw.plugins.python_backend import _files_for_loaded_origins
@@ -1424,6 +1432,8 @@ def test_host_dependency_record_retains_loaded_ownership(tmp_path):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("withdrawn", [False, True])
+# Keep the complete real admission matrix in one regression.
+# pylint: disable-next=R0915
 async def test_host_dependency_observation_recovers_concurrent_imports(
     tmp_path,
     monkeypatch,
@@ -1477,7 +1487,7 @@ async def test_host_dependency_observation_recovers_concurrent_imports(
     with pytest.raises(ValueError, match="DEPENDENCY_ENVIRONMENT_AMBIGUOUS"):
         read_dependency_inventory(source, (site,), ("unrelated-sdk",))
     description = PluginDescription(
-        SimpleNamespace(id="host-recovery", sdk=None),
+        PluginManifest(id="host-recovery", version="1.0", sdk=None),
         source,
         None,
         None,
@@ -1595,12 +1605,13 @@ async def test_host_dependency_observation_recovers_concurrent_imports(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("layout", ["ordinary", "namespace_alias", "unknown"])
+# Keep the complete real admission matrix in one regression.
+# pylint: disable-next=R0912,R0915
 async def test_host_dependency_boundaries_keep_preexisting_and_removed_imports(
     tmp_path,
     monkeypatch,
     layout,
 ):
-    import sys
     from types import ModuleType
     from qwenpaw.plugins.dependency_usage import (
         DependencyDeclaration,
@@ -1768,9 +1779,6 @@ async def test_host_dependency_boundaries_keep_preexisting_and_removed_imports(
         assert other_host.snapshot is not None
         assert other_host.environment is not None
         assert other_host.snapshot.distributions[remaining]["version"] == "1.0"
-        from qwenpaw.plugins.execution.dependencies import (
-            canonical_environment_path,
-        )
 
         assert (
             str(canonical_environment_path(future))
@@ -1873,6 +1881,8 @@ async def test_host_dependency_boundaries_keep_preexisting_and_removed_imports(
         "non_cache_file",
     ],
 )
+# Keep the complete real admission matrix in one regression.
+# pylint: disable-next=R0912,R0915
 async def test_dependency_directory_classification_retains_provider_ownership(
     tmp_path,
     layout,
@@ -1880,7 +1890,6 @@ async def test_dependency_directory_classification_retains_provider_ownership(
 ):
     from qwenpaw.plugins.execution.dependencies import (
         _installed_metadata,
-        canonical_environment_path,
         dependency_sites,
         observe_dependencies,
     )
@@ -2021,7 +2030,6 @@ async def test_dependency_directory_classification_retains_provider_ownership(
     )
     assert ("sample-sdk" in imported) is (layout != "namespace")
     if layout in {"owned", "namespace"}:
-        import sys
         from types import ModuleType
         from qwenpaw.plugins.dependency_usage import (
             DependencyDeclaration,
@@ -2180,6 +2188,8 @@ async def test_dependency_directory_classification_retains_provider_ownership(
         ("addition", "stale"),
     ],
 )
+# Keep the complete real admission matrix in one regression.
+# pylint: disable-next=R0912,R0915
 async def test_dependency_import_resolution_rejects_changed_module(
     tmp_path,
     monkeypatch,
@@ -2188,7 +2198,6 @@ async def test_dependency_import_resolution_rejects_changed_module(
     expected,
 ):
     import asyncio
-    import sys
     import threading
     from types import ModuleType
     from qwenpaw.plugins import dependency_transaction as transaction
@@ -2278,7 +2287,6 @@ async def test_dependency_import_resolution_checks_supplemental_changes(
     change,
 ):
     import asyncio
-    import sys
     import threading
     from types import ModuleType
     from qwenpaw.plugins import dependency_transaction as transaction
@@ -2336,7 +2344,6 @@ async def test_async_dependency_targets_reject_changed_host_paths(
     monkeypatch,
     kind,
 ):
-    import sys
     from qwenpaw.plugins.python_backend import PythonBackend
 
     from qwenpaw.plugins.channel_adapter import (
@@ -2385,7 +2392,6 @@ async def test_frozen_dependency_path_preparation_and_loop_publication(
 ):
     import asyncio
     import os
-    import sys
     import threading
     from qwenpaw.plugins import loader as loader_mod
 
@@ -2445,6 +2451,8 @@ async def test_frozen_dependency_path_preparation_and_loop_publication(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("leave_marker", [False, True])
+# Keep the complete real admission matrix in one regression.
+# pylint: disable-next=R0915
 async def test_load_waits_for_dependency_writer(
     tmp_path,
     monkeypatch,
@@ -2456,7 +2464,6 @@ async def test_load_waits_for_dependency_writer(
     import asyncio
     import json
     import os
-    import sys
     from contextlib import suppress
 
     from .timing import WAIT_TIMEOUT
@@ -2495,7 +2502,9 @@ spec.loader.exec_module(m)
 site = Path(sys.argv[2])
 with m.file_lock(m._gate(site)), m.file_lock(m._admission_gate(site)):
     marker = m.repair_marker(site)
-    marker.write_text('Shared dependency publication requires verification.\\n')
+    marker.write_text(
+        'Shared dependency publication requires verification.\\n'
+    )
     sys.stdout.buffer.write(b'READY\\n')
     sys.stdout.buffer.flush()
     assert sys.stdin.readline().strip() == 'RELEASE'

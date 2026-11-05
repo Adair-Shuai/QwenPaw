@@ -213,15 +213,32 @@ class NoneSandbox(LocalSandbox):
 
         start = time.monotonic()
         try:
-            self._process = await asyncio.create_subprocess_exec(
-                *_shell_argv(shell, cmd),
-                stdin=asyncio.subprocess.DEVNULL,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                cwd=cwd,
-                env=env,
-                start_new_session=True,
-            )
+            if (
+                sys.platform == "win32"
+                and _shell_basename(shell) in _CMD_NAMES
+            ):
+                # Popen builds cmd.exe's raw /c string without escaping the
+                # command's quotes twice, including script paths with spaces.
+                self._process = await asyncio.create_subprocess_shell(
+                    cmd,
+                    executable=shell,
+                    stdin=asyncio.subprocess.DEVNULL,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=cwd,
+                    env=env,
+                    start_new_session=True,
+                )
+            else:
+                self._process = await asyncio.create_subprocess_exec(
+                    *_shell_argv(shell, cmd),
+                    stdin=asyncio.subprocess.DEVNULL,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    cwd=cwd,
+                    env=env,
+                    start_new_session=True,
+                )
             stdout_bytes, stderr_bytes = await asyncio.wait_for(
                 communicate_shell_process(self._process),
                 timeout=self._config.timeout_seconds,
