@@ -39,6 +39,20 @@ def _runtime_module():
 
 
 runtime = _runtime_module()
+_RUNTIME_MODULES = {
+    name: module
+    for name, module in sys.modules.copy().items()
+    if name == runtime.__name__ or name.startswith(runtime.__name__ + ".")
+}
+
+
+@pytest.fixture(autouse=True)
+def restore_runtime_imports(monkeypatch):
+    """Restore this test runtime after unrelated real plugin unloads."""
+    for name, module in _RUNTIME_MODULES.items():
+        monkeypatch.setitem(sys.modules, name, module)
+
+
 build_router = sys.modules["test_run_center_runtime.api"].build_router
 repository_module = sys.modules["test_run_center_runtime.repository"]
 descriptor_module = sys.modules["test_run_center_runtime.descriptors"]

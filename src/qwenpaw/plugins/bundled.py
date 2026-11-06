@@ -37,6 +37,7 @@ import json
 import logging
 import os
 import shutil
+import stat
 import sys
 import tempfile
 from pathlib import Path, PurePosixPath, PureWindowsPath
@@ -785,22 +786,82 @@ def _bundle_runtime_files(source: Path) -> list[str]:
     return sorted(files)
 
 
+def _bundle_files_present(plugin_dir: Path, files: list[Any]) -> bool:
+    """Check every listed file while resolving each shared directory once.
+
+    Windows directory enumeration supplies metadata for ordinary files. Keep
+    link/reparse entries on the resolved-path check, and never walk unlisted
+    subdirectories (which may contain large user datasets).
+    """
+    root = plugin_dir.resolve()
+    grouped: dict[str, set[str]] = {}
+    for relative in files:
+        if not isinstance(relative, str) or not relative:
+            return False
+        windows = PureWindowsPath(relative)
+        path = Path(relative)
+        if windows.drive or windows.root or path.is_absolute():
+            return False
+        if (
+            ".." in windows.parts
+            or ".." in path.parts
+            or any(":" in part for part in path.parts)
+            or not path.name
+        ):
+            return False
+        # WindowsPath equality folds case even in case-sensitive NTFS dirs.
+        # Keep distinct marker paths distinct until the filesystem checks them.
+        grouped.setdefault(str(path.parent), set()).add(path.name)
+
+    def resolved_file(directory: Path, name: str) -> bool:
+        candidate = (directory / name).resolve()
+        candidate.relative_to(root)
+        return candidate.is_file()
+
+    for parent, names in grouped.items():
+        directory = (plugin_dir / parent).resolve()
+        directory.relative_to(root)
+        try:
+            with os.scandir(io_path(directory)) as entries:
+                for entry in entries:
+                    if entry.name not in names:
+                        continue
+                    reparse = os.name == "nt" and (
+                        entry.stat(follow_symlinks=False).st_file_attributes
+                        & stat.FILE_ATTRIBUTE_REPARSE_POINT
+                    )
+                    present = (
+                        resolved_file(directory, entry.name)
+                        if entry.is_symlink() or reparse
+                        else entry.is_file(follow_symlinks=False)
+                    )
+                    if not present:
+                        return False
+                    names.remove(entry.name)
+                    if not names:
+                        break
+        except PermissionError:
+            # A directory may allow file access without granting enumeration.
+            # Preserve the previous per-file behavior in that unusual case.
+            pass
+        # Also preserves case-insensitive Windows lookup when a name's case
+        # was changed after installation, without conflating case-sensitive
+        # directory entries in the common enumeration path.
+        if not all(resolved_file(directory, name) for name in names):
+            return False
+    return True
+
+
 def _has_bundle_complete_marker(plugin_dir: Path) -> bool:
     marker = plugin_dir / _BUNDLE_COMPLETE_FILE
     try:
         payload = json.loads(marker.read_text(encoding="utf-8"))
+        if not isinstance(payload, dict):
+            return False
         files = payload.get("files")
         if not isinstance(files, list):
             return False
-        root = plugin_dir.resolve()
-        for relative in files:
-            if not isinstance(relative, str) or not relative:
-                return False
-            candidate = (plugin_dir / relative).resolve()
-            candidate.relative_to(root)
-            if not candidate.is_file():
-                return False
-        return True
+        return _bundle_files_present(plugin_dir, files)
     except (OSError, ValueError, TypeError, KeyError):
         return False
 

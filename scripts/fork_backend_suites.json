@@ -191,6 +191,20 @@
       "tests/unit/runtime/test_console_turn_state.py",
       "tests/unit/runtime/test_message_convert.py",
       "tests/unit/app/test_task_tracker.py"
+    ],
+    "desktop_footprint": [
+      "tests/unit/tauri/test_desktop_dependency_lock.py",
+      "tests/unit/tauri/test_layered_channel_build.py",
+      "tests/unit/tauri/test_desktop_layer_layout.py",
+      "tests/unit/pack/test_measure_desktop_footprint.py",
+      "tests/unit/tauri/test_desktop_optional_ml.py",
+      "tests/unit/tauri/test_desktop_python_cache.py",
+      "tests/unit/tauri/test_component_compression.py",
+      "tests/unit/tauri/test_windows_portable_installer_contract.py"
+    ],
+    "windows_lifecycle": [
+      "tests/unit/plugins/test_bundle_marker_scan.py",
+      "tests/unit/tauri/test_windows_update_extraction.py"
     ]
   },
   "required_cases": {
@@ -415,7 +429,9 @@
       "test_boot_checks_missing_dependencies_without_running_installer",
       "test_registered_plugins_are_not_rechecked_on_second_boot_phase",
       "test_missing_boot_dependency_can_be_repaired_explicitly",
-      "test_installs_serialised_through_shared_target_lock"
+      "test_installs_serialised_through_shared_target_lock",
+      "test_startup_ranks_only_current_unloaded_plugin_candidates",
+      "test_startup_metadata_probe_keeps_event_loop_responsive"
     ],
     "tests/unit/app/routers/test_plugins_router.py": [
       "test_replace_installed_plugin_full_isolated_lifecycle",
@@ -852,6 +868,45 @@
     "tests/unit/app/test_plugin_startup_order.py": [
       "test_registry_and_runtime_readiness_are_distinct",
       "test_bundled_candidates_are_health_checked_before_agent_startup"
+    ],
+    "tests/unit/tauri/test_desktop_dependency_lock.py": [
+      "test_desktop_lock_satisfies_every_selected_direct_dependency"
+    ],
+    "tests/unit/tauri/test_layered_channel_build.py": [
+      "test_layered_channel_wheels_resolve_real_offline_dependency_closure",
+      "test_layered_channel_missing_dependency_stops_build",
+      "test_desktop_build_wires_independent_layered_channel_pool"
+    ],
+    "tests/unit/tauri/test_desktop_layer_layout.py": [
+      "test_python_layers_real_installs_stay_stable_after_import_validation"
+    ],
+    "tests/unit/pack/test_measure_desktop_footprint.py": [
+      "test_real_startup_rss_and_owned_tree_cleanup",
+      "test_failed_launch_writes_report_and_reaps_descendants",
+      "test_preexisting_listener_is_not_used_or_terminated"
+    ],
+    "tests/unit/tauri/test_desktop_optional_ml.py": [
+      "test_inference_is_optional_and_full_retains_it",
+      "test_real_core_and_ugsci_behaviors_without_inference_imports"
+    ],
+    "tests/unit/tauri/test_desktop_python_cache.py": [
+      "test_real_import_cache_keeps_delta_baseline_valid",
+      "test_desktop_factories_pin_cache_after_extension_environment",
+      "test_cli_python_descendants_cannot_write_into_components"
+    ],
+    "tests/unit/tauri/test_component_compression.py": [
+      "test_component_archives_use_best_deflate_and_are_deterministic",
+      "test_best_deflate_archives_pass_signed_runtime_installation"
+    ],
+    "tests/unit/tauri/test_windows_portable_installer_contract.py": [
+      "test_cli_launcher_uses_python_module_entry_point"
+    ],
+    "tests/unit/plugins/test_bundle_marker_scan.py": [
+      "test_bundle_marker_checks_all_files_with_one_scan_per_directory",
+      "test_bundle_marker_rejects_unsafe_or_malformed_files",
+      "test_bundle_marker_resolves_directory_links_before_enumeration",
+      "test_bundle_marker_retains_case_and_permission_fallback",
+      "test_bundle_marker_does_not_merge_differently_cased_directories"
     ]
   }
 }

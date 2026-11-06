@@ -7,7 +7,7 @@ set -euo pipefail
 echo "[launch_tauri_macos] Unpacking zip..."
 TAURI_VERIFY_ROOT="$(mktemp -d "${RUNNER_TEMP:-/tmp}/qwenpaw-verify-tauri.XXXXXX")"
 unzip -q dist/UGSci-Tauri-*-macOS.zip -d "$TAURI_VERIFY_ROOT"
-APP="$(find "$TAURI_VERIFY_ROOT" -maxdepth 3 -name '*.app' -type d | head -1)"
+APP="$(find "$TAURI_VERIFY_ROOT" -mindepth 1 -maxdepth 1 -name '*.app' -type d | head -1)"
 if [ -z "$APP" ]; then
   echo "::error::Tauri .app not found inside zip"
   exit 1
@@ -24,7 +24,19 @@ echo "[launch_tauri_macos] Launching Tauri shell..."
 export QWENPAW_UI_VERIFY_NONCE="$(uuidgen | tr -d '-' | tr '[:upper:]' '[:lower:]')"
 export QWENPAW_UI_VERIFY_REPORT_PATH="${RUNNER_TEMP:-/tmp}/qwenpaw-native-ui-report.json"
 rm -f "$QWENPAW_UI_VERIFY_REPORT_PATH"
-BUNDLE_EXECUTABLE="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$APP/Contents/Info.plist")"
+BUNDLE_EXECUTABLE="$(python3 - "$APP/Contents/Info.plist" <<'PY'
+import plistlib
+import sys
+
+with open(sys.argv[1], "rb") as source:
+    executable = plistlib.load(source)["CFBundleExecutable"]
+if not isinstance(executable, str) or not executable or executable in {".", ".."} or any(
+    character in executable for character in "/\\\r\n"
+):
+    raise ValueError("Invalid CFBundleExecutable")
+print(executable)
+PY
+)"
 APP_EXECUTABLE="$APP/Contents/MacOS/$BUNDLE_EXECUTABLE"
 if [ ! -x "$APP_EXECUTABLE" ]; then
   echo "::error::Tauri bundle executable is missing or not executable: $APP_EXECUTABLE"

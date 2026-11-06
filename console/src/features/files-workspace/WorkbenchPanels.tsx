@@ -2,6 +2,8 @@ import {
   FormEvent,
   createElement,
   useEffect,
+  useCallback,
+  useMemo,
   useState,
   useSyncExternalStore,
   type ComponentType,
@@ -31,8 +33,17 @@ import { fileExtension, openVisualizationCenter } from "./fileOpenModes";
 import { registerBuiltinRenderers } from "../../components/Workspace/store/builtinRenderers";
 import { rendererRegistry } from "../../components/Workspace/store/rendererRegistry";
 import AgentCollaborationPanel from "./AgentCollaborationPanel";
-import type { FilesWorkspaceScope } from "./filesWorkspaceScope";
-import type { FileTarget } from "./types";
+import {
+  filesWorkspaceScopeKey,
+  type FilesWorkspaceScope,
+} from "./filesWorkspaceScope";
+import {
+  useCodingTabsStore,
+  type EditorTab,
+} from "../../stores/codingTabsStore";
+import { fileTabTarget } from "./fileIdentity";
+import { openHtmlFile } from "../../utils/openHtmlFile";
+import type { FileTarget, WorkbenchBrowserFile } from "./types";
 import styles from "./FilesWorkspace.module.less";
 
 const BROWSER_URL_STORAGE_KEY = "qwenpaw-workbench-browser-url";
@@ -45,24 +56,98 @@ const getRendererRegistrySnapshot = () => rendererRegistry.getSnapshot();
 
 interface WorkbenchBrowserPanelProps {
   active: boolean;
+  scope: Extract<FilesWorkspaceScope, { kind: "session" }>;
+  browserFile?: WorkbenchBrowserFile;
+  onOpenFiles: () => void;
 }
 
-export function WorkbenchBrowserPanel({ active }: WorkbenchBrowserPanelProps) {
+type BrowserPage =
+  | { kind: "url"; url: string }
+  | { kind: "file"; tabPath: string };
+
+function browserArtifact(
+  tab: EditorTab,
+  scope: WorkbenchBrowserPanelProps["scope"],
+): WorkspaceArtifact {
+  const target = fileTabTarget(tab);
+  return {
+    ...tab.artifact,
+    id:
+      tab.artifact?.id ??
+      `browser:${filesWorkspaceScopeKey(scope)}:${tab.path}`,
+    title:
+      tab.artifact?.title ??
+      target.path.replace(/\\/g, "/").split("/").pop() ??
+      target.path,
+    source: tab.artifact?.source ?? "link",
+    mimeType: "text/html",
+    textContent: tab.content,
+    workspacePath:
+      tab.artifact?.workspacePath ??
+      (target.source === "workspace" ? target.path : undefined),
+    workspaceRoot: tab.artifact?.workspaceRoot ?? target.root,
+    chatId: tab.artifact?.chatId ?? scope.chatId,
+    agentId: tab.artifact?.agentId ?? scope.agentId,
+    sessionId: tab.artifact?.sessionId ?? scope.sessionId,
+    projectDirOverride:
+      tab.artifact?.projectDirOverride ?? scope.projectDirOverride,
+  };
+}
+
+export function WorkbenchBrowserPanel({
+  active,
+  scope,
+  browserFile,
+  onOpenFiles,
+}: WorkbenchBrowserPanelProps) {
   const { t } = useTranslation();
   const [input, setInput] = useState("");
-  const [history, setHistory] = useState<string[]>(() => {
+  const [navigation, setNavigation] = useState<{
+    pages: BrowserPage[];
+    index: number;
+  }>(() => {
     const stored = localStorage.getItem(BROWSER_URL_STORAGE_KEY);
-    return stored ? [stored] : [];
+    return {
+      pages: stored ? [{ kind: "url", url: stored }] : [],
+      index: stored ? 0 : -1,
+    };
   });
-  const [historyIndex, setHistoryIndex] = useState(() =>
-    localStorage.getItem(BROWSER_URL_STORAGE_KEY) ? 0 : -1,
+  const { pages, index } = navigation;
+  const current = pages[index];
+  const scopeKey = filesWorkspaceScopeKey(scope);
+  const fileTab = useCodingTabsStore((state) =>
+    current?.kind === "file"
+      ? state.tabsByAgent[scopeKey]?.find((tab) => tab.path === current.tabPath)
+      : undefined,
+  );
+  const artifact = useMemo(
+    () => (fileTab ? browserArtifact(fileTab, scope) : undefined),
+    [fileTab, scope],
   );
   const [reloadKey, setReloadKey] = useState(0);
-  const currentUrl = historyIndex >= 0 ? history[historyIndex] : "";
+  const currentAddress =
+    current?.kind === "url"
+      ? current.url
+      : fileTab
+      ? fileTab.displayPath ?? fileTab.path
+      : "";
+  const pushPage = useCallback((page: BrowserPage) => {
+    setNavigation((previous) => {
+      const next = [...previous.pages.slice(0, previous.index + 1), page];
+      return { pages: next, index: next.length - 1 };
+    });
+  }, []);
+  useEffect(() => {
+    if (browserFile) pushPage({ kind: "file", tabPath: browserFile.tabPath });
+  }, [browserFile, pushPage]);
+  useEffect(() => {
+    setInput(currentAddress);
+  }, [current, currentAddress]);
+
   const embedsThisConsole = (() => {
-    if (!currentUrl) return false;
+    if (current?.kind !== "url") return false;
     try {
-      const url = new URL(currentUrl);
+      const url = new URL(current.url);
       return (
         url.origin === window.location.origin &&
         (url.pathname === "/" || url.pathname.startsWith("/chat"))
@@ -71,18 +156,15 @@ export function WorkbenchBrowserPanel({ active }: WorkbenchBrowserPanelProps) {
       return false;
     }
   })();
-
-  useEffect(() => {
-    setInput(currentUrl);
-  }, [currentUrl]);
-
   const navigate = (rawValue: string) => {
     const value = rawValue.trim();
     if (!value) return;
-    let nextUrl = value;
-    if (!/^[a-z][a-z\d+.-]*:/i.test(nextUrl)) {
-      nextUrl = `https://${nextUrl}`;
+    if (current?.kind === "file" && value === currentAddress) {
+      setReloadKey((key) => key + 1);
+      return;
     }
+    let nextUrl = value;
+    if (!/^[a-z][a-z\d+.-]*:/i.test(nextUrl)) nextUrl = `https://${nextUrl}`;
     try {
       const parsed = new URL(nextUrl);
       if (!["http:", "https:"].includes(parsed.protocol)) throw new Error();
@@ -93,14 +175,9 @@ export function WorkbenchBrowserPanel({ active }: WorkbenchBrowserPanelProps) {
       );
       return;
     }
-
-    const nextHistory = [...history.slice(0, historyIndex + 1), nextUrl];
-    setHistory(nextHistory);
-    setHistoryIndex(nextHistory.length - 1);
-    setInput(nextUrl);
+    pushPage({ kind: "url", url: nextUrl });
     localStorage.setItem(BROWSER_URL_STORAGE_KEY, nextUrl);
   };
-
   const submit = (event: FormEvent) => {
     event.preventDefault();
     navigate(input);
@@ -112,17 +189,25 @@ export function WorkbenchBrowserPanel({ active }: WorkbenchBrowserPanelProps) {
         <button
           type="button"
           aria-label={t("common.back", "后退")}
-          disabled={historyIndex <= 0}
-          onClick={() => setHistoryIndex((index) => Math.max(0, index - 1))}
+          disabled={index <= 0}
+          onClick={() =>
+            setNavigation((previous) => ({
+              ...previous,
+              index: Math.max(0, previous.index - 1),
+            }))
+          }
         >
           <ArrowLeft size={15} />
         </button>
         <button
           type="button"
           aria-label={t("common.forward", "前进")}
-          disabled={historyIndex < 0 || historyIndex >= history.length - 1}
+          disabled={index < 0 || index >= pages.length - 1}
           onClick={() =>
-            setHistoryIndex((index) => Math.min(history.length - 1, index + 1))
+            setNavigation((previous) => ({
+              ...previous,
+              index: Math.min(previous.pages.length - 1, previous.index + 1),
+            }))
           }
         >
           <ArrowRight size={15} />
@@ -130,7 +215,7 @@ export function WorkbenchBrowserPanel({ active }: WorkbenchBrowserPanelProps) {
         <button
           type="button"
           aria-label={t("common.refresh", "刷新")}
-          disabled={!currentUrl}
+          disabled={!current}
           onClick={() => setReloadKey((key) => key + 1)}
         >
           <RefreshCw size={14} />
@@ -141,9 +226,10 @@ export function WorkbenchBrowserPanel({ active }: WorkbenchBrowserPanelProps) {
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
-              if (event.key !== "Enter") return;
-              event.preventDefault();
-              navigate(input);
+              if (event.key === "Enter") {
+                event.preventDefault();
+                navigate(input);
+              }
             }}
             placeholder={t(
               "workbench.browser.placeholder",
@@ -152,20 +238,70 @@ export function WorkbenchBrowserPanel({ active }: WorkbenchBrowserPanelProps) {
             aria-label={t("workbench.browser.address", "浏览器地址")}
           />
         </label>
+        {current?.kind === "file" && (
+          <button
+            type="button"
+            onClick={() => {
+              if (fileTab)
+                useCodingTabsStore
+                  .getState()
+                  .setActiveTab(scopeKey, fileTab.path);
+              onOpenFiles();
+            }}
+            aria-label={t("workbench.browser.showFile", "查看文件")}
+            title={t("workbench.browser.showFile", "查看文件")}
+          >
+            <FileText size={14} />
+          </button>
+        )}
         <button
           type="button"
           aria-label={t("workbench.browser.openExternal", "在新窗口打开")}
-          disabled={!currentUrl}
-          onClick={() =>
-            currentUrl &&
-            window.open(currentUrl, "_blank", "noopener,noreferrer")
-          }
+          disabled={!current || (current.kind === "file" && !fileTab)}
+          onClick={() => {
+            if (current?.kind === "url")
+              window.open(current.url, "_blank", "noopener,noreferrer");
+            else if (fileTab && artifact)
+              openHtmlFile({
+                content: fileTab.content,
+                filePath:
+                  artifact.workspacePath ?? fileTab.displayPath ?? fileTab.path,
+                chatId: artifact.chatId,
+                projectDirOverride: artifact.projectDirOverride,
+                root: artifact.workspaceRoot,
+                workspaceBacked: fileTab.source === "workspace",
+                artifact,
+              });
+          }}
         >
           <ExternalLink size={14} />
         </button>
       </form>
-
-      {embedsThisConsole ? (
+      {current?.kind === "file" ? (
+        <div className={styles.browserFrameWrap}>
+          {fileTab && artifact ? (
+            <FilePreview
+              key={`${fileTab.path}:${reloadKey}`}
+              filePath={fileTab.displayPath ?? fileTab.path}
+              content={fileTab.content}
+              artifact={artifact}
+              chatId={artifact.chatId}
+              root={artifact.workspaceRoot}
+              projectDirOverride={artifact.projectDirOverride}
+              workspaceBacked={fileTab.source === "workspace"}
+              listenForArtifactUpdates={false}
+              showHtmlOpenButton={false}
+            />
+          ) : (
+            <div role="status" className={styles.workbenchEmptyState}>
+              {t(
+                "workbench.browser.fileClosed",
+                "网页文件已关闭，请从文件中重新打开。",
+              )}
+            </div>
+          )}
+        </div>
+      ) : embedsThisConsole ? (
         <div className={styles.workbenchEmptyState}>
           <span className={styles.workbenchEmptyIcon}>
             <Globe2 size={28} />
@@ -173,12 +309,12 @@ export function WorkbenchBrowserPanel({ active }: WorkbenchBrowserPanelProps) {
           <strong>当前控制台不能嵌入自身</strong>
           <p>请输入其他网页地址，或使用右上角按钮在新窗口打开。</p>
         </div>
-      ) : currentUrl ? (
+      ) : current?.kind === "url" ? (
         <div className={styles.browserFrameWrap}>
           <iframe
-            key={`${currentUrl}:${reloadKey}`}
+            key={`${current.url}:${reloadKey}`}
             className={styles.browserFrame}
-            src={currentUrl}
+            src={current.url}
             title={t("workbench.browser.title", "工作台浏览器")}
             sandbox="allow-downloads allow-forms allow-modals allow-popups allow-same-origin allow-scripts"
             referrerPolicy="no-referrer"

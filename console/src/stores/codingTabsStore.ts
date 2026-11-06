@@ -44,7 +44,7 @@ export interface EditorTab {
   /** Last loaded byte size; refreshed from the source, never persisted. */
   size?: number;
   previewKind?: "text" | "image" | "pdf" | "csv" | "binary";
-  preferredView?: "text" | "visualization";
+  preferredView?: "text" | "visualization" | "browser";
   readOnly?: boolean;
   /** Current disk version. Kept in memory only and refreshed after loading. */
   etag?: string;

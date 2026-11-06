@@ -61,8 +61,9 @@ pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelecti
         format!("{origins},http://localhost:5173,http://127.0.0.1:5173"),
     );
     command.env("NO_PROXY", "localhost,127.0.0.1,::1,0.0.0.0");
+    let command = apply_contributed_environment(app, command);
     Ok((
-        pin_managed_officecli(apply_contributed_environment(app, command)),
+        pin_managed_python_cache(pin_managed_officecli(command)),
         LauncherSelection {
             packaged: false,
             managed_backend: false,
@@ -86,8 +87,9 @@ pub(super) fn expected_backend_version(app: &tauri::AppHandle) -> Result<String,
 pub(super) fn create(app: &tauri::AppHandle) -> Result<(Command, LauncherSelection), String> {
     let resource_dir = app.path().resource_dir().map_err(|err| err.to_string())?;
     let (command, selection) = create_packaged(&resource_dir)?;
+    let command = apply_contributed_environment(app, command);
     Ok((
-        pin_managed_officecli(apply_contributed_environment(app, command)),
+        pin_managed_python_cache(pin_managed_officecli(command)),
         selection,
     ))
 }
@@ -221,7 +223,7 @@ pub(super) fn create_packaged(resource_dir: &Path) -> Result<(Command, LauncherS
         log::debug!("[backend] bundled neqsim jar not found");
     }
     Ok((
-        pin_managed_officecli(command),
+        pin_managed_python_cache(pin_managed_officecli(command)),
         LauncherSelection {
             packaged: true,
             managed_backend: launch.managed_backend,
@@ -229,6 +231,20 @@ pub(super) fn create_packaged(resource_dir: &Path) -> Result<(Command, LauncherS
             managed_python_packages: launch.managed_python_packages,
         },
     ))
+}
+
+// Keep runtime imports out of signed component trees. The daemon uses the same
+// factory on every restart, and ordinary Python descendants inherit the prefix.
+// The platform's per-user cache is deliberately independent of a configurable
+// working directory, resource directory, or an inherited PYTHONPYCACHEPREFIX.
+fn pin_managed_python_cache(command: Command) -> Command {
+    let cache = dirs::cache_dir()
+        .ok_or_else(|| std::io::Error::other("User cache directory unavailable"))
+        .and_then(|root| super::python_cache::prepare(&root));
+    if let Err(ref error) = cache {
+        log::warn!("[backend] Python cache unavailable; disabling bytecode writes: {error}");
+    }
+    super::python_cache::apply(command, cache.as_deref().ok())
 }
 
 // Backend and daemon descendants share the reviewed engine. Apply this after

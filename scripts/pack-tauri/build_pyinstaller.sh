@@ -208,6 +208,9 @@ echo ""
 else
     echo "== Layered desktop mode: skipping PyInstaller and legacy dependency install =="
     DEST="${BINARIES_DIR}/qwenpaw-backend"
+    # Schema validation and wheel inspection need only lightweight build deps.
+    install_python_packages \
+        -r "${REPO_ROOT}/scripts/pack/channel-contract-requirements.txt"
 fi
 
 # The Chrome Native Messaging host runs under this standalone interpreter,
@@ -247,11 +250,23 @@ echo "== Building readable channel runtime =="
 CHANNEL_WHEELS="${DIST}/channel-wheels"
 rm -rf "$CHANNEL_WHEELS" "${BINARIES_DIR}/channel-runtime"
 mkdir -p "$CHANNEL_WHEELS"
-# Select only channel dependencies from the shared pool with the target
-# interpreter; full-only extras must not enlarge the readable runtime.
-"$NATIVE_HOST_PYTHON" -m pip download --no-index --only-binary=:all: \
-    --find-links "$DESKTOP_WHEELS" \
-    --dest "$CHANNEL_WHEELS" "${HOST_WHEEL}[channels]"
+if [ "$LAYERED_DESKTOP" = true ]; then
+    # The full wheel pool is intentionally absent in layered builds.
+    "$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/prepare_channel_wheels.py" \
+        --repo "$REPO_ROOT" --python "$NATIVE_HOST_PYTHON" \
+        --wheelhouse "$CHANNEL_WHEELS"
+    CHANNEL_HOST_WHEELS=("${CHANNEL_WHEELS}"/qwenpaw-*.whl)
+    if [ "${#CHANNEL_HOST_WHEELS[@]}" -ne 1 ] || [ ! -f "${CHANNEL_HOST_WHEELS[0]}" ]; then
+        echo "ERROR: Expected one channel host wheel" >&2
+        exit 1
+    fi
+    HOST_WHEEL="${CHANNEL_HOST_WHEELS[0]}"
+else
+    # Select only channel dependencies from the legacy shared pool.
+    "$NATIVE_HOST_PYTHON" -m pip download --no-index --only-binary=:all: \
+        --find-links "$DESKTOP_WHEELS" \
+        --dest "$CHANNEL_WHEELS" "${HOST_WHEEL}[channels]"
+fi
 "$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/stage_channel_runtime.py" \
     --python "$NATIVE_HOST_PYTHON" --wheel "$HOST_WHEEL" \
     --resource-dir "${REPO_ROOT}/console/src-tauri" \
@@ -357,7 +372,8 @@ if [ "$LAYERED_DESKTOP" = true ]; then
         binaries/*:binaries/*) ;;
         *) echo "ERROR: invalid layered Python component paths" >&2; exit 1 ;;
     esac
-    PYTHONPATH="${REPO_ROOT}/console/src-tauri/${DEPENDENCY_PATH}" \
+    PYTHONDONTWRITEBYTECODE=1 \
+        PYTHONPATH="${REPO_ROOT}/console/src-tauri/${DEPENDENCY_PATH}" \
         "${REPO_ROOT}/console/src-tauri/${RUNTIME_PATH}/python/bin/python3" \
         "${REPO_ROOT}/plugins/bundle/chrome/assets/scripts/nm_host.py" \
         --check-runtime

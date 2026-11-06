@@ -88,7 +88,8 @@ def write_delta(
                 date_time=(1980, 1, 1, 0, 0, 0),
             )
             info.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(info, canonical_json(delta))
+            # Explicit ZipInfo entries do not inherit the archive's level.
+            archive.writestr(info, canonical_json(delta), compresslevel=9)
             for relative in sorted(set(delta["add"]) | set(delta["replace"])):
                 source = target / Path(relative)
                 info = zipfile.ZipInfo(
@@ -96,7 +97,7 @@ def write_delta(
                     date_time=(1980, 1, 1, 0, 0, 0),
                 )
                 info.compress_type = zipfile.ZIP_DEFLATED
-                archive.writestr(info, source.read_bytes())
+                archive.writestr(info, source.read_bytes(), compresslevel=9)
         os.replace(temporary, output)
     except Exception:
         temporary.unlink(missing_ok=True)

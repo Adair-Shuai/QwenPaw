@@ -1,10 +1,4 @@
-import {
-  ArrowLeft,
-  Expand,
-  FileText,
-  MessageSquarePlus,
-  X,
-} from "lucide-react";
+import { ArrowLeft, Expand, MessageSquarePlus, X } from "lucide-react";
 import {
   useCallback,
   lazy,
@@ -12,6 +6,7 @@ import {
   useEffect,
   useLayoutEffect,
   useRef,
+  useId,
   useState,
   forwardRef,
   useImperativeHandle,
@@ -20,12 +15,18 @@ import {
 import { useTranslation } from "react-i18next";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { setTextareaValue } from "../../pages/Chat/utils";
-import type { FilesDrawerEvent, FilesDrawerState, FileTarget } from "./types";
+import type {
+  FilesDrawerEvent,
+  FilesDrawerState,
+  FileTarget,
+  WorkbenchBrowserFile,
+} from "./types";
 import type { FilesWorkspaceScope } from "./filesWorkspaceScope";
 import { filesWorkspaceScopeKey } from "./filesWorkspaceScope";
 import {
   useWorkbenchSelection,
   WorkbenchTitle,
+  WorkbenchIcon,
   WorkbenchNavigation,
   WorkbenchExtensionPanels,
 } from "./WorkbenchExtensions";
@@ -92,12 +93,26 @@ function SessionFilesDrawer({
   forwardedRef,
 }: FilesDrawerProps & { forwardedRef: ForwardedRef<HTMLElement> }) {
   const { t } = useTranslation();
+  const titleId = useId();
   const drawerRef = useRef<HTMLElement>(null);
   useImperativeHandle(forwardedRef, () => drawerRef.current!, []);
   const resizeCleanupRef = useRef<(() => void) | undefined>(undefined);
   const [isResizing, setIsResizing] = useState(false);
   const { mode, setMode, genUiTarget, clearGenUiTarget } =
     useWorkbenchSelection(state);
+  const modeRef = useRef(mode);
+  modeRef.current = mode;
+  const browserSequence = useRef(0);
+  const [browserFile, setBrowserFile] = useState<WorkbenchBrowserFile>();
+  const openBrowser = useCallback(
+    (tabPath: string) => {
+      setBrowserFile({ tabPath, requestId: ++browserSequence.current });
+      // A slow file load must not steal focus after a deliberate tool switch.
+      if (modeRef.current === "files" || modeRef.current === "browser")
+        setMode("browser");
+    },
+    [setMode],
+  );
   const prefersReducedMotion = useReducedMotion();
   const isWorkspace = state.kind === "workspace";
   const [activeFileTarget, setActiveFileTarget] = useState<
@@ -224,7 +239,8 @@ function SessionFilesDrawer({
             }
       }
       role="region"
-      aria-label={t("files.title")}
+      aria-label={mode === "files" ? t("files.title") : undefined}
+      aria-labelledby={mode === "files" ? undefined : titleId}
       tabIndex={-1}
     >
       <div
@@ -263,10 +279,10 @@ function SessionFilesDrawer({
       />
       <header className={styles.drawerHeader}>
         <div className={styles.fileMark}>
-          <FileText size={17} />
+          <WorkbenchIcon mode={mode} />
         </div>
         <div className={styles.drawerTitle}>
-          <strong>
+          <strong id={titleId}>
             {mode === "files" ? (
               isWorkspace && !target ? (
                 t("files.workspace")
@@ -312,6 +328,7 @@ function SessionFilesDrawer({
           scope={scope}
           runtimeSessionId={runtimeSessionId}
           target={genUiTarget}
+          browserFile={browserFile}
           simulationRunId={
             state.kind === "workspace" ? state.simulationRunId : undefined
           }
@@ -355,6 +372,7 @@ function SessionFilesDrawer({
                 active={mode === "files"}
                 hideNavigator={!isWorkspace}
                 onActiveTargetChange={setActiveFileTarget}
+                onOpenBrowser={openBrowser}
                 onBrowseMemoryTag={() => dispatch({ type: "EXPAND_WORKSPACE" })}
               />
             </Suspense>

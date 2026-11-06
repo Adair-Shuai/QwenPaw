@@ -14,6 +14,11 @@ import { createRef, useEffect, useReducer } from "react";
 import { slotRegistry } from "../../plugins/registry/store";
 import { ThemeProvider, useTheme } from "../../contexts/ThemeContext";
 import { PAGE_STYLES } from "../../utils/pageStyle";
+import {
+  turnFilesApi,
+  type TurnFileManifest,
+} from "../../api/modules/turnFiles";
+import { turnFileTarget } from "./turnFileTarget";
 
 vi.mock("../../monacoSetup", () => ({}));
 vi.mock("@monaco-editor/react", () => ({
@@ -104,6 +109,19 @@ vi.mock("../../api/modules/workspace", () => ({
 vi.mock("../../utils/downloadFileFromUrl", () => ({
   downloadFileFromUrl: vi.fn(),
 }));
+
+async function findHtmlFrame(title: string) {
+  return waitFor(
+    () => {
+      const frame = screen
+        .queryAllByTitle(title)
+        .find((element) => element.tagName === "IFRAME");
+      expect(frame).toBeVisible();
+      return frame!;
+    },
+    { timeout: 12_000 },
+  );
+}
 
 describe("FilesDrawer", () => {
   beforeEach(() => {
@@ -1263,5 +1281,241 @@ describe("FilesDrawer", () => {
         name: /files\.download|Download|下载/i,
       }),
     ).toBeInTheDocument();
+  });
+  it.each(["page.html", "page.htm"])(
+    "opens %s in the scoped browser by default without creating a popup",
+    async (path) => {
+      const popup = vi.spyOn(window, "open").mockReturnValue(null);
+      vi.mocked(workspaceApi.loadFileText).mockResolvedValue({
+        content: "<h1>Local web page</h1>",
+        etag: "web-v1",
+      });
+      const { rerender } = renderWithProviders(
+        <FilesDrawer
+          state={{
+            kind: "workspace",
+            target: { source: "workspace", path, root: "workspace" },
+            trigger: null,
+          }}
+          scope={interactionScope}
+          dispatch={vi.fn()}
+        />,
+      );
+      await waitFor(() =>
+        expect(screen.getByRole("button", { name: "浏览器" })).toHaveAttribute(
+          "aria-pressed",
+          "true",
+        ),
+      );
+      const frame = await findHtmlFrame(path);
+      expect(frame).toBeVisible();
+      expect(frame).toHaveAttribute("sandbox", "allow-scripts");
+      expect(frame.getAttribute("srcdoc")).toContain("Local web page");
+      expect(
+        screen.getByRole("textbox", { name: /浏览器地址|Browser address/ }),
+      ).toHaveValue(path);
+      expect(popup).not.toHaveBeenCalled();
+      const tabs =
+        useCodingTabsStore.getState().tabsByAgent[
+          "session:default:interactions"
+        ];
+      expect(tabs).toHaveLength(1);
+      expect(tabs[0]).toMatchObject({
+        displayPath: path,
+        workspaceRoot: "workspace",
+      });
+      fireEvent.click(screen.getByRole("button", { name: "GenUI" }));
+      expect(frame).not.toBeVisible();
+      fireEvent.click(screen.getByRole("button", { name: "浏览器" }));
+      expect(
+        screen
+          .getAllByTitle(path)
+          .find((element) => element.tagName === "IFRAME"),
+      ).toBe(frame);
+      rerender(
+        <FilesDrawer
+          state={{ kind: "workspace", trigger: null }}
+          scope={{ ...interactionScope, sessionId: "other-web-session" }}
+          dispatch={vi.fn()}
+        />,
+      );
+      expect(frame).not.toBeInTheDocument();
+      expect(
+        screen
+          .queryAllByTitle(path)
+          .find((element) => element.tagName === "IFRAME"),
+      ).toBeUndefined();
+      popup.mockRestore();
+    },
+  );
+
+  it("opens edited HTML from the preview button in the browser using the same dirty buffer", async () => {
+    const popup = vi.spyOn(window, "open").mockReturnValue(null);
+    vi.mocked(workspaceApi.loadFileText).mockResolvedValue({
+      content: "<h1>Original</h1>",
+      etag: "web-v1",
+    });
+    renderWithProviders(
+      <FilesDrawer
+        state={{
+          kind: "workspace",
+          target: {
+            source: "workspace",
+            path: "draft.html",
+            preferredView: "text",
+          },
+          trigger: null,
+        }}
+        scope={interactionScope}
+        dispatch={vi.fn()}
+      />,
+    );
+    const editor = await screen.findByTestId("monaco-editor");
+    const draft = "<h1>Unsaved webpage</h1>";
+    fireEvent.change(editor, { target: { value: draft } });
+    fireEvent.click(
+      screen.getByRole("button", { name: /^(Preview|预览|files\.preview)$/i }),
+    );
+    fireEvent.click(
+      await screen.findByRole("button", {
+        name: /openHtmlInBrowser|在浏览器中打开|Open in browser/i,
+      }),
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "浏览器" })).toHaveAttribute(
+        "aria-pressed",
+        "true",
+      ),
+    );
+    const frame = await findHtmlFrame("draft.html");
+    expect(frame.getAttribute("srcdoc")).toContain("Unsaved webpage");
+    const tabs =
+      useCodingTabsStore.getState().tabsByAgent["session:default:interactions"];
+    expect(tabs).toHaveLength(1);
+    expect(tabs[0]).toMatchObject({ content: draft, dirty: true });
+    expect(popup).not.toHaveBeenCalled();
+    const address = screen.getByRole("textbox", {
+      name: /浏览器地址|Browser address/,
+    });
+    fireEvent.change(address, {
+      target: { value: "https://example.com/next" },
+    });
+    fireEvent.keyDown(address, { key: "Enter" });
+    expect(screen.getByTitle(/工作台浏览器|Workbench browser/)).toHaveAttribute(
+      "src",
+      "https://example.com/next",
+    );
+    fireEvent.click(screen.getByRole("button", { name: /^(Back|后退)$/ }));
+    expect(
+      (await findHtmlFrame("draft.html")).getAttribute("srcdoc"),
+    ).toContain("Unsaved webpage");
+    popup.mockRestore();
+  });
+
+  it("does not let a slow HTML load replace a deliberately selected GenUI panel", async () => {
+    let finish!: (value: { content: string; etag: string }) => void;
+    vi.mocked(workspaceApi.loadFileText).mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderWithProviders(
+      <FilesDrawer
+        state={{
+          kind: "workspace",
+          target: { source: "workspace", path: "slow.html" },
+          trigger: null,
+        }}
+        scope={interactionScope}
+        dispatch={vi.fn()}
+      />,
+    );
+    await waitFor(() => expect(workspaceApi.loadFileText).toHaveBeenCalled());
+    fireEvent.click(screen.getByRole("button", { name: "GenUI" }));
+    await act(async () =>
+      finish({ content: "<h1>Slow web page</h1>", etag: "web-v1" }),
+    );
+    expect(screen.getByRole("button", { name: "GenUI" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(screen.getByRole("button", { name: "GenUI" })).toHaveAttribute(
+      "title",
+      "GenUI",
+    );
+    fireEvent.click(screen.getByRole("button", { name: "浏览器" }));
+    expect((await findHtmlFrame("slow.html")).getAttribute("srcdoc")).toContain(
+      "Slow web page",
+    );
+  });
+
+  it("keeps archived HTML resources in their original turn when opened in the browser", async () => {
+    const html = {
+      id: "html",
+      name: "index.html",
+      path: "design/index.html",
+      root: "workspace" as const,
+      status: "created" as const,
+      delivered: true,
+      size: 80,
+      binary: false,
+      before_available: false,
+      after_available: true,
+    };
+    const turn: TurnFileManifest = {
+      id: "browser-archive",
+      session_id: "runtime-original",
+      agent_id: "default",
+      status: "completed",
+      started_at: "2026-11-05",
+      incomplete: true,
+      overlap: false,
+      warnings: [],
+      files: [html],
+    };
+    const getArchive = vi.spyOn(turnFilesApi, "get").mockResolvedValue(turn);
+    const fetcher = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValue(
+        new Response(
+          '<link rel="stylesheet" href="missing.css"><h1>Archived browser page</h1>',
+          { headers: { "Content-Type": "text/html" } },
+        ),
+      );
+    const target = turnFileTarget(
+      { ...interactionScope, sessionId: "runtime-original" },
+      turn,
+      html,
+    );
+    renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", target, trigger: null }}
+        scope={interactionScope}
+        dispatch={vi.fn()}
+      />,
+    );
+    const frame = await findHtmlFrame("index.html");
+    expect(screen.getByRole("button", { name: "浏览器" })).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+    expect(getArchive).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "runtime-original",
+        agentId: "default",
+      }),
+      "browser-archive",
+    );
+    expect(frame.getAttribute("srcdoc")).toContain("Archived browser page");
+    expect(frame.getAttribute("srcdoc")).toContain("data:text/css,");
+    const missing = await screen.findByText(/design\/missing\.css/);
+    expect(missing.closest('[role="status"]')).toBeVisible();
+    fireEvent.click(screen.getByText(/查看详情|turnFiles.warningDetails/));
+    expect(missing).toBeVisible();
+    expect(fetcher).toHaveBeenCalledOnce();
+    expect(String(fetcher.mock.calls[0][0])).toContain(
+      "browser-archive/files/html",
+    );
+    expect(workspaceApi.loadFileText).not.toHaveBeenCalled();
   });
 });

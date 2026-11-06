@@ -2398,6 +2398,15 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
 
         await self._recover_startup_transactions()
         discovered = await run_sync_io(self.discover_plugins)
+        # Boot discovers channels first, then other plugins. Only rank this
+        # phase's candidates; already registered/failed records are skipped
+        # again under their lifecycle lock below.
+        discovered = [
+            item
+            for item in discovered
+            if (types is None or item[0].plugin_type in types)
+            and item[0].id not in self._loaded_plugins
+        ]
 
         def startup_order(item):
             try:
@@ -2410,11 +2419,11 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 missing = True
             return missing, item[0].plugin_type == "app", item[0].id
 
-        discovered.sort(key=startup_order)
+        # Requirement and distribution metadata reads can be slow on Windows.
+        # Ranking is only a hint; load_plugin still performs fresh admission.
+        await run_sync_io(discovered.sort, key=startup_order)
 
         for manifest, plugin_dir in discovered:
-            if types is not None and manifest.plugin_type not in types:
-                continue
             from .settings import is_plugin_enabled
 
             async with self.plugin_lifecycle(manifest.id):

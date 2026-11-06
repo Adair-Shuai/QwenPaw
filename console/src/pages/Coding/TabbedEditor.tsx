@@ -94,6 +94,7 @@ interface TabbedEditorProps {
   onFileSaved?: (path: string) => void;
   onMemoryTagClick?: (tag: string) => void;
   onOpenFile?: (target: FileTarget) => void;
+  onOpenHtmlInBrowser?: (target: FileTarget) => void;
   onLoadFile?: (path: string) => Promise<string>;
   onSaveFile?: (path: string, content: string) => Promise<void>;
   onDownloadFile?: (path: string) => Promise<void>;
@@ -215,6 +216,7 @@ export default function TabbedEditor({
   onFileSaved,
   onMemoryTagClick,
   onOpenFile,
+  onOpenHtmlInBrowser,
   onLoadFile,
   onSaveFile,
   onDownloadFile,
@@ -1502,6 +1504,15 @@ export default function TabbedEditor({
                 root={activeTarget?.root}
                 projectDirOverride={projectDirOverride}
                 workspaceBacked={activeTarget?.source === "workspace"}
+                onOpenHtmlInBrowser={
+                  onOpenHtmlInBrowser && activeTarget
+                    ? () =>
+                        onOpenHtmlInBrowser({
+                          ...activeTarget,
+                          preferredView: "browser",
+                        })
+                    : undefined
+                }
                 onOpenWorkspaceFile={
                   onOpenFile &&
                   activeTarget?.source === "workspace" &&

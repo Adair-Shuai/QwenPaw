@@ -271,7 +271,9 @@ def test_symlinked_wal_is_rejected_without_following_it(
     assert discovered_count == 0
     assert not run_ids
     assert outside.read_bytes() == b"untrusted"
-    assert any("is not a regular file" in item for item in warnings)
+    assert any(
+        "traverses a link or reparse point" in item for item in warnings
+    )
 
 
 @pytest.mark.parametrize(

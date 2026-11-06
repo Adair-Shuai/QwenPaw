@@ -483,3 +483,47 @@ uv pip compile requirements-desktop.in --generate-hashes --python-version 3.11 -
 必须保留 `--universal` 和 `--no-emit-package qwenpaw`。前者保留 Windows/macOS 平台依赖标记，避免 macOS 尝试安装 `pywin32`；后者用于排除会单独构建 wheel 的 QwenPaw backend。如果锁文件包含本地项目条目 `.`，`pip --require-hashes` 会因为本地目录没有制品哈希而拒绝生产构建。
 
 非分层模式仍保留旧 PyInstaller 路径，仅用于手动兼容验证，不属于 b7 生产发行链路。Chrome Native Messaging Host 在分层模式下通过 `PYTHONPATH` 使用 `python-packages` 组件，不能把其依赖重新写入 CPython 组件。
+
+## 桌面安装与更新负担的回归（2026-11-05）
+
+生产分层版的核心依赖选择为 `.[local,qoder]`、UGSci 必需读取器及既有离线科学工具链；`[full]` 仍属于旧打包兼容路径。上游依赖声明改变后也必须重新解析桌面锁，不能只检查 AgentScope 一项。本次以旧锁作为版本偏好重新解析，删除 46 项不再需要的核心层依赖，保留其余版本，仅将 ReMe 三项更新到项目声明版本。通用锁的条目数从 304 降至 258，不等于每个平台实际安装包数。
+
+官方渠道仍保留独立的可读运行包和离线启用能力。分层构建通过 `prepare_channel_wheels.py` 单独准备 `[channels]` 的真实依赖闭包，不引用已跳过的 `[full]` 构建变量。渠道闭包、ABI、官方归档摘要及完整内容校验继续执行。核心层和渠道层仍可能重复包含基础依赖，本轮没有跨组件共享它们；后续减少重复需要同时验证组件更新兼容与隔离加载。
+
+两层 Python 安装均使用 `--no-compile`，构建期间的导入和 Native Messaging 验证禁止生成字节码。后端从唯一的本地 wheel 按包名离线安装，避免临时构建路径进入 `direct_url.json` 和 `RECORD`；原始 wheel 摘要仍记录在组件元数据。回归使用真实离线 pip 安装与导入，验证相同 wheel、锁和解释器的安装内容一致。此检查不宣称不同平台、不同工具版本或重新构建的 wheel 本身完全一致。签名、兼容性门禁、差量应用验证和全量回退保持原有要求。
+
+只读体积基准可直接运行（将路径替换为本次构建的实际依赖层）：
+
+```powershell
+python scripts/measure_desktop_footprint.py --root <安装目录> --site-packages <python-packages层> --label before --output before.json
+```
+
+比较同一平台前后两个安装目录和实际安装包文件大小；目录统计是逻辑字节数，不能代替压缩下载大小。相交目录不能相加。报告列出文件数、顶层目录、RECORD 包归属、未归属文件及跳过的目录链接，不导入待测包。
+
+启动与空载内存测量必须显式提供独立配置的启动命令和未占用的 loopback `/healthz` 地址，并将 `--command` 放在末尾：
+
+```powershell
+python scripts/measure_desktop_footprint.py --health-url http://127.0.0.1:18791/healthz --cache-state first-launch --idle-seconds 30 --rss-samples 10 --label before --output before-launch.json --command <启动程序> <隔离配置的参数>
+```
+
+记录到真实就绪的时间和启动进程树 RSS；RSS 求和可能重复计算共享页，不能当作整机物理内存增量。工具回收自己启动的进程树，超时／提前退出返回失败并保存报告。它不清理操作系统缓存、不创建业务配置，也不发送模型任务；应在无并发测试负载时，用同一配置至少重复三次。`first-launch` 只是操作者标签，真正冷缓存需另行控制。不要向日常使用的桌面或共享 daemon 发启动命令。
+
+固定检查 `python scripts/verify_update_regressions.py` 覆盖全部选中直接依赖的版本一致性、渠道独立构建、真实重复安装、测量进程清理，以及既有签名更新／恢复流程。体积减小并不代表启动或常驻内存自动改善。
+
+### 第二轮依赖与运行缓存优化（2026-11-06）
+
+默认桌面锁进一步从 258 项降至 250 项，保留项没有版本变化。Transformers 和 ONNX Runtime 改为 `[ml]` 可选项，`[full]` 仍保留原推理能力；UGSci 所需 SymPy 和 Tokenizers 改为明确的直接依赖。需要额外推理库的自定义桌面发行，应在依赖输入中选择 `[ml]` 并重新锁定、构建和签名，不得在已签名的依赖组件中临时执行 pip 安装。普通 Python 环境可以按需安装 `qwenpaw[ml]`。
+
+桌面后端和 daemon 重启使用系统用户缓存目录中的 `qwenpaw/python-bytecode-v1`，可跨进程复用字节码；签名组件目录不再因这些导入产生缓存文件。缓存目录不可安全使用时，自动禁写字节码并继续启动。独立 Windows CLI 使用 `-B` 和可继承的 `PYTHONDONTWRITEBYTECODE=1`；现有隔离频道 worker 的 `-I -B` 保持不变。此项修改包含原生宿主代码，必须随完整桌面升级交付；既有指纹门禁会阻止旧宿主误接收不匹配组件。旧目录中的缓存及浏览器独立启动的 Native Messaging 行为不在本轮自动迁移范围内。
+
+组件 ZIP 的逐文件压缩级别修正为实际生效的 DEFLATE 9，仍兼容现有签名及更新协议。UGSci 本地暂存包的测量仅节省 13,364 字节（约 0.173%），构建耗时有所增加；这是一项小幅下载优化，不能用来声称整包大幅减小。依赖裁剪的实际安装包收益、冷启动和空载内存仍须在下一次完整构建后，使用前述同平台、同配置基准确认。
+
+### Windows 安装与启动机制优化（2026-11-06）
+
+更新助手复用单次解压的 1 MiB 缓冲，并将逐块界面／日志回调限流到约 100 毫秒一次。代表性 1,040 文件 ZIP 的真实 C# 解压测量，累计托管分配减少 95.41%，不是进程 RSS 减幅；每个解压文件摘要均一致。解压阶段完成与整个安装完成仍分开，整体完成必须经过健康检查和提交。完整校验、同卷事务副本及回滚备份没有裁掉。
+
+原生 daemon 在本次后端 ready 后使用系统进程等待，停止每 100 毫秒的回执读取／旧健康接口探测；进程退出后仍检查更新重启意图。新启动、初始化超时、失败回滚、显式停止和崩溃退避保留。此项减少空载时持续 I/O，不代表首启时间自动下降。
+
+插件只为当前加载阶段的候选探测排序依赖，已处理记录不重复排序；磁盘探测在工作线程完成，加载仍重新执行准入和锁内检查。内置插件完整性标记改为按目录检查全部声明文件，保留链接边界和逐次缺失检测，不缓存“已完整”的跨启动结论。UGSci 的 591 个运行文件在本机暂存副本上，路径解析调用 592→171；计时只代表该局部检查。
+
+验证入口继续为 `python scripts/verify_fork_regressions.py`、`python scripts/verify_update_regressions.py` 和 Rust daemon 测试。Windows 专项通过实际编译的更新助手执行，不能用非 Windows 的条件跳过代替。完整 Windows 安装包、升级后启动及长时间空载 RSS 的发行验收仍需单独执行；本轮没有发布软件。

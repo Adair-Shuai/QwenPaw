@@ -33,7 +33,9 @@ internal static class QwenPawCliLauncher
             string dependencies = Resolve(installRoot, layout.components["python-packages"].path);
             string python = Path.Combine(pythonRoot, "python", "python.exe");
             if (!File.Exists(python)) throw new FileNotFoundException("UGSci Python runtime is missing.", python);
-            var quoted = new List<string> { "-m", "qwenpaw" };
+            // This short-lived standalone launcher does not inherit the native
+            // daemon's private cache. Never write into signed component roots.
+            var quoted = new List<string> { "-B", "-m", "qwenpaw" };
             // python -m qwenpaw reaches src/qwenpaw/__main__.py which calls
             // the Click CLI.  -m qwenpaw.cli.main only imports the module:
             // main.py has no __main__ guard, so --version would print
@@ -46,6 +48,8 @@ internal static class QwenPawCliLauncher
                 UseShellExecute = false
             };
             start.EnvironmentVariables["PYTHONNOUSERSITE"] = "1";
+            // -B is not inherited by `qwenpaw desktop` / update subprocesses.
+            start.EnvironmentVariables["PYTHONDONTWRITEBYTECODE"] = "1";
             start.EnvironmentVariables["PYTHONPATH"] = backend + Path.PathSeparator + dependencies;
             using (Process process = Process.Start(start))
             {

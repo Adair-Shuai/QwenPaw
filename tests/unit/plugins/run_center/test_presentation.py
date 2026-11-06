@@ -17,10 +17,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+# Import the autouse fixture so this module restores its real runtime too.
+# pylint: disable-next=unused-import
 from .test_run_center import (
     RunRepository,
     build_router,
     repository_module,
+    restore_runtime_imports,
     _legacy_store,
 )
 

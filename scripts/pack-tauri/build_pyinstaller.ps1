@@ -270,6 +270,11 @@ Write-Host ""
 } else {
     Write-Host "== Layered desktop mode: skipping PyInstaller and legacy dependency install ==" -ForegroundColor Yellow
     $DEST = Join-Path $BINARIES_DIR "qwenpaw-backend"
+    # Channel schema validation and wheel inspection use only these small
+    # build dependencies; the host and SDKs stay out of the build environment.
+    Install-PythonPackages -Packages @(
+        "-r", (Join-Path $REPO_ROOT "scripts\pack\channel-contract-requirements.txt")
+    )
 }
 
 # The Chrome Native Messaging host runs under this standalone interpreter,
@@ -302,12 +307,22 @@ foreach ($generated in @($CHANNEL_WHEELS, $CHANNEL_RUNTIME)) {
     if (Test-Path $generated) { Remove-Item -Recurse -Force $generated }
 }
 New-Item -ItemType Directory -Force -Path $CHANNEL_WHEELS | Out-Null
-# Select only channel dependencies from the shared pool with the target
-# interpreter; full-only extras must not enlarge the readable runtime.
-& $NATIVE_HOST_PYTHON -m pip download --no-index --only-binary=:all: `
-    --find-links $DESKTOP_WHEELS `
-    --dest $CHANNEL_WHEELS "${HOST_WHEEL}[channels]"
-Assert-LastExit "Channel wheel resolution failed"
+if ($LAYERED_DESKTOP) {
+    # The full wheel pool is intentionally absent in layered builds.
+    & $PYTHON_BIN (Join-Path $PSScriptRoot "prepare_channel_wheels.py") `
+        --repo $REPO_ROOT --python $NATIVE_HOST_PYTHON `
+        --wheelhouse $CHANNEL_WHEELS
+    Assert-LastExit "Channel wheel build failed"
+    $CHANNEL_HOST_WHEELS = @(Get-ChildItem $CHANNEL_WHEELS -Filter "qwenpaw-*.whl")
+    if ($CHANNEL_HOST_WHEELS.Count -ne 1) { throw "Expected one channel host wheel" }
+    $HOST_WHEEL = $CHANNEL_HOST_WHEELS[0].FullName
+} else {
+    # Select only channel dependencies from the legacy shared pool.
+    & $NATIVE_HOST_PYTHON -m pip download --no-index --only-binary=:all: `
+        --find-links $DESKTOP_WHEELS `
+        --dest $CHANNEL_WHEELS "${HOST_WHEEL}[channels]"
+    Assert-LastExit "Channel wheel resolution failed"
+}
 $RUNTIME_RELEASE = (Get-Content (Join-Path $PYTHON_RUNTIME_DIR ".python-runtime-version") -Raw).Trim()
 & $PYTHON_BIN (Join-Path $PSScriptRoot "stage_channel_runtime.py") `
     --python $NATIVE_HOST_PYTHON --wheel $HOST_WHEEL `
@@ -442,7 +457,9 @@ if ($LAYERED_DESKTOP) {
     Assert-LastExit "Failed to assemble versioned desktop runtime layout"
 
     $previousPythonPath = $env:PYTHONPATH
+    $previousDontWriteBytecode = $env:PYTHONDONTWRITEBYTECODE
     try {
+        $env:PYTHONDONTWRITEBYTECODE = "1"
         $activeLayout = Get-Content (Join-Path $BINARIES_DIR 'state\active.json') -Raw | ConvertFrom-Json
         $dependencyRelativePath = $activeLayout.components.'python-packages'.path
         $runtimeRelativePath = $activeLayout.components.'python-runtime'.path
@@ -462,6 +479,7 @@ if ($LAYERED_DESKTOP) {
         Assert-LastExit "Layered Python dependencies cannot run the Native Messaging host"
     } finally {
         $env:PYTHONPATH = $previousPythonPath
+        $env:PYTHONDONTWRITEBYTECODE = $previousDontWriteBytecode
     }
     Write-Host "Layered desktop runtime assembled; frozen backend removed from shipping resources" -ForegroundColor Green
     Write-Host ""

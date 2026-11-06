@@ -591,7 +591,8 @@ class TestInstallCommandOffline:
 
         monkeypatch.setattr(PluginLoader, "create", create)
         monkeypatch.setattr(
-            "qwenpaw.plugins.channel_bootstrap.resolve_default_channel_runtime",
+            "qwenpaw.plugins.channel_bootstrap."
+            "resolve_default_channel_runtime",
             lambda: None,
         )
         cleanup_attempts = []
@@ -1122,16 +1123,18 @@ def test_offline_force_install_respects_durable_commit(
         pc.plugin,
         ["install", str(source), "--force"],
     )
-    assert result.exit_code != 0
     assert f"{failure_stage} blocked" in result.output
-    assert "installed successfully" not in result.output
     version = json.loads((old / "plugin.json").read_text())["version"]
     marker = updates.marker_path("demo")
     if failure_stage == "commit":
+        assert result.exit_code != 0
+        assert "installed successfully" not in result.output
         assert version == "1.0.0"
         assert (old / "user.txt").read_text() == "old data"
         assert not marker.exists()
     else:
+        assert result.exit_code == 0
+        assert "installed successfully" in result.output
         assert version == "2.0.0"
         saved = json.loads(marker.read_text())
         assert saved["status"] == "committed"

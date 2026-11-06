@@ -14,6 +14,7 @@ use tauri_plugin_log::{Target, TargetKind};
 
 mod command;
 pub(crate) mod daemon;
+mod python_cache;
 pub(crate) mod runtime;
 mod status;
 

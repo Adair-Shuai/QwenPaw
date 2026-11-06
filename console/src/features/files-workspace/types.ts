@@ -23,7 +23,7 @@ export interface FileTarget {
   path: string;
   root?: WorkspaceRoot;
   /** Explicit rendering intent for formats that support both text and GenUI. */
-  preferredView?: "text" | "visualization";
+  preferredView?: "text" | "visualization" | "browser";
   /** Latest file metadata, supplied by the native file loader. */
   size?: number;
   /** Stable URL emitted by a chat tool result for a historical artifact. */
@@ -43,6 +43,12 @@ export type WorkbenchMode =
   | "compute"
   | "simulation"
   | "interactions";
+
+/** A browser visit references the native editor buffer, never a second copy. */
+export interface WorkbenchBrowserFile {
+  tabPath: string;
+  requestId: number;
+}
 
 export type FilesDrawerState =
   | { kind: "closed" }

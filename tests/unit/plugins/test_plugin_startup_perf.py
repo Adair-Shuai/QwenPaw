@@ -17,8 +17,10 @@ launch" bug:
 
 from __future__ import annotations
 
+import asyncio
 import json
 from pathlib import Path
+import threading
 
 import pytest
 
@@ -196,6 +198,88 @@ async def test_registered_plugins_are_not_rechecked_on_second_boot_phase(
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("bounded_dependency_environment")
+async def test_startup_ranks_only_current_unloaded_plugin_candidates(
+    tmp_path,
+    monkeypatch,
+    fresh_registry,
+):
+    """Real two-phase loading avoids probes for excluded and loaded plugins."""
+    _plugin(tmp_path, "a-missing", "qwenpaw-ranking-missing-package==1.0")
+    _plugin(tmp_path, "z-ready")
+    loader = PluginLoader([tmp_path])
+    loader.registry = fresh_registry
+    loop_thread = threading.get_ident()
+    probes = []
+    original = loader._find_unsatisfied_dependencies
+
+    def count(requirements):
+        probes.append((requirements.parent.name, threading.get_ident()))
+        return original(requirements)
+
+    monkeypatch.setattr(loader, "_find_unsatisfied_dependencies", count)
+    assert await loader.load_all_plugins(types=["channel"]) == {}
+    assert probes == []
+    try:
+        records = await loader.load_all_plugins(types=["general"])
+        assert list(records) == ["z-ready", "a-missing"]
+        assert records["z-ready"].status == "registered"
+        assert records["a-missing"].status == "failed"
+        assert sorted(name for name, _thread in probes) == [
+            "a-missing",
+            "z-ready",
+        ]
+        assert all(thread != loop_thread for _name, thread in probes)
+        probes.clear()
+        await loader.load_all_plugins()
+        assert probes == []
+    finally:
+        await loader.unload_plugin("z-ready")
+
+
+@pytest.mark.asyncio
+@pytest.mark.usefixtures("bounded_dependency_environment")
+async def test_startup_metadata_probe_keeps_event_loop_responsive(
+    tmp_path,
+    monkeypatch,
+    fresh_registry,
+):
+    """A delayed real metadata probe must allow an async peer to proceed."""
+    _plugin(tmp_path, "ready")
+    loader = PluginLoader([tmp_path])
+    loader.registry = fresh_registry
+    entered = threading.Event()
+    released = threading.Event()
+    original = loader._find_unsatisfied_dependencies
+
+    def wait_then_probe(requirements):
+        entered.set()
+        assert released.wait(3), "startup ranking blocked the event loop"
+        return original(requirements)
+
+    async def peer():
+        while not entered.is_set():
+            await asyncio.sleep(0)
+        released.set()
+
+    monkeypatch.setattr(
+        loader,
+        "_find_unsatisfied_dependencies",
+        wait_then_probe,
+    )
+    peer_task = asyncio.create_task(peer())
+    try:
+        records = await loader.load_all_plugins()
+        assert records["ready"].status == "registered"
+        await peer_task
+    finally:
+        released.set()
+        peer_task.cancel()
+        await asyncio.gather(peer_task, return_exceptions=True)
+        await loader.unload_plugin("ready")
+
+
+@pytest.mark.asyncio
 async def test_missing_boot_dependency_can_be_repaired_explicitly(
     tmp_path,
     monkeypatch,
@@ -212,11 +296,10 @@ async def test_missing_boot_dependency_can_be_repaired_explicitly(
 def test_satisfied_cache_is_lock_guarded() -> None:
     """Guard: satisfied-cache reads/writes must hold _SATISFIED_LOCK."""
     import inspect as _inspect
-    import threading as _threading
 
     assert isinstance(
         loader_mod._SATISFIED_LOCK,
-        type(_threading.Lock()),
+        type(threading.Lock()),
     ), "_SATISFIED_LOCK must be a threading.Lock"
     source = _inspect.getsource(
         loader_mod.PluginLoader._find_unsatisfied_dependencies,

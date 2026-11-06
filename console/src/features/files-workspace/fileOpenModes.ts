@@ -63,6 +63,8 @@ export function supportsOilGasVisualization(path: string): boolean {
 }
 
 export function withDefaultFileView(target: FileTarget): FileTarget {
+  if (!target.preferredView && /\.html?$/i.test(target.path))
+    return { ...target, preferredView: "browser" };
   if (target.preferredView || !isEclipseTextDeck(target.path)) return target;
   return { ...target, preferredView: "text" };
 }

@@ -3,6 +3,7 @@
 
 import os
 from pathlib import Path
+import plistlib
 import shutil
 import subprocess
 import zipfile
@@ -33,6 +34,7 @@ def _run(tmp_path, script, *args):
             "HOME": str(tmp_path / "home"),
             "GITHUB_ENV": str(tmp_path / "github-env"),
             "COMMAND_LOG": str(tmp_path / "commands.log"),
+            "RUNNER_TEMP": str(tmp_path),
         },
         capture_output=True,
         text=True,
@@ -81,25 +83,36 @@ def test_signing_skips_debug_symbols_and_keeps_native_signatures(
 def test_launcher_uses_real_top_level_app(tmp_path, missing):
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir()
-    _command(bin_dir, "open", 'printf "%s\\n" "$1" >> "$COMMAND_LOG"\n')
+    _command(bin_dir, "uuidgen", "echo 01234567-89ab-cdef-0123-456789abcdef\n")
     for name in ("xattr", "sleep", "ps", "curl"):
         _command(bin_dir, name, "exit 0\n")
     app = "QwenPaw Desktop.app"
     dist = tmp_path / "dist"
     dist.mkdir()
     with zipfile.ZipFile(
-        dist / "QwenPaw-Tauri-test-macOS.zip",
+        dist / "UGSci-Tauri-test-macOS.zip",
         "w",
     ) as archive:
         archive.writestr(f"__MACOSX/{app}/._Contents", b"metadata")
         if missing != "app":
-            archive.writestr(f"{app}/Contents/Info.plist", b"plist")
+            archive.writestr(
+                f"{app}/Contents/Info.plist",
+                plistlib.dumps({"CFBundleExecutable": "qwenpaw-desktop"}),
+            )
             if missing != "executable":
                 executable = zipfile.ZipInfo(
                     f"{app}/Contents/MacOS/qwenpaw-desktop",
                 )
                 executable.external_attr = 0o100755 << 16
-                archive.writestr(executable, b"binary")
+                archive.writestr(
+                    executable,
+                    "#!/usr/bin/env bash\n"
+                    'printf "%s\\n" "$0" >> "$COMMAND_LOG"\n'
+                    'printf "%s\\n" "$QWENPAW_UI_VERIFY_NONCE" '
+                    '>> "$COMMAND_LOG"\n'
+                    'mkdir -p "$HOME/.qwenpaw"\n'
+                    'echo 12345 > "$HOME/.qwenpaw/desktop_port"\n',
+                )
     port = tmp_path / "home/.qwenpaw/desktop_port"
     port.parent.mkdir(parents=True)
     port.write_text("12345")
@@ -112,7 +125,20 @@ def test_launcher_uses_real_top_level_app(tmp_path, missing):
         assert not log.exists(), "invalid bundle must not be launched"
     else:
         assert result.returncode == 0, result.stdout + result.stderr
-        assert log.read_text().splitlines() == [f"dist/verify-tauri/{app}"]
-        assert (tmp_path / "github-env").read_text() == (
-            "BASE_URL=http://127.0.0.1:12345\n"
+        environment = dict(
+            line.split("=", 1)
+            for line in (tmp_path / "github-env").read_text().splitlines()
+        )
+        verify_root = Path(environment["TAURI_VERIFY_ROOT"])
+        assert verify_root.parent == tmp_path
+        assert log.read_text().splitlines() == [
+            str(verify_root / app / "Contents/MacOS/qwenpaw-desktop"),
+            "0123456789abcdef0123456789abcdef",
+        ]
+        assert environment["BASE_URL"] == "http://127.0.0.1:12345"
+        assert environment["QWENPAW_UI_VERIFY_NONCE"] == (
+            "0123456789abcdef0123456789abcdef"
+        )
+        assert environment["QWENPAW_UI_VERIFY_REPORT_PATH"] == str(
+            tmp_path / "qwenpaw-native-ui-report.json",
         )

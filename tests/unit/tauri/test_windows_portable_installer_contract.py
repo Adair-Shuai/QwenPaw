@@ -138,7 +138,7 @@ def test_cli_launcher_uses_python_module_entry_point() -> None:
     )
     source = launcher.read_text(encoding="utf-8")
 
-    assert 'new List<string> { "-m", "qwenpaw" }' in source
+    assert 'new List<string> { "-B", "-m", "qwenpaw" }' in source
     assert '"qwenpaw.cli.main"' not in source
     assert "python -m qwenpaw reaches src/qwenpaw/__main__.py" in source
 

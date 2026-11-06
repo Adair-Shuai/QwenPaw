@@ -402,6 +402,13 @@ internal static class UGSciUpdateAssistant
             {
                 long total = 0; foreach (ZipArchiveEntry entry in archive.Entries) total += Math.Max(0, entry.Length);
                 long completed = 0;
+                // A desktop runtime contains tens of thousands of small files.
+                // Keep one buffer for the operation rather than allocating a
+                // large object (and scheduling a UI/log update) for every file.
+                byte[] buffer = new byte[1024 * 1024];
+                var progressClock = Stopwatch.StartNew();
+                int lastReportedPercent = -1;
+                string lastEntry = "";
                 foreach (ZipArchiveEntry entry in archive.Entries)
                 {
                     string name = entry.FullName.Replace('/', Path.DirectorySeparatorChar);
@@ -434,15 +441,25 @@ internal static class UGSciUpdateAssistant
                     using (Stream input = entry.Open())
                     using (var target = new FileStream(ioOutput, FileMode.CreateNew, FileAccess.Write, FileShare.None))
                     {
-                        byte[] buffer = new byte[1024 * 1024]; int read;
+                        int read;
                         while ((read = input.Read(buffer, 0, buffer.Length)) > 0)
                         {
                             target.Write(buffer, 0, read);
                             completed += read;
-                            report(total == 0 ? 100 : (int)Math.Min(100, completed * 100 / total), entry.FullName);
+                            int percent = total == 0 ? 0 : (int)Math.Min(99, completed * 100 / total);
+                            if (lastReportedPercent < 0 || progressClock.ElapsedMilliseconds >= 100)
+                            {
+                                report(percent, entry.FullName);
+                                lastReportedPercent = percent;
+                                progressClock.Restart();
+                            }
                         }
                     }
+                    lastEntry = entry.FullName;
                 }
+                // Empty files and directory-only packages still finish their
+                // progress stage; errors leave before this success notification.
+                report(100, lastEntry);
             }
         }
 

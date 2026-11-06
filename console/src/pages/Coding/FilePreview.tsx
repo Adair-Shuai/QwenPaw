@@ -124,6 +124,8 @@ export interface FilePreviewProps {
   onOpenWorkspaceFile?: (path: string) => void;
   onOpenFile?: (path: string) => void;
   onMemoryTagClick?: (tag: string) => void;
+  onOpenHtmlInBrowser?: () => void;
+  showHtmlOpenButton?: boolean;
 }
 
 export default function FilePreview({
@@ -141,6 +143,8 @@ export default function FilePreview({
   onOpenWorkspaceFile,
   onOpenFile,
   onMemoryTagClick,
+  onOpenHtmlInBrowser,
+  showHtmlOpenButton = true,
 }: FilePreviewProps) {
   const openWorkspaceFile =
     onOpenWorkspaceFile ??
@@ -252,7 +256,8 @@ export default function FilePreview({
     </PreviewBoundary>
   );
 
-  if (getPreviewType(filePath) !== "html") return preview;
+  if (getPreviewType(filePath) !== "html" || !showHtmlOpenButton)
+    return preview;
   return (
     <div className={styles.htmlWrap}>
       <div className={styles.htmlToolbar}>
@@ -260,15 +265,17 @@ export default function FilePreview({
           type="button"
           className={styles.htmlOpenButton}
           onClick={() =>
-            openHtmlFile({
-              content: artifact.textContent ?? content,
-              filePath: artifact.workspacePath ?? filePath,
-              chatId: artifact.chatId,
-              projectDirOverride: artifact.projectDirOverride,
-              root: artifact.workspaceRoot ?? root,
-              workspaceBacked,
-              artifact,
-            })
+            onOpenHtmlInBrowser
+              ? onOpenHtmlInBrowser()
+              : openHtmlFile({
+                  content: artifact.textContent ?? content,
+                  filePath: artifact.workspacePath ?? filePath,
+                  chatId: artifact.chatId,
+                  projectDirOverride: artifact.projectDirOverride,
+                  root: artifact.workspaceRoot ?? root,
+                  workspaceBacked,
+                  artifact,
+                })
           }
         >
           <ExternalLink size={14} strokeWidth={1.5} aria-hidden="true" />

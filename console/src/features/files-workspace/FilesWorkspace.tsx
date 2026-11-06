@@ -64,6 +64,7 @@ interface FilesWorkspaceProps {
   active?: boolean;
   onActiveTargetChange?: (target: FileTarget | undefined) => void;
   onBrowseMemoryTag?: () => void;
+  onOpenBrowser?: (tabPath: string) => void;
 }
 
 function inferPreviewKind(
@@ -106,6 +107,7 @@ export default function FilesWorkspace({
   active = true,
   onActiveTargetChange,
   onBrowseMemoryTag,
+  onOpenBrowser,
 }: FilesWorkspaceProps) {
   const { t } = useTranslation();
   const { codingMode } = useCodingMode();
@@ -614,6 +616,8 @@ export default function FilesWorkspace({
           if (existing.source === "artifact" && existing.artifact)
             targetsByTab.current.delete(tabPath);
           activateTab(tabPath);
+          if (resolvedTarget.preferredView === "browser")
+            onOpenBrowser?.(tabPath);
           return;
         }
         targetsByTab.current.set(tabPath, resolvedTarget);
@@ -643,6 +647,8 @@ export default function FilesWorkspace({
         revalidatedScope.current = scopeKey;
         setActiveTab(scopeKey, tabPath);
         setMobilePane("document");
+        if (resolvedTarget.preferredView === "browser")
+          onOpenBrowser?.(tabPath);
       } catch (error) {
         if (
           mountedRef.current &&
@@ -659,6 +665,7 @@ export default function FilesWorkspace({
       getMemoryConfig,
       loadTarget,
       openTab,
+      onOpenBrowser,
       resolveEditableTarget,
       scopeKey,
       setActiveTab,
@@ -1033,6 +1040,7 @@ export default function FilesWorkspace({
             }}
             onMemoryTagClick={memoryTagsSupported ? showMemoryTag : undefined}
             onOpenFile={openTarget}
+            onOpenHtmlInBrowser={onOpenBrowser ? openTarget : undefined}
             onFileSaved={() => setMemoryTagsRevision((value) => value + 1)}
             onDownloadFile={async (path) => {
               const tab = tabsRef.current.find((item) => item.path === path);

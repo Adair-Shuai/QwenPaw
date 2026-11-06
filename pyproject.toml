@@ -24,10 +24,12 @@ dependencies = [
     "reme-ai==0.4.2.0",
     "reme-auto-fin==0.1.3",
     "reme-daily-paper==0.1.3",
-    "transformers>=4.30.0",
+    # Preserve ReMe exact local tokenization without the inference stack.
+    "tokenizers>=0.21,<1",
+    # UGSci formula parsing previously received this through ONNX Runtime.
+    "sympy>=1.12,<2",
     "python-dotenv>=1.0.0",
     "python-socks>=2.5.3",
-    "onnxruntime<1.24",
     "pywebview>=4.0",
     "aiofiles>=24.1.0",
     "shortuuid>=1.0.0",
@@ -174,6 +176,11 @@ dev = [
 local = [
     "huggingface_hub>=0.20.0",
 ]
+ml = [
+    # Optional inference libraries; default memory/tokenization stays lightweight.
+    "transformers>=4.30.0",
+    "onnxruntime<1.24",
+]
 hub = [
     "docker>=7.1.0,<8",
 ]
@@ -237,7 +244,7 @@ channels = [
 ]
 full = [
     "qwenpaw[channels]",
-    "qwenpaw[qwenpaw-data,hub,local,whisper,codex,qoder]",
+    "qwenpaw[qwenpaw-data,hub,local,ml,whisper,codex,qoder]",
 ]
 sip = [
     "pyVoIP>=1.6.0",

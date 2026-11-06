@@ -45,6 +45,7 @@ const suites = {
   interfaceAppearance: [
     "src/pages/Chat/components/ChatHome.test.tsx",
     "src/pages/Chat/components/ExecutionProcess.test.tsx",
+    "src/pages/Chat/HostBubbles.upstream-collapse.test.tsx",
     "src/pages/Chat/components/ComposerAddMenu.test.tsx",
     "src/utils/actionColors.test.ts",
     "src/pages/Market/index.test.tsx",
@@ -624,6 +625,10 @@ requireCases(
   ],
 );
 requireCases("src/features/files-workspace/FilesDrawer.test.tsx", [
+  "opens %s in the scoped browser by default without creating a popup",
+  "opens edited HTML from the preview button in the browser using the same dirty buffer",
+  "does not let a slow HTML load replace a deliberately selected GenUI panel",
+  "keeps archived HTML resources in their original turn when opened in the browser",
   "restores per-style file widths without replacing the active editor or its unsaved draft",
   "clears closed file actions instead of falling back to the opening request",
   "retains browser history, address drafts and the iframe across tool switches",
@@ -714,6 +719,15 @@ requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
 requireCases("src/pages/Chat/HostBubbles.render.test.tsx", [
   "shows real execution transitions in the mounted response without mistaking delivered arguments for completion",
   "mounts the persisted turn file summary in the real response and opens an immutable scoped version",
+]);
+requireCases("src/pages/Chat/HostBubbles.upstream-collapse.test.tsx", [
+  "opens the current process while running and remounts it closed around the final answer",
+  "applies %s to intermediate text and native process groups",
+  "closes a %s turn and exposes a dangling native tool as interrupted",
+  "keeps native thinking and tool disclosure independent inside the outer group",
+  "hides thinking live without removing the native tool or final answer in expanded mode",
+  "lazily mounts a real plugin record and preserves its draft, updates, and actions while open",
+  "keeps approval requests visible outside process groups in %s",
 ]);
 requireCases("src/pages/Chat/components/ExecutionProcess.test.tsx", [
   "lazily opens real native plugin records and preserves their live props and actions",

@@ -2,11 +2,16 @@
 """Tests for the b7 versioned desktop runtime layout."""
 
 from importlib.util import module_from_spec, spec_from_file_location
+import base64
+import csv
+import hashlib
+import io
 import json
 import re
 from pathlib import Path
 import sys
 import tomllib
+import zipfile
 
 from packaging.requirements import Requirement
 from packaging.version import Version
@@ -14,6 +19,7 @@ from packaging.version import Version
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HELPER = REPO_ROOT / "scripts" / "pack-tauri" / "assemble_desktop_layout.py"
 PYTHON_LAYERS = REPO_ROOT / "scripts" / "pack-tauri" / "build_python_layers.py"
+sys.path.insert(0, str(HELPER.parent))
 
 
 def test_desktop_lock_tracks_the_declared_classifier_sdk():
@@ -147,6 +153,133 @@ def test_dependency_layer_digest_is_a_valid_component_version():
     value = helper._dependency_version("e3028883b2090145" + "0" * 48)
     assert value == "0+sha.e3028883b2090145"
     assert str(Version(value)) == value
+
+
+def _write_layer_fixture_wheel(directory, name, version, files):
+    """Create an offline wheel consumed by the real pip installer."""
+    metadata = f"{name}-{version}.dist-info"
+    files = {
+        **files,
+        f"{metadata}/METADATA": (
+            f"Metadata-Version: 2.1\nName: {name}\nVersion: {version}\n"
+        ).encode(),
+        f"{metadata}/WHEEL": (
+            "Wheel-Version: 1.0\nGenerator: layer-regression\n"
+            "Root-Is-Purelib: true\nTag: py3-none-any\n"
+        ).encode(),
+    }
+    records = io.StringIO(newline="")
+    writer = csv.writer(records, lineterminator="\n")
+    for relative, content in sorted(files.items()):
+        digest = base64.urlsafe_b64encode(
+            hashlib.sha256(content).digest(),
+        ).rstrip(b"=")
+        writer.writerow((relative, f"sha256={digest.decode()}", len(content)))
+    writer.writerow((f"{metadata}/RECORD", "", ""))
+    files[f"{metadata}/RECORD"] = records.getvalue().encode()
+    destination = directory / f"{name}-{version}-py3-none-any.whl"
+    with zipfile.ZipFile(destination, "w") as archive:
+        for relative, content in sorted(files.items()):
+            info = zipfile.ZipInfo(relative, (1980, 1, 1, 0, 0, 0))
+            archive.writestr(info, content)
+    return destination
+
+
+def test_python_layers_real_installs_stay_stable_after_import_validation(
+    tmp_path,
+    monkeypatch,
+):
+    """Identical local wheels produce reusable layers without build caches."""
+    helper = _load_python_layers()
+    repo = tmp_path / "repo"
+    console = repo / "console/dist"
+    console.mkdir(parents=True)
+    (console / "index.html").write_text("console", encoding="utf-8")
+    (repo / "src/qwenpaw").mkdir(parents=True)
+    wheelhouse = repo / "wheelhouse"
+    wheelhouse.mkdir()
+    dependencies = _write_layer_fixture_wheel(
+        wheelhouse,
+        "qwenpaw_layer_fixture",
+        "1.0",
+        {
+            "xlrd.py": b"VALUE = 1\n",
+            "modelscope/__init__.py": b"",
+            "modelscope/hub/__init__.py": b"",
+            "modelscope/hub/api.py": b"VALUE = 2\n",
+        },
+    )
+    dependency_hash = hashlib.sha256(dependencies.read_bytes()).hexdigest()
+    (repo / "requirements-desktop.lock").write_text(
+        "--no-index\n"
+        f"--find-links {wheelhouse.as_uri()}\n"
+        "qwenpaw-layer-fixture==1.0 "
+        f"--hash=sha256:{dependency_hash}\n",
+        encoding="utf-8",
+    )
+    original_run = helper._run  # pylint: disable=protected-access
+    validations = []
+    wheel_paths = []
+
+    def run_with_fixture_wheel(command, *, cwd, env=None):
+        if command[1:3] == ["-m", "build"]:
+            wheels = Path(command[command.index("--outdir") + 1])
+            wheel_paths.append(
+                _write_layer_fixture_wheel(
+                    wheels,
+                    "qwenpaw",
+                    "2.2.2b9",
+                    {
+                        "qwenpaw/__init__.py": b"",
+                        "qwenpaw/tauri/__init__.py": b"",
+                        "qwenpaw/tauri/entry.py": b"import xlrd\n",
+                        "qwenpaw/cli/__init__.py": b"",
+                        "qwenpaw/cli/init_cmd.py": b"import xlrd\n",
+                        "qwenpaw/app/__init__.py": b"",
+                        "qwenpaw/app/_app.py": b"import modelscope.hub.api\n",
+                        "qwenpaw/console/index.html": (
+                            repo / "src/qwenpaw/console/index.html"
+                        ).read_bytes(),
+                    },
+                ),
+            )
+            return
+        if command[1:2] == ["-c"]:
+            validations.append(dict(env))
+        original_run(command, cwd=cwd, env=env)
+
+    # Windows callers do not normally set this globally. The builder must
+    # protect its own validation subprocess instead of relying on its caller.
+    monkeypatch.delenv("PYTHONDONTWRITEBYTECODE", raising=False)
+    monkeypatch.setattr(helper, "_run", run_with_fixture_wheel)
+    inventories = []
+    for index in range(2):
+        output = tmp_path / f"build-{index}"
+        helper.build_layers(
+            repo,
+            Path(sys.executable),
+            Path(sys.executable),
+            output,
+            "2.2.2b9",
+        )
+        assert not list(output.rglob("__pycache__"))
+        assert not list(output.rglob("*.pyc"))
+        assert not list(output.rglob("direct_url.json"))
+        inventories.append(
+            {
+                path.relative_to(output)
+                .as_posix(): hashlib.sha256(
+                    path.read_bytes(),
+                )
+                .hexdigest()
+                for path in output.rglob("*")
+                if path.is_file()
+            },
+        )
+    assert wheel_paths[0].parent != wheel_paths[1].parent
+    assert len(validations) == 2
+    assert all(env["PYTHONDONTWRITEBYTECODE"] == "1" for env in validations)
+    assert inventories[0] == inventories[1]
 
 
 def test_python_layer_console_staging_requires_built_console(tmp_path):

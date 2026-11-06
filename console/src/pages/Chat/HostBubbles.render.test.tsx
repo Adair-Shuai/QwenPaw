@@ -48,6 +48,21 @@ vi.mock("react-i18next", async (importOriginal) => ({
 }));
 // Keep the real vendor Request/Card and SDK contexts. Only visual leaves are
 // stubbed: the shared test design alias omits vendor ConfigProvider internals.
+vi.mock("@agentscope-ai/design", async (importOriginal) => {
+  const design = await importOriginal<Record<string, unknown>>();
+  const { createContext } = await import("react");
+  const ConfigContext = createContext({
+    getPrefixCls: (suffix?: string) =>
+      suffix ? `test-chat-${suffix}` : "test-chat",
+  });
+  return {
+    ...design,
+    ConfigProvider: Object.assign(
+      ({ children }: { children?: ReactNode }) => <>{children}</>,
+      { ConfigContext },
+    ),
+  };
+});
 vi.mock("@agentscope-ai/icons", async (importOriginal) => {
   const icons = await importOriginal<Record<string, unknown>>();
   const placeholder = () => <span />;
@@ -376,9 +391,13 @@ describe("merged host bubbles behavior", () => {
     await act(async () => {
       setAssistantMessageDisplayPreference("process-collapsed");
     });
-    expect(
-      screen.getByRole("button", { name: /chat.execution.complete/ }),
-    ).toHaveAttribute("aria-expanded", "false");
+    const collapsedHeader = screen
+      .getByText("chat.messageDisplay.stepsCompleted")
+      .closest('[class*="-accordion-group-header-close"]');
+    expect(collapsedHeader).not.toBeNull();
+    expect(screen.queryByText("tool content")).not.toBeInTheDocument();
+    fireEvent.click(collapsedHeader!);
+    expect(screen.getByText("tool content")).toBeVisible();
     expect(screen.getByTestId("response-actions")).toHaveTextContent(
       "sdk-message-id",
     );
@@ -477,30 +496,31 @@ it("shows real execution transitions in the mounted response without mistaking d
   const { container, rerender } = render(
     view(AgentScopeRuntimeRunStatus.InProgress, [call]),
   );
-  expect(
-    container.querySelector('[data-execution-state="running"]'),
-  ).toBeTruthy();
-  expect(
-    screen.getByRole("button", { name: /chat.execution.active/ }),
-  ).toHaveAttribute("aria-expanded", "true");
-  expect(screen.queryByText("tool content")).not.toBeInTheDocument();
-  fireEvent.click(
-    screen.getByRole("button", { name: /chat.execution.actions.readFile/ }),
+  const header = (title: string) =>
+    screen
+      .getByText(title)
+      .closest<HTMLElement>(
+        '[class*="-accordion-group-header-open"], [class*="-accordion-group-header-close"]',
+      )!;
+  expect(header("chat.messageDisplay.stepsRunning").className).toContain(
+    "-header-open",
   );
-  await act(async () =>
-    fireEvent.click(screen.getByText("chat.execution.viewRecord")),
-  );
-  expect(await screen.findByText("tool content")).toBeVisible();
-  rerender(view(AgentScopeRuntimeRunStatus.Completed, [call, output]));
-  const complete = screen.getByRole("button", {
-    name: /chat.execution.complete/,
-  });
-  expect(complete).toHaveAttribute("aria-expanded", "false");
+  expect(screen.getByText("tool content")).toBeVisible();
+  const answer = {
+    id: "final-message",
+    type: AgentScopeRuntimeMessageType.MESSAGE,
+    role: "assistant",
+    status: AgentScopeRuntimeRunStatus.Completed,
+    content: [{ type: "text", text: "Final answer remains visible" }],
+  };
+  rerender(view(AgentScopeRuntimeRunStatus.Completed, [call, output, answer]));
+  const complete = header("chat.messageDisplay.stepsCompleted");
+  expect(complete.className).toContain("-header-close");
   expect(screen.queryByText("tool content")).not.toBeInTheDocument();
+  expect(screen.getByText("Final answer remains visible")).toBeVisible();
   fireEvent.click(complete);
-  expect(
-    container.querySelectorAll('[data-execution-state="returned"]'),
-  ).toHaveLength(1);
+  expect(screen.getAllByText("tool content")).toHaveLength(1);
+  expect(complete.className).toContain("-header-open");
   rerender(
     view(AgentScopeRuntimeRunStatus.Failed, [
       call,
@@ -515,20 +535,16 @@ it("shows real execution transitions in the mounted response without mistaking d
       },
     ]),
   );
-  fireEvent.click(
-    screen.getByRole("button", { name: /chat.execution.failedCount/ }),
-  );
-  expect(
-    container.querySelector('[data-execution-state="failed"]'),
-  ).toBeTruthy();
+  const failed = header("chat.messageDisplay.stepsFailed");
+  expect(failed.className).toContain("-header-close");
+  expect(screen.queryByText("tool content")).not.toBeInTheDocument();
+  fireEvent.click(failed);
+  expect(screen.getByText("tool content")).toBeVisible();
   rerender(view(AgentScopeRuntimeRunStatus.Canceled, [call]));
-  fireEvent.click(
-    screen.getByRole("button", { name: /chat.execution.interruptedCount/ }),
-  );
-  expect(
-    container.querySelector('[data-execution-state="interrupted"]'),
-  ).toBeTruthy();
-  expect(
-    container.querySelector('[data-execution-state="running"]'),
-  ).toBeNull();
+  const canceled = header("chat.messageDisplay.stepsCanceled");
+  expect(canceled.className).toContain("-header-close");
+  expect(screen.queryByText("tool content")).not.toBeInTheDocument();
+  fireEvent.click(canceled);
+  expect(screen.getByText("tool content")).toBeVisible();
+  expect(container.querySelector("[data-execution-process]")).toBeNull();
 });

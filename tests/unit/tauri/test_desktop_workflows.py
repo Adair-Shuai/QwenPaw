@@ -160,10 +160,10 @@ def test_download_helper_resolves_verifier_from_its_own_checkout() -> None:
     reason="Desktop manifest upload steps run in Bash on Ubuntu",
 )
 @pytest.mark.parametrize(
-    ("workflow_name", "job_name"),
+    "repository",
     [
-        ("desktop-promote.yml", "promote-oss"),
-        ("desktop-release.yml", "upload-oss"),
+        "agentscope-ai/QwenPaw",
+        "Adair-Shuai/QwenPaw",
     ],
 )
 @pytest.mark.parametrize(
@@ -182,13 +182,23 @@ def test_download_helper_resolves_verifier_from_its_own_checkout() -> None:
 )
 def test_desktop_updater_manifest_only_publishes_stable_versions(
     tmp_path,
-    workflow_name,
-    job_name,
+    repository,
     version,
     expected,
 ) -> None:
     """Execute the real upload step with a local substitute for OSS."""
-    steps = _load_workflow(workflow_name)["jobs"][job_name]["steps"]
+    steps = _load_workflow("desktop-promote.yml")["jobs"]["promote-oss"][
+        "steps"
+    ]
+    if repository == "Adair-Shuai/QwenPaw":
+        expected = {
+            "2.3.0a1": "2.3.0-alpha.1",
+            "2.3.0b2": "2.3.0-beta.2",
+            "2.3.0-beta.2": "2.3.0-beta.2",
+            "2.3.0rc1": "2.3.0-rc.1",
+            "2.3.0.dev1": "2.3.0-dev.1",
+            "2.3.0.post1.dev1": "2.3.0-dev.1+post.1",
+        }.get(version, expected)
     step = next(
         step
         for step in steps
@@ -220,6 +230,22 @@ def test_desktop_updater_manifest_only_publishes_stable_versions(
     gh = bin_dir / "gh"
     gh.write_text("#!/bin/sh\necho 'Test release notes'\n", encoding="utf-8")
     gh.chmod(0o755)
+    ossutil = bin_dir / "ossutil"
+    ossutil.write_text(
+        "#!/bin/sh\n"
+        'case "$1" in\n'
+        "  ls) exit 0 ;;\n"
+        '  cp) case "$2" in\n'
+        '    oss://*) cp "$PUBLISHED_MANIFEST.staging" '
+        '"$PUBLISHED_MANIFEST" ;;\n'
+        '    *) cp "$2" "$PUBLISHED_MANIFEST.staging" ;;\n'
+        "  esac ;;\n"
+        '  rm) rm -f "$PUBLISHED_MANIFEST.staging" ;;\n'
+        "  *) exit 1 ;;\n"
+        "esac\n",
+        encoding="utf-8",
+    )
+    ossutil.chmod(0o755)
     metadata = tmp_path / "tauri-updater-meta-windows"
     metadata.mkdir()
     (metadata / "installer.exe").write_bytes(b"MZtest")
@@ -230,6 +256,20 @@ def test_desktop_updater_manifest_only_publishes_stable_versions(
                 "target": "windows-x86_64",
                 "artifact": "installer.exe",
                 "signature": "installer.exe.sig",
+            },
+        ),
+        encoding="utf-8",
+    )
+    mac_metadata = tmp_path / "tauri-updater-meta-macos"
+    mac_metadata.mkdir()
+    (mac_metadata / "desktop.app.tar.gz").write_bytes(b"mac-test")
+    (mac_metadata / "desktop.app.tar.gz.sig").write_text("mac-signature")
+    (mac_metadata / "tauri-darwin-aarch64-updater.json").write_text(
+        json.dumps(
+            {
+                "target": "darwin-aarch64",
+                "artifact": "desktop.app.tar.gz",
+                "signature": "desktop.app.tar.gz.sig",
             },
         ),
         encoding="utf-8",
@@ -262,7 +302,9 @@ def test_desktop_updater_manifest_only_publishes_stable_versions(
             "RELEASE_INFRA": str(infrastructure),
             "OSS_BUCKET": "test-bucket",
             "OSS_PUBLIC_BASE_URL": "https://example.test/desktop",
-            "GITHUB_REPOSITORY": "test/repo",
+            "GITHUB_REPOSITORY": repository,
+            "GITHUB_RUN_ID": "test-run",
+            "GITHUB_RUN_ATTEMPT": "1",
             "RELEASE_BODY": "Test release notes",
             "PUBLISHED_MANIFEST": str(published),
         },
@@ -285,6 +327,10 @@ def test_desktop_updater_manifest_only_publishes_stable_versions(
         assert manifest["platforms"]["windows-x86_64"] == {
             "url": "https://example.test/desktop/win-tauri/installer.exe",
             "signature": "test-signature",
+        }
+        assert manifest["platforms"]["darwin-aarch64"] == {
+            "url": "https://example.test/desktop/mac-tauri/desktop.app.tar.gz",
+            "signature": "mac-signature",
         }
 
 

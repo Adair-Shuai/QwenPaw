@@ -258,7 +258,8 @@ def _full_zip(source: Path, output: Path) -> None:
             relative = path.relative_to(source).as_posix()
             info = zipfile.ZipInfo(relative, date_time=(1980, 1, 1, 0, 0, 0))
             info.compress_type = zipfile.ZIP_DEFLATED
-            archive.writestr(info, path.read_bytes())
+            # Explicit ZipInfo entries do not inherit the archive's level.
+            archive.writestr(info, path.read_bytes(), compresslevel=9)
     os.replace(temporary, output)
 
 

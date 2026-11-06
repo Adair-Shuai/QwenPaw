@@ -107,35 +107,12 @@ pub(crate) fn run() -> Result<(), String> {
                 return Err(error.to_string());
             }
         };
-        let mut ready = false;
-        let mut restart_requested = false;
-        let mut initializing = false;
-        let status = loop {
-            let outcome = startup_outcome(&receipt)
-                .unwrap_or_else(|| backend_startup_state(&directory, previous_instance.as_deref()));
-            ready |= outcome == StartupOutcome::Ready;
-            restart_requested |= outcome == StartupOutcome::Restart;
-            initializing |= outcome == StartupOutcome::Starting;
-            if !ready && outcome == StartupOutcome::Failed {
-                terminate_owned_child(child.id())?;
-                break child.wait().map_err(|err| err.to_string())?;
-            }
-            if let Some(status) = child.try_wait().map_err(|err| err.to_string())? {
-                break status;
-            }
-            let timeout = if initializing { 30 * 60 } else { 60 };
-            if !ready && started.elapsed() >= Duration::from_secs(timeout) {
-                // A live startup may prepare offline packages for several minutes.
-                // Bound hung initialization, but do not confuse it with no endpoint.
-                // Kill only this owned child before switching component roots.
-                terminate_owned_child(child.id())?;
-                break child.wait().map_err(|err| err.to_string())?;
-            }
-            std::thread::sleep(Duration::from_millis(100));
-        };
-        // Read once more after exit: a fast apply-and-restart may happen
-        // entirely between polls. Its freshly published pointers must survive.
-        restart_requested |= startup_outcome(&receipt) == Some(StartupOutcome::Restart);
+        let (status, _ready, restart_requested) =
+            watch_backend_child(&mut child, &receipt, started, || {
+                startup_outcome(&receipt).unwrap_or_else(|| {
+                    backend_startup_state(&directory, previous_instance.as_deref())
+                })
+            })?;
         let _ = std::fs::remove_file(&receipt);
         if stop_request.exists() {
             return Ok(());
@@ -145,7 +122,7 @@ pub(crate) fn run() -> Result<(), String> {
             continue;
         }
         #[cfg(not(debug_assertions))]
-        if !ready && selection.has_managed_components() {
+        if !_ready && selection.has_managed_components() {
             super::command::rollback_managed_launcher(selection)?;
             eprintln!("[agent-host] managed startup failed; restored previous runtime");
             continue;
@@ -167,6 +144,50 @@ pub(crate) fn run() -> Result<(), String> {
             return Ok(());
         }
     }
+}
+
+fn watch_backend_child(
+    child: &mut std::process::Child,
+    receipt: &std::path::Path,
+    started: Instant,
+    mut probe: impl FnMut() -> StartupOutcome,
+) -> Result<(std::process::ExitStatus, bool, bool), String> {
+    let mut ready = false;
+    let mut restart_requested = false;
+    let mut initializing = false;
+    let status = loop {
+        let outcome = probe();
+        ready |= outcome == StartupOutcome::Ready;
+        restart_requested |= outcome == StartupOutcome::Restart;
+        initializing |= outcome == StartupOutcome::Starting;
+        if !ready && outcome == StartupOutcome::Failed {
+            terminate_owned_child(child.id())?;
+            break child.wait().map_err(|err| err.to_string())?;
+        }
+        if ready {
+            // Readiness is terminal for this launch. Once confirmed, only
+            // process exit can trigger recovery; the OS wait avoids reopening
+            // the same receipt (or legacy health socket) ten times a second.
+            // Explicit shutdown still terminates the child through its API.
+            break child.wait().map_err(|err| err.to_string())?;
+        }
+        if let Some(status) = child.try_wait().map_err(|err| err.to_string())? {
+            break status;
+        }
+        let timeout = if initializing { 30 * 60 } else { 60 };
+        if started.elapsed() >= Duration::from_secs(timeout) {
+            // A live startup may prepare offline packages for several minutes.
+            // Bound hung initialization, but do not confuse it with no endpoint.
+            // Kill only this owned child before switching component roots.
+            terminate_owned_child(child.id())?;
+            break child.wait().map_err(|err| err.to_string())?;
+        }
+        std::thread::sleep(Duration::from_millis(100));
+    };
+    // A fast apply-and-restart may happen between startup polls or while the
+    // ready process is in the OS wait. Its committed pointers must survive.
+    restart_requested |= startup_outcome(receipt) == Some(StartupOutcome::Restart);
+    Ok((status, ready, restart_requested))
 }
 
 fn published_instance(directory: &std::path::Path) -> Option<String> {
@@ -265,6 +286,221 @@ fn terminate_owned_child(pid: u32) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::io::{Read, Write};
+
+    // Run this test executable as a real backend substitute. It never opens
+    // the user's application or configuration and exits on a private signal.
+    #[test]
+    fn supervised_process_fixture() {
+        let Some(root) = std::env::var_os("QWENPAW_DAEMON_TEST_ROOT") else {
+            return;
+        };
+        let root = PathBuf::from(root);
+        let mode = std::env::var("QWENPAW_DAEMON_TEST_MODE").unwrap();
+        if mode != "unavailable" {
+            let status = if mode == "ready_crash" {
+                "ready"
+            } else {
+                &mode
+            };
+            std::fs::write(
+                root.join("receipt.json"),
+                serde_json::json!({"status": status}).to_string(),
+            )
+            .unwrap();
+        }
+        std::fs::write(root.join("alive"), "1").unwrap();
+        let started = Instant::now();
+        while !root.join("release").exists() {
+            assert!(started.elapsed() < Duration::from_secs(10));
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        if mode == "ready_crash" {
+            std::process::exit(7);
+        }
+        std::fs::write(
+            root.join("receipt.json"),
+            serde_json::json!({"status": "restart"}).to_string(),
+        )
+        .unwrap();
+    }
+
+    struct OwnedFixtureChild(std::process::Child);
+
+    impl Drop for OwnedFixtureChild {
+        fn drop(&mut self) {
+            // Assertion failures must not leave an isolated test process alive.
+            let _ = self.0.kill();
+            let _ = self.0.wait();
+        }
+    }
+
+    fn fixture_child(root: &std::path::Path, mode: &str) -> OwnedFixtureChild {
+        let mut command = Command::new(std::env::current_exe().unwrap());
+        command
+            .args([
+                "--exact",
+                "backend::daemon::tests::supervised_process_fixture",
+                "--nocapture",
+            ])
+            .env("QWENPAW_DAEMON_TEST_ROOT", root)
+            .env("QWENPAW_DAEMON_TEST_MODE", mode)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null());
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x08000000 | 0x00000200);
+        }
+        let mut child = OwnedFixtureChild(command.spawn().unwrap());
+        let deadline = Instant::now();
+        while !root.join("alive").exists() {
+            assert!(child.0.try_wait().unwrap().is_none());
+            assert!(deadline.elapsed() < Duration::from_secs(10));
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        child
+    }
+
+    #[test]
+    fn ready_backend_waits_without_repolling_and_preserves_restart_receipt() {
+        let root = tempfile::tempdir().unwrap();
+        let mut child = fixture_child(root.path(), "ready");
+        let receipt = root.path().join("receipt.json");
+        let release = root.path().join("release");
+        let releaser = std::thread::spawn(move || {
+            std::thread::sleep(Duration::from_millis(650));
+            let released = Instant::now();
+            std::fs::write(release, "1").unwrap();
+            released
+        });
+        let mut probes = 0usize;
+        let started = Instant::now();
+        let (status, ready, restart) = watch_backend_child(&mut child.0, &receipt, started, || {
+            probes += 1;
+            startup_outcome(&receipt).unwrap_or(StartupOutcome::Unavailable)
+        })
+        .unwrap();
+        let observed_exit = Instant::now();
+        let released = releaser.join().unwrap();
+        assert!(status.success());
+        assert!(ready);
+        assert!(
+            restart,
+            "An update receipt written during wait must survive"
+        );
+        assert_eq!(probes, 1, "Readiness is terminal for startup probing");
+        assert!(child.0.try_wait().unwrap().is_some());
+        eprintln!(
+            "native_wait_measurement: held_ms={} probes={} release_to_exit_ms={}",
+            started.elapsed().as_millis(),
+            probes,
+            observed_exit.duration_since(released).as_millis(),
+        );
+    }
+
+    #[test]
+    fn failed_and_unavailable_startup_still_terminate_only_owned_child() {
+        for (mode, elapsed_seconds) in [("failed", 0), ("unavailable", 61), ("starting", 1801)] {
+            let root = tempfile::tempdir().unwrap();
+            let mut child = fixture_child(root.path(), mode);
+            let receipt = root.path().join("receipt.json");
+            let started = Instant::now() - Duration::from_secs(elapsed_seconds);
+            let (status, ready, restart) =
+                watch_backend_child(&mut child.0, &receipt, started, || {
+                    startup_outcome(&receipt).unwrap_or(StartupOutcome::Unavailable)
+                })
+                .unwrap();
+            assert!(
+                !status.success(),
+                "A failed or timed-out child must be stopped"
+            );
+            assert!(!ready);
+            assert!(!restart);
+            assert!(child.0.try_wait().unwrap().is_some());
+        }
+    }
+
+    #[test]
+    fn ready_backend_crash_preserves_status_without_becoming_startup_failure() {
+        let root = tempfile::tempdir().unwrap();
+        let mut child = fixture_child(root.path(), "ready_crash");
+        let receipt = root.path().join("receipt.json");
+        let release = root.path().join("release");
+        let (status, ready, restart) =
+            watch_backend_child(&mut child.0, &receipt, Instant::now(), || {
+                let outcome = startup_outcome(&receipt).unwrap_or(StartupOutcome::Unavailable);
+                if outcome == StartupOutcome::Ready {
+                    std::fs::write(&release, "1").unwrap();
+                }
+                outcome
+            })
+            .unwrap();
+        assert_eq!(status.code(), Some(7));
+        assert!(
+            ready,
+            "A later crash must not roll back a healthy component"
+        );
+        assert!(
+            !restart,
+            "An unrequested crash retains normal failure backoff"
+        );
+        assert!(child.0.try_wait().unwrap().is_some());
+    }
+
+    #[test]
+    fn initializing_backend_keeps_extended_deadline_and_fast_restart_intent() {
+        let root = tempfile::tempdir().unwrap();
+        let mut child = fixture_child(root.path(), "starting");
+        let receipt = root.path().join("receipt.json");
+        let release = root.path().join("release");
+        let mut probes = 0;
+        let (status, ready, restart) = watch_backend_child(
+            &mut child.0,
+            &receipt,
+            Instant::now() - Duration::from_secs(61),
+            || {
+                probes += 1;
+                let outcome = startup_outcome(&receipt).unwrap_or(StartupOutcome::Unavailable);
+                if outcome == StartupOutcome::Starting {
+                    std::fs::write(&release, "1").unwrap();
+                }
+                outcome
+            },
+        )
+        .unwrap();
+        assert!(
+            status.success(),
+            "Starting receives the existing 30-minute budget"
+        );
+        assert!(!ready, "A requested restart is not core readiness");
+        assert!(restart);
+        assert!(probes >= 1);
+        assert!(child.0.try_wait().unwrap().is_some());
+    }
+
+    #[test]
+    fn already_exited_child_still_preserves_restart_between_polls() {
+        let root = tempfile::tempdir().unwrap();
+        let mut child = fixture_child(root.path(), "starting");
+        let receipt = root.path().join("receipt.json");
+        std::fs::write(root.path().join("release"), "1").unwrap();
+        assert!(child.0.wait().unwrap().success());
+        let (status, ready, restart) =
+            watch_backend_child(&mut child.0, &receipt, Instant::now(), || {
+                // A startup observation can be older than the process exit.
+                StartupOutcome::Starting
+            })
+            .unwrap();
+        assert!(status.success());
+        assert!(!ready);
+        assert!(restart, "Always reread this launch's receipt after exit");
+    }
 
     #[test]
     fn published_record_requires_a_new_healthy_backend() {

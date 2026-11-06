@@ -251,6 +251,7 @@ def build_layers(
                 "install",
                 "--disable-pip-version-check",
                 "--no-input",
+                "--no-compile",
                 "--requirement",
                 str(lock),
                 "--require-hashes",
@@ -294,9 +295,16 @@ def build_layers(
                 "--disable-pip-version-check",
                 "--no-input",
                 "--no-deps",
+                "--no-compile",
+                "--no-index",
+                "--find-links",
+                str(wheels),
                 "--target",
                 str(backend),
-                str(wheel),
+                # Resolve the sole local wheel by name so pip does not record
+                # its random temporary path in direct_url.json and RECORD.
+                # The wheel digest below retains the artifact's provenance.
+                f"qwenpaw=={version}",
             ],
             cwd=repo,
         )
@@ -308,6 +316,9 @@ def build_layers(
 
         environment = dict(os.environ)
         environment["PYTHONNOUSERSITE"] = "1"
+        # Validation must not mutate either signed layer with timestamped
+        # bytecode after dependency pruning (especially on Windows).
+        environment["PYTHONDONTWRITEBYTECODE"] = "1"
         environment["PYTHONPATH"] = os.pathsep.join(
             (str(backend), str(dependencies)),
         )

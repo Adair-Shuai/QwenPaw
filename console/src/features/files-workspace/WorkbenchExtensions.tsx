@@ -17,7 +17,12 @@ import {
 import { useTranslation } from "react-i18next";
 import { SlotErrorBoundary } from "../../plugins/registry/Slot";
 import type { FilesWorkspaceScope } from "./filesWorkspaceScope";
-import type { FilesDrawerState, FileTarget, WorkbenchMode } from "./types";
+import type {
+  FilesDrawerState,
+  FileTarget,
+  WorkbenchMode,
+  WorkbenchBrowserFile,
+} from "./types";
 import {
   WorkbenchAgentPanel,
   WorkbenchBrowserPanel,
@@ -35,6 +40,7 @@ interface WorkbenchPanelContext {
   target?: FileTarget;
   simulationRunId?: string;
   interactionRequestId?: string;
+  browserFile?: WorkbenchBrowserFile;
   active: boolean;
   onOpenFiles: () => void;
   onClearTarget: () => void;
@@ -130,6 +136,12 @@ export function WorkbenchTitle({ mode }: { mode: WorkbenchMode }) {
   return <>{t(`workbench.activity.${mode}`, item.label)}</>;
 }
 
+export function WorkbenchIcon({ mode }: { mode: WorkbenchMode }) {
+  const Icon = (activities.find((item) => item.id === mode) ?? activities[0])
+    .icon;
+  return <Icon size={17} aria-hidden="true" />;
+}
+
 export function WorkbenchNavigation({
   mode,
   onSelect,
@@ -149,6 +161,7 @@ export function WorkbenchNavigation({
           type="button"
           className={mode === id ? styles.activityActive : undefined}
           aria-label={t(`workbench.activity.${id}`, label)}
+          title={t(`workbench.activity.${id}`, label)}
           aria-pressed={mode === id}
           onClick={() => onSelect(id)}
         >
