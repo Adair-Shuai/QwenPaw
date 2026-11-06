@@ -15,6 +15,7 @@ HELLO -> (client IDENTIFY) -> READY, replies HEARTBEAT_ACK, and lets
 tests push DISPATCH events (e.g. C2C_MESSAGE_CREATE) to the connected
 channel.
 """
+
 from __future__ import annotations
 
 # pylint: disable=protected-access  # nested handlers touch own instance
@@ -48,7 +49,9 @@ class MockQQIM:
         self.api_calls: list[dict[str, Any]] = []
         # Latest connected WS session (one at a time is enough).
         self._ws_conn: Optional[Any] = None
-        self._identified = threading.Event()
+        self._connection_changed = threading.Condition(self._lock)
+        self._connection_generation = 0
+        self._identified_generation = 0
         self._seq = 0
         self._http_server: Optional[ThreadingHTTPServer] = None
         self._ws_server: Optional[Any] = None
@@ -171,6 +174,8 @@ class MockQQIM:
         def handler(conn: Any) -> None:
             with mock._lock:
                 mock._ws_conn = conn
+                mock._connection_generation += 1
+                generation = mock._connection_generation
             hello = {"op": OP_HELLO, "d": {"heartbeat_interval": 45000}}
             conn.send(json.dumps(hello))
             try:
@@ -188,15 +193,19 @@ class MockQQIM:
                             "d": {"session_id": "mock-session-1"},
                         }
                         conn.send(json.dumps(ready))
-                        mock._identified.set()
+                        with mock._connection_changed:
+                            if mock._ws_conn is conn:
+                                mock._identified_generation = generation
+                                mock._connection_changed.notify_all()
                     elif op == OP_HEARTBEAT:
                         conn.send(json.dumps({"op": OP_HEARTBEAT_ACK}))
             except Exception:  # noqa: BLE001 - client dropped; fine
                 pass
             finally:
-                with mock._lock:
+                with mock._connection_changed:
                     if mock._ws_conn is conn:
                         mock._ws_conn = None
+                        mock._connection_changed.notify_all()
 
         server = ws_serve(handler, "127.0.0.1", 0)
         self.ws_port = server.socket.getsockname()[1]
@@ -216,13 +225,29 @@ class MockQQIM:
     # test-facing helpers
     # -------------------------------------------------------------- #
 
-    def wait_identified(self, timeout: float = 30.0) -> bool:
-        """Block until the channel completed HELLO->IDENTIFY->READY."""
-        return self._identified.wait(timeout)
+    @property
+    def connection_generation(self) -> int:
+        """Return the latest socket generation, including its handshake."""
+        with self._lock:
+            return self._connection_generation
 
-    def reset_identified(self) -> None:
-        """Clear the IDENTIFY flag before triggering a channel reload."""
-        self._identified.clear()
+    def wait_identified(
+        self,
+        timeout: float = 30.0,
+        *,
+        after_generation: int = 0,
+    ) -> bool:
+        """Wait for a currently connected, newer HELLO->IDENTIFY->READY."""
+        with self._connection_changed:
+            return self._connection_changed.wait_for(
+                lambda: (
+                    self._ws_conn is not None
+                    and self._identified_generation
+                    == self._connection_generation
+                    and self._identified_generation > after_generation
+                ),
+                timeout,
+            )
 
     def push_dispatch(self, event_type: str, d: dict) -> None:
         """Push an arbitrary DISPATCH event to the connected channel."""

@@ -15,6 +15,7 @@ import zipfile
 
 from packaging.requirements import Requirement
 from packaging.version import Version
+import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 HELPER = REPO_ROOT / "scripts" / "pack-tauri" / "assemble_desktop_layout.py"
@@ -185,6 +186,46 @@ def _write_layer_fixture_wheel(directory, name, version, files):
     return destination
 
 
+def _write_layer_fixture_plugins(repo):
+    for identifier in (
+        "flowforge",
+        "qwenpaw-run-center",
+        "ugsci",
+        "ugsci_research",
+        "qwenpaw-data",
+    ):
+        category = "apps" if identifier == "qwenpaw-data" else "bundle"
+        root = repo / "plugins" / category / identifier
+        (root / "ui/dist").mkdir(parents=True)
+        (root / "ui/dist/index.js").write_text(
+            f"window.{identifier.replace('-', '_')} = 1;\n",
+            encoding="utf-8",
+        )
+        (root / "backend.py").write_text("VALUE = 1\n", encoding="utf-8")
+        (root / "required.json").write_text("{}", encoding="utf-8")
+        (root / "plugin.json").write_text(
+            json.dumps(
+                {
+                    "id": identifier,
+                    "version": "1.0.0",
+                    "entry": {
+                        "backend": "backend.py",
+                        "frontend": "ui/dist/index.js",
+                    },
+                    "pack_requires": ["required.json"],
+                    "pack_exclude": ["visualization/data"],
+                },
+            ),
+            encoding="utf-8",
+        )
+    local_data = repo / "plugins/bundle/ugsci/visualization/data"
+    local_data.mkdir(parents=True)
+    (local_data / "local.csv").write_text(
+        "must remain local",
+        encoding="utf-8",
+    )
+
+
 def test_python_layers_real_installs_stay_stable_after_import_validation(
     tmp_path,
     monkeypatch,
@@ -192,6 +233,7 @@ def test_python_layers_real_installs_stay_stable_after_import_validation(
     """Identical local wheels produce reusable layers without build caches."""
     helper = _load_python_layers()
     repo = tmp_path / "repo"
+    _write_layer_fixture_plugins(repo)
     console = repo / "console/dist"
     console.mkdir(parents=True)
     (console / "index.html").write_text("console", encoding="utf-8")
@@ -240,6 +282,7 @@ def test_python_layers_real_installs_stay_stable_after_import_validation(
                         "qwenpaw/console/index.html": (
                             repo / "src/qwenpaw/console/index.html"
                         ).read_bytes(),
+                        "qwenpaw/plugins_bundle/obsolete/plugin.json": b"{}",
                     },
                 ),
             )
@@ -255,13 +298,49 @@ def test_python_layers_real_installs_stay_stable_after_import_validation(
     inventories = []
     for index in range(2):
         output = tmp_path / f"build-{index}"
-        helper.build_layers(
+        metadata = helper.build_layers(
             repo,
             Path(sys.executable),
             Path(sys.executable),
             output,
             "2.2.2b9",
         )
+        backend = output / "app/backend/2.2.2b9"
+        plugins = backend / "qwenpaw/plugins_bundle"
+        assert set(metadata["bundledPlugins"]) == {
+            "flowforge",
+            "qwenpaw-run-center",
+            "ugsci",
+            "ugsci_research",
+            "qwenpaw-data",
+        }
+        assert not (plugins / "obsolete").exists()
+        assert not (plugins / "ugsci/visualization/data").exists()
+        assert (plugins / "qwenpaw-data/ui/dist/index.js").is_file()
+        record = next(backend.glob("qwenpaw-*.dist-info/RECORD"))
+        with record.open(encoding="utf-8", newline="") as stream:
+            rows = {row[0]: row[1:] for row in csv.reader(stream)}
+        delivered = {
+            path.relative_to(backend).as_posix()
+            for path in plugins.rglob("*")
+            if path.is_file()
+        }
+        assert {
+            name for name in rows if name.startswith("qwenpaw/plugins_bundle/")
+        } == delivered
+        for name in delivered:
+            content = (backend / name).read_bytes()
+            digest = (
+                base64.urlsafe_b64encode(
+                    hashlib.sha256(content).digest(),
+                )
+                .rstrip(b"=")
+                .decode("ascii")
+            )
+            assert rows[name] == [f"sha256={digest}", str(len(content))]
+        assert (
+            repo / "plugins/bundle/ugsci/visualization/data/local.csv"
+        ).read_text("utf-8") == "must remain local"
         assert not list(output.rglob("__pycache__"))
         assert not list(output.rglob("*.pyc"))
         assert not list(output.rglob("direct_url.json"))
@@ -280,6 +359,24 @@ def test_python_layers_real_installs_stay_stable_after_import_validation(
     assert len(validations) == 2
     assert all(env["PYTHONDONTWRITEBYTECODE"] == "1" for env in validations)
     assert inventories[0] == inventories[1]
+
+
+@pytest.mark.parametrize("missing", ["ui/dist/index.js", "required.json"])
+def test_backend_plugin_staging_rejects_incomplete_canonical_payload(
+    tmp_path,
+    missing,
+):
+    # pylint: disable=protected-access
+    helper = _load_python_layers()
+    repo = tmp_path / "repo"
+    _write_layer_fixture_plugins(repo)
+    (repo / "plugins/apps/qwenpaw-data" / missing).unlink()
+    backend = tmp_path / "backend"
+    record = backend / "qwenpaw-2.2.2b9.dist-info/RECORD"
+    record.parent.mkdir(parents=True)
+    record.write_text("qwenpaw-2.2.2b9.dist-info/RECORD,,\n", encoding="utf-8")
+    with pytest.raises(ValueError, match="qwenpaw-data is missing"):
+        helper._stage_backend_plugins(repo, backend)
 
 
 def test_python_layer_console_staging_requires_built_console(tmp_path):

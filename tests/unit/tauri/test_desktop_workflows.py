@@ -33,6 +33,77 @@ def _load_workflow(name: str) -> dict:
     )
 
 
+@pytest.mark.parametrize("configured_root", [False, True])
+def test_windows_failure_logs_include_shared_backend_diagnostics(
+    tmp_path: Path,
+    configured_root: bool,
+) -> None:
+    steps = _load_workflow("desktop-build.yml")["jobs"]["build-tauri-windows"][
+        "steps"
+    ]
+    stage = next(
+        step
+        for step in steps
+        if step.get("name") == "Stage desktop verify logs (Tauri Windows)"
+    )
+    upload = next(
+        step
+        for step in steps
+        if step.get("name") == "Upload desktop verify logs (Tauri Windows)"
+    )
+    assert stage["if"] == upload["if"] == "failure()"
+    script = stage["run"]
+    for path in ("desktop.log", "runtime\\shared\\launcher.log"):
+        assert f"(Join-Path $workingDir '{path}')" in script
+    assert "$env:QWENPAW_WORKING_DIR" in script
+    assert "Join-Path $env:USERPROFILE '.qwenpaw'" in script
+    assert "${{ runner.temp }}/desktop-verify-logs" in upload["with"]["path"]
+    assert steps.index(stage) < steps.index(upload)
+    if os.name != "nt":
+        return
+
+    # Execute the actual workflow stage with backend and native logs on
+    # separate input trees, as on the hosted Windows runner.
+    runner = tmp_path / "runner"
+    profile = tmp_path / "profile"
+    working = tmp_path / "custom" if configured_root else profile / ".qwenpaw"
+    inputs = {
+        runner / "qwenpaw-desktop-stdout.log": "native stdout",
+        runner / "qwenpaw-desktop-stderr.log": "native stderr",
+        working / "desktop.log": "BM25 backend traceback",
+        working / "runtime/shared/launcher.log": "shared launcher traceback",
+    }
+    for path, content in inputs.items():
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(content, encoding="utf-8")
+    for path in (tmp_path / "temp", tmp_path / "localappdata"):
+        path.mkdir()
+    environment = {**os.environ}
+    environment.pop("QWENPAW_WORKING_DIR", None)
+    environment.update(
+        RUNNER_TEMP=str(runner),
+        USERPROFILE=str(profile),
+        TEMP=str(tmp_path / "temp"),
+        LOCALAPPDATA=str(tmp_path / "localappdata"),
+    )
+    if configured_root:
+        environment["QWENPAW_WORKING_DIR"] = str(working)
+    destination = runner / "desktop-verify-logs"
+    assert destination.resolve().is_relative_to(tmp_path.resolve())
+    result = subprocess.run(
+        ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+        env=environment,
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    for source, content in inputs.items():
+        assert (destination / source.name).read_text("utf-8") == content
+        assert source.read_text("utf-8") == content
+
+
 @pytest.mark.parametrize(
     ("permission_id", "command"),
     [

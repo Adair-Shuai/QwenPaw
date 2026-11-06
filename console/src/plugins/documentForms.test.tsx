@@ -23,8 +23,31 @@ vi.mock("react-i18next", () => {
   return { useTranslation: () => ({ t, i18n: { language: "zh-CN" } }) };
 });
 
+function detachedFormStyles() {
+  return Array.from(document.styleSheets)
+    .map((sheet) => sheet.ownerNode)
+    .filter(
+      (owner): owner is HTMLStyleElement =>
+        owner instanceof HTMLStyleElement &&
+        owner.parentElement?.classList.contains("df-app") === true &&
+        !document.contains(owner),
+    );
+}
+
 afterEach(() => {
   cleanup();
+  // jsdom 29 can retain a sheet when React removes its styled ancestor.
+  // Reattach only detached form-owned styles, then remove each owner directly
+  // so jsdom unregisters it. The mounted page keeps its real CSS throughout.
+  for (const owner of detachedFormStyles()) {
+    document.head.append(owner);
+    owner.remove();
+  }
+  expect(
+    Array.from(document.styleSheets).every(
+      (sheet) => !sheet.ownerNode || document.contains(sheet.ownerNode),
+    ),
+  ).toBe(true);
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
   Reflect.deleteProperty(window, "QwenPaw");
@@ -52,6 +75,18 @@ const reply = (value: unknown) =>
   new Response(JSON.stringify(structuredClone(value)), {
     headers: { "Content-Type": "application/json" },
   });
+
+// Compile the shipped bundle once, then execute it against each test's fresh
+// host. Recompiling identical dynamic scripts per case makes V8 coverage retain
+// a separate instrumented bundle for every page registration.
+const registerPackedDocumentForms = new Function(
+  "window",
+  "URL",
+  fs.readFileSync(
+    path.resolve(process.cwd(), "../plugins/apps/document-forms/ui/index.js"),
+    "utf8",
+  ),
+);
 
 async function exerciseWorkflowTabs(
   stageId: string,
@@ -283,16 +318,7 @@ async function exerciseWorkflowTabs(
     },
   });
   await act(async () => {
-    new Function(
-      "window",
-      fs.readFileSync(
-        path.resolve(
-          process.cwd(),
-          "../plugins/apps/document-forms/ui/index.js",
-        ),
-        "utf8",
-      ),
-    )(window);
+    registerPackedDocumentForms(window, URL);
   });
   renderWithProviders(<Page />);
   await user.click(
@@ -911,17 +937,7 @@ it("organizes projects into seven stages and keeps material versions and submiss
     },
   });
   await act(async () => {
-    new Function(
-      "window",
-      "URL",
-      fs.readFileSync(
-        path.resolve(
-          process.cwd(),
-          "../plugins/apps/document-forms/ui/index.js",
-        ),
-        "utf8",
-      ),
-    )(window, URL);
+    registerPackedDocumentForms(window, URL);
   });
   renderWithProviders(<Page />);
   await waitFor(() =>
@@ -1150,17 +1166,7 @@ it("opens the response review agent only in negotiation and starts with explicit
     },
   });
   await act(async () => {
-    new Function(
-      "window",
-      "URL",
-      fs.readFileSync(
-        path.resolve(
-          process.cwd(),
-          "../plugins/apps/document-forms/ui/index.js",
-        ),
-        "utf8",
-      ),
-    )(window, URL);
+    registerPackedDocumentForms(window, URL);
   });
   renderWithProviders(<Page />);
   const nav = await screen.findByRole("navigation", { name: "项目阶段" });
@@ -1446,17 +1452,7 @@ it("keeps a single project form in the middle while questions and Office preview
     },
   });
   await act(async () => {
-    new Function(
-      "window",
-      "URL",
-      fs.readFileSync(
-        path.resolve(
-          process.cwd(),
-          "../plugins/apps/document-forms/ui/index.js",
-        ),
-        "utf8",
-      ),
-    )(window, URL);
+    registerPackedDocumentForms(window, URL);
   });
   renderWithProviders(<Page />);
   const nav = await screen.findByRole("navigation", { name: "项目阶段" });
@@ -1844,17 +1840,7 @@ it("fills plan-specific information, keeps common fields in the basic profile an
     },
   });
   await act(async () => {
-    new Function(
-      "window",
-      "URL",
-      fs.readFileSync(
-        path.resolve(
-          process.cwd(),
-          "../plugins/apps/document-forms/ui/index.js",
-        ),
-        "utf8",
-      ),
-    )(window, URL);
+    registerPackedDocumentForms(window, URL);
   });
   renderWithProviders(<Page />);
   await user.click(await screen.findByRole("button", { name: /01 上报计划/ }));
@@ -2086,17 +2072,7 @@ it("reviews shared project differences before selectively updating a stage form 
     },
   });
   await act(async () => {
-    new Function(
-      "window",
-      "URL",
-      fs.readFileSync(
-        path.resolve(
-          process.cwd(),
-          "../plugins/apps/document-forms/ui/index.js",
-        ),
-        "utf8",
-      ),
-    )(window, URL);
+    registerPackedDocumentForms(window, URL);
   });
   renderWithProviders(<Page />);
   await user.click(
@@ -2207,11 +2183,7 @@ it("automatically loads the five bundled templates and downloads their blank Exc
     },
   });
   await act(async () => {
-    new Function(
-      "window",
-      "URL",
-      fs.readFileSync(path.join(appRoot, "ui/index.js"), "utf8"),
-    )(window, URL);
+    registerPackedDocumentForms(window, URL);
   });
   renderWithProviders(<Page />);
   await user.click(screen.getByRole("button", { name: /下载配套模板/ }));
@@ -2469,17 +2441,7 @@ describe.each(["embedded", "compatible"])(
         },
       });
       await act(async () => {
-        new Function(
-          "window",
-          "URL",
-          fs.readFileSync(
-            path.resolve(
-              process.cwd(),
-              "../plugins/apps/document-forms/ui/index.js",
-            ),
-            "utf8",
-          ),
-        )(window, URL);
+        registerPackedDocumentForms(window, URL);
       });
       renderWithProviders(<Page />);
       await user.click(
@@ -3051,16 +3013,7 @@ async function exerciseSelectionPage(linked = false, paste = false) {
     },
   });
   await act(async () => {
-    new Function(
-      "window",
-      fs.readFileSync(
-        path.resolve(
-          process.cwd(),
-          "../plugins/apps/document-forms/ui/index.js",
-        ),
-        "utf8",
-      ),
-    )(window);
+    registerPackedDocumentForms(window, URL);
   });
   renderWithProviders(<Page />);
   await user.click(await screen.findByRole("button", { name: /02 选商论证/ }));
@@ -3360,16 +3313,7 @@ it("imports shared information from the existing Excel template into a reviewed 
     },
   });
   await act(async () => {
-    new Function(
-      "window",
-      fs.readFileSync(
-        path.resolve(
-          process.cwd(),
-          "../plugins/apps/document-forms/ui/index.js",
-        ),
-        "utf8",
-      ),
-    )(window);
+    registerPackedDocumentForms(window, URL);
   });
   renderWithProviders(<Page />);
   await user.click(await screen.findByRole("button", { name: "基础信息填报" }));
@@ -3570,18 +3514,7 @@ async function exerciseApprovalViewer(deleting = false) {
       },
     },
   });
-  await act(async () =>
-    new Function(
-      "window",
-      fs.readFileSync(
-        path.resolve(
-          process.cwd(),
-          "../plugins/apps/document-forms/ui/index.js",
-        ),
-        "utf8",
-      ),
-    )(window),
-  );
+  await act(async () => registerPackedDocumentForms(window, URL));
   const view = renderWithProviders(<Page />);
   await user.click(await screen.findByRole("button", { name: /01 上报计划/ }));
   expect(binaryCalls).toHaveLength(0);
@@ -3845,18 +3778,7 @@ it("groups negotiation content into five ordered tabs without duplicating fields
       },
     },
   });
-  await act(async () =>
-    new Function(
-      "window",
-      fs.readFileSync(
-        path.resolve(
-          process.cwd(),
-          "../plugins/apps/document-forms/ui/index.js",
-        ),
-        "utf8",
-      ),
-    )(window),
-  );
+  await act(async () => registerPackedDocumentForms(window, URL));
   renderWithProviders(<Page />);
   await user.click(await screen.findByRole("button", { name: /03 商务谈判/ }));
   const tabs = await screen.findByRole("tablist", { name: "填写内容分组" });

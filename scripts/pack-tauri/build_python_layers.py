@@ -8,8 +8,10 @@
 from __future__ import annotations
 
 import argparse
+import base64
 from collections.abc import Iterator
 from contextlib import contextmanager
+import csv
 import hashlib
 import importlib.util
 import json
@@ -18,6 +20,9 @@ from pathlib import Path
 import shutil
 import subprocess
 import tempfile
+
+from stage_bundled_plugins import stage_bundled_plugins
+from verify_frozen_plugins import verify as verify_plugins
 
 try:
     from copy_windows_tree import copy_tree, remove_tree
@@ -162,6 +167,46 @@ def _safe_empty(path: Path, parent: Path) -> None:
     if resolved.exists():
         remove_tree(resolved)
     resolved.mkdir(parents=True)
+
+
+def _stage_backend_plugins(repo: Path, backend: Path) -> list[str]:
+    """Install canonical plugin payloads and record their delivered bytes."""
+    records = list(backend.glob("qwenpaw-*.dist-info/RECORD"))
+    if len(records) != 1:
+        raise RuntimeError("backend must contain exactly one QwenPaw RECORD")
+    record = records[0]
+    with record.open(encoding="utf-8", newline="") as stream:
+        rows = [
+            row
+            for row in csv.reader(stream)
+            if not row[0].startswith("qwenpaw/plugins_bundle/")
+        ]
+    plugins = backend / "qwenpaw/plugins_bundle"
+    selected = stage_bundled_plugins(repo, plugins)
+    verify_plugins(plugins)
+    # The host wheel contains only the source mirrors. The final desktop layer
+    # also carries canonical bundle/apps plugins with their built frontends.
+    # Keep installed-package integrity metadata consistent with that payload.
+    for path in sorted(plugins.rglob("*")):
+        if not path.is_file():
+            continue
+        digest = (
+            base64.urlsafe_b64encode(
+                hashlib.sha256(path.read_bytes()).digest(),
+            )
+            .rstrip(b"=")
+            .decode("ascii")
+        )
+        rows.append(
+            [
+                path.relative_to(backend).as_posix(),
+                f"sha256={digest}",
+                str(path.stat().st_size),
+            ],
+        )
+    with record.open("w", encoding="utf-8", newline="") as stream:
+        csv.writer(stream, lineterminator="\n").writerows(rows)
+    return selected
 
 
 @contextmanager
@@ -313,6 +358,7 @@ def build_layers(
             raise RuntimeError(
                 f"backend wheel does not contain the console: {packaged_console}",
             )
+        bundled_plugins = _stage_backend_plugins(repo, backend)
 
         environment = dict(os.environ)
         environment["PYTHONNOUSERSITE"] = "1"
@@ -345,6 +391,7 @@ def build_layers(
             "backendWheelSha256": _sha256(wheel),
             "dependencyVersion": dependency_version,
             "desktopRequirementsSha256": lock_hash,
+            "bundledPlugins": bundled_plugins,
         }
         dependency_metadata = {
             "schemaVersion": 2,

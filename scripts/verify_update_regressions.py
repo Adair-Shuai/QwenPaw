@@ -97,11 +97,14 @@ REQUIRED_CASES = {
         "test_desktop_lock_satisfies_every_selected_direct_dependency",
     },
     "tests/unit/tauri/test_layered_channel_build.py": {
+        "test_channel_runtime_excludes_bundled_plugins_with_record_integrity",
+        "test_channel_runtime_checks_unsafe_bundled_member_before_filtering",
         "test_layered_channel_wheels_resolve_real_offline_dependency_closure",
         "test_layered_channel_missing_dependency_stops_build",
         "test_desktop_build_wires_independent_layered_channel_pool",
     },
     "tests/unit/tauri/test_desktop_layer_layout.py": {
+        "test_backend_plugin_staging_rejects_incomplete_canonical_payload",
         "test_python_layers_real_installs_stay_stable_after_import_validation",
     },
     "tests/unit/pack/test_measure_desktop_footprint.py": {
@@ -152,6 +155,7 @@ REQUIRED_CASES = {
         "test_replace_bundled_plugin_rejects_untrusted_or_mismatched_source",
     },
     "tests/unit/tauri/test_desktop_workflows.py": {
+        "test_windows_failure_logs_include_shared_backend_diagnostics",
         "test_desktop_update_commands_are_allowed_by_main_window_acl",
         "test_artifact_selection_retains_fork_brand_and_newest_id",
         "test_fork_beta_promotion_retains_checked_desktop_manifest",

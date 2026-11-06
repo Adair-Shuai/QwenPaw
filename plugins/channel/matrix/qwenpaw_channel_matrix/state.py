@@ -3,12 +3,14 @@
 
 from __future__ import annotations
 
-from contextlib import ExitStack
+from contextlib import ExitStack, closing
 import hashlib
 import json
 import logging
 import os
 from pathlib import Path
+import sqlite3
+import stat
 import tempfile
 
 from qwenpaw.plugins.install_lock import plugin_install_lock
@@ -50,6 +52,89 @@ def _atomic_json(path, value):
         Path(temporary).unlink(missing_ok=True)
 
 
+def _crypto_file_exists(path):
+    if path.is_symlink():
+        raise MatrixStateError("MATRIX_CRYPTO_PATH_UNSAFE")
+    try:
+        mode = path.stat().st_mode
+    except FileNotFoundError:
+        return False
+    except OSError as exc:
+        # Such a legacy name could never have been a Windows file/ADS.
+        if os.name == "nt" and getattr(exc, "winerror", None) == 123:
+            return False
+        raise MatrixStateError("MATRIX_CRYPTO_STORE_UNREADABLE") from exc
+    if not stat.S_ISREG(mode):
+        raise MatrixStateError("MATRIX_CRYPTO_STORE_INVALID")
+    return True
+
+
+def _migrate_crypto_database(directory, legacy_name, name, user_id, device_id):
+    """Snapshot the authenticated old DB, including committed WAL and ADS."""
+    if directory.is_symlink():
+        raise MatrixStateError("MATRIX_CRYPTO_PATH_UNSAFE")
+    source = directory / legacy_name
+    destination = directory / name
+    old_exists = _crypto_file_exists(source)
+    new_exists = _crypto_file_exists(destination)
+    if old_exists and new_exists:
+        raise MatrixStateError("MATRIX_CRYPTO_STORE_CONFLICT")
+    if new_exists:
+        try:
+            with closing(
+                sqlite3.connect(destination.as_uri() + "?mode=ro", uri=True),
+            ) as database:
+                _verify_crypto_identity(database, user_id, device_id)
+        except sqlite3.Error as exc:
+            raise MatrixStateError("MATRIX_CRYPTO_STORE_INVALID") from exc
+        return
+    if not old_exists:
+        return
+    fd, temporary = tempfile.mkstemp(prefix=".matrix-crypto-", dir=directory)
+    os.close(fd)
+    temporary = Path(temporary)
+    try:
+        with closing(
+            sqlite3.connect(source.as_uri() + "?mode=ro", uri=True),
+        ) as old:
+            with closing(sqlite3.connect(temporary)) as new:
+                _verify_crypto_identity(old, user_id, device_id)
+                old.backup(new)
+                if new.execute("PRAGMA integrity_check").fetchall() != [
+                    ("ok",),
+                ]:
+                    raise MatrixStateError("MATRIX_CRYPTO_STORE_INVALID")
+        with temporary.open("r+b") as stream:
+            os.fsync(stream.fileno())
+        # Hard-link publication is atomic and cannot overwrite a second DB.
+        # Existing Matrix identity/workspace/legacy OS claims are still held.
+        try:
+            os.link(temporary, destination)
+        except FileExistsError as exc:
+            raise MatrixStateError("MATRIX_CRYPTO_STORE_CONFLICT") from exc
+        if os.name != "nt":
+            directory_fd = os.open(directory, os.O_RDONLY)
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
+        # Only a complete, checked, durably published snapshot permits this.
+        # An interruption before removal leaves both DBs and fails closed.
+        source.unlink()
+    except (OSError, sqlite3.Error) as exc:
+        raise MatrixStateError("MATRIX_CRYPTO_STORE_MIGRATION_FAILED") from exc
+    finally:
+        temporary.unlink(missing_ok=True)
+
+
+def _verify_crypto_identity(database, user_id, device_id):
+    identities = set(
+        database.execute("SELECT user_id, device_id FROM accounts"),
+    )
+    if identities != {(user_id, device_id)}:
+        raise MatrixStateError("MATRIX_CRYPTO_STORE_IDENTITY_CONFLICT")
+
+
 class MatrixStateStore:
     """Hold OS claims until every SDK resource has stopped.
 
@@ -73,6 +158,7 @@ class MatrixStateStore:
         self.owner = None
         self.directory = None
         self.crypto_dir = None
+        self.crypto_store_name = None
         self._claims = ExitStack()
         self._begun = False
         self._legacy_adopted = False
@@ -157,6 +243,8 @@ class MatrixStateStore:
         legacy_verified=False,
         encryption_enabled=False,
     ):
+        # Keep the existing SDK state flow and callback contract.
+        # pylint: disable=too-many-branches,too-many-statements
         if not self._begun or not user_id:
             raise MatrixStateError("MATRIX_STATE_IDENTITY_REQUIRED")
         owner = {
@@ -176,16 +264,22 @@ class MatrixStateStore:
         if not directory.resolve().is_relative_to(self.root.resolve()):
             raise MatrixStateError("MATRIX_STATE_PATH_UNSAFE")
         database_name = f"{user_id}_{device_id}.db"
+        # The parent directory already carries the full authenticated identity
+        # hash. Keep the basename short enough for native Windows SQLite.
+        portable_name = "matrix.db"
         needs_crypto = encryption_enabled or (
             self.legacy and (self.legacy / "matrix_crypto_store").exists()
         )
         if needs_crypto and (
-            Path(database_name).name != database_name or "\\" in database_name
+            Path(database_name).name != database_name
+            or "\\" in database_name
+            or "\0" in database_name
         ):
             raise MatrixStateError("MATRIX_CRYPTO_FILENAME_UNSAFE")
         # Across workspaces, the same account/device must not acquire two key
         # stores concurrently. OS locks release on crash; files are never used
-        # as a PID/existence-only lock or deleted while another process owns it.
+        # as a PID/existence-only lock or deleted while another process
+        # owns it.
         claim_root = (
             self.legacy / "matrix_plugin_claims"
             if self.legacy
@@ -232,17 +326,33 @@ class MatrixStateStore:
             # silently take over this device's Olm/Megolm database.
             legacy_crypto = self.legacy / "matrix_crypto_store"
             if legacy_crypto.exists():
-                expected = database_name
+                expected = {database_name, portable_name}
                 foreign = [
-                    p for p in legacy_crypto.glob("*.db") if p.name != expected
+                    p
+                    for p in legacy_crypto.glob("*.db")
+                    if p.name not in expected
                 ]
-                if foreign and not (legacy_crypto / expected).is_file():
+                if foreign and not any(
+                    _crypto_file_exists(legacy_crypto / name)
+                    for name in expected
+                ):
                     raise MatrixStateError(
                         "MATRIX_LEGACY_CRYPTO_IDENTITY_CONFLICT",
                     )
-                if any(crypto.glob("*.db")):
+                if any(crypto.glob("*.db")) or _crypto_file_exists(
+                    crypto / database_name,
+                ):
                     raise MatrixStateError("MATRIX_CRYPTO_STORE_CONFLICT")
                 crypto = legacy_crypto
+        if needs_crypto:
+            _migrate_crypto_database(
+                crypto,
+                database_name,
+                portable_name,
+                user_id,
+                device_id,
+            )
+        if self.has_legacy_state():
             _atomic_json(self.legacy / "matrix_plugin_owner.json", owner)
             self._legacy_adopted = True
         _atomic_json(device_claim.with_suffix(".json"), owner)
@@ -252,6 +362,7 @@ class MatrixStateStore:
             {"homeserver": self.homeserver, "scope": scope},
         )
         self.owner, self.directory, self.crypto_dir = owner, directory, crypto
+        self.crypto_store_name = portable_name
 
     def save_auth(self, token, user_id, device_id):
         if (

@@ -3,14 +3,21 @@
 """Exercise isolated channel wheel resolution and desktop build wiring."""
 
 from importlib.util import module_from_spec, spec_from_file_location
+import base64
 import csv
+import hashlib
 import io
+import json
 from pathlib import Path
+import runpy
+import stat
 import subprocess
 import sys
 import zipfile
 
+import packaging
 import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 PACK = REPO_ROOT / "scripts/pack-tauri"
@@ -24,7 +31,14 @@ def _load(name):
     return module
 
 
-def _wheel(directory, name, version="1.0", requirements=(), extras=()):
+def _wheel(
+    directory,
+    name,
+    version="1.0",
+    requirements=(),
+    extras=(),
+    payload=None,
+):
     stem = name.replace("-", "_")
     info = f"{stem}-{version}.dist-info"
     metadata = [
@@ -40,10 +54,19 @@ def _wheel(directory, name, version="1.0", requirements=(), extras=()):
         f"{info}/WHEEL": (
             "Wheel-Version: 1.0\nRoot-Is-Purelib: true\n" "Tag: py3-none-any\n"
         ),
+        **(payload or {}),
+    }
+    files = {
+        path: value.encode() if isinstance(value, str) else value
+        for path, value in files.items()
     }
     record = io.StringIO()
     writer = csv.writer(record)
-    writer.writerows((path, "", "") for path in files)
+    for path, content in files.items():
+        digest = base64.urlsafe_b64encode(hashlib.sha256(content).digest())
+        writer.writerow(
+            (path, "sha256=" + digest.decode().rstrip("="), len(content)),
+        )
     writer.writerow((f"{info}/RECORD", "", ""))
     files[f"{info}/RECORD"] = record.getvalue()
     path = directory / f"{stem}-{version}-py3-none-any.whl"
@@ -51,6 +74,209 @@ def _wheel(directory, name, version="1.0", requirements=(), extras=()):
         for member, content in files.items():
             archive.writestr(member, content)
     return path
+
+
+@pytest.fixture(name="runtime_host_wheel")
+def _runtime_host_wheel_fixture(tmp_path):
+    from scripts.pack.generate_plugin_metadata import (
+        build_official_channel_bundle,
+    )
+
+    version = runpy.run_path(str(REPO_ROOT / "src/qwenpaw/__version__.py"))[
+        "__version__"
+    ]
+    bundle = tmp_path / "official-channels"
+    build_official_channel_bundle(
+        REPO_ROOT,
+        bundle,
+        host_version=version,
+    )
+    source = REPO_ROOT / "src/qwenpaw"
+    payload = {
+        "qwenpaw/" + path.relative_to(source).as_posix(): path.read_bytes()
+        for directory in (
+            source / "channel_protocol",
+            source / "plugins",
+            source / "plugins/execution",
+            source / "utils",
+        )
+        for path in directory.glob("*.py")
+    }
+    payload.update(
+        {
+            "qwenpaw/official_channels/" + path.name: path.read_bytes()
+            for path in bundle.iterdir()
+            if path.is_file()
+        },
+    )
+    wheelhouse = tmp_path / "runtime-wheels"
+    wheelhouse.mkdir()
+    _wheel(
+        wheelhouse,
+        "packaging",
+        packaging.__version__,
+        payload={
+            "packaging/" + path.name: path.read_bytes()
+            for path in Path(packaging.__file__).parent.glob("*.py")
+        },
+    )
+    _wheel(
+        wheelhouse,
+        "PyYAML",
+        yaml.__version__,
+        payload={
+            "yaml/" + path.name: path.read_bytes()
+            for path in Path(yaml.__file__).parent.glob("*.py")
+        },
+    )
+    return wheelhouse, version, payload, bundle
+
+
+@pytest.mark.parametrize("relocated", [False, True])
+def test_channel_runtime_excludes_bundled_plugins_with_record_integrity(
+    runtime_host_wheel,
+    tmp_path,
+    relocated,
+):
+    wheelhouse, version, payload, bundle = runtime_host_wheel
+    prefix = f"qwenpaw-{version}.data/purelib/" if relocated else ""
+    payload.update(
+        {
+            prefix + "qwenpaw/plugins_bundle/__init__.py": b"",
+            prefix + "qwenpaw/plugins_bundle/ugsci/plugin.json": b"{}",
+            prefix + "qwenpaw/plugins_bundle/run-center/ui/index.js": b"ui",
+            "qwenpaw/plugins_bundle_helpers.py": b"VALUE = 'retained'\n",
+            f"qwenpaw-{version}.data/scripts/qwenpaw": b"unused entrypoint",
+        },
+    )
+    wheel = _wheel(
+        wheelhouse,
+        "qwenpaw",
+        version,
+        requirements=(
+            f"packaging=={packaging.__version__}",
+            f"PyYAML=={yaml.__version__}",
+        ),
+        extras=("channels",),
+        payload=payload,
+    )
+    resources = tmp_path / "resources"
+    subprocess.run(
+        [
+            sys.executable,
+            "-m",
+            "venv",
+            "--without-pip",
+            "--copies",
+            str(resources / "python"),
+        ],
+        check=True,
+    )
+    python = (
+        resources
+        / "python"
+        / ("Scripts/python.exe" if sys.platform == "win32" else "bin/python")
+    )
+    runtime = _load("stage_channel_runtime")
+    manifest = runtime.stage_channel_runtime(
+        python=python,
+        wheel=wheel,
+        resource_dir=resources,
+        wheelhouse=wheelhouse,
+    )
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    site = resources / data["support_root"]
+    assert not (site / "qwenpaw/plugins_bundle").exists()
+    assert (site / "qwenpaw/plugins_bundle_helpers.py").is_file()
+    assert (
+        data["host_wheel_sha256"]
+        == hashlib.sha256(
+            wheel.read_bytes(),
+        ).hexdigest()
+    )
+    for original in bundle.iterdir():
+        staged = site / "qwenpaw/official_channels" / original.name
+        assert staged.read_bytes() == original.read_bytes()
+    index = site / "qwenpaw/official_channels/index.json"
+    assert (
+        data["official_index_sha256"]
+        == hashlib.sha256(
+            index.read_bytes(),
+        ).hexdigest()
+    )
+    record = site / f"qwenpaw-{version}.dist-info/RECORD"
+    with record.open(encoding="utf-8", newline="") as stream:
+        rows = list(csv.reader(stream))
+    paths = {row[0] for row in rows}
+    assert paths == {
+        path.relative_to(site).as_posix()
+        for directory in (site / "qwenpaw", record.parent)
+        for path in directory.rglob("*")
+        if path.is_file()
+    }
+    for relative, digest, size in rows:
+        if relative == record.relative_to(site).as_posix():
+            assert (digest, size) == ("", "")
+            continue
+        content = (site / relative).read_bytes()
+        expected = base64.urlsafe_b64encode(hashlib.sha256(content).digest())
+        assert digest == "sha256=" + expected.decode().rstrip("=")
+        assert int(size) == len(content)
+    # Match the real worker's namespace bootstrap, then import its actual
+    # protocol and execution SDK under an otherwise empty target interpreter.
+    probe = """
+import importlib, pathlib, sys, types
+site = pathlib.Path(sys.argv[1])
+sys.path.insert(0, str(site))
+package = types.ModuleType("qwenpaw")
+package.__path__ = [str(site / "qwenpaw")]
+sys.modules["qwenpaw"] = package
+plugins = types.ModuleType("qwenpaw.plugins")
+plugins.__path__ = [str(site / "qwenpaw/plugins")]
+sys.modules["qwenpaw.plugins"] = plugins
+protocol = importlib.import_module("qwenpaw.channel_protocol")
+worker = importlib.import_module("qwenpaw.channel_protocol.shared_worker")
+assert callable(worker.ChannelRuntime)
+assert protocol.IdentityParams("qq", "stage-probe", 1).to_mapping() == {
+    "channel_key": "qq", "instance_id": "stage-probe", "generation": 1,
+}
+for module in (protocol, worker):
+    assert pathlib.Path(module.__file__).is_relative_to(site)
+assert importlib.util.find_spec("qwenpaw.plugins_bundle") is None
+"""
+    result = subprocess.run(
+        [str(python), "-I", "-B", "-c", probe, str(site)],
+        check=False,
+        text=True,
+        capture_output=True,
+        cwd=tmp_path,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert not list(site.rglob("__pycache__"))
+    archive = next((site / "qwenpaw/official_channels").glob("*.zip"))
+    archive.write_bytes(b"tampered official channel")
+    with pytest.raises(ValueError, match="archive digest mismatch"):
+        runtime._validate_official_resources(site, version)
+
+
+@pytest.mark.parametrize("unsafe", ["traversal", "symlink"])
+def test_channel_runtime_checks_unsafe_bundled_member_before_filtering(
+    tmp_path,
+    unsafe,
+):
+    wheel = _wheel(tmp_path, "qwenpaw")
+    name = "qwenpaw/plugins_bundle/../escape.py"
+    if unsafe == "symlink":
+        name = zipfile.ZipInfo("qwenpaw/plugins_bundle/linked.py")
+        name.external_attr = (stat.S_IFLNK | 0o777) << 16
+    with zipfile.ZipFile(wheel, "a") as archive:
+        archive.writestr(name, "outside")
+    site = tmp_path / "site"
+    site.mkdir()
+    with pytest.raises(ValueError, match="Unsafe wheel member"):
+        _load("stage_channel_runtime")._extract_wheel(wheel, site)
+    assert not (site / "qwenpaw/escape.py").exists()
 
 
 @pytest.fixture(name="channel_project")

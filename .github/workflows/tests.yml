@@ -144,11 +144,13 @@ jobs:
           cache: 'npm'
           cache-dependency-path: plugins/bundle/qwenpaw-openui/frontend/package-lock.json
 
-      - name: Build OpenUI runtime for plugin archive contracts
+      - name: Build plugin runtimes for archive contracts
         shell: bash
         run: |
           npm --prefix plugins/bundle/qwenpaw-openui/frontend ci
           npm --prefix plugins/bundle/qwenpaw-openui/frontend run build
+          npm --prefix plugins/memory/powercontext/frontend ci
+          npm --prefix plugins/memory/powercontext/frontend run build
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5

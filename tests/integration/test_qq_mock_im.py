@@ -52,6 +52,48 @@ _HTTP_TIMEOUT = default_http_timeout(15.0)
 _MOCK_IM = MockQQIM()
 
 
+def _configure_qq_channel(app_server, mock_im, **values) -> None:
+    """Wait for the committed reload and its current gateway generation."""
+    generation = mock_im.connection_generation
+    reload_mark = len(app_server.logs)
+    response = app_server.api_request(
+        "PUT",
+        "/api/config/channels/qq",
+        json={
+            "enabled": True,
+            "app_id": "integ-mock-qq-app",
+            "client_secret": "integ-mock-qq-secret",
+            **values,
+        },
+        timeout=_HTTP_TIMEOUT,
+    )
+    assert response.status_code == 200, app_server.logs_tail()
+    wait_for_agent_reload(app_server, reload_mark)
+    assert mock_im.wait_identified(
+        timeout=60.0,
+        after_generation=generation,
+    ), (
+        "QQ channel did not complete a new READY: " + app_server.logs_tail()
+    )
+    deadline = time.monotonic() + 60.0
+    while True:
+        health = app_server.api_request(
+            "GET",
+            "/api/config/channels/qq/health",
+            timeout=_HTTP_TIMEOUT,
+        )
+        if (
+            health.status_code == 200
+            and health.json().get("status") == "healthy"
+        ):
+            return
+        assert time.monotonic() < deadline, (
+            f"QQ driver did not become healthy: {health.text}\n"
+            + app_server.logs_tail()
+        )
+        time.sleep(0.1)
+
+
 def APP_SERVER_EXTRA_ENV() -> dict:  # noqa: N802 - conftest contract
     """Redirect QQ endpoints in the app subprocess to the mock IM."""
     _MOCK_IM.start()
@@ -89,23 +131,7 @@ def qq_channel_up(app_server):
     so we simply wait for the mock gateway to observe IDENTIFY.
     """
     install_official_channel(app_server, "qq")
-    reload_mark = len(app_server.logs)
-    put = app_server.api_request(
-        "PUT",
-        "/api/config/channels/qq",
-        json={
-            "enabled": True,
-            "app_id": "integ-mock-qq-app",
-            "client_secret": "integ-mock-qq-secret",
-        },
-        timeout=_HTTP_TIMEOUT,
-    )
-    assert put.status_code == 200, app_server.logs_tail()
-    wait_for_agent_reload(app_server, reload_mark)
-    assert _MOCK_IM.wait_identified(timeout=60.0), (
-        "QQ channel never completed IDENTIFY against mock gateway: "
-        + app_server.logs_tail()[-3000:]
-    )
+    _configure_qq_channel(app_server, _MOCK_IM)
     yield _MOCK_IM
     app_server.api_request(
         "PUT",
@@ -623,23 +649,11 @@ def test_qq_access_control_dm_gates_unknown_sender(
     srv, mock_url = mock_llm
     srv.force_tool_call = False
     unregister_mock_provider(app_server, MOCK_LLM_PROVIDER_ID)
-    qq_channel_up.reset_identified()
     provider_id = register_mock_provider(app_server, mock_url)
-    put = app_server.api_request(
-        "PUT",
-        "/api/config/channels/qq",
-        json={
-            "enabled": True,
-            "app_id": "integ-mock-qq-app",
-            "client_secret": "integ-mock-qq-secret",
-            "access_control_dm": True,
-        },
-        timeout=_HTTP_TIMEOUT,
-    )
-    assert put.status_code == 200, app_server.logs_tail()
-    assert qq_channel_up.wait_identified(timeout=60.0), (
-        "QQ channel did not reconnect after ACL config reload: "
-        + app_server.logs_tail()[-3000:]
+    _configure_qq_channel(
+        app_server,
+        qq_channel_up,
+        access_control_dm=True,
     )
     try:
         deny_text = None
@@ -673,20 +687,11 @@ def test_qq_access_control_dm_gates_unknown_sender(
         assert MOCK_LLM_RESPONSE.split()[0] not in deny_text, deny_text
     finally:
         unregister_mock_provider(app_server, provider_id)
-        qq_channel_up.reset_identified()
-        restore = app_server.api_request(
-            "PUT",
-            "/api/config/channels/qq",
-            json={
-                "enabled": True,
-                "app_id": "integ-mock-qq-app",
-                "client_secret": "integ-mock-qq-secret",
-                "access_control_dm": False,
-            },
-            timeout=_HTTP_TIMEOUT,
+        _configure_qq_channel(
+            app_server,
+            qq_channel_up,
+            access_control_dm=False,
         )
-        assert restore.status_code == 200
-        qq_channel_up.wait_identified(timeout=60.0)
 
 
 @pytest.mark.integration
@@ -755,23 +760,8 @@ def test_qq_bot_prefix_message_is_skipped(
     srv, mock_url = mock_llm
     srv.force_tool_call = False
     unregister_mock_provider(app_server, MOCK_LLM_PROVIDER_ID)
-    qq_channel_up.reset_identified()
     provider_id = register_mock_provider(app_server, mock_url)
-    put = app_server.api_request(
-        "PUT",
-        "/api/config/channels/qq",
-        json={
-            "enabled": True,
-            "app_id": "integ-mock-qq-app",
-            "client_secret": "integ-mock-qq-secret",
-            "bot_prefix": "[BOT]",
-        },
-        timeout=_HTTP_TIMEOUT,
-    )
-    assert put.status_code == 200, app_server.logs_tail()
-    assert qq_channel_up.wait_identified(timeout=60.0), app_server.logs_tail()[
-        -2000:
-    ]
+    _configure_qq_channel(app_server, qq_channel_up, bot_prefix="[BOT]")
     try:
         openid = "integ-qq-prefix-user"
         before = len(qq_channel_up.api_calls)
@@ -789,19 +779,7 @@ def test_qq_bot_prefix_message_is_skipped(
         assert not new_calls, new_calls
     finally:
         unregister_mock_provider(app_server, provider_id)
-        qq_channel_up.reset_identified()
-        app_server.api_request(
-            "PUT",
-            "/api/config/channels/qq",
-            json={
-                "enabled": True,
-                "app_id": "integ-mock-qq-app",
-                "client_secret": "integ-mock-qq-secret",
-                "bot_prefix": "",
-            },
-            timeout=_HTTP_TIMEOUT,
-        )
-        qq_channel_up.wait_identified(timeout=60.0)
+        _configure_qq_channel(app_server, qq_channel_up, bot_prefix="")
 
 
 @pytest.mark.integration

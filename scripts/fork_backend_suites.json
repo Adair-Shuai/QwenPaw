@@ -141,6 +141,7 @@
       "tests/unit/plugins/test_sdk_channel_routing_contract.py",
       "tests/unit/market/test_search_deadline.py",
       "tests/unit/channels/test_base_core.py",
+      "tests/unit/channels/test_matrix.py",
       "tests/unit/plugins/test_sdk_context_lifecycle.py",
       "tests/unit/plugins/test_manifest_dependencies.py",
       "tests/unit/plugins/test_plugin_storage_windows_paths.py",
@@ -209,6 +210,14 @@
     ]
   },
   "required_cases": {
+    "tests/unit/channels/test_matrix.py": [
+      "test_matrix_market_manifest_requires_native_channel_host",
+      "test_default_e2ee_dependency_initializes_crypto_store",
+      "test_e2ee_migrates_raw_database_without_replacing_keys",
+      "test_e2ee_refuses_conflicting_crypto_stores_without_changing_either",
+      "test_e2ee_rejects_foreign_database_identity_before_migration",
+      "test_e2ee_migration_preserves_committed_wal_and_identity"
+    ],
     "tests/unit/tauri/test_plugin_payload_completeness.py": [
       "test_desktop_plugins_reuse_complete_payloads_in_real_signed_zips",
       "test_signed_component_gate_rejects_missing_declared_payload",

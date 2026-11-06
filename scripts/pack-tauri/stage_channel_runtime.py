@@ -133,6 +133,7 @@ def _extract_wheel(path: Path, site: Path) -> None:
     with zipfile.ZipFile(path) as archive:
         seen = set()
         relocated = {}
+        omitted = set()
         for info in archive.infolist():
             relative = PurePosixPath(info.filename)
             if (
@@ -153,7 +154,14 @@ def _extract_wheel(path: Path, site: Path) -> None:
                     relocated[info.filename] = PurePosixPath(*parts).as_posix()
                 else:
                     # Channel support needs libraries, not entrypoint scripts.
+                    omitted.add(info.filename)
                     continue
+            if parts[:2] == ("qwenpaw", "plugins_bundle"):
+                # The selected backend owns bundled applications. A worker
+                # needs the SDK and dormant official channel ZIPs, not another
+                # independently discoverable copy of those applications.
+                omitted.add(info.filename)
+                continue
             # Keep ordinary .pth bytes for RECORD integrity. This explicit
             # site is added only to sys.path, never via site.addsitedir, so
             # startup hooks stay inert. Editable providers still fail audit.
@@ -162,7 +170,7 @@ def _extract_wheel(path: Path, site: Path) -> None:
                 raise ValueError(f"Overlapping wheel payload: {target.name}")
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(archive.read(info))
-        if relocated:
+        if relocated or omitted:
             metadata = next(
                 name
                 for name in archive.namelist()
@@ -171,7 +179,9 @@ def _extract_wheel(path: Path, site: Path) -> None:
             )
             record = site / PurePosixPath(metadata).with_name("RECORD")
             with record.open(encoding="utf-8", newline="") as stream:
-                rows = list(csv.reader(stream))
+                rows = [
+                    row for row in csv.reader(stream) if row[0] not in omitted
+                ]
             for row in rows:
                 row[0] = relocated.get(row[0], row[0])
             with record.open("w", encoding="utf-8", newline="") as stream:
@@ -232,6 +242,8 @@ def _validate_closure(snapshot: dict, host_version: str) -> None:
 
 # Closed identity guards are kept together for auditability.
 # pylint: disable=too-many-boolean-expressions
+# Keep the closed index and identity guards auditable in one validation pass.
+# pylint: disable-next=too-many-branches
 def _validate_official_resources(site: Path, host_version: str) -> None:
     """Authenticate dormant sources without importing staged code or SDKs."""
     inventory_file = site / "qwenpaw/plugins/official_channel_catalog.py"

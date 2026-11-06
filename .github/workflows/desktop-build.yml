@@ -274,11 +274,18 @@ jobs:
           }
           New-Item -ItemType Directory -Force -Path $verifyLogRoot | Out-Null
 
+          $workingDir = if ([string]::IsNullOrWhiteSpace($env:QWENPAW_WORKING_DIR)) {
+            Join-Path $env:USERPROFILE '.qwenpaw'
+          } else {
+            $env:QWENPAW_WORKING_DIR
+          }
           $files = @(
             (Join-Path $env:RUNNER_TEMP 'qwenpaw-desktop-stdout.log'),
             (Join-Path $env:RUNNER_TEMP 'qwenpaw-desktop-stderr.log'),
             (Join-Path $env:RUNNER_TEMP 'qwenpaw-native-ui-report.json'),
-            (Join-Path $env:TEMP 'ugsci-desktop-setup.log')
+            (Join-Path $env:TEMP 'ugsci-desktop-setup.log'),
+            (Join-Path $workingDir 'desktop.log'),
+            (Join-Path $workingDir 'runtime\shared\launcher.log')
           )
           foreach ($file in $files) {
             if (Test-Path -LiteralPath $file -PathType Leaf) {
