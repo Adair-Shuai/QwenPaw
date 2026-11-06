@@ -3,12 +3,47 @@ name: Plugin SDK lifecycle diagnostics
 # A focused manual diagnosis, never a substitute for the production full gate.
 on:
   workflow_dispatch:
+    inputs:
+      suite:
+        description: Focused diagnostic suite
+        type: choice
+        options: [sdk, footprint]
+        default: sdk
 
 permissions:
   contents: read
 
 jobs:
+  footprint:
+    if: ${{ inputs.suite == 'footprint' }}
+    runs-on: macos-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install standalone measurement test dependencies
+        run: python -m pip install pytest psutil
+      - name: Exercise real measurement and process cleanup
+        run: |
+          python -m pytest --noconftest -c /dev/null \
+            tests/unit/pack/test_measure_desktop_footprint.py \
+            --basetemp "$RUNNER_TEMP/footprint-regressions" \
+            --junitxml=footprint-tests.xml -vv --tb=long -ra
+      - name: Preserve focused diagnostic evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: macos-footprint-diagnostics
+          path: |
+            footprint-tests.xml
+            ${{ runner.temp }}/footprint-regressions/**/*.json
+            ${{ runner.temp }}/footprint-regressions/**/*.csv
+          retention-days: 7
+
   sdk:
+    if: ${{ inputs.suite != 'footprint' }}
     strategy:
       fail-fast: false
       matrix:
