@@ -12,6 +12,7 @@ import socket
 import subprocess
 import sys
 import textwrap
+from types import SimpleNamespace
 
 import psutil
 import pytest
@@ -52,10 +53,12 @@ def _make_link(link: Path, target: Path) -> None:
         link.symlink_to(target, target_is_directory=True)
 
 
+@pytest.mark.parametrize("native_platform", [None, "Darwin", "Linux"])
 def test_directory_measurement_counts_actual_bytes_and_never_starts(
     tmp_path: Path,
     monkeypatch: pytest.MonkeyPatch,
     capsys: pytest.CaptureFixture,
+    native_platform: str | None,
 ) -> None:
     installation = tmp_path / "installation"
     (installation / "runtime" / "nested").mkdir(parents=True)
@@ -66,12 +69,27 @@ def test_directory_measurement_counts_actual_bytes_and_never_starts(
     def refuse_launch(*_args, **_kwargs):
         pytest.fail("Directory-only measurement attempted to start a process")
 
+    if native_platform:
+        monkeypatch.setattr(
+            os,
+            "uname",
+            lambda: SimpleNamespace(
+                sysname=native_platform,
+                release="25.6.0",
+                machine="arm64",
+                nodename="must-not-appear-in-report",
+            ),
+            raising=False,
+        )
+        monkeypatch.setattr(FOOTPRINT.platform, "platform", refuse_launch)
     monkeypatch.setattr(subprocess, "Popen", refuse_launch)
     result = FOOTPRINT.main(["--root", str(installation)])
 
     report = json.loads(capsys.readouterr().out)
     assert result == 0
     assert report["launch"] is None
+    if native_platform:
+        assert report["platform"] == f"{native_platform}-25.6.0-arm64"
     assert report["directories"][0]["logical_bytes"] == 27
     assert report["directories"][0]["file_count"] == 3
     assert report["directories"][0]["top_level"] == [
@@ -169,7 +187,9 @@ def _launch_service(tmp_path: Path):
             """
             from http.server import BaseHTTPRequestHandler, HTTPServer
             from pathlib import Path
+            from socketserver import TCPServer
             import os
+            import socket
             import subprocess
             import sys
             import threading
@@ -202,8 +222,18 @@ def _launch_service(tmp_path: Path):
                     self.wfile.write(b'ok')
                 def log_message(self, *args):
                     pass
+            def refuse_reverse_lookup(*args, **kwargs):
+                raise AssertionError('Loopback fixture must not require DNS')
+            socket.getfqdn = refuse_reverse_lookup
+            class LoopbackHTTPServer(HTTPServer):
+                def server_bind(self):
+                    # HTTPServer normally reverse-resolves the numeric bind IP.
+                    # Keep the real socket and HTTP handler, with no host DNS.
+                    TCPServer.server_bind(self)
+                    self.server_name = self.server_address[0]
+                    self.server_port = self.server_address[1]
             time.sleep(0.15)
-            server = HTTPServer(('127.0.0.1', port), Handler)
+            server = LoopbackHTTPServer(('127.0.0.1', port), Handler)
             if mode == 'exit-after-ready':
                 thread = threading.Thread(
                     target=server.serve_forever, daemon=True,

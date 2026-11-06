@@ -689,13 +689,22 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return args
 
 
+def _platform_label() -> str:
+    """Describe the OS without subprocess-based macOS platform probes."""
+    native_uname = getattr(os, "uname", None)
+    if native_uname is not None:
+        system = native_uname()
+        return f"{system.sysname}-{system.release}-{system.machine}"
+    return platform.platform()
+
+
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     report: dict[str, Any] = {
         "schema_version": 1,
         "measured_at_utc": datetime.now(timezone.utc).isoformat(),
         "label": args.label,
-        "platform": platform.platform(),
+        "platform": _platform_label(),
         "python_version": platform.python_version(),
         "size_note": (
             "Logical regular-file bytes, not allocated disk or download size. "
