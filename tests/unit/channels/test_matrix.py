@@ -455,8 +455,12 @@ def test_scoped_crypto_filename_conflict_is_rejected(tmp_path):
     ).hexdigest()
     crypto = state.root / scope / "crypto_store"
     crypto.mkdir(parents=True)
-    (crypto / f"{BOT}_SERVER-DEVICE.db").write_bytes(b"old")
-    (crypto / f"{scope}.db").write_bytes(b"new")
+    legacy_database = crypto / f"{BOT}_SERVER-DEVICE.db"
+    current_database = crypto / (
+        "matrix.db" if os.name == "nt" else f"{scope}.db"
+    )
+    legacy_database.write_bytes(b"old")
+    current_database.write_bytes(b"new")
 
     state.begin()
     try:
@@ -465,6 +469,8 @@ def test_scoped_crypto_filename_conflict_is_rejected(tmp_path):
             match="MATRIX_CRYPTO_STORE_CONFLICT",
         ):
             state.bind(BOT, "SERVER-DEVICE", encryption_enabled=True)
+        assert legacy_database.read_bytes() == b"old"
+        assert current_database.read_bytes() == b"new"
     finally:
         state.close()
 
