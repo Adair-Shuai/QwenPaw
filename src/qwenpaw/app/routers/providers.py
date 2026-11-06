@@ -135,7 +135,7 @@ class ProviderConfigRequest(BaseModel):
     base_url: Optional[str] = Field(default=None)
     name: Optional[str] = Field(
         default=None,
-        description=("New display name. Only applied to custom providers."),
+        description="New display name. Only applied to custom providers.",
     )
     chat_model: Optional[ChatModelName] = Field(
         default=None,
@@ -294,6 +294,7 @@ class ModelConfigRequest(BaseModel):
     )
     thinking_budget: Optional[int] = Field(
         default=None,
+        ge=1,
         description="Token budget for thinking.",
     )
     reasoning_effort: Optional[str] = Field(

@@ -263,8 +263,7 @@ async def _persist_pending_project_dirs(
         for path, label in normalize_project_dir_list(pending):
             if not path.is_dir():
                 logger.warning(
-                    "Ignoring pending project dir that is not a "
-                    "directory: %s",
+                    "Ignoring pending project dir that is not a directory: %s",
                     path,
                 )
                 continue
@@ -324,7 +323,7 @@ def _extract_session_and_payload(request_data: Union[AgentRequest, dict]):
                 # getattr checks (e.g. _content_has_text) see real attrs.
                 content_parts.extend(
                     _coerce_content_item(c)
-                    for c in (content_part["content"] or [])
+                    for c in content_part["content"] or []
                 )
                 if isinstance(content_part.get("metadata"), dict):
                     message_metadata = content_part["metadata"]
@@ -431,14 +430,18 @@ def _chat_registration_fields(native_payload: dict[str, Any]) -> dict:
         return {}
     return {
         "source": "subagent",
-        "parent_session_id": str(
-            request_context.get("parent_session_id") or "",
-        )
-        or None,
-        "root_session_id": str(
-            request_context.get("root_session_id") or "",
-        )
-        or None,
+        "parent_session_id": (
+            str(
+                request_context.get("parent_session_id") or "",
+            )
+            or None
+        ),
+        "root_session_id": (
+            str(
+                request_context.get("root_session_id") or "",
+            )
+            or None
+        ),
     }
 
 
@@ -455,6 +458,7 @@ def _empty_sse_response() -> StreamingResponse:
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
         },
     )
 
@@ -490,8 +494,10 @@ def _tail_text_file(
     "/chat",
     status_code=200,
     summary="Chat with console (streaming response)",
-    description="Agent API Request Format. See runtime.agentscope.io. "
-    "Use body.reconnect=true to attach to a running stream.",
+    description=(
+        "Agent API Request Format. See runtime.agentscope.io. "
+        "Use body.reconnect=true to attach to a running stream."
+    ),
 )
 async def post_console_chat(
     request_data: Union[AgentRequest, dict],
@@ -623,6 +629,7 @@ async def post_console_chat(
         headers={
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
         },
     )
 

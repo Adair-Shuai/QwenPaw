@@ -64,7 +64,9 @@ def dependency_python(root, *, installer="pip"):
             destination = library / entry.name
             if not destination.exists():
                 # Audits resolve metadata origins within the observed site.
-                if entry.suffix == ".dist-info" and entry.is_dir():
+                if (
+                    entry.suffix == ".dist-info" or entry.name == "share"
+                ) and entry.is_dir():
                     shutil.copytree(entry, destination)
                 else:
                     expose(entry, destination)
@@ -82,12 +84,14 @@ def dependency_python(root, *, installer="pip"):
             str(python),
             "-I",
             "-c",
-            "import importlib.metadata as m, importlib.util, sys; "
-            "items = [d for d in m.distributions() "
-            "if d.metadata['Name'].lower() == 'pip']; "
-            "assert len(items) == int(sys.argv[1] == 'pip'), items; "
-            "assert (importlib.util.find_spec('pip') is not None) "
-            "== (sys.argv[1] == 'pip')",
+            (
+                "import importlib.metadata as m, importlib.util, sys; "
+                "items = [d for d in m.distributions() "
+                "if d.metadata['Name'].lower() == 'pip']; "
+                "assert len(items) == int(sys.argv[1] == 'pip'), items; "
+                "assert (importlib.util.find_spec('pip') is not None) "
+                "== (sys.argv[1] == 'pip')"
+            ),
             installer,
         ],
         check=True,

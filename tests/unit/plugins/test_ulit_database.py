@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Exercise ULit migrations, HTTP writes and worker connection cleanup."""
 
 # pylint: disable=protected-access

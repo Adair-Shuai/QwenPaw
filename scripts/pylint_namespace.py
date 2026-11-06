@@ -118,15 +118,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     options, files = arguments[:separator], arguments[separator + 1 :]
     if project is not None:
         return run_linter(options, files, root, project)
-    groups: dict[Path, list[str]] = {}
+    groups: dict[tuple[Path, bool], list[str]] = {}
     for filename in files:
-        groups.setdefault(project_root(filename, root), []).append(filename)
-    if not groups or tuple(groups) == (root,):
+        context = project_root(filename, root)
+        # Tests infer temporary modules and fixtures. Keep their Astroid cache
+        # separate from production modules while checking every selected file.
+        test_context = (
+            (root / filename).resolve().is_relative_to(root / "tests")
+        )
+        groups.setdefault((context, test_context), []).append(filename)
+    if not groups or (len(groups) == 1 and next(iter(groups))[0] == root):
         return run_linter(options, files, root, root)
     # Astroid caches modules by import name. Independent processes are
     # necessary when embedded projects each own names such as src/scripts.
     status = 0
-    for context, selected in groups.items():
+    for (context, _test_context), selected in groups.items():
         result = subprocess.run(
             [
                 sys.executable,

@@ -68,15 +68,36 @@ def dependency_http_error(exc):
                 "operation": exc.operation,
             },
         )
+    code = exc.reason_code or "DEPENDENCY_PLAN_UNVERIFIED"
+    instructions = {
+        "DEPENDENCY_UNSATISFIED": (
+            "Resolve the missing dependency requirements, then "
+            "retry installation."
+        ),
+        "DEPENDENCY_ENVIRONMENT_IDENTITY_CHANGED": (
+            "The dependency environment changed; verify the active "
+            "environment, then retry installation."
+        ),
+        "DEPENDENCY_REPAIR_REQUIRED": (
+            "Complete the pending dependency repair before "
+            "retrying installation."
+        ),
+        "DEPENDENCY_RESTART_REQUIRED": (
+            "Restart the backend to release the affected dependencies, "
+            "then retry installation."
+        ),
+    }
+    logger.info("Plugin dependency refusal: code=%s", _log_safe(code))
     return HTTPException(
         status_code=409,
         detail={
-            "code": exc.reason_code or "DEPENDENCY_PLAN_UNVERIFIED",
+            "code": code,
             "message": str(exc),
             "instructions": [
-                (
-                    "Resolve the shared dependency requirements, "
-                    "then retry installation."
+                instructions.get(
+                    code,
+                    "Review the dependency preparation error before "
+                    "retrying installation.",
                 ),
             ],
         },
@@ -244,12 +265,14 @@ def unload_http_detail(
         "quiescent": bool(getattr(report, "quiescent", False)),
         "needs_restart": bool(getattr(report, "needs_restart", True)),
         "errors": list(getattr(report, "errors", None) or []),
-        "message": message
-        or (
-            f"{kind} '{plugin_id}' cleanup is incomplete."
-            if not getattr(report, "clean", False)
-            and getattr(report, "quiescent", False)
-            else f"{kind} '{plugin_id}' did not go quiescent."
+        "message": (
+            message
+            or (
+                f"{kind} '{plugin_id}' cleanup is incomplete."
+                if not getattr(report, "clean", False)
+                and getattr(report, "quiescent", False)
+                else f"{kind} '{plugin_id}' did not go quiescent."
+            )
         ),
     }
 
@@ -870,7 +893,7 @@ async def _post_load_setup(  # pylint: disable=too-many-branches
                 )
             except Exception as exc:
                 logger.warning(
-                    f"Could not register control command "
+                    "Could not register control command "
                     f"'{cmd_reg.handler.command_name}': {exc}",
                 )
     except Exception as exc:
@@ -1134,12 +1157,12 @@ def _post_unload_cleanup(
                     command_registry.unregister_command(f"/{cmd_name}")
                 except Exception as exc:
                     logger.warning(
-                        f"Could not unregister priority for"
+                        "Could not unregister priority for"
                         f" '/{cmd_name}': {exc}",
                     )
         except Exception as exc:
             logger.warning(
-                f"Command cleanup skipped for plugin "
+                "Command cleanup skipped for plugin "
                 f"'{_log_safe(plugin_id)}': {exc}",
             )
 
@@ -1723,7 +1746,8 @@ async def unload_plugin_keep_config(
     summary="Repair plugin dependencies",
     description=(
         "Explicitly install missing plugin dependencies, then load. "
-        "Host-package upgrades are rejected and require a backend restart."
+        "Shared dependency replacements require review and controlled apply; "
+        "loaded code may require a backend restart."
     ),
 )
 async def repair_plugin_dependencies(plugin_id: str, request: Request):
@@ -1968,8 +1992,10 @@ async def set_plugin_enabled(
         record = await loader.lifecycle.set_enabled(plugin_id, True)
         return {
             "id": plugin_id,
-            "enabled": bool(getattr(record, "enabled", False))
-            and getattr(record, "status", None) == "active",
+            "enabled": (
+                bool(getattr(record, "enabled", False))
+                and getattr(record, "status", None) == "active"
+            ),
             "loaded": getattr(record, "status", None) == "active",
             "status": getattr(record, "status", "failed"),
             "diagnostics": list(
@@ -2258,7 +2284,7 @@ async def _async_download(url: str, dest: Path) -> None:
                     total += len(chunk)
                     if total > _MAX_DOWNLOAD_BYTES:
                         raise RuntimeError(
-                            f"Download aborted: response exceeds "
+                            "Download aborted: response exceeds "
                             f"{_MAX_DOWNLOAD_BYTES // (1024 * 1024)} MB",
                         )
                     fh.write(chunk)

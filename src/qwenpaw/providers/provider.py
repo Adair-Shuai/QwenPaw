@@ -232,7 +232,7 @@ class ProviderInfo(BaseModel):
     )
     is_custom: bool = Field(
         default=False,
-        description=("Whether this provider is user-created (not built-in)."),
+        description="Whether this provider is user-created (not built-in).",
     )
     support_model_discovery: bool = Field(
         default=False,
@@ -299,9 +299,11 @@ class ProviderInfo(BaseModel):
 
     thinking_param_style: str | None = Field(
         default=None,
-        description="Which thinking-parameter UI to show: "
-        "'budget' (Slider) or 'effort' (Select). "
-        "None means the provider does not support thinking config.",
+        description=(
+            "Which thinking-parameter UI to show: "
+            "'budget' (Slider) or 'effort' (Select). "
+            "None means the provider does not support thinking config."
+        ),
     )
     reasoning_effort_options: List[str] = Field(
         default_factory=lambda: [
@@ -320,8 +322,10 @@ class ProviderInfo(BaseModel):
     )
     meta: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Additional metadata for the provider "
-        "(e.g., api_key_url, api_key_hint).",
+        description=(
+            "Additional metadata for the provider "
+            "(e.g., api_key_url, api_key_hint)."
+        ),
     )
 
     @model_validator(mode="after")
@@ -818,8 +822,10 @@ class Provider(ProviderInfo, ABC):  # pylint: disable=too-many-public-methods
             selected and selected.requires_paid_confirmation
         ):
             raise ProviderError(
-                message=f"Model '{model_id}' is no longer confirmed free; "
-                f"review its pricing and explicitly enable it before use.",
+                message=(
+                    f"Model '{model_id}' is no longer confirmed free; "
+                    "review its pricing and explicitly enable it before use."
+                ),
             )
 
     def get_effective_generate_kwargs(self, model_id: str) -> Dict[str, Any]:
@@ -1142,6 +1148,44 @@ class Provider(ProviderInfo, ABC):  # pylint: disable=too-many-public-methods
         """Update per-model configuration (e.g. generate_kwargs)."""
         for model in Provider.all_models(self) + self.discovered_models:
             if model.id == model_id:
+                # Validate every input that can fail before mutating
+                # the model, so a rejected update leaves no partial
+                # changes behind. The checks below mirror, in order,
+                # the validations in the application phase that follows.
+                if "model_type" in config:
+                    if config["model_type"] not in ("chat", "decision"):
+                        raise ValueError(
+                            "model_type must be chat or decision",
+                        )
+                for field in (
+                    f"supports_image",
+                    f"supports_video",
+                    f"supports_audio",
+                    f"supports_tool_calling",
+                ):
+                    if field not in config:
+                        continue
+                    value = config[field]
+                    if value is not None and type(value) is not bool:
+                        raise ValueError(f"{field} must be boolean or null")
+                if f"thinking_control" in config:
+                    raw_control = config[f"thinking_control"]
+                    if raw_control is not None:
+                        ThinkingControl.model_validate(raw_control)
+                if (
+                    "max_input_length" in config
+                    and config["max_input_length"] is not None
+                    and int(config["max_input_length"]) < 1000
+                ):
+                    raise ValueError(
+                        "max_input_length must be at least 1000",
+                    )
+                if (
+                    "thinking_budget" in config
+                    and config["thinking_budget"] is not None
+                    and int(config["thinking_budget"]) < 1
+                ):
+                    raise ValueError("thinking_budget must be at least 1")
                 changed_fields: list[str] = []
                 if "model_type" in config:
                     value = config["model_type"]
@@ -1225,6 +1269,10 @@ class Provider(ProviderInfo, ABC):  # pylint: disable=too-many-public-methods
                     and config["max_input_length"] is not None
                 ):
                     max_input_length = int(config["max_input_length"])
+                    if max_input_length < 1000:
+                        raise ValueError(
+                            "max_input_length must be at least 1000",
+                        )
                     if (
                         model.max_input_length != max_input_length
                         or not model.max_input_length_configured
@@ -1260,6 +1308,10 @@ class Provider(ProviderInfo, ABC):  # pylint: disable=too-many-public-methods
                         if config["thinking_budget"] is not None
                         else None
                     )
+                    if thinking_budget is not None and thinking_budget < 1:
+                        raise ValueError(
+                            "thinking_budget must be at least 1",
+                        )
                     if model.thinking_budget != thinking_budget:
                         model.thinking_budget = thinking_budget
                         changed_fields.append("thinking_budget")

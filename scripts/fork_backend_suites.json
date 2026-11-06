@@ -157,7 +157,8 @@
       "tests/unit/plugins/test_bundled_startup_safety.py",
       "tests/unit/tauri/test_component_service.py",
       "tests/unit/app/routers/test_healthz.py",
-      "tests/unit/app/test_plugin_startup_order.py"
+      "tests/unit/app/test_plugin_startup_order.py",
+      "tests/unit/channels/test_matrix_state.py"
     ],
     "run_center": [
       "tests/unit/plugins/run_center/test_research_router_contract.py",
@@ -928,6 +929,10 @@
       "test_bundle_marker_resolves_directory_links_before_enumeration",
       "test_bundle_marker_retains_case_and_permission_fallback",
       "test_bundle_marker_does_not_merge_differently_cased_directories"
+    ],
+    "tests/unit/channels/test_matrix_state.py": [
+      "test_sqlite_layout_migration_preserves_committed_wal",
+      "test_sqlite_migration_rejects_foreign_keys_without_changing_files"
     ]
   }
 }

@@ -259,7 +259,7 @@ class Workspace:  # pylint: disable=too-many-public-methods
         """Reuse an agent task tracker before this workspace starts."""
         if self._started:
             raise RuntimeError(
-                f"Cannot replace task tracker for started workspace "
+                "Cannot replace task tracker for started workspace "
                 f"'{self.agent_id}'",
             )
         self._task_tracker = task_tracker
@@ -446,6 +446,11 @@ class Workspace:  # pylint: disable=too-many-public-methods
         available = getattr(self._manager, "assert_agent_available", None)
         if available is not None:
             available(self.agent_id)
+        from ...schemas import AgentRequest
+
+        if isinstance(request, dict):
+            request = AgentRequest(**request)
+
         config = load_agent_config(self.agent_id)
         backend = config.backend
         if backend != "qwenpaw":
@@ -657,10 +662,12 @@ class Workspace:  # pylint: disable=too-many-public-methods
                     "channel_manager": ws._service_manager.services.get(
                         "channel_manager",
                     ),
-                    "timezone": normalize_tz(
-                        load_config().user_timezone or "UTC",
-                    )
-                    or "UTC",
+                    "timezone": (
+                        normalize_tz(
+                            load_config().user_timezone or "UTC",
+                        )
+                        or "UTC"
+                    ),
                     "agent_id": ws.agent_id,
                     "start_paused": ws.cron_start_paused,
                 },
@@ -734,7 +741,7 @@ class Workspace:  # pylint: disable=too-many-public-methods
         """
         if self._started:
             logger.warning(
-                f"Cannot set reusable components for already started "
+                "Cannot set reusable components for already started "
                 f"workspace: {sanitize_log_value(self.agent_id)}",
             )
             return
@@ -852,8 +859,7 @@ class Workspace:  # pylint: disable=too-many-public-methods
             )
         except Exception as exc:
             logger.warning(
-                "weixin->wechat chats.json migration failed for "
-                "agent %s: %s",
+                "weixin->wechat chats.json migration failed for agent %s: %s",
                 sanitize_log_value(self.agent_id),
                 sanitize_log_value(exc),
             )
@@ -864,8 +870,7 @@ class Workspace:  # pylint: disable=too-many-public-methods
             )
         except Exception as exc:
             logger.warning(
-                "weixin->wechat jobs.json migration failed for "
-                "agent %s: %s",
+                "weixin->wechat jobs.json migration failed for agent %s: %s",
                 sanitize_log_value(self.agent_id),
                 sanitize_log_value(exc),
             )
@@ -913,6 +918,8 @@ class Workspace:  # pylint: disable=too-many-public-methods
         # Repeated cancellation of the caller must not interrupt final writes.
         await run_async_to_completion(cancel_and_drain())
 
+    # Keep the transaction or callback contract intact.
+    # pylint: disable=R0912
     async def stop(
         self,
         final: bool = True,
@@ -996,6 +1003,8 @@ class Workspace:  # pylint: disable=too-many-public-methods
         logger.info(
             f"Workspace stopped: {sanitize_log_value(self.agent_id)}",
         )
+
+    # pylint: enable=R0912
 
     def __repr__(self) -> str:
         """String representation of workspace."""

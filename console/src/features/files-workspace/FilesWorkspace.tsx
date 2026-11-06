@@ -236,6 +236,7 @@ export default function FilesWorkspace({
   } | null>(null);
   const artifactSaveRef = useRef(artifactSave);
   artifactSaveRef.current = artifactSave;
+  const [editorRevision, setEditorRevision] = useState(0);
   const [editorNavigation, setEditorNavigation] = useState<{
     path: string;
     line: number;
@@ -261,10 +262,13 @@ export default function FilesWorkspace({
 
   useEffect(
     () =>
-      listenForProjectDirectoryChanges((changedScopeKey) => {
+      listenForProjectDirectoryChanges((changedScopeKey, options) => {
         if (changedScopeKey === scopeKey) {
-          clearProjectTabs(scopeKey);
-          setDirectoryRevision((current) => current + 1);
+          if (!options.preserveTabs) {
+            clearProjectTabs(scopeKey);
+            setEditorRevision((current) => current + 1);
+            setDirectoryRevision((current) => current + 1);
+          }
         }
       }),
     [clearProjectTabs, scopeKey],
@@ -1009,7 +1013,7 @@ export default function FilesWorkspace({
           />
         ) : (
           <TabbedEditor
-            key={`${scopeKey}:${directoryRevision}`}
+            key={`${scopeKey}:${editorRevision}`}
             tabs={tabs}
             previewActive={active}
             previewManagedUpdates

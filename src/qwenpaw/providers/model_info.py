@@ -42,18 +42,24 @@ class ModelInfo(BaseModel):
     )
     supports_multimodal: bool | None = Field(
         default=None,
-        description="Whether this model supports multimodal input "
-        "(image/audio/video). None means not yet probed.",
+        description=(
+            "Whether this model supports multimodal input "
+            "(image/audio/video). None means not yet probed."
+        ),
     )
     supports_image: bool | None = Field(
         default=None,
-        description="Whether this model supports image input. "
-        "None means not yet probed.",
+        description=(
+            "Whether this model supports image input. "
+            "None means not yet probed."
+        ),
     )
     supports_video: bool | None = Field(
         default=None,
-        description="Whether this model supports video input. "
-        "None means not yet probed.",
+        description=(
+            "Whether this model supports video input. "
+            "None means not yet probed."
+        ),
     )
     probe_source: str | None = Field(
         default=None,
@@ -128,8 +134,10 @@ class ModelInfo(BaseModel):
     max_input_length: int = Field(
         default=DEFAULT_CONTEXT_WINDOW,
         ge=1000,
-        description="Maximum input context window size (tokens). "
-        "Controls when context compaction is triggered.",
+        description=(
+            "Maximum input context window size (tokens). "
+            "Controls when context compaction is triggered."
+        ),
     )
     max_input_length_configured: bool = Field(
         default=False,
@@ -170,14 +178,18 @@ class ModelInfo(BaseModel):
     context_length_source: str | None = None
     generate_kwargs: Dict[str, Any] = Field(
         default_factory=dict,
-        description="Per-model generation parameters that override "
-        "provider-level generate_kwargs.",
+        description=(
+            "Per-model generation parameters that override "
+            "provider-level generate_kwargs."
+        ),
     )
     relay_reasoning: bool = Field(
         default=True,
-        description="Whether to relay reasoning_content (thinking traces) "
-        "back in subsequent turns. When False the formatter omits "
-        "reasoning_content from assistant wire messages.",
+        description=(
+            "Whether to relay reasoning_content (thinking traces) "
+            "back in subsequent turns. When False the formatter omits "
+            "reasoning_content from assistant wire messages."
+        ),
     )
 
     @model_validator(mode="before")
@@ -218,38 +230,65 @@ class ModelInfo(BaseModel):
 
     thinking_enabled: bool | None = Field(
         default=None,
-        description="Tri-state thinking toggle: None=auto (don't send, "
-        "use model default), True=enable, False=disable. "
-        "Provider-specific mapping applies.",
+        description=(
+            "Tri-state thinking toggle: None=auto (don't send, "
+            "use model default), True=enable, False=disable. "
+            "Provider-specific mapping applies."
+        ),
     )
 
     thinking_budget: int | None = Field(
         default=None,
         ge=1,
-        description="Token budget for thinking. Provider-specific: "
-        "DashScope/Anthropic use thinking_budget, Gemini uses "
-        "thinking_config.thinking_budget.",
+        description=(
+            "Token budget for thinking. Provider-specific: "
+            "DashScope/Anthropic use thinking_budget, Gemini uses "
+            "thinking_config.thinking_budget."
+        ),
     )
     reasoning_effort: str | None = Field(
         default=None,
-        description="Reasoning effort level: 'low', 'medium', 'high'. "
-        "Used by OpenAI-family providers.",
+        description=(
+            "Reasoning effort level: 'low', 'medium', 'high'. "
+            "Used by OpenAI-family providers."
+        ),
     )
     thinking_param_style: str | None = Field(
         default=None,
-        description="Override provider-level thinking_param_style for this "
-        "model. 'budget' shows Slider, 'effort' shows Select.",
+        description=(
+            "Override provider-level thinking_param_style for this "
+            "model. 'budget' shows Slider, 'effort' shows Select."
+        ),
     )
     reasoning_effort_options: List[str] | None = Field(
         default=None,
-        description="Override provider-level reasoning_effort_options for "
-        "this model.",
+        description=(
+            "Override provider-level reasoning_effort_options for this model."
+        ),
     )
     thinking_budget_range: List[int] | None = Field(
         default=None,
-        description="Override provider-level thinking_budget_range [min, max] "
-        "for this model.",
+        description=(
+            "Override provider-level thinking_budget_range [min, max] "
+            "for this model."
+        ),
     )
+
+    @model_validator(mode="after")
+    def validate_thinking_budget_range(self):
+        """Require a complete, ordered [min, max] thinking budget range."""
+        budget_range = self.thinking_budget_range
+        if budget_range is not None and (
+            len(budget_range) != 2
+            or budget_range[0] > budget_range[1]
+            or budget_range[1] < 1
+        ):
+            raise ValueError(
+                "thinking_budget_range must be [min, max] with min <= max "
+                "and max >= 1",
+            )
+        return self
+
     supports_agent_thinking: bool | None = Field(
         default=None,
         description=(

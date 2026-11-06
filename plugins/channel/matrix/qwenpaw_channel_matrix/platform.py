@@ -4,6 +4,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import hmac
 import html
 import inspect
 import io
@@ -23,6 +25,7 @@ import httpx
 from nio import (
     AsyncClient,
     AsyncClientConfig,
+    KeysQueryResponse,
     KeysUploadResponse,
     LoginResponse,
     KeyVerificationCancel,
@@ -66,6 +69,34 @@ from qwenpaw.schemas import (
     VideoContent,
 )
 
+# Crypto-only imports must remain conditional in plaintext nio builds.
+# pylint: disable=ungrouped-imports
+if ENCRYPTION_ENABLED:
+    # Optional crypto exports are unavailable in plaintext-only nio builds.
+    from nio.store import (
+        DefaultStore,
+        KeyStore,
+    )  # pylint: disable=ungrouped-imports
+
+    class _ScopedStore(DefaultStore):
+        """Use the scope-derived database basename for every state file."""
+
+        def __post_init__(self):
+            super().__post_init__()
+            base = Path(self.database_name).stem
+            for attribute, suffix in (
+                ("trust_db", ".trusted_devices"),
+                ("blacklist_db", ".blacklisted_devices"),
+                ("ignore_db", ".ignored_devices"),
+            ):
+                path = Path(self.store_path) / f"{base}{suffix}"
+                setattr(self, attribute, KeyStore(str(path)))
+
+else:
+    DefaultStore = None
+    _ScopedStore = None
+
+# pylint: enable=ungrouped-imports
 logger = logging.getLogger("qwenpaw.plugins.matrix")
 
 
@@ -94,6 +125,11 @@ _NON_RETRYABLE_AUTH_CODES = frozenset(
         "M_USER_DEACTIVATED",
     },
 )
+_E2EE_HEALTH_TIMEOUT = 10
+_E2EE_HEALTH_INTERVAL = 60
+_E2EE_STARTUP_ATTEMPTS = 3
+_E2EE_STARTUP_RETRY_DELAY = 1
+
 _LOGIN_RETRY_INITIAL_DELAY = 5.0
 _LOGIN_RETRY_MAX_DELAY = 60.0
 
@@ -195,7 +231,7 @@ class HistoryEntry:
     media_parts: Optional[List[Any]] = None
 
 
-# pylint: disable=wrong-import-position
+# pylint: disable=wrong-import-position,ungrouped-imports
 from qwenpaw.app.channels.utils import (  # noqa: E402
     data_url_filename,
     parse_data_url_async,
@@ -204,7 +240,7 @@ from qwenpaw.utils.media_paths import local_media_path  # noqa: E402
 from .errors import MatrixDeliveryError  # noqa: E402
 from .state import MatrixStateStore  # noqa: E402
 
-# pylint: enable=wrong-import-position
+# pylint: enable=wrong-import-position,ungrouped-imports
 
 
 class MatrixPlatform:
@@ -237,6 +273,19 @@ class MatrixPlatform:
             if config.get("workspace_dir")
             else None
         )
+        self._auth_scope = {
+            "homeserver": self.homeserver,
+            "login_user": self.matrix_user_id.strip(),
+            "device_id": (
+                self.device_id
+                or self._derive_device_id_from_name(self.device_name)
+            ),
+        }
+        self._cached_auth_identity = None
+        self._e2ee_error = None
+        self._e2ee_query_retryable = False
+        self._ready = False
+        self._logged_megolm_failure = False
         self._state = MatrixStateStore(config)
         self._client = None
         self._http_client = None
@@ -278,6 +327,9 @@ class MatrixPlatform:
         if not self.enabled or not self.homeserver:
             await self.on_state("disconnected")
             return
+        self._ready = False
+        self._e2ee_error = None
+        self._logged_megolm_failure = False
         self._start_task = asyncio.current_task()
         self._stopping = False
         self._stop_event = asyncio.Event()
@@ -297,7 +349,7 @@ class MatrixPlatform:
                 )
             )
             self._init_async_client(resolved_device_id)
-            if has_password_creds:
+            if has_password_creds and not self._cached_auth_identity:
                 authenticated = await self._login_with_password(
                     login_user,
                     resolved_device_id,
@@ -315,8 +367,11 @@ class MatrixPlatform:
                 follow_redirects=True,
                 timeout=60,
             )
+            self._ready = True
             await self.on_state("connected")
             self._sync_task = self._spawn(self._sync_loop())
+            if self.encryption:
+                self._spawn(self._e2ee_health_loop())
         except BaseException:
             # Retain the SDK and claims for explicit, retryable stop cleanup.
             await self.on_state("failed")
@@ -327,6 +382,7 @@ class MatrixPlatform:
     async def stop(self):
         # Keep the existing SDK state flow and callback contract.
         # pylint: disable=too-many-branches
+        self._ready = False
         self._stopping = True
         if self._stop_event is not None:
             self._stop_event.set()
@@ -394,8 +450,26 @@ class MatrixPlatform:
     def _load_auth_state(self, restore_token=True, restore_identity=True):
         try:
             payload = self._state.auth_hint() or {}
-            if restore_token and not self.access_token:
-                self.access_token = str(payload.get("access_token", ""))
+            if restore_token:
+                token = payload.get("access_token")
+                user = payload.get("user_id")
+                device = payload.get("device_id")
+                if payload.get(
+                    "credential_scope",
+                ) != self._auth_scope or not all(
+                    isinstance(value, str) and value
+                    for value in (token, user, device)
+                ):
+                    return
+                if not hmac.compare_digest(
+                    str(payload.get("password_fingerprint", "")),
+                    self._password_fingerprint(token),
+                ):
+                    return
+                if not self.access_token:
+                    self.access_token = token
+                    self.device_id = device
+                    self._cached_auth_identity = (user, device)
             if restore_identity:
                 self.matrix_user_id = self.matrix_user_id or str(
                     payload.get("user_id", ""),
@@ -406,62 +480,22 @@ class MatrixPlatform:
         except Exception as exc:
             logger.warning("Matrix auth hint could not be read: %s", exc)
 
-    async def _bind_authenticated_state(self, whoami=None):
+    def _password_fingerprint(self, token: str) -> str:
+        """Bind a cached session to its password with a slow password KDF."""
+        digest = hashlib.pbkdf2_hmac(
+            "sha256",
+            self.password.encode(),
+            token.encode(),
+            600_000,
+        )
+        return "pbkdf2-sha256:600000:" + digest.hex()
+
+    async def _bind_authenticated_state(self):
         user_id = self._user_id or ""
         device_id = self._client.device_id or ""
-        verified = False
-        if self._state.has_legacy_state():
-            hint = self._state.legacy_auth() or {}
-            if (
-                hint.get("user_id") != user_id
-                or hint.get("device_id", "") != device_id
-            ):
-                raise RuntimeError("MATRIX_LEGACY_IDENTITY_CONFLICT")
-            expected_owner = {
-                "homeserver": self.homeserver,
-                "user_id": user_id,
-                "device_id": device_id,
-                "workspace_dir": str(self._workspace_dir),
-            }
-            owner = self._state.legacy_owner()
-            if owner is not None:
-                if owner != expected_owner:
-                    raise RuntimeError("MATRIX_LEGACY_OWNER_CONFLICT")
-                verified = True
-            elif self._state.has_legacy_authorization:
-                verified = self._state.captured_legacy_verified(
-                    user_id,
-                    device_id,
-                )
-                if not verified:
-                    raise RuntimeError("MATRIX_LEGACY_OWNER_UNVERIFIED")
-            else:
-                # The old JSON has no homeserver. Only a token the user has
-                # explicitly provided for THIS server may be checked here.
-                # Never transmit an unrelated cached token to a new server.
-                explicit_token = self.config.get("access_token") or ""
-                if not explicit_token or explicit_token != hint.get(
-                    "access_token",
-                ):
-                    raise RuntimeError("MATRIX_LEGACY_OWNER_UNVERIFIED")
-                if whoami is None:
-                    current_token = self._client.access_token
-                    try:
-                        self._client.access_token = explicit_token
-                        whoami = await self._client.whoami()
-                    finally:
-                        self._client.access_token = current_token
-                verified = (
-                    isinstance(whoami, WhoamiResponse)
-                    and whoami.user_id == user_id
-                    and whoami.device_id == device_id
-                )
-                if not verified:
-                    raise RuntimeError("MATRIX_LEGACY_OWNER_UNVERIFIED")
         self._state.bind(
             user_id,
             device_id,
-            legacy_verified=verified,
             encryption_enabled=self.encryption,
         )
         if self.encryption:
@@ -469,7 +503,7 @@ class MatrixPlatform:
             self._client.store_path = str(self._state.crypto_dir)
             self._client.config = replace(
                 self._client.config,
-                store_name=self._state.crypto_store_name,
+                store_name=self._state.database_name,
             )
 
     def _save_auth_state(self):
@@ -484,12 +518,25 @@ class MatrixPlatform:
                 self._client.access_token,
                 self._user_id,
                 self._client.device_id or "",
+                credential_scope=self._auth_scope,
+                password_fingerprint=(
+                    self._password_fingerprint(
+                        self._client.access_token,
+                    )
+                    if self.password
+                    else ""
+                ),
             )
         except OSError as exc:
             logger.warning("Matrix auth state could not be saved: %s", exc)
         self.access_token = self._client.access_token
         self.matrix_user_id = self._user_id
         self.device_id = self._client.device_id or self.device_id
+        if self.password:
+            self._cached_auth_identity = (
+                self._user_id,
+                self._client.device_id,
+            )
 
     def _load_sync_token(self):
         return self._state.load_sync()
@@ -527,6 +574,7 @@ class MatrixPlatform:
         sync_s = self.sync_timeout_ms / 1000
         request_timeout = max(sync_s + 30, 60)
         return AsyncClientConfig(
+            store=_ScopedStore if encryption else DefaultStore,
             store_sync_tokens=False,
             encryption_enabled=encryption,
             request_timeout=request_timeout,
@@ -542,11 +590,13 @@ class MatrixPlatform:
         has_password_creds: bool,
         has_token_cred: bool,
     ) -> None:
+        # Reuse only a session saved for this password configuration.
+        # Explicit tokens must never be replaced with a cached credential.
         has_explicit_identity = (
             has_password_creds or has_token_cred or self.matrix_user_id
         )
         self._load_auth_state(
-            restore_token=False,
+            restore_token=has_password_creds and not has_token_cred,
             restore_identity=not has_explicit_identity,
         )
 
@@ -759,6 +809,18 @@ class MatrixPlatform:
                 if self._is_stopping():
                     return False
                 return await self._handle_token_login_success(whoami)
+            if (
+                self._cached_auth_identity
+                and getattr(whoami, "status_code", None) == "M_UNKNOWN_TOKEN"
+                and self.password
+            ):
+                self.access_token = ""
+                self._client.access_token = ""
+                self._cached_auth_identity = None
+                return await self._login_with_password(
+                    self._auth_scope["login_user"],
+                    self._client.device_id,
+                )
             if not self._is_retryable_auth_failure(whoami):
                 logger.error("MatrixChannel: token login rejected: %s", whoami)
                 return False
@@ -777,7 +839,17 @@ class MatrixPlatform:
         self,
         whoami: WhoamiResponse,
     ) -> bool:
-        if self.matrix_user_id and self.matrix_user_id != whoami.user_id:
+        if self._cached_auth_identity:
+            if self._cached_auth_identity != (
+                whoami.user_id,
+                whoami.device_id,
+            ):
+                logger.error(
+                    "Matrix cached session identity changed; refusing it",
+                )
+                self._client.access_token = ""
+                return False
+        elif self.matrix_user_id and self.matrix_user_id != whoami.user_id:
             logger.error(
                 "MatrixChannel: configured user_id=%s does not match "
                 "access_token owner=%s; refusing stale "
@@ -796,7 +868,7 @@ class MatrixPlatform:
             self._user_id,
             whoami.device_id,
         )
-        await self._bind_authenticated_state(whoami)
+        await self._bind_authenticated_state()
         self._save_auth_state()
         if self.encryption and self._client.store_path:
             if self._client.device_id:
@@ -829,18 +901,160 @@ class MatrixPlatform:
             ),
         )
 
+    async def health_check(self) -> dict[str, Any]:
+        """Check Matrix client connection status."""
+        if not getattr(self, "enabled", True) or not self.homeserver:
+            return {
+                "channel": "matrix",
+                "status": "disabled",
+                "detail": "Matrix homeserver not configured.",
+            }
+        if self._client is None:
+            return {
+                "channel": "matrix",
+                "status": "unhealthy",
+                "detail": "Matrix client not initialized.",
+            }
+        has_token = bool(self._client.access_token)
+        if not has_token:
+            return {
+                "channel": "matrix",
+                "status": "unhealthy",
+                "detail": "Matrix client has no access token (not logged in).",
+            }
+        if not self._ready:
+            return {
+                "channel": "matrix",
+                "status": "unhealthy",
+                "detail": (
+                    self._e2ee_error
+                    or "Matrix channel has not completed startup."
+                ),
+            }
+        if self.encryption:
+            try:
+                keys_ok = await asyncio.wait_for(
+                    self._check_e2ee_device_keys(repair=False),
+                    timeout=_E2EE_HEALTH_TIMEOUT,
+                )
+            except asyncio.TimeoutError:
+                keys_ok = self._record_e2ee_error(
+                    "Matrix E2EE device keys health check timed out.",
+                )
+            if not keys_ok:
+                return {
+                    "channel": "matrix",
+                    "status": "unhealthy",
+                    "detail": self._e2ee_error,
+                }
+        return {
+            "channel": "matrix",
+            "status": "healthy",
+            "detail": "Matrix client is connected.",
+        }
+
+    def _record_e2ee_error(self, detail: str) -> bool:
+        if detail != self._e2ee_error:
+            logger.error("MatrixChannel: %s", detail)
+        self._e2ee_error = detail
+        return False
+
+    # Keep the transaction or callback contract intact.
+    # pylint: disable=R0911
+    async def _check_e2ee_device_keys(self, *, repair: bool) -> bool:
+        """Reconcile our persisted identity with the homeserver's device."""
+        self._e2ee_query_retryable = False
+        if not self._client or not self._client.olm:
+            return self._record_e2ee_error("Matrix E2EE store is not loaded.")
+        client = self._client
+        try:
+            # nio ignores its own device when updating its device store, so
+            # inspect the server response, not client.device_store.
+            client.olm.add_changed_users({client.user_id})
+            try:
+                response = await asyncio.wait_for(
+                    client.keys_query(),
+                    timeout=_E2EE_HEALTH_TIMEOUT,
+                )
+            except Exception as exc:
+                self._e2ee_query_retryable = True
+                logger.warning("Matrix E2EE device keys query failed: %s", exc)
+                return self._record_e2ee_error(
+                    "Matrix E2EE device keys query could not complete.",
+                )
+            if not isinstance(response, KeysQueryResponse):
+                self._e2ee_query_retryable = self._is_retryable_auth_failure(
+                    response,
+                )
+                return self._record_e2ee_error(
+                    "Matrix E2EE device keys query failed.",
+                )
+            server_name = client.user_id.split(":", 1)[-1]
+            devices = response.device_keys.get(client.user_id)
+            if server_name in response.failures or devices is None:
+                self._e2ee_query_retryable = True
+                return self._record_e2ee_error(
+                    "Matrix E2EE device keys could not be verified.",
+                )
+            remote = devices.get(client.device_id)
+            if remote is not None:
+                expected = {
+                    f"{kind}:{client.device_id}": value
+                    for kind, value in client.olm.account.identity_keys.items()
+                }
+                if remote.get("keys") != expected:
+                    return self._record_e2ee_error(
+                        "Matrix E2EE device keys conflict with the local "
+                        "crypto store; check the configured device_id.",
+                    )
+            elif not repair:
+                return self._record_e2ee_error(
+                    "Matrix E2EE device keys are missing on the homeserver; "
+                    "restart the channel to re-upload them.",
+                )
+            else:
+                if client.olm.account.shared:
+                    logger.error(
+                        "MatrixChannel: homeserver lost E2EE device keys; "
+                        "re-uploading the existing identity",
+                    )
+                # Persist the retry before sending. Keep the same account
+                # and all existing Olm/Megolm sessions, including on failure.
+                client.olm.account.shared = False
+                client.olm.save_account()
+            if repair and client.should_upload_keys:
+                uploaded = await client.keys_upload()
+                if not isinstance(uploaded, KeysUploadResponse):
+                    return self._record_e2ee_error(
+                        "Matrix E2EE keys upload failed; restart the channel "
+                        "to retry.",
+                    )
+                logger.info("MatrixChannel: E2E keys uploaded")
+            self._e2ee_error = None
+            return True
+        except Exception as exc:
+            logger.warning("MatrixChannel: E2EE key check failed: %s", exc)
+            return self._record_e2ee_error(
+                "Matrix E2EE device keys could not be verified.",
+            )
+
+    # pylint: enable=R0911
+
     async def _setup_e2ee_after_login(self) -> bool:
         if not self.encryption:
             return True
-        if self._client.should_upload_keys:
-            resp = await self._client.keys_upload()
-            if not isinstance(resp, KeysUploadResponse):
-                logger.error(
-                    "MatrixChannel: E2E keys upload failed after login: %s",
-                    resp,
-                )
+        for attempt in range(_E2EE_STARTUP_ATTEMPTS):
+            if self._is_stopping():
+                raise asyncio.CancelledError
+            if await self._check_e2ee_device_keys(repair=True):
+                break
+            if (
+                not self._e2ee_query_retryable
+                or attempt + 1 == _E2EE_STARTUP_ATTEMPTS
+            ):
                 return False
-            logger.info("MatrixChannel: E2E keys uploaded")
+            if await self._wait_backoff_or_stop(_E2EE_STARTUP_RETRY_DELAY):
+                raise asyncio.CancelledError
         self._client.add_event_callback(
             self._on_room_encrypted_media_event,
             (
@@ -870,6 +1084,17 @@ class MatrixPlatform:
             "MatrixChannel: E2EE enabled, encrypted event handlers registered",
         )
         return True
+
+    async def _e2ee_health_loop(self) -> None:
+        # Probe independently of sync/send, so message traffic cannot multiply
+        # key queries or wait for a slow homeserver health response.
+        while not await self._wait_backoff_or_stop(_E2EE_HEALTH_INTERVAL):
+            health = await self.health_check()
+            if self._is_stopping():
+                return
+            await self.on_state(
+                "connected" if health["status"] == "healthy" else "failed",
+            )
 
     async def _e2ee_maintenance(self) -> None:
         if not self.encryption or not self._client or (not self._client.olm):
@@ -1894,12 +2119,16 @@ class MatrixPlatform:
         room: MatrixRoom,
         event: MegolmEvent,
     ) -> None:
-        logger.warning(
-            "MatrixChannel: could not decrypt event %s in %s (session_id=%s)",
+        """Handle undecryptable encrypted events (missing session key)."""
+        log = logger.warning if self._logged_megolm_failure else logger.error
+        log(
+            "MatrixChannel: could not decrypt event %s in %s (session_id=%s); "
+            "check Matrix channel health for missing E2EE device keys",
             event.event_id,
             room.room_id,
             getattr(event, "session_id", "?"),
         )
+        self._logged_megolm_failure = True
 
     async def _on_room_encrypted_media_event(
         self,

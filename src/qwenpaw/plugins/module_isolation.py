@@ -66,7 +66,6 @@ import threading
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -618,6 +617,8 @@ def compile_plugin_import_closure(
     _compile_file(Path(entry_file), search_paths, seen)
 
 
+# Keep the transaction or callback contract intact.
+# pylint: disable=R0912,R1702
 def probe_plugin_source(
     plugin_id: str,
     source_path: Path,
@@ -652,6 +653,7 @@ def probe_plugin_source(
     spec.loader = source_only_loader(spec.loader)
     module = importlib.util.module_from_spec(spec)
     module.__dict__["__builtins__"] = plugin_builtins
+    previous_paths = list(sys.path)
     try:
         sys.modules[probe_name] = module
         module.__package__ = probe_name
@@ -671,7 +673,34 @@ def probe_plugin_source(
                 "(or a PawApp 'app' instance)",
             )
     finally:
-        finish_probe_import(plugin_id, source_path)
+        try:
+            finish_probe_import(plugin_id, source_path)
+        finally:
+            root = _norm(source_path)
+            current = tuple(sys.path)
+            preserved = set()
+            boundary = len(current)
+            for original in reversed(previous_paths):
+                for index in range(boundary - 1, -1, -1):
+                    if current[index] is original:
+                        preserved.add(index)
+                        boundary = index
+                        break
+            for index in range(len(current) - 1, -1, -1):
+                entry = current[index]
+                if (
+                    index not in preserved
+                    and isinstance(entry, str)
+                    and os.path.isabs(entry)
+                ):
+                    path = _norm(entry)
+                    if path == root or path.startswith(root + os.sep):
+                        # Delete this entry only, preserving other live edits.
+                        if index < len(sys.path) and sys.path[index] is entry:
+                            del sys.path[index]
+
+
+# pylint: enable=R0912,R1702
 
 
 def finish_probe_import(plugin_id: str, source_path: Path) -> None:

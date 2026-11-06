@@ -30,6 +30,10 @@ if (!existsSync(teamArtifactsSuite))
 // Keep this inventory separate from Vitest discovery: deleting a feature's
 // tests during a merge must fail verification instead of silently reducing it.
 const suites = {
+  upstreamIntegration: [
+    "src/layouts/MainLayout/MainLayout.settings.test.tsx",
+    "src/features/files-workspace/FilesWorkspace.directory-confirmation.test.tsx",
+  ],
   deploymentConfiguration: ["vite.config.test.ts"],
   skillImport: ["src/pages/Agent/Skills/useSkills.paths.test.ts"],
   turnFileDelivery: [

@@ -5,6 +5,7 @@ discovery, disk-based plugin listing, and plugin UI file serving.
 These cover the path-traversal guards and the pre-loader fallback
 paths that previously had no test coverage.
 """
+
 # pylint: disable=protected-access,redefined-outer-name,unused-argument,use-implicit-booleaness-not-comparison  # noqa: E501
 from __future__ import annotations
 
@@ -35,6 +36,33 @@ def _zip_bytes(entries: dict[str, str]) -> bytes:
         for name, content in entries.items():
             zf.writestr(name, content)
     return buffer.getvalue()
+
+
+@pytest.mark.parametrize(
+    ("code", "expected"),
+    [
+        ("DEPENDENCY_UNSATISFIED", "requirements"),
+        ("DEPENDENCY_ENVIRONMENT_IDENTITY_CHANGED", "environment"),
+        ("DEPENDENCY_REPAIR_REQUIRED", "repair"),
+    ],
+)
+def test_dependency_refusal_instructions_match_failure_stage(code, expected):
+    from qwenpaw.app.routers.plugins import dependency_http_error
+    from qwenpaw.plugins.dependency_gate import (
+        GateDecision,
+        SharedDependencyError,
+    )
+
+    response = dependency_http_error(
+        SharedDependencyError(
+            GateDecision(False, False, reason=code, reason_code=code),
+        ),
+    )
+    assert response.status_code == 409
+    assert response.detail["code"] == code
+    assert expected in response.detail["instructions"][0].lower()
+    if code != "DEPENDENCY_UNSATISFIED":
+        assert "requirements" not in response.detail["instructions"][0].lower()
 
 
 # ---------------------------------------------------------------------------
@@ -301,8 +329,10 @@ class TestMarketProvenance:
         ("source", "expected"),
         [
             (
-                "https://platform.agentscope.io/plugins/onesix/"
-                "qwenpaw-plugin-tool-wait_agent_task/archive/zip/master",
+                (
+                    "https://platform.agentscope.io/plugins/onesix/"
+                    "qwenpaw-plugin-tool-wait_agent_task/archive/zip/master"
+                ),
                 "@onesix/qwenpaw-plugin-tool-wait_agent_task",
             ),
             (

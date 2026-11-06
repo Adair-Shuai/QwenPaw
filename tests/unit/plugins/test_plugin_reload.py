@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 import pytest
+from tests.fs_alias_support import directory_alias
 
 from qwenpaw.plugins.architecture import PluginManifest
 from qwenpaw.plugins.lifecycle import UnloadMode
@@ -42,7 +43,7 @@ def _write_plugin(
     )
     (root / "main.py").write_text(
         "class _P:\n"
-        f"    def register(self, api):\n"
+        "    def register(self, api):\n"
         f"        {body}\n"
         "plugin = _P()\n",
         encoding="utf-8",
@@ -61,7 +62,7 @@ def _link_cached_sources(root, linked_source, entry, helper):
         )
         entry.rename(target / entry.name)
         helper.rename(target / helper.name)
-        (root / "backend").symlink_to(target.name, target_is_directory=True)
+        directory_alias(target, root / "backend")
         manifest = json.loads((root / "plugin.json").read_text())
         manifest["entry"]["backend"] = "backend/main.py"
         (root / "plugin.json").write_text(json.dumps(manifest))
@@ -75,6 +76,7 @@ def _link_cached_sources(root, linked_source, entry, helper):
 
 
 @pytest.mark.asyncio
+@pytest.mark.usefixtures("bounded_dependency_environment")
 @pytest.mark.parametrize(
     ("linked_source", "external_cache"),
     [
@@ -115,14 +117,8 @@ async def test_reload_ignores_same_size_same_mtime_bytecode(
     vendor.parent.mkdir(parents=True)
     vendor.write_text("VALUE = 'third-party'\n")
     if external_cache:
-        (root / "dependency_alias").symlink_to(
-            ".venv",
-            target_is_directory=True,
-        )
-        (root / "actual_backend" / "cycle").symlink_to(
-            "..",
-            target_is_directory=True,
-        )
+        directory_alias(root / ".venv", root / "dependency_alias")
+        directory_alias(root, root / "actual_backend" / "cycle")
         vendor = root / "dependency_alias" / "lib" / "vendor.py"
     vendor_cache = Path(py_compile.compile(str(vendor), doraise=True))
     vendor_before = vendor_cache.read_bytes(), vendor_cache.stat().st_mtime_ns
@@ -238,7 +234,7 @@ async def test_failed_reload_preserves_user_symlinks_and_external_data(
         if link_kind == "owned-root":
             provision_files(plugin_id, factories[0], dest, "1.0.0")
             shutil.rmtree(dest)
-        dest.symlink_to(external, target_is_directory=True)
+        directory_alias(external, dest)
         assert (
             provision_files(plugin_id, factories[0], dest, "1.0.0") == "keep"
         )
@@ -248,7 +244,7 @@ async def test_failed_reload_preserves_user_symlinks_and_external_data(
         link = dest / ("nested" if link_kind == "directory" else relative)
         if link.is_dir():
             shutil.rmtree(link)
-            link.symlink_to(external, target_is_directory=True)
+            directory_alias(external, link)
         else:
             link.unlink()
             link.symlink_to(external / "note.txt")

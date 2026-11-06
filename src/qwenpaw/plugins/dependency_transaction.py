@@ -41,6 +41,7 @@ _PLAN_FIELDS = (
     "continuation_command",
     "host_bundle_identity",
     "dependency_state_dir",
+    "policy_version",
 )
 
 
@@ -75,6 +76,7 @@ def authenticate_plan(directory, operation, *, seal=False):
                 "continuation_command",
                 "host_bundle_identity",
                 "dependency_state_dir",
+                "policy_version",
             }
         },
         sort_keys=True,
@@ -114,7 +116,7 @@ def _hash(path):
 
 
 def environment_fingerprint(snapshot):
-    """Include exact metadata bytes, not just selected distribution versions."""
+    ("Include exact metadata bytes, not just selected distribution versions.")
     evidence = {"environment": snapshot, "metadata": {}}
     for name, row in snapshot["distributions"].items():
         root = Path(row["metadata_path"])
@@ -128,22 +130,8 @@ def environment_fingerprint(snapshot):
     ).hexdigest()
 
 
-def visible_distributions(distributions, sites):
-    """Select provider rows by physical site identity without changing them."""
-    visible = {str(canonical(site)) for site in sites}
-    visibility, result = {}, {}
-    for name, row in distributions.items():
-        site = Path(row["metadata_path"]).parent
-        key = str(site)
-        if key not in visibility:
-            visibility[key] = str(canonical(site)) in visible
-        if visibility[key]:
-            result[name] = row
-    return result
-
-
 def verify_providers(observed, proposed, changes, *, full_metadata=True):
-    """Verify target versions and origins, plus full metadata for offline use."""
+    ("Verify target versions and origins, plus full metadata for offline use.")
     for change in changes:
         actual, expected = (
             observed.get(change["name"]),
@@ -167,10 +155,13 @@ def verify_providers(observed, proposed, changes, *, full_metadata=True):
             ):
                 continue
         raise RuntimeError(
-            "DEPENDENCY_VERIFICATION_FAILED: fresh dependency provider differs.",
+            "DEPENDENCY_VERIFICATION_FAILED: fresh dependency "
+            "provider differs.",
         )
 
 
+# Keep the transaction or callback contract intact.
+# pylint: disable=R0912
 def _owned(row, prefix):
     site = canonical(Path(row["metadata_path"]).parent)
     record = Path(row["metadata_path"]) / "RECORD"
@@ -209,7 +200,8 @@ def _owned(row, prefix):
             if path.suffix == ".pyc":
                 continue
             raise RuntimeError(
-                "DEPENDENCY_PLAN_UNVERIFIED: an installed owned file is missing.",
+                "DEPENDENCY_PLAN_UNVERIFIED: an installed owned "
+                "file is missing.",
             )
         if not path.is_file():
             raise RuntimeError(
@@ -230,11 +222,13 @@ def _owned(row, prefix):
                 actual = None
             if not separator or actual != digest:
                 raise RuntimeError(
-                    "DEPENDENCY_PLAN_STALE: installed file differs from RECORD.",
+                    "DEPENDENCY_PLAN_STALE: installed file differs "
+                    "from RECORD.",
                 )
         if entry[2] and int(entry[2]) != len(content):
             raise RuntimeError(
-                "DEPENDENCY_PLAN_STALE: installed file length differs from RECORD.",
+                "DEPENDENCY_PLAN_STALE: installed file length "
+                "differs from RECORD.",
             )
         files[str(resolved)] = {
             "sha256": hashlib.sha256(content).hexdigest(),
@@ -252,7 +246,8 @@ def _owned(row, prefix):
                         != canonical(resolved.parent / "__pycache__").parts
                     ):
                         raise RuntimeError(
-                            "DEPENDENCY_PLAN_UNVERIFIED: unsafe installed cache.",
+                            "DEPENDENCY_PLAN_UNVERIFIED: unsafe installed "
+                            "cache.",
                         )
                     files[str(cache_path)] = {
                         "sha256": _hash(cache),
@@ -263,6 +258,9 @@ def _owned(row, prefix):
             "DEPENDENCY_PLAN_UNVERIFIED: RECORD does not own itself.",
         )
     return files
+
+
+# pylint: enable=R0912
 
 
 def dependency_site_is_mutable(site, prefix, managed_root, context=None):
@@ -305,6 +303,8 @@ def _distribution_file_in_scope(path, site, prefix, context=None):
     )
 
 
+# Keep the transaction or callback contract intact.
+# pylint: disable=R0912,R0915
 def prepare_payload(
     directory,
     snapshot,
@@ -328,29 +328,85 @@ def prepare_payload(
                 context,
             ):
                 raise RuntimeError(
-                    "DEPENDENCY_ENVIRONMENT_PROTECTED: installed site is protected.",
+                    "DEPENDENCY_ENVIRONMENT_PROTECTED: installed site "
+                    "is protected.",
                 )
             owned = _owned(row, snapshot["prefix"])
             for path, evidence in owned.items():
                 if _immutable_path(path, context):
                     raise RuntimeError(
-                        "DEPENDENCY_ENVIRONMENT_PROTECTED: installed file is protected.",
+                        "DEPENDENCY_ENVIRONMENT_PROTECTED: installed file "
+                        "is protected.",
                     )
                 if str(path) in old_files:
                     raise RuntimeError(
-                        "DEPENDENCY_PLAN_UNVERIFIED: shared installed file ownership.",
+                        "DEPENDENCY_PLAN_UNVERIFIED: shared installed file "
+                        "ownership.",
                     )
                 old_files[str(path)] = evidence
                 ownership.setdefault(str(path), set()).add(name)
-        else:
-            record = Path(row["metadata_path"]) / "RECORD"
-            if record.is_file():
-                for entry in csv.reader(
-                    record.read_text(encoding="utf-8").splitlines(),
-                ):
-                    if entry:
-                        path = canonical(record.parent.parent / entry[0])
-                        ownership.setdefault(str(path), set()).add(name)
+    # Only these paths are queried below. All providers still participate;
+    # canonicalize each containing directory once, then verify exact matches
+    # and file symlinks with the original canonical operation.
+    queried = {path.casefold() for path in old_files}
+    parents, record_witnesses = {}, []
+
+    def signature(path):
+        value = path.stat()
+        link = path.lstat()
+        return (
+            value.st_dev,
+            value.st_ino,
+            value.st_mtime_ns,
+            value.st_ctime_ns,
+            link.st_dev,
+            link.st_ino,
+            link.st_mtime_ns,
+            link.st_ctime_ns,
+        )
+
+    def owner_path(path):
+        parent = path.parent
+        if parent not in parents:
+            before = signature(parent)
+            resolved = canonical(parent)
+            if signature(parent) != before:
+                raise RuntimeError("DEPENDENCY_ENVIRONMENT_IDENTITY_CHANGED")
+            parents[parent] = (resolved, before)
+        resolved = parents[parent][0] / path.name
+        if str(resolved).casefold() in queried or path.is_symlink():
+            return str(canonical(path))
+        return None
+
+    for name, row in snapshot["distributions"].items():
+        if name in changed:
+            continue
+        record = Path(row["metadata_path"]) / "RECORD"
+        if record.is_file():
+            before = signature(record)
+            content = record.read_text(encoding="utf-8")
+            if signature(record) != before:
+                raise RuntimeError("DEPENDENCY_ENVIRONMENT_IDENTITY_CHANGED")
+            record_witnesses.append((record, before))
+            for entry in csv.reader(content.splitlines()):
+                if entry and queried:
+                    path = record.parent.parent / entry[0]
+                    try:
+                        owned_path = owner_path(path)
+                    except FileNotFoundError:
+                        owned_path = str(canonical(path))
+                    if owned_path is not None and owned_path in old_files:
+                        ownership.setdefault(owned_path, set()).add(name)
+
+    def validate_ownership_inputs():
+        for parent, (resolved, witness) in parents.items():
+            if signature(parent) != witness or canonical(parent) != resolved:
+                raise RuntimeError("DEPENDENCY_ENVIRONMENT_IDENTITY_CHANGED")
+        for record, witness in record_witnesses:
+            if signature(record) != witness:
+                raise RuntimeError("DEPENDENCY_ENVIRONMENT_IDENTITY_CHANGED")
+
+    validate_ownership_inputs()
     for path in old_files:
         if len(ownership[path]) != 1 or not ownership[path].issubset(changed):
             raise RuntimeError(
@@ -391,11 +447,13 @@ def prepare_payload(
             context,
         ):
             raise RuntimeError(
-                "DEPENDENCY_ENVIRONMENT_PROTECTED: use the environment owner's package manager.",
+                "DEPENDENCY_ENVIRONMENT_PROTECTED: use the "
+                "environment owner's package manager.",
             )
         if not os.access(site, os.W_OK) or not os.access(site.parent, os.W_OK):
             raise RuntimeError(
-                "DEPENDENCY_ENVIRONMENT_PROTECTED: dependency site is not writable.",
+                "DEPENDENCY_ENVIRONMENT_PROTECTED: dependency site "
+                "is not writable.",
             )
         info = metadata_path.split("/", 1)[0]
         prefix = canonical(snapshot["prefix"])
@@ -506,7 +564,8 @@ def prepare_payload(
                 )
             ):
                 raise RuntimeError(
-                    "DEPENDENCY_PLAN_UNVERIFIED: unsafe or duplicate publication path.",
+                    "DEPENDENCY_PLAN_UNVERIFIED: unsafe or duplicate "
+                    "publication path.",
                 )
             destination = resolved
             for visible in snapshot["sites"]:
@@ -516,7 +575,8 @@ def prepare_payload(
                     and str(canonical(collision)) not in old_files
                 ):
                     raise RuntimeError(
-                        "DEPENDENCY_PLAN_UNVERIFIED: unowned dependency collision.",
+                        "DEPENDENCY_PLAN_UNVERIFIED: unowned dependency "
+                        "collision.",
                     )
             payload = directory / "payload" / str(len(new_files))
             payload.parent.mkdir(exist_ok=True)
@@ -530,6 +590,7 @@ def prepare_payload(
                     else 0o644
                 ),
             }
+    validate_ownership_inputs()
     return {
         "old": old_files,
         "new": new_files,
@@ -538,6 +599,9 @@ def prepare_payload(
             {str(canonical(site)) for site in destinations.values()},
         ),
     }
+
+
+# pylint: enable=R0912,R0915
 
 
 def _module_snapshot():
@@ -560,20 +624,6 @@ def _imported_observation(old, modules):
         value for _name, _module, value in modules if isinstance(value, str)
     }
     return owned, _imported_origins(owned, origins)
-
-
-def _imported_changes(payload, modules):
-    _owned, origins = _imported_observation(tuple(payload["old"]), modules)
-    return [
-        name
-        for name, _module, value in modules
-        if isinstance(value, str) and origins[value]
-    ]
-
-
-def imported_changes(payload):
-    """Synchronous callers inspect a detached module snapshot."""
-    return _imported_changes(payload, _module_snapshot())
 
 
 async def imported_changes_async(payload):
@@ -642,7 +692,8 @@ def verify_payload(directory, operation):
             or stat.S_IMODE(file.stat().st_mode) != evidence["mode"]
         ):
             raise RuntimeError(
-                "DEPENDENCY_PLAN_STALE: installed dependency files changed after review.",
+                "DEPENDENCY_PLAN_STALE: installed dependency files "
+                "changed after review.",
             )
     for path, evidence in operation["payload"]["new"].items():
         payload = directory / evidence["payload"]
@@ -652,7 +703,8 @@ def verify_payload(directory, operation):
             or _hash(payload) != evidence["sha256"]
         ):
             raise RuntimeError(
-                "DEPENDENCY_PLAN_STALE: retained wheel payload changed after review.",
+                "DEPENDENCY_PLAN_STALE: retained wheel payload "
+                "changed after review.",
             )
         destination = Path(path)
         if any(
@@ -680,7 +732,8 @@ def verify_payload(directory, operation):
             ):
                 if cache.is_symlink():
                     raise RuntimeError(
-                        "DEPENDENCY_PLAN_STALE: dependency cache became a symlink.",
+                        "DEPENDENCY_PLAN_STALE: dependency cache became a "
+                        "symlink.",
                     )
                 owned[str(canonical(cache))] = {
                     "sha256": _hash(cache),
@@ -709,27 +762,31 @@ def _verify_publication_scope(directory, operation, old_files):
             context,
         ):
             raise RuntimeError(
-                "DEPENDENCY_ENVIRONMENT_PROTECTED: dependency site is protected.",
+                "DEPENDENCY_ENVIRONMENT_PROTECTED: dependency site "
+                "is protected.",
             )
         sites.add(str(site))
         owned = _owned(old, prefix) if old else {}
         for path in set(old_files).intersection(map(str, owned)):
             if _immutable_path(path, context):
                 raise RuntimeError(
-                    "DEPENDENCY_ENVIRONMENT_PROTECTED: installed file is protected.",
+                    "DEPENDENCY_ENVIRONMENT_PROTECTED: installed file "
+                    "is protected.",
                 )
             remaining_old.discard(path)
         metadata = canonical(proposed["metadata_path"])
         record = payload["new"].get(str(metadata / "RECORD"))
         if metadata.parent.parts != site.parts or record is None:
             raise RuntimeError(
-                "DEPENDENCY_PLAN_UNVERIFIED: publication ownership is missing.",
+                "DEPENDENCY_PLAN_UNVERIFIED: publication ownership "
+                "is missing.",
             )
         content = (directory / record["payload"]).read_text(encoding="utf-8")
         for entry in csv.reader(content.splitlines()):
             if len(entry) != 3:
                 raise RuntimeError(
-                    "DEPENDENCY_PLAN_UNVERIFIED: invalid publication ownership.",
+                    "DEPENDENCY_PLAN_UNVERIFIED: invalid publication "
+                    "ownership.",
                 )
             path = canonical(site / entry[0])
             if str(path) not in payload["new"] or not (
@@ -739,7 +796,8 @@ def _verify_publication_scope(directory, operation, old_files):
                 )
             ):
                 raise RuntimeError(
-                    "DEPENDENCY_PLAN_UNVERIFIED: unsafe publication ownership.",
+                    "DEPENDENCY_PLAN_UNVERIFIED: unsafe publication "
+                    "ownership.",
                 )
             remaining_new.discard(str(path))
     if remaining_old or remaining_new or sites != set(payload["sites"]):
@@ -782,7 +840,8 @@ def _source_files(root):
     for path in root.rglob("*"):
         if path.is_symlink():
             raise RuntimeError(
-                "DEPENDENCY_REPAIR_REQUIRED: source backup contains a symlink.",
+                "DEPENDENCY_REPAIR_REQUIRED: source backup "
+                "contains a symlink.",
             )
         if path.is_file():
             files[path.relative_to(root).as_posix()] = {
@@ -828,7 +887,7 @@ def backup_source(directory, target):
 
 
 def restore_source(directory, operation):
-    """Idempotently finish source recovery before declaring rollback complete."""
+    ("Idempotently finish source recovery before declaring rollback complete.")
     before = operation.get("source_before")
     if not before:
         return
@@ -932,6 +991,8 @@ def publish(directory, operation):
     atomic_json(directory / "journal.json", journal)
 
 
+# Keep the transaction or callback contract intact.
+# pylint: disable=R0912
 def rollback(directory):
     """Idempotently restore exact prior bytes and modes after any phase."""
     path = directory / "journal.json"
@@ -942,7 +1003,7 @@ def rollback(directory):
         return False
     journal["phase"] = "rolling_back"
     atomic_json(path, journal)
-    for destination, evidence in journal["new"].items():
+    for destination, _evidence in journal["new"].items():
         file = Path(destination)
         if file.suffix == ".py":
             for cache in file.parent.glob(
@@ -950,13 +1011,15 @@ def rollback(directory):
             ):
                 if cache.is_symlink():
                     raise RuntimeError(
-                        "DEPENDENCY_REPAIR_REQUIRED: dependency cache became a symlink.",
+                        "DEPENDENCY_REPAIR_REQUIRED: dependency cache "
+                        "became a symlink.",
                     )
                 cache.unlink()
         if file.exists():
             if file.is_symlink():
                 raise RuntimeError(
-                    "DEPENDENCY_REPAIR_REQUIRED: rollback path became a symlink.",
+                    "DEPENDENCY_REPAIR_REQUIRED: rollback path became "
+                    "a symlink.",
                 )
             file.unlink()
     for row in journal["old"]:
@@ -979,6 +1042,9 @@ def rollback(directory):
     )
     atomic_json(path, journal)
     return True
+
+
+# pylint: enable=R0912
 
 
 def finish(directory, operation, *, committed):
@@ -1029,7 +1095,9 @@ def reconcile_commit(directory, operation):
         result=journal["result"],
         error=None,
         retryable=False,
-        message="Shared dependencies upgraded and plugin installation completed.",
+        message=(
+            "Shared dependencies upgraded and plugin installation completed."
+        ),
     )
     operation.pop("worker_pid", None)
     atomic_json(directory / "operation.json", operation)
@@ -1059,7 +1127,8 @@ def _verify_reviewed_plan(directory, operation, snapshot):
         != operation["environment_fingerprint"]
     ):
         raise RuntimeError(
-            "DEPENDENCY_PLAN_STALE: dependency environment changed after review.",
+            "DEPENDENCY_PLAN_STALE: dependency environment "
+            "changed after review.",
         )
     verify_payload(directory, operation)
 
@@ -1074,6 +1143,8 @@ def _reconcile_pending_commit(directory, operation):
     return False
 
 
+# Keep the transaction or callback contract intact.
+# pylint: disable=R0912,R0915,W0212
 async def apply_operation(manager, operation_id):
     """Stop exact consumers, replace bytes, verify, and resume installation."""
     import asyncio
@@ -1092,7 +1163,7 @@ async def apply_operation(manager, operation_id):
 
     async with async_lock(operation_lock(directory)):
         operation = await run_sync_io(manager._read, operation_id)
-        if operation["status"] in {"succeeded", "cancelled"}:
+        if operation["status"] in {"succeeded", "cancelled", "failed"}:
             return manager._public(operation)
         if operation.get("worker_pid") or operation["status"] == "applying":
             return manager._public(operation)
@@ -1106,7 +1177,8 @@ async def apply_operation(manager, operation_id):
                 != operation["source_revision"]
             ):
                 raise RuntimeError(
-                    "DEPENDENCY_PLAN_STALE: retained source changed after review.",
+                    "DEPENDENCY_PLAN_STALE: retained source changed "
+                    "after review.",
                 )
             binding = await manager._binding(source)
             fresh = await binding.backend.audit_dependencies(
@@ -1121,30 +1193,33 @@ async def apply_operation(manager, operation_id):
                 operation,
                 fresh.to_mapping(),
             )
-            consumers = await manager._consumers(binding, fresh)
+            consumers = await manager._consumers(
+                binding,
+                fresh,
+                operation=operation,
+            )
             manager._check_reviewed_usage(operation, consumers)
-            for consumer in consumers:
-                evidence = consumer["environment"]
-                inventory = dict(evidence["distributions"])
-                inventory.update(
-                    await run_sync_io(
-                        visible_distributions,
-                        operation["proposed"],
-                        evidence["dependency_sites"],
-                    ),
-                )
-                manager._compatible(
-                    consumer["requirements"],
-                    inventory,
-                    evidence["marker_environment"],
-                )
+            consumers = manager._affected(
+                consumers,
+                {
+                    row["name"]: operation["proposed"][row["name"]]
+                    for row in operation["changes"]
+                },
+            )
+            manager._check_core(
+                operation["proposed"],
+                fresh.marker_environment,
+                fresh.distributions,
+                operation["changes"],
+            )
             if not operation[
                 "requires_restart"
             ] and await imported_changes_async(
                 operation["payload"],
             ):
                 raise RuntimeError(
-                    "DEPENDENCY_PLAN_STALE: a host import now requires a backend restart; prepare a new confirmation.",
+                    "DEPENDENCY_PLAN_STALE: a host import now requires "
+                    "a backend restart; prepare a new confirmation.",
                 )
             operation["approved"] = True
             if operation["requires_restart"]:
@@ -1189,7 +1264,8 @@ async def apply_operation(manager, operation_id):
                     or Path(record.source_path).resolve() != lease.code_root
                 ):
                     raise RuntimeError(
-                        "DEPENDENCY_CONSUMER_UNRESTORABLE: an active consumer lacks lifecycle restart custody.",
+                        "DEPENDENCY_CONSUMER_UNRESTORABLE: an active "
+                        "consumer lacks lifecycle restart custody.",
                     )
             admissions = loader.registry.dependency_usage.capture_admissions(
                 leases,
@@ -1218,7 +1294,8 @@ async def apply_operation(manager, operation_id):
                         or report.needs_restart
                     ):
                         raise RuntimeError(
-                            "DEPENDENCY_CONSUMER_BUSY: a shared consumer could not stop safely.",
+                            "DEPENDENCY_CONSUMER_BUSY: a shared consumer could"
+                            " not stop safely.",
                         )
             for lease in leases:
                 if (
@@ -1226,9 +1303,11 @@ async def apply_operation(manager, operation_id):
                     or lease in owners.leases()
                 ):
                     raise RuntimeError(
-                        "DEPENDENCY_CONSUMER_BUSY: exact process exit proof is unavailable.",
+                        "DEPENDENCY_CONSUMER_BUSY: exact process exit "
+                        "proof is unavailable.",
                     )
-            # Capture the prior source independently of the loader's short-lived
+            # Capture the prior source independently of the loader's
+            # short-lived
             # swap backup, because dependency commit includes continuation.
             _, target = loader._install_paths(operation["plugin_id"], None)
             operation["source_before"] = await run_sync_io(
@@ -1253,7 +1332,16 @@ async def apply_operation(manager, operation_id):
 
             # Lock the complete observed environment before entering the
             # maintenance barrier; verification must not expand nested locks.
-            prepared_consumers = await manager._prepare_consumer_targets()
+            prepared_consumers = await manager._prepare_consumer_targets(
+                operation,
+                fresh,
+            )
+            prepared_binding = (
+                await binding.backend.prepare_dependency_targets(
+                    binding.description,
+                )
+            )
+            prepared_consumers.append(prepared_binding)
             async with environment_observation(
                 (
                     *(fresh.dependency_sites or ()),
@@ -1287,9 +1375,14 @@ async def apply_operation(manager, operation_id):
                         != operation["environment_fingerprint"]
                     ):
                         raise RuntimeError(
-                            "DEPENDENCY_PLAN_STALE: environment changed while consumers stopped.",
+                            "DEPENDENCY_PLAN_STALE: environment changed while "
+                            "consumers stopped.",
                         )
-                    current = await manager._consumers(binding, verified)
+                    current = await manager._consumers(
+                        binding,
+                        verified,
+                        operation=operation,
+                    )
                     manager._check_reviewed_usage(
                         operation,
                         current,
@@ -1328,7 +1421,8 @@ async def apply_operation(manager, operation_id):
             )
             if record.status not in {"active", "inactive", "registered"}:
                 raise RuntimeError(
-                    "DEPENDENCY_CONTINUATION_FAILED: plugin installation did not complete.",
+                    "DEPENDENCY_CONTINUATION_FAILED: plugin "
+                    "installation did not complete.",
                 )
             for previous, config in stopped_records:
                 if previous.manifest.id != operation["plugin_id"]:
@@ -1343,7 +1437,8 @@ async def apply_operation(manager, operation_id):
                         "registered",
                     }:
                         raise RuntimeError(
-                            "DEPENDENCY_RESTORE_FAILED: previous consumer did not resume.",
+                            "DEPENDENCY_RESTORE_FAILED: previous consumer did "
+                            "not resume.",
                         )
             await run_sync_io(
                 commit_result,
@@ -1397,8 +1492,9 @@ async def apply_operation(manager, operation_id):
                                 )
                             ):
                                 raise RuntimeError(
-                                    "DEPENDENCY_REPAIR_REQUIRED: new consumer remains active.",
-                                )
+                                    "DEPENDENCY_REPAIR_REQUIRED: new consumer"
+                                    " remains active.",
+                                ) from exc
                     with observation_write():
                         await run_sync_io(rollback, directory)
                     loader.registry.dependency_usage.restore_rebased(rebased)
@@ -1433,7 +1529,10 @@ async def apply_operation(manager, operation_id):
                 message=(
                     "Dependency upgrade requires recovery."
                     if repair
-                    else "Dependency upgrade did not complete; installed packages were preserved or restored."
+                    else (
+                        "Dependency upgrade did not complete; installed "
+                        "packages were preserved or restored."
+                    )
                 ),
                 error={
                     "code": code,
@@ -1451,3 +1550,6 @@ async def apply_operation(manager, operation_id):
             if token is not None:
                 capability_context.reset(token)
         return manager._public(operation)
+
+
+# pylint: enable=R0912,R0915,W0212

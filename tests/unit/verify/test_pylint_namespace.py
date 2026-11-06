@@ -212,7 +212,7 @@ def test_mixed_projects_use_fresh_processes_and_preserve_exit_bits(
     for name in files:
         write_source(tmp_path, name)
     calls = []
-    statuses = iter((2, 4, 16))
+    statuses = iter((2, 4, 16, 8))
 
     def run(arguments, **settings):
         calls.append((arguments, settings))
@@ -220,12 +220,13 @@ def test_mixed_projects_use_fresh_processes_and_preserve_exit_bits(
 
     monkeypatch.setattr(pylint_namespace.subprocess, "run", run)
     options = ["--enable=all", "--msg-template={symbol}"]
-    assert pylint_namespace.main([*options, "--", *files]) == 22
+    assert pylint_namespace.main([*options, "--", *files]) == 30
     contexts = [
         tmp_path,
         *(tmp_path / p for p in pylint_namespace.PROJECT_ROOTS),
+        tmp_path,
     ]
-    selected = [[files[0], files[3]], [files[1]], [files[2]]]
+    selected = [[files[0]], [files[1]], [files[2]], [files[3]]]
     assert calls == [
         (
             [

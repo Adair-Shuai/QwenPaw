@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# Real SDK fixtures intentionally inspect private state and keep fixture names.
+# pylint: disable=protected-access,redefined-outer-name,unused-argument
 """Host lifecycle through real queues, Agents and child workers."""
 
 import asyncio
@@ -9,9 +11,12 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
+
+from tests.fs_alias_support import directory_alias
 
 from tests.channel_support.host import (
     Host,
@@ -296,6 +301,22 @@ def test_runner_hello_requires_shared_identity():
         expected_requirements=(),
     )
     assert validate_shared_hello(shared, **expected).to_mapping() == shared
+    warning = {
+        **shared,
+        "dependencies": [
+            {
+                "requirement": "sample-sdk>=2",
+                "name": "sample-sdk",
+                "installed_version": "1.0",
+                "status": "incompatible",
+            },
+        ],
+    }
+    checked = validate_shared_hello(
+        warning,
+        **{**expected, "expected_requirements": ("sample-sdk>=2",)},
+    )
+    assert checked.dependencies[0].status == "incompatible"
     for field, value, reason in (
         ("channel_key", "other", "CHANNEL_KEY_MISMATCH"),
         ("instance_id", "old-worker", "INSTANCE_ID_MISMATCH"),
@@ -314,6 +335,156 @@ def test_runner_hello_requires_shared_identity():
     assert rejected.value.reason_code == "DEPENDENCY_UNSATISFIED"
 
 
+# Keep the transaction or callback contract intact.
+# pylint: disable=R0915
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["run", "probe"])
+@pytest.mark.parametrize(
+    "scenario",
+    [
+        "missing-child",
+        "version-warning",
+        "missing-extra",
+        "unrelated-metadata",
+        "installed-url",
+        "invalid-metadata",
+    ],
+)
+async def test_channel_worker_checks_declared_dependency_closure(
+    host,
+    caplog,
+    mode,
+    scenario,
+):
+    import logging
+    from dataclasses import replace
+    from qwenpaw.__version__ import __version__
+    from qwenpaw.app.channels.process_supervisor import ChannelProcess
+    from qwenpaw.plugins.architecture import PluginManifest
+    from qwenpaw.plugins.channel_adapter import describe_channel
+
+    source = host.artifact(sdk=True)
+    selected = "[feature]" if scenario == "missing-extra" else ""
+    minimum = "2" if scenario == "version-warning" else "1"
+    (source / "requirements.txt").write_text(
+        (
+            ""
+            if scenario == "unrelated-metadata"
+            else f"sample-shared-sdk{selected}>={minimum}\n"
+        ),
+    )
+    (host.site / "sample_shared_sdk.py").write_text(
+        "def __getattr__(name):\n"
+        "    if name != 'VALUE':\n"
+        "        raise AttributeError(name)\n"
+        "    import qwenpaw_closure_child\n"
+        "    return qwenpaw_closure_child.VALUE\n",
+    )
+    metadata = host.site / "sample_shared_sdk-1.0.dist-info"
+    metadata.mkdir()
+    child = (
+        "qwenpaw-closure-child @ https://example.invalid/child.zip"
+        if scenario == "installed-url"
+        else f"qwenpaw-closure-child>={minimum}"
+    )
+    if scenario == "invalid-metadata":
+        child = "not a valid dependency declaration ???"
+    (metadata / "METADATA").write_text(
+        "Metadata-Version: 2.1\nName: sample-shared-sdk\nVersion: 1.0\n"
+        f"Requires-Dist: {child}\n"
+        "Requires-Dist: qwenpaw-closure-extra; extra == 'feature'\n"
+        "Requires-Dist: qwenpaw-closure-inactive; python_version < '0'\n",
+    )
+    if scenario != "missing-child":
+        (host.site / "qwenpaw_closure_child.py").write_text(
+            "VALUE = 'offline-sdk'\n",
+        )
+        metadata = host.site / "qwenpaw_closure_child-1.0.dist-info"
+        metadata.mkdir()
+        (metadata / "METADATA").write_text(
+            "Metadata-Version: 2.1\nName: qwenpaw-closure-child\n"
+            "Version: 1.0\n",
+        )
+    if scenario == "unrelated-metadata":
+        external = source.parent / "unrelated-1.0.dist-info"
+        external.mkdir()
+        (external / "METADATA").write_text(
+            "Metadata-Version: 2.1\nName: unrelated\nVersion: 1.0\n",
+        )
+        directory_alias(external, host.site / external.name)
+    description = describe_channel(
+        source,
+        PluginManifest.from_dict(
+            json.loads((source / "plugin.json").read_text()),
+        ),
+    )
+    prepared = description.prepare_proxy_config(
+        {"enabled": True, "use_sdk": True},
+    )
+    proxy = description.create_proxy(
+        None,
+        prepared.config,
+        python_executable=sys.executable,
+        support_root=Path(__file__).resolve().parents[3] / "src",
+        dependency_paths=(host.site,),
+        instance_id="closure",
+        generation=1,
+        qwenpaw_version=__version__,
+        prepared_config=prepared,
+    )
+    spec = replace(proxy._launch_spec, workspace_id="test-workspace")
+    process = ChannelProcess()
+    for operation in ("get", "put"):
+        process.register_method(
+            "host.state." + operation,
+            lambda params, _request: {"value": params.value},
+        )
+    caplog.set_level(logging.WARNING, logger="qwenpaw.plugins.worker")
+    start = process.start if mode == "run" else process.probe
+    try:
+        if scenario in {"missing-child", "missing-extra", "invalid-metadata"}:
+            with pytest.raises(process.error_type) as rejected:
+                await start(spec)
+            assert rejected.value.reason_code == (
+                "DEPENDENCY_METADATA_INVALID"
+                if scenario == "invalid-metadata"
+                else "DEPENDENCY_UNSATISFIED"
+            )
+            assert process.observed_hello is None
+            assert process.health_snapshot()["platform_state"] != "connected"
+            assert not rows(host.ledger, "connected")
+        else:
+            await start(spec)
+            assert process.observed_hello is not None
+            if mode == "run":
+                await eventually(lambda: bool(rows(host.ledger, "connected")))
+                value = await process.call("sample.identity", {})
+                assert value["sdk"] == "offline-sdk"
+            else:
+                assert not rows(host.ledger, "connected")
+            for name in (
+                ("sample-shared-sdk", "qwenpaw-closure-child")
+                if scenario == "version-warning"
+                else ()
+            ):
+                await eventually(
+                    lambda expected_name=name: any(
+                        "Dependency warning:" in record.message
+                        and expected_name in record.message
+                        and "attempting load" in record.message
+                        for record in caplog.records
+                    ),
+                )
+    finally:
+        stopped = await process.stop()
+        assert stopped.exited and not stopped.residual
+
+
+# pylint: enable=R0915
+
+
+# Keep the transaction or callback contract intact.
+# pylint: disable=R0915
 @pytest.mark.asyncio
 @pytest.mark.parametrize("mode", ["run", "audit", "probe", "manage"])
 async def test_execution_preparation_yields_and_consumes_session_snapshot(
@@ -332,14 +503,14 @@ async def test_execution_preparation_yields_and_consumes_session_snapshot(
     if mode == "manage":
         with (source / "sample.py").open("a") as stream:
             stream.write(
-                "\nasync def manage(request):\n"
-                "    result = request.to_mapping()\n"
-                "    result.pop('parameters')\n"
-                "    result.pop('timeout_ms')\n"
-                "    return dict(result, outcome='ok', reason_code=None,\n"
-                "                result={'scan_url': 'https://example.test/scan',\n"
-                "                        'continuation': 'opaque'})\n"
-                "Driver.manage = staticmethod(manage)\n",
+                "\nasync def manage(request):\n    result = "
+                "request.to_mapping()\n    result.pop('parameters')\n"
+                "    result.pop('timeout_ms')\n    return "
+                "dict(result, outcome='ok', reason_code=None,\n     "
+                "           result={'scan_url': "
+                "'https://example.test/scan',\n                     "
+                "   'continuation': 'opaque'})\nDriver.manage = "
+                "staticmethod(manage)\n",
             )
     description = describe_channel(
         source,
@@ -362,7 +533,8 @@ async def test_execution_preparation_yields_and_consumes_session_snapshot(
     process = ChannelProcess()
     entered, release = threading.Event(), threading.Event()
     loop_thread = threading.get_ident()
-    read_text, open_worker = Path.read_text, process._open
+    original = SimpleNamespace(read_text=Path.read_text)
+    open_worker = process._open
     metadata = {source / "channel.json", source / "requirements.txt"}
     opened = False
 
@@ -374,7 +546,7 @@ async def test_execution_preparation_yields_and_consumes_session_snapshot(
             ), "metadata read on event loop"
             entered.set()
             assert release.wait(5), "preparation barrier was not released"
-        return read_text(path, *args, **kwargs)
+        return original.read_text(path, *args, **kwargs)
 
     async def open_session(*args, **kwargs):
         nonlocal opened
@@ -448,8 +620,13 @@ async def test_execution_preparation_yields_and_consumes_session_snapshot(
         assert stopped.exited and not stopped.residual
 
 
+# pylint: enable=R0915
+
+
+# Keep the transaction or callback contract intact.
+# pylint: disable=R0915
 @pytest.mark.asyncio
-async def test_preparation_cancellation_retains_custody_and_rejects_changed_source(
+async def test_preparation_cancellation_retains_custody_and_rejects_changed_source(  # noqa: E501
     host,
     monkeypatch,
 ):
@@ -537,6 +714,46 @@ async def test_preparation_cancellation_retains_custody_and_rejects_changed_sour
         assert stopped.exited and not stopped.residual
 
 
+# pylint: enable=R0915
+
+
+@pytest.mark.asyncio
+async def test_channel_preflight_rechecks_metadata_read_during_probe(
+    host,
+    monkeypatch,
+):
+    import zipfile
+    from qwenpaw.app.channels.process_supervisor import ChannelProcess
+    from qwenpaw.plugins.dependency_gate import SharedDependencyError
+
+    source = host.artifact(sdk=True)
+    wheel = next(local_wheel(host.root / "wheels").glob("*.whl"))
+    with zipfile.ZipFile(wheel) as archive:
+        archive.extractall(host.site)
+    manifest = host.loader.read_source_manifest(source)[1]
+    binding = host.loader.backend_resolver.resolve(source, manifest)
+    probe = ChannelProcess.probe
+
+    async def changed_after_read(process, spec):
+        result = await probe(process, spec)
+        metadata = host.site / "sample_shared_sdk-1.0.dist-info/METADATA"
+        with metadata.open("a") as stream:
+            stream.write("Requires-Dist: new-missing-child>=1\n")
+        return result
+
+    monkeypatch.setattr(ChannelProcess, "probe", changed_after_read)
+    with pytest.raises(SharedDependencyError) as rejected:
+        async with host.loader.plugin_lifecycle(KEY):
+            await host.loader.lifecycle.preflight_backend(
+                binding,
+                allow_install=False,
+                probe=True,
+            )
+    assert rejected.value.reason_code == "DEPENDENCY_UNSATISFIED"
+    assert "new-missing-child" in str(rejected.value)
+    assert not host.loader._channel_backend._preparation_scopes
+
+
 @pytest.mark.asyncio
 async def test_local_install_enable_uses_installed_code_and_offline_dependency(
     host,
@@ -585,11 +802,24 @@ async def test_local_install_enable_uses_installed_code_and_offline_dependency(
 
 
 @pytest.mark.asyncio
-async def test_real_agent_stream_final_reply_and_saved_session(host):
+async def test_real_agent_stream_final_reply_and_saved_session(
+    host,
+    monkeypatch,
+):
+    from qwenpaw.app.channels.process_supervisor import ChannelProcess
+
+    real_probe, probes = ChannelProcess.probe, []
+
+    async def probe(process, *args, **kwargs):
+        probes.append(process)
+        return await real_probe(process, *args, **kwargs)
+
+    monkeypatch.setattr(ChannelProcess, "probe", probe)
     ws = await host.workspace("actual-agent", streaming_enabled=True)
     await host.real_agent(ws)
     record = await host.loader.load_plugin_from_path(host.artifact())
     assert record.status == "active"
+    assert len(probes) == 1
     channel, value = await host.identity(ws)
     assert value["pid"] != os.getpid()
     ack = await host.emit(ws, text="native input", room="conversation")
@@ -742,20 +972,74 @@ async def test_config_read_save_restart_preserves_fields_and_exits_old_worker(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("dependency_change", [False, True])
 async def test_update_replaces_worker_and_preserves_data(
     host,
+    monkeypatch,
+    dependency_change,
 ):
-    ws = await host.workspace("updating")
-    await host.loader.load_plugin_from_path(host.artifact())
+    ws = await host.workspace("updating", use_sdk=dependency_change)
+    first = host.artifact(sdk=dependency_change)
+    if dependency_change:
+        import zipfile
+
+        old_wheel = next(
+            local_wheel(
+                host.root / "old-wheel",
+                version="0.5",
+                value="old-sdk",
+            ).glob("*.whl"),
+        )
+        with zipfile.ZipFile(old_wheel) as archive:
+            archive.extractall(host.site)
+        (first / "requirements.txt").write_text("sample-shared-sdk==0.5\n")
+    await host.loader.load_plugin_from_path(first)
     await host.loader.lifecycle.update_config(KEY, {"custom": "keep"})
     old, before = await host.identity(ws)
     data = ws.workspace_dir / "business.json"
     data.write_text('{"retained":true}')
-    report = await host.loader.lifecycle.reload(
-        KEY,
-        new_source=host.artifact("2.0.0"),
-    )
-    assert report.ok, report.errors
+    candidate = host.artifact("2.0.0", sdk=dependency_change)
+    if dependency_change:
+        from qwenpaw.plugins.dependency_upgrade import (
+            DependencyUpgradeRequired,
+            dependency_upgrades,
+            install_with_upgrade,
+        )
+
+        wheels = local_wheel(host.root / "new-wheel")
+        local_certifi_wheel(wheels)
+        calls = []
+
+        def offline(command, **kwargs):
+            calls.append(command)
+            return subprocess.run(
+                [*command, "--no-index", "--find-links", str(wheels)],
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=kwargs["timeout"],
+            )
+
+        monkeypatch.setattr(
+            host.loader,
+            "_run_subprocess_with_streaming_log",
+            offline,
+        )
+        with pytest.raises(DependencyUpgradeRequired) as review:
+            await install_with_upgrade(host.loader, candidate, force=True)
+        manager = dependency_upgrades(host.loader)
+        operation = manager._read(review.value.operation["id"])
+        assert operation["force"] and not operation["requires_restart"]
+        assert (
+            len(calls) == 1
+        )  # The staged replacement retains the successful wheels.
+        assert alive(before["pid"])
+        assert (await host.identity(ws))[1]["sdk"] == "old-sdk"
+        result = await manager.apply(operation["id"])
+        assert result["status"] == "succeeded", result
+    else:
+        report = await host.loader.lifecycle.reload(KEY, new_source=candidate)
+        assert report.ok, report.errors
     fresh, after = await host.identity(ws)
     assert not alive(before["pid"]) and after["version"] == "2.0.0"
     assert fresh._launch_spec.generation > old._launch_spec.generation
@@ -821,12 +1105,8 @@ async def test_application_shutdown_reaps_workers_and_preserves_installed_code(
     assert all(not alive(pid) for pid in pids)
     assert not host.registry.runtime_owners.leases(KEY)
     assert (host.installed / "sample.py").is_file()
-    assert all(
-        [
-            await ws.channel_manager.get_channel(KEY) is None
-            for ws in workspaces
-        ],
-    )
+    channels = [await ws.channel_manager.get_channel(KEY) for ws in workspaces]
+    assert all(channel is None for channel in channels)
 
 
 @pytest.mark.asyncio
@@ -975,11 +1255,10 @@ async def test_real_approval_card_and_inbound_operator_decision(
 @pytest.fixture
 def legacy_start(request, host, tmp_path, monkeypatch):
     from dataclasses import replace
-    from types import SimpleNamespace
     from qwenpaw.app.channels.manager import ChannelManager
     from qwenpaw.plugins.architecture import PluginManifest
     from qwenpaw.plugins.channel_adapter import describe_channel
-    from qwenpaw.plugins import azure_legacy, matrix_legacy
+    from qwenpaw.plugins import azure_legacy
 
     key = request.param
     root = Path(__file__).resolve().parents[3]
@@ -1020,34 +1299,18 @@ def legacy_start(request, host, tmp_path, monkeypatch):
     }
     config_path = legacy / "config.json"
     config_path.write_text(json.dumps(config))
-    reader = azure_legacy if key == "azure_bot" else matrix_legacy
-    reader_name = "_snapshot" if key == "azure_bot" else "read_json_snapshot"
-    filename = (
-        "azure_bot_refs.json"
-        if key == "azure_bot"
-        else "matrix_auth_state.json"
-    )
-    state = (
-        {"room": {"service_url": "https://bot.test"}}
-        if key == "azure_bot"
-        else {"user_id": "@alice:matrix.test", "device_id": "DEVICE"}
-    )
+    reader = azure_legacy
+    reader_name = "_snapshot"
+    filename = "azure_bot_refs.json"
+    state = {"room": {"service_url": "https://bot.test"}}
     (legacy / filename).write_text(json.dumps(state))
-    capture_fn = (
-        azure_legacy.capture_azure_legacy
-        if key == "azure_bot"
-        else matrix_legacy.capture_matrix_legacy
-    )
+    capture_fn = azure_legacy.capture_azure_legacy
     capture = capture_fn(
         config_path=config_path,
         legacy_state_dir=legacy,
         working_dir=legacy,
     )
-    field = (
-        "legacy_reference_owner"
-        if key == "azure_bot"
-        else "legacy_state_owner"
-    )
+    field = "legacy_reference_owner"
     manager = ChannelManager([])
     manager._workspace_dir = workspace
     manager._workspace_config = SimpleNamespace(channels={key: values})
@@ -1075,7 +1338,7 @@ def legacy_start(request, host, tmp_path, monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     "legacy_start",
-    ["azure_bot", "matrix"],
+    ["azure_bot"],
     indirect=True,
 )
 async def test_legacy_start_preparation_yields_and_keeps_authorization(
@@ -1122,14 +1385,8 @@ async def test_legacy_start_preparation_yields_and_keeps_authorization(
         assert authorization["owner"]["workspace_dir"] == str(
             case.manager._workspace_dir,
         )
-        digest_key = (
-            "refs_sha256" if case.key == "azure_bot" else "auth_sha256"
-        )
-        captured = (
-            case.capture["entries"][0]
-            if case.key == "azure_bot"
-            else case.capture
-        )
+        digest_key = "refs_sha256"
+        captured = case.capture["entries"][0]
         assert authorization[digest_key] == captured[digest_key]
         assert calls and all(thread != loop_thread for thread in calls)
         assert len(calls) == 1
@@ -1149,8 +1406,6 @@ async def test_legacy_start_preparation_yields_and_keeps_authorization(
         ("azure_bot", "mutate"),
         ("azure_bot", "replace"),
         ("azure_bot", "publish"),
-        ("matrix", "cancel"),
-        ("matrix", "mutate"),
     ],
     indirect=["legacy_start"],
 )
@@ -1231,6 +1486,8 @@ async def test_legacy_preparation_does_not_publish_stale_start(
         await asyncio.gather(task, return_exceptions=True)
 
 
+# Keep the transaction or callback contract intact.
+# pylint: disable=R0915
 @pytest.mark.asyncio
 @pytest.mark.parametrize("action", ["scan", "replace", "cancel"])
 async def test_qr_session_rechecks_source_after_scope_read(
@@ -1240,7 +1497,6 @@ async def test_qr_session_rechecks_source_after_scope_read(
 ):
     import threading
     from dataclasses import replace
-    from types import SimpleNamespace
     from qwenpaw.app.channels import qrcode_sessions as qr
     from qwenpaw.app.channels.management import (
         ChannelManagementService,
@@ -1356,3 +1612,6 @@ async def test_qr_session_rechecks_source_after_scope_read(
         release.set()
         await asyncio.gather(pending, return_exceptions=True)
         await sessions.aclose()
+
+
+# pylint: enable=R0915

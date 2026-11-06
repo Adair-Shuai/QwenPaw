@@ -8,7 +8,6 @@ from decimal import Decimal
 from importlib import metadata
 import json
 from pathlib import Path
-import re
 from typing import Any, Mapping
 
 from packaging.markers import default_environment
@@ -210,11 +209,12 @@ class SharedChannelDescriptor:
 
 
 def _read_requirements(path: str | Path) -> tuple[str, ...]:
-    lines = [
-        re.split(r"\s+#", line, maxsplit=1)[0].strip()
-        for line in Path(path).read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.lstrip().startswith("#")
-    ]
+    from ..plugins.dependency_gate import parse_requirements_file
+
+    parsed = parse_requirements_file(Path(path))
+    if parsed.unsupported:
+        raise ProtocolValidationError("unsupported dependency declaration")
+    lines = [str(req) for req in parsed.requirements]
     try:
         result = canonicalize_requirements(lines)
         for value in result:
@@ -230,7 +230,7 @@ def _requirement(value: str) -> Requirement:
     except DescriptorValidationError as exc:
         raise ProtocolValidationError(str(exc)) from exc
     requirement = Requirement(canonical)
-    if requirement.url or requirement.extras:
+    if requirement.url:
         raise ProtocolValidationError(
             "Shared audit requires plain distribution requirements",
         )
@@ -269,10 +269,13 @@ class DependencyAudit:
         return [row.to_mapping() for row in self.dependencies]
 
     def require_satisfied(self) -> None:
-        """Refuse startup when metadata is missing or incompatible."""
-        if not self.satisfied:
+        (
+            "Refuse missing dependencies; version declarations "
+            "are load warnings."
+        )
+        if any(row.status == "missing" for row in self.dependencies):
             raise ProtocolValidationError(
-                "Shared dependencies are missing or incompatible",
+                "Shared dependencies are missing",
                 reason_code="DEPENDENCY_UNSATISFIED",
             )
 
@@ -333,7 +336,13 @@ def audit_shared_dependencies(
                     installed = metadata.version(name)
                 except metadata.PackageNotFoundError:
                     pass
-        rows.append(_dependency_status(value, installed, environment))
+        row = _dependency_status(value, installed, environment)
+        if row.status == "missing":
+            from ..plugins.dependency_gate import is_requirement_satisfied
+
+            if is_requirement_satisfied(requirement):
+                row = DependencyStatus(value, name, None, "unknown")
+        rows.append(row)
     return DependencyAudit(tuple(rows))
 
 
@@ -364,6 +373,12 @@ def _dependency_snapshot(
                 "installed_version must be a string or null",
             )
         row = _dependency_status(requirement, installed, environment)
+        if (
+            data["status"] == "unknown"
+            and installed is None
+            and row.status == "missing"
+        ):
+            row = DependencyStatus(requirement, row.name, None, "unknown")
         DependencyAudit((row,)).require_satisfied()
         if row.to_mapping() != {**data, "requirement": requirement}:
             raise ProtocolValidationError(
@@ -453,6 +468,8 @@ class SharedHelloParams(IdentityParams):
         }
 
 
+# Keep the transaction or callback contract intact.
+# pylint: disable=W0613
 def validate_channel_contract(channel_key: str, capabilities) -> None:
     """Reject unimplemented contracts before candidate activation."""
     from .models import (
@@ -497,6 +514,9 @@ def validate_channel_contract(channel_key: str, capabilities) -> None:
             "Channel contract required",
             reason_code="CHANNEL_CONTRACT_UNSUPPORTED",
         )
+
+
+# pylint: enable=W0613
 
 
 def validate_shared_hello(

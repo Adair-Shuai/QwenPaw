@@ -63,9 +63,7 @@ def _make_reme_answer(results, link_expansion=None):
         el = r.get("end_line", 0)
         score = ReMeLightMemoryManager._extract_score(r)
         text = r.get("text", "")
-        header = (
-            f"========== {path}:{sl}-{el} " f"[score={score:.4f}] =========="
-        )
+        header = f"========== {path}:{sl}-{el} [score={score:.4f}] =========="
         lines.append(f"{header}\n{text}")
         if link_expansion:
             expansion = link_expansion.get(path, {})
@@ -574,9 +572,9 @@ async def test_auto_memory_search_uses_reranker(manager):
 
     # Over-fetch: limit should be 2 * 3 = 6
     limit = manager._run_reme_job.call_args.kwargs["limit"]
-    assert limit == 6, (
-        f"auto_memory_search should over-fetch: " f"expected 6, got {limit}"
-    )
+    assert (
+        limit == 6
+    ), f"auto_memory_search should over-fetch: expected 6, got {limit}"
 
     # Reranked: first result should be doc-2 (index 2 promoted by reranker)
     assert result is not None
@@ -589,3 +587,91 @@ async def test_auto_memory_search_uses_reranker(manager):
     assert (
         len(resp.metadata["results"]) == 2
     ), f"expected 2 results, got {len(resp.metadata['results'])}"
+
+
+# ── load_reranker_config credential guard (#8276) ──
+
+
+@pytest.mark.asyncio
+async def test_load_reranker_config_requires_non_empty_api_key():
+    from unittest.mock import patch
+
+    from qwenpaw.agents.memory.reme_reranker import load_reranker_config
+    from qwenpaw.config.config import RerankerConfig
+
+    for empty_key in ("", "   "):
+        cfg = RerankerConfig(
+            enabled=True,
+            model_name="test-reranker",
+            base_url="https://api.example.com",
+            api_key=empty_key,
+        )
+        agent_cfg = types.SimpleNamespace(
+            running=types.SimpleNamespace(
+                reme_light_memory_config=types.SimpleNamespace(
+                    reranker_config=cfg,
+                ),
+            ),
+        )
+        with patch(
+            "qwenpaw.agents.memory.reme_reranker.load_agent_config_async",
+            AsyncMock(return_value=agent_cfg),
+        ):
+            loaded = await load_reranker_config("test-agent")
+            assert (
+                loaded is None
+            ), f"reranker should be disabled when key is {empty_key!r}"
+
+
+@pytest.mark.asyncio
+async def test_load_reranker_config_success_with_valid_api_key():
+    from unittest.mock import patch
+
+    from qwenpaw.agents.memory.reme_reranker import load_reranker_config
+    from qwenpaw.config.config import RerankerConfig
+
+    cfg = RerankerConfig(
+        enabled=True,
+        model_name="test-reranker",
+        base_url="https://api.example.com",
+        api_key="valid-key",
+    )
+    agent_cfg = types.SimpleNamespace(
+        running=types.SimpleNamespace(
+            reme_light_memory_config=types.SimpleNamespace(
+                reranker_config=cfg,
+            ),
+        ),
+    )
+    with patch(
+        "qwenpaw.agents.memory.reme_reranker.load_agent_config_async",
+        AsyncMock(return_value=agent_cfg),
+    ):
+        loaded = await load_reranker_config("test-agent")
+        assert loaded is not None
+        assert loaded.api_key == "valid-key"
+
+
+# ── call_reranker_api empty api_key guard (#8276) ──
+
+
+@pytest.mark.asyncio
+async def test_call_reranker_api_guards_empty_api_key(caplog):
+    import logging
+
+    from qwenpaw.agents.memory.reme_reranker import call_reranker_api
+    from qwenpaw.config.config import RerankerConfig
+
+    for empty_key in ("", "   "):
+        cfg = RerankerConfig(
+            enabled=True,
+            model_name="test-reranker",
+            base_url="https://api.example.com",
+            api_key=empty_key,
+        )
+        with caplog.at_level(logging.WARNING):
+            caplog.clear()
+            res = await call_reranker_api("query", ["doc1"], cfg)
+            assert res is None
+            assert "[rerank] api_key not configured" in caplog.text
+            assert "unexpected error" not in caplog.text

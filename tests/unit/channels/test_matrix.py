@@ -1,29 +1,32 @@
 # -*- coding: utf-8 -*-
+# Real SDK fixtures intentionally inspect private state and keep fixture names.
+# pylint: disable=protected-access,redefined-outer-name,unused-argument
 """Local Matrix API transport; actual nio/client/platform remain unmocked."""
-# Real SDK persistence assertions require its private crypto/transport fields.
-# pylint: disable=protected-access,redefined-outer-name
 
 import asyncio
+import os
 from contextlib import closing
-import json
 import shutil
 import sqlite3
-from pathlib import Path
+import hashlib
+import json
 import tomllib
+from pathlib import Path
 
 from aiohttp import web
 from nio import AsyncClient
-from nio.crypto import ENCRYPTION_ENABLED
+from nio.crypto import ENCRYPTION_ENABLED, OlmDevice
 import pytest
 import pytest_asyncio
-from qwenpaw.channel_protocol.models import SendParams
+
 from qwenpaw._version_compat import check_plugin_version_compat
 from qwenpaw.plugins.architecture import PluginManifest
+from qwenpaw.channel_protocol.models import SendParams
 from qwenpaw.utils.media_paths import file_url_to_path
 from tests.channel_support.driver import bind, module
 
-
 matrix_module = module("matrix", "platform")
+state_module = module("matrix", "state")
 MatrixPlatform = matrix_module.MatrixPlatform
 
 BOT = "@bot:example.com"
@@ -38,35 +41,14 @@ def test_matrix_requirements_match_channels_extra():
     declared = set(project["project"]["optional-dependencies"]["channels"])
     requirements = {
         line.strip()
-        for line in (project_root / "plugins/channel/matrix/requirements.txt")
-        .read_text()
-        .splitlines()
+        for line in (
+            (project_root / "plugins/channel/matrix/requirements.txt")
+            .read_text()
+            .splitlines()
+        )
         if line.strip() and not line.lstrip().startswith("#")
     }
     assert requirements <= declared
-
-
-@pytest.mark.parametrize(
-    "host,expected",
-    [("2.3.0b2", False), ("2.3.0b3", True), ("2.3.0b4", True)],
-)
-def test_matrix_market_manifest_requires_native_channel_host(
-    monkeypatch,
-    host,
-    expected,
-):
-    root = Path(__file__).resolve().parents[3]
-    raw = json.loads(
-        (root / "plugins/channel/matrix/plugin.json").read_text("utf-8"),
-    )
-    assert raw["id"] == "matrix" and raw["publish"] is True
-    assert raw["version"] == "0.1.0.dev2"
-    assert raw["qwenpaw_version"]["min"] == "2.3.0b3"
-    monkeypatch.setattr("qwenpaw.__version__.__version__", host)
-    assert (
-        check_plugin_version_compat(PluginManifest.from_dict(raw))[0]
-        is expected
-    )
 
 
 def text_event(body, event_id, sender=SENDER):
@@ -111,7 +93,10 @@ class LocalMatrixAPI:
         self.device = "SERVER-DEVICE"
         self.closed = asyncio.Event()
         self.download = b"native-media-bytes"
+        self.device_keys = {}
 
+    # Keep the transaction or callback contract intact.
+    # pylint: disable=R0912
     async def handle(self, request):
         raw = await request.read()
         try:
@@ -168,6 +153,8 @@ class LocalMatrixAPI:
                 },
             }, 200
         elif path.endswith("/keys/upload"):
+            if "device_keys" in body:
+                self.device_keys[self.device] = body["device_keys"]
             value, status = {
                 "one_time_key_counts": {
                     "signed_curve25519": len(
@@ -176,7 +163,10 @@ class LocalMatrixAPI:
                 },
             }, 200
         elif path.endswith("/keys/query"):
-            value, status = {"device_keys": {}, "failures": {}}, 200
+            value, status = {
+                "device_keys": {self.user: self.device_keys},
+                "failures": {},
+            }, 200
         elif "/send/" in path:
             value, status = ({"event_id": "$sent-" + str(len(self.sent))}, 200)
         elif "/download/" in path:
@@ -187,6 +177,8 @@ class LocalMatrixAPI:
         else:
             value, status = {}, 200
         return web.json_response(value, status=status)
+
+    # pylint: enable=R0912
 
     @property
     def sent(self):
@@ -284,7 +276,41 @@ async def test_password_precedes_token_and_server_identity_is_persisted(
         "access_token": "password-result-token",
         "user_id": BOT,
         "device_id": "SERVER-DEVICE",
+        "credential_scope": {
+            "homeserver": hs.url,
+            "login_user": BOT,
+            "device_id": "named-device",
+        },
+        "password_fingerprint": platform._password_fingerprint(
+            "password-result-token",
+        ),
     }
+
+
+@pytest.mark.asyncio
+async def test_legacy_identity_mismatch_does_not_block_valid_token(
+    platform_factory,
+):
+    platform = platform_factory()
+    legacy = Path(platform.config["legacy_state_dir"])
+    legacy.mkdir(parents=True)
+    old_auth = {
+        "access_token": "old-test-token",
+        "user_id": "@old-bot:example.com",
+        "device_id": "OLD-DEVICE",
+    }
+    (legacy / "matrix_auth_state.json").write_text(json.dumps(old_auth))
+    (legacy / "matrix_sync_token").write_text("old-batch")
+    await platform.start()
+    assert platform.observed_states == ["connected"]
+    assert platform._state.owner["user_id"] == BOT
+    assert (
+        json.loads(
+            (legacy / "matrix_auth_state.json").read_text(),
+        )
+        == old_auth
+    )
+    assert (legacy / "matrix_sync_token").read_text() == "old-batch"
 
 
 @pytest.mark.asyncio
@@ -312,174 +338,155 @@ async def test_default_e2ee_dependency_initializes_crypto_store(
     assert platform._client.olm is not None
     assert platform._client.olm.account.shared
     assert len(hs.calls("/keys/upload")) == 1
-    assert any(platform._state.crypto_dir.glob("*.db"))
-    identity_keys = platform._client.olm.account.identity_keys
     database = Path(platform._client.store.database_path)
-    assert database.name == "matrix.db"
+    assert database.name == platform._state.database_name
+    assert database.name == (
+        "matrix.db"
+        if os.name == "nt"
+        else f"{platform._state.directory.name}.db"
+    )
     assert database.parent == platform._state.crypto_dir
-    assert len(database.parent.parent.name) == 64
+    assert database.is_file()
+    peer = OlmDevice(
+        SENDER,
+        "PEER-DEVICE",
+        {"ed25519": "ed25519-key", "curve25519": "curve25519-key"},
+    )
+    assert platform._client.store.verify_device(peer)
+    trusted = platform._state.crypto_dir / f"{database.stem}.trusted_devices"
+    assert trusted.is_file()
+    identity_keys = platform._client.olm.account.identity_keys
+    saved = platform._client.store.load_account()
+    assert saved is not None and saved.shared
+    assert saved.identity_keys == identity_keys
     await platform.stop()
-    restarted = platform_factory(encryption=True)
-    await restarted.start()
-    assert restarted._client.olm.account.identity_keys == identity_keys
-    assert restarted._client.olm.account.shared
+
+    resumed = platform_factory(encryption=True)
+    await resumed.start()
+    assert resumed._client.olm.account.shared
+    assert resumed._client.olm.account.identity_keys == identity_keys
+    assert resumed._client.store.is_device_verified(peer)
     assert len(hs.calls("/keys/upload")) == 1
 
 
-def crypto_snapshot(source, destination):
-    destination.parent.mkdir(parents=True, exist_ok=True)
-    with closing(
-        sqlite3.connect(source.as_uri() + "?mode=ro", uri=True),
-    ) as old:
-        with closing(sqlite3.connect(destination)) as new:
-            old.backup(new)
-
-
-def legacy_crypto_path(tmp_path, hs):
+@pytest.mark.parametrize("use_legacy", [False, True])
+def test_scoped_crypto_filenames_migrate_legacy_names(
+    tmp_path,
+    use_legacy,
+):
+    homeserver = "https://matrix.example.com"
+    workspace = tmp_path / "A"
     legacy = tmp_path / "legacy"
-    legacy.mkdir(exist_ok=True)
-    (legacy / "matrix_auth_state.json").write_text(
-        json.dumps(
+    config = {
+        "workspace_dir": str(workspace),
+        "homeserver": homeserver,
+        "legacy_state_dir": str(legacy),
+    }
+    state = state_module.MatrixStateStore(config)
+    scope = hashlib.sha256(
+        json.dumps([homeserver, BOT, "SERVER-DEVICE"]).encode(),
+    ).hexdigest()
+    crypto = (
+        legacy / "matrix_crypto_store"
+        if use_legacy
+        else state.root / scope / "crypto_store"
+    )
+    crypto.mkdir(parents=True)
+    suffixes = (
+        ".db",
+        ".trusted_devices",
+        ".blacklisted_devices",
+        ".ignored_devices",
+    )
+    for index, suffix in enumerate(suffixes):
+        path = crypto / f"{BOT}_SERVER-DEVICE{suffix}"
+        path.write_bytes(f"state-{index}".encode())
+    if use_legacy:
+        (legacy / "matrix_auth_state.json").write_text(
+            json.dumps({"user_id": BOT, "device_id": "SERVER-DEVICE"}),
+        )
+        owner = {
+            "homeserver": homeserver,
+            "user_id": BOT,
+            "device_id": "SERVER-DEVICE",
+            "workspace_dir": str(state.workspace),
+        }
+        (legacy / "matrix_plugin_owner.json").write_text(
+            json.dumps(owner),
+        )
+
+    state.begin()
+    target_crypto = state.root / scope / "crypto_store"
+    try:
+        state.bind(
+            BOT,
+            "SERVER-DEVICE",
+            encryption_enabled=True,
+        )
+        assert state.crypto_dir == target_crypto
+        assert state.database_name == (
+            "matrix.db" if os.name == "nt" else f"{scope}.db"
+        )
+        for index, suffix in enumerate(suffixes):
+            legacy_path = crypto / f"{BOT}_SERVER-DEVICE{suffix}"
+            safe_path = (
+                target_crypto / f"{Path(state.database_name).stem}{suffix}"
+            )
+            if use_legacy:
+                assert legacy_path.read_bytes() == f"state-{index}".encode()
+            else:
+                assert not legacy_path.exists()
+            assert safe_path.read_bytes() == f"state-{index}".encode()
+    finally:
+        state.close()
+
+
+def test_scoped_crypto_filename_conflict_is_rejected(tmp_path):
+    homeserver = "https://matrix.example.com"
+    state = state_module.MatrixStateStore(
+        {
+            "workspace_dir": str(tmp_path / "A"),
+            "homeserver": homeserver,
+            "legacy_state_dir": str(tmp_path / "legacy"),
+        },
+    )
+    scope = hashlib.sha256(
+        json.dumps([homeserver, BOT, "SERVER-DEVICE"]).encode(),
+    ).hexdigest()
+    crypto = state.root / scope / "crypto_store"
+    crypto.mkdir(parents=True)
+    (crypto / f"{BOT}_SERVER-DEVICE.db").write_bytes(b"old")
+    (crypto / f"{scope}.db").write_bytes(b"new")
+
+    state.begin()
+    try:
+        with pytest.raises(
+            state_module.MatrixStateError,
+            match="MATRIX_CRYPTO_STORE_CONFLICT",
+        ):
+            state.bind(BOT, "SERVER-DEVICE", encryption_enabled=True)
+    finally:
+        state.close()
+
+
+def test_scoped_crypto_database_names_are_unique_per_identity(tmp_path):
+    names = []
+    for index, user in enumerate(("@one:example.com", "@two:example.com")):
+        state = state_module.MatrixStateStore(
             {
-                "access_token": "explicit-token",
-                "user_id": BOT,
-                "device_id": hs.device,
+                "workspace_dir": str(tmp_path / str(index)),
+                "homeserver": "https://matrix.example.com",
+                "legacy_state_dir": str(tmp_path / f"legacy-{index}"),
             },
-        ),
-    )
-    return legacy / "matrix_crypto_store" / f"{BOT}_{hs.device}.db"
-
-
-@pytest.mark.parametrize("legacy", [False, True])
-@pytest.mark.asyncio
-async def test_e2ee_migrates_raw_database_without_replacing_keys(
-    tmp_path,
-    hs,
-    platform_factory,
-    legacy,
-):
-    assert (
-        ENCRYPTION_ENABLED
-    ), "Matrix crypto regression requires E2EE dependencies"
-    platform = platform_factory(encryption=True)
-    await platform.start()
-    identity_keys = platform._client.olm.account.identity_keys
-    database = Path(platform._client.store.database_path)
-    await platform.stop()
-    raw = (
-        legacy_crypto_path(tmp_path, hs)
-        if legacy
-        else database.parent / f"{BOT}_{hs.device}.db"
-    )
-    crypto_snapshot(database, raw)
-    database.unlink()
-    restarted = platform_factory(encryption=True)
-    await restarted.start()
-    migrated = Path(restarted._client.store.database_path)
-    assert migrated.name == "matrix.db"
-    assert migrated.is_file() and migrated.stat().st_size > 0
-    assert not raw.exists()
-    assert restarted._client.olm.account.identity_keys == identity_keys
-    assert restarted._client.olm.account.shared
-    assert len(hs.calls("/keys/upload")) == 1
-
-
-@pytest.mark.parametrize("separate_legacy_directory", [False, True])
-@pytest.mark.asyncio
-async def test_e2ee_refuses_conflicting_crypto_stores_without_changing_either(
-    tmp_path,
-    hs,
-    platform_factory,
-    separate_legacy_directory,
-):
-    assert (
-        ENCRYPTION_ENABLED
-    ), "Matrix crypto regression requires E2EE dependencies"
-    platform = platform_factory(encryption=True)
-    await platform.start()
-    database = Path(platform._client.store.database_path)
-    await platform.stop()
-    raw = database.parent / f"{BOT}_{hs.device}.db"
-    crypto_snapshot(database, raw)
-    if separate_legacy_directory:
-        other = legacy_crypto_path(tmp_path, hs)
-        crypto_snapshot(database, other)
-        database.unlink()
-    else:
-        other = database
-    before = raw.read_bytes(), other.read_bytes()
-    restarted = platform_factory(encryption=True)
-    with pytest.raises(RuntimeError, match="MATRIX_CRYPTO_STORE_CONFLICT"):
-        await restarted.start()
-    assert (raw.read_bytes(), other.read_bytes()) == before
-    assert restarted.observed_states == ["failed"]
-
-
-@pytest.mark.asyncio
-async def test_e2ee_rejects_foreign_database_identity_before_migration(
-    hs,
-    platform_factory,
-):
-    assert (
-        ENCRYPTION_ENABLED
-    ), "Matrix crypto regression requires E2EE dependencies"
-    platform = platform_factory(encryption=True)
-    await platform.start()
-    database = Path(platform._client.store.database_path)
-    await platform.stop()
-    raw = database.parent / f"{BOT}_{hs.device}.db"
-    crypto_snapshot(database, raw)
-    database.unlink()
-    with closing(sqlite3.connect(raw)) as old:
-        old.execute("UPDATE accounts SET user_id = ?", ("@foreign:example",))
-        old.commit()
-    before = raw.read_bytes()
-    restarted = platform_factory(encryption=True)
-    with pytest.raises(
-        RuntimeError,
-        match="MATRIX_CRYPTO_STORE_IDENTITY_CONFLICT",
-    ):
-        await restarted.start()
-    assert raw.read_bytes() == before
-    assert not database.exists()
-
-
-@pytest.mark.asyncio
-async def test_e2ee_migration_preserves_committed_wal_and_identity(
-    hs,
-    platform_factory,
-):
-    assert (
-        ENCRYPTION_ENABLED
-    ), "Matrix crypto regression requires E2EE dependencies"
-    platform = platform_factory(encryption=True)
-    await platform.start()
-    identity_keys = platform._client.olm.account.identity_keys
-    database = Path(platform._client.store.database_path)
-    await platform.stop()
-    raw = database.parent / f"{BOT}_{hs.device}.db"
-    with closing(sqlite3.connect(database)) as writer:
-        assert writer.execute("PRAGMA journal_mode=WAL").fetchone() == ("wal",)
-        writer.execute("CREATE TABLE migration_marker (value TEXT)")
-        writer.execute("INSERT INTO migration_marker VALUES ('committed-wal')")
-        writer.commit()
-        # Freeze a crashed writer's DB/WAL pair as the old-layout fixture.
-        # The product must use SQLite backup, not copy this DB file alone.
-        shutil.copyfile(database, raw)
-        shutil.copyfile(str(database) + "-wal", str(raw) + "-wal")
-    database.unlink()
-    restarted = platform_factory(encryption=True)
-    await restarted.start()
-    migrated = Path(restarted._client.store.database_path)
-    with closing(sqlite3.connect(migrated)) as new:
-        assert new.execute(
-            "SELECT value FROM migration_marker",
-        ).fetchall() == [
-            ("committed-wal",),
-        ]
-    assert restarted._client.olm.account.identity_keys == identity_keys
-    assert restarted._client.olm.account.shared
-    assert not raw.exists()
+        )
+        state.begin()
+        try:
+            state.bind(user, "SERVER-DEVICE", encryption_enabled=True)
+            names.append((state.crypto_dir, state.database_name))
+        finally:
+            state.close()
+    assert len(set(names)) == 2
+    assert all(":" not in name for _directory, name in names)
 
 
 @pytest.mark.asyncio
@@ -677,6 +684,8 @@ async def test_driver_native_text_roundtrip_reaches_original_room(
     assert sync_task.done() and platform._client is None
 
 
+# Keep the transaction or callback contract intact.
+# pylint: disable=R0915
 @pytest.mark.asyncio
 async def test_unknown_typing_stop_retires_only_its_local_owner(
     hs,
@@ -684,9 +693,6 @@ async def test_unknown_typing_stop_retires_only_its_local_owner(
     tmp_path,
     monkeypatch,
 ):
-    # Keep the complete real SDK roundtrip in this protected case.
-    # pylint: disable=too-many-statements
-    import hashlib
     from tests.channel_support.protocol import finish, open_route
 
     platform = platform_factory()
@@ -712,9 +718,11 @@ async def test_unknown_typing_stop_retires_only_its_local_owner(
             {
                 **identity.to_mapping(),
                 "response_handle": handle,
-                "delivery_id": hashlib.sha256(
-                    (handle + ":prepare").encode(),
-                ).hexdigest(),
+                "delivery_id": (
+                    hashlib.sha256(
+                        (handle + ":prepare").encode(),
+                    ).hexdigest()
+                ),
             },
             None,
         )
@@ -757,3 +765,185 @@ async def test_unknown_typing_stop_retires_only_its_local_owner(
     await finish(peer, identity, second)
     assert shared_task.done() and not platform._typing_owners
     assert not platform._typing_tasks and stops == [*before, ROOM]
+
+
+# pylint: enable=R0915
+
+
+@pytest.mark.parametrize(
+    "host,expected",
+    [("2.3.0b2", False), ("2.3.0b3", True), ("2.3.0b4", True)],
+)
+def test_matrix_market_manifest_requires_native_channel_host(
+    monkeypatch,
+    host,
+    expected,
+):
+    root = Path(__file__).resolve().parents[3]
+    raw = json.loads(
+        (root / "plugins/channel/matrix/plugin.json").read_text("utf-8"),
+    )
+    assert raw["id"] == "matrix" and raw["publish"] is True
+    assert raw["version"] == "0.1.0.dev2"
+    assert raw["qwenpaw_version"]["min"] == "2.3.0b3"
+    monkeypatch.setattr("qwenpaw.__version__.__version__", host)
+    assert (
+        check_plugin_version_compat(PluginManifest.from_dict(raw))[0]
+        is expected
+    )
+
+
+def crypto_snapshot(source, destination):
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    with closing(
+        sqlite3.connect(source.as_uri() + "?mode=ro", uri=True),
+    ) as old:
+        with closing(sqlite3.connect(destination)) as new:
+            old.backup(new)
+
+
+def legacy_crypto_path(tmp_path, hs):
+    legacy = tmp_path / "legacy"
+    legacy.mkdir(exist_ok=True)
+    (legacy / "matrix_auth_state.json").write_text(
+        json.dumps(
+            {
+                "access_token": "explicit-token",
+                "user_id": BOT,
+                "device_id": hs.device,
+            },
+        ),
+    )
+    return legacy / "matrix_crypto_store" / f"{BOT}_{hs.device}.db"
+
+
+@pytest.mark.parametrize("legacy", [False, True])
+@pytest.mark.asyncio
+async def test_e2ee_migrates_raw_database_without_replacing_keys(
+    tmp_path,
+    hs,
+    platform_factory,
+    legacy,
+):
+    assert (
+        ENCRYPTION_ENABLED
+    ), "Matrix crypto regression requires E2EE dependencies"
+    platform = platform_factory(encryption=True)
+    await platform.start()
+    identity_keys = platform._client.olm.account.identity_keys
+    database = Path(platform._client.store.database_path)
+    await platform.stop()
+    raw = (
+        legacy_crypto_path(tmp_path, hs)
+        if legacy
+        else database.parent / f"{BOT}_{hs.device}.db"
+    )
+    crypto_snapshot(database, raw)
+    database.unlink()
+    restarted = platform_factory(encryption=True)
+    await restarted.start()
+    migrated = Path(restarted._client.store.database_path)
+    assert migrated.name == restarted._state.database_name
+    assert migrated.is_file() and migrated.stat().st_size > 0
+    assert raw.exists() is legacy
+    assert restarted._client.olm.account.identity_keys == identity_keys
+    assert restarted._client.olm.account.shared
+    assert len(hs.calls("/keys/upload")) == 1
+
+
+@pytest.mark.parametrize("separate_legacy_directory", [False, True])
+@pytest.mark.asyncio
+async def test_e2ee_refuses_conflicting_crypto_stores_without_changing_either(
+    tmp_path,
+    hs,
+    platform_factory,
+    separate_legacy_directory,
+):
+    assert (
+        ENCRYPTION_ENABLED
+    ), "Matrix crypto regression requires E2EE dependencies"
+    platform = platform_factory(encryption=True)
+    await platform.start()
+    database = Path(platform._client.store.database_path)
+    await platform.stop()
+    raw = database.parent / f"{BOT}_{hs.device}.db"
+    crypto_snapshot(database, raw)
+    if separate_legacy_directory:
+        other = legacy_crypto_path(tmp_path, hs)
+        crypto_snapshot(database, other)
+        database.unlink()
+    else:
+        other = database
+    before = raw.read_bytes(), other.read_bytes()
+    restarted = platform_factory(encryption=True)
+    with pytest.raises(RuntimeError, match="MATRIX_CRYPTO_STORE_CONFLICT"):
+        await restarted.start()
+    assert (raw.read_bytes(), other.read_bytes()) == before
+    assert restarted.observed_states == ["failed"]
+
+
+@pytest.mark.asyncio
+async def test_e2ee_rejects_foreign_database_identity_before_migration(
+    hs,
+    platform_factory,
+):
+    assert (
+        ENCRYPTION_ENABLED
+    ), "Matrix crypto regression requires E2EE dependencies"
+    platform = platform_factory(encryption=True)
+    await platform.start()
+    database = Path(platform._client.store.database_path)
+    await platform.stop()
+    raw = database.parent / f"{BOT}_{hs.device}.db"
+    crypto_snapshot(database, raw)
+    database.unlink()
+    with closing(sqlite3.connect(raw)) as old:
+        old.execute("UPDATE accounts SET user_id = ?", ("@foreign:example",))
+        old.commit()
+    before = raw.read_bytes()
+    restarted = platform_factory(encryption=True)
+    with pytest.raises(
+        RuntimeError,
+        match="MATRIX_CRYPTO_STORE_IDENTITY_CONFLICT",
+    ):
+        await restarted.start()
+    assert raw.read_bytes() == before
+    assert not database.exists()
+
+
+@pytest.mark.asyncio
+async def test_e2ee_migration_preserves_committed_wal_and_identity(
+    hs,
+    platform_factory,
+):
+    assert (
+        ENCRYPTION_ENABLED
+    ), "Matrix crypto regression requires E2EE dependencies"
+    platform = platform_factory(encryption=True)
+    await platform.start()
+    identity_keys = platform._client.olm.account.identity_keys
+    database = Path(platform._client.store.database_path)
+    await platform.stop()
+    raw = database.parent / f"{BOT}_{hs.device}.db"
+    with closing(sqlite3.connect(database)) as writer:
+        assert writer.execute("PRAGMA journal_mode=WAL").fetchone() == ("wal",)
+        writer.execute("CREATE TABLE migration_marker (value TEXT)")
+        writer.execute("INSERT INTO migration_marker VALUES ('committed-wal')")
+        writer.commit()
+        # Freeze a crashed writer's DB/WAL pair as the old-layout fixture.
+        # The product must use SQLite backup, not copy this DB file alone.
+        shutil.copyfile(database, raw)
+        shutil.copyfile(str(database) + "-wal", str(raw) + "-wal")
+    database.unlink()
+    restarted = platform_factory(encryption=True)
+    await restarted.start()
+    migrated = Path(restarted._client.store.database_path)
+    with closing(sqlite3.connect(migrated)) as new:
+        assert new.execute(
+            "SELECT value FROM migration_marker",
+        ).fetchall() == [
+            ("committed-wal",),
+        ]
+    assert restarted._client.olm.account.identity_keys == identity_keys
+    assert restarted._client.olm.account.shared
+    assert not raw.exists()

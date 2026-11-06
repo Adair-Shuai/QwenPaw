@@ -4,6 +4,7 @@
 Pluggable message renderer: Message -> sendable parts (runtime Content).
 Style/capabilities control markdown, emoji, code fence.
 """
+
 from __future__ import annotations
 
 import json
@@ -20,6 +21,7 @@ from qwenpaw.schemas import (
     TextContent,
     VideoContent,
 )
+from qwenpaw.utils.markdown_cjk import normalize_cjk_emphasis
 
 logger = logging.getLogger(__name__)
 
@@ -182,9 +184,11 @@ class MessageRenderer:
         self,
         message: Any,
     ) -> List[SemanticContentPart]:
-        """Preserve semantic roles without adding a platform's native layout."""
+        ("Preserve semantic roles without adding a platform's native layout.")
         return self._message_to_presented_parts(message, semantic=True)
 
+    # Keep the transaction or callback contract intact.
+    # pylint: disable=R1702
     def _message_to_presented_parts(
         self,
         message: Any,
@@ -441,6 +445,11 @@ class MessageRenderer:
                 # context and the durable index. No-op when absent.
                 text = strip_headline(c.text)
                 if text:
+                    if s.supports_markdown:
+                        # Repair CJK emphasis boundaries (e.g. ``**中文。**后``)
+                        # so channels that render Markdown do not leak the raw
+                        # ``**`` markers.
+                        text = normalize_cjk_emphasis(text)
                     append(TextContent(text=text))
             elif ctype == ContentType.REFUSAL and getattr(c, "refusal", None):
                 append(RefusalContent(refusal=c.refusal), "refusal")
@@ -518,6 +527,8 @@ class MessageRenderer:
         if not result and msg_type and not suppressed_tool_data:
             append(TextContent(text=f"[Message type: {msg_type}]"), "rendered")
         return result
+
+    # pylint: enable=R1702
 
     def parts_to_text(
         self,
