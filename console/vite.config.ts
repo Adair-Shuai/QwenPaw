@@ -197,6 +197,8 @@ export default defineConfig(({ command, mode }) => {
       rollupOptions: {
         ...(desktop ? { input: path.resolve(__dirname, "tauri.html") } : {}),
         output: {
+          // Extensionless licenses must not acquire a Windows-invalid trailing dot.
+          assetFileNames: "assets/[name]-[hash][extname]",
           manualChunks(id) {
             if (desktop) return;
             if (id.includes("vite/preload-helper")) return "ui-vendor";

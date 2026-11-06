@@ -191,6 +191,7 @@ for (const [file, titles] of [
     [
       "keeps assets at the root when the basename is %j",
       "uses %j as the asset prefix %j",
+      "builds extensionless assets with portable names and intact references (%s)",
     ],
   ],
   [
