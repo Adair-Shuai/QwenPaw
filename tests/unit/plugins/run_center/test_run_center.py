@@ -39,6 +39,7 @@ def _runtime_module():
 
 
 runtime = _runtime_module()
+importlib.import_module(f"{runtime.__name__}.presentation")
 _RUNTIME_MODULES = {
     name: module
     for name, module in sys.modules.copy().items()
