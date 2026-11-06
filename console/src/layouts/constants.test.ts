@@ -91,6 +91,29 @@ describe("isStableVersion", () => {
 });
 
 describe("compareVersions", () => {
+  it("orders Matrix development updates before alpha beta rc and stable", () => {
+    const versions = [
+      "0.1.0.dev1",
+      "0.1.0.dev2",
+      "0.1.0a1",
+      "0.1.0b1",
+      "0.1.0rc1",
+      "0.1.0",
+      "0.1.0.post1",
+    ];
+    for (let index = 1; index < versions.length; index++) {
+      expect(
+        compareVersions(versions[index], versions[index - 1]),
+      ).toBeGreaterThan(0);
+      expect(
+        compareVersions(versions[index - 1], versions[index]),
+      ).toBeLessThan(0);
+    }
+    expect(compareVersions("0.1.0.dev2", "0.1.0.dev2")).toBe(0);
+    expect(compareVersions("0.1.0.dev10", "0.1.0.dev2")).toBeGreaterThan(0);
+    expect(compareVersions("0.1.0dev2", "0.1.0.dev2")).toBe(0);
+  });
+
   it.each([
     ["1.0.0", "2.0.0", -1],
     ["2.0.0", "1.0.0", 1],

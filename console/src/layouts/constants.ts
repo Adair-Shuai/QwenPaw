@@ -34,7 +34,7 @@ export const isStableVersion = (v: string): boolean =>
 
 // Compare two PEP 440 version strings. Returns >0 if a>b, <0 if a<b, 0 if equal.
 // .postN releases sort after their base version (e.g. 1.0.0.post1 > 1.0.0).
-// Pre-release versions (aN, bN, rcN) sort before their base version.
+// Development releases sort before alpha, beta, rc and their base version.
 export const compareVersions = (a: string, b: string): number => {
   const normalise = (v: string): number[] => {
     // Handle .postN suffix
@@ -42,26 +42,30 @@ export const compareVersions = (a: string, b: string): number => {
     const postNum = postMatch ? Number(postMatch[1]) : 0;
     const baseVersion = v
       .replace(/\.post\d+$/i, "")
-      .replace(/[-.]?(alpha|beta|rc)[.-]?(\d+)$/i, (_match, label, num) => {
+      .replace(/[-.]?(alpha|beta|rc|dev)[.-]?(\d+)$/i, (_match, label, num) => {
         const short =
           label.toLowerCase() === "alpha"
             ? "a"
             : label.toLowerCase() === "beta"
             ? "b"
-            : "rc";
+            : label.toLowerCase();
         return `${short}${num}`;
       });
 
     // Handle pre-release suffix (e.g., 1.0.1b1 -> base=1.0.1, preType=b, preNum=1)
-    const preMatch = baseVersion.match(/^(.+?)(a|alpha|b|beta|rc|c)(\d*)$/i);
+    const preMatch = baseVersion.match(
+      /^(.+?)(dev|a|alpha|b|beta|rc|c)(\d*)$/i,
+    );
     let coreVersion = baseVersion;
-    let preType = 0; // 0 = stable, -3 = alpha, -2 = beta, -1 = rc
+    let preType = 0; // 0 = stable, -4 = dev, -3 = alpha, -2 = beta, -1 = rc
     let preNum = 0;
     if (preMatch) {
       coreVersion = preMatch[1];
       const preLabel = preMatch[2].toLowerCase();
       preType =
-        preLabel === "a" || preLabel === "alpha"
+        preLabel === "dev"
+          ? -4
+          : preLabel === "a" || preLabel === "alpha"
           ? -3
           : preLabel === "b" || preLabel === "beta"
           ? -2

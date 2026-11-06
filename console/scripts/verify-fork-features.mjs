@@ -237,7 +237,12 @@ for (const [file, titles] of [
       "queues signed upgrades from the real page and shows restart state",
       "replaces unmanaged catalog upgrades with their version and digest",
       "keeps core incompatibility blocked without attempting replacement",
+      "updates installed Matrix dev1 to dev2 from the real %s page action",
     ],
+  ],
+  [
+    "src/layouts/constants.test.ts",
+    ["orders Matrix development updates before alpha beta rc and stable"],
   ],
   [
     "src/os/DesktopAppLabels.test.tsx",

@@ -41,6 +41,7 @@ vi.mock("@/plugins/usePluginLoader", () => ({
 let requests: { path: string; body?: Record<string, unknown> }[];
 let installed: Record<string, unknown>[];
 let catalog: Record<string, unknown>[];
+let market: Record<string, unknown>[];
 let queueResponse: { status: number; body: unknown };
 
 beforeEach(() => {
@@ -72,6 +73,7 @@ beforeEach(() => {
       upgrade_available: true,
     },
   ];
+  market = [];
   queueResponse = { status: 200, body: { queued: true, component: "probe" } };
   vi.stubGlobal(
     "fetch",
@@ -85,22 +87,22 @@ beforeEach(() => {
       if (path === "/api/plugins/market/search")
         return Response.json({
           success: true,
-          data: { plugins: [], total: 0 },
+          data: { plugins: market, total: market.length },
         });
-      if (path === "/api/components/probe/install") {
+      if (path === `/api/components/${installed[0].id}/install`) {
         return Response.json(queueResponse.body, {
           status: queueResponse.status,
         });
       }
       if (path === "/api/plugins/replace") {
-        installed = installed.map((p) => ({
-          ...p,
-          version: "1.0.1",
-          loaded: true,
-          status: "active",
-        }));
+        installed = installed.map((p) =>
+          p.id === body.plugin_id
+            ? { ...p, version: body.version, loaded: true, status: "active" }
+            : p,
+        );
         catalog = [];
-        return Response.json({ id: "probe", name: "Probe", version: "1.0.1" });
+        market = [];
+        return Response.json({ id: body.plugin_id, version: body.version });
       }
       throw new Error(`Unexpected request: ${path}`);
     }),
@@ -108,13 +110,13 @@ beforeEach(() => {
 });
 afterEach(() => vi.unstubAllGlobals());
 
-async function mountAndUpdate(all = false) {
+async function mountAndUpdate(all = false, name = "Probe") {
   render(
     <MemoryRouter>
       <PluginManagerPage />
     </MemoryRouter>,
   );
-  const card = await screen.findByRole("article", { name: "Probe" });
+  const card = await screen.findByRole("article", { name });
   await waitFor(() =>
     expect(
       within(card).getByRole("button", { name: "pluginManager.update" }),
@@ -129,6 +131,76 @@ async function mountAndUpdate(all = false) {
 }
 
 describe("installed plugin page upgrade contract", () => {
+  it.each(["catalog", "community"])(
+    "updates installed Matrix dev1 to dev2 from the real %s page action",
+    async (source) => {
+      installed = [
+        {
+          id: "matrix",
+          name: "Matrix",
+          version: "0.1.0.dev1",
+          plugin_type: "channel",
+          status: "active",
+          loaded: true,
+          enabled: true,
+          market_id: "@qwenpaw/matrix",
+        },
+      ];
+      const catalogUrl =
+        "https://ugsci-download.oss-cn-beijing.aliyuncs.com/files/plugins/channel/matrix/matrix-0.1.0.dev2.zip";
+      const marketUrl =
+        "https://platform.agentscope.io/plugins/qwenpaw/matrix/archive/zip/master";
+      catalog =
+        source === "catalog"
+          ? [
+              {
+                plugin_id: "matrix",
+                name: "Matrix",
+                version: "0.1.0.dev2",
+                channel: "ugsci",
+                install_url: catalogUrl,
+                sha256: "b".repeat(64),
+                upgrade_available: true,
+              },
+            ]
+          : [];
+      market =
+        source === "community"
+          ? [
+              {
+                id: "@qwenpaw/matrix",
+                display_name: "Matrix",
+                owner: "qwenpaw",
+                developer: "qwenpaw",
+                version: "0.1.0.dev2",
+                locales: {},
+              },
+            ]
+          : [];
+      queueResponse = {
+        status: 409,
+        body: { detail: { reason: "not_managed", message: "not managed" } },
+      };
+      const card = await mountAndUpdate(false, "Matrix");
+      await waitFor(() =>
+        expect(within(card).getByText("v0.1.0.dev2")).toBeInTheDocument(),
+      );
+      expect(
+        requests.find((request) => request.path === "/api/plugins/replace")
+          ?.body,
+      ).toEqual({
+        plugin_id: "matrix",
+        version: "0.1.0.dev2",
+        source: source === "catalog" ? catalogUrl : marketUrl,
+        ...(source === "catalog" ? { sha256: "b".repeat(64) } : {}),
+      });
+      expect(h.reload).not.toHaveBeenCalled();
+      expect(
+        requests.some((request) => request.path === "/api/plugins/install"),
+      ).toBe(false);
+    },
+  );
+
   it("queues signed upgrades from the real page and shows restart state", async () => {
     const card = await mountAndUpdate();
     await waitFor(() =>

@@ -127,6 +127,20 @@ def test_ci_retains_fork_inventory_gates_and_application_tests():
             "npm --prefix plugins/bundle/qwenpaw-openui/frontend run build"
             in build["run"]
         )
+        powercontext_index = next(
+            index
+            for index, step in enumerate(steps)
+            if step.get("name")
+            == "Build PowerContext runtime for plugin archive contracts"
+        )
+        assert powercontext_index < test_index
+        powercontext_build = steps[powercontext_index]
+        assert not powercontext_build.get("continue-on-error", False)
+        for command in ("ci", "run build"):
+            assert (
+                f"npm --prefix plugins/memory/powercontext/frontend {command}"
+                in powercontext_build["run"]
+            )
         if name == "tests.yml":
             triggers = workflow.get("on", workflow.get(True))
             assert "lobehub-style" in triggers["push"]["branches"]
