@@ -3,7 +3,13 @@
 
 from __future__ import annotations
 
+from importlib.util import module_from_spec, spec_from_file_location
+import json
 from pathlib import Path
+import subprocess
+
+import pytest
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 
@@ -98,6 +104,76 @@ def test_reusable_plugin_build_matches_release_artifact_scope() -> None:
             "qwenpaw-data",
         ):
             assert f"--exclude {plugin}" in workflow[pack:]
+
+
+@pytest.mark.parametrize(
+    "workflow_name,job",
+    [
+        ("release.yml", "build-plugins"),
+        ("release-resume.yml", "build-plugins"),
+        ("plugins-build.yml", "build-plugins"),
+        ("plugins-release.yml", "upload-oss"),
+    ],
+)
+def test_plugin_pack_jobs_install_channel_contract_dependencies(
+    workflow_name,
+    job,
+) -> None:
+    """Each clean runner installs the real validator's lightweight imports."""
+    workflow = yaml.safe_load(_workflow(workflow_name))
+    steps = workflow["jobs"][job]["steps"]
+    pack_index = next(
+        index
+        for index, step in enumerate(steps)
+        if "scripts/pack/generate_plugin_metadata.py" in step.get("run", "")
+    )
+    install = (
+        "python -m pip install -r "
+        "scripts/pack/channel-contract-requirements.txt"
+    )
+    prerequisites = [
+        step for step in steps[:pack_index] if install in step.get("run", "")
+    ]
+    assert prerequisites, f"{workflow_name}:{job} omits preflight dependencies"
+    for step in [*prerequisites, steps[pack_index]]:
+        assert not step.get("continue-on-error", False)
+    assert any("if" not in step for step in prerequisites)
+
+
+def test_resumed_wheel_validates_contracts_and_stages_tested_openui() -> None:
+    workflow = yaml.safe_load(_workflow("release-resume.yml"))
+    steps = workflow["jobs"]["build-wheel"]["steps"]
+    indexes = {step.get("name"): index for index, step in enumerate(steps)}
+    install = indexes["Install channel contract preflight dependencies"]
+    stage = indexes["Build and stage bundled OpenUI runtime"]
+    build = indexes["Build package"]
+    assert install < stage < build
+    assert (
+        "python -m pip install -r "
+        "scripts/pack/channel-contract-requirements.txt"
+    ) in steps[install]["run"]
+    runtime = steps[stage]["run"]
+    commands = [
+        "npm --prefix plugins/bundle/qwenpaw-openui/frontend ci",
+        "npm --prefix plugins/bundle/qwenpaw-openui/frontend test",
+        "python scripts/pack-tauri/stage_bundled_plugins.py --repo . --dest",
+        "cp -R .codex-tmp/wheel-plugin-stage/qwenpaw-openui "
+        "src/qwenpaw/plugins_bundle/",
+    ]
+    positions = [runtime.index(command) for command in commands]
+    assert positions == sorted(positions)
+    for asset in ("index.js", "system-prompt.txt"):
+        assert (
+            "test -s src/qwenpaw/plugins_bundle/qwenpaw-openui/"
+            f"dist/{asset}"
+        ) in runtime
+    package = steps[build]["run"]
+    assert package.index(
+        "python scripts/pack/validate_channel_contracts.py",
+    ) < package.index("python -m build")
+    for index in (install, stage, build):
+        assert "if" not in steps[index]
+        assert not steps[index].get("continue-on-error", False)
 
 
 def test_release_builds_run_center_and_docker_runtime_dependencies() -> None:
@@ -709,3 +785,208 @@ def test_uproject_release_uses_parameterized_oss_bucket() -> None:
     assert "ui/dist/index.js" not in workflow
     assert "setup-node" not in workflow
     assert "npm --prefix" not in workflow
+
+
+def _pack_upload_fixture(tmp_path):
+    spec = spec_from_file_location(
+        "release_plugin_packer",
+        REPO_ROOT / "scripts/pack/generate_plugin_metadata.py",
+    )
+    assert spec and spec.loader
+    packer = module_from_spec(spec)
+    spec.loader.exec_module(packer)
+    root = tmp_path / "dist/plugins"
+    hub = tmp_path / "hub-source"
+    hub.mkdir()
+    manifest = {
+        "id": "release-hub",
+        "version": "1.0.0",
+        "entry": {"backend": "plugin.py"},
+    }
+    (hub / "plugin.json").write_text(json.dumps(manifest), "utf-8")
+    (hub / "plugin.py").write_text("VALUE = 1\n", "utf-8")
+    files = {}
+    for kind, source in (
+        ("channel", REPO_ROOT / "plugins/channel/azure_bot"),
+        ("hub", hub),
+    ):
+        manifest = json.loads((source / "plugin.json").read_text("utf-8"))
+        identifier, version = manifest["id"], manifest["version"]
+        relative = f"{kind}/{identifier}/{identifier}-{version}.zip"
+        archive = root / relative
+        # Exercise the same archive and metadata builders as release packing.
+        # pylint: disable=protected-access
+        packer._zip_plugin(source, archive, manifest)
+        row = packer._build_metadata(
+            manifest,
+            file_id=archive.stem,
+            plugin_id=identifier,
+            version=version,
+            kind=kind,
+            zip_path=archive,
+            cdn_path=f"/files/plugins/{relative}",
+        )
+        files[row["id"]] = row
+    (root / "index.json").write_text(json.dumps({"files": files}), "utf-8")
+    return root, files
+
+
+def _upload_module():
+    spec = spec_from_file_location(
+        "release_plugin_upload",
+        REPO_ROOT / "scripts/pack/upload_plugin_artifacts.py",
+    )
+    assert spec and spec.loader
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def _mock_oss_transport(monkeypatch, uploader, remote):
+    """Only replace OSS transport; use actual ZIP bytes and file comparison."""
+    uploads = []
+
+    def oss(arguments):
+        command, source, *rest = arguments
+        if command == "stat":
+            exists = source in remote
+            return subprocess.CompletedProcess(
+                arguments,
+                0 if exists else 1,
+                "",
+                "" if exists else "NoSuchKey",
+            )
+        assert command == "cp"
+        destination = rest[0]
+        if source.startswith("oss://"):
+            Path(destination).write_bytes(remote[source])
+        else:
+            assert "x-oss-forbid-overwrite:true#" in rest[-1]
+            assert "--force" not in arguments
+            assert destination not in remote
+            remote[destination] = Path(source).read_bytes()
+            uploads.append(destination)
+        return subprocess.CompletedProcess(arguments, 0, "", "")
+
+    monkeypatch.setattr(uploader, "_oss", oss)
+    return uploads
+
+
+@pytest.mark.parametrize(
+    "workflow_name,job",
+    [
+        ("release.yml", "publish-plugins"),
+        ("release-resume.yml", "publish-plugins"),
+        ("plugins-release.yml", "upload-oss"),
+    ],
+)
+def test_plugin_publish_jobs_upload_indexed_azure_and_hub_artifacts(
+    tmp_path,
+    monkeypatch,
+    workflow_name,
+    job,
+):
+    steps = yaml.safe_load(_workflow(workflow_name))["jobs"][job]["steps"]
+    step = next(
+        row
+        for row in steps
+        if row.get("name") == "Sync plugin zips to OSS (long-cache, immutable)"
+    )
+    assert "python scripts/pack/upload_plugin_artifacts.py" in step["run"]
+    assert '--root dist/plugins --bucket "$OSS_BUCKET"' in step["run"]
+    assert not step.get("continue-on-error", False)
+    root, files = _pack_upload_fixture(tmp_path)
+    uploader = _upload_module()
+    remote = {}
+    uploads = _mock_oss_transport(monkeypatch, uploader, remote)
+    uploader.upload_artifacts(root, "release-test")
+    expected = {f"oss://release-test{row['url']}" for row in files.values()}
+    assert set(uploads) == set(remote) == expected
+    assert any("/channel/azure-bot/" in uri for uri in remote)
+    assert any("/hub/release-hub/" in uri for uri in remote)
+    for row in files.values():
+        relative = row["url"].removeprefix("/files/plugins/")
+        assert (
+            remote[f"oss://release-test{row['url']}"]
+            == (root / relative).read_bytes()
+        )
+    uploads.clear()
+    uploader.upload_artifacts(root, "release-test")
+    assert not uploads
+
+
+def test_plugin_upload_conflict_blocks_every_new_object(tmp_path, monkeypatch):
+    root, files = _pack_upload_fixture(tmp_path)
+    uploader = _upload_module()
+    hub = next(row for row in files.values() if row["platform"] == "hub")
+    remote = {
+        f"oss://release-test{hub['url']}": b"published different content",
+    }
+    uploads = _mock_oss_transport(monkeypatch, uploader, remote)
+    with pytest.raises(ValueError, match="without a version bump"):
+        uploader.upload_artifacts(root, "release-test")
+    assert not uploads
+
+
+@pytest.mark.parametrize("damage", ["missing", "digest", "unindexed"])
+def test_plugin_upload_rejects_incomplete_local_artifacts(
+    tmp_path,
+    monkeypatch,
+    damage,
+):
+    root, files = _pack_upload_fixture(tmp_path)
+    row = next(iter(files.values()))
+    archive = root / row["url"].removeprefix("/files/plugins/")
+    if damage == "missing":
+        archive.unlink()
+    elif damage == "digest":
+        archive.write_bytes(b"damaged ZIP")
+    else:
+        (root / "unindexed.zip").write_bytes(b"unindexed ZIP")
+    uploader = _upload_module()
+
+    def unexpected_transport(_arguments):
+        raise AssertionError("Local validation must precede OSS access")
+
+    monkeypatch.setattr(uploader, "_oss", unexpected_transport)
+    with pytest.raises(ValueError, match="artifact|inventory"):
+        uploader.upload_artifacts(root, "release-test")
+
+
+@pytest.mark.parametrize("failure", ["denied", "readback"])
+def test_plugin_upload_transport_failures_do_not_pass(
+    tmp_path,
+    monkeypatch,
+    failure,
+):
+    root, _files = _pack_upload_fixture(tmp_path)
+    uploader = _upload_module()
+    remote = {}
+    uploads = _mock_oss_transport(monkeypatch, uploader, remote)
+    transport = getattr(uploader, "_oss")
+
+    def fail_transport(arguments):
+        if failure == "denied" and arguments[0] == "stat":
+            return subprocess.CompletedProcess(
+                arguments,
+                1,
+                "",
+                "StatusCode: 403 AccessDenied",
+            )
+        result = transport(arguments)
+        if (
+            failure == "readback"
+            and arguments[0] == "cp"
+            and arguments[1].startswith("oss://")
+        ):
+            Path(arguments[2]).write_bytes(b"corrupted remote object")
+        return result
+
+    monkeypatch.setattr(uploader, "_oss", fail_transport)
+    with pytest.raises(
+        (RuntimeError, ValueError),
+        match="403|verification failed",
+    ):
+        uploader.upload_artifacts(root, "release-test")
+    if failure == "denied":
+        assert not uploads

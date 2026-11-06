@@ -2,6 +2,7 @@
 *.py text eol=lf
 plugins/apps/document-forms/tests/fixtures/*.pdf binary
 scripts/check-channels.sh text eol=lf
+plugins/apps/qwenpaw-data/scripts/sync-context-ui.sh text eol=lf
 .github/workflows/tests.yml text eol=lf
 plugins/apps/qwenpaw-data/scripts/data-console/patches/console-embed.patch text eol=lf
 plugins/apps/qwenpaw-data/scripts/data-console/paw-bridge.js text eol=lf

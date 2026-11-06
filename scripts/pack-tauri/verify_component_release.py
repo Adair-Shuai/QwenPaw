@@ -87,6 +87,32 @@ def _verify_full_archive(
         with archive.open(name) as stream:
             while stream.read(1024 * 1024):
                 pass
+    if "plugin.json" in names:
+        plugin = json.loads(archive.read("plugin.json"))
+        if (
+            plugin.get("id") != component
+            or plugin.get("version") != entry["version"]
+        ):
+            raise ValueError(f"plugin archive identity differs: {component}")
+        declared = plugin.get("entry", {})
+        required = plugin.get("pack_requires", [])
+        if not isinstance(declared, dict) or not isinstance(required, list):
+            raise ValueError(
+                f"invalid plugin payload declarations: {component}",
+            )
+        for value in [*declared.values(), *required]:
+            if (
+                not isinstance(value, str)
+                or not value
+                or safe_relative_path(value) != value
+            ):
+                raise ValueError(
+                    f"unsafe plugin required payload: {component}",
+                )
+            if value not in managed or not archive.getinfo(value).file_size:
+                raise ValueError(
+                    f"plugin {component} is missing required payload: {value}",
+                )
 
 
 def _verify_delta_archive(

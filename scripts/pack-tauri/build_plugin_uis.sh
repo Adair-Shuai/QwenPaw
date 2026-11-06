@@ -51,6 +51,9 @@ while IFS= read -r plugin_dir; do
     fi
 
     echo "  - $plugin_name: building..."
+    if [ "$plugin_name" = "qwenpaw-data" ]; then
+        "$python_cmd" "$REPO_ROOT/scripts/pack-tauri/prepare_data_context_console.py" --repo "$REPO_ROOT"
+    fi
     (
         cd "$ui_dir"
         if ! npm ci --prefix "$ui_dir"; then
@@ -70,6 +73,12 @@ while IFS= read -r plugin_dir; do
     if [ ! -f "$dist_js" ]; then
         echo "  - $plugin_name: ERROR - dist/index.js not found after build!"
         exit 1
+    fi
+    if [ "$plugin_name" = "qwenpaw-data" ]; then
+        "$python_cmd" "$plugin_dir/scripts/verify-data-console.py" \
+            "$ui_dir/dist/data-console" \
+            --canonical-bridge "$plugin_dir/scripts/data-console/paw-bridge.js" \
+            --canonical-patch "$plugin_dir/scripts/data-console/patches/console-embed.patch"
     fi
 
     size=$(du -h "$dist_js" | cut -f1)

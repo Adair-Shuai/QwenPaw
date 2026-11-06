@@ -83,7 +83,7 @@ def test_shipped_plugins_keep_major_version_compatibility_boundary(
         ("bundle/cloudpaw", "0.0.4"),
         ("bundle/computer-use", "1.0.6"),
         ("bundle/flowforge", "0.1.9"),
-        ("bundle/qwenpaw-openui", "0.2.0"),
+        ("bundle/qwenpaw-openui", "0.2.1"),
         ("bundle/qwenpaw-pet", "0.1.5"),
         ("bundle/qwenpaw-run-center", "0.3.0"),
         ("bundle/ugsci", "0.8.1"),

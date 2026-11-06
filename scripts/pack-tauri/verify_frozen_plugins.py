@@ -78,6 +78,20 @@ def verify(root: Path) -> None:
                 raise ValueError(
                     f"plugin {plugin_id} is missing {kind} entry: {target}",
                 )
+        for required in _pack_requires(manifest):
+            target = _safe_entry(
+                plugin_root,
+                required,
+                f"{plugin_id}.pack_requires",
+            )
+            if (
+                target is None
+                or not target.is_file()
+                or not target.stat().st_size
+            ):
+                raise ValueError(
+                    f"plugin {plugin_id} is missing required payload: {required}",
+                )
     missing = CRITICAL_PLUGINS - seen
     if missing:
         raise ValueError(
@@ -85,6 +99,17 @@ def verify(root: Path) -> None:
             + ", ".join(sorted(missing)),
         )
     print("Verified bundled plugins: " + ", ".join(sorted(seen)))
+
+
+def _pack_requires(manifest: dict) -> list[str]:
+    required = manifest.get("pack_requires", [])
+    if not isinstance(required, list) or not all(
+        isinstance(path, str) and path for path in required
+    ):
+        raise ValueError(
+            "pack_requires must be a list of non-empty relative paths",
+        )
+    return required
 
 
 def _normalise_archive_member(value: str) -> str:
@@ -115,6 +140,37 @@ def _safe_archive_entry(
     if not target.startswith(plugin_root + "/"):
         raise ValueError(f"{label} escapes its plugin directory")
     return target
+
+
+def _verify_required_archive_files(manifest, plugin_root, files, read_file):
+    plugin_id = manifest["id"]
+    entry = manifest.get("entry")
+    if not isinstance(entry, dict):
+        raise ValueError(f"plugin {plugin_id} has no entry object")
+    for kind in ("backend", "frontend"):
+        target = _safe_archive_entry(
+            plugin_root,
+            entry.get(kind),
+            f"{plugin_id}.{kind}",
+        )
+        if target is not None and target not in files:
+            raise ValueError(
+                f"plugin {plugin_id} is missing {kind} entry in archive: {target}",
+            )
+        if target is not None and not read_file(target):
+            raise ValueError(
+                f"plugin {plugin_id} has an empty {kind} entry in archive: {target}",
+            )
+    for required in _pack_requires(manifest):
+        target = _safe_archive_entry(
+            plugin_root,
+            required,
+            f"{plugin_id}.pack_requires",
+        )
+        if target is None or target not in files or not read_file(target):
+            raise ValueError(
+                f"plugin {plugin_id} is missing required payload in archive: {required}",
+            )
 
 
 def _verify_archive_files(
@@ -221,23 +277,7 @@ def _verify_archive_files(
             raise ValueError(
                 "UGSci visualization test data must not be published",
             )
-        entry = manifest.get("entry")
-        if not isinstance(entry, dict):
-            raise ValueError(f"plugin {plugin_id} has no entry object")
-        for kind in ("backend", "frontend"):
-            target = _safe_archive_entry(
-                plugin_root,
-                entry.get(kind),
-                f"{plugin_id}.{kind}",
-            )
-            if target is not None and target not in files:
-                raise ValueError(
-                    f"plugin {plugin_id} is missing {kind} entry in archive: {target}",
-                )
-            if target is not None and not read_file(target):
-                raise ValueError(
-                    f"plugin {plugin_id} has an empty {kind} entry in archive: {target}",
-                )
+        _verify_required_archive_files(manifest, plugin_root, files, read_file)
     missing = CRITICAL_PLUGINS - seen
     if missing:
         raise ValueError(

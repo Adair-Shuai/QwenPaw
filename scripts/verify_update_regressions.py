@@ -22,6 +22,7 @@ SUITES = (
     "tests/unit/tauri/test_desktop_workflows.py",
     "tests/unit/tauri/test_desktop_layer_layout.py",
     "tests/unit/tauri/test_stage_desktop_components.py",
+    "tests/unit/tauri/test_plugin_payload_completeness.py",
     "tests/unit/app/test_desktop_update_manifest.py",
     "tests/unit/verify/test_release_workflow_safety.py",
     "tests/unit/tauri/test_stage_officecli.py",
@@ -50,6 +51,15 @@ SUITES = (
     "tests/unit/tauri/test_windows_update_extraction.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/tauri/test_plugin_payload_completeness.py": {
+        "test_desktop_plugins_reuse_complete_payloads_in_real_signed_zips",
+        "test_signed_component_gate_rejects_missing_declared_payload",
+        "test_desktop_plugin_reuse_rejects_foreign_or_incomplete_sources",
+        "test_desktop_archive_requires_manifest_declared_auxiliary_files",
+        "test_data_context_vendoring_runs_script_and_restores_router",
+        "test_component_workflow_reuses_complete_desktop_plugins",
+        "test_desktop_builds_vendor_data_context_before_plugin_bundle",
+    },
     "tests/unit/plugins/test_bundle_marker_scan.py": {
         "test_bundle_marker_checks_all_files_with_one_scan_per_directory",
         "test_bundle_marker_rejects_unsafe_or_malformed_files",
@@ -163,6 +173,12 @@ REQUIRED_CASES = {
     "tests/unit/verify/test_release_workflow_safety.py": {
         "test_clean_release_and_frontend_checks_build_openui_runtime",
         "test_reusable_plugin_build_matches_release_artifact_scope",
+        "test_plugin_pack_jobs_install_channel_contract_dependencies",
+        "test_resumed_wheel_validates_contracts_and_stages_tested_openui",
+        "test_plugin_publish_jobs_upload_indexed_azure_and_hub_artifacts",
+        "test_plugin_upload_conflict_blocks_every_new_object",
+        "test_plugin_upload_rejects_incomplete_local_artifacts",
+        "test_plugin_upload_transport_failures_do_not_pass",
     },
     "tests/unit/tauri/test_stage_officecli.py": {
         "test_reviewed_pin_does_not_query_latest",

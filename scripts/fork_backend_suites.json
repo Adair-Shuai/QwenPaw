@@ -129,6 +129,7 @@
     ],
     "upstream_merge": [
       "tests/unit/plugins/test_upstream_merge_compat.py",
+      "tests/unit/tauri/test_plugin_payload_completeness.py",
       "tests/unit/plugins/test_plugin_uninstall_tombstones.py",
       "tests/unit/plugins/test_plugin_startup_perf.py",
       "tests/unit/app/routers/test_plugins_router.py",
@@ -208,6 +209,15 @@
     ]
   },
   "required_cases": {
+    "tests/unit/tauri/test_plugin_payload_completeness.py": [
+      "test_desktop_plugins_reuse_complete_payloads_in_real_signed_zips",
+      "test_signed_component_gate_rejects_missing_declared_payload",
+      "test_desktop_plugin_reuse_rejects_foreign_or_incomplete_sources",
+      "test_desktop_archive_requires_manifest_declared_auxiliary_files",
+      "test_data_context_vendoring_runs_script_and_restores_router",
+      "test_component_workflow_reuses_complete_desktop_plugins",
+      "test_desktop_builds_vendor_data_context_before_plugin_bundle"
+    ],
     "tests/unit/tauri/test_ugsci_release_data.py": [
       "test_runtime_bundle_install_excludes_samples_and_keeps_user_imports",
       "test_runtime_hash_matches_legacy_without_entering_excluded_trees",

@@ -85,6 +85,10 @@ $pluginSources | ForEach-Object {
     }
 
     Write-Host "  - ${pluginName}: building..."
+    if ($pluginName -eq "qwenpaw-data") {
+        python (Join-Path $PSScriptRoot "prepare_data_context_console.py") --repo $REPO_ROOT
+        if ($LASTEXITCODE -ne 0) { throw "Data context console build failed" }
+    }
     Push-Location $uiDir
     try {
         npm ci 2>$null
@@ -105,6 +109,13 @@ $pluginSources | ForEach-Object {
     if (-not (Test-Path $distJs)) {
         Write-Host "  - ${pluginName}: ERROR - dist/index.js not found after build!"
         exit 1
+    }
+    if ($pluginName -eq "qwenpaw-data") {
+        python (Join-Path $pluginDir.FullName "scripts/verify-data-console.py") `
+            (Join-Path $uiDir "dist/data-console") `
+            --canonical-bridge (Join-Path $pluginDir.FullName "scripts/data-console/paw-bridge.js") `
+            --canonical-patch (Join-Path $pluginDir.FullName "scripts/data-console/patches/console-embed.patch")
+        if ($LASTEXITCODE -ne 0) { throw "Data console snapshot verification failed" }
     }
 
     $size = (Get-Item $distJs).Length / 1KB

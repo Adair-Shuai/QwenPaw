@@ -133,12 +133,24 @@ jobs:
       - name: Install release dependencies
         run: python -m pip install packaging cryptography
 
+      - name: Set up Node for standalone plugin builds
+        if: ${{ !inputs.include_desktop_components }}
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Build standalone managed plugin frontends
+        if: ${{ !inputs.include_desktop_components }}
+        run: bash scripts/pack-tauri/build_plugin_uis.sh
+
       - name: Stage managed bundled plugins and apps
+        if: ${{ !inputs.include_desktop_components }}
         run: |
           python scripts/pack-tauri/stage_bundled_plugins.py \
             --repo . \
             --dest component-staging \
             --plugin-roots bundle apps
+          python scripts/pack-tauri/verify_frozen_plugins.py component-staging
 
       - name: Resolve desktop component artifact source
         if: ${{ inputs.include_desktop_components }}
@@ -251,6 +263,11 @@ jobs:
       - name: Stage backend, runtime and tool components
         if: ${{ inputs.include_desktop_components }}
         run: |
+          python scripts/pack-tauri/stage_desktop_plugins.py \
+            --repo . --binaries desktop-component-source/binaries \
+            --output component-staging \
+            --target '${{ matrix.target }}' \
+            --version '${{ inputs.release_version }}'
           python scripts/pack-tauri/stage_desktop_components.py \
             --binaries desktop-component-source/binaries \
             --output component-staging \
