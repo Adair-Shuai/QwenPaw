@@ -1,6 +1,8 @@
 # -*- coding: utf-8 -*-
 """Keep the desktop lock aligned with the selected dependency profile."""
 
+from importlib.util import module_from_spec, spec_from_file_location
+import json
 from pathlib import Path
 import re
 import tomllib
@@ -38,6 +40,19 @@ def _desktop_requirements():
                     )
             else:
                 requirements.append(line)
+    # Match the real desktop staging inventory, including bundled apps. A
+    # developer environment may hide a missing plugin dependency such as ULit's
+    # PyMuPDF even when every core requirement is already locked.
+    spec = spec_from_file_location(
+        "desktop_bundled_plugins",
+        ROOT / "scripts/pack-tauri/stage_bundled_plugins.py",
+    )
+    assert spec and spec.loader
+    staging = module_from_spec(spec)
+    spec.loader.exec_module(staging)
+    for plugin in staging.discover_bundled_plugins(ROOT):
+        manifest = json.loads((plugin / "plugin.json").read_text("utf-8"))
+        requirements.extend(manifest.get("dependencies", []))
     return [Requirement(value) for value in requirements]
 
 

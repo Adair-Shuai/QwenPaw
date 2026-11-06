@@ -25,6 +25,7 @@ from helpers import (
     MOCK_LLM_RESPONSE,
     MockLLMHandler,
     default_http_timeout,
+    install_official_channel,
     register_mock_provider,
     unregister_mock_provider,
     wait_for_agent_reload,
@@ -53,6 +54,7 @@ def mock_llm():
 def matrix_channel_up(app_server):
     """Enable the Matrix channel against the mock homeserver."""
     _MOCK_HS.start()
+    install_official_channel(app_server, "matrix")
     reload_mark = len(app_server.logs)
     put = app_server.api_request(
         "PUT",

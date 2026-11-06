@@ -4,6 +4,7 @@
 
 import json
 import importlib.util
+import shutil
 import zipfile
 from pathlib import Path
 
@@ -73,7 +74,7 @@ def test_shipped_plugins_keep_major_version_compatibility_boundary(
         ("apps/uproject", "0.1.2"),
         ("tool/wan27", "1.0.4"),
         ("apps/agent-kanban", "0.1.4"),
-        ("apps/document-forms", "1.5.1"),
+        ("apps/document-forms", "1.5.2"),
         ("apps/storage-capacity", "0.3.1"),
         ("apps/uideas", "0.2.0"),
         ("apps/ulit", "0.1.4"),
@@ -81,12 +82,14 @@ def test_shipped_plugins_keep_major_version_compatibility_boundary(
         ("bundle/chrome", "0.1.4"),
         ("bundle/cloudpaw", "0.0.4"),
         ("bundle/computer-use", "1.0.6"),
-        ("bundle/flowforge", "0.1.8"),
+        ("bundle/flowforge", "0.1.9"),
         ("bundle/qwenpaw-openui", "0.2.0"),
         ("bundle/qwenpaw-pet", "0.1.5"),
         ("bundle/qwenpaw-run-center", "0.3.0"),
-        ("bundle/ugsci", "0.8.0"),
+        ("bundle/ugsci", "0.8.1"),
         ("bundle/ugsci_research", "0.1.6"),
+        ("memory/powercontext", "1.0.2"),
+        ("channel/azure_bot", "2.0.1"),
         ("hub/aliyun-hub", "1.0.0"),
         ("hub/clawhub-hub", "1.0.0"),
         ("hub/modelscope-hub", "1.0.0"),
@@ -132,6 +135,87 @@ def test_repaired_market_archives_cover_b2_and_advance_versions(
         cdn_path=f"/files/plugins/{archive.name}",
     )
     assert metadata["qwenpaw_version"] == packaged["qwenpaw_version"]
+
+
+@pytest.mark.parametrize(
+    "relative,previous,changed_file",
+    [
+        ("bundle/ugsci", "0.8.1", "expert_presentation.py"),
+        ("bundle/flowforge", "0.1.9", "router.py"),
+        ("apps/document-forms", "1.5.2", "backend/engine.py"),
+    ],
+)
+def test_b4_bundle_updates_replace_complete_b3_installations(
+    tmp_path,
+    monkeypatch,
+    relative,
+    previous,
+    changed_file,
+):
+    """Packaged startup replaces B3 code using static published identities."""
+    from packaging.version import Version
+
+    from qwenpaw.plugins import bundled
+
+    origin = ROOT / "plugins" / relative
+    manifest = json.loads((origin / "plugin.json").read_text("utf-8"))
+    assert Version(manifest["version"]) > Version(previous)
+    source = tmp_path / "source"
+    source.mkdir()
+    for relative_file in {
+        "plugin.json",
+        changed_file,
+        *manifest["entry"].values(),
+    }:
+        destination = source / relative_file
+        destination.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(origin / relative_file, destination)
+    target = tmp_path / "installed" / manifest["id"]
+    shutil.copytree(source, target)
+    old_manifest = {**manifest, "version": previous}
+    (target / "plugin.json").write_text(json.dumps(old_manifest), "utf-8")
+    (target / changed_file).write_text(
+        "# previously installed B3 code\n",
+        "utf-8",
+    )
+    bundled._write_bundle_revision(target, f"version:{previous}")
+    bundled._write_bundle_complete(target, target)
+    (target / "workspace").mkdir()
+    (target / "workspace/user.json").write_text('{"keep": true}', "utf-8")
+    monkeypatch.setattr(bundled, "_is_development_environment", lambda: False)
+
+    def reject_hash(*_args, **_kwargs):
+        raise AssertionError("packaged startup must use immutable versions")
+
+    monkeypatch.setattr(bundled, "_compute_bundle_hash", reject_hash)
+    assert bundled._install_or_update_plugin(
+        source,
+        target,
+        manifest["id"],
+        manifest,
+    )
+    assert (target / changed_file).read_bytes() == (
+        origin / changed_file
+    ).read_bytes()
+    assert json.loads((target / "plugin.json").read_text("utf-8")) == manifest
+    assert (target / "workspace/user.json").read_text(
+        "utf-8",
+    ) == '{"keep": true}'
+    assert not bundled._install_or_update_plugin(
+        source,
+        target,
+        manifest["id"],
+        manifest,
+    )
+
+
+def test_omp_workflows_preserves_published_b3_identity():
+    from packaging.version import Version
+
+    manifest = json.loads(
+        (ROOT / "plugins/bundle/omp_workflows/plugin.json").read_text("utf-8"),
+    )
+    assert Version(manifest["version"]) >= Version("0.1.5")
 
 
 def test_data_app_compatibility_release_advances_version_before_build():

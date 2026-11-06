@@ -25,6 +25,7 @@ API endpoints:
   - GET  /api/config/channels/qq
   - GET  /api/config/channels/qq/health
 """
+
 from __future__ import annotations
 
 import threading
@@ -37,6 +38,7 @@ from helpers import (
     MOCK_LLM_RESPONSE,
     MockLLMHandler,
     default_http_timeout,
+    install_official_channel,
     register_mock_provider,
     unregister_mock_provider,
     wait_for_agent_reload,
@@ -86,6 +88,7 @@ def qq_channel_up(app_server):
     endpoint only applies to already-running channels (404 otherwise),
     so we simply wait for the mock gateway to observe IDENTIFY.
     """
+    install_official_channel(app_server, "qq")
     reload_mark = len(app_server.logs)
     put = app_server.api_request(
         "PUT",

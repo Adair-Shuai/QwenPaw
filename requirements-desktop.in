@@ -3,6 +3,10 @@
 # Required readers used by the default bundled UGSci plugin.
 -r plugins/bundle/ugsci/requirements.txt
 
+# ULit needs local PDF text extraction. PyMuPDF 2 adds an inference stack;
+# retain the standalone reader profile used by the bundled app.
+PyMuPDF>=1.24,<2
+
 # Offline desktop document/data/petroleum toolchain. These packages live in
 # the independently versioned python-packages component, never in CPython.
 numpy

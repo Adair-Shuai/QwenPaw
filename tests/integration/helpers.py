@@ -4,6 +4,7 @@
 Extracted from individual test modules to eliminate duplication and
 ensure fixes (e.g. TimeoutException handling) apply everywhere.
 """
+
 from __future__ import annotations
 
 import json
@@ -224,6 +225,32 @@ def delete_plugin_quietly(
         )
     except Exception:
         pass
+
+
+def install_official_channel(app_server, plugin_id: str) -> None:
+    """Install the delivered channel through its real opt-in lifecycle."""
+    wait_until_plugin_loader_ready(app_server)
+    response = app_server.api_request(
+        "POST",
+        "/api/plugins/install",
+        json={"source": f"bundled:{plugin_id}"},
+        timeout=PLUGIN_HTTP_TIMEOUT,
+    )
+    assert response.status_code == 200, (
+        f"official channel install failed: {response.status_code} | "
+        f"{response.text} | logs: {app_server.logs_tail()}"
+    )
+    status = app_server.api_request(
+        "GET",
+        f"/api/plugins/{plugin_id}/status",
+        timeout=PLUGIN_HTTP_TIMEOUT,
+    )
+    assert status.status_code == 200, app_server.logs_tail()
+    body = status.json()
+    assert body.get("loaded") is True and body.get("status") != "failed", (
+        f"official channel was not registered: {body} | "
+        f"logs: {app_server.logs_tail()}"
+    )
 
 
 # ------------------------------------------------------------------ #

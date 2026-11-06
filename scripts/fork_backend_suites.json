@@ -413,6 +413,8 @@
       "test_explicit_beta_minimum_preserves_required_api_boundary",
       "test_shipped_plugins_keep_major_version_compatibility_boundary",
       "test_repaired_market_archives_cover_b2_and_advance_versions",
+      "test_b4_bundle_updates_replace_complete_b3_installations",
+      "test_omp_workflows_preserves_published_b3_identity",
       "test_memory_market_release_advances_incompatible_published_version",
       "test_data_app_compatibility_release_advances_version_before_build"
     ],
