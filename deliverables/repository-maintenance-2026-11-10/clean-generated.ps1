@@ -149,6 +149,8 @@ foreach ($row in $plan.targets) {
     $absolute = Assert-WorkspacePath $row.path
     Assert-UntrackedTarget $row.path $absolute
     $timer = [Diagnostics.Stopwatch]::StartNew()
+    $attemptedRemoval = $false
+    $removeErrors = @()
     try {
         if (-not ($candidates | Where-Object { $_.path -eq $row.path })) { throw 'Target absent from reviewed allowlist' }
         # WMI process queries are unreliable on this host ("call cancelled").
@@ -174,12 +176,22 @@ foreach ($row in $plan.targets) {
         if ($used.Count) { throw "Active process references target: $([string]::Join(',', @($used.ProcessId)))" }
         $fresh = Get-TreeSummary $absolute
         if ($fresh.metadata_sha256 -ne $row.metadata_sha256) { throw 'Target changed after inventory; retained for reinspection' }
-        Remove-Item -LiteralPath $absolute -Recurse -Force
-        if (Test-Path -LiteralPath $absolute) { throw 'Target still exists after removal' }
+        $attemptedRemoval = $true
+        Remove-Item -LiteralPath $absolute -Recurse -Force -ErrorAction SilentlyContinue -ErrorVariable removeErrors
+        if (Test-Path -LiteralPath $absolute) {
+            throw "Some files could not be removed; retained without changing permissions ($($removeErrors.Count) errors)"
+        }
         $results += [ordered]@{ path = $row.path; family = $row.family; bytes = $row.bytes; files = $row.files; removed = $true; seconds = $timer.Elapsed.TotalSeconds }
         Write-Output "Removed $($row.path): $($row.bytes) bytes"
     } catch {
-        $results += [ordered]@{ path = $row.path; removed = $false; reason = $_.Exception.Message }
+        $retained = [ordered]@{ path = $row.path; removed = $false; reason = $_.Exception.Message }
+        if ($attemptedRemoval -and (Test-Path -LiteralPath $absolute)) {
+            $remaining = Get-TreeSummary $absolute
+            $retained.remaining_bytes = $remaining.bytes
+            $retained.remaining_files = $remaining.files
+            $retained.bytes_removed = [Math]::Max(0, $row.bytes - $remaining.bytes)
+        }
+        $results += $retained
         Write-Output "Retained/incomplete $($row.path): $($_.Exception.Message)"
     }
     [ordered]@{

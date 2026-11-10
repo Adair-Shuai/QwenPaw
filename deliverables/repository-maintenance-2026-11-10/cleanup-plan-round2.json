@@ -1,0 +1,185 @@
+{
+  "created_at": "2026-11-10T21:55:07.8843793+08:00",
+  "base_commit": "45b2ddd9ff6fa94e25a61e182d1b518eb75ac4e9",
+  "deletion_requires": "Local HEAD and the remote branch must equal PushedCommit; unchanged tree metadata; no tracked files, links, nested Git repositories, or active executable images under the target; no active desktop compilers.",
+  "planned_bytes": 12160835134,
+  "targets": [
+    {
+      "path": "build",
+      "reason": "Generated Python wheel/sdist staging",
+      "family": "python-build",
+      "bytes": 653917190,
+      "files": 3241,
+      "metadata_sha256": "201696297bbf2305dc90c02d7ba8b0afe26349d64ef9d290de5d151952050eba"
+    },
+    {
+      "path": "dist",
+      "reason": "Local plugin and release package outputs",
+      "family": "package-output",
+      "bytes": 76726422,
+      "files": 18,
+      "metadata_sha256": "91e79008fb7a5645b22e339afcf5a2f632cbfa4ab8fee8d4c56765b614ae479e"
+    },
+    {
+      "path": "console/dist",
+      "reason": "Generated console production assets",
+      "family": "frontend-build",
+      "bytes": 60296430,
+      "files": 2169,
+      "metadata_sha256": "7ce7b370e1886855a740973f9149ccd451d7af45f8951302856023c3e2d11bc7"
+    },
+    {
+      "path": "console/dist-tauri",
+      "reason": "Generated desktop bootstrap assets",
+      "family": "frontend-build",
+      "bytes": 3606693,
+      "files": 37,
+      "metadata_sha256": "289a7e9c980727c6c215490448fb0db9b37ca15cd9efe9a443dd77f2759c62d5"
+    },
+    {
+      "path": "website/dist",
+      "reason": "Generated website assets",
+      "family": "frontend-build",
+      "bytes": 50523270,
+      "files": 796,
+      "metadata_sha256": "a2ea1224660dc3073eb38139574e8316d61918bd38f3c3942f04447f6b2cb520"
+    },
+    {
+      "path": ".mypy_cache",
+      "reason": "Regenerable mypy cache",
+      "family": "tool-cache",
+      "bytes": 271470120,
+      "files": 12703,
+      "metadata_sha256": "ed4142f2359fe7f3cc80beedd0c32d987f118af71639184555de511a56178d29"
+    },
+    {
+      "path": ".ruff_cache",
+      "reason": "Regenerable Ruff cache",
+      "family": "tool-cache",
+      "bytes": 185466,
+      "files": 231,
+      "metadata_sha256": "9fda96f446a00ad4785e2972fc7ac08c0b03a739322a522daac875b67f468df3"
+    },
+    {
+      "path": "tmp/ci-node22",
+      "reason": "Old isolated CI Node installation",
+      "family": "test-environment",
+      "bytes": 185905130,
+      "files": 2074,
+      "metadata_sha256": "009286e00754099252ca74057ed0844a9f738fed975641937ef5cec1080b793e"
+    },
+    {
+      "path": ".codex-tmp/document-forms/ci-env",
+      "reason": "Old isolated document-forms test dependencies",
+      "family": "test-environment",
+      "bytes": 251643256,
+      "files": 19524,
+      "metadata_sha256": "1774ff29c5b5f00a049703ff2a49ccfcec5ae72c3cad0eebd33bf569b8ca02d3"
+    },
+    {
+      "path": ".codex-tmp/release-beta4-windows-bm25-42145710955/desktop-lock-env",
+      "reason": "Old isolated desktop dependency verification environment",
+      "family": "test-environment",
+      "bytes": 953349221,
+      "files": 29888,
+      "metadata_sha256": "81b8106e3b1bd6adbd5d246c86d59088a5805a66256721c03509b6726e32b3b1"
+    },
+    {
+      "path": ".codex-tmp/release-beta4-windows-bm25-42145710955/installed-backend",
+      "reason": "Old wheel install verification output",
+      "family": "test-environment",
+      "bytes": 158386074,
+      "files": 5729,
+      "metadata_sha256": "29c3e430a985ea729d8f1ffa37907d9ca4a5027ce6a492cafcdefe3dd704e076"
+    },
+    {
+      "path": ".codex-tmp/release-beta4-windows-bm25-42145710955/exact-runtime",
+      "reason": "Old extracted runtime for package verification",
+      "family": "test-environment",
+      "bytes": 154318147,
+      "files": 4061,
+      "metadata_sha256": "7059a89ab759bbbbccdc107b4a4a44f58bab39e04adc25bd5a3f220277a7e467"
+    },
+    {
+      "path": ".codex-tmp/ugsci-size-bvix35t6/candidate",
+      "reason": "Old temporary plugin packaging candidate; canonical local data retained",
+      "family": "package-output",
+      "bytes": 547463780,
+      "files": 693,
+      "metadata_sha256": "6e4f044adba50bfd8e2efde9ba5f744201ef4f6d2fee2efc36ccf40dc329d86b"
+    },
+    {
+      "path": ".codex-tmp/ugsci-size-bvix35t6/candidate-full.zip",
+      "reason": "Old package size experiment archive",
+      "family": "package-output",
+      "bytes": 132641884,
+      "files": 1,
+      "metadata_sha256": "459c999e6a6d5bc0ef0fc7b8f35c1687f3c6edc3a918f04218bb4565b223c49c"
+    },
+    {
+      "path": ".codex-tmp/ugsci-size-bvix35t6/candidate-delta-estimate.zip",
+      "reason": "Old package size experiment archive",
+      "family": "package-output",
+      "bytes": 6351738,
+      "files": 1,
+      "metadata_sha256": "d6e36bde90c9b3bb1db4d27eebfdc4e21ba0853cde574af97becfc5166537cc4"
+    },
+    {
+      "path": ".codex-tmp/ugsci-size-8gstqytb/candidate",
+      "reason": "Old temporary plugin packaging candidate; canonical local data retained",
+      "family": "package-output",
+      "bytes": 548675308,
+      "files": 693,
+      "metadata_sha256": "d3c9767d8d349fcb1f1db7715ab8d1b5e4fbfa1943f94354ceef99a2449be025"
+    },
+    {
+      "path": ".codex-tmp/ugsci-size-8gstqytb/candidate-full.zip",
+      "reason": "Old package size experiment archive",
+      "family": "package-output",
+      "bytes": 132650632,
+      "files": 1,
+      "metadata_sha256": "731cd1d61b822cc73c5f081ef54c486efda184207e705e809e0dbb748b57145e"
+    },
+    {
+      "path": ".codex-tmp/ugsci-size-8gstqytb/candidate-delta-estimate.zip",
+      "reason": "Old package size experiment archive",
+      "family": "package-output",
+      "bytes": 215776,
+      "files": 1,
+      "metadata_sha256": "b5b754a4511fd8fdbc6638b5a15a477ea3f2f1d3b6718d1e4823fb8d54ee5c72"
+    },
+    {
+      "path": ".codex-tmp/current-component/artifacts",
+      "reason": "Old local component package experiment cache; metadata retained",
+      "family": "package-output",
+      "bytes": 906195837,
+      "files": 58,
+      "metadata_sha256": "43ada37e9e33260003a7d33c36a6f48a9b4463c2ccd846830b0e5b2f2b5b1e06"
+    },
+    {
+      "path": ".codex-tmp/prev-component/artifacts",
+      "reason": "Old local component package experiment cache; metadata retained",
+      "family": "package-output",
+      "bytes": 887564173,
+      "files": 70,
+      "metadata_sha256": "74407882f4ef7208e14677abf4bd3e2a1aa689f9f4f5cfa6734b46f69869d907"
+    },
+    {
+      "path": "deliverables/release-beta3/postpublish-cache/desktop",
+      "reason": "Local installer download cache; user explicitly requested removal of local packages",
+      "family": "package-output",
+      "bytes": 3816781099,
+      "files": 6,
+      "metadata_sha256": "a182ffacd9e033cacd61cdd59946c8187f2041c79361129760e1188e2f724898"
+    },
+    {
+      "path": "deliverables/release-beta3/postpublish-cache/cdn/artifacts",
+      "reason": "Local component archive download cache; release audit metadata retained",
+      "family": "package-output",
+      "bytes": 2361967488,
+      "files": 87,
+      "metadata_sha256": "da08029966aadb543b8e80375f14b6920e7463a5646a3d4d842014c714959005"
+    }
+  ],
+  "skipped": []
+}
