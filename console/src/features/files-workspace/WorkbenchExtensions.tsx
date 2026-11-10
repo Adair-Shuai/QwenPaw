@@ -3,6 +3,7 @@ import {
   useLayoutEffect,
   useState,
   type ComponentType,
+  type ReactNode,
 } from "react";
 import {
   Blocks,
@@ -32,10 +33,16 @@ import {
   WorkbenchSimulationPanel,
 } from "./WorkbenchPanels";
 import styles from "./FilesWorkspace.module.less";
+import type { BrowserSession } from "./workbenchTabsStore";
+import type { InteractionRequest } from "../user-input/types";
 import { InteractionPanel } from "../user-input/InteractionPanel";
 
 /** Extensions receive the native session scope; they do not own file tabs. */
-interface WorkbenchPanelContext {
+export interface WorkbenchPanelContext {
+  browserStartContent?: ReactNode;
+  browserSession?: BrowserSession;
+  onBrowserSessionChange?: (session: BrowserSession) => void;
+  onRequestsChange?: (requests: InteractionRequest[]) => void;
   scope: Extract<FilesWorkspaceScope, { kind: "session" }>;
   runtimeSessionId?: string;
   target?: FileTarget;
@@ -154,9 +161,11 @@ export function WorkbenchIcon({ mode }: { mode: WorkbenchMode }) {
 
 export function WorkbenchNavigation({
   mode,
+  indicators,
   onSelect,
 }: {
-  mode: WorkbenchMode;
+  mode?: WorkbenchMode;
+  indicators?: Partial<Record<WorkbenchMode, number>>;
   onSelect: (mode: WorkbenchMode) => void;
 }) {
   const { t } = useTranslation();
@@ -181,6 +190,14 @@ export function WorkbenchNavigation({
           >
             <Icon size={18} aria-hidden="true" />
             <span>{t(`workbench.activityShort.${id}`, shortLabels[id])}</span>
+            {!!indicators?.[id] && (
+              <i
+                className={styles.activityBadge}
+                aria-label={String(indicators[id])}
+              >
+                {indicators[id]}
+              </i>
+            )}
           </button>
         </Tooltip>
       ))}
@@ -229,5 +246,20 @@ export function WorkbenchExtensionPanels({
         );
       })}
     </>
+  );
+}
+
+/** Each content tab owns its passive UI. Active resource views release on hide. */
+export function WorkbenchContentPanel({
+  mode,
+  ...context
+}: WorkbenchPanelContext & { mode: Exclude<WorkbenchMode, "files"> }) {
+  const panel = panels.find((item) => item.id === mode);
+  if (!panel || (!context.active && mode !== "browser")) return null;
+  const Panel = panel.component;
+  return (
+    <SlotErrorBoundary slot={`chat.workbench.${mode}`} pluginId="workbench">
+      <Panel {...context} />
+    </SlotErrorBoundary>
   );
 }

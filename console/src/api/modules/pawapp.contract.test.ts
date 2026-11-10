@@ -28,6 +28,7 @@
  */
 import { describe, it, expect, vi, afterEach } from "vitest";
 import { pawappApi } from "./pawapp";
+import { subscribeToPluginChanges } from "../../utils/pluginChangeEvents";
 
 vi.mock("../config", () => ({
   getApiUrl: (path: string) => `/api${path}`,
@@ -83,6 +84,20 @@ async function mustReject<T = Error>(run: () => Promise<unknown>): Promise<T> {
 }
 
 describe("pawappApi.list", () => {
+  it("refreshes app shortcuts only after a confirmed successful uninstall", async () => {
+    const changed = vi.fn();
+    const unsubscribe = subscribeToPluginChanges(changed);
+    try {
+      stubFetch({ ok: false, status: 500 });
+      await mustReject(() => pawappApi.uninstall("notes"));
+      expect(changed).not.toHaveBeenCalled();
+      stubFetch({ ok: true });
+      await pawappApi.uninstall("notes");
+      expect(changed).toHaveBeenCalledOnce();
+    } finally {
+      unsubscribe();
+    }
+  });
   it("GETs the collection root with auth headers and no method override", async () => {
     const payload = { apps: [], total: 0 };
     stubFetch({ ok: true, json: () => Promise.resolve(payload) });

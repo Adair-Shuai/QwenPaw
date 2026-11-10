@@ -100,10 +100,20 @@ def test_host_has_dedicated_compute_slot_and_open_event():
     requests = (
         ROOT / "console/src/features/files-workspace/useWorkbenchRequests.ts"
     ).read_text(encoding="utf-8")
-    assert "<WorkbenchExtensionPanels" in drawer
+    content = (
+        ROOT / "console/src/features/files-workspace/WorkbenchContent.tsx"
+    ).read_text(encoding="utf-8")
+    assert "<WorkbenchContent" in drawer
+    assert "<WorkbenchContentPanel" in content
+    assert "mode={tab.kind}" in content
+    assert "scope={scope}" in content
+    assert "active={active}" in content
     assert 'id: "compute"' in extensions
     assert "component: WorkbenchComputePanel" in extensions
-    assert "<Panel {...context} active={active}" in extensions
+    adapter = extensions.split("export function WorkbenchContentPanel(", 1)[1]
+    assert "context.active" in adapter
+    assert "const Panel = panel.component" in adapter
+    assert "<Panel {...context} />" in adapter
     assert "useWorkbenchRequests(" in chat
     assert "qwenpaw:open-compute-workbench" in requests
     assert 'mode: "compute"' in requests

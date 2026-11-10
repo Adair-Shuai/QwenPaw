@@ -100,7 +100,9 @@ import { PAGE_LAYOUTS } from "../utils/pageStyle";
 import AppearanceNavigation from "./AppearanceNavigation";
 import DualSidebarNavigation, {
   DUAL_SIDEBAR_PRIMARY_KEYS,
+  DUAL_SIDEBAR_FIXED_KEYS,
 } from "./DualSidebarNavigation";
+import { useSidebarAppEntries } from "./useSidebarAppEntries";
 import dualStyles from "./dualSidebar.module.less";
 import type { SettingsNavigationState } from "../pages/SettingsCenter/usePluginSettingsNavigation";
 
@@ -190,6 +192,7 @@ export default function Sidebar({
   const [historyPopoverOpen, setHistoryPopoverOpen] = useState(false);
   const redesigned = pageStyle !== "classic";
   const dualSidebar = pageStyle === "dual-sidebar";
+  const { entries: appEntries } = useSidebarAppEntries(dualSidebar);
   const [agentPopoverOpen, setAgentPopoverOpen] = useState(false);
   const [version, setVersion] = useState("");
   const [accountForm] = Form.useForm();
@@ -276,7 +279,11 @@ export default function Sidebar({
   const currentApprovalIdsRef = useRef<Set<string>>(new Set());
   const seenApprovalIdsRef = useRef<Set<string>>(new Set());
 
-  const { focusItemIds, hiddenPluginItemIds } = useSidebarStore();
+  const {
+    focusItemIds,
+    hiddenPluginItemIds,
+    railItemIds = [],
+  } = useSidebarStore();
   const { selectedAgent, agents, setSelectedAgent, refreshAgents } =
     useAgentStore();
   const currentAgent = agents.find((agent) => agent.id === selectedAgent);
@@ -904,6 +911,14 @@ export default function Sidebar({
             )}
             selectedKey={settingsActive ? "core.settings-center" : selectedKey}
             collapsed={collapsed}
+            currentPath={location.pathname}
+            shortcuts={railItemIds.flatMap((id) => {
+              if (DUAL_SIDEBAR_FIXED_KEYS.includes(id)) return [];
+              const entry = [...allNavigation, ...appEntries].find(
+                (item) => item.key === id,
+              );
+              return entry ? [entry] : [];
+            })}
             onExpand={
               fullWidthPage ? undefined : () => handleSetCollapsed(false)
             }

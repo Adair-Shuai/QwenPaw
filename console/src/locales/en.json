@@ -16,10 +16,8 @@
   "globalSearch": {
     "user": "You",
     "assistant": "Assistant",
-
     "filters": "Filters",
     "resultCount": "{{count}} results",
-
     "chatPreviewHint": "Open this conversation to review messages, attachments and deliveries.",
     "scopeShort": "Chats and file records from the selected agent",
     "enterQuery": "Enter a keyword to search this category",
@@ -719,6 +717,10 @@
     "dragHint": "Drag to reorder, or move into the library.",
     "mirrorHint": "Keep your everyday tools close.",
     "sidebarPreview": "Visible entries",
+    "dualSidebarEntries": "Custom shortcuts",
+    "dualSidebarMore": "More menu",
+    "dualSidebarEntriesHelp": "Choose apps and modules to show below More in the feature navigation. Drag to reorder. Changes save automatically.",
+    "sidebarAppsError": "Unable to load apps.",
     "preview": "Preview",
     "dropHere": "Drag shortcuts here",
     "previewCaption": "Changes save automatically",
@@ -3351,6 +3353,44 @@
       "genui": "GenUI",
       "compute": "Compute",
       "simulation": "Simulate"
+    },
+    "tabs": {
+      "workspace": "Workspace",
+      "label": "Workspace content",
+      "close": "Close content",
+      "closeOthers": "Close other content",
+      "closeAll": "Close all content",
+      "new": "Open content",
+      "all": "All content",
+      "search": "Search open content",
+      "noResults": "No matching content",
+      "openFile": "Open file",
+      "newBrowser": "New webpage",
+      "memoryGraph": "Memory graph",
+      "unsavedTitle": "Save changes before closing?",
+      "unsavedHint": "These files have unsaved changes.",
+      "discard": "Discard and close",
+      "saveClose": "Save and close",
+      "changedDuringSave": "Content changed. Review it before closing again.",
+      "newTab": "New tab",
+      "addTab": "New tab"
+    },
+    "empty": {
+      "label": "Empty workspace",
+      "title": "Open content to get started",
+      "recentTitle": "Pick up where you left off",
+      "backgroundTitle": "Continue your tasks",
+      "hint": "Open files, webpages and task views, then switch between their tabs.",
+      "backgroundHint": "Pending interactions and running tasks are collected here.",
+      "pending": "Waiting for input",
+      "running": "Running",
+      "recent": "Recently closed"
+    },
+    "start": {
+      "tools": "Tools",
+      "common": "Common views",
+      "noRecent": "Reopen recently closed content here.",
+      "openView": "Open {{name}}"
     }
   },
   "files": {

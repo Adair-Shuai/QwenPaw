@@ -747,6 +747,25 @@
   background: var(--files-bg);
 }
 
+.browserWorkspace {
+  container: workbench-browser / inline-size;
+  padding: 0;
+  overflow: hidden;
+
+  .browserToolbar {
+    flex-shrink: 0;
+    padding: 8px 14px;
+    border-bottom: 1px solid var(--files-line);
+
+    button {
+      width: var(--files-control-size);
+      height: var(--files-control-size);
+      flex-shrink: 0;
+      border-radius: var(--files-control-radius);
+    }
+  }
+}
+
 .browserToolbar {
   display: flex;
   align-items: center;
@@ -2707,5 +2726,29 @@
   .directorySwitch {
     min-width: var(--app-hit-touch);
     min-height: var(--app-hit-touch);
+  }
+}
+
+.activityBadge {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  min-width: 13px;
+  padding: 0 3px;
+  border-radius: var(--app-radius);
+  color: var(--app-text-inverse);
+  background: var(--app-accent);
+  font-size: 9px;
+  font-style: normal;
+  line-height: 14px;
+}
+
+@container workbench-browser (max-width: 340px) {
+  .browserWorkspace .browserToolbar {
+    flex-wrap: wrap;
+  }
+  .browserWorkspace .browserAddress {
+    order: 1;
+    flex-basis: 100%;
   }
 }

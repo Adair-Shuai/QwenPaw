@@ -37,6 +37,7 @@ afterAll(() => vi.unstubAllEnvs());
 
 const mocks = vi.hoisted(() => ({
   sidebar: {
+    railItemIds: [] as string[],
     focusItemIds: ["core.workspace", "core.models"] as string[],
     hiddenPluginItemIds: [] as string[],
   },
@@ -64,6 +65,13 @@ const mocks = vi.hoisted(() => ({
   renderActualSettingsPanel: false,
   interfaceStyle: "classic" as InterfaceStyle,
   pageStyle: "classic" as PageStyle,
+}));
+vi.mock("./useSidebarAppEntries", () => ({
+  useSidebarAppEntries: () => ({
+    entries: [
+      { key: "pawapp:notes", label: "Notes", path: "/apps/notes", icon: null },
+    ],
+  }),
 }));
 
 vi.mock("react-i18next", () => ({
@@ -479,6 +487,7 @@ describe("Sidebar", () => {
     mockMobileViewport(false);
     mocks.interfaceStyle = "classic";
     mocks.pageStyle = "classic";
+    mocks.sidebar.railItemIds = [];
     for (const style of [
       "warm-minimal",
       "cool-workspace",
@@ -1022,6 +1031,35 @@ describe("Sidebar", () => {
       ).toBeNull();
     },
   );
+
+  it("renders ordered custom apps and modules below More and follows their real routes", () => {
+    mocks.pageStyle = "dual-sidebar";
+    mocks.sidebar.railItemIds = [
+      "pawapp:notes",
+      "core.models",
+      "core.files",
+      "missing.plugin",
+    ];
+    renderWithProviders(<RoutedSidebar />);
+    const rail = screen.getByRole("navigation", { name: "Feature navigation" });
+    const custom = within(rail).getByRole("group", {
+      name: "Custom shortcuts",
+    });
+    expect(
+      within(custom)
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toEqual(["Notes", "Models"]);
+    expect(custom.previousElementSibling?.tagName).toBe("HR");
+    fireEvent.click(within(custom).getByRole("button", { name: "Notes" }));
+    expect(screen.getByTestId("probe-path")).toHaveTextContent("/apps/notes");
+    expect(
+      within(custom).getByRole("button", { name: "Notes" }),
+    ).toHaveAttribute("aria-current", "page");
+    fireEvent.click(within(custom).getByRole("button", { name: "Models" }));
+    expect(screen.getByTestId("probe-path")).toHaveTextContent("/models");
+    mocks.sidebar.railItemIds = [];
+  });
 
   it("keeps only the feature rail in settings and restores conversation state on return", () => {
     mocks.pageStyle = "dual-sidebar";

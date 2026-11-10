@@ -16,10 +16,8 @@
   "globalSearch": {
     "user": "你",
     "assistant": "助手",
-
     "filters": "筛选",
     "resultCount": "{{count}} 条结果",
-
     "chatPreviewHint": "在原会话中继续查看消息、附件与交付成果。",
     "scopeShort": "搜索所选专家的会话与文件记录",
     "enterQuery": "输入关键词以检索此分类",
@@ -719,6 +717,10 @@
     "dragHint": "拖动排序，或移入入口库。",
     "mirrorHint": "让常用工具触手可及。",
     "sidebarPreview": "已显示入口",
+    "dualSidebarEntries": "自定义入口",
+    "dualSidebarMore": "更多菜单",
+    "dualSidebarEntriesHelp": "选择应用和模块，显示在左侧功能栏“更多”下方。拖动可调整顺序，修改会自动保存。",
+    "sidebarAppsError": "应用列表加载失败。",
     "preview": "预览",
     "dropHere": "将快捷入口拖到这里",
     "previewCaption": "修改会自动保存",
@@ -3209,6 +3211,44 @@
       "genui": "GenUI",
       "compute": "计算",
       "simulation": "数模"
+    },
+    "tabs": {
+      "workspace": "工作区",
+      "label": "工作区内容",
+      "close": "关闭内容",
+      "closeOthers": "关闭其他内容",
+      "closeAll": "关闭全部内容",
+      "new": "打开内容",
+      "all": "全部内容",
+      "search": "搜索已打开的内容",
+      "noResults": "没有匹配的内容",
+      "openFile": "打开文件",
+      "newBrowser": "新建网页",
+      "memoryGraph": "记忆图谱",
+      "unsavedTitle": "保存更改后关闭？",
+      "unsavedHint": "以下文件包含未保存的更改。",
+      "discard": "放弃更改并关闭",
+      "saveClose": "保存并关闭",
+      "changedDuringSave": "内容已变化，请检查后再次关闭。",
+      "newTab": "新标签页",
+      "addTab": "新建标签页"
+    },
+    "empty": {
+      "label": "空工作区",
+      "title": "打开内容，开始工作",
+      "recentTitle": "继续刚才的工作",
+      "backgroundTitle": "继续当前任务",
+      "hint": "打开文件、网页和任务视图，通过标签轻松切换。",
+      "backgroundHint": "待处理的交互与运行中的任务集中在这里。",
+      "pending": "待填写",
+      "running": "运行中",
+      "recent": "最近关闭"
+    },
+    "start": {
+      "tools": "工具",
+      "common": "常用视图",
+      "noRecent": "关闭的内容可在这里重新打开。",
+      "openView": "打开{{name}}"
     }
   },
   "files": {

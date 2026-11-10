@@ -5,8 +5,10 @@ import {
   useCallback,
   useMemo,
   useState,
+  useRef,
   useSyncExternalStore,
   type ComponentType,
+  type ReactNode,
 } from "react";
 import { message } from "antd";
 import {
@@ -46,6 +48,8 @@ import { openHtmlFile } from "../../utils/openHtmlFile";
 import type { FileTarget, WorkbenchBrowserFile } from "./types";
 import styles from "./FilesWorkspace.module.less";
 
+import type { BrowserPage, BrowserSession } from "./workbenchTabsStore";
+
 const BROWSER_URL_STORAGE_KEY = "qwenpaw-workbench-browser-url";
 
 export type { WorkbenchMode } from "./types";
@@ -55,15 +59,14 @@ const subscribeRendererRegistry = (listener: () => void) =>
 const getRendererRegistrySnapshot = () => rendererRegistry.getSnapshot();
 
 interface WorkbenchBrowserPanelProps {
+  browserStartContent?: ReactNode;
   active: boolean;
   scope: Extract<FilesWorkspaceScope, { kind: "session" }>;
   browserFile?: WorkbenchBrowserFile;
+  browserSession?: BrowserSession;
+  onBrowserSessionChange?: (session: BrowserSession) => void;
   onOpenFiles: () => void;
 }
-
-type BrowserPage =
-  | { kind: "url"; url: string }
-  | { kind: "file"; tabPath: string };
 
 function browserArtifact(
   tab: EditorTab,
@@ -95,17 +98,21 @@ function browserArtifact(
 }
 
 export function WorkbenchBrowserPanel({
+  browserStartContent,
   active,
   scope,
   browserFile,
+  browserSession,
+  onBrowserSessionChange,
   onOpenFiles,
 }: WorkbenchBrowserPanelProps) {
   const { t } = useTranslation();
-  const [input, setInput] = useState("");
+  const [input, setInput] = useState(browserSession?.input ?? "");
   const [navigation, setNavigation] = useState<{
     pages: BrowserPage[];
     index: number;
   }>(() => {
+    if (browserSession) return browserSession;
     const stored = localStorage.getItem(BROWSER_URL_STORAGE_KEY);
     return {
       pages: stored ? [{ kind: "url", url: stored }] : [],
@@ -140,9 +147,18 @@ export function WorkbenchBrowserPanel({
   useEffect(() => {
     if (browserFile) pushPage({ kind: "file", tabPath: browserFile.tabPath });
   }, [browserFile, pushPage]);
+  const addressInitialized = useRef(false);
+  const initializedWithSession = useRef(browserSession !== undefined);
   useEffect(() => {
+    if (!addressInitialized.current) {
+      addressInitialized.current = true;
+      if (initializedWithSession.current) return;
+    }
     setInput(currentAddress);
   }, [current, currentAddress]);
+  useEffect(() => {
+    onBrowserSessionChange?.({ pages, index, input });
+  }, [pages, index, input, onBrowserSessionChange]);
 
   const embedsThisConsole = (() => {
     if (current?.kind !== "url") return false;
@@ -176,7 +192,7 @@ export function WorkbenchBrowserPanel({
       return;
     }
     pushPage({ kind: "url", url: nextUrl });
-    localStorage.setItem(BROWSER_URL_STORAGE_KEY, nextUrl);
+    if (!browserSession) localStorage.setItem(BROWSER_URL_STORAGE_KEY, nextUrl);
   };
   const submit = (event: FormEvent) => {
     event.preventDefault();
@@ -184,7 +200,12 @@ export function WorkbenchBrowserPanel({
   };
 
   return (
-    <div className={styles.workbenchPanel} aria-hidden={!active}>
+    <div
+      className={`${styles.workbenchPanel} ${
+        browserStartContent ? styles.browserWorkspace : ""
+      }`}
+      aria-hidden={!active}
+    >
       <form className={styles.browserToolbar} onSubmit={submit}>
         <button
           type="button"
@@ -326,6 +347,8 @@ export function WorkbenchBrowserPanel({
             )}
           </div>
         </div>
+      ) : browserStartContent ? (
+        browserStartContent
       ) : (
         <div className={styles.workbenchEmptyState}>
           <span className={styles.workbenchEmptyIcon}>

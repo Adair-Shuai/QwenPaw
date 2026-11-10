@@ -7,7 +7,10 @@ import {
   within,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import FilesWorkspace from "./FilesWorkspace";
+import { createRef } from "react";
+import FilesWorkspace, {
+  type FilesWorkspaceController,
+} from "./FilesWorkspace";
 import { useCodingTabsStore } from "../../stores/codingTabsStore";
 import type { FileTarget } from "./types";
 import { updateArtifactPreview } from "./openFilePreview";
@@ -924,5 +927,42 @@ describe("FilesWorkspace native editor integration", () => {
     expect(screen.getByTestId("preview-content")).toHaveTextContent(
       "visible result",
     );
+  });
+
+  it("restores the folded navigator from a graph tab in the unified workspace", async () => {
+    const controller = createRef<FilesWorkspaceController>();
+    render(
+      <FilesWorkspace
+        scope={scope}
+        unifiedTabs
+        controllerRef={controller}
+        initialTarget={{
+          source: "workspace",
+          root: "project",
+          path: "graph-source.md",
+        }}
+      />,
+    );
+    await waitFor(() => expect(currentTabs()).toHaveLength(1));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /files.hideNavigator|Hide file navigator|收起文件导航器/,
+      }),
+    );
+    expect(
+      screen.getByText("file navigator").closest("[hidden]"),
+    ).not.toBeNull();
+    act(() => controller.current?.showGraph("wiki"));
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /files.showNavigator|Show file navigator|显示文件导航器/,
+      }),
+    );
+    expect(screen.getByText("file navigator").closest("[hidden]")).toBeNull();
+    expect(activeTab()).toMatchObject({
+      path: "graph-source.md",
+      content: "disk:graph-source.md",
+    });
   });
 });

@@ -9,35 +9,22 @@ import {
 import { Tooltip } from "antd";
 import {
   useCallback,
-  lazy,
-  Suspense,
   useEffect,
   useLayoutEffect,
   useRef,
-  useId,
   useState,
   forwardRef,
   useImperativeHandle,
   type ForwardedRef,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { motion, useReducedMotion } from "motion/react";
 import { setTextareaValue } from "../../pages/Chat/utils";
-import type {
-  FilesDrawerEvent,
-  FilesDrawerState,
-  FileTarget,
-  WorkbenchBrowserFile,
-} from "./types";
+import type { FilesDrawerEvent, FilesDrawerState, FileTarget } from "./types";
 import type { FilesWorkspaceScope } from "./filesWorkspaceScope";
 import { filesWorkspaceScopeKey } from "./filesWorkspaceScope";
-import {
-  useWorkbenchSelection,
-  WorkbenchTitle,
-  WorkbenchIcon,
-  WorkbenchNavigation,
-  WorkbenchExtensionPanels,
-} from "./WorkbenchExtensions";
+import WorkbenchContent from "./WorkbenchContent";
+import { EMPTY_WORKBENCH, useWorkbenchTabsStore } from "./workbenchTabsStore";
 import styles from "./FilesWorkspace.module.less";
 import { useTheme } from "../../contexts/ThemeContext";
 
@@ -45,7 +32,6 @@ const PREVIEW_WIDTH_STORAGE_KEY = "qwenpaw-files-preview-width";
 const WORKSPACE_WIDTH_STORAGE_KEY = "qwenpaw-files-workspace-width";
 const MIN_DRAWER_WIDTH = 420;
 const MIN_CHAT_WIDTH = 420;
-const FilesWorkspace = lazy(() => import("./FilesWorkspace"));
 
 function readStoredWidth(key: string): number {
   if (typeof window === "undefined") return 0;
@@ -101,27 +87,16 @@ function SessionFilesDrawer({
   forwardedRef,
 }: FilesDrawerProps & { forwardedRef: ForwardedRef<HTMLElement> }) {
   const { t } = useTranslation();
-  const titleId = useId();
   const drawerRef = useRef<HTMLElement>(null);
   useImperativeHandle(forwardedRef, () => drawerRef.current!, []);
   const resizeCleanupRef = useRef<(() => void) | undefined>(undefined);
   const [isResizing, setIsResizing] = useState(false);
   const [maximized, setMaximized] = useState(false);
-  const { mode, setMode, genUiTarget, clearGenUiTarget } =
-    useWorkbenchSelection(state);
-  const modeRef = useRef(mode);
-  modeRef.current = mode;
-  const browserSequence = useRef(0);
-  const [browserFile, setBrowserFile] = useState<WorkbenchBrowserFile>();
-  const openBrowser = useCallback(
-    (tabPath: string) => {
-      setBrowserFile({ tabPath, requestId: ++browserSequence.current });
-      // A slow file load must not steal focus after a deliberate tool switch.
-      if (modeRef.current === "files" || modeRef.current === "browser")
-        setMode("browser");
-    },
-    [setMode],
+  const content = useWorkbenchTabsStore(
+    (store) => store.scopes[filesWorkspaceScopeKey(scope)] ?? EMPTY_WORKBENCH,
   );
+  const selected = content.tabs.find((tab) => tab.id === content.activeId);
+  const mode = selected?.kind === "graph" ? "files" : selected?.kind ?? "files";
   const prefersReducedMotion = useReducedMotion();
   const isWorkspace = state.kind === "workspace";
   const [activeFileTarget, setActiveFileTarget] = useState<
@@ -213,8 +188,6 @@ function SessionFilesDrawer({
   };
 
   const drawerStyle = width > 0 ? { width: `${width}px` } : undefined;
-  const filename =
-    target?.path.replace(/\\/g, "/").split("/").pop() ?? t("files.title");
   const panelActions = (
     <>
       {mode === "files" && isWorkspace && target && (
@@ -317,8 +290,7 @@ function SessionFilesDrawer({
             }
       }
       role="region"
-      aria-label={mode === "files" ? t("files.title") : undefined}
-      aria-labelledby={mode === "files" ? undefined : titleId}
+      aria-label={t("workbench.tabs.workspace", "工作区")}
       tabIndex={-1}
     >
       <div
@@ -355,93 +327,15 @@ function SessionFilesDrawer({
           });
         }}
       />
-      {mode !== "files" && (
-        <header className={styles.drawerHeader}>
-          <div className={styles.headerIcon}>
-            <WorkbenchIcon mode={mode} />
-          </div>
-          <div className={styles.drawerTitle}>
-            <strong id={titleId}>
-              <WorkbenchTitle mode={mode} />
-            </strong>
-            {!isWorkspace && (
-              <span>
-                {target?.size !== undefined
-                  ? t("files.previewSize", { size: target.size })
-                  : t("files.preview")}
-              </span>
-            )}
-          </div>
-          {panelActions}
-        </header>
-      )}
-
-      <div className={styles.workspace}>
-        <WorkbenchNavigation mode={mode} onSelect={setMode} />
-        <WorkbenchExtensionPanels
-          mode={mode}
-          scope={scope}
-          runtimeSessionId={runtimeSessionId}
-          target={genUiTarget}
-          browserFile={browserFile}
-          simulationRunId={
-            state.kind === "workspace" ? state.simulationRunId : undefined
-          }
-          interactionRequestId={
-            state.kind === "workspace" ? state.interactionRequestId : undefined
-          }
-          onClearTarget={clearGenUiTarget}
-          onOpenFiles={() => setMode("files")}
-        />
-
-        <AnimatePresence initial={false} mode="popLayout">
-          <motion.div
-            key="files-workspace"
-            className={styles.drawerContent}
-            style={mode === "files" ? undefined : { display: "none" }}
-            initial={
-              prefersReducedMotion
-                ? false
-                : { opacity: 0, x: isWorkspace ? -10 : 10 }
-            }
-            animate={{ opacity: 1, x: 0 }}
-            exit={
-              prefersReducedMotion
-                ? { opacity: 0 }
-                : { opacity: 0, x: isWorkspace ? 8 : -8 }
-            }
-            transition={
-              prefersReducedMotion
-                ? { duration: 0 }
-                : { duration: 0.2, ease: [0.22, 0.78, 0.24, 1] }
-            }
-          >
-            <Suspense
-              fallback={
-                <>
-                  <header className={styles.drawerHeader}>
-                    <span className={styles.drawerTitle}>{filename}</span>
-                    {panelActions}
-                  </header>
-                  <div className={styles.empty}>{t("common.loading")}</div>
-                </>
-              }
-            >
-              <FilesWorkspace
-                initialTarget={state.target}
-                scope={scope}
-                active={mode === "files"}
-                hideNavigator={!isWorkspace}
-                onActiveTargetChange={setActiveFileTarget}
-                onOpenBrowser={openBrowser}
-                onBrowseMemoryTag={() => dispatch({ type: "EXPAND_WORKSPACE" })}
-                headerActions={panelActions}
-                footerActions={footerActions}
-              />
-            </Suspense>
-          </motion.div>
-        </AnimatePresence>
-      </div>
+      <WorkbenchContent
+        state={state}
+        scope={scope}
+        runtimeSessionId={runtimeSessionId}
+        panelActions={panelActions}
+        footerActions={footerActions}
+        onActiveTargetChange={setActiveFileTarget}
+        onBrowseMemoryTag={() => dispatch({ type: "EXPAND_WORKSPACE" })}
+      />
     </motion.aside>
   );
 }

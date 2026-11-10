@@ -26,6 +26,27 @@
   var React = host.React;
   var antd = host.antd;
   var h = React.createElement;
+  // Artwork from UGSci-Mono/icons/apps/ulit.svg.
+  var APP_ICON = h(
+    "svg",
+    {
+      width: 24,
+      height: 24,
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "1.6",
+      strokeLinejoin: "round",
+      strokeLinecap: "round",
+      "aria-hidden": true,
+      style: { verticalAlign: "middle", flexShrink: 0 },
+    },
+    h("path", {
+      d: "M12 6.1c-2.65-2-5.7-2.3-9.25-1.95v14.7c3.55-.35 6.6-.05 9.25 1.95 2.65-2 5.7-2.3 9.25-1.95V4.15c-3.55-.35-6.6-.05-9.25 1.95Z",
+    }),
+    h("path", { d: "M12 6.1v14.45M15.3 4.62v6.15l1.7-1.35 1.7 1.35V4.12" }),
+  );
+
   var ReactMarkdown = host.ReactMarkdown;
   var remarkGfm = host.remarkGfm;
 
@@ -63,27 +84,29 @@
   var Switch = antd.Switch;
   var Radio = antd.Radio;
 
+  var WORKBENCH_CSS = ".ulit-workbench{height:100%;min-width:0;display:flex;flex-direction:column;background:var(--app-bg);color:var(--app-text);font-size:var(--app-font-body,14px);container-type:inline-size}.ulit-workbench *{box-sizing:border-box}.ulit-topbar{display:flex;align-items:center;flex-wrap:wrap;gap:16px;padding:16px 28px;padding-right:100px;border-bottom:1px solid var(--app-border);background:var(--app-bg);flex:none}.ulit-content{flex:1;min-height:0;overflow:auto}.ulit-content>div{max-width:1480px;margin-inline:auto}.ulit-workbench :is(.ant-card,.qwenpaw-card){background:var(--app-surface);border-color:var(--app-border);box-shadow:none}.ulit-workbench :is(.ant-btn,.qwenpaw-btn){min-height:var(--app-hit-target,32px)}.ulit-workbench :is(.ant-btn-primary,.qwenpaw-btn-primary){color:var(--app-text-inverse)}.ulit-workbench :is(.ant-tabs-nav,.qwenpaw-tabs-nav){margin-bottom:16px}.ulit-workbench :is(.ant-table-wrapper,.qwenpaw-table-wrapper){overflow:auto}.ulit-workbench :is(.ant-empty,.qwenpaw-empty){padding:48px 20px;border:1px dashed var(--app-border-strong);border-radius:var(--app-radius-card,16px);background:var(--app-surface)}@container(max-width:600px){.ulit-topbar{padding:16px;gap:12px}.ulit-topbar>div:nth-child(2){order:3;flex-basis:100%;flex-wrap:wrap}.ulit-content>div{padding:16px!important}}";
+
   // ── Colors ──────────────────────────────────────────────────────
   var C = {
-    primary: "#7c3aed",
-    bg: "#faf9fc",
-    cardBg: "#ffffff",
-    border: "rgba(15,23,42,0.08)",
-    text: "#1f2937",
-    sub: "#6b7280",
-    muted: "#9ca3af",
-    highlight: "#fbbf24",
-    evidence: "#10b981",
-    ai: "#3b82f6",
-    danger: "#ef4444",
+    primary: "var(--app-accent)",
+    bg: "var(--app-bg)",
+    cardBg: "var(--app-surface)",
+    border: "var(--app-border)",
+    text: "var(--app-text)",
+    sub: "var(--app-text-secondary)",
+    muted: "var(--app-text-tertiary)",
+    highlight: "var(--app-warning)",
+    evidence: "var(--app-success)",
+    ai: "var(--app-info)",
+    danger: "var(--app-error)",
   };
 
   var STATUS_COLORS = {
-    unread: "#9ca3af",
+    unread: "var(--app-text-tertiary)",
     skimming: "#f59e0b",
-    reading: "#3b82f6",
+    reading: "var(--app-info)",
     read: "#22c55e",
-    shelved: "#6b7280",
+    shelved: "var(--app-text-secondary)",
   };
 
   var STATUS_LABELS = {
@@ -490,7 +513,7 @@
       ),
       loading ? h(Spin, { style: { display: "block", margin: "40px auto" } }) :
         projects.length === 0 ? h(Empty, { description: "暂无项目，点击右上角创建" }) :
-          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 16 } },
+          h("div", { style: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(min(300px, 100%), 1fr))", gap: 16 } },
             projects.map(function (p) {
               return h(Card, {
                 key: p.id,
@@ -815,7 +838,7 @@
       // Content area
       h("div", { style: { flex: 1, overflow: "auto", background: C.bg } },
         activeTab === "reader" && h("div", { style: { height: "100%", display: "flex", flexDirection: "column" } },
-          h("div", { style: { padding: "8px 16px", background: "#fff", borderBottom: "1px solid " + C.border, display: "flex", alignItems: "center", gap: 8 } },
+          h("div", { style: { padding: "8px 16px", background: "var(--app-surface)", borderBottom: "1px solid " + C.border, display: "flex", alignItems: "center", gap: 8 } },
             h(Typography.Text, { type: "secondary" }, "页码"),
             h(Input, {
               size: "small", type: "number", min: 1, value: readerPage,
@@ -932,7 +955,7 @@
                 h(Typography.Text, { strong: true }, "证据声明:"),
                 aiResult.claims.map(function (claim, i) {
                   return h(Card, {
-                    key: i, size: "small", style: { marginTop: 8, borderRadius: 6, background: "#f8f9fa" }
+                    key: i, size: "small", style: { marginTop: 8, borderRadius: 6, background: "var(--app-surface-subtle)" }
                   },
                     h("div", null,
                       h(Typography.Text, null, claim.claim),
@@ -1191,7 +1214,8 @@
 
     // If a paper is selected, show paper detail full screen
     if (currentPaperId) {
-      return h("div", { style: { height: "100%", display: "flex", flexDirection: "column" } },
+      return h("div", { className: "ulit-workbench" },
+        h("style", null, WORKBENCH_CSS),
         h(PaperDetailView, {
           paperId: currentPaperId,
           onBack: function () { setCurrentPaperId(null); },
@@ -1199,17 +1223,12 @@
       );
     }
 
-    return h("div", { style: { height: "100%", display: "flex", flexDirection: "column", background: C.bg } },
+    return h("div", { className: "ulit-workbench" },
+      h("style", null, WORKBENCH_CSS),
       // Top nav bar
-      h("div", {
-        style: {
-          padding: "0 24px", height: 52, background: "#fff",
-          borderBottom: "1px solid " + C.border,
-          display: "flex", alignItems: "center", gap: 24, flexShrink: 0,
-        }
-      },
+      h("div", { className: "ulit-topbar" },
         h("div", { style: { display: "flex", alignItems: "center", gap: 8 } },
-          h("span", { style: { fontSize: 20 } }, "📚"),
+          h("span", { "aria-hidden": true }, APP_ICON),
           h(Typography.Text, { strong: true, style: { fontSize: 16 } }, "ULit 文研")
         ),
         h("div", { style: { display: "flex", gap: 4 } },
@@ -1230,7 +1249,7 @@
         }, "📤 导出")
       ),
       // Content area
-      h("div", { style: { flex: 1, overflow: "auto" } },
+      h("div", { className: "ulit-content" },
         view === "projects" && h(ProjectListView, { onOpenProject: openProject }),
         view === "library" && h(PaperLibraryView, { onOpenPaper: openPaper }),
         view === "jobs" && h(JobCenterView),

@@ -166,6 +166,8 @@ export class ThreeViewerEngine {
   private cellCenters: Float32Array | null = null;
   private raycaster = new THREE.Raycaster();
   private mouse = new THREE.Vector2();
+  private canvasPointerStart: { x: number; y: number } | null = null;
+  private canvasDragged = false;
   private container: HTMLElement;
   private animationId: number | null = null;
   private frameTimes: number[] = [];
@@ -318,6 +320,7 @@ export class ThreeViewerEngine {
 
     this.perspectiveCamera = new THREE.PerspectiveCamera(50, w / h, 1, 20000);
     this.perspectiveCamera.position.set(3000, 3000, 3000);
+    this.perspectiveCamera.up.set(0, 0, 1);
     this.orthoCamera = new THREE.OrthographicCamera(
       -w / 2,
       w / 2,
@@ -327,11 +330,10 @@ export class ThreeViewerEngine {
       20000,
     );
     this.orthoCamera.position.copy(this.perspectiveCamera.position);
+    this.orthoCamera.up.copy(this.perspectiveCamera.up);
     this.camera = this.perspectiveCamera;
 
-    this.controls = new OrbitControls(this.camera, this.renderer.domElement);
-    this.controls.enableDamping = true;
-    this.controls.dampingFactor = 0.08;
+    this.controls = this.createCameraControls();
 
     const ambient = new THREE.AmbientLight(0x404060, 1.5);
     this.scene.add(ambient);
@@ -349,6 +351,10 @@ export class ThreeViewerEngine {
     this.raycaster.params.Line = { threshold: 12 };
 
     this.renderer.domElement.addEventListener("click", this.onCanvasClick);
+    this.renderer.domElement.addEventListener(
+      "pointerdown",
+      this.onCanvasPointerDown,
+    );
     this.renderer.domElement.addEventListener(
       "pointermove",
       this.onCanvasPointerMove,
@@ -1465,6 +1471,35 @@ export class ThreeViewerEngine {
     );
   }
 
+  private createCameraControls(): OrbitControls {
+    const previous = this.controls;
+    const position = this.camera.position.clone();
+    previous?.dispose();
+    // OrbitControls caches its up-axis quaternion in the constructor. Rebuild
+    // after a camera pose/projection change, also discarding pending inertia.
+    const controls = new OrbitControls(this.camera, this.renderer.domElement);
+    this.camera.position.copy(position);
+    if (previous) {
+      controls.target.copy(previous.target);
+      const distance = position.distanceTo(controls.target);
+      controls.minDistance = Math.min(previous.minDistance, distance);
+      controls.maxDistance = Math.max(previous.maxDistance, distance);
+    }
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.16;
+    controls.rotateSpeed = 0.65;
+    controls.update();
+    if (previous) controls.target.copy(previous.target);
+    this.camera.position.copy(position);
+    this.camera.lookAt(controls.target);
+    controls.addEventListener("change", this.onCameraChange);
+    return controls;
+  }
+
+  private onCameraChange = () => {
+    if (this.compassHud) this.updateCompassHud();
+  };
+
   private applyCameraProjection() {
     const aspect = this.viewportAspect();
     if (this.camera instanceof THREE.PerspectiveCamera) {
@@ -1501,7 +1536,7 @@ export class ThreeViewerEngine {
     this.camera.position.copy(pose.position);
     this.controls.target.copy(center);
     this.applyCameraProjection();
-    this.controls.update();
+    this.controls = this.createCameraControls();
   }
 
   private resetView() {
@@ -1724,7 +1759,7 @@ export class ThreeViewerEngine {
         this.controls.target.fromArray(scene.camera.target);
       if (Array.isArray(scene.camera?.up) && scene.camera.up.length === 3)
         this.camera.up.fromArray(scene.camera.up);
-      this.controls.update();
+      this.controls = this.createCameraControls();
       this.infoEl.textContent = "场景已恢复";
     } catch (err) {
       if (isCurrent() && !(err instanceof Error && err.name === "AbortError")) {
@@ -2840,9 +2875,8 @@ export class ThreeViewerEngine {
     next.up.copy(current.up);
     next.lookAt(this.controls.target);
     this.camera = next;
-    this.controls.object = next;
     this.applyCameraProjection();
-    this.controls.update();
+    this.controls = this.createCameraControls();
     const input = this.sidebar.querySelector(
       '[id="vis-ortho"]',
     ) as HTMLInputElement | null;
@@ -2963,7 +2997,7 @@ export class ThreeViewerEngine {
         this.controls.target.fromArray(view.target);
       if (Array.isArray(view.up)) this.camera.up.fromArray(view.up);
       this.applyCameraProjection();
-      this.controls.update();
+      this.controls = this.createCameraControls();
       this.infoEl.textContent = "\u5df2\u6062\u590d\u7528\u6237\u89c6\u89d2";
     } catch {
       this.infoEl.textContent = "\u89c6\u89d2\u6570\u636e\u65e0\u6548";
@@ -3071,6 +3105,7 @@ export class ThreeViewerEngine {
 
   private onCanvasContextMenu = (event: MouseEvent) => {
     event.preventDefault();
+    if (this.canvasDragged) return;
     this.canvasNdc(event);
     this.raycaster.setFromCamera(this.mouse, this.camera);
     const hit = this.raycaster.intersectObjects(this.pickables(), true)[0];
@@ -4573,7 +4608,22 @@ export class ThreeViewerEngine {
     return this.currentDataset;
   }
 
+  private onCanvasPointerDown = (event: PointerEvent) => {
+    this.canvasPointerStart = { x: event.clientX, y: event.clientY };
+    this.canvasDragged = false;
+  };
+
   private onCanvasPointerMove = (event: PointerEvent) => {
+    if (event.buttons !== 0) {
+      const start = this.canvasPointerStart;
+      if (
+        start &&
+        Math.hypot(event.clientX - start.x, event.clientY - start.y) > 4
+      )
+        this.canvasDragged = true;
+      // Hover raycasts over the full model compete with camera interaction.
+      return;
+    }
     if (this.datasetLoading) return;
     this.canvasNdc(event);
     this.raycaster.setFromCamera(this.mouse, this.camera);
@@ -4600,6 +4650,7 @@ export class ThreeViewerEngine {
   };
 
   private onCanvasDblClick = (event: MouseEvent) => {
+    if (this.canvasDragged) return;
     this.canvasNdc(event);
     this.raycaster.setFromCamera(this.mouse, this.camera);
     const hit = this.raycaster.intersectObjects(this.pickables(), true)[0];
@@ -4610,7 +4661,7 @@ export class ThreeViewerEngine {
   };
 
   private onCanvasClick = async (event: MouseEvent) => {
-    if (this.datasetLoading) return;
+    if (this.datasetLoading || this.canvasDragged) return;
     this.canvasNdc(event);
     this.raycaster.setFromCamera(this.mouse, this.camera);
     const hit = this.raycaster.intersectObjects(this.pickables(), true)[0];
@@ -4753,7 +4804,7 @@ export class ThreeViewerEngine {
       const radius = Math.max(this.geometry.boundingSphere?.radius || 1, 1);
       this.controls.target.copy(center);
       this.camera.position.copy(center).addScalar(radius * 0.08);
-      this.controls.update();
+      this.controls = this.createCameraControls();
       this.infoEl.textContent = `已聚焦 Cell ID: ${requested}`;
       return true;
     }
@@ -4772,7 +4823,7 @@ export class ThreeViewerEngine {
     const radius = Math.max(this.geometry.boundingSphere?.radius || 1, 1);
     this.controls.target.copy(center);
     this.camera.position.copy(center).addScalar(radius * 0.08);
-    this.controls.update();
+    this.controls = this.createCameraControls();
     this.infoEl.textContent = `已聚焦 Cell ID: ${requested}`;
     return true;
   }
@@ -4879,7 +4930,7 @@ export class ThreeViewerEngine {
     const radius = Math.max(this.geometry.boundingSphere?.radius || 1, 1);
     this.controls.target.copy(center);
     this.camera.position.copy(center).addScalar(radius * 0.08);
-    this.controls.update();
+    this.controls = this.createCameraControls();
     this.infoEl.textContent = `已聚焦 ${
       objectType === "well" ? "井" : "管段"
     }: ${objectId}`;
@@ -4966,7 +5017,7 @@ export class ThreeViewerEngine {
       this.camera.zoom = camera.zoom;
       this.camera.updateProjectionMatrix();
       this.controls.target.copy(camera.target);
-      this.controls.update();
+      this.controls = this.createCameraControls();
       this.store.setSelection(selection);
     }
     return {
@@ -5353,6 +5404,10 @@ export class ThreeViewerEngine {
     if (this.animationId !== null) cancelAnimationFrame(this.animationId);
     if (this.abortController) this.abortController.abort();
     this.renderer.domElement.removeEventListener("click", this.onCanvasClick);
+    this.renderer.domElement.removeEventListener(
+      "pointerdown",
+      this.onCanvasPointerDown,
+    );
     this.renderer.domElement.removeEventListener(
       "pointermove",
       this.onCanvasPointerMove,

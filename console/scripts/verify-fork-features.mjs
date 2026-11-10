@@ -55,6 +55,8 @@ const suites = {
     "src/pages/Chat/components/ChatSessionTransition.test.tsx",
   ],
   upstreamIntegration: [
+    "src/api/modules/pawapp.contract.test.ts",
+    "src/layouts/useSidebarAppEntries.test.tsx",
     "src/layouts/MainLayout/MainLayout.settings.test.tsx",
     "src/features/files-workspace/FilesWorkspace.directory-confirmation.test.tsx",
   ],
@@ -191,6 +193,7 @@ const suites = {
     "src/layouts/SidebarSettingsPanel.test.tsx",
     "src/pages/Chat/ChatPage.openFilePreview.test.tsx",
     "src/features/files-workspace/FilesDrawer.test.tsx",
+    "src/features/files-workspace/workbenchTabsStore.test.ts",
     "src/features/files-workspace/FilesWorkspace.test.tsx",
     "src/features/files-workspace/FilesWorkspace.integration.test.tsx",
     "src/features/files-workspace/FilesWorkspace.pending-diff.test.tsx",
@@ -443,6 +446,8 @@ for (const [file, titles] of [
   [
     "src/plugins/visualizationEngine.test.ts",
     [
+      "rotates mounted views around their displayed up axis and clears inertia across camera changes",
+      "keeps mounted drag gestures out of hover picking and selection while ordinary clicks still select",
       "mounts two real engines with independent stores and keeps the surviving engine usable after disposal",
       "deletes a well overlay through its owner and releases detached and rendered resources exactly once",
       "retains loaded scalars for filtering and exposes selected objects to the embedding host",
@@ -1513,7 +1518,10 @@ requireCases("src/features/files-workspace/FilesDrawer.test.tsx", [
 ]);
 requireCases(
   "src/features/files-workspace/FilesWorkspace.integration.test.tsx",
-  ["keeps docked controls and native drafts while folding the file navigator"],
+  [
+    "keeps docked controls and native drafts while folding the file navigator",
+    "restores the folded navigator from a graph tab in the unified workspace",
+  ],
 );
 requireCases(
   "src/features/files-workspace/FilesNavigator.interaction.test.tsx",
@@ -1539,6 +1547,49 @@ requireCases("src/layouts/MainLayout/MainLayout.settings.test.tsx", [
 requireCases("src/layouts/Sidebar.render.test.tsx", [
   "keeps only the feature rail in settings and restores conversation state on return",
   "preserves the app return target when reopening settings from the rail (plugin %s)",
+]);
+
+requireCases("src/layouts/Sidebar.render.test.tsx", [
+  "renders ordered custom apps and modules below More and follows their real routes",
+]);
+requireCases("src/pages/SettingsCenter/NavigationSettings.test.tsx", [
+  "adds apps and modules to the dual-sidebar rail without changing the original shortcuts",
+  "removes and resets dual-sidebar shortcuts through the existing editor",
+  "keeps the existing More menu editor available beside custom rail settings",
+]);
+requireCases("src/stores/sidebarStore.test.ts", [
+  "persists custom rail order independently and keeps unavailable app identities",
+]);
+requireCases("src/layouts/useSidebarAppEntries.test.tsx", [
+  "uses available installed apps and refreshes after install, disable and uninstall",
+  "ignores stale replies and supports retry after a failed app list request",
+]);
+
+requireCases("src/api/modules/pawapp.contract.test.ts", [
+  "refreshes app shortcuts only after a confirmed successful uninstall",
+]);
+
+requireCases("src/features/files-workspace/workbenchTabsStore.test.ts", [
+  "keeps tool selection when native file references hydrate and change",
+  "closes adjacent views and retains exact scoped identities in recent content",
+  "migrates pending scopes explicitly and removes deleted conversation content",
+  "clears rebound project resources from open and recent tabs while preserving workspace files and remote browser drafts",
+]);
+requireCases("src/features/files-workspace/FilesDrawer.test.tsx", [
+  "opens mixed content in one strip and restores an independent browser draft from recent content",
+  "keeps dirty native buffers after cancel or save failure and closes only after a successful scoped save",
+  "shows only this runtime's running tasks in the empty workspace and closes their view without cancelling work",
+  "does not reopen a late file read after the user closes the remaining content",
+  "closes several native file views atomically and clears the final active buffer reference",
+  "opens a Codex-style new tab with working tools and restores recent views without losing the native draft",
+  "applies the native directory-rebinding boundary to content tabs and recent files without resetting remote drafts",
+]);
+requireCases("src/features/user-input/InteractionPanel.integration.test.tsx", [
+  "preserves the shipped interaction form draft across content tabs and suspends hidden panel polling",
+]);
+
+requireCases("src/styles/layout.test.ts", [
+  "uses shared control metrics and inverse foregrounds on accent-filled workspace buttons",
 ]);
 
 if (!process.argv.includes("--check")) {

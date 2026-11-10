@@ -5,6 +5,7 @@ import {
   fireEvent,
   screen,
   waitFor,
+  within,
 } from "@testing-library/react";
 import {
   afterAll,
@@ -19,6 +20,7 @@ import {
 import { renderWithProviders } from "../../test/common_setup";
 import i18n from "../../i18n";
 import FilesDrawer from "../files-workspace/FilesDrawer";
+import { useWorkbenchTabsStore } from "../files-workspace/workbenchTabsStore";
 import { filesDrawerReducer } from "../files-workspace/filesDrawerState";
 import { useWorkbenchRequests } from "../files-workspace/useWorkbenchRequests";
 import type { FilesDrawerState } from "../files-workspace/types";
@@ -339,6 +341,7 @@ describe("published OpenUI interaction in the native right workspace", () => {
   }, 60_000);
 
   beforeEach(() => {
+    useWorkbenchTabsStore.setState({ scopes: {} });
     localStorage.clear();
     vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
     records = [];
@@ -867,7 +870,10 @@ describe("published OpenUI interaction in the native right workspace", () => {
       target: { value: "29" },
     });
     fireEvent.click(
-      screen.getByRole("button", { name: /计算参数确认（示例）/ }),
+      within(screen.getByRole("region", { name: "任务交互" })).getByRole(
+        "button",
+        { name: /计算参数确认（示例）/ },
+      ),
     );
     expect(screen.getByLabelText(/长\s*\(m\)/)).toHaveValue(17);
     fireEvent.click(screen.getByLabelText("关闭", { selector: "button" }));
@@ -876,6 +882,37 @@ describe("published OpenUI interaction in the native right workspace", () => {
     fireEvent.click(screen.getByRole("button", { name: /第二个参数请求/ }));
     expect(screen.getByLabelText(/长\s*\(m\)/)).toHaveValue(29);
     expect(calls.every((call) => call.method === "GET")).toBe(true);
+    expect(admitted).not.toHaveBeenCalled();
+  }, 30_000);
+
+  it("preserves the shipped interaction form draft across content tabs and suspends hidden panel polling", async () => {
+    records.push(request(activeId));
+    renderWithProviders(<WorkbenchHost />);
+    fireEvent.change(await screen.findByLabelText(/长\s*\(m\)/), {
+      target: { value: "37" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: i18n.t("workbench.activity.browser"),
+      }),
+    );
+    await act(async () => Promise.resolve());
+    const afterSwitch = calls.filter((call) => call.method === "GET").length;
+    await act(async () => vi.advanceTimersByTimeAsync(3100));
+    // The existing chat discovery watcher still performs its single 2.5-second poll.
+    expect(calls.filter((call) => call.method === "GET")).toHaveLength(
+      afterSwitch + 1,
+    );
+    expect(screen.queryByLabelText(/长\s*\(m\)/)).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: i18n.t("workbench.activity.interactions"),
+      }),
+    );
+    expect(await screen.findByLabelText(/长\s*\(m\)/)).toHaveValue(37);
+    expect(screen.getAllByRole("tablist")).toHaveLength(1);
+    expect(calls.every((call) => call.method === "GET")).toBe(true);
+    expect(records[0].status).toBe("pending");
     expect(admitted).not.toHaveBeenCalled();
   }, 30_000);
 });

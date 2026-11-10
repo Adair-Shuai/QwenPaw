@@ -27,6 +27,28 @@ function makeApp(overrides: Partial<AppCardData> = {}): AppCardData {
 }
 
 describe("AppCard", () => {
+  it.each([
+    "storage-capacity",
+    "wellbore-pressure",
+    "document-forms",
+    "uproject",
+    "ulit",
+    "uideas",
+  ])("uses the original themed artwork for %s", (id) => {
+    const { container } = render(
+      <AppCard app={makeApp({ id })} onClick={vi.fn()} />,
+    );
+    const icon = container.querySelector<HTMLElement>(
+      `[data-ugsci-app-icon="${id}"]`,
+    );
+    expect(icon).toBeInTheDocument();
+    expect(icon?.style.maskImage).toMatch(/^url\(/);
+    expect(icon?.style.backgroundColor).toBe("currentcolor");
+    expect(
+      container.querySelector("svg.lucide-app-window"),
+    ).not.toBeInTheDocument();
+  });
+
   it("uses a Lucide fallback when no image icon is available", () => {
     render(<AppCard app={makeApp()} onClick={vi.fn()} />);
 

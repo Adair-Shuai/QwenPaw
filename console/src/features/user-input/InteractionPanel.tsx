@@ -19,6 +19,8 @@ import type { ComponentType } from "react";
 import styles from "./InteractionPanel.module.less";
 
 interface PanelProps {
+  active?: boolean;
+  onRequestsChange?: (requests: InteractionRequest[]) => void;
   scope: Extract<FilesWorkspaceScope, { kind: "session" }>;
   runtimeSessionId?: string;
   interactionRequestId?: string;
@@ -47,6 +49,8 @@ export function InteractionPanel(props: PanelProps) {
 }
 
 function ScopedInteractionPanel({
+  active = true,
+  onRequestsChange,
   scope: chatScope,
   runtimeSessionId,
   interactionRequestId,
@@ -119,6 +123,7 @@ function ScopedInteractionPanel({
   );
 
   useEffect(() => {
+    if (!active) return;
     const controller = new AbortController();
     void refresh(controller.signal);
     const timer = window.setInterval(
@@ -129,7 +134,11 @@ function ScopedInteractionPanel({
       controller.abort();
       window.clearInterval(timer);
     };
-  }, [refresh]);
+  }, [refresh, active]);
+
+  useEffect(() => {
+    onRequestsChange?.(requests);
+  }, [requests, onRequestsChange]);
 
   const replace = (request: InteractionRequest) => {
     if (!alive.current) return;

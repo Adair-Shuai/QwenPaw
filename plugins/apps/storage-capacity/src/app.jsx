@@ -12,6 +12,36 @@ import {
 const Q = window.QwenPaw,
   React = Q.host.React;
 const { useState, useEffect, useRef, useId } = React;
+// Artwork from UGSci-Mono/icons/apps/storage-capacity.svg.
+const AppBrandIcon = () =>
+  React.createElement(
+    "svg",
+    {
+      width: 24,
+      height: 24,
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "1.6",
+      strokeLinejoin: "round",
+      strokeLinecap: "round",
+      "aria-hidden": true,
+      style: { verticalAlign: "middle", flexShrink: 0 },
+    },
+    React.createElement("path", {
+      d: "M5.6 10.2a6.4 6.4 0 0 1 12.8 0m-6.4-.1 2.9-3",
+    }),
+    React.createElement("path", {
+      d: "M2.6 16.8c4.15-.35 5.65-4.15 9.4-4.15s5.25 3.8 9.4 4.15",
+    }),
+    React.createElement("path", {
+      d: "M2.6 20.8c4.15-.35 5.65-4.15 9.4-4.15s5.25 3.8 9.4 4.15",
+    }),
+  );
+
+
+
+
 const API = "/storage-capacity";
 const style = document.createElement("style");
 style.id = "storage-capacity-styles";
@@ -1768,7 +1798,7 @@ function App() {
     <div className="sc-app sc-workflow">
       <aside className="sc-sidebar">
         <div>
-          <h1>库容评估</h1>
+          <h1 style={{ display: "flex", alignItems: "center", gap: 8 }}><AppBrandIcon />库容评估</h1>
           <span className="sc-muted">UGSci 工程应用</span>
         </div>
         <button className="sc-create" disabled={busy || !cat} onClick={create}>

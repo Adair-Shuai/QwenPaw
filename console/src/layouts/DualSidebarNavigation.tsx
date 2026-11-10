@@ -1,5 +1,11 @@
 import type { ReactNode } from "react";
-import { FolderOpen, House, PanelLeftOpen, Settings } from "lucide-react";
+import {
+  FolderOpen,
+  House,
+  PanelLeftOpen,
+  Settings,
+  Puzzle,
+} from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { SearchTrigger } from "../features/global-search/SearchTrigger";
 import type { FlatMenuEntry } from "./registry/adapter";
@@ -15,6 +21,14 @@ export const DUAL_SIDEBAR_PRIMARY_KEYS = [
   "core.inbox",
 ] as const;
 
+export const DUAL_SIDEBAR_FIXED_KEYS: readonly string[] = [
+  ...DUAL_SIDEBAR_PRIMARY_KEYS,
+  "core.chat",
+  "core.marketplace",
+  "core.app-center.embed",
+  "core.settings-center",
+];
+
 export default function DualSidebarNavigation({
   entries,
   selectedKey,
@@ -26,6 +40,8 @@ export default function DualSidebarNavigation({
   onSettings,
   inboxIcon,
   children,
+  shortcuts = [],
+  currentPath,
 }: {
   entries: FlatMenuEntry[];
   selectedKey: string;
@@ -37,6 +53,8 @@ export default function DualSidebarNavigation({
   onSettings: () => void;
   inboxIcon: ReactNode;
   children: ReactNode;
+  shortcuts?: FlatMenuEntry[];
+  currentPath?: string;
 }) {
   const { t } = useTranslation();
   const activeKey =
@@ -134,6 +152,35 @@ export default function DualSidebarNavigation({
           t("sidebar.dualSidebar.schedules", "Scheduled tasks"),
         )}
         <div className={styles.more}>{children}</div>
+        <hr className={styles.divider} />
+        <div
+          className={styles.shortcuts}
+          role="group"
+          aria-label={t(
+            "settingsCenter.dualSidebarEntries",
+            "Custom shortcuts",
+          )}
+        >
+          {shortcuts.map((entry) => (
+            <button
+              key={entry.key}
+              type="button"
+              title={typeof entry.label === "string" ? entry.label : undefined}
+              aria-current={
+                selectedKey === entry.key ||
+                (entry.key.startsWith("pawapp:") &&
+                  (currentPath === entry.path ||
+                    currentPath?.startsWith(`${entry.path}/`)))
+                  ? "page"
+                  : undefined
+              }
+              onClick={() => onNavigate(entry)}
+            >
+              {entry.icon ?? <Puzzle size={18} />}
+              <span>{entry.label}</span>
+            </button>
+          ))}
+        </div>
       </div>
       <div className={styles.secondary}>
         {renderEntry("core.run-center", t("sidebar.dualSidebar.runs", "Runs"))}

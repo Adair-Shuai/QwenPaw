@@ -1,4 +1,5 @@
 import { renderWithProviders } from "@/test/common_setup";
+import { ConfigProvider } from "antd";
 import {
   act,
   fireEvent,
@@ -9,6 +10,8 @@ import {
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import FilesDrawer from "./FilesDrawer";
+import { notifyProjectDirectoryChanged } from "../project-directory/projectDirectoryChangeEvent";
+import { useWorkbenchTabsStore } from "./workbenchTabsStore";
 import i18n from "../../i18n";
 import { filesDrawerReducer } from "./filesDrawerState";
 import { workspaceApi } from "../../api/modules/workspace";
@@ -106,6 +109,7 @@ vi.mock("../../api/modules/workspace", () => ({
       etag: "etag",
     }),
     getFileDownloadUrl: vi.fn((path: string) => `/api/files/download/${path}`),
+    saveFileContent: vi.fn().mockResolvedValue({ etag: "saved-etag" }),
     loadFile: vi.fn().mockResolvedValue({
       content: "profile content",
     }),
@@ -132,6 +136,7 @@ async function findHtmlFrame(title: string) {
 
 describe("FilesDrawer", () => {
   beforeEach(() => {
+    useWorkbenchTabsStore.setState({ scopes: {} });
     vi.spyOn(agentsApi, "getAgent").mockResolvedValue({
       id: "default",
       name: "Default",
@@ -183,7 +188,9 @@ describe("FilesDrawer", () => {
       );
       expect(button).toHaveAttribute("title", name);
     }
-    const drawer = screen.getByRole("region", { name: /files|文件/i });
+    const drawer = screen.getByRole("region", {
+      name: i18n.t("workbench.tabs.workspace"),
+    });
     fireEvent.click(
       screen.getByRole("button", { name: i18n.t("files.maximizeWorkspace") }),
     );
@@ -209,7 +216,7 @@ describe("FilesDrawer", () => {
       />,
     );
     expect(ref.current).toBe(
-      screen.getByRole("region", { name: /files|文件/i }),
+      screen.getByRole("region", { name: i18n.t("workbench.tabs.workspace") }),
     );
   });
 
@@ -377,7 +384,9 @@ describe("FilesDrawer", () => {
         />
       </>,
     );
-    const drawer = screen.getByRole("region", { name: /files|文件/i });
+    const drawer = screen.getByRole("region", {
+      name: i18n.t("workbench.tabs.workspace"),
+    });
     fireEvent.keyDown(screen.getByRole("textbox", { name: "Chat input" }), {
       key: "Escape",
     });
@@ -560,7 +569,7 @@ describe("FilesDrawer", () => {
         screen.queryByRole("tab", { name: /closed.txt/ }),
       ).not.toBeInTheDocument(),
     );
-    expect(screen.queryByText("closed.txt")).not.toBeInTheDocument();
+    expect(screen.getByRole("button", { name: /closed.txt/ })).toBeVisible();
     expect(
       screen.queryByRole("button", {
         name: /mentionInChat|在聊天中引用|Mention in chat/i,
@@ -620,6 +629,11 @@ describe("FilesDrawer", () => {
       />,
     );
     expect(frame).not.toBeInTheDocument();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: i18n.t("workbench.activity.browser"),
+      }),
+    );
     expect(
       screen.getByRole("button", { name: /^(后退|Back)$/ }),
     ).toBeDisabled();
@@ -687,7 +701,9 @@ describe("FilesDrawer", () => {
     fireEvent.change(editing, {
       target: { value: "style-independent unsaved draft" },
     });
-    const drawer = screen.getByRole("region", { name: /files|文件/i });
+    const drawer = screen.getByRole("region", {
+      name: i18n.t("workbench.tabs.workspace"),
+    });
     expect(drawer).toHaveStyle({ width: "480px" });
     fireEvent.click(screen.getByRole("button", { name: "deepseek" }));
     expect(drawer).toHaveStyle({ width: "600px" });
@@ -1110,6 +1126,9 @@ describe("FilesDrawer", () => {
       />,
     );
 
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /hello.txt/ })).toBeVisible(),
+    );
     expect(await screen.findByTestId("file-navigator")).toBeInTheDocument();
     expect(
       screen.queryByText((content) =>
@@ -1195,7 +1214,9 @@ describe("FilesDrawer", () => {
       />,
     );
 
-    const drawer = screen.getByRole("region", { name: /files|文件/i });
+    const drawer = screen.getByRole("region", {
+      name: i18n.t("workbench.tabs.workspace"),
+    });
     const separator = screen.getByRole("separator");
     vi.spyOn(drawer, "getBoundingClientRect")
       .mockReturnValueOnce({ width: 500 } as DOMRect)
@@ -1231,7 +1252,9 @@ describe("FilesDrawer", () => {
       />,
     );
 
-    const drawer = screen.getByRole("region", { name: /files|文件/i });
+    const drawer = screen.getByRole("region", {
+      name: i18n.t("workbench.tabs.workspace"),
+    });
     const separator = screen.getByRole("separator");
     vi.spyOn(drawer.parentElement!, "getBoundingClientRect").mockReturnValue({
       width: 1200,
@@ -1270,7 +1293,9 @@ describe("FilesDrawer", () => {
       />,
     );
 
-    expect(screen.getByRole("region", { name: /files|文件/i })).toHaveStyle({
+    expect(
+      screen.getByRole("region", { name: i18n.t("workbench.tabs.workspace") }),
+    ).toHaveStyle({
       width: "480px",
     });
 
@@ -1282,7 +1307,9 @@ describe("FilesDrawer", () => {
       />,
     );
 
-    expect(screen.getByRole("region", { name: /files|文件/i })).toHaveStyle({
+    expect(
+      screen.getByRole("region", { name: i18n.t("workbench.tabs.workspace") }),
+    ).toHaveStyle({
       width: "720px",
     });
   });
@@ -1617,5 +1644,496 @@ describe("FilesDrawer", () => {
       "browser-archive/files/html",
     );
     expect(workspaceApi.loadFileText).not.toHaveBeenCalled();
+  });
+
+  it("opens mixed content in one strip and restores an independent browser draft from recent content", async () => {
+    const { rerender } = renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", { name: i18n.t("workbench.start.tools") }),
+      ).toBeVisible(),
+    );
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.all") }),
+    ).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.newBrowser") }),
+    );
+    const firstAddress = screen.getByRole("textbox", {
+      name: /浏览器地址|Browser address/,
+    });
+    for (const url of [
+      "https://example.com/first",
+      "https://example.com/second",
+    ]) {
+      fireEvent.change(firstAddress, { target: { value: url } });
+      fireEvent.keyDown(firstAddress, { key: "Enter" });
+    }
+    fireEvent.change(firstAddress, {
+      target: { value: "unfinished first address" },
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.addTab") }),
+    );
+
+    const secondAddress = screen.getByRole("textbox", {
+      name: /浏览器地址|Browser address/,
+    });
+    expect(secondAddress).toHaveValue("");
+    fireEvent.change(secondAddress, {
+      target: { value: "unfinished second address" },
+    });
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
+    expect(screen.getAllByRole("tablist")).toHaveLength(1);
+    rerender(
+      <FilesDrawer
+        state={{
+          kind: "workspace",
+          target: {
+            source: "workspace",
+            path: "mixed.txt",
+            preferredView: "text",
+          },
+          trigger: null,
+        }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    const mixedEditor = await screen.findByTestId("monaco-editor");
+    fireEvent.change(mixedEditor, { target: { value: "mixed content draft" } });
+    expect(screen.getAllByRole("tab")).toHaveLength(3);
+    expect(screen.getAllByRole("tablist")).toHaveLength(1);
+    fireEvent.click(screen.getByRole("tab", { name: /example.com/ }));
+    expect(firstAddress).toBeVisible();
+    expect(firstAddress).toHaveValue("unfinished first address");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `${i18n.t("workbench.tabs.close")} example.com`,
+      }),
+    );
+    expect(secondAddress).toBeVisible();
+    expect(secondAddress).toHaveValue("unfinished second address");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `${i18n.t("workbench.tabs.close")} ${i18n.t(
+          "workbench.tabs.newTab",
+        )}`,
+      }),
+    );
+    expect(mixedEditor).toHaveValue("mixed content draft");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `${i18n.t("workbench.tabs.close")} mixed.txt`,
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.discard") }),
+    );
+    expect(
+      screen.getByRole("heading", {
+        name: i18n.t("workbench.empty.recent"),
+      }),
+    ).toBeVisible();
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /example.com/ }));
+    expect(
+      screen.getByRole("textbox", { name: /浏览器地址|Browser address/ }),
+    ).toHaveValue("unfinished first address");
+    fireEvent.click(screen.getByRole("button", { name: /^(后退|Back)$/ }));
+    expect(
+      screen.getByRole("textbox", { name: /浏览器地址|Browser address/ }),
+    ).toHaveValue("https://example.com/first");
+  });
+
+  it("keeps dirty native buffers after cancel or save failure and closes only after a successful scoped save", async () => {
+    renderWithProviders(
+      <ConfigProvider theme={{ token: { motion: false } }}>
+        <FilesDrawer
+          state={{
+            kind: "workspace",
+            target: {
+              source: "workspace",
+              root: "workspace",
+              path: "notes/draft.txt",
+              preferredView: "text",
+            },
+            trigger: null,
+          }}
+          dispatch={vi.fn()}
+          scope={interactionScope}
+        />
+      </ConfigProvider>,
+    );
+    const editor = await screen.findByTestId("monaco-editor");
+    fireEvent.change(editor, { target: { value: "carefully retained draft" } });
+    const closeFile = () =>
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: `${i18n.t("workbench.tabs.close")} draft.txt`,
+        }),
+      );
+    closeFile();
+    fireEvent.click(
+      within(screen.getByRole("dialog")).getByRole("button", {
+        name: /^(取消|Cancel)$/,
+      }),
+    );
+    expect(editor).toHaveValue("carefully retained draft");
+    vi.mocked(workspaceApi.saveFileContent).mockRejectedValueOnce(
+      new Error("conflicting file revision"),
+    );
+    closeFile();
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.saveClose") }),
+    );
+    await waitFor(() =>
+      expect(screen.getByText("conflicting file revision")).toBeVisible(),
+    );
+    expect(screen.getByRole("tab", { name: /draft.txt/ })).toBeVisible();
+    expect(
+      useCodingTabsStore.getState().tabsByAgent[
+        "session:default:interactions"
+      ][0],
+    ).toMatchObject({ content: "carefully retained draft", dirty: true });
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.saveClose") }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.queryByRole("tab", { name: /draft.txt/ }),
+      ).not.toBeInTheDocument(),
+    );
+    expect(workspaceApi.saveFileContent).toHaveBeenLastCalledWith(
+      "notes/draft.txt",
+      "carefully retained draft",
+      "etag",
+      undefined,
+      "workspace",
+      undefined,
+    );
+    expect(
+      useCodingTabsStore.getState().tabsByAgent["session:default:interactions"],
+    ).toEqual([]);
+    expect(
+      screen.getByRole("heading", {
+        name: i18n.t("workbench.empty.recent"),
+      }),
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: /draft.txt/ }));
+    await screen.findByRole("tab", { name: /draft.txt/ });
+    expect(
+      useCodingTabsStore.getState().tabsByAgent[
+        "session:default:interactions"
+      ][0].workspaceRoot,
+    ).toBe("workspace");
+  });
+
+  it("shows only this runtime's running tasks in the empty workspace and closes their view without cancelling work", async () => {
+    const store = useBackgroundTasksStore.getState();
+    store.addTask({
+      toolCallId: "current-task",
+      toolName: "scientific_tool",
+      taskSummary: "当前计算",
+      sessionId: "backend-current",
+      startTime: Date.now(),
+    });
+    store.addTask({
+      toolCallId: "other-task",
+      toolName: "private_tool",
+      taskSummary: "其他会话",
+      sessionId: "backend-other",
+      startTime: Date.now(),
+    });
+    renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+        runtimeSessionId="backend-current"
+      />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", {
+          name: i18n.t("workbench.empty.backgroundTitle"),
+        }),
+      ).toBeVisible(),
+    );
+    expect(screen.queryByText("其他会话")).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /当前计算/ }));
+    expect(screen.getByRole("tab", { name: /当前计算/ })).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `${i18n.t("workbench.tabs.close")} 当前计算`,
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("heading", {
+          name: i18n.t("workbench.empty.backgroundTitle"),
+        }),
+      ).toBeVisible(),
+    );
+    expect(
+      useBackgroundTasksStore
+        .getState()
+        .tasks.find((task) => task.toolCallId === "current-task")?.status,
+    ).toBe("running");
+  });
+
+  it("does not reopen a late file read after the user closes the remaining content", async () => {
+    let finish!: (value: { content: string; etag: string }) => void;
+    vi.mocked(workspaceApi.loadFileText).mockReturnValueOnce(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    renderWithProviders(
+      <FilesDrawer
+        state={{
+          kind: "workspace",
+          target: { source: "workspace", path: "late.txt" },
+          trigger: null,
+        }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    await waitFor(() => expect(workspaceApi.loadFileText).toHaveBeenCalled());
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: i18n.t("workbench.activity.browser"),
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `${i18n.t("workbench.tabs.close")} ${i18n.t(
+          "workbench.tabs.newTab",
+        )}`,
+      }),
+    );
+    await act(async () => finish({ content: "late result", etag: "late" }));
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    expect(
+      useCodingTabsStore.getState().tabsByAgent[
+        "session:default:interactions"
+      ] ?? [],
+    ).toEqual([]);
+    expect(
+      screen.getByRole("heading", {
+        name: i18n.t("workbench.empty.recent"),
+      }),
+    ).toBeVisible();
+  });
+
+  it("applies the native directory-rebinding boundary to content tabs and recent files without resetting remote drafts", async () => {
+    const { rerender } = renderWithProviders(
+      <FilesDrawer
+        state={{
+          kind: "workspace",
+          target: {
+            source: "workspace",
+            path: "old-project.txt",
+            root: "project",
+          },
+          trigger: null,
+        }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    await screen.findByRole("tab", { name: /old-project.txt/ });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `${i18n.t("workbench.tabs.close")} old-project.txt`,
+      }),
+    );
+    rerender(
+      <FilesDrawer
+        state={{
+          kind: "workspace",
+          target: {
+            source: "workspace",
+            path: "project-view.txt",
+            root: "project",
+            preferredView: "visualization",
+            artifact: {
+              id: "project-view",
+              title: "Project view",
+              source: "link",
+              mimeType: "text/plain",
+              textContent: "Project preview",
+            },
+          },
+          trigger: null,
+        }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    await screen.findByRole("tab", { name: /project-view.txt/ });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: i18n.t("workbench.activity.browser"),
+      }),
+    );
+    const address = screen.getByRole("textbox", {
+      name: /浏览器地址|Browser address/,
+    });
+    fireEvent.change(address, { target: { value: "remote draft" } });
+    act(() =>
+      notifyProjectDirectoryChanged(interactionScope, { preserveTabs: true }),
+    );
+    expect(
+      screen.getByRole("tab", { name: /project-view.txt/ }),
+    ).toBeInTheDocument();
+    act(() =>
+      notifyProjectDirectoryChanged({
+        ...interactionScope,
+        sessionId: "another-session",
+      }),
+    );
+    expect(
+      screen.getByRole("tab", { name: /project-view.txt/ }),
+    ).toBeInTheDocument();
+    act(() => notifyProjectDirectoryChanged(interactionScope));
+    expect(
+      screen.queryByRole("tab", { name: /project-view.txt/ }),
+    ).not.toBeInTheDocument();
+    expect(address).toHaveValue("remote draft");
+    const model =
+      useWorkbenchTabsStore.getState().scopes["session:default:interactions"];
+    expect(model.tabs).toHaveLength(1);
+    expect(model.recent).toEqual([]);
+  });
+
+  it("closes several native file views atomically and clears the final active buffer reference", async () => {
+    const { rerender } = renderWithProviders(
+      <FilesDrawer
+        state={{
+          kind: "workspace",
+          target: { source: "workspace", path: "first.txt" },
+          trigger: null,
+        }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    await screen.findByRole("tab", { name: /first.txt/ });
+    rerender(
+      <FilesDrawer
+        state={{
+          kind: "workspace",
+          target: { source: "workspace", path: "second.txt" },
+          trigger: null,
+        }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    await screen.findByRole("tab", { name: /second.txt/ });
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.all") }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.closeAll") }),
+    );
+    expect(screen.queryByRole("tab")).not.toBeInTheDocument();
+    const native = useCodingTabsStore.getState();
+    expect(native.tabsByAgent["session:default:interactions"]).toEqual([]);
+    expect(native.activeTabByAgent["session:default:interactions"]).toBe("");
+    expect(
+      useWorkbenchTabsStore.getState().scopes["session:default:interactions"]
+        .recent,
+    ).toHaveLength(2);
+  });
+
+  it("opens a Codex-style new tab with working tools and restores recent views without losing the native draft", async () => {
+    renderWithProviders(
+      <FilesDrawer
+        state={{
+          kind: "workspace",
+          target: {
+            source: "workspace",
+            path: "starter.txt",
+            preferredView: "text",
+          },
+          trigger: null,
+        }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    const editor = await screen.findByTestId("monaco-editor");
+    fireEvent.change(editor, { target: { value: "starter draft" } });
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.addTab") }),
+    );
+    const page = screen.getByRole("region", {
+      name: i18n.t("workbench.tabs.newTab"),
+    });
+    expect(
+      within(page).getByRole("heading", {
+        name: i18n.t("workbench.start.tools"),
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(page).getByRole("heading", {
+        name: i18n.t("workbench.start.common"),
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(page).getByRole("heading", {
+        name: i18n.t("workbench.empty.recent"),
+      }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("textbox", { name: /浏览器地址|Browser address/ }),
+    ).toHaveValue("");
+    fireEvent.click(
+      within(page).getByRole("button", {
+        name: i18n.t("workbench.start.openView", {
+          name: i18n.t("workbench.activity.compute"),
+        }),
+      }),
+    );
+    expect(
+      screen.getByRole("tab", {
+        name: new RegExp(i18n.t("workbench.activity.compute")),
+      }),
+    ).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `${i18n.t("workbench.tabs.close")} ${i18n.t(
+          "workbench.activity.compute",
+        )}`,
+      }),
+    );
+    const recent = within(
+      screen.getByRole("region", { name: i18n.t("workbench.tabs.newTab") }),
+    ).getByRole("region", { name: i18n.t("workbench.empty.recent") });
+    fireEvent.click(
+      within(recent).getByRole("button", {
+        name: new RegExp(i18n.t("workbench.activity.compute")),
+      }),
+    );
+    expect(
+      screen.getByRole("tab", {
+        name: new RegExp(i18n.t("workbench.activity.compute")),
+      }),
+    ).toHaveAttribute("aria-selected", "true");
+    fireEvent.click(screen.getByRole("tab", { name: /starter.txt/ }));
+    expect(editor).toHaveValue("starter draft");
+    expect(
+      useCodingTabsStore.getState().tabsByAgent["session:default:interactions"],
+    ).toHaveLength(1);
   });
 });

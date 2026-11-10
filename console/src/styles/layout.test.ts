@@ -102,3 +102,30 @@ describe("global link accessibility", () => {
     expect(contrast(selectedText, hoverBackground)).toBeGreaterThanOrEqual(4.5);
   });
 });
+
+describe("right workspace content controls", () => {
+  it("uses shared control metrics and inverse foregrounds on accent-filled workspace buttons", () => {
+    const source = readFileSync(
+      join(
+        process.cwd(),
+        "src/features/files-workspace/WorkbenchTabs.module.less",
+      ),
+      "utf8",
+    );
+    const fileControls = readFileSync(
+      join(
+        process.cwd(),
+        "src/features/files-workspace/FilesWorkspace.module.less",
+      ),
+      "utf8",
+    );
+    expect(fileControls).toMatch(
+      /\.primaryButton\s*\{\s*color: var\(--app-text-inverse\);/,
+    );
+    expect(source).toContain("width: var(--app-icon-button);");
+    expect(source).toContain("height: var(--app-icon-button);");
+    expect(source).toContain("border-radius: var(--app-radius);");
+    expect(source).toContain("@media (pointer: coarse)");
+    expect(source).not.toContain(",\nbutton:focus-visible");
+  });
+});

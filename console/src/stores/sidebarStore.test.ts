@@ -7,6 +7,31 @@ const HIDDEN_PLUGIN_ITEMS_STORAGE_KEY =
   "qwenpaw_sidebar_hidden_plugin_items_v1";
 
 describe("sidebarStore", () => {
+  it("persists custom rail order independently and keeps unavailable app identities", () => {
+    const original = useSidebarStore.getState().focusItemIds;
+    useSidebarStore
+      .getState()
+      .setRailItemIds([
+        "pawapp:notes",
+        "core.models",
+        "pawapp:notes",
+        "missing.app",
+      ]);
+    expect(useSidebarStore.getState().railItemIds).toEqual([
+      "pawapp:notes",
+      "core.models",
+      "missing.app",
+    ]);
+    expect(
+      JSON.parse(localStorage.getItem("qwenpaw_sidebar_rail_items_v1")!),
+    ).toEqual(useSidebarStore.getState().railItemIds);
+    useSidebarStore.getState().setRailItemIds(["core.models", "pawapp:notes"]);
+    expect(useSidebarStore.getState().railItemIds).toEqual([
+      "core.models",
+      "pawapp:notes",
+    ]);
+    expect(useSidebarStore.getState().focusItemIds).toBe(original);
+  });
   beforeEach(() => {
     localStorage.removeItem(FOCUS_ITEMS_STORAGE_KEY);
     localStorage.removeItem(HIDDEN_PLUGIN_ITEMS_STORAGE_KEY);

@@ -1,3 +1,4 @@
+import { UgsciAppIcon, ugsciAppIconUrls } from "@/components/UgsciAppIcon";
 import { pickAppDescription } from "./appDescription";
 import { InteractiveCard } from "@/components/interaction/InteractiveCard";
 /**
@@ -124,7 +125,9 @@ export const AppCard: FC<AppCardProps> = ({ app, onClick, onUninstall }) => {
           aria-label={app.name}
         >
           <div className={styles.cardIcon}>
-            {isImageIcon ? (
+            {ugsciAppIconUrls.has(app.id) ? (
+              <UgsciAppIcon appId={app.id} size={32} />
+            ) : isImageIcon ? (
               <img
                 src={displayIcon}
                 alt=""

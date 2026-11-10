@@ -3,6 +3,7 @@ import { create } from "zustand";
 import { isFixedSidebarItemId } from "@/constants/sidebarItems";
 
 const FOCUS_ITEMS_STORAGE_KEY = "qwenpaw_sidebar_focus_items_v1";
+const RAIL_ITEMS_STORAGE_KEY = "qwenpaw_sidebar_rail_items_v1";
 const HIDDEN_PLUGIN_ITEMS_STORAGE_KEY =
   "qwenpaw_sidebar_hidden_plugin_items_v1";
 
@@ -15,6 +16,8 @@ export const DEFAULT_FOCUS_ITEM_IDS = [
 ];
 
 interface SidebarStoreState {
+  railItemIds: string[];
+  setRailItemIds: (itemIds: string[]) => void;
   focusItemIds: string[];
   hiddenPluginItemIds: string[];
   setFocusItemIds: (itemIds: string[]) => void;
@@ -111,6 +114,31 @@ function updateSidebarItemsVisibility(
 }
 
 export const useSidebarStore = create<SidebarStoreState>((set) => ({
+  railItemIds: (() => {
+    try {
+      const stored: unknown = JSON.parse(
+        localStorage.getItem(RAIL_ITEMS_STORAGE_KEY) || "[]",
+      );
+      return Array.isArray(stored)
+        ? [
+            ...new Set(
+              stored.filter((id): id is string => typeof id === "string"),
+            ),
+          ]
+        : [];
+    } catch {
+      return [];
+    }
+  })(),
+  setRailItemIds: (itemIds) => {
+    const railItemIds = [...new Set(itemIds)];
+    try {
+      localStorage.setItem(RAIL_ITEMS_STORAGE_KEY, JSON.stringify(railItemIds));
+    } catch {
+      // Storage can be unavailable.
+    }
+    set({ railItemIds });
+  },
   focusItemIds: loadFocusItemIds(),
   hiddenPluginItemIds: loadHiddenPluginItemIds(),
 

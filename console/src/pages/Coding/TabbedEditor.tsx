@@ -102,6 +102,8 @@ interface TabbedEditorProps {
   onRevealFile?: (path: string) => Promise<void>;
   headerActions?: ReactNode;
   headerLeading?: ReactNode;
+  hideTabBar?: boolean;
+  emptyContent?: ReactNode;
   chatId?: string;
   projectDirOverride?: string;
   /** Keep editor state while suspending resource-heavy previews in hidden panels. */
@@ -225,6 +227,8 @@ export default function TabbedEditor({
   onRevealFile,
   headerActions,
   headerLeading,
+  hideTabBar = false,
+  emptyContent,
   chatId,
   projectDirOverride,
   previewActive = true,
@@ -1031,7 +1035,7 @@ export default function TabbedEditor({
   if (tabs.length === 0) {
     return (
       <div className={styles.wrap}>
-        {(headerActions || headerLeading) && (
+        {!hideTabBar && (headerActions || headerLeading) && (
           <div className={styles.tabBar}>
             {headerLeading && (
               <div className={styles.tabBarLeading}>{headerLeading}</div>
@@ -1040,10 +1044,12 @@ export default function TabbedEditor({
             <div className={styles.tabBarActions}>{headerActions}</div>
           </div>
         )}
-        <div className={styles.empty}>
-          <FileCode size={36} className={styles.emptyIcon} />
-          <p className={styles.emptyText}>{t("files.selectFile")}</p>
-        </div>
+        {emptyContent ?? (
+          <div className={styles.empty}>
+            <FileCode size={36} className={styles.emptyIcon} />
+            <p className={styles.emptyText}>{t("files.selectFile")}</p>
+          </div>
+        )}
       </div>
     );
   }
@@ -1112,226 +1118,238 @@ export default function TabbedEditor({
   return (
     <div className={styles.wrap} onKeyDown={handleKeyDown}>
       {/* ── Tab bar ────────────────────────────────────────────────────── */}
-      <div className={styles.tabBar}>
-        {headerLeading && (
-          <div className={styles.tabBarLeading}>{headerLeading}</div>
-        )}
-        <div className={styles.tabViewport} ref={tabViewportRef} role="tablist">
-          <div className={styles.tabRail}>
-            {tabs.map((tab, index) => {
-              const active = tab.path === activeTabPath;
-              const hasDiff = Boolean(pendingDiffs[tab.path]);
-              return (
-                <Dropdown
-                  key={tab.path}
-                  trigger={["contextMenu"]}
-                  menu={{
-                    items: [
-                      {
-                        key: "close",
-                        label: t("files.closeTab"),
-                        onClick: () => onTabClose(tab.path),
-                      },
-                      {
-                        key: "closeOthers",
-                        label: t("files.closeOtherTabs"),
-                        disabled: tabs.length <= 1,
-                        onClick: () => onCloseOtherTabs(tab.path),
-                      },
-                    ],
-                  }}
-                >
-                  <div
-                    ref={(element) => {
-                      if (element)
-                        tabElementsRef.current.set(tab.path, element);
-                      else tabElementsRef.current.delete(tab.path);
+      {!hideTabBar && (
+        <div className={styles.tabBar}>
+          {headerLeading && (
+            <div className={styles.tabBarLeading}>{headerLeading}</div>
+          )}
+          <div
+            className={styles.tabViewport}
+            ref={tabViewportRef}
+            role="tablist"
+          >
+            <div className={styles.tabRail}>
+              {tabs.map((tab, index) => {
+                const active = tab.path === activeTabPath;
+                const hasDiff = Boolean(pendingDiffs[tab.path]);
+                return (
+                  <Dropdown
+                    key={tab.path}
+                    trigger={["contextMenu"]}
+                    menu={{
+                      items: [
+                        {
+                          key: "close",
+                          label: t("files.closeTab"),
+                          onClick: () => onTabClose(tab.path),
+                        },
+                        {
+                          key: "closeOthers",
+                          label: t("files.closeOtherTabs"),
+                          disabled: tabs.length <= 1,
+                          onClick: () => onCloseOtherTabs(tab.path),
+                        },
+                      ],
                     }}
-                    className={`${styles.tab} ${
-                      active ? styles.tabActive : ""
-                    }`}
-                    onClick={() => onTabSelect(tab.path)}
-                    onAuxClick={(event) => {
-                      if (event.button !== 1) return;
-                      event.preventDefault();
-                      onTabClose(tab.path);
-                    }}
-                    role="tab"
-                    aria-selected={active}
-                    tabIndex={active ? 0 : -1}
-                    onKeyDown={(event) => handleTabKeyDown(event, index)}
-                    title={tab.displayPath ?? visibleEditorPath(tab.path)}
                   >
-                    {hasDiff ? (
-                      <GitCompareArrows size={11} className={styles.diffDot} />
-                    ) : tab.dirty ? (
-                      <span className={styles.dirtyDot} />
-                    ) : null}
-                    <span className={styles.tabName}>
-                      {fileName(tab.displayPath ?? tab.path)}
-                    </span>
-                    <button
-                      type="button"
-                      className={styles.closeBtn}
-                      onClick={(event) => {
-                        event.stopPropagation();
+                    <div
+                      ref={(element) => {
+                        if (element)
+                          tabElementsRef.current.set(tab.path, element);
+                        else tabElementsRef.current.delete(tab.path);
+                      }}
+                      className={`${styles.tab} ${
+                        active ? styles.tabActive : ""
+                      }`}
+                      onClick={() => onTabSelect(tab.path)}
+                      onAuxClick={(event) => {
+                        if (event.button !== 1) return;
+                        event.preventDefault();
                         onTabClose(tab.path);
                       }}
-                      aria-label={`${t("files.closeTab")}: ${fileName(
-                        tab.displayPath ?? tab.path,
-                      )}`}
+                      role="tab"
+                      aria-selected={active}
+                      tabIndex={active ? 0 : -1}
+                      onKeyDown={(event) => handleTabKeyDown(event, index)}
+                      title={tab.displayPath ?? visibleEditorPath(tab.path)}
                     >
-                      <X size={11} />
-                    </button>
-                  </div>
-                </Dropdown>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className={styles.tabControls}>
-          <button
-            type="button"
-            className={`${styles.tabControlBtn} ${styles.scrollControl}`}
-            onClick={() => scrollTabs(-1)}
-            aria-label={t("files.scrollTabsLeft")}
-          >
-            <ChevronLeft size={13} />
-          </button>
-          <button
-            type="button"
-            className={`${styles.tabControlBtn} ${styles.scrollControl}`}
-            onClick={() => scrollTabs(1)}
-            aria-label={t("files.scrollTabsRight")}
-          >
-            <ChevronRight size={13} />
-          </button>
-          <button
-            ref={openFilesButtonRef}
-            type="button"
-            className={`${styles.openFilesBtn} ${
-              openFilesVisible ? styles.openFilesBtnActive : ""
-            }`}
-            onClick={() => setOpenFilesVisible((visible) => !visible)}
-            aria-label={t("files.openFiles", { count: tabs.length })}
-            aria-expanded={openFilesVisible}
-            aria-haspopup="dialog"
-          >
-            <ListFilter size={13} />
-            <span className={styles.openFilesLabel}>
-              {t("files.openFilesLabel")}
-            </span>
-            <span className={styles.tabCount}>{tabs.length}</span>
-          </button>
-        </div>
-        {headerActions && (
-          <div className={styles.tabBarActions}>{headerActions}</div>
-        )}
-
-        {openFilesVisible && (
-          <div
-            className={styles.openFilesPanel}
-            ref={openFilesPanelRef}
-            role="dialog"
-            aria-label={t("files.openFilesLabel")}
-          >
-            <div className={styles.openFilesHeader}>
-              <div className={styles.openFilesTitleRow}>
-                <strong>{t("files.openFilesLabel")}</strong>
-                <span>{t("files.openFileCount", { count: tabs.length })}</span>
-              </div>
-              <label className={styles.openFilesSearch}>
-                <Search size={13} />
-                <input
-                  autoFocus
-                  type="search"
-                  value={openFilesQuery}
-                  onChange={(event) => setOpenFilesQuery(event.target.value)}
-                  aria-label={t("files.searchOpenFiles")}
-                  placeholder={t("files.searchOpenFiles")}
-                />
-              </label>
-            </div>
-
-            <div className={styles.openFilesList}>
-              {filteredTabs.length > 0 ? (
-                filteredTabs.map((tab) => {
-                  const active = tab.path === activeTabPath;
-                  const displayPath =
-                    tab.displayPath ?? visibleEditorPath(tab.path);
-                  const hasDiff = Boolean(pendingDiffs[tab.path]);
-                  return (
-                    <div
-                      key={tab.path}
-                      className={`${styles.openFileItem} ${
-                        active ? styles.openFileItemActive : ""
-                      }`}
-                    >
+                      {hasDiff ? (
+                        <GitCompareArrows
+                          size={11}
+                          className={styles.diffDot}
+                        />
+                      ) : tab.dirty ? (
+                        <span className={styles.dirtyDot} />
+                      ) : null}
+                      <span className={styles.tabName}>
+                        {fileName(tab.displayPath ?? tab.path)}
+                      </span>
                       <button
                         type="button"
-                        className={styles.openFileMain}
-                        onClick={() => {
-                          onTabSelect(tab.path);
-                          setOpenFilesVisible(false);
+                        className={styles.closeBtn}
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          onTabClose(tab.path);
                         }}
-                      >
-                        <FileCode size={14} />
-                        <span className={styles.openFileCopy}>
-                          <span className={styles.openFileName}>
-                            {fileName(displayPath)}
-                            {hasDiff ? (
-                              <GitCompareArrows
-                                size={11}
-                                className={styles.diffDot}
-                              />
-                            ) : tab.dirty ? (
-                              <span className={styles.dirtyDot} />
-                            ) : null}
-                          </span>
-                          <span className={styles.openFilePath}>
-                            {parentPath(displayPath)}
-                          </span>
-                        </span>
-                      </button>
-                      <button
-                        type="button"
-                        className={styles.openFileClose}
-                        onClick={() => onTabClose(tab.path)}
                         aria-label={`${t("files.closeTab")}: ${fileName(
-                          displayPath,
+                          tab.displayPath ?? tab.path,
                         )}`}
                       >
-                        <X size={12} />
+                        <X size={11} />
                       </button>
                     </div>
-                  );
-                })
-              ) : (
-                <div className={styles.openFilesEmpty}>
-                  {t("files.noOpenFilesFound")}
-                </div>
-              )}
-            </div>
-
-            <div className={styles.openFilesFooter}>
-              <button
-                type="button"
-                onClick={() => onCloseOtherTabs(activeTabPath)}
-                disabled={tabs.length <= 1}
-              >
-                {t("files.closeOtherTabs")}
-              </button>
-              <button type="button" onClick={handleCloseAllTabs}>
-                {t("files.closeAllTabs")}
-              </button>
+                  </Dropdown>
+                );
+              })}
             </div>
           </div>
-        )}
-      </div>
+
+          <div className={styles.tabControls}>
+            <button
+              type="button"
+              className={`${styles.tabControlBtn} ${styles.scrollControl}`}
+              onClick={() => scrollTabs(-1)}
+              aria-label={t("files.scrollTabsLeft")}
+            >
+              <ChevronLeft size={13} />
+            </button>
+            <button
+              type="button"
+              className={`${styles.tabControlBtn} ${styles.scrollControl}`}
+              onClick={() => scrollTabs(1)}
+              aria-label={t("files.scrollTabsRight")}
+            >
+              <ChevronRight size={13} />
+            </button>
+            <button
+              ref={openFilesButtonRef}
+              type="button"
+              className={`${styles.openFilesBtn} ${
+                openFilesVisible ? styles.openFilesBtnActive : ""
+              }`}
+              onClick={() => setOpenFilesVisible((visible) => !visible)}
+              aria-label={t("files.openFiles", { count: tabs.length })}
+              aria-expanded={openFilesVisible}
+              aria-haspopup="dialog"
+            >
+              <ListFilter size={13} />
+              <span className={styles.openFilesLabel}>
+                {t("files.openFilesLabel")}
+              </span>
+              <span className={styles.tabCount}>{tabs.length}</span>
+            </button>
+          </div>
+          {headerActions && (
+            <div className={styles.tabBarActions}>{headerActions}</div>
+          )}
+
+          {openFilesVisible && (
+            <div
+              className={styles.openFilesPanel}
+              ref={openFilesPanelRef}
+              role="dialog"
+              aria-label={t("files.openFilesLabel")}
+            >
+              <div className={styles.openFilesHeader}>
+                <div className={styles.openFilesTitleRow}>
+                  <strong>{t("files.openFilesLabel")}</strong>
+                  <span>
+                    {t("files.openFileCount", { count: tabs.length })}
+                  </span>
+                </div>
+                <label className={styles.openFilesSearch}>
+                  <Search size={13} />
+                  <input
+                    autoFocus
+                    type="search"
+                    value={openFilesQuery}
+                    onChange={(event) => setOpenFilesQuery(event.target.value)}
+                    aria-label={t("files.searchOpenFiles")}
+                    placeholder={t("files.searchOpenFiles")}
+                  />
+                </label>
+              </div>
+
+              <div className={styles.openFilesList}>
+                {filteredTabs.length > 0 ? (
+                  filteredTabs.map((tab) => {
+                    const active = tab.path === activeTabPath;
+                    const displayPath =
+                      tab.displayPath ?? visibleEditorPath(tab.path);
+                    const hasDiff = Boolean(pendingDiffs[tab.path]);
+                    return (
+                      <div
+                        key={tab.path}
+                        className={`${styles.openFileItem} ${
+                          active ? styles.openFileItemActive : ""
+                        }`}
+                      >
+                        <button
+                          type="button"
+                          className={styles.openFileMain}
+                          onClick={() => {
+                            onTabSelect(tab.path);
+                            setOpenFilesVisible(false);
+                          }}
+                        >
+                          <FileCode size={14} />
+                          <span className={styles.openFileCopy}>
+                            <span className={styles.openFileName}>
+                              {fileName(displayPath)}
+                              {hasDiff ? (
+                                <GitCompareArrows
+                                  size={11}
+                                  className={styles.diffDot}
+                                />
+                              ) : tab.dirty ? (
+                                <span className={styles.dirtyDot} />
+                              ) : null}
+                            </span>
+                            <span className={styles.openFilePath}>
+                              {parentPath(displayPath)}
+                            </span>
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          className={styles.openFileClose}
+                          onClick={() => onTabClose(tab.path)}
+                          aria-label={`${t("files.closeTab")}: ${fileName(
+                            displayPath,
+                          )}`}
+                        >
+                          <X size={12} />
+                        </button>
+                      </div>
+                    );
+                  })
+                ) : (
+                  <div className={styles.openFilesEmpty}>
+                    {t("files.noOpenFilesFound")}
+                  </div>
+                )}
+              </div>
+
+              <div className={styles.openFilesFooter}>
+                <button
+                  type="button"
+                  onClick={() => onCloseOtherTabs(activeTabPath)}
+                  disabled={tabs.length <= 1}
+                >
+                  {t("files.closeOtherTabs")}
+                </button>
+                <button type="button" onClick={handleCloseAllTabs}>
+                  {t("files.closeAllTabs")}
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ── Toolbar ────────────────────────────────────────────────────── */}
       <div className={styles.toolbar}>
+        {hideTabBar && headerLeading}
         <span className={styles.fileName}>{activeDisplayPath}</span>
 
         <div className={styles.toolbarRight}>

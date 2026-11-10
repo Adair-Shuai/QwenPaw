@@ -1,3 +1,4 @@
+import { UgsciAppIcon, ugsciAppIconUrls } from "@/components/UgsciAppIcon";
 import { UGSCI_BUTTON_LOADING } from "@/components/UgsciMotion";
 /**
  * AppMarket.tsx — App market view for the App Center.
@@ -770,7 +771,9 @@ export function AppMarket({
                       }
                     >
                       <div className={styles.cardIcon}>
-                        {iconSrc ? (
+                        {ugsciAppIconUrls.has(entry.plugin_id || entry.id) ? (
+                          <UgsciAppIcon appId={entry.plugin_id || entry.id} />
+                        ) : iconSrc ? (
                           <img
                             src={iconSrc}
                             alt=""

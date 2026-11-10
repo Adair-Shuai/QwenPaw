@@ -30,6 +30,35 @@ import { readSurveyFile } from "./survey-file.mjs";
 import TrajectoryView, { TrajectoryMini } from "./trajectory-view.jsx";
 const Q = window.QwenPaw,
   React = Q.host.React;
+// Artwork from UGSci-Mono/icons/apps/wellbore-pressure.svg.
+const AppBrandIcon = () =>
+  React.createElement(
+    "svg",
+    {
+      width: 24,
+      height: 24,
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "1.6",
+      strokeLinejoin: "round",
+      strokeLinecap: "round",
+      "aria-hidden": true,
+      style: { verticalAlign: "middle", flexShrink: 0 },
+    },
+    React.createElement("path", {
+      d: "M2.25 3.55h7.35M4 3.55v6.55c0 6.35 4.1 10.45 10.45 10.45h6.4",
+    }),
+    React.createElement("path", {
+      d: "M7.9 3.55v6.55c0 4.05 2.55 6.55 6.55 6.55h6.4",
+    }),
+    React.createElement("circle", { cx: "16.55", cy: "7.45", r: "4.4" }),
+    React.createElement("path", { d: "m16.55 7.45 1.7-1.75m-1.7 6.15v4.8" }),
+  );
+
+
+
+
 const { useState, useRef, useMemo } = React;
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
@@ -626,7 +655,7 @@ function App() {
         <header className="wp-top">
           <div className="wp-brand">
             <div className="wp-logo" aria-hidden="true">
-              ↧
+              <AppBrandIcon />
             </div>
             <div>
               <div className="wp-eyebrow">UGSCI · WELLBORE WORKBENCH</div>

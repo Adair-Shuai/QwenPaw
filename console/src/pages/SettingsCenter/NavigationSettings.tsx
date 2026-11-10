@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { Button, Popover } from "antd";
+import { Button, Popover, Segmented } from "antd";
 import { useAutoSave } from "@/hooks/useAutoSave";
 import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import {
@@ -38,6 +38,9 @@ import { orderSidebarEntries } from "@/layouts/registry/sidebarEntries";
 import type { FlatMenuEntry } from "@/layouts/registry/adapter";
 import { useSidebarEntryGroups } from "./useSidebarEntryGroups";
 import styles from "./NavigationSettings.module.less";
+import { useTheme } from "@/contexts/ThemeContext";
+import { DUAL_SIDEBAR_FIXED_KEYS } from "@/layouts/DualSidebarNavigation";
+import { useSidebarAppEntries } from "@/layouts/useSidebarAppEntries";
 
 function DropZone({
   id,
@@ -122,24 +125,63 @@ function EntryTile({
 
 export default function NavigationSettings() {
   const { t } = useTranslation();
+  const { pageStyle } = useTheme();
+  const dualSidebar = pageStyle === "dual-sidebar";
+  const [section, setSection] = useState("rail");
+  const editingRail = dualSidebar && section === "rail";
+  return (
+    <div>
+      {dualSidebar && (
+        <Segmented
+          value={section}
+          onChange={setSection}
+          options={[
+            {
+              value: "rail",
+              label: t("settingsCenter.dualSidebarEntries", "Custom shortcuts"),
+            },
+            {
+              value: "more",
+              label: t("settingsCenter.dualSidebarMore", "More menu"),
+            },
+          ]}
+        />
+      )}
+      <NavigationSettingsEditor
+        key={`${pageStyle}-${section}`}
+        dualSidebar={editingRail}
+      />
+    </div>
+  );
+}
+
+function NavigationSettingsEditor({ dualSidebar }: { dualSidebar: boolean }) {
+  const { t } = useTranslation();
   const reducedMotion = useReducedMotion();
   const { work, global, plugins } = useSidebarEntryGroups();
+  const apps = useSidebarAppEntries(dualSidebar);
   const {
     focusItemIds,
     hiddenPluginItemIds,
     setFocusItemIds,
     setSidebarItemsVisible,
     resetFocusItemIds,
+    railItemIds = [],
+    setRailItemIds,
   } = useSidebarStore();
-  const entries = [...work, ...global, ...plugins];
-  const visible = orderSidebarEntries(
-    entries.filter((entry) =>
-      entry.key.startsWith("core.")
-        ? focusItemIds.includes(entry.key)
-        : !hiddenPluginItemIds.includes(entry.key),
-    ),
-    focusItemIds,
-  ).map((entry) => entry.key);
+  const entries = [...work, ...global, ...plugins, ...apps.entries].filter(
+    (entry) => !dualSidebar || !DUAL_SIDEBAR_FIXED_KEYS.includes(entry.key),
+  );
+  const visible = dualSidebar
+    ? railItemIds.filter((id) => entries.some((entry) => entry.key === id))
+    : orderSidebarEntries(
+        entries.filter((entry) =>
+          entry.key.startsWith("core.")
+            ? focusItemIds.includes(entry.key)
+            : !hiddenPluginItemIds.includes(entry.key),
+        ),
+        focusItemIds,
+      ).map((entry) => entry.key);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<string[]>([]);
   const [activeId, setActiveId] = useState<string | null>(null);
@@ -165,6 +207,13 @@ export default function NavigationSettings() {
   };
   const { schedule: scheduleSave, requestClose } = useAutoSave(async () => {
     const editableIds = new Set(entries.map((entry) => entry.key));
+    if (dualSidebar) {
+      setRailItemIds([
+        ...draft,
+        ...railItemIds.filter((id) => !editableIds.has(id)),
+      ]);
+      return;
+    }
     setFocusItemIds([
       ...draft,
       ...focusItemIds.filter((id) => !editableIds.has(id)),
@@ -220,7 +269,15 @@ export default function NavigationSettings() {
       label: t("settingsCenter.sidebarGroups.plugins"),
       entries: plugins,
     },
+    {
+      key: "apps",
+      label: t("nav.apps", "Apps"),
+      entries: apps.entries,
+    },
   ];
+  const previewLabel = dualSidebar
+    ? t("settingsCenter.dualSidebarEntries", "Custom shortcuts")
+    : t("settingsCenter.sidebarPreview");
   return (
     <div className={styles.page} data-editing={editing}>
       <header className={styles.header}>
@@ -241,6 +298,20 @@ export default function NavigationSettings() {
           </Popover>
         </div>
       </header>
+      {dualSidebar && (
+        <p>
+          {t(
+            "settingsCenter.dualSidebarEntriesHelp",
+            "Choose apps and modules to show below More in the feature navigation. Drag to reorder. Changes save automatically.",
+          )}
+        </p>
+      )}
+      {dualSidebar && apps.error && (
+        <div role="alert">
+          {t("settingsCenter.sidebarAppsError", "Unable to load apps.")}{" "}
+          <Button onClick={apps.retry}>{t("common.retry", "Retry")}</Button>
+        </div>
+      )}
       <DndContext
         sensors={sensors}
         accessibility={{
@@ -281,15 +352,12 @@ export default function NavigationSettings() {
               : { type: "spring", stiffness: 320, damping: 32 }
           }
         >
-          <section
-            className={styles.preview}
-            aria-label={t("settingsCenter.sidebarPreview")}
-          >
+          <section className={styles.preview} aria-label={previewLabel}>
             <div className={styles.previewHeader}>
               <span className={styles.previewTitle}>
-                {t("settingsCenter.sidebarPreview")}
+                {previewLabel}
                 <span className={styles.entryCount}>
-                  {selectedEntries.length + 1}
+                  {selectedEntries.length + (dualSidebar ? 0 : 1)}
                 </span>
               </span>
               <div className={styles.actions}>
@@ -313,7 +381,11 @@ export default function NavigationSettings() {
                       aria-label={t("common.reset")}
                       title={t("common.reset")}
                       icon={<RotateCcw size={16} />}
-                      onClick={resetFocusItemIds}
+                      onClick={
+                        dualSidebar
+                          ? () => setRailItemIds([])
+                          : resetFocusItemIds
+                      }
                     />
                     <Button
                       type="primary"
@@ -351,19 +423,21 @@ export default function NavigationSettings() {
                 {!selectedEntries.length && (
                   <p className={styles.empty}>{t("settingsCenter.dropHere")}</p>
                 )}
-                <div
-                  className={styles.fixedTile}
-                  title={t("settingsCenter.fixedEntry")}
-                >
-                  <span className={styles.icon}>
-                    <Inbox size={22} />
-                  </span>
-                  <span className={styles.label}>{t("nav.inbox")}</span>
-                  <LockKeyhole
-                    size={14}
-                    aria-label={t("settingsCenter.fixedEntry")}
-                  />
-                </div>
+                {!dualSidebar && (
+                  <div
+                    className={styles.fixedTile}
+                    title={t("settingsCenter.fixedEntry")}
+                  >
+                    <span className={styles.icon}>
+                      <Inbox size={22} />
+                    </span>
+                    <span className={styles.label}>{t("nav.inbox")}</span>
+                    <LockKeyhole
+                      size={14}
+                      aria-label={t("settingsCenter.fixedEntry")}
+                    />
+                  </div>
+                )}
               </DropZone>
             </div>
           </section>
@@ -384,7 +458,9 @@ export default function NavigationSettings() {
                   <h3>{t("settingsCenter.availableEntries")}</h3>
                   {groups.map((group) => {
                     const available = group.entries.filter(
-                      (entry) => !selected.includes(entry.key),
+                      (entry) =>
+                        !selected.includes(entry.key) &&
+                        entries.some((item) => item.key === entry.key),
                     );
                     return (
                       group.entries.length > 0 && (

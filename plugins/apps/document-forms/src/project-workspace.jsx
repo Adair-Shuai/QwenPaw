@@ -10,6 +10,34 @@ import ApprovalDocuments, { splitMaterials } from "./approval-documents.jsx";
 const Q = window.QwenPaw;
 const React = Q.host.React;
 const { useState, useEffect, useRef } = React;
+// Artwork from UGSci-Mono/icons/apps/document-forms.svg.
+const AppBrandIcon = () =>
+  React.createElement(
+    "svg",
+    {
+      width: 24,
+      height: 24,
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: "1.6",
+      strokeLinejoin: "round",
+      strokeLinecap: "round",
+      "aria-hidden": true,
+      style: { verticalAlign: "middle", flexShrink: 0 },
+    },
+    React.createElement("path", {
+      d: "M6 2.9h8.5l4.9 4.9v12.1q0 1.2-1.2 1.2H6q-1.4 0-1.4-1.4V4.3q0-1.4 1.4-1.4Z",
+    }),
+    React.createElement("path", { d: "M14.1 3.2v4.9H19M8 11h5.9" }),
+    React.createElement("path", {
+      d: "M8 17.2c1.4-2.25 2.2-3.5 3.1-3.15 1.1.42-.05 3.28 1.05 3.28.8 0 1.2-1.03 1.8-1.03.63 0 1.02.56 2.15.56",
+    }),
+  );
+
+
+
+
 const STATUS = {
   pending: "未开始",
   in_progress: "进行中",
@@ -619,7 +647,7 @@ export default function ProjectWorkspace({ Editor, services }) {
           <span aria-hidden="true">{leftCollapsed ? "›" : "‹"}</span>
           <span>{leftCollapsed ? "项目" : "收起"}</span>
         </button>
-        <div className="df-brand">外协助手</div>
+        <div className="df-brand" style={{ display: "flex", alignItems: "center", gap: 10 }}><AppBrandIcon />外协助手</div>
         <button
           className="df-primary df-new"
           disabled={!!busy || !!editorBusy}

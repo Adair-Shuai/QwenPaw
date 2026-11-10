@@ -1,10 +1,10 @@
 .sc-app {
-  --sc-ink: var(--app-text-primary, #182033);
+  --sc-ink: var(--app-text, #182033);
   --sc-muted: var(--app-text-secondary, #667085);
-  --sc-paper: var(--app-bg, #fff);
-  --sc-soft: var(--app-bg-secondary, #f5f6fa);
+  --sc-paper: var(--app-surface, #fff);
+  --sc-soft: var(--app-surface-subtle, #f5f6fa);
   --sc-line: var(--app-border, #e6e9f0);
-  --sc-accent: #0d76fd;
+  --sc-accent: var(--app-accent);
   display: flex;
   height: 100%;
   min-height: 520px;
@@ -230,7 +230,7 @@
 }
 .sc-resizer:hover,
 .sc-resizer:focus-visible {
-  background: #0d76fd22;
+  background: var(--app-accent-soft);
   outline: none;
 }
 .sc-chat-history {
@@ -407,12 +407,12 @@
   outline-offset: 2px;
 }
 .sc-app .sc-primary {
-  color: white;
+  color: var(--app-text-inverse);
   background: var(--sc-accent);
   border-color: var(--sc-accent);
 }
 .sc-app .sc-primary:hover {
-  background: #0a5fd0;
+  background: var(--app-accent-hover);
 }
 .sc-sidebar {
   width: 210px;
@@ -822,7 +822,7 @@
   min-height: 450px;
   border: 1px solid var(--sc-line);
   border-radius: 6px;
-  background: #fff;
+  background: var(--sc-paper);
 }
 .sc-prose {
   font-size: 13px;
@@ -923,30 +923,6 @@
     flex-wrap: wrap;
   }
 }
-@media (prefers-color-scheme: dark) {
-  .sc-app {
-    --sc-paper: #20272e;
-    --sc-soft: #192027;
-    --sc-ink: #e4e8ed;
-    --sc-muted: #a4acb7;
-    --sc-line: #39414b;
-  }
-  .sc-alert {
-    background: #332b20;
-    color: #e8c495;
-    border-color: #725d3b;
-  }
-  .sc-error {
-    color: #eea59c;
-  }
-  .sc-warning {
-    color: #d8b47b;
-  }
-  .sc-ok {
-    color: #90c5a5;
-  }
-}
-
 /* Keep app actions clear of the host fullscreen toolbar. */
 .sc-workflow .sc-header {
   padding-right: 108px;
@@ -1244,9 +1220,9 @@
 
 /* A quiet application shell: one editing surface and a separate comparison dock. */
 .sc-workflow {
-  --sc-muted: #697586;
-  --sc-line: #e3e7ed;
-  --sc-accent: #1769c2;
+  --sc-muted: var(--app-text-secondary);
+  --sc-line: var(--app-border);
+  --sc-accent: var(--app-accent);
 }
 .sc-workflow [hidden] {
   display: none !important;
@@ -1273,7 +1249,7 @@
   width: 210px;
   padding: 20px 14px 12px;
   gap: 17px;
-  background: #f7f8fa;
+  background: var(--app-surface-subtle);
 }
 .sc-workflow .sc-sidebar h1 {
   font-size: 18px;
@@ -1290,8 +1266,8 @@
 .sc-workflow .sc-create {
   justify-content: flex-start;
   padding: 8px 11px;
-  background: white;
-  color: #344054;
+  background: var(--app-surface-subtle);
+  color: var(--app-text-secondary);
   box-shadow: 0 1px 2px #172b4d04;
 }
 .sc-workflow .sc-project-select {
@@ -1308,7 +1284,7 @@
   padding: 12px 9px 6px;
   font-size: 10px;
   letter-spacing: 1px;
-  color: #8a93a1;
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-flow-nav {
   gap: 3px;
@@ -1323,11 +1299,11 @@
   justify-content: flex-start;
 }
 .sc-workflow .sc-flow-nav button:hover {
-  background: #eceff3;
+  background: var(--app-surface-subtle);
 }
 .sc-workflow .sc-flow-nav button[aria-selected="true"] {
-  background: #e8f0fa;
-  color: #175b9c;
+  background: var(--app-surface-subtle);
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-step-number {
   display: flex;
@@ -1337,15 +1313,15 @@
   height: 21px;
   flex: 0 0 21px;
   font-size: 10px;
-  border: 1px solid #d9e0e8;
+  border: 1px solid var(--app-border);
   border-radius: 50%;
-  color: #7c8795;
-  background: #fff;
+  color: var(--app-text-secondary);
+  background: var(--sc-paper);
 }
 .sc-workflow .sc-flow-nav button[aria-selected="true"] .sc-step-number {
-  background: #276aa9;
-  border-color: #276aa9;
-  color: white;
+  background: var(--app-surface-subtle);
+  border-color: var(--app-border);
+  color: var(--app-text-inverse);
 }
 .sc-workflow .sc-step-text {
   font-size: 12px;
@@ -1364,22 +1340,22 @@
 }
 .sc-workflow .sc-flow-nav button[data-status="blocked"] small,
 .sc-workflow .sc-flow-nav button[data-status="stale"] small {
-  color: #a27236;
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-step-done {
   font-size: 12px;
-  color: #699482;
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-sidebar footer {
   padding: 12px 6px 0;
   font-size: 10px;
   line-height: 1.9;
-  color: #929aa5;
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-header {
   padding: 12px 24px;
   min-height: 66px;
-  background: #fff;
+  background: var(--sc-paper);
   gap: 10px;
 }
 .sc-workflow .sc-header h2 {
@@ -1402,19 +1378,19 @@
 .sc-workflow .sc-header button {
   padding: 5px 8px;
   border-color: transparent;
-  color: #536174;
+  color: var(--app-text-secondary);
   background: transparent;
 }
 .sc-workflow .sc-header button:hover,
 .sc-workflow .sc-header button[aria-pressed="true"] {
-  background: #edf3f9;
-  color: #175b9c;
+  background: var(--app-surface-subtle);
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-node-toolbar {
   padding: 17px 24px 8px;
   border: 0;
   gap: 10px;
-  background: white;
+  background: var(--app-surface-subtle);
 }
 .sc-workflow .sc-node-toolbar h2 {
   font-size: 21px;
@@ -1428,7 +1404,7 @@
   font-size: 12px;
   padding: 6px 9px;
   min-width: 90px;
-  background: white;
+  background: var(--app-surface-subtle);
 }
 .sc-workflow .sc-node-toolbar .sc-primary {
   padding: 7px 13px;
@@ -1440,7 +1416,7 @@
   padding: 0 24px;
   border-bottom: 1px solid var(--sc-line);
   flex-shrink: 0;
-  background: white;
+  background: var(--app-surface-subtle);
 }
 .sc-workflow .sc-content-tabs button {
   padding: 11px 0 10px;
@@ -1452,18 +1428,18 @@
   font-size: 12px;
 }
 .sc-workflow .sc-content-tabs button[aria-selected="true"] {
-  color: #175b9c;
-  border-bottom-color: #276aa9;
+  color: var(--app-text-secondary);
+  border-bottom-color: var(--app-border);
   font-weight: 600;
 }
 .sc-content-tabs > span {
   margin-left: auto;
   font-size: 10px;
-  color: #8b95a3;
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-body {
   padding: 24px 26px 30px;
-  background: #fff;
+  background: var(--sc-paper);
 }
 .sc-workflow .sc-body > [role="tabpanel"],
 .sc-workflow .sc-body [role="tabpanel"] {
@@ -1475,22 +1451,22 @@
   gap: 18px 22px;
 }
 .sc-workflow .sc-field {
-  color: #526071;
+  color: var(--app-text-secondary);
   font-size: 12px;
   gap: 6px;
 }
 .sc-workflow .sc-field input,
 .sc-workflow .sc-field select,
 .sc-workflow .sc-field textarea {
-  background: #fcfdfe;
-  border-color: #d9e0e8;
+  background: var(--app-surface-subtle);
+  border-color: var(--app-border);
   padding: 8px 10px;
   border-radius: 6px;
   font-size: 13px;
 }
 .sc-workflow .sc-field input:focus,
 .sc-workflow .sc-field textarea:focus {
-  background: #fff;
+  background: var(--sc-paper);
 }
 .sc-workflow .sc-unit-top {
   margin-bottom: 12px;
@@ -1498,12 +1474,12 @@
 .sc-workflow .sc-unit-top > .sc-muted {
   font-size: 10px;
   padding: 2px 7px;
-  background: #f2f5f7;
+  background: var(--app-surface-subtle);
   border-radius: 4px;
 }
 .sc-method-context {
   font-size: 12px;
-  color: #526071;
+  color: var(--app-text-secondary);
   margin-bottom: 10px;
 }
 .sc-method-context summary {
@@ -1513,11 +1489,11 @@
 .sc-method-context summary > span {
   margin-left: 12px;
   font-size: 11px;
-  color: #8b95a3;
+  color: var(--app-text-secondary);
 }
 .sc-method-context p {
   padding: 10px 12px;
-  background: #f6f8fa;
+  background: var(--app-surface-subtle);
   line-height: 1.8;
 }
 .sc-workflow .sc-formula {
@@ -1526,14 +1502,14 @@
   border: 0;
   border-left: 2px solid #c3d5e8;
   border-radius: 0 5px 5px 0;
-  background: #f6f8fb;
-  color: #3c5067;
+  background: var(--app-surface-subtle);
+  color: var(--app-text-secondary);
   font-size: 12px;
 }
 .sc-workflow .sc-note {
-  background: #f7f9fb;
+  background: var(--app-surface-subtle);
   font-size: 11px;
-  color: #728093;
+  color: var(--app-text-secondary);
   padding: 9px 12px;
 }
 .sc-workflow .sc-node-figures {
@@ -1554,8 +1530,8 @@
   font-size: 11px;
 }
 .sc-workflow .sc-open-figure {
-  border-color: #d6e1ed;
-  color: #336b9a;
+  border-color: var(--app-border);
+  color: var(--app-text-secondary);
   padding: 6px 10px;
   font-size: 11px;
 }
@@ -1564,7 +1540,7 @@
   border: 0;
   margin: 0 0 16px;
   padding: 3px;
-  background: #f3f5f8;
+  background: var(--app-surface-subtle);
   border-radius: 6px;
   width: fit-content;
   max-width: 100%;
@@ -1572,17 +1548,17 @@
 .sc-workflow .sc-figure-tabs button {
   padding: 6px 12px;
   border: 0;
-  color: #758195;
+  color: var(--app-text-secondary);
   font-size: 11px;
 }
 .sc-workflow .sc-figure-tabs button[aria-selected="true"] {
-  background: #fff;
-  color: #254f78;
+  background: var(--sc-paper);
+  color: var(--app-text-secondary);
   box-shadow: 0 1px 4px #132e4b12;
   border-radius: 4px;
 }
 .sc-workflow .sc-node-figures > .sc-figure {
-  border: 1px solid #e8edf2;
+  border: 1px solid var(--app-border);
   border-radius: 8px;
   padding: 10px 16px 8px;
 }
@@ -1596,23 +1572,23 @@
 .sc-workflow .sc-figure-tools button {
   background: transparent;
   border-color: transparent;
-  color: #6b7b8d;
+  color: var(--app-text-secondary);
   font-size: 11px;
 }
 .sc-workflow .sc-figure-tools button:hover {
-  background: #f0f4f8;
-  color: #285c8e;
+  background: var(--app-surface-subtle);
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-chart-legend button {
   padding: 3px 5px;
-  color: #506076;
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-chart-note {
   font-size: 10px;
   line-height: 1.7;
   padding-top: 7px;
   margin-top: 6px;
-  color: #8a95a3;
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-node-result {
   margin-top: 24px;
@@ -1628,30 +1604,30 @@
 .sc-workflow .sc-node-values > div {
   padding: 14px 17px;
   border-radius: 6px;
-  background: #f5f8fb;
-  border: 1px solid #e6ecf2;
+  background: var(--app-surface-subtle);
+  border: 1px solid var(--app-border);
 }
 .sc-workflow .sc-node-values dd {
   font-size: 24px;
   font-weight: 600;
-  color: #284c70;
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-results-workspace {
-  background: #f1f4f8;
-  border-top-color: #ccd6e1;
+  background: var(--app-surface-subtle);
+  border-top-color: var(--app-border);
 }
 .sc-workflow .sc-results-header {
   padding: 9px 14px;
   min-height: 44px;
-  background: #f8fafc;
-  border-bottom-color: #e3e9f0;
+  background: var(--app-surface-subtle);
+  border-bottom-color: var(--app-border);
 }
 .sc-workflow .sc-results-header > strong {
   display: flex;
   align-items: center;
   gap: 7px;
   font-size: 12px;
-  color: #3f536b;
+  color: var(--app-text-secondary);
   font-weight: 600;
 }
 .sc-workflow .sc-results-header small {
@@ -1662,9 +1638,9 @@
   height: 18px;
   margin: 0;
   border-radius: 4px;
-  background: #e7edf4;
+  background: var(--app-surface-subtle);
   font-size: 10px;
-  color: #64768a;
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-results-header .sc-actions {
   gap: 3px;
@@ -1673,7 +1649,7 @@
   background: transparent;
   border-color: transparent;
   padding: 4px 7px;
-  color: #6b7b8d;
+  color: var(--app-text-secondary);
   font-size: 11px;
 }
 .sc-workflow .sc-result-window-strip {
@@ -1684,40 +1660,40 @@
 .sc-workflow .sc-result-window-strip button {
   border-color: transparent;
   background: transparent;
-  color: #8a95a3;
+  color: var(--app-text-secondary);
   font-size: 10px;
   padding: 3px 7px;
 }
 .sc-workflow .sc-result-window-strip button[aria-pressed="true"] {
-  background: #e3eaf3;
-  color: #46617f;
+  background: var(--app-surface-subtle);
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-result-canvas {
-  background: #f1f4f8;
+  background: var(--app-surface-subtle);
 }
 .sc-workflow .sc-result-window {
-  border: 1px solid #d4dee8;
+  border: 1px solid var(--app-border);
   border-radius: 8px;
-  background: #fff;
+  background: var(--sc-paper);
   box-shadow: 0 2px 5px #263f5b08;
 }
 .sc-workflow .sc-result-window:focus-within {
-  border-color: #91aec9;
+  border-color: var(--app-border);
   box-shadow: 0 2px 8px #263f5b10;
 }
 .sc-workflow .sc-result-titlebar {
   min-height: 39px;
   padding: 6px 9px 6px 13px;
-  background: #fff;
-  border-color: #edf1f5;
+  background: var(--sc-paper);
+  border-color: var(--app-border);
 }
 .sc-workflow .sc-result-titlebar strong {
   font-weight: 600;
-  color: #3c526c;
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-result-titlebar small {
-  background: #eef3f8;
-  color: #64809c;
+  background: var(--app-surface-subtle);
+  color: var(--app-text-secondary);
   padding: 2px 6px;
   border-radius: 4px;
   font-size: 10px;
@@ -1727,11 +1703,11 @@
   min-width: 22px;
   width: 22px;
   height: 22px;
-  color: #95a1b0;
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-result-titlebar button:hover {
-  color: #3b5f83;
-  background: #eef3f8;
+  color: var(--app-text-secondary);
+  background: var(--app-surface-subtle);
 }
 .sc-workflow .sc-window-body {
   padding: 8px 13px 4px;
@@ -1742,35 +1718,35 @@
   align-items: center;
   justify-content: space-between;
   padding: 5px 24px 5px 13px;
-  background: #fafbfd;
-  border-color: #eef2f6;
+  background: var(--app-surface-subtle);
+  border-color: var(--app-border);
   font-size: 10px;
-  color: #8a97a8;
+  color: var(--app-text-secondary);
 }
 .sc-result-window footer time {
   white-space: nowrap;
 }
 .sc-result-window footer .outdated {
-  color: #aa742f;
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-window-resizer {
-  color: #a9b8c8;
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-dock-resizer {
   height: 5px;
   top: -3px;
 }
 .sc-workflow .sc-dock-resizer:focus-visible {
-  outline: 1px solid #84a5c8;
+  outline: 1px solid var(--app-border);
 }
 .sc-workflow .sc-assistant {
-  background: #fbfcfe;
-  border-color: #e1e7ef;
+  background: var(--app-surface-subtle);
+  border-color: var(--app-border);
 }
 .sc-workflow .sc-assistant > header {
   padding: 18px 85px 15px 18px;
   min-height: 75px;
-  background: #fff;
+  background: var(--sc-paper);
 }
 .sc-workflow .sc-assistant header strong {
   font-size: 13px;
@@ -1779,7 +1755,7 @@
 .sc-workflow .sc-assistant header small {
   margin-top: 3px;
   font-size: 10px;
-  color: #91a0b1;
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-chat-history {
   padding: 22px 18px;
@@ -1788,40 +1764,40 @@
   font-size: 12px;
   line-height: 1.8;
   margin: 0 0 17px;
-  color: #7d8b9d;
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-chat-welcome button {
   display: flex;
   justify-content: space-between;
   font-size: 11px;
-  border-color: #e3eaf2;
-  color: #667c95;
-  background: white;
+  border-color: var(--app-border);
+  color: var(--app-text-secondary);
+  background: var(--app-surface-subtle);
   padding: 9px 11px;
   border-radius: 6px;
 }
 .sc-workflow .sc-chat-welcome button::after {
   content: "↗";
-  color: #8da3ba;
+  color: var(--app-text-secondary);
 }
 .sc-workflow .sc-chat-compose {
   padding: 12px 14px 16px;
-  border-top-color: #edf1f5;
+  border-top-color: var(--app-border);
 }
 .sc-workflow .sc-chat-compose > .sc-link {
   margin-bottom: 9px;
   font-size: 11px;
-  color: #6b7f96;
+  color: var(--app-text-secondary);
 }
 .sc-compose-box {
-  border: 1px solid #d5e0eb;
+  border: 1px solid var(--app-border);
   border-radius: 10px;
-  background: white;
+  background: var(--app-surface-subtle);
   box-shadow: 0 2px 5px #18385804;
   padding: 2px;
 }
 .sc-compose-box:focus-within {
-  border-color: #8eacc9;
+  border-color: var(--app-border);
 }
 .sc-workflow .sc-compose-box textarea {
   padding: 10px 11px;
@@ -1841,7 +1817,7 @@
   border-color: transparent;
 }
 .sc-workflow .sc-compose-box button:not(.sc-primary) {
-  color: #728399;
+  color: var(--app-text-secondary);
 }
 @container capacity (max-width: 1100px) {
   .sc-workflow .sc-sidebar {
@@ -1882,4 +1858,60 @@
   .sc-result-window footer time {
     display: none;
   }
+}
+
+/* Shared workbench density and surfaces. */
+.sc-app {
+  font-size: var(--app-font-body, 14px);
+}
+.sc-app button {
+  min-height: var(--app-hit-target, 32px);
+  border-radius: var(--app-radius, 10px);
+}
+.sc-workflow .sc-sidebar {
+  background: var(--app-surface-subtle);
+}
+.sc-flow-nav button[aria-selected="true"] {
+  background: var(--app-accent-soft);
+  border-color: transparent;
+  color: var(--app-accent-text);
+}
+.sc-workflow .sc-header {
+  background: var(--app-bg);
+}
+.sc-alert {
+  background: var(--app-warning-bg);
+  color: var(--app-warning-text);
+  border-color: var(--app-warning-border);
+}
+.sc-error {
+  color: var(--app-error-text);
+}
+.sc-warning {
+  color: var(--app-warning-text);
+}
+.sc-ok,
+.sc-step-done {
+  color: var(--app-success-text);
+}
+
+.sc-workflow .sc-step-number {
+  background: var(--app-surface);
+}
+.sc-workflow .sc-flow-nav button[aria-selected="true"] .sc-step-number {
+  background: var(--app-accent);
+  border-color: var(--app-accent);
+  color: var(--app-text-inverse);
+}
+.sc-workflow .sc-content-tabs button[aria-selected="true"] {
+  color: var(--app-accent-text);
+  border-bottom-color: var(--app-accent);
+}
+.sc-workflow .sc-step-done {
+  color: var(--app-success-text);
+}
+
+.sc-workflow .sc-flow-nav button[aria-selected="true"] {
+  color: var(--app-accent-text);
+  background: var(--app-accent-soft);
 }

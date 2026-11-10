@@ -231,16 +231,16 @@
   --df-stage-state-color: var(--df-accent);
 }
 .df-stage-state.df-state-completed {
-  --df-stage-state-color: #327555;
+  --df-stage-state-color: var(--app-success-text);
 }
 .df-stage-state.df-state-submitted {
-  --df-stage-state-color: #8a6932;
+  --df-stage-state-color: var(--app-warning-text);
 }
 .df-app[data-theme="dark"] .df-stage-state.df-state-completed {
-  --df-stage-state-color: #81d4b0;
+  --df-stage-state-color: var(--app-success-text);
 }
 .df-app[data-theme="dark"] .df-stage-state.df-state-submitted {
-  --df-stage-state-color: #e5c38a;
+  --df-stage-state-color: var(--app-warning-text);
 }
 .df-stage-state .df-toolbar-icon {
   width: 12px;

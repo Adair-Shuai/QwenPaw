@@ -31,6 +31,7 @@ import {
   useMessageQueueStore,
 } from "@/stores/messageQueueStore";
 import { useBackgroundTasksStore } from "@/stores/backgroundTasksStore";
+import { useCodingTabsStore } from "@/stores/codingTabsStore";
 import ChatPage from "./index";
 import i18n, { i18nReady } from "../../i18n";
 import { LongTextPasteInput } from "./LongTextPaste";
@@ -731,18 +732,6 @@ vi.mock("../../stores/filesSurfaceStore", () => ({
   useSessionFilesDrawer: vi.fn(() => ({ kind: "closed" })),
 }));
 
-vi.mock("../../stores/codingTabsStore", () => ({
-  useCodingTabsStore: Object.assign(
-    vi.fn(() => ({})),
-    {
-      getState: vi.fn(() => ({
-        migrateScope: vi.fn(),
-        removeScope: vi.fn(),
-      })),
-    },
-  ),
-}));
-
 vi.mock("./utils", async () => {
   const actual = await vi.importActual<typeof import("./utils")>("./utils");
   return {
@@ -786,6 +775,11 @@ describe("ChatPage coverage", () => {
   beforeEach(() => {
     clearAgentMentionModes();
     useBackgroundTasksStore.setState({ tasks: [] });
+    useCodingTabsStore.setState({
+      tabsByAgent: {},
+      activeTabByAgent: {},
+      diffsByAgent: {},
+    });
     vi.mocked(sessionApi.getBackendSessionId).mockReturnValue(
       "backend-session-1",
     );

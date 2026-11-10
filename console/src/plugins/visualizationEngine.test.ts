@@ -56,7 +56,9 @@ const dataset = (overrides: Partial<DatasetInfo> = {}): DatasetInfo => ({
 });
 const positions = () => new Float32Array([0, 0, 0, 1, 0, 0, 2, 0, 0, 3, 0, 0]);
 const indices = () => new Uint32Array([0, 1, 2, 3]);
+const harnessEngines: ThreeViewerEngine[] = [];
 afterEach(() => {
+  harnessEngines.splice(0).forEach((engine) => engine["controls"].dispose());
   vi.useRealTimers();
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
@@ -402,12 +404,19 @@ async function engineHarness() {
     perspectiveCamera: new THREE.PerspectiveCamera(),
     orthoCamera: new THREE.OrthographicCamera(),
     camera: new THREE.PerspectiveCamera(),
-    controls: { update: vi.fn(), target: new THREE.Vector3() },
+    controls: {
+      update: vi.fn(),
+      dispose: vi.fn(),
+      target: new THREE.Vector3(),
+      minDistance: 0,
+      maxDistance: Infinity,
+    },
     sidebar,
     objectTree: document.createElement("div"),
     detailsEl: document.createElement("div"),
     infoEl: document.createElement("div"),
     renderer: {
+      domElement: document.createElement("canvas"),
       renderLists: { dispose: vi.fn() },
       info: { render: { calls: 2, triangles: 4 } },
     },
@@ -450,10 +459,180 @@ async function engineHarness() {
     if (filename === "ids.u32") return new Uint32Array([0, 1]).buffer;
     return new Float32Array([12, 25]).buffer;
   });
+  harnessEngines.push(engine);
   return { engine, THREE, ds };
 }
 
 describe("real visualization engine operations", () => {
+  async function rotationEngine() {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn(() => 1),
+    );
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const root = document.createElement("div");
+    Object.defineProperties(root, {
+      clientWidth: { value: 1000 },
+      clientHeight: { value: 800 },
+    });
+    document.body.append(root);
+    const request = async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith("/manifest"))
+        return Response.json({ version: 1, datasets: [dataset()] });
+      if (url.endsWith("/net.f32")) return new Response(positions().buffer);
+      if (url.endsWith("/net.u32")) return new Response(indices().buffer);
+      if (url.endsWith("/ids.u32"))
+        return new Response(new Uint32Array([0, 1]).buffer);
+      return new Response(new Float32Array([12, 25]).buffer);
+    };
+    const engine = new ThreeViewerEngine(root, {
+      apiBase: "/api",
+      request,
+      autoLoad: false,
+    });
+    await engine.ready;
+    await engine.executeCommand("open", { datasetId: "net" });
+    const canvas = engine["renderer"].domElement;
+    Object.defineProperties(canvas, {
+      clientWidth: { value: 1000 },
+      clientHeight: { value: 800 },
+    });
+    canvas.setPointerCapture = vi.fn();
+    canvas.releasePointerCapture = vi.fn();
+    vi.spyOn(canvas, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 1000,
+      bottom: 800,
+      width: 1000,
+      height: 800,
+      toJSON: () => ({}),
+    });
+    const pointer = (type: string, x: number, y: number, buttons = 1) => {
+      canvas.dispatchEvent(
+        Object.assign(
+          new MouseEvent(type, {
+            clientX: x,
+            clientY: y,
+            buttons,
+            bubbles: true,
+          }),
+          { pointerId: 1, pointerType: "mouse" },
+        ),
+      );
+    };
+    return { engine, root, canvas, pointer };
+  }
+
+  it("rotates mounted views around their displayed up axis and clears inertia across camera changes", async () => {
+    const { engine, root } = await rotationEngine();
+    const box = new THREE.Box3(
+      new THREE.Vector3(-10, -20, -3),
+      new THREE.Vector3(10, 20, 3),
+    );
+    const settle = () => {
+      for (let frame = 0; frame < 120; frame++) engine["controls"].update();
+    };
+    try {
+      expect(engine["camera"].up.toArray()).toEqual([0, 0, 1]);
+      for (const view of [
+        "iso",
+        "north",
+        "east",
+        "top",
+        "bottom",
+        "iso",
+      ] as const) {
+        engine["controls"].rotateLeft(0.4);
+        engine["frameBox"](box, view);
+        const camera = engine["camera"];
+        const before = camera.position.clone();
+        settle();
+        expect(camera.position.distanceTo(before)).toBeLessThan(1e-7);
+        const offset = before.clone().sub(engine["controls"].target);
+        engine["controls"].rotateLeft(0.3);
+        settle();
+        const rotated = camera.position.clone().sub(engine["controls"].target);
+        expect(rotated.length()).toBeCloseTo(offset.length(), 7);
+        expect(rotated.dot(camera.up)).toBeCloseTo(offset.dot(camera.up), 7);
+        expect(rotated.distanceTo(offset)).toBeGreaterThan(1);
+      }
+      engine["controls"].rotateLeft(0.4);
+      const position = engine["camera"].position.clone();
+      const target = engine["controls"].target.clone();
+      for (const ortho of [true, false]) {
+        engine["setOrthographic"](ortho);
+        settle();
+        expect(engine["camera"].position.distanceTo(position)).toBeLessThan(
+          1e-7,
+        );
+        expect(engine["controls"].target.distanceTo(target)).toBeLessThan(1e-7);
+      }
+      // Existing saved Y-up views retain both their pose and rotation axis.
+      localStorage.setItem(
+        viewerPersistenceKey({ apiBase: "/api" }, "userView"),
+        JSON.stringify({
+          position: [10, 20, 30],
+          target: [1, 2, 3],
+          up: [0, 1, 0],
+        }),
+      );
+      engine["recallUserView"]();
+      settle();
+      expect(engine["camera"].position.toArray()).toEqual(
+        [10, 20, 30].map((value) => expect.closeTo(value, 7)),
+      );
+      engine["controls"].rotateLeft(0.3);
+      settle();
+      expect(engine["camera"].position.y).toBeCloseTo(20, 7);
+    } finally {
+      engine.dispose();
+      root.remove();
+      localStorage.clear();
+    }
+  });
+
+  it("keeps mounted drag gestures out of hover picking and selection while ordinary clicks still select", async () => {
+    const { engine, root, canvas, pointer } = await rotationEngine();
+    const raycast = vi.spyOn(engine["raycaster"], "intersectObjects");
+    const compass = vi.spyOn(engine["compassHud"], "setAzimuth");
+    try {
+      const selected = engine.store.getState().selected;
+      const before = engine["camera"].position.clone();
+      pointer("pointerdown", 500, 400);
+      pointer("pointermove", 560, 400);
+      pointer("pointerup", 560, 400, 0);
+      fireEvent.click(canvas, { clientX: 560, clientY: 400 });
+      fireEvent.doubleClick(canvas, { clientX: 560, clientY: 400 });
+      expect(raycast).not.toHaveBeenCalled();
+      expect(engine.store.getState().selected).toEqual(selected);
+      expect(engine["camera"].position.distanceTo(before)).toBeGreaterThan(0);
+      expect(compass).toHaveBeenCalled();
+      for (let frame = 0; frame < 120; frame++) engine["controls"].update();
+      engine["camera"].updateMatrixWorld();
+      pointer("pointermove", 500, 400, 0);
+      expect(raycast).toHaveBeenCalledOnce();
+      pointer("pointerdown", 500, 400);
+      pointer("pointermove", 501, 401);
+      pointer("pointerup", 500, 400, 0);
+      engine["camera"].updateMatrixWorld();
+      fireEvent.click(canvas, { clientX: 500, clientY: 400 });
+      expect(raycast).toHaveBeenCalledTimes(2);
+      expect(engine.store.getState().selected).toMatchObject({
+        type: "segment",
+        datasetId: "net",
+      });
+      expect(engine["measurePoints"]).toHaveLength(0);
+    } finally {
+      engine.dispose();
+      root.remove();
+    }
+  });
+
   it("deletes a well overlay through its owner and releases detached and rendered resources exactly once", async () => {
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
     vi.spyOn(window, "confirm").mockReturnValue(true);

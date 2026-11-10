@@ -2,6 +2,7 @@ import { getApiUrl } from "../config";
 import { buildAuthHeaders } from "../authHeaders";
 import { responseErrorMessage } from "../error";
 import { requestWithPluginBusyConfirmation } from "../pluginBusy";
+import { notifyPluginChange } from "../../utils/pluginChangeEvents";
 
 export interface PawAppInfo {
   id: string;
@@ -103,6 +104,7 @@ export const pawappApi = {
         await responseErrorMessage(res, `Uninstall failed (${res.status})`),
       );
     }
+    notifyPluginChange();
   },
 
   /**

@@ -228,6 +228,7 @@ import {
   useTerminalSurfaceStore,
 } from "../../stores/terminalSurfaceStore";
 import { useCodingTabsStore } from "../../stores/codingTabsStore";
+import { useWorkbenchTabsStore } from "../../features/files-workspace/workbenchTabsStore";
 import { RichFileReferenceInputProvider } from "./RichFileReferenceInput";
 import { LongTextPasteInput, LongTextPasteProvider } from "./LongTextPaste";
 import type { ParsedFileReference } from "./fileReferenceFormatting";
@@ -3429,6 +3430,7 @@ export default function ChatPage() {
       const fromScopeKey = sessionFilesScopeKey(agentId, fromId);
       const toScopeKey = sessionFilesScopeKey(agentId, toId);
       useCodingTabsStore.getState().migrateScope(fromScopeKey, toScopeKey);
+      useWorkbenchTabsStore.getState().migrateScope(fromScopeKey, toScopeKey);
       useFilesSurfaceStore.getState().migrateSession(fromScopeKey, toScopeKey);
       useTerminalSurfaceStore
         .getState()
@@ -3494,6 +3496,7 @@ export default function ChatPage() {
         removedId,
       );
       useCodingTabsStore.getState().removeScope(removedScopeKey);
+      useWorkbenchTabsStore.getState().removeScope(removedScopeKey);
       useFilesSurfaceStore.getState().removeSession(removedScopeKey);
       useTerminalSurfaceStore.getState().removeSession(removedScopeKey);
     };
@@ -3608,6 +3611,7 @@ export default function ChatPage() {
       const fromScopeKey = sessionFilesScopeKey(agentId, "new");
       const toScopeKey = sessionFilesScopeKey(agentId, sessionId);
       useCodingTabsStore.getState().migrateScope(fromScopeKey, toScopeKey);
+      useWorkbenchTabsStore.getState().migrateScope(fromScopeKey, toScopeKey);
       useFilesSurfaceStore.getState().migrateSession(fromScopeKey, toScopeKey);
       useTerminalSurfaceStore
         .getState()
