@@ -57,7 +57,7 @@ export default function ProviderCandidatePicker({
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [providerId, modelType, tier, search, offset, revision]);
+  }, [providerId, modelType, tier, search, offset, revision, message]);
   return (
     <section
       className={styles.candidatePicker}

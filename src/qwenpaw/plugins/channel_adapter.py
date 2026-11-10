@@ -378,6 +378,15 @@ class ChannelServices:
     record: Callable
 
 
+def _dependency_sites_covered(sites, roots):
+    """Compare fresh physical identities, including actual Windows spelling."""
+    from .execution.dependencies import canonical_environment_path
+
+    required = {str(canonical_environment_path(path)) for path in sites}
+    observed = {str(canonical_environment_path(path)) for path in roots}
+    return required <= observed
+
+
 class ChannelBackend:
     """Static definitions and execution checks for isolated Channels."""
 
@@ -555,7 +564,11 @@ class ChannelBackend:
                 or view.warnings != snapshot.warnings
             ):
                 raise RuntimeError("DEPENDENCY_ENVIRONMENT_IDENTITY_CHANGED")
-            if set(snapshot.dependency_sites or ()) <= set(map(str, roots)):
+            if await run_sync_io(
+                _dependency_sites_covered,
+                snapshot.dependency_sites or (),
+                roots,
+            ):
                 await scope[0].enter_async_context(
                     async_lock(observation_readers(roots)),
                 )

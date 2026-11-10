@@ -260,7 +260,6 @@ def test_replace_installed_plugin_requires_sha256_for_ugsci_host():
                 request,
             ),
         )
-
     assert caught.value.status_code == 400
     assert "SHA256" in caught.value.detail
 
@@ -280,7 +279,6 @@ def test_replace_installed_plugin_rejects_unapproved_host():
                 request,
             ),
         )
-
     assert caught.value.status_code == 400
     assert "approved external catalog" in caught.value.detail
 
@@ -400,7 +398,6 @@ def _catalog_upgrade_source(
             pytest.fail("Bundled catalog updates must not download an archive")
 
         monkeypatch.setattr(plugin_router, "_async_download", reject_download)
-
     return source
 
 
@@ -587,7 +584,6 @@ def test_replace_installed_plugin_full_isolated_lifecycle(
         )
         assert "1.0.0" in (installed / "dist/index.js").read_text()
         return
-
     result = asyncio.run(upgrade())
 
     assert result["version"] == "1.1.0"

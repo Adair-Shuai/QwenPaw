@@ -265,35 +265,35 @@ export function QuickStart({ docsBase }: QuickStartProps) {
         id="qwenpaw-quickstart"
       >
         <div
-          className="pointer-events-none absolute left-1/2 top-0 h-px w-screen -translate-x-1/2 animate-[qwenpaw-dash-move-right_1s_linear_infinite]"
+          className="pointer-events-none absolute left-1/2 top-0 h-px w-screen -translate-x-1/2 "
           style={{
             background:
-              "repeating-linear-gradient(to right, rgba(255,157,77,0.45) 0 8px, transparent 8px 16px)",
+              "repeating-linear-gradient(to right, #e3e5e0 0 8px, transparent 8px 16px)",
             backgroundSize: "16px 100%",
           }}
         />
         <div
-          className="pointer-events-none absolute left-1/2 top-full h-px w-screen -translate-x-1/2 -translate-y-px animate-[qwenpaw-dash-move-left_1s_linear_infinite]"
+          className="pointer-events-none absolute left-1/2 top-full h-px w-screen -translate-x-1/2 -translate-y-px "
           style={{
             background:
-              "repeating-linear-gradient(to right, rgba(255,157,77,0.45) 0 8px, transparent 8px 16px)",
+              "repeating-linear-gradient(to right, #e3e5e0 0 8px, transparent 8px 16px)",
             backgroundSize: "16px 100%",
           }}
         />
         <div className="relative mx-auto max-w-4xl">
           <div
-            className="pointer-events-none absolute bottom-0 left-4 top-0 w-px md:left-0 animate-[qwenpaw-dash-move-down_1s_linear_infinite]"
+            className="pointer-events-none absolute bottom-0 left-4 top-0 w-px md:left-0 "
             style={{
               background:
-                "repeating-linear-gradient(to bottom, rgba(255,157,77,0.45) 0 8px, transparent 8px 16px)",
+                "repeating-linear-gradient(to bottom, #e3e5e0 0 8px, transparent 8px 16px)",
               backgroundSize: "100% 16px",
             }}
           />
           <div
-            className="pointer-events-none absolute bottom-0 right-4 top-0 w-px md:right-0 animate-[qwenpaw-dash-move-up_1s_linear_infinite]"
+            className="pointer-events-none absolute bottom-0 right-4 top-0 w-px md:right-0 "
             style={{
               background:
-                "repeating-linear-gradient(to bottom, rgba(255,157,77,0.45) 0 8px, transparent 8px 16px)",
+                "repeating-linear-gradient(to bottom, #e3e5e0 0 8px, transparent 8px 16px)",
               backgroundSize: "100% 16px",
             }}
           />
@@ -314,18 +314,17 @@ export function QuickStart({ docsBase }: QuickStartProps) {
             </motion.div>
             <div className="relative isolate mx-auto max-w-4xl">
               <div
-                className="pointer-events-none absolute left-1/2 top-0 z-20 h-px w-screen -translate-x-1/2 animate-[qwenpaw-dash-move-left_1s_linear_infinite]"
+                className="pointer-events-none absolute left-1/2 top-0 z-20 h-px w-screen -translate-x-1/2 "
                 style={{
                   background:
-                    "repeating-linear-gradient(to right, rgba(255,157,77,0.45) 0 8px, transparent 8px 16px)",
+                    "repeating-linear-gradient(to right, #e3e5e0 0 8px, transparent 8px 16px)",
                   backgroundSize: "16px 100%",
                 }}
               />
               <div
                 className="relative z-10 mt-6 rounded-2xl p-[2px] shadow-[0px_8px_32px_0px_rgba(212,212,212,0.25)] md:mt-8"
                 style={{
-                  background:
-                    "linear-gradient(to bottom, var(--color-primary), #F0E6DF)",
+                  background: "var(--border)",
                 }}
               >
                 <motion.div
@@ -344,14 +343,14 @@ export function QuickStart({ docsBase }: QuickStartProps) {
                           onClick={() => setSelectedMethod(method)}
                           className={`inline-flex h-10 items-center justify-center gap-1 px-2 text-xs font-medium leading-none transition sm:h-12 sm:gap-1.5 sm:text-sm ${
                             active
-                              ? "bg-(--color-primary)"
-                              : "bg-(--color-secondary) text-[#4a4a4a] hover:bg-(--color-primary)"
+                              ? "bg-(--color-primary) text-white"
+                              : "bg-(--color-secondary) text-[#4a4a4a] hover:bg-(--color-primary) hover:text-white"
                           }`}
                         >
                           <MethodTabIcon method={method} />
                           <span>{t(`quickstart.method.${method}`)}</span>
                           {method === "desktop" ? (
-                            <span className="ml-1 h-4 rounded-xs bg-[#FFD8B8] px-1 py-px text-[9px] text-[#F46F02] sm:px-1 sm:text-[12px]">
+                            <span className="ml-1 h-4 rounded-xs bg-[#eee9e1] px-1 py-px text-[9px] text-[#755b3b] sm:px-1 sm:text-[12px]">
                               {t("quickstart.badgeBeta")}
                             </span>
                           ) : null}
@@ -594,7 +593,7 @@ export function QuickStart({ docsBase }: QuickStartProps) {
                                 <span>
                                   {t("quickstart.desktop.downloadGithub")}
                                 </span>
-                                <span className="ml-0.5 rounded-xs bg-[#FFD8B8] px-1.5 py-0.5 text-[10px] font-semibold text-[#F46F02] sm:text-[11px]">
+                                <span className="ml-0.5 rounded-xs bg-[#eee9e1] px-1.5 py-0.5 text-[10px] font-semibold text-[#755b3b] sm:text-[11px]">
                                   {t("quickstart.desktop.recommended")}
                                 </span>
                               </a>
@@ -621,10 +620,10 @@ export function QuickStart({ docsBase }: QuickStartProps) {
                 </motion.div>
               </div>
               <div
-                className="pointer-events-none absolute bottom-0 left-1/2 h-px w-screen -translate-x-1/2 animate-[qwenpaw-dash-move-right_1s_linear_infinite]"
+                className="pointer-events-none absolute bottom-0 left-1/2 h-px w-screen -translate-x-1/2 "
                 style={{
                   background:
-                    "repeating-linear-gradient(to right, rgba(255,157,77,0.45) 0 8px, transparent 8px 16px)",
+                    "repeating-linear-gradient(to right, #e3e5e0 0 8px, transparent 8px 16px)",
                   backgroundSize: "16px 100%",
                 }}
               />

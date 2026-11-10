@@ -20,7 +20,8 @@ from uuid import uuid4
 from ..utils.io_utils import run_async_to_completion, run_sync_io
 
 CURRENT_STEERING: ContextVar[Any] = ContextVar(
-    "qwenpaw_steering", default=None
+    "qwenpaw_steering",
+    default=None,
 )
 STEERING_METADATA = "qwenpaw_steering"
 
@@ -102,7 +103,7 @@ class SteeringStore:
                         or existing["text"] != text
                     ):
                         raise SteeringConflict(
-                            "Steering request ID was reused"
+                            "Steering request ID was reused",
                         )
                     return self._receipt(existing)
                 count = conn.execute(
@@ -112,7 +113,7 @@ class SteeringStore:
                 ).fetchone()[0]
                 if count >= 32:
                     raise SteeringConflict(
-                        "Too many pending steering messages"
+                        "Too many pending steering messages",
                     )
                 conn.execute(
                     "INSERT INTO steering VALUES(?,?,?,?,?,?,?,?)",
@@ -163,9 +164,9 @@ def get_steering_store(workspace: Any) -> SteeringStore:
     tracker = workspace.task_tracker
     stores = getattr(tracker, "_steering_stores", None)
     if stores is None:
-        stores = tracker._steering_stores = (
-            {}
-        )  # pylint: disable=protected-access
+        stores = (
+            tracker._steering_stores
+        ) = {}  # pylint: disable=protected-access
     path = Path(workspace.workspace_dir).resolve() / "steering.sqlite3"
     key = (str(path), str(workspace.agent_id))
     if key not in stores:
@@ -176,7 +177,8 @@ def get_steering_store(workspace: Any) -> SteeringStore:
 def applied_ids_from_state(state: dict) -> set[str]:
     """Recover only server-authored, durable user-input markers."""
     context = ((state.get("agent") or {}).get("state") or {}).get(
-        "context", []
+        "context",
+        [],
     )
     result = set()
     for msg in context:
@@ -204,9 +206,14 @@ class SteeringController:
         self._receipts_closed = False
 
     def bind(self, ctx: Any) -> bool:
+        # Validate the complete steering identity before granting access.
+        # pylint: disable=R0916
+        from ..runtime.console_turn_state import is_console_history_replacement
+
         request = ctx.request
         if (
-            ctx.workspace is not self.workspace
+            is_console_history_replacement(request)
+            or ctx.workspace is not self.workspace
             or (self.ctx is not None and self.ctx is not ctx)
             or str(ctx.agent_id) != self.store.agent_id
             or str(ctx.session_id) != str(self.chat.session_id)
@@ -225,7 +232,9 @@ class SteeringController:
     async def submit(self, expected_run_id: str, request_id: str, text: str):
         async with self.lock:
             existing = await run_sync_io(
-                self.store.get, self.chat.id, request_id
+                self.store.get,
+                self.chat.id,
+                request_id,
             )
             if existing is not None:
                 if (
@@ -240,7 +249,7 @@ class SteeringController:
                 or self.closed
             ):
                 raise SteeringConflict(
-                    "The target execution is no longer steerable"
+                    "The target execution is no longer steerable",
                 )
             return await run_sync_io(
                 self.store.accept,
@@ -284,9 +293,9 @@ class SteeringController:
                                 STEERING_METADATA: {
                                     "request_id": item["request_id"],
                                     "run_id": self.run_id,
-                                }
+                                },
                             },
-                        )
+                        ),
                     )
                 proxy = StateProxy()
                 proxy.data = self.agent.state_dict()
@@ -299,7 +308,7 @@ class SteeringController:
                             user_id=self.chat.user_id,
                             channel=self.chat.channel,
                             agent=proxy,
-                        )
+                        ),
                     )
                 except Exception:
                     # A failed checkpoint is not consumed input. Keep the
@@ -317,7 +326,10 @@ class SteeringController:
                 self.accepting = False
                 self.closed = True
                 await run_sync_io(
-                    self.store.reconcile, self.chat.id, None, set()
+                    self.store.reconcile,
+                    self.chat.id,
+                    None,
+                    set(),
                 )
             return False
 

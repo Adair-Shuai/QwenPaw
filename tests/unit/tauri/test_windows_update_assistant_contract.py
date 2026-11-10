@@ -4,7 +4,6 @@
 import json
 from pathlib import Path
 
-
 REPO_ROOT = Path(__file__).resolve().parents[3]
 SOURCE = REPO_ROOT / "scripts" / "pack-tauri" / "windows_update_assistant.cs"
 BUILD = (
@@ -78,6 +77,14 @@ def test_assistant_covers_visible_handoff_and_safe_install_stages() -> None:
         in source
     )
     assert "RepairApplicationShortcuts(executable, location)" in source
+    assert (
+        "RefreshShellIcons(executable, new[] { startMenu, desktop })" in source
+    )
+    assert (
+        "RefreshShellIcons(executable, new[] { value.start_menu_shortcut_path"
+        in source
+    )
+    assert 'DllImport("shell32.dll"' in source
     assert "Never leave InstallLocation empty" in source
     assert (
         "Mark the\n            // transaction committed before "

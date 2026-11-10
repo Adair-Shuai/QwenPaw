@@ -61,10 +61,12 @@ async def driver_at(tmp_path, **config):
 
 
 async def test_authenticated_websocket_accepts_valid_token(tmp_path):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     async with driver_at(tmp_path, access_token="secret") as (
         driver,
         peer,
-        identity,
+        _unused_identity,
     ):
         async with aiohttp.ClientSession() as client:
             with pytest.raises(aiohttp.WSServerHandshakeError) as rejected:
@@ -93,10 +95,12 @@ async def test_real_driver_acl_session_stable_event_and_route(
     share,
     session,
 ):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     async with driver_at(tmp_path, share_session_in_group=share) as (
         driver,
         peer,
-        identity,
+        _unused_identity,
     ):
         async with aiohttp.ClientSession() as client:
             async with client.ws_connect(ws_url(driver._platform)) as ws:
@@ -137,6 +141,8 @@ async def test_text_and_file_use_native_recipient(
     action,
     id_key,
 ):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     async with driver_at(tmp_path) as (driver, peer, identity):
         async with aiohttp.ClientSession() as client:
             async with client.ws_connect(ws_url(driver._platform)) as ws:
@@ -199,7 +205,8 @@ async def test_text_and_file_use_native_recipient(
                 )
                 assert frame["params"][id_key] == int(target.split(":")[-1])
                 assert (
-                    Path(frame["params"]["file"]).read_text() == "file payload"
+                    Path(frame["params"]["file"]).read_text(encoding="utf-8")
+                    == "file payload"
                 )
                 assert frame["params"]["name"] == "report.txt"
                 await ws.send_json(
@@ -209,7 +216,9 @@ async def test_text_and_file_use_native_recipient(
 
 
 async def test_stop_releases_listener_port_and_owned_tasks(tmp_path):
-    async with driver_at(tmp_path) as (driver, peer, identity):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
+    async with driver_at(tmp_path) as (driver, peer, _unused_identity):
         platform = driver._platform
         port = platform.listen_port
         await driver.stop()

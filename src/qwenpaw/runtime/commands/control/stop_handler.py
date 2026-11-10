@@ -71,7 +71,6 @@ class StopCommandHandler(BaseControlCommandHandler):
                 f"No running task found for session "
                 f"`{target_session_id[:40]}`."
             )
-
         stopped = await workspace.task_tracker.request_stop(chat_id)
 
         cleared = await workspace.channel_manager.clear_queue(

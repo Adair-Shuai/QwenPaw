@@ -138,7 +138,6 @@ class FakeAgent(Agent):
         text = ""
         for block in prompt:
             text += getattr(block, "text", "") or ""
-
         cancel = asyncio.Event()
         self._cancel[session_id] = cancel
 
@@ -185,7 +184,6 @@ class FakeAgent(Agent):
                 session_id=session_id,
                 update=update_agent_message(text_block(f" [perm:{chosen}]")),
             )
-
         # A tool call: start then complete.
         await self._conn.session_update(
             session_id=session_id,
@@ -212,7 +210,6 @@ class FakeAgent(Agent):
                 await asyncio.wait_for(cancel.wait(), timeout=10.0)
             except asyncio.TimeoutError:
                 pass
-
         self._cancel.pop(session_id, None)
         return PromptResponse(stop_reason="end_turn")
 

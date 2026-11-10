@@ -52,6 +52,8 @@ async def test_response_policy_reuses_local_dto_cache() -> None:
     policy = await proxy._response_policy("handle", meta)
 
     assert policy is cached
+    # Preserve the exact empty-list result contract.
+    # pylint: disable-next=use-implicit-booleaness-not-comparison
     assert process.calls == []
 
 

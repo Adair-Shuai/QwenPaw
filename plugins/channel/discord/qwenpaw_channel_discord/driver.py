@@ -87,6 +87,8 @@ class DiscordDriver(SharedResponseDriver):
         return {}
 
     async def _open(self, params, request):
+        # Retain the native callback and lifecycle hook parameter names.
+        # pylint: disable=unused-argument
         self._identity(params)
         self._require_connected()
         route = self._target(params["to_handle"], params.get("meta") or {})

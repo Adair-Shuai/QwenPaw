@@ -37,14 +37,12 @@ def format_findings_summary(
     """Format findings into a concise markdown summary."""
     if not result.findings:
         return "No specific risk rules matched."
-
     lines = []
     for finding in result.findings[:max_items]:
         lines.append(
             f"- [{finding.severity.value}] {finding.description}",
         )
         # Don't add remediation here - it will be added separately at the end
-
     # Calculate remaining based on findings processed, not lines added
     processed_count = min(max_items, len(result.findings))
     remaining = result.findings_count - processed_count
@@ -95,7 +93,6 @@ def format_channel_approval_body(
     else:
         lines.append("")
         lines.append("No specific risk rules matched.")
-
     if result.params:
         params_str = json.dumps(result.params, ensure_ascii=False, indent=2)
         if len(params_str) > 500:
@@ -103,7 +100,6 @@ def format_channel_approval_body(
         lines.append("")
         lines.append("**Parameters:**")
         lines.append(f"```json\n{params_str}\n```")
-
     lines.append("")
     lines.append("\U0001f4a1 **Actions**")
     lines.append("- Approve: `/approval approve`")

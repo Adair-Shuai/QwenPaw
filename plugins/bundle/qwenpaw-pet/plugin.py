@@ -15,7 +15,6 @@ from pathlib import Path
 _plugin_dir = str(Path(__file__).resolve().parent)
 if _plugin_dir not in sys.path:
     sys.path.insert(0, _plugin_dir)
-
 # Evict stale cached sibling modules so hot-reload after plugin
 # reinstall picks up the new files instead of the previous version
 # lingering in ``sys.modules``.
@@ -34,7 +33,6 @@ for _sib in (
         os.path.realpath(_plugin_dir) + os.sep,
     ):
         del sys.modules[_sib]
-
 from qwenpaw.plugins.api import PluginApi  # noqa: E402
 
 from emitter import (  # noqa: E402
@@ -123,7 +121,6 @@ class QwenPawPetPlugin:
                 "QwenPaw Pet: failed to patch ApprovalService; "
                 "approval events will be unavailable",
             )
-
         try:
             ensure_desktop_available()
             emit_pet_event(
@@ -152,19 +149,16 @@ class QwenPawPetPlugin:
                 "QwenPaw Pet: shutdown event emit failed",
                 exc_info=True,
             )
-
         try:
             result = stop_desktop(force=True, aggressive=True, grace=5.0)
             logger.info("QwenPaw Pet: stop_desktop result=%s", result)
         except Exception:
             logger.exception("QwenPaw Pet: failed to stop desktop process")
-
         try:
             restore_approval_service()
             restore_agent_runner()
         except Exception:
             logger.exception("QwenPaw Pet: failed to restore class methods")
-
         logger.info("QwenPaw Pet shutdown hook complete")
 
 

@@ -1,15 +1,24 @@
 import type { QueueAttachment } from "../../stores/messageQueueStore";
 import { extractClientMessageId } from "../../utils/clientMessageId";
 import type { AgentMentionModesSnapshot } from "./components/agentMentionModes";
+import {
+  quotesFromMessage,
+  withoutAnswerQuoteContent,
+  type AnswerQuote,
+} from "./answerQuotes";
 
 export interface RequestEditSnapshot {
   text: string;
   attachments: QueueAttachment[];
   unsupported: boolean;
   mentionModes?: AgentMentionModesSnapshot;
+  answerQuotes?: AnswerQuote[];
 }
 
 type RecordValue = Record<string, unknown>;
+export type RequestEditTarget =
+  | { client_message_id: string }
+  | { message_id: string };
 const mentionKey = "qwenpaw_agent_mention_dispatch";
 const record = (value: unknown): RecordValue | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value)
@@ -19,6 +28,24 @@ const string = (...values: unknown[]): string | undefined =>
   values.find(
     (value): value is string => typeof value === "string" && !!value.trim(),
   );
+
+/** Only backend-issued message identities may select a destructive rewind. */
+export function getRequestEditTarget(
+  data: unknown,
+): RequestEditTarget | undefined {
+  const root = record(data);
+  const user = Array.isArray(root?.input)
+    ? root.input.map(record).find((message) => message?.role === "user")
+    : undefined;
+  const metadata = record(user?.metadata);
+  const clientId = string(extractClientMessageId(metadata));
+  if (clientId) return { client_message_id: clientId };
+  const messageId = string(
+    metadata?.original_id,
+    record(metadata?.metadata)?.original_id,
+  );
+  return messageId ? { message_id: messageId } : undefined;
+}
 
 /** Match one request frame for inline editing; never a new submission ID.
  * ID-less messages deliberately use object identity, not text or timestamps.
@@ -158,7 +185,7 @@ export function getRequestEditSnapshot(
   const attachments: QueueAttachment[] = [];
   let unsupported = false;
   for (const message of users) {
-    const content = message!.content;
+    const content = withoutAnswerQuoteContent(message!).content;
     if (typeof content === "string") {
       text.push(content);
       continue;
@@ -179,10 +206,12 @@ export function getRequestEditSnapshot(
     }
   }
   const modes = mentionModes(root.metadata) ?? mentionModes(users[0]!.metadata);
+  const answerQuotes = users.flatMap((message) => quotesFromMessage(message!));
   return {
     text: text.join("\n"),
     attachments,
     unsupported,
     ...(modes ? { mentionModes: modes } : {}),
+    ...(answerQuotes.length ? { answerQuotes } : {}),
   };
 }

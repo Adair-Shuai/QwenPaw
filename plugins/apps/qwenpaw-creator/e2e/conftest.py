@@ -15,7 +15,6 @@ import pytest
 E2E_DIR = Path(__file__).resolve().parent
 if str(E2E_DIR) not in sys.path:
     sys.path.insert(0, str(E2E_DIR))
-
 import config as e2e_config  # noqa: E402
 from utils.api_client import CreatorApiClient  # noqa: E402
 

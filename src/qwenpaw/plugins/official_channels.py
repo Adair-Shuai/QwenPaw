@@ -203,6 +203,8 @@ async def async_bundled_channel_source(plugin_id, *, retain=None):
 @lru_cache(maxsize=64)
 def _metadata_slot(root_identity, plugin_id):
     """Keep the most recent passive snapshot for this resource and channel."""
+    # Both arguments are required parts of the lru_cache identity key.
+    # pylint: disable=unused-argument
     return {}
 
 
@@ -258,6 +260,9 @@ def _persisted_channel_enabled(data, key):
 
 
 async def prepare_channel_upgrade():
+    # Keep source verification, preflight and replacement in one lifecycle
+    # transaction.
+    # pylint: disable=R0912,R0915
     """Prepare only persisted enabled channels during an explicit upgrade."""
     from ..utils.io_utils import run_sync_io
 
@@ -321,9 +326,15 @@ async def prepare_channel_upgrade():
                     source = record.source_path
                 async with loader.plugin_lifecycle(plugin_id):
                     _, manifest = await run_sync_io(
+                        # The loader lifecycle owns this verified registration
+                        # and preflight handoff.
+                        # pylint: disable-next=protected-access
                         loader._read_source_manifest,
                         source,
                     )
+                    # The loader lifecycle owns this verified registration and
+                    # preflight handoff.
+                    # pylint: disable-next=protected-access
                     compatible, _ = loader._check_version_compatibility(
                         manifest,
                     )

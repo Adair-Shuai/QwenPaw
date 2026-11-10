@@ -90,6 +90,7 @@ def prepare(work):
                 str(PATCH),
             ],
             capture_output=True,
+            check=False,
         ).returncode
         == 0
     )
@@ -125,8 +126,8 @@ def install_cuda(version, directory):
                 raise ValueError(
                     f"NVIDIA package checksum mismatch: {component}",
                 )
-            with zipfile.ZipFile(archive) as package:
-                package.extractall(Path(temporary) / "unpacked")
+            with zipfile.ZipFile(archive) as toolkit_archive:
+                toolkit_archive.extractall(Path(temporary) / "unpacked")
             roots = list((Path(temporary) / "unpacked").iterdir())
             if len(roots) != 1 or not roots[0].is_dir():
                 raise ValueError("Unexpected CUDA package layout")
@@ -237,6 +238,9 @@ def check_macos_libraries(bundle):
 
 
 def package(target, build_dir, source, output, cuda=None):
+    # Keep checksum checks, binary allowlisting and licenses in one package
+    # transaction.
+    # pylint: disable=R0912
     config = target_config(target)
     output.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory() as temporary:

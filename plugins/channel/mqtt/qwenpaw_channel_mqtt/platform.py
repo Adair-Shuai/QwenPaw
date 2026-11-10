@@ -84,6 +84,8 @@ class MQTTPlatform:
         reason_code,
         properties=None,
     ):
+        # Retain the native callback and lifecycle hook parameter names.
+        # pylint: disable=unused-argument
         if not self._owns(client):
             return
         if reason_code != 0:
@@ -133,6 +135,8 @@ class MQTTPlatform:
         reason_code,
         properties=None,
     ):
+        # Retain the native callback and lifecycle hook parameter names.
+        # pylint: disable=unused-argument
         if not self._owns(client):
             return
         if (
@@ -165,6 +169,9 @@ class MQTTPlatform:
                 return
             # paho implicitly republishes unknown outbound messages. Replace
             # its object, retaining the worker identity and MID cursor.
+            # Paho MID state registers the existing ACK receipt before
+            # publishing.
+            # pylint: disable-next=protected-access
             self._last_mid = client._last_mid
             rc = await asyncio.to_thread(client.loop_stop)
             if (
@@ -184,9 +191,7 @@ class MQTTPlatform:
                     self._ready.clear()
                     await self.start()
                     return
-                except asyncio.CancelledError:
-                    raise
-                except Exception:
+                except Exception as exc:
                     if self.client is not None:
                         failed = self.client
                         failed.disconnect()
@@ -195,7 +200,9 @@ class MQTTPlatform:
                             rc != mqtt.MQTT_ERR_SUCCESS
                             and getattr(failed, "_thread", None) is not None
                         ):
-                            raise RuntimeError("MQTT_LOOP_STOP_FAILED")
+                            raise RuntimeError(
+                                "MQTT_LOOP_STOP_FAILED",
+                            ) from exc
                         if self.client is failed:
                             self.client = None
                     delay = min(delay * 2, 10)
@@ -204,6 +211,8 @@ class MQTTPlatform:
                 self._reconnect_pending = None
 
     def _on_message(self, client, userdata, msg):
+        # Retain the native callback and lifecycle hook parameter names.
+        # pylint: disable=unused-argument
         if not self._owns(client) or not self.connected:
             return
         epoch = self._epoch
@@ -262,6 +271,8 @@ class MQTTPlatform:
         c = self.client
         # Keep packet IDs progressing across replacement clients, including
         # durable broker sessions. Never alias a still-unknown old publish.
+        # Paho MID state registers the existing ACK receipt before publishing.
+        # pylint: disable-next=protected-access
         c._last_mid = self._last_mid
         if self.config.get("username") and self.config.get("password"):
             c.username_pw_set(self.config["username"], self.config["password"])

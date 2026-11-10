@@ -28,7 +28,6 @@ class OMPWorkflowsPlugin:
         ):
             api.register_mode(mode_cls)
             logger.info("Registered OMP mode: %s", mode_cls.name)
-
         api.register_skill_provider(
             skills_dir=_PLUGIN_DIR / "skills",
             enabled_by_default=True,

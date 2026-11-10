@@ -10,6 +10,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { AssistantMarkdown } from "./AssistantMarkdown";
 import { chatExtensions } from "../../plugins/registry/chatExtensions";
 import type { ChatCodeBlockProps } from "../../plugins/types/qwenpaw";
+import { getAnswerSelection } from "./components/AnswerQuoteComposer";
+import { TurnFilesScopeProvider } from "../../features/files-workspace/TurnFilesScope";
 
 vi.mock("@agentscope-ai/design", async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
@@ -39,6 +41,383 @@ afterEach(() => {
 });
 
 describe("assistant code block plugins", () => {
+  it("does not rerender unchanged answer plugins during unrelated composer updates", () => {
+    const seen = vi.fn();
+    chatExtensions.addCodeBlock("performance", "custom-ui", (props) => {
+      seen(props.source);
+      return <span>{props.source}</span>;
+    });
+    function Chat() {
+      const [draft, setDraft] = useState("");
+      const [source, setSource] = useState("first");
+      return (
+        <>
+          <input
+            aria-label="draft"
+            value={draft}
+            onChange={(event) => setDraft(event.target.value)}
+          />
+          <button onClick={() => setSource("second")}>next delta</button>
+          <AssistantMarkdown
+            messageId="stable"
+            cursor={false}
+            content={`\`\`\`custom-ui\n${source}\n\`\`\``}
+          />
+        </>
+      );
+    }
+    render(<Chat />);
+    expect(screen.getByText("first")).toBeInTheDocument();
+    seen.mockClear();
+    for (let i = 0; i < 30; i++) {
+      fireEvent.change(screen.getByLabelText("draft"), {
+        target: { value: `draft ${i}` },
+      });
+    }
+    expect(seen).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByText("next delta"));
+    expect(screen.getByText("second")).toBeInTheDocument();
+    expect(seen).toHaveBeenCalled();
+    act(() => {
+      chatExtensions.addCodeBlock("performance", "custom-ui", () => (
+        <span>reloaded plugin</span>
+      ));
+    });
+    expect(screen.getByText("reloaded plugin")).toBeInTheDocument();
+  });
+
+  it.each([false, true])(
+    "keeps slash-separated prose literal beside real file and directory references with plugins=%s",
+    (plugins) => {
+      if (plugins)
+        chatExtensions.addCodeBlock("test", "custom-ui", () => <span>UI</span>);
+      const path = String.raw`C:\Users\shuai\.qwenpaw\workspaces\default`;
+      const view = render(
+        <AssistantMarkdown
+          messageId="prose-path-boundary"
+          cursor={false}
+          content={`折腾点代码/脚本，**代码**/脚本，\`代码\`/脚本。\n\n工作目录是\`${path}\`，档案是\`PROFILE.md\`，源文件 [实现](src/app.ts#L12)。`}
+        />,
+      );
+      expect(view.container.textContent?.match(/代码\/脚本/g)).toHaveLength(3);
+      expect(
+        view.container.querySelector('a[data-directory-reference="/脚本"]'),
+      ).toBeNull();
+      expect(screen.getAllByRole("link")).toHaveLength(3);
+      expect(screen.getByRole("link", { name: path })).toHaveAttribute(
+        "data-directory-reference",
+        path.replace(/\\/g, "/"),
+      );
+      expect(screen.getByRole("link", { name: "PROFILE.md" })).toHaveAttribute(
+        "data-file-reference",
+        "PROFILE.md",
+      );
+      expect(screen.getByRole("link", { name: "实现 L12" })).toHaveAttribute(
+        "data-file-reference",
+        "src/app.ts",
+      );
+    },
+  );
+
+  it.each([false, true])(
+    "opens inline directory locations in the file manager with original scope and plugins=%s",
+    (plugins) => {
+      if (plugins)
+        chatExtensions.addCodeBlock("test", "custom-ui", () => <span>UI</span>);
+      const reveal = vi.fn();
+      const preview = vi.fn();
+      window.addEventListener("qwenpaw:reveal-file", reveal);
+      window.addEventListener("qwenpaw:open-file-preview", preview);
+      const path = String.raw`C:\Users\shuai\.qwenpaw\workspaces\default`;
+      try {
+        render(
+          <AssistantMarkdown
+            messageId="directory-mentions"
+            cursor={false}
+            content={`工作目录在 \`${path}\`。也可打开 ${path}。查看 [输出目录](docs/)，构建用 [构建文件](C:/Work/Makefile)。`}
+          />,
+        );
+        const links = screen.getAllByRole("link", { name: path });
+        expect(links).toHaveLength(2);
+        for (const link of links) {
+          expect(link).toHaveAttribute(
+            "data-directory-reference",
+            path.replace(/\\/g, "/"),
+          );
+          expect(link.querySelector(".lucide-folder-open")).toBeInTheDocument();
+          fireEvent.click(link);
+        }
+        expect(reveal).toHaveBeenCalledTimes(2);
+        expect(reveal.mock.calls[0][0].detail).toMatchObject({
+          agentId: "agent-a",
+          sessionId: "session-a",
+          target: { source: "workspace", path: path.replace(/\\/g, "/") },
+        });
+        fireEvent.click(screen.getByRole("link", { name: "输出目录" }));
+        expect(reveal.mock.calls[2][0].detail.target.path).toBe("docs/");
+        expect(preview).not.toHaveBeenCalled();
+        fireEvent.click(screen.getByRole("link", { name: "构建文件" }));
+        expect(preview.mock.calls[0][0].detail.target).toMatchObject({
+          source: "workspace",
+          path: "C:/Work/Makefile",
+        });
+        expect(reveal).toHaveBeenCalledTimes(3);
+      } finally {
+        window.removeEventListener("qwenpaw:reveal-file", reveal);
+        window.removeEventListener("qwenpaw:open-file-preview", preview);
+      }
+    },
+  );
+
+  it.each([false, true])(
+    "opens inline and plain filenames from historical answers with plugins=%s",
+    (plugins) => {
+      if (plugins)
+        chatExtensions.addCodeBlock("test", "custom-ui", () => <span>UI</span>);
+      const open = vi.fn();
+      window.addEventListener("qwenpaw:open-file-preview", open);
+      try {
+        const view = render(
+          <AssistantMarkdown
+            messageId="file-mentions"
+            cursor={false}
+            content={
+              "当前的实情是：`PROFILE.md` 仍为空。写进 PROFILE.md 后继续。查看 src/app.ts:12-18、`./PROFILE.md` 和 `docs/PROFILE.md`，身份是 `default`。\n\n```python\nprint('PROFILE.md')\n```\n\n[`PROFILE.md`](https://example.com) 和 [项目档案](PROFILE.md)"
+            }
+          />,
+        );
+        const profiles = screen
+          .getAllByRole("link", { name: "PROFILE.md" })
+          .filter(
+            (link) => link.getAttribute("data-file-reference") === "PROFILE.md",
+          );
+        expect(profiles).toHaveLength(3);
+        fireEvent.click(profiles[0]);
+        expect(open.mock.calls[0][0].detail).toMatchObject({
+          agentId: "agent-a",
+          sessionId: "session-a",
+          target: { source: "profile", path: "PROFILE.md" },
+        });
+        fireEvent.click(profiles[1]);
+        expect(open.mock.calls[1][0].detail.target.source).toBe("profile");
+        fireEvent.click(profiles[2]);
+        expect(open.mock.calls[2][0].detail.target).toMatchObject({
+          source: "workspace",
+          path: "PROFILE.md",
+        });
+        fireEvent.click(screen.getByRole("link", { name: "app.ts L12–18" }));
+        expect(open.mock.calls[3][0].detail.target).toMatchObject({
+          source: "workspace",
+          path: "src/app.ts",
+          line: 12,
+          endLine: 18,
+        });
+        fireEvent.click(
+          view.container.querySelector(
+            '[data-file-reference="docs/PROFILE.md"]',
+          )!,
+        );
+        expect(open.mock.calls[4][0].detail.target).toMatchObject({
+          source: "workspace",
+          path: "docs/PROFILE.md",
+        });
+        fireEvent.click(screen.getByRole("link", { name: "项目档案" }));
+        expect(open.mock.calls[5][0].detail.target).toMatchObject({
+          source: "workspace",
+          path: "PROFILE.md",
+        });
+        expect(view.container.querySelector("code")).toHaveTextContent(
+          "default",
+        );
+        expect(
+          view.container.querySelector('a[href="https://example.com"]'),
+        ).toHaveTextContent("PROFILE.md");
+        expect(
+          view.container.querySelector('a[href="https://example.com"] a'),
+        ).toBeNull();
+      } finally {
+        window.removeEventListener("qwenpaw:open-file-preview", open);
+      }
+    },
+  );
+
+  it("keeps file mention routing when a streamed filename finishes and is restored from history", () => {
+    const view = render(
+      <AssistantMarkdown
+        messageId="streamed-mention"
+        cursor={false}
+        content="写进 `PROFILE.m"
+      />,
+    );
+    view.rerender(
+      <AssistantMarkdown
+        messageId="streamed-mention"
+        cursor={false}
+        content="写进 `PROFILE.md`"
+      />,
+    );
+    expect(screen.getByRole("link", { name: "PROFILE.md" })).toHaveAttribute(
+      "data-file-reference",
+      "PROFILE.md",
+    );
+    view.unmount();
+    render(
+      <AssistantMarkdown
+        messageId="history-mention"
+        cursor={false}
+        content="写进 `PROFILE.md`"
+      />,
+    );
+    expect(screen.getByRole("link", { name: "PROFILE.md" })).toHaveAttribute(
+      "data-file-reference",
+      "PROFILE.md",
+    );
+  });
+
+  it("adopts a newly allocated session and keeps references bound to it across later navigation", () => {
+    const open = vi.fn();
+    window.addEventListener("qwenpaw:open-file-preview", open);
+    const response = (
+      <AssistantMarkdown
+        messageId="allocation"
+        cursor={false}
+        content="[source](src/app.ts#L12)"
+      />
+    );
+    const scope = {
+      kind: "session" as const,
+      agentId: "agent-a",
+      sessionId: "new",
+    };
+    try {
+      const view = render(
+        <TurnFilesScopeProvider value={scope}>
+          {response}
+        </TurnFilesScopeProvider>,
+      );
+      view.rerender(
+        <TurnFilesScopeProvider
+          value={{ ...scope, sessionId: "allocated", chatId: "chat-a" }}
+        >
+          {response}
+        </TurnFilesScopeProvider>,
+      );
+      fireEvent.click(screen.getByRole("link", { name: "source L12" }));
+      expect(open.mock.calls[0][0].detail).toMatchObject({
+        agentId: "agent-a",
+        sessionId: "allocated",
+        chatId: "chat-a",
+      });
+      view.rerender(
+        <TurnFilesScopeProvider
+          value={{ ...scope, sessionId: "other", chatId: "chat-b" }}
+        >
+          {response}
+        </TurnFilesScopeProvider>,
+      );
+      fireEvent.click(screen.getByRole("link", { name: "source L12" }));
+      expect(open.mock.calls[1][0].detail).toMatchObject({
+        sessionId: "allocated",
+        chatId: "chat-a",
+      });
+    } finally {
+      window.removeEventListener("qwenpaw:open-file-preview", open);
+    }
+  });
+  it.each([false, true])(
+    "opens file references through the real Markdown renderer with plugins=%s",
+    (plugins) => {
+      if (plugins)
+        chatExtensions.addCodeBlock("test", "custom-ui", () => <span>UI</span>);
+      const open = vi.fn();
+      window.addEventListener("qwenpaw:open-file-preview", open);
+      try {
+        render(
+          <AssistantMarkdown
+            messageId="file-references"
+            cursor={false}
+            content={
+              "See [implementation](C:/Work/src/app.ts:12-18), [notes](<docs/research notes.md#L8>) and [website](https://example.com)."
+            }
+          />,
+        );
+        const reference = screen.getByRole("link", {
+          name: "implementation L12–18",
+        });
+        expect(reference).toHaveAttribute(
+          "title",
+          "C:/Work/src/app.ts · L12–18",
+        );
+        fireEvent.click(reference);
+        expect(open.mock.calls[0][0].detail).toMatchObject({
+          agentId: "agent-a",
+          sessionId: "session-a",
+          target: {
+            source: "workspace",
+            path: "C:/Work/src/app.ts",
+            line: 12,
+            endLine: 18,
+          },
+        });
+        fireEvent.click(screen.getByRole("link", { name: "notes L8" }));
+        expect(open.mock.calls[1][0].detail.target).toMatchObject({
+          path: "docs/research notes.md",
+          line: 8,
+        });
+        expect(screen.getByRole("link", { name: "website" })).toHaveAttribute(
+          "href",
+          "https://example.com",
+        );
+      } finally {
+        window.removeEventListener("qwenpaw:open-file-preview", open);
+      }
+    },
+  );
+
+  it("keeps streamed file references and history on the same original destination", () => {
+    const view = render(
+      <AssistantMarkdown
+        messageId="stream-file"
+        cursor={false}
+        content="See [source](src/app.ts#L"
+      />,
+    );
+    view.rerender(
+      <AssistantMarkdown
+        messageId="stream-file"
+        cursor={false}
+        content="See [source](src/app.ts#L12C4)"
+      />,
+    );
+    expect(screen.getByRole("link", { name: "source L12 C4" })).toHaveAttribute(
+      "title",
+      "src/app.ts · L12 C4",
+    );
+    expect(view.container.textContent).toContain("See");
+  });
+
+  it("keeps answer text selectable for quoting across a file reference", () => {
+    const view = render(
+      <div data-answer-quote-source="answer:0">
+        <AssistantMarkdown
+          messageId="answer"
+          cursor={false}
+          content="Read [source](src/app.ts#L12) for details."
+        />
+      </div>,
+    );
+    const source = view.container.querySelector("[data-answer-quote-source]")!;
+    const range = document.createRange();
+    range.selectNodeContents(source);
+    const selection = window.getSelection()!;
+    selection.removeAllRanges();
+    selection.addRange(range);
+    expect(getAnswerSelection(view.container, selection)).toMatchObject({
+      messageId: "answer:0",
+    });
+    selection.removeAllRanges();
+  });
+
   it("normalizes registration and fence languages and restores an earlier renderer", () => {
     chatExtensions.addCodeBlock("test", " My-UI ", ({ language }) => (
       <span>first renderer: {language}</span>

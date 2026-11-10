@@ -31,7 +31,9 @@ beforeEach(() => {
 });
 describe("server-owned avatars", () => {
   it("loads server selection and restores default without deleting history", async () => {
-    expect(DEFAULT_AVATAR).toBe(`${import.meta.env.BASE_URL}ugsci-avatar.webp`);
+    expect(DEFAULT_AVATAR).toBe(
+      `${import.meta.env.BASE_URL}ugsci-mono/avatars/assistant-128.png`,
+    );
     vi.mocked(avatarApi.get).mockResolvedValue(profile);
     await useLocalAvatar.getState().load();
     expect(useLocalAvatar.getState().images.gif).toBe("blob:avatar");

@@ -76,7 +76,6 @@ _REGISTRY: dict[str, tuple[str, str]] = {
 # .py/.json/… file.
 for _ext in code._EXT_TO_LANG:  # pylint: disable=protected-access
     _REGISTRY.setdefault(_ext, ("code", "render"))
-
 SUPPORTED_EXTENSIONS = frozenset(_REGISTRY)
 
 

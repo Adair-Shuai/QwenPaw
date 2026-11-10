@@ -143,15 +143,12 @@ def _process_line(  # pylint: disable=too-many-return-statements
     max_depth_val = options.get("maxDepth")
     if max_depth_val is not None and depth > max_depth_val:
         return None
-
     m = re.match(r'^(\s*-\s*)(\w+)(?:\s+"([^"]*)")?(.*)$', line)
     if not m:
         return None if options.get("interactive") else line
-
     prefix, role_raw, name, suffix = m.groups()
     if role_raw.startswith("/"):
         return None if options.get("interactive") else line
-
     role = role_raw.lower()
     is_interactive = role in INTERACTIVE_ROLES
     is_content = role in CONTENT_ROLES
@@ -161,11 +158,9 @@ def _process_line(  # pylint: disable=too-many-return-statements
         return None
     if options.get("compact") and is_structural and not name:
         return None
-
     should_have_ref = is_interactive or (is_content and name)
     if not should_have_ref:
         return line
-
     ref = next_ref()
     nth = tracker["get_next_index"](role, name)
     tracker["track_ref"](role, name, ref)
@@ -236,7 +231,6 @@ def build_role_snapshot_from_aria(
         _remove_nth_from_non_duplicates(refs, tracker)
         snapshot = "\n".join(result_lines) or "(no interactive elements)"
         return snapshot, refs
-
     result_lines = []
     for line in lines:
         processed = _process_line(line, refs, options, tracker, next_ref)

@@ -19,6 +19,8 @@ from qwenpaw.channel_protocol.targets import decode_reply_target
 from .errors import WeChatDeliveryError
 
 
+# Non-stream driver retains the fail-closed optional cleanup hook.
+# pylint: disable-next=abstract-method
 class WeChatDriver(SharedResponseDriver):
     def __init__(self):
         super().__init__(
@@ -114,6 +116,8 @@ class WeChatDriver(SharedResponseDriver):
         }
 
     async def _open(self, params, request):
+        # Retain the native callback and lifecycle hook parameter names.
+        # pylint: disable=unused-argument
         self._identity(params)
         self._require_connected()
         handle = "wechat:reply:" + uuid.uuid4().hex

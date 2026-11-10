@@ -657,7 +657,7 @@ asyncio.run(main())
         PIP_CACHE_DIR=str(tmp_path / "pip-cache"),
         UV_CACHE_DIR=str(tmp_path / "uv-cache"),
     )
-    result = subprocess.run(
+    with subprocess.Popen(
         [
             str(python),
             "-I",
@@ -672,11 +672,45 @@ asyncio.run(main())
         ],
         cwd=tmp_path,
         env=env,
-        capture_output=True,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
         text=True,
-        timeout=90,
-        check=False,
-    )
+    ) as child:
+        try:
+            stdout, stderr = child.communicate(timeout=90)
+        except subprocess.TimeoutExpired:
+            # Stop the venv interpreter and installer descendants before
+            # collecting pipes; killing only the launcher leaves them open.
+            import psutil
+
+            try:
+                descendants = psutil.Process(child.pid).children(
+                    recursive=True,
+                )
+            except psutil.NoSuchProcess:
+                descendants = []
+            for process in reversed(descendants):
+                try:
+                    process.kill()
+                except psutil.NoSuchProcess:
+                    pass
+            if child.poll() is None:
+                child.kill()
+            psutil.wait_procs(descendants, timeout=5)
+            try:
+                stdout, stderr = child.communicate(timeout=5)
+            finally:
+                child.stdout.close()
+                child.stderr.close()
+            pytest.fail(
+                f"Dependency transaction timed out:\n{stdout}\n{stderr}",
+            )
+        result = subprocess.CompletedProcess(
+            child.args,
+            child.returncode,
+            stdout,
+            stderr,
+        )
     assert result.returncode == 0, result.stdout + result.stderr
     assert (
         set(json.loads(result.stdout.strip().splitlines()[-1])["installed"])

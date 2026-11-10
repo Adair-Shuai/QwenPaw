@@ -16,6 +16,7 @@ from ...adapter.sandbox import (
     ScriptTimeoutError,
     execute_script,
 )
+from ...adapter.script_worker import ALLOWED_MODULES
 from ...io import (
     IO,
     Hidden,
@@ -42,7 +43,10 @@ class ScriptNode(WorkflowNode):
             description=(
                 "Run a short Python snippet in the bounded worker-process "
                 "sandbox. Assign to `result` to emit a value. Use the "
-                "CodeExecutionTool for heavier workloads."
+                "CodeExecutionTool for heavier workloads. Standard modules "
+                "are preloaded and support import/from-import: "
+                + ", ".join(sorted(ALLOWED_MODULES))
+                + ". Input variables are injected as globals."
             ),
             inputs=[
                 IO.String.Input(
@@ -74,8 +78,10 @@ class ScriptNode(WorkflowNode):
                     optional=True,
                     default=[],
                     tooltip=(
-                        "Extra stdlib modules to whitelist (on top of math, "
-                        "json, statistics, re, datetime, itertools, etc.)."
+                        "Optional module declarations, restricted to the "
+                        "preloaded standard modules listed in the node "
+                        "description. Import statements work without adding "
+                        "these modules here."
                     ),
                 ),
                 IO.Boolean.Input(

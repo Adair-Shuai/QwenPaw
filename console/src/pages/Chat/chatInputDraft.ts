@@ -234,11 +234,18 @@ export function useChatInputDraft(
     // Ignore a pre-#8351 per-agent entry instead of restoring it (#8351).
     discardLegacyDraft(agentId);
 
-    const getTextarea = (): HTMLTextAreaElement | null =>
-      document.querySelector<HTMLTextAreaElement>(
-        'textarea[data-sender-input="true"]',
-      ) ??
-      document.querySelector<HTMLTextAreaElement>('[class*="sender"] textarea');
+    let currentTextarea: HTMLTextAreaElement | null = null;
+    const getTextarea = (): HTMLTextAreaElement | null => {
+      if (currentTextarea?.isConnected) return currentTextarea;
+      currentTextarea =
+        document.querySelector<HTMLTextAreaElement>(
+          'textarea[data-sender-input="true"]',
+        ) ??
+        document.querySelector<HTMLTextAreaElement>(
+          '[class*="sender"] textarea',
+        );
+      return currentTextarea;
+    };
 
     // Read before listening so a session switch cannot capture the previous
     // conversation's value. New SDK nodes re-read authoritative storage below.
@@ -335,7 +342,18 @@ export function useChatInputDraft(
 
     // SDK initialization and remounts have no fixed time limit. Discover each
     // new input once; DOM updates on an existing input never rewrite its draft.
-    const observer = new MutationObserver(() => {
+    const observer = new MutationObserver((records) => {
+      // Streaming answers mutate the page repeatedly. A live sender has
+      // already been restored; do not rescan the growing transcript per delta.
+      if (currentTextarea?.isConnected) return;
+      const addedTextarea = records.some((record) =>
+        Array.from(record.addedNodes).some(
+          (node) =>
+            node instanceof Element &&
+            (node.matches("textarea") || node.querySelector("textarea")),
+        ),
+      );
+      if (!addedTextarea) return;
       const textarea = getTextarea();
       if (textarea) applyStoredDraft(textarea);
     });

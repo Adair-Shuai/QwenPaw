@@ -73,13 +73,11 @@ class UltraQAGate(LoopGate):
     async def check(self, ctx: Any) -> Optional[StopHandlerResult]:
         if isinstance(ctx, dict) and ctx.get("has_tool_calls"):
             return StopHandlerResult(action=StopAction.BYPASS)
-
         st: _UltraQAState | None = self._state()
         if st is None:
             return StopHandlerResult(
                 action=StopAction.BYPASS,
             )
-
         wf = WorkflowState.from_existing(
             st.workspace_dir,
             "ultraqa",
@@ -101,7 +99,6 @@ class UltraQAGate(LoopGate):
                 action=StopAction.TERMINATE,
                 reason="QA goals achieved",
             )
-
         # Gate owns cycle in memory (single writer).
         if st.cycle >= st.max_cycles:
             await asyncio.to_thread(wf.cleanup)
@@ -110,7 +107,6 @@ class UltraQAGate(LoopGate):
                 action=StopAction.TERMINATE,
                 reason=f"Reached max cycles ({st.max_cycles})",
             )
-
         if _repeated_failure(
             st.last_failures,
             ULTRAQA_MAX_SAME_FAILURE,
@@ -121,7 +117,6 @@ class UltraQAGate(LoopGate):
                 action=StopAction.TERMINATE,
                 reason="Same failure repeated too many times",
             )
-
         st.cycle += 1
         await asyncio.to_thread(
             wf.update_state,

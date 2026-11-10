@@ -7,17 +7,18 @@
  */
 
 import type { DatasetInfo } from "./contracts/types";
-
-export type WellPlacement = "spatial" | "depth-only";
+import {
+  datasetProfile,
+  resolveWellPlacement,
+  type WellPlacement,
+} from "./capabilities/datasetProfile";
+export {
+  isWellSource,
+  type WellPlacement,
+} from "./capabilities/datasetProfile";
 
 /** Metres. Matches the backend trajectory_placement threshold. */
 export const SPATIAL_XY_METERS = 1;
-
-const WELL_SOURCES = new Set(["wellbore", "las", "dlis", "well", "trajectory"]);
-
-export function isWellSource(source: string | undefined): boolean {
-  return WELL_SOURCES.has(source || "");
-}
 
 export function trajectoryPlacement(
   x: ArrayLike<number>,
@@ -49,14 +50,7 @@ export function trajectoryPlacement(
 }
 
 export function wellPlacement(dataset: DatasetInfo): WellPlacement | null {
-  if (!isWellSource(dataset.source)) return null;
-  const meta = dataset.metadata || {};
-  if (meta.placement === "spatial" || meta.spatial === true) return "spatial";
-  if (meta.placement === "depth-only" || meta.spatial === false)
-    return "depth-only";
-  if (dataset.source === "las" || dataset.source === "dlis")
-    return "depth-only";
-  return "spatial";
+  return resolveWellPlacement(dataset);
 }
 
 export function isSpatialWell(dataset: DatasetInfo): boolean {
@@ -67,23 +61,8 @@ export function isDepthOnlyWell(dataset: DatasetInfo): boolean {
   return wellPlacement(dataset) === "depth-only";
 }
 
-const NON_GRID_SOURCES = new Set([
-  "las",
-  "dlis",
-  "network",
-  "network-tube",
-  "wellbore",
-  "well",
-  "trajectory",
-  "surface",
-  "intersection",
-  "well-intersection",
-  "slice",
-]);
-
 export function isGridDataset(dataset: DatasetInfo): boolean {
-  if (dataset.grid_dims && dataset.grid_dims.length >= 3) return true;
-  return !NON_GRID_SOURCES.has(dataset.source || "");
+  return datasetProfile(dataset).isGrid;
 }
 
 export function wellDisplayName(dataset: DatasetInfo): string {

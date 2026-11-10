@@ -1,3 +1,4 @@
+import { UgsciMotion } from "../components/UgsciMotion";
 import { Progress } from "antd";
 import { useTranslation } from "react-i18next";
 import styles from "./BackendLoadingPage.module.less";
@@ -56,9 +57,11 @@ export default function BackendLoadingPage({
   return (
     <div className={styles.page}>
       <div className={styles.card}>
-        <img
-          src={`${import.meta.env.BASE_URL}qwenpaw.png`}
-          alt="QwenPaw"
+        <UgsciMotion
+          variant="startup"
+          size={96}
+          active={!hasFailed}
+          label="UGSci"
           className={styles.logo}
         />
 

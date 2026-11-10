@@ -77,15 +77,12 @@ class _QuoteState:
         if self.escaped:
             self.escaped = False
             return
-
         if char == "\\" and not self.in_single:
             self.escaped = True
             return
-
         if char == "'" and not self.in_double:
             self.in_single = not self.in_single
             return
-
         if char == '"' and not self.in_single:
             self.in_double = not self.in_double
 
@@ -141,7 +138,6 @@ def _check_command_substitution(
                 matched=command[snippet_start:snippet_end],
                 snippet=command[snippet_start:snippet_end],
             )
-
     # Other patterns checked against unquoted content
     for pattern, label in _COMMAND_SUBSTITUTION_PATTERNS:
         m = pattern.search(unquoted)
@@ -174,7 +170,6 @@ def _check_obfuscated_flags(command: str) -> GuardFinding | None:
             command,
             risk_type="obfuscated_flags",
         )
-
     if _LOCALE_QUOTE_RE.search(command):
         return _finding(
             "SHELL_EVASION_OBFUSCATED_FLAGS",
@@ -184,7 +179,6 @@ def _check_obfuscated_flags(command: str) -> GuardFinding | None:
             command,
             risk_type="obfuscated_flags",
         )
-
     if _EMPTY_SPECIAL_QUOTE_DASH_RE.search(command):
         return _finding(
             "SHELL_EVASION_OBFUSCATED_FLAGS",
@@ -194,7 +188,6 @@ def _check_obfuscated_flags(command: str) -> GuardFinding | None:
             command,
             risk_type="obfuscated_flags",
         )
-
     if _EMPTY_QUOTE_DASH_RE.search(command):
         return _finding(
             "SHELL_EVASION_OBFUSCATED_FLAGS",
@@ -204,7 +197,6 @@ def _check_obfuscated_flags(command: str) -> GuardFinding | None:
             command,
             risk_type="obfuscated_flags",
         )
-
     # Quoted flag content: whitespace + quote + dash-letter inside quote
     state = _QuoteState()
     prev_char = ""
@@ -213,7 +205,6 @@ def _check_obfuscated_flags(command: str) -> GuardFinding | None:
             state.feed(ch)
             prev_char = ch
             continue
-
         if not state.in_any_quote and prev_char in (" ", "\t"):
             if ch in ("'", '"'):
                 # Peek inside the quote to see if it starts with a dash
@@ -234,10 +225,8 @@ def _check_obfuscated_flags(command: str) -> GuardFinding | None:
                         risk_type="obfuscated_flags",
                         matched=command[i : j + 1],
                     )
-
         state.feed(ch)
         prev_char = ch
-
     return None
 
 
@@ -315,7 +304,6 @@ def _check_newlines(command: str) -> GuardFinding | None:
     # treated as hidden-command splitting.
     if _looks_like_heredoc(command):
         return None
-
     # Carriage return outside double quotes (misparsing concern)
     state = _QuoteState()
     for ch in command:
@@ -332,7 +320,6 @@ def _check_newlines(command: str) -> GuardFinding | None:
                 command,
                 risk_type="newlines",
             )
-
     # Newline outside quotes followed by non-whitespace (hidden command)
     state = _QuoteState()
     for i, ch in enumerate(command):
@@ -351,7 +338,6 @@ def _check_newlines(command: str) -> GuardFinding | None:
                     command,
                     risk_type="newlines",
                 )
-
     return None
 
 
@@ -383,7 +369,6 @@ def _check_comment_quote_desync(command: str) -> GuardFinding | None:
     """
     if "#" not in command:
         return None
-
     state = _QuoteState()
     for i, ch in enumerate(command):
         if state.escaped:
@@ -409,7 +394,6 @@ def _check_comment_quote_desync(command: str) -> GuardFinding | None:
             # Skip rest of comment line
             if line_end == -1:
                 break
-
     return None
 
 
@@ -423,7 +407,6 @@ def _check_quoted_newline(command: str) -> GuardFinding | None:
     """
     if "\n" not in command or "#" not in command:
         return None
-
     state = _QuoteState()
     for i, ch in enumerate(command):
         if state.escaped:
@@ -449,7 +432,6 @@ def _check_quoted_newline(command: str) -> GuardFinding | None:
                         max(0, i - 10) : min(len(command), line_end + 10)
                     ],
                 )
-
     return None
 
 
@@ -525,10 +507,8 @@ def _load_check_enabled_map() -> dict[str, bool]:
         raw = load_config().security.tool_guard.shell_evasion_checks
     except Exception:
         return {}
-
     if not isinstance(raw, dict):
         return {}
-
     enabled: dict[str, bool] = {}
     for key, value in raw.items():
         if key in _CHECK_NAMES and isinstance(value, bool):
@@ -559,11 +539,9 @@ class ShellEvasionGuardian(BaseToolGuardian):
     ) -> list[GuardFinding]:
         if tool_name != "execute_shell_command":
             return []
-
         command = params.get("command")
         if not isinstance(command, str) or not command.strip():
             return []
-
         # Pre-compute content outside single quotes for checks that need it.
         outside_single_quotes = _extract_outside_single_quotes(command)
 
@@ -588,5 +566,4 @@ class ShellEvasionGuardian(BaseToolGuardian):
                 continue
             if result is not None:
                 findings.append(result)
-
         return findings

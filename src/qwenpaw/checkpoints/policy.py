@@ -80,6 +80,9 @@ QWENPAW_RUNTIME_STATE_FILES = frozenset(
         "feishu_receive_ids.json",
         "HEARTBEAT.md",
         "history.db",
+        "history.db-wal",
+        "history.db-shm",
+        "history.db-journal",
         "jobs.json",
         "matrix_auth_state.json",
         "matrix_sync_token",
@@ -422,7 +425,6 @@ def session_file_path(
     """Return the QwenPaw 2.0 JSON session path for one session."""
     if not session_id:
         raise ValueError("session_id must not be None or empty")
-
     save_dir = Path(workspace_dir) / "sessions"
     safe_sid = sanitize_filename(session_id)
     safe_uid = sanitize_filename(user_id) if user_id else ""

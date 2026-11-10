@@ -379,7 +379,6 @@ async def test_ready_session_lru_rechecks_evicted_sessions(
     try:
         for session_id in ("session-a", "session-b", "session-a", "session-c"):
             await manager._ensure_session(session_id)
-
         assert list(manager._ready_sessions) == ["session-a", "session-c"]
         assert client.ensure_session.await_count == 3
 
@@ -428,7 +427,6 @@ async def test_cache_eviction_keeps_pending_commit_progress(
                 [_user(f"other request {index}"), _assistant("other reply")],
                 session_id=f"other-chat-{index}",
             )
-
         assert pending_session_id not in manager._ready_sessions
         assert len(manager._ready_sessions) == 1
         assert len(manager._persisted_msg_ids) == 2
@@ -467,7 +465,6 @@ async def test_empty_turn_does_not_leave_pending_session_entries(
     try:
         for index in range(3):
             await manager.auto_memory([], session_id=f"empty-chat-{index}")
-
         assert not manager._pending_commit_msg_ids
         assert not manager._persisted_msg_ids
         client.add_messages.assert_not_awaited()

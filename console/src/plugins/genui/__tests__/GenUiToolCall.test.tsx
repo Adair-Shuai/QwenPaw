@@ -12,17 +12,24 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { render } from "@testing-library/react";
 import * as React from "react";
+
+// Minimal host surface deliberately supplied by this isolated fixture.
+const fixtureWindow = window as unknown as {
+  QwenPaw: {
+    host: { React: typeof React; getCurrentSessionId?: () => string };
+  };
+};
 import { GenUiToolCall } from "@genui-src/components/GenUiToolCall";
 
 // Set up window.QwenPaw.host.React before importing components
 beforeEach(() => {
-  (window as any).QwenPaw = {
+  fixtureWindow.QwenPaw = {
     host: { React },
   };
 });
 
 afterEach(() => {
-  delete (window as any).QwenPaw;
+  Reflect.deleteProperty(fixtureWindow, "QwenPaw");
 });
 
 function makeValidResult(): string {
@@ -225,7 +232,7 @@ describe("GenUiToolCall", () => {
   });
 
   it("returns null when host React is not available", () => {
-    delete (window as any).QwenPaw;
+    Reflect.deleteProperty(fixtureWindow, "QwenPaw");
     const props = {
       data: {
         status: "completed",

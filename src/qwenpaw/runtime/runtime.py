@@ -145,7 +145,7 @@ class Runtime:
             if not skip_agent:
                 self._apply_context_injections(ctx)
                 if steering_candidate is not None and steering_candidate.bind(
-                    ctx
+                    ctx,
                 ):
                     steering = steering_candidate
                 from ..config.context import (
@@ -160,6 +160,7 @@ class Runtime:
                         request=request,
                         agent_id=ctx.agent_id,
                         response_id=envelope.response.id,
+                        track_tools=True,
                         project_dirs=get_all_project_dir_paths()
                         or [get_tool_base_dir()],
                     )
@@ -271,8 +272,6 @@ class Runtime:
             raise
         finally:
             if steering is not None:
-                from ..utils.io_utils import run_async_to_completion
-
                 try:
                     await run_async_to_completion(steering.close())
                 except asyncio.CancelledError:
@@ -385,12 +384,13 @@ class Runtime:
             proxy = StateProxy()
             proxy.data = agent.state_dict()
             request = ctx.request
-            from .console_turn_state import REGENERATE_FROM, stamp_console_turn
+            from .console_turn_state import (
+                is_console_history_replacement,
+                stamp_console_turn,
+            )
 
             # A failed replacement must not destroy the previously saved turn.
-            if (getattr(request, "request_context", None) or {}).get(
-                REGENERATE_FROM,
-            ):
+            if is_console_history_replacement(request):
                 return
             stamp_console_turn(
                 proxy.data,

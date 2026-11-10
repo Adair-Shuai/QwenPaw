@@ -71,7 +71,6 @@ async def test_pending_session_project_dir_must_exist(
             _request(tmp_path / "missing"),
             workspace,
         )
-
     assert error.value.status_code == 400
 
 

@@ -348,7 +348,6 @@ def test_running_config_retry_knobs_roundtrip(app_server) -> None:
         "llm_max_qpm",
     ):
         assert key in baseline, baseline
-
     patched = dict(baseline)
     patched["llm_max_retries"] = 7
     patched["llm_max_qpm"] = 999

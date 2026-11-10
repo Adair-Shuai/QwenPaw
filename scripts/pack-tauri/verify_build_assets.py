@@ -37,8 +37,10 @@ import hashlib
 import importlib.util
 import io
 import json
+import subprocess
 import sys
 from pathlib import Path
+from typing import cast
 
 
 def _plugin_packaging_helper(repo: Path):
@@ -581,7 +583,7 @@ def main() -> int:
 
     repo = _repo_root()
     all_errors: list[str] = []
-    total = 9
+    total = 10
 
     print("=== Build Asset Verification ===")
     print(f"Repository: {repo}")
@@ -677,6 +679,35 @@ def main() -> int:
         total,
         errs,
         "Real-WebView plugin verification command is allowed",
+    )
+
+    # Check bytes in both the source tree and the frontend actually packaged.
+    errs = []
+    for brand_arguments in [
+        [],
+        ["--scope", "console", "--dist", "console/dist"],
+    ]:
+        result = subprocess.run(
+            [
+                "node",
+                "console/scripts/verify-brand-assets.mjs",
+                *cast(list[str], brand_arguments),
+            ],
+            cwd=repo,
+            capture_output=True,
+            text=True,
+            encoding="utf-8",
+            check=False,
+        )
+        if result.returncode:
+            errs.append(result.stdout + result.stderr)
+    all_errors.extend(errs)
+    _run_check(
+        "brand asset contents",
+        10,
+        total,
+        errs,
+        "Shipped brand assets and built frontend match their content digests",
     )
 
     print()

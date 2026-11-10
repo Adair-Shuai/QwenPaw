@@ -32,7 +32,9 @@ describe("agentApi", () => {
 
   it("agentApi sends POST to /agent/process with body", async () => {
     const body = { message: "hello", session_id: "s1" };
-    await agentApi.agentApi(body as any);
+    await agentApi.agentApi(
+      body as unknown as Parameters<typeof agentApi.agentApi>[0],
+    );
     expect(request).toHaveBeenCalledWith("/console/chat", {
       method: "POST",
       body: JSON.stringify(body),
@@ -62,7 +64,9 @@ describe("agentApi", () => {
   });
 
   it("updateAgentRunningConfig sends PUT with config body", async () => {
-    const config = { agents: [{ name: "test" }] } as any;
+    const config = { agents: [{ name: "test" }] } as unknown as Parameters<
+      typeof agentApi.updateAgentRunningConfig
+    >[0];
     vi.mocked(request).mockResolvedValue(config);
     const result = await agentApi.updateAgentRunningConfig(config);
     expect(request).toHaveBeenCalledWith("/workspace/running-config", {

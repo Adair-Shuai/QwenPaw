@@ -293,6 +293,8 @@ async def test_qualitative_rubric_only_revises_text_responses() -> None:
 
 @pytest.mark.parametrize("limit_first", [False, True])
 async def test_iteration_limit_skips_decision_model(limit_first, monkeypatch):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     rubric = _gate(
         "rubric",
         "qualitative_rubric",

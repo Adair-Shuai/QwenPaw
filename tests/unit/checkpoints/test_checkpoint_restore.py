@@ -542,7 +542,6 @@ def test_tree_restore_uses_constant_git_processes_for_many_files(
         rel = f"src/file_{index:04d}.py"
         (tmp_path / rel).write_text(f"VALUE = {index}\n", encoding="utf-8")
         paths.add(rel)
-
     repository = CheckpointRepository(tmp_path)
     tree = repository.write_workspace_tree()
 
@@ -552,7 +551,6 @@ def test_tree_restore_uses_constant_git_processes_for_many_files(
     ):
         with patch("subprocess.Popen", wraps=subprocess.Popen) as popen:
             result = operation(tree, paths)
-
         assert result == ([], [])
         commands = [tuple(call.args[0]) for call in popen.call_args_list]
         assert len(commands) == 2
@@ -576,14 +574,12 @@ def test_memory_preview_uses_constant_git_processes(
             f"fact {index}\n",
             encoding="utf-8",
         )
-
     repository = CheckpointRepository(tmp_path)
     tree = repository.write_workspace_tree()
     restorer = MemoryRestorer(repository=repository)
 
     with patch("subprocess.Popen", wraps=subprocess.Popen) as popen:
         result = restorer.plan(tree)
-
     assert result == ([], [])
     commands = [tuple(call.args[0]) for call in popen.call_args_list]
     assert len(commands) == 3
@@ -612,10 +608,8 @@ def test_restore_rejects_symlink_parent_outside_workspace(
         os.symlink(outside, linked, target_is_directory=True)
     except OSError as exc:
         pytest.skip(f"directory symbolic links are unavailable: {exc}")
-
     with pytest.raises(CheckpointError, match="outside workspace|reparse"):
         repository.restore_internal_paths({"linked/escaped.txt": b"escaped"})
-
     assert not (outside / "escaped.txt").exists()
 
 
@@ -634,12 +628,10 @@ def test_restore_rejects_windows_junction_parent(tmp_path: Path) -> None:
     )
     if created.returncode != 0:
         pytest.skip(f"junctions are unavailable: {created.stderr}")
-
     with pytest.raises(CheckpointError, match="outside workspace|reparse"):
         repository.restore_internal_paths(
             {"junction/escaped.txt": b"escaped"},
         )
-
     assert not (outside / "escaped.txt").exists()
     sentinel = outside / "sentinel.txt"
     sentinel.write_text("keep", encoding="utf-8")
@@ -775,11 +767,9 @@ async def test_restore_with_files_rejects_invalid_selections(
             **common,
             selected_files=("docs/missing.md",),
         )
-
     confirm_args = {**common, "dry_run": False}
     with pytest.raises(CheckpointError, match="explicit.*--files"):
         await engine.restore_with_files(**confirm_args)
-
     head_before = engine.session_head(
         session_key(
             channel=CHANNEL,
@@ -894,7 +884,6 @@ async def test_precise_guard_timeout_resumes_cron() -> None:
 
     with pytest.raises(CheckpointError, match="did not become idle"):
         await guard.quiesce()
-
     assert workspace.cron_executor.paused is False
     assert workspace.cron_executor.resume_count == 1
     release.set()
@@ -1003,7 +992,6 @@ async def test_restore_with_memory_rolls_back_session_on_failure(
             user_id=USER_ID,
             channel=CHANNEL,
         )
-
     assert _session_text(session_path) == "second"
     assert (
         engine.session_head(
@@ -1185,7 +1173,6 @@ async def test_cancelled_memory_restore_waits_for_rollback(
     release.set()
     with pytest.raises(asyncio.CancelledError):
         await restore_task
-
     assert _session_text(session_path) == "second"
     assert memory_path.read_text(encoding="utf-8") == "memory second"
     assert engine.query_gate.is_set()
@@ -1234,7 +1221,6 @@ async def test_conversation_restore_rolls_back_after_head_update_failure(
             user_id=USER_ID,
             channel=CHANNEL,
         )
-
     assert _session_text(session_path) == "second"
     assert (
         engine.session_head(

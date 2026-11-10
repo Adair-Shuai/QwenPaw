@@ -88,7 +88,6 @@ async def test_relative_preview_preserves_chat_lookup_http_error(
     request = Request({"type": "http", "headers": []})
     with pytest.raises(HTTPException) as exc_info:
         await _resolve_relative_path("report.md", request)
-
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Chat not found"
 
@@ -109,6 +108,5 @@ async def test_relative_preview_preserves_agent_lookup_http_error(
     request = Request({"type": "http", "headers": []})
     with pytest.raises(HTTPException) as exc_info:
         await _resolve_relative_path("report.md", request)
-
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Agent not found"

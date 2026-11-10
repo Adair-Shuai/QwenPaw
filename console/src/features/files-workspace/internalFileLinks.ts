@@ -1,7 +1,5 @@
 import type { FileTarget } from "./types";
 
-const EXTERNAL_SCHEMES = new Set(["http:", "https:", "mailto:"]);
-
 export function isAbsoluteLocalFilePath(rawPath: string): boolean {
   const path = rawPath.trim();
   return (
@@ -17,39 +15,75 @@ function hasUnsafeSegment(path: string): boolean {
     .some((segment) => !segment || segment === "." || segment === "..");
 }
 
-export function parseInternalFileLink(rawHref: string): FileTarget | null {
+export function parseInternalFileLink(
+  rawHref: string,
+  allowAbsolutePaths = false,
+  allowDirectoryPaths = false,
+): FileTarget | null {
   const href = rawHref.trim();
-  if (!href || href.startsWith("/") || href.startsWith("\\")) {
+  if (!href || href.startsWith("#") || href.includes("?")) {
     return null;
   }
-  const scheme = /^[a-z][a-z\d+.-]*:/i.exec(href)?.[0].toLowerCase();
-  if (scheme) {
-    return EXTERNAL_SCHEMES.has(scheme) ? null : null;
+  let [rawPath, fragment = ""] = href.split("#", 2);
+  const suffix = /:(\d+)(?:-(\d+))?(?::(\d+))?$/.exec(rawPath);
+  if (suffix) {
+    if (fragment) return null;
+    rawPath = rawPath.slice(0, suffix.index);
+    fragment = `L${suffix[1]}${suffix[2] ? `-L${suffix[2]}` : ""}${
+      suffix[3] ? `C${suffix[3]}` : ""
+    }`;
   }
-
-  const [rawPath, fragment = ""] = href.split("#", 2);
+  const scheme = /^[a-z][a-z\d+.-]*:/i.exec(rawPath)?.[0].toLowerCase();
+  if (scheme && !/^[a-z]:[\\/]/i.test(rawPath) && scheme !== "file:") {
+    return null;
+  }
   let path: string;
   try {
-    path = decodeURIComponent(rawPath);
+    if (scheme === "file:") {
+      const url = new URL(rawPath);
+      if (url.hostname && url.hostname !== "localhost") return null;
+      rawPath = url.pathname.replace(/^\/([a-z]:\/)/i, "$1");
+    }
+    path = decodeURIComponent(rawPath).replace(/\\/g, "/");
   } catch {
     return null;
   }
+  const absolute = isAbsoluteLocalFilePath(path);
+  const segments = path.replace(/^(?:[a-z]:)?\//i, "");
+  const directoryRoot = allowDirectoryPaths && absolute && !segments;
+  const checkedSegments = allowDirectoryPaths
+    ? segments.replace(/\/$/, "")
+    : segments;
   if (
     !path ||
-    path.includes("\\") ||
-    /^[a-z]:/i.test(path) ||
-    hasUnsafeSegment(path)
+    /[\u0000-\u001f\u007f]/.test(path) ||
+    path.startsWith("//") ||
+    (absolute && !allowAbsolutePaths) ||
+    (!absolute && /^[a-z]:/i.test(path)) ||
+    (!directoryRoot && hasUnsafeSegment(checkedSegments))
   ) {
     return null;
   }
 
-  const lineMatch = /^L(\d+)(?:C(\d+))?$/.exec(fragment);
+  const lineMatch = /^L(\d+)(?:-L?(\d+))?(?:C(\d+))?$/.exec(fragment);
   if (fragment && !lineMatch) return null;
+  const line = lineMatch ? Number(lineMatch[1]) : undefined;
+  const endLine = lineMatch?.[2] ? Number(lineMatch[2]) : undefined;
+  const column = lineMatch?.[3] ? Number(lineMatch[3]) : undefined;
+  if (
+    [line, endLine, column].some(
+      (value) =>
+        value !== undefined && (!Number.isSafeInteger(value) || value < 1),
+    ) ||
+    (line !== undefined && endLine !== undefined && endLine < line)
+  )
+    return null;
   return {
     source: "workspace",
     path,
-    line: lineMatch ? Number(lineMatch[1]) : undefined,
-    column: lineMatch?.[2] ? Number(lineMatch[2]) : undefined,
+    line,
+    ...(endLine !== undefined && { endLine }),
+    column,
   };
 }
 
@@ -58,8 +92,12 @@ export function toProjectRelativePath(
   projectDirectory?: string,
 ): string | null {
   const path = rawPath.trim().replace(/\\/g, "/");
-  const direct = parseInternalFileLink(path);
-  if (direct) return direct.path;
+  // These are filesystem names. Preserve literal link punctuation and percent signs.
+  const relativePath = (value: string) =>
+    parseInternalFileLink(value.split("/").map(encodeURIComponent).join("/"))
+      ?.path ?? null;
+  const direct = relativePath(path);
+  if (direct) return direct;
   if (!projectDirectory) return null;
 
   const root = projectDirectory.trim().replace(/\\/g, "/").replace(/\/+$/, "");
@@ -67,7 +105,7 @@ export function toProjectRelativePath(
   const comparablePath = ignoreCase ? path.toLowerCase() : path;
   const comparableRoot = ignoreCase ? root.toLowerCase() : root;
   if (!comparablePath.startsWith(`${comparableRoot}/`)) return null;
-  return parseInternalFileLink(path.slice(root.length + 1))?.path ?? null;
+  return relativePath(path.slice(root.length + 1));
 }
 
 function normalizeComparablePath(path: string): string {

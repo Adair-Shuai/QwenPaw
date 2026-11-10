@@ -222,13 +222,13 @@ export function WorksForYou() {
             className="pointer-events-none absolute left-1/2 top-0 h-px w-screen -translate-x-1/2 animate-[qwenpaw-dash-move-right_1s_linear_infinite]"
             style={{
               background:
-                "repeating-linear-gradient(to right, rgba(255,157,77,0.45) 0 8px, transparent 8px 16px)",
+                "repeating-linear-gradient(to right, #e3e5e0 0 8px, transparent 8px 16px)",
               backgroundSize: "16px 100%",
             }}
             aria-hidden
           />
 
-          <div className="divide-y divide-[#F1E5DC] sm:hidden">
+          <div className="divide-y divide-(--border) sm:hidden">
             {cards.map((card, index) => (
               <FeatureCard
                 key={card.key}
@@ -276,7 +276,7 @@ export function WorksForYou() {
             className="pointer-events-none absolute bottom-0 left-1/2 h-px w-screen -translate-x-1/2 animate-[qwenpaw-dash-move-left_1s_linear_infinite]"
             style={{
               background:
-                "repeating-linear-gradient(to right, rgba(255,157,77,0.45) 0 8px, transparent 8px 16px)",
+                "repeating-linear-gradient(to right, #e3e5e0 0 8px, transparent 8px 16px)",
               backgroundSize: "16px 100%",
             }}
             aria-hidden
@@ -301,7 +301,7 @@ export function WorksForYou() {
                   {activePage === page && (
                     <motion.div
                       key={`${page}-${autoProgressing ? "timed" : "idle"}`}
-                      className="absolute top-0 bottom-0 left-0 rounded-full bg-[linear-gradient(90deg,#FFB36F_0%,#FF9D4D_55%,#F7852D_100%)]"
+                      className="absolute top-0 bottom-0 left-0 rounded-full bg-(--accent)"
                       initial={reduceMotion ? false : { width: "0%" }}
                       animate={{
                         width: reduceMotion
@@ -360,7 +360,7 @@ function FeatureCard({
 
   return (
     <motion.article
-      className="group flex min-w-0 h-full flex-col border-b border-[#F1E5DC] py-6 last:border-b-0 sm:border-b-0 sm:py-0"
+      className="group flex min-w-0 h-full flex-col border-b border-(--border) py-6 last:border-b-0 sm:border-b-0 sm:py-0"
       initial={reduceMotion ? false : { opacity: 0, y: 12 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.2 }}

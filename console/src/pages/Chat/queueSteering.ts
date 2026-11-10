@@ -21,6 +21,8 @@ export function queueSteeringBlockReason(
     item.images?.length ||
     item.mentions?.length ||
     item.quote ||
+    context?.qwenpaw_edit_resend ||
+    context?.qwenpaw_answer_quotes ||
     getSubmittedAgentMention(context) ||
     context?.agent_coordination_requested ||
     params?.target_agent_id ||

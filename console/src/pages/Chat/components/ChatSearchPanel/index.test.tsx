@@ -79,7 +79,7 @@ vi.mock("@agentscope-ai/design", async (importOriginal) => {
       React.createElement(
         "button",
         { type: "button", onClick, "data-testid": "icon-button" },
-        icon as any,
+        icon as React.ReactNode,
       ),
   };
 });

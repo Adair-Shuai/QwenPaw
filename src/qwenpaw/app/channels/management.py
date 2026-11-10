@@ -115,6 +115,9 @@ class ChannelManagementService:
         *,
         timeout: float,
     ) -> ManagementResult:
+        # Preserve native event routing, media fallbacks and cleanup in SDK
+        # order.
+        # pylint: disable=R0912,R0915,R0916
         if self._closed:
             raise ManagementError("MANAGEMENT_CLOSED")
         if (

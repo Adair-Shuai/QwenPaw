@@ -24,6 +24,8 @@ async def download_media(
     filename: str = "",
     headers: Optional[dict] = None,
 ) -> Optional[str]:
+    # Preserve native event routing, media fallbacks and cleanup in SDK order.
+    # pylint: disable=R0911
     """Download a media file from URL to local media directory.
 
     Args:

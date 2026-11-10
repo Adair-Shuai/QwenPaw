@@ -70,7 +70,6 @@ class SecurityRule:
                 self.compiled_patterns.append(re.compile(pat))
             except re.error as exc:
                 logger.warning("Bad regex in rule %s: %s", self.id, exc)
-
         self.compiled_exclude_patterns: list[re.Pattern[str]] = []
         for pat in self.exclude_patterns:
             try:
@@ -122,7 +121,6 @@ class SecurityRule:
                             "file_path": file_path,
                         },
                     )
-
         # --- Pass 2: multiline patterns ----------------------------------
         for pattern in self.compiled_patterns:
             stripped = _CHAR_CLASS_RE.sub("", pattern.pattern)
@@ -151,7 +149,6 @@ class SecurityRule:
                         "file_path": file_path,
                     },
                 )
-
         return matches
 
 
@@ -193,7 +190,6 @@ class RuleLoader:
                 raise RuntimeError(f"Failed to load {path}: {exc}") from exc
             if not isinstance(raw, list):
                 raise RuntimeError(f"Expected list in {path}")
-
         self.rules = []
         self.rules_by_id = {}
         self.rules_by_category = {}
@@ -212,7 +208,6 @@ class RuleLoader:
                     entry.get("id", "?"),
                     exc,
                 )
-
         return self.rules
 
     def get_rule(self, rule_id: str) -> SecurityRule | None:
@@ -276,7 +271,6 @@ class PatternAnalyzer(BaseAnalyzer):
             content = sf.read_content()
             if not content:
                 continue
-
             is_doc = self.policy.is_doc_path(sf.relative_path)
 
             applicable = self._get_rules(sf.file_type)
@@ -297,7 +291,6 @@ class PatternAnalyzer(BaseAnalyzer):
                         "typescript",
                     ):
                         continue
-
                 matches = rule.scan_content(
                     content,
                     file_path=sf.relative_path,
@@ -311,7 +304,6 @@ class PatternAnalyzer(BaseAnalyzer):
                             severity = Severity(override)
                         except ValueError:
                             pass
-
                     findings.append(
                         Finding(
                             id=(
@@ -334,7 +326,6 @@ class PatternAnalyzer(BaseAnalyzer):
                             },
                         ),
                     )
-
         # Filter well-known test credentials
         findings = [
             f for f in findings if not self._is_known_test_credential(f)
@@ -343,7 +334,6 @@ class PatternAnalyzer(BaseAnalyzer):
         # De-duplicate if enabled in policy
         if self.policy.rule_scoping.dedupe_duplicate_findings:
             findings = self._dedupe_findings(findings)
-
         return findings
 
     # ------------------------------------------------------------------

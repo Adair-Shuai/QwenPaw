@@ -206,6 +206,8 @@ export function buildWorkspaceMarkdown(response: CopyableResponse): string {
 }
 
 const REPLY_FILENAME_MAX_STEM = 32;
+// Filenames explicitly reject ASCII control characters before saving.
+// eslint-disable-next-line no-control-regex
 const REPLY_FILENAME_INVALID_CHARS = /[<>:"/\\|?*\u0000-\u001f]/g;
 
 function truncateFilenameStem(text: string, maxChars: number): string {
@@ -243,16 +245,21 @@ export function summarizeReplyFilename(
 }
 
 /** Extract plain text from user message content. */
-export function extractUserMessageText(m: any): string {
+export function extractUserMessageText(m: { content?: unknown }): string {
   if (typeof m.content === "string") return m.content;
   if (!Array.isArray(m.content)) return "";
   return m.content
-    .filter((p: any) => p.type === "text")
-    .map((p: any) => p.text || "")
+    .filter((p: { type?: unknown }) => p.type === "text")
+    .map((p: { text?: unknown }) => p.text || "")
     .join("\n");
 }
 
-export function extractTextFromMessage(msg: any): string {
+export function extractTextFromMessage(
+  msg:
+    | { cards?: Array<{ data?: { input?: Array<{ content?: unknown }> } }> }
+    | null
+    | undefined,
+): string {
   const innerMessage = msg?.cards?.[0]?.data?.input?.[0];
   if (!innerMessage) return "";
   return extractUserMessageText(innerMessage);
@@ -350,7 +357,9 @@ export function toStoredName(v: string): string {
 }
 
 /** Convert content part URLs to stored name format. */
-export function normalizeContentUrls(part: any): any {
+export function normalizeContentUrls(
+  part: Record<string, unknown>,
+): Record<string, unknown> {
   const p = { ...part };
   if (p.type === "image" && typeof p.image_url === "string")
     p.image_url = toStoredName(p.image_url);

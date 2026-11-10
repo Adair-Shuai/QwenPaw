@@ -73,7 +73,8 @@ const PdfSearchBar: React.FC<PdfSearchBarProps> = ({
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => {
       if (e.key === "Enter") {
-        e.shiftKey ? onPrev() : onNext();
+        if (e.shiftKey) onPrev();
+        else onNext();
       } else if (e.key === "Escape") {
         onClose();
       }

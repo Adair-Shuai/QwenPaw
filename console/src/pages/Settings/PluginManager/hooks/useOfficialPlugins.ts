@@ -48,11 +48,12 @@ export function useOfficialPlugins({ onInstalled }: UseOfficialPluginsOptions) {
   }, [t]);
 
   useEffect(() => {
+    const requestIdAtSetup = requestId;
     void loadCatalog();
     const unsubscribe = subscribeToPluginChanges(() => void loadCatalog());
     return () => {
       unsubscribe();
-      ++requestId.current;
+      ++requestIdAtSetup.current;
     };
   }, [loadCatalog]);
 

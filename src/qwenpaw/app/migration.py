@@ -86,7 +86,6 @@ def _do_migrate_legacy_workspace() -> bool:
     except Exception as e:
         logger.error(f"Failed to load config: {e}")
         return False
-
     # Check if already migrated
     # Skip if:
     # 1. Multiple agents already exist (multi-agent config), OR
@@ -97,7 +96,6 @@ def _do_migrate_legacy_workspace() -> bool:
             f"({len(config.agents.profiles)} agents), skipping migration",
         )
         return False
-
     if "default" in config.agents.profiles:
         agent_ref = config.agents.profiles["default"]
         if isinstance(agent_ref, AgentProfileRef):
@@ -108,7 +106,6 @@ def _do_migrate_legacy_workspace() -> bool:
                     "Default agent already migrated, skipping migration",
                 )
                 return False
-
     logger.info("=" * 60)
     logger.info("Migrating legacy config to multi-agent structure...")
     logger.info("=" * 60)
@@ -177,7 +174,6 @@ def _do_migrate_legacy_workspace() -> bool:
         if agent_config_tmp.exists():
             agent_config_tmp.unlink()
         raise
-
     migrated_items = []
 
     for source_dir in [Path(WORKING_DIR).expanduser()]:
@@ -186,10 +182,8 @@ def _do_migrate_legacy_workspace() -> bool:
             default_workspace,
             migrated_items,
         )
-
     if migrated_items:
         logger.info(f"Migrated workspace items: {', '.join(migrated_items)}")
-
     # Update root config.json to new structure
     # CRITICAL: Preserve legacy agent fields in root config for downgrade
     # compatibility. Old versions expect these fields to have valid values.
@@ -244,18 +238,15 @@ def _migrate_workspace_item(
     """
     if not old_path.exists():
         return
-
     if new_path.exists():
         logger.debug(f"Skipping {item_name} (already exists in new location)")
         return
-
     try:
         if old_path.is_dir():
             shutil.copytree(old_path, new_path)
         else:
             new_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(old_path, new_path)
-
         migrated_items.append(item_name)
         logger.debug(f"Migrated {item_name}")
     except Exception as e:
@@ -281,7 +272,6 @@ def _migrate_workspace_items_from_source(
             item_name,
             migrated_items,
         )
-
     # Migrate all .md files
     if source_dir.exists():
         for md_file in sorted(source_dir.glob("*.md")):
@@ -432,13 +422,11 @@ def _do_migrate_legacy_skills() -> bool:
             e,
         )
         return False
-
     try:
         config = load_config()
     except Exception as e:
         logger.warning("Failed to load config for skill migration: %s", e)
         return False
-
     default_workspace = Path(
         f"{WORKING_DIR}/workspaces/default",
     ).expanduser()
@@ -453,7 +441,6 @@ def _do_migrate_legacy_skills() -> bool:
             workspace_dirs,
             seen_workspaces,
         )
-
     workspaces_root = Path(WORKING_DIR) / "workspaces"
     if workspaces_root.exists():
         for workspace_dir in sorted(workspaces_root.iterdir()):
@@ -463,7 +450,6 @@ def _do_migrate_legacy_skills() -> bool:
                     workspace_dirs,
                     seen_workspaces,
                 )
-
     _register_workspace(default_workspace, workspace_dirs, seen_workspaces)
 
     # --- Phase 2: Build migration sources ---
@@ -487,7 +473,6 @@ def _do_migrate_legacy_skills() -> bool:
                 for p in ws_skills_dir.iterdir()
             ):
                 workspaces_with_existing_skills.add(str(workspace_dir))
-
     legacy_root = Path(WORKING_DIR).expanduser()
     if (
         legacy_root != default_workspace
@@ -501,7 +486,6 @@ def _do_migrate_legacy_skills() -> bool:
             migration_sources.append(
                 (legacy_root, default_workspace, "legacy_root"),
             )
-
     workspace_active_names: dict[Path, set[str]] = {}
     copied_workspace_skills = 0
 
@@ -515,7 +499,6 @@ def _do_migrate_legacy_skills() -> bool:
 
         if not customized and not active:
             continue
-
         logger.debug(
             "Found legacy skills in %s (%s): %d customized, %d active",
             source_root,
@@ -539,7 +522,6 @@ def _do_migrate_legacy_skills() -> bool:
             active_sig = _build_signature(active[skill_name])
             if custom_sig != active_sig:
                 same_name_diff_content.add(skill_name)
-
         # Process customized skills
         for skill_name, skill_dir in customized.items():
             if skill_name in same_name_diff_content:
@@ -561,7 +543,6 @@ def _do_migrate_legacy_skills() -> bool:
                 # If also in active with same content, mark as enabled
                 if skill_name in active:
                     active_names.add(skill_name)
-
         # Process active skills
         for skill_name, skill_dir in active.items():
             if skill_name in same_name_diff_content:
@@ -582,7 +563,6 @@ def _do_migrate_legacy_skills() -> bool:
                     copied_workspace_skills += 1
                 active_names.add(skill_name)  # Mark as enabled
             # else: already handled in customized loop
-
     # --- Phase 4: Reconcile workspace manifests ---
     for workspace_dir in workspace_dirs:
         # reconcile discovers on-disk skills and populates skill.json
@@ -618,7 +598,6 @@ def _do_migrate_legacy_skills() -> bool:
             default_workspace_manifest(),
             _update,
         )
-
     # A fresh installation should be usable immediately.  The default agent
     # used to stop at an empty workspace while the packaged skills only lived
     # in the shared pool.  Seed the default workspace with builtin skills once
@@ -630,7 +609,6 @@ def _do_migrate_legacy_skills() -> bool:
             default_workspace,
             language=config.agents.language or "zh",
         )
-
     if copied_workspace_skills > 0:
         logger.info(
             "Legacy skill migration completed: %d workspace copies",
@@ -641,7 +619,6 @@ def _do_migrate_legacy_skills() -> bool:
             "Bootstrapped default agent with %d builtin skill(s)",
             bootstrapped_default_skills,
         )
-
     return copied_workspace_skills > 0 or bootstrapped_default_skills > 0
 
 
@@ -719,7 +696,6 @@ def _do_ensure_default_agent() -> None:
             f"{WORKING_DIR}/workspaces/default",
         ).expanduser()
         agent_existed = False
-
     # Ensure workspace directory exists
     default_workspace.mkdir(parents=True, exist_ok=True)
 
@@ -746,7 +722,6 @@ def _do_ensure_default_agent() -> None:
         # Set as active if no active agent
         if not config.agents.active_agent:
             config.agents.active_agent = "default"
-
         _bootstrap_default_agent_workspace(
             default_workspace,
             language=template_result.agent_config.language,
@@ -887,14 +862,12 @@ def _do_ensure_qa_agent() -> None:
             f"{WORKING_DIR}/workspaces/{qa_id}",
         ).expanduser()
         agent_existed = False
-
     qa_workspace.mkdir(parents=True, exist_ok=True)
 
     _ensure_workspace_json_files(qa_workspace, "QA agent")
 
     if agent_existed:
         return
-
     other_id = _other_agent_owns_workspace(
         config.agents.profiles,
         qa_workspace,
@@ -911,7 +884,6 @@ def _do_ensure_qa_agent() -> None:
             other_id,
         )
         return
-
     logger.info("Creating builtin QA agent...")
     template_result = build_agent_template(
         QA_AGENT_TEMPLATE,

@@ -574,6 +574,8 @@ def test_runtime_parent_thread_survives_request_worker(
 @pytest.mark.skipif(sys.platform != "darwin", reason="Requires Seatbelt")
 def test_macos_sandbox_cli_can_reach_only_its_runtime(tmp_path, monkeypatch):
     """Run the actual CLI inside its server's native sandbox."""
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     from qwenpaw.plugins import dependency_maintenance as maintenance
     from qwenpaw.plugins.channel_bootstrap import plugin_runtime_site
 
@@ -636,13 +638,17 @@ def test_macos_sandbox_cli_can_reach_only_its_runtime(tmp_path, monkeypatch):
             protected = {protected!r}
             for name in protected:
                 path = Path(name)
-                for mutate in (lambda: path.write_text("tampered"), path.unlink):
+                for mutate in (
+                    lambda: path.write_text("tampered"), path.unlink
+                ):
                     try:
                         mutate()
                     except PermissionError:
                         pass
                     else:
-                        raise AssertionError("shared custody writable: " + name)
+                        raise AssertionError(
+                            "shared custody writable: " + name
+                        )
             shared = Path({str(shared)!r})
             assert maintenance.live_readers([shared]) == []
             own_shared_directory = maintenance._readers_dir(shared) / scope

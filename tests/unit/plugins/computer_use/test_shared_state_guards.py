@@ -37,7 +37,6 @@ def test_the_rate_limit_cap_holds_under_concurrent_callers():
         thread.start()
     for thread in threads:
         thread.join()
-
     assert len(dispatch._action_times) == dispatch._MAX_ACTIONS_PER_MINUTE
     assert refused
 
@@ -96,5 +95,4 @@ def test_the_access_store_is_a_single_shared_instance(monkeypatch):
         thread.start()
     for thread in threads:
         thread.join()
-
     assert len({id(store) for store in seen}) == 1

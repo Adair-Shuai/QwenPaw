@@ -25,7 +25,6 @@ def prefix_graph_payload(data: dict, prefix: str) -> None:
         se["sub_macro_ids"] = [
             p + str(mid) for mid in se.get("sub_macro_ids", [])
         ]
-
     for me in data.get("macro_events", []):
         me["macro_id"] = p + str(me["macro_id"])
         me["super_id"] = (
@@ -54,11 +53,9 @@ def prefix_graph_payload(data: dict, prefix: str) -> None:
                     if txt.get("macro_id")
                     else ""
                 )
-
     for mr in data.get("macro_relations", []):
         mr["source"] = p + str(mr["source"])
         mr["target"] = p + str(mr["target"])
-
     for sr in data.get("super_relations", []):
         sr["source"] = p + str(sr["source"])
         sr["target"] = p + str(sr["target"])
@@ -115,7 +112,6 @@ def merged_graph_payload(
             titles.append(f"{prefix}: {root['title']}")
         all_themes.update(root.get("themes", []))
         all_entities.update(str(e) for e in root.get("key_entities", []))
-
     merged["root"]["title"] = f"Merged memory: {len(sources)} sources"
     merged["root"]["description"] = "; ".join(titles[:20])
     if len(titles) > 20:

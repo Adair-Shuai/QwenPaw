@@ -73,6 +73,7 @@ class DriverManager:
         self._cleanup_tasks: set[asyncio.Task[None]] = set()
         self._cleanup_handler_ids: set[int] = set()
         self._lock = asyncio.Lock()
+        self._catalog_semaphore = asyncio.Semaphore(8)
 
     def register_handler_type(
         self,
@@ -432,12 +433,14 @@ class DriverManager:
             (request_context or {}).get(DRIVER_SCOPE_CONTEXT_KEY) or "",
         )
         handlers = self._iter_handlers(protocol, scope_id=scope_id)
-        capabilities: list[DriverCapability] = []
-        for handler in handlers:
+        semaphore = asyncio.Semaphore(8)
+
+        async def discover(handler):
             try:
-                handler_capabilities = await handler.list_capabilities(
-                    request_context=request_context,
-                )
+                async with semaphore:
+                    return await handler.list_capabilities(
+                        request_context=request_context,
+                    )
             except Exception as exc:
                 # Keep healthy Drivers available during partial failures.
                 logger.warning(
@@ -446,10 +449,17 @@ class DriverManager:
                     exc,
                     exc_info=True,
                 )
-                continue
-            for capability in handler_capabilities:
-                if kind is None or capability.kind == kind:
-                    capabilities.append(capability)
+                return []
+
+        results = await asyncio.gather(
+            *(discover(handler) for handler in handlers),
+        )
+        capabilities = [
+            capability
+            for result in results
+            for capability in result
+            if kind is None or capability.kind == kind
+        ]
         return sorted(capabilities, key=lambda item: item.capability_id)
 
     async def list_driver_capabilities(
@@ -576,12 +586,16 @@ class DriverManager:
                 self._credential_store,
             )
             providers = {CREDENTIAL_ALIAS_DEFAULT: primary}
-        return handler_type(
+        handler = handler_type(
             card,
             primary,
             providers,
             approval_gate=self._approval_gate,
         )
+        set_limit = getattr(handler, "set_catalog_refresh_semaphore", None)
+        if callable(set_limit):
+            set_limit(self._catalog_semaphore)
+        return handler
 
     def _resolve_handler_type(self, protocol: str) -> type[DriverHandler]:
         if protocol in self._handler_types:

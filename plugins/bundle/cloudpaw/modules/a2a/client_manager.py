@@ -89,7 +89,6 @@ class A2AClientManager:
         if entry and entry.card and not self._card_expired(entry):
             logger.info("Reusing cached connection for %s", agent_url)
             return self._card_summary(entry)
-
         entry = _AgentEntry(
             url=agent_url,
             auth_type=auth_type,
@@ -111,7 +110,6 @@ class A2AClientManager:
                 endpoint=gw_cfg.get("endpoint", "ramoauth.aliyuncs.com"),
             )
             logger.info("Applied gateway URL patch for %s", agent_url)
-
         entry.rpc_url = card.get("url", agent_url)
 
         self._agents[agent_url] = entry
@@ -147,7 +145,6 @@ class A2AClientManager:
         }
         if context_id:
             msg_obj["contextId"] = context_id
-
         method = "SendStreamingMessage" if streaming else "SendMessage"
         payload = self._build_jsonrpc(method, {"message": msg_obj})
 
@@ -249,13 +246,10 @@ class A2AClientManager:
             )
             resp.raise_for_status()
             card = resp.json()
-
         if is_gateway:
             card = normalize_gateway_card(card)
-
         if not card.get("url"):
             card["url"] = agent_url
-
         logger.info(
             "Agent Card fetched for %s: %s",
             agent_url,
@@ -358,7 +352,6 @@ class A2AClientManager:
         card = entry.card
         if not card:
             return {"url": entry.url, "status": "not_connected"}
-
         skills = []
         for s in card.get("skills", []):
             skill_info = {"name": s.get("name", "")}
@@ -366,7 +359,6 @@ class A2AClientManager:
             if desc:
                 skill_info["description"] = desc
             skills.append(skill_info)
-
         interfaces = []
         for iface in card.get("additionalInterfaces", []):
             interfaces.append(
@@ -376,7 +368,6 @@ class A2AClientManager:
                     "protocol_version": iface.get("protocolVersion", ""),
                 },
             )
-
         caps = card.get("capabilities", {})
         return {
             "url": entry.url,

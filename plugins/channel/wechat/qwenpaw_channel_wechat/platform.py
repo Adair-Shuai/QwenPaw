@@ -106,7 +106,11 @@ class WeChatPlatform:
                     raise ValueError("QRCODE_UNAVAILABLE")
                 scan_url = data.get("qrcode_img_content", "")
                 if not scan_url.startswith("http"):
-                    scan_url = f"https://liteapp.weixin.qq.com/q/7GiQu1?qrcode={code}&bot_type=3"
+                    scan_url = (
+                        "https://liteapp.weixin.qq.com/q/7GiQu1?qrcode="
+                        f"{code}"
+                        "&bot_type=3"
+                    )
                 logger.info("WeChat login: scan %s", scan_url)
                 if self._on_auth_required is not None:
                     await self._on_auth_required(scan_url)
@@ -184,8 +188,6 @@ class WeChatPlatform:
                         logger.warning("WeChat inbound message failed")
                 if data.get("ret", -1) not in (0, -1) and not messages:
                     await asyncio.sleep(3)
-            except asyncio.CancelledError:
-                raise
             except Exception:
                 logger.warning("WeChat polling failed; retrying")
                 await asyncio.sleep(min(5 * 2 ** min(failures, 5), 120))
@@ -277,8 +279,6 @@ class WeChatPlatform:
                 while not self._stopping:
                     await self._client.sendtyping(user, ticket, status=1)
                     await asyncio.sleep(5)
-        except asyncio.CancelledError:
-            raise
         except Exception:
             logger.warning("WeChat typing indicator failed")
 
@@ -323,6 +323,8 @@ class WeChatPlatform:
             yield path, materialized.filename or local_path.name
 
     async def send_parts(self, route, parts):
+        # Preserve part ordering and partial-delivery error accounting.
+        # pylint: disable=R0912
         user, context = route["wechat_from_user_id"], route.get(
             "wechat_context_token",
         ) or self.context_token(route["wechat_from_user_id"])

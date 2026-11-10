@@ -44,7 +44,8 @@ async def voice_incoming(request: Request) -> Response:
         return Response(
             content=(
                 '<?xml version="1.0" encoding="UTF-8"?>'
-                "<Response><Say>Voice channel is not available.</Say></Response>"
+                "<Response><Say>Voice channel is not available.</Say></Res"
+                "ponse>"
             ),
             media_type="application/xml",
         )

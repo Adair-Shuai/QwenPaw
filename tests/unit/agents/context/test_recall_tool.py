@@ -760,10 +760,8 @@ async def test_cancelled_recall_keeps_claim_until_worker_finishes(
         assert not first_task.done()
     finally:
         release.set()
-
     with pytest.raises(asyncio.CancelledError):
         await first_task
-
     retry = await guarded_tool(op="expand", lo=1, hi=3)
     assert retry.state == ToolResultState.SUCCESS
     assert calls == 2
@@ -816,7 +814,6 @@ async def test_large_recall_is_cursor_paginated(
         assert len(_text(chunk).encode("utf-8")) <= 1024
         page = chunk.metadata[RECALL_PAGE_METADATA_KEY]
         assert pages < 200
-
     assert pages > 1
     assert page["complete"] is True
     assert "[recall page complete]" in _text(chunk)

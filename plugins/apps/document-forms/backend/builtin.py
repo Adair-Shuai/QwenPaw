@@ -110,8 +110,15 @@ OPINION_VARIABLES = {
     **{f"selection.partner{i}_name": f"候选单位{i}" for i in range(1, 4)},
 }
 OPINION_DEFAULTS = {
-    "selection.reliability": "《【project.name】》为【selection.year】年审查通过的技术服务实施计划，计划金额为【selection.budget_wan】万元。依托《【funding.project_name】》，WBS编码【funding.wbs】，依托项目经费为【funding.amount_wan】万元，",
-    "selection.qualification_review": "通过调研业内情况，综合对比了多家单位的优势技术、专业特色及历史业绩等，优选三家单位开展论证与资质审查，分别为【selection.partner1_name】、【selection.partner2_name】、【selection.partner3_name】。",
+    "selection.reliability": (
+        "《【project.name】》为【selection.year】年审查通过的技术服务实施计划，计划金额为【selection.budge"
+        "t_wan】万元。依托《【funding.project_name】》，WBS编码【funding.wbs】，依托项目经费为【fundin"
+        "g.amount_wan】万元，"
+    ),
+    "selection.qualification_review": (
+        "通过调研业内情况，综合对比了多家单位的优势技术、专业特色及历史业绩等，优选三家单位开展论证与资质审查，分别为【selection.part"
+        "ner1_name】、【selection.partner2_name】、【selection.partner3_name】。"
+    ),
 }
 OPINION_TOKEN = re.compile(r"【([a-z][a-z0-9_.]*(?:\|[0-6])?)】")
 
@@ -123,7 +130,7 @@ def opinion_variable(key, values):
         try:
             number = Decimal(value)
             text = format(number, "f")
-            whole, dot, fraction = text.partition(".")
+            whole, _, fraction = text.partition(".")
             value = whole + "." + fraction.ljust(int(precision), "0")
         except InvalidOperation:
             pass
@@ -146,7 +153,7 @@ def opinion_template(field, text):
         ]
         for pattern, key in patterns:
 
-            def replace(match):
+            def replace(match, key=key):
                 original = match.group(1)
                 precision = (
                     len(original.partition(".")[2])

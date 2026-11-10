@@ -120,7 +120,10 @@ def verify(executable, flash, piccolo, output, gpu_layers):
                     port,
                     "/v1/systemone",
                     {
-                        "state": "A user requests the total in a CSV file. No file changes are requested.",
+                        "state": (
+                            "A user requests the total in a CSV file. "
+                            "No file changes are requested."
+                        ),
                         "questions": {
                             "action": {
                                 "type": "choice",

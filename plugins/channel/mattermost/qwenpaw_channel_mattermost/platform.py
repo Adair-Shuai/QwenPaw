@@ -163,8 +163,6 @@ class MattermostPlatform:
                             continue
                         if event.get("event") == "posted":
                             self._spawn_event(event, self._epoch)
-            except asyncio.CancelledError:
-                raise
             except Exception:
                 if self._stopping:
                     raise
@@ -365,7 +363,8 @@ class MattermostPlatform:
             self._http = None
         if retry_socket is not None:
             # A done failed listener is historical evidence, not a fresh close.
-            # Retry the same retained socket; retain both refs if it fails again.
+            # Retry the same retained socket; retain both refs if it fails
+            # again.
             await retry_socket.close()
             await retry_socket.wait_closed()
             self._task = None

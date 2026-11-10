@@ -31,6 +31,8 @@ logger = logging.getLogger(__name__)
 _MAX_PENDING_TURNS_PER_CALL = 8
 
 
+# Non-stream driver retains the fail-closed optional cleanup hook.
+# pylint: disable-next=abstract-method
 class VoiceDriver(SharedResponseDriver):
     def __init__(self):
         super().__init__(
@@ -225,11 +227,16 @@ class VoiceDriver(SharedResponseDriver):
             raise VoicePlatformError("VOICE_HOST_ADMISSION_FAILED")
 
     async def _open(self, params, request):
+        # Retain the native callback and lifecycle hook parameter names.
+        # pylint: disable=unused-argument
         self._identity(params)
         platform = self._require_connected()
         target = decode_reply_target(str(params["to_handle"]))
         session = target["session_id"] if target else str(params["to_handle"])
         call_sid = session.removeprefix("voice:")
+        # Paired driver/platform callbacks share this lifecycle and receipt
+        # ledger.
+        # pylint: disable-next=protected-access
         connection = platform._calls.get(call_sid)
         if connection is None:
             raise VoicePlatformError("CALL_CLOSED")

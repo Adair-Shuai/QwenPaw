@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""SIP transcription and speech through the normal shared response lifecycle."""
+"""SIP transcription and speech through the normal shared response lifecycle.
+"""
 
 from __future__ import annotations
 
@@ -24,6 +25,8 @@ from .platform import SIPPlatform, SIPPlatformError
 _MAX_PENDING_PER_CALL = 32
 
 
+# Non-stream drivers never request cleanup; the base hook stays fail-closed.
+# pylint: disable-next=abstract-method
 class SIPDriver(SharedResponseDriver):
     def __init__(self):
         super().__init__("sip", "sip.shared.responses", SIPPlatformError)
@@ -58,6 +61,8 @@ class SIPDriver(SharedResponseDriver):
         await self._context.set_platform_state(state)
 
     def _require_connected(self):
+        # The native driver and platform share owned connection state.
+        # pylint: disable=protected-access
         if (
             self._stopping
             or not self._connected
@@ -93,6 +98,7 @@ class SIPDriver(SharedResponseDriver):
         return handle
 
     async def _open(self, params, request):
+        del request  # Required RPC callback parameter.
         self._identity(params)
         platform = self._require_connected()
         decoded = decode_reply_target(params["to_handle"])

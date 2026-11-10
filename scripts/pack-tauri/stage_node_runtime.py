@@ -132,7 +132,6 @@ def _extract(archive: Path, suffix: str, workdir: Path) -> Path:
     else:
         with tarfile.open(archive, "r:xz") as tar:
             _extract_tar_safely(tar, workdir)
-
     roots = [
         path
         for path in workdir.iterdir()
@@ -279,7 +278,6 @@ def main() -> None:
             )
         print(f"node-runtime already staged ({version}-{target}); skipping")
         return
-
     print(f"Staging Node.js {version} for {target}...")
     print(f"Downloading {url}")
 
@@ -295,14 +293,12 @@ def main() -> None:
         staged_dest.mkdir(parents=True, exist_ok=True)
         for item in extracted.iterdir():
             shutil.move(str(item), staged_dest / item.name)
-
         if not (
             staged_dest
             / ("node.exe" if platform.system() == "Windows" else "bin/node")
         ).is_file():
             raise SystemExit("staging failed: node executable missing")
         atomic_install_tree(staged_dest, dest)
-
     if not _node_exe(dest).is_file() or not _npx_exe(dest).is_file():
         raise SystemExit("staging failed: node or npx missing")
     removed = prune_runtime(dest)

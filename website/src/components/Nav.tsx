@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect } from "react";
-import { Link } from "react-router-dom";
+import { Link, useLocation } from "react-router-dom";
 import {
   Menu,
   X,
@@ -58,16 +58,17 @@ const navTextClass = "font-inter text-[14px] font-medium leading-5";
 
 const navLinkBaseClass = `inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-md px-1 py-1.5 ${navTextClass} text-neutral-800 no-underline transition-colors focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2`;
 
-const navLinkOrangeClass = `${navLinkBaseClass} hover:!text-orange-400 focus-visible:outline-orange-400`;
-const navLinkBlueClass = `${navLinkBaseClass} hover:!text-[#0064FD] focus-visible:outline-[#0064FD]`;
+const navLinkOrangeClass = `${navLinkBaseClass} hover:!text-(--text-muted) focus-visible:outline-(--text)`;
+const navLinkBlueClass = navLinkOrangeClass;
 
-const navDownloadBtnClass = `inline-flex min-w-[6.75rem] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 ${navTextClass} text-neutral-800 no-underline transition-colors cursor-pointer border border-[#F3F1F0] bg-(--color-card-fill) hover:bg-(--color-secondary)`;
+const navDownloadBtnClass = `inline-flex min-w-[6.75rem] shrink-0 items-center justify-center gap-1.5 whitespace-nowrap rounded-md px-2.5 py-1.5 ${navTextClass} text-white no-underline transition-colors cursor-pointer border border-(--accent) bg-(--accent) hover:bg-[#111310]`;
 
 const navIconStroke = 1.5;
 const exploreMenuItemClass = `${navLinkOrangeClass} w-full justify-start px-3 py-2`;
 
 export function Nav() {
-  const { projectName, docsPath } = useSiteConfig();
+  const { docsPath } = useSiteConfig();
+  const { pathname } = useLocation();
   const { toggleLang } = useSiteLanguage();
   const { t, i18n } = useTranslation();
   const isZh = i18n.resolvedLanguage === "zh";
@@ -109,6 +110,7 @@ export function Nav() {
     const handleEscape = (event: KeyboardEvent) => {
       if (event.key !== "Escape") return;
       setExploreOpen(false);
+      setOpen(false);
     };
     document.addEventListener("mousedown", handleClickOutside);
     document.addEventListener("keydown", handleEscape);
@@ -124,19 +126,25 @@ export function Nav() {
     };
   }, []);
 
+  useEffect(() => {
+    setOpen(false);
+    setExploreOpen(false);
+  }, [pathname]);
+
   return (
-    <header className="sticky top-0 z-99 border-b border-border bg-white">
-      <nav className="mx-auto flex h-16 max-w-7xl items-center justify-between gap-2 px-4 sm:px-6 md:px-6 lg:gap-3">
+    <header className="site-nav sticky top-0 z-99 border-b border-border bg-white">
+      <nav className="site-nav-inner mx-auto flex h-16 max-w-7xl items-center justify-between gap-2 px-4 sm:px-6 md:px-6 lg:gap-3">
         <Link
           to="/"
           className="nav-brand-link flex shrink-0 items-center gap-2 text-lg font-semibold text-neutral-900 no-underline"
-          aria-label={projectName}
+          aria-label="UGSci"
         >
-          <span className="nav-brand-logo -mt-1 flex">
-            <QwenpawMascot size={120} />
+          <span className="nav-brand-logo flex">
+            <QwenpawMascot size={36} />
           </span>
+          <span className="site-wordmark">UGSci</span>
         </Link>
-        <div className="nav-links hidden min-[641px]:flex min-[641px]:min-w-0 min-[641px]:flex-1 min-[641px]:items-center min-[641px]:justify-end min-[641px]:gap-3 lg:gap-5 xl:gap-6">
+        <div className="nav-links hidden min-[1024px]:flex min-[1024px]:min-w-0 min-[1024px]:flex-1 min-[1024px]:items-center min-[1024px]:justify-end min-[1024px]:gap-3 lg:gap-5 xl:gap-6">
           <a
             href="https://agentscope.io/"
             target="_blank"
@@ -284,10 +292,19 @@ export function Nav() {
 
         <button
           type="button"
-          className="nav-mobile-toggle flex min-[641px]:hidden items-center justify-center rounded-md border-0 bg-transparent p-2 text-neutral-900"
+          className="nav-mobile-toggle flex min-[1024px]:hidden items-center justify-center rounded-md border-0 bg-transparent p-2 text-neutral-900"
           onClick={() => setOpen((o) => !o)}
           aria-expanded={open}
-          aria-label={open ? "Close menu" : "Open menu"}
+          aria-label={
+            open
+              ? isZh
+                ? "关闭菜单"
+                : "Close menu"
+              : isZh
+              ? "打开菜单"
+              : "Open menu"
+          }
+          aria-controls="site-mobile-menu"
         >
           {open ? <X size={24} /> : <Menu size={24} />}
         </button>
@@ -295,7 +312,8 @@ export function Nav() {
 
       {/* 移动端菜单 */}
       <div
-        className={`nav-mobile flex min-[641px]:hidden flex-col gap-2 border-t border-neutral-100 bg-white px-4 py-3 sm:px-8 ${
+        id="site-mobile-menu"
+        className={`nav-mobile flex min-[1024px]:hidden flex-col gap-2 border-t border-neutral-100 bg-white px-4 py-3 sm:px-8 ${
           open ? "" : "hidden"
         }`}
       >

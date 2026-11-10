@@ -81,7 +81,6 @@ def _resolve_image_url(path_or_url: str) -> str:
     """
     if path_or_url.startswith(("http://", "https://")):
         return path_or_url
-
     path_obj = Path(path_or_url)
     if not path_obj.exists():
         raise FileNotFoundError(
@@ -89,18 +88,15 @@ def _resolve_image_url(path_or_url: str) -> str:
         )
     if not path_obj.is_file():
         raise ValueError(f"Not a file: {path_or_url}")
-
     ext = path_obj.suffix.lower()
     if ext not in _IMAGE_MIME_TYPES:
         raise ValueError(
             f"Unsupported image format: {ext}. "
             f"Supported: {', '.join(_IMAGE_MIME_TYPES.keys())}",
         )
-
     mime_type = _IMAGE_MIME_TYPES[ext]
     with open(path_obj, "rb") as f:
         image_data = base64.b64encode(f.read()).decode("utf-8")
-
     return f"data:{mime_type};base64,{image_data}"
 
 
@@ -121,13 +117,11 @@ def _extract_config(
     endpoint = tool_config.get("endpoint", "")
     if not endpoint or not endpoint.strip():
         endpoint = _DEFAULT_ENDPOINT
-
     timeout_raw = tool_config.get("timeout")
     if timeout_raw is None or float(timeout_raw) <= 0:
         timeout = _DEFAULT_TIMEOUT
     else:
         timeout = float(timeout_raw)
-
     model = tool_config.get("model", "") or default_model
 
     return api_key, endpoint, timeout, model
@@ -202,7 +196,6 @@ def _call_multimodal_conversation(
             stream=False,
             **kwargs,
         )
-
     return rsp
 
 
@@ -297,7 +290,6 @@ async def generate_image_qwen(
                     ),
                 ],
             )
-
         api_key, endpoint, timeout, model = _extract_config(
             tool_config,
             default_model="qwen-image-2.0-pro",
@@ -315,7 +307,6 @@ async def generate_image_qwen(
                     ),
                 ],
             )
-
         if model not in _VALID_MODELS_GENERATE:
             return ToolChunk(
                 state=ToolResultState.ERROR,
@@ -330,7 +321,6 @@ async def generate_image_qwen(
                     ),
                 ],
             )
-
         if not 1 <= n <= 6:
             return ToolChunk(
                 state=ToolResultState.ERROR,
@@ -344,7 +334,6 @@ async def generate_image_qwen(
                     ),
                 ],
             )
-
         messages = [
             {
                 "role": "user",
@@ -361,7 +350,6 @@ async def generate_image_qwen(
             call_kwargs["size"] = size
         if negative_prompt:
             call_kwargs["negative_prompt"] = negative_prompt
-
         logger.info(
             f"Generating image with Qwen-Image: "
             f"model={model}, size={size}, n={n}",
@@ -391,7 +379,6 @@ async def generate_image_qwen(
                     ),
                 ],
             )
-
         image_urls = _parse_image_urls(rsp)
         if not image_urls:
             return ToolChunk(
@@ -406,7 +393,6 @@ async def generate_image_qwen(
                     ),
                 ],
             )
-
         logger.info(
             f"Qwen-Image generated {len(image_urls)} image(s)",
         )
@@ -450,7 +436,6 @@ async def generate_image_qwen(
                     ),
                 )
                 saved_paths.append(img_url)
-
         content_blocks.append(
             TextBlock(
                 type="text",
@@ -466,7 +451,6 @@ async def generate_image_qwen(
         )
 
         return ToolChunk(state=ToolResultState.SUCCESS, content=content_blocks)
-
     except Exception as e:
         logger.error(
             f"Qwen-Image generation failed: {e}",
@@ -543,7 +527,6 @@ async def edit_image_qwen(
                     ),
                 ],
             )
-
         tool_config = get_tool_config("edit_image_qwen")
         if not tool_config:
             return ToolChunk(
@@ -558,7 +541,6 @@ async def edit_image_qwen(
                     ),
                 ],
             )
-
         api_key, endpoint, timeout, model = _extract_config(
             tool_config,
             default_model="qwen-image-2.0-pro",
@@ -576,7 +558,6 @@ async def edit_image_qwen(
                     ),
                 ],
             )
-
         if model not in _VALID_MODELS_EDIT:
             return ToolChunk(
                 state=ToolResultState.ERROR,
@@ -591,7 +572,6 @@ async def edit_image_qwen(
                     ),
                 ],
             )
-
         if not 1 <= n <= 6:
             return ToolChunk(
                 state=ToolResultState.ERROR,
@@ -605,7 +585,6 @@ async def edit_image_qwen(
                     ),
                 ],
             )
-
         # Build message content: images first, then prompt text
         content = []
         for img_input in reference_images:
@@ -625,7 +604,6 @@ async def edit_image_qwen(
                     ],
                 )
             content.append({"image": resolved})
-
         content.append({"text": prompt})
 
         messages = [{"role": "user", "content": content}]
@@ -639,7 +617,6 @@ async def edit_image_qwen(
             call_kwargs["size"] = size
         if negative_prompt:
             call_kwargs["negative_prompt"] = negative_prompt
-
         logger.info(
             f"Editing image with Qwen-Image: "
             f"model={model}, "
@@ -670,7 +647,6 @@ async def edit_image_qwen(
                     ),
                 ],
             )
-
         image_urls = _parse_image_urls(rsp)
         if not image_urls:
             return ToolChunk(
@@ -685,7 +661,6 @@ async def edit_image_qwen(
                     ),
                 ],
             )
-
         logger.info(
             f"Qwen-Image edit produced {len(image_urls)} image(s)",
         )
@@ -729,7 +704,6 @@ async def edit_image_qwen(
                     ),
                 )
                 saved_paths.append(img_url)
-
         content_blocks.append(
             TextBlock(
                 type="text",
@@ -745,7 +719,6 @@ async def edit_image_qwen(
         )
 
         return ToolChunk(state=ToolResultState.SUCCESS, content=content_blocks)
-
     except Exception as e:
         logger.error(
             f"Qwen-Image edit failed: {e}",

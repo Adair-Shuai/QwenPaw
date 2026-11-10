@@ -10,6 +10,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SUITES = (
+    "tests/unit/app/test_console_static_security.py",
     "tests/unit/tauri/test_update_release_contract.py",
     "tests/unit/tauri/test_incremental_update_regressions.py",
     "tests/unit/tauri/test_component_release.py",
@@ -49,8 +50,61 @@ SUITES = (
     "tests/unit/plugins/test_bundle_marker_scan.py",
     "tests/unit/plugins/test_plugin_startup_perf.py",
     "tests/unit/tauri/test_windows_update_extraction.py",
+    "tests/unit/tauri/test_windows_installer_io.py",
+    "tests/unit/tauri/test_windows_setup_progress.py",
+    "tests/unit/tauri/test_windows_webview_install.py",
+    "tests/unit/tauri/test_desktop_scientific_pruning.py",
+    "tests/unit/tauri/test_stage_python_runtime.py",
+    "tests/unit/plugins/test_dependency_source_sync.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/app/test_console_static_security.py": {
+        "test_console_static_symlinks_stay_within_build",
+        "test_console_brand_assets_revalidate_after_upgrade",
+    },
+    "tests/unit/plugins/test_dependency_source_sync.py": {
+        "test_source_backup_and_restore_flush_exact_bytes_and_modes",
+        "test_source_sync_failure_preserves_original_read_only_mode",
+    },
+    "tests/unit/tauri/test_windows_installer_io.py": {
+        "test_installer_replaces_legacy_shortcut_icons_on_upgrade",
+        "test_installer_compiled_verification_counts_payload_and_rechecks_changes",
+        "test_installer_compiled_verification_rejects_unsafe_or_incomplete_package",
+        "test_installer_compiled_copy_and_size_preserve_deep_and_empty_trees",
+        "test_installer_compiled_io_refuses_package_and_destination_junctions",
+        "test_installer_embeds_and_executes_compiled_helper_with_windows_powershell",
+        "test_installer_streams_child_log_before_exit_and_preserves_failure_status",
+        "test_installer_compiled_copy_accepts_redirected_ancestors_but_not_overlap",
+        "test_installer_compiled_preserves_user_root_junction_without_link_escape",
+        "test_installer_compiled_copy_rejects_dangling_destination_root_junction",
+    },
+    "tests/unit/tauri/test_windows_setup_progress.py": {
+        "test_setup_streams_stages_and_failure_log_before_process_exit",
+    },
+    "tests/unit/tauri/test_windows_webview_install.py": {
+        "test_webview_existing_runtime_skips_copy_launch_download_and_clears_marker",
+        "test_webview_offline_success_uses_one_copy_and_never_downloads",
+        "test_webview_offline_failure_attempts_only_one_online_fallback",
+        "test_webview_shared_timeout_prevents_retry_and_rechecks_registration",
+        "test_webview_registration_polling_uses_remaining_shared_budget",
+        "test_webview_rejects_invalid_microsoft_signature_before_launch",
+        "test_webview_failure_is_visible_and_preserves_missing_marker",
+        "test_webview_download_and_signature_share_budget_without_extra_attempts",
+        "test_webview_real_budget_clock_decreases_and_expiry_clamps_to_zero",
+        "test_webview_real_download_cancels_slow_body_without_launching_installer",
+        "test_fresh_install_without_existing_data_does_not_enter_backup_phase",
+    },
+    "tests/unit/tauri/test_desktop_scientific_pruning.py": {
+        "test_scientific_pruning_only_removes_audited_test_trees",
+        "test_scientific_pruning_changes_component_identity",
+        "test_scientific_pruning_rejects_paths_outside_staging",
+        "test_pruned_real_scientific_packages_keep_offline_operations",
+    },
+    "tests/unit/tauri/test_stage_python_runtime.py": {
+        "test_prunes_python_native_symbols_but_keeps_runtime_and_build_support",
+        "test_cached_python_runtime_is_pruned_without_download",
+        "test_pruned_python_runtime_gets_new_component_identity",
+    },
     "tests/unit/tauri/test_plugin_payload_completeness.py": {
         "test_desktop_plugins_reuse_complete_payloads_in_real_signed_zips",
         "test_signed_component_gate_rejects_missing_declared_payload",
@@ -92,6 +146,8 @@ REQUIRED_CASES = {
     },
     "tests/unit/tauri/test_windows_portable_installer_contract.py": {
         "test_cli_launcher_uses_python_module_entry_point",
+        "test_installer_verifies_in_elevated_process_before_any_mutation",
+        "test_installer_parallel_user_backup_keeps_complete_copy_and_failure_gate",
     },
     "tests/unit/tauri/test_desktop_dependency_lock.py": {
         "test_desktop_lock_satisfies_every_selected_direct_dependency",
@@ -155,6 +211,7 @@ REQUIRED_CASES = {
         "test_replace_bundled_plugin_rejects_untrusted_or_mismatched_source",
     },
     "tests/unit/tauri/test_desktop_workflows.py": {
+        "test_windows_build_creates_portable_package_once_and_keeps_signing",
         "test_windows_failure_logs_include_shared_backend_diagnostics",
         "test_desktop_update_commands_are_allowed_by_main_window_acl",
         "test_artifact_selection_retains_fork_brand_and_newest_id",
@@ -191,13 +248,15 @@ REQUIRED_CASES = {
         "test_binary_verification_disables_engine_self_updates",
         "test_binary_verification_rejects_mutation_during_probe",
     },
-    SUITES[0]: {
+    "tests/unit/tauri/test_update_release_contract.py": {
         "test_publication_gate_verifies_full_fallback_and_all_deltas",
         "test_publication_gate_blocks_broken_but_present_artifacts",
         "test_current_updater_preserves_data_across_future_release_routes",
         "test_update_release_gates_cannot_be_bypassed_by_publication",
     },
-    SUITES[2]: {"test_builds_ten_direct_deltas_and_binds_signed_history"},
+    "tests/unit/tauri/test_component_release.py": {
+        "test_builds_ten_direct_deltas_and_binds_signed_history",
+    },
     "tests/unit/tauri/test_ugsci_release_data.py": {
         "test_release_staging_and_market_zip_exclude_local_visualization_data",
         "test_python_wheel_and_sdist_exclude_visualization_test_data",

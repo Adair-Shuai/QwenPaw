@@ -125,6 +125,9 @@ class ShellGuard:
                 pass
 
     def _monitor(self):
+        # Keep lifetime monitoring and process-tree cleanup in the same owned
+        # task.
+        # pylint: disable=R0912,R1702
         while not self._stop.is_set():
             if not self.warning:
                 try:

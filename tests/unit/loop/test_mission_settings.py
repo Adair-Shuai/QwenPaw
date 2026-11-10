@@ -99,7 +99,6 @@ async def test_start_mission_persists_editable_defaults(tmp_path) -> None:
             max_iterations=14,
             max_retries_per_story=5,
         )
-
     config = read_loop_config(loop_dir)
     assert config["max_iterations"] == 14
     assert config["max_retries_per_story"] == 5

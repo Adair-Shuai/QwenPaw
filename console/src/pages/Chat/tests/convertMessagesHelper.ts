@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 /**
  * Test helper — extracts pure message-conversion logic from sessionApi
  * for isolated testing. This mirrors the internal implementation so tests

@@ -132,7 +132,6 @@ async def send_message(
             status_code=500,
             detail=f"Failed to get agent workspace: {str(e)}",
         ) from e
-
     # Get channel manager from workspace
     channel_manager = workspace.channel_manager
     if not channel_manager:
@@ -140,7 +139,6 @@ async def send_message(
             status_code=500,
             detail=f"Channel manager not initialized for agent {agent_id}",
         )
-
     # Log the send request
     agent_info = f" (agent: {x_agent_id})" if x_agent_id else ""
     logger.info(
@@ -169,14 +167,12 @@ async def send_message(
             success=True,
             message=f"Message sent successfully to {request.channel}",
         )
-
     except KeyError as e:
         logger.warning("Channel not found: %s", e)
         raise HTTPException(
             status_code=404,
             detail=f"Channel not found: {request.channel}",
         ) from e
-
     except Exception as e:
         logger.error(
             "Failed to send message to %s: %s",

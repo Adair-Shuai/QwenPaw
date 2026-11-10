@@ -4,8 +4,17 @@ import {
   Files,
   GitBranch,
   PackageCheck,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from "lucide-react";
-import { useCallback, useEffect, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
+import { Tooltip } from "antd";
 import { useTranslation } from "react-i18next";
 import { buildAuthHeaders } from "../../api/authHeaders";
 import { projectDirectoryApi } from "../../api/modules/projectDirectory";
@@ -39,11 +48,15 @@ import MemoryTagsNavigator from "./MemoryTagsNavigator";
 import { useMemoryFileConfig } from "./useMemoryTagSupport";
 import { fileTabPath, fileTabTarget, findOpenFileTab } from "./fileIdentity";
 import { projectRootPath, workspaceRoots } from "./directorySources";
+import { isDefaultWorkspaceMarkdown } from "./defaultWorkspaceMarkdown";
 import {
   filesWorkspaceScopeKey,
   type FilesWorkspaceScope,
 } from "./filesWorkspaceScope";
-import { toProjectRelativePath } from "./internalFileLinks";
+import {
+  isAbsoluteLocalFilePath,
+  toProjectRelativePath,
+} from "./internalFileLinks";
 import {
   revealTargetFromEditorTab,
   revealWorkspacePath,
@@ -65,6 +78,8 @@ interface FilesWorkspaceProps {
   onActiveTargetChange?: (target: FileTarget | undefined) => void;
   onBrowseMemoryTag?: () => void;
   onOpenBrowser?: (tabPath: string) => void;
+  headerActions?: ReactNode;
+  footerActions?: ReactNode;
 }
 
 function inferPreviewKind(
@@ -108,6 +123,8 @@ export default function FilesWorkspace({
   onActiveTargetChange,
   onBrowseMemoryTag,
   onOpenBrowser,
+  headerActions,
+  footerActions,
 }: FilesWorkspaceProps) {
   const { t } = useTranslation();
   const { codingMode } = useCodingMode();
@@ -143,6 +160,7 @@ export default function FilesWorkspace({
     setTabContent,
     setTabDirty,
     setTabEtag,
+    diffsByAgent,
   } = useCodingTabsStore();
   const hydratedTabs = useRef(new Set<string>());
   const revalidatedScope = useRef("");
@@ -217,6 +235,7 @@ export default function FilesWorkspace({
     active && !hideNavigator && activity === "deliverables",
   );
   const [memoryTagsActive, setMemoryTagsActive] = useState(false);
+  const [navigatorCollapsed, setNavigatorCollapsed] = useState(false);
   const [selectedMemoryTag, setSelectedMemoryTag] = useState<string | null>(
     null,
   );
@@ -276,12 +295,28 @@ export default function FilesWorkspace({
 
   const resolveEditableTarget = useCallback(
     async (target: FileTarget): Promise<FileTarget> => {
-      if (target.source !== "attachment" || !target.path) {
+      const absoluteReference =
+        target.source === "workspace" && isAbsoluteLocalFilePath(target.path);
+      if (
+        (target.source !== "attachment" && !absoluteReference) ||
+        !target.path
+      ) {
         return target;
       }
       try {
         const agentInfo = await projectDirectoryApi.get();
         const workspaceDirectory = agentInfo.workspace_dir ?? agentInfo.path;
+        const profilePath = absoluteReference
+          ? toProjectRelativePath(target.path, workspaceDirectory)
+          : null;
+        if (profilePath && isDefaultWorkspaceMarkdown(profilePath)) {
+          return {
+            ...target,
+            source: "profile",
+            path: profilePath,
+            root: "workspace",
+          };
+        }
         // An attachment can live under any directory the session is bound to,
         // so every one is a candidate — checking only the primary would leave
         // a file in an extra root stuck as a read-only historical artifact.
@@ -323,12 +358,13 @@ export default function FilesWorkspace({
 
         for (const candidate of candidates) {
           try {
-            await workspaceApi.getFileMetadata(
-              candidate.path,
-              chatId,
-              candidate.root,
-              projectDirOverride,
-            );
+            if (!absoluteReference)
+              await workspaceApi.getFileMetadata(
+                candidate.path,
+                chatId,
+                candidate.root,
+                projectDirOverride,
+              );
             return {
               ...target,
               source: "workspace",
@@ -342,6 +378,8 @@ export default function FilesWorkspace({
       } catch {
         // Keep historical attachments read-only when directory lookup fails.
       }
+      if (absoluteReference)
+        throw new Error("File is unavailable in the session directories");
       return target;
     },
     [agentId, chatId, projectDirOverride, scopeKind, sessionId],
@@ -755,6 +793,7 @@ export default function FilesWorkspace({
 
   useEffect(() => {
     if (tabs.length === 0 && !memoryGraphRoot) {
+      setNavigatorCollapsed(false);
       setMobilePane(activity === "git" && codingMode ? "source" : "navigator");
     }
   }, [activity, codingMode, memoryGraphRoot, tabs.length]);
@@ -780,361 +819,449 @@ export default function FilesWorkspace({
   };
 
   const hasDocument = tabs.length > 0 || memoryGraphRoot !== null;
+  const navigatorLabel = t(
+    activity === "git"
+      ? "files.sourceControl"
+      : activity === "deliverables"
+      ? "files.deliverables"
+      : "files.navigator",
+  );
+  const navigatorControls = !hideNavigator && (
+    <>
+      {headerActions && hasDocument && (
+        <Tooltip
+          title={t(
+            navigatorCollapsed ? "files.showNavigator" : "files.hideNavigator",
+          )}
+        >
+          <button
+            type="button"
+            className={`${styles.iconButton} ${styles.desktopNavigatorToggle}`}
+            aria-label={t(
+              navigatorCollapsed
+                ? "files.showNavigator"
+                : "files.hideNavigator",
+            )}
+            aria-expanded={!navigatorCollapsed}
+            onClick={() => setNavigatorCollapsed((collapsed) => !collapsed)}
+          >
+            {navigatorCollapsed ? (
+              <PanelLeftOpen size={16} />
+            ) : (
+              <PanelLeftClose size={16} />
+            )}
+          </button>
+        </Tooltip>
+      )}
+      <button
+        type="button"
+        className={styles.mobilePaneSwitch}
+        aria-label={navigatorLabel}
+        onClick={() => {
+          setNavigatorCollapsed(false);
+          setMobilePane(activity === "git" ? "source" : "navigator");
+        }}
+      >
+        {activity === "git" ? (
+          <GitBranch size={16} />
+        ) : activity === "deliverables" ? (
+          <PackageCheck size={16} />
+        ) : (
+          <Files size={16} />
+        )}
+        <span>{navigatorLabel}</span>
+      </button>
+    </>
+  );
+  const activeDiff = diffsByAgent?.[scopeKey]?.[activeTabPath];
 
   return (
     <div
-      className={styles.workspace}
+      className={`${styles.workspace} ${
+        headerActions ? styles.workspaceDocked : ""
+      }`}
       data-mobile-pane={hideNavigator ? "document" : mobilePane}
     >
-      {(codingMode || scope.kind === "session") && !hideNavigator && (
-        <nav className={styles.activityRail} aria-label={t("files.workspace")}>
-          <button
-            type="button"
-            className={activity === "files" ? styles.activityActive : ""}
-            aria-label={t("files.navigator")}
-            onClick={() => {
-              setActivity("files");
-              setMobilePane("navigator");
-            }}
+      <div
+        className={styles.navigatorColumn}
+        hidden={hideNavigator || navigatorCollapsed}
+      >
+        {(codingMode || scope.kind === "session") && !hideNavigator && (
+          <nav
+            className={styles.explorerNavigation}
+            aria-label={t("files.workspace")}
           >
-            <Files size={18} />
-          </button>
-          {scope.kind === "session" && (
             <button
               type="button"
-              className={
-                activity === "deliverables" ? styles.activityActive : ""
-              }
-              aria-label={t("files.deliverables", "会话成果")}
-              aria-pressed={activity === "deliverables"}
+              className={activity === "files" ? styles.activityActive : ""}
+              aria-label={t("files.navigator")}
+              aria-pressed={activity === "files"}
               onClick={() => {
-                setActivity("deliverables");
+                setActivity("files");
                 setMobilePane("navigator");
               }}
             >
-              <PackageCheck size={18} />
+              <Files size={15} />
+              <span>{t("files.fileTab", "文件")}</span>
             </button>
-          )}
-          {codingMode && (chatId || !projectDirOverride) ? (
-            <button
-              type="button"
-              className={activity === "git" ? styles.activityActive : ""}
-              aria-label={t("files.sourceControl")}
-              onClick={() => {
-                setActivity("git");
-                setMobilePane("source");
-              }}
-            >
-              <GitBranch size={18} />
-            </button>
-          ) : null}
-        </nav>
-      )}
-      {!hideNavigator &&
-        (activity === "deliverables" && scope.kind === "session" ? (
-          <div className={styles.navigatorPane}>
-            {hasDocument && (
+            {scope.kind === "session" && (
               <button
                 type="button"
-                className={styles.mobilePaneSwitch}
-                aria-label={t("files.openFilesLabel")}
-                onClick={() => setMobilePane("document")}
+                className={
+                  activity === "deliverables" ? styles.activityActive : ""
+                }
+                aria-label={t("files.deliverables", "会话成果")}
+                aria-pressed={activity === "deliverables"}
+                onClick={() => {
+                  setActivity("deliverables");
+                  setMobilePane("navigator");
+                }}
               >
-                <Files size={16} />
-                <span>{t("files.openFilesLabel")}</span>
+                <PackageCheck size={15} />
+                <span>{t("files.deliverables")}</span>
               </button>
             )}
-            <ArtifactsWorkspace
-              scope={scope}
-              persistedArtifacts={deliverables.artifacts}
-              loading={deliverables.loading}
-              error={
-                deliverables.error
-                  ? deliverables.moreError
-                    ? t(
-                        "files.deliverablesMoreFailed",
-                        "历史成果加载失败，请重试。",
-                      )
-                    : t(
-                        "files.deliverablesLoadFailed",
-                        "成果加载失败，请刷新重试。",
-                      )
-                  : undefined
-              }
-              onRefresh={deliverables.refresh}
-              hasMore={deliverables.hasMore}
-              loadingMore={deliverables.loadingMore}
-              moreError={deliverables.moreError}
-              onLoadMore={deliverables.loadMore}
-              target={(() => {
-                const tab = tabs.find((item) => item.path === activeTabPath);
-                return tab
-                  ? targetsByTab.current.get(tab.path) ?? {
-                      source: tab.source ?? "workspace",
-                      path: tab.displayPath ?? tab.path,
-                      root: tab.workspaceRoot,
-                      artifactUrl: tab.artifactUrl,
-                      artifact: tab.artifact,
-                    }
-                  : undefined;
-              })()}
-              onSelect={(target) => {
-                setMemoryGraphRoot(null);
-                void openTarget(target);
-              }}
-            />
-          </div>
-        ) : activity === "files" || !codingMode ? (
-          <div className={styles.navigatorPane}>
-            {hasDocument && (
+            {codingMode && (chatId || !projectDirOverride) ? (
               <button
                 type="button"
-                className={styles.mobilePaneSwitch}
-                aria-label={t("files.openFilesLabel")}
-                onClick={() => setMobilePane("document")}
+                className={activity === "git" ? styles.activityActive : ""}
+                aria-label={t("files.sourceControl")}
+                aria-pressed={activity === "git"}
+                onClick={() => {
+                  setActivity("git");
+                  setMobilePane("source");
+                }}
               >
-                <Files size={16} />
-                <span>{t("files.openFilesLabel")}</span>
+                <GitBranch size={15} />
               </button>
+            ) : null}
+            {headerActions && (
+              <div className={styles.navigatorPanelActions}>
+                {headerActions}
+              </div>
             )}
-            <FilesNavigator
-              key={`${scopeKey}:${
-                projectDirOverride ?? ""
-              }:${directoryRevision}:${savedFileRevision}`}
-              scope={effectiveScope}
-              selectedPath={
-                tabs.find((tab) => tab.path === activeTabPath)?.displayPath ??
-                activeTabPath
-              }
-              onSelect={(target) => {
-                setMemoryGraphRoot(null);
-                void openTarget(target);
-              }}
-              activeMemoryGraphRoot={memoryGraphRoot}
-              onShowMemoryGraph={(root) => {
-                setMemoryGraphRoot(root);
-                setMobilePane("document");
-              }}
-              onShowFiles={() => {
-                setMemoryTagsActive(false);
-                setMemoryGraphRoot(null);
-              }}
-              memoryTagsActive={memoryTagsSupported && memoryTagsActive}
-              onShowMemoryTags={() => setMemoryTagsActive(true)}
-              memoryTagsPanel={
-                memoryTagsSupported ? (
-                  <MemoryTagsNavigator
-                    key={`${scopeKey}:${selectedMemoryTag ?? ""}`}
-                    agentId={agentId}
-                    tag={selectedMemoryTag}
-                    revision={memoryTagsRevision}
-                    memoryConfig={memoryConfig}
-                    selectedPath={activeTarget?.path ?? ""}
-                    selectedSource={activeTarget?.source}
-                    selectedRoot={activeTarget?.root}
-                    onSelectTag={setSelectedMemoryTag}
-                    onOpenFile={(target) => {
-                      setMemoryGraphRoot(null);
-                      void openTarget(target);
-                    }}
-                  />
-                ) : undefined
-              }
-            />
-          </div>
-        ) : (
-          <aside className={styles.sourcePanel}>
-            {hasDocument && (
-              <button
-                type="button"
-                className={styles.mobilePaneSwitch}
-                aria-label={t("files.openFilesLabel")}
-                onClick={() => setMobilePane("document")}
-              >
-                <ArrowLeft size={16} />
-                <span>{t("files.openFilesLabel")}</span>
-              </button>
-            )}
-            <header>
-              <GitBranch size={15} />
-              <span>{t("files.sourceControl")}</span>
-            </header>
-            <GitPanel chatId={chatId} />
-          </aside>
-        ))}
-      <main className={styles.documentSurface}>
-        {!hideNavigator && (
-          <button
-            type="button"
-            className={styles.mobilePaneSwitch}
-            aria-label={t(
-              activity === "git"
-                ? "files.sourceControl"
-                : activity === "deliverables"
-                ? "files.deliverables"
-                : "files.navigator",
-            )}
-            onClick={() =>
-              setMobilePane(activity === "git" ? "source" : "navigator")
-            }
-          >
-            {activity === "git" ? (
-              <GitBranch size={16} />
-            ) : activity === "deliverables" ? (
-              <PackageCheck size={16} />
-            ) : (
-              <Files size={16} />
-            )}
-            <span>
-              {t(
-                activity === "git"
-                  ? "files.sourceControl"
-                  : activity === "deliverables"
-                  ? "files.deliverables"
-                  : "files.navigator",
-              )}
-            </span>
-          </button>
+          </nav>
         )}
+        {!hideNavigator &&
+          (activity === "deliverables" && scope.kind === "session" ? (
+            <div className={styles.navigatorPane}>
+              {hasDocument && (
+                <button
+                  type="button"
+                  className={styles.mobilePaneSwitch}
+                  aria-label={t("files.openFilesLabel")}
+                  onClick={() => setMobilePane("document")}
+                >
+                  <Files size={16} />
+                  <span>{t("files.openFilesLabel")}</span>
+                </button>
+              )}
+              <ArtifactsWorkspace
+                scope={scope}
+                persistedArtifacts={deliverables.artifacts}
+                loading={deliverables.loading}
+                error={
+                  deliverables.error
+                    ? deliverables.moreError
+                      ? t(
+                          "files.deliverablesMoreFailed",
+                          "历史成果加载失败，请重试。",
+                        )
+                      : t(
+                          "files.deliverablesLoadFailed",
+                          "成果加载失败，请刷新重试。",
+                        )
+                    : undefined
+                }
+                onRefresh={deliverables.refresh}
+                hasMore={deliverables.hasMore}
+                loadingMore={deliverables.loadingMore}
+                moreError={deliverables.moreError}
+                onLoadMore={deliverables.loadMore}
+                target={(() => {
+                  const tab = tabs.find((item) => item.path === activeTabPath);
+                  return tab
+                    ? targetsByTab.current.get(tab.path) ?? {
+                        source: tab.source ?? "workspace",
+                        path: tab.displayPath ?? tab.path,
+                        root: tab.workspaceRoot,
+                        artifactUrl: tab.artifactUrl,
+                        artifact: tab.artifact,
+                      }
+                    : undefined;
+                })()}
+                onSelect={(target) => {
+                  setMemoryGraphRoot(null);
+                  void openTarget(target);
+                }}
+              />
+            </div>
+          ) : activity === "files" || !codingMode ? (
+            <div className={styles.navigatorPane}>
+              {hasDocument && (
+                <button
+                  type="button"
+                  className={styles.mobilePaneSwitch}
+                  aria-label={t("files.openFilesLabel")}
+                  onClick={() => setMobilePane("document")}
+                >
+                  <Files size={16} />
+                  <span>{t("files.openFilesLabel")}</span>
+                </button>
+              )}
+              <FilesNavigator
+                compact={Boolean(headerActions)}
+                key={`${scopeKey}:${
+                  projectDirOverride ?? ""
+                }:${directoryRevision}:${savedFileRevision}`}
+                scope={effectiveScope}
+                selectedPath={
+                  tabs.find((tab) => tab.path === activeTabPath)?.displayPath ??
+                  activeTabPath
+                }
+                onSelect={(target) => {
+                  setMemoryGraphRoot(null);
+                  void openTarget(target);
+                }}
+                activeMemoryGraphRoot={memoryGraphRoot}
+                onShowMemoryGraph={(root) => {
+                  setMemoryGraphRoot(root);
+                  setMobilePane("document");
+                }}
+                onShowFiles={() => {
+                  setMemoryTagsActive(false);
+                  setMemoryGraphRoot(null);
+                }}
+                memoryTagsActive={memoryTagsSupported && memoryTagsActive}
+                onShowMemoryTags={() => setMemoryTagsActive(true)}
+                memoryTagsPanel={
+                  memoryTagsSupported ? (
+                    <MemoryTagsNavigator
+                      key={`${scopeKey}:${selectedMemoryTag ?? ""}`}
+                      agentId={agentId}
+                      tag={selectedMemoryTag}
+                      revision={memoryTagsRevision}
+                      memoryConfig={memoryConfig}
+                      selectedPath={activeTarget?.path ?? ""}
+                      selectedSource={activeTarget?.source}
+                      selectedRoot={activeTarget?.root}
+                      onSelectTag={setSelectedMemoryTag}
+                      onOpenFile={(target) => {
+                        setMemoryGraphRoot(null);
+                        void openTarget(target);
+                      }}
+                    />
+                  ) : undefined
+                }
+              />
+            </div>
+          ) : (
+            <aside className={styles.sourcePanel}>
+              {hasDocument && (
+                <button
+                  type="button"
+                  className={styles.mobilePaneSwitch}
+                  aria-label={t("files.openFilesLabel")}
+                  onClick={() => setMobilePane("document")}
+                >
+                  <ArrowLeft size={16} />
+                  <span>{t("files.openFilesLabel")}</span>
+                </button>
+              )}
+              <header>
+                <GitBranch size={15} />
+                <span>{t("files.sourceControl")}</span>
+              </header>
+              <GitPanel chatId={chatId} />
+            </aside>
+          ))}
+      </div>
+      <main className={styles.documentSurface}>
+        {!headerActions && navigatorControls}
         {loadError && (
           <div className={styles.loadError} role="alert">
             <FileWarning size={24} />
             <span>{loadError}</span>
           </div>
         )}
-        {memoryGraphRoot ? (
-          <MemoryGraphView
-            agentId={scope.agentId}
-            root={memoryGraphRoot}
-            onOpenFile={(source, path) => {
-              setMemoryGraphRoot(null);
-              void openTarget({ source, path });
-            }}
-          />
-        ) : (
-          <TabbedEditor
-            key={`${scopeKey}:${editorRevision}`}
-            tabs={tabs}
-            previewActive={active}
-            previewManagedUpdates
-            activeTabPath={activeTabPath}
-            scopeKey={scopeKey}
-            onTabSelect={activateTab}
-            onTabClose={handleClose}
-            onCloseOtherTabs={handleCloseOthers}
-            onTabDirtyChange={(path, dirty) =>
-              setTabDirty(scopeKey, path, dirty)
-            }
-            onTabContentChange={(path, content) =>
-              setTabContent(scopeKey, path, content)
-            }
-            onLoadFile={loadTabContent}
-            chatId={chatId}
-            projectDirOverride={projectDirOverride}
-            navigation={editorNavigation}
-            onRevealFile={async (path) => {
-              const tab = tabsRef.current.find((item) => item.path === path);
-              const target = revealTargetFromEditorTab(tab, path);
-              if (target)
-                await revealWorkspacePath({
-                  ...target,
-                  chatId,
-                  projectDirOverride,
-                });
-            }}
-            onMemoryTagClick={memoryTagsSupported ? showMemoryTag : undefined}
-            onOpenFile={openTarget}
-            onOpenHtmlInBrowser={onOpenBrowser ? openTarget : undefined}
-            onFileSaved={() => setMemoryTagsRevision((value) => value + 1)}
-            onDownloadFile={async (path) => {
-              const tab = tabsRef.current.find((item) => item.path === path);
-              const target = fileTabTarget(
-                tab ?? { path, content: "", dirty: false },
-              );
-              const sourcePath = target.path;
-              const filename = sourcePath.split("/").pop() ?? sourcePath;
-              if (tab?.artifactUrl) {
-                await downloadFileFromUrl(tab.artifactUrl, filename, {
-                  headers: buildAuthHeaders(),
-                  errorMessage: t("files.downloadFailed"),
-                });
-                return;
+        {memoryGraphRoot && headerActions && (
+          <div className={styles.graphHeader}>
+            {navigatorControls}
+            <span className={styles.headerSpacer} />
+            {headerActions}
+          </div>
+        )}
+        <div className={styles.documentEditor}>
+          {memoryGraphRoot ? (
+            <MemoryGraphView
+              agentId={scope.agentId}
+              root={memoryGraphRoot}
+              onOpenFile={(source, path) => {
+                setMemoryGraphRoot(null);
+                void openTarget({ source, path });
+              }}
+            />
+          ) : (
+            <TabbedEditor
+              key={`${scopeKey}:${editorRevision}`}
+              tabs={tabs}
+              previewActive={active}
+              previewManagedUpdates
+              headerActions={headerActions}
+              headerLeading={headerActions && navigatorControls}
+              activeTabPath={activeTabPath}
+              scopeKey={scopeKey}
+              onTabSelect={activateTab}
+              onTabClose={handleClose}
+              onCloseOtherTabs={handleCloseOthers}
+              onTabDirtyChange={(path, dirty) =>
+                setTabDirty(scopeKey, path, dirty)
               }
-              if (target.source === "workspace") {
-                await downloadFileFromUrl(
-                  workspaceApi.getFileDownloadUrl(sourcePath, target.root),
-                  filename,
-                  {
-                    headers: {
-                      ...buildAuthHeaders(),
-                      ...(chatId ? { "X-Chat-Id": chatId } : {}),
-                      ...(!chatId && projectDirOverride
-                        ? {
-                            "X-Session-Project-Dir": projectDirOverride,
-                          }
-                        : {}),
-                    },
+              onTabContentChange={(path, content) =>
+                setTabContent(scopeKey, path, content)
+              }
+              onLoadFile={loadTabContent}
+              chatId={chatId}
+              projectDirOverride={projectDirOverride}
+              navigation={editorNavigation}
+              onRevealFile={async (path) => {
+                const tab = tabsRef.current.find((item) => item.path === path);
+                const target = revealTargetFromEditorTab(tab, path);
+                if (target)
+                  await revealWorkspacePath({
+                    ...target,
+                    chatId,
+                    projectDirOverride,
+                  });
+              }}
+              onMemoryTagClick={memoryTagsSupported ? showMemoryTag : undefined}
+              onOpenFile={openTarget}
+              onOpenHtmlInBrowser={onOpenBrowser ? openTarget : undefined}
+              onFileSaved={() => setMemoryTagsRevision((value) => value + 1)}
+              onDownloadFile={async (path) => {
+                const tab = tabsRef.current.find((item) => item.path === path);
+                const target = fileTabTarget(
+                  tab ?? { path, content: "", dirty: false },
+                );
+                const sourcePath = target.path;
+                const filename = sourcePath.split("/").pop() ?? sourcePath;
+                if (tab?.artifactUrl) {
+                  await downloadFileFromUrl(tab.artifactUrl, filename, {
+                    headers: buildAuthHeaders(),
                     errorMessage: t("files.downloadFailed"),
-                  },
-                );
-                return;
-              }
-              const blob = new Blob([tab?.content ?? ""], {
-                type: "text/plain;charset=utf-8",
-              });
-              const url = URL.createObjectURL(blob);
-              const anchor = document.createElement("a");
-              anchor.href = url;
-              anchor.download = filename;
-              anchor.click();
-              URL.revokeObjectURL(url);
-            }}
-            onSaveFile={async (path, content) => {
-              const tab = tabsRef.current.find((item) => item.path === path);
-              if (isInlineGeneratedTab(tab)) {
-                if (artifactSaveRef.current) {
-                  throw new Error("An artifact save is already open");
+                  });
+                  return;
                 }
-                return new Promise<void>((resolve, reject) => {
-                  const request = {
-                    scopeKey,
-                    path: tab?.displayPath ?? "reply.md",
-                    root: tab?.workspaceRoot ?? ("project" as const),
-                    content,
-                    resolve,
-                    reject,
-                  };
-                  artifactSaveRef.current = request;
-                  setArtifactSave(request);
+                if (target.source === "workspace") {
+                  await downloadFileFromUrl(
+                    workspaceApi.getFileDownloadUrl(sourcePath, target.root),
+                    filename,
+                    {
+                      headers: {
+                        ...buildAuthHeaders(),
+                        ...(chatId ? { "X-Chat-Id": chatId } : {}),
+                        ...(!chatId && projectDirOverride
+                          ? {
+                              "X-Session-Project-Dir": projectDirOverride,
+                            }
+                          : {}),
+                      },
+                      errorMessage: t("files.downloadFailed"),
+                    },
+                  );
+                  return;
+                }
+                const blob = new Blob([tab?.content ?? ""], {
+                  type: "text/plain;charset=utf-8",
                 });
-              }
-              const target = fileTabTarget(
-                tab ?? { path, content, dirty: true },
-              );
-              if (target.source === "workspace") {
-                const saved = await workspaceApi.saveFileContent(
-                  target.path,
-                  content,
-                  tab?.etag,
-                  chatId,
-                  target.root,
-                  projectDirOverride,
+                const url = URL.createObjectURL(blob);
+                const anchor = document.createElement("a");
+                anchor.href = url;
+                anchor.download = filename;
+                anchor.click();
+                URL.revokeObjectURL(url);
+              }}
+              onSaveFile={async (path, content) => {
+                const tab = tabsRef.current.find((item) => item.path === path);
+                if (isInlineGeneratedTab(tab)) {
+                  if (artifactSaveRef.current) {
+                    throw new Error("An artifact save is already open");
+                  }
+                  return new Promise<void>((resolve, reject) => {
+                    const request = {
+                      scopeKey,
+                      path: tab?.displayPath ?? "reply.md",
+                      root: tab?.workspaceRoot ?? ("project" as const),
+                      content,
+                      resolve,
+                      reject,
+                    };
+                    artifactSaveRef.current = request;
+                    setArtifactSave(request);
+                  });
+                }
+                const target = fileTabTarget(
+                  tab ?? { path, content, dirty: true },
                 );
-                setTabEtag(scopeKey, path, saved.etag);
-                return;
-              }
-              const { source, path: sourcePath } = target;
-              if (source === "profile") {
-                await workspaceApi.saveFile(sourcePath, content, agentId);
-              } else if (source === "daily" || source === "digest") {
-                await workspaceApi.saveMemoryFile(sourcePath, content, source);
-              } else if (source === "memory") {
-                await workspaceApi.saveDailyMemory(sourcePath, content);
-              } else {
-                throw new Error("This file cannot be saved in place");
-              }
-            }}
-          />
+                if (target.source === "workspace") {
+                  const saved = await workspaceApi.saveFileContent(
+                    target.path,
+                    content,
+                    tab?.etag,
+                    chatId,
+                    target.root,
+                    projectDirOverride,
+                  );
+                  setTabEtag(scopeKey, path, saved.etag);
+                  return;
+                }
+                const { source, path: sourcePath } = target;
+                if (source === "profile") {
+                  await workspaceApi.saveFile(sourcePath, content, agentId);
+                } else if (source === "daily" || source === "digest") {
+                  await workspaceApi.saveMemoryFile(
+                    sourcePath,
+                    content,
+                    source,
+                  );
+                } else if (source === "memory") {
+                  await workspaceApi.saveDailyMemory(sourcePath, content);
+                } else {
+                  throw new Error("This file cannot be saved in place");
+                }
+              }}
+            />
+          )}
+        </div>
+        {footerActions && !memoryGraphRoot && (
+          <footer className={styles.documentFooter}>
+            <span className={styles.fileStatus}>
+              {activeTab && (
+                <>
+                  <span>
+                    {activeTab.readOnly
+                      ? t("files.readOnly", "只读")
+                      : isInlineGeneratedTab(activeTab)
+                      ? t("files.generatedContent", "生成内容")
+                      : activeTab.dirty
+                      ? t("workspace.unsaved")
+                      : activeDiff
+                      ? t("files.agentChangedFile")
+                      : t("workspace.saved")}
+                  </span>
+                  {activeTab.dirty && activeDiff && (
+                    <span>{t("files.agentChangedFile")}</span>
+                  )}
+                  {hideNavigator && activeTab.size !== undefined && (
+                    <span>
+                      {t("files.previewSize", { size: activeTab.size })}
+                    </span>
+                  )}
+                </>
+              )}
+            </span>
+            <div className={styles.footerActions}>{footerActions}</div>
+          </footer>
         )}
       </main>
       {artifactSave && artifactSave.scopeKey === scopeKey && (

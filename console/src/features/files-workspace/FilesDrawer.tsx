@@ -1,4 +1,12 @@
-import { ArrowLeft, Expand, MessageSquarePlus, X } from "lucide-react";
+import {
+  ArrowLeft,
+  Expand,
+  Maximize2,
+  Minimize2,
+  MessageSquarePlus,
+  X,
+} from "lucide-react";
+import { Tooltip } from "antd";
 import {
   useCallback,
   lazy,
@@ -98,6 +106,7 @@ function SessionFilesDrawer({
   useImperativeHandle(forwardedRef, () => drawerRef.current!, []);
   const resizeCleanupRef = useRef<(() => void) | undefined>(undefined);
   const [isResizing, setIsResizing] = useState(false);
+  const [maximized, setMaximized] = useState(false);
   const { mode, setMode, genUiTarget, clearGenUiTarget } =
     useWorkbenchSelection(state);
   const modeRef = useRef(mode);
@@ -206,14 +215,83 @@ function SessionFilesDrawer({
   const drawerStyle = width > 0 ? { width: `${width}px` } : undefined;
   const filename =
     target?.path.replace(/\\/g, "/").split("/").pop() ?? t("files.title");
+  const panelActions = (
+    <>
+      {mode === "files" && isWorkspace && target && (
+        <Tooltip title={t("files.backToPreview")}>
+          <button
+            type="button"
+            className={styles.iconButton}
+            aria-label={t("files.backToPreview")}
+            onClick={() => dispatch({ type: "COLLAPSE_TO_PREVIEW", target })}
+          >
+            <ArrowLeft size={16} />
+          </button>
+        </Tooltip>
+      )}
+      <Tooltip
+        title={t(
+          maximized ? "files.restoreWorkspace" : "files.maximizeWorkspace",
+        )}
+      >
+        <button
+          type="button"
+          className={styles.iconButton}
+          aria-label={t(
+            maximized ? "files.restoreWorkspace" : "files.maximizeWorkspace",
+          )}
+          aria-pressed={maximized}
+          onClick={() => setMaximized((current) => !current)}
+        >
+          {maximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+        </button>
+      </Tooltip>
+      <Tooltip title={t("common.close")}>
+        <button
+          type="button"
+          className={styles.iconButton}
+          aria-label={t("common.close")}
+          onClick={close}
+        >
+          <X size={16} />
+        </button>
+      </Tooltip>
+    </>
+  );
+  const footerActions = (
+    <>
+      {target && (
+        <button
+          type="button"
+          className={styles.secondaryButton}
+          onClick={() => insertFileReference(target.path)}
+        >
+          <MessageSquarePlus size={15} />
+          {t("files.mentionInChat")}
+        </button>
+      )}
+      {!isWorkspace && (
+        <button
+          type="button"
+          className={styles.primaryButton}
+          onClick={() => dispatch({ type: "EXPAND_WORKSPACE" })}
+        >
+          <Expand size={15} />
+          {t("files.expandWorkspace")}
+        </button>
+      )}
+    </>
+  );
   return (
     <motion.aside
       ref={drawerRef}
       className={`${styles.drawer} ${
         isWorkspace ? styles.drawerWorkspace : styles.drawerPreview
-      } ${isResizing ? styles.drawerResizing : ""}`}
+      } ${isResizing ? styles.drawerResizing : ""} ${
+        maximized ? styles.drawerMaximized : ""
+      }`}
       style={drawerStyle}
-      layout={isResizing || prefersReducedMotion ? false : "size"}
+      layout={isResizing || maximized || prefersReducedMotion ? false : "size"}
       initial={
         prefersReducedMotion ? false : { opacity: 0, x: 18, scale: 0.995 }
       }
@@ -277,49 +355,26 @@ function SessionFilesDrawer({
           });
         }}
       />
-      <header className={styles.drawerHeader}>
-        <div className={styles.fileMark}>
-          <WorkbenchIcon mode={mode} />
-        </div>
-        <div className={styles.drawerTitle}>
-          <strong id={titleId}>
-            {mode === "files" ? (
-              isWorkspace && !target ? (
-                t("files.workspace")
-              ) : (
-                filename
-              )
-            ) : (
+      {mode !== "files" && (
+        <header className={styles.drawerHeader}>
+          <div className={styles.headerIcon}>
+            <WorkbenchIcon mode={mode} />
+          </div>
+          <div className={styles.drawerTitle}>
+            <strong id={titleId}>
               <WorkbenchTitle mode={mode} />
+            </strong>
+            {!isWorkspace && (
+              <span>
+                {target?.size !== undefined
+                  ? t("files.previewSize", { size: target.size })
+                  : t("files.preview")}
+              </span>
             )}
-          </strong>
-          {!isWorkspace && (
-            <span>
-              {target?.size !== undefined
-                ? t("files.previewSize", { size: target.size })
-                : t("files.preview")}
-            </span>
-          )}
-        </div>
-        {mode === "files" && isWorkspace && target && (
-          <button
-            type="button"
-            className={styles.secondaryButton}
-            onClick={() => dispatch({ type: "COLLAPSE_TO_PREVIEW", target })}
-          >
-            <ArrowLeft size={15} />
-            {t("files.backToPreview")}
-          </button>
-        )}
-        <button
-          type="button"
-          className={styles.iconButton}
-          aria-label={t("common.close")}
-          onClick={close}
-        >
-          <X size={17} />
-        </button>
-      </header>
+          </div>
+          {panelActions}
+        </header>
+      )}
 
       <div className={styles.workspace}>
         <WorkbenchNavigation mode={mode} onSelect={setMode} />
@@ -363,7 +418,13 @@ function SessionFilesDrawer({
           >
             <Suspense
               fallback={
-                <div className={styles.empty}>{t("common.loading")}</div>
+                <>
+                  <header className={styles.drawerHeader}>
+                    <span className={styles.drawerTitle}>{filename}</span>
+                    {panelActions}
+                  </header>
+                  <div className={styles.empty}>{t("common.loading")}</div>
+                </>
               }
             >
               <FilesWorkspace
@@ -374,34 +435,10 @@ function SessionFilesDrawer({
                 onActiveTargetChange={setActiveFileTarget}
                 onOpenBrowser={openBrowser}
                 onBrowseMemoryTag={() => dispatch({ type: "EXPAND_WORKSPACE" })}
+                headerActions={panelActions}
+                footerActions={footerActions}
               />
             </Suspense>
-            {!isWorkspace && (
-              <>
-                <footer className={styles.drawerFooter}>
-                  {target && (
-                    <button
-                      type="button"
-                      className={styles.secondaryButton}
-                      onClick={() => {
-                        insertFileReference(target.path);
-                      }}
-                    >
-                      <MessageSquarePlus size={15} />
-                      {t("files.mentionInChat")}
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    className={styles.primaryButton}
-                    onClick={() => dispatch({ type: "EXPAND_WORKSPACE" })}
-                  >
-                    <Expand size={15} />
-                    {t("files.expandWorkspace")}
-                  </button>
-                </footer>
-              </>
-            )}
           </motion.div>
         </AnimatePresence>
       </div>

@@ -38,7 +38,6 @@ def forks_integrated(
         )
     except ImportError:
         return False
-
     project_dir = resolve_integration_project_dir(workspace_dir)
     if project_dir is None:
         # No git project / pointer → cannot register registry forks; the

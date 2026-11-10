@@ -13,6 +13,7 @@ Ported from ``leagent.workflow.state_store``. Provides:
 from __future__ import annotations
 
 import json
+import logging
 import os
 import tempfile
 from dataclasses import dataclass
@@ -20,7 +21,23 @@ from pathlib import Path
 from typing import Any, Protocol
 from uuid import UUID
 
+from ..file_io import atomic_replace
 from .types import WorkflowState
+
+
+logger = logging.getLogger(__name__)
+
+
+class CheckpointStorageError(RuntimeError):
+    """A durable checkpoint operation failed with its original IO context."""
+
+    def __init__(self, operation: str, path: Path, error: Exception) -> None:
+        super().__init__(
+            f"checkpoint {operation} failed at {path} "
+            f"({type(error).__name__}, "
+            f"errno={getattr(error, 'errno', None)}, "
+            f"winerror={getattr(error, 'winerror', None)}): {error}",
+        )
 
 
 @dataclass
@@ -143,62 +160,118 @@ class JsonWorkflowStateStore:
 
     def _load_index(self) -> None:
         path = self._index_path()
-        if path.exists():
-            try:
-                self._index = json.loads(path.read_text(encoding="utf-8"))
-            except Exception:
-                self._index = {}
+        try:
+            index = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(index, dict) or any(
+                not isinstance(key, str) or not isinstance(value, str)
+                for key, value in index.items()
+            ):
+                raise ValueError("checkpoint index must map run IDs to UUIDs")
+            for value in index.values():
+                UUID(value)
+            self._index.update(index)
+        except FileNotFoundError:
+            pass
+        except (OSError, ValueError):
+            logger.warning(
+                "workflow_checkpoint_index_unavailable path=%s",
+                path,
+                exc_info=True,
+            )
 
     @staticmethod
     def _atomic_write(path: Path, content: str) -> None:
-        descriptor, temporary = tempfile.mkstemp(
-            prefix=f".{path.name}.",
-            dir=path.parent,
-        )
+        temporary = None
         try:
+            descriptor, temporary = tempfile.mkstemp(
+                prefix=f".{path.name}.",
+                dir=path.parent,
+            )
             with os.fdopen(descriptor, "w", encoding="utf-8") as stream:
                 stream.write(content)
                 stream.flush()
                 os.fsync(stream.fileno())
-            os.replace(temporary, path)
+            atomic_replace(temporary, path)
+        except Exception as exc:
+            logger.exception("workflow_checkpoint_write_failed path=%s", path)
+            raise CheckpointStorageError("write", path, exc) from exc
         finally:
-            if os.path.exists(temporary):
-                os.unlink(temporary)
+            if temporary is not None:
+                try:
+                    Path(temporary).unlink(missing_ok=True)
+                except OSError:
+                    logger.warning(
+                        "workflow_checkpoint_temp_cleanup_failed path=%s",
+                        temporary,
+                        exc_info=True,
+                    )
 
-    def _save_index(self) -> None:
+    def _save_index(self, index: dict[str, str]) -> None:
         self._atomic_write(
             self._index_path(),
-            json.dumps(self._index, ensure_ascii=False),
+            json.dumps(index, ensure_ascii=False),
         )
 
     async def save(self, snapshot: WorkflowRunSnapshot) -> None:
         key = str(snapshot.state.id)
-        payload = snapshot.to_payload()
         path = self._state_path(key)
+        try:
+            payload = snapshot.to_payload()
+        except Exception as exc:
+            logger.exception(
+                "workflow_checkpoint_serialize_failed state_id=%s path=%s",
+                key,
+                path,
+            )
+            raise CheckpointStorageError("serialize", path, exc) from exc
         self._atomic_write(path, payload)
         if snapshot.prompt_id:
-            self._index[snapshot.prompt_id] = key
-            self._save_index()
+            self._load_index()
+            index = {**self._index, snapshot.prompt_id: key}
+            self._save_index(index)
+            self._index = index
 
     async def load(self, state_id: UUID) -> WorkflowRunSnapshot | None:
         path = self._state_path(str(state_id))
-        if not path.exists():
-            return None
         try:
-            return WorkflowRunSnapshot.from_payload(
+            snapshot = WorkflowRunSnapshot.from_payload(
                 path.read_text(encoding="utf-8"),
             )
-        except Exception:
+            if str(snapshot.state.id) != str(state_id):
+                raise ValueError("checkpoint state ID differs from filename")
+            return snapshot
+        except FileNotFoundError:
             return None
+        except Exception as exc:
+            logger.exception("workflow_checkpoint_read_failed path=%s", path)
+            raise CheckpointStorageError("read", path, exc) from exc
 
     async def load_by_prompt_id(
         self,
         prompt_id: str,
     ) -> WorkflowRunSnapshot | None:
+        self._load_index()
         key = self._index.get(prompt_id)
-        if key is None:
-            return None
-        return await self.load(UUID(key))
+        if key is not None:
+            snapshot = await self.load(UUID(key))
+            if snapshot is not None:
+                return snapshot
+        # The index is a locator. Recover a missing entry from the durable
+        # snapshot rather than losing a completed or paused execution.
+        for path in (self._root / "runs").glob("*.json"):
+            try:
+                state_id = UUID(path.stem)
+            except ValueError:
+                continue
+            try:
+                snapshot = await self.load(state_id)
+            except CheckpointStorageError:
+                continue
+            if snapshot is not None and snapshot.prompt_id:
+                self._index[snapshot.prompt_id] = str(state_id)
+                if snapshot.prompt_id == prompt_id:
+                    return snapshot
+        return None
 
     async def delete(self, state_id: UUID) -> None:
         path = self._state_path(str(state_id))
@@ -212,16 +285,25 @@ class JsonWorkflowStateStore:
 def build_workflow_state_store(
     root: Path | str | None,
 ) -> WorkflowStateStore:
-    """Factory: prefer JSON-file store, fall back to in-memory."""
+    """Use configured durable storage or explicit memory storage."""
     if root is not None:
         try:
             return JsonWorkflowStateStore(root)
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.exception(
+                "workflow_checkpoint_initialize_failed root=%s",
+                root,
+            )
+            raise CheckpointStorageError(
+                "initialize",
+                Path(root),
+                exc,
+            ) from exc
     return InMemoryWorkflowStateStore()
 
 
 __all__ = [
+    "CheckpointStorageError",
     "InMemoryWorkflowStateStore",
     "JsonWorkflowStateStore",
     "WorkflowRunSnapshot",

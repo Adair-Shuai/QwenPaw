@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import copy
+import logging
 import os
 import time
 from concurrent.futures import CancelledError as FutureCancelledError
@@ -25,6 +26,14 @@ from .engine import (
 from .engine.progress import NodeStatus
 from .invocation import MAX_WORKFLOW_DEPTH, current_run, workflow_stack
 from .flow_repository import RevisionConflict
+from .inspection import (
+    credential_values,
+    node_details,
+    redact_transport,
+    transport_credential_values,
+)
+
+logger = logging.getLogger(__name__)
 
 PAUSED = {"paused", "waiting_human"}
 
@@ -49,10 +58,9 @@ def _snapshot_run(
 
 
 class RunLifecycleMixin:
-    (
-        "Run management for WorkflowService; "
-        "storage and executor are injected."
-    )
+    """Run management for WorkflowService; storage and executor are
+    injected.
+    """
 
     def start_run(
         self,
@@ -62,6 +70,8 @@ class RunLifecycleMixin:
         on_event: Callable[[ProgressEvent], None] | None = None,
         trigger_type: str | None = None,
         agent_id: str | None = None,
+        debug_options: dict[str, Any] | None = None,
+        _captured_payload: dict[str, Any] | None = None,
     ) -> RunHandle:
         with self._lifecycle_lock:
             self._assert_accepting_runs()
@@ -87,12 +97,21 @@ class RunLifecycleMixin:
                     raise ValueError(
                         "Parent workflow is no longer accepting child runs",
                     )
-            payload = self.get_flow(flow_id)
+            payload = (
+                copy.deepcopy(_captured_payload)
+                if _captured_payload is not None
+                else self.get_flow(flow_id)
+            )
             if payload is None:
                 raise FileNotFoundError(f"flow '{flow_id}' not found")
             from .engine.executor import _merge_schema_input_defaults
 
-            inputs = _merge_schema_input_defaults(load(payload), inputs or {})
+            document = load(payload)
+            if debug_options is not None:
+                from .debugging import debug_document
+
+                document = debug_document(payload, debug_options)
+            inputs = _merge_schema_input_defaults(document, inputs or {})
             from qwenpaw.app.agent_context import (
                 get_current_user_id,
                 get_current_session_id,
@@ -122,6 +141,11 @@ class RunLifecycleMixin:
                 or "console",
                 "flow_revision": payload.get("revision", 0),
             }
+            if debug_options is not None:
+                from .debugging import debug_summary
+
+                metadata["trigger_type"] = "debug"
+                metadata["debug"] = debug_summary(debug_options)
             return self._submit_run(
                 run_id,
                 flow_id,
@@ -129,6 +153,64 @@ class RunLifecycleMixin:
                 inputs or {},
                 metadata,
                 on_event=on_event,
+                debug_options=debug_options,
+            )
+
+    async def start_debug_run(
+        self,
+        flow_id: str,
+        inputs: dict[str, Any] | None = None,
+        *,
+        mode: str,
+        target_node_id: str,
+        expected_revision: int,
+        pins: dict[str, list[Any]] | None = None,
+        node_inputs: dict[str, Any] | None = None,
+        agent_id: str | None = None,
+    ) -> RunHandle:
+        """Admit an isolated test of a saved revision with real runners."""
+        from .debugging import (
+            debug_document,
+            debug_validation_document,
+            prepare_debug_plan,
+        )
+        from .engine.errors import ValidationError
+
+        scope, executor = await self.authoring_executor(agent_id)
+        with self._lifecycle_lock:
+            payload = self.get_flow(flow_id)
+            if payload is None:
+                raise FileNotFoundError(f"flow '{flow_id}' not found")
+            options = prepare_debug_plan(
+                payload,
+                executor.node_registry,
+                mode=mode,
+                target_node_id=target_node_id,
+                expected_revision=expected_revision,
+                pins=pins,
+                node_inputs=node_inputs,
+            )
+            doc = debug_document(payload, options)
+            checked = self.validate_flow(
+                debug_validation_document(
+                    doc,
+                    options,
+                    executor.node_registry,
+                ).model_dump(),
+                executor=executor,
+                pinned_node_ids=set(options["pins"]),
+            )
+            if not checked["ok"]:
+                raise ValidationError(
+                    "Debug workflow validation failed",
+                    errors=checked["errors"],
+                )
+            return self.start_run(
+                flow_id,
+                inputs,
+                agent_id=scope,
+                debug_options=options,
+                _captured_payload=payload,
             )
 
     def resume_run(
@@ -188,6 +270,8 @@ class RunLifecycleMixin:
                     record.get("flow_revision", 0),
                 ),
             )
+            if record.get("debug") is not None:
+                metadata["debug"] = record["debug"]
             active_parent = current_run.get()
             if active_parent:
                 metadata["parent_run_id"] = active_parent["run_id"]
@@ -213,6 +297,7 @@ class RunLifecycleMixin:
                     inputs or {},
                     metadata,
                     state_id=state_id,
+                    debug_options=persisted.get("debug_options"),
                 )
             except Exception:
                 self._flow_repository.release_resume(run_id, new_id)
@@ -306,6 +391,7 @@ class RunLifecycleMixin:
         state_id: UUID | None,
         progress: ProgressRegistry,
         run_id: str,
+        debug_options: dict[str, Any] | None = None,
     ) -> WorkflowResult:
         """Prepare the agent and execute under the captured run context."""
         handle.task = asyncio.current_task()
@@ -325,10 +411,28 @@ class RunLifecycleMixin:
                     metadata.get("agent_id") or get_current_agent_id(),
                     {**metadata, "run_id": run_id},
                 )
+            validation_payload = payload
+            if debug_options is not None:
+                from .debugging import (
+                    debug_document,
+                    debug_validation_document,
+                )
+
+                doc = debug_document(payload, debug_options)
+                validation_payload = debug_validation_document(
+                    doc,
+                    debug_options,
+                    executor.node_registry,
+                ).model_dump()
             validation = self.validate_flow(
-                payload,
+                validation_payload,
                 executor=executor,
                 resuming=state_id is not None,
+                pinned_node_ids=(
+                    set(debug_options["pins"])
+                    if debug_options is not None
+                    else None
+                ),
             )
             if not validation["ok"]:
                 raise ValueError(
@@ -343,6 +447,11 @@ class RunLifecycleMixin:
                     prompt_id=run_id,
                     progress_registry=progress,
                     extra_data=metadata,
+                    **(
+                        {"debug_options": debug_options}
+                        if debug_options is not None
+                        else {}
+                    ),
                 )
             return await executor.execute_async(
                 doc,
@@ -350,6 +459,11 @@ class RunLifecycleMixin:
                 prompt_id=run_id,
                 progress_registry=progress,
                 extra_data=metadata,
+                **(
+                    {"debug_options": debug_options}
+                    if debug_options is not None
+                    else {}
+                ),
             )
         finally:
             current_run.reset(run_token)
@@ -365,6 +479,7 @@ class RunLifecycleMixin:
         *,
         state_id: UUID | None = None,
         on_event: Callable[[ProgressEvent], None] | None = None,
+        debug_options: dict[str, Any] | None = None,
     ) -> RunHandle:
         from .service import RunHandle
 
@@ -381,6 +496,11 @@ class RunLifecycleMixin:
             started_at=time.time(),
             owner_pid=os.getpid(),
             flow_snapshot=payload,
+            **(
+                {"debug_options": debug_options}
+                if debug_options is not None
+                else {}
+            ),
             **metadata,
         )
         progress.add_handler(
@@ -397,6 +517,11 @@ class RunLifecycleMixin:
             state_id=state_id or UUID(int=0),
             progress=progress,
             metadata=metadata,
+            inspection_secrets=credential_values(
+                payload,
+                inputs,
+                debug_options,
+            ),
         )
         self._runs[run_id] = handle
 
@@ -410,6 +535,7 @@ class RunLifecycleMixin:
                 state_id,
                 progress,
                 run_id,
+                debug_options,
             ),
             self._loop,
         )
@@ -466,6 +592,11 @@ class RunLifecycleMixin:
                         node_statuses=progress.node_statuses(),
                     )
                 except Exception as exc:
+                    logger.exception(
+                        "workflow_run_failed run_id=%s flow_id=%s",
+                        run_id,
+                        handle.flow_id,
+                    )
                     handle.error = str(exc)
                     status = (
                         "cancelled" if handle.cancel_requested else "failed"
@@ -520,9 +651,71 @@ class RunLifecycleMixin:
                 return None
             result = dict(record or {})
             result.pop("flow_snapshot", None)
+            result.pop("debug_options", None)
             if handle is not None:
                 result.update(handle.to_dict())
+            result["node_details"] = node_details(
+                result,
+                (record or {}).get("flow_snapshot") or {},
+                events=(record or {}).get("events"),
+            )
             return result
+
+    async def public_run_redactor(self, run_id: str):
+        """Build a public-view filter without modifying executable values."""
+        record = self._execution_repository.get(run_id) or {}
+        definition = record.get("flow_snapshot") or {}
+        node_output_ids = (
+            set(definition.get("nodes") or {})
+            if definition and not isinstance(definition.get("outputs"), dict)
+            else None
+        )
+        secrets = transport_credential_values(record, node_output_ids)
+        handle = self._runs.get(run_id)
+        if handle is not None:
+            secrets.update(handle.inspection_secrets)
+        if self._executor.state_store is not None:
+            # The public record's state ID also survives a missing prompt
+            # index and continuations that share their parent's checkpoint.
+            raw_state_id = record.get("state_id")
+            snapshot = None
+            if raw_state_id:
+                snapshot = await self._executor.state_store.load(
+                    UUID(str(raw_state_id)),
+                )
+            if snapshot is None:
+                snapshot = await self._executor.state_store.load_by_prompt_id(
+                    run_id,
+                )
+            # A continuation can publish before its own prompt index is saved;
+            # the shared checkpoint still owns the original workflow inputs.
+            if snapshot is None and handle is not None and handle.state_id.int:
+                snapshot = await self._executor.state_store.load(
+                    handle.state_id,
+                )
+            if snapshot is not None:
+                secrets.update(
+                    credential_values(
+                        snapshot.state.inputs,
+                        snapshot.state.variables,
+                    ),
+                )
+
+        def clean(value):
+            secrets.update(transport_credential_values(value, node_output_ids))
+            return redact_transport(value, secrets, node_output_ids)
+
+        return clean
+
+    async def get_public_run_record(
+        self,
+        run_id: str,
+    ) -> dict[str, Any] | None:  # noqa: E501
+        record = self.get_run_record(run_id)
+        if record is None:
+            return None
+        clean = await self.public_run_redactor(run_id)
+        return clean(record)
 
     def list_runs(self) -> list[dict[str, Any]]:
         with self._lifecycle_lock:

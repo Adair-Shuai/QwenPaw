@@ -17,7 +17,6 @@ def inject_interaction_module() -> None:
     module_name = "qwenpaw.app.interaction"
     if module_name in sys.modules:
         return
-
     mod = types.ModuleType(module_name)
     mod.__package__ = "qwenpaw.app"
 

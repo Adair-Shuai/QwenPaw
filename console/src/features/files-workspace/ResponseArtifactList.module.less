@@ -1,32 +1,38 @@
+:global(.qwenpaw-bubble-content-wrapper) > div:has(> .list) {
+  width: 100%;
+  min-width: 0;
+}
+
 .list {
+  width: min(100%, 720px);
+  min-width: 0;
   display: grid;
   justify-items: start;
-  gap: 6px;
+  gap: 8px;
   margin: 12px 0;
 }
 
 .grid {
   width: 100%;
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(min(320px, 100%), 1fr));
+  grid-template-columns: minmax(0, 1fr);
   gap: 8px;
 }
 
 .file {
   width: 100%;
   min-width: 0;
-  min-height: max(64px, calc(64px * var(--app-font-scale)));
+  min-height: max(80px, calc(80px * var(--app-font-scale)));
   height: auto;
-  padding: 0 8px 0 0;
+  padding: 0 10px 0 0;
   display: flex;
   align-items: center;
-  gap: 4px;
+  gap: 6px;
   color: inherit;
   border: 1px solid var(--app-border);
-  border-radius: 10px;
+  border-radius: 12px;
   background: var(--app-fill-faint);
   text-align: left;
-  cursor: pointer;
 
   &:hover {
     border-color: var(--app-selected-border);
@@ -42,51 +48,40 @@
 .previewButton {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 14px;
   flex: 1;
   min-width: 0;
   align-self: stretch;
-  padding: 10px 6px 10px 14px;
+  padding: 15px 6px 15px 16px;
   border: 0;
-  border-radius: 10px;
+  border-radius: 12px;
   background: transparent;
   color: inherit;
   text-align: left;
   cursor: pointer;
 }
 
-.revealButton {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
+.actions {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
   flex: 0 0 auto;
-  border: 0;
-  border-radius: 6px;
-  color: var(--app-text-secondary);
-  background: transparent;
-  cursor: pointer;
-
-  &:hover {
-    color: var(--app-info-text);
-    background: var(--app-info-bg);
-  }
+  min-width: 66px;
 }
 
-.previewButton:focus-visible,
-.revealButton:focus-visible {
+.previewButton:focus-visible {
   outline: 2px solid var(--app-selected-border);
   outline-offset: -2px;
 }
 
 .icon {
-  width: 40px;
-  height: 40px;
+  width: 48px;
+  height: 48px;
   display: grid;
   place-items: center;
   flex: 0 0 auto;
   color: var(--app-info-text);
-  border-radius: 8px;
+  border-radius: 10px;
   background: var(--app-info-bg);
 }
 
@@ -94,16 +89,12 @@
   min-width: 0;
   display: grid;
   flex: 1;
-  gap: 3px;
+  gap: 6px;
 
-  strong,
-  small {
+  strong {
     overflow: hidden;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  strong {
     font-size: var(--app-font-body);
     font-weight: 600;
   }
@@ -114,7 +105,31 @@
   }
 }
 
-.status {
+.meta {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 8px;
+
+  small + small::before {
+    content: "·";
+    margin-right: 8px;
+    color: var(--app-text-tertiary);
+  }
+}
+
+.fileType {
+  flex: 0 0 auto;
+}
+
+.path {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta .status {
   flex: 0 0 auto;
   color: var(--app-success-text);
   font-size: var(--app-font-caption);
@@ -123,6 +138,21 @@
   &[data-change="modified"],
   &[data-change="sent"] {
     color: var(--app-info-text);
+  }
+}
+
+@media (max-width: 480px) {
+  .previewButton {
+    gap: 10px;
+    padding-left: 12px;
+  }
+
+  .meta {
+    gap: 6px;
+
+    small + small::before {
+      margin-right: 6px;
+    }
   }
 }
 

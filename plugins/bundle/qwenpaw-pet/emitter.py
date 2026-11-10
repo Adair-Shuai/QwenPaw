@@ -180,7 +180,6 @@ def _desktop_url_candidates() -> list[str]:
     explicit = (os.environ.get("QWENPAW_PET_DESKTOP_URL") or "").strip()
     if explicit:
         return [explicit.rstrip("/")]
-
     out: list[str] = []
     try:
         from qwenpaw_pet_desktop import runtime as pet_rt
@@ -190,7 +189,6 @@ def _desktop_url_candidates() -> list[str]:
             out.append(bu.rstrip("/"))
     except Exception:
         pass
-
     host = (os.environ.get("QWENPAW_PET_DESKTOP_HOST") or "127.0.0.1").strip()
     host = host or "127.0.0.1"
     port = int(os.environ.get("QWENPAW_PET_DESKTOP_PORT", "8765"))
@@ -352,11 +350,9 @@ def _spawn_desktop_background_impl() -> tuple[bool, str | None]:
         from qwenpaw_pet_desktop import runtime as pet_rt
     except ImportError as exc:
         return False, f"{_MISSING_DEPS_HINT} ({exc})"
-
     host, preferred_port = _spawn_host_port_from_env()
     if _living_desktop_present(host, preferred_port):
         return False, "Desktop pet is already running or starting."
-
     try:
         pet_rt.ensure_runtime()
         # Create the bridge token *before* spawning so the very first
@@ -480,7 +476,6 @@ def stop_desktop(
     skip = _stop_desktop_skip_reason(force=force)
     if skip is not None:
         return {"ok": True, "stopped": False, "reason": skip}
-
     try:
         from qwenpaw_pet_desktop import runtime as pet_rt
     except ImportError as exc:
@@ -489,7 +484,6 @@ def stop_desktop(
             "stopped": False,
             "reason": f"runtime not importable: {exc}",
         }
-
     pid = pet_rt.read_pid()
     if not pid and force:
         health = desktop_health()
@@ -511,7 +505,6 @@ def stop_desktop(
     if not running and not force:
         _clear_desktop_base_url_cache()
         return {"ok": True, "stopped": False, "reason": "not running"}
-
     stopped = _stop_pid(
         pid,
         grace=grace,
@@ -567,7 +560,6 @@ def ensure_desktop_available() -> None:
     if not ok:
         logger.warning("Could not autostart pet desktop: %s", hint)
         return
-
     try:
         loop = asyncio.get_running_loop()
     except RuntimeError:
@@ -612,7 +604,6 @@ def start_desktop_interactive() -> dict[str, Any]:
                 launch_attempted=False,
                 message="Desktop pet is already running.",
             )
-
         host, preferred_port = _spawn_host_port_from_env()
         wait_sec = 5.0 if sys.platform == "win32" else 3.0
         if _living_desktop_present(host, preferred_port):
@@ -630,7 +621,6 @@ def start_desktop_interactive() -> dict[str, Any]:
                 launch_attempted=False,
                 message="Desktop pet is already starting.",
             )
-
         ok, hint = _spawn_desktop_background_impl()
         if not ok:
             return _desktop_start_response(
@@ -639,7 +629,6 @@ def start_desktop_interactive() -> dict[str, Any]:
                 message=hint or "Could not start the desktop pet process.",
                 hint=_MISSING_DEPS_HINT,
             )
-
         # ``start_desktop_interactive`` is wired to ``POST /desktop/start`` as
         # a sync FastAPI route, so FastAPI dispatches it in a worker thread —
         # blocking ``time.sleep`` here is fine and does not stall the loop.
@@ -649,7 +638,6 @@ def start_desktop_interactive() -> dict[str, Any]:
                 launch_attempted=True,
                 message="Desktop pet started.",
             )
-
         return _desktop_start_response(
             already_running=False,
             launch_attempted=True,
@@ -709,7 +697,6 @@ def emit_pet_event(event: str, **payload: Any) -> None:
             event,
         )
         return
-
     global _EVENT_SERIAL
     _EVENT_SERIAL += 1
     # Do not pre-resolve ``state`` here — the desktop pet maps ``event`` via

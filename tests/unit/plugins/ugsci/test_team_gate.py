@@ -112,7 +112,6 @@ async def test_dispatch_retry_limit_is_enforced(tmp_path: Path) -> None:
         assert workflow.read_state()["dispatch_retries"] == expected_retry
         workflow.update_state({"current_phase": "plan"})
         await gate.check({})
-
     workflow.update_state({"current_phase": "dispatch"})
     result = await gate.check({})
 

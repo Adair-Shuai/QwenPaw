@@ -308,7 +308,6 @@ class AuditLog:
         if until:
             clauses.append("ts <= ?")
             params.append(until)
-
         where = " WHERE " + " AND ".join(clauses) if clauses else ""
 
         try:

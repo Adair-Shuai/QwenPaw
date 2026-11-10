@@ -33,7 +33,9 @@ describe("defaultConfig static shape", () => {
   });
 
   it("carries the welcome defaults with two prompts and an api stub", () => {
-    expect(defaultConfig.welcome.avatar).toBe("/online.svg");
+    expect(defaultConfig.welcome.avatar).toBe(
+      "/ugsci-mono/avatars/assistant-256.png",
+    );
     expect(defaultConfig.welcome.prompts).toHaveLength(2);
     expect(defaultConfig.api).toEqual({ baseURL: "", token: "" });
   });
@@ -66,7 +68,7 @@ describe("getDefaultConfig", () => {
     // Untouched defaults survive the spread.
     expect(cfg.sender).not.toHaveProperty("maxLength");
     expect(cfg.theme.colorPrimary).toBe("#FF7F16");
-    expect(cfg.welcome.avatar).toBe("/online.svg");
+    expect(cfg.welcome.avatar).toBe("/ugsci-mono/avatars/assistant-256.png");
     expect(cfg.api).toEqual({ baseURL: "", token: "" });
   });
 

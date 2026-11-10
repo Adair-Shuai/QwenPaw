@@ -85,5 +85,4 @@ def test_backup_contains_global_config_finds_noncanonical_filename(
     with zipfile.ZipFile(backup_path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr(META_FILE, meta.model_dump_json())
         zf.writestr(PREFIX_CONFIG, json.dumps({"security": {}}))
-
     assert helpers.backup_contains_global_config("backup-test")

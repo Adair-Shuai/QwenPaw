@@ -76,7 +76,6 @@ def test_verify_checksum_mismatch_deletes(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="SHA256 mismatch"):
         BinaryManager._verify_checksum(str(filepath), "0" * 64)
-
     assert not filepath.exists()
 
 

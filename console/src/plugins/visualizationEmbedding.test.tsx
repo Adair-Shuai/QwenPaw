@@ -45,21 +45,45 @@ afterEach(() => {
     .forEach((node) => node.remove());
 });
 
+type EmbeddedWorkspaceProps = {
+  artifact?: Partial<WorkspaceArtifact>;
+  workspacePath?: string;
+  [key: string]: unknown;
+};
+type EmbeddedViewerApi = {
+  version: number;
+  mount: (
+    container: HTMLElement,
+    options: Record<string, unknown>,
+  ) => Promise<{
+    ready: Promise<void>;
+    dispose: () => void;
+    update: (options: Record<string, unknown>) => void;
+    executeCommand: (...args: unknown[]) => Promise<unknown>;
+  }>;
+};
+
 function fixture(bundle: string) {
   let page: React.ComponentType = () => null;
-  let workspace: React.ComponentType<any> = () => null;
+  let workspace: React.ComponentType<EmbeddedWorkspaceProps> = () => null;
   let renderer: RendererRegistration | undefined;
   const navigate = vi.fn();
   const dispose = vi.fn();
   const mount = vi.fn(
-    (_container: HTMLElement, _options: Record<string, unknown>) => ({
-      ready: Promise.resolve(),
-      dispose,
-      update: vi.fn(),
-      executeCommand: vi.fn(),
-    }),
+    (_container: HTMLElement, _options: Record<string, unknown>) => {
+      void _container;
+      void _options;
+      return {
+        ready: Promise.resolve(),
+        dispose,
+        update: vi.fn(),
+        executeCommand: vi.fn(),
+      };
+    },
   );
   const request = vi.fn(async (url: string, _init?: RequestInit) => {
+    void _init;
+
     if (url.endsWith("/imports/workspace"))
       return response({ job_id: "job-1" });
     if (url.endsWith("/imports/job-1"))
@@ -73,17 +97,33 @@ function fixture(bundle: string) {
   const host = {
     React,
     antd: {
-      Button: ({ children, onClick }: any) => (
-        <button onClick={onClick}>{children}</button>
-      ),
-      Alert: ({ message, description }: any) => (
+      Button: ({
+        children,
+        onClick,
+      }: Pick<
+        React.ButtonHTMLAttributes<HTMLButtonElement>,
+        "children" | "onClick"
+      >) => <button onClick={onClick}>{children}</button>,
+      Alert: ({
+        message,
+        description,
+      }: {
+        message?: React.ReactNode;
+        description?: React.ReactNode;
+      }) => (
         <div role="alert">
           {message}
           {description}
         </div>
       ),
-      Spin: ({ tip }: any) => <div>{tip || "加载中"}</div>,
-      Typography: { Text: ({ children }: any) => <span>{children}</span> },
+      Spin: ({ tip }: { tip?: React.ReactNode }) => (
+        <div>{tip || "加载中"}</div>
+      ),
+      Typography: {
+        Text: ({ children }: React.PropsWithChildren) => (
+          <span>{children}</span>
+        ),
+      },
     },
     antdIcons: {},
     getApiUrl: (value: string) => `/prefix/api/${value.replace(/^\//, "")}`,
@@ -97,15 +137,22 @@ function fixture(bundle: string) {
     value: {
       host,
       route: {
-        add: (_plugin: string, route: any) => {
+        add: (
+          _plugin: string,
+          route: { id: string; component: React.ComponentType },
+        ) => {
           if (route.id === "ugsci.visualization") page = route.component;
         },
       },
       workspace: {
-        registerRenderer: (item: any) => {
+        registerRenderer: (
+          item: Omit<RendererRegistration, "component"> & {
+            component: React.ComponentType<EmbeddedWorkspaceProps>;
+          },
+        ) => {
           if (item.id === "ugsci.visualization") {
             workspace = item.component;
-            renderer = item;
+            renderer = item as unknown as RendererRegistration;
           }
         },
       },
@@ -179,7 +226,10 @@ describe.each([
           mimeType: "application/x-eclipse-grid",
         })?.renderer.id,
       ).toBe("ugsci.visualization");
-      render(<ArtifactPreview artifact={artifact} />);
+      await act(async () => {
+        render(<ArtifactPreview artifact={artifact} />);
+        await vi.dynamicImportSettled();
+      });
       const table = await screen.findByRole("table", {}, { timeout: 10000 });
       expect(table).toHaveTextContent("井号");
       expect(table).toHaveTextContent("演示井A");
@@ -223,7 +273,11 @@ describe.each([
   });
   it("exposes a reusable lazy application mount with independent command handling", async () => {
     const { mount, dispose } = fixture(bundle);
-    const api = (window as any).QwenPaw.ugsci.visualization;
+    const api = (
+      Reflect.get(window, "QwenPaw") as unknown as {
+        ugsci: { visualization: EmbeddedViewerApi };
+      }
+    ).ugsci.visualization;
     expect(api.version).toBe(1);
     const container = document.createElement("div");
     const onSelection = vi.fn();
@@ -313,9 +367,11 @@ describe.each([
 
 it("preserves scope while credentials refresh and aborts timed out import polling", async () => {
   let token = "first";
-  const request = vi.fn(async (_url: string, _init?: RequestInit) =>
-    response({ status: "running", progress: 0.2 }),
-  );
+  const request = vi.fn(async (_url: string, _init?: RequestInit) => {
+    void _url;
+    void _init;
+    return response({ status: "running", progress: 0.2 });
+  });
   const options = hostViewerOptions(
     {
       React,
@@ -382,9 +438,11 @@ it("does not execute a late command after the viewer is disposed", async () => {
 });
 
 it("allows scoped workspace listing while rejecting path traversal and unrelated service writes", async () => {
-  const request = vi.fn(async (_url: string, _init?: RequestInit) =>
-    response({ entries: [] }),
-  );
+  const request = vi.fn(async (_url: string, _init?: RequestInit) => {
+    void _url;
+    void _init;
+    return response({ entries: [] });
+  });
   const options = hostViewerOptions(
     {
       React,

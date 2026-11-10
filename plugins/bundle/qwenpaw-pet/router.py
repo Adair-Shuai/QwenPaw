@@ -128,7 +128,6 @@ def _install_from_source(source: Path, *, replace: bool) -> dict[str, object]:
         manifest, _sheet = pet_package.validate_pet_package(source)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
     pet_id = str(manifest.get("id") or source.name)
     if not _SAFE_PET_ID.fullmatch(pet_id):
         raise HTTPException(
@@ -138,12 +137,10 @@ def _install_from_source(source: Path, *, replace: bool) -> dict[str, object]:
                 "(letters, digits, '.', '_', '-' only)"
             ),
         )
-
     try:
         target = pet_package.install_pet(source, replace=replace)
     except FileExistsError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
-
     return {
         "ok": True,
         "petId": pet_id,
@@ -308,7 +305,6 @@ def build_router() -> APIRouter:
                 status_code=404,
                 detail=f"path not found: {src}",
             )
-
         tmp_root: Path | None = None
         try:
             if src.is_dir():
@@ -360,7 +356,6 @@ def build_router() -> APIRouter:
                 status_code=400,
                 detail="no files uploaded",
             )
-
         tmp_root = Path(tempfile.mkdtemp(prefix="qwenpaw-pet-upload-"))
         extract_root: Path | None = None
         try:
@@ -369,7 +364,6 @@ def build_router() -> APIRouter:
                 dest.parent.mkdir(parents=True, exist_ok=True)
                 with dest.open("wb") as out:
                     shutil.copyfileobj(uf.file, out)
-
             children = list(tmp_root.iterdir())
             single_zip = (
                 len(children) == 1
@@ -384,7 +378,6 @@ def build_router() -> APIRouter:
                 source_dir = _resolve_pet_source(extract_root)
             else:
                 source_dir = _resolve_pet_source(tmp_root)
-
             return _install_from_source(source_dir, replace=replace)
         finally:
             shutil.rmtree(tmp_root, ignore_errors=True)

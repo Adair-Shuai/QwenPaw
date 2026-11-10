@@ -59,7 +59,6 @@ class GatewayTokenProvider:
             raise RuntimeError(
                 "ALIBABA_CLOUD_ACCESS_KEY_ID / SECRET not configured",
             )
-
         cmd = [
             "aliyun",
             "ramoauth",
@@ -94,7 +93,6 @@ class GatewayTokenProvider:
             raise RuntimeError(
                 f"Token refresh failed (exit={proc.returncode}): {err_msg}",
             )
-
         data = json.loads(stdout.decode())
         d = data.get("Data") or data
         token = d.get("AccessToken", d.get("access_token", ""))
@@ -102,7 +100,6 @@ class GatewayTokenProvider:
             raise RuntimeError(
                 f"No AccessToken in response: {stdout.decode()[:500]}",
             )
-
         expires_in = int(d.get("ExpiresIn", 3600))
         self._cached_token = token
         self._token_expire_at = (

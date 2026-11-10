@@ -90,6 +90,9 @@ class SIPPlatform:
             await self._state_changed(state)
 
     def current(self, route):
+        # Keep the existing URL, identity and value validation as one checked
+        # contract.
+        # pylint: disable=R0916
         call = self._calls.get(route.get("call_id"))
         if (
             not self._accepting
@@ -139,7 +142,7 @@ class SIPPlatform:
         if (
             not self._accepting
             or call_id in self._calls
-            or (limit > 0 and len(self._calls) >= limit)
+            or (0 < limit <= len(self._calls))
         ):
             await self.backend.hangup(call_id)
             return
@@ -186,8 +189,6 @@ class SIPPlatform:
                         await self._diagnostic("SIP_WELCOME_FAILED")
             if self._calls.get(call_id) is call and not call.closing:
                 self._reset_timeout(call)
-        except asyncio.CancelledError:
-            raise
         except Exception:
             await self._fatal(call, "SIP_CALL_SETUP_FAILED")
         finally:
@@ -233,8 +234,6 @@ class SIPPlatform:
                 )
                 await call.stt.feed_audio(pcm)
                 errors = 0
-            except asyncio.CancelledError:
-                raise
             except Exception:
                 errors += 1
                 if errors >= 20:
@@ -273,6 +272,9 @@ class SIPPlatform:
         await self._end_call(call, hangup=True)
 
     async def play(self, route, text):
+        # Preserve native event routing, media fallbacks and cleanup in SDK
+        # order.
+        # pylint: disable=R0915
         from .helpers import _clean_for_tts, _pcm16_to_pyvoip
         from .stt_tts import synthesize_tts_stream
 

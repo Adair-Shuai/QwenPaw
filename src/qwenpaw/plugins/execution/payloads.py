@@ -68,7 +68,9 @@ def _hex(value, length):
 
 
 class PayloadStore:
-    """One side's outbox quota; only the creating host disposes the run root."""
+    """One side's outbox quota; only the creating host disposes the run
+    root.
+    """
 
     def __init__(self, root, run_id, limits, side, *, owner=False):
         self.root, self.run_id, self.limits = root, run_id, limits
@@ -143,6 +145,8 @@ class PayloadStore:
 
     @classmethod
     def attach(cls, context, *, side="worker"):
+        # Validate complete payload ownership and bounds before attachment.
+        # pylint: disable=R0916
         if (
             not isinstance(context, Mapping)
             or set(context) != {"version", "root", "run_id", "limits"}
@@ -489,6 +493,8 @@ class PayloadStore:
             await asyncio.shield(job)
 
     async def read(self, message, *, deadline):
+        # Validate payload identity and resource limits before reading bytes.
+        # pylint: disable=R0916
         self.validate_message(message)
         try:
             reference = _strict_json(message)
@@ -569,7 +575,9 @@ class PayloadStore:
         return await self._io(load, deadline)
 
     def close(self):
-        """Fence new I/O; possibly unread files remain owned until tree exit."""
+        """Fence new I/O; possibly unread files remain owned until tree
+        exit.
+        """
         self._closed = True
         for abort in self._jobs.values():
             abort.set()
@@ -580,6 +588,8 @@ class PayloadStore:
             self._directories.pop(name)
 
     def _cleanup_files(self, deadline, abort):
+        # Keep file ownership validation and compensating cleanup together.
+        # pylint: disable=R0912,R1702
         closed = []
         try:
             self._check_deadline(deadline, abort)
@@ -630,6 +640,8 @@ class PayloadStore:
 
     async def cleanup(self, *, deadline):
         """Fence admission, drain every successor, then exclusively dispose."""
+        # Keep every ownership and live-reader guard before removal.
+        # pylint: disable=R0911
         if self._disposed:
             return True
         self.close()

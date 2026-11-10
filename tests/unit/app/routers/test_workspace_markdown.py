@@ -108,7 +108,6 @@ async def test_prompt_file_write_rolls_back_when_config_save_fails(
             ),
             object(),
         )
-
     assert exc_info.value.status_code == 500
     assert target.read_text(encoding="utf-8") == "old content"
 
@@ -137,6 +136,5 @@ async def test_prompt_file_write_rejects_path_separators(
             ),
             object(),
         )
-
     assert exc_info.value.status_code == 400
     assert not list(tmp_path.glob("*.md"))

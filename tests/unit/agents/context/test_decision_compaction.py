@@ -484,7 +484,8 @@ async def test_scroll_margin_cannot_hide_candidate_token_growth(
     model,
     tmp_path,
 ):
-    # Raw usage grows 600 -> 650; comparing against corrected 850 must not pass.
+    # Raw usage grows 600 -> 650; comparing against corrected 850 must not
+    # pass.
     agent = make_agent()
     agent.model.model_key = "provider:model"
     agent.model.context_size = 1000

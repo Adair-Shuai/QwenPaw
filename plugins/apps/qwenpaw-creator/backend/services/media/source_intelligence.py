@@ -676,7 +676,6 @@ def build_source_intelligence_index(
                 f"Source Understanding provider claimed unsupported {modality} coverage",
             )
         coverage[modality] = item
-
     provenance = set(provenance_refs)
     default_base = {
         "assetVersionId": asset_version_id,

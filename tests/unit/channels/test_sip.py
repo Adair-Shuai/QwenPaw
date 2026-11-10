@@ -74,6 +74,8 @@ class Vendor:
                 self.state = "answered"
 
             def read_audio(self, **kwargs):
+                # Retain fixture injection and substituted callback signatures.
+                # pylint: disable=unused-argument
                 return b""
 
             def write_audio(self, data):
@@ -121,23 +123,25 @@ class Vendor:
                 callback.on_data(b"\0" * 320)
                 callback.on_complete()
 
-        def module(name, **attrs):
+        def _sdk_module(name, **attrs):
             value = ModuleType(name)
             value.__dict__.update(attrs)
             return value
 
-        voip = module(
+        voip = _sdk_module(
             "pyVoIP.VoIP",
             VoIPPhone=Phone,
             CallState=NS(ANSWERED="answered"),
             InvalidStateError=type("InvalidStateError", (Exception,), {}),
         )
-        realtime = module("dashscope_realtime", DashScopeRealtimeASR=ASR)
-        config = module(
+        realtime = _sdk_module("dashscope_realtime", DashScopeRealtimeASR=ASR)
+        config = _sdk_module(
             "dashscope_realtime.asr",
+            # Retain the keyword-only SDK configuration factory.
+            # pylint: disable-next=unnecessary-lambda
             ASRConfig=lambda **kwargs: NS(**kwargs),
         )
-        tts = module(
+        tts = _sdk_module(
             "dashscope.audio.tts_v2",
             AudioFormat=NS(
                 **{
@@ -149,12 +153,12 @@ class Vendor:
             SpeechSynthesizer=Synth,
         )
         return {
-            "pyVoIP": module("pyVoIP", VoIP=voip),
+            "pyVoIP": _sdk_module("pyVoIP", VoIP=voip),
             "pyVoIP.VoIP": voip,
             "dashscope_realtime": realtime,
             "dashscope_realtime.asr": config,
-            "dashscope": module("dashscope"),
-            "dashscope.audio": module("dashscope.audio"),
+            "dashscope": _sdk_module("dashscope"),
+            "dashscope.audio": _sdk_module("dashscope.audio"),
             "dashscope.audio.tts_v2": tts,
         }
 
@@ -172,6 +176,10 @@ def vendor(monkeypatch, unused_tcp_port):
 
 @asynccontextmanager
 async def running(vendor, tmp_path):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     driver = module("sip").SIPDriver()
     peer, identity = bind("sip", driver, tmp_path)
     try:
@@ -202,6 +210,8 @@ async def running(vendor, tmp_path):
 
 
 async def incoming(vendor):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     call = vendor.phones[-1].incoming()
     await until(lambda: vendor.asrs)
     return call
@@ -223,6 +233,10 @@ async def test_real_backend_transcript_sender_turn_delivery_and_finish(
     vendor,
     tmp_path,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     async with running(vendor, tmp_path) as (driver, peer, identity):
         call = await incoming(vendor)
         asr = vendor.asrs[-1]
@@ -262,6 +276,10 @@ async def test_real_backend_transcript_sender_turn_delivery_and_finish(
 
 
 async def test_new_turn_and_speech_interrupt_retire_only_tts(vendor, tmp_path):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     async with running(vendor, tmp_path) as (driver, peer, identity):
         await incoming(vendor)
         asr = vendor.asrs[-1]
@@ -271,6 +289,8 @@ async def test_new_turn_and_speech_interrupt_retire_only_tts(vendor, tmp_path):
         old = driver._route_attrs(event["response_handle"])
         asr.partial("interrupt")
         await until(
+            # Observe the current active-call set after interruption.
+            # pylint: disable-next=unnecessary-lambda
             lambda: next(
                 iter(driver._platform._calls.values()),
             ).abort.is_set(),
@@ -296,6 +316,10 @@ async def test_active_tts_interrupt_joins_native_synth_and_retains_call(
     vendor,
     tmp_path,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     async with running(vendor, tmp_path) as (driver, peer, identity):
         call = await incoming(vendor)
         vendor.asrs[-1].sentence("first")
@@ -322,7 +346,15 @@ async def test_active_tts_interrupt_joins_native_synth_and_retains_call(
 
 
 async def test_stop_closes_asr_call_and_backend(vendor, tmp_path, monkeypatch):
-    async with running(vendor, tmp_path) as (driver, peer, identity):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
+    async with running(vendor, tmp_path) as (
+        driver,
+        _unused_peer,
+        _unused_identity,
+    ):
         call = await incoming(vendor)
         asr = vendor.asrs[-1]
         platform = driver._platform

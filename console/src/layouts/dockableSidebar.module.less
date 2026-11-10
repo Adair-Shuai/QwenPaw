@@ -14,15 +14,38 @@
   cursor: col-resize;
   touch-action: none;
   user-select: none;
-  &:hover,
-  &:focus-visible {
-    background: var(--app-accent-soft);
-    outline: 1px solid var(--app-accent-border);
+  background: transparent;
+  outline: none;
+  &::after {
+    content: "";
+    position: absolute;
+    inset-block: 0;
+    left: 4px;
+    width: 1px;
+    background: color-mix(in srgb, var(--app-text-tertiary) 50%, transparent);
+    opacity: 0;
+    pointer-events: none;
+    transition:
+      opacity 120ms ease,
+      background-color 120ms ease;
+  }
+  &:hover::after {
+    opacity: 1;
+  }
+  &:focus-visible::after {
+    width: 2px;
+    background: color-mix(in srgb, var(--app-focus-ring) 45%, transparent);
+    opacity: 1;
   }
 }
 .resizing {
   cursor: col-resize;
   user-select: none;
+  .resizeHandle::after {
+    width: 1px;
+    background: color-mix(in srgb, var(--app-text-secondary) 55%, transparent);
+    opacity: 1;
+  }
 }
 .frame {
   --sidebar-footer-height: max(56px, calc(56px * var(--app-font-scale, 1)));

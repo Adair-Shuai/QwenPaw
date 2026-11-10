@@ -39,7 +39,9 @@ def chunk_text(text: str) -> list[str]:
 
 
 async def download_file(url, media_dir: Path, filename, *, session=None):
-    """Use an owned HTTP session when supplied; failure remains a placeholder."""
+    """Use an owned HTTP session when supplied; failure remains a
+    placeholder.
+    """
     owned = session is None
     if owned:
         session = aiohttp.ClientSession()

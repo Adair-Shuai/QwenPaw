@@ -25,7 +25,7 @@ describe("agentsApi", () => {
   });
 
   it("getAgent calls GET /agents/${id}", async () => {
-    const data = { name: "a1" } as any;
+    const data = { name: "a1" };
     vi.mocked(request).mockResolvedValue(data);
     const result = await agentsApi.getAgent("a1");
     expect(request).toHaveBeenCalledWith("/agents/a1");
@@ -33,8 +33,8 @@ describe("agentsApi", () => {
   });
 
   it("createAgent sends POST /agents with JSON body", async () => {
-    const agent = { name: "new" } as any;
-    const ref = { agent_id: "x" } as any;
+    const agent = { name: "new" };
+    const ref = { agent_id: "x" };
     vi.mocked(request).mockResolvedValue(ref);
     const result = await agentsApi.createAgent(agent);
     expect(request).toHaveBeenCalledWith("/agents", {
@@ -45,7 +45,9 @@ describe("agentsApi", () => {
   });
 
   it("updateAgent sends PUT /agents/${id} with JSON body", async () => {
-    const agent = { name: "updated" } as any;
+    const agent = { name: "updated" } as Parameters<
+      typeof agentsApi.updateAgent
+    >[1];
     vi.mocked(request).mockResolvedValue(agent);
     const result = await agentsApi.updateAgent("a1", agent);
     expect(request).toHaveBeenCalledWith("/agents/a1", {
@@ -140,7 +142,7 @@ describe("agentsApi", () => {
   });
 
   it("getMemoryRuntimeStatus fetches lightweight runtime state", async () => {
-    const runtime = { reindexing: true } as any;
+    const runtime = { reindexing: true };
     const controller = new AbortController();
     vi.mocked(request).mockResolvedValue(runtime);
 
@@ -185,7 +187,7 @@ describe("agentsApi", () => {
   });
 
   it("reorderAgents sends PUT /agents/order with agent_ids", async () => {
-    const resp = { success: true, agent_ids: ["a", "b"] } as any;
+    const resp = { success: true, agent_ids: ["a", "b"] };
     vi.mocked(request).mockResolvedValue(resp);
     const result = await agentsApi.reorderAgents(["a", "b"]);
     expect(request).toHaveBeenCalledWith("/agents/order", {

@@ -8,7 +8,7 @@ import {
   within,
 } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useEffect } from "react";
+import { useEffect, type ComponentProps } from "react";
 import TabbedEditor from "./TabbedEditor";
 import { useCodingTabsStore } from "../../stores/codingTabsStore";
 import { rendererRegistry } from "../../components/Workspace/store/rendererRegistry";
@@ -16,6 +16,11 @@ import { updateArtifactPreview } from "../../features/files-workspace/openFilePr
 import type { FileTarget } from "../../features/files-workspace/types";
 
 const SCOPE_KEY = "agent:default";
+const navigationMocks = vi.hoisted(() => ({
+  enabled: false,
+  setSelection: vi.fn(),
+  reveal: vi.fn(),
+}));
 
 const clipboardMocks = vi.hoisted(() => ({
   copyText: vi.fn().mockResolvedValue(undefined),
@@ -33,10 +38,24 @@ vi.mock("@monaco-editor/react", () => ({
     value: string;
     onMount?: (editor: unknown) => void;
   }) => {
-    onMount?.({
-      getValue: () => "",
-      onDidChangeCursorSelection: () => ({ dispose: vi.fn() }),
-    });
+    useEffect(() => {
+      if (navigationMocks.enabled)
+        onMount?.({
+          getModel: () => ({
+            getLineCount: () => 80,
+            getLineMaxColumn: () => 40,
+          }),
+          setSelection: navigationMocks.setSelection,
+          revealLinesInCenter: navigationMocks.reveal,
+          focus: vi.fn(),
+          onDidChangeCursorSelection: () => ({ dispose: vi.fn() }),
+        });
+    }, []);
+    if (!navigationMocks.enabled)
+      onMount?.({
+        getValue: () => "",
+        onDidChangeCursorSelection: () => ({ dispose: vi.fn() }),
+      });
     return <div data-testid="editor-value">{value}</div>;
   },
   DiffEditor: () => <div data-testid="diff-editor" />,
@@ -69,12 +88,14 @@ function Harness({
   onOpenFile,
   previewActive,
   previewManagedUpdates,
+  navigation,
 }: {
   onSaveFile: (path: string, content: string) => Promise<void>;
   onDownloadFile?: (path: string) => Promise<void>;
   onOpenFile?: (target: FileTarget) => void;
   previewActive?: boolean;
   previewManagedUpdates?: boolean;
+  navigation?: ComponentProps<typeof TabbedEditor>["navigation"];
 }) {
   const tabs = useCodingTabsStore(
     (state) => state.tabsByAgent[SCOPE_KEY] ?? [],
@@ -108,11 +129,48 @@ function Harness({
       onSaveFile={onSaveFile}
       previewActive={previewActive}
       previewManagedUpdates={previewManagedUpdates}
+      navigation={navigation}
     />
   );
 }
 
 describe("TabbedEditor Markdown navigation (#8528)", () => {
+  it("applies a pending file reference after the destination tab becomes active", () => {
+    navigationMocks.enabled = true;
+    navigationMocks.setSelection.mockClear();
+    navigationMocks.reveal.mockClear();
+    useCodingTabsStore.setState({
+      tabsByAgent: {
+        [SCOPE_KEY]: [
+          { path: "old.py", content: "unsaved old file", dirty: true },
+          { path: "target.py", content: "target", dirty: false },
+        ],
+      },
+      activeTabByAgent: { [SCOPE_KEY]: "old.py" },
+      diffsByAgent: {},
+    });
+    try {
+      render(
+        <Harness
+          onSaveFile={vi.fn()}
+          navigation={{ path: "target.py", line: 8, endLine: 12, sequence: 1 }}
+        />,
+      );
+      expect(navigationMocks.setSelection).not.toHaveBeenCalled();
+      act(() =>
+        useCodingTabsStore.getState().setActiveTab(SCOPE_KEY, "target.py"),
+      );
+      expect(navigationMocks.setSelection).toHaveBeenLastCalledWith(
+        expect.objectContaining({ startLineNumber: 8, endLineNumber: 12 }),
+      );
+      expect(navigationMocks.reveal).toHaveBeenLastCalledWith(8, 12);
+      expect(
+        useCodingTabsStore.getState().tabsByAgent[SCOPE_KEY][0],
+      ).toMatchObject({ content: "unsaved old file", dirty: true });
+    } finally {
+      navigationMocks.enabled = false;
+    }
+  });
   it.each([
     ["docs/a.md", undefined],
     ["workspace-root::docs/a.md", "workspace"],

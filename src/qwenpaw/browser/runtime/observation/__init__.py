@@ -68,13 +68,11 @@ def _clean_tree(
             cleaned, child_omitted = _clean_tree(child)
             children.extend(cleaned)
             omitted += child_omitted
-
     if not _has_information(node):
         if not children:
             return [], omitted + 1
         if len(children) == 1:
             return children, omitted + 1
-
     return [{**node, "children": children}], omitted
 
 

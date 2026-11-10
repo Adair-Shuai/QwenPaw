@@ -153,7 +153,6 @@ async def _exclude_nested_repos(cwd: Path) -> None:
     nested = await asyncio.to_thread(_scan)
     if not nested:
         return
-
     exclude_path = cwd / ".git" / "info" / "exclude"
 
     def _write_exclude() -> None:
@@ -179,7 +178,6 @@ async def _auto_init_repo(cwd: Path) -> str:
     if rc != 0:
         logger.warning("git init failed in %s: %s", cwd, err)
         return ""
-
     await _write_gitignore(cwd)
     await _exclude_nested_repos(cwd)
 
@@ -195,7 +193,6 @@ async def _auto_init_repo(cwd: Path) -> str:
     )
     if commit_rc != 0:
         logger.debug("Initial commit failed in %s: %s", cwd, commit_err)
-
     rc2, branch_out, _ = await _git(cwd, "rev-parse", "--abbrev-ref", "HEAD")
     return branch_out.strip() if rc2 == 0 else "main"
 
@@ -304,7 +301,6 @@ async def git_status(request: Request) -> GitStatus:
         branch = await _auto_init_repo(cwd)
         if not branch:
             return GitStatus(branch="", changes=[], ahead=0, behind=0)
-
     # Ahead / behind (may fail if no upstream)
     ahead = behind = 0
     rc2, rev_out, _ = await _git(
@@ -318,7 +314,6 @@ async def git_status(request: Request) -> GitStatus:
         parts = rev_out.strip().split()
         if len(parts) == 2:
             behind, ahead = int(parts[0]), int(parts[1])
-
     # Changed files – normal mode collapses untracked directories into one
     # entry each (avoids thousands of rows on fresh repos).
     # -c core.quotepath=false prevents git from escaping non-ASCII filenames
@@ -352,7 +347,6 @@ async def git_status(request: Request) -> GitStatus:
             changes.append(
                 ChangedFile(path=path, status=unstaged_char, staged=False),
             )
-
     return GitStatus(
         branch=branch,
         changes=changes,
@@ -432,7 +426,6 @@ async def get_diff(
         if rc not in (0, 1):
             return {"diff": ""}
         return {"diff": out}
-
     args = ["diff"]
     if staged:
         args.append("--staged")

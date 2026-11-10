@@ -618,13 +618,31 @@
     min-height: var(--app-hit-touch);
   }
 }
-:global(html[data-page-style="openai"]) .surface.surface {
-  padding-inline: 10px;
-}
 @media (max-width: 768px) {
   :global(html[data-page-style]:not([data-page-style="classic"]))
     .surface.compactRail {
     padding-inline: 6px;
+  }
+}
+
+:global(html[data-page-style="dual-sidebar"][data-page-style]) {
+  .surface .toolFrame {
+    margin: 0 10px 8px;
+  }
+
+  .surface .toolPanel,
+  .surface .agent {
+    background: transparent;
+  }
+
+  .surface .newTask {
+    justify-content: center;
+    width: calc(100% - 20px);
+    margin: 0 10px;
+    min-height: 36px;
+    border: 1px solid var(--app-border);
+    background: var(--app-surface);
+    border-radius: 8px;
   }
 }
 

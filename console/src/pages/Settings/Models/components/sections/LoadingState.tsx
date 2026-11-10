@@ -15,6 +15,7 @@ export function LoadingState({
 
   return (
     <SharedLoadingState
+      motionVariant="model"
       className={`${styles.loading} ${className || ""}`}
       textClassName={styles.loadingText}
       message={message}

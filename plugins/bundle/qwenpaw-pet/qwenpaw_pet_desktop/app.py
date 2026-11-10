@@ -97,7 +97,6 @@ def run_desktop(pet_dir: Path, host: str, port: int, scale: float) -> int:
             # ``signal.signal`` only works on the main thread; ignore
             # if we somehow ended up elsewhere (e.g. embedded test).
             pass
-
     pump = QTimer(window)
 
     def _drain_pet_events() -> None:

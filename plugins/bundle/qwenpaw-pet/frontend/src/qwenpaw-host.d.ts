@@ -31,7 +31,7 @@ declare global {
     path: string;
     component: unknown;
     label?: string;
-    icon?: string;
+    icon?: ReactNS.ReactNode;
     priority?: number;
   }
 

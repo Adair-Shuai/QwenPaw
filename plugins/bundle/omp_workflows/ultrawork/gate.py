@@ -65,13 +65,11 @@ class UltraworkGate(LoopGate):
     async def check(self, ctx: Any) -> Optional[StopHandlerResult]:
         if isinstance(ctx, dict) and ctx.get("has_tool_calls"):
             return StopHandlerResult(action=StopAction.BYPASS)
-
         st: _UltraworkState | None = self._state()
         if st is None:
             return StopHandlerResult(
                 action=StopAction.BYPASS,
             )
-
         wf = WorkflowState.from_existing(
             st.workspace_dir,
             "ultrawork",
@@ -113,7 +111,6 @@ class UltraworkGate(LoopGate):
                 action=StopAction.TERMINATE,
                 reason="Ultrawork completed",
             )
-
         st.blocked_on_merge = False
         st.iteration += 1
         if st.iteration > st.max_iterations:
@@ -123,7 +120,6 @@ class UltraworkGate(LoopGate):
                 action=StopAction.TERMINATE,
                 reason=f"Reached max iterations ({st.max_iterations})",
             )
-
         await asyncio.to_thread(
             wf.update_state,
             {"iteration": st.iteration},

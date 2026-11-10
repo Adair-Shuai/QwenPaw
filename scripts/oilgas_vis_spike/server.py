@@ -126,7 +126,6 @@ async def get_binary_file(filename: str):
     file_path = BIN_DIR / filename
     if not file_path.exists():
         raise HTTPException(404, f"File not found: {filename}")
-
     # Determine content type
     if filename.endswith(".f32"):
         media_type = "application/octet-stream"
@@ -136,7 +135,6 @@ async def get_binary_file(filename: str):
         media_type = "application/json"
     else:
         media_type = "application/octet-stream"
-
     return FileResponse(
         file_path,
         media_type=media_type,
@@ -211,7 +209,6 @@ def main():
                 ds["n_cells"],
                 ds["n_vertices"],
             )
-
     logger.info("Viewer URL: http://%s:%d/viewer", host, port)
     logger.info("Press Ctrl+C to stop.\n")
 

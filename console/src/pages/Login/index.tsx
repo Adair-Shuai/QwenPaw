@@ -192,9 +192,11 @@ export default function LoginPage() {
         <div style={{ textAlign: "center", marginBottom: 32 }}>
           <img
             src={`${import.meta.env.BASE_URL}${
-              isDark ? "logo-dark.svg" : "logo-light.svg"
+              isDark
+                ? "ugsci-mono/brand/lockup-white.svg"
+                : "ugsci-mono/brand/lockup-black.svg"
             }`}
-            alt="QwenPaw"
+            alt="UGSci"
             style={{ height: 48, marginBottom: 12 }}
           />
           <h2 className={styles.loginTitle}>

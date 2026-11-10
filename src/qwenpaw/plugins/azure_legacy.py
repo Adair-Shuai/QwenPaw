@@ -58,6 +58,8 @@ def _manifest_path(root):
 
 
 def _validate(capture):
+    # Authenticate the complete legacy payload before importing secrets.
+    # pylint: disable=R0916
     if (
         not isinstance(capture, Mapping)
         or set(capture)
@@ -266,7 +268,9 @@ def _capture_sources(capture, global_snapshot, root, absolute):
 
 
 def project_azure_legacy(capture: Mapping | None, owner: dict) -> dict:
-    """Select bounded launch authority; the snapshot never enters launch JSON."""
+    """Select bounded launch authority; the snapshot never enters launch
+    JSON.
+    """
     try:
         if capture is None:
             return {

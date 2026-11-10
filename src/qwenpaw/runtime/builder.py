@@ -144,8 +144,6 @@ class AgentBuilder:
         workspace tools.
 
         """
-        from agentscope.tool import Toolkit
-
         effective_skills = list(effective_skills or ())
         local_ws = self._get_local_workspace(ctx) if ctx else None
         if local_ws is not None:
@@ -184,7 +182,9 @@ class AgentBuilder:
         tools = self.apply_subagent_tool_whitelist(tools, request_context)
         coding = agent_config.coding_mode.enabled
         tools.sort(key=self._tool_name)
-        make_toolkit = partial(Toolkit, tools=tools)
+        from .tool_discovery import DiscoveryToolkit
+
+        make_toolkit = partial(DiscoveryToolkit, tools=tools)
         if coding:
             from ..modes.coding.code_mode import build_code_mode_toolkit
 
@@ -379,6 +379,8 @@ class AgentBuilder:
         middlewares.  The agent receives all dependencies externally —
         it does not build any of them internally.
         """
+        # Freeze installed prompt evidence on the newly constructed agent.
+        # pylint: disable=protected-access
         from agentscope.agent import ReActConfig
 
         from ..agents.react_agent import QwenPawAgent
@@ -609,6 +611,10 @@ class AgentBuilder:
             effective_skills=effective_skills,
             governor=governor,
         )
+        agent._context_inspection_prompt_sources = ctx.extras.pop(
+            "context_inspection_prompt_sources",
+            [],
+        )
 
         if agent_config.coding_mode.enabled:
             code_tool = await toolkit.get_tool("run_code")
@@ -655,7 +661,9 @@ class AgentBuilder:
         if hb is not None:
             heartbeat_enabled = getattr(hb, "enabled", False)
 
-        ctx_extras = getattr(ctx, "extras", {}) or {}
+        ctx_extras = getattr(ctx, "extras", None)
+        if not isinstance(ctx_extras, dict):
+            ctx_extras = {}
         preloaded_skills = ctx_extras.pop("preloaded_skills", ())
         prompt_ctx = SimpleNamespace(
             workspace_dir=workspace_dir,
@@ -675,11 +683,22 @@ class AgentBuilder:
             plugins = getattr(workspace, "plugins", None)
             pm = getattr(plugins, "prompt_manager", None) if plugins else None
             if pm is not None and len(pm) > 0:
-                return pm.build_sync(prompt_ctx)
+                prompt = pm.build_sync(prompt_ctx)
+                ctx_extras[
+                    "context_inspection_prompt_sources"
+                ] = prompt_ctx.extras.get(
+                    "context_inspection_prompt_sources",
+                    [],
+                )
+                return prompt
 
         from .prompt_contributors import build_default_prompt_manager
 
-        return build_default_prompt_manager().build_sync(prompt_ctx)
+        prompt = build_default_prompt_manager().build_sync(prompt_ctx)
+        ctx_extras[
+            "context_inspection_prompt_sources"
+        ] = prompt_ctx.extras.get("context_inspection_prompt_sources", [])
+        return prompt
 
     def build_model(
         self,

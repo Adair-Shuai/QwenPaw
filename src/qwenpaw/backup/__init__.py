@@ -14,7 +14,6 @@ if TYPE_CHECKING:
     )
     from .manager import BackupManager, BackupOperationConflict
     from .orchestration import execute_restore
-
 _EXPORTS = {
     "BackupManager": "manager",
     "BackupOperationConflict": "manager",

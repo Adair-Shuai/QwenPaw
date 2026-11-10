@@ -132,7 +132,7 @@ def _migrate_legacy_thinking_budget_range(
         return False
     if numbers is not None and len(numbers) == 1 and numbers[0] >= 1:
         owner["thinking_budget_range"] = [0, numbers[0]]
-        outcome = "using [0, %d]" % numbers[0]
+        outcome = f"using [0, {int(numbers[0])}]"
     elif provider_level:
         owner.pop("thinking_budget_range")
         outcome = "restoring the provider default"

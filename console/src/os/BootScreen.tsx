@@ -8,7 +8,7 @@
  */
 import { useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { Command } from "lucide-react";
+
 import { useOsStyles } from "./useOsStyles";
 
 interface BootScreenProps {
@@ -54,8 +54,13 @@ export default function BootScreen({
   return (
     <div className={cx(styles.boot, exiting && styles.bootExit)}>
       <div className={styles.bootBrand}>
-        <Command size={54} strokeWidth={1.6} />
-        <div className={styles.bootName}>QwenPaw OS</div>
+        <img
+          src={import.meta.env.BASE_URL + "qwenpaw.png"}
+          width={54}
+          height={54}
+          alt="UGSci"
+        />
+        <div className={styles.bootName}>UGSci Desktop</div>
       </div>
       <div className={styles.bootBar}>
         <div className={styles.bootBarFill} style={{ width: `${progress}%` }} />

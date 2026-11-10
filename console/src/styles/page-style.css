@@ -19,11 +19,6 @@ html[data-page-style]:not([data-page-style="classic"])
   border-bottom: 0;
   background: var(--app-bg);
 }
-html[data-page-style="openai"] .qwenpaw-chat-anywhere-layout-right-header {
-  height: 58px !important;
-  min-height: 58px;
-  border-bottom: 1px solid var(--app-border);
-}
 html[data-page-style]:not([data-page-style="classic"])
   .qwenpaw-chat-anywhere-default-header-right {
   height: 100%;
@@ -82,9 +77,6 @@ html[data-page-style]:not([data-page-style="classic"])
 html[data-page-style]:not([data-page-style="classic"]) .qwenpaw-markdown {
   font-size: calc(14px * var(--app-font-scale));
   line-height: 1.85;
-}
-html[data-page-style="openai"] .qwenpaw-markdown {
-  font-size: calc(13px * var(--app-font-scale));
 }
 html[data-page-style]:not([data-page-style="classic"])
   .qwenpaw-bubble-end

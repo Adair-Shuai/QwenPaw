@@ -497,6 +497,7 @@ function MemoryDirectoryNode({
 }
 
 interface FilesNavigatorProps {
+  compact?: boolean;
   selectedPath: string;
   onSelect: (target: FileTarget) => void;
   activeMemoryGraphRoot: MemoryGraphRoot | null;
@@ -509,6 +510,7 @@ interface FilesNavigatorProps {
 }
 
 export default function FilesNavigator({
+  compact = false,
   selectedPath,
   onSelect,
   activeMemoryGraphRoot,
@@ -1087,9 +1089,27 @@ export default function FilesNavigator({
     }
   };
 
+  const availableSources: (NavigatorSource | "tags")[] = [
+    "workspace",
+    "profile",
+    "daily",
+    "digest",
+    ...(memoryTagsPanel ? ["tags" as const] : []),
+  ];
+  const selectSource = (next: NavigatorSource | "tags") => {
+    setActiveTreeItemPath(null);
+    if (next === "tags") {
+      onShowMemoryTags?.();
+      return;
+    }
+    setSource(next);
+    onShowFiles();
+  };
+
   return (
     <aside
       className={styles.navigator}
+      data-compact={compact || undefined}
       data-source={source}
       data-root={rootFlavour}
       aria-label={t("files.navigator")}
@@ -1210,39 +1230,57 @@ export default function FilesNavigator({
           }}
         />
       </header>
-      <div className={styles.sourceTabs} role="tablist">
-        {(
-          [
-            "workspace",
-            "profile",
-            "daily",
-            "digest",
-            ...(memoryTagsPanel ? ["tags"] : []),
-          ] as (NavigatorSource | "tags")[]
-        ).map((item) => (
-          <button
-            type="button"
-            role="tab"
-            aria-selected={activeSource === item}
-            key={item}
-            className={`${styles.sourceTab} ${
-              activeSource === item ? styles.sourceTabActive : ""
-            }`}
-            data-source={item}
-            onClick={() => {
-              setActiveTreeItemPath(null);
-              if (item === "tags") {
-                onShowMemoryTags?.();
-                return;
-              }
-              setSource(item);
-              onShowFiles();
+      {compact ? (
+        <div className={styles.sourceSelector}>
+          <Dropdown
+            trigger={["click"]}
+            menu={{
+              selectedKeys: [activeSource],
+              items: availableSources.map((item) => ({
+                key: item,
+                label: t(
+                  item === "tags" ? "files.memoryTagsLabel" : `files.${item}`,
+                ),
+              })),
+              onClick: ({ key }) =>
+                selectSource(key as NavigatorSource | "tags"),
             }}
           >
-            {t(item === "tags" ? "files.memoryTagsLabel" : `files.${item}`)}
-          </button>
-        ))}
-      </div>
+            <button
+              type="button"
+              className={styles.secondaryButton}
+              aria-label={t("files.selectSource")}
+            >
+              <span>
+                {t(
+                  activeSource === "tags"
+                    ? "files.memoryTagsLabel"
+                    : `files.${activeSource}`,
+                )}
+              </span>
+              <ChevronDown size={14} />
+            </button>
+          </Dropdown>
+        </div>
+      ) : (
+        <div className={styles.sourceTabs} role="tablist">
+          {availableSources.map((item) => (
+            <button
+              type="button"
+              role="tab"
+              aria-selected={activeSource === item}
+              key={item}
+              className={`${styles.sourceTab} ${
+                activeSource === item ? styles.sourceTabActive : ""
+              }`}
+              data-source={item}
+              onClick={() => selectSource(item)}
+            >
+              {t(item === "tags" ? "files.memoryTagsLabel" : `files.${item}`)}
+            </button>
+          ))}
+        </div>
+      )}
       {memoryTagsActive && memoryTagsPanel}
       <DndContext
         sensors={sensors}

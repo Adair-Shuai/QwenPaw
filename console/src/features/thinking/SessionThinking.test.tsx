@@ -150,10 +150,13 @@ it("discards queued writes and responses when switching chats", async () => {
   expect(screen.getByRole("slider")).toHaveAttribute("aria-valuenow", "1");
 });
 
-const { messageError } = vi.hoisted(() => ({ messageError: vi.fn() }));
+const { messageError, notifications } = vi.hoisted(() => {
+  const messageError = vi.fn();
+  return { messageError, notifications: { error: messageError } };
+});
 
 vi.mock("@/hooks/useAppMessage", () => ({
-  useAppMessage: () => ({ message: { error: messageError } }),
+  useAppMessage: () => ({ message: { error: notifications.error } }),
 }));
 vi.mock("./sessionThinkingApi", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./sessionThinkingApi")>()),
@@ -217,7 +220,51 @@ const thinkingView = {
   reason: null,
 };
 
-beforeEach(() => messageError.mockClear());
+beforeEach(() => {
+  messageError.mockClear();
+  notifications.error = messageError;
+});
+
+it("does not reload session thinking when only notifications change", async () => {
+  const request = deferred<ThinkingView>();
+  vi.mocked(sessionThinkingApi.get).mockReturnValue(request.promise);
+  const panel = (
+    <SessionThinking agentId="agent" sessionId="session" chatId="chat" />
+  );
+  const { rerender } = renderWithProviders(panel);
+  await act(async () => {});
+  expect(sessionThinkingApi.get).toHaveBeenCalledTimes(1);
+  notifications.error = vi.fn();
+  rerender(
+    <SessionThinking agentId="agent" sessionId="session" chatId="chat" />,
+  );
+  await act(async () => {});
+  expect(sessionThinkingApi.get).toHaveBeenCalledTimes(1);
+  await act(async () => request.resolve(effortView));
+  expect(await screen.findByRole("slider")).toHaveAttribute(
+    "aria-valuenow",
+    "1",
+  );
+  expect(sessionThinkingApi.get).toHaveBeenCalledTimes(1);
+});
+
+it("reports a pending thinking load failure through current notifications", async () => {
+  const request = deferred<ThinkingView>();
+  vi.mocked(sessionThinkingApi.get).mockReturnValue(request.promise);
+  const { rerender } = renderWithProviders(
+    <SessionThinking agentId="agent" sessionId="session" chatId="chat" />,
+  );
+  const currentError = vi.fn();
+  notifications.error = currentError;
+  rerender(
+    <SessionThinking agentId="agent" sessionId="session" chatId="chat" />,
+  );
+  expect(sessionThinkingApi.get).toHaveBeenCalledTimes(1);
+  await act(async () => request.reject(new Error("Current notification")));
+  expect(currentError).toHaveBeenCalledWith("Error: Current notification");
+  expect(messageError).not.toHaveBeenCalled();
+  expect(sessionThinkingApi.get).toHaveBeenCalledTimes(1);
+});
 
 it("shows the Hub catalog name in the trigger and panel instead of its routing ID", async () => {
   const model = "ddfc504d910c40d5afb25250933df0000";

@@ -91,7 +91,6 @@ async def test_acp_stream_extend_kill_survives_past_max_runtime(
             await asyncio.wait_for(task, timeout=2.0)
     finally:
         reset_call_context(token)
-
     joined = " ".join(_chunk_text(c) for c in chunks)
     assert "reached the preset max runtime" not in joined
 

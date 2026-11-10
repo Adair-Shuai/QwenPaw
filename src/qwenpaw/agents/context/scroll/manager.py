@@ -2313,6 +2313,9 @@ class ScrollContextManager:
         }
 
     def load_state(self, data: Any) -> None:
+        # Preserve persisted-state validation and compatibility with existing
+        # sessions.
+        # pylint: disable=R0916
         """Rehydrate bookkeeping from :meth:`to_dict`. Tolerant of partial or
         absent data (older checkpoints) — anything missing stays at its
         freshly-constructed empty default."""

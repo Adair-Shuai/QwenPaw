@@ -146,31 +146,11 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 Write-Host "Generating Tauri icons..."
-$ICON_SOURCE = Get-Item (Join-Path $REPO_ROOT "scripts\pack\assets\icon.svg")
-$ICON_OUTPUTS = @(
-    "icon.ico",
-    "icon.icns",
-    "icon.png",
-    "32x32.png",
-    "128x128.png",
-    "128x128@2x.png"
-) | ForEach-Object { Join-Path $REPO_ROOT "console\src-tauri\icons\$_" }
-$ICONS_NEED_BUILD = $false
-foreach ($iconOutput in $ICON_OUTPUTS) {
-    if (-not (Test-Path -LiteralPath $iconOutput -PathType Leaf) -or
-        (Get-Item -LiteralPath $iconOutput).LastWriteTimeUtc -lt $ICON_SOURCE.LastWriteTimeUtc) {
-        $ICONS_NEED_BUILD = $true
-        break
-    }
+node scripts/verify-brand-assets.mjs --scope native
+if ($LASTEXITCODE -ne 0) {
+    throw "Brand assets are stale. Run python scripts/pack/generate_brand_assets.py from the repository root."
 }
-if ($ICONS_NEED_BUILD) {
-    pnpm exec tauri icon ../scripts/pack/assets/icon.svg
-    if ($LASTEXITCODE -ne 0) {
-        throw "Tauri icon generation failed"
-    }
-} else {
-    Write-Host "Tauri icons are current; skipping regeneration" -ForegroundColor DarkGray
-}
+Write-Host "Tauri icons are current; skipping regeneration" -ForegroundColor DarkGray
 
 Write-Host "Syncing Tauri version..."
 node ../scripts/pack-tauri/sync_tauri_version.mjs
@@ -282,44 +262,17 @@ if ($NsisExe) {
         Write-Host "warning: $message" -ForegroundColor Yellow
     }
 } else {
-    # NSIS may fail after Rust compilation (most commonly because its 32-bit
-    # compiler cannot mmap the large resource datablock). Build the installable
-    # zip whenever no setup.exe exists, even if a future Tauri CLI happens to
-    # return zero after a bundler-only failure.
+    # Layered builds intentionally skip NSIS; legacy bundling can also fail
+    # after Rust compilation. Validate the executable here, then use the one
+    # canonical portable-package build below. Previously this branch copied,
+    # compressed, CRC-checked and signed the entire tree only to delete it and
+    # repeat every operation in the unconditional build immediately below.
     Write-Host "No NSIS installer was produced (Tauri exit $tauriExit); checking for compiled binary" -ForegroundColor Yellow
     $AppExe = Get-Item (Join-Path $REPO_ROOT "console\src-tauri\target\release\qwenpaw-desktop.exe") -ErrorAction SilentlyContinue
-    if ($AppExe) {
-        Write-Host "Compiled binary found; creating complete portable zip" -ForegroundColor Yellow
-        $PortableRoot = Join-Path $BUNDLE_DIR "portable\UGSci Desktop"
-        $PortablePayload = Join-Path $PortableRoot "payload"
-        $ZipPath = Join-Path $BUNDLE_DIR "UGSci-Desktop-portable.zip"
-        if (Test-Path $PortableRoot) { Remove-Item -Recurse -Force $PortableRoot }
-        New-Item -ItemType Directory -Force -Path $PortablePayload | Out-Null
-        # Keep the Cargo/Tauri binary name internal to the build tree. The
-        # user-facing portable package exposes a stable product executable.
-        Copy-Item -Force $AppExe.FullName (Join-Path $PortablePayload "UGSci.exe")
-        $Resources = Join-Path $REPO_ROOT "console\src-tauri\binaries"
-        if (-not (Test-Path $Resources)) { throw "Tauri resources directory not found: $Resources" }
-        python (Join-Path $REPO_ROOT "scripts\pack-tauri\copy_windows_tree.py") `
-            --source $Resources --destination (Join-Path $PortablePayload "binaries")
-        Assert-LastExit "Failed to copy Windows portable resources"
-        & (Join-Path $REPO_ROOT "scripts\pack-tauri\create_windows_portable_installer.ps1") `
-            -PortableRoot $PortableRoot `
-            -ZipPath $ZipPath `
-            -Version $VERSION
-        if ($env:TAURI_SIGNING_PRIVATE_KEY) {
-            Set-Location (Join-Path $REPO_ROOT "console")
-            pnpm exec tauri signer sign $ZipPath
-            if ($LASTEXITCODE -ne 0 -or -not (Test-Path -LiteralPath "$ZipPath.sig" -PathType Leaf)) {
-                throw "Portable Windows updater ZIP signing failed"
-            }
-            Set-Location $REPO_ROOT
-        }
-        Write-Host "Portable zip created: $ZipPath" -ForegroundColor Green
-        $LASTEXITCODE = 0
-    } else {
+    if (-not $AppExe) {
         throw "No Windows installer or compiled desktop binary was produced (Tauri exit $tauriExit)"
     }
+    Write-Host "Compiled binary found; preparing the complete portable package below" -ForegroundColor Yellow
 }
 
 # b7 always ships the user-facing ZIP + Setup.exe package, even when NSIS also
@@ -351,6 +304,9 @@ if ($env:TAURI_SIGNING_PRIVATE_KEY -and -not (Test-Path -LiteralPath "$ZipPath.s
     Set-Location (Join-Path $REPO_ROOT "console")
     pnpm exec tauri signer sign $ZipPath
     Assert-LastExit "Portable Windows updater ZIP signing failed"
+    if (-not (Test-Path -LiteralPath "$ZipPath.sig" -PathType Leaf)) {
+        throw "Portable Windows updater ZIP signature is missing"
+    }
     Set-Location $REPO_ROOT
 }
 $MigrationBridge = Join-Path $BUNDLE_DIR "UGSci-Desktop-migration.exe"

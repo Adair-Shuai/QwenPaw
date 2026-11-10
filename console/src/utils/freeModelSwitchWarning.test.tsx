@@ -1,3 +1,11 @@
+import { isValidElement, type ReactNode } from "react";
+import type { ModalFuncProps } from "antd";
+type WarningDialog = Pick<ModalFuncProps, "title" | "content"> & {
+  onOk: () => void;
+  onCancel: () => void;
+  afterClose: () => void;
+};
+import type { TFunction } from "i18next";
 /**
  * freeModelSwitchWarning gates switches to free models behind a
  * confirmation dialog (free tiers have weak availability guarantees).
@@ -17,7 +25,7 @@ import { confirmFreeModelSwitch } from "./freeModelSwitchWarning";
 
 const WARNING_KEY = "qwenpaw_free_model_switch_warning_disabled";
 
-const t = ((key: string) => key) as any;
+const t = ((key: string) => key) as unknown as TFunction;
 const freeModel = { is_free: true };
 const paidModel = { is_free: false };
 const provider = { id: "openrouter" };
@@ -44,7 +52,7 @@ describe("confirmFreeModelSwitch", () => {
   });
 
   it("shows the dialog for a free model and resolves true on confirm", async () => {
-    confirmMock.mockImplementation((opts: any) => {
+    confirmMock.mockImplementation((opts: WarningDialog) => {
       opts.onOk();
     });
     await expect(
@@ -57,7 +65,7 @@ describe("confirmFreeModelSwitch", () => {
   });
 
   it("resolves false when the user cancels", async () => {
-    confirmMock.mockImplementation((opts: any) => {
+    confirmMock.mockImplementation((opts: WarningDialog) => {
       opts.onCancel();
     });
     await expect(
@@ -66,7 +74,7 @@ describe("confirmFreeModelSwitch", () => {
   });
 
   it("resolves false when the modal closes without a decision", async () => {
-    confirmMock.mockImplementation((opts: any) => {
+    confirmMock.mockImplementation((opts: WarningDialog) => {
       opts.afterClose();
     });
     await expect(
@@ -75,7 +83,7 @@ describe("confirmFreeModelSwitch", () => {
   });
 
   it("settles only once even if both cancel and afterClose fire", async () => {
-    confirmMock.mockImplementation((opts: any) => {
+    confirmMock.mockImplementation((opts: WarningDialog) => {
       opts.onCancel();
       opts.afterClose();
     });
@@ -85,13 +93,21 @@ describe("confirmFreeModelSwitch", () => {
   });
 
   it("persists the disable choice when the checkbox is checked", async () => {
-    confirmMock.mockImplementation((opts: any) => {
+    confirmMock.mockImplementation((opts: WarningDialog) => {
       // Simulate the user checking "don't show again" via the content tree
       // The checkbox onChange is wired inside the rendered content element
       const content = opts.content;
       // Walk the element tree to find the Checkbox onChange handler
-      const findCheckbox = (node: any): any => {
-        if (!node) return null;
+      const findCheckbox = (
+        node: ReactNode,
+      ): ((event: { target: { checked: boolean } }) => void) | null => {
+        if (
+          !isValidElement<{
+            onChange?: (event: { target: { checked: boolean } }) => void;
+            children?: ReactNode;
+          }>(node)
+        )
+          return null;
         if (node.props?.onChange) return node.props.onChange;
         const children = node.props?.children;
         if (Array.isArray(children)) {
@@ -106,7 +122,7 @@ describe("confirmFreeModelSwitch", () => {
       };
       const onChange = findCheckbox(content);
       expect(onChange).toBeTruthy();
-      onChange({ target: { checked: true } });
+      onChange!({ target: { checked: true } });
       opts.onOk();
     });
     await confirmFreeModelSwitch({ provider, model: freeModel, t });
@@ -114,7 +130,7 @@ describe("confirmFreeModelSwitch", () => {
   });
 
   it("uses the provider sample website for known providers", async () => {
-    confirmMock.mockImplementation((opts: any) => {
+    confirmMock.mockImplementation((opts: WarningDialog) => {
       const html = JSON.stringify(opts.content);
       expect(html).toContain("https://openrouter.ai/collections/free-models");
       opts.onOk();
@@ -123,7 +139,7 @@ describe("confirmFreeModelSwitch", () => {
   });
 
   it("falls back to the provider base_url for unknown providers", async () => {
-    confirmMock.mockImplementation((opts: any) => {
+    confirmMock.mockImplementation((opts: WarningDialog) => {
       const html = JSON.stringify(opts.content);
       expect(html).toContain("https://my-provider.example.com");
       opts.onOk();
@@ -136,7 +152,7 @@ describe("confirmFreeModelSwitch", () => {
   });
 
   it("falls back to '#' when neither sample nor base_url exists", async () => {
-    confirmMock.mockImplementation((opts: any) => {
+    confirmMock.mockImplementation((opts: WarningDialog) => {
       const html = JSON.stringify(opts.content);
       expect(html).toContain('"#"');
       opts.onOk();

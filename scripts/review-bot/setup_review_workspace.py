@@ -374,7 +374,6 @@ def configure_review_model() -> None:
             "Add REVIEW_DASHSCOPE_API_KEY to your fork's GitHub secrets.",
         )
         sys.exit(1)
-
     from qwenpaw.providers.provider_manager import ProviderManager
 
     manager = ProviderManager.get_instance()
@@ -409,12 +408,10 @@ def main():
         filepath = WORKSPACE_DIR / filename
         filepath.write_text(content, encoding="utf-8")
         print(f"  Written: {filepath}")
-
     bootstrap = WORKSPACE_DIR / "BOOTSTRAP.md"
     if bootstrap.exists():
         bootstrap.unlink()
         print(f"  Removed: {bootstrap}")
-
     print("\nConfiguring review LLM...")
     configure_review_model()
 

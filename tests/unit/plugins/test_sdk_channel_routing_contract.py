@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# Exercise the real queue consumer to inspect cancellation and cleanup.
+# pylint: disable=protected-access
 """Public channel identities and callbacks through the real shared queue."""
 
 import asyncio
@@ -1080,6 +1082,10 @@ async def test_interrupt_reload_retains_blocked_terminal_until_public_retry(
     monkeypatch,
     bounded_dependency_environment,
 ):
+    # Keep real reload, blocked cleanup and public retry in one scenario.
+    # pylint: disable=R0915
+    # Preserve execution of the dependency-environment fixture.
+    del bounded_dependency_environment
     from qwenpaw.app.channels.base import BaseChannel
     from qwenpaw.plugins import PluginBusyError
 
@@ -1129,7 +1135,8 @@ async def test_interrupt_reload_retains_blocked_terminal_until_public_retry(
     source = source.replace(
         "            async def stop(self, ctx):\n                return True",
         "            async def stop(self, ctx):\n"
-        "                plugin.storage.write_json('transport-stopped.json', True)\n"
+        "                plugin.storage.write_json('transport-stopped.json"
+        "', True)\n"
         "                return True",
     )
     async with PluginTestHost(tmp_path / "host") as host:
@@ -1199,7 +1206,8 @@ async def test_interrupt_reload_retains_blocked_terminal_until_public_retry(
             try:
                 await wait_for(lambda: retry.done() or retry_waiting.is_set())
                 if retry.done():
-                    await retry  # Surface an unexpected Busy instead of a timeout.
+                    # Surface an unexpected Busy instead of a timeout.
+                    await retry
                 assert (
                     not retry.done()
                 ), "Reload must wait for the real request"

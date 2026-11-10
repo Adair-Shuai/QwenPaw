@@ -24,7 +24,6 @@ try:
     )
 except ImportError:
     from handshake import HandshakePermanentError, send_hello, wait_hello_ack
-
 try:
     from .protocol_mirror import (
         NM_CLOSE_FRAME_PROTOCOL,
@@ -45,7 +44,6 @@ except ImportError:
         NM_MAX_OUTBOUND_BYTES,
         close_code_catalog,
     )
-
 DEFAULT_CONFIG_PATH = Path.home() / ".qwenpaw" / "nm-bridge.json"
 DEFAULT_CONNECT_RETRY_SECONDS = 120.0
 INITIAL_CONNECT_RETRY_DELAY_SECONDS = 0.5
@@ -273,7 +271,6 @@ async def connect_websocket_with_retry(
         if on_connected is not None:
             await on_connected(ws)
         return ws
-
     deadline = monotonic() + retry_seconds
     delay = INITIAL_CONNECT_RETRY_DELAY_SECONDS
     while True:
@@ -456,7 +453,6 @@ async def run_bridge(
         exit_code = 1
     else:
         exit_code = 0
-
     if terminate is not None:
         sys.stdout.buffer.flush()
         sys.stderr.flush()

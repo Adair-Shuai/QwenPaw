@@ -98,7 +98,6 @@ def test_resolve_workspace_path_rejects_symlink_escape(
         link.symlink_to(outside, target_is_directory=True)
     except OSError:
         pytest.skip("Symlinks are unavailable")
-
     with pytest.raises(InvalidWorkspacePath):
         resolve_workspace_path(tmp_path, "outside/secret.txt")
 
@@ -233,7 +232,6 @@ def test_save_rejects_deleted_if_match_target(tmp_path: Path) -> None:
 
     with pytest.raises(FileVersionConflict):
         save_text_file(tmp_path, "notes.md", "stale", old_etag)
-
     assert not target.exists()
 
 
@@ -254,7 +252,6 @@ def test_concurrent_versioned_saves_allow_only_one_writer(
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(executor.map(_save, ["first", "second"]))
-
     assert sorted(results) == ["conflict", "saved"]
 
 

@@ -167,7 +167,9 @@ def live_channel_managers() -> list[Any]:
 
 @dataclass
 class _ChannelStartContext:
-    """One immutable input baseline, retained until start or cleanup finishes."""
+    """One immutable input baseline, retained until start or cleanup
+    finishes.
+    """
 
     key: str
     config: Any
@@ -260,6 +262,8 @@ class _ChannelStartContext:
         manager._start_contexts[channel] = self
 
     def validate(self, manager, channel=None, *, initial=False):
+        # Check the captured channel identity and generation before effects.
+        # pylint: disable=R0916
         from ... import constant
         from ...plugins.registry import PluginRegistry
         from .registry import selected_process_channels
@@ -349,6 +353,8 @@ def instantiate_channel(
     manager=None,
 ) -> BaseChannel:
     """Build one channel instance from workspace config (three-gate caller)."""
+    # Keep channel construction and failure cleanup under one boundary.
+    # pylint: disable=R0915
     from ...plugins.registry import PluginRegistry
     from .registry import selected_process_channels
 
@@ -749,7 +755,6 @@ class ChannelManager:  # pylint: disable=too-many-public-methods
         """
         available = get_available_channels()
         registry = get_channel_registry()
-        import os
         from types import SimpleNamespace
         from ...config.channel_env import read_channel_env
         from ...config.utils import get_config_path
@@ -781,8 +786,8 @@ class ChannelManager:  # pylint: disable=too-many-public-methods
         manager._workspace_dir = workspace_dir
         manager._workspace_config = env_config
         try:
-            for key in env_channels:
-                if not channel_enabled(env_channels[key]):
+            for key, values in env_channels.items():
+                if not channel_enabled(values):
                     continue
                 context = _ChannelStartContext.capture(
                     manager,
@@ -1160,6 +1165,8 @@ class ChannelManager:  # pylint: disable=too-many-public-methods
         Note:
             Preserves original batch merging logic (drain + merge)
         """
+        # Preserve queue ownership, cancellation and completion ordering.
+        # pylint: disable=R0912
         logger.info(
             f"Consumer started: channel={channel_id} "
             f"session={session_id[:30]} "
@@ -1561,6 +1568,8 @@ class ChannelManager:  # pylint: disable=too-many-public-methods
         The returned handle is not guaranteed to be a local
         ``BaseChannel`` — callers must treat it as opaque.
         """
+        # Validate the requested runtime and configuration before startup.
+        # pylint: disable=R0916
         existing = self._find_channel(key)
         if (
             existing is not None
@@ -1601,6 +1610,8 @@ class ChannelManager:  # pylint: disable=too-many-public-methods
         *,
         replace_from=None,
     ) -> ChannelHandle:
+        # Keep startup and compensating cleanup inside the lifecycle lock.
+        # pylint: disable=R0912,R0915
         from ...plugins.registry import PluginRegistry
 
         registry = PluginRegistry()
@@ -1746,6 +1757,8 @@ class ChannelManager:  # pylint: disable=too-many-public-methods
             return await run_async_to_completion(self._stop_one_unlocked(key))
 
     async def _stop_one_unlocked(self, key: str) -> StopReceipt:
+        # Report each shutdown outcome while retaining leftover ownership.
+        # pylint: disable=R0911
         async with self._lock:
             channel = self._find_channel(key)
         if channel is None:
@@ -1951,6 +1964,8 @@ class ChannelManager:  # pylint: disable=too-many-public-methods
         workspace_config=None,
     ) -> None:
         """Drain and stop the old owner before constructing its successor."""
+        # Keep replacement and rollback inside one lifecycle transaction.
+        # pylint: disable=R0912
         from ...plugins.lifecycle import QuiescenceError
         from ...utils.io_utils import run_async_to_completion
 

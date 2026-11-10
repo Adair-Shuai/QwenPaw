@@ -2,6 +2,12 @@ import { chatExtensions } from "../../plugins/registry/chatExtensions";
 import { ChatList } from "../../plugins/registry/slotKeys";
 import { attachClientMessageId } from "../../utils/clientMessageId";
 import {
+  applyAnswerQuotePayload,
+  quotesFromContext,
+  quotesFromMessage,
+  withoutAnswerQuoteContent,
+} from "./answerQuotes";
+import {
   applyAgentMentionSubmission,
   getSubmittedAgentMention,
 } from "./agentMentionSubmission";
@@ -16,7 +22,28 @@ export function applyChatPayloadTransforms(
   ],
   controls?: Record<string, unknown>,
 ): Record<string, unknown> {
+  const users = Array.isArray(payload.input)
+    ? payload.input.filter((item) => item?.role === "user")
+    : [];
+  const contextQuotes = quotesFromContext(
+    payload.request_context as Record<string, unknown> | undefined,
+  );
+  const quotes = contextQuotes.length
+    ? contextQuotes
+    : users.length
+    ? quotesFromMessage(users[users.length - 1])
+    : [];
   let requestBody = payload;
+  if (quotes.length && Array.isArray(payload.input)) {
+    const input = [...payload.input];
+    // Strip only the submitted message; earlier turns retain their quote context.
+    for (let i = input.length - 1; i >= 0; i--) {
+      if (input[i]?.role !== "user") continue;
+      input[i] = withoutAnswerQuoteContent(input[i]);
+      break;
+    }
+    requestBody = { ...payload, input };
+  }
   for (const entry of transforms
     .slice()
     .sort((a, b) => (a.item.order ?? 100) - (b.item.order ?? 100))) {
@@ -54,10 +81,13 @@ export function applyChatPayloadTransforms(
       },
     };
   }
-  return applyAgentMentionSubmission(
-    requestBody,
-    getSubmittedAgentMention(
-      payload.request_context as Record<string, unknown> | undefined,
+  return applyAnswerQuotePayload(
+    applyAgentMentionSubmission(
+      requestBody,
+      getSubmittedAgentMention(
+        payload.request_context as Record<string, unknown> | undefined,
+      ),
     ),
+    quotes,
   );
 }

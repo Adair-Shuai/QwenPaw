@@ -7,8 +7,6 @@ from typing import TYPE_CHECKING, Callable, Iterable
 
 if TYPE_CHECKING:
     from .ports import ControlLink
-
-
 _local: list["ControlLink"] = []
 _external: Callable[[], Iterable["ControlLink"]] = lambda: ()
 

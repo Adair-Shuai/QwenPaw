@@ -237,7 +237,6 @@ class DownloadProgressTracker:
                 DownloadTaskStatus.FAILED,
             }:
                 next_speed = 0.0
-
             self._progress = replace(
                 self._progress,
                 status=status,
@@ -353,11 +352,9 @@ class DownloadProgressTracker:
                 total_bytes=self.get_progress().total_bytes,
             )
             return result
-
         if result.status == DownloadTaskStatus.CANCELLED:
             self._set_status(DownloadTaskStatus.CANCELLED)
             return result
-
         self._set_status(
             result.status,
             error=result.error or "Download failed.",
@@ -383,7 +380,6 @@ class ProcessDownloadController:
         with self._lock:
             if self._task is not None and self._task.process.is_alive():
                 raise RuntimeError("A download is already in progress.")
-
             queue = self._context.Queue()
             raw_process = spec.task.create_process(
                 self._context,
@@ -420,7 +416,6 @@ class ProcessDownloadController:
             if task is None or not task.process.is_alive():
                 return
             self._progress.request_cancel()
-
         shutdown_process_sync(
             task.process,
             graceful_timeout=2.0,
@@ -429,7 +424,6 @@ class ProcessDownloadController:
 
         if task.monitor_thread is not threading.current_thread():
             task.monitor_thread.join(timeout=2.0)
-
         self._finish_task(
             task=task,
             result=DownloadTaskResult(
@@ -459,19 +453,15 @@ class ProcessDownloadController:
                 DownloadTaskStatus.CANCELLED,
             }:
                 return
-
             progress_update = spec.task.probe_progress()
             if progress_update is not None:
                 self._progress.apply_progress_update(progress_update)
-
             if self._handle_message(queue, spec):
                 return
-
             if not process.is_alive():
                 process.join(timeout=0.1)
                 if self._handle_message(queue, spec):
                     return
-
                 self._finish_task(
                     task=ManagedDownloadTask(
                         process=process,
@@ -486,7 +476,6 @@ class ProcessDownloadController:
                     cleanup_spec=True,
                 )
                 return
-
             time.sleep(spec.poll_interval)
 
     def _handle_message(
@@ -499,17 +488,14 @@ class ProcessDownloadController:
                 message = queue.get_nowait()
             except (Empty, ValueError, OSError):
                 return False
-
             message_type = message.get("type")
             if message_type == DownloadTaskMessageType.PROGRESS.value:
                 self._progress.apply_progress_update(
                     DownloadProgressUpdate.from_message(message),
                 )
                 continue
-
             if message_type != DownloadTaskMessageType.RESULT.value:
                 continue
-
             result = DownloadTaskResult.from_message(message)
             try:
                 result, downloaded_bytes = spec.task.finalize(result)
@@ -527,7 +513,6 @@ class ProcessDownloadController:
                     cleanup_spec=True,
                 )
                 return True
-
             self._finish_task(
                 spec=spec,
                 result=result,
@@ -561,13 +546,10 @@ class ProcessDownloadController:
             resolved_task = self._get_task_for_spec(resolved_spec)
         if resolved_spec is None and resolved_task is not None:
             resolved_spec = resolved_task.spec
-
         if cleanup_spec and resolved_spec is not None:
             self._cleanup_task_spec(resolved_spec)
-
         if resolved_task is not None:
             self._release_task_resources(resolved_task)
-
         with self._lock:
             current_task = self._task
             if current_task is not None and (
@@ -578,7 +560,6 @@ class ProcessDownloadController:
                 )
             ):
                 self._task = None
-
         self._progress.apply_result(
             result,
             downloaded_bytes=downloaded_bytes,

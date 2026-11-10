@@ -25,7 +25,10 @@ describe("cronJobApi", () => {
   });
 
   it("createCronJob sends POST to /cron/jobs with spec body", async () => {
-    const spec = { name: "cleanup", cron_expression: "0 * * * *" } as any;
+    const spec = {
+      name: "cleanup",
+      cron_expression: "0 * * * *",
+    } as unknown as Parameters<typeof cronJobApi.createCronJob>[0];
     const created = { ...spec, id: "job-2" };
     vi.mocked(request).mockResolvedValue(created);
     const result = await cronJobApi.createCronJob(spec);
@@ -47,7 +50,10 @@ describe("cronJobApi", () => {
   });
 
   it("replaceCronJob sends PUT with encoded jobId and spec body", async () => {
-    const spec = { name: "updated", cron_expression: "*/5 * * * *" } as any;
+    const spec = {
+      name: "updated",
+      cron_expression: "*/5 * * * *",
+    } as unknown as Parameters<typeof cronJobApi.replaceCronJob>[1];
     await cronJobApi.replaceCronJob("job-1", spec);
     expect(request).toHaveBeenCalledWith(
       `/cron/jobs/${encodeURIComponent("job-1")}`,

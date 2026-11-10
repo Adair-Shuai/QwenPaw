@@ -25,6 +25,7 @@ Dependencies follow `pyproject.toml`.
 - **Node.js / npm** (for the console frontend)
 - (Windows only) **NSIS**: `makensis` on PATH
 - **Icons**: Pre-generated `icon.ico` (Windows) and `icon.icns` (macOS) are included in `scripts/pack/assets/`
+- After editing `assets/icon.svg`, install console dependencies and run `python scripts/pack/generate_brand_assets.py` in the project environment to synchronize desktop, mobile, website and extension icons. Run `node console/scripts/verify-brand-assets.mjs` to verify source assets. Frontend builds and desktop packaging also verify content digests.
 
 ## One-click build
 

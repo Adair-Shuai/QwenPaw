@@ -97,7 +97,6 @@ async def get_all_acls(request: Request):
             for ch in cm.channels:
                 if ch.access_control_enabled:
                     enabled_channels.add(ch.channel)
-
     # Only return channels that are non-empty OR have access control on
     result = {}
     for key, data in raw_acls.items():
@@ -108,12 +107,10 @@ async def get_all_acls(request: Request):
         )
         if has_data or key in enabled_channels:
             result[key] = data
-
     # Add enabled channels not yet in file
     for ch_name in enabled_channels:
         if ch_name not in result:
             result[ch_name] = {"whitelist": {}, "blacklist": {}, "pending": []}
-
     return result
 
 

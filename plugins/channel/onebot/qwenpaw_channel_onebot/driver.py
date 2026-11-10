@@ -4,8 +4,8 @@
 from __future__ import annotations
 
 from collections import OrderedDict
-import hashlib
 from collections.abc import Mapping
+import hashlib
 import uuid
 
 from qwenpaw.channel_protocol.models import EndpointParams, InboundEvent
@@ -30,6 +30,8 @@ from .codec import (
 from .platform import OneBotPlatform, OneBotPlatformError
 
 
+# Non-stream drivers never request cleanup; the base hook stays fail-closed.
+# pylint: disable-next=abstract-method
 class OneBotDriver(SharedResponseDriver):
     def __init__(self):
         super().__init__(
@@ -95,7 +97,8 @@ class OneBotDriver(SharedResponseDriver):
             )
         except Exception as exc:
             # This specific JSON-RPC error proves there was no handler/effect.
-            # It remains a startup failure, never a substitute registration ACK.
+            # It remains a startup failure, never a substitute registration
+            # ACK.
             if (
                 getattr(exc, "code", None) == -32601
                 and operation == "register"
@@ -115,6 +118,8 @@ class OneBotDriver(SharedResponseDriver):
             await self._state_changed("connected")
 
     def _require_connected(self):
+        # The native driver and platform share owned connection state.
+        # pylint: disable=protected-access
         if (
             self._stopping
             or not self._connected
@@ -197,6 +202,7 @@ class OneBotDriver(SharedResponseDriver):
         return {"to_handle": "group:" + number if group else number}
 
     async def _open(self, params, request):
+        del request  # Required RPC callback parameter.
         self._identity(params)
         self._require_connected()
         route = self._target(
@@ -247,6 +253,8 @@ class OneBotDriver(SharedResponseDriver):
                 self._admissions.popitem(last=False)
 
     async def _normalize_message(self, value):
+        # The paired platform owns media admission for this driver.
+        # pylint: disable=protected-access
         platform = self._require_connected()
         user = str(value.get("user_id") or "")
         group = str(value.get("group_id") or "")

@@ -4,12 +4,13 @@
 from __future__ import annotations
 
 import json
-import os
 import threading
 import time
 from pathlib import Path
 from typing import Any
 from uuid import uuid4
+
+from .file_io import atomic_replace
 
 
 class ExecutionRepository:
@@ -148,7 +149,7 @@ class ExecutionRepository:
         with self._lock:
             try:
                 temporary.write_text(payload, encoding="utf-8")
-                os.replace(temporary, path)
+                atomic_replace(temporary, path)
             finally:
                 temporary.unlink(missing_ok=True)
 

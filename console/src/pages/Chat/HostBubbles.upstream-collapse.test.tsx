@@ -273,8 +273,19 @@ describe("upstream collapse in the real host response", () => {
     expect(screen.queryByText("阶段说明")).not.toBeInTheDocument();
     expect(screen.queryByText("Thinking")).not.toBeInTheDocument();
     expect(container.querySelector("details")).toBeNull();
+    const disclosure = screen.getByRole("button", {
+      name: stepsTitle("stepsCompleted", 2),
+    });
+    expect(disclosure).toHaveAttribute("aria-expanded", "false");
+    expect(
+      document.getElementById(disclosure.getAttribute("aria-controls")!),
+    ).toHaveAttribute("hidden");
 
     fireEvent.click(completed);
+    expect(disclosure).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByRole("region", { name: stepsTitle("stepsCompleted", 2) }),
+    ).toBeVisible();
     expect(screen.getByText("阶段说明")).toBeVisible();
     expect(container.querySelectorAll("details")).toHaveLength(1);
     expect(container.querySelector("details")?.className).not.toMatch(

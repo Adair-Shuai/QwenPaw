@@ -57,7 +57,6 @@ async def a2a_list() -> ToolChunk:
                 entry["error"] = str(exc)
                 agents_list.append(entry)
                 continue
-
         if card_info:
             entry["status"] = card_info.get("status", "connected")
             entry["name"] = card_info.get("name", "")
@@ -66,9 +65,7 @@ async def a2a_list() -> ToolChunk:
             entry["capabilities"] = card_info.get("capabilities", {})
         else:
             entry["status"] = "disconnected"
-
         agents_list.append(entry)
-
     result = json.dumps(
         {"agents": agents_list, "count": len(agents_list)},
         ensure_ascii=False,

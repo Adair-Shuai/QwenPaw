@@ -69,6 +69,8 @@ const properties: Record<string, string> = {
   nphi: "中子孔隙度",
 };
 export function controlLabel(name: string): string {
+  if (name === "wellSectionGrid") return "目标网格";
+  if (name === "wellSectionWell") return "井轨迹";
   return controls[name] || name;
 }
 export function propertyLabel(

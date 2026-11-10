@@ -74,7 +74,6 @@ async def get_token_usage(
                 f"  - {model}: {tokens:,} tokens ({stats.call_count} calls)",
             )
         lines.append("")
-
     if summary.by_date and len(summary.by_date) <= 14:
         lines.append("By date:")
         for dt, stats in list(summary.by_date.items())[-7:]:
@@ -87,7 +86,6 @@ async def get_token_usage(
             f"By date: {len(summary.by_date)} days with usage "
             "(see console for details)",
         )
-
     text = "\n".join(lines) if lines else "No token usage data in this period."
     return ToolChunk(
         is_last=True,

@@ -177,7 +177,7 @@ async def test_synchronous_cleanup_does_not_block_host_event_loop(
             WAIT_TIMEOUT * 2,
         ), "Event loop could not release cleanup"
 
-    async with sdk_component() as (host, ctx):
+    async with sdk_component() as (_unused_host, ctx):
         handle = ctx.resources.defer(cleanup, "blocking-close")
         closing = asyncio.create_task(handle.close())
         try:
@@ -331,7 +331,7 @@ async def test_finished_background_failure_remains_diagnosable(sdk_component):
 async def test_closed_child_scopes_release_parent_registration(sdk_component):
     from qwenpaw.plugins import SDKError
 
-    async with sdk_component() as (host, ctx):
+    async with sdk_component() as (_unused_host, ctx):
         initial = ctx.resources.snapshot()["resources"]
         closed = []
         for index in range(3):
@@ -364,7 +364,7 @@ async def test_closed_child_scopes_release_parent_registration(sdk_component):
 
 
 async def test_child_release_preserves_same_owner_siblings(sdk_component):
-    async with sdk_component() as (host, ctx):
+    async with sdk_component() as (_unused_host, ctx):
         first = ctx.resources.child(instance_id="same")
         second = ctx.resources.child(instance_id="same")
         await first.close()
@@ -390,7 +390,7 @@ async def test_parent_and_child_concurrent_close_wait_for_one_real_cleanup(
         await release.wait()
         calls.append("finished")
 
-    async with sdk_component() as (host, ctx):
+    async with sdk_component() as (_unused_host, ctx):
         child = ctx.resources.child(instance_id="concurrent")
         child.defer(cleanup)
         direct = asyncio.create_task(child.close())

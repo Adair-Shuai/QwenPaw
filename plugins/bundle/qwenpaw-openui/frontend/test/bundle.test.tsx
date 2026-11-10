@@ -3,6 +3,7 @@ import ReactDOM from "react-dom";
 import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import { pathToFileURL } from "node:url";
+import postcss from "postcss";
 import {
   act,
   cleanup,
@@ -82,6 +83,86 @@ beforeAll(async () => {
   } finally {
     dynamicCode.mockRestore();
   }
+});
+
+it("keeps published table layout and cell spacing isolated from Markdown defaults", () => {
+  const Render = Component!;
+  const view = render(
+    <div className="x-markdown qwenpaw-markdown">
+      <pre>
+        <Render
+          source={
+            'root = Table([Col("Time", ["14:00–14:25"]), Col("Plan", ["Focus"])])'
+          }
+          language="openui-lang"
+          messageId="table-style"
+          blockId="table-style:0"
+          isStreaming={false}
+          agentId="a"
+          sessionId="s"
+          fallback={() => <pre>fallback</pre>}
+        />
+      </pre>
+      <table data-native-table>
+        <tbody>
+          <tr>
+            <td>Ordinary Markdown</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>,
+  );
+  const table = view.container.querySelector(".openui-table")!;
+  const head = table.querySelector("th")!;
+  const cell = table.querySelector("td")!;
+  expect(cell.textContent).toBe("14:00–14:25");
+  const styles = document.querySelector(
+    'style[data-qwenpaw-plugin="qwenpaw-openui"]',
+  )!.textContent!;
+  const protectedDeclarations = (element: Element) => {
+    const declarations = new Map<string, string>();
+    postcss.parse(styles).walkRules((rule) => {
+      if (
+        !rule.selectors.some(
+          (selector) =>
+            selector.includes(".openui-table") &&
+            !selector.includes("::") &&
+            element.matches(selector),
+        )
+      )
+        return;
+      rule.walkDecls((decl) => {
+        if (decl.important) declarations.set(decl.prop, decl.value);
+      });
+    });
+    return declarations;
+  };
+  // jsdom does not resolve custom properties in the cascade. Inspect the
+  // actual bundle's matching declarations; browser QA checks computed pixels.
+  const tableStyle = protectedDeclarations(table);
+  expect(tableStyle.get("display")).toBe("table");
+  expect(tableStyle.get("margin")).toBe("0");
+  expect(tableStyle.has("width")).toBe(false);
+  for (const element of [head, cell]) {
+    expect(protectedDeclarations(element).get("padding")).toBe(
+      "var(--openui-space-m)",
+    );
+    expect(protectedDeclarations(element).get("border")).toBe("0");
+  }
+  expect(protectedDeclarations(head).get("border-bottom")).toBe(
+    "1px solid var(--openui-border-default)",
+  );
+  expect(protectedDeclarations(head).get("background")).toBe("transparent");
+  expect(protectedDeclarations(cell).get("white-space")).toBe("nowrap");
+  expect(
+    protectedDeclarations(view.container.querySelector("[data-native-table]")!)
+      .size,
+  ).toBe(0);
+  expect(
+    protectedDeclarations(
+      view.container.querySelector("[data-native-table] td")!,
+    ).size,
+  ).toBe(0);
 });
 
 it("loads the shipped module with host React and registers rendering plus a merging capability transform", () => {

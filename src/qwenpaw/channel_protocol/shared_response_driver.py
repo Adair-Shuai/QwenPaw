@@ -101,7 +101,9 @@ class SharedResponseDriver:
             raise RuntimeError("STALE_CONNECTION_CALLBACK")
 
     def diagnostics(self) -> dict[str, int]:
-        """Return a detached snapshot of this Driver's Core admission counts."""
+        """Return a detached snapshot of this Driver's Core admission
+        counts.
+        """
         return {
             "core_batch_backpressure_total": (
                 self._core_batch_backpressure_total
@@ -241,6 +243,8 @@ class SharedResponseDriver:
             )
 
     def _outbound_handler(self, handler):
+        # The paired peer carries the authenticated effect budget.
+        # pylint: disable=protected-access
         async def execute(params, request):
             with send_budget(
                 getattr(self._context, "send_timeout", DEFAULT_SEND_TIMEOUT),
@@ -260,7 +264,9 @@ class SharedResponseDriver:
 
     @contextmanager
     def target_resolution(self):
-        """Classify only a determinate target refusal, before route allocation."""
+        """Classify only a determinate target refusal, before route
+        allocation.
+        """
         try:
             yield
         except self.delivery_error as exc:
@@ -279,13 +285,14 @@ class SharedResponseDriver:
             )
             if not result.reason_code:
                 raise ValueError("SCHEMA_MISMATCH") from exc
+            continue_on_error = policy.continue_on_delivery_error
             raise RpcError(
                 RPC_RESPONSE_OPEN_FAILED,
                 "response target unavailable",
                 data={
                     "operation": "channel.response.open",
                     "result": result.to_mapping(),
-                    "continue_on_delivery_error": policy.continue_on_delivery_error,
+                    "continue_on_delivery_error": continue_on_error,
                 },
             ) from exc
 
@@ -611,6 +618,9 @@ class SharedResponseDriver:
         return self._locks[handle]
 
     async def _admit_event(self, event, created):
+        # Preserve native event routing, media fallbacks and cleanup in SDK
+        # order.
+        # pylint: disable=R0912
         if getattr(
             event,
             "actor_unknown",
@@ -727,6 +737,8 @@ class SharedResponseDriver:
         ).to_mapping()
 
     async def _send(self, params, request):
+        # Keep response delivery and receipt transitions under one owner.
+        # pylint: disable=R0912
         self._identity(params)
         source_capability = send_source_capability(
             params.content_source,

@@ -81,7 +81,6 @@ def _append_ctx_bar(
     """
     if not used or not size:  # window or occupancy unknown -> show nothing
         return
-
     # Clamp to [0, 1] so a stale ``used > size`` can't overflow the track.
     ratio = used / size
     ratio = 0.0 if ratio < 0.0 else 1.0 if ratio > 1.0 else ratio
@@ -93,7 +92,6 @@ def _append_ctx_bar(
         color = _CTX_AMBER  # filling up
     else:
         color = _CTX_GREEN  # healthy headroom
-
     # Whole cells only. Round to nearest, but never show a live context as an
     # empty bar, and never overflow the fixed track.
     filled = int(ratio * _CTX_BAR_WIDTH + 0.5)

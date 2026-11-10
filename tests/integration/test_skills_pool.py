@@ -425,7 +425,6 @@ def test_pool_batch_delete_all_success(app_server) -> None:
     try:
         for n in names:
             _create_pool_skill(app_server, n)
-
         resp = app_server.api_request(
             "POST",
             f"{_POOL_BASE}/batch-delete",
@@ -436,7 +435,6 @@ def test_pool_batch_delete_all_success(app_server) -> None:
         results = resp.json().get("results", {})
         for n in names:
             assert results[n]["success"] is True
-
         remaining = _list_pool_skill_names(app_server)
         for n in names:
             assert n not in remaining
@@ -834,7 +832,6 @@ def test_hub_install_start_poll_complete(app_server) -> None:
             if last_status in terminal:
                 break
             time.sleep(1.0)
-
         assert (
             last_status in terminal
         ), f"task {task_id} stuck at {last_status}"

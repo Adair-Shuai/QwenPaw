@@ -1,8 +1,9 @@
 import { ChevronDown, ChevronUp, FolderOpen } from "lucide-react";
-import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { chatApi } from "../../api/modules/chat";
 import FileGlyph from "./FileGlyph";
+import DeliveryFileActions from "./DeliveryFileActions";
 import type { FileTarget } from "./types";
 import {
   responseArtifactIdentity,
@@ -25,8 +26,7 @@ interface ResponseArtifact {
   toolName: string;
 }
 
-const MIN_FILE_WIDTH = 320;
-const GRID_GAP = 8;
+const COLLAPSED_FILES = 2;
 const FILE_IO_TOOLS = new Set(["appendfile", "editfile", "writefile"]);
 const TOOL_INPUT_TYPES = new Set([
   "tool_call",
@@ -304,55 +304,56 @@ export default function ResponseArtifactList({
     () => extractResponseArtifacts(messages),
     [messages],
   );
+  const scopeAgentId = scope?.agentId;
+  const scopeSessionId = scope?.sessionId;
   useEffect(
     () =>
       setResponseArtifactGroup(
         groupId,
         artifacts.map((item) => item.target),
-        scope,
+        scopeAgentId !== undefined && scopeSessionId !== undefined
+          ? {
+              kind: "session",
+              agentId: scopeAgentId,
+              sessionId: scopeSessionId,
+            }
+          : undefined,
       ),
-    [artifacts, groupId, scope?.agentId, scope?.sessionId],
+    [artifacts, groupId, scopeAgentId, scopeSessionId],
   );
-  const gridRef = useRef<HTMLDivElement>(null);
   const [expanded, setExpanded] = useState(false);
-  const [visibleCount, setVisibleCount] = useState(2);
-
-  useEffect(() => {
-    const grid = gridRef.current;
-    if (!grid) return;
-
-    const measure = () => {
-      const width = grid.getBoundingClientRect().width || grid.clientWidth;
-      const columns = Math.max(
-        1,
-        Math.floor((width + GRID_GAP) / (MIN_FILE_WIDTH + GRID_GAP)),
-      );
-      setVisibleCount(columns * 2);
-    };
-    measure();
-
-    if (typeof ResizeObserver === "undefined") {
-      window.addEventListener("resize", measure);
-      return () => window.removeEventListener("resize", measure);
-    }
-    const observer = new ResizeObserver(measure);
-    observer.observe(grid);
-    return () => observer.disconnect();
-  }, [artifacts.length]);
 
   if (artifacts.length === 0) return null;
 
-  const hasOverflow = artifacts.length > visibleCount;
-  const hiddenCount = Math.max(0, artifacts.length - visibleCount);
+  const hasOverflow = artifacts.length > COLLAPSED_FILES;
+  const hiddenCount = Math.max(0, artifacts.length - COLLAPSED_FILES);
   const visibleArtifacts = expanded
     ? artifacts
-    : artifacts.slice(0, visibleCount);
+    : artifacts.slice(0, COLLAPSED_FILES);
 
   return (
     <div className={styles.list} data-testid="response-artifacts">
-      <div ref={gridRef} className={styles.grid}>
+      <div className={styles.grid}>
         {visibleArtifacts.map((artifact) => {
           const change = artifactChange(artifact.toolName);
+          const extension = artifact.name.includes(".")
+            ? artifact.name.split(".").pop()?.toUpperCase()
+            : undefined;
+          const preview = (trigger: HTMLElement) => {
+            window.dispatchEvent(
+              new CustomEvent("qwenpaw:open-file-preview", {
+                detail: {
+                  target: artifact.target,
+                  trigger,
+                  ...(scope && {
+                    agentId: scope.agentId,
+                    sessionId: scope.sessionId,
+                    chatId: scope.chatId,
+                  }),
+                },
+              }),
+            );
+          };
           return (
             <div key={artifact.id} className={styles.file}>
               <button
@@ -364,59 +365,59 @@ export default function ResponseArtifactList({
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
-                  window.dispatchEvent(
-                    new CustomEvent("qwenpaw:open-file-preview", {
-                      detail: {
-                        target: artifact.target,
-                        trigger: event.currentTarget,
-                        ...(scope && {
-                          agentId: scope.agentId,
-                          sessionId: scope.sessionId,
-                          chatId: scope.chatId,
-                        }),
-                      },
-                    }),
-                  );
+                  preview(event.currentTarget);
                 }}
               >
                 <i className={styles.icon} aria-hidden="true">
-                  <FileGlyph name={artifact.name} size={20} />
+                  <FileGlyph name={artifact.name} size={27} />
                 </i>
                 <span className={styles.details}>
                   <strong>{artifact.name}</strong>
-                  <small title={artifact.path}>{artifact.path}</small>
+                  <span className={styles.meta}>
+                    <small className={styles.status} data-change={change}>
+                      {t(CHANGE_LABEL_KEY[change])}
+                    </small>
+                    {extension && (
+                      <small className={styles.fileType}>{extension}</small>
+                    )}
+                    <small className={styles.path} title={artifact.path}>
+                      {artifact.path}
+                    </small>
+                  </span>
                 </span>
-                <small className={styles.status} data-change={change}>
-                  {t(CHANGE_LABEL_KEY[change])}
-                </small>
               </button>
-              <button
-                type="button"
-                className={styles.revealButton}
-                title={t("workspace.revealInFileManager", "在文件夹中打开")}
-                aria-label={`${t(
-                  "workspace.revealInFileManager",
-                  "在文件夹中打开",
-                )}：${artifact.name}`}
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  window.dispatchEvent(
-                    new CustomEvent("qwenpaw:reveal-file", {
-                      detail: {
-                        target: artifact.target,
-                        ...(scope && {
-                          agentId: scope.agentId,
-                          sessionId: scope.sessionId,
-                          chatId: scope.chatId,
-                        }),
+              <div className={styles.actions}>
+                <DeliveryFileActions
+                  name={artifact.name}
+                  target={artifact.target}
+                  scope={scope}
+                  onPreview={preview}
+                  moreActions={[
+                    {
+                      key: "legacy-location",
+                      label: t(
+                        "workspace.revealInFileManager",
+                        "在文件夹中打开",
+                      ),
+                      icon: <FolderOpen size={15} aria-hidden="true" />,
+                      onSelect: () => {
+                        window.dispatchEvent(
+                          new CustomEvent("qwenpaw:reveal-file", {
+                            detail: {
+                              target: artifact.target,
+                              ...(scope && {
+                                agentId: scope.agentId,
+                                sessionId: scope.sessionId,
+                                chatId: scope.chatId,
+                              }),
+                            },
+                          }),
+                        );
                       },
-                    }),
-                  );
-                }}
-              >
-                <FolderOpen size={16} aria-hidden="true" />
-              </button>
+                    },
+                  ]}
+                />
+              </div>
             </div>
           );
         })}

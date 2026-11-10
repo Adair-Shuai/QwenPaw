@@ -45,6 +45,7 @@ from .authoring import AuthoringUnavailable
 from .flow_repository import RevisionConflict
 from .lifecycle import ResumeInputError
 from .engine.errors import ValidationError as WorkflowValidationError
+from .engine.state_store import CheckpointStorageError
 
 logger = logging.getLogger(__name__)
 
@@ -84,6 +85,17 @@ class RunRequest(BaseModel):
     """Body schema for POST /flows/{id}/run."""
 
     inputs: dict[str, Any] = {}
+
+
+class DebugRequest(BaseModel):
+    """Manual execution of one saved node or its dependency closure."""
+
+    mode: Literal["node", "until"]
+    target_node_id: str = Field(min_length=1)
+    expected_revision: int = Field(ge=0, strict=True)
+    inputs: dict[str, Any] = Field(default_factory=dict)
+    pins: dict[str, list[Any]] = Field(default_factory=dict)
+    node_inputs: dict[str, Any] = Field(default_factory=dict)
 
 
 class GenerateRequest(BaseModel):
@@ -312,6 +324,36 @@ def _register_authoring_routes(
 
 
 def _register_run_routes(router: APIRouter, service: WorkflowService) -> None:
+    @router.post("/flows/{flow_id}/debug")
+    async def debug_run(
+        flow_id: str,
+        request: Request,
+        body: DebugRequest,
+    ) -> dict[str, Any]:
+        try:
+            handle = await service.start_debug_run(
+                flow_id,
+                body.inputs,
+                mode=body.mode,
+                target_node_id=body.target_node_id,
+                expected_revision=body.expected_revision,
+                pins=body.pins,
+                node_inputs=body.node_inputs,
+                agent_id=_request_agent_id(request),
+            )
+        except (
+            FileNotFoundError,
+            ValueError,
+            WorkflowValidationError,
+            AuthoringUnavailable,
+        ) as exc:
+            raise _service_error(exc) from exc
+        return {
+            "run_id": handle.run_id,
+            "flow_id": handle.flow_id,
+            "status": handle.status.value,
+        }
+
     @router.post("/flows/{flow_id}/run")
     async def start_run(
         flow_id: str,
@@ -335,11 +377,26 @@ def _register_run_routes(router: APIRouter, service: WorkflowService) -> None:
 
     @router.get("/runs")
     async def list_runs() -> list[dict[str, Any]]:
-        return service.list_runs()
+        try:
+            return [
+                public
+                for record in service.list_runs()
+                if (
+                    public := await service.get_public_run_record(
+                        record["run_id"],
+                    )
+                )
+                is not None
+            ]
+        except CheckpointStorageError as exc:
+            raise HTTPException(503, str(exc)) from exc
 
     @router.get("/runs/{run_id}")
     async def get_run(run_id: str) -> dict[str, Any]:
-        record = service.get_run_record(run_id)
+        try:
+            record = await service.get_public_run_record(run_id)
+        except CheckpointStorageError as exc:
+            raise HTTPException(503, str(exc)) from exc
         if record is None:
             raise HTTPException(404, f"run '{run_id}' not found")
         return record
@@ -380,7 +437,10 @@ def _register_event_routes(
     @router.get("/runs/{run_id}/events")
     async def run_events(run_id: str) -> StreamingResponse:
         handle = service.get_run(run_id)
-        record = service.get_run_record(run_id)
+        try:
+            record = await service.get_public_run_record(run_id)
+        except CheckpointStorageError as exc:
+            raise HTTPException(503, str(exc)) from exc
         if record is None:
             raise HTTPException(404, f"run '{run_id}' not found")
 
@@ -398,6 +458,11 @@ def _register_event_routes(
         # Poll handle.progress.history() + handle.is_done on a short cadence.
         # We avoid asyncio.Queue here because events are emitted from the
         # background loop thread; cross-loop asyncio.Queue is not safe.
+        try:
+            clean = await service.public_run_redactor(run_id)
+        except CheckpointStorageError as exc:
+            raise HTTPException(503, str(exc)) from exc
+
         async def event_generator():
             seen = 0
             try:
@@ -406,7 +471,7 @@ def _register_event_routes(
                     new_events = history[seen:]
                     seen = len(history)
                     for ev in new_events:
-                        yield _sse_pack(ev.to_dict())
+                        yield _sse_pack(clean(ev.to_dict()))
                     if handle.is_done:
                         break
                     await asyncio.sleep(0.1)
@@ -434,6 +499,7 @@ class _WebSocketSubscription:
         self.progress: ProgressRegistry | None = None
         self.handler: ProgressHandler | None = None
         self.replayed: set[int] = set()
+        self.clean = lambda value: value
 
     def detach(self) -> None:
         if self.progress is not None and self.handler is not None:
@@ -448,9 +514,10 @@ class _WebSocketSubscription:
     ) -> Literal["missing", "persisted", "live"]:
         self.detach()
         self.run_id = run_id
+        self.clean = await self.service.public_run_redactor(run_id)
         handle = self.service.get_run(run_id)
         if handle is None:
-            record = self.service.get_run_record(run_id)
+            record = await self.service.get_public_run_record(run_id)
             if record is None:
                 await websocket.send_text(
                     json.dumps(
@@ -487,7 +554,7 @@ class _WebSocketSubscription:
         # An event emitted at attachment can reach both history and the queue.
         self.replayed = {id(event) for event in history}
         for event in history:
-            await websocket.send_text(json.dumps(event.to_dict()))
+            await websocket.send_text(json.dumps(self.clean(event.to_dict())))
         return "live"
 
     async def forward(self, websocket: WebSocket) -> bool:
@@ -498,7 +565,9 @@ class _WebSocketSubscription:
                 event = self.queue.get_nowait()
                 if id(event) in self.replayed:
                     continue
-                await websocket.send_text(json.dumps(event.to_dict()))
+                await websocket.send_text(
+                    json.dumps(self.clean(event.to_dict())),
+                )
                 break
         except Empty:
             pass
@@ -557,6 +626,16 @@ def _register_websocket_route(
                     break
         except WebSocketDisconnect:
             pass
+        except CheckpointStorageError as exc:
+            await websocket.send_text(
+                json.dumps(
+                    {
+                        "type": "error",
+                        "code": "CHECKPOINT_STORAGE_ERROR",
+                        "error": str(exc),
+                    },
+                ),
+            )
         finally:
             subscription.detach()
 

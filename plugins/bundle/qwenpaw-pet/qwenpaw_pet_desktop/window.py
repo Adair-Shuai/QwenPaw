@@ -84,7 +84,6 @@ def _wrap_bubble_text(
         paragraph = paragraph.strip()
         if not paragraph or len(lines) >= max_lines:
             continue
-
         current = ""
         for token in paragraph.split():
             trial = token if not current else f"{current} {token}"
@@ -95,10 +94,8 @@ def _wrap_bubble_text(
             current = token
             if len(lines) >= max_lines:
                 break
-
         if len(lines) >= max_lines:
             break
-
         if current:
             while current and len(lines) < max_lines:
                 if fm.horizontalAdvance(current) <= max_width:
@@ -113,7 +110,6 @@ def _wrap_bubble_text(
                 cut = max(1, cut - 1)
                 _append(current[:cut])
                 current = current[cut:]
-
     return "\n".join(lines)
 
 
@@ -137,7 +133,6 @@ class PetWindow(QWidget):
         self.sheet = QPixmap(str(sheet_path))
         if self.sheet.isNull():
             raise RuntimeError(f"could not load spritesheet: {sheet_path}")
-
         self.scale = scale
         self.pet_width = int(CELL_WIDTH * scale)
         self.pet_height = int(CELL_HEIGHT * scale)
@@ -213,7 +208,6 @@ class PetWindow(QWidget):
             return
         if self._handle_early_lifecycle(ev_name, event):
             return
-
         self._advance_event_serial(event)
         state = state_for_event(ev_name, event.get("state"))
         self._apply_bubble_text(ev_name, text)
@@ -258,11 +252,9 @@ class PetWindow(QWidget):
                 return True
         elif ev_name in ("query.cancelled", "query.error"):
             self._approval_pending = False
-
         if self._turn_complete and ev_name in _LIFECYCLE_AFTER_DONE_BLOCKED:
             self.update()
             return True
-
         if (
             ev_name != "query.received"
             and self._received_hold_active()
@@ -271,14 +263,12 @@ class PetWindow(QWidget):
             self._deferred_lifecycle_event = dict(event)
             self.update()
             return True
-
         if (
             self._approval_pending
             and ev_name in _LIFECYCLE_WHILE_APPROVAL_BLOCKED
         ):
             self.update()
             return True
-
         if self._approval_pending and ev_name == "tool.result":
             self._advance_event_serial(event)
             state = state_for_event(ev_name, event.get("state"))
@@ -286,7 +276,6 @@ class PetWindow(QWidget):
             self._write_state(event)
             self.update()
             return True
-
         return False
 
     def _apply_bubble_text(
@@ -321,7 +310,6 @@ class PetWindow(QWidget):
                 duration_ms = _POST_DONE_ANIMATION_MS
             self._schedule_state_revert(duration_ms)
             return
-
         delay_ms = event.get("delay_ms")
         if (
             isinstance(duration_ms, int)

@@ -7,7 +7,6 @@ import io
 import json
 import subprocess
 import zipfile
-from pathlib import Path
 from types import SimpleNamespace
 
 import httpx
@@ -20,21 +19,21 @@ from qwenpaw.app.routers import turn_files as router
 
 
 def start(store, project, **overrides):
-    values = dict(
-        session_id="session-a",
-        user_id="user-a",
-        channel="console",
-        agent_id="agent-a",
-        client_message_id="client-a",
-        response_id="response-a",
-        roots=[(f"project:{project}", project)],
-    )
+    values = {
+        "session_id": "session-a",
+        "user_id": "user-a",
+        "channel": "console",
+        "agent_id": "agent-a",
+        "client_message_id": "client-a",
+        "response_id": "response-a",
+        "roots": [(f"project:{project}", project)],
+    }
     values.update(overrides)
     return store.start(**values)
 
 
-@pytest.fixture
-def directories(tmp_path):
+@pytest.fixture(name="directories")
+def _directories(tmp_path):
     workspace, project = tmp_path / "workspace", tmp_path / "project"
     workspace.mkdir()
     project.mkdir()
@@ -44,6 +43,8 @@ def directories(tmp_path):
 def test_real_turn_diff_uses_dirty_baseline_without_touching_git_index(
     directories,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     workspace, project = directories
     subprocess.run(
         ["git", "init", str(project)],
@@ -84,6 +85,8 @@ def test_real_turn_diff_uses_dirty_baseline_without_touching_git_index(
 
 
 def test_unchanged_preexisting_files_do_not_appear(directories):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     workspace, project = directories
     (project / "draft.txt").write_text("already dirty", encoding="utf-8")
     store = TurnFileStore(workspace)
@@ -93,6 +96,8 @@ def test_unchanged_preexisting_files_do_not_appear(directories):
 
 
 def test_delivery_versions_survive_same_turn_changes_and_restart(directories):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     workspace, project = directories
     file = project / "report.txt"
     file.write_bytes(b"original")
@@ -136,6 +141,8 @@ def test_delivery_versions_survive_same_turn_changes_and_restart(directories):
 def test_final_delivery_merges_with_change_and_old_turn_stays_immutable(
     directories,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     workspace, project = directories
     store = TurnFileStore(workspace)
     capture = start(store, project)
@@ -163,6 +170,8 @@ def test_explicit_external_delivery_captures_only_authorized_file(
     directories,
     tmp_path,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     workspace, project = directories
     store = TurnFileStore(workspace)
     capture = start(store, project)
@@ -185,6 +194,8 @@ def test_explicit_external_delivery_captures_only_authorized_file(
 
 
 def test_history_filters_apply_before_limit(directories):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     workspace, project = directories
     store = TurnFileStore(workspace)
     first = store.finish(start(store, project, response_id="response-first"))
@@ -202,6 +213,8 @@ async def test_history_pagination_filters_scope_before_page_boundaries(
     directories,
     monkeypatch,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     workspace, project = directories
     store = get_store(workspace)
     expected_ids = set()
@@ -211,12 +224,12 @@ async def test_history_pagination_filters_scope_before_page_boundaries(
         )
         expected_ids.add(result["id"])
         store.finish(start(store, project, session_id="other-session"))
-    scope = dict(
-        session_id="session-a",
-        agent_id="agent-a",
-        user_id="user-a",
-        channel="console",
-    )
+    scope = {
+        "session_id": "session-a",
+        "agent_id": "agent-a",
+        "user_id": "user-a",
+        "channel": "console",
+    }
     expected = [item["id"] for item in store.list_turns(**scope)]
     assert set(expected) == expected_ids
     assert [
@@ -287,6 +300,8 @@ async def test_history_pagination_filters_scope_before_page_boundaries(
 def test_delivery_is_durable_before_finish_and_id_survives_final_merge(
     directories,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     from qwenpaw.turn_files.store import _ACTIVE
 
     workspace, project = directories
@@ -327,6 +342,8 @@ def test_failed_manifest_write_releases_capture_and_keeps_delivered_version(
     directories,
     monkeypatch,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     from qwenpaw.turn_files.store import _ACTIVE
 
     workspace, project = directories
@@ -360,6 +377,8 @@ def test_failed_manifest_write_releases_capture_and_keeps_delivered_version(
 
 
 def test_binary_changes_are_archived_without_text_diff(directories):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     workspace, project = directories
     store = TurnFileStore(workspace)
     capture = start(store, project)
@@ -376,6 +395,8 @@ def test_limits_and_read_errors_report_incomplete_without_false_deletions(
     directories,
     monkeypatch,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     workspace, project = directories
     store = TurnFileStore(workspace)
     (project / "a.txt").write_bytes(b"old")
@@ -414,6 +435,8 @@ def test_archive_budget_and_truncated_diff_are_explicit(
     directories,
     monkeypatch,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     workspace, project = directories
     store = TurnFileStore(workspace)
     capture = start(store, project)
@@ -433,6 +456,8 @@ def test_overlapping_agents_are_marked_without_serializing_turns(
     directories,
     tmp_path,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     workspace, project = directories
     first, second = TurnFileStore(workspace), TurnFileStore(
         tmp_path / "other-agent",
@@ -448,6 +473,8 @@ def test_output_root_excludes_internal_state_credentials_and_reparse_points(
     directories,
     monkeypatch,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     workspace, _project = directories
     store = TurnFileStore(workspace)
     capture = start(store, workspace, roots=[("workspace", workspace)])
@@ -481,6 +508,8 @@ def test_output_root_excludes_internal_state_credentials_and_reparse_points(
 
 
 def test_scope_traversal_and_blob_integrity_are_enforced(directories):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     workspace, project = directories
     store = TurnFileStore(workspace)
     capture = start(store, project)
@@ -517,6 +546,8 @@ def test_bundle_separates_roots_and_preserves_multiple_delivery_versions(
     directories,
     tmp_path,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     workspace, project = directories
     other = tmp_path / "other"
     other.mkdir()
@@ -552,6 +583,8 @@ def test_damaged_archive_never_falls_back_to_mutable_workspace_bytes(
     damage,
     operation,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     workspace, project = directories
     store = TurnFileStore(workspace)
     capture = start(store, project)
@@ -590,6 +623,8 @@ def test_damaged_archive_never_falls_back_to_mutable_workspace_bytes(
 def test_deletion_only_bundle_keeps_the_clearly_labeled_before_version(
     directories,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     workspace, project = directories
     file = project / "deleted.txt"
     file.write_bytes(b"before deletion")
@@ -614,6 +649,8 @@ async def test_http_routes_enforce_chat_identity_and_serve_archived_bytes(
     directories,
     monkeypatch,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     workspace, project = directories
     store = get_store(workspace)
     capture = start(store, project)
@@ -705,3 +742,97 @@ async def test_http_routes_enforce_chat_identity_and_serve_archived_bytes(
             response.status_code == 200
             and response.headers["content-type"] == "application/zip"
         )
+
+
+@pytest.mark.parametrize("before_limited", [False, True])
+def test_unavailable_snapshot_bytes_do_not_manufacture_a_file_modification(
+    directories,
+    monkeypatch,
+    before_limited,
+):
+    workspace, project = directories
+    (project / "unchanged.inc").write_bytes(b"unchanged engineering input")
+    store = TurnFileStore(workspace)
+    original_budget = scanner.MAX_TOTAL_BYTES
+    if before_limited:
+        monkeypatch.setattr(scanner, "MAX_TOTAL_BYTES", 0)
+    capture = start(store, project)
+    monkeypatch.setattr(
+        scanner,
+        "MAX_TOTAL_BYTES",
+        original_budget if before_limited else 0,
+    )
+    result = store.finish(capture)
+    assert result["files"] == []
+    assert result["incomplete"]
+    assert result["warnings"]
+
+
+# pylint: disable-next=line-too-long
+def test_workspace_sqlite_sidecars_are_internal_but_project_databases_remain_user_files(  # noqa: E501
+    directories,
+):
+    workspace, project = directories
+    names = ("history.db-wal", "history.db-shm", "history.db-journal")
+    store = TurnFileStore(workspace)
+    capture = start(store, workspace, roots=[("workspace", workspace)])
+    for name in names:
+        (workspace / name).write_bytes(b"runtime database maintenance")
+    result = store.finish(capture)
+    assert result["files"] == []
+    capture = start(store, project)
+    for name in names:
+        (project / name).write_bytes(b"user database output")
+    assert {row["path"] for row in store.finish(capture)["files"]} == set(
+        names,
+    )
+
+
+def test_no_tool_attribution_correction_preserves_original_rows_but_blocks_downloads(  # noqa: E501
+    directories,
+):
+    workspace, project = directories
+    store = TurnFileStore(workspace)
+    capture = start(store, project)
+    (project / "ambient.txt").write_bytes(b"another session")
+    result = store.finish(capture)
+    row = result["files"][0]
+    path = store.directory / "turns" / (result["id"] + ".json")
+    original = json.loads(path.read_text("utf-8"))
+    original["tool_activity"] = False
+    original["incomplete"] = True
+    original["warnings"] = ["Snapshot byte budget reached"]
+    path.write_text(json.dumps(original), encoding="utf-8")
+    corrected = store.get_turn(result["id"], session_id="session-a")
+    assert corrected["files"] == []
+    assert not corrected["incomplete"] and corrected["warnings"] == []
+    with pytest.raises(FileNotFoundError):
+        store.get_file(result["id"], row["id"], session_id="session-a")
+    assert json.loads(path.read_text("utf-8"))["files"][0]["id"] == row["id"]
+    assert (project / "ambient.txt").read_bytes() == b"another session"
+
+
+def test_legacy_runtime_rows_are_filtered_without_hiding_project_databases(
+    directories,
+):
+    workspace, project = directories
+    store = TurnFileStore(workspace)
+    capture = start(store, project)
+    (project / "history.db-wal").write_bytes(b"project data")
+    result = store.finish(capture)
+    project_row = result["files"][0]
+    path = store.directory / "turns" / (result["id"] + ".json")
+    original = json.loads(path.read_text("utf-8"))
+    original["files"].append(
+        {
+            **original["files"][0],
+            "id": "a" * 32,
+            "root": "workspace",
+        },
+    )
+    path.write_text(json.dumps(original), encoding="utf-8")
+    corrected = store.get_turn(result["id"], session_id="session-a")
+    assert [row["id"] for row in corrected["files"]] == [project_row["id"]]
+    with pytest.raises(FileNotFoundError):
+        store.get_file(result["id"], "a" * 32, session_id="session-a")
+    assert len(json.loads(path.read_text("utf-8"))["files"]) == 2

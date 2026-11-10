@@ -52,13 +52,9 @@ def _read_source_identity(description):
     import json
 
     manifest_path = description.source_path / "plugin.json"
-    if (
-        manifest_path.is_file()
-        and PluginManifest.model_validate(
-            json.loads(manifest_path.read_text(encoding="utf-8")),
-        )
-        != description.manifest
-    ):
+    if manifest_path.is_file() and PluginManifest.model_validate(
+        json.loads(manifest_path.read_text(encoding="utf-8")),
+    ).model_dump(mode="json") != description.manifest.model_dump(mode="json"):
         raise dependency_error("DEPENDENCY_ORIGIN_INVALID")
     if description.requirements_path is not None:
         parsed = parse_requirements_file(description.requirements_path)

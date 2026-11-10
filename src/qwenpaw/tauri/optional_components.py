@@ -234,7 +234,6 @@ def _install_component(python: str, name: str) -> None:
             bin_dir = component_dir / "bin"
             bin_dir.mkdir(parents=True, exist_ok=True)
             shutil.copy2(ffmpeg, bin_dir / "ffmpeg.exe")
-
         shutil.rmtree(backup, ignore_errors=True)
         if site_dir.exists():
             site_dir.replace(backup)

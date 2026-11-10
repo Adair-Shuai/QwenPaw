@@ -6,10 +6,10 @@ import { getRouteTitle } from "./routeTitle";
 describe("RouteDocumentTitle", () => {
   it("updates the browser title when the active route changes", () => {
     const { rerender } = render(<RouteDocumentTitle title="Chat" />);
-    expect(document.title).toBe("Chat · QwenPaw");
+    expect(document.title).toBe("Chat · UGSci");
 
     rerender(<RouteDocumentTitle title="Models" />);
-    expect(document.title).toBe("Models · QwenPaw");
+    expect(document.title).toBe("Models · UGSci");
   });
 });
 

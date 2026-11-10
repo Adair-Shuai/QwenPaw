@@ -42,7 +42,7 @@ const socialLinks: SocialLink[] = [
   {
     href: "https://github.com/agentscope-ai/QwenPaw",
     ariaLabel: "footer.social.github",
-    icon: <GitHubIcon size={20} className="block text-orange-400" />,
+    icon: <GitHubIcon size={20} className="block text-(--text-muted)" />,
     qrCode:
       "https://img.alicdn.com/imgextra/i1/O1CN014U6Tgn1u8OMZ3rzTo_!!6000000005992-2-tps-400-400.png",
   },
@@ -66,7 +66,7 @@ const socialLinks: SocialLink[] = [
     icon: (
       <span
         aria-hidden
-        className="block text-[18px] leading-none text-orange-400"
+        className="block text-[18px] leading-none text-(--text-muted)"
       >
         🍠
       </span>
@@ -155,19 +155,22 @@ export function Footer() {
   const hoveredLinkData = socialLinks.find((l) => l.ariaLabel === hoveredLink);
 
   return (
-    <footer className="mt-auto bg-white">
+    <footer className="site-footer mt-auto bg-white">
       <div className="mx-auto max-w-7xl px-6 py-10 md:py-12">
         <div className="flex flex-col gap-10 lg:flex-row lg:items-start lg:justify-between lg:gap-16">
           <section className="min-w-0 max-w-xl">
-            <Link to="/" className="inline-flex items-center mb-4">
-              <QwenpawMascot size={100} />
+            <Link
+              to="/"
+              className="inline-flex items-center gap-2 mb-4"
+              aria-label="UGSci"
+            >
+              <QwenpawMascot size={36} />
+              <span className="site-wordmark">UGSci</span>
             </Link>
             <p className="mb-2 text-[15px] leading-7 text-(--text)">
-              {t("whyQwenpaw.heroLine")}
-              <br />
-              {t("whyQwenpaw.secondPrefix")}
+              {t("studio.description")}
             </p>
-            <div className="mt-5 flex items-center gap-4 text-[#f2a25b]">
+            <div className="mt-5 flex items-center gap-4 text-(--text-muted)">
               {socialLinks.map((link) => (
                 <a
                   key={link.ariaLabel}

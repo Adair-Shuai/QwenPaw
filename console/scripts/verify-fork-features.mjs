@@ -7,7 +7,11 @@ import { inspectForkTestSource } from "./fork-test-source.mjs";
 const root = fileURLToPath(new URL("../", import.meta.url));
 const guardTests = spawnSync(
   process.execPath,
-  ["--test", path.join(root, "scripts/fork-test-source.test.mjs")],
+  [
+    "--test",
+    path.join(root, "scripts/fork-test-source.test.mjs"),
+    path.join(root, "scripts/verify-brand-assets.test.mjs"),
+  ],
   { stdio: "inherit" },
 );
 if (guardTests.error) throw guardTests.error;
@@ -19,6 +23,12 @@ const requireCases = (file, titles) =>
     readFileSync(path.join(root, file), "utf8"),
     titles,
   );
+requireCases("scripts/verify-brand-assets.test.mjs", [
+  "keeps content verification before every shared plugin release pack step",
+  "verifies actual shipped assets and rejects changed installer content",
+  "rejects missing mobile and extension icons",
+  "checks built public assets and catches the desktop favicon regression",
+]);
 const teamArtifactsSuite = path.join(
   root,
   "../tests/unit/plugins/ugsci/test_team_artifacts.py",
@@ -30,15 +40,42 @@ if (!existsSync(teamArtifactsSuite))
 // Keep this inventory separate from Vitest discovery: deleting a feature's
 // tests during a merge must fail verification instead of silently reducing it.
 const suites = {
+  toolControlPolling: ["src/hooks/useToolCallControl.test.ts"],
+  answerFileReferences: [
+    "src/pages/Chat/fileReferenceMarkdown.test.ts",
+    "src/features/files-workspace/internalFileLinks.test.ts",
+    "src/pages/Chat/AssistantMarkdown.test.tsx",
+  ],
+  assistantVisuals: [
+    "src/components/UgsciAssistantVisual.test.tsx",
+    "src/components/UgsciMotion/index.test.tsx",
+    "src/components/UgsciMotion/BackendLoadingPage.test.tsx",
+    "src/components/LoadingState/index.test.tsx",
+    "src/pages/Settings/Models/components/sections/LoadingState.test.tsx",
+    "src/pages/Chat/components/ChatSessionTransition.test.tsx",
+  ],
   upstreamIntegration: [
     "src/layouts/MainLayout/MainLayout.settings.test.tsx",
     "src/features/files-workspace/FilesWorkspace.directory-confirmation.test.tsx",
   ],
+  contextInspection: [
+    "src/api/modules/chatContext.test.ts",
+    "src/pages/Chat/hooks/useContextInspection.test.tsx",
+    "src/pages/Chat/hooks/useContextDraftSources.test.tsx",
+    "src/pages/Chat/components/ContextUsageIndicator/ContextInspector.test.tsx",
+  ],
+  sessionThinkingLifecycle: [
+    "src/features/thinking/SessionThinking.test.tsx",
+    "src/features/thinking/SessionThinking.saving.test.tsx",
+  ],
+  globalSearch: ["src/features/global-search/GlobalSearch.test.tsx"],
   deploymentConfiguration: ["vite.config.test.ts"],
   skillImport: ["src/pages/Agent/Skills/useSkills.paths.test.ts"],
   turnFileDelivery: [
     "src/api/modules/turnFiles.test.ts",
     "src/features/files-workspace/TurnFileSummary.test.tsx",
+    "src/features/files-workspace/DeliveryFileActions.test.tsx",
+    "src/features/files-workspace/deliveryFileNative.test.ts",
     "src/features/files-workspace/ResponseArtifactList.test.tsx",
     "src/features/files-workspace/responseArtifactRegistry.test.tsx",
     "src/features/files-workspace/ArtifactsWorkspace.test.tsx",
@@ -50,6 +87,7 @@ const suites = {
     "src/pages/Chat/components/ChatHome.test.tsx",
     "src/pages/Chat/components/ExecutionProcess.test.tsx",
     "src/pages/Chat/HostBubbles.upstream-collapse.test.tsx",
+    "src/pages/Chat/LazyAccordion.test.tsx",
     "src/pages/Chat/components/ComposerAddMenu.test.tsx",
     "src/utils/actionColors.test.ts",
     "src/pages/Market/index.test.tsx",
@@ -62,10 +100,12 @@ const suites = {
     "src/layouts/sidebarSizing.test.ts",
     "src/contexts/ThemeContext.test.tsx",
     "src/layouts/Sidebar.render.test.tsx",
+    "src/layouts/Sidebar.test.tsx",
     "src/App.runtime.test.tsx",
   ],
   mentions: [
     "src/pages/Chat/ChatPage.coverage.test.tsx",
+    "src/pages/Chat/ChatPage.test.tsx",
     "src/pages/Chat/agentMentionSubmission.test.ts",
     "src/pages/Chat/components/useAgentMention.test.tsx",
     "src/pages/Chat/components/AgentMentionPopup.test.tsx",
@@ -74,6 +114,8 @@ const suites = {
     "src/pages/Chat/components/ComposerTokenHighlights.test.tsx",
   ],
   submission: [
+    "src/pages/Chat/answerQuotes.test.ts",
+    "src/pages/Chat/components/AnswerQuoteComposer.test.tsx",
     "src/pages/Chat/requestEditSnapshot.test.ts",
     "src/pages/Chat/chatInputDraft.test.ts",
     "src/pages/Chat/useChatInputDraft.test.tsx",
@@ -126,6 +168,16 @@ const suites = {
     "src/plugins/visualizationEmbedding.test.tsx",
     "src/plugins/oilgasViewerUi.test.ts",
     "src/plugins/visualizationEngine.test.ts",
+    "src/plugins/visualizationCapabilities.test.ts",
+    "src/plugins/visualizationRenderers.test.ts",
+    "src/plugins/visualizationDomains.integration.test.ts",
+    "src/plugins/visualizationImports.test.ts",
+    "src/plugins/visualizationArchitecture.test.ts",
+    "src/plugins/visualizationCatalog.test.ts",
+    "src/plugins/visualizationInspector.test.ts",
+    "src/plugins/visualizationLayout.test.ts",
+    "src/plugins/visualizationWorkbench.integration.test.ts",
+    "src/plugins/visualizationWorkbench.races.test.ts",
     "src/utils/openExternalLink.test.ts",
     "src/utils/openHtmlFile.test.ts",
     "src/layouts/SidebarSessionList.test.tsx",
@@ -133,6 +185,7 @@ const suites = {
     "src/pages/Chat/HostBubbles.render.test.tsx",
     "src/plugins/expertSummon.test.tsx",
     "src/plugins/expertPresentation.test.tsx",
+    "src/plugins/expertAvatar.test.ts",
     "src/layouts/LocalAvatarPicker.test.tsx",
     "src/stores/localAvatarStore.test.ts",
     "src/layouts/SidebarSettingsPanel.test.tsx",
@@ -173,6 +226,17 @@ const suites = {
     "src/plugins/hostSdk/ugsciWorkflow.test.tsx",
     "src/plugins/hostSdk/ugsciAuthoring.test.tsx",
     "src/plugins/hostSdk/flowforgeModel.test.ts",
+    "src/plugins/flowForgeGraph.test.tsx",
+    "src/plugins/flowForgeEditor.test.tsx",
+    "src/plugins/flowForgeInspector.test.tsx",
+    "src/plugins/flowForgeRunInspector.test.tsx",
+    "src/plugins/flowForgeI18n.test.ts",
+    "src/plugins/flowForgeWorkbench.test.tsx",
+    "src/plugins/flowForgeRunComparison.test.tsx",
+    "src/plugins/flowForgeVariableBindings.test.tsx",
+    "src/plugins/flowForgeRunAnalytics.test.tsx",
+    "src/plugins/flowForgeApp.test.tsx",
+    "src/layouts/MainLayout/NavigationGuard.test.tsx",
   ],
 };
 const files = [...new Set(Object.values(suites).flat())];
@@ -380,6 +444,7 @@ for (const [file, titles] of [
     "src/plugins/visualizationEngine.test.ts",
     [
       "mounts two real engines with independent stores and keeps the surviving engine usable after disposal",
+      "deletes a well overlay through its owner and releases detached and rendered resources exactly once",
       "retains loaded scalars for filtering and exposes selected objects to the embedding host",
       "waits for initialization before open and rejects invalid geometry instead of acknowledging success",
       "silently synchronizes loaded tube, depth-log and spatial-well views without selecting a different dataset",
@@ -395,6 +460,104 @@ for (const [file, titles] of [
       "previews ordinary delivered CSV through the native table with the real visualization bundle installed",
       "retains explicit network CSV imports through the professional workspace viewer",
       "does not execute a late command after the viewer is disposed",
+    ],
+  ],
+  [
+    "src/plugins/visualizationDomains.integration.test.ts",
+    [
+      "loads every domain through real engine instances and preserves overlays, views, colors and independent disposal",
+    ],
+  ],
+  [
+    "src/plugins/visualizationImports.test.ts",
+    [
+      "keeps CSV explicit and preserves same-model companion selection across entry points",
+      "aborts during the polling delay without another request or cancelling the conversion",
+      "ignores late completion after disposal and keeps another observer independent",
+      "preserves terminal failure identity for retry decisions and rejects empty results",
+    ],
+  ],
+  [
+    "src/plugins/visualizationCapabilities.test.ts",
+    [
+      "groups every spatial well alias as a selectable well and routes the actual tree selection",
+      "keeps depth-only well aliases and unplaced logs out of spatial visibility",
+      "opens a dimensioned slice in the section view even when the current view is reservoir",
+    ],
+  ],
+  [
+    "src/plugins/visualizationRenderers.test.ts",
+    [
+      "uses the same topology for primary and overlay surface, network and well objects",
+      "retains slice converter hex cells and edge filtering while navigating to sections",
+      "preserves explicit network segments and tube surfaces for actual ray picking",
+      "keeps reservoir fill and edge filtering synchronized without changing source buffers",
+      "releases shared geometry and material once and leaves another handle usable",
+    ],
+  ],
+  [
+    "src/plugins/visualizationCatalog.test.ts",
+    [
+      "shows only populated data groups and keeps search independent of saved folds",
+      "lists only visible spatial layers and removes hidden rows on the next render",
+      "keeps selection independent of the active analysis and opens only through its explicit action",
+      "updates selection in place while retaining keyboard focus and the full double-click sequence",
+      "shows declared parent provenance and searchable sources without inferring name-based relationships",
+      "keeps depth-only logs openable while preventing their spatial visibility",
+      "preserves legacy selection and isolates keyboard open, focus, visibility, deletion and context actions",
+    ],
+  ],
+  [
+    "src/plugins/visualizationInspector.test.ts",
+    [
+      "keeps stable tab IDs and original control keys while using object, analysis and scene labels",
+      "groups current grid controls without replacing nodes, listeners or entered values",
+      "retains IJK operations for a dimensioned slice but rejects missing or invalid dimensions",
+      "keeps well and depth-log attributes available while limiting geometry operations to their supported targets",
+      "hides current-dataset actions when an overlay is selected and preserves global access with no object",
+      "restores applicable rows with their original values and keeps separate inspectors independent",
+      "synchronizes disabled switch buttons and ignores disabled interaction until reenabled",
+    ],
+  ],
+  [
+    "src/plugins/visualizationLayout.test.ts",
+    [
+      "reserves one central corridor and separates the top and bottom control rows",
+      "stacks measured overlays clear of the footer and each other",
+      "preserves feature visibility and releases space from hidden controls on resize",
+      "prioritizes readable details in short windows without negative or offscreen bounds",
+      "keeps a narrow log chart between the tabs and footer without 3D overlays",
+      "navigates only the visible workbench tabs while retaining the legacy default",
+    ],
+  ],
+  [
+    "src/plugins/visualizationWorkbench.integration.test.ts",
+    [
+      "inspects without replacing analysis and preserves scene handles plus saved analysis settings on explicit open",
+      "keeps selection, layer visibility, analysis switches and disposal isolated between mounted workbenches",
+      "preserves per-layer clipping through origin and vertical-scale changes and restores clipping plus K-layer controls",
+    ],
+  ],
+  [
+    "src/plugins/visualizationWorkbench.races.test.ts",
+    [
+      "keeps an existing layer hidden when its visibility changes during another analysis load",
+      "offers a working retry on the selected object card after an analysis request fails",
+      "rejects earlier A and B completions while the latest A generation owns analysis and geometry",
+      "stops old time-step playback as soon as a different analysis starts loading",
+      "rejects delayed cell details after selecting a well or opening network analysis",
+      "preserves isolate and show-all visibility when reopening cached analysis",
+      "limits the footer reset to the selected current analysis without changing another layer",
+      "disables object visibility for empty catalogs and depth-only logs and clears playback on empty refresh",
+      "stops grid time and slice playback when the refreshed catalog becomes empty",
+    ],
+  ],
+  [
+    "src/plugins/visualizationArchitecture.test.ts",
+    [
+      "keeps capability and import catalogs independent of rendering, UI, transport and host modules",
+      "keeps domain renderers and shared scene resources independent of workbench orchestration",
+      "has no runtime dependency cycles across catalogs, domain renderers and shared geometry helpers",
     ],
   ],
   [
@@ -616,6 +779,50 @@ requireCases("src/pages/Agent/ACP/components/ACPDrawer.test.tsx", [
   "keeps an embedded runtime edit open on failure and flushes the original form on return",
 ]);
 // Native file behavior and fork panels must remain connected through the real host.
+requireCases("src/pages/Coding/TabbedEditor.test.tsx", [
+  "applies a pending file reference after the destination tab becomes active",
+]);
+requireCases("src/hooks/useToolCallControl.test.ts", [
+  "bounds slow polling requests and resumes after failure without losing offload detection",
+  "ignores slow polling results from a previous tool after switching identity",
+]);
+requireCases("src/pages/Chat/AssistantMarkdown.test.tsx", [
+  "does not rerender unchanged answer plugins during unrelated composer updates",
+  "keeps slash-separated prose literal beside real file and directory references with plugins=%s",
+  "opens inline directory locations in the file manager with original scope and plugins=%s",
+  "opens inline and plain filenames from historical answers with plugins=%s",
+  "keeps file mention routing when a streamed filename finishes and is restored from history",
+  "opens file references through the real Markdown renderer with plugins=%s",
+  "keeps streamed file references and history on the same original destination",
+  "keeps answer text selectable for quoting across a file reference",
+  "adopts a newly allocated session and keeps references bound to it across later navigation",
+]);
+requireCases("src/features/files-workspace/internalFileLinks.test.ts", [
+  "opts into directory roots and trailing separators without weakening file parsing",
+]);
+requireCases("src/pages/Chat/fileReferenceMarkdown.test.ts", [
+  "preserves every byte and reference in a large mixed file list",
+  "keeps slash-separated prose literal across Unicode words and inline formatting",
+  "recognizes separated and explicitly formatted paths while excluding joined prose",
+  "decorates full Windows and POSIX directory paths and preserves file line suffixes",
+  "decorates inline and plain file mentions without nesting links or modifying fenced examples",
+  "supports quoted Chinese and spaced filenames and consumes URLs before file matching",
+  "preserves long non-file tokens while recognizing the following filename",
+]);
+requireCases("src/pages/Chat/HostBubbles.render.test.tsx", [
+  "turns a historical inline PROFILE.md mention in the real assistant response into a scoped configuration link",
+  "opens a file citation from the actual assistant response with its original session and line range",
+]);
+requireCases("src/pages/Chat/ChatPage.openFilePreview.test.tsx", [
+  "opens an actual directory citation through ChatPage's scoped file manager handler",
+  "opens an actual file citation inside ChatPage without losing its scope or line range to capture delegation",
+]);
+requireCases("src/features/files-workspace/FilesWorkspace.test.tsx", [
+  "opens a bare configuration citation through the original agent configuration API",
+  "reuses a dirty configuration buffer for an absolute agent workspace citation",
+  "opens absolute answer references in a secondary bound directory and forwards line navigation",
+  "rejects absolute answer references outside the session directories",
+]);
 requireCases(
   "src/features/files-workspace/FilesWorkspace.integration.test.tsx",
   [
@@ -692,8 +899,22 @@ requireCases("src/plugins/pawapp-sdk/sessionRouting.test.ts", [
   "resolves a normal chat route to its backend session",
   "infers the active PawApp from the browser path",
 ]);
+requireCases("src/layouts/Sidebar.test.tsx", [
+  "registers Workflows after Experts against the optional FlowForge route",
+]);
 requireCases("src/layouts/Sidebar.render.test.tsx", [
+  "keeps workspace and app links full width in $pageStyle at $path with saved collapse $savedCollapsed",
+  "opens workspace and apps full width from chat and restores drafts in %s",
+  "keeps the full extension area on the rail across real marketplace tab navigation",
+  "hides conversations before the workflow plugin finishes registering its route",
+  "uses the navigation rail for direct workflow pages in %s",
+  "keeps the workflow rail compact across mobile and desktop viewports",
+  "opens Workflows below Experts with a full workspace and restores conversation state in %s",
+  "keeps direct workflow links full width with saved conversation collapse %s",
+  "hides the workflow shortcut when its route is unavailable or explicitly hidden",
   "switches style layouts and restores independent sidebar choices without remounting plugins",
+  "connects Dual sidebar Home schedules experts workspace and plugin shortcuts through registered routes",
+  "keeps Dual sidebar conversation and plugin drafts mounted while its second pane collapses and styles switch",
   "collapses a narrow sidebar on pointer %s and restores its previous width after reopening",
   "cancels a narrow resize without persisting a collapsed sidebar",
   "resizes the mounted sidebar by dragging and preserves its width and plugin state",
@@ -708,6 +929,15 @@ requireCases("src/layouts/Header.test.tsx", [
 requireCases("src/utils/pageStyle.test.tsx", [
   "keeps the theme, layout and light-dark mode independent across switches and reloads",
   "synchronizes layout between windows without changing the color theme",
+  "restores the retired layout as Simple style and offers only supported choices",
+  "persists Dual sidebar independently from the palette and restores it after reload",
+]);
+requireCases("src/pages/Chat/LazyAccordion.test.tsx", [
+  "supports keyboard disclosure and connects the summary to its process region",
+  "does not render process children until the closed group is opened",
+  "unmounts process children when the group closes again",
+  "ignores clicks on an accordion nested inside process content",
+  "keeps the clicked header anchored when opening shifts its position",
 ]);
 requireCases("src/layouts/SidebarSettingsPanel.test.tsx", [
   "selects %s layout from Page style without changing the theme",
@@ -726,7 +956,13 @@ requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
   "UGSci fork feature: composer approvals follow the active session and disappear on the home route",
   "UGSci fork feature: prototype Agent action opens real mention choices without submitting the draft",
 ]);
+requireCases("src/components/UgsciAssistantVisual.test.tsx", [
+  "replaces animated SVG images immediately when the system motion preference changes",
+]);
 requireCases("src/pages/Chat/HostBubbles.render.test.tsx", [
+  "keeps an errored provisional response terminal after a later response completes",
+  "does not attribute legacy ambient files or snapshot warnings to a saved greeting without tools",
+  "uses supplied assistant motion for active tools and static results after the turn ends",
   "shows real execution transitions in the mounted response without mistaking delivered arguments for completion",
   "mounts the persisted turn file summary in the real response and opens an immutable scoped version",
 ]);
@@ -754,12 +990,41 @@ requireCases(
   ],
 );
 requireCases("src/features/files-workspace/TurnFileSummary.test.tsx", [
+  "opens concrete capture reasons directly from the incomplete warning",
+  "keeps proven deliveries when hiding unowned ambient changes from a legacy turn",
+  "keeps browser card and primary preview on the archived version with menu downloads",
+  "disables unavailable browser delivery actions while retaining the available turn archive",
   "shows delivered images inline and links archived sibling pages without inventing deliveries",
   "prioritizes deliveries and keeps secondary archived changes accessible after expansion",
   "expands delivery and change lists independently without hiding unavailable deliveries",
   "opens the immutable version and current file through distinct scoped native targets",
   "never matches another attempt, agent, or session by a shared client message ID",
   "replaces misleading legacy hints even when the captured turn has no file changes",
+]);
+requireCases("src/features/files-workspace/DeliveryFileActions.test.tsx", [
+  "uses built-in preview in browsers and exposes no native application or location actions",
+  "shows the actual default application icon and directly opens the archived target with its scope",
+  "opens a chosen Word application once without changing the system default shown on the primary button",
+  "reveals the same archive version and scope while filtering the legacy workspace location action",
+  "offers built-in preview after association enumeration fails and retries the real menu request",
+  "keeps unavailable archive actions disabled while allowing an explicit current-workspace extra action",
+  "invalidates an in-flight native action when navigation changes scope and ignores its late failure",
+  "invalidates callbacks on unmount and ignores a native action's later rejection",
+  "closes the actual dropdown on Escape and restores focus to its trigger",
+]);
+requireCases("src/features/files-workspace/deliveryFileNative.test.ts", [
+  "fetches exact archived bytes with owning scope headers and opens only its native token",
+  "never falls back to the workspace when an archive has no URL or returns an error",
+  "invalidates a failed native copy so the next explicit action re-stages the archive",
+  "does not stage an old account's late response after credentials change",
+  "does not open a program after a late staging response",
+  "rejects mismatched artifact ownership without reading bytes",
+  "rejects an external archive URL before sending credentials or reading a fallback URL",
+  "sends scope headers to the configured desktop backend even when it differs from the WebView origin",
+  "does not trust the WebView origin as an archive backend after a desktop backend is configured",
+  "reads legacy external files without private headers or cookies and refuses redirects",
+  "does not stage or retry a backend response when fetch rejects a redirect",
+  "cancels a late response when the configured backend changes",
 ]);
 requireCases("src/pages/Chat/components/ComposerOptions.test.tsx", [
   "retains a control draft across dismissal and layout changes",
@@ -815,9 +1080,27 @@ requireCases("src/features/files-workspace/useSessionDeliverables.test.tsx", [
   "ignores a pending response while hidden and reloads from the server when reopened",
 ]);
 requireCases("src/plugins/expertPresentation.test.tsx", [
+  "renders the approved compact single-page avatar workshop without duplicate role previews",
+  "retains inline avatar colors across expert settings tabs and resets the palette independently",
+  "opens a read-only full introduction from the expert name and keeps configuration in settings",
+  "assigns and persists an identity-matched avatar through actual blank expert creation",
+  "assigns an identity-matched avatar when creating an expert from a template",
+  "discards a late avatar load after closing a card and opening a different expert",
+  "matches legacy expert identities and opens the local avatar studio from the actual card",
+  "persists composed avatar recipes from cards and restores them after remount without overwriting display metadata",
+  "retains avatar edits on conflicts and supports retry and identity rematching",
   "preserves drafts across settings tabs and saves only display metadata",
   "preserves advanced drafts and unknown running configuration fields when saving",
   "retains failed saves and confirms discarding an unsaved draft",
+]);
+requireCases("src/plugins/expertAvatar.test.ts", [
+  "reuses bounded SVG templates and invalidates every rendered recipe input",
+  "evicts old templates by count and text budget and bypasses oversized entries",
+  "preserves mounted SVG nodes during unrelated updates and refreshes changed colors",
+  "colors every composed part independently across all roles while preserving theme defaults and transparent cutouts",
+  "renders all 72 original roles and maps their identities to the same valid recipes",
+  "escapes custom labels and keeps composed badge clip paths distinct",
+  "prioritizes the expert name and ignores boilerplate identity trailers",
 ]);
 requireCases("src/hooks/useBackgroundTaskWatcher.test.ts", [
   "isolates equal tool call ids when an older session is removed",
@@ -914,11 +1197,14 @@ requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
   "UGSci fork feature: historical edit replaces only its original bubble inline and cancel restores that bubble without a dialog",
 ]);
 requireCases("src/pages/Chat/components/MessageEditResend.inline.test.tsx", [
+  "persists the explicit keep-original choice %s and resets each new edit to replacement",
+  "blocks replacement without a durable target and permits explicit preservation",
   "edits at the original bubble while retaining plugin fallback, slots and footer instances through cancellation",
   "keeps one focused textarea while typing and edits only the selected identity among identical messages",
   "retains a draft across durable-identity refreshes and cancels a vanished legacy editor instead of moving it",
 ]);
 requireCases("src/pages/Chat/requestEditSnapshot.test.ts", [
+  "resolves backend rewind targets from client or original IDs without inferring request IDs",
   "keeps a client identity across live/history clones and prefers it over original IDs",
   "uses outer or wrapped original metadata IDs with a separate namespace",
   "never matches different ID-less objects by identical text or second timestamps",
@@ -952,6 +1238,7 @@ requireCases("src/pages/Chat/components/MessageQueuePanel.keyboard.test.tsx", [
 ]);
 
 requireCases("src/pages/Chat/chatInputDraft.sdk.test.tsx", [
+  "avoids document scans during answer mutations and still restores a replaced real sender",
   "restores a typed draft and its selection after a complete remount with the real metadata toolbar before the sender",
   "restores after a sender mounts beyond the old polling window without repeatedly rewriting an already mounted input",
   "restores the latest user revision into a replaced SDK sender and never resurrects a deliberately cleared draft",
@@ -993,7 +1280,267 @@ requireCases(
   ["preserves the disabled runtime state when a community update completes"],
 );
 
+requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
+  "UGSci fork feature: historical edit keep-original %s reaches the transport and refreshes replacement history",
+]);
+
+requireCases("src/pages/Chat/answerQuotes.test.ts", [
+  "isolates persistent quote drafts and consumes only the admitted selection",
+  "preserves quotes through mention dispatch, attachment transport, retry and edit reconstruction",
+]);
+requireCases("src/pages/Chat/components/AnswerQuoteComposer.test.tsx", [
+  "quotes rendered text and code independently while preserving draft and plugin inputs",
+  "rejects non-answer, cross-message and interactive selections and dismisses stale menus",
+  "renders stored quotes collapsed with the real SDK card and retains media and actions",
+]);
+requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
+  "UGSci fork feature: answer quote admission freezes multiple passages and keeps newer selections",
+  "UGSci fork feature: answer quotes survive durable queue admission and full queue rejection",
+  "UGSci fork feature: keyboard queue submission includes the mounted compact quote draft",
+]);
+requireCases("src/pages/Chat/components/MessageEditResend.inline.test.tsx", [
+  "preserves quoted passages when editing and resending a real SDK request",
+]);
+
 console.log(`Fork feature inventory verified: ${files.length} suites.`);
+requireCases("src/features/global-search/GlobalSearch.test.tsx", [
+  "searches real scoped APIs from the mounted dialog and opens an exact message without changing the draft",
+  "cancels obsolete searches and keeps the query when reopening with the keyboard",
+  "searches immutable delivery records and reports partial failures instead of an empty success",
+  "locates a loaded message only inside the target agent and chat",
+  "filters delivery results and exposes a recoverable list error in the mounted dialog",
+]);
+requireCases("src/layouts/MainLayout/MainLayout.accessibility.test.tsx", [
+  "mounts global search without replacing the active route",
+]);
+requireCases("src/api/modules/chatContext.test.ts", [
+  "reads an explicitly scoped encoded chat without creating messages or model calls",
+]);
+requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
+  "UGSci fork feature: mounted context inspector removes and restores real draft quotes before submission and invalidates undo",
+  "UGSci fork feature: mounted context inspector retries scoped inspection and keeps saved sources and summaries read-only",
+  "UGSci fork feature: mounted context inspector discards a previous chat response after navigation",
+  "UGSci fork feature: mounted context inspector closes when runtime identity changes within the same chat",
+  "UGSci fork feature: mounted context inspector new chat preserves unknown capacity and resets only known context windows",
+]);
+requireCases("src/pages/Chat/hooks/useContextInspection.test.tsx", [
+  "loads only while open and refreshes the saved snapshot after execution changes",
+  "aborts old visits and never shows a late result after switching away and back",
+  "rejects mismatched session evidence and offers retry without retaining prior records",
+  "marks legacy sources unknown and avoids querying new chats or unsupported backends",
+]);
+requireCases("src/pages/Chat/hooks/useContextDraftSources.test.tsx", [
+  "UGSci fork feature: removes real pending quotes and restores their identity without replacing newer draft selections",
+  "invalidates undo on submission without changing its immutable quote snapshot",
+  "rejects stale actions across agent or chat visits even after returning to the original draft",
+]);
+requireCases(
+  "src/pages/Chat/components/ContextUsageIndicator/ContextInspector.test.tsx",
+  [
+    "opens from the existing dial on click and preserves usage and cache details",
+    "previews supplied draft text and delegates removal and undo without changing saved sources",
+    "shows recorded evidence and the exact stored summary without inventing rule or memory inclusion",
+    "keeps drafts available during remote loading and replaces stale records with retryable errors",
+    "supports keyboard tabs and Escape, and closes on scope or containing overlay changes",
+    "disables compaction while executing but preserves the new conversation action",
+    "keeps sources usable without model capacity and distinguishes unavailable and uncompressed summaries",
+  ],
+);
+requireCases("src/plugins/flowForgeGraph.test.tsx", [
+  "rejects incompatible occupied and cyclic data bindings without coercing runtime types",
+  "preserves bounded refinement routes while rejecting duplicate control destinations",
+  "binds the selected typed output through the real canvas serializer and keeps other inputs",
+  "keeps explicit zero defaults and exposes node-addressable errors from old and new servers",
+]);
+
+requireCases("src/plugins/flowForgeEditor.test.tsx", [
+  "groups infrequent actions without losing version input configuration or layout in %s",
+  "locates a required field in the real inspector and saves its corrected value",
+  "rejects an obsolete successful validation when the draft changes before trial execution",
+  "does not open a run after leaving the editor while validation is pending",
+  "isolates a late save across flow visits including returning to the original flow",
+  "resolves existing input bindings after the node catalogue arrives later than the flow",
+  "identifies and selects an edge-only diagnostic from %s so the actual editor can remove that connection",
+]);
+
+requireCases("src/plugins/flowForgeInspector.test.tsx", [
+  "focuses structured schema JSON pointer errors in the actual field without losing their detail",
+  "edits structured model schemas through the real inspector and preserves bilingual business keys",
+  "edits bilingual system instructions while preserving the linked user prompt",
+  "loads real host agent choices without replacing saved ids and edits multiline tasks",
+  "aborts old directory requests and rejects late responses across agent and flow scope",
+  "keeps saved values on directory failures and retries malformed responses explicitly",
+  "uses current edges as read-only input sources before serialization and preserves controls",
+  "localizes schema fields and focuses validation without offering an unsupported model override",
+  "renders named typed ports and keeps configuration diagnostics separate from actual run status",
+]);
+
+requireCases("src/plugins/flowForgeRunInspector.test.tsx", [
+  "preserves node identity output keys while masking credentials inside their values",
+  "ignores a late review response after %s of the run monitor",
+  "inspects immutable node observations and distinguishes waiting skipped and unexecuted nodes",
+  "shows node errors and fallback event timings without exposing legacy credential fields",
+  "keeps review resume cancellation and parent child run navigation on the actual monitor",
+  "reconnects authenticated SSE with CRLF frames and preserves repeated events without replay duplicates",
+  "isolates late record responses after switching runs and aborts the old event request",
+]);
+
+requireCases("src/features/thinking/SessionThinking.test.tsx", [
+  "does not reload session thinking when only notifications change",
+  "reports a pending thinking load failure through current notifications",
+]);
+requireCases("src/features/thinking/SessionThinking.saving.test.tsx", [
+  "finishes submitted saves after switching away (first fails=%s)",
+  "waits for the same chat's writes after return or remount (remount=%s)",
+]);
+
+requireCases("src/layouts/MainLayout/NavigationGuard.test.tsx", [
+  "guards real BrowserRouter-compatible pushes and retries exactly once with original state",
+  "preserves replace semantics and invalidates a pending retry on unmount",
+]);
+
+requireCases("src/plugins/flowForgeApp.test.tsx", [
+  "opens the actual editor from the workflow list and preserves router history state",
+  "mounts a deep-linked run in the bottom debugger and clears it when the selected agent changes",
+  "switches the real workflow list to English while preserving names and revision values",
+  "keeps the latest requested run inputs and rejects a late response after opening another workflow",
+]);
+
+requireCases("src/plugins/flowForgeRunComparison.test.tsx", [
+  "compares immutable run inputs outputs and configuration while retaining zero and masking credentials",
+  "rejects unrelated workflow snapshots and ignores a late comparison across run and agent scope",
+  "filters real run history and compares two selected saved runs",
+  "clears an aborted comparison spinner and retains nodes whose only difference is duration",
+  "keeps docked monitoring and actual record callbacks alive while collapsed and switches its interface language",
+  "keeps draft identity stable across token refresh and isolates a late account response",
+]);
+
+requireCases("src/plugins/flowForgeWorkbench.test.tsx", [
+  "recovers bilingual drafts after remount and clears only the successfully saved content",
+  "isolates local drafts by authenticated account and execution agent",
+  "keeps newer edits when an earlier save completes and refreshes the draft revision",
+  "preserves another editor draft when one concurrent editor saves",
+  "reports unavailable local draft storage and still allows a server save",
+  "guards host sidebar navigation and preserves an acknowledged draft before retrying once",
+  "keeps a stale recovered draft on revision conflict without overwriting the newer server revision",
+  "docks a resizable inspector beside the real canvas and keeps optional node ports compact",
+  "runs a selected node with fixed bilingual slots while leaving normal run inputs independent",
+  "saves named Chinese English and mixed test cases and excludes another agent's run variables",
+  "recovers valid drafts alongside a corrupt record while retaining the corrupt source",
+  "requires confirmation again after an acknowledged same-page navigation",
+  "guards native browser back and consumes approval for only the requested history entry",
+  "ignores a late debug response after switching the execution agent",
+  "keeps invalid debug JSON editable and sends no execution request",
+  "preserves source run revision and edited provenance when a named sample is restored",
+  "localizes the mounted workbench while preserving authored bilingual node content",
+]);
+
+requireCases("src/plugins/flowForgeVariableBindings.test.tsx", [
+  "hides values only for changed source configurations while preserving unaffected upstream observations",
+  "binds observed nested bilingual object fields and locates their real source output",
+  "retains typed whole-output bindings and named canvas handles through the existing serializer",
+  "withholds stale foreign unversioned and unrecorded values without reading configured or summary values",
+  "completes stable slot expressions and validates missing fields types cycles and incomplete paths immediately",
+  "exposes text model content through slot zero while withholding the inactive parsed slot",
+  "offers parsed fields only in structured mode and keeps array slot paths executable",
+  "localizes the actual variable inspector and completion while keeping authored Unicode keys intact",
+]);
+
+requireCases("src/plugins/flowForgeRunAnalytics.test.tsx", [
+  "falls back to raw output when the same observed node changes to an incompatible result shape",
+  "resets output views and slots when switching observed nodes and closes the previous node file loader",
+  "uses recorded timestamps and explicit retries with honest legacy gaps and failure aggregation",
+  "estimates only recorded token usage with explicit currency and per-million rates including zero",
+  "switches actual node output between raw text expandable JSON and object-array tables without changing zero false or bilingual values",
+  "bounds table pages JSON expansion and file discovery while preserving the complete raw value",
+  "opens safe files through the real host preview contract using the recorded agent and redacted content",
+  "previews desktop SDK API files across origins while keeping record URLs and credentials scoped",
+  "views actual LLM and script output slots explicitly while preserving bilingual zero false and complete raw outputs",
+  "closes an old slot file preview and ignores its late loader after choosing another observed slot",
+  "keeps failed host preview loading visible and retryable while legacy records without agent context stay disabled",
+  "translates a file preview availability error live without repeating a file request",
+  "ignores a late preview resolver after switching runs and keeps arbitrary remote links as recorded text",
+]);
+
+requireCases("src/plugins/flowForgeI18n.test.ts", [
+  "localizes unavailable structured output diagnostics while retaining field and edge locations",
+  "localizes actual builtin class ids and distinguishes validated JSON calls without rewriting business values",
+  "localizes connection and required-input diagnostics while retaining node and field identities",
+  "covers every static workflow interface translation with an English resource",
+  "interpolates bilingual business values while keeping stored identifiers intact",
+  "uses the host language with regional codes and retains the legacy Chinese fallback",
+]);
+
+requireCases("src/plugins/hostSdk/flowforgeModel.test.ts", [
+  "localizes model call presentation and runtime diagnostics while retaining legacy identities",
+]);
+
+requireCases("src/plugins/flowForgeInspector.test.tsx", [
+  "switches live node settings between Chinese and English while preserving model overrides and business values",
+  "translates a recorded agent directory failure after a live language switch without refetching",
+]);
+
+requireCases("src/plugins/flowForgeApp.test.tsx", [
+  "isolates an admitted run dialog and its late failure after changing the execution agent",
+  "follows run query changes through browser history and clears an externally removed run",
+]);
+
+requireCases("src/plugins/flowForgeWorkbench.test.tsx", [
+  "tracks clean and acknowledged same-page pushes before guarding native back",
+  "recovers valid named samples alongside corruption and resets case state across scopes",
+]);
+
+requireCases("src/plugins/flowForgeApp.test.tsx", [
+  "writes the admitted run into its URL and clears it when monitoring closes",
+]);
+
+requireCases("src/components/UgsciMotion/index.test.tsx", [
+  "uses local browser-cacheable assets for %s and reuses the mounted image",
+  "shares observers and subscriptions and releases them after the last instance",
+  "stops offscreen and hidden-page animations and responds to reduced motion",
+  "does not create frame callbacks or timers while rendering and updating",
+  "keeps native button busy guards and removes the icon after completion",
+  "uses cached startup assets in the pre-React bootstrap without a script loop",
+  "loops assembled startup eyes rightward and traces all four rounded page edges",
+  "ships only twelve bounded vector assets with finite logo assembly and static fallbacks",
+]);
+requireCases("src/components/UgsciMotion/BackendLoadingPage.test.tsx", [
+  "uses the startup mark with actual progress and stops on failure while preserving retry",
+]);
+
+requireCases("src/features/files-workspace/FilesDrawer.test.tsx", [
+  "keeps seven labelled side activities and docked controls available with an empty workspace",
+]);
+requireCases(
+  "src/features/files-workspace/FilesWorkspace.integration.test.tsx",
+  ["keeps docked controls and native drafts while folding the file navigator"],
+);
+requireCases(
+  "src/features/files-workspace/FilesNavigator.interaction.test.tsx",
+  [
+    "switches compact file sources and memory tags through the actual source menu",
+  ],
+);
+
+requireCases("src/pages/Chat/ChatPage.test.tsx", [
+  "keeps plugin renderer identities through unrelated chat updates",
+]);
+requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
+  "does not inherit queue-only ownership or reload history when switching chats",
+]);
+requireCases("src/pages/Chat/sessionApi/sessionApi.test.ts", [
+  "starts a fresh load when returning to an aborted in-flight session",
+  "rejects an already aborted switch even when its history is cached",
+]);
+
+requireCases("src/layouts/MainLayout/MainLayout.settings.test.tsx", [
+  "retains the dual-sidebar feature rail across core and plugin settings and history",
+]);
+requireCases("src/layouts/Sidebar.render.test.tsx", [
+  "keeps only the feature rail in settings and restores conversation state on return",
+  "preserves the app return target when reopening settings from the rail (plugin %s)",
+]);
+
 if (!process.argv.includes("--check")) {
   const result = spawnSync(
     process.execPath,

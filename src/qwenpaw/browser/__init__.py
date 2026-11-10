@@ -6,7 +6,6 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from .sdk.facade import Browser
     from .sdk.page import Page
-
 __all__ = ["Browser", "Page"]
 
 

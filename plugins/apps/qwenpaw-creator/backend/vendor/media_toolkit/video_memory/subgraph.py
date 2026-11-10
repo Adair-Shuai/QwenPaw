@@ -83,7 +83,6 @@ def apply_subgraph_payload(
                 macro_id=macro.macro_id,
             ),
         )
-
     entities = []
     for e in sg_data.get("entities", []):
         vg = e.get("visual_grounding", {})
@@ -100,7 +99,6 @@ def apply_subgraph_payload(
                 macro_id=macro.macro_id,
             ),
         )
-
     edges = []
     for e in sg_data.get("edges", []):
         edges.append(
@@ -112,7 +110,6 @@ def apply_subgraph_payload(
                 description=e.get("description", ""),
             ),
         )
-
     on_screen_texts = []
     for t in sg_data.get("on_screen_texts", []):
         tr = t.get("time_range", [start, end])
@@ -127,7 +124,6 @@ def apply_subgraph_payload(
                 macro_id=macro.macro_id,
             ),
         )
-
     macro.subgraph = Subgraph(
         macro_id=macro.macro_id,
         micro_events=events,

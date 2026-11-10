@@ -293,7 +293,7 @@ async def test_rejected_stream_admission_does_not_create_or_replace_state(
         ).channel_manager.get_channel(
             CHANNEL,
         )
-        activity = host._loader.lifecycle.get_instance(
+        activity_ledger = host._loader.lifecycle.get_instance(
             "extension-contract",
         ).activity
         first = AgentRequest(input=[], session_id="first", user_id="author")
@@ -315,7 +315,7 @@ async def test_rejected_stream_admission_does_not_create_or_replace_state(
         key = (id(first), "text")
         original = channel._stream_contexts[key]
         try:
-            async with activity.mutation():
+            async with activity_ledger.mutation():
                 with pytest.raises(PluginBusyError):
                     await channel._stream(
                         "start",

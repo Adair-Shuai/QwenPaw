@@ -46,7 +46,6 @@ def test_clean_release_and_frontend_checks_build_openui_runtime() -> None:
             assert workflow.index(
                 "scripts/sync_run_center_bundle.py --sync",
             ) < workflow.index(gate)
-
     for suffix in ("sh", "ps1"):
         helper = (
             REPO_ROOT / "scripts" / "pack-tauri" / f"build_plugin_uis.{suffix}"
@@ -55,7 +54,6 @@ def test_clean_release_and_frontend_checks_build_openui_runtime() -> None:
         assert "qwenpaw-openui/frontend" in text
         assert "system-prompt.txt" in text
         assert "npm ci --prefix" in text and "npm run build --prefix" in text
-
     for name, gate in (
         ("release.yml", "Build package"),
         ("publish-pypi.yml", "Build package"),
@@ -244,7 +242,6 @@ def test_distribution_builds_embed_run_center_frontend() -> None:
             "test -s src/qwenpaw/plugins_bundle/"
             "qwenpaw-run-center/ui/dist/index.js" in text
         )
-
     dockerfile = (REPO_ROOT / "deploy" / "Dockerfile").read_text(
         encoding="utf-8",
     )

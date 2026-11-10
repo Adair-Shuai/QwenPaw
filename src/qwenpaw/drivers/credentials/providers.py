@@ -64,7 +64,6 @@ class StandardOAuth2Exchanger:
         token_endpoint = str(secrets.get("token_endpoint") or "")
         if not token_endpoint:
             raise OAuthRequiredError(str(secrets.get("ref") or ""))
-
         payload: dict[str, Any]
         if secrets.get("refresh_token"):
             payload = {
@@ -79,7 +78,6 @@ class StandardOAuth2Exchanger:
                 "client_secret": secrets.get("client_secret", ""),
                 "scope": secrets.get("scope", ""),
             }
-
         async with httpx.AsyncClient() as client:
             data = await _post_oauth_token_with_retry(
                 client,
@@ -126,7 +124,6 @@ async def _post_oauth_token_with_retry(
                 raise
             last_error = exc
         await asyncio.sleep(_OAUTH_RETRY_BASE_DELAY_SECONDS * attempt)
-
     if last_error is not None:
         raise last_error
     raise DriverCredentialProviderError("OAuth token exchange failed")
@@ -176,7 +173,6 @@ class OAuth2CCProvider(CredentialProvider):
                 kind="oauth2_cc",
                 secrets={"access_token": self._cached_token},
             )
-
         async with self._lock:
             now = time.time()
             if (
@@ -232,7 +228,6 @@ class OAuth2AuthCodeProvider(CredentialProvider):
                 kind=record.kind,
                 secrets={"access_token": access_token},
             )
-
         async with self._lock:
             record = await self._store.get(self._ref)
             values = record.values

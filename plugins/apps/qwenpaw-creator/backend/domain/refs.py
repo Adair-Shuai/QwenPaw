@@ -34,7 +34,6 @@ def parse_target_ref(value: str) -> TargetRef:
         if ".." in match.group(2):
             raise ValidationError(f"非法 target ref: {value!r}")
         return TargetRef(match.group(1), match.group(2))
-
     artifact_match = _ARTIFACT_TARGET_RE.fullmatch(raw)
     if artifact_match is None:
         raise ValidationError(f"非法 target ref: {value!r}")

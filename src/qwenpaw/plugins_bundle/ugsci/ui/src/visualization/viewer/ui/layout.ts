@@ -1,12 +1,16 @@
-/** Shared chrome sizes for the Videx-style viewer shell. */
-
+/** One set of bounds for the workbench panels, tools and viewport overlays. */
 export const LAYOUT = {
-  treeWidth: 256,
+  treeWidth: 224,
   treeCollapsed: 36,
-  inspectorWidth: 300,
+  inspectorWidth: 280,
   inspectorCollapsed: 36,
+  gutter: 8,
+  toolbarTop: 8,
   toolbarHeight: 34,
   tabsTop: 46,
+  tabsHeight: 34,
+  contentTop: 88,
+  infoHeight: 32,
   wellMapWidth: 228,
   wellMapHeight: 176,
   slicePlayerHeight: 32,
@@ -24,7 +28,7 @@ export function chromeInsets(
   };
 }
 
-/** Apply these defaults when entering a smaller size tier, then allow user toggles. */
+/** Set defaults on entry to a size tier; subsequent user toggles stay explicit. */
 export function responsiveChromeState(width: number) {
   return {
     treeCollapsed: width > 0 && width < 760,
@@ -58,11 +62,9 @@ export function applyChromeOffsets(elements: {
     elements.treeCollapsed,
     elements.inspectorCollapsed,
   );
-  const gutter = 8;
+  const { gutter, contentTop } = LAYOUT;
   const viewportLeft = `${left + gutter}px`;
   const viewportRight = `${right + gutter}px`;
-  const sliceBottom = 8;
-  const sliceHeight = LAYOUT.slicePlayerHeight;
   const width =
     elements.containerWidth ||
     elements.tree.parentElement?.clientWidth ||
@@ -72,136 +74,239 @@ export function applyChromeOffsets(elements: {
     elements.tree.parentElement?.clientHeight ||
     Infinity;
   const available = Math.max(0, width - left - right - gutter * 2);
-  const compact = available < 640 || height < 540;
+  const viewportWidth = Number.isFinite(available)
+    ? `${available}px`
+    : `calc(100% - ${left + right + gutter * 2}px)`;
+  const remainingHeight = (reserved: number) =>
+    Number.isFinite(height)
+      ? `${Math.max(0, height - reserved)}px`
+      : `calc(100% - ${reserved}px)`;
+  const compact = available < 680 || height < 540;
   const narrow = available < 420;
+  const displayed = (element?: HTMLElement | null) =>
+    Boolean(element && !element.hidden && element.style.display !== "none");
+  const measuredHeight = (
+    element: HTMLElement | null | undefined,
+    fallback: number,
+  ) => element?.offsetHeight || fallback;
+  const logView = displayed(elements.wellLog);
+  const show = (element: HTMLElement | null | undefined, visible: boolean) => {
+    // Never change a feature's display/hidden state while adapting its position.
+    if (element) element.style.visibility = visible ? "" : "hidden";
+    return visible && displayed(element);
+  };
+  const horizontalBounds = (element: HTMLElement | null | undefined) => {
+    if (!element) return;
+    element.style.left = viewportLeft;
+    element.style.right = viewportRight;
+    element.style.minWidth = "0";
+    element.style.boxSizing = "border-box";
+  };
 
-  elements.tree.style.left = "0";
-  elements.tree.style.right = "auto";
-  elements.tree.style.width = `${
-    elements.treeCollapsed ? LAYOUT.treeCollapsed : LAYOUT.treeWidth
-  }px`;
+  Object.assign(elements.tree.style, {
+    left: "0",
+    right: "auto",
+    top: "0",
+    bottom: "0",
+    width: `${left}px`,
+    boxSizing: "border-box",
+  });
+  Object.assign(elements.inspector.style, {
+    left: "auto",
+    right: "0",
+    top: "0",
+    bottom: "0",
+    width: `${right}px`,
+    boxSizing: "border-box",
+  });
 
-  elements.inspector.style.left = "auto";
-  elements.inspector.style.right = "0";
-  elements.inspector.style.width = `${
-    elements.inspectorCollapsed
-      ? LAYOUT.inspectorCollapsed
-      : LAYOUT.inspectorWidth
-  }px`;
-
-  elements.toolbar?.style.setProperty("left", viewportLeft);
-  elements.toolbar?.style.setProperty("right", viewportRight);
-  elements.tabs?.style.setProperty("left", viewportLeft);
-  elements.tabs?.style.setProperty("right", viewportRight);
-  for (const row of [elements.toolbar, elements.tabs]) {
+  for (const [row, top, rowHeight] of [
+    [elements.toolbar, LAYOUT.toolbarTop, LAYOUT.toolbarHeight],
+    [elements.tabs, LAYOUT.tabsTop, LAYOUT.tabsHeight],
+  ] as const) {
     if (!row) continue;
-    row.style.whiteSpace = "nowrap";
-    row.style.overflowX = "auto";
-    row.style.overflowY = "hidden";
-    row.style.flexWrap = "nowrap";
-    row.style.minWidth = "0";
-    row.style.pointerEvents = "auto";
+    horizontalBounds(row);
+    Object.assign(row.style, {
+      top: `${top}px`,
+      height: `${rowHeight}px`,
+      whiteSpace: "nowrap",
+      overflowX: "auto",
+      overflowY: "hidden",
+      flexWrap: "nowrap",
+      pointerEvents: "auto",
+    });
     for (const child of Array.from(row.children)) {
       (child as HTMLElement).style.flexShrink = "0";
       (child as HTMLElement).style.whiteSpace = "nowrap";
     }
   }
-  // Preserve each widget's functional display state; only suppress secondary
-  // overlays when they would cover the model or the selection details.
-  for (const widget of [
-    elements.wellMap,
-    elements.readout,
-    elements.hud,
-    elements.histogram,
-  ]) {
-    if (widget) widget.style.visibility = compact ? "hidden" : "";
-  }
-  if (elements.compass)
-    elements.compass.style.visibility = narrow ? "hidden" : "";
 
+  // Bottom rows get their own space. A disabled/absent slice player reserves none.
+  let footerTop = gutter;
   if (elements.slicePlayer) {
-    elements.slicePlayer.style.left = viewportLeft;
-    elements.slicePlayer.style.right = viewportRight;
-    elements.slicePlayer.style.bottom = `${sliceBottom}px`;
-    elements.slicePlayer.style.overflowX = "auto";
+    horizontalBounds(elements.slicePlayer);
+    Object.assign(elements.slicePlayer.style, {
+      bottom: `${footerTop}px`,
+      height: `${LAYOUT.slicePlayerHeight}px`,
+      overflowX: "auto",
+      overflowY: "hidden",
+    });
     const slider = elements.slicePlayer.querySelector<HTMLInputElement>(
       'input[type="range"]',
     );
     if (slider) slider.style.minWidth = "24px";
+    if (displayed(elements.slicePlayer))
+      footerTop += LAYOUT.slicePlayerHeight + gutter;
   }
   if (elements.info) {
-    elements.info.style.left = viewportLeft;
-    elements.info.style.right = viewportRight;
-    elements.info.style.maxWidth = "none";
-    elements.info.style.whiteSpace = "nowrap";
-    elements.info.style.overflow = "hidden";
-    elements.info.style.textOverflow = "ellipsis";
-    elements.info.style.bottom = `${sliceBottom + sliceHeight + 6}px`;
+    horizontalBounds(elements.info);
+    Object.assign(elements.info.style, {
+      bottom: `${footerTop}px`,
+      height: `${LAYOUT.infoHeight}px`,
+      maxWidth: "none",
+      whiteSpace: "nowrap",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+    });
+    if (displayed(elements.info)) footerTop += LAYOUT.infoHeight + gutter;
   }
+
+  const clusterHeight = measuredHeight(elements.viewCluster, 112);
+  const clusterVisible = show(
+    elements.viewCluster,
+    !logView &&
+      !narrow &&
+      height - contentTop - footerTop >= clusterHeight + gutter,
+  );
+  if (elements.viewCluster)
+    Object.assign(elements.viewCluster.style, {
+      left: viewportLeft,
+      right: "auto",
+      top: `${contentTop}px`,
+      bottom: "auto",
+    });
+  let hudVisible = false;
+  if (elements.hud) {
+    Object.assign(elements.hud.style, {
+      left: `${left + gutter + (clusterVisible ? 100 : 0)}px`,
+      right: "auto",
+      top: `${contentTop}px`,
+      bottom: "auto",
+      minWidth: "0",
+      maxWidth: "180px",
+      boxSizing: "border-box",
+    });
+    hudVisible = show(elements.hud, !logView && !compact);
+  }
+  const upperLimit =
+    contentTop +
+    Math.max(
+      clusterVisible ? clusterHeight + gutter : 0,
+      hudVisible ? measuredHeight(elements.hud, 116) + gutter : 0,
+    );
+
+  // Stack left overlays by their actual height so text and the map cannot overlap.
+  let leftBottom = footerTop;
   if (elements.wellMap) {
-    elements.wellMap.style.left = viewportLeft;
-    elements.wellMap.style.bottom = `${sliceBottom + sliceHeight + 28}px`;
-  }
-  if (elements.viewCluster) {
-    elements.viewCluster.style.left = viewportLeft;
-    elements.viewCluster.style.top = "88px";
-  }
-  if (elements.compass) {
-    elements.compass.style.left = "auto";
-    elements.compass.style.right = viewportRight;
-    elements.compass.style.bottom = `${sliceBottom + sliceHeight + 6}px`;
+    Object.assign(elements.wellMap.style, {
+      left: viewportLeft,
+      right: "auto",
+      top: "auto",
+      bottom: `${leftBottom}px`,
+      width: `${LAYOUT.wellMapWidth}px`,
+      height: `${LAYOUT.wellMapHeight}px`,
+    });
+    if (
+      show(
+        elements.wellMap,
+        !logView &&
+          !compact &&
+          height - upperLimit - leftBottom >= LAYOUT.wellMapHeight + gutter,
+      )
+    )
+      leftBottom += LAYOUT.wellMapHeight + gutter;
   }
   if (elements.readout) {
-    elements.readout.style.right = "auto";
-    elements.readout.style.bottom = "252px";
-    elements.readout.style.left = viewportLeft;
+    Object.assign(elements.readout.style, {
+      left: viewportLeft,
+      right: "auto",
+      top: "auto",
+      bottom: `${leftBottom}px`,
+      width: `${LAYOUT.wellMapWidth}px`,
+      maxWidth: viewportWidth,
+    });
+    const readoutHeight = measuredHeight(elements.readout, 160);
+    show(
+      elements.readout,
+      !logView &&
+        !compact &&
+        height - upperLimit - leftBottom >= readoutHeight + gutter,
+    );
   }
-  if (elements.hud) {
-    elements.hud.style.right = "auto";
-    elements.hud.style.top = "88px";
-    elements.hud.style.left = `${left + gutter + 104}px`;
+
+  // Selection details take priority over decorative overlays on shorter windows.
+  const detailReserve = displayed(elements.details)
+    ? Math.min(180, Math.max(0, height - contentTop - footerTop - gutter))
+    : 0;
+  let rightBottom = footerTop;
+  for (const [widget, fallbackHeight, eligible] of [
+    [elements.compass, 108, !narrow],
+    [elements.legend, 80, true],
+    [elements.histogram, 58, !compact],
+  ] as const) {
+    if (!widget) continue;
+    Object.assign(widget.style, {
+      right: viewportRight,
+      left: "auto",
+      top: "auto",
+      bottom: `${rightBottom}px`,
+      maxWidth: viewportWidth,
+      boxSizing: "border-box",
+    });
+    const widgetHeight = measuredHeight(widget, fallbackHeight);
+    if (
+      show(
+        widget,
+        !logView &&
+          eligible &&
+          height - contentTop - detailReserve - rightBottom >=
+            widgetHeight + gutter,
+      )
+    )
+      rightBottom += widgetHeight + gutter;
   }
-  if (elements.legend) {
-    elements.legend.style.right = viewportRight;
-    elements.legend.style.left = "auto";
-    elements.legend.style.maxWidth = `max(0px, calc(100% - ${
-      left + right + gutter * 2
-    }px))`;
-    elements.legend.style.bottom = `${sliceBottom + sliceHeight + 114}px`;
-  }
-  if (elements.histogram) {
-    elements.histogram.style.right = viewportRight;
-    elements.histogram.style.bottom = `${sliceBottom + sliceHeight + 182}px`;
-    elements.histogram.style.left = "auto";
-  }
-  if (elements.details) {
-    elements.details.style.right = viewportRight;
-    elements.details.style.left = "auto";
-    elements.details.style.width = "270px";
-    elements.details.style.maxWidth = `max(0px, calc(100% - ${
-      left + right + gutter * 2
-    }px))`;
-    elements.details.style.boxSizing = "border-box";
-    elements.details.style.maxHeight = compact
-      ? "40%"
-      : "min(260px, calc(100% - 370px))";
-    elements.details.style.overflowY = "auto";
-    elements.details.style.bottom = `${
-      sliceBottom + sliceHeight + (compact ? 186 : 246)
-    }px`;
-  }
-  if (elements.wellLog) {
-    elements.wellLog.style.right = viewportRight;
-    elements.wellLog.style.top = "88px";
-    elements.wellLog.style.bottom = "16px";
-    elements.wellLog.style.maxWidth = `max(0px, calc(100% - ${
-      left + right + gutter * 2
-    }px))`;
-  }
+  if (elements.details)
+    Object.assign(elements.details.style, {
+      right: viewportRight,
+      left: "auto",
+      top: "auto",
+      bottom: `${rightBottom}px`,
+      width: "270px",
+      maxWidth: viewportWidth,
+      boxSizing: "border-box",
+      maxHeight: `${Math.max(
+        0,
+        Math.min(260, height - contentTop - rightBottom - gutter),
+      )}px`,
+      overflowY: "auto",
+    });
+  if (elements.wellLog)
+    Object.assign(elements.wellLog.style, {
+      right: viewportRight,
+      left: "auto",
+      top: `${contentTop}px`,
+      bottom: `${footerTop}px`,
+      maxWidth: viewportWidth,
+      boxSizing: "border-box",
+      height: remainingHeight(contentTop + footerTop),
+    });
   if (elements.shortcuts) {
-    elements.shortcuts.style.left = viewportLeft;
-    elements.shortcuts.style.right = viewportRight;
-    elements.shortcuts.style.maxHeight = "calc(100% - 100px)";
-    elements.shortcuts.style.overflowY = "auto";
+    horizontalBounds(elements.shortcuts);
+    Object.assign(elements.shortcuts.style, {
+      top: `${contentTop}px`,
+      bottom: "auto",
+      maxHeight: remainingHeight(contentTop + footerTop),
+      overflowY: "auto",
+    });
   }
 }

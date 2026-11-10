@@ -33,7 +33,6 @@ def apply_textual_compat() -> None:
     global _COMPAT_APPLIED  # pylint: disable=global-statement
     if _COMPAT_APPLIED:
         return
-
     # Textualize/textual#6643: Markdown.update() may detach a widget before
     # the compositor reflows. Textual 8.2.8 can return that stale widget from
     # hit testing, then crash while beginning a selection. Remove this shim

@@ -72,9 +72,8 @@ def test_summary_timeout_config_reaches_manager(tmp_path: Path, shared):
     from qwenpaw.agents.context.scroll.history import HistoryStore
 
     config = _agent_config()
-    config.running.light_context_config.scroll_config.summary_timeout_seconds = (
-        600
-    )
+    scroll_config = config.running.light_context_config.scroll_config
+    scroll_config.summary_timeout_seconds = 600
     # Exercise the same JSON round-trip as persisted agent configuration.
     config.running.light_context_config = (
         LightContextConfig.model_validate_json(

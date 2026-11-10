@@ -88,7 +88,6 @@ def test_api_agents_list_create_get_delete(app_server) -> None:
         del_resp = app_server.api_request("DELETE", f"/api/agents/{agent_id}")
         assert del_resp.status_code == 200, app_server.logs_tail()
         assert del_resp.json().get("success") is True
-
     missing = app_server.api_request("GET", f"/api/agents/{agent_id}")
     assert missing.status_code == 404, app_server.logs_tail()
 
@@ -190,7 +189,6 @@ def test_api_agents_order_put_roundtrip(app_server) -> None:
     ]
     if len(regular_ids) < 2:
         pytest.skip("need at least two unpinned agents for reorder test")
-
     first_regular = baseline_ids.index(regular_ids[0])
     reordered_ids = list(baseline_ids)
     reordered_ids[first_regular : first_regular + 2] = reversed(

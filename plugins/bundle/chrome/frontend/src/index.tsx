@@ -551,27 +551,32 @@ function useChromeStyles(): Record<string, ReactNS.CSSProperties> {
   return React.useMemo(() => createStyles(token), [token]);
 }
 
+// Original geometry from UGSci-sidebar-icons.zip.
 function ChromeSidebarIcon(): ReactNS.ReactElement {
-  return (
-    <svg
-      aria-hidden="true"
-      focusable="false"
-      viewBox="0 0 24 24"
-      width={16}
-      height={16}
-      fill="none"
-      stroke="currentColor"
-      strokeWidth={2}
-      strokeLinecap="round"
-      strokeLinejoin="round"
-      shapeRendering="geometricPrecision"
-    >
-      <circle cx={12} cy={12} r={9} />
-      <circle cx={12} cy={12} r={3.375} />
-      <line x1={12} y1={8.625} x2={20.344} y2={8.625} />
-      <line x1={9.075} y1={13.688} x2={4.903} y2={6.459} />
-      <line x1={14.925} y1={13.688} x2={10.753} y2={20.916} />
-    </svg>
+  return React.createElement(
+    "svg",
+    {
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: 1.6,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      "aria-hidden": true,
+      focusable: "false",
+      width: "1em",
+      height: "1em",
+    },
+    React.createElement("rect", {
+      x: "2.7",
+      y: "3.9",
+      width: "18.6",
+      height: "16.2",
+      rx: "1.45",
+    }),
+    React.createElement("path", {
+      d: "M2.7 8.15h18.6M6.3 6.1h.1M10.35 17.0l1.5-5.5 4.4 3.65-2.7.05-1.4 2.15",
+    }),
   );
 }
 

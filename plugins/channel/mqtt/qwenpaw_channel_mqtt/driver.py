@@ -18,6 +18,8 @@ from qwenpaw.channel_protocol.targets import decode_reply_target
 from .platform import MQTTDeliveryError, MQTTPlatform
 
 
+# Non-stream driver retains the fail-closed optional cleanup hook.
+# pylint: disable-next=abstract-method
 class MQTTDriver(SharedResponseDriver):
     def __init__(self):
         super().__init__("mqtt", "mqtt.shared.responses", MQTTDeliveryError)
@@ -76,6 +78,8 @@ class MQTTDriver(SharedResponseDriver):
         )
 
     async def _open(self, params, request):
+        # Retain the native callback and lifecycle hook parameter names.
+        # pylint: disable=unused-argument
         self._identity(params)
         self._require_connected()
         meta = dict(params.get("meta") or {})

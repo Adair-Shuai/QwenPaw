@@ -24,7 +24,6 @@ from typing import TYPE_CHECKING, Any, Callable
 
 if TYPE_CHECKING:
     from ..config.config import Config
-
 logger = logging.getLogger(__name__)
 
 
@@ -113,7 +112,6 @@ def run_extension_contributions(
         except Exception as exc:  # pylint: disable=broad-exception-caught
             lines = [f"(extension error) {exc}"]
         results.append((cid, lines))
-
     for name, fn in sorted(_resolved_eps(), key=lambda x: x[0]):
         try:
             raw = fn(ctx)
@@ -121,5 +119,4 @@ def run_extension_contributions(
         except Exception as exc:  # pylint: disable=broad-exception-caught
             lines = [f"(entry point {name!r} error) {exc}"]
         results.append((f"ep:{name}", lines))
-
     return results

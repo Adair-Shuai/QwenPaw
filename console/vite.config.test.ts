@@ -105,6 +105,8 @@ describe("console deployment configuration", () => {
       expect(font?.fileName).toMatch(/^assets\/font-[\w-]+\.woff2$/);
       for (const file of files) {
         for (const part of file.fileName.split("/")) {
+          // Windows filenames must explicitly reject ASCII control characters.
+          // eslint-disable-next-line no-control-regex
           expect(part).not.toMatch(/[<>:"\\|?*\x00-\x1f]|[. ]$/);
           expect(part).not.toMatch(
             /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/i,

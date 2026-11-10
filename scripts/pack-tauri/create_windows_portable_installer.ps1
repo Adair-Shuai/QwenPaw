@@ -70,7 +70,7 @@ foreach ($pluginId in $requiredPluginIds) {
 Copy-Item -LiteralPath (Join-Path $PSScriptRoot "..\..\console\src-tauri\nsis\update-qwenpaw-path.ps1") `
   -Destination $pathHelper -Force
 
-@'
+$installerTemplate = @'
 param(
   [switch]$Silent,
   [switch]$NoCliPath,
@@ -95,6 +95,17 @@ $payloadRoot = Join-Path $sourceRoot "payload"
 $checksumManifest = Join-Path $sourceRoot "checksums.sha256"
 $versionManifest = Join-Path $sourceRoot "version.json"
 
+$installerPhaseClocks = @{}
+function Start-InstallerPhase([string]$Name) {
+  $script:installerPhaseClocks[$Name] = [Diagnostics.Stopwatch]::StartNew()
+  Write-Host "[UGSCI-INSTALL] $Name..."
+}
+function Complete-InstallerPhase([string]$Name) {
+  $clock = $script:installerPhaseClocks[$Name]
+  $clock.Stop()
+  Write-Host ("[UGSCI-INSTALL] {0} finished in {1:N1}s" -f $Name, $clock.Elapsed.TotalSeconds)
+}
+
 function Get-NormalizedDirectoryPath([string]$Path) {
   $full = [IO.Path]::GetFullPath($Path)
   $volumeRoot = [IO.Path]::GetPathRoot($full)
@@ -114,6 +125,49 @@ function Test-CurrentProcessElevated {
 
 function Quote-ProcessArgument([string]$Value) {
   return '"' + $Value.Replace('"', '\"') + '"'
+}
+
+function Wait-InstallerProcessWithLog {
+  param(
+    [Parameter(Mandatory = $true)] [Diagnostics.Process]$Process,
+    [Parameter(Mandatory = $true)] [string]$LogPath
+  )
+  # Keep the handle alive so ExitCode remains available after a short-lived
+  # child exits. Tail a single shared stream instead of rereading the log.
+  $processHandle = $Process.Handle
+  $reader = $null
+  try {
+    do {
+      if (-not $reader -and [IO.File]::Exists($LogPath)) {
+        $stream = [IO.File]::Open($LogPath, [IO.FileMode]::Open, [IO.FileAccess]::Read,
+          ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+        $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8, $true)
+      }
+      if ($reader) {
+        # Write preserves partial lines across polls. The parent receives a
+        # line as soon as the transcript flushes it, even before the UAC child
+        # finishes copying a large runtime or user-data backup.
+        [Console]::Write($reader.ReadToEnd())
+        [Console]::Out.Flush()
+      }
+      if ($Process.HasExited) { break }
+      Start-Sleep -Milliseconds 250
+    } while ($true)
+    $Process.WaitForExit()
+    # A very short-lived child can create its log and exit between the file
+    # existence check and HasExited above. Open that final log before draining.
+    if (-not $reader -and [IO.File]::Exists($LogPath)) {
+      $stream = [IO.File]::Open($LogPath, [IO.FileMode]::Open, [IO.FileAccess]::Read,
+        ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete))
+      $reader = [IO.StreamReader]::new($stream, [Text.Encoding]::UTF8, $true)
+    }
+    if ($reader) {
+      [Console]::Write($reader.ReadToEnd())
+      [Console]::Out.Flush()
+    }
+  } finally {
+    if ($reader) { $reader.Dispose() }
+  }
 }
 
 function Invoke-ElevatedInstaller([string]$ResolvedInstallDir) {
@@ -145,18 +199,15 @@ function Invoke-ElevatedInstaller([string]$ResolvedInstallDir) {
     FilePath = $powershell
     ArgumentList = ($arguments -join " ")
     Verb = "RunAs"
-    Wait = $true
     PassThru = $true
+    WindowStyle = "Hidden"
   }
-  if ($Silent) { $start.WindowStyle = "Hidden" }
   try {
     $process = Start-Process @start
   } catch [ComponentModel.Win32Exception] {
     throw "Administrator approval was cancelled or could not be started."
   }
-  if (Test-Path -LiteralPath $logPath -PathType Leaf) {
-    Get-Content -LiteralPath $logPath -Encoding UTF8 | Write-Output
-  }
+  Wait-InstallerProcessWithLog -Process $process -LogPath $logPath
   exit $process.ExitCode
 }
 
@@ -195,72 +246,16 @@ function Get-DirectoryPrefix([string]$Path) {
   return $normalized + '\'
 }
 
-function Get-Sha256Hex([string]$Path) {
-  $ioPath = if ($Path.Length -lt 248) { $Path } elseif ($Path.StartsWith('\\')) {
-    '\\?\UNC\' + $Path.Substring(2)
-  } else { '\\?\' + $Path }
-  $stream = [IO.File]::OpenRead($ioPath)
-  try {
-    $sha = [Security.Cryptography.SHA256]::Create()
-    try {
-      return ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace("-", "").ToLowerInvariant()
-    } finally {
-      $sha.Dispose()
-    }
-  } finally {
-    $stream.Dispose()
-  }
-}
-
 function Test-PackageIntegrity {
-  if (-not (Test-Path -LiteralPath $checksumManifest -PathType Leaf)) {
-    throw "Package checksum manifest is missing"
-  }
-  $root = Get-NormalizedDirectoryPath -Path $sourceRoot
-  $rootPrefix = Get-DirectoryPrefix -Path $root
-  $expected = New-Object 'Collections.Generic.HashSet[string]' ([StringComparer]::OrdinalIgnoreCase)
-  foreach ($line in Get-Content -LiteralPath $checksumManifest -Encoding UTF8) {
-    if (-not $line.Trim()) { continue }
-    if ($line -notmatch '^([0-9a-fA-F]{64})  (.+)$') {
-      throw "Invalid checksum manifest entry: $line"
-    }
-    $expectedHash = $Matches[1].ToLowerInvariant()
-    $relative = $Matches[2].Replace('/', '\')
-    if ([IO.Path]::IsPathRooted($relative) -or $relative.Split('\') -contains '..') {
-      throw "Unsafe checksum path: $relative"
-    }
-    $fullPath = Join-Path $root $relative
-    if (-not $fullPath.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) {
-      throw "Checksum path escapes package root: $relative"
-    }
-    if (-not $expected.Add($relative)) { throw "Duplicate checksum entry: $relative" }
-    $ioPath = if ($fullPath.Length -lt 248) { $fullPath } elseif ($fullPath.StartsWith('\\')) {
-      '\\?\UNC\' + $fullPath.Substring(2)
-    } else { '\\?\' + $fullPath }
-    if (-not [IO.File]::Exists($ioPath)) {
-      throw "Package file is missing: $relative"
-    }
-    $actualHash = Get-Sha256Hex -Path $fullPath
-    if ($actualHash -ne $expectedHash) { throw "Package checksum mismatch: $relative" }
-  }
-  $rootIo = if ($root.StartsWith('\\')) { '\\?\UNC\' + $root.Substring(2) } else { '\\?\' + $root }
-  foreach ($file in [IO.Directory]::EnumerateFiles($rootIo, '*', [IO.SearchOption]::AllDirectories)) {
-    $normalFile = if ($file.StartsWith('\\?\UNC\')) { '\\' + $file.Substring(8) } elseif ($file.StartsWith('\\?\')) { $file.Substring(4) } else { $file }
-    if ($normalFile -eq $checksumManifest) { continue }
-    $relative = $normalFile.Substring($rootPrefix.Length)
-    if (-not $expected.Contains($relative)) { throw "Unchecked package file: $relative" }
-  }
-  foreach ($required in @(
-      "Setup.exe", "install.ps1", "version.json", "payload\Setup.exe", "payload\Uninstall.exe",
-      "payload\UGSci.exe", "payload\binaries\state\active.json",
-      "payload\binaries\cli\qwenpaw.exe",
-      "payload\binaries\update-assistant\UGSciUpdateAssistant.exe"
-    )) {
-    if (-not $expected.Contains($required)) { throw "Required checksum entry is missing: $required" }
-  }
+  [UGSciInstallerIO]::VerifyPackage($sourceRoot, [string[]]@(
+    "Setup.exe", "install.ps1", "version.json", "payload\Setup.exe", "payload\Uninstall.exe",
+    "payload\UGSci.exe", "payload\binaries\state\active.json",
+    "payload\binaries\cli\qwenpaw.exe",
+    "payload\binaries\update-assistant\UGSciUpdateAssistant.exe"
+  ))
 }
 
-Test-PackageIntegrity
+
 $packageVersion = Get-Content -LiteralPath $versionManifest -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($packageVersion.schema -ne 1 -or $packageVersion.product -ne "UGSci Desktop" -or
     $packageVersion.payload -ne "payload" -or -not $packageVersion.version) {
@@ -409,6 +404,22 @@ if (-not $Elevated -and -not (Test-CurrentProcessElevated)) {
 if ($Elevated -and -not (Test-CurrentProcessElevated)) {
   throw "The elevated installer did not receive administrator permissions."
 }
+# Compile and verify only in the process that will perform installation.
+# A direct unelevated script delegates first; the elevated process always
+# performs its own fresh full verification before any installation mutation.
+Start-InstallerPhase "Preparing file operations"
+# The helper source is embedded, so setup still runs from a self-contained,
+# checksum-covered install.ps1 without loading a mutable external assembly.
+Add-Type -TypeDefinition ([Text.Encoding]::UTF8.GetString(
+  [Convert]::FromBase64String("__UGSCI_INSTALLER_IO_BASE64__")
+))
+Complete-InstallerPhase "Preparing file operations"
+# The bootstrap verification is not reused: recheck every digest in this
+# process before touching the existing installation, including direct PS runs.
+Start-InstallerPhase "Verifying package"
+$verifiedPackage = Test-PackageIntegrity
+Complete-InstallerPhase "Verifying package"
+
 $transactionParent = if (
   (Test-CurrentProcessElevated) -and $installRoot -match '^[A-Za-z]:\\$'
 ) {
@@ -576,27 +587,7 @@ function ConvertTo-LongIoPath {
 
 function Get-DirectorySizeBytes {
   param([string]$Path)
-  if (-not $Path -or -not (Test-Path -LiteralPath $Path -PathType Container)) {
-    return [int64]0
-  }
-  $total = [int64]0
-  $pending = New-Object 'Collections.Generic.Stack[string]'
-  $pending.Push((ConvertTo-LongIoPath -Path $Path))
-  while ($pending.Count -gt 0) {
-    $directory = $pending.Pop()
-    foreach ($entry in [IO.Directory]::EnumerateFileSystemEntries($directory)) {
-      $attributes = [IO.File]::GetAttributes($entry)
-      if (($attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-        continue
-      }
-      if (($attributes -band [IO.FileAttributes]::Directory) -ne 0) {
-        $pending.Push($entry)
-      } else {
-        $total += [int64]([IO.FileInfo]::new($entry).Length)
-      }
-    }
-  }
-  return $total
+  return [UGSciInstallerIO]::DirectorySize($Path)
 }
 
 function Format-InstallerByteCount([int64]$Bytes) {
@@ -742,12 +733,12 @@ function New-UpdateDataBackup {
   New-Item -ItemType Directory -Path $backupRoot -Force | Out-Null
   $backedUpAnything = $false
   if ($workingDir -and (Test-Path -LiteralPath $workingDir -PathType Container)) {
-    & robocopy.exe $workingDir (Join-Path $backupRoot "working-dir") /E /COPY:DAT /DCOPY:DAT /XJ /R:2 /W:1 /NFL /NDL /NP | Out-Null
+    & robocopy.exe $workingDir (Join-Path $backupRoot "working-dir") /E /COPY:DAT /DCOPY:DAT /XJ /MT:4 /R:2 /W:1 /NFL /NDL /NP | Out-Null
     if ($LASTEXITCODE -gt 7) { throw "User data backup failed (robocopy exit $LASTEXITCODE)" }
     $backedUpAnything = $true
   }
   if (Test-Path -LiteralPath $secretDir) {
-    & robocopy.exe $secretDir (Join-Path $backupRoot "secret-dir") /E /COPY:DAT /DCOPY:DAT /XJ /R:2 /W:1 /NFL /NDL /NP | Out-Null
+    & robocopy.exe $secretDir (Join-Path $backupRoot "secret-dir") /E /COPY:DAT /DCOPY:DAT /XJ /MT:4 /R:2 /W:1 /NFL /NDL /NP | Out-Null
     if ($LASTEXITCODE -gt 7) { throw "Secret data backup failed (robocopy exit $LASTEXITCODE)" }
     $backedUpAnything = $true
   }
@@ -755,7 +746,7 @@ function New-UpdateDataBackup {
   foreach ($preserved in @($Plan.InstallLocalNames)) {
     $oldPath = Join-Path $InstallDir $preserved
     if (Test-Path -LiteralPath $oldPath -PathType Container) {
-      & robocopy.exe $oldPath (Join-Path $installLocalRoot $preserved) /E /COPY:DAT /DCOPY:DAT /XJ /R:2 /W:1 /NFL /NDL /NP | Out-Null
+      & robocopy.exe $oldPath (Join-Path $installLocalRoot $preserved) /E /COPY:DAT /DCOPY:DAT /XJ /MT:4 /R:2 /W:1 /NFL /NDL /NP | Out-Null
       if ($LASTEXITCODE -gt 7) { throw "Installed user data backup failed for $preserved (robocopy exit $LASTEXITCODE)" }
       $backedUpAnything = $true
     }
@@ -793,21 +784,44 @@ function Assert-MicrosoftSignedWebView2Installer([string]$Path) {
   }
 }
 
+function Get-WebView2RemainingMilliseconds {
+  return [int][Math]::Max(0, 300000 - $script:webView2Budget.ElapsedMilliseconds)
+}
+
 function Install-WebView2Runtime([string]$Installer) {
+  if ((Get-WebView2RemainingMilliseconds) -le 0) {
+    throw "WebView2 shared installation wait budget is exhausted"
+  }
   Assert-MicrosoftSignedWebView2Installer -Path $Installer
-  $process = Start-Process -FilePath $Installer -ArgumentList "/silent", "/install" -PassThru
-  if (-not $process.WaitForExit(300000)) {
-    Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
-    throw "WebView2 installation timed out"
-  }
-  if ($process.ExitCode -ne 0) {
-    throw "WebView2 installation failed (exit $($process.ExitCode))"
-  }
-  for ($attempt = 0; $attempt -lt 15; $attempt++) {
+  $remaining = Get-WebView2RemainingMilliseconds
+  if ($remaining -le 0) { throw "WebView2 shared installation wait budget is exhausted" }
+  $process = Start-Process -FilePath $Installer -ArgumentList "/silent", "/install" -PassThru -WindowStyle Hidden
+  try {
+    $remaining = Get-WebView2RemainingMilliseconds
+    if ($remaining -le 0 -or -not $process.WaitForExit($remaining)) {
+      Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+      # Registration can complete just before the installer wrapper times out.
+      if (Test-WebView2RuntimeInstalled) { return }
+      throw "WebView2 installation timed out; shared wait budget exhausted"
+    }
     if (Test-WebView2RuntimeInstalled) { return }
-    Start-Sleep -Seconds 2
+    if ($process.ExitCode -ne 0) {
+      throw "WebView2 installation failed (exit $($process.ExitCode))"
+    }
+    for ($attempt = 0; $attempt -lt 15; $attempt++) {
+      $remaining = Get-WebView2RemainingMilliseconds
+      if ($remaining -le 0) { break }
+      Start-Sleep -Milliseconds ([Math]::Min(2000, $remaining))
+      if (Test-WebView2RuntimeInstalled) { return }
+    }
+    if (Test-WebView2RuntimeInstalled) { return }
+    if ((Get-WebView2RemainingMilliseconds) -le 0) {
+      throw "WebView2 registration timed out; shared wait budget exhausted"
+    }
+    throw "WebView2 installer finished but the runtime is not registered"
+  } finally {
+    $process.Dispose()
   }
-  throw "WebView2 installer finished but the runtime is not registered"
 }
 
 function Get-WebView2MissingMessage {
@@ -829,8 +843,46 @@ function Write-WebView2MissingMarker([string]$DestinationDir) {
   Set-Content -LiteralPath (Join-Path $DestinationDir "webview2-missing.txt") -Value (Get-WebView2MissingMessage) -Encoding UTF8
 }
 
+function Select-WebView2Installer([string]$Destination, [string]$Bundled) {
+  if ($Destination -and (Test-Path -LiteralPath $Destination -PathType Leaf)) { return $Destination }
+  if ($Bundled -and (Test-Path -LiteralPath $Bundled -PathType Leaf)) { return $Bundled }
+  return $null
+}
+
+function Save-WebView2Bootstrapper {
+  param(
+    [string]$Destination,
+    [int]$TimeoutMilliseconds,
+    [string]$Uri = "https://go.microsoft.com/fwlink/p/?LinkId=2124703"
+  )
+  if ($TimeoutMilliseconds -le 0) { throw "WebView2 shared download wait budget is exhausted" }
+  $client = [Net.WebClient]::new()
+  try {
+    # Windows PowerShell Invoke-WebRequest -TimeoutSec does not bound slow
+    # response-body reads. Wait on the entire async download and abort it when
+    # its share of the phase budget expires.
+    $download = $client.DownloadFileTaskAsync([Uri]$Uri, $Destination)
+    if (-not $download.Wait($TimeoutMilliseconds)) {
+      try { $client.CancelAsync() } catch { }
+      throw "WebView2 bootstrapper download timed out"
+    }
+    $download.GetAwaiter().GetResult()
+  } finally {
+    try { $client.Dispose() } catch { }
+  }
+}
+
 function Ensure-WebView2 {
   param([string]$DestinationDir)
+  # One budget for every explicit wait, including download, installers and
+  # registration polling. Signature checks and OS scheduling are not a hard
+  # wall-clock guarantee, but their elapsed time reduces what remains.
+  $script:webView2Budget = [Diagnostics.Stopwatch]::StartNew()
+  if (Test-WebView2RuntimeInstalled) {
+    Write-Host "[UGSCI-INSTALL] WebView2 runtime already installed; no installer needed"
+    Clear-WebView2MissingMarker $DestinationDir
+    return
+  }
   $bundledStandalone = Join-Path $payloadRoot "MicrosoftEdgeWebView2RuntimeInstallerX64.exe"
   $bundledBootstrapper = Join-Path $payloadRoot "MicrosoftEdgeWebview2Setup.exe"
   $destinationStandalone = if ($DestinationDir) {
@@ -840,47 +892,62 @@ function Ensure-WebView2 {
     Join-Path $DestinationDir "MicrosoftEdgeWebview2Setup.exe"
   } else { $null }
 
-  foreach ($source in @($bundledStandalone, $bundledBootstrapper)) {
-    if ($source -and (Test-Path -LiteralPath $source -PathType Leaf) -and $DestinationDir -and
-        (Test-Path -LiteralPath $DestinationDir -PathType Container)) {
-      $targetName = Split-Path -Leaf $source
-      Copy-Item -LiteralPath $source -Destination (Join-Path $DestinationDir $targetName) -Force
+  # The payload has already been copied. Choose one copy of each kind; never
+  # recopy or execute both the source and destination installer copies.
+  $standalone = Select-WebView2Installer $destinationStandalone $bundledStandalone
+  $bootstrapper = Select-WebView2Installer $destinationBootstrapper $bundledBootstrapper
+  if ($standalone) {
+    try {
+      Write-Host "[UGSCI-INSTALL] Installing bundled offline WebView2 runtime"
+      Install-WebView2Runtime -Installer $standalone
+      Clear-WebView2MissingMarker $DestinationDir
+      return
+    } catch {
+      Write-Host "[UGSCI-INSTALL] Offline WebView2 installer failed: $($_.Exception.Message)"
     }
   }
-
   if (Test-WebView2RuntimeInstalled) {
     Clear-WebView2MissingMarker $DestinationDir
     return
   }
-
-  $candidates = @(
-    $destinationStandalone,
-    $bundledStandalone,
-    $destinationBootstrapper,
-    $bundledBootstrapper
-  ) | Where-Object { $_ -and (Test-Path -LiteralPath $_ -PathType Leaf) }
-  foreach ($candidate in $candidates) {
-    try {
-      Install-WebView2Runtime -Installer $candidate
-      Clear-WebView2MissingMarker $DestinationDir
-      return
-    } catch { }
+  if ((Get-WebView2RemainingMilliseconds) -le 0) {
+    Write-Host "[UGSCI-INSTALL] WebView2 shared wait budget exhausted; skipping online fallback"
+    Write-WebView2MissingMarker $DestinationDir
+    return
   }
-
-  $downloaded = Join-Path $env:TEMP "MicrosoftEdgeWebview2Setup-$PID.exe"
+  $downloaded = $null
   try {
-    Invoke-WebRequest -Uri "https://go.microsoft.com/fwlink/p/?LinkId=2124703" -OutFile $downloaded -UseBasicParsing -TimeoutSec 120
-    if ($destinationBootstrapper) {
-      Copy-Item -LiteralPath $downloaded -Destination $destinationBootstrapper -Force
+    if (-not $bootstrapper) {
+      $remaining = Get-WebView2RemainingMilliseconds
+      $downloadTimeout = [int][Math]::Min(120000, $remaining)
+      if ($downloadTimeout -le 0) { throw "WebView2 shared download wait budget is exhausted" }
+      $downloaded = Join-Path $env:TEMP ("MicrosoftEdgeWebview2Setup-" + [Guid]::NewGuid().ToString("N") + ".exe")
+      Write-Host "[UGSCI-INSTALL] Downloading official WebView2 bootstrapper (one online fallback)"
+      Save-WebView2Bootstrapper -Destination $downloaded -TimeoutMilliseconds $downloadTimeout
+      $bootstrapper = $downloaded
     }
-    Install-WebView2Runtime -Installer $downloaded
+    if ((Get-WebView2RemainingMilliseconds) -le 0) { throw "WebView2 shared installation wait budget is exhausted" }
+    Write-Host "[UGSCI-INSTALL] Installing WebView2 with one online fallback"
+    Install-WebView2Runtime -Installer $bootstrapper
+    # Retain only a successful, signature-verified downloaded installer.
+    if ($downloaded -and $destinationBootstrapper) {
+      try { Copy-Item -LiteralPath $downloaded -Destination $destinationBootstrapper -Force } catch {
+        Write-Host "[UGSCI-INSTALL] WebView2 installed; could not retain bootstrapper: $($_.Exception.Message)"
+      }
+    }
     Clear-WebView2MissingMarker $DestinationDir
     return
   } catch {
+    Write-Host "[UGSCI-INSTALL] Online WebView2 fallback failed: $($_.Exception.Message)"
+    if (Test-WebView2RuntimeInstalled) {
+      Clear-WebView2MissingMarker $DestinationDir
+      return
+    }
     Write-WebView2MissingMarker $DestinationDir
     return
   } finally {
-    Remove-Item -LiteralPath $downloaded -Force -ErrorAction SilentlyContinue
+    if ($downloaded) { Remove-Item -LiteralPath $downloaded -Force -ErrorAction SilentlyContinue }
+    $script:webView2Budget.Stop()
   }
 }
 
@@ -917,21 +984,10 @@ function Move-DirectoryWithRetry {
 function Copy-DirectoryLongPathSafe {
   param(
     [Parameter(Mandatory = $true)] [string]$Source,
-    [Parameter(Mandatory = $true)] [string]$Destination
+    [Parameter(Mandatory = $true)] [string]$Destination,
+    [switch]$AllowSourceRootLink
   )
-  $sourceIo = ConvertTo-LongIoPath $Source
-  $destinationIo = ConvertTo-LongIoPath $Destination
-  [IO.Directory]::CreateDirectory($destinationIo) | Out-Null
-  foreach ($directory in [IO.Directory]::EnumerateDirectories($sourceIo, '*', [IO.SearchOption]::AllDirectories)) {
-    $relative = $directory.Substring($sourceIo.TrimEnd('\').Length).TrimStart('\')
-    [IO.Directory]::CreateDirectory([IO.Path]::Combine($destinationIo, $relative)) | Out-Null
-  }
-  foreach ($file in [IO.Directory]::EnumerateFiles($sourceIo, '*', [IO.SearchOption]::AllDirectories)) {
-    $relative = $file.Substring($sourceIo.TrimEnd('\').Length).TrimStart('\')
-    $target = [IO.Path]::Combine($destinationIo, $relative)
-    [IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target)) | Out-Null
-    [IO.File]::Copy($file, $target, $true)
-  }
+  [UGSciInstallerIO]::CopyDirectory($Source, $Destination, [bool]$AllowSourceRootLink) | Out-Null
 }
 
 function Remove-DirectoryLongPathSafe {
@@ -946,10 +1002,12 @@ $releaseVersion = [string]$packageVersion.version
 $hasExistingUserData = $env:QWENPAW_WORKING_DIR -or $env:COPAW_WORKING_DIR -or
   (Test-Path -LiteralPath (Join-Path $env:USERPROFILE ".copaw")) -or
   (Test-Path -LiteralPath (Join-Path $env:USERPROFILE ".qwenpaw"))
+Start-InstallerPhase "Checking backup and disk space"
 $backupPlan = if ($existingInstallDir -or $hasExistingUserData) {
   Get-UpdateDataBackupPlan -ReleaseVersion $releaseVersion -InstallDir $installDir
 } else { $null }
-$payloadBytes = Get-DirectorySizeBytes -Path $payloadRoot
+# Counted from the same file streams used for full integrity verification.
+$payloadBytes = [int64]$verifiedPackage.PayloadBytes
 $versionBytes = [int64](Get-Item -LiteralPath $versionManifest).Length
 $installBytes = $payloadBytes + $versionBytes
 if ($backupPlan) {
@@ -976,6 +1034,7 @@ if ($backupPlan -and [int64]$backupPlan.TotalBytes -gt 0) {
 # any installation-tree mutation. Requirements sharing a volume are summed so
 # two individually valid copies cannot overcommit the same disk.
 Assert-SufficientDiskSpace -Requirement $spaceRequirements
+Complete-InstallerPhase "Checking backup and disk space"
 
 $installerParentPid = 0
 $installerProcess = Get-CimInstance Win32_Process -Filter "ProcessId=$PID" -ErrorAction SilentlyContinue
@@ -994,14 +1053,23 @@ if ((Test-Path -LiteralPath $stagingDir) -or (Test-Path -LiteralPath $backupDir)
   throw "A unique installer transaction path already exists; setup will not overwrite recovery data"
 }
 New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
+Start-InstallerPhase "Copying application files"
 Copy-DirectoryLongPathSafe -Source $payloadRoot -Destination $stagingDir
 Copy-Item -LiteralPath $versionManifest -Destination (Join-Path $stagingDir "version.json") -Force
+Complete-InstallerPhase "Copying application files"
 
-$dataBackup = if ($backupPlan -and [int64]$backupPlan.TotalBytes -gt 0) {
-  New-UpdateDataBackup -ReleaseVersion $releaseVersion -InstallDir $installDir -Plan $backupPlan
-} else { $null }
-if ($dataBackup) { Write-Host "User data backed up to $dataBackup" }
+$dataBackup = $null
+if ($backupPlan -and [int64]$backupPlan.TotalBytes -gt 0) {
+  Start-InstallerPhase "Backing up user data"
+  $dataBackup = New-UpdateDataBackup -ReleaseVersion $releaseVersion -InstallDir $installDir -Plan $backupPlan
+  if ($dataBackup) { Write-Host "User data backed up to $dataBackup" }
+  Complete-InstallerPhase "Backing up user data"
+} else {
+  Write-Host "[UGSCI-INSTALL] No existing user data requires backup"
+}
+Start-InstallerPhase "Checking WebView2 runtime"
 Ensure-WebView2 -DestinationDir $stagingDir
+Complete-InstallerPhase "Checking WebView2 runtime"
 
 $previousVersion = if ($previousUninstall -and $previousUninstall.DisplayVersion) {
   [string]$previousUninstall.DisplayVersion
@@ -1032,6 +1100,7 @@ if ($DeferredCommit) { Write-InstallTransaction -Stage "prepared" }
 $previousTreeMoved = $false
 $newTreeActivated = $false
 try {
+  Start-InstallerPhase "Activating installation"
   # Moving the previous tree is the first destructive mutation and therefore
   # must be covered by the rollback handler below.
   if (Test-Path $installDir) {
@@ -1050,17 +1119,21 @@ try {
     throw "Installed application payload failed validation"
   }
 
+  Complete-InstallerPhase "Activating installation"
+  Start-InstallerPhase "Preserving installed user data"
   if (Test-Path $backupDir) {
     foreach ($preserved in @("execution-runtime", "optional-components", "engines", "data", "state", "user-data", "workspace", "models")) {
       $oldPath = Join-Path $backupDir $preserved
       $newPath = Join-Path $installDir $preserved
       if (Test-Path $oldPath) {
         if (Test-Path $newPath) { Remove-DirectoryLongPathSafe -Path $newPath }
-        Copy-DirectoryLongPathSafe -Source $oldPath -Destination $newPath
+        Copy-DirectoryLongPathSafe -Source $oldPath -Destination $newPath -AllowSourceRootLink
       }
     }
   }
 
+  Complete-InstallerPhase "Preserving installed user data"
+  Start-InstallerPhase "Registering application"
   $runtimeDir = Join-Path $installDir "execution-runtime"
   New-Item -ItemType Directory -Path $runtimeDir -Force | Out-Null
   if (-not (Test-Path (Join-Path $runtimeDir "selection.txt"))) {
@@ -1098,6 +1171,7 @@ try {
   $shortcut = $shell.CreateShortcut($startMenuShortcutPath)
   $shortcut.TargetPath = $appExe
   $shortcut.WorkingDirectory = $installDir
+  $shortcut.IconLocation = "$appExe,0"
   $shortcut.Save()
   $createDesktopShortcut = (-not $NoDesktopShortcut) -and
     ((-not $DeferredCommit) -or (-not $existingInstallDir) -or ($null -ne $previousDesktopShortcut))
@@ -1105,11 +1179,15 @@ try {
     $desktopShortcut = $shell.CreateShortcut($desktopShortcutPath)
     $desktopShortcut.TargetPath = $appExe
     $desktopShortcut.WorkingDirectory = $installDir
+    $desktopShortcut.IconLocation = "$appExe,0"
     $desktopShortcut.Save()
   } else {
     Remove-Item -LiteralPath $desktopShortcutPath -Force -ErrorAction SilentlyContinue
   }
 
+  [UGSciInstallerIO]::RefreshShellIcons($appExe, [string[]]@($startMenuShortcutPath, $desktopShortcutPath))
+  Complete-InstallerPhase "Registering application"
+  Start-InstallerPhase "Committing installation"
   if ($DeferredCommit) {
     if (-not $previousTreeMoved -or -not (Test-Path -LiteralPath $backupDir -PathType Container)) {
       throw "Deferred update commit requires a recoverable previous installation"
@@ -1123,6 +1201,7 @@ try {
     # entry is harmless, so cleanup failure must not roll back healthy files.
     Remove-Item -LiteralPath $legacyUninstallKey -Recurse -Force -ErrorAction SilentlyContinue
   }
+  Complete-InstallerPhase "Committing installation"
 } catch {
   $installError = $_
   [Environment]::SetEnvironmentVariable("Path", $previousUserPath, "User")
@@ -1186,10 +1265,13 @@ try {
   if (-not $rollbackError -and $DeferredCommit) {
     Remove-Item -LiteralPath $TransactionFile -Force -ErrorAction SilentlyContinue
   }
+  [UGSciInstallerIO]::RefreshShellIcons($appExe, [string[]]@($startMenuShortcutPath, $desktopShortcutPath))
   throw "Portable installation failed; $rollbackState. $installError"
 }
 } finally {
+  Start-InstallerPhase "Cleaning staging files"
   try { Remove-DirectoryLongPathSafe -Path $stagingDir } catch { }
+  Complete-InstallerPhase "Cleaning staging files"
   if ($mutexAcquired) { $mutex.ReleaseMutex() }
   $mutex.Dispose()
 }
@@ -1200,7 +1282,11 @@ if (-not $Silent) { Write-Host "You can launch it from the Start menu or desktop
 # let PowerShell propagate the last native status and make Setup.exe report a
 # false installation failure after the transaction committed successfully.
 exit 0
-'@ | Set-Content -LiteralPath $installPs1 -Encoding UTF8
+'@
+$installerIoSource = [IO.File]::ReadAllBytes((Join-Path $PSScriptRoot "windows_installer_io.cs"))
+$installerTemplate.Replace(
+  "__UGSCI_INSTALLER_IO_BASE64__", [Convert]::ToBase64String($installerIoSource)
+) | Set-Content -LiteralPath $installPs1 -Encoding UTF8
 
 @'
 param(

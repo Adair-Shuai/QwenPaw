@@ -94,7 +94,7 @@ const itemVariants = {
 
 function ChannelPill({ iconSrc, name }: { iconSrc: string; name: string }) {
   return (
-    <div className="inline-flex h-11 w-43 shrink-0 items-center justify-center gap-2 rounded-xl border border-[#F5F3EF] bg-white px-4 py-2 text-sm font-normal text-(--color-text-secondary)  md:text-[1.02rem]">
+    <div className="inline-flex h-11 w-43 shrink-0 items-center justify-center gap-2 rounded-xl border border-(--border) bg-white px-4 py-2 text-sm font-normal text-(--color-text-secondary)  md:text-[1.02rem]">
       <img
         src={iconSrc}
         alt=""
@@ -139,18 +139,9 @@ export function Channels() {
               }`}
             >
               <span className="mr-2">{t("channels.titleWe")}</span>
-              <img
-                src="https://img.alicdn.com/imgextra/i4/O1CN01aJaU1x1eYT3UlTm19_!!6000000003883-55-tps-771-132.svg"
-                alt=""
-                className={`inline-block h-5 w-auto shrink-0 pr-0 sm:h-6 sm:pr-0.5 md:h-7 ${
-                  isZh
-                    ? "mb-1 sm:mb-0 md:mb-1 md:translate-y-0"
-                    : "mt-1 sm:mt-0 sm:mb-2 md:mb-3 md:translate-y-[1px]"
-                }`}
-                aria-hidden
-              />
+              <span className="font-semibold tracking-tight">UGSci</span>
             </span>
-            <em className="italic text-[#301601] font-semibold">
+            <em className="text-(--text) font-semibold">
               {t("channels.titleEverything")}
             </em>
           </span>

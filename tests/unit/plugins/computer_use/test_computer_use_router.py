@@ -163,7 +163,6 @@ async def test_pending_decision_rejects_non_computer_use_approval(
                 decision="session",
             ),
         )
-
     assert service.decisions == []
 
 

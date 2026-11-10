@@ -1,5 +1,12 @@
-import React, { useCallback, useLayoutEffect, useRef, useState } from "react";
+import React, {
+  useCallback,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { Accordion } from "@agentscope-ai/chat";
+import styles from "./HostBubbles.module.less";
 
 type AccordionProps = React.ComponentProps<typeof Accordion>;
 
@@ -26,9 +33,12 @@ export default function LazyAccordion({
   className,
   defaultOpen = false,
   renderChildren,
+  title,
   ...accordionProps
 }: LazyAccordionProps) {
   const [open, setOpen] = useState(defaultOpen);
+  const panelId = useId();
+  const buttonId = useId();
   const rootRef = useRef<HTMLDivElement>(null);
   const pendingHeaderTopRef = useRef<number | null>(null);
   const pendingScrollerRef = useRef<HTMLElement | null>(null);
@@ -66,9 +76,35 @@ export default function LazyAccordion({
   }, []);
 
   return (
-    <div ref={rootRef} className={className} onClick={handleClick}>
-      <Accordion {...accordionProps} open={open}>
-        <>{open ? renderChildren() : null}</>
+    <div
+      ref={rootRef}
+      className={className}
+      data-step-disclosure
+      onClick={handleClick}
+    >
+      <Accordion
+        {...accordionProps}
+        open={open}
+        title={
+          <button
+            id={buttonId}
+            type="button"
+            className={styles.disclosureButton}
+            aria-expanded={open}
+            aria-controls={panelId}
+          >
+            {title}
+          </button>
+        }
+      >
+        <div
+          id={panelId}
+          role="region"
+          aria-labelledby={buttonId}
+          hidden={!open}
+        >
+          {open ? renderChildren() : null}
+        </div>
       </Accordion>
     </div>
   );

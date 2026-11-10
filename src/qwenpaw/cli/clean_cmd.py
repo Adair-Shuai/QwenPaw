@@ -31,7 +31,6 @@ def clean_cmd(yes: bool, dry_run: bool) -> None:
     if not wd.exists():
         click.echo(f"WORKING_DIR does not exist: {wd}")
         return
-
     children = _iter_children(wd)
     # Filter out the telemetry marker file
     telemetry_marker = wd / TELEMETRY_MARKER_FILE
@@ -45,24 +44,20 @@ def clean_cmd(yes: bool, dry_run: bool) -> None:
         else:
             click.echo(f"WORKING_DIR is already empty: {wd}")
         return
-
     click.echo(f"WORKING_DIR: {wd}")
     click.echo("Will remove:")
     for c in children:
         click.echo(f"  - {c}")
     if telemetry_marker.exists():
         click.echo(f"Will keep: {TELEMETRY_MARKER_FILE}")
-
     if dry_run:
         click.echo("dry-run: nothing deleted.")
         return
-
     if not yes:
         ok = click.confirm(f"Delete ALL contents under {wd}?", default=False)
         if not ok:
             click.echo("Cancelled.")
             return
-
     # delete contents, keep the directory itself
     for c in children:
         try:
@@ -72,5 +67,4 @@ def clean_cmd(yes: bool, dry_run: bool) -> None:
                 c.unlink()
         except FileNotFoundError:
             pass
-
     click.echo("Done.")

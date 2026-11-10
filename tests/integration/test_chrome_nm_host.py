@@ -85,7 +85,6 @@ def test_oversized_outbound_message_writes_nothing() -> None:
             stdout,
             json.dumps({"id": 7, "result": "q" * 2_000_000}).encode("utf-8"),
         )
-
     assert stdout.getvalue() == b""
 
 
@@ -302,7 +301,6 @@ def test_version_mismatch_stops_with_upgrade_advice(tmp_path: Path) -> None:
                 retry_seconds=1,
             ),
         )
-
     assert "upgrade the extension" in caught.value.advice
     assert websocket.closed
     assert websocket.hello_messages[0]["type"] == "hello"

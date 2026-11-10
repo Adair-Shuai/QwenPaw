@@ -16,7 +16,6 @@ from ...runtime.prompt_manager import SyncPromptContributor
 
 if TYPE_CHECKING:
     from ..base import AgentMode
-
 logger = logging.getLogger(__name__)
 
 

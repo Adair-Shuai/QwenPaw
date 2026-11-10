@@ -1,0 +1,335 @@
+.rail {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: var(--dual-rail-width, 66px);
+  padding: 18px 7px 64px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  border-right: 1px solid var(--app-border);
+  background: var(--app-shell-bg);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+  font-size: var(--app-font-caption);
+
+  button {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 4px;
+    width: 100%;
+    min-height: 46px;
+    padding: 6px 1px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: var(--app-text-secondary);
+    font: inherit;
+    font-size: max(11px, calc(11px * var(--app-font-scale)));
+    line-height: 1.35;
+    text-align: center;
+    cursor: pointer;
+
+    > span:last-child {
+      max-width: 100%;
+      overflow-wrap: anywhere;
+    }
+
+    svg {
+      width: 18px;
+      height: 18px;
+      flex-shrink: 0;
+      stroke-width: 1.6;
+    }
+
+    &:hover {
+      background: var(--app-fill);
+      color: var(--app-text);
+    }
+
+    &[aria-current="page"] {
+      background: var(--app-surface);
+      color: var(--app-text);
+
+      &::before {
+        content: "";
+        position: absolute;
+        top: 17px;
+        left: -7px;
+        width: 3px;
+        height: 17px;
+        border-radius: 0 2px 2px 0;
+        background: var(--app-text);
+      }
+    }
+  }
+}
+
+.brand {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  font-size: 11px;
+  color: var(--app-text);
+
+  strong {
+    font-weight: 650;
+    letter-spacing: -0.3px;
+  }
+}
+
+.brandMark {
+  width: 31px;
+  height: 31px;
+  background: currentColor;
+  mask-size: contain;
+  mask-position: center;
+  mask-repeat: no-repeat;
+}
+
+.primary,
+.secondary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.secondary {
+  margin-top: auto;
+}
+
+.collapsedActions {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+
+  > button {
+    min-height: 34px;
+    width: calc(50% - 1px);
+    padding: 4px 0;
+
+    > span {
+      display: none;
+    }
+  }
+
+  > button:only-child {
+    flex: 0 0 28px;
+    width: 28px;
+    height: 28px;
+    min-height: 28px;
+    padding: 0;
+
+    svg {
+      width: 16px;
+      height: 16px;
+    }
+  }
+}
+
+.more {
+  nav {
+    padding: 0;
+    gap: 0;
+  }
+
+  nav > button {
+    flex-direction: column;
+    justify-content: center;
+    padding: 6px 1px;
+    gap: 4px;
+    min-height: 46px;
+    font-size: max(11px, calc(11px * var(--app-font-scale)));
+  }
+}
+
+.heading {
+  display: none;
+}
+
+.createRow {
+  display: contents;
+}
+
+.surface.surface .createRow {
+  order: 1;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 10px;
+
+  > button[data-page-new-task] {
+    order: 0;
+    flex: 1;
+    min-width: 0;
+    width: auto;
+    margin: 0;
+  }
+
+  > button:not([data-page-new-task]) {
+    order: 1;
+  }
+}
+
+.deviceLabel {
+  position: absolute;
+  left: calc(var(--dual-rail-width) + 16px);
+  bottom: 16px;
+  font-size: 11px;
+  color: var(--app-text-secondary);
+  pointer-events: none;
+
+  &[hidden] {
+    display: none;
+  }
+}
+
+.surface.surface.surface .accountDock {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: var(--dual-rail-width);
+  margin: 0;
+  padding: 10px 6px;
+  align-items: center;
+  background: var(--app-shell-bg);
+}
+
+.surface.surface .account.account {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 36px;
+  min-height: 36px;
+  height: 36px;
+  padding: 4px;
+  margin-inline: auto;
+  border: 1px solid var(--app-border);
+  border-radius: 50%;
+  background: var(--app-surface);
+
+  > span:nth-child(2),
+  > svg {
+    display: none;
+  }
+}
+
+.surface.surface {
+  --dual-rail-width: 66px;
+  position: relative;
+  padding: 0 0 0 var(--dual-rail-width) !important;
+  background: var(--app-surface-subtle) !important;
+
+  > :global([class$="-layout-sider-children"]) {
+    position: static;
+  }
+
+  .heading {
+    order: -1;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 62px;
+    padding: 14px 10px 14px 16px;
+    color: var(--app-text);
+    font-size: var(--app-font-secondary);
+
+    &[hidden] {
+      display: none;
+    }
+
+    > svg {
+      width: 16px;
+      height: 16px;
+      color: var(--app-text-secondary);
+      flex-shrink: 0;
+    }
+
+    > strong {
+      flex: 1;
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      font-weight: 600;
+    }
+
+    > button {
+      display: grid;
+      place-items: center;
+      width: 30px;
+      height: 30px;
+      padding: 4px;
+      flex-shrink: 0;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: var(--app-text-secondary);
+      cursor: pointer;
+
+      &:hover {
+        background: var(--app-fill);
+      }
+    }
+  }
+}
+
+@media (max-width: 768px) {
+  .surface.surface {
+    --dual-rail-width: 56px;
+  }
+
+  .rail {
+    padding-inline: 4px;
+  }
+}
+
+@media (min-width: 769px) {
+  .surface[data-dual-sidebar-collapsed="true"] {
+    .accountDock {
+      bottom: 36px;
+    }
+
+    .rail {
+      padding-bottom: 100px;
+    }
+  }
+}
+
+@media (any-pointer: coarse) {
+  .collapsedActions {
+    flex-direction: column;
+
+    > button {
+      width: 100%;
+      min-height: 44px;
+    }
+
+    > button:only-child {
+      flex-basis: 44px;
+      width: 44px;
+      height: 44px;
+      min-height: 44px;
+    }
+  }
+
+  .surface.surface .account.account {
+    width: 44px;
+    height: 44px;
+    min-height: 44px;
+  }
+
+  .surface.surface .heading > button {
+    min-width: 44px;
+    min-height: 44px;
+  }
+}

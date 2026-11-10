@@ -142,7 +142,6 @@ def find_optimal_threshold(
             lo = mid + 1
         else:
             hi = mid - 1
-
     logger.info(
         "auto threshold: %.1f (target median=%.0fs, actual median=%.0fs)",
         best_thresh,
@@ -174,7 +173,6 @@ def plan_segments(
         )
     elif threshold <= 0:
         threshold = DEFAULT_SCENE_THRESHOLD
-
     boundaries = [t for t, s in zip(cut_times, cut_scores) if s >= threshold]
 
     merged_boundaries: list[float] = []
@@ -183,7 +181,6 @@ def plan_segments(
         if b - last_b >= min_scene_sec:
             merged_boundaries.append(b)
             last_b = b
-
     final_segments: list[tuple[float, float]] = []
     prev = start_sec
     for b in merged_boundaries:
@@ -198,7 +195,6 @@ def plan_segments(
         else:
             final_segments.append((prev, b))
         prev = b
-
     last_dur = end_sec - prev
     if last_dur > max_scene_sec:
         n_parts = max(2, round(last_dur / (max_scene_sec * 0.7)))
@@ -212,7 +208,6 @@ def plan_segments(
         final_segments.append((s, end_sec))
     else:
         final_segments.append((prev, end_sec))
-
     if not final_segments:
         final_segments = [(start_sec, end_sec)]
     return final_segments

@@ -94,13 +94,11 @@ class AutopilotGate(LoopGate):
     ) -> Optional[StopHandlerResult]:
         if isinstance(ctx, dict) and ctx.get("has_tool_calls"):
             return StopHandlerResult(action=StopAction.BYPASS)
-
         st: _AutopilotState | None = self._state()
         if st is None:
             return StopHandlerResult(
                 action=StopAction.BYPASS,
             )
-
         wf = WorkflowState.from_existing(
             st.workspace_dir,
             "autopilot",
@@ -137,7 +135,6 @@ class AutopilotGate(LoopGate):
                     action=StopAction.INTERRUPT_AND_CONTINUE,
                     reason="Autopilot blocked: forks not integrated",
                 )
-
         if data.get("merge_blocked"):
             await asyncio.to_thread(
                 wf.update_state,
@@ -153,7 +150,6 @@ class AutopilotGate(LoopGate):
                 action=StopAction.TERMINATE,
                 reason=f"Total iteration limit ({st.max_iterations})",
             )
-
         if phase == "completed":
             await asyncio.to_thread(wf.cleanup)
             self.deactivate()
@@ -161,7 +157,6 @@ class AutopilotGate(LoopGate):
                 action=StopAction.TERMINATE,
                 reason="Autopilot completed",
             )
-
         if (
             phase == "validation"
             and st.validation_round > st.max_validation_rounds
@@ -174,7 +169,6 @@ class AutopilotGate(LoopGate):
                     f"Validation round limit " f"({st.max_validation_rounds})"
                 ),
             )
-
         if phase not in st.phase_entry_iteration:
             st.phase_entry_iteration[phase] = st.iteration
         elif (
@@ -187,7 +181,6 @@ class AutopilotGate(LoopGate):
                 action=StopAction.TERMINATE,
                 reason=f"Phase '{phase}' stalled",
             )
-
         return StopHandlerResult(
             action=StopAction.INTERRUPT_AND_CONTINUE,
             reason="Autopilot in progress",

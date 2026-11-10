@@ -105,6 +105,7 @@ class FileState:
     content: bytes | None
     binary: bool = False
     uncertain: bool = False
+    metadata_fingerprint: str = ""
 
 
 @dataclass
@@ -140,12 +141,24 @@ def read_file(path: Path, snapshot: Snapshot, display: str) -> FileState:
     fingerprint = f"metadata:{before.st_size}:{before.st_mtime_ns}"
     if before.st_size > MAX_FILE_BYTES:
         snapshot.warn(f"File exceeds snapshot size limit: {display}")
-        return FileState(before.st_size, fingerprint, None, uncertain=True)
+        return FileState(
+            before.st_size,
+            fingerprint,
+            None,
+            uncertain=True,
+            metadata_fingerprint=fingerprint,
+        )
     if snapshot.bytes_read + before.st_size > MAX_TOTAL_BYTES:
         snapshot.warn(
             "Snapshot byte budget reached; some contents unavailable",
         )
-        return FileState(before.st_size, fingerprint, None, uncertain=True)
+        return FileState(
+            before.st_size,
+            fingerprint,
+            None,
+            uncertain=True,
+            metadata_fingerprint=fingerprint,
+        )
     flags = os.O_RDONLY | getattr(os, "O_BINARY", 0)
     flags |= getattr(os, "O_NOFOLLOW", 0)
     fd = os.open(path, flags)
@@ -173,17 +186,29 @@ def read_file(path: Path, snapshot: Snapshot, display: str) -> FileState:
         or identity(before) != identity(current)
     ):
         snapshot.warn(f"File changed while reading: {display}")
-        return FileState(current.st_size, fingerprint, None, uncertain=True)
+        return FileState(
+            current.st_size,
+            fingerprint,
+            None,
+            uncertain=True,
+            metadata_fingerprint=(
+                f"metadata:{current.st_size}:{current.st_mtime_ns}"
+            ),
+        )
     snapshot.bytes_read += len(data)
     return FileState(
         len(data),
         hashlib.sha256(data).hexdigest(),
         data,
         binary=text_content(data) is None,
+        metadata_fingerprint=fingerprint,
     )
 
 
 def scan(roots: tuple[Root, ...]) -> Snapshot:
+    # Keep archive discovery and finalization in the immutable-delivery
+    # transaction.
+    # pylint: disable=R0912
     snapshot = Snapshot()
     visited = 0
     for root in roots:

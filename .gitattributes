@@ -16,3 +16,12 @@ src/qwenpaw/providers/data/providers/*.json text eol=lf
 docs/patches/*.patch text eol=lf
 # Unified-diff context lines are checksummed runtime build inputs.
 docs/patches/piccolo-llama.cpp.patch -whitespace
+# Brand asset digests must survive Windows and Unix checkouts unchanged.
+scripts/pack/assets/*.svg text eol=lf
+console/public/*.svg text eol=lf
+console/public/ugsci-mono/**/*.svg text eol=lf
+console/src-tauri/icons/android/**/*.xml text eol=lf
+website/public/logo.svg text eol=lf
+website/public/qwenpaw-symbol.svg text eol=lf
+plugins/bundle/ugsci/ui/ugsci-icon.svg text eol=lf
+src/qwenpaw/plugins_bundle/ugsci/ui/ugsci-icon.svg text eol=lf

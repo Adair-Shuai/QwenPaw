@@ -103,21 +103,18 @@ async def test_reset_session_isolation(gate_pair):
     ):
         for _ in range(3):
             await g.check({})
-
     with patch(
         "qwenpaw.loop.gates.loop_gate._session_id",
         return_value="session-b",
     ):
         for _ in range(2):
             await g.check({})
-
     with patch(
         "qwenpaw.loop.gates.loop_gate._session_id",
         return_value="session-a",
     ):
         g.reset_turn()
         assert g._state().iteration == 0
-
     with patch(
         "qwenpaw.loop.gates.loop_gate._session_id",
         return_value="session-b",
@@ -133,7 +130,6 @@ def test_reset_session_removes_only_current_session(gate_pair):
     ):
         gate_pair.reset_session()
         assert gate_pair._state() is None
-
     with patch(
         "qwenpaw.loop.gates.loop_gate._session_id",
         return_value="session-b",

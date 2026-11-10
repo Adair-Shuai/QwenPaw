@@ -27,19 +27,16 @@ def reset_password_cmd() -> None:
             "Set QWENPAW_AUTH_ENABLED=true to enable it first.",
         )
         return
-
     data = _load_auth_data()
 
     if data.get("_auth_load_error"):
         raise click.ClickException(
             "Failed to read auth data. Check auth.json for corruption.",
         )
-
     user = data.get("user")
     if not user:
         click.echo("No registered user found. Nothing to reset.")
         return
-
     username = user.get("username", "<unknown>")
     click.echo(f"Resetting password for user: {username}")
 
@@ -51,7 +48,6 @@ def reset_password_cmd() -> None:
 
     if not new_password or not new_password.strip():
         raise click.ClickException("Password cannot be empty.")
-
     pw_hash, salt = _hash_password(new_password)
     data["user"]["password_hash"] = pw_hash
     data["user"]["password_salt"] = salt

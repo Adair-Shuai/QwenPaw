@@ -1,3 +1,4 @@
+import { UGSCI_BUTTON_LOADING } from "@/components/UgsciMotion";
 import { memo } from "react";
 import { Button } from "@agentscope-ai/design";
 import {
@@ -73,7 +74,7 @@ export const LocalModelRow = memo(function LocalModelRow({
               danger
               size="small"
               icon={<StopOutlined size="1em" />}
-              loading={stoppingServer}
+              loading={stoppingServer ? UGSCI_BUTTON_LOADING : false}
               onClick={onStopServer}
             >
               {t("models.localStopServer")}
@@ -82,7 +83,7 @@ export const LocalModelRow = memo(function LocalModelRow({
               danger
               size="small"
               icon={<DeleteOutlined size="1em" />}
-              loading={isDeleting}
+              loading={isDeleting ? UGSCI_BUTTON_LOADING : false}
               disabled
               onClick={() => onDeleteModel(model)}
             >
@@ -95,7 +96,7 @@ export const LocalModelRow = memo(function LocalModelRow({
               type="primary"
               size="small"
               icon={<PlayCircleOutlined size="1em" />}
-              loading={isStarting}
+              loading={isStarting ? UGSCI_BUTTON_LOADING : false}
               onClick={() => onStartServer(model)}
               disabled={isServerBusy || isDeleting}
             >
@@ -105,7 +106,7 @@ export const LocalModelRow = memo(function LocalModelRow({
               danger
               size="small"
               icon={<DeleteOutlined size="1em" />}
-              loading={isDeleting}
+              loading={isDeleting ? UGSCI_BUTTON_LOADING : false}
               onClick={() => onDeleteModel(model)}
               disabled={isDeleting || isServerBusy}
             >

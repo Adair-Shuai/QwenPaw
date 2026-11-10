@@ -1,3 +1,7 @@
+import type {
+  CapturedChatOptions,
+  CapturedChatProps,
+} from "@/test/chatOptionsFixture";
 /**
  * Chat/index.tsx behavior tests
  *
@@ -19,7 +23,7 @@ import { useUploadLimitStore } from "@/stores/uploadLimitStore";
 // ---------------------------------------------------------------------------
 // Capture AgentScopeRuntimeWebUI options
 // ---------------------------------------------------------------------------
-let capturedOptions: any = null;
+let capturedOptions: CapturedChatOptions | null = null;
 
 const {
   mockListProviders,
@@ -53,7 +57,7 @@ vi.mock("../../hooks/useAppMessage", () => ({
 
 vi.mock("../../contexts/ApprovalContext", () => ({
   useApprovalContext: () => ({
-    approvals: [] as any[],
+    approvals: [] as unknown[],
     setApprovals: vi.fn(),
   }),
 }));
@@ -64,7 +68,9 @@ vi.mock("../../plugins/PluginContext", () => ({
     registerPlugin: vi.fn(),
     toolRenderConfig: {},
   }),
-  PluginContext: { Provider: ({ children }: any) => children },
+  PluginContext: {
+    Provider: ({ children }: import("react").PropsWithChildren) => children,
+  },
 }));
 
 vi.mock("./components/ChatSessionInitializer", () => ({
@@ -94,8 +100,8 @@ vi.mock("@agentscope-ai/chat", () => ({
     MCP_CALL_OUTPUT: "mcp_call_output",
   },
   // render rightHeader so child components appear in the DOM
-  AgentScopeRuntimeWebUI: vi.fn((props: any) => {
-    capturedOptions = props.options;
+  AgentScopeRuntimeWebUI: vi.fn((props: CapturedChatProps) => {
+    capturedOptions = props.options as unknown as CapturedChatOptions;
     return <div data-testid="chat-ui">{props.options?.theme?.rightHeader}</div>;
   }),
   useChatAnywhereSessionsState: vi.fn(() => ({
@@ -105,10 +111,10 @@ vi.mock("@agentscope-ai/chat", () => ({
     setSessions: vi.fn(),
   })),
   useChatAnywhereSessions: vi.fn(() => ({ createSession: vi.fn() })),
-  useChatAnywhereI18n: vi.fn((selector: (state: any) => unknown) =>
+  useChatAnywhereI18n: vi.fn((selector: (state: unknown) => unknown) =>
     selector({ setLocale: vi.fn() }),
   ),
-  useChatAnywhereInput: vi.fn((selector?: (state: any) => unknown) => {
+  useChatAnywhereInput: vi.fn((selector?: (state: unknown) => unknown) => {
     const state = {
       setLoading: vi.fn(),
       getLoading: vi.fn(),
@@ -122,7 +128,7 @@ vi.mock("@agentscope-ai/chat", () => ({
 vi.mock(
   "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Context/ChatAnywhereI18nContext",
   () => ({
-    useChatAnywhereI18n: (selector: (state: any) => unknown) =>
+    useChatAnywhereI18n: (selector: (state: unknown) => unknown) =>
       selector({ setLocale: vi.fn() }),
   }),
 );
@@ -328,6 +334,36 @@ describe("ChatPage", () => {
 
   // ── basic rendering ───────────────────────────────────────────────────────
 
+  it("keeps plugin renderer identities through unrelated chat updates", async () => {
+    const registration = chatExtensions.addToolRender(
+      "perf",
+      "perf_tool",
+      () => <span>tool</span>,
+    );
+    chatExtensions.addCard("perf", "PerfCard", () => <span>card</span>);
+    const view = renderWithProviders(<ChatPage />, {
+      initialEntries: ["/chat"],
+    });
+    await screen.findByTestId("chat-ui");
+    const firstTool = capturedOptions!.customToolRenderConfig!.perf_tool;
+    const firstCard = capturedOptions!.cards!.PerfCard;
+    view.rerender(<ChatPage />);
+    expect(capturedOptions!.customToolRenderConfig!.perf_tool).toBe(firstTool);
+    expect(capturedOptions!.cards!.PerfCard).toBe(firstCard);
+    act(() => chatExtensions.addCard("other", "OtherCard", () => null));
+    expect(capturedOptions!.customToolRenderConfig!.perf_tool).toBe(firstTool);
+    expect(capturedOptions!.cards!.PerfCard).toBe(firstCard);
+    act(() => {
+      registration.dispose();
+      chatExtensions.addToolRender("perf", "perf_tool", () => (
+        <span>new tool</span>
+      ));
+    });
+    expect(capturedOptions!.customToolRenderConfig!.perf_tool).not.toBe(
+      firstTool,
+    );
+  });
+
   it("renders AgentScopeRuntimeWebUI", async () => {
     renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
     expect(await screen.findByTestId("chat-ui")).toBeInTheDocument();
@@ -349,7 +385,7 @@ describe("ChatPage", () => {
     await screen.findByTestId("chat-ui");
 
     // directly invoke capturedOptions.api.fetch (openclaw pattern)
-    const response = await capturedOptions.api.fetch({
+    const response = await capturedOptions!.api.fetch({
       input: [{ role: "user", content: "hello" }],
       signal: undefined,
     });
@@ -362,7 +398,7 @@ describe("ChatPage", () => {
     renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
     await screen.findByTestId("chat-ui");
 
-    const response = await capturedOptions.api.fetch({
+    const response = await capturedOptions!.api.fetch({
       input: [{ role: "user", content: "hello" }],
       signal: undefined,
     });
@@ -378,7 +414,7 @@ describe("ChatPage", () => {
     renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
     await screen.findByTestId("chat-ui");
 
-    await capturedOptions.api.fetch({
+    await capturedOptions!.api.fetch({
       input: [{ role: "user", content: "hello" }],
       signal: undefined,
     });
@@ -401,7 +437,7 @@ describe("ChatPage", () => {
     renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
     await screen.findByTestId("chat-ui");
 
-    await capturedOptions.api.fetch({
+    await capturedOptions!.api.fetch({
       input: [{ role: "user", content: "hello" }],
       signal: undefined,
     });
@@ -432,7 +468,7 @@ describe("ChatPage", () => {
     renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
     await screen.findByTestId("chat-ui");
 
-    await capturedOptions.api.fetch({
+    await capturedOptions!.api.fetch({
       input: [
         {
           role: "user",
@@ -465,7 +501,7 @@ describe("ChatPage", () => {
     renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
     await screen.findByTestId("chat-ui");
 
-    const parsed = capturedOptions.api.responseParser(
+    const parsed = capturedOptions!.api.responseParser(
       JSON.stringify({
         object: "response",
         status: "completed",
@@ -491,7 +527,7 @@ describe("ChatPage", () => {
       }),
     );
 
-    expect(parsed.output[0]).toMatchObject({
+    expect(parsed!.output![0]).toMatchObject({
       type: "message",
       role: "system",
       metadata: {
@@ -504,11 +540,11 @@ describe("ChatPage", () => {
         ],
       },
     });
-    expect(parsed.output[0].content[0].text).toContain("openai:gpt-primary");
-    expect(parsed.output[0].content[0].text).toContain(
+    expect(parsed!.output![0].content![0].text).toContain("openai:gpt-primary");
+    expect(parsed!.output![0].content![0].text).toContain(
       "anthropic:claude-fallback",
     );
-    expect(parsed.output[1].role).toBe("assistant");
+    expect(parsed!.output![1].role).toBe("assistant");
   });
 
   it("deduplicates repeated fallback metadata across stream chunks", async () => {
@@ -523,13 +559,13 @@ describe("ChatPage", () => {
       reason_kind: "rate_limited",
     };
 
-    capturedOptions.api.responseParser(
+    capturedOptions!.api.responseParser(
       JSON.stringify({
         object: "response.delta",
         metadata: { qwenpaw_model_fallbacks: [event] },
       }),
     );
-    const parsed = capturedOptions.api.responseParser(
+    const parsed = capturedOptions!.api.responseParser(
       JSON.stringify({
         object: "response",
         status: "completed",
@@ -538,7 +574,9 @@ describe("ChatPage", () => {
       }),
     );
 
-    expect(parsed.output[0].metadata.qwenpaw_model_fallbacks).toHaveLength(1);
+    expect(parsed!.output![0].metadata!.qwenpaw_model_fallbacks).toHaveLength(
+      1,
+    );
   });
 
   // ── handleFileUpload ──────────────────────────────────────────────────────
@@ -553,7 +591,7 @@ describe("ChatPage", () => {
     const onError = vi.fn();
     const onSuccess = vi.fn();
 
-    await capturedOptions.sender.attachments.customRequest({
+    await capturedOptions!.sender.attachments.customRequest({
       file: bigFile,
       onSuccess,
       onError,
@@ -571,7 +609,7 @@ describe("ChatPage", () => {
     const onSuccess = vi.fn();
     const onError = vi.fn();
 
-    await capturedOptions.sender.attachments.customRequest({
+    await capturedOptions!.sender.attachments.customRequest({
       file: smallFile,
       onSuccess,
       onError,
@@ -598,8 +636,8 @@ describe("ChatPage", () => {
     renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
     await screen.findByTestId("chat-ui");
 
-    expect(capturedOptions.sender.allowSpeech).toBe(false);
-    expect(capturedOptions.sender.prefix).toBeTruthy();
+    expect(capturedOptions!.sender.allowSpeech).toBe(false);
+    expect(capturedOptions!.sender.prefix).toBeTruthy();
 
     act(() => {
       resolveProviderType({ transcription_provider_type: "disabled" });
@@ -615,8 +653,8 @@ describe("ChatPage", () => {
     await screen.findByTestId("chat-ui");
 
     await waitFor(() => {
-      expect(capturedOptions.sender.allowSpeech).toBe(false);
-      expect(capturedOptions.sender.prefix).toBeTruthy();
+      expect(capturedOptions!.sender.allowSpeech).toBe(false);
+      expect(capturedOptions!.sender.prefix).toBeTruthy();
     });
   });
 
@@ -629,8 +667,8 @@ describe("ChatPage", () => {
     await screen.findByTestId("chat-ui");
 
     await waitFor(() => {
-      expect(capturedOptions.sender.allowSpeech).toBe(true);
-      expect(capturedOptions.sender.prefix).toBeTruthy();
+      expect(capturedOptions!.sender.allowSpeech).toBe(true);
+      expect(capturedOptions!.sender.prefix).toBeTruthy();
     });
   });
 
@@ -668,10 +706,10 @@ describe("ChatPage", () => {
   it("shows copy and timestamp actions for responses", async () => {
     renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
     await screen.findByTestId("chat-ui");
-    expect(capturedOptions.actions.list[0].onClick).toEqual(
+    expect(capturedOptions!.actions.list[0].onClick).toEqual(
       expect.any(Function),
     );
-    expect(capturedOptions.actions.list[1].render).toEqual(
+    expect(capturedOptions!.actions.list[1].render).toEqual(
       expect.any(Function),
     );
   });

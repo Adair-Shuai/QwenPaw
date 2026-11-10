@@ -1157,6 +1157,7 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     {
       promise: Promise<IAgentScopeRuntimeWebUISession>;
       owner: SessionOwnerToken;
+      signal?: AbortSignal;
     }
   > = new Map();
 
@@ -1662,6 +1663,7 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
   }
 
   async getSession(sessionId: string, signal?: AbortSignal) {
+    if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
     const owner = this.getActiveOwner();
 
     // Check short-lived result cache first (populated by preloadSession).
@@ -1681,16 +1683,21 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
     // new agent never adopts a request (and its captured owner) started by a
     // previous agent.
     const existingRequest = this.sessionRequests.get(sessionId);
-    if (existingRequest && this.isActiveOwner(existingRequest.owner)) {
+    if (
+      existingRequest &&
+      !existingRequest.signal?.aborted &&
+      this.isActiveOwner(existingRequest.owner)
+    ) {
       return existingRequest.promise;
     }
 
     const requestPromise = this._doGetSession(sessionId, signal, owner);
-    const entry = { promise: requestPromise, owner };
+    const entry = { promise: requestPromise, owner, signal };
     this.sessionRequests.set(sessionId, entry);
 
     try {
       const session = await requestPromise;
+      if (signal?.aborted) throw new DOMException("Aborted", "AbortError");
       const extendedSession = session as ExtendedSession;
       const realId = extendedSession.realId || null;
       if (
@@ -1942,10 +1949,11 @@ class SessionApi implements IAgentScopeRuntimeWebUISessionAPI {
 
   async updateSession(session: Partial<IAgentScopeRuntimeWebUISession>) {
     // Strip messages before merging to avoid storing large data in the
-    // session list. Use destructuring instead of mutating the input object
+    // session list. Omit them from a shallow copy of the input object
     // — the library may pass its own internal session reference, and
     // mutating session.messages would corrupt its React state.
-    const { messages: _msgs, ...metadata } = session;
+    const metadata = { ...session };
+    delete metadata.messages;
     const index = this.sessionList.findIndex((s) => s.id === metadata.id);
 
     if (index > -1) {

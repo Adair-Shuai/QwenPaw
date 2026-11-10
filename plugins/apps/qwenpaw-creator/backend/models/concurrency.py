@@ -33,7 +33,6 @@ async def model_slot(kind: str) -> AsyncIterator[None]:
         limit = config.get_vlm_concurrency()
     else:
         raise ValueError(f"Unknown model concurrency kind: {kind}")
-
     limiter = _get_limiter(kind, limit)
     async with limiter:
         yield

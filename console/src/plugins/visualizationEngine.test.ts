@@ -1,4 +1,8 @@
+import { LAYOUT } from "../../../plugins/bundle/ugsci/ui/src/visualization/viewer/ui/layout";
 import { ThreeViewerEngine } from "../../../plugins/bundle/ugsci/ui/src/visualization/viewer/engines/ThreeViewerEngine";
+import { createDatasetObject } from "../../../plugins/bundle/ugsci/ui/src/visualization/viewer/scene/createDatasetObject";
+import { networkLineIndices } from "../../../plugins/bundle/ugsci/ui/src/visualization/viewer/features/network/networkObject";
+import type { BufferGeometry, Mesh, MeshPhongMaterial } from "three";
 // @ts-expect-error Three.js ships runtime JS; plugin-specific typings are used by its own typecheck.
 import * as THREE from "../../../plugins/bundle/ugsci/ui/node_modules/three/build/three.module.js";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -381,13 +385,17 @@ async function engineHarness() {
     catalogGeneration: 0,
     datasetLoading: false,
     geometry: null,
+    currentObject: null,
     mesh: null,
     hexEdgeLines: null,
     cellIds: null,
     baseIndices: null,
     overlayMeshes: new Map(),
+    overlayObjects: new Map(),
     overlayLoading: new Set(),
     overlayVisibility: new Map(),
+    analysisStates: new Map(),
+    selectionRevision: 0,
     origin: [0, 0, 0],
     modelRoot: new THREE.Group(),
     scene: new THREE.Scene(),
@@ -404,7 +412,11 @@ async function engineHarness() {
       info: { render: { calls: 2, triangles: 4 } },
     },
     workerManager: { isAvailable: () => false },
-    slicePlayer: { setDims: vi.fn() },
+    slicePlayer: {
+      setDims: vi.fn(),
+      setPlaying: vi.fn(),
+      root: document.createElement("div"),
+    },
     viewRouter: new ViewRouter(sidebar, undefined, store),
     opacity: 0.8,
     abortController: null,
@@ -417,6 +429,7 @@ async function engineHarness() {
     onSelectionCallback: null,
   });
   for (const method of [
+    "updatePanelOffsets",
     "resetFilters",
     "updateLegend",
     "renderHistogram",
@@ -441,6 +454,96 @@ async function engineHarness() {
 }
 
 describe("real visualization engine operations", () => {
+  it("deletes a well overlay through its owner and releases detached and rendered resources exactly once", async () => {
+    vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue(null);
+    vi.spyOn(window, "confirm").mockReturnValue(true);
+    vi.stubGlobal(
+      "requestAnimationFrame",
+      vi.fn(() => 1),
+    );
+    vi.stubGlobal("cancelAnimationFrame", vi.fn());
+    const primary = dataset();
+    const well = dataset({
+      id: "well-overlay",
+      name: "Well overlay",
+      source: "wellbore",
+      metadata: { placement: "spatial", geometry_primitive: "lines" },
+    });
+    let deleted = false;
+    const request = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (
+          url.endsWith("/datasets/well-overlay") &&
+          init?.method === "DELETE"
+        ) {
+          deleted = true;
+          return new Response('{"status":"removed"}');
+        }
+        if (url.endsWith("/manifest"))
+          return new Response(
+            JSON.stringify({
+              version: 1,
+              datasets: deleted ? [primary] : [primary, well],
+            }),
+          );
+        if (url.endsWith("/net.f32")) return new Response(positions().buffer);
+        if (url.endsWith("/net.u32")) return new Response(indices().buffer);
+        if (url.endsWith("/ids.u32"))
+          return new Response(new Uint32Array([0, 1]).buffer);
+        if (url.endsWith("/pressure.f32"))
+          return new Response(new Float32Array([12, 25]).buffer);
+        return new Response('{"commands":[]}');
+      },
+    );
+    const root = document.createElement("div");
+    document.body.appendChild(root);
+    const engine = new ThreeViewerEngine(root, {
+      apiBase: "/api",
+      request,
+      autoLoad: false,
+    });
+    const state = engine;
+    try {
+      await engine.ready;
+      await engine.executeCommand("open", { datasetId: primary.id });
+      const primaryObject = state["currentObject"]!;
+      const primaryDisposed = vi.spyOn(primaryObject.geometry, "dispose");
+      await state["toggleDatasetVisibility"](well, true);
+      const overlay = state["overlayObjects"].get(well.id)!;
+      expect(overlay).toBeDefined();
+      const tube = overlay.object!.getObjectByName("oilgas-well-tube") as Mesh<
+        BufferGeometry,
+        MeshPhongMaterial | import("three").MeshBasicMaterial
+      >;
+      const sourceDisposed = vi.spyOn(overlay.geometry, "dispose");
+      const tubeDisposed = vi.spyOn(tube.geometry, "dispose");
+      const materialDisposed = vi.spyOn(tube.material, "dispose");
+      expect(state["wellPlanPoints"].has(well.id)).toBe(true);
+      await state["deleteCatalogDataset"](well);
+      expect(deleted).toBe(true);
+      for (const collection of [
+        state["overlayObjects"],
+        state["overlayMeshes"],
+        state["overlayVisibility"],
+        state["overlayLoading"],
+        state["wellPlanPoints"],
+      ])
+        expect(collection.has(well.id)).toBe(false);
+      expect(overlay.object!.parent).toBeNull();
+      expect(state["currentObject"]).toBe(primaryObject);
+      expect(primaryDisposed).not.toHaveBeenCalled();
+      for (const dispose of [sourceDisposed, tubeDisposed, materialDisposed])
+        expect(dispose).toHaveBeenCalledTimes(1);
+      engine.dispose();
+      for (const dispose of [sourceDisposed, tubeDisposed, materialDisposed])
+        expect(dispose).toHaveBeenCalledTimes(1);
+      expect(primaryDisposed).toHaveBeenCalledTimes(1);
+    } finally {
+      engine.dispose();
+      root.remove();
+    }
+  });
   it("builds stable persistence namespaces without credentials and retains legacy unscoped keys", () => {
     const scope: ViewerMountOptions = {
       apiBase:
@@ -550,18 +653,18 @@ describe("real visualization engine operations", () => {
     try {
       await Promise.all(engines.map((engine) => engine.ready));
       for (const engine of engines) {
-        await (engine as any).restoreScene();
+        await engine["restoreScene"]();
         expect(engine.store.getState().dataset).toBeNull();
-        (engine as any).recallUserView();
-        expect((engine as any).camera.position.toArray()).not.toEqual([
+        engine["recallUserView"]();
+        expect(engine["camera"].position.toArray()).not.toEqual([
           900, 900, 900,
         ]);
       }
       for (const [index, engine] of engines.entries()) {
         await engine.executeCommand("open", { datasetId: "net" });
-        (engine as any).camera.position.set(index + 2, index + 4, index + 6);
-        (engine as any).saveScene();
-        (engine as any).storeUserView();
+        engine["camera"].position.set(index + 2, index + 4, index + 6);
+        engine["saveScene"]();
+        engine["storeUserView"]();
       }
       expect(
         new Set(options.map((item) => viewerPersistenceKey(item, "scene")))
@@ -573,26 +676,22 @@ describe("real visualization engine operations", () => {
           localStorage.getItem(viewerPersistenceKey(options[index], "scene"))!,
         );
         expect(saved.camera.position).toEqual(position);
-        (engine as any).camera.position.set(0, 0, 0);
-        (engine as any).recallUserView();
-        expect((engine as any).camera.position.toArray()).toEqual(
+        engine["camera"].position.set(0, 0, 0);
+        engine["recallUserView"]();
+        expect(engine["camera"].position.toArray()).toEqual(
           position.map((value) => expect.closeTo(value, 8)),
         );
-        (engine as any).camera.position.set(1, 1, 1);
-        await (engine as any).restoreScene();
-        expect((engine as any).detailsEl.textContent).not.toContain(
-          "场景恢复失败",
-        );
-        expect((engine as any).camera.position.toArray()).toEqual(
+        engine["camera"].position.set(1, 1, 1);
+        await engine["restoreScene"]();
+        expect(engine["detailsEl"].textContent).not.toContain("场景恢复失败");
+        expect(engine["camera"].position.toArray()).toEqual(
           position.map((value) => expect.closeTo(value, 8)),
         );
       }
       engines[2].update({ persistenceKey: "card-c" });
-      (engines[2] as any).camera.position.set(100, 100, 100);
-      (engines[2] as any).recallUserView();
-      expect((engines[2] as any).camera.position.toArray()).toEqual([
-        100, 100, 100,
-      ]);
+      engines[2]["camera"].position.set(100, 100, 100);
+      engines[2]["recallUserView"]();
+      expect(engines[2]["camera"].position.toArray()).toEqual([100, 100, 100]);
       expect(localStorage.getItem("ugsci.visualization.scene")).toBe(
         '{"datasetId":"unknown-legacy-owner"}',
       );
@@ -653,7 +752,7 @@ describe("real visualization engine operations", () => {
     const root = document.createElement("div");
     document.body.append(root);
     const engine = new ThreeViewerEngine(root, options);
-    const state = engine as any;
+    const state = engine;
     localStorage.clear();
     try {
       await engine.ready;
@@ -671,38 +770,38 @@ describe("real visualization engine operations", () => {
           camera: { position: [21, 22, 23], target: [1, 2, 3], up: [0, 1, 0] },
         }),
       );
-      const oldRestore = state.restoreScene();
+      const oldRestore = state["restoreScene"]();
       await vi.waitFor(() => expect(resolveAlpha).toBeDefined());
-      expect(state.restoringScene).toBe(true);
+      expect(state["restoringScene"]).toBe(true);
       engine.update({ headers: { "X-Agent-Id": "beta" } });
       await engine.ready;
-      expect(state.restoringScene).toBe(false);
+      expect(state["restoringScene"]).toBe(false);
       await engine.executeCommand("open", { datasetId: "beta-net" });
       await engine.executeCommand("set-opacity", { opacity: 0.75 });
-      state.camera.position.set(2, 4, 6);
-      state.saveScene();
-      const expectedColormap = state.currentColormap;
+      state["camera"].position.set(2, 4, 6);
+      state["saveScene"]();
+      const expectedColormap = state["currentColormap"];
       deferBeta = true;
-      const newRestore = state.restoreScene();
+      const newRestore = state["restoreScene"]();
       await vi.waitFor(() => expect(resolveBeta).toBeDefined());
-      expect(state.restoringScene).toBe(true);
+      expect(state["restoringScene"]).toBe(true);
 
       resolveAlpha!(new Response(positions().buffer));
       await oldRestore;
-      expect(state.restoringScene).toBe(true);
+      expect(state["restoringScene"]).toBe(true);
       expect(engine.store.getState().dataset?.id).toBe("beta-net");
-      expect(state.currentColormap).toBe(expectedColormap);
-      expect(state.opacity).toBe(0.75);
-      expect(state.zScale).toBe(1);
-      expect(state.camera.position.toArray()).toEqual([2, 4, 6]);
-      expect(state.detailsEl.textContent).not.toContain("场景恢复失败");
+      expect(state["currentColormap"]).toBe(expectedColormap);
+      expect(state["opacity"]).toBe(0.75);
+      expect(state["zScale"]).toBe(1);
+      expect(state["camera"].position.toArray()).toEqual([2, 4, 6]);
+      expect(state["detailsEl"].textContent).not.toContain("场景恢复失败");
 
       resolveBeta!(new Response(positions().buffer));
       await newRestore;
-      expect(state.restoringScene).toBe(false);
-      expect(state.infoEl.textContent).toBe("场景已恢复");
-      expect(state.opacity).toBe(0.75);
-      expect(state.camera.position.toArray()).toEqual(
+      expect(state["restoringScene"]).toBe(false);
+      expect(state["infoEl"].textContent).toBe("场景已恢复");
+      expect(state["opacity"]).toBe(0.75);
+      expect(state["camera"].position.toArray()).toEqual(
         [2, 4, 6].map((value) => expect.closeTo(value, 8)),
       );
     } finally {
@@ -728,11 +827,11 @@ describe("real visualization engine operations", () => {
       new THREE.Vector3(-500, -500, -100),
       new THREE.Vector3(500, 500, 100),
     );
-    for (const view of ["iso", "top", "north"]) {
+    for (const view of ["iso", "top", "north"] as const) {
       for (const collapsed of [false, true]) {
         engine.objectTreeCollapsed = collapsed;
         engine.sidebarCollapsed = collapsed;
-        (ThreeViewerEngine.prototype as any).frameBox.call(engine, box, view);
+        ThreeViewerEngine.prototype["frameBox"].call(engine, box, view);
         engine.camera.lookAt(engine.controls.target);
         engine.camera.updateMatrixWorld();
         for (const x of [-500, 500])
@@ -743,8 +842,16 @@ describe("real visualization engine operations", () => {
               );
               const pixelX = (projected.x + 1) * 625;
               const pixelY = (1 - projected.y) * 425;
-              expect(pixelX).toBeGreaterThanOrEqual(collapsed ? 44 : 264);
-              expect(pixelX).toBeLessThanOrEqual(collapsed ? 1206 : 942);
+              expect(pixelX).toBeGreaterThanOrEqual(
+                (collapsed ? LAYOUT.treeCollapsed : LAYOUT.treeWidth) + 8,
+              );
+              expect(pixelX).toBeLessThanOrEqual(
+                1250 -
+                  (collapsed
+                    ? LAYOUT.inspectorCollapsed
+                    : LAYOUT.inspectorWidth) -
+                  8,
+              );
               expect(pixelY).toBeGreaterThanOrEqual(80);
               expect(pixelY).toBeLessThanOrEqual(780);
             }
@@ -853,6 +960,8 @@ describe("real visualization engine operations", () => {
     tabHost.append(engine.viewRouter.createTabs());
     engine.wellLogEl = document.createElement("canvas");
     engine.wellMapRoot = document.createElement("div");
+    engine.wellMapCanvas = document.createElement("canvas");
+    engine.refreshWellMap = ThreeViewerEngine.prototype["refreshWellMap"];
     const tube = dataset({
       id: "tube",
       source: "network-tube",
@@ -943,7 +1052,7 @@ describe("real visualization engine operations", () => {
     expect(engine.loadDataset).not.toHaveBeenCalled();
     engine.currentDataset = null;
     await engine.applyActiveView("intersection");
-    expect(engine.loadDataset).toHaveBeenCalledExactlyOnceWith("surface");
+    expect(engine.loadDataset).toHaveBeenCalledExactlyOnceWith("surface", true);
   });
   it("supports keyboard view tabs and silent synchronization without activation callbacks", () => {
     const container = document.createElement("div");
@@ -968,18 +1077,14 @@ describe("real visualization engine operations", () => {
       container.remove();
     }
   });
-  it("preserves all three explicit network segments and correctly recognizes legacy degenerates", async () => {
-    const { engine } = await engineHarness();
+  it("preserves all three explicit network segments and correctly recognizes legacy degenerates", () => {
     const pairs = new Uint32Array([0, 1, 1, 2, 2, 3]);
-    expect(engine.lineRenderIndices(dataset(), pairs, 4)).toBe(pairs);
-    expect(engine.lineRenderIndices(dataset({ metadata: {} }), pairs, 4)).toBe(
-      pairs,
-    );
+    expect(networkLineIndices(dataset(), pairs)).toBe(pairs);
+    expect(networkLineIndices(dataset({ metadata: {} }), pairs)).toBe(pairs);
     expect(
-      engine.lineRenderIndices(
+      networkLineIndices(
         dataset({ metadata: {} }),
         new Uint32Array([0, 1, 0, 1, 2, 1, 2, 3, 2]),
-        4,
       ),
     ).toEqual(pairs);
   });
@@ -993,10 +1098,23 @@ describe("real visualization engine operations", () => {
       new Float32Array([1, 0, 0, 0, 1, 0, 0, 0, 1, 1, 1, 1]),
       3,
     );
-    const object = engine.buildWellObject(well, positions(), pointColors);
+    const handle = createDatasetObject({
+      dataset: well,
+      positions: positions(),
+      indices: indices(),
+      origin: [0, 0, 0],
+      role: "primary",
+      opacity: 0.85,
+      wireframe: false,
+      wellLabelsVisible: true,
+    });
+    handle.applyColors(pointColors);
+    const object = handle.object!;
     const tube = object.children.find(
-      (node: { name: string }) => node.name === "oilgas-well-tube",
+      (node): node is Mesh<BufferGeometry, MeshPhongMaterial> =>
+        node instanceof THREE.Mesh && node.name === "oilgas-well-tube",
     );
+    if (!tube) throw new Error("Expected the rendered well tube mesh");
     expect(tube.material.vertexColors).toBe(true);
     expect(tube.geometry.getAttribute("color").count).toBe(
       tube.geometry.getAttribute("position").count,
@@ -1017,10 +1135,10 @@ describe("real visualization engine operations", () => {
     engine.scalarMin = 0;
     engine.scalarMax = 1;
     // This harness stubs only rendering chrome; execute the actual legend method.
-    (ThreeViewerEngine.prototype as any).updateLegend.call(engine);
+    ThreeViewerEngine.prototype["updateLegend"].call(engine);
     expect(engine.legendEl.textContent).toContain("全部缺测");
     expect(engine.legendEl.textContent).not.toContain("0.000");
-    engine.disposeObject3D(object);
+    handle.dispose();
   });
   it("waits for initialization before open and rejects invalid geometry instead of acknowledging success", async () => {
     const { engine } = await engineHarness();

@@ -19,6 +19,12 @@ import type { RendererContext } from "../types";
 
 type ViewMode = "preview" | "code";
 
+type ToolbarProps = Pick<RendererContext, "artifact" | "workspace"> & {
+  viewMode: ViewMode;
+  setViewMode: React.Dispatch<React.SetStateAction<ViewMode>>;
+  t: ReturnType<typeof useTranslation>["t"];
+};
+
 const SandpackRenderer: React.FC<RendererContext> = ({
   artifact,
   theme,
@@ -28,7 +34,9 @@ const SandpackRenderer: React.FC<RendererContext> = ({
   const { t } = useTranslation();
   const [viewMode, setViewMode] = useState<ViewMode>("preview");
   const [sandpackLoaded, setSandpackLoaded] = useState(false);
-  const [sandpackMod, setSandpackMod] = useState<any>(null);
+  const [sandpackMod, setSandpackMod] = useState<
+    typeof import("@codesandbox/sandpack-react") | null
+  >(null);
   const code = artifact.textContent ?? "";
 
   useEffect(() => {
@@ -133,7 +141,7 @@ const SandpackRenderer: React.FC<RendererContext> = ({
   );
 };
 
-const Toolbar: React.FC<any> = ({
+const Toolbar: React.FC<ToolbarProps> = ({
   viewMode,
   setViewMode,
   artifact,

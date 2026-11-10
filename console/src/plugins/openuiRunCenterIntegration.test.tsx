@@ -1,3 +1,5 @@
+const currentCodeBlocks = () =>
+  chatExtensions.getListSnapshot()["response.codeBlocks"];
 import React from "react";
 import { readFileSync } from "node:fs";
 import path from "node:path";
@@ -71,6 +73,8 @@ describe("published OpenUI and Run Center integration", () => {
   let View: React.ComponentType<ViewProps>;
   let saved = { revision: 1, plan: plan() };
   const fetchHost = vi.fn(async (url: string, _init?: RequestInit) => {
+    void _init;
+
     if (url !== "/run-center/runs/openui-integration-run/presentation") {
       throw new Error(`Unexpected integration request: ${url}`);
     }
@@ -174,20 +178,12 @@ describe("published OpenUI and Run Center integration", () => {
       view.container.querySelector("[data-openui-task-scope]"),
     ).not.toBeNull();
     expect(
-      chatExtensions
-        .getListSnapshot()
-        ["response.codeBlocks"].some(
-          (entry) => entry.pluginId === "qwenpaw-openui",
-        ),
+      currentCodeBlocks().some((entry) => entry.pluginId === "qwenpaw-openui"),
     ).toBe(true);
     act(() => removePluginRuntime("qwenpaw-openui"));
     expect(runtime.openui).toBeUndefined();
     expect(
-      chatExtensions
-        .getListSnapshot()
-        ["response.codeBlocks"].some(
-          (entry) => entry.pluginId === "qwenpaw-openui",
-        ),
+      currentCodeBlocks().some((entry) => entry.pluginId === "qwenpaw-openui"),
     ).toBe(false);
     expect(view.container.querySelector("[data-openui-task-scope]")).toBeNull();
     expect(

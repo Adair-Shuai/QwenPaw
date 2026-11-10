@@ -57,7 +57,6 @@ def smart_resize(
             max_pixels,
         )
         max_pixels = min_pixels
-
     height = max(factor, round(height / factor) * factor)
     width = max(factor, round(width / factor) * factor)
 

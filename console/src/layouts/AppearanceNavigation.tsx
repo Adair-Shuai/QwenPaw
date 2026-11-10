@@ -12,6 +12,8 @@ export default function AppearanceNavigation({
   onNavigate,
   onWorkspace,
   renderEntry,
+  showPrimary = true,
+  excludedKeys = [],
 }: {
   entries: FlatMenuEntry[];
   shortcuts: FlatMenuEntry[];
@@ -19,6 +21,8 @@ export default function AppearanceNavigation({
   onNavigate: (entry: FlatMenuEntry) => void;
   onWorkspace?: (trigger: HTMLElement) => void;
   renderEntry: (entry: FlatMenuEntry) => ReactNode;
+  showPrimary?: boolean;
+  excludedKeys?: readonly string[];
 }) {
   const { t } = useTranslation();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -33,7 +37,12 @@ export default function AppearanceNavigation({
   }, [moreOpen]);
   const extraEntries = shortcuts.filter(
     (entry) =>
-      !["core.app-center", "core.cron-jobs", "core.chat"].includes(entry.key),
+      ![
+        "core.app-center",
+        "core.cron-jobs",
+        "core.chat",
+        ...excludedKeys,
+      ].includes(entry.key),
   );
   const workKeys = new Set(["core.files", "core.workspace", "core.inbox"]);
   const groups = [
@@ -59,6 +68,7 @@ export default function AppearanceNavigation({
     icon: ReactNode,
     label: string,
   ) =>
+    showPrimary &&
     entry && (
       <button
         type="button"
@@ -80,7 +90,7 @@ export default function AppearanceNavigation({
         <Clock3 size={17} />,
         t("sidebar.automation", "Automation"),
       )}
-      {onWorkspace && (
+      {showPrimary && onWorkspace && (
         <button
           type="button"
           onClick={(event) => onWorkspace(event.currentTarget)}

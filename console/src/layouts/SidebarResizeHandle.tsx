@@ -81,8 +81,6 @@ export default function SidebarResizeHandle({
       className={styles.resizeHandle}
       onPointerDown={(event) => {
         if (event.button !== 0) return;
-        event.preventDefault();
-        event.currentTarget.focus({ preventScroll: true });
         gesture.current = { id: event.pointerId, x: event.clientX, width };
         event.currentTarget.setPointerCapture(event.pointerId);
         onResizingChange(true);

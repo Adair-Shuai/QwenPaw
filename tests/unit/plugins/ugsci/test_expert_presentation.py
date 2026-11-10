@@ -97,6 +97,179 @@ def test_display_metadata_roundtrip_preserves_prompts_and_agent_isolation(
     ) == '{"name":"original"}'
 
 
+def test_avatar_recipe_roundtrip_and_legacy_metadata_defaults(
+    presentation_env,
+):
+    client, workspaces = presentation_env
+    initial = client.get("/experts/a/presentation").json()
+    assert initial["avatar"] is None
+    recipe = {
+        "domain": "gas",
+        "role": "pressure",
+        "shell": "shield",
+        "visor": "angular",
+        "expression": "friendly",
+        "badge": "research",
+        "crown_domain": "law",
+        "crown_role": "counsel",
+        "category_label": "跨领域专家",
+        "colors": None,
+    }
+    response = client.put(
+        "/experts/a/presentation",
+        json={**initial, "avatar": recipe},
+    )
+    assert response.status_code == 200
+    assert response.json()["avatar"] == recipe
+    assert client.get("/experts/a/presentation").json()["avatar"] == recipe
+    assert client.get("/experts/b/presentation").json()["avatar"] is None
+    assert (workspaces["a"] / "PROFILE.md").read_text("utf-8") == "原有角色提示词"
+    path = workspaces["b"] / "ugsci/expert-card.json"
+    path.parent.mkdir(exist_ok=True)
+    legacy = {key: value for key, value in initial.items() if key != "avatar"}
+    path.write_text(json.dumps(legacy), encoding="utf-8")
+    assert client.get("/experts/b/presentation").json()["avatar"] is None
+
+
+def test_avatar_legacy_update_preserves_recipe_and_explicit_null_resets_it(
+    presentation_env,
+):
+    client, _ = presentation_env
+    initial = client.get("/experts/a/presentation").json()
+    saved = client.put(
+        "/experts/a/presentation",
+        json={**initial, "avatar": {"domain": "storage", "role": "capacity"}},
+    ).json()
+    metadata_only = {
+        key: value for key, value in saved.items() if key != "avatar"
+    }
+    metadata_only["summary"] = "旧客户端更新简介"
+    updated = client.put("/experts/a/presentation", json=metadata_only).json()
+    assert updated["avatar"] == saved["avatar"]
+    reset = client.put(
+        "/experts/a/presentation",
+        json={**updated, "avatar": None},
+    )
+    assert reset.status_code == 200
+    assert reset.json()["avatar"] is None
+
+
+@pytest.mark.parametrize(
+    "invalid",
+    [
+        {"domain": "unknown", "role": "capacity"},
+        {"domain": "storage", "role": "clinical"},
+        {"domain": "storage", "role": "capacity", "shell": "<script>"},
+        {"domain": "storage", "role": "capacity", "badge": "unknown"},
+        {"domain": "storage", "role": "capacity", "crown_domain": "unknown"},
+        {"domain": "storage", "role": "capacity", "crown_role": "clinical"},
+        {"domain": "storage", "role": "capacity", "svg": "<svg/>"},
+    ],
+)
+def test_invalid_avatar_recipes_leave_saved_metadata_intact(
+    presentation_env,
+    invalid,
+):
+    client, workspaces = presentation_env
+    initial = client.get("/experts/a/presentation").json()
+    saved = client.put("/experts/a/presentation", json=initial).json()
+    path = workspaces["a"] / "ugsci/expert-card.json"
+    original = path.read_bytes()
+    assert (
+        client.put(
+            "/experts/a/presentation",
+            json={**saved, "avatar": invalid},
+        ).status_code
+        == 422
+    )
+    assert path.read_bytes() == original
+
+
+def test_avatar_part_colors_roundtrip_legacy_edits_and_explicit_reset(
+    presentation_env,
+):
+    client, workspaces = presentation_env
+    initial = client.get("/experts/a/presentation").json()
+    colors = {
+        "shell": "#e07842",
+        "visor": "#171717",
+        "eyes": "#9de7df",
+        "crown": "#356c89",
+        "badge": "#a86b35",
+        "badge_ring": "#748058",
+        "background": "transparent",
+    }
+    response = client.put(
+        "/experts/a/presentation",
+        json={
+            **initial,
+            "avatar": {
+                "domain": "storage",
+                "role": "capacity",
+                "colors": colors,
+            },
+        },
+    )
+    assert response.status_code == 200
+    saved = response.json()
+    assert saved["avatar"]["colors"] == colors
+    assert client.get("/experts/a/presentation").json() == saved
+    assert (
+        json.loads(
+            (workspaces["a"] / "ugsci/expert-card.json").read_text("utf-8"),
+        )["avatar"]["colors"]
+        == colors
+    )
+    legacy = {
+        key: value for key, value in saved["avatar"].items() if key != "colors"
+    }
+    updated = client.put(
+        "/experts/a/presentation",
+        json={**saved, "avatar": {**legacy, "visor": "soft"}},
+    ).json()
+    assert updated["avatar"]["colors"] == colors
+    reset = client.put(
+        "/experts/a/presentation",
+        json={**updated, "avatar": {**updated["avatar"], "colors": {}}},
+    ).json()
+    assert set(reset["avatar"]["colors"].values()) == {"auto"}
+    assert (workspaces["a"] / "PROFILE.md").read_text("utf-8") == "原有角色提示词"
+    assert client.get("/experts/b/presentation").json()["avatar"] is None
+
+
+@pytest.mark.parametrize(
+    "colors",
+    [
+        {"shell": "red"},
+        {"shell": "#123"},
+        {"shell": "#12345678"},
+        {"shell": '" onload="alert(1)'},
+        {"visor": "transparent"},
+        {"eyes": "url(https://example.com)"},
+        {"unknown": "#123456"},
+        {"background": "<script>"},
+    ],
+)
+def test_invalid_avatar_colors_preserve_the_saved_recipe(
+    presentation_env,
+    colors,
+):
+    client, workspaces = presentation_env
+    initial = client.get("/experts/a/presentation").json()
+    saved = client.put(
+        "/experts/a/presentation",
+        json={**initial, "avatar": {"domain": "storage", "role": "capacity"}},
+    ).json()
+    path = workspaces["a"] / "ugsci/expert-card.json"
+    before = path.read_bytes()
+    result = client.put(
+        "/experts/a/presentation",
+        json={**saved, "avatar": {**saved["avatar"], "colors": colors}},
+    )
+    assert result.status_code == 422
+    assert path.read_bytes() == before
+
+
 def test_display_metadata_rejects_stale_invalid_and_unknown_updates(
     presentation_env,
 ):

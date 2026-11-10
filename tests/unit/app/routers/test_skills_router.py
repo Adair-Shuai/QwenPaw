@@ -83,7 +83,6 @@ def test_list_skills_returns_workspace_specs(client, patch_get_agent):
         return_value=[],
     ) as build_mock:
         response = client.get("/api/skills")
-
     assert response.status_code == 200
     assert response.json() == []
     build_mock.assert_called_once()
@@ -99,7 +98,6 @@ def test_list_skills_404_when_agent_lookup_fails(client):
         ),
     ):
         response = client.get("/api/skills")
-
     assert response.status_code == 404
 
 
@@ -125,7 +123,6 @@ def test_search_hub_returns_mapped_specs(client):
         new=AsyncMock(return_value=[fake_hub_result]),
     ) as search_mock:
         response = client.get("/api/skills/hub/search?q=cool&limit=5")
-
     assert response.status_code == 200
     body = response.json()
     assert len(body) == 1
@@ -144,7 +141,6 @@ def test_list_pool_skills_returns_pool_specs(client):
         return_value=[],
     ) as build_mock:
         response = client.get("/api/skills/pool")
-
     assert response.status_code == 200
     assert response.json() == []
     build_mock.assert_called_once()
@@ -172,7 +168,6 @@ def test_start_install_registers_task_and_returns_id(
             "/api/skills/hub/install/start",
             json={"bundle_url": "https://hub/example.zip"},
         )
-
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["bundle_url"] == "https://hub/example.zip"
@@ -193,7 +188,6 @@ def test_get_install_status_returns_task(client, patch_get_agent):
             "/api/skills/hub/install/start",
             json={"bundle_url": "https://hub/x.zip"},
         )
-
     task_id = start.json()["task_id"]
     status = client.get(f"/api/skills/hub/install/status/{task_id}")
     assert status.status_code == 200
@@ -222,7 +216,6 @@ def test_cancel_install_marks_task_cancelled(client, patch_get_agent):
         task_id = start.json()["task_id"]
 
         cancel = client.post(f"/api/skills/hub/install/cancel/{task_id}")
-
     assert cancel.status_code == 200
     assert cancel.json() == {"task_id": task_id, "status": "cancelled"}
     cancel_event = skills_module._hub_install_cancel_events[task_id]

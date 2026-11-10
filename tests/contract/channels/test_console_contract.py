@@ -58,6 +58,8 @@ class TestConsoleChannelContract(ChannelContractTest):
         )
 
     def test_default_config_and_policy(self):
+        # Exercise real internals and verify lifecycle state in this test.
+        # pylint: disable=protected-access
         from qwenpaw.app.channels.console.channel import ConsoleChannel
         from qwenpaw.config.config import ConsoleConfig
 
@@ -145,6 +147,8 @@ class TestConsoleChannelContract(ChannelContractTest):
         )
 
     def test_parts_text_and_prefix_override(self, instance):
+        # Exercise real internals and verify lifecycle state in this test.
+        # pylint: disable=protected-access
         instance.bot_prefix = ""
         assert instance._parts_to_text([]) == ""
         parts = [TextContent(text="hello"), TextContent(text="world")]
@@ -166,6 +170,8 @@ class TestConsoleChannelContract(ChannelContractTest):
         )
 
     async def test_content_parts_are_output(self, instance, capsys):
+        # Exercise real internals and verify lifecycle state in this test.
+        # pylint: disable=protected-access
         instance._safe_print("hello-print")
         assert "hello-print" in capsys.readouterr().out
         instance._print_parts(
@@ -207,6 +213,8 @@ class TestConsoleChannelContract(ChannelContractTest):
         ids=["text", "image", "file", "audio"],
     )
     def test_complete_submissions_bypass_debounce(self, instance, part):
+        # Exercise real internals and verify lifecycle state in this test.
+        # pylint: disable=protected-access
         parts = [part]
         ok, merged = instance._apply_no_text_debounce("console:u1", parts)
         assert ok is True

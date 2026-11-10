@@ -28,11 +28,9 @@ class BootstrapHook(LifecycleHook):
     async def run(self, ctx: HookContext) -> HookResult:
         if ctx.extras.get("is_cron"):
             return HookResult()
-
         wd = ctx.workspace_dir
         if not wd:
             return HookResult()
-
         bootstrap_path = Path(wd) / "BOOTSTRAP.md"
         bootstrap_completed_flag = Path(wd) / ".bootstrap_completed"
 
@@ -40,10 +38,8 @@ class BootstrapHook(LifecycleHook):
             return HookResult()
         if not bootstrap_path.exists():
             return HookResult()
-
         if not ctx.input_msgs:
             return HookResult()
-
         try:
             from ...agents.prompt import build_bootstrap_guidance
             from ...agents.utils import prepend_to_message_content
@@ -52,19 +48,16 @@ class BootstrapHook(LifecycleHook):
             agent_config = ctx.agent_config
             if agent_config is not None:
                 language = getattr(agent_config, "language", "zh") or "zh"
-
             bootstrap_guidance = build_bootstrap_guidance(language)
 
             for msg in ctx.input_msgs:
                 if msg.role == "user":
                     prepend_to_message_content(msg, bootstrap_guidance)
                     break
-
             bootstrap_completed_flag.touch()
             logger.debug("Bootstrap guidance injected into input_msgs")
         except Exception:
             logger.debug("bootstrap: injection failed", exc_info=True)
-
         return HookResult()
 
 

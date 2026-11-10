@@ -263,7 +263,6 @@ async def register_agent(
     except Exception as exc:
         connect_error = str(exc)
         logger.warning("Failed to connect to %s: %s", body.url, exc)
-
     # Derive alias: explicit alias > sanitised card name > URL hostname
     alias: str
     if body.alias:
@@ -278,10 +277,8 @@ async def register_agent(
         parsed = urlparse(body.url)
         alias = parsed.hostname or body.url
         card_name = ""
-
     if not card_name and card_info and card_info.get("name"):
         card_name = card_info["name"]
-
     logger.info(
         "register_agent: alias='%s' card_name='%s' url='%s'",
         alias,
@@ -295,7 +292,6 @@ async def register_agent(
             status_code=409,
             detail=f"Alias '{alias}' is already used for a different URL",
         )
-
     reg_info = {
         "url": body.url,
         "alias": alias,
@@ -305,7 +301,6 @@ async def register_agent(
     }
     if card_name:
         reg_info["card_name"] = card_name
-
     agents_cfg[alias] = reg_info
     _save_config(ws_dir, agents_cfg)
 
@@ -342,14 +337,12 @@ async def rename_agent(
             status_code=400,
             detail="Alias cannot contain whitespace",
         )
-
     reg = agents_cfg.get(alias)
     if not reg:
         raise HTTPException(
             status_code=404,
             detail=f"Agent '{alias}' not found",
         )
-
     if new_alias in agents_cfg and agents_cfg[new_alias]["url"] != reg["url"]:
         raise HTTPException(
             status_code=409,
@@ -358,7 +351,6 @@ async def rename_agent(
                 f"a different agent"
             ),
         )
-
     # Re-register under the new alias
     agents_cfg.pop(alias)
     reg["alias"] = new_alias
@@ -386,7 +378,6 @@ async def delete_agent(
             status_code=404,
             detail=f"Agent '{alias}' not found",
         )
-
     _save_config(ws_dir, agents_cfg)
 
     manager = _get_manager()
@@ -394,7 +385,6 @@ async def delete_agent(
         await manager.disconnect(reg["url"])
     except Exception as exc:
         logger.warning("Error disconnecting %s: %s", reg["url"], exc)
-
     logger.info("delete_agent: deleted alias='%s' url='%s'", alias, reg["url"])
     return {"status": "ok"}
 
@@ -425,7 +415,6 @@ async def refresh_agent(
         await manager.disconnect(reg["url"])
     except Exception:
         pass
-
     try:
         card_info = await manager.connect(
             agent_url=reg["url"],
@@ -436,7 +425,6 @@ async def refresh_agent(
     except Exception as exc:
         logger.warning("Refresh failed for %s: %s", reg["url"], exc)
         return _build_entry_response(reg, None, error=str(exc))
-
     return _build_entry_response(reg, card_info)
 
 
@@ -515,7 +503,6 @@ async def import_agents() -> ImportResponse:
                     len(page_results),
                 )
                 next_token = data.get("nextToken", "")
-
     except httpx.HTTPStatusError as exc:
         logger.warning(
             "AgentHub import HTTP error: %d — %s",
@@ -544,7 +531,6 @@ async def import_agents() -> ImportResponse:
             status_code=500,
             detail=f"Unexpected error: {exc}",
         ) from exc
-
     agents: list[ImportedAgentResponse] = []
     for item in all_results:
         interfaces = item.get("supportedInterfaces", [])
@@ -553,7 +539,6 @@ async def import_agents() -> ImportResponse:
         agent_url = interfaces[0].get("url", "")
         if not agent_url:
             continue
-
         agents.append(
             ImportedAgentResponse(
                 url=agent_url,
@@ -565,7 +550,6 @@ async def import_agents() -> ImportResponse:
                 auth_type="gateway",
             ),
         )
-
     logger.info(
         "AgentHub import complete: fetched %d raw, returned %d with URLs",
         len(all_results),
@@ -608,7 +592,6 @@ async def direct_call(request: Request, body: A2ACallRequest) -> dict:
             status_code=409,
             detail="An A2A call is already in progress",
         )
-
     logger.info(
         "direct_call: agent_alias='%s' agent_url='%s'",
         body.agent_alias,
@@ -633,10 +616,8 @@ async def direct_call(request: Request, body: A2ACallRequest) -> dict:
         context_id=body.context_id,
     ):
         final_chunk = chunk
-
     if final_chunk is None:
         return {"error": "A2A call produced no result"}
-
     result: dict = {}
     for block in final_chunk.content:
         if block.get("type") == "text":

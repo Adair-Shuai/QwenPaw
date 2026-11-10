@@ -25,7 +25,6 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
         raise RuntimeError(
             "Missing dependency resvg-py — install with: pip install resvg-py",
         ) from error
-
     return [
         meta_block(doc_type.lower(), 1, [1]),
         {"type": "image", "image": img, "page": 1, "label": "[SVG View]"},

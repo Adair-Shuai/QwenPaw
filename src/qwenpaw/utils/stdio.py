@@ -22,7 +22,6 @@ def ensure_standard_streams() -> None:
 def _ensure_text_stream(stream: TextIO | None) -> TextIO:
     if _is_stream_usable(stream):
         return cast(TextIO, stream)
-
     return _get_fallback_stream(stream)
 
 
@@ -31,7 +30,6 @@ def _get_fallback_stream(stream: TextIO | None) -> TextIO:
     fallback = _FALLBACK_STREAMS_BY_ENCODING.get(encoding)
     if _is_stream_usable(fallback):
         return fallback  # type: ignore[return-value]
-
     fallback = _open_fallback_stream(encoding)
     _FALLBACK_STREAMS_BY_ENCODING[encoding] = fallback
     _FALLBACK_STREAMS.append(fallback)
@@ -42,17 +40,14 @@ def _get_fallback_stream(stream: TextIO | None) -> TextIO:
 def _is_stream_usable(stream: TextIO | None) -> bool:
     if stream is None:
         return False
-
     try:
         stream.flush()
     except (AttributeError, OSError, ValueError):
         return False
-
     try:
         stream.write("")
     except (AttributeError, OSError, ValueError):
         return False
-
     return True
 
 
@@ -61,7 +56,6 @@ def _register_fallback_cleanup() -> None:
 
     if _FALLBACK_CLEANUP_REGISTERED:
         return
-
     atexit.register(_close_fallback_streams)
     _FALLBACK_CLEANUP_REGISTERED = True
 
@@ -73,7 +67,6 @@ def _close_fallback_streams() -> None:
             fallback.close()
         except OSError:
             pass
-
     _FALLBACK_STREAMS_BY_ENCODING.clear()
 
 

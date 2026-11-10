@@ -61,22 +61,18 @@ class LoginRateLimiter:
         attempts = list(self.ip_attempts[ip_address])
         if not attempts:
             return False
-
         # Rule 1: Check failed attempts count
         failed_count = sum(1 for _, success, _ in attempts if not success)
         if failed_count >= self.ip_max_failed_per_minute:
             return True
-
         # Rule 2: Check total request frequency
         total_count = len(attempts)
         if total_count >= self.ip_max_total_per_minute:
             return True
-
         # Rule 3: Check unique usernames count
         unique_usernames = set(username for _, _, username in attempts)
         if len(unique_usernames) >= self.ip_max_usernames_per_minute:
             return True
-
         return False
 
     def is_ip_limited(self, ip_address: str) -> bool:
@@ -135,7 +131,6 @@ class LoginRateLimiter:
                 self.locked_users[username] = (
                     timestamp + self.user_lock_duration
                 )
-
             # Check if IP should be locked based on rate limiting rules
             if self.is_ip_rate_limited(ip_address):
                 self.locked_ips[ip_address] = timestamp + self.ip_lock_duration

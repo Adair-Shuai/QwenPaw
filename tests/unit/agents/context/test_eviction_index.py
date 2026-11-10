@@ -184,7 +184,6 @@ def test_tiny_index_budget_keeps_one_recallable_global_span():
     idx = EvictionIndex(session_id="s")
     for seq in range(1, 5):
         _add(idx, seq, f"headline-{seq}-" + "x" * 1000)
-
     rendered = idx.render(detail_char_budget=128)
 
     assert "details folded to fit context" in rendered

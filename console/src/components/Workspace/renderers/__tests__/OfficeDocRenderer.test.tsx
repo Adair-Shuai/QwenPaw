@@ -132,8 +132,8 @@ describe("OfficeDocRenderer", () => {
     const ctx = makeContext();
     const { container } = render(<OfficeDocRenderer {...ctx} />);
 
-    // antd Spin renders with .ant-spin class
-    expect(container.querySelector(".ant-spin")).toBeTruthy();
+    // The real pending conversion mounts the cached file-processing visual.
+    expect(container.querySelector('[data-ugsci-motion="files"]')).toBeTruthy();
   });
 
   it("renders iframe with HTML on successful conversion", async () => {

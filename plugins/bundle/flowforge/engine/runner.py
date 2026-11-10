@@ -23,7 +23,13 @@ from .nodes import NodeRegistry, WorkflowNode
 from .cache_provider import CacheProvider, NullCacheProvider
 from .caching import BaseCache, CacheEntry, CacheKeySet, hash_signature
 from .errors import NodeExecutionError, WorkflowEngineError
-from .progress import CurrentNodeContext, NodeStatus, ProgressRegistry
+from .input_bindings import is_opaque_input
+from .progress import (
+    CurrentNodeContext,
+    NodeStatus,
+    ProgressEvent,
+    ProgressRegistry,
+)
 
 logger = get_logger(__name__)
 
@@ -78,7 +84,7 @@ def _retry_policy(node_def: dict[str, Any]) -> tuple[int, float]:
 
 
 class NodeRunResult:
-    __slots__ = ("output", "cached", "duration_ms", "error")
+    __slots__ = ("output", "cached", "duration_ms", "error", "inputs")
 
     def __init__(
         self,
@@ -87,7 +93,9 @@ class NodeRunResult:
         cached: bool = False,
         duration_ms: int = 0,
         error: str | None = None,
+        inputs: dict[str, Any] | None = None,
     ) -> None:
+        self.inputs = inputs
         self.output = output
         self.cached = cached
         self.duration_ms = duration_ms
@@ -140,6 +148,15 @@ class NodeRunner:
             hidden,
             schema,
         )
+        recorded_inputs = copy.deepcopy(resolved_inputs)
+        self.progress.emit(
+            ProgressEvent(
+                type="node_inputs",
+                prompt_id=self.progress.prompt_id,
+                node_id=node_id,
+                data={"inputs": recorded_inputs},
+            ),
+        )
 
         # -------------------- instance memoization --------------------
         instance_entry = self.object_cache.get(node_id)
@@ -180,8 +197,16 @@ class NodeRunner:
                         value=_output_from_payload(provider_hit),
                     )
             if cached is not None:
-                self.progress.set_status(node_id, NodeStatus.CACHED)
-                return NodeRunResult(cached.value, cached=True)
+                self.progress.set_status(
+                    node_id,
+                    NodeStatus.CACHED,
+                    metadata=cached.value.metadata,
+                )
+                return NodeRunResult(
+                    cached.value,
+                    cached=True,
+                    inputs=recorded_inputs,
+                )
 
         self._resolve_lazy_inputs(instance, resolved_inputs, schema)
 
@@ -196,7 +221,7 @@ class NodeRunner:
             scoped_hidden,
             resolved_inputs,
         )
-        return await self._finalize_output(
+        result = await self._finalize_output(
             node_id,
             node_def,
             class_type,
@@ -206,6 +231,8 @@ class NodeRunner:
             cacheable,
             key,
         )
+        result.inputs = recorded_inputs
+        return result
 
     def _resolve_inputs(
         self,
@@ -226,7 +253,14 @@ class NodeRunner:
                 and isinstance(value[1], int)
                 and not isinstance(value[1], bool)
             ):
-                return upstream_values.get((value[0], value[1]))
+                key = (value[0], value[1])
+                if key not in upstream_values:
+                    raise NodeExecutionError(
+                        node_id,
+                        f"Linked output '{value[0]}[{value[1]}]' "
+                        "is unavailable",
+                    )
+                return upstream_values[key]
             if isinstance(value, dict):
                 return {name: resolve(item) for name, item in value.items()}
             if isinstance(value, list):
@@ -236,11 +270,22 @@ class NodeRunner:
                 state.resolve_template(value) if state is not None else value
             )
 
+        debug = getattr(hidden, "debug_options", None)
+        overrides = (
+            debug["node_inputs"]
+            if debug and node_id == debug["target_node_id"]
+            else {}
+        )
         resolved_inputs = {
-            name: resolve(value)
+            name: (
+                copy.deepcopy(value)
+                if is_opaque_input(node_def, name, value)
+                else resolve(value)
+            )
             for name, value in (node_def.get("inputs") or {}).items()
-            if name != "__flow_dependencies"
+            if name != "__flow_dependencies" and name not in overrides
         }
+        resolved_inputs.update(copy.deepcopy(overrides))
         for inp in schema.inputs:
             if inp.id not in resolved_inputs:
                 default = getattr(inp, "default", None)
@@ -329,6 +374,7 @@ class NodeRunner:
                             node_id,
                             output.error,
                             retryable=output.metadata.get("retryable"),
+                            metadata=output.metadata,
                         )
                 return output
             except Exception as exc:  # noqa: BLE001
@@ -361,6 +407,7 @@ class NodeRunner:
                     node_id,
                     NodeStatus.ERROR,
                     error=str(exc),
+                    metadata=getattr(exc, "metadata", None),
                 )
                 if isinstance(exc, NodeExecutionError):
                     raise

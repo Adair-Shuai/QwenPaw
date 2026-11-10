@@ -1,3 +1,4 @@
+import type { MouseEvent } from "react";
 import { getHost, clearApiCache } from "../core/runtime";
 import type { ExpertData, ExpertPresentation } from "../core/types";
 import {
@@ -6,6 +7,8 @@ import {
   fetchExpertPresentation,
   saveExpertPresentation,
 } from "./expertPresentation";
+import { avatarForExpert } from "./avatar/expertAvatar";
+import { ExpertAvatarEditor } from "./avatar/ExpertAvatarEditor";
 
 export function ExpertBasicSettings({
   expert,
@@ -23,10 +26,11 @@ export function ExpertBasicSettings({
   const [baseline, setBaseline] = useState("");
   const [error, setError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [avatarOpen, setAvatarOpen] = useState(false);
   const display = expertPresentation(expert);
   useEffect(() => {
     let active = true;
-    fetchExpertPresentation(expert.agent.id)
+    fetchExpertPresentation(expert.agent.id, true)
       .then((value) => {
         if (active) {
           setDraft(value);
@@ -74,6 +78,34 @@ export function ExpertBasicSettings({
     "div",
     null,
     React.createElement("h3", null, "基本信息"),
+    React.createElement(
+      "details",
+      { className: "ugsci-avatar-settings", open: avatarOpen },
+      React.createElement(
+        "summary",
+        {
+          onClick: (event: MouseEvent) => {
+            event.preventDefault();
+            setAvatarOpen((open) => !open);
+          },
+        },
+        "专家头像工坊",
+      ),
+      avatarOpen &&
+        React.createElement(ExpertAvatarEditor, {
+          name: draft.display_name || expert.agent.name,
+          value: avatarForExpert({ ...expert, presentation: draft }),
+          suggested: avatarForExpert({
+            ...expert,
+            presentation: { ...draft, avatar: null },
+          }),
+          disabled: saving,
+          onChange: (avatar) =>
+            setDraft((previous) =>
+              previous ? { ...previous, avatar } : previous,
+            ),
+        }),
+    ),
     React.createElement(
       "p",
       { className: "ugsci-settings-intro" },

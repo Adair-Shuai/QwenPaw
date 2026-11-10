@@ -1,3 +1,4 @@
+import { UGSCI_BUTTON_LOADING } from "@/components/UgsciMotion";
 import { ChatGPTAccountPanel } from "../cards/ChatGPTAccountPanel";
 import { OAuthConfirmModal } from "@/pages/Chat/ModelSelector/OAuthConfirmModal";
 import { SharedModal } from "@/components/interaction/SharedModal";
@@ -499,7 +500,7 @@ export function ProviderConfigModal({
         })),
       );
     }
-  }, [provider, form, open]);
+  }, [provider, form, open, defaultChatModel]);
 
   const handleSubmit = async () => {
     try {
@@ -670,7 +671,7 @@ export function ProviderConfigModal({
                 size="small"
                 icon={<ApiOutlined size="1em" />}
                 onClick={handleTest}
-                loading={testing}
+                loading={testing ? UGSCI_BUTTON_LOADING : false}
               >
                 {t("models.testConnection")}
               </Button>
@@ -680,7 +681,7 @@ export function ProviderConfigModal({
             <Button onClick={onClose}>{t("models.cancel")}</Button>
             <Button
               type="primary"
-              loading={saving}
+              loading={saving ? UGSCI_BUTTON_LOADING : false}
               disabled={!formDirty}
               onClick={handleSubmit}
             >

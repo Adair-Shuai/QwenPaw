@@ -536,7 +536,6 @@ def test_skill_scanner_global_whitelist_add_remove(app_server) -> None:
             timeout=_HTTP_TIMEOUT,
         )
         assert del_resp.status_code in {200, 204}, app_server.logs_tail()
-
     # Verify whitelist no longer contains the entry.
     get_after = app_server.api_request(
         "GET",

@@ -1,3 +1,4 @@
+import { UgsciMotion } from "../../UgsciMotion";
 /**
  * OfficeScreenshotRenderer — Office 文档截图预览（OfficeCLI 高保真渲染）
  *
@@ -10,7 +11,7 @@
  * 支持的格式：DOCX、XLSX、PPTX
  */
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { Button, Space, Tooltip, Spin, Alert, Tag } from "antd";
+import { Button, Space, Tooltip, Alert, Tag } from "antd";
 import {
   DownloadOutlined,
   ReloadOutlined,
@@ -139,7 +140,6 @@ const OfficeScreenshotContent: React.FC<ScreenshotContext> = ({
     if (viewMode === "screenshot" && !useFallback) {
       fetchScreenshot(currentPage);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchScreenshot, currentPage, viewMode, useFallback]);
 
   // Cleanup object URL on unmount and mark as unmounted
@@ -203,7 +203,7 @@ const OfficeScreenshotContent: React.FC<ScreenshotContext> = ({
           background: theme === "dark" ? "#1e1e1e" : "#fff",
         }}
       >
-        <Spin size="large" />
+        <UgsciMotion theme={theme} variant="files" size={80} />
         <span style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
           {t("workspace.converting")}
         </span>
@@ -410,7 +410,7 @@ const OfficeScreenshotContent: React.FC<ScreenshotContext> = ({
               transform: "translate(-50%, -50%)",
             }}
           >
-            <Spin size="large" />
+            <UgsciMotion theme={theme} variant="files" size={80} />
           </div>
         )}
         {screenshotUrl && (

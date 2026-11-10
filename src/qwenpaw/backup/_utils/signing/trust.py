@@ -47,10 +47,8 @@ def resolve_signature_action(
             )
             return "sign_trusted"
         raise signature_error(meta)
-
     if trust_mode != "legacy":
         raise signature_error(meta)
-
     logger.warning(
         "%s legacy unsigned backup after explicit trust: %s",
         operation,

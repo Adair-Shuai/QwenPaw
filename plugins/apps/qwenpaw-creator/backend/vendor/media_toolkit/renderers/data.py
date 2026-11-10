@@ -73,7 +73,6 @@ def _render_csv(path: str, **opts: Any) -> list[dict[str, Any]]:
         import pandas as pd
     except ImportError as error:
         raise RuntimeError(_PANDAS_HINT) from error
-
     from vendor.media_toolkit.renderers import meta_block
 
     df_full = pd.read_csv(path, nrows=FULL_TEXT_ROW_CAP + 1)
@@ -96,7 +95,6 @@ def _render_xlsx(path: str, **opts: Any) -> list[dict[str, Any]]:
         import pandas as pd
     except ImportError as error:
         raise RuntimeError(_PANDAS_HINT) from error
-
     from vendor.media_toolkit.renderers import (
         DEFAULT_MAX_PAGES,
         meta_block,
@@ -164,12 +162,10 @@ def _dataframe_to_blocks(
 
     if df.empty:
         return [{"type": "text", "text": f"{header}\n\n(empty)", "page": page}]
-
     try:
         table_md = df.to_markdown(index=False)
     except Exception:  # pylint: disable=broad-except
         table_md = df.to_string(index=False, max_rows=MAX_ROWS)
-
     parts = [header, table_md]
     if truncated:
         parts.append(f"... (showing first {max_rows} rows)")
@@ -205,7 +201,6 @@ def _dataframe_to_image(df, title: str):
         import matplotlib.pyplot as plt
     except ImportError:
         return None
-
     from vendor.media_toolkit.renderers import configure_matplotlib_cjk
 
     configure_matplotlib_cjk()
@@ -242,7 +237,6 @@ def _dataframe_to_image(df, title: str):
         else:
             cell.set_facecolor("#FFFFFF")
         cell.set_edgecolor("#B4C7E7")
-
     from vendor.media_toolkit.renderers import fig_to_image
 
     return fig_to_image(fig, pad_inches=0.1)

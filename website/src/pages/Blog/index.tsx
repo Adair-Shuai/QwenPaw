@@ -140,7 +140,7 @@ export default function Blog() {
         </header>
 
         <div
-          className="mb-6 h-px w-full bg-[#DCC1B2] md:mb-10"
+          className="mb-6 h-px w-full bg-(--border) md:mb-10"
           role="separator"
           aria-hidden
         />
@@ -171,7 +171,7 @@ export default function Blog() {
                 <li key={slug}>
                   <Link
                     to={`/blog/${slug}`}
-                    className="group box-border flex flex-col gap-2.5 border border-[#DCC1B2] bg-[#FFFFFF] p-3 no-underline transition-shadow hover:shadow-md sm:gap-3 md:flex-row md:items-center md:gap-5 md:p-4"
+                    className="group box-border flex flex-col gap-2.5 border border-(--border) bg-[#FFFFFF] p-3 no-underline transition-shadow hover:shadow-md sm:gap-3 md:flex-row md:items-center md:gap-5 md:p-4"
                   >
                     <div className="aspect-[1224/696] w-full shrink-0 md:h-[7.5rem] md:w-auto">
                       <BlogCover title={frontmatter.title} cover={cover} />
@@ -209,7 +209,7 @@ export default function Blog() {
                           {frontmatter.tags.map((tag) => (
                             <span
                               key={tag}
-                              className="box-border border border-[#DCC1B2] bg-[#FFFFFF] px-2 py-px text-[10px] text-(--color-text-tertiary) sm:px-2.5 sm:py-0.5 sm:text-xs"
+                              className="box-border border border-(--border) bg-[#FFFFFF] px-2 py-px text-[10px] text-(--color-text-tertiary) sm:px-2.5 sm:py-0.5 sm:text-xs"
                             >
                               #{tag}
                             </span>

@@ -12,7 +12,6 @@ except ImportError:  # pragma: no cover - offline / partial installs
         "## Fork worktree commit protocol (REQUIRED)\n"
         "Commit all changes in the worktree before finishing.\n"
     )
-
 ROLE_PROMPTS: dict[str, str] = {
     "analyst": (
         "You are a requirements analyst. "

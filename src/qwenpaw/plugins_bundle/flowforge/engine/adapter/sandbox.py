@@ -72,9 +72,12 @@ async def execute_script(
         if name in os.environ
     }
     with tempfile.TemporaryDirectory(prefix="flowforge-script-") as directory:
+        # Worker pipes carry UTF-8 JSON even with a Windows GBK locale.
         process = await asyncio.create_subprocess_exec(
             sys.executable,
             "-I",
+            "-X",
+            "utf8",
             worker,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,

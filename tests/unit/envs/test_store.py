@@ -134,6 +134,8 @@ async def test_shell_limit_catalog_hot_update_and_reset(
     monkeypatch,
 ):
     """Console writes validate, persist, apply and reset one live setting."""
+    # Retain fixture injection and substituted callback signatures.
+    # pylint: disable=unused-argument
     key = "QWENPAW_SHELL_MEMORY_LIMIT_MB"
     monkeypatch.delenv(key, raising=False)
     app = FastAPI()

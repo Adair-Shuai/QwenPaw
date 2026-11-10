@@ -90,7 +90,6 @@ async def get_recent(
     """
     if max_age_seconds < 0:
         raise ValueError("max_age_seconds must be non-negative")
-
     async with _lock:
         _prune_expired_locked(max_age_seconds)
         return _strip_ts(_list)

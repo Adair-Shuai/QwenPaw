@@ -55,7 +55,6 @@ async def reconcile_plugin_activation(
         if healthy:
             await run_sync_io(finalize)
             return True
-
         disabled_candidate = (
             record is None and not is_plugin_enabled(config)
         ) or (

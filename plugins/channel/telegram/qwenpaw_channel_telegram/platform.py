@@ -16,6 +16,9 @@ import uuid
 import httpx
 from telegram import Audio, BotCommand, Document, InputFile, PhotoSize, Video
 from telegram.constants import ParseMode
+
+# Retain the existing PTB exception exports for channel integrations.
+# pylint: disable-next=unused-import
 from telegram.error import (
     BadRequest,
     EndPointNotFound,
@@ -205,6 +208,8 @@ async def _build_content_parts_from_message(
     bot: Any,
     media_dir: Path,
 ) -> tuple[list, bool, bool]:
+    # Preserve native event routing, media fallbacks and cleanup in SDK order.
+    # pylint: disable=R0912
     """Build runtime content_parts from Telegram message.
 
     Returns (content_parts, has_bot_command, is_bot_mentioned).
@@ -703,12 +708,16 @@ class TelegramPlatform:
                 self._seen_updates.popitem(last=False)
 
     async def _native_callback(self, update, context):
+        # Retain the native callback and lifecycle hook parameter names.
+        # pylint: disable=unused-argument
         if not self._stopping and update.callback_query is not None:
             await self._card_handler.handle_callback_query(
                 update.callback_query,
             )
 
     async def _request_polling_reconnect(self, app, reason):
+        # Retain the native callback and lifecycle hook parameter names.
+        # pylint: disable=unused-argument
         if self._stopping or self._reconnect_reason is not None:
             return
         self._reconnect_reason = reason
@@ -822,8 +831,6 @@ class TelegramPlatform:
             except InvalidToken:
                 await self.on_state("failed")
                 raise
-            except asyncio.CancelledError:
-                raise
             except Exception:
                 await self.on_state("disconnected")
                 logger.exception("Telegram polling connection failed")
@@ -928,8 +935,6 @@ class TelegramPlatform:
     async def _effect(self, awaitable):
         try:
             return await awaitable
-        except asyncio.CancelledError:
-            raise
         except (BadRequest, Forbidden, RetryAfter) as exc:
             raise TelegramDeliveryError("PLATFORM_REJECTED") from exc
         except Exception as exc:
@@ -951,8 +956,6 @@ class TelegramPlatform:
             except (BadRequest, EndPointNotFound) as exc:
                 if not _rich_rejection(exc):
                     raise TelegramDeliveryError("PLATFORM_REJECTED") from exc
-            except asyncio.CancelledError:
-                raise
             except Exception as exc:
                 raise TelegramDeliveryError(
                     "PLATFORM_RESULT_UNKNOWN",
@@ -977,8 +980,6 @@ class TelegramPlatform:
                 value = await self._effect(
                     bot.send_message(**kwargs, text=plain),
                 )
-            except asyncio.CancelledError:
-                raise
             except Exception as exc:
                 raise TelegramDeliveryError(
                     "PLATFORM_RESULT_UNKNOWN",
@@ -1177,6 +1178,9 @@ class TelegramPlatform:
         }
 
     async def update_stream(self, resource, text, *, final=False):
+        # Preserve native event routing, media fallbacks and cleanup in SDK
+        # order.
+        # pylint: disable=R0912
         last = float(resource.get("last_edit", "0"))
         if not final:
             await asyncio.sleep(
@@ -1228,8 +1232,6 @@ class TelegramPlatform:
                         raise TelegramDeliveryError(
                             "PLATFORM_REJECTED",
                         ) from exc
-                except asyncio.CancelledError:
-                    raise
                 except Exception as exc:
                     raise TelegramDeliveryError(
                         "PLATFORM_RESULT_UNKNOWN",
@@ -1264,8 +1266,6 @@ class TelegramPlatform:
                         raise TelegramDeliveryError(
                             "PLATFORM_REJECTED",
                         ) from exc
-            except asyncio.CancelledError:
-                raise
             except Exception as exc:
                 raise TelegramDeliveryError(
                     "PLATFORM_RESULT_UNKNOWN",
@@ -1338,6 +1338,9 @@ class TelegramPlatform:
         if staged is None or not acknowledged:
             return
         binding, severity = staged
+        # Paired driver/platform callbacks share this lifecycle and receipt
+        # ledger.
+        # pylint: disable-next=protected-access
         self._cards._cache_request_context(
             binding.request_id,
             binding.tool_name,
@@ -1351,6 +1354,9 @@ class TelegramPlatform:
                 "message_thread_id": binding.message_thread_id,
             },
         )
+        # Paired driver/platform callbacks share this lifecycle and receipt
+        # ledger.
+        # pylint: disable-next=protected-access
         self._cards._get_request_context(binding.request_id)[
             "binding"
         ] = binding
@@ -1361,6 +1367,9 @@ class TelegramPlatform:
         parsed = _parse_callback_data(query.data or "")
         if parsed is None:
             return
+        # Paired driver/platform callbacks share this lifecycle and receipt
+        # ledger.
+        # pylint: disable-next=protected-access
         cached = self._cards._get_request_context(parsed["request_id"])
         binding = cached.get("binding") if cached else None
         message, actor = query.message, query.from_user
@@ -1382,6 +1391,9 @@ class TelegramPlatform:
                 show_alert=True,
             )
             return
+        # Paired driver/platform callbacks share this lifecycle and receipt
+        # ledger.
+        # pylint: disable-next=protected-access
         if binding.request_id in self._cards._processed_requests:
             try:
                 await query.answer(text="Already processed.", show_alert=False)
@@ -1440,6 +1452,9 @@ class TelegramPlatform:
         result = params.approval_resolution
         request_id = route.get("approval_binding_id")
         cached = (
+            # Paired driver/platform callbacks share this lifecycle and receipt
+            # ledger.
+            # pylint: disable-next=protected-access
             self._cards._get_request_context(request_id)
             if request_id
             else None
@@ -1488,5 +1503,8 @@ class TelegramPlatform:
                     raise
 
         await self._effect(edit_resolved())
+        # Paired driver/platform callbacks share this lifecycle and receipt
+        # ledger.
+        # pylint: disable-next=protected-access
         self._cards._mark_processed(request_id, action)
         return self._receipt(route, [binding.message_id])

@@ -17,6 +17,8 @@ from qwenpaw.app.routers import mcp_oauth, provider_oauth, terminal
 @pytest.fixture
 def proxy_config(monkeypatch):
     """Configure middleware trust without constructing API routes."""
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     networks = auth._parse_networks(["127.0.0.1/32"])
     config = SimpleNamespace(
         security=SimpleNamespace(allow_no_auth_hosts=[]),
@@ -28,6 +30,8 @@ def proxy_config(monkeypatch):
 @pytest.fixture
 def proxy_app(monkeypatch, proxy_config):
     """Use production middleware registration without agent startup."""
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     monkeypatch.delenv("QWENPAW_RUNTIME_INTERNAL_TOKEN", raising=False)
     monkeypatch.setattr(auth, "is_auth_enabled", lambda: True)
     monkeypatch.setattr(auth, "has_registered_users", lambda: True)
@@ -53,6 +57,8 @@ def proxy_app(monkeypatch, proxy_config):
 
     @app.get("/api/proxy-probe")
     async def probe(request: Request):
+        # Exercise real internals and verify lifecycle state in this test.
+        # pylint: disable=protected-access
         return {
             "scheme": request.url.scheme,
             "peer": request.client.host,
@@ -83,6 +89,8 @@ def _client(fixture, peer="127.0.0.1"):
 
 
 async def test_trusted_https_terminal_same_origin(proxy_app):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     async with _client(proxy_app) as client:
         response = await client.get(
             f"/api/terminals/{uuid4()}",
@@ -97,6 +105,8 @@ async def test_trusted_https_terminal_same_origin(proxy_app):
 
 
 async def test_trusted_https_oauth_callback(proxy_app):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     async with _client(proxy_app) as client:
         response = await client.get(
             "/api/proxy-probe",
@@ -130,6 +140,8 @@ def test_production_scheme_middleware_precedes_auth():
 
 
 async def test_trusted_https_still_rejects_cross_site_terminal(proxy_app):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     async with _client(proxy_app) as client:
         response = await client.get(
             f"/api/terminals/{uuid4()}",
@@ -152,6 +164,8 @@ async def test_untrusted_spoofed_scheme_and_ip_are_ignored(
     peer,
     empty_trust,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     if empty_trust:
         proxy_app.networks.clear()
     async with _client(proxy_app, peer) as client:
@@ -176,6 +190,8 @@ async def test_untrusted_spoofed_scheme_and_ip_are_ignored(
 
 
 async def test_direct_http_terminal_and_oauth_unchanged(proxy_app):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     async with _client(proxy_app) as client:
         terminal_response = await client.get(
             f"/api/terminals/{uuid4()}",
@@ -202,6 +218,10 @@ async def test_scheme_restoration_preserves_real_auth_ip_gate(
     peer,
     forwarded_ip,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     proxy_app.config.security.allow_no_auth_hosts = ["127.0.0.1", "::1"]
     proxy_app.networks[:] = auth._parse_networks([peer])
     headers = {"X-Forwarded-Proto": "https", "X-Forwarded-For": forwarded_ip}
@@ -260,6 +280,10 @@ async def test_scheme_only_changes_in_copied_scope(
     value,
     expected,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Retain fixture injection and substituted callback signatures.
+    # pylint: disable=unused-argument
     scope = _scope(kind, [value])
     original = scope.copy()
     downstream, receive, send = await _invoke(scope)
@@ -295,6 +319,10 @@ async def test_scheme_only_changes_in_copied_scope(
     ],
 )
 async def test_trusted_malformed_proto_rejected(proxy_config, values):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Retain fixture injection and substituted callback signatures.
+    # pylint: disable=unused-argument
     downstream, _, send = await _invoke(_scope(values=values))
     downstream.assert_not_awaited()
     first = send.call_args_list[0].args[0]
@@ -308,6 +336,10 @@ async def test_websocket_malformed_proto_closes_connection(
     proxy_config,
     values,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Retain fixture injection and substituted callback signatures.
+    # pylint: disable=unused-argument
     downstream, _, send = await _invoke(_scope("websocket", values))
     downstream.assert_not_awaited()
     assert send.call_args_list[0].args[0] == {
@@ -318,6 +350,10 @@ async def test_websocket_malformed_proto_closes_connection(
 
 @pytest.mark.parametrize("value", [b"ws", b"wss"])
 async def test_http_rejects_websocket_only_schemes(proxy_config, value):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Retain fixture injection and substituted callback signatures.
+    # pylint: disable=unused-argument
     downstream, _, send = await _invoke(_scope(values=[value]))
     downstream.assert_not_awaited()
     assert send.call_args_list[0].args[0]["status"] == 400
@@ -325,6 +361,10 @@ async def test_http_rejects_websocket_only_schemes(proxy_config, value):
 
 @pytest.mark.parametrize("kind", ["http", "websocket", "lifespan"])
 async def test_no_forwarded_proto_passes_scope_untouched(proxy_config, kind):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Retain fixture injection and substituted callback signatures.
+    # pylint: disable=unused-argument
     scope = _scope(kind)
     downstream, receive, send = await _invoke(scope)
     downstream.assert_awaited_once_with(scope, receive, send)
@@ -333,6 +373,10 @@ async def test_no_forwarded_proto_passes_scope_untouched(proxy_config, kind):
 
 
 async def test_missing_peer_does_not_trust_forwarded_proto(proxy_config):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Retain fixture injection and substituted callback signatures.
+    # pylint: disable=unused-argument
     scope = _scope(values=[b"https"])
     scope["client"] = None
     downstream, _, send = await _invoke(scope)
@@ -345,6 +389,10 @@ async def test_untrusted_or_non_request_invalid_headers_pass_through(
     proxy_config,
     kind,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Retain fixture injection and substituted callback signatures.
+    # pylint: disable=unused-argument
     scope = _scope(kind, [b"https\r\n", b"invalid"], peer="198.51.100.2")
     downstream, receive, send = await _invoke(scope)
     downstream.assert_awaited_once_with(scope, receive, send)

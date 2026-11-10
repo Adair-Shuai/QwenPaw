@@ -11,7 +11,6 @@ try:
     from .protocol_mirror import PROTOCOL_VERSION, contract_snapshot
 except ImportError:
     from protocol_mirror import PROTOCOL_VERSION, contract_snapshot
-
 try:
     from .build_fingerprint import BUILD_FINGERPRINT
 except ImportError:
@@ -107,7 +106,6 @@ async def wait_hello_ack(ws: Any, timeout: float = 5.0) -> dict:
         raw = await asyncio.wait_for(ws.recv(), timeout=timeout)
     except asyncio.TimeoutError as exc:
         raise HandshakeTransientError("Hello ack timeout") from exc
-
     message = json.loads(
         raw.decode("utf-8") if isinstance(raw, bytes) else raw,
     )

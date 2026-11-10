@@ -650,7 +650,6 @@ GR.API         GR:
             f.flush()
             adapter = LasioAdapter()
             dataset = adapter.read(WellLogReadRequest(path=f.name))
-
         os.unlink(f.name)
 
         assert dataset.depth_mnemonic == "DEPT"

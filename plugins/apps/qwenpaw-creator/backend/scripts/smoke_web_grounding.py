@@ -63,7 +63,6 @@ from urllib.parse import unquote, urlparse
 BACKEND_ROOT = Path(__file__).resolve().parents[1]
 if str(BACKEND_ROOT) not in sys.path:
     sys.path.insert(0, str(BACKEND_ROOT))
-
 from models.media_transport import validate_reference_image_bytes  # noqa: E402
 from services.web_grounding import ground_prompt_context  # noqa: E402
 from utils.env import load_project_env  # noqa: E402
@@ -99,7 +98,6 @@ def evaluate_result(
         failures.append(
             f"grounding status is {result.get('status')!r}, expected 'success'",
         )
-
     jobs = [
         item
         for item in result.get("visual_jobs") or []
@@ -129,13 +127,11 @@ def evaluate_result(
             failures.append(
                 f"accepted source is not decodable: {path} ({type(exc).__name__})",
             )
-
     for job_key, count in accepted_by_job.items():
         if count > 1:
             failures.append(
                 f"visual job {job_key!r} has {count} accepted sources; expected at most one",
             )
-
     for identity in expected_identities:
         expected = identity.strip().casefold()
         identity_jobs = [

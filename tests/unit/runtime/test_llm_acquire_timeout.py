@@ -81,7 +81,6 @@ async def test_acquire_timeout_raises_typed_error() -> None:
     ):
         with pytest.raises(_AcquireTimeoutError):
             await model(messages=[{"role": "user", "content": "hi"}])
-
     # The retry loop must NOT have retried on an internal acquire timeout.
     assert fake_limiter.acquire.await_count == 1
 
@@ -103,7 +102,6 @@ async def test_acquire_timeout_does_not_release_semaphore() -> None:
     ):
         with pytest.raises(_AcquireTimeoutError):
             await model(messages=[{"role": "user", "content": "hi"}])
-
     fake_limiter.release.assert_not_called()
 
 
@@ -138,7 +136,6 @@ async def test_acquire_timeout_leaves_no_pending_tasks() -> None:
                 await model(
                     messages=[{"role": "user", "content": "hi"}],
                 )
-
     # Allow any cancellation cleanup to flush.
     await asyncio.sleep(0)
 
@@ -204,7 +201,6 @@ async def test_normal_call_after_timeout_succeeds() -> None:
         ):
             with pytest.raises(_AcquireTimeoutError):
                 await model(messages=[{"role": "user", "content": "hi"}])
-
     # Second call: real acquire path, inner model succeeds.
     with patch(
         "qwenpaw.providers.retry_chat_model.get_rate_limiter",
@@ -213,7 +209,6 @@ async def test_normal_call_after_timeout_succeeds() -> None:
         result = await model2(messages=[{"role": "user", "content": "hi"}])
         assert result is not None
         assert calls["n"] == 1
-
     # Limiter is fully released after the successful call.
     assert limiter._in_flight == 0
     assert limiter._semaphore._value == limiter._max_concurrent

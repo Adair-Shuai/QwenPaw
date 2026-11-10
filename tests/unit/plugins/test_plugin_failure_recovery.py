@@ -1450,6 +1450,8 @@ async def test_prepared_update_failure_blocks_activation_and_allows_retry(
     failure_stage,
     retry,
 ):
+    # Keep the real lifecycle sequence and all behavior assertions together.
+    # pylint: disable=R0915
     from qwenpaw.plugins import updates
 
     plugin_id = f"boot_{failure_stage}"

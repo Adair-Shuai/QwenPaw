@@ -21,8 +21,10 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass, field
-from typing import Any, Iterable
+from typing import Any, Iterable, cast
 
+from .template_paths import template_node_sources
+from .input_bindings import node_dependency_inputs
 
 LinkRef = tuple[str, int]  # (upstream_node_id, slot)
 
@@ -165,8 +167,22 @@ class TopologicalSort:
                 for item in value:
                     walk(item)
 
-        for _, value in (node.get("inputs") or {}).items():
+        for _, value in node_dependency_inputs(node).items():
             walk(value)
+        definitions = {
+            key: cast(dict[str, Any], self.prompt.get(key))
+            for key in self.prompt.all_ids
+        }
+        sources = template_node_sources(
+            {
+                "inputs": node_dependency_inputs(node),
+                "control": node.get("control") or {},
+            },
+            definitions,
+        )
+        for source in sources:
+            if (source, 0) not in links:
+                links.append((source, 0))
         return links
 
     def control_predecessors_of(self, node_id: str) -> set[str]:
@@ -267,9 +283,18 @@ class ExecutionList:
                 exec_list.complete_node_execution(nid)
     """
 
-    def __init__(self, prompt: DynamicPrompt, topo: TopologicalSort) -> None:
+    def __init__(
+        self,
+        prompt: DynamicPrompt,
+        topo: TopologicalSort,
+        *,
+        allowed_nodes: set[str] | None = None,
+        stop_at: str | None = None,
+    ) -> None:
         self.prompt = prompt
         self.topo = topo
+        self.allowed_nodes = allowed_nodes
+        self.stop_at = stop_at
         self.state = ExecutionState()
         self._unblocked = asyncio.Event()
         self._cancelled = False
@@ -286,13 +311,22 @@ class ExecutionList:
         seen: set[str] = set()
         while stack:
             nid = stack.pop()
-            if nid in seen:
+            if (
+                nid in seen
+                or nid in self.state.completed
+                or (
+                    self.allowed_nodes is not None
+                    and nid not in self.allowed_nodes
+                )
+            ):
                 continue
             seen.add(nid)
             if self.prompt.get(nid) is None:
                 continue
             dependencies = {up for up, _ in self.topo.upstream_of(nid)}
             dependencies.update(self.topo.control_predecessors_of(nid))
+            if self.allowed_nodes is not None:
+                dependencies.intersection_update(self.allowed_nodes)
             for up_id in dependencies:
                 if self.prompt.get(up_id) is not None:
                     self.state.strong_links.setdefault(nid, set()).add(up_id)
@@ -440,6 +474,10 @@ class ExecutionList:
                 nid in protected
                 or nid in self.state.completed
                 or nid in self.state.skipped
+                or (
+                    self.allowed_nodes is not None
+                    and nid not in self.allowed_nodes
+                )
             ):
                 continue
             self.state.skipped.add(nid)

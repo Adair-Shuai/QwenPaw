@@ -62,14 +62,11 @@ class BootstrapHook:
             # Check if bootstrap has already been triggered before
             if bootstrap_completed_flag.exists():
                 return None
-
             if not bootstrap_path.exists():
                 return None
-
             messages = list(agent.state.context)
             if not is_first_user_interaction(messages):
                 return None
-
             bootstrap_guidance = build_bootstrap_guidance(
                 self.language,
             )
@@ -86,18 +83,15 @@ class BootstrapHook:
                 if msg.role == "user":
                     prepend_to_message_content(msg, bootstrap_guidance)
                     break
-
             logger.debug("Bootstrap guidance prepended to first user message")
 
             # Create completion flag to prevent repeated triggering
             bootstrap_completed_flag.touch()
             logger.debug("Created bootstrap completion flag")
-
         except Exception as e:
             logger.error(
                 "Failed to process bootstrap: %s",
                 e,
                 exc_info=True,
             )
-
         return None

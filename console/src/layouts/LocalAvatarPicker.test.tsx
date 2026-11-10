@@ -51,7 +51,10 @@ it("offers both built-in avatars and restores a saved choice without fetching a 
     screen
       .getByRole("button", { name: "sidebar.defaultAvatar" })
       .querySelector("img"),
-  ).toHaveAttribute("src", `${import.meta.env.BASE_URL}ugsci-avatar.webp`);
+  ).toHaveAttribute(
+    "src",
+    `${import.meta.env.BASE_URL}ugsci-mono/avatars/assistant-128.png`,
+  );
   fireEvent.click(cute);
   await waitFor(() => expect(cute).toHaveAttribute("aria-pressed", "true"));
   expect(avatarApi.select).toHaveBeenCalledWith("builtin:ugsci-cute");
@@ -78,7 +81,10 @@ it("keeps uploaded GIF bytes instead of flattening animation through canvas", as
     screen
       .getByRole("button", { name: "sidebar.defaultAvatar" })
       .querySelector("img"),
-  ).toHaveAttribute("src", `${import.meta.env.BASE_URL}ugsci-avatar.webp`);
+  ).toHaveAttribute(
+    "src",
+    `${import.meta.env.BASE_URL}ugsci-mono/avatars/assistant-128.png`,
+  );
   const file = new File([gif], "mascot.gif", { type: "image/gif" });
   fireEvent.change(view.container.querySelector('input[type="file"]')!, {
     target: { files: [file] },

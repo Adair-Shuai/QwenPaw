@@ -80,12 +80,22 @@ def test_runtime_lock_is_released_after_process_death(tmp_path):
         # Windows venv python.exe can be a launcher with a real interpreter
         # child. Terminate the lock owner too, as the native supervisor does.
         if os.name == "nt":
-            subprocess.run(
-                ["taskkill", "/PID", str(child.pid), "/T", "/F"],
-                check=True,
-                capture_output=True,
-            )
-        else:
+            import psutil
+
+            try:
+                descendants = psutil.Process(child.pid).children(
+                    recursive=True,
+                )
+            except psutil.NoSuchProcess:
+                descendants = []
+            for process in reversed(descendants):
+                try:
+                    process.kill()
+                except psutil.NoSuchProcess:
+                    pass
+            _, alive = psutil.wait_procs(descendants, timeout=5)
+            assert not alive, "runtime interpreter survived termination"
+        if child.poll() is None:
             child.kill()
 
     with subprocess.Popen(

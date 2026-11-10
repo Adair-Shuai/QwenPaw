@@ -47,6 +47,8 @@ def isolated_channel_catalog(monkeypatch, tmp_path):
 
     class SDKImportGuard(importlib.abc.MetaPathFinder):
         def find_spec(self, fullname, path=None, target=None):
+            # Retain fixture injection and substituted callback signatures.
+            # pylint: disable=unused-argument
             if guarded_module(fullname):
                 raise AssertionError("Passive discovery imported " + fullname)
 

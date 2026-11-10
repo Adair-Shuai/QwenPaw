@@ -57,11 +57,9 @@ def convert_to_pdf(path: str, soffice: str, dest_pdf: str) -> None:
             raise RuntimeError(
                 f"LibreOffice conversion failed: {proc.stderr.strip()}",
             )
-
         pdfs = [f for f in os.listdir(tmpdir) if f.endswith(".pdf")]
         if not pdfs:
             raise RuntimeError("LibreOffice produced no PDF output")
-
         shutil.copy2(os.path.join(tmpdir, pdfs[0]), dest_pdf)
 
 
@@ -82,7 +80,6 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
 
             return data_render(path, **opts)
         raise RuntimeError(LIBREOFFICE_INSTALL_HINT)
-
     with tempfile.TemporaryDirectory() as workdir:
         out_pdf = os.path.join(workdir, "converted.pdf")
         convert_to_pdf(path, soffice, out_pdf)

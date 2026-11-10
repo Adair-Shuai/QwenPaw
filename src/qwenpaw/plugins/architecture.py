@@ -195,7 +195,6 @@ class PluginManifest(BaseModel):
         """
         if not isinstance(data, dict):
             return data
-
         # Work on a shallow copy so callers' dicts aren't mutated.
         data = dict(data)
 
@@ -203,7 +202,6 @@ class PluginManifest(BaseModel):
         for key in ("name", "description", "author"):
             if key in data:
                 data[key] = _coerce_manifest_str(data[key])
-
         # ``description_i18n`` must be a str→str mapping; anything else is
         # dropped so malformed manifests keep loading.
         raw_i18n = data.get("description_i18n")
@@ -213,11 +211,9 @@ class PluginManifest(BaseModel):
             }
         else:
             data.pop("description_i18n", None)
-
         # ``name`` defaults to ``id`` when missing or empty.
         if not data.get("name"):
             data["name"] = data.get("id", "")
-
         # ``entry`` may be absent; merge legacy ``entry_point`` into it.
         entry_data = data.get("entry") or {}
         if not isinstance(entry_data, dict):
@@ -234,7 +230,6 @@ class PluginManifest(BaseModel):
                 raise ValueError(
                     "descriptor entry requires an explicit valid plugin type",
                 ) from exc
-
         # Resolve ``type``: explicit value wins; otherwise infer.  We
         # need the parsed entry/meta to infer, so do a light parse here.
         raw_type = data.get("type")
@@ -244,7 +239,6 @@ class PluginManifest(BaseModel):
             tmp_entry = PluginEntryPoints(**entry_data)
             tmp_meta = data.get("meta") or {}
             data["plugin_type"] = _infer_type_from_meta(tmp_meta, tmp_entry)
-
         return data
 
     @classmethod

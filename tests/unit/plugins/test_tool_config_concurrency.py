@@ -14,10 +14,12 @@ from .test_sdk_entry_contract import write_plugin
 from .timing import WAIT_TIMEOUT
 
 
-async def test_concurrent_legacy_activations_preserve_both_tools_and_user_config(
+async def test_concurrent_legacy_activations_preserve_both_tools_and_user_config(  # noqa: E501
     tmp_path,
     monkeypatch,
 ):
+    # Keep both concurrent activations and persisted-state assertions.
+    # pylint: disable=R0915
     from qwenpaw.agents import tools
     from qwenpaw.config import config as configs
     from qwenpaw.plugins import api
@@ -161,6 +163,8 @@ async def test_tool_cleanup_transaction_preserves_concurrent_registration(
     monkeypatch,
     operation,
 ):
+    # Keep the competing cleanup and registration in one real scenario.
+    # pylint: disable=R0915
     from qwenpaw.config import config as configs
     from qwenpaw.plugins import api
     from qwenpaw.plugins.testing import PluginTestHost

@@ -74,12 +74,14 @@ class InteractionMiddleware(MiddlewareBase):
     def __init__(self, ctx):
         self.ctx = ctx
 
-    async def on_system_prompt(self, _agent, current_prompt: str) -> str:
+    async def on_system_prompt(self, agent, current_prompt: str) -> str:
+        del agent
         if INTERACTION_PROMPT in current_prompt:
             return current_prompt
         return f"{current_prompt.rstrip()}\n\n{INTERACTION_PROMPT}".strip()
 
-    async def on_acting(self, _agent, input_kwargs, next_handler):
+    async def on_acting(self, agent, input_kwargs, next_handler):
+        del agent
         call = input_kwargs.get("tool_call") or {}
         name = (
             call.get("name")

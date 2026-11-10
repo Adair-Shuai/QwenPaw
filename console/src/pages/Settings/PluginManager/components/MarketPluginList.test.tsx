@@ -100,6 +100,11 @@ describe("MarketPluginList", () => {
         observe(element: Element) {
           this.record.elements.push(element);
         }
+        unobserve(element: Element) {
+          this.record.elements = this.record.elements.filter(
+            (target) => target !== element,
+          );
+        }
         disconnect() {}
       },
     );

@@ -1,3 +1,14 @@
+type IdeaFixture = ReturnType<typeof makeIdea> & {
+  status_before_archive?: string;
+  expansion?: unknown;
+};
+type IdeaStreamFixture = {
+  onmessage: ((event: { data: string }) => void) | undefined;
+  onopen: (() => void) | undefined;
+  onerror: (() => void) | undefined;
+  readyState: number;
+  close: () => void;
+};
 import fs from "node:fs";
 import path from "node:path";
 import React from "react";
@@ -28,8 +39,16 @@ const makeIdea = (id: string, extra = {}) => ({
 
 describe("UIdeas shipped workspace", () => {
   let Component: React.ComponentType;
-  let ideas: any[], suggestions: any[], clusters: any[], meta: any;
-  let eventSource: any;
+  let ideas: IdeaFixture[],
+    suggestions: Array<{ id: string; status: string; [key: string]: unknown }>,
+    clusters: Array<{ id: string; [key: string]: unknown }>,
+    meta: {
+      min_ideas: number;
+      proactive_enabled: boolean;
+      interval_minutes: number;
+      todo_queue: Record<string, unknown>[];
+    };
+  const eventSource: { current?: IdeaStreamFixture } = {};
   let failLoad = false,
     jobStatus = "running";
   const fetcher = vi.fn();
@@ -73,13 +92,13 @@ describe("UIdeas shipped workspace", () => {
     vi.stubGlobal(
       "EventSource",
       class {
-        onmessage: any;
-        onopen: any;
-        onerror: any;
+        onmessage: IdeaStreamFixture["onmessage"];
+        onopen: IdeaStreamFixture["onopen"];
+        onerror: IdeaStreamFixture["onerror"];
         readyState = 0;
         close = vi.fn();
         constructor() {
-          eventSource = this;
+          eventSource.current = this;
         }
       },
     );
@@ -96,13 +115,13 @@ describe("UIdeas shipped workspace", () => {
         const body = init.body ? JSON.parse(String(init.body)) : null;
         if (failLoad && route === "/ideas" && init.method === "GET")
           return new Response('{"detail":"连接暂时不可用"}', { status: 503 });
-        let data: any = {};
+        let data = {};
         if (route === "/ideas" && init.method === "POST") {
           const idea = makeIdea("new", body);
           ideas.unshift(idea);
           data = { idea };
         } else if (route.startsWith("/ideas/") && init.method === "PATCH") {
-          const idea = ideas.find((i) => i.id === route.split("/")[2]);
+          const idea = ideas.find((i) => i.id === route.split("/")[2])!;
           if (body.status === "archived")
             idea.status_before_archive = idea.status;
           Object.assign(idea, body);
@@ -113,7 +132,7 @@ describe("UIdeas shipped workspace", () => {
         else if (route.startsWith("/suggestions/") && init.method === "PATCH") {
           const suggestion = suggestions.find(
             (s) => s.id === route.split("/")[2],
-          );
+          )!;
           suggestion.status = body.status;
           if (body.status === "accepted" && !meta.todo_queue.length)
             meta.todo_queue.push({
@@ -162,7 +181,10 @@ describe("UIdeas shipped workspace", () => {
           getApiToken: () => "",
           useTheme: () => "light",
         },
-        registerRoutes: (_id: string, routes: any[]) => {
+        registerRoutes: (
+          _id: string,
+          routes: Array<{ component: React.ComponentType }>,
+        ) => {
           Component = routes[0].component;
         },
       },
@@ -281,7 +303,9 @@ describe("UIdeas shipped workspace", () => {
       target: { value: "正在编辑的新内容" },
     });
     act(() =>
-      eventSource.onmessage({ data: JSON.stringify({ type: "idea:updated" }) }),
+      eventSource.current!.onmessage!({
+        data: JSON.stringify({ type: "idea:updated" }),
+      }),
     );
     await waitFor(() =>
       expect(
@@ -446,7 +470,7 @@ describe("UIdeas shipped workspace", () => {
       reader.onload = () => resolve(String(reader.result));
       reader.readAsText(blobs[0]);
     });
-    expect(JSON.parse(text).ideas.map((i: any) => i.id)).toEqual([
+    expect(JSON.parse(text).ideas.map((i: { id: string }) => i.id)).toEqual([
       "a",
       "b",
       "archived",

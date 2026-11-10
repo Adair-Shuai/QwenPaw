@@ -660,26 +660,30 @@ function v() {
   return e.useMemo(() => ae(t), [t]);
 }
 function ie() {
-  return /* @__PURE__ */ e.createElement(
+  return e.createElement(
     "svg",
     {
-      "aria-hidden": "true",
-      focusable: "false",
       viewBox: "0 0 24 24",
-      width: 16,
-      height: 16,
       fill: "none",
       stroke: "currentColor",
-      strokeWidth: 2,
+      strokeWidth: 1.6,
       strokeLinecap: "round",
       strokeLinejoin: "round",
-      shapeRendering: "geometricPrecision"
+      "aria-hidden": !0,
+      focusable: "false",
+      width: "1em",
+      height: "1em"
     },
-    /* @__PURE__ */ e.createElement("circle", { cx: 12, cy: 12, r: 9 }),
-    /* @__PURE__ */ e.createElement("circle", { cx: 12, cy: 12, r: 3.375 }),
-    /* @__PURE__ */ e.createElement("line", { x1: 12, y1: 8.625, x2: 20.344, y2: 8.625 }),
-    /* @__PURE__ */ e.createElement("line", { x1: 9.075, y1: 13.688, x2: 4.903, y2: 6.459 }),
-    /* @__PURE__ */ e.createElement("line", { x1: 14.925, y1: 13.688, x2: 10.753, y2: 20.916 })
+    e.createElement("rect", {
+      x: "2.7",
+      y: "3.9",
+      width: "18.6",
+      height: "16.2",
+      rx: "1.45"
+    }),
+    e.createElement("path", {
+      d: "M2.7 8.15h18.6M6.3 6.1h.1M10.35 17.0l1.5-5.5 4.4 3.65-2.7.05-1.4 2.15"
+    })
   );
 }
 function le() {
@@ -864,9 +868,9 @@ function fe({
 }
 function Ee() {
   var H;
-  const t = v(), n = j(), [r, l] = e.useState(null), [i, h] = e.useState(null), [p, g] = e.useState(null), [E, I] = e.useState(!0), [M, L] = e.useState(!1), [D, k] = e.useState(null), [W, G] = e.useState(!1), [A, q] = e.useState(() => xe()), x = e.useCallback(
+  const t = v(), n = j(), [r, l] = e.useState(null), [i, h] = e.useState(null), [p, g] = e.useState(null), [E, M] = e.useState(!0), [I, L] = e.useState(!1), [D, k] = e.useState(null), [W, G] = e.useState(!1), [A, q] = e.useState(() => xe()), x = e.useCallback(
     async (a) => {
-      a != null && a.silent || I(!0), k(null);
+      a != null && a.silent || M(!0), k(null);
       try {
         const [s, y] = await Promise.all([
           se(),
@@ -877,7 +881,7 @@ function Ee() {
         const y = s instanceof Error ? s.message : String(s);
         return k(y), null;
       } finally {
-        a != null && a.silent || I(!1);
+        a != null && a.silent || M(!1);
       }
     },
     []
@@ -1001,7 +1005,7 @@ function Ee() {
     u,
     {
       type: "primary",
-      loading: M,
+      loading: I,
       onClick: () => void b({ refresh: !0 })
     },
     o(n, "repairBrowserConnector")
@@ -1093,7 +1097,7 @@ function Ee() {
       {
         icon: "copy",
         label: o(n, "qwenpawExtensionPath"),
-        loading: M,
+        loading: I,
         onClick: () => void V(),
         tone: "blue",
         iconOnly: !0

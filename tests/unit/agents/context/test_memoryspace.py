@@ -153,7 +153,6 @@ def test_search_uses_seq_as_stable_bm25_tie_breaker(tmp_path: Path):
         second = space.search("identical ranking", k=3)
     finally:
         space.close()
-
     assert [row["seq"] for row in first] == expected_seqs
     assert [row["seq"] for row in second] == expected_seqs
 
@@ -335,7 +334,6 @@ def test_search_returns_and_deduplicates_complete_turn(tmp_path: Path):
         user_hits = space.search("compass", k=10)
     finally:
         space.close()
-
     assert len(hits) == 1
     assert hits[0]["matched_seqs"] == [
         user_seq,
@@ -405,7 +403,6 @@ def test_search_cjk_substring_returns_complete_turn(tmp_path: Path):
         )
     finally:
         space.close()
-
     assert len(hits) == 1
     assert hits[0]["match_seq"] == user_seq
     assert hits[0]["turn_start_seq"] == user_seq
@@ -461,7 +458,6 @@ def test_search_cjk_multiple_terms_are_and_combined(tmp_path: Path):
         )
     finally:
         space.close()
-
     assert len(hits) == 1
     assert hits[0]["match_seq"] == user_seq
     assert hits[0]["turn_complete"] is True
@@ -514,7 +510,6 @@ def test_search_cjk_uppercase_or_matches_either_term(tmp_path: Path):
         )
     finally:
         space.close()
-
     assert {hit["match_seq"] for hit in hits} == {
         project_seq,
         deadline_seq,
@@ -571,7 +566,6 @@ def test_search_like_metacharacters_are_literal(tmp_path: Path):
         )
     finally:
         space.close()
-
     assert [row["content"] for row in underscore] == ["项目_编号"]
     assert [row["content"] for row in percent] == ["项目%进度"]
     assert [row["content"] for row in backslash] == ["项目\\路径"]
@@ -635,7 +629,6 @@ def test_search_loads_duplicate_hit_turn_once(
         rows = space.search("duplicate-needle", k=100)
     finally:
         space.close()
-
     turns = [row for row in rows if row["kind"] != "_notice"]
     assert len(turns) == 1
     assert turns[0]["matched_seqs"] == matched
@@ -695,7 +688,6 @@ def test_search_pages_until_it_finds_k_distinct_turns(tmp_path: Path):
         rows = space.search("needle", k=2)
     finally:
         space.close()
-
     turns = [row for row in rows if row["kind"] != "_notice"]
     assert len(turns) == 2
     assert second_start in {row["turn_start_seq"] for row in turns}
@@ -756,7 +748,6 @@ def test_search_marks_partial_when_raw_hit_cap_hides_turns(tmp_path: Path):
         rows = space.search("needle", k=2)
     finally:
         space.close()
-
     turns = [row for row in rows if row["kind"] != "_notice"]
     notices = [row for row in rows if row["kind"] == "_notice"]
     assert len(turns) == 1
@@ -802,7 +793,6 @@ def test_search_turn_expansion_has_total_row_budget(tmp_path: Path):
         rows = space.search("budget-needle", k=10)
     finally:
         space.close()
-
     result = next(row for row in rows if row["kind"] != "_notice")
     turn = result["turn"]
     assert len([row for row in turn if not row.get("_truncated")]) == 3
@@ -848,7 +838,6 @@ def test_search_turn_expansion_has_total_byte_budget(tmp_path: Path):
         rows = space.search("byte-budget-needle")
     finally:
         space.close()
-
     result = next(row for row in rows if row["kind"] != "_notice")
     turn = result["turn"]
     assert len([row for row in turn if not row.get("_truncated")]) == 1
@@ -928,7 +917,6 @@ def test_search_groups_imported_kind_by_user_role(tmp_path: Path):
         )
     finally:
         space.close()
-
     assert len(assistant_hit) == 1
     assert assistant_hit[0]["turn_start_seq"] == user_seq
     assert assistant_hit[0]["turn_end_seq"] == assistant_seq
@@ -977,7 +965,6 @@ def test_search_turn_does_not_cross_session_or_agent(tmp_path: Path):
         hits = space.search("needle", all_agents=True, k=10)
     finally:
         space.close()
-
     assert len(hits) == 3
     for hit in hits:
         assert {
@@ -1212,7 +1199,6 @@ def test_search_filters_by_created_at_calendar_dates(tmp_path: Path):
         like = space.search("tasks", created_on="2024-11-05")
     finally:
         space.close()
-
     assert len(exact) == 1
     assert exact[0]["content"] == "logged 18 tasks"
     assert exact[0]["created_at"].startswith("2024-11-05")
@@ -1269,7 +1255,6 @@ def test_date_only_search_keeps_null_content_rows(tmp_path: Path):
         turns = space.search("", created_on="2024-11-05")
     finally:
         space.close()
-
     assert [row["seq"] for row in matching_rows] == [target_seq]
     assert matching_rows[0]["content"] is None
     assert len(turns) == 1
@@ -1349,7 +1334,6 @@ def test_search_accepts_date_max_without_overflow(
         )
     finally:
         space.close()
-
     assert [row["seq"] for row in rows] == [target_seq]
 
 
@@ -1517,7 +1501,6 @@ def test_expand_includes_legacy_unowned_rows(history_db: Path):
         rows = space.expand(legacy_seq, legacy_seq)
     finally:
         space.close()
-
     assert [row["content"] for row in rows] == ["legacy unowned turn"]
 
 
@@ -1689,7 +1672,6 @@ def test_saved_tool_paths_accept_quoted_and_legacy_paths_with_spaces(
         )
     finally:
         space.close()
-
     assert paths == [quoted_file.resolve(), legacy_file.resolve()]
 
 
@@ -1717,7 +1699,6 @@ def test_saved_tool_paths_prefer_structured_artifact_metadata(tmp_path: Path):
         )
     finally:
         space.close()
-
     assert paths == [artifact.resolve()]
 
 
@@ -1753,7 +1734,6 @@ def test_saved_tool_search_checks_each_multiblock_artifact(tmp_path: Path):
         rows = space.search("deepneedle", k=1)
     finally:
         space.close()
-
     assert len(rows) == 1
     assert rows[0]["kind"] == "tool_result"
     assert f"file_path={target_file}" in rows[0]["content"]
@@ -1786,7 +1766,6 @@ def test_saved_tool_search_preserves_uppercase_or(tmp_path: Path):
         rows = space.search("项目 OR 截止日期", k=10)
     finally:
         space.close()
-
     assert len(rows) == 1
     assert rows[0]["kind"] == "tool_result"
     assert f"file_path={artifact}" in rows[0]["content"]
@@ -1825,7 +1804,6 @@ def test_recall_tool_annotates_each_multiblock_artifact(tmp_path: Path):
         rows = space.recall_tool("multi-block-call")
     finally:
         space.close()
-
     artifacts = [
         row["content"] for row in rows if row["kind"] == "_saved_tool_output"
     ]
@@ -1872,7 +1850,6 @@ def test_recall_tool_returns_preview_when_artifact_expired(tmp_path: Path):
         rows = space.recall_tool("expired-call")
     finally:
         space.close()
-
     assert rows[0]["kind"] == "_saved_tool_output_unavailable"
     assert "ARTIFACT_UNAVAILABLE" in rows[0]["content"]
     assert rows[1]["kind"] == "tool_result"
@@ -1919,7 +1896,6 @@ def test_saved_tool_search_pages_past_first_200_candidates(tmp_path: Path):
         rows = space.search("deepneedle", k=1)
     finally:
         space.close()
-
     assert len(rows) == 1
     assert rows[0]["kind"] == "tool_result"
     assert "tool_call_id=target-call" in rows[0]["content"]
@@ -2002,7 +1978,6 @@ def test_attach_saved_tool_preserves_preview_when_scan_budget_exhausts(
         )
     finally:
         space.close()
-
     notices = [row for row in rows if row["kind"] == "_notice"]
     assert len(notices) == 1
     assert "Results are partial" in notices[0]["content"]

@@ -162,7 +162,6 @@ class EmbeddingIndex:
             doc_tokens.append(tokens)
             for t in set(tokens):
                 df[t] = df.get(t, 0) + 1
-
         self._doc_lens = [len(dt) for dt in doc_tokens]
         self._avg_dl = sum(self._doc_lens) / n if n > 0 else 1.0
 
@@ -236,7 +235,6 @@ class EmbeddingIndex:
         """
         if len(self.nodes) == 0:
             return []
-
         indices = list(range(len(self.nodes)))
         if node_types:
             nt_lower = {t.lower() for t in node_types}
@@ -247,7 +245,6 @@ class EmbeddingIndex:
             ]
         if not indices:
             return []
-
         q_emb = None
         if query_embedding is not None and self.embeddings is not None:
             cand = np.asarray(query_embedding, dtype=np.float32).reshape(-1)
@@ -260,7 +257,6 @@ class EmbeddingIndex:
                 )
             else:
                 q_emb = cand
-
         if q_emb is not None:
             normed = self._normalized()
             q_norm = q_emb / (np.linalg.norm(q_emb) or 1)
@@ -276,7 +272,6 @@ class EmbeddingIndex:
         else:
             cosine_scores = None
             dense_rank = {}
-
         sparse_scores = self._sparse_search(query)
         # Only nodes with a positive BM25 score earn a sparse rank;
         # zero-score nodes must not gain RRF credit from arbitrary
@@ -293,7 +288,6 @@ class EmbeddingIndex:
 
         if not dense_rank and not sparse_rank:
             return []
-
         rrf_k = 60
         fused = []
         for i in indices:

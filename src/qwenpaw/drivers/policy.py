@@ -93,7 +93,6 @@ def evaluate_policy(
     if not matches:
         default = driver_policy.default_effect
         return default if default in _STRICTNESS else POLICY_EFFECT_DENY
-
     matches.sort(
         key=lambda rule: (
             target_name_specificity(rule.target),
@@ -283,7 +282,6 @@ def _selector_value(value: str | None) -> str:
 def _time_range_satisfied(time_range: Any, now: datetime) -> bool:
     if not _weekdays_satisfied(time_range.weekdays, now):
         return False
-
     after = _parse_clock(time_range.after)
     before = _parse_clock(time_range.before)
     current = now.timetz().replace(tzinfo=None)

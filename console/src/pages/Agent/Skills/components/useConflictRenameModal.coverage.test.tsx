@@ -34,8 +34,20 @@ import {
 import React from "react";
 
 vi.mock("@agentscope-ai/design", async () => {
-  const actual = await vi.importActual<any>("@agentscope-ai/design");
-  const Modal = ({ open, title, children, onOk, onCancel, zIndex }: any) => {
+  const actual = await vi.importActual<typeof import("@agentscope-ai/design")>(
+    "@agentscope-ai/design",
+  );
+  const Modal = ({
+    open,
+    title,
+    children,
+    onOk,
+    onCancel,
+    zIndex,
+  }: Pick<
+    import("antd").ModalProps,
+    "open" | "title" | "children" | "onOk" | "onCancel" | "zIndex"
+  >) => {
     if (!open) return null;
     return React.createElement(
       "div",

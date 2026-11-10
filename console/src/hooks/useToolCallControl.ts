@@ -230,9 +230,11 @@ export function useToolCallControl(
     let cancelled = false;
     let attempts = 0;
     let policyLoaded = false;
+    let inFlight = false;
 
     const tryFetch = async () => {
-      if (cancelled || fetchedRef.current) return;
+      if (cancelled || fetchedRef.current || inFlight) return;
+      inFlight = true;
 
       const sid = resolveSessionId(sessionId);
       let notFound = false;
@@ -246,7 +248,12 @@ export function useToolCallControl(
         ? Promise.resolve(null)
         : toolCallsApi.getOffloadPolicy().catch(() => null);
 
-      const [info, policy] = await Promise.all([infoPromise, policyPromise]);
+      const [info, policy] = await Promise.all([
+        infoPromise,
+        policyPromise,
+      ]).finally(() => {
+        inFlight = false;
+      });
       if (cancelled) return;
 
       if (policy) {
@@ -308,10 +315,12 @@ export function useToolCallControl(
     if (!isCalling || !toolCallId) return;
 
     let cancelled = false;
+    let inFlight = false;
     const poll = async () => {
-      if (cancelled || autoOffloadRegisteredRef.current) return;
+      if (cancelled || inFlight || autoOffloadRegisteredRef.current) return;
       const sid = resolveSessionId(sessionId);
       if (!sid) return;
+      inFlight = true;
       try {
         const info = await toolCallsApi.getInfo(sid, toolCallId);
         if (cancelled || !info) return;
@@ -333,6 +342,8 @@ export function useToolCallControl(
         }
       } catch {
         /* ignore transient errors */
+      } finally {
+        inFlight = false;
       }
     };
 

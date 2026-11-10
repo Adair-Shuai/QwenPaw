@@ -1,5 +1,6 @@
 {
   "groups": {
+    "answerFileReferences": ["tests/unit/runtime/test_prompt_contributors.py"],
     "ugsci": [
       "tests/unit/plugins/ugsci/test_bundle_sync.py",
       "tests/unit/plugins/ugsci/test_derivation_workbench_frontend.py",
@@ -62,7 +63,8 @@
       "tests/unit/plugins/ugsci/test_visualization_tool_contract.py",
       "tests/unit/plugins/ugsci/test_storage_inventory_stage_contract.py",
       "tests/unit/plugins/ugsci/test_roff_conversion_contract.py",
-      "tests/unit/plugins/ugsci/test_expert_presentation.py"
+      "tests/unit/plugins/ugsci/test_expert_presentation.py",
+      "tests/unit/plugins/ugsci/test_visualization_services.py"
     ],
     "flowforge": [
       "tests/unit/plugins/test_plugin_api_helpers.py",
@@ -85,7 +87,16 @@
       "tests/unit/plugins/flowforge/test_lifecycle_listing_contract.py",
       "tests/unit/plugins/flowforge/test_router_stream_contract.py",
       "tests/unit/plugins/flowforge/test_executor_stage_contract.py",
-      "tests/unit/plugins/flowforge/test_service_lifetime.py"
+      "tests/unit/plugins/flowforge/test_service_lifetime.py",
+      "tests/unit/plugins/flowforge/test_authoring_diagnostics.py",
+      "tests/unit/plugins/flowforge/test_run_inspection.py",
+      "tests/unit/plugins/flowforge/test_script_language_compatibility.py",
+      "tests/unit/plugins/flowforge/test_model_generation_contract.py",
+      "tests/unit/plugins/flowforge/test_debug_execution.py",
+      "tests/unit/plugins/flowforge/test_checkpoint_storage.py",
+      "tests/unit/plugins/flowforge/test_structured_output.py",
+      "tests/unit/plugins/flowforge/test_variable_bindings.py",
+      "tests/unit/plugins/flowforge/test_run_analytics.py"
     ],
     "office": [
       "tests/unit/agents/tools/test_office_tools.py",
@@ -112,16 +123,12 @@
       "tests/unit/plugins/test_openui.py",
       "tests/unit/plugins/test_openui_interactions.py"
     ],
-    "avatars": [
-      "tests/unit/app/routers/test_avatars_router.py"
-    ],
+    "avatars": ["tests/unit/app/routers/test_avatars_router.py"],
     "document_forms": [
       "plugins/apps/document-forms/tests/test_document_forms.py",
       "plugins/apps/document-forms/tests/test_publication.py"
     ],
-    "uideas": [
-      "tests/unit/plugins/test_uideas_workbench.py"
-    ],
+    "uideas": ["tests/unit/plugins/test_uideas_workbench.py"],
     "inventory": [
       "tests/unit/verify/test_fork_regression_inventory.py",
       "tests/unit/verify/test_pylint_namespace.py",
@@ -144,6 +151,7 @@
       "tests/unit/channels/test_matrix.py",
       "tests/unit/plugins/test_sdk_context_lifecycle.py",
       "tests/unit/plugins/test_manifest_dependencies.py",
+      "tests/unit/plugins/test_dependency_source_identity.py",
       "tests/unit/plugins/test_plugin_storage_windows_paths.py",
       "tests/unit/plugins/test_module_isolation_paths.py",
       "tests/unit/plugins/test_sdk_storage_http_concurrency.py",
@@ -158,18 +166,17 @@
       "tests/unit/tauri/test_component_service.py",
       "tests/unit/app/routers/test_healthz.py",
       "tests/unit/app/test_plugin_startup_order.py",
-      "tests/unit/channels/test_matrix_state.py"
+      "tests/unit/channels/test_matrix_state.py",
+      "tests/unit/plugins/test_channel_dependency_roots.py",
+      "tests/unit/plugins/test_dependency_source_sync.py",
+      "tests/unit/channels/test_channel_host.py"
     ],
     "run_center": [
       "tests/unit/plugins/run_center/test_research_router_contract.py",
       "tests/unit/plugins/run_center/test_research.py"
     ],
-    "research_mode": [
-      "tests/unit/plugins/test_research_mode_registration.py"
-    ],
-    "uproject": [
-      "tests/unit/plugins/test_uproject_app.py"
-    ],
+    "research_mode": ["tests/unit/plugins/test_research_mode_registration.py"],
+    "uproject": ["tests/unit/plugins/test_uproject_app.py"],
     "turnFileDelivery": [
       "tests/unit/test_turn_files.py",
       "tests/unit/runtime/test_turn_file_lifecycle.py"
@@ -186,14 +193,13 @@
       "tests/unit/plugins/test_official_channel_bundle.py",
       "tests/unit/tauri/test_ugsci_release_data.py"
     ],
-    "ulit": [
-      "tests/unit/plugins/test_ulit_database.py"
-    ],
+    "ulit": ["tests/unit/plugins/test_ulit_database.py"],
     "steering": [
       "tests/unit/app/test_steering.py",
       "tests/unit/runtime/test_console_turn_state.py",
       "tests/unit/runtime/test_message_convert.py",
-      "tests/unit/app/test_task_tracker.py"
+      "tests/unit/app/test_task_tracker.py",
+      "tests/unit/runtime/test_console_edit_resend.py"
     ],
     "desktop_footprint": [
       "tests/unit/tauri/test_desktop_dependency_lock.py",
@@ -208,9 +214,144 @@
     "windows_lifecycle": [
       "tests/unit/plugins/test_bundle_marker_scan.py",
       "tests/unit/tauri/test_windows_update_extraction.py"
-    ]
+    ],
+    "windows_install_performance": [
+      "tests/unit/tauri/test_windows_installer_io.py",
+      "tests/unit/tauri/test_windows_setup_progress.py",
+      "tests/unit/tauri/test_windows_webview_install.py",
+      "tests/unit/tauri/test_desktop_scientific_pruning.py",
+      "tests/unit/tauri/test_stage_python_runtime.py",
+      "tests/unit/tauri/test_desktop_workflows.py"
+    ],
+    "toolDiscovery": [
+      "tests/unit/runtime/test_tool_discovery.py",
+      "tests/unit/runtime/test_tool_discovery_accuracy.py",
+      "tests/unit/drivers/handlers/test_mcp_catalog_refresh.py"
+    ],
+    "contextInspection": ["tests/unit/app/chats/test_context_inspection.py"]
   },
   "required_cases": {
+    "tests/unit/runtime/test_tool_discovery_accuracy.py": [
+      "test_unknown_identifiers_never_substitute_other_apps",
+      "test_exact_identity_case_and_server_scope",
+      "test_exact_server_precedes_similarly_named_tool_prefixes",
+      "test_original_driver_names_resolve_to_their_public_binding",
+      "test_discovery_overview_contains_only_request_available_namespaces",
+      "test_native_owner_overview_and_bilingual_dependency_intent",
+      "test_unsupported_formats_are_not_positive_capabilities",
+      "test_explicit_negative_actions_are_not_activated",
+      "test_action_and_format_indexes_refresh_after_schema_mutation",
+      "test_full_json_array_budget_includes_separators_and_evicts_base",
+      "test_direct_catalog_boundary_counts_the_complete_array",
+      "test_large_catalog_generates_only_base_and_selected_schemas",
+      "test_public_names_keep_closures_distinct_through_sdk_and_governance",
+      "test_request_gates_precede_discovery_and_saved_activation",
+      "test_bad_arguments_and_missing_governor_never_execute",
+      "test_discovery_name_collision_keeps_both_integration_tools_callable",
+      "test_public_identity_revocation_hides_and_blocks_execution",
+      "test_code_mode_catalog_preserves_public_aliases_and_inner_denial"
+    ],
+    "tests/unit/plugins/flowforge/test_structured_output.py": [
+      "test_bilingual_structured_values_keep_both_slots_through_http_and_restart",
+      "test_invalid_schema_reports_field_before_any_provider_invocation",
+      "test_json_mode_rejects_non_json_or_ambiguous_responses_and_keeps_usage",
+      "test_schema_mismatch_keeps_actual_usage_and_escaped_business_field_path",
+      "test_required_field_location_and_local_draft_seven_references",
+      "test_local_anchors_support_recursive_and_nullable_contracts",
+      "test_legacy_text_response_and_content_alias_keep_existing_behavior",
+      "test_text_mode_rejects_parsed_binding_before_execution",
+      "test_dynamic_output_mode_distinguishes_unavailable_slot_and_explicit_null",
+      "test_literal_schema_values_are_not_workflow_links_or_expressions",
+      "test_schema_whole_field_bindings_keep_real_dependencies",
+      "test_host_stream_is_accumulated_once_before_structured_validation"
+    ],
+    "tests/unit/plugins/flowforge/test_variable_bindings.py": [
+      "test_normal_run_orders_quoted_nested_template_dependencies",
+      "test_nested_slots_keep_zero_false_and_null_without_coercion",
+      "test_multislot_array_reference_executes_using_real_output_slots",
+      "test_debug_until_and_single_node_share_nested_dependency_scope",
+      "test_debug_quoted_workflow_input_remains_in_required_input_schema",
+      "test_invalid_template_references_are_rejected_before_node_execution",
+      "test_template_dependencies_participate_in_cycle_validation",
+      "test_llm_pin_slots_follow_effective_text_or_schema_mode",
+      "test_template_context_preserves_legacy_outputs_and_stable_slots",
+      "test_text_model_stable_slot_zero_runs_without_changing_legacy_single_output",
+      "test_debug_until_resolves_multislot_array_values"
+    ],
+    "tests/unit/plugins/flowforge/test_run_analytics.py": [
+      "test_real_run_records_wall_clock_timing_and_explicit_retry_count",
+      "test_cached_run_keeps_original_output_without_rebilling_response_usage",
+      "test_legacy_inspection_preserves_unknown_times_and_sums_recorded_usage"
+    ],
+    "tests/unit/plugins/flowforge/test_debug_execution.py": [
+      "test_debug_literal_tool_overrides_use_normal_capability_validation",
+      "test_single_node_literal_override_replaces_nested_upstream_bindings",
+      "test_single_node_debug_reuses_slots_without_executing_upstream",
+      "test_single_node_requires_pins_or_literal_input_before_admission",
+      "test_until_debug_executes_only_ancestors_and_stops_at_target",
+      "test_until_debug_pins_cut_upstream_and_keep_multislot_array_identity",
+      "test_until_debug_pin_cuts_the_entire_upstream_dependency_chain",
+      "test_debug_ignores_unrelated_invalid_and_pinned_node_inputs",
+      "test_debug_reuses_tool_output_when_source_tool_is_unavailable",
+      "test_single_node_debug_requires_pins_for_template_output_dependencies",
+      "test_until_debug_schedules_template_dependencies_before_target",
+      "test_until_debug_preserves_condition_selection_without_running_other_arm",
+      "test_debug_revision_schema_and_control_pins_fail_before_any_execution",
+      "test_production_runs_ignore_debug_samples_and_keep_saved_definitions",
+      "test_debug_execution_uses_the_request_agent_scope",
+      "test_debug_admission_uses_the_validated_revision_during_concurrent_save",
+      "test_debug_record_and_redaction_survive_restart_without_changing_history",
+      "test_debug_cancellation_uses_normal_lifecycle_and_leaves_no_active_runner",
+      "test_debug_review_resume_after_restart_keeps_execution_limit",
+      "test_old_records_do_not_invent_resolved_inputs"
+],
+    "tests/unit/plugins/flowforge/test_model_generation_contract.py": [
+      "test_zero_temperature_is_preserved_and_metadata_uses_resolved_model",
+      "test_legacy_omitted_and_null_generation_settings_use_defaults",
+      "test_invalid_generation_settings_fail_before_provider_call",
+      "test_adapter_override_and_agent_inheritance_are_reflected_in_node_metadata"
+],
+    "tests/unit/plugins/flowforge/test_checkpoint_storage.py": [
+      "test_configured_storage_failure_does_not_fall_back_to_memory",
+      "test_disk_full_preserves_previous_checkpoint_and_logs_cause",
+      "test_serialization_failure_preserves_previous_checkpoint",
+      "test_temp_cleanup_failure_keeps_original_write_error",
+      "test_concurrent_stores_recover_entries_after_index_loss",
+      "test_failed_index_write_is_diagnostic_and_does_not_commit_memory_index",
+      "test_index_recovery_survives_http_resume_and_protects_original_inputs",
+      "test_corrupt_checkpoint_is_reported_by_http_sse_and_websocket",
+      "test_http_write_failure_exposes_path_and_codes_then_allows_retry"
+    ],
+    "tests/unit/runtime/test_prompt_contributors.py": [
+      "test_file_references_are_in_the_actual_default_prompt"
+    ],
+    "tests/unit/runtime/test_tool_discovery.py": [
+      "test_real_agent_loop_discovers_calls_and_checks_permissions",
+      "test_builder_bounds_large_catalog_and_activates_through_sdk",
+      "test_discovery_survives_serialized_state_and_revalidates_registry",
+      "test_subagent_whitelist_applies_before_search",
+      "test_activation_budget_and_oversized_tool_access",
+      "test_search_prefers_read_action_over_provider_name"
+    ],
+    "tests/unit/drivers/handlers/test_mcp_catalog_refresh.py": [
+      "test_warm_catalog_returns_during_refresh_and_retains_after_failure",
+      "test_cold_discovery_is_shared_and_chat_cancellation_is_isolated",
+      "test_config_change_discards_refresh_and_revokes_execution",
+      "test_background_prefetch_notification_and_shutdown",
+      "test_stateful_catalog_pagination_is_complete_and_bounded",
+      "test_shutdown_cancels_inflight_directory_refresh",
+      "test_manager_bounds_background_discovery_across_servers",
+      "test_stateful_notifications_reach_directory_owner",
+      "test_concurrent_discovery_preserves_partial_results"
+    ],
+    "tests/unit/plugins/flowforge/test_script_language_compatibility.py": [
+      "test_preloaded_and_standard_imports_share_worker_contract",
+      "test_worker_utf8_round_trip_preserves_text_stdout_and_errors",
+      "test_worker_rejects_imports_outside_standard_module_list",
+      "test_script_validation_reports_source_errors_before_execution",
+      "test_bilingual_statistics_through_http_and_restart",
+      "test_legacy_llm_without_system_and_unknown_input_diagnostics"
+    ],
     "tests/unit/channels/test_matrix.py": [
       "test_matrix_market_manifest_requires_native_channel_host",
       "test_default_e2ee_dependency_initializes_crypto_store",
@@ -289,6 +430,7 @@
       "test_import_patches_preserve_original_custom_loader"
     ],
     "tests/unit/plugins/test_openui_interactions.py": [
+      "test_discovery_respects_ui_capability_and_executes_scoped_tool",
       "test_tool_http_draft_restart_submit_and_delivery",
       "test_http_owner_scope_and_persisted_session_validation",
       "test_http_rejects_invalid_answers_without_mutation",
@@ -763,6 +905,11 @@
       "test_exported_author_suite_collects_outside_checkout"
     ],
     "tests/unit/plugins/ugsci/test_expert_presentation.py": [
+      "test_avatar_part_colors_roundtrip_legacy_edits_and_explicit_reset",
+      "test_invalid_avatar_colors_preserve_the_saved_recipe",
+      "test_avatar_recipe_roundtrip_and_legacy_metadata_defaults",
+      "test_avatar_legacy_update_preserves_recipe_and_explicit_null_resets_it",
+      "test_invalid_avatar_recipes_leave_saved_metadata_intact",
       "test_display_metadata_roundtrip_preserves_prompts_and_agent_isolation",
       "test_display_metadata_rejects_stale_invalid_and_unknown_updates",
       "test_display_metadata_corruption_is_not_silently_overwritten",
@@ -777,13 +924,20 @@
       "test_scope_traversal_and_blob_integrity_are_enforced",
       "test_http_routes_enforce_chat_identity_and_serve_archived_bytes",
       "test_history_pagination_filters_scope_before_page_boundaries",
-      "test_damaged_archive_never_falls_back_to_mutable_workspace_bytes"
+      "test_damaged_archive_never_falls_back_to_mutable_workspace_bytes",
+      "test_unavailable_snapshot_bytes_do_not_manufacture_a_file_modification",
+      "test_workspace_sqlite_sidecars_are_internal_but_project_databases_remain_user_files",
+      "test_no_tool_attribution_correction_preserves_original_rows_but_blocks_downloads",
+      "test_legacy_runtime_rows_are_filtered_without_hiding_project_databases"
     ],
     "tests/unit/runtime/test_turn_file_lifecycle.py": [
       "test_native_turn_archives_real_files_on_all_exit_paths",
       "test_successful_send_freezes_delivered_bytes_before_later_overwrite",
       "test_repeated_cancellation_keeps_archive_task_alive",
-      "test_third_party_turn_has_same_durable_file_contract"
+      "test_third_party_turn_has_same_durable_file_contract",
+      "test_no_tool_turn_does_not_claim_ambient_shared_workspace_writes",
+      "test_actual_native_tool_funnel_marks_capture_before_filesystem_effects",
+      "test_third_party_text_only_turn_does_not_claim_external_writes"
     ],
     "tests/unit/plugins/test_manifest_dependencies.py": [
       "test_wheel_identity_and_header_validation",
@@ -921,7 +1075,9 @@
       "test_best_deflate_archives_pass_signed_runtime_installation"
     ],
     "tests/unit/tauri/test_windows_portable_installer_contract.py": [
-      "test_cli_launcher_uses_python_module_entry_point"
+      "test_cli_launcher_uses_python_module_entry_point",
+      "test_installer_verifies_in_elevated_process_before_any_mutation",
+      "test_installer_parallel_user_backup_keeps_complete_copy_and_failure_gate"
     ],
     "tests/unit/plugins/test_bundle_marker_scan.py": [
       "test_bundle_marker_checks_all_files_with_one_scan_per_directory",
@@ -932,7 +1088,96 @@
     ],
     "tests/unit/channels/test_matrix_state.py": [
       "test_sqlite_layout_migration_preserves_committed_wal",
-      "test_sqlite_migration_rejects_foreign_keys_without_changing_files"
+      "test_sqlite_migration_rejects_foreign_keys_without_changing_files",
+      "test_local_and_global_sqlite_sources_are_rejected_before_migration"
+    ],
+    "tests/unit/plugins/test_dependency_source_identity.py": [
+      "test_source_admission_after_manifest_module_reload"
+    ],
+    "tests/unit/plugins/ugsci/test_visualization_services.py": [
+      "test_import_worker_publishes_related_wells_without_http_module",
+      "test_catalog_publication_keeps_parallel_storage_contexts_independent",
+      "test_catalog_publication_retries_temporary_windows_manifest_lock",
+      "test_catalog_publication_keeps_previous_manifest_after_persistent_lock",
+      "test_http_dataset_services_preserve_temporal_resources_and_errors",
+      "test_derived_publication_keeps_runtime_catalog_ownership"
+    ],
+    "tests/unit/tauri/test_desktop_scientific_pruning.py": [
+      "test_scientific_pruning_only_removes_audited_test_trees",
+      "test_scientific_pruning_changes_component_identity",
+      "test_scientific_pruning_rejects_paths_outside_staging",
+      "test_pruned_real_scientific_packages_keep_offline_operations"
+    ],
+    "tests/unit/tauri/test_stage_python_runtime.py": [
+      "test_prunes_python_native_symbols_but_keeps_runtime_and_build_support",
+      "test_cached_python_runtime_is_pruned_without_download",
+      "test_pruned_python_runtime_gets_new_component_identity"
+    ],
+    "tests/unit/tauri/test_desktop_workflows.py": [
+      "test_windows_build_creates_portable_package_once_and_keeps_signing"
+    ],
+    "tests/unit/runtime/test_console_edit_resend.py": [
+      "test_edit_resend_commits_selected_history_policy_and_survives_reopen",
+      "test_edit_resend_failure_and_cancel_leave_original_disk_history",
+      "test_edit_resend_write_failure_preserves_original",
+      "test_edit_resend_rewinds_selected_older_turn_by_durable_identity",
+      "test_edit_resend_rejects_invalid_or_unscoped_targets_without_mutation",
+      "test_edit_resend_rejects_steering_supplements_and_ambiguous_receipts",
+      "test_edit_resend_missing_session_and_other_user_cannot_rewind",
+      "test_edit_resend_cannot_checkpoint_a_replacement_through_steering",
+      "test_edit_resend_http_rejects_backend_without_history_replacement"
+    ],
+    "tests/unit/app/chats/test_context_inspection.py": [
+      "test_actual_model_call_captures_transient_memory_and_persists_frozen_rules",
+      "test_concurrent_agents_do_not_share_snapshots_or_configured_but_unused_sources",
+      "test_observer_failure_does_not_change_or_repeat_model_call",
+      "test_actual_data_and_read_file_result_use_frozen_model_visible_evidence",
+      "test_snapshot_roundtrip_discards_rewound_turn_and_rebounds_imported_content",
+      "test_legacy_context_is_saved_evidence_and_does_not_invent_rules_or_memory",
+      "test_scroll_summary_uses_saved_continuation_and_preserves_staleness",
+      "test_snapshot_limits_exclude_binary_and_only_count_quotes_present_in_message",
+      "test_memory_provenance_marks_only_the_recorded_hint_block",
+      "test_http_context_requires_auth_and_uses_exact_agent_chat_user_identity",
+      "test_http_context_is_read_only_and_never_hydrates_or_executes"
+    ],
+    "tests/unit/plugins/flowforge/test_authoring_diagnostics.py": [
+      "test_required_inputs_have_stable_codes_and_field_locations",
+      "test_edge_type_diagnostic_identifies_the_canvas_edge",
+      "test_duplicate_control_binding_is_rejected_instead_of_last_edge_winning",
+      "test_independent_nodes_warn_without_changing_validity",
+      "test_bounded_refine_loop_remains_valid_with_diagnostics",
+      "test_unavailable_capability_and_invalid_document_keep_uniform_contract",
+      "test_flexible_schema_keeps_arbitrary_input_ports"
+    ],
+    "tests/unit/plugins/flowforge/test_run_inspection.py": [
+      "test_run_node_directory_uses_fixed_snapshot_and_preserves_false_values",
+      "test_not_yet_executed_nodes_are_visible_without_fabricated_outputs",
+      "test_public_inspection_redacts_credentials_live_and_after_restart_without_changing_results",
+      "test_named_workflow_output_cannot_impersonate_a_node_output",
+      "test_short_credentials_do_not_corrupt_run_routing_or_status",
+      "test_stream_redactor_remembers_credentials_discovered_in_earlier_events",
+      "test_last_node_execution_clears_previous_failure_in_inspection",
+      "test_resumed_run_uses_original_input_credentials_for_public_redaction",
+      "test_node_identity_in_output_map_is_not_a_credential_name",
+      "test_named_business_credential_output_remains_redacted_when_alias_is_node_id",
+      "test_real_credentials_inside_node_identity_output_still_redact",
+      "test_run_persistence_failures_log_original_cause_without_claiming_success",
+      "test_checkpoint_reader_collision_retries_without_losing_durable_results",
+      "test_persistent_checkpoint_collision_keeps_previous_snapshot_and_fails",
+      "test_node_details_ignore_malformed_event_ids"
+    ],
+    "tests/unit/plugins/test_channel_dependency_roots.py": [
+      "test_dependency_roots_use_physical_identity_and_windows_spelling",
+      "test_dependency_root_alias_is_rechecked_after_retarget"
+    ],
+    "tests/unit/plugins/test_dependency_source_sync.py": [
+      "test_source_backup_and_restore_flush_exact_bytes_and_modes",
+      "test_source_sync_failure_preserves_original_read_only_mode"
+    ],
+    "tests/unit/channels/test_channel_host.py": [
+      "test_real_agent_stream_final_reply_and_saved_session",
+      "test_update_replaces_worker_and_preserves_data",
+      "test_channel_preflight_rechecks_metadata_read_during_probe"
     ]
   }
 }

@@ -100,7 +100,6 @@ def resolve_codex_binary_info(
                 if resolved is not None
                 else None
             )
-
     environment_binary = environment.get("CODEX_BINARY")
     if environment_binary:
         resolved = _resolve_configured(
@@ -113,7 +112,6 @@ def resolve_codex_binary_info(
                 if resolved is not None
                 else None
             )
-
     bundled = sdk_candidate
     if bundled is None:
         bundled = bundled_cli_candidate()
@@ -122,13 +120,11 @@ def resolve_codex_binary_info(
         platform_name=platform_name,
     ):
         return CodexBinaryResolution(bundled.resolve(), "python-sdk")
-
     on_path = shutil.which("codex")
     if on_path:
         resolved = Path(on_path).resolve()
         if not _is_embedded_runtime(resolved):
             return CodexBinaryResolution(resolved, "path")
-
     candidates = (
         install_candidates
         if install_candidates is not None

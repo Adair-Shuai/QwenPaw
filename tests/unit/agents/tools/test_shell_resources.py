@@ -305,6 +305,8 @@ async def test_guard_initialization_and_registration_run_off_loop(monkeypatch):
 @pytest.mark.parametrize("backend", ["restricted", "appcontainer"])
 async def test_windows_reader_threads_share_output_guard(monkeypatch, backend):
     """Exercise real reader/thread code with only the Win32 boundary faked."""
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     guard = ShellGuard(1024**3, 3 * 1024**2)
     size = 2 * 1024**2
     remaining = {101: size, 102: size}
@@ -355,6 +357,8 @@ async def test_windows_reader_threads_share_output_guard(monkeypatch, backend):
 
 def test_windows_stops_guard_before_closing_output_readers():
     """The watchdog must release reader callbacks before handle cleanup."""
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     readers = [tempfile.TemporaryFile(), tempfile.TemporaryFile()]
     writers = [io.BytesIO(), io.BytesIO()]
     guard = MagicMock(spec=ShellGuard)

@@ -203,6 +203,8 @@ async def test_provider_rejects_invalid_stream_terminal_protocol(
 
     def declare(ctx):
         async def generate(call, request):
+            # Retain fixture injection and substituted callback signatures.
+            # pylint: disable=unused-argument
             yield ModelChunk(
                 (ContentBlock(text="first"),),
                 is_last=ctx.config.get("case") == "after_terminal",
@@ -225,7 +227,7 @@ async def test_provider_rejects_invalid_stream_terminal_protocol(
         plugin_id="extension-contract",
         capabilities=("providers", "config"),
         config={"case": case},
-    ) as (host, ctx):
+    ) as (host, _unused_provider_context):
         model = await host.create_model("sdk-provider", "sdk-model")
         with pytest.raises(SDKError, match="terminal"):
             async for _ in model.stream(

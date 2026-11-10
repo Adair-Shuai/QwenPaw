@@ -8,6 +8,9 @@ def read_channel_env(
     channel_key: str,
     environ: Mapping[str, str],
 ) -> dict | None:
+    # Preserve legacy configuration precedence and environment aliases in
+    # order.
+    # pylint: disable=R0911,R0912
     """Parse the old entry exactly; never construct or import a channel."""
     if channel_key == "telegram":
         return {

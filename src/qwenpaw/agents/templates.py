@@ -89,7 +89,6 @@ def build_agent_template(
             initial_skill_names=(),
             md_template_id=get_workspace_md_template_id(template_id),
         )
-
     if template_id == LOCAL_AGENT_TEMPLATE:
         agent_config = AgentProfileConfig(
             id=agent_id,
@@ -110,7 +109,6 @@ def build_agent_template(
             initial_skill_names=LOCAL_TEMPLATE_SKILL_NAMES,
             md_template_id=get_workspace_md_template_id(template_id),
         )
-
     if template_id == QA_AGENT_TEMPLATE:
         agent_config = AgentProfileConfig(
             id=agent_id,
@@ -129,7 +127,6 @@ def build_agent_template(
             initial_skill_names=tuple(BUILTIN_QA_AGENT_SKILL_NAMES),
             md_template_id=get_workspace_md_template_id(template_id),
         )
-
     raise ValueError(
         f"Unsupported template: {template_id!r}. "
         f"Expected one of {SUPPORTED_AGENT_TEMPLATES}.",

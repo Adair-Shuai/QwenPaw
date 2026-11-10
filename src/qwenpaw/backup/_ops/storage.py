@@ -105,7 +105,6 @@ def _detail_sync(backup_id: str) -> BackupDetail | None:
                         # agents which can't be looked up via /api/agents.
                         if parts[3] == "agent.json":
                             agent_json_paths[aid] = info.filename
-
             for aid, json_path in agent_json_paths.items():
                 try:
                     raw = zf.read(json_path)
@@ -175,7 +174,6 @@ def _export_sync(backup_id: str) -> tuple[Path, str]:
     zp = find_zip_path(backup_id)
     if zp is None:
         raise FileNotFoundError(f"Backup not found: {backup_id}")
-
     with zipfile.ZipFile(zp, "r") as zf:
         meta_json = read_meta_from_zip(zf)
         if meta_json is None:
@@ -238,7 +236,6 @@ def _import_sync(
     )
     if not zipfile.is_zipfile(tmp_path):
         raise ValueError("Uploaded file is not a valid zip archive")
-
     with zipfile.ZipFile(tmp_path, "r") as zf:
         meta_json = read_meta_from_zip(zf)
         if meta_json is None:
@@ -251,7 +248,6 @@ def _import_sync(
             trust_mode=trust_mode,
             operation="Importing",
         )
-
     validate_backup_id(meta.id)
 
     BACKUP_DIR.mkdir(parents=True, exist_ok=True)
@@ -265,7 +261,6 @@ def _import_sync(
             meta.id,
         )
         raise BackupConflictError(existing_meta)
-
     dest = zip_path(meta.id)
     noncanonical_existing = existing if existing != dest else None
     if signature_action == "none":

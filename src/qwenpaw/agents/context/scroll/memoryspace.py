@@ -867,7 +867,6 @@ class MemorySpace:
                 _budget,
                 raw_hits_partial=raw_partial,
             )
-
         # FTS5 MATCH takes a query grammar, not plain text. Sanitize first; an
         # all-punctuation query (no word tokens) has nothing to MATCH, so use
         # the LIKE scan instead — as we also do when FTS5 is unavailable. The
@@ -926,7 +925,6 @@ class MemorySpace:
                 requested,
                 _budget,
             )
-
         # Search saved full tool outputs only after indexed/database hits are
         # exhausted. A keyword-free date query never scans artifacts.
         if (
@@ -1231,7 +1229,6 @@ class MemorySpace:
                 tuple(span_params),
             )
             effective_start = int(start_seq)
-
         turn: list[dict] = []
         for raw_row in cursor:
             budget.ensure_time()
@@ -1298,7 +1295,6 @@ class MemorySpace:
                 "start_seq": start,
                 "matched_seqs": [seq],
             }
-
         results = list(notices)
         loaded_groups = 0
         for group in groups.values():
@@ -1879,7 +1875,6 @@ class MemorySpace:
                         pending.remove(item)
                 if len(matches) >= limit:
                     break
-
                 folded = line.casefold()
                 if any(
                     all(needle in folded for needle in group)

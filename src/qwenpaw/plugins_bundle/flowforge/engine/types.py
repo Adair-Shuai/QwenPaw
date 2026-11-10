@@ -16,6 +16,8 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field
 
+from .template_paths import TEMPLATE_PATTERN, nested_template_value
+
 
 class WorkflowStatus(str, Enum):
     """Execution status of a workflow instance."""
@@ -205,9 +207,11 @@ class WorkflowState(BaseModel):
         # Stored output slots stay intact for recovery; public templates use
         # the single output value directly (outputs.method.value).
         outputs = {
-            key: value[0]
-            if isinstance(value, (tuple, list)) and len(value) == 1
-            else value
+            key: (
+                value[0]
+                if isinstance(value, (tuple, list)) and len(value) == 1
+                else value
+            )
             for key, value in self.outputs.items()
         }
         ctx.update(outputs)
@@ -220,6 +224,7 @@ class WorkflowState(BaseModel):
                 "variables": self.variables,
                 "output": outputs,
                 "outputs": outputs,
+                "output_slots": self.outputs,
                 "state": {
                     "id": str(self.id),
                     "workflow_id": self.workflow_id,
@@ -270,8 +275,6 @@ class WorkflowResult(BaseModel):
 # ──────────────────────────────────────────────────────────────────────────────
 # Template / field resolution helpers
 # ──────────────────────────────────────────────────────────────────────────────
-
-TEMPLATE_PATTERN = re.compile(r"\$\{([^}]+)\}")
 
 
 def _resolve_field(
@@ -474,19 +477,8 @@ def _get_nested_value(
     path: str,
     default: Any = None,
 ) -> Any:
-    """Get nested value from dictionary using dot notation."""
-    parts = path.split(".")
-    current: Any = obj
-    for part in parts:
-        if isinstance(current, dict):
-            current = current.get(part)
-        elif hasattr(current, part):
-            current = getattr(current, part)
-        else:
-            return default
-        if current is None:
-            return default
-    return current
+    """Resolve shared dotted, quoted-key and array template paths."""
+    return nested_template_value(obj, path, default)
 
 
 # Forward-ref model rebuild for self-referencing ``conditions`` field.

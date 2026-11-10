@@ -88,7 +88,7 @@ describe("SidebarSettingsPanel", () => {
   });
 
   it.each([
-    ["Warm minimal", "warm-minimal", "#fcfcfa"],
+    ["Warm minimal", "warm-minimal", "#ffffff"],
     ["Cool workspace", "cool-workspace", "#ffffff"],
     ["Soft focus", "soft-focus", "#ffffff"],
   ])(
@@ -143,7 +143,7 @@ describe("SidebarSettingsPanel", () => {
     },
   );
 
-  it.each(["deepseek", "openai"])(
+  it.each(["deepseek", "classic", "dual-sidebar"])(
     "selects %s layout from Page style without changing the theme",
     async (style) => {
       localStorage.setItem("qwenpaw-interface-style", "warm-minimal");
@@ -161,7 +161,14 @@ describe("SidebarSettingsPanel", () => {
         await screen.findByRole("button", { name: "Page style" }),
       );
       await userEvent.click(
-        await screen.findByRole("button", { name: `${style} style` }),
+        await screen.findByRole("button", {
+          name:
+            style === "deepseek"
+              ? "Simple style"
+              : style === "dual-sidebar"
+              ? "Dual sidebar"
+              : "Original layout",
+        }),
       );
       expect(document.documentElement).toHaveAttribute(
         "data-page-style",

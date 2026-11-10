@@ -341,7 +341,6 @@ def _terminate_process_tree_win32(
         except (OSError, subprocess.TimeoutExpired):
             pass
         return not pid_exists(pid)
-
     try:
         subprocess.run(
             ["taskkill", "/T", "/PID", str(pid)],
@@ -381,7 +380,6 @@ def _terminate_process_tree_unix(  # pylint: disable=too-many-return-statements
             pgid = os.getpgid(pid)
         except OSError:
             pgid = None
-
     try:
         if pgid is not None and pgid != os.getpgid(os.getpid()):
             os.killpg(pgid, signal.SIGTERM)
@@ -392,10 +390,8 @@ def _terminate_process_tree_unix(  # pylint: disable=too-many-return-statements
         return True
     except OSError:
         pass
-
     if sent_term and _wait_for_pid_exit(pid, grace):
         return True
-
     try:
         if pgid is not None and pgid != os.getpgid(os.getpid()):
             os.killpg(pgid, signal.SIGKILL)

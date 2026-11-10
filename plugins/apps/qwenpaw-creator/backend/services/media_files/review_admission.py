@@ -144,7 +144,6 @@ def assert_media_review_admission(
                     "commandType": command_type,
                 },
             )
-
     referenced = set(reference_version_ids)
     for artifact in pending:
         if artifact.version_id in referenced:

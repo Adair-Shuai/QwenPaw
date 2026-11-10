@@ -38,7 +38,7 @@ const output = [
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
-  delete (window as any).QwenPaw;
+  Reflect.deleteProperty(window, "QwenPaw");
 });
 
 it("only accepts simulation tool references from live and historical messages", () => {
@@ -91,13 +91,13 @@ it("only accepts simulation tool references from live and historical messages", 
 });
 
 function loadSimulationCard(bundle: string) {
-  let append: any;
+  let append!: (props: { data: { output: unknown } }) => React.ReactNode;
   let selectedAgent = "default";
   const navigate = vi.fn();
-  const monitor = vi.fn((props: any) => (
+  const monitor = vi.fn((props: { runId: string }) => (
     <div data-testid="monitor">{props.runId}</div>
   ));
-  (window as any).QwenPaw = {
+  Reflect.set(window, "QwenPaw", {
     host: {
       React,
       antd: { Button },
@@ -113,7 +113,11 @@ function loadSimulationCard(bundle: string) {
     route: { add: vi.fn() },
     chat: {
       response: {
-        append: (_plugin: string, renderFn: any, options: any) => {
+        append: (
+          _plugin: string,
+          renderFn: typeof append,
+          options: { id: string },
+        ) => {
           if (options.id === "ugsci.simulation.response-append")
             append = renderFn;
           return { dispose() {} };
@@ -121,7 +125,7 @@ function loadSimulationCard(bundle: string) {
       },
     },
     runCenter: { SimulationMonitor: monitor },
-  };
+  });
   const source = fs.readFileSync(path.resolve(process.cwd(), bundle), "utf8");
   new Function(source)();
   expect(append).toBeTypeOf("function");
@@ -217,7 +221,7 @@ describe.each([
 });
 
 it("mounts the shared sidebar monitor with session scope and handles late plugin loading", () => {
-  (window as any).QwenPaw = {};
+  Reflect.set(window, "QwenPaw", {});
   const scope = {
     kind: "session" as const,
     agentId: "owner",
@@ -228,9 +232,11 @@ it("mounts the shared sidebar monitor with session scope and handles late plugin
     <WorkbenchSimulationPanel runId="sim_one" scope={scope} />,
   );
   expect(screen.getByRole("status")).toHaveTextContent("尚未加载");
-  const monitor = vi.fn(({ runId }: any) => <div>{runId}</div>);
+  const monitor = vi.fn(({ runId }) => <div>{runId}</div>);
   act(() => {
-    (window as any).QwenPaw.runCenter = { SimulationMonitor: monitor };
+    Reflect.set(Reflect.get(window, "QwenPaw"), "runCenter", {
+      SimulationMonitor: monitor,
+    });
     window.dispatchEvent(new Event("qwenpaw:simulation-monitor-ready"));
   });
   expect(screen.getByText("sim_one")).toBeInTheDocument();

@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 # pylint: disable=protected-access
-"""Pure WeCom card content and historical routing-context extraction helpers."""
+"""Pure WeCom card content and historical routing-context extraction helpers.
+"""
 
 from __future__ import annotations
 

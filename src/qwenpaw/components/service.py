@@ -440,7 +440,6 @@ def _valid_active_component_ids() -> set[str]:
             return set()
     except (OSError, TypeError, ValueError, json.JSONDecodeError):
         return set()
-
     valid: set[str] = set()
     for raw_component, raw_record in components.items():
         if not isinstance(raw_record, dict):
@@ -1227,8 +1226,10 @@ class ComponentUpdateService:
 
 
 def _validate_runtime_set(updater: ComponentUpdater) -> None:
-    """Probe the exact Python/backend/dependency combination before \
-publishing."""
+    (
+        "Probe the exact Python/backend/dependency combination before "
+        "publishing."
+    )
     records = updater.candidate_directory_records or {}
     if not set(records) & {"backend", "python-runtime", "python-packages"}:
         return

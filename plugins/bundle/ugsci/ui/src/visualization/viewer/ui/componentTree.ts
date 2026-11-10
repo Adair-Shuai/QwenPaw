@@ -3,75 +3,31 @@
  */
 
 import type { DatasetInfo } from "../contracts/types";
+import { isDepthOnlyWell, isSpatialWell } from "../wellClassification";
 import {
-  isDepthOnlyWell,
-  isGridDataset,
-  isSpatialWell,
-  wellDisplayName,
-} from "../wellClassification";
+  DATASET_GROUPS,
+  datasetProfile,
+  type DatasetGroupId,
+} from "../capabilities/datasetProfile";
+import {
+  datasetListLabel,
+  organizeCatalog,
+  type CatalogEntry,
+  type CatalogMode,
+} from "./catalogOrganization";
 
-export type ComponentGroupId =
-  | "grids"
-  | "wells"
-  | "logs"
-  | "surfaces"
-  | "networks"
-  | "other";
+export { datasetListLabel, datasetMatchesQuery } from "./catalogOrganization";
 
-export const COMPONENT_GROUPS: ReadonlyArray<{
-  id: ComponentGroupId;
-  title: string;
-}> = [
-  { id: "grids", title: "\u7f51\u683c" },
-  { id: "wells", title: "\u4e95" },
-  { id: "logs", title: "\u6d4b\u4e95" },
-  { id: "surfaces", title: "\u5c42\u9762 / \u5256\u9762" },
-  { id: "networks", title: "\u7ba1\u7f51" },
-];
+export type ComponentGroupId = DatasetGroupId;
+
+export const COMPONENT_GROUPS = DATASET_GROUPS;
 
 export function classifyDatasetGroup(dataset: DatasetInfo): ComponentGroupId {
-  if (isGridDataset(dataset)) return "grids";
-  if (isSpatialWell(dataset)) return "wells";
-  if (isDepthOnlyWell(dataset)) return "logs";
-  const source = dataset.source || "";
-  if (
-    ["surface", "intersection", "well-intersection", "slice"].includes(source)
-  ) {
-    return "surfaces";
-  }
-  if (["network", "network-tube"].includes(source)) return "networks";
-  return "other";
-}
-
-export function datasetMatchesQuery(
-  dataset: DatasetInfo,
-  query: string,
-): boolean {
-  const needle = query.trim().toLowerCase();
-  if (!needle) return true;
-  const wellName =
-    typeof dataset.metadata?.well_name === "string"
-      ? dataset.metadata.well_name
-      : "";
-  return [
-    dataset.id,
-    dataset.name,
-    wellName,
-    dataset.source || "",
-    wellDisplayName(dataset),
-  ]
-    .join(" ")
-    .toLowerCase()
-    .includes(needle);
-}
-
-export function datasetListLabel(dataset: DatasetInfo): string {
-  if (isSpatialWell(dataset) || isDepthOnlyWell(dataset))
-    return wellDisplayName(dataset);
-  return dataset.name;
+  return datasetProfile(dataset).group;
 }
 
 export interface ComponentTreeRenderOptions {
+  mode?: CatalogMode;
   query: string;
   activeId: string | null;
   selectedId: string | null;
@@ -80,6 +36,7 @@ export interface ComponentTreeRenderOptions {
   onToggleGroup: (groupId: ComponentGroupId) => void;
   onToggleVisible: (dataset: DatasetInfo, visible: boolean) => void;
   onSelect: (dataset: DatasetInfo) => void;
+  onOpen?: (dataset: DatasetInfo) => void;
   onFocus: (dataset: DatasetInfo) => void;
   onDelete?: (dataset: DatasetInfo) => void;
   onContextMenu?: (dataset: DatasetInfo, event: MouseEvent) => void;
@@ -91,43 +48,47 @@ export function renderComponentTree(
   options: ComponentTreeRenderOptions,
 ) {
   list.innerHTML = "";
-  const filtered = datasets.filter((dataset) =>
-    datasetMatchesQuery(dataset, options.query),
-  );
-  const grouped = new Map<ComponentGroupId, DatasetInfo[]>();
-  for (const group of COMPONENT_GROUPS) grouped.set(group.id, []);
-  grouped.set("other", []);
-  for (const dataset of filtered) {
-    const groupId = classifyDatasetGroup(dataset);
-    grouped.get(groupId)?.push(dataset);
-  }
-
-  let rendered = 0;
-  for (const group of COMPONENT_GROUPS) {
-    const items = grouped.get(group.id) || [];
-    if (options.query.trim() && items.length === 0) continue;
-    rendered += items.length;
-    list.appendChild(buildGroup(group.id, group.title, items, options));
-  }
-  const other = grouped.get("other") || [];
-  if (other.length > 0) {
-    rendered += other.length;
-    list.appendChild(buildGroup("other", "\u5176\u4ed6", other, options));
-  }
-  if (rendered === 0) {
+  list.dataset.catalogMode = options.mode || "data";
+  const groups = organizeCatalog(datasets, options);
+  for (const group of groups)
+    list.appendChild(buildGroup(group.id, group.title, group.entries, options));
+  if (groups.length === 0) {
     const empty = document.createElement("div");
     empty.textContent = options.query.trim()
-      ? "\u6ca1\u6709\u5339\u914d\u7684\u5bf9\u8c61"
-      : "\u6682\u65e0\u5bf9\u8c61";
+      ? options.mode === "layers"
+        ? "没有匹配的图层"
+        : "没有匹配的对象"
+      : options.mode === "layers"
+      ? "暂无可见空间图层"
+      : "暂无对象";
     empty.style.cssText = "padding:10px 8px;color:#484f58;";
     list.appendChild(empty);
   }
 }
 
+/** Selection changes must retain focused controls and the native double-click target. */
+export function updateComponentTreeSelection(
+  list: HTMLElement,
+  selectedId: string | null,
+): void {
+  for (const item of list.querySelectorAll<HTMLElement>("[data-dataset-id]"))
+    setItemSelection(item, item.dataset.datasetId === selectedId);
+}
+
+function setItemSelection(item: HTMLElement, selected: boolean): void {
+  item.dataset.selected = String(selected);
+  item
+    .querySelector<HTMLButtonElement>("[data-catalog-select]")
+    ?.setAttribute("aria-pressed", String(selected));
+  item.style.background = selected ? "rgba(31,111,235,.22)" : "transparent";
+  item.style.color = selected ? "#e6edf3" : "#8b949e";
+  item.style.boxShadow = selected ? "inset 2px 0 #58a6ff" : "none";
+}
+
 function buildGroup(
   groupId: ComponentGroupId,
   title: string,
-  datasets: DatasetInfo[],
+  entries: CatalogEntry[],
   options: ComponentTreeRenderOptions,
 ): HTMLElement {
   // Search results must remain visible without changing the user's saved folds.
@@ -152,7 +113,7 @@ function buildGroup(
   const label = document.createElement("span");
   label.textContent = title.toUpperCase();
   const count = document.createElement("span");
-  count.textContent = String(datasets.length);
+  count.textContent = String(entries.length);
   count.style.cssText = "margin-left:auto;color:#484f58;font-weight:500;";
   header.append(chevron, label, count);
   header.addEventListener("click", () => options.onToggleGroup(groupId));
@@ -160,23 +121,12 @@ function buildGroup(
 
   if (collapsed) return group;
 
-  if (datasets.length === 0) {
-    const empty = document.createElement("div");
-    empty.textContent = "\u7a7a";
-    empty.style.cssText =
-      "padding:2px 8px 8px 22px;color:#484f58;font-size:11px;";
-    group.appendChild(empty);
-    return group;
-  }
-
-  for (const dataset of datasets) {
-    group.appendChild(buildItem(dataset, options));
-  }
+  for (const entry of entries) group.appendChild(buildItem(entry, options));
   return group;
 }
 
 function buildItem(
-  dataset: DatasetInfo,
+  { dataset, parent }: CatalogEntry,
   options: ComponentTreeRenderOptions,
 ): HTMLElement {
   const item = document.createElement("div");
@@ -186,21 +136,17 @@ function buildItem(
   const selected = dataset.id === options.selectedId;
   const depthOnly = isDepthOnlyWell(dataset);
   item.dataset.datasetId = dataset.id;
-  item.dataset.selected = String(selected || active);
+  item.dataset.active = String(active);
   item.style.cssText = [
     "display:flex;align-items:flex-start;gap:6px;",
     "padding:5px 6px 5px 8px;margin:1px 0;border-radius:5px;cursor:pointer;",
-    selected || active
-      ? "background:rgba(31,111,235,.22);color:#e6edf3;"
-      : "background:transparent;color:#8b949e;",
-    selected || active ? "box-shadow:inset 2px 0 #58a6ff;" : "box-shadow:none;",
   ].join("");
 
   const check = document.createElement("input");
   check.type = "checkbox";
   check.checked = options.visibleIds.has(dataset.id);
   check.style.cssText = "margin:3px 0 0;flex:0 0 auto;";
-  if (depthOnly) {
+  if (!datasetProfile(dataset).spatialOverlay) {
     check.checked = false;
     check.disabled = true;
     check.title =
@@ -213,14 +159,19 @@ function buildItem(
     "\u663e\u793a/\u9690\u85cf " + datasetListLabel(dataset),
   );
   check.addEventListener("click", (event) => event.stopPropagation());
-  check.addEventListener("change", () =>
-    options.onToggleVisible(dataset, check.checked),
-  );
+  check.addEventListener("dblclick", (event) => event.stopPropagation());
+  check.addEventListener("change", () => {
+    if (check.disabled) {
+      check.checked = false;
+      return;
+    }
+    options.onToggleVisible(dataset, check.checked);
+  });
 
   const text = document.createElement("button");
   text.type = "button";
+  text.dataset.catalogSelect = "true";
   text.setAttribute("aria-label", "选择 " + datasetListLabel(dataset));
-  text.setAttribute("aria-pressed", String(selected || active));
   text.style.cssText =
     "min-width:0;flex:1;border:0;padding:0;background:transparent;text-align:left;color:inherit;cursor:pointer;";
   const name = document.createElement("div");
@@ -232,9 +183,41 @@ function buildItem(
   const meta = document.createElement("div");
   meta.textContent = datasetMeta(dataset);
   meta.style.cssText = "color:#6e7681;font-size:10px;margin-top:1px;";
+  if (active) {
+    const badge = document.createElement("span");
+    badge.textContent = "当前分析";
+    badge.dataset.analysisActive = "true";
+    badge.style.cssText =
+      "display:inline-block;margin-left:5px;padding:1px 4px;border-radius:3px;background:rgba(31,111,235,.2);color:#79c0ff;font-size:9px;white-space:nowrap;";
+    meta.appendChild(badge);
+  }
   text.append(name, meta);
+  if (parent) {
+    const relation = document.createElement("div");
+    relation.dataset.parentDataset = parent.id;
+    relation.textContent = `派生自：${parent.label}${
+      parent.available ? "" : "（未在目录中）"
+    }`;
+    relation.title = `来源数据集：${parent.label}（${parent.id}）`;
+    relation.style.cssText =
+      "color:#8b949e;font-size:10px;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;";
+    text.appendChild(relation);
+  }
 
   item.append(check, text);
+  const open = document.createElement("button");
+  open.type = "button";
+  open.textContent = "↗";
+  open.title = "打开分析 " + datasetListLabel(dataset);
+  open.setAttribute("aria-label", open.title);
+  open.style.cssText =
+    "display:flex;align-items:center;justify-content:center;flex:0 0 auto;width:22px;height:22px;margin-top:1px;padding:0;border:1px solid #30363d;border-radius:4px;background:transparent;color:#8b949e;cursor:pointer;font-size:14px;";
+  open.addEventListener("click", (event) => {
+    event.stopPropagation();
+    (options.onOpen || options.onSelect)(dataset);
+  });
+  open.addEventListener("dblclick", (event) => event.stopPropagation());
+  item.appendChild(open);
   if (options.onDelete) {
     const del = document.createElement("button");
     del.type = "button";
@@ -247,6 +230,7 @@ function buildItem(
       event.stopPropagation();
       options.onDelete!(dataset);
     });
+    del.addEventListener("dblclick", (event) => event.stopPropagation());
     del.addEventListener("mouseenter", () => {
       del.style.color = "#f85149";
     });
@@ -275,6 +259,7 @@ function buildItem(
   item.addEventListener("mouseleave", () => {
     if (item.dataset.selected !== "true") item.style.color = "#8b949e";
   });
+  setItemSelection(item, selected);
   return item;
 }
 

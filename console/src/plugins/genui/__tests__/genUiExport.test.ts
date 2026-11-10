@@ -27,14 +27,14 @@ describe("genUiExport", () => {
         open: vi.fn(),
         write,
         close: vi.fn(),
-        readyState: "complete",
+        readyState: "complete" as const,
       },
       addEventListener: vi.fn(),
       focus: vi.fn(),
       print: vi.fn(),
       close: vi.fn(),
     };
-    vi.spyOn(window, "open").mockReturnValue(popup as any);
+    vi.spyOn(window, "open").mockReturnValue(popup as unknown as Window);
     const host = document.createElement("div");
     const img = document.createElement("img");
     img.setAttribute("data-genui-media-source", "blob:example");

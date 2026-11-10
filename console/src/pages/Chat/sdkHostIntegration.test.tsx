@@ -1,3 +1,7 @@
+import type {
+  CapturedChatOptions,
+  CapturedChatProps,
+} from "@/test/chatOptionsFixture";
 /**
  * CoPaw ↔ AgentScope Chat SDK host-contract tests.
  *
@@ -69,7 +73,7 @@ const {
   mockResolvedRoutes: new Map<string, ChatSpec>(),
 }));
 
-let capturedOptions: any = null;
+let capturedOptions: CapturedChatOptions | null = null;
 const mockAgentNames = vi.hoisted(() => ({
   agents: [{ id: "default", name: "Default", backend: "qwenpaw" }],
 }));
@@ -91,7 +95,7 @@ vi.mock("../../hooks/useAppMessage", () => ({
 
 vi.mock("../../contexts/ApprovalContext", () => ({
   useApprovalContext: () => ({
-    approvals: [] as any[],
+    approvals: [] as unknown[],
     setApprovals: vi.fn(),
   }),
 }));
@@ -102,7 +106,9 @@ vi.mock("../../plugins/PluginContext", () => ({
     registerPlugin: vi.fn(),
     toolRenderConfig: {},
   }),
-  PluginContext: { Provider: ({ children }: any) => children },
+  PluginContext: {
+    Provider: ({ children }: import("react").PropsWithChildren) => children,
+  },
 }));
 
 vi.mock("./components/ChatSessionInitializer", () => ({
@@ -110,8 +116,8 @@ vi.mock("./components/ChatSessionInitializer", () => ({
 }));
 
 vi.mock("@agentscope-ai/chat", () => ({
-  AgentScopeRuntimeWebUI: vi.fn((props: any) => {
-    capturedOptions = props.options;
+  AgentScopeRuntimeWebUI: vi.fn((props: CapturedChatProps) => {
+    capturedOptions = props.options as unknown as CapturedChatOptions;
     useEffect(() => {
       const id = props.options?.session?.currentSessionId;
       if (id)
@@ -135,21 +141,32 @@ vi.mock("@agentscope-ai/chat", () => ({
     setSessions: vi.fn(),
   })),
   useChatAnywhereSessions: vi.fn(() => ({ createSession: vi.fn() })),
-  useChatAnywhereInput: vi.fn((select: any) =>
-    select({
-      loading: mockSdkInput.loading,
-      setSessionLoading: mockSdkInput.setSessionLoading,
-      setLoading: vi.fn(),
-      getLoading: vi.fn(() => false),
-      setDisabled: vi.fn(),
-    }),
+  useChatAnywhereInput: vi.fn(
+    (
+      select: (state: {
+        loading: boolean;
+        setLoading: (loading: boolean) => void;
+        getLoading: () => boolean;
+        setSessionLoading: (...args: unknown[]) => void;
+        setDisabled: (disabled: boolean) => void;
+      }) => unknown,
+    ) =>
+      select({
+        loading: mockSdkInput.loading,
+        setSessionLoading: mockSdkInput.setSessionLoading,
+        setLoading: vi.fn(),
+        getLoading: vi.fn(() => false),
+        setDisabled: vi.fn(),
+      }),
   ),
 }));
 
 vi.mock(
   "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Context/ChatAnywhereI18nContext",
   () => ({
-    useChatAnywhereI18n: (select: any) => select({ setLocale: vi.fn() }),
+    useChatAnywhereI18n: (
+      select: (state: { setLocale: (locale: string) => void }) => unknown,
+    ) => select({ setLocale: vi.fn() }),
   }),
 );
 
@@ -324,7 +341,7 @@ vi.mock("@/api/modules/commands", () => ({
 
 vi.mock("@/stores/loopStore", () => ({
   useLoopStore: Object.assign(
-    vi.fn((selector?: any) => {
+    vi.fn((selector?: (state: Record<string, unknown>) => unknown) => {
       const state = {
         availableModes: [],
         selectedMode: null,
@@ -384,7 +401,7 @@ vi.mock("@/hooks/useAgentRunningConfigApprovalLevel", () => ({
 vi.mock("@/stores/messageQueueStore", async (importOriginal) => ({
   ...(await importOriginal<typeof import("@/stores/messageQueueStore")>()),
   useMessageQueueStore: Object.assign(
-    vi.fn((selector?: any) => {
+    vi.fn((selector?: (state: Record<string, unknown>) => unknown) => {
       const state = {
         queues: {},
         runStates: {},
@@ -429,8 +446,10 @@ vi.mock("@/stores/messageQueueStore", async (importOriginal) => ({
   MAX_QUEUE_SIZE: 100,
   STORAGE_PREFIX: "chat.queue.",
   getLatestQueuedSessionIdForAgent: vi.fn(() => undefined),
-  withSendLock: vi.fn(async (_key: string, fn: () => any) => fn()),
-  holdOwnershipLock: vi.fn((_key: string, cb: () => void, _signal: any) => {
+  withSendLock: vi.fn(async (_key: string, fn: () => unknown) => fn()),
+  holdOwnershipLock: vi.fn((_key: string, cb: () => void, _signal: unknown) => {
+    void _signal;
+
     if (mockOwnershipState.acquire) cb();
     return Promise.resolve();
   }),
@@ -503,7 +522,7 @@ vi.mock("./components/HarnessModelSelector", () => ({
 }));
 
 vi.mock("./replayFastForward", () => ({
-  wrapReplayFastForward: vi.fn((opts: any) => opts),
+  wrapReplayFastForward: vi.fn((opts: unknown) => opts),
 }));
 
 vi.mock("../../components/Chat/MediaDownload", () => ({
@@ -511,11 +530,11 @@ vi.mock("../../components/Chat/MediaDownload", () => ({
 }));
 
 vi.mock("../../components/Chat/ToolCards/adapters/v1Adapter", () => ({
-  withGenericFallback: vi.fn((fn: any) => fn),
+  withGenericFallback: vi.fn((fn: unknown) => fn),
 }));
 
 vi.mock("./approvalPayload", () => ({
-  applyApprovalLevelToRequestBody: vi.fn((body: any) => body),
+  applyApprovalLevelToRequestBody: vi.fn((body: unknown) => body),
 }));
 
 vi.mock("../../api/modules/chatProjectDirectory", () => ({
@@ -536,8 +555,8 @@ vi.mock("../../api/modules/projectDirectory", () => ({
 }));
 
 vi.mock("./turnUsage", () => ({
-  patchContextMaxInputLength: vi.fn((body: any) => body),
-  wrapChatResponseUsageStream: vi.fn((stream: any) => stream),
+  patchContextMaxInputLength: vi.fn((body: unknown) => body),
+  wrapChatResponseUsageStream: vi.fn((stream: unknown) => stream),
 }));
 
 vi.mock("./turnUsageStore", () => ({
@@ -564,7 +583,8 @@ vi.mock("./components/ChatSessionDrawer", () => ({
 }));
 
 vi.mock("../../plugins/registry/PluginSlotBoundary", () => ({
-  PluginSlotBoundary: ({ children }: any) => children,
+  PluginSlotBoundary: ({ children }: import("react").PropsWithChildren) =>
+    children,
 }));
 
 vi.mock("../../stores/filesSurfaceStore", () => ({
@@ -674,7 +694,7 @@ describe("ChatPage coverage", () => {
       ok: true,
       status: 200,
       json: () => Promise.resolve({}),
-    }) as any;
+    });
   });
 
   afterEach(() => {
@@ -729,7 +749,7 @@ describe("ChatPage coverage", () => {
     expect(holdOwnershipLock).not.toHaveBeenCalled();
     expect(session.trackNavigatedSession).not.toHaveBeenCalled();
     expect(
-      await capturedOptions.sender.beforeSubmit({
+      await capturedOptions!.sender.beforeSubmit({
         query: "wait",
         fileList: [],
       }),
@@ -740,7 +760,7 @@ describe("ChatPage coverage", () => {
       finish({ agent_id: "default", chat: routeChat(target) }),
     );
     await waitFor(() =>
-      expect(capturedOptions.session.currentSessionId).toBe(target),
+      expect(capturedOptions!.session.currentSessionId).toBe(target),
     );
     await waitFor(() => expect(sdk).toBeVisible());
     expect(screen.getByTestId("chat-ui")).toBe(sdk);
@@ -769,7 +789,7 @@ describe("ChatPage coverage", () => {
 
     await waitFor(() => expect(mockSelectedAgent()).toBe("another-agent"));
     await waitFor(() =>
-      expect(capturedOptions.session.currentSessionId).toBe(target),
+      expect(capturedOptions!.session.currentSessionId).toBe(target),
     );
     expect(screen.getByTestId("chat-path")).toHaveTextContent(
       `/chat/${target}`,
@@ -808,7 +828,7 @@ describe("ChatPage coverage", () => {
       screen.getByRole("button", { name: /Retry|common.retry|重试/ }),
     );
     await waitFor(() =>
-      expect(capturedOptions.session.currentSessionId).toBe(target),
+      expect(capturedOptions!.session.currentSessionId).toBe(target),
     );
     await waitFor(() => expect(screen.getByTestId("chat-ui")).toBeVisible());
     expect(mockResolveChat).toHaveBeenCalledTimes(2);
@@ -865,7 +885,7 @@ describe("ChatPage coverage", () => {
     expect(initialSignal.aborted).toBe(true);
     expect(mockResolveChat).toHaveBeenCalledOnce();
     expect(mockSelectedAgent()).toBe("another-agent");
-    expect(capturedOptions.session.currentSessionId).toBeUndefined();
+    expect(capturedOptions!.session.currentSessionId).toBeUndefined();
   });
 
   it("queues attachments when SDK loading is false but backend cleanup is still running", async () => {
@@ -881,7 +901,7 @@ describe("ChatPage coverage", () => {
         expect.any(AbortSignal),
       ),
     );
-    const result = await capturedOptions.sender.beforeSubmit({
+    const result = await capturedOptions!.sender.beforeSubmit({
       query: "follow-up during cleanup",
       fileList: [
         {
@@ -945,7 +965,7 @@ describe("ChatPage coverage", () => {
         expect.any(AbortSignal),
       ),
     );
-    const admission = capturedOptions.sender.beforeSubmit({
+    const admission = capturedOptions!.sender.beforeSubmit({
       query: "source pending input",
       fileList: [],
     });
@@ -953,7 +973,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {
       navigateToTarget();
     });
-    expect(capturedOptions.session.currentSessionId).toBe(target);
+    expect(capturedOptions!.session.currentSessionId).toBe(target);
     const { getDraftStorageKey } = await import("./chatInputDraft");
     const draftKey = getDraftStorageKey("default", target);
     localStorage.setItem(draftKey, "new route draft");
@@ -987,7 +1007,7 @@ describe("ChatPage coverage", () => {
         finish = resolve;
       });
       let deferred = false;
-      vi.mocked(fetchActiveLoopMode).mockImplementation((options: any) => {
+      vi.mocked(fetchActiveLoopMode).mockImplementation((options) => {
         if (!options.signal && !deferred) {
           deferred = true;
           return late;
@@ -1065,7 +1085,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.fetch) {
-      await capturedOptions.api.fetch({
+      await capturedOptions!.api.fetch({
         input: [{ role: "user", content: "hello" }],
         signal: undefined,
       });
@@ -1080,7 +1100,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
@@ -1107,7 +1127,7 @@ describe("ChatPage coverage", () => {
       const smallFile = new File(["content"], "img.png", { type: "image/png" });
       const onSuccess = vi.fn();
       const onError = vi.fn();
-      await capturedOptions.sender.attachments.customRequest({
+      await capturedOptions!.sender.attachments.customRequest({
         file: smallFile,
         onSuccess,
         onError,
@@ -1156,7 +1176,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
@@ -1186,7 +1206,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response.delta",
           delta: "hello world",
@@ -1204,7 +1224,7 @@ describe("ChatPage coverage", () => {
 
     if (capturedOptions?.api?.responseParser) {
       // Exercise the payloadRequestsHistoryClear / messageRequestsHistoryClear paths
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "message",
           metadata: { clear_history: true },
@@ -1221,14 +1241,14 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
           output: [],
         }),
       );
-      expect(parsed.output).toBeDefined();
+      expect(parsed!.output).toBeDefined();
     }
   });
 
@@ -1240,7 +1260,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({ type: "turn_usage", tokens: 1234 }),
       );
       expect(parsed).toBeNull();
@@ -1255,11 +1275,11 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({ type: "replay_end" }),
       );
       expect(parsed).toBeTruthy();
-      expect(parsed.type).toBe("heartbeat");
+      expect(parsed!.type).toBe("heartbeat");
     }
   });
 
@@ -1271,7 +1291,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           type: "rate_limited",
           alternatives: [
@@ -1297,11 +1317,11 @@ describe("ChatPage coverage", () => {
 
     if (capturedOptions?.api?.responseParser) {
       // First send some delta content to build up trailing text
-      capturedOptions.api.responseParser(
+      capturedOptions!.api.responseParser(
         JSON.stringify({ object: "response.delta", delta: "partial text" }),
       );
       // Then complete with empty output — should fill from trailing
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
@@ -1309,8 +1329,8 @@ describe("ChatPage coverage", () => {
         }),
       );
       expect(parsed).toBeTruthy();
-      expect(parsed.output).toBeDefined();
-      expect(Array.isArray(parsed.output)).toBe(true);
+      expect(parsed!.output).toBeDefined();
+      expect(Array.isArray(parsed!.output)).toBe(true);
     }
   });
 
@@ -1323,7 +1343,7 @@ describe("ChatPage coverage", () => {
 
     if (capturedOptions?.api?.responseParser) {
       // Send a fallback event
-      capturedOptions.api.responseParser(
+      capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response.delta",
           delta: "hello",
@@ -1340,7 +1360,7 @@ describe("ChatPage coverage", () => {
         }),
       );
       // Complete the response
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
@@ -1355,8 +1375,8 @@ describe("ChatPage coverage", () => {
       );
       expect(parsed).toBeTruthy();
       // Output should have fallback notice prepended
-      expect(Array.isArray(parsed.output)).toBe(true);
-      expect(parsed.output.length).toBeGreaterThanOrEqual(1);
+      expect(Array.isArray(parsed!.output)).toBe(true);
+      expect(parsed!.output!.length).toBeGreaterThanOrEqual(1);
     }
   });
 
@@ -1371,7 +1391,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.fetch) {
-      const result = await capturedOptions.api.fetch({
+      const result = await capturedOptions!.api.fetch({
         input: [{ role: "user", content: "hello" }],
         signal: undefined,
       });
@@ -1389,7 +1409,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.fetch) {
-      const result = await capturedOptions.api.fetch({
+      const result = await capturedOptions!.api.fetch({
         input: [{ role: "user", content: "hello" }],
         signal: undefined,
       });
@@ -1406,7 +1426,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.cancel) {
-      capturedOptions.api.cancel({ session_id: "test-session" });
+      capturedOptions!.api.cancel({ session_id: "test-session" });
       // stopChat should have been called
       await waitFor(() => expect(chatApi.stopChat).toHaveBeenCalled());
     }
@@ -1420,7 +1440,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.reconnect) {
-      const result = await capturedOptions.api.reconnect({
+      const result = await capturedOptions!.api.reconnect({
         session_id: "test-session",
         signal: undefined,
       });
@@ -1442,7 +1462,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.replaceMediaURL) {
-      const result = capturedOptions.api.replaceMediaURL(
+      const result = capturedOptions!.api.replaceMediaURL(
         "http://example.com/file.png",
       );
       expect(typeof result).toBe("string");
@@ -1459,7 +1479,7 @@ describe("ChatPage coverage", () => {
     const copyAction = capturedOptions?.actions?.list?.[0];
     expect(copyAction?.onClick).toBeTypeOf("function");
 
-    await copyAction.onClick({
+    await copyAction!.onClick!({
       data: {
         output: [
           {
@@ -1510,7 +1530,7 @@ describe("ChatPage coverage", () => {
     expect(copyAction?.icon?.type).toBe("span");
     expect(copyAction?.onClick).toBeTypeOf("function");
 
-    await copyAction.onClick({
+    await copyAction!.onClick!({
       data: {
         input: [
           { role: "user", content: [{ type: "text", text: "user msg" }] },
@@ -1556,7 +1576,7 @@ describe("ChatPage coverage", () => {
     const beforeSubmit = capturedOptions?.sender?.beforeSubmit;
     expect(capturedOptions?.sender?.queue).toBeUndefined();
     expect(typeof beforeSubmit).toBe("function");
-    const result = await beforeSubmit({
+    const result = await beforeSubmit!({
       query: "hello",
       session_id: "sdk-chat-uuid",
       context: { source: "sender" },
@@ -1753,7 +1773,7 @@ describe("ChatPage coverage", () => {
       initialEntries: ["/chat/test-session"],
     });
     await screen.findByTestId("chat-ui");
-    await capturedOptions.sender.attachments.customRequest({
+    await capturedOptions!.sender.attachments.customRequest({
       file: new File(["attachment"], "attachment.txt", { type: "text/plain" }),
       onSuccess: vi.fn(),
       onError: vi.fn(),
@@ -1820,7 +1840,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
     const { holdOwnershipLock } = await import("@/stores/messageQueueStore");
     await waitFor(() => expect(holdOwnershipLock).toHaveBeenCalled());
-    const result = await capturedOptions.sender.beforeSubmit({
+    const result = await capturedOptions!.sender.beforeSubmit({
       query: "next turn",
       fileList: [],
     });
@@ -1838,7 +1858,7 @@ describe("ChatPage coverage", () => {
     });
     await screen.findByTestId("chat-ui");
 
-    const result = await capturedOptions.sender.beforeSubmit({
+    const result = await capturedOptions!.sender.beforeSubmit({
       query: "",
       fileList: [
         {
@@ -1878,7 +1898,7 @@ describe("ChatPage coverage", () => {
       renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
       await screen.findByTestId("chat-ui");
       expect(
-        await capturedOptions.sender.beforeSubmit({
+        await capturedOptions!.sender.beforeSubmit({
           query: "fresh draft",
           fileList: [],
         }),
@@ -1934,7 +1954,7 @@ describe("ChatPage coverage", () => {
       mentions: [{ value: "@reviewer", type: "user" }],
     };
     const capturedQuery = inputData.query;
-    const result = await beforeSubmit(inputData);
+    const result = await beforeSubmit!(inputData);
     const submitted = {
       ...inputData,
       query:
@@ -1972,7 +1992,7 @@ describe("ChatPage coverage", () => {
     await act(async () => acquireOwnership!());
 
     const beforeSubmit = capturedOptions?.sender?.beforeSubmit;
-    const result = await beforeSubmit({ query: "do the task" });
+    const result = await beforeSubmit!({ query: "do the task" });
 
     expect(result).toMatchObject({ proceed: true, query: "do the task" });
     expect(mockBeginLoopModeSubmission).not.toHaveBeenCalled();
@@ -1987,8 +2007,8 @@ describe("ChatPage coverage", () => {
 
     const attachments = capturedOptions?.sender?.attachments;
     expect(attachments?.trigger).toBeTypeOf("function");
-    const element = attachments.trigger({ disabled: false });
-    renderWithProviders(element);
+    const element = attachments!.trigger!({ disabled: false });
+    renderWithProviders(<>{element}</>);
     fireEvent.click(screen.getByRole("button", { name: "Add content" }));
     expect(screen.getByRole("button", { name: "Attach files" })).toBeTruthy();
   });
@@ -2010,7 +2030,7 @@ describe("ChatPage coverage", () => {
     );
     const onSuccess = vi.fn();
     await act(async () => {
-      await capturedOptions.sender.attachments.customRequest({
+      await capturedOptions!.sender.attachments.customRequest({
         file: new File(["image"], "test.png", { type: "image/png" }),
         onSuccess,
         onError: vi.fn(),
@@ -2035,7 +2055,7 @@ describe("ChatPage coverage", () => {
       });
       const onSuccess = vi.fn();
       const onError = vi.fn();
-      await capturedOptions.sender.attachments.customRequest({
+      await capturedOptions!.sender.attachments.customRequest({
         file: smallFile,
         onSuccess,
         onError,
@@ -2058,7 +2078,7 @@ describe("ChatPage coverage", () => {
       const smallFile = new File(["content"], "img.png", { type: "image/png" });
       const onSuccess = vi.fn();
       const onError = vi.fn();
-      await capturedOptions.sender.attachments.customRequest({
+      await capturedOptions!.sender.attachments.customRequest({
         file: smallFile,
         onSuccess,
         onError,
@@ -2076,7 +2096,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.onFileCardClick) {
-      capturedOptions.api.onFileCardClick({
+      capturedOptions!.api.onFileCardClick({
         name: "test.txt",
         size: 100,
         url: "http://example.com/test.txt",
@@ -2094,7 +2114,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.onFileCardClick) {
-      capturedOptions.api.onFileCardClick({ name: "test.txt", size: 100 });
+      capturedOptions!.api.onFileCardClick({ name: "test.txt", size: 100 });
       expect(true).toBe(true);
     }
   });
@@ -2107,7 +2127,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
@@ -2133,7 +2153,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "message",
           metadata: {
@@ -2153,7 +2173,7 @@ describe("ChatPage coverage", () => {
       body: null,
       json: () => Promise.resolve({}),
     };
-    global.fetch = vi.fn().mockResolvedValue(mockResponse) as any;
+    global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
     renderWithProviders(<ChatPage />, {
       initialEntries: ["/chat/test-session"],
@@ -2161,7 +2181,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.fetch) {
-      const result = await capturedOptions.api.fetch({
+      const result = await capturedOptions!.api.fetch({
         input: [
           {
             role: "user",
@@ -2179,12 +2199,14 @@ describe("ChatPage coverage", () => {
         }),
       );
       // Verify the body contains expected fields
-      const callArgs = (fetch as any).mock.calls.find(
-        (c: any) =>
-          c[0]?.includes?.("/console/chat") && c[1]?.method === "POST",
-      );
+      const callArgs = vi
+        .mocked(fetch)
+        .mock.calls.find(
+          (c) =>
+            String(c[0]).includes("/console/chat") && c[1]?.method === "POST",
+        );
       if (callArgs) {
-        const body = JSON.parse(callArgs[1].body);
+        const body = JSON.parse(callArgs[1]!.body as string);
         expect(body.stream).toBe(true);
         expect(body.input).toBeDefined();
       }
@@ -2206,7 +2228,7 @@ describe("ChatPage coverage", () => {
     });
     await screen.findByTestId("chat-ui");
 
-    await capturedOptions.api.fetch({
+    await capturedOptions!.api.fetch({
       input: [
         {
           role: "user",
@@ -2242,7 +2264,7 @@ describe("ChatPage coverage", () => {
     });
     await screen.findByTestId("chat-ui");
     const session = (await import("./sessionApi")).default;
-    await capturedOptions.api.fetch({
+    await capturedOptions!.api.fetch({
       session_id: "sdk-chat-uuid",
       context: {
         session_id: "shared-runtime",
@@ -2292,7 +2314,7 @@ describe("ChatPage coverage", () => {
         input: [{ role: "user", content: [{ type: "text", text: "hello" }] }],
       };
       try {
-        await capturedOptions.api.fetch(submission);
+        await capturedOptions!.api.fetch(submission);
 
         expect(getPendingProjectDirectory("default", "sdk-chat-uuid")).toBe(
           ok ? null : "/projects/custom",
@@ -2304,7 +2326,7 @@ describe("ChatPage coverage", () => {
           );
         } else {
           expect(onDirectoryChanged).not.toHaveBeenCalled();
-          await capturedOptions.api.fetch(submission);
+          await capturedOptions!.api.fetch(submission);
           expect(
             getPendingProjectDirectory("default", "sdk-chat-uuid"),
           ).toBeNull();
@@ -2323,7 +2345,7 @@ describe("ChatPage coverage", () => {
   // ── customFetch: with biz_params ───────────────────────────────────────
   it("customFetch merges biz_params into request body", async () => {
     const mockResponse = { ok: true, status: 200, body: null };
-    global.fetch = vi.fn().mockResolvedValue(mockResponse) as any;
+    global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
     renderWithProviders(<ChatPage />, {
       initialEntries: ["/chat/test-session"],
@@ -2331,17 +2353,19 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.fetch) {
-      await capturedOptions.api.fetch({
+      await capturedOptions!.api.fetch({
         input: [{ role: "user", content: "test" }],
         biz_params: { custom_field: "custom_value" },
         signal: undefined,
       });
-      const callArgs = (fetch as any).mock.calls.find(
-        (c: any) =>
-          c[0]?.includes?.("/console/chat") && c[1]?.method === "POST",
-      );
+      const callArgs = vi
+        .mocked(fetch)
+        .mock.calls.find(
+          (c) =>
+            String(c[0]).includes("/console/chat") && c[1]?.method === "POST",
+        );
       if (callArgs) {
-        const body = JSON.parse(callArgs[1].body);
+        const body = JSON.parse(callArgs[1]!.body as string);
         expect(body.custom_field).toBe("custom_value");
       }
     }
@@ -2355,7 +2379,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
@@ -2368,8 +2392,8 @@ describe("ChatPage coverage", () => {
           ],
         }),
       );
-      expect(parsed.output).toHaveLength(1);
-      expect(parsed.output[0].content[0].text).toBe("full answer");
+      expect(parsed!.output).toHaveLength(1);
+      expect(parsed!.output![0].content![0].text).toBe("full answer");
     }
   });
 
@@ -2381,7 +2405,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
@@ -2389,9 +2413,9 @@ describe("ChatPage coverage", () => {
           error: { message: "something went wrong" },
         }),
       );
-      expect(parsed.output).toBeDefined();
+      expect(parsed!.output).toBeDefined();
       // Should contain the error message
-      const textContent = parsed.output?.[0]?.content?.[0]?.text;
+      const textContent = parsed!.output?.[0]?.content?.[0]?.text;
       expect(textContent).toBe("something went wrong");
     }
   });
@@ -2399,7 +2423,7 @@ describe("ChatPage coverage", () => {
   // ── customFetch: non-ok response discards last user message ────────────
   it("customFetch discards last user message on non-ok response", async () => {
     const mockResponse = { ok: false, status: 500, body: null };
-    global.fetch = vi.fn().mockResolvedValue(mockResponse) as any;
+    global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
     renderWithProviders(<ChatPage />, {
       initialEntries: ["/chat/test-session"],
@@ -2407,7 +2431,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.fetch) {
-      const result = await capturedOptions.api.fetch({
+      const result = await capturedOptions!.api.fetch({
         input: [{ role: "user", content: "hello" }],
         signal: undefined,
       });
@@ -2446,7 +2470,9 @@ describe("ChatPage coverage", () => {
 
     expect(Array.isArray(capturedOptions?.sender?.suggestions)).toBe(true);
     // Should have at least /new and /clear commands
-    expect(capturedOptions.sender.suggestions.length).toBeGreaterThanOrEqual(2);
+    expect(capturedOptions!.sender.suggestions!.length).toBeGreaterThanOrEqual(
+      2,
+    );
   });
 
   // ── session config ─────────────────────────────────────────────────────
@@ -2461,7 +2487,7 @@ describe("ChatPage coverage", () => {
     expect(capturedOptions?.session?.hideBuiltInSessionList).toBe(true);
     expect(capturedOptions?.session?.api).toBeTruthy();
     const session = (await import("./sessionApi")).default;
-    act(() => capturedOptions.session.onCurrentSessionChange("created-chat"));
+    act(() => capturedOptions!.session.onCurrentSessionChange!("created-chat"));
     expect(session.activateCreatedSession).toHaveBeenCalledWith("created-chat");
   });
 
@@ -2563,7 +2589,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     expect(capturedOptions?.customToolRenderConfig).toBeTruthy();
-    expect(typeof capturedOptions.customToolRenderConfig).toBe("object");
+    expect(typeof capturedOptions!.customToolRenderConfig).toBe("object");
   });
 
   // ── request/response extension config ──────────────────────────────────
@@ -2622,7 +2648,7 @@ describe("ChatPage coverage", () => {
     if (capturedOptions?.api?.responseParser) {
       // This should throw since JSON.parse will fail
       expect(() => {
-        capturedOptions.api.responseParser("not valid json");
+        capturedOptions!.api.responseParser("not valid json");
       }).not.toThrow();
     }
   });
@@ -2642,7 +2668,7 @@ describe("ChatPage coverage", () => {
       });
       const onSuccess = vi.fn();
       const onError = vi.fn();
-      await capturedOptions.sender.attachments.customRequest({
+      await capturedOptions!.sender.attachments.customRequest({
         file: pdfFile,
         onSuccess,
         onError,
@@ -2666,7 +2692,7 @@ describe("ChatPage coverage", () => {
       });
       const onSuccess = vi.fn();
       const onError = vi.fn();
-      await capturedOptions.sender.attachments.customRequest({
+      await capturedOptions!.sender.attachments.customRequest({
         file: videoFile,
         onSuccess,
         onError,
@@ -2745,10 +2771,10 @@ describe("ChatPage coverage", () => {
         },
       };
       // Send same fallback twice — should be deduplicated
-      capturedOptions.api.responseParser(JSON.stringify(fallbackPayload));
-      capturedOptions.api.responseParser(JSON.stringify(fallbackPayload));
+      capturedOptions!.api.responseParser(JSON.stringify(fallbackPayload));
+      capturedOptions!.api.responseParser(JSON.stringify(fallbackPayload));
       // Complete
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
@@ -2763,8 +2789,8 @@ describe("ChatPage coverage", () => {
       );
       expect(parsed).toBeTruthy();
       // Output should have at least the original content
-      expect(Array.isArray(parsed.output)).toBe(true);
-      expect(parsed.output.length).toBeGreaterThanOrEqual(1);
+      expect(Array.isArray(parsed!.output)).toBe(true);
+      expect(parsed!.output!.length).toBeGreaterThanOrEqual(1);
     }
   });
 
@@ -2891,7 +2917,7 @@ describe("ChatPage coverage", () => {
 
     if (capturedOptions?.api?.responseParser) {
       // Send rate_limited payload to set rateLimitAlternatives
-      capturedOptions.api.responseParser(
+      capturedOptions!.api.responseParser(
         JSON.stringify({
           type: "rate_limited",
           alternatives: [
@@ -2928,7 +2954,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.fetch) {
-      await capturedOptions.api.fetch({
+      await capturedOptions!.api.fetch({
         input: [{ role: "user", content: "hello" }],
         signal: undefined,
       });
@@ -2948,7 +2974,7 @@ describe("ChatPage coverage", () => {
 
     if (capturedOptions?.api?.cancel) {
       await expect(
-        capturedOptions.api.cancel({ session_id: "" }),
+        capturedOptions!.api.cancel({ session_id: "" }),
       ).rejects.toThrow("Missing chat identity for cancellation");
     }
   });
@@ -2962,7 +2988,7 @@ describe("ChatPage coverage", () => {
 
     if (capturedOptions?.api?.reconnect) {
       const controller = new AbortController();
-      const result = await capturedOptions.api.reconnect({
+      const result = await capturedOptions!.api.reconnect({
         session_id: "test-session",
         signal: controller.signal,
       });
@@ -2978,7 +3004,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
     const modelCalls = mockGetActiveModels.mock.calls.length;
     const fetchCalls = vi.mocked(fetch).mock.calls.length;
-    await expect(capturedOptions.api.fetch({ input: [] })).rejects.toThrow(
+    await expect(capturedOptions!.api.fetch({ input: [] })).rejects.toThrow(
       "Chat submission has no input",
     );
     expect(mockGetActiveModels).toHaveBeenCalledTimes(modelCalls);
@@ -2987,7 +3013,9 @@ describe("ChatPage coverage", () => {
 
   it("blocks input and queue submission while SDK history is pending", async () => {
     const { holdOwnershipLock } = await import("@/stores/messageQueueStore");
-    let resolve!: (session: any) => void;
+    let resolve!: (
+      session: Awaited<ReturnType<typeof mockSdkHistoryLoad>>,
+    ) => void;
     mockSdkHistoryLoad.mockImplementationOnce(
       () =>
         new Promise((done) => {
@@ -3002,7 +3030,7 @@ describe("ChatPage coverage", () => {
       .useMessageQueueStore;
     const count = vi.mocked(store.getState().enqueue).mock.calls.length;
     const input = { query: "keep this draft", fileList: [] };
-    expect(await capturedOptions.sender.beforeSubmit(input)).toBe(false);
+    expect(await capturedOptions!.sender.beforeSubmit(input)).toBe(false);
     expect(store.getState().enqueue).toHaveBeenCalledTimes(count);
     expect(holdOwnershipLock).not.toHaveBeenCalled();
     const optionsWhileLoading = capturedOptions;
@@ -3011,9 +3039,9 @@ describe("ChatPage coverage", () => {
     );
     // Ownership now resolves after history, so the host can rerender while
     // preserving the SDK session adapter and its completed history load.
-    expect(capturedOptions.session.api).toBe(optionsWhileLoading.session.api);
+    expect(capturedOptions!.session.api).toBe(optionsWhileLoading!.session.api);
     await waitFor(async () => {
-      expect(await capturedOptions.sender.beforeSubmit(input)).toMatchObject({
+      expect(await capturedOptions!.sender.beforeSubmit(input)).toMatchObject({
         proceed: true,
       });
     });
@@ -3026,7 +3054,9 @@ describe("ChatPage coverage", () => {
 
   it("does not occupy another Agent's queue when its route cannot load", async () => {
     const { holdOwnershipLock } = await import("@/stores/messageQueueStore");
-    mockSdkHistoryLoad.mockResolvedValueOnce(undefined as any);
+    mockSdkHistoryLoad.mockResolvedValueOnce(
+      undefined as unknown as Awaited<ReturnType<typeof mockSdkHistoryLoad>>,
+    );
     renderWithProviders(<ChatPage />, {
       initialEntries: ["/chat/other-agent-chat"],
     });
@@ -3062,27 +3092,27 @@ describe("ChatPage coverage", () => {
       );
       localStorage.setItem(key, "submitted-draft");
       expect(
-        await capturedOptions.sender.beforeSubmit({
+        await capturedOptions!.sender.beforeSubmit({
           query: "hello",
           fileList: [],
         }),
       ).toMatchObject({ proceed: true, clear: true });
       expect(localStorage.getItem(key)).toBeNull();
-      let finish!: (response: any) => void;
+      let finish!: (response: Response) => void;
       global.fetch = vi.fn(
         () =>
-          new Promise((resolve) => {
+          new Promise<Response>((resolve) => {
             finish = resolve;
           }),
-      ) as any;
-      const request = capturedOptions.api.fetch({
+      );
+      const request = capturedOptions!.api.fetch({
         input: [{ role: "user", content: "hello" }],
       });
       await waitFor(() => expect(finish).toBeDefined());
       expect(localStorage.getItem(key)).toBeNull();
       localStorage.setItem(key, "newer-draft");
       await act(async () => {
-        finish({ ok, status: ok ? 200 : 503, body: null });
+        finish({ ok, status: ok ? 200 : 503, body: null } as Response);
         await request;
       });
       expect(localStorage.getItem(key)).toBe("newer-draft");
@@ -3114,7 +3144,7 @@ describe("ChatPage coverage", () => {
           finish = resolve;
         }),
     );
-    const submission = capturedOptions.sender.beforeSubmit({
+    const submission = capturedOptions!.sender.beforeSubmit({
       query: "hello",
       fileList: [],
     });
@@ -3245,7 +3275,7 @@ describe("ChatPage coverage", () => {
   // ── customFetch with session in input ──────────────────────────────────
   it("customFetch extracts session from input", async () => {
     const mockResponse = { ok: true, status: 200, body: null };
-    global.fetch = vi.fn().mockResolvedValue(mockResponse) as any;
+    global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
     renderWithProviders(<ChatPage />, {
       initialEntries: ["/chat/test-session"],
@@ -3253,7 +3283,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.fetch) {
-      const result = await capturedOptions.api.fetch({
+      const result = await capturedOptions!.api.fetch({
         input: [
           {
             role: "user",
@@ -3264,12 +3294,14 @@ describe("ChatPage coverage", () => {
         signal: undefined,
       });
       expect(result).toBeTruthy();
-      const callArgs = (fetch as any).mock.calls.find(
-        (c: any) =>
-          c[0]?.includes?.("/console/chat") && c[1]?.method === "POST",
-      );
+      const callArgs = vi
+        .mocked(fetch)
+        .mock.calls.find(
+          (c) =>
+            String(c[0]).includes("/console/chat") && c[1]?.method === "POST",
+        );
       if (callArgs) {
-        const body = JSON.parse(callArgs[1].body);
+        const body = JSON.parse(callArgs[1]!.body as string);
         expect(body.session_id).toBeDefined();
       }
     }
@@ -3285,7 +3317,7 @@ describe("ChatPage coverage", () => {
     if (capturedOptions?.api?.responseParser) {
       // Send a string payload (not an object); should not crash
       expect(() =>
-        capturedOptions.api.responseParser(JSON.stringify("just a string")),
+        capturedOptions!.api.responseParser(JSON.stringify("just a string")),
       ).not.toThrow();
     }
   });
@@ -3300,7 +3332,7 @@ describe("ChatPage coverage", () => {
     if (capturedOptions?.api?.responseParser) {
       // Null-like wire payloads are ignored without crashing the chat stream.
       expect(() => {
-        capturedOptions.api.responseParser(JSON.stringify(null));
+        capturedOptions!.api.responseParser(JSON.stringify(null));
       }).not.toThrow();
     }
   });
@@ -3317,7 +3349,7 @@ describe("ChatPage coverage", () => {
       const onSuccess = vi.fn();
       const onError = vi.fn();
       const onProgress = vi.fn();
-      await capturedOptions.sender.attachments.customRequest({
+      await capturedOptions!.sender.attachments.customRequest({
         file: smallFile,
         onSuccess,
         onError,
@@ -3336,7 +3368,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
 
     if (capturedOptions?.api?.onFileCardClick) {
-      capturedOptions.api.onFileCardClick({
+      capturedOptions!.api.onFileCardClick({
         name: "test.txt",
         size: 100,
         url: "http://example.com/test.txt?token=abc123",

@@ -445,9 +445,9 @@ usable.
                         "source_fingerprint": digest,
                     },
                 )
-                from .api import _get_all_files
+                from .services.datasets import dataset_resource_files
 
-                required = set(_get_all_files(dataset).values())
+                required = set(dataset_resource_files(dataset).values())
                 if not required or any(
                     not (resources / name).is_file() for name in required
                 ):

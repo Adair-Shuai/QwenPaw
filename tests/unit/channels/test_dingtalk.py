@@ -32,6 +32,8 @@ class Socket:
 
 class Stream:
     def __init__(self, *args):
+        # Retain fixture injection and substituted callback signatures.
+        # pylint: disable=unused-argument
         self.websocket, self.connection_error = None, None
         self.callback_handler_map = {}
 
@@ -56,6 +58,8 @@ class Reply:
         return json.dumps({"errcode": 0})
 
     async def json(self, **kwargs):
+        # Retain fixture injection and substituted callback signatures.
+        # pylint: disable=unused-argument
         return {"errcode": 0}
 
     def release(self):
@@ -67,11 +71,15 @@ class Reply:
 
 @pytest_asyncio.fixture
 async def native(tmp_path, monkeypatch, request):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     sdk = module("dingtalk", "sdk")
     rows = []
     monkeypatch.setattr(sdk, "StreamClient", Stream)
 
     async def token(self, request):
+        # Retain fixture injection and substituted callback signatures.
+        # pylint: disable=unused-argument
         rows.append(("token", request.to_map()))
         return sdk.dingtalk_oauth_models.GetAccessTokenResponse(
             body=sdk.dingtalk_oauth_models.GetAccessTokenResponseBody(
@@ -88,6 +96,8 @@ async def native(tmp_path, monkeypatch, request):
 
     def endpoint(kind):
         async def call(self, request, headers, options):
+            # Retain fixture injection and substituted callback signatures.
+            # pylint: disable=unused-argument
             rows.append((kind, request.to_map()))
             if kind == "deliver":
                 return sdk.dingtalk_card_models.DeliverCardResponse(
@@ -136,6 +146,8 @@ async def native(tmp_path, monkeypatch, request):
         monkeypatch.setattr(cls, method, endpoint(kind))
 
     async def network_request(self, method, url, **kwargs):
+        # Retain fixture injection and substituted callback signatures.
+        # pylint: disable=unused-argument
         rows.append(("webhook", {"url": str(url), "body": kwargs.get("json")}))
         return Reply()
 
@@ -202,6 +214,8 @@ def message(mid, *, group=False, mentioned=True, content=None, **fields):
 
 
 async def ingress(rt, value):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     callback = CallbackMessage.from_dict(value)
     handler = next(
         iter(rt.driver._platform._client.callback_handler_map.values()),
@@ -231,6 +245,8 @@ async def send(rt, handle, text="answer", **fields):
 
 @pytest.mark.parametrize("group", [False, True])
 async def test_dm_and_group_mention_parse_and_reply_webhook(native, group):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     rt = native
     if group:
         await ingress(rt, message("ignored", group=True, mentioned=False))
@@ -255,6 +271,8 @@ async def test_dm_and_group_mention_parse_and_reply_webhook(native, group):
 
 @pytest.mark.parametrize("group", [False, True])
 async def test_proactive_openapi_preserves_recipient(native, group):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     rt = native
     opened = await rt.peer.methods["channel.response.open"](
         {
@@ -286,6 +304,8 @@ async def test_proactive_openapi_preserves_recipient(native, group):
 
 @pytest.mark.parametrize("native", ["card"], indirect=True)
 async def test_stream_card_final_reply_uses_original_card(native):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     rt = native
     event = await ingress(rt, message("stream", group=True))
     handle = event["response_handle"]
@@ -339,6 +359,10 @@ async def test_failed_feedback_archives_current_receipt_and_replays(
     native,
     monkeypatch,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     rt = native
     calls = []
 
@@ -391,6 +415,8 @@ async def test_failed_feedback_archives_current_receipt_and_replays(
 
 
 async def test_legal_approval_command_uses_authenticated_native_sender(native):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     event = await ingress(
         native,
         message(
@@ -407,6 +433,10 @@ async def test_legal_approval_command_uses_authenticated_native_sender(native):
 
 
 async def test_stop_joins_sdk_thread_and_closes_http(native):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     platform = native.driver._platform
     thread, client = platform._stream_thread, platform._http
     await native.driver.stop()
@@ -433,6 +463,8 @@ def _expected_markdown_chunks(text: str) -> list[str]:
 
 async def test_markdown_chunks_keeps_short_and_splits_long_table():
     """Short bodies stay one piece; long tables split with a header."""
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     transport = module("dingtalk", "transport")
     assert transport._markdown_chunks("hello") == ["hello"]
     table = _long_pipe_table()
@@ -449,6 +481,10 @@ async def test_long_markdown_table_splits_on_session_webhook(native):
     @mention / ``at`` stays on the first chunk. No chunk uses
     ``msgtype=text``.
     """
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     platform = native.driver._platform
     body = _long_pipe_table()
     bot_prefix = "[Bot]"
@@ -495,6 +531,10 @@ async def test_long_markdown_table_splits_on_session_webhook(native):
 
 async def test_long_markdown_table_splits_on_open_api(native):
     """Open API sends the same long table as sampleMarkdown chunks."""
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     platform = native.driver._platform
     body = _long_pipe_table()
     bot_prefix = "[Bot]"
@@ -530,6 +570,10 @@ async def test_long_markdown_table_splits_on_open_api(native):
 
 async def test_long_markdown_fails_when_a_later_chunk_fails(native):
     """Success is returned only when every markdown chunk is sent."""
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     platform = native.driver._platform
     body = "y" * 9000
     send_payload = AsyncMock(side_effect=[True, False, True])

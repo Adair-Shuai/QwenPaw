@@ -1,3 +1,4 @@
+import { UGSCI_BUTTON_LOADING } from "@/components/UgsciMotion";
 import { useTranslation } from "react-i18next";
 import { Button, Modal, Input, Form, Divider, Typography, Space } from "antd";
 import { Package, Link, FolderOpen, FileArchive, X } from "lucide-react";
@@ -97,7 +98,7 @@ export function InstallPluginModal({
             block
             style={{ marginTop: 12 }}
             disabled={!localSel}
-            loading={localInstalling}
+            loading={localInstalling ? UGSCI_BUTTON_LOADING : false}
             onClick={handleInstallLocal}
           >
             {localInstalling
@@ -129,7 +130,11 @@ export function InstallPluginModal({
                 onPressEnter={handleInstallUrl}
               />
             </Form.Item>
-            <Button block loading={urlInstalling} onClick={handleInstallUrl}>
+            <Button
+              block
+              loading={urlInstalling ? UGSCI_BUTTON_LOADING : false}
+              onClick={handleInstallUrl}
+            >
               {urlInstalling
                 ? t("pluginManager.installing")
                 : t("pluginManager.installFromUrl")}

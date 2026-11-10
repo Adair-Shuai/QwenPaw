@@ -68,22 +68,18 @@ async def read_stream_sse() -> AsyncIterator[str]:
         if _queue is not None:
             break
         await asyncio.sleep(0.1)
-
     queue = _queue
     if queue is None:
         msg = json.dumps({"done": True, "error": "no active call"})
         yield f"data: {msg}\n\n"
         return
-
     while True:
         try:
             item = await asyncio.wait_for(queue.get(), timeout=60.0)
         except asyncio.TimeoutError:
             yield ": keepalive\n\n"
             continue
-
         if item is None:
             yield f"data: {json.dumps({'done': True})}\n\n"
             break
-
         yield f"data: {json.dumps(item, ensure_ascii=False)}\n\n"

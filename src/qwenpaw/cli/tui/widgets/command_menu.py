@@ -173,7 +173,6 @@ class PromptInput(TextArea):
             return
         if await self._route_permission_key(event):
             return
-
         if self._menu.display:
             if event.key == "down":
                 self._menu.cursor_down()
@@ -193,7 +192,6 @@ class PromptInput(TextArea):
             event.prevent_default()
             event.stop()
             return
-
         app = self.app
         if event.key == "up" and not self.value:
             event.prevent_default()

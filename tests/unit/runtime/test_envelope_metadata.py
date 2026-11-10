@@ -200,7 +200,6 @@ async def test_tool_metadata_is_scoped_to_its_own_outputs():
         ),
     ):
         await _translate(envelope, event)
-
     tool_metadata = {"route": "call-a"}
     payloads = await _translate(
         envelope,
@@ -301,7 +300,6 @@ async def test_finalize_does_not_promote_event_metadata(finalizer):
         payloads = await _dump(
             envelope.error_envelope("failed", "test_error"),
         )
-
     _assert_no_metadata(payloads)
 
 

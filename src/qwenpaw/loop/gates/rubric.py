@@ -216,7 +216,9 @@ def _is_confident(probability: object) -> bool:
 
 
 def _release_decision_task(task: asyncio.Task[str | None]) -> None:
-    """Release finished checks and consume results after caller cancellation."""
+    """Release finished checks and consume results after caller
+    cancellation.
+    """
     _pending_decision_tasks.discard(task)
     if not task.cancelled():
         task.exception()

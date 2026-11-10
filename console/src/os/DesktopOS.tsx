@@ -452,7 +452,7 @@ export default function DesktopOS() {
           backdrop behind icons and app windows rather than a card. */}
       <div className={styles.emptyHint}>
         <img src={`${import.meta.env.BASE_URL}qwenpaw.png`} alt="" />
-        <div className={styles.emptyBrandName}>QwenPaw OS</div>
+        <div className={styles.emptyBrandName}>UGSci Desktop</div>
       </div>
 
       {/* Windows layer */}

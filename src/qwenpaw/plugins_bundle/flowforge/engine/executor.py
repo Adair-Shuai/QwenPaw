@@ -14,6 +14,7 @@ into a single async pipeline. Entry points:
 from __future__ import annotations
 
 import asyncio
+import copy
 import time
 from datetime import datetime
 from typing import Any
@@ -245,6 +246,9 @@ def _route_node_output(
     class_type: str,
     output: NodeOutput,
 ) -> None:
+    if node_id == exec_list.stop_at:
+        exec_list.complete_node_execution(node_id)
+        return
     if output.expand:
         frame = ExpandFrame(
             parent_id=node_id,
@@ -252,6 +256,8 @@ def _route_node_output(
             nodes=output.expand.get("nodes", {}),
         )
         added = exec_list.prompt.add_expanded(frame)
+        if exec_list.allowed_nodes is not None:
+            exec_list.allowed_nodes.update(added)
         for nid in added:
             exec_list.add_node(nid)
 
@@ -433,6 +439,7 @@ class WorkflowExecutor:
         resume_state: WorkflowState | None = None,
         abort_event: asyncio.Event | None = None,
         progress_registry: ProgressRegistry | None = None,
+        debug_options: dict[str, Any] | None = None,
     ) -> WorkflowResult:
         """Main entry point.
 
@@ -440,7 +447,17 @@ class WorkflowExecutor:
         accumulated variables survive into the re-run. ``abort_event``
         lets a parent run share its abort signal with the child.
         """
-        vr = validate(doc, registry=self.node_registry)
+        # pylint: disable=too-many-branches
+        validation_doc = doc
+        if debug_options is not None:
+            from ..debugging import debug_validation_document
+
+            validation_doc = debug_validation_document(
+                doc,
+                debug_options,
+                self.node_registry,
+            )
+        vr = validate(validation_doc, registry=self.node_registry)
         ok, output_nodes, errors = vr.ok, vr.output_nodes, vr.errors
         if not ok:
             raise ValidationError("Workflow validation failed", errors=errors)
@@ -482,7 +499,20 @@ class WorkflowExecutor:
 
         prompt = DynamicPrompt(doc.nodes)
         topo = TopologicalSort(prompt)
-        exec_list = ExecutionList(prompt, topo)
+        exec_list = ExecutionList(
+            prompt,
+            topo,
+            allowed_nodes=(
+                set(debug_options["allowed_nodes"])
+                if debug_options is not None
+                else None
+            ),
+            stop_at=(
+                debug_options["target_node_id"]
+                if debug_options is not None
+                else None
+            ),
+        )
         self._active_lists[state_id] = exec_list
         upstream_values: dict[tuple[str, int], Any] = {}
 
@@ -497,6 +527,35 @@ class WorkflowExecutor:
             topo,
             upstream_values,
         )
+
+        if debug_options is not None:
+            for node_id, values in debug_options["pins"].items():
+                if node_id in exec_list.state.completed:
+                    continue
+                values = copy.deepcopy(values)
+                for slot, value in enumerate(values):
+                    upstream_values[(node_id, slot)] = value
+                exec_list.state.completed.add(node_id)
+                definition = doc.nodes[node_id]
+                alias = (definition.get("inputs") or {}).get("output") or (
+                    definition.get("control") or {}
+                ).get("output")
+                if isinstance(alias, str) and alias:
+                    state.set(alias, values[0] if len(values) == 1 else values)
+                metadata = {"debug_pinned": True, "duration_ms": 0}
+                state.record_execution(
+                    NodeExecutionResult(
+                        node_id=node_id,
+                        status=WorkflowStatus.COMPLETED,
+                        output=tuple(values),
+                        metadata=metadata,
+                    ),
+                )
+                progress.set_status(
+                    node_id,
+                    NodeStatus.CACHED,
+                    metadata=metadata,
+                )
 
         for out_id in output_nodes:
             exec_list.add_node(out_id)
@@ -529,6 +588,7 @@ class WorkflowExecutor:
             progress=progress,
             abort_event=abort_event,
             extra_data=extra_data,
+            debug_options=debug_options,
         )
 
         start_ts = time.monotonic()
@@ -582,7 +642,11 @@ class WorkflowExecutor:
             workflow_id=doc.id or prompt_id,
             state_id=state.id,
             status=state.status,
-            outputs=resolved_outputs or dict(state.outputs),
+            outputs=(
+                resolved_outputs
+                if debug_options is not None
+                else resolved_outputs or dict(state.outputs)
+            ),
             errors=errors_list,
             execution_history=list(state.execution_history),
             duration_ms=duration_ms,
@@ -887,6 +951,7 @@ class WorkflowExecutor:
                     node_id=node_id,
                     status=WorkflowStatus.FAILED,
                     error=str(exc),
+                    metadata=copy.deepcopy(getattr(exc, "metadata", {})),
                 ),
             )
             if control.get("error_handler"):
@@ -918,6 +983,13 @@ class WorkflowExecutor:
                 exec_list.add_node(control["error_handler"])
             return "error"
 
+        observed_metadata = dict(output.metadata)
+        if result and getattr(result, "cached", False):
+            observed_metadata["cache_hit"] = True
+        recorded_inputs = getattr(result, "inputs", None)
+        if recorded_inputs is not None:
+            observed_metadata["inputs"] = copy.deepcopy(recorded_inputs)
+
         if output.block_execution:
             exec_list.add_external_block(node_id, output.block_execution)
             state.status = (
@@ -931,7 +1003,7 @@ class WorkflowExecutor:
                     status=state.status,
                     output=output.values,
                     duration_ms=result.duration_ms if result else 0,
-                    metadata=output.metadata,
+                    metadata=observed_metadata,
                 ),
             )
             progress.set_status(node_id, NodeStatus.BLOCKED)
@@ -957,7 +1029,7 @@ class WorkflowExecutor:
                 status=WorkflowStatus.COMPLETED,
                 output=output.values,
                 duration_ms=result.duration_ms if result else 0,
-                metadata=output.metadata,
+                metadata=observed_metadata,
                 next_node=output.next_node,
             ),
         )
@@ -989,7 +1061,8 @@ class WorkflowExecutor:
             await self.state_store.save(snapshot)
         except Exception as exc:
             raise RuntimeError(
-                "workflow checkpoint could not be persisted",
+                "workflow checkpoint could not be persisted "
+                f"({type(exc).__name__}: {exc})",
             ) from exc
 
     # ------------------------------------------------------------------
@@ -1004,6 +1077,7 @@ class WorkflowExecutor:
         prompt_id: str | None = None,
         progress_registry: ProgressRegistry | None = None,
         extra_data: dict[str, Any] | None = None,
+        debug_options: dict[str, Any] | None = None,
     ) -> WorkflowResult:
         """Resume a paused run from its persisted snapshot."""
         if self.state_store is None:
@@ -1033,6 +1107,7 @@ class WorkflowExecutor:
             resume_state=snapshot.state,
             progress_registry=progress_registry,
             extra_data=extra_data or snapshot.state.metadata,
+            debug_options=debug_options,
         )
 
     def resource_snapshot(self) -> dict[str, int]:

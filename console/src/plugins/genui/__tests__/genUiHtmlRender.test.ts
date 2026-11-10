@@ -123,7 +123,13 @@ describe("genUiHtmlRender", () => {
     const after = document.querySelector("polyline")?.getAttribute("points");
     expect(before).toBeTruthy();
     expect(after).not.toBe(before);
-    expect((window as any).__GENUI_EXPORT__.values.a).toBe(-1);
+    expect(
+      (
+        window as unknown as {
+          __GENUI_EXPORT__: { values: Record<string, unknown> };
+        }
+      ).__GENUI_EXPORT__.values.a,
+    ).toBe(-1);
   });
 
   it("paints allowlisted icons as SVG and omits Lucide names", () => {

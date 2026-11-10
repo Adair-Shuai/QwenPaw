@@ -58,7 +58,6 @@ def _resolve_image_url(path_or_url: str) -> str:
     """
     if path_or_url.startswith(("http://", "https://")):
         return path_or_url
-
     path_obj = Path(path_or_url)
     if not path_obj.exists():
         raise FileNotFoundError(
@@ -66,18 +65,15 @@ def _resolve_image_url(path_or_url: str) -> str:
         )
     if not path_obj.is_file():
         raise ValueError(f"Not a file: {path_or_url}")
-
     ext = path_obj.suffix.lower()
     if ext not in _IMAGE_MIME_TYPES:
         raise ValueError(
             f"Unsupported image format: {ext}. "
             f"Supported: {', '.join(_IMAGE_MIME_TYPES.keys())}",
         )
-
     mime_type = _IMAGE_MIME_TYPES[ext]
     with open(path_obj, "rb") as f:
         image_data = base64.b64encode(f.read()).decode("utf-8")
-
     return f"data:{mime_type};base64,{image_data}"
 
 
@@ -96,13 +92,11 @@ def _extract_config(
     endpoint = tool_config.get("endpoint", "")
     if not endpoint or not endpoint.strip():
         endpoint = _DEFAULT_ENDPOINT
-
     timeout_raw = tool_config.get("timeout")
     if timeout_raw is None or float(timeout_raw) <= 0:
         timeout = _DEFAULT_TIMEOUT
     else:
         timeout = float(timeout_raw)
-
     return api_key, endpoint, timeout
 
 
@@ -173,7 +167,6 @@ def _call_video_synthesis(
             prompt=prompt,
             **kwargs,
         )
-
     return rsp
 
 
@@ -231,7 +224,6 @@ async def text_to_video_wan(
                     ),
                 ],
             )
-
         api_key, endpoint, timeout = _extract_config(tool_config)
         if not api_key:
             return ToolChunk(
@@ -246,7 +238,6 @@ async def text_to_video_wan(
                     ),
                 ],
             )
-
         if resolution not in _VALID_RESOLUTIONS:
             return ToolChunk(
                 state=ToolResultState.ERROR,
@@ -261,7 +252,6 @@ async def text_to_video_wan(
                     ),
                 ],
             )
-
         if ratio not in _VALID_RATIOS:
             return ToolChunk(
                 state=ToolResultState.ERROR,
@@ -276,7 +266,6 @@ async def text_to_video_wan(
                     ),
                 ],
             )
-
         if not 2 <= duration <= 15:
             return ToolChunk(
                 state=ToolResultState.ERROR,
@@ -290,7 +279,6 @@ async def text_to_video_wan(
                     ),
                 ],
             )
-
         logger.info(
             f"Generating text-to-video: model=wan2.7-t2v-2026-04-25, "
             f"resolution={resolution}, ratio={ratio}, "
@@ -307,7 +295,6 @@ async def text_to_video_wan(
             kwargs["negative_prompt"] = negative_prompt
         if audio_url:
             kwargs["audio_url"] = audio_url
-
         rsp = await asyncio.to_thread(
             _call_video_synthesis,
             api_key=api_key,
@@ -332,7 +319,6 @@ async def text_to_video_wan(
                     ),
                 ],
             )
-
         video_url = rsp.output.video_url
         logger.info(
             f"Text-to-video generated, downloading: {video_url}",
@@ -370,7 +356,6 @@ async def text_to_video_wan(
                 ),
             ],
         )
-
     except Exception as e:
         logger.error(
             f"Text-to-video generation failed: {e}",
@@ -447,7 +432,6 @@ async def image_to_video_wan(
                     ),
                 ],
             )
-
         api_key, endpoint, timeout = _extract_config(tool_config)
         if not api_key:
             return ToolChunk(
@@ -462,7 +446,6 @@ async def image_to_video_wan(
                     ),
                 ],
             )
-
         if resolution not in _VALID_RESOLUTIONS:
             return ToolChunk(
                 state=ToolResultState.ERROR,
@@ -477,7 +460,6 @@ async def image_to_video_wan(
                     ),
                 ],
             )
-
         if not 2 <= duration <= 15:
             return ToolChunk(
                 state=ToolResultState.ERROR,
@@ -491,7 +473,6 @@ async def image_to_video_wan(
                     ),
                 ],
             )
-
         # Build media array based on input combination
         media: List[dict] = []
 
@@ -531,7 +512,6 @@ async def image_to_video_wan(
                         ),
                     ],
                 )
-
             try:
                 resolved_first = _resolve_image_url(first_frame_url)
             except (FileNotFoundError, ValueError) as e:
@@ -544,7 +524,6 @@ async def image_to_video_wan(
                         ),
                     ],
                 )
-
             media.append(
                 {"type": "first_frame", "url": resolved_first},
             )
@@ -590,7 +569,6 @@ async def image_to_video_wan(
                         "url": driving_audio_url,
                     },
                 )
-
         mode_desc = (
             "video-continuation"
             if first_clip_url
@@ -634,7 +612,6 @@ async def image_to_video_wan(
                     ),
                 ],
             )
-
         video_url = rsp.output.video_url
         logger.info(
             f"Image-to-video generated, downloading: {video_url}",
@@ -672,7 +649,6 @@ async def image_to_video_wan(
                 ),
             ],
         )
-
     except Exception as e:
         logger.error(
             f"Image-to-video generation failed: {e}",
@@ -740,7 +716,6 @@ async def reference_to_video_wan(
     """
     if reference_videos is None:
         reference_videos = []
-
     try:
         tool_config = get_tool_config("reference_to_video_wan")
         if not tool_config:
@@ -756,7 +731,6 @@ async def reference_to_video_wan(
                     ),
                 ],
             )
-
         api_key, endpoint, timeout = _extract_config(tool_config)
         if not api_key:
             return ToolChunk(
@@ -771,7 +745,6 @@ async def reference_to_video_wan(
                     ),
                 ],
             )
-
         if not reference_images:
             return ToolChunk(
                 state=ToolResultState.ERROR,
@@ -785,7 +758,6 @@ async def reference_to_video_wan(
                     ),
                 ],
             )
-
         if resolution not in _VALID_RESOLUTIONS:
             return ToolChunk(
                 state=ToolResultState.ERROR,
@@ -800,7 +772,6 @@ async def reference_to_video_wan(
                     ),
                 ],
             )
-
         if ratio not in _VALID_RATIOS:
             return ToolChunk(
                 state=ToolResultState.ERROR,
@@ -815,7 +786,6 @@ async def reference_to_video_wan(
                     ),
                 ],
             )
-
         if not 2 <= duration <= 15:
             return ToolChunk(
                 state=ToolResultState.ERROR,
@@ -829,7 +799,6 @@ async def reference_to_video_wan(
                     ),
                 ],
             )
-
         # Build media array: reference_images first, then videos,
         # then optional first_frame
         media: List[dict] = []
@@ -853,7 +822,6 @@ async def reference_to_video_wan(
             media.append(
                 {"type": "reference_image", "url": resolved},
             )
-
         for vid_url in reference_videos:
             if not vid_url.startswith(("http://", "https://")):
                 return ToolChunk(
@@ -872,7 +840,6 @@ async def reference_to_video_wan(
             media.append(
                 {"type": "reference_video", "url": vid_url},
             )
-
         if first_frame_url:
             try:
                 resolved_ff = _resolve_image_url(first_frame_url)
@@ -889,7 +856,6 @@ async def reference_to_video_wan(
             media.append(
                 {"type": "first_frame", "url": resolved_ff},
             )
-
         logger.info(
             f"Generating reference-to-video: "
             f"model=wan2.7-r2v, "
@@ -927,7 +893,6 @@ async def reference_to_video_wan(
                     ),
                 ],
             )
-
         video_url = rsp.output.video_url
         logger.info(
             f"Reference-to-video generated, downloading: " f"{video_url}",
@@ -967,7 +932,6 @@ async def reference_to_video_wan(
                 ),
             ],
         )
-
     except Exception as e:
         logger.error(
             f"Reference-to-video generation failed: {e}",

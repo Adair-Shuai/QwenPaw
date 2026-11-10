@@ -1,3 +1,4 @@
+import { UgsciMotion } from "../../UgsciMotion";
 /**
  * OfficeOoxmlPreview — 纯前端 OOXML 预览（fallback 专用）
  *
@@ -22,7 +23,7 @@
  * - 支持超时取消（防止大文件卡死）
  */
 import React, { useEffect, useState, useCallback, useMemo } from "react";
-import { Button, Space, Tooltip, Spin, Alert, Tag } from "antd";
+import { Button, Space, Tooltip, Alert, Tag } from "antd";
 import {
   DownloadOutlined,
   FileTextOutlined,
@@ -366,7 +367,7 @@ const OfficeOoxmlPreview: React.FC<{
           background: bgColor,
         }}
       >
-        <Spin size="large" />
+        <UgsciMotion theme={theme} variant="files" size={80} />
         <span style={{ color: "#999", fontSize: 12 }}>
           {t("workspace.clientSideConverting", "正在浏览器端解析")} {label}...
         </span>

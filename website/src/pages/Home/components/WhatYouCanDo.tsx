@@ -7,34 +7,25 @@ type UseCaseKey = "social" | "creative" | "productivity" | "research";
 
 const CATEGORY_CONFIG: Array<{
   key: UseCaseKey;
-  background: string;
   preview: string;
 }> = [
   {
     key: "social",
-    background:
-      "https://img.alicdn.com/imgextra/i4/O1CN01tdSfuK1X2DrN462ga_!!6000000002865-2-tps-1578-946.png",
     preview:
       "https://img.alicdn.com/imgextra/i2/O1CN01Be9DH21wKQ0fqNLSo_!!6000000006289-2-tps-1362-894.png",
   },
   {
     key: "creative",
-    background:
-      "https://img.alicdn.com/imgextra/i3/O1CN010T7jhC1LptQKwxNGm_!!6000000001349-2-tps-2114-1180.png",
     preview:
       "https://img.alicdn.com/imgextra/i3/O1CN013OF19c1j2vsqbmynl_!!6000000004491-2-tps-1362-894.png",
   },
   {
     key: "productivity",
-    background:
-      "https://img.alicdn.com/imgextra/i3/O1CN01SVXYZd1a2Af7uEY94_!!6000000003271-2-tps-1874-1046.png",
     preview:
       "https://img.alicdn.com/imgextra/i3/O1CN01Q0dF3W1FqudE7Rcop_!!6000000000539-2-tps-1362-894.png",
   },
   {
     key: "research",
-    background:
-      "https://img.alicdn.com/imgextra/i3/O1CN01oybwPf1vKaWII7bmm_!!6000000006154-2-tps-1962-1096.png",
     preview:
       "https://img.alicdn.com/imgextra/i2/O1CN01GNAC861QnfbKZIFK2_!!6000000002021-2-tps-1362-894.png",
   },
@@ -73,26 +64,11 @@ export function WhatYouCanDo() {
     return (
       <motion.div
         key={`preview-${key}`}
-        className="relative flex flex-col overflow-hidden h-[200px] sm:h-[380px]"
+        className="relative flex flex-col overflow-hidden rounded-xl border border-(--border) bg-(--color-secondary) h-[200px] sm:h-[380px]"
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 0.3 }}
       >
-        <motion.div
-          key={`${active.key}-bg`}
-          className="absolute inset-0"
-          initial={{ opacity: 0, scale: 1.04 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 1.15, ease: "easeOut" }}
-        >
-          <img
-            src={active.background}
-            alt=""
-            aria-hidden
-            loading="lazy"
-            className="h-full w-full object-cover object-bottom opacity-90"
-          />
-        </motion.div>
         <motion.div
           key={`${active.key}-frame`}
           className="relative z-10 -mb-[18px] overflow-hidden p-4 pb-0 md:p-10 md:pb-0"
@@ -171,12 +147,12 @@ export function WhatYouCanDo() {
                     {/* Hover 背景 */}
                     {!active && (
                       <span
-                        className="pointer-events-none absolute left-10 right-0 top-0 z-0 h-full bg-transparent transition-colors duration-200 group-hover:bg-[#FFF7F0] md:left-11"
+                        className="pointer-events-none absolute left-10 right-0 top-0 z-0 h-full bg-transparent transition-colors duration-200 group-hover:bg-(--color-secondary) md:left-11"
                         aria-hidden
                       />
                     )}
                     <span
-                      className="absolute bottom-0 left-10 right-0 h-px bg-[#FDE8D7] md:left-11"
+                      className="absolute bottom-0 left-10 right-0 h-px bg-(--border) md:left-11"
                       aria-hidden
                     />
                     <div className="relative z-10 flex items-start gap-2.5 px-1.5 md:gap-3 md:px-2">
@@ -184,7 +160,7 @@ export function WhatYouCanDo() {
                         {active && (
                           <motion.img
                             layoutId="qwenpaw-usecase-active-logo"
-                            src="https://img.alicdn.com/imgextra/i4/O1CN01vcAthP1tSFv3dB8Bd_!!6000000005900-55-tps-29-29.svg"
+                            src="/logo.svg"
                             alt=""
                             aria-hidden
                             className="h-6 w-6 object-contain md:h-7 md:w-7"

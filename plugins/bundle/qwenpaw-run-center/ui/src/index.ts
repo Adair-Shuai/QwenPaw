@@ -1798,11 +1798,33 @@ import { createAdaptiveRunView } from "./adaptive";
       id: "core.run-center",
       location: "primary.settings",
       label: () => "运行中心",
-      icon: QP.host.antdIcons?.ThunderboltOutlined
-        ? React.createElement(QP.host.antdIcons.ThunderboltOutlined, {
-            style: { fontSize: 16 },
-          })
-        : undefined,
+      // Original geometry from UGSci-sidebar-icons.zip.
+      icon: React.createElement(
+        "svg",
+        {
+          viewBox: "0 0 24 24",
+          fill: "none",
+          stroke: "currentColor",
+          strokeWidth: 1.6,
+          strokeLinecap: "round",
+          strokeLinejoin: "round",
+          "aria-hidden": true,
+          focusable: "false",
+          width: 16,
+          height: 16,
+        },
+        React.createElement("rect", {
+          x: "2.65",
+          y: "3.85",
+          width: "18.7",
+          height: "13.75",
+          rx: "1.45",
+        }),
+        React.createElement("path", {
+          d: "m6.2 7.65 4.3 3.05-4.3 3.05ZM13.8 8.95h4.1m-4.1 3.65h2.75",
+        }),
+        React.createElement("path", { d: "M12 17.6v3.05m-4.25 0h8.5" }),
+      ),
       route: routeId,
       order: 8,
     });

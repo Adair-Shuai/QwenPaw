@@ -121,7 +121,8 @@ CLAUDE.md
 
 # Build cache
 console/dist-tauri/
-.cache/  # Includes conda_unpack_wheels/ for Windows packaging workaround
+# Includes conda_unpack_wheels/ for Windows packaging workaround.
+.cache/
 
 # Hypothesis test cache
 .hypothesis/
@@ -141,6 +142,11 @@ src/.hypothesis/
 # Local diagnostics, screenshots and temporary catalog clones may contain
 # private test context and must never be included in source uploads.
 /.codex-tmp/
+/console/.codex-tmp/
+/console/.vite/
+
+# Local historical evidence; curated reports and the delivery index remain visible.
+/deliverables/archive/
 
 # Worktrees
 .worktrees/
@@ -186,8 +192,11 @@ docs/reviews/
 /.qwenpaw-dev-runtime/
 /.qwenpaw-dev-runtime.secret/
 /.tmp_*/
+/.tmp-*/
 /.pytest_cache/
+/.pytest_cache_*/
 /.mypy_cache/
+.ruff_cache/
 tmp/
 
 # Local visualization imports and conversion caches. Existing tracked

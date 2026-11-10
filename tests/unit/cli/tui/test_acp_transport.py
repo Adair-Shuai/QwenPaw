@@ -79,7 +79,6 @@ async def test_start_and_basic_turn():
         events = await _collect_turn(transport)
     finally:
         await transport.close()
-
     assert any(isinstance(e, ThoughtDelta) for e in events)
     assert any(isinstance(e, BackendWarmed) for e in events)
     text = "".join(e.text for e in events if isinstance(e, TextDelta))
@@ -130,7 +129,6 @@ async def test_permission_allow():
         await asyncio.wait_for(_run(), timeout=10.0)
     finally:
         await transport.close()
-
     text = "".join(e.text for e in events if isinstance(e, TextDelta))
     assert "[perm:allow]" in text
 
@@ -157,7 +155,6 @@ async def test_permission_cancellation_emits_expired_event():
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
-
     expired = await asyncio.wait_for(queue.get(), timeout=1.0)
     assert isinstance(expired, PermissionExpired)
     assert expired.request_id == request.request_id
@@ -186,7 +183,6 @@ async def test_permission_timeout_cancellation_emits_timeout_message():
     task.cancel("timeout")
     with pytest.raises(asyncio.CancelledError):
         await task
-
     expired = await asyncio.wait_for(queue.get(), timeout=1.0)
     assert isinstance(expired, PermissionExpired)
     assert expired.request_id == request.request_id
@@ -289,7 +285,6 @@ async def test_interrupt_cancels_turn():
         await asyncio.wait_for(runner, timeout=10.0)
     finally:
         await transport.close()
-
     assert isinstance(events[-1], TurnEnded)
 
 
@@ -304,7 +299,6 @@ async def test_list_sessions():
         )
     finally:
         await transport.close()
-
     assert len(sessions) == 1
     assert sessions[0].session_id == "old-session-1"
     assert sessions[0].title == "Earlier chat about Rust"
@@ -334,7 +328,6 @@ async def test_start_with_resume_loads_and_replays():
         await asyncio.wait_for(_run(), timeout=5.0)
     finally:
         await transport.close()
-
     users = [e.text for e in events if isinstance(e, UserTurn)]
     assert users == ["How do I write a loop in Rust?", "Thanks!"]
 
@@ -363,7 +356,6 @@ async def test_load_session_replays_history():
         await asyncio.wait_for(_run(), timeout=5.0)
     finally:
         await transport.close()
-
     user_turns = [e for e in events if isinstance(e, UserTurn)]
     assert [u.text for u in user_turns] == [
         "How do I write a loop in Rust?",

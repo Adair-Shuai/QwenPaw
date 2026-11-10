@@ -186,7 +186,6 @@ def test_raise_restore_lock_timeout_names_path_and_env(monkeypatch) -> None:
 
     with pytest.raises(TimeoutError) as excinfo:
         mod._raise_restore_lock_timeout(Path("/tmp/some.lock"))
-
     message = str(excinfo.value)
     # The message embeds os.fspath(path), which is backslash-separated
     # on Windows; compare against the same rendering.
@@ -223,7 +222,6 @@ def test_restore_process_lock_creates_and_releases_the_lock_file(
                     probe.fileno(),
                     fcntl.LOCK_EX | fcntl.LOCK_NB,
                 )
-
     with open(lock_file, "a+b") as probe:
         fcntl.flock(probe.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         fcntl.flock(probe.fileno(), fcntl.LOCK_UN)
@@ -253,7 +251,6 @@ def test_acquire_file_lock_retries_while_contended(
     with open(lock_path, "a+b") as handle:
         mod._acquire_file_lock(handle, lock_path)
         acquire_attempts = len(attempts)
-
     # One contended attempt plus the successful retry.
     assert acquire_attempts == 2
     assert sleeps == [mod._LOCK_RETRY_INTERVAL_SECONDS]
@@ -280,7 +277,6 @@ def test_acquire_file_lock_times_out_when_never_available(
     with open(lock_path, "a+b") as handle:
         with pytest.raises(TimeoutError) as excinfo:
             mod._acquire_file_lock(handle, lock_path)
-
     assert str(lock_path) in str(excinfo.value)
     # deadline = 0.0 + 1.0; the loop ran while the clock read 0.4 and 0.9,
     # then the 5.0 check ended it without another attempt.
@@ -307,7 +303,6 @@ def test_release_file_lock_unlocks_the_region(
     with open(lock_path, "a+b") as handle:
         real_flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
         mod._release_file_lock(handle)
-
     assert released == [fcntl.LOCK_UN]
 
 
@@ -606,7 +601,6 @@ def test_swap_directories_requires_a_staging_directory(tmp_path) -> None:
             tmp_path / "secrets.restore_tmp",
             tmp_path / "secrets.restore_old",
         )
-
     assert not dst.exists()
 
 
@@ -631,7 +625,6 @@ def test_swap_directories_rolls_back_when_commit_rename_fails(
 
     with pytest.raises(OSError):
         mod._swap_directories(dst, staging, old)
-
     # The rollback put the original data back so dst is never absent.
     assert _snapshot(dst) == {"original.txt": "original"}
     assert not old.exists()
@@ -660,7 +653,6 @@ def test_swap_directories_reports_failed_rollback(
 
     with pytest.raises(OSError):
         mod._swap_directories(dst, staging, old)
-
     # The original data is still safe, just not back in place yet.
     assert _snapshot(old) == {"original.txt": "original"}
     assert not dst.exists()
@@ -683,7 +675,6 @@ def test_swap_directories_propagates_error_without_old_dir(
 
     with pytest.raises(OSError):
         mod._swap_directories(dst, staging, old)
-
     assert not dst.exists()
 
 
@@ -870,7 +861,6 @@ def test_assert_directory_renamable_restores_after_failed_probe(
 
     with pytest.raises(OSError):
         mod.assert_directory_renamable(target)
-
     assert _snapshot(target) == {"a.txt": "a"}
     assert not probe_holder["path"].exists()
 
@@ -907,7 +897,6 @@ def test_assert_directory_renamable_logs_unrecoverable_probe(
     with caplog.at_level("ERROR"):
         with pytest.raises(OSError):
             mod.assert_directory_renamable(target)
-
     assert any(
         "Failed to restore" in record.getMessage() for record in caplog.records
     )
@@ -954,7 +943,6 @@ def test_unique_probe_path_gives_up_after_100_slots(tmp_path) -> None:
         candidate = mod._unique_probe_path(target)
         candidate.touch()
         taken.append(candidate)
-
     assert len(set(taken)) == 100
 
     with pytest.raises(RuntimeError, match="restore probe path"):

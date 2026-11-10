@@ -53,12 +53,10 @@ class CompletionRubricGate(LoopGate):
         """Request or consume an agent-native completion evaluation."""
         if ctx.get("has_tool_calls") or ctx.get("final_msg") is None:
             return StopHandlerResult(action=StopAction.BYPASS)
-
         state = self._state()
         if state is None:
             state = _CompletionRubricState()
             self.activate(state)
-
         return self._evaluate_response(state, ctx.get("final_msg"))
 
     def build_continuation(self) -> str:
@@ -80,7 +78,6 @@ class CompletionRubricGate(LoopGate):
                 reason="Completion rubric passed",
                 final_message=state.candidate,
             )
-
         state.candidate = message
         if state.evaluations >= self._max_evaluations:
             return StopHandlerResult(
@@ -91,7 +88,6 @@ class CompletionRubricGate(LoopGate):
                 ),
                 final_message=state.candidate,
             )
-
         state.evaluations += 1
         state.continuation = self._evaluation_prompt()
         return StopHandlerResult(

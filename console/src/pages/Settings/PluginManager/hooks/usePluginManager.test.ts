@@ -10,7 +10,10 @@ const hoisted = vi.hoisted(() => ({
     info: vi.fn(),
     warning: vi.fn(),
   },
-  stableT: vi.fn((k: string, _options?: unknown) => k),
+  stableT: vi.fn((k: string, _options?: unknown) => {
+    void _options;
+    return k;
+  }),
   fetchPluginsMock: vi.fn(),
   fetchPluginCatalogMock: vi.fn(),
   fetchMarketPluginsMock: vi.fn(),

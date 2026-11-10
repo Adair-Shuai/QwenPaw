@@ -60,6 +60,9 @@ from fastapi.responses import (
 )
 from pydantic import BaseModel, Field
 
+from .services import catalog as catalog_services
+from .services import datasets as dataset_services
+
 if TYPE_CHECKING:
     from .cache.manifest_store import ManifestStore
     from .cache.resource_store import ResourceStore
@@ -238,31 +241,8 @@ def _publish_derived(
     time_step: int,
     manifest_store: ManifestStore | SimulationCatalog,
 ) -> None:
-    metadata = result.setdefault("metadata", {})
-    metadata.update(
-        parent_dataset=source["id"],
-        time_step=time_step,
-        managed=True,
-    )
-    run_id = (source.get("metadata") or {}).get("simulation_run_id")
-    if run_id:
-        metadata["simulation_run_id"] = run_id
-    result["properties"] = {
-        key: {
-            **value,
-            "count": result.get(
-                (
-                    "n_vertices"
-                    if value.get("association") == "point"
-                    else "n_cells"
-                ),
-                0,
-            ),
-        }
-        for key, value in (source.get("properties") or {}).items()
-        if key in result.get("files", {}).get("scalars", {})
-    }
-    manifest_store.upsert(result)
+    """Backward-compatible entry for shared derived-dataset publication."""
+    catalog_services.publish_derived(result, source, time_step, manifest_store)
 
 
 async def _command_agent_id(request: Request) -> str:
@@ -275,98 +255,14 @@ async def _command_agent_id(request: Request) -> str:
     return workspace.agent_id
 
 
-class _DatasetCatalog:
-    """Catalog visibility and managed-resource cleanup for one router."""
-
-    def __init__(
-        self,
-        manifest_store: ManifestStore | SimulationCatalog,
-        resource_store: ResourceStore,
-        catalog_state: CatalogState,
-    ) -> None:
-        self.manifest_store = manifest_store
-        self.resource_store = resource_store
-        self.catalog_state = catalog_state
-
-    @staticmethod
-    def is_managed(ds: dict) -> bool:
-        return bool((ds.get("metadata") or {}).get("managed"))
-
-    def collect_cascade(self, dataset_id: str) -> list[dict]:
-        datasets = list(self.manifest_store.read().get("datasets") or [])
-        by_parent: dict[str, list[dict]] = {}
-        for item in datasets:
-            parent = str(
-                (item.get("metadata") or {}).get("parent_dataset") or "",
-            )
-            if parent:
-                by_parent.setdefault(parent, []).append(item)
-        target = next(
-            (item for item in datasets if item.get("id") == dataset_id),
-            None,
-        )
-        if not target:
-            return []
-        ordered = [target]
-        queue = [dataset_id]
-        seen = {dataset_id}
-        while queue:
-            current = queue.pop(0)
-            for child in by_parent.get(current, []):
-                child_id = str(child.get("id") or "")
-                if not child_id or child_id in seen:
-                    continue
-                seen.add(child_id)
-                ordered.append(child)
-                queue.append(child_id)
-        return ordered
-
-    def public_datasets(self, include_hidden: bool = False) -> list[dict]:
-        hidden = set() if include_hidden else self.catalog_state.hidden_ids()
-        return [
-            ds
-            for ds in self.manifest_store.read().get("datasets", [])
-            if ds.get("id") not in hidden
-        ]
-
-    def remove_dataset_files(self, ds: dict) -> int:
-        deleted = 0
-        for filename in set(_get_all_files(ds).values()):
-            try:
-                deleted += int(self.resource_store.delete(filename))
-            except ValueError:
-                logger.warning(
-                    "Skipped unsafe resource during cleanup: %s",
-                    filename,
-                )
-        return deleted
+class _DatasetCatalog(catalog_services.DatasetCatalog):
+    """Adapt shared catalog errors to the existing HTTP response contract."""
 
     def delete_or_hide_dataset(self, dataset_id: str) -> dict[str, Any]:
-        ds = self.manifest_store.get_dataset(dataset_id)
-        if not ds:
-            raise HTTPException(404, f"Dataset not found: {dataset_id}")
-        hidden: list[str] = []
-        removed: list[str] = []
-        deleted_files = 0
-        for item in self.collect_cascade(dataset_id):
-            item_id = str(item.get("id") or "")
-            if not item_id:
-                continue
-            if self.is_managed(item):
-                deleted_files += self.remove_dataset_files(item)
-                self.manifest_store.remove(item_id)
-                removed.append(item_id)
-            else:
-                hidden.append(item_id)
-        if hidden:
-            self.catalog_state.hide(hidden)
-        return {
-            "dataset_id": dataset_id,
-            "hidden": hidden,
-            "removed": removed,
-            "deleted_files": deleted_files,
-            "status": "removed" if dataset_id in removed else "hidden",
-        }
+        try:
+            return super().delete_or_hide_dataset(dataset_id)
+        except catalog_services.DatasetNotFound as exc:
+            raise HTTPException(404, str(exc)) from exc
 
 
 def _range_response(
@@ -1543,135 +1439,28 @@ def _get_capabilities() -> dict[str, bool]:
 
 
 def _dataset_scalar_files(ds: dict, time_step: int = 0) -> dict[str, str]:
-    """Match viewer selection: zero is static, positive values are index + 1.
-
-    A known step can omit static-only properties; those keep their static
-    values. An unknown step must never silently export the wrong snapshot.
-    """
-    scalars = dict((ds.get("files") or {}).get("scalars") or {})
-    if time_step == 0:
-        return scalars
-    selected = next(
-        (
-            step
-            for step in ds.get("time_steps") or []
-            if step.get("index") == time_step - 1
-        ),
-        None,
-    )
-    if selected is None:
-        raise HTTPException(404, f"Time step not found: {time_step}")
-    scalars.update(selected.get("scalars") or {})
-    return scalars
+    """Adapt shared time-step selection to the existing HTTP error contract."""
+    try:
+        return dataset_services.dataset_scalar_files(ds, time_step)
+    except dataset_services.TimeStepNotFound as exc:
+        raise HTTPException(404, str(exc)) from exc
 
 
 def _property_association(ds: dict, property_name: str = "") -> str:
-    descriptor = (ds.get("properties") or {}).get(property_name) or {}
-    if isinstance(descriptor, dict) and descriptor.get("association") in (
-        "point",
-        "cell",
-    ):
-        return descriptor["association"]
-    association = (ds.get("metadata") or {}).get("scalar_association")
-    if association in ("point", "cell"):
-        return association
-    # The old LAS/DLIS resource contract omitted its point association.
-    return (
-        "point" if ds.get("source") in ("las", "dlis", "wellbore") else "cell"
-    )
+    """Backward-compatible resource-association helper."""
+    return dataset_services.property_association(ds, property_name)
 
 
 def _build_resource_descriptors(ds: dict, resource_store) -> list[dict]:
-    """Build ResourceDescriptor list for a dataset."""
-    descriptors = []
-    files = ds.get("files", {})
-
-    if files.get("positions"):
-        descriptors.append(
-            resource_store.describe(
-                files["positions"],
-                "positions",
-                "float32",
-                [ds.get("n_vertices", 0) * 3],
-            ),
-        )
-    if files.get("indices"):
-        descriptors.append(
-            resource_store.describe(
-                files["indices"],
-                "indices",
-                "uint32",
-                [ds.get("n_indices", 0)],
-            ),
-        )
-    if files.get("cell_ids"):
-        descriptors.append(
-            resource_store.describe(
-                files["cell_ids"],
-                "cell-ids",
-                "uint32",
-                [ds.get("n_cells", 0)],
-            ),
-        )
-    for prop_name, fname in files.get("scalars", {}).items():
-        dtype = "float32" if fname.endswith(".f32") else "uint32"
-        association = _property_association(ds, prop_name)
-        descriptor = resource_store.describe(
-            fname,
-            "property",
-            dtype,
-            [ds.get("n_vertices" if association == "point" else "n_cells", 0)],
-            prop_name,
-        )
-        descriptor["association"] = association
-        descriptor["propertyName"] = prop_name
-        descriptors.append(descriptor)
-
-    for step in ds.get("time_steps") or []:
-        for prop_name, fname in (step.get("scalars") or {}).items():
-            association = _property_association(ds, prop_name)
-            descriptor = resource_store.describe(
-                fname,
-                "property",
-                "float32" if fname.endswith(".f32") else "uint32",
-                [
-                    ds.get(
-                        "n_vertices" if association == "point" else "n_cells",
-                        0,
-                    ),
-                ],
-                prop_name,
-            )
-            descriptor.update(
-                association=association,
-                propertyName=prop_name,
-                timeStep=int(step["index"]) + 1,
-            )
-            descriptors.append(descriptor)
-
-    return descriptors
+    """Backward-compatible resource-descriptor helper."""
+    return dataset_services.build_resource_descriptors(ds, resource_store)
 
 
 def _get_all_files(ds: dict) -> dict[str, str]:
-    """Map resource_id → filename for a dataset."""
-    result = {}
-    files = ds.get("files", {})
-    for key in ("positions", "indices", "cell_ids"):
-        if files.get(key):
-            result[files[key]] = files[key]
-    for fname in files.get("scalars", {}).values():
-        result[fname] = fname
-    for step in ds.get("time_steps") or []:
-        for fname in (step.get("scalars") or {}).values():
-            result[fname] = fname
-    return result
+    """Backward-compatible resource enumeration helper."""
+    return dataset_services.dataset_resource_files(ds)
 
 
 def _update_manifest(bin_dir: Path, dataset_info: dict[str, Any]) -> None:
     """Atomically update the manifest (backward-compatible export)."""
-    from .cache.manifest_store import ManifestStore
-    from .cache.layout import CacheLayout
-
-    cache = CacheLayout(bin_dir.parent)
-    store = ManifestStore(bin_dir, cache)
-    store.upsert(dataset_info)
+    catalog_services.publish_manifest(bin_dir, dataset_info)

@@ -16,6 +16,17 @@ import { toolCallsApi } from "@/api/modules/toolCalls";
 import { workspaceApi } from "@/api/modules/workspace";
 import { setPendingProjectDirectory } from "@/features/project-directory/pendingProjectDirectory";
 import sessionApi from "./sessionApi";
+import {
+  AssistantFileLink,
+  AssistantFileReferenceScope,
+} from "./AssistantFileLink";
+import { Element } from "html-react-parser";
+import { DIRECTORY_REFERENCE_HREF_PREFIX } from "./fileReferenceMarkdown";
+
+const fileReferenceFixture = vi.hoisted(() => ({
+  visible: false,
+  href: "src/app.ts#L12-L18",
+}));
 
 const {
   mockListProviders,
@@ -35,7 +46,7 @@ vi.mock("../../hooks/useAppMessage", () => ({
 
 vi.mock("../../contexts/ApprovalContext", () => ({
   useApprovalContext: () => ({
-    approvals: [] as any[],
+    approvals: [] as unknown[],
     setApprovals: vi.fn(),
   }),
 }));
@@ -46,7 +57,9 @@ vi.mock("../../plugins/PluginContext", () => ({
     registerPlugin: vi.fn(),
     toolRenderConfig: {},
   }),
-  PluginContext: { Provider: ({ children }: any) => children },
+  PluginContext: {
+    Provider: ({ children }: import("react").PropsWithChildren) => children,
+  },
 }));
 
 vi.mock("./components/ChatSessionInitializer", () => ({
@@ -69,7 +82,9 @@ vi.mock("./components/AgentMentionController", () => ({
 }));
 vi.mock("./components/ChatSenderTabsPanel", () => ({ default: () => null }));
 vi.mock("./RichFileReferenceInput", () => ({
-  RichFileReferenceInputProvider: ({ children }: any) => children,
+  RichFileReferenceInputProvider: ({
+    children,
+  }: import("react").PropsWithChildren) => children,
 }));
 
 vi.mock("@agentscope-ai/chat", () => ({
@@ -90,14 +105,37 @@ vi.mock("@agentscope-ai/chat", () => ({
     MCP_CALL: "mcp_call",
     MCP_CALL_OUTPUT: "mcp_call_output",
   },
-  AgentScopeRuntimeWebUI: vi.fn((props: any) => {
-    const actions = Children.toArray(
-      props.options.theme.rightHeader.props.children,
-    ).filter(
-      (child) => isValidElement(child) && child.type === ChatActionGroup,
-    );
-    return <div data-testid="chat-ui">{actions}</div>;
-  }),
+  AgentScopeRuntimeWebUI: vi.fn(
+    (props: import("@/test/chatOptionsFixture").CapturedChatProps) => {
+      const actions = Children.toArray(
+        (
+          props.options.theme.rightHeader as import("react").ReactElement<{
+            children?: import("react").ReactNode;
+          }>
+        ).props.children,
+      ).filter(
+        (child) => isValidElement(child) && child.type === ChatActionGroup,
+      );
+      return (
+        <div data-testid="chat-ui">
+          {actions}
+          {fileReferenceFixture.visible && (
+            <AssistantFileReferenceScope.Provider
+              value={{ agentId: "default", sessionId: "new" }}
+            >
+              <AssistantFileLink
+                href={fileReferenceFixture.href}
+                streamStatus="done"
+                domNode={new Element("a", { href: fileReferenceFixture.href })}
+              >
+                Source file
+              </AssistantFileLink>
+            </AssistantFileReferenceScope.Provider>
+          )}
+        </div>
+      );
+    },
+  ),
   useChatAnywhereSessionsState: vi.fn(() => ({
     sessions: [],
     currentSessionId: null,
@@ -237,6 +275,8 @@ import ChatPage from "./index";
 
 describe("ChatPage message Markdown action", () => {
   beforeEach(() => {
+    fileReferenceFixture.visible = false;
+    fileReferenceFixture.href = "src/app.ts#L12-L18";
     chatExtensions.__resetForTests();
     mockListProviders.mockResolvedValue([]);
     mockGetActiveModels.mockResolvedValue({
@@ -251,6 +291,51 @@ describe("ChatPage message Markdown action", () => {
     chatExtensions.__resetForTests();
     useFilesSurfaceStore.setState({ sessionDrawers: {} });
     vi.clearAllMocks();
+  });
+
+  it("opens an actual directory citation through ChatPage's scoped file manager handler", async () => {
+    const reveal = vi
+      .spyOn(workspaceApi, "revealInFileManager")
+      .mockResolvedValue({ ok: true });
+    fileReferenceFixture.visible = true;
+    const path = "C:/Users/shuai/.qwenpaw/workspaces/default";
+    fileReferenceFixture.href =
+      DIRECTORY_REFERENCE_HREF_PREFIX + encodeURIComponent(path);
+    try {
+      renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
+      fireEvent.click(await screen.findByRole("link", { name: "Source file" }));
+      await vi.waitFor(() =>
+        expect(reveal).toHaveBeenCalledWith(
+          path,
+          undefined,
+          "project",
+          undefined,
+        ),
+      );
+      expect(useFilesSurfaceStore.getState().sessionDrawers).toEqual({});
+    } finally {
+      reveal.mockRestore();
+    }
+  });
+
+  it("opens an actual file citation inside ChatPage without losing its scope or line range to capture delegation", async () => {
+    fileReferenceFixture.visible = true;
+    renderWithProviders(<ChatPage />, { initialEntries: ["/chat"] });
+    fireEvent.click(
+      await screen.findByRole("link", { name: "Source file L12–18" }),
+    );
+    expect(
+      useFilesSurfaceStore.getState().sessionDrawers["session:default:new"],
+    ).toMatchObject({
+      kind: "preview",
+      target: {
+        source: "workspace",
+        path: "src/app.ts",
+        line: 12,
+        endLine: 18,
+        preferredView: "text",
+      },
+    });
   });
 
   it("opens a preview drawer when a file preview event arrives", async () => {

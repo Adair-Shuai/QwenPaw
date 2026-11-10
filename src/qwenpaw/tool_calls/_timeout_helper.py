@@ -47,7 +47,6 @@ def arm_kill_deadline(
         return True
     if secs is None or secs < 0:
         return False
-
     loop = asyncio.get_running_loop()
     now = loop.time()
     desired_kill = now + secs
@@ -97,10 +96,8 @@ async def cancellable_wait(
         if fallback_secs is None:
             return await coro_or_task
         return await asyncio.wait_for(coro_or_task, timeout=fallback_secs)
-
     if as_kill_deadline and fallback_secs is not None:
         arm_kill_deadline(ctx, fallback_secs)
-
     task = (
         coro_or_task
         if isinstance(coro_or_task, asyncio.Task)
@@ -123,7 +120,6 @@ async def cancellable_wait(
             raise asyncio.CancelledError(
                 f"tool cancelled by manager (reason={ctx.cancel_reason})",
             )
-
         return task.result()
     finally:
         if not cancel_waiter.done():

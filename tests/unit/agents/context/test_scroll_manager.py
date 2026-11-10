@@ -1165,6 +1165,8 @@ async def test_summary_retry_shares_configured_budget(
             raise scroll_manager_module._SummaryCandidateError(
                 "missing headings",
             )
+        # Forward the real keyword-only summary request without alteration.
+        # pylint: disable-next=missing-kwoa
         return await original(*args, **kwargs)
 
     monkeypatch.setattr(

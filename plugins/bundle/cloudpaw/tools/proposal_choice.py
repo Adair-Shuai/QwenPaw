@@ -137,7 +137,6 @@ def _normalize_proposals(  # pylint: disable=too-many-return-statements
     """
     if not isinstance(data, list) or len(data) == 0:
         return "Error: data must be a non-empty JSON array."
-
     # Check if it's a 2D array (all items are 10-column rows)
     if all(_is_row(item) for item in data):
         cleaned = [r for r in data if not _is_header_row(r)]
@@ -157,7 +156,6 @@ def _normalize_proposals(  # pylint: disable=too-many-return-statements
                 cleaned[i : i + chunk] for i in range(0, len(cleaned), chunk)
             ]
         return [cleaned]
-
     # Check if it's a 3D array (multiple proposals)
     if all(isinstance(item, list) for item in data):
         result = []
@@ -185,7 +183,6 @@ def _normalize_proposals(  # pylint: disable=too-many-return-statements
                     )
             result.append(cleaned)
         return result
-
     return (
         "Error: data format not recognized. Expected either:\n"
         "- 2D array for single proposal: [[row1], [row2], ...] "
@@ -202,7 +199,6 @@ def _validate_proposals(proposals: List[List[List[Any]]]) -> Union[str, None]:
             f"Error: must have 1 to 5 proposals (found {len(proposals)}). "
             f"Each proposal can contain multiple resource rows."
         )
-
     for i, proposal in enumerate(proposals):
         for j, row in enumerate(proposal):
             for k, cell in enumerate(row):
@@ -213,7 +209,6 @@ def _validate_proposals(proposals: List[List[List[Any]]]) -> Union[str, None]:
                         f"Cell must be a string or an object with "
                         f"'text' field."
                     )
-
     return None
 
 
@@ -283,7 +278,6 @@ async def proposal_choice(
                 ),
             ],
         )
-
     # Parse strategy names if provided
     custom_names: list[str] | None = None
     if strategy_names:
@@ -295,7 +289,6 @@ async def proposal_choice(
                 custom_names = parsed_names
         except (json.JSONDecodeError, TypeError):
             pass
-
     # Normalize to 3D array format
     expected_count = len(custom_names) if custom_names else 0
     normalized = _normalize_proposals(raw_data, expected_count=expected_count)
@@ -315,7 +308,6 @@ async def proposal_choice(
                 TextBlock(type="text", text=error),
             ],
         )
-
     # Determine proposal names
     proposal_names: list[str]
     if custom_names and len(custom_names) >= len(proposals):
@@ -324,7 +316,6 @@ async def proposal_choice(
         proposal_names = ["方案"]
     else:
         proposal_names = _PROPOSAL_NAMES[: len(proposals)]
-
     # Get session context
     session_id = get_current_session_id()
     logger.info("[proposal_choice] session_id from context: %s", session_id)
@@ -341,7 +332,6 @@ async def proposal_choice(
             state=ToolResultState.SUCCESS,
             content=[TextBlock(type="text", text=payload)],
         )
-
     logger.info(
         "[proposal_choice] Creating interaction for session: %s",
         session_id,
@@ -364,7 +354,6 @@ async def proposal_choice(
         )
     finally:
         InteractionManager.cleanup(session_id)
-
     result = interaction.result or "用户未做出选择"
     return ToolChunk(
         state=ToolResultState.SUCCESS,

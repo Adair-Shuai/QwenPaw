@@ -60,7 +60,7 @@ const I = {
     }
   }
 };
-function _(t) {
+function S(t) {
   return t != null && t.toLowerCase().startsWith("zh") ? "zh" : "en";
 }
 function a(t, n) {
@@ -72,41 +72,65 @@ function a(t, n) {
   }
   return I[t][n];
 }
-const B = "1.0.7", D = {
-  version: B
-}, i = window.QwenPaw.host, e = i.React, {
+const q = "1.0.7", B = {
+  version: q
+}, o = window.QwenPaw.host, e = o.React;
+function D() {
+  return e.createElement(
+    "svg",
+    {
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: 1.6,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      "aria-hidden": !0,
+      focusable: "false",
+      width: "1em",
+      height: "1em"
+    },
+    e.createElement("path", {
+      d: "M11.3 17.4H4.25q-1.5 0-1.5-1.5V5.1q0-1.5 1.5-1.5h15.5q1.5 0 1.5 1.5v7.25M9.3 17.4v3m-3.2 0h6"
+    }),
+    e.createElement("path", {
+      d: "m14.2 10.9.55 9.5 2.65-2.85 2.8 3.05 1.7-1.55-2.8-3.05 3.0-1.5Z"
+    })
+  );
+}
+const {
   Badge: J,
-  Button: h,
-  Empty: R,
+  Button: b,
+  Empty: M,
   Popconfirm: F,
   Space: k,
-  Switch: q,
-  Table: Q,
+  Switch: Q,
+  Table: H,
   Tabs: K,
-  Tooltip: z,
-  Typography: G,
+  Tooltip: R,
+  Typography: V,
   message: m
-} = i.antd, {
-  CheckOutlined: M,
-  CloseOutlined: H,
-  DeleteOutlined: V,
+} = o.antd, {
+  CheckOutlined: z,
+  CloseOutlined: G,
+  DeleteOutlined: Z,
   FolderOpenOutlined: X,
   ReloadOutlined: Y,
-  SafetyCertificateOutlined: Z
-} = i.antdIcons, { Text: d, Title: ee } = G;
-function te() {
+  SafetyCertificateOutlined: ee
+} = o.antdIcons, { Text: d, Title: te } = V;
+function ae() {
   try {
-    return _(localStorage.getItem("language"));
+    return S(localStorage.getItem("language"));
   } catch {
-    return _(void 0);
+    return S(void 0);
   }
 }
-async function b(t, n) {
-  const s = i.fetch ? await i.fetch(t, n) : await fetch(i.getApiUrl(t), {
+async function h(t, n) {
+  const s = o.fetch ? await o.fetch(t, n) : await fetch(o.getApiUrl(t), {
     ...n,
     headers: {
       ...(n == null ? void 0 : n.headers) || {},
-      ...i.getApiToken() ? { Authorization: `Bearer ${i.getApiToken()}` } : {}
+      ...o.getApiToken() ? { Authorization: `Bearer ${o.getApiToken()}` } : {}
     }
   }), r = await s.text();
   let l = null;
@@ -123,26 +147,26 @@ async function b(t, n) {
   }
   return l;
 }
-function ae(t, n) {
+function ne(t, n) {
   const s = t.toolParams.display_name;
   if (typeof s == "string" && s.trim())
     return s;
   const r = t.toolParams.canonical_app_id;
   return typeof r == "string" && r.trim() ? r : a(n, "unknownApplication");
 }
-function ne(t) {
+function se(t) {
   const n = t.toolParams.canonical_app_id;
   if (typeof n != "string" || !n.trim())
     return "";
   const s = n.indexOf(":");
   return s !== -1 && n.slice(0, s) === "process" ? n.slice(s + 1) : n;
 }
-function se({ approval: t, onResolved: n }) {
+function oe({ approval: t, onResolved: n }) {
   var g;
-  const s = _((g = i.useLocale) == null ? void 0 : g.call(i)), [r, l] = e.useState(null), u = typeof t.toolParams.risk == "string" ? t.toolParams.risk : "", v = typeof t.toolParams.warning == "string" ? t.toolParams.warning : "", S = ae(t, s), p = ne(t), y = async (f) => {
+  const s = S((g = o.useLocale) == null ? void 0 : g.call(o)), [r, l] = e.useState(null), u = typeof t.toolParams.risk == "string" ? t.toolParams.risk : "", v = typeof t.toolParams.warning == "string" ? t.toolParams.warning : "", C = ne(t, s), p = se(t), y = async (f) => {
     l(f);
     try {
-      await b("/computer-use/session/pending/decision", {
+      await h("/computer-use/session/pending/decision", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -160,7 +184,7 @@ function se({ approval: t, onResolved: n }) {
     }
   };
   return e.createElement(
-    i.antd.Card,
+    o.antd.Card,
     { size: "small", bordered: !0, style: { borderRadius: 8 } },
     e.createElement(
       "div",
@@ -171,15 +195,15 @@ function se({ approval: t, onResolved: n }) {
         e.createElement(
           k,
           { size: 8 },
-          e.createElement(Z),
+          e.createElement(ee),
           e.createElement(
             d,
             { strong: !0 },
             a(s, "approvalTitle")
           )
         ),
-        e.createElement(d, { strong: !0 }, S),
-        p && p !== S ? e.createElement(
+        e.createElement(d, { strong: !0 }, C),
+        p && p !== C ? e.createElement(
           "div",
           {
             style: {
@@ -222,10 +246,10 @@ function se({ approval: t, onResolved: n }) {
         k,
         { size: 8, wrap: !0 },
         e.createElement(
-          h,
+          b,
           {
             danger: !0,
-            icon: e.createElement(H),
+            icon: e.createElement(G),
             loading: r === "deny",
             disabled: r !== null,
             onClick: () => void y("deny")
@@ -233,9 +257,9 @@ function se({ approval: t, onResolved: n }) {
           a(s, "deny")
         ),
         e.createElement(
-          h,
+          b,
           {
-            icon: e.createElement(M),
+            icon: e.createElement(z),
             loading: r === "session",
             disabled: r !== null,
             onClick: () => void y("session")
@@ -243,10 +267,10 @@ function se({ approval: t, onResolved: n }) {
           a(s, "allowSession")
         ),
         e.createElement(
-          h,
+          b,
           {
             type: "primary",
-            icon: e.createElement(M),
+            icon: e.createElement(z),
             loading: r === "always",
             disabled: r !== null,
             onClick: () => void y("always")
@@ -259,17 +283,17 @@ function se({ approval: t, onResolved: n }) {
 }
 function ie() {
   var P, T, x;
-  const t = _((P = i.useLocale) == null ? void 0 : P.call(i)), n = (T = i.useCurrentSession) == null ? void 0 : T.call(i), s = (n == null ? void 0 : n.id) ?? ((x = i.getCurrentSessionId) == null ? void 0 : x.call(i)) ?? null, [r, l] = e.useState(null), [u, v] = e.useState([]), [S, p] = e.useState(!0), [y, g] = e.useState(!1), [f, E] = e.useState(!0), [U, A] = e.useState(null), w = e.useCallback(async () => {
+  const t = S((P = o.useLocale) == null ? void 0 : P.call(o)), n = (T = o.useCurrentSession) == null ? void 0 : T.call(o), s = (n == null ? void 0 : n.id) ?? ((x = o.getCurrentSessionId) == null ? void 0 : x.call(o)) ?? null, [r, l] = e.useState(null), [u, v] = e.useState([]), [C, p] = e.useState(!0), [y, g] = e.useState(!1), [f, E] = e.useState(!0), [N, A] = e.useState(null), w = e.useCallback(async () => {
     E(!0);
     try {
-      const [o, c] = await Promise.all([
-        b("/computer-use/status"),
-        b("/computer-use/access")
+      const [i, c] = await Promise.all([
+        h("/computer-use/status"),
+        h("/computer-use/access")
       ]);
-      l(o), v(c.access || []), p(o.enabled !== !1);
-    } catch (o) {
+      l(i), v(c.access || []), p(i.enabled !== !1);
+    } catch (i) {
       m.error(
-        o instanceof Error ? o.message : a(t, "failed")
+        i instanceof Error ? i.message : a(t, "failed")
       );
     } finally {
       E(!1);
@@ -278,13 +302,13 @@ function ie() {
   e.useEffect(() => {
     w();
   }, [w]);
-  const $ = async (o) => {
-    A(`revoke:${o.canonical_app_id}`);
+  const $ = async (i) => {
+    A(`revoke:${i.canonical_app_id}`);
     try {
-      await b("/computer-use/access", {
+      await h("/computer-use/access", {
         method: "DELETE",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ canonical_app_id: o.canonical_app_id })
+        body: JSON.stringify({ canonical_app_id: i.canonical_app_id })
       }), await w();
     } catch (c) {
       m.error(
@@ -293,14 +317,14 @@ function ie() {
     } finally {
       A(null);
     }
-  }, W = async (o) => {
+  }, W = async (i) => {
     g(!0);
     try {
-      await b("/computer-use/feature", {
+      await h("/computer-use/feature", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: o, session_id: s })
-      }), p(o), m.success(a(t, o ? "enabledMsg" : "disabledMsg")), await w();
+        body: JSON.stringify({ enabled: i, session_id: s })
+      }), p(i), m.success(a(t, i ? "enabledMsg" : "disabledMsg")), await w();
     } catch (c) {
       m.error(
         c instanceof Error ? c.message : a(t, "failed")
@@ -313,38 +337,38 @@ function ie() {
       title: a(t, "application"),
       dataIndex: "display_name",
       key: "display_name",
-      render: (o) => e.createElement(d, { strong: !0 }, o)
+      render: (i) => e.createElement(d, { strong: !0 }, i)
     },
     {
       title: a(t, "applicationId"),
       dataIndex: "canonical_app_id",
       key: "canonical_app_id",
-      render: (o) => e.createElement(d, { code: !0 }, o)
+      render: (i) => e.createElement(d, { code: !0 }, i)
     },
     {
       key: "actions",
       width: 56,
-      render: (o, c) => e.createElement(
+      render: (i, c) => e.createElement(
         F,
         {
           title: a(t, "revokeConfirm"),
           onConfirm: () => void $(c)
         },
         e.createElement(
-          z,
+          R,
           { title: a(t, "revoke") },
-          e.createElement(h, {
+          e.createElement(b, {
             type: "text",
             danger: !0,
             shape: "circle",
-            icon: e.createElement(V),
-            loading: U === `revoke:${c.canonical_app_id}`,
+            icon: e.createElement(Z),
+            loading: N === `revoke:${c.canonical_app_id}`,
             "aria-label": a(t, "revoke")
           })
         )
       )
     }
-  ], C = (r == null ? void 0 : r.runtime_available) === !0;
+  ], _ = (r == null ? void 0 : r.runtime_available) === !0;
   return e.createElement(
     "main",
     {
@@ -375,28 +399,28 @@ function ie() {
           k,
           { align: "baseline", size: 8 },
           e.createElement(
-            ee,
+            te,
             { level: 3, style: { margin: 0 } },
             a(t, "title")
           ),
           e.createElement(
             d,
             { type: "secondary", style: { fontSize: 12 } },
-            `${a(t, "version")} ${D.version}`
+            `${a(t, "version")} ${B.version}`
           )
         ),
         e.createElement(J, {
-          status: C ? "success" : "error",
-          text: a(t, C ? "ready" : "unavailable")
+          status: _ ? "success" : "error",
+          text: a(t, _ ? "ready" : "unavailable")
         })
       ),
       e.createElement(
         k,
         { size: 8 },
         e.createElement(
-          z,
+          R,
           { title: a(t, "refresh") },
-          e.createElement(h, {
+          e.createElement(b, {
             type: "text",
             shape: "circle",
             icon: e.createElement(Y),
@@ -413,11 +437,11 @@ function ie() {
             { type: "secondary", style: { fontSize: 13 } },
             a(t, "feature")
           ),
-          e.createElement(q, {
-            checked: S,
+          e.createElement(Q, {
+            checked: C,
             loading: y,
-            disabled: !C,
-            onChange: (o) => void W(o),
+            disabled: !_,
+            onChange: (i) => void W(i),
             "aria-label": a(t, "feature")
           })
         )
@@ -429,15 +453,15 @@ function ie() {
         {
           key: "access",
           label: a(t, "accessManagement"),
-          children: e.createElement(Q, {
+          children: e.createElement(H, {
             rowKey: "canonical_app_id",
             columns: j,
             dataSource: u,
             pagination: !1,
             size: "middle",
             locale: {
-              emptyText: e.createElement(R, {
-                image: R.PRESENTED_IMAGE_SIMPLE,
+              emptyText: e.createElement(M, {
+                image: M.PRESENTED_IMAGE_SIMPLE,
                 description: a(t, "empty")
               })
             }
@@ -447,19 +471,19 @@ function ie() {
     })
   );
 }
-var O;
-(O = window.QwenPaw.chat) == null || O.approval.render(
+var L;
+(L = window.QwenPaw.chat) == null || L.approval.render(
   "computer-use",
   "computer_use_app_access",
-  se
+  oe
 );
-var L, N;
-(N = (L = window.QwenPaw).registerRoutes) == null || N.call(L, "computer-use", [
+var O, U;
+(U = (O = window.QwenPaw).registerRoutes) == null || U.call(O, "computer-use", [
   {
     path: "/plugin/computer-use",
     component: ie,
-    label: a(te(), "routeLabel"),
-    icon: "🖥️",
+    label: a(ae(), "routeLabel"),
+    icon: /* @__PURE__ */ e.createElement(D, null),
     priority: 43
   }
 ]);

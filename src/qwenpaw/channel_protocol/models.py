@@ -226,7 +226,10 @@ class AuthRequiredParams(IdentityParams):
                 is None
                 for label in host.split(".")
             ):
-                raise _error("Invalid QR scan URL", path=("scan_url",))
+                raise _error(
+                    "Invalid QR scan URL",
+                    path=("scan_url",),
+                ) from None
         return cls(**identity.__dict__, scan_url=scan_url)
 
     def to_mapping(self) -> dict[str, Any]:
@@ -1339,7 +1342,10 @@ class SendParams(IdentityParams):
                 or any(part["type"] != "text" for part in parts)
             ):
                 raise _error(
-                    "Raw text sources require an ordinary completed text event",
+                    (
+                        "Raw text sources require an ordinary completed text e"
+                        "vent"
+                    ),
                 )
             if not parts and raw_sources.error_source is None:
                 _require_send_parts(parts)

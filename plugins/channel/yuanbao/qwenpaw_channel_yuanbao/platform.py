@@ -178,8 +178,6 @@ class YuanbaoPlatform:
         async with self._effect():
             try:
                 await self._connect()
-            except asyncio.CancelledError:
-                raise
             except Exception:
                 logger.exception("yuanbao: initial connection failed")
                 await self._close_connection()
@@ -481,11 +479,15 @@ class YuanbaoPlatform:
                 pass
         return False
 
+    # Keep native variant fallbacks and mention handling in the same parser.
+    # pylint: disable-next=too-many-branches
     async def _parse_msg_body(
         self,
         msg_body: List[dict],
         is_group: bool = False,
     ) -> tuple:
+        # Preserve native event routing, media fallbacks and cleanup in SDK
+        # order.
         """Parse msg_body elements into content parts.
 
         Yuanbao only emits four element kinds in practice:
@@ -499,6 +501,8 @@ class YuanbaoPlatform:
         types historically supported by TIM are not pushed by Yuanbao;
         an ``unhandled msg_type`` warning is emitted as a safety net.
         """
+        del is_group  # Preserve the callback or fixture contract.
+        # Decode native element variants without changing their ordering.
         parts: List[Any] = []
         bot_mentioned = False
 
@@ -640,8 +644,6 @@ class YuanbaoPlatform:
                     break
                 elif msg.type == aiohttp.WSMsgType.ERROR:
                     break
-        except asyncio.CancelledError:
-            raise
         except Exception:
             logger.exception("yuanbao: receive failed")
         finally:
@@ -707,6 +709,8 @@ class YuanbaoPlatform:
             )
 
     async def _handle_chat_message(self, inbound):
+        # Retain routing, duplicate and access-control early exits.
+        # pylint: disable=R0911,R0912
         async with self._effect(), self._admission_lock:
             if not self._connected:
                 return False
@@ -835,6 +839,8 @@ class YuanbaoPlatform:
     def _write_session_map(self, *, blocking):
         # Merge only changed keys while holding an OS lock; atomic replacement
         # preserves unrelated legacy records and never truncates a bad file.
+        # Keep locked session-map validation and atomic publication together.
+        # pylint: disable=R0912
         path = self._session_map_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         if path.is_symlink():
@@ -998,8 +1004,6 @@ class YuanbaoPlatform:
                     receipt=receipt,
                 )
             return receipt
-        except asyncio.CancelledError:
-            raise
         except YuanbaoDeliveryError as exc:
             if exc.receipt is not None:
                 raise
@@ -1020,7 +1024,8 @@ class YuanbaoPlatform:
             if not future.done():
                 future.cancel()
             elif not future.cancelled():
-                future.exception()  # Consume a disconnect concurrent with write failure.
+                # Consume a disconnect concurrent with write failure.
+                future.exception()
 
     async def _send_raw_msg_body(self, route, msg_body, msg_id):
         if route["chat_type"] == "group":
@@ -1122,7 +1127,8 @@ class YuanbaoPlatform:
                         ) from exc
                     except Exception:
                         # Only preparation/upload failure can select the legacy
-                        # link fallback. Never fallback after a native send begins.
+                        # link fallback. Never fallback after a native send
+                        # begins.
                         fallback = self._media_url_fallback_text(part)
                         if fallback:
                             await send(
@@ -1173,8 +1179,6 @@ class YuanbaoPlatform:
         raw, msg_id = result
         try:
             await asyncio.wait_for(ws.send_bytes(raw), SEND_TIMEOUT)
-        except asyncio.CancelledError:
-            raise
         except Exception as exc:
             raise YuanbaoDeliveryError(
                 "YUANBAO_TYPING_WRITE_UNKNOWN",
@@ -1199,8 +1203,6 @@ class YuanbaoPlatform:
                                 route,
                                 HEARTBEAT_RUNNING,
                             )
-                    except asyncio.CancelledError:
-                        raise
                     except Exception:
                         logger.warning(
                             "yuanbao: typing keepalive stopped",
@@ -1240,8 +1242,6 @@ class YuanbaoPlatform:
                 try:
                     await self._connect()
                     return
-                except asyncio.CancelledError:
-                    raise
                 except Exception:
                     logger.exception("yuanbao: reconnect failed")
                     await self._close_connection()
@@ -1287,7 +1287,8 @@ class YuanbaoPlatform:
             task.cancel()
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
-        # Close errors propagate; the Driver keeps this resource owner on failure.
+        # Close errors propagate; the Driver keeps this resource owner on
+        # failure.
         await self._cleanup_session()
         if self._token_manager is not None:
             await self._token_manager.close()

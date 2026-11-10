@@ -911,7 +911,8 @@ async def get_chat_steering_receipt(
     receipt = await run_sync_io(store.get, chat_id, request_id)
     if receipt is None:
         raise HTTPException(
-            status_code=404, detail="Steering receipt not found",
+            status_code=404,
+            detail="Steering receipt not found",
         )
     return receipt
 
@@ -933,19 +934,63 @@ async def steer_chat(
             or existing["text"] != body.text
         ):
             raise HTTPException(
-                status_code=409, detail="Steering request ID was reused",
+                status_code=409,
+                detail="Steering request ID was reused",
             )
         return existing
     if controller is None:
         raise HTTPException(
-            status_code=409, detail="No supported active execution",
+            status_code=409,
+            detail="No supported active execution",
         )
     try:
         return await controller.submit(
-            body.expected_run_id, body.request_id, body.text,
+            body.expected_run_id,
+            body.request_id,
+            body.text,
         )
     except SteeringConflict as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/{chat_id}/context")
+async def get_chat_context(
+    chat_id: str,
+    expected_session_id: str | None = Query(None, max_length=500),
+    expected_user_id: str | None = Query(None, max_length=500),
+    workspace=Depends(get_workspace),
+):
+    """Inspect the authorized chat's saved context without running an agent.
+
+    Authentication is supplied by the existing console AuthMiddleware. Channel
+    user IDs are storage identities, not login usernames; only ChatSpec selects
+    them. Expected IDs detect stale UI requests and never grant access.
+    """
+    from ...agents.context_inspection import inspection_view
+
+    chat = await workspace.chat_manager.get_chat(chat_id)
+    if chat is None or _is_app_owned_chat(chat):
+        raise HTTPException(status_code=404, detail="Chat not found")
+    if (
+        expected_session_id is not None
+        and expected_session_id != chat.session_id
+    ) or (expected_user_id is not None and expected_user_id != chat.user_id):
+        raise HTTPException(status_code=409, detail="Chat identity changed")
+    saved = await workspace.session.get_session_state_dict(
+        chat.session_id,
+        chat.user_id,
+        chat.channel,
+    )
+    agent_data = saved.get("agent", {}) if isinstance(saved, dict) else {}
+    view = inspection_view(agent_data if isinstance(agent_data, dict) else {})
+    return {
+        "agent_id": workspace.agent_id,
+        "chat_id": chat.id,
+        "session_id": chat.session_id,
+        "user_id": chat.user_id,
+        "channel": chat.channel,
+        **view,
+    }
 
 
 @router.get("/{chat_id}", response_model=ChatHistory)

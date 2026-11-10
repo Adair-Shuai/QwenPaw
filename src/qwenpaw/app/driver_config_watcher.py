@@ -17,7 +17,6 @@ from ..drivers.storage import AsyncDriverCardStore
 
 if TYPE_CHECKING:
     from ..drivers.manager import DriverManager
-
 logger = logging.getLogger(__name__)
 
 DEFAULT_POLL_INTERVAL = 2.0
@@ -79,7 +78,6 @@ class DriverConfigWatcher:
         current = await self._card_store.snapshot()
         if current == self._last_snapshot:
             return
-
         old = self._last_snapshot
 
         removed_paths = sorted(set(old) - set(current))
@@ -111,7 +109,6 @@ class DriverConfigWatcher:
                     name,
                     exc_info=True,
                 )
-
         for name in sorted(changed_names):
             try:
                 await self._driver_manager.refresh_driver(name)
@@ -122,7 +119,6 @@ class DriverConfigWatcher:
                     name,
                     exc_info=True,
                 )
-
         # Use the snapshot that triggered this pass as the baseline. If a
         # manual edit lands while refresh_driver() is running, the next poll
         # will compare against this observed state and apply it instead of

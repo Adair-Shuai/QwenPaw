@@ -420,7 +420,7 @@ class FeishuDriver(SharedResponseDriver):
         admission = await self._admit_event(event, created)
         if admission is None:
             return
-        ack, uncertain = admission
+        ack, _unused_uncertain = admission
         for alias in (meta["session_id"], actor, meta["feishu_chat_id"]):
             if alias:
                 self._receive_ids[alias] = target

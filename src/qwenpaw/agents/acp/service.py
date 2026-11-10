@@ -85,7 +85,6 @@ class ACPService:
     ) -> dict[str, Any]:
         if restart:
             await self.close_chat_session(chat_id=chat_id, agent=agent)
-
         conversation = await self._get_or_create_session(
             chat_id=chat_id,
             agent=agent,
@@ -108,7 +107,6 @@ class ACPService:
                     f"{conversation.acp_session_id} is already "
                     "processing a turn",
                 )
-
             conversation.cwd = cwd or conversation.cwd
             conversation.client.update_cwd(conversation.cwd)
             conversation.client.start_prompt(on_message)
@@ -141,7 +139,6 @@ class ACPService:
             raise ACPSessionError(
                 f"Session {acp_session_id} is not awaiting permission resume",
             )
-
         async with conversation.turn_lock:
             conversation.client.resume_prompt(on_message)
             conversation.client.resolve_permission(option_id)
@@ -187,11 +184,9 @@ class ACPService:
         conversation = await self.get_session(chat_id, agent)
         if conversation is None:
             return False
-
         prompt_task = conversation.prompt_task
         if prompt_task is None or prompt_task.done():
             return False
-
         for _ in range(3):
             try:
                 await conversation.conn.cancel(
@@ -199,7 +194,6 @@ class ACPService:
                 )
             except Exception:
                 return False
-
             try:
                 await asyncio.wait_for(
                     asyncio.shield(prompt_task),
@@ -215,7 +209,6 @@ class ACPService:
                 break
             else:
                 break
-
         return prompt_task.done()
 
     async def _get_or_create_session(
@@ -229,7 +222,6 @@ class ACPService:
         agent_config = self._get_agent_config(agent)
         async with self._lock:
             existing = self._sessions.get((chat_id, agent))
-
         if existing is not None:
             if existing.process.returncode is None:
                 return existing
@@ -244,7 +236,6 @@ class ACPService:
                 "no bound ACP session found for runner "
                 f"'{agent}' in current chat",
             )
-
         session_cwd = cwd or "."
         conversation = await self._open_conversation(
             chat_id=chat_id,
@@ -352,7 +343,6 @@ class ACPService:
         prompt_task = conversation.prompt_task
         if prompt_task is None:
             raise ACPSessionError("ACP prompt task is missing")
-
         permission_task = asyncio.create_task(
             conversation.client.wait_for_permission_request(),
         )
@@ -373,20 +363,17 @@ class ACPService:
                     ),
                     "event": finished_event,
                 }
-
             permission_task.cancel()
             try:
                 await permission_task
             except asyncio.CancelledError:
                 pass
-
             try:
                 await prompt_task
             except Exception as exc:
                 conversation.prompt_task = None
                 await conversation.client.finish_prompt()
                 raise ACPSessionError(str(exc)) from exc
-
             conversation.prompt_task = None
             finished_event = await conversation.client.finish_prompt()
             pending_permission = conversation.client.pending_permission

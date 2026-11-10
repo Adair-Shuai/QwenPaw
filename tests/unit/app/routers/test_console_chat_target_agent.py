@@ -49,6 +49,5 @@ async def test_post_console_chat_routes_body_target(monkeypatch):
             AgentRequest(target_agent_id="reviewer"),
             request,
         )
-
     assert exc_info.value.status_code == 503
     get_agent.assert_awaited_once_with(request, agent_id="reviewer")

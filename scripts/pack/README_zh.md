@@ -23,6 +23,7 @@
 - **Node.js / npm**（用于构建 console 前端）
 - （仅 Windows）**NSIS**：`makensis` 在 PATH
 - **图标**：预生成的 `icon.ico` (Windows) 和 `icon.icns` (macOS) 已包含在 `scripts/pack/assets/` 中
+- 修改 `assets/icon.svg` 后，在安装控制台依赖的项目环境运行 `python scripts/pack/generate_brand_assets.py`，同步桌面、移动端、官网和扩展图标。`node console/scripts/verify-brand-assets.mjs` 校验源资源，前端构建与桌面打包同时核对资源摘要。
 
 ## 一键打包
 

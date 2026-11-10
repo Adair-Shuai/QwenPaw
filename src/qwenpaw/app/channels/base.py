@@ -377,6 +377,8 @@ class BaseChannel(ABC):
 
     async def _access_control_gate(self, payload: Any) -> bool:
         """Check access control. Returns True if blocked."""
+        # Keep ordered deny rules explicit before accepting channel input.
+        # pylint: disable=R0911
         # Prefer acl_sender_id (real sender, unaffected by shared session)
         if isinstance(payload, dict):
             sender_id = (
@@ -1731,7 +1733,8 @@ class BaseChannel(ABC):
         task = state.get("task")
         try:
             if task is not None:
-                # The task owns its execution deadline; joining never resets it.
+                # The task owns its execution deadline; joining never resets
+                # it.
                 deadline = state.get("deadline")
                 timeout = (
                     None

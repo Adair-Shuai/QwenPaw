@@ -2,7 +2,8 @@
 # pylint: disable=undefined-all-variable
 """Public SDK and legacy exports, resolved lazily for execution workers.
 
-The supported versioned author API is the whitelist in ``compliance.PUBLIC_API``.
+The supported versioned author API is the whitelist in
+``compliance.PUBLIC_API``.
 Legacy exports such as PluginApi and PluginLoader remain compatibility APIs.
 """
 

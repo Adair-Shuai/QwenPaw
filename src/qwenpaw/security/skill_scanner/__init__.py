@@ -431,7 +431,6 @@ def scan_skill_directory(
     mode = _get_scan_mode(cfg)
     if mode == "off":
         return None
-
     resolved = Path(skill_dir).resolve()
     effective_name = skill_name or resolved.name
 
@@ -441,7 +440,6 @@ def scan_skill_directory(
             effective_name,
         )
         return None
-
     effective_timeout = timeout if timeout is not None else _scan_timeout(cfg)
 
     cached = _get_cached_result(resolved)
@@ -466,9 +464,7 @@ def scan_skill_directory(
                 )
                 future.cancel()
                 return None
-
         _store_cached_result(resolved, result)
-
     if not result.is_safe:
         should_block = block if block is not None else (mode == "block")
         if should_block:
@@ -482,5 +478,4 @@ def scan_skill_directory(
             len(result.findings),
             result.max_severity.value,
         )
-
     return result

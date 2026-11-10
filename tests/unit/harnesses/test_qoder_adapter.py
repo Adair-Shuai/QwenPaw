@@ -609,7 +609,6 @@ async def test_qoder_approval_uses_qwenpaw_service(
             {"command": "pytest"},
             context,
         )
-
     assert result.behavior == "allow"
     summary = service.create_pending_summary.call_args.kwargs["summary"]
     assert summary.source_type == "qoder"
@@ -634,7 +633,6 @@ async def test_history_uses_persisted_qoder_session(tmp_path: Path) -> None:
         return_value=messages,
     ) as get_messages:
         history = await adapter.history("chat-1")
-
     assert history[0].text == "Recovered"
     get_messages.assert_called_once_with(
         adapter._sessions["chat-1"],
@@ -676,7 +674,6 @@ async def test_cancelling_turn_interrupts_qoder(tmp_path: Path) -> None:
 
     with pytest.raises(asyncio.CancelledError):
         await turn
-
     assert client.interrupted is True
 
 
@@ -716,6 +713,5 @@ async def test_cli_timeout_reaps_process(tmp_path: Path) -> None:
         pytest.raises(asyncio.TimeoutError),
     ):
         await adapter._run_cli("status")
-
     assert process.killed is True
     assert process.waited is True

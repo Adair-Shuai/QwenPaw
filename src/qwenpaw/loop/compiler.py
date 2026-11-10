@@ -16,7 +16,6 @@ def compile_loop_mode(
     gate_catalog = catalog or get_gate_catalog()
     for gate in config.gates:
         gate_catalog.validate_params(gate.type, gate.params)
-
     enabled = [gate for gate in config.gates if gate.enabled]
     gate_catalog.validate_exclusive_groups(
         [gate.type for gate in enabled],
@@ -35,7 +34,6 @@ def compile_loop_mode(
                 gate=gate,
             ),
         )
-
     handler = StopHandler()
     handler.replace(configured)
     return handler

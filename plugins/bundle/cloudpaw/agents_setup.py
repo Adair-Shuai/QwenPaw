@@ -33,15 +33,12 @@ def register_extra_tools(agent_id: str, extra_tools: dict[str, dict]) -> None:
         )
     except ImportError:
         return
-
     try:
         agent_cfg = load_agent_config(agent_id)
     except Exception:
         return
-
     if not agent_cfg.tools:
         agent_cfg.tools = ToolsConfig()
-
     changed = False
     _SYNC_FIELDS = (
         "enabled",
@@ -62,7 +59,6 @@ def register_extra_tools(agent_id: str, extra_tools: dict[str, dict]) -> None:
                 agent_id,
             )
             continue
-
         # Tool already exists in config (e.g. as a default builtin) — sync
         # spec fields onto the existing entry so plugin-driven overrides
         # (enabled / async_execution / icon / etc.) take effect on subsequent
@@ -82,7 +78,6 @@ def register_extra_tools(agent_id: str, extra_tools: dict[str, dict]) -> None:
                     new_value,
                     agent_id,
                 )
-
     if changed:
         try:
             save_agent_config(agent_id, agent_cfg)
@@ -108,7 +103,6 @@ def _build_acp_config(spec: dict[str, Any]) -> Any:
     except ImportError:
         logger.warning("Cannot import ACPConfig; ACP configuration skipped")
         return None
-
     acp_spec = spec["acp_agent"]
     env = {**acp_spec.get("env", {})}
 
@@ -138,7 +132,6 @@ def _inject_llm_env(env: dict[str, str]) -> None:
 
     if os.environ.get("IAC_CODE_PROVIDER") or env.get("IAC_CODE_PROVIDER"):
         return
-
     _write_qwenpaw_mode_to_settings()
     return
 
@@ -159,7 +152,6 @@ def _write_qwenpaw_mode_to_settings() -> None:
             settings = {}
     else:
         settings = {}
-
     # Write llm_source: qwenpaw
     if settings.get("llm_source") != "qwenpaw":
         settings["llm_source"] = "qwenpaw"
@@ -195,7 +187,6 @@ def ensure_builtin_agents() -> None:
             "Cannot import config modules; agent registration skipped",
         )
         return
-
     config = load_config()
 
     for spec in _AGENT_SPECS:
@@ -225,7 +216,6 @@ def ensure_builtin_agents() -> None:
             )
             save_config(config)
             logger.info("Registered agent %s at %s", agent_id, expected_ws)
-
         running_overrides = spec.get("running_overrides", {})
         running_cfg = (
             AgentsRunningConfig(**running_overrides)
@@ -261,7 +251,6 @@ def ensure_builtin_agents() -> None:
                 acp=acp_config,
                 approval_level=spec.get("approval_level", "AUTO"),
             )
-
         _initialize_agent_workspace(
             expected_ws,
             skill_names=spec["skill_names"],
@@ -273,7 +262,6 @@ def ensure_builtin_agents() -> None:
             save_agent_config(agent_id, agent_cfg)
         except ValueError:
             logger.exception("Failed to save agent.json for %s", agent_id)
-
         register_extra_tools(agent_id, spec.get("extra_tools", {}))
 
 
@@ -319,7 +307,6 @@ def _seed_persona_md_files(
     if not role_md_dir.exists():
         logger.warning("Persona pack dir not found: %s", persona_pack)
         return
-
     for md_file in role_md_dir.glob("*.md"):
         target = workspace_dir / md_file.name
         if not target.exists():
@@ -327,7 +314,6 @@ def _seed_persona_md_files(
                 shutil.copy2(md_file, target)
             except Exception as e:
                 logger.warning("Failed to copy %s: %s", md_file.name, e)
-
     try:
         from qwenpaw.agents.prompt import _get_agent_md_dir
 
@@ -365,7 +351,6 @@ def _uninstall_agent_profiles() -> None:
     except ImportError:
         logger.warning("Cannot import config modules; agent uninstall skipped")
         return
-
     config = load_config()
     changed = False
 
@@ -389,12 +374,10 @@ def _uninstall_agent_profiles() -> None:
                     )
         else:
             logger.debug("Agent %s not in profiles, skipping", agent_id)
-
     if config.agents.active_agent in agent_ids:
         config.agents.active_agent = "default"
         changed = True
         logger.info("Reset active_agent to 'default'")
-
     if changed:
         try:
             save_config(config)
@@ -415,12 +398,10 @@ def _uninstall_plugin_skills() -> None:
     except ImportError:
         logger.warning("Cannot import skill_system; skill uninstall skipped")
         return
-
     try:
         ensure_skill_pool_initialized()
     except Exception as exc:
         logger.warning("Skill pool init failed: %s", exc)
-
     pool_dir = get_skill_pool_dir()
     manifest_path = pool_dir / "skill.json"
 
@@ -436,7 +417,6 @@ def _uninstall_plugin_skills() -> None:
                     skill_name,
                     exc,
                 )
-
     if manifest_path.exists():
         try:
             manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -447,7 +427,6 @@ def _uninstall_plugin_skills() -> None:
                     if skills[skill_name].get("source") == "plugin:cloudpaw":
                         del skills[skill_name]
                         changed = True
-
             if changed:
                 manifest_path.write_text(
                     json.dumps(manifest, indent=2, ensure_ascii=False) + "\n",
@@ -474,7 +453,6 @@ def _install_workspace_skills(
         )
     except ImportError:
         return
-
     pool_dir = get_skill_pool_dir()
     ws_skills = get_workspace_skills_dir(workspace_dir)
 
@@ -497,7 +475,6 @@ def _install_workspace_skills(
                 skill_name,
                 e,
             )
-
     reconcile_workspace_manifest(workspace_dir)
 
     manifest_path = get_workspace_skill_manifest_path(workspace_dir)

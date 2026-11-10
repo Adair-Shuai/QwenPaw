@@ -96,7 +96,6 @@ def current_generation_kwargs(model_name: str | None = None) -> dict[str, Any]:
     ctx = get_current_trace()
     if ctx is None:
         return {}
-
     metadata = {
         **ctx.metadata,
         "langfuse_observation_kind": "llm",
@@ -127,7 +126,6 @@ async def agent_trace_scope(
     if client_factory is None and not is_langfuse_enabled():
         yield None
         return
-
     client = (client_factory or _langfuse_client)()
     try:
         if client is None:
@@ -173,7 +171,6 @@ async def agent_trace_scope(
                         output={"status": "error"},
                     )
                     raise
-
     finally:
         if previous is None:
             clear_current_trace()
@@ -200,7 +197,6 @@ async def tool_span(
     if client_factory is None and not is_langfuse_enabled():
         yield None
         return
-
     client = (
         (client_factory or _langfuse_client)() if ctx is not None else None
     )

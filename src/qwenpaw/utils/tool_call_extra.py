@@ -31,7 +31,6 @@ def attach_transient_tool_call_extra(
     if isinstance(block, dict):
         block[_TRANSIENT_TOOL_CALL_EXTRA_ATTR] = record
         return
-
     # ``ToolCallBlock`` rejects unknown fields through Pydantic's normal
     # setattr path. This deliberately relies on the current Pydantic model
     # layout accepting transient attributes through ``object.__setattr__``;
@@ -68,7 +67,6 @@ def collect_transient_tool_call_extras(
                     _TRANSIENT_TOOL_CALL_EXTRA_ATTR,
                     None,
                 )
-
         if (
             block_type not in ("tool_use", "tool_call")
             or not isinstance(tool_id, str)
@@ -107,7 +105,6 @@ def tool_call_extras_for_provider(
     raw = metadata.get(TOOL_CALL_EXTRAS_METADATA_KEY)
     if not isinstance(raw, dict):
         return {}
-
     matched: dict[str, Any] = {}
     for tool_id, record in raw.items():
         if (

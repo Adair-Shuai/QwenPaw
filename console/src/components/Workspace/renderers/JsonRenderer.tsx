@@ -46,7 +46,7 @@ function isMinified(text: string): boolean {
   const trimmed = text.trim();
   if (!trimmed) return false;
   // 首字符是 { 或 [ 且不含换行
-  if (!/^[{\[]/.test(trimmed)) return false;
+  if (!/^[{[]/.test(trimmed)) return false;
   const newlineCount = (trimmed.match(/\n/g) ?? []).length;
   const length = trimmed.length;
   // 平均每行 > 500 字符视为压缩

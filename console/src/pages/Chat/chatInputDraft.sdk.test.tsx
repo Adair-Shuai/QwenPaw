@@ -270,6 +270,35 @@ describe("persisted drafts with the installed SDK sender", () => {
     },
   );
 
+  it("avoids document scans during answer mutations and still restores a replaced real sender", async () => {
+    render(tree());
+    await userEvent.setup().type(composer(), "keep my draft");
+    await settled();
+    const answer = document.createElement("div");
+    document.body.append(answer);
+    const query = vi.spyOn(document, "querySelector");
+    try {
+      for (let i = 0; i < 30; i++) {
+        await act(async () => {
+          answer.textContent = `stream delta ${i}`;
+        });
+      }
+      expect(
+        query.mock.calls.filter(([selector]) => selector.includes("textarea")),
+      ).toHaveLength(0);
+      expect(composer()).toHaveValue("keep my draft");
+      fireEvent.click(screen.getByRole("button", { name: "Remount composer" }));
+      await waitFor(() => expect(composer()).toHaveValue("keep my draft"));
+      expect(
+        query.mock.calls.some(([selector]) => selector.includes("textarea")),
+      ).toBe(true);
+      expect(submitted).not.toHaveBeenCalled();
+    } finally {
+      query.mockRestore();
+      answer.remove();
+    }
+  });
+
   it("uses the current stored revision for a replacement without rewriting the input still being edited", async () => {
     render(tree());
     const user = userEvent.setup();

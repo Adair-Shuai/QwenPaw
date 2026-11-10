@@ -125,7 +125,9 @@ def _signal_exact_shutdown_event(pid: int) -> bool:
 
 
 def signal_shutdown_event(pid: int) -> bool:
-    """Signal the app, including an interpreter behind a Windows venv launcher."""
+    """Signal the app, including an interpreter behind a Windows venv
+    launcher.
+    """
     if sys.platform != "win32":
         return False
     if _signal_exact_shutdown_event(pid):

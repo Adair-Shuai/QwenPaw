@@ -55,7 +55,7 @@ const item = (id: string, extra = {}) => ({
   assignee: "李明",
   due_date: "2099-11-15",
   milestone_id: "",
-  depends_on: [],
+  depends_on: [] as string[],
   created_at: stamp,
   updated_at: stamp,
   ...extra,
@@ -63,11 +63,16 @@ const item = (id: string, extra = {}) => ({
 
 describe("UProject shipped workspace", () => {
   let Component: React.ComponentType;
-  let projects: any[],
-    items: any[],
-    milestones: any[],
-    meetings: any[],
-    briefs: any[];
+  let projects: ReturnType<typeof project>[],
+    items: ReturnType<typeof item>[],
+    milestones: Array<{
+      id: string;
+      project_id: string;
+      status: string;
+      [key: string]: unknown;
+    }>,
+    meetings: Array<{ id: string; project_id: string; [key: string]: unknown }>,
+    briefs: Array<{ id: string; project_id: string; [key: string]: unknown }>;
   let failWrite: string;
   let intercept:
     | ((route: string, init: RequestInit) => Promise<Response> | undefined)
@@ -79,7 +84,7 @@ describe("UProject shipped workspace", () => {
       headers: { "Content-Type": "application/json" },
     });
 
-  function annotated(p: any) {
+  function annotated(p: ReturnType<typeof project>) {
     const children = items.filter((i) => i.project_id === p.id);
     const open = children.filter(
       (i) => !["agreed", "deferred"].includes(i.status),
@@ -111,7 +116,7 @@ describe("UProject shipped workspace", () => {
 
   function bundle(id: string) {
     return {
-      project: annotated(projects.find((p) => p.id === id)),
+      project: annotated(projects.find((p) => p.id === id)!),
       items: items.filter((i) => i.project_id === id),
       milestones: milestones.filter((m) => m.project_id === id),
       meetings: meetings.filter((m) => m.project_id === id),
@@ -202,10 +207,7 @@ describe("UProject shipped workspace", () => {
         if (projectRoute) {
           const id = projectRoute[1];
           if (method === "PATCH")
-            Object.assign(
-              projects.find((p) => p.id === id),
-              body,
-            );
+            Object.assign(projects.find((p) => p.id === id)!, body);
           if (method === "DELETE") {
             projects = projects.filter((p) => p.id !== id);
             return response({ ok: true });
@@ -213,7 +215,7 @@ describe("UProject shipped workspace", () => {
           return response(
             method === "GET"
               ? bundle(id)
-              : { project: annotated(projects.find((p) => p.id === id)) },
+              : { project: annotated(projects.find((p) => p.id === id)!) },
           );
         }
         const addRoute =
@@ -255,8 +257,11 @@ describe("UProject shipped workspace", () => {
               : meetings;
           const row = collection.find((r) => r.id === id);
           if (method === "DELETE")
-            collection.splice(collection.indexOf(row), 1);
-          else Object.assign(row, body);
+            collection.splice(
+              collection.findIndex((candidate) => candidate === row),
+              1,
+            );
+          else Object.assign(row!, body);
           return response({
             [kind === "items"
               ? "item"
@@ -316,7 +321,10 @@ describe("UProject shipped workspace", () => {
           getApiToken: () => "",
           useTheme: () => "light",
         },
-        registerRoutes: (_id: string, routes: any[]) => {
+        registerRoutes: (
+          _id: string,
+          routes: Array<{ component: React.ComponentType }>,
+        ) => {
           Component = routes[0].component;
         },
       },
@@ -719,10 +727,9 @@ describe("UProject shipped workspace", () => {
       reader.readAsText(blobs[0]);
     });
     const exported = JSON.parse(text);
-    expect(exported.projects.map((b: any) => b.project.id)).toEqual([
-      "p1",
-      "p2",
-    ]);
+    expect(
+      exported.projects.map((b: { project: { id: string } }) => b.project.id),
+    ).toEqual(["p1", "p2"]);
     expect(exported.projects[0].items).toHaveLength(3);
     expect(exported.projects[0].meetings[0].decisions).toBe("下周提交模型边界");
     expect(exported.projects[0].briefs[0].content).toBe(

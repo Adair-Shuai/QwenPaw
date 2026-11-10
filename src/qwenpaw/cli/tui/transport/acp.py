@@ -282,7 +282,6 @@ class _TuiClient:
                 expires_at + _PERMISSION_EXPIRY_GRACE_SECONDS - time.time(),
                 0.0,
             )
-
         try:
             option_id = await asyncio.wait_for(future, timeout)
         except asyncio.TimeoutError:
@@ -307,7 +306,6 @@ class _TuiClient:
             raise
         finally:
             self._pending.pop(request_id, None)
-
         if option_id is None:
             return RequestPermissionResponse(
                 outcome=DeniedOutcome(outcome="cancelled"),
@@ -382,7 +380,6 @@ class AcpTransport:
             self._command = list(command)
         if agent:
             self._command += ["--agent", agent]
-
         self._queue: asyncio.Queue[Any] = asyncio.Queue()
         self._client = _TuiClient(self._queue)
         self._stack: AsyncExitStack | None = None

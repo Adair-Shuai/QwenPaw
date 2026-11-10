@@ -35,6 +35,11 @@ import {
 } from "@agentscope-ai/chat";
 import { useChatAnywhereOptions } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Context/ChatAnywhereOptionsContext";
 import { Avatar, Flex } from "antd";
+import {
+  UgsciAssistantVisual,
+  type AssistantVisualState,
+} from "@/components/UgsciAssistantVisual";
+import { describeExecutionStep } from "./components/executionStepModel";
 import { useTranslation } from "react-i18next";
 import { AssistantMarkdown } from "./AssistantMarkdown";
 import { useEffectiveFontSize } from "@/contexts/FontSizeContext";
@@ -103,18 +108,23 @@ const HostMessage = React.memo(function HostMessage({
         switch (item.type) {
           case AgentScopeRuntimeContentType.TEXT:
             return (
-              <AssistantMarkdown
+              <div
                 key={index}
-                messageId={`${data.id}:${index}`}
-                content={item.text}
-                cursor={item.status === AgentScopeRuntimeRunStatus.InProgress}
-                // Native text deltas omit content.status; the message owns
-                // their lifecycle. Keep the legacy Markdown cursor separate.
-                isStreaming={
-                  (item.status ?? data.status) ===
-                  AgentScopeRuntimeRunStatus.InProgress
-                }
-              />
+                data-global-search-message={data.id}
+                data-answer-quote-source={`${data.id}:${index}`}
+              >
+                <AssistantMarkdown
+                  messageId={`${data.id}:${index}`}
+                  content={item.text}
+                  cursor={item.status === AgentScopeRuntimeRunStatus.InProgress}
+                  // Native text deltas omit content.status; the message owns
+                  // their lifecycle. Keep the legacy Markdown cursor separate.
+                  isStreaming={
+                    (item.status ?? data.status) ===
+                    AgentScopeRuntimeRunStatus.InProgress
+                  }
+                />
+              </div>
             );
           case AgentScopeRuntimeContentType.REFUSAL:
             return (
@@ -248,18 +258,46 @@ function DefaultHostResponseCard({
       ? activeStepBlockIndex
       : findLastStepBlockIndex(messageBlocks);
 
+  const generating = AgentScopeRuntimeResponseBuilder.maybeGenerating(data);
+  const toolRunning =
+    generating &&
+    mergedMessages.some((message) => {
+      if (!isToolLikeResponseMessageType(message.type)) return false;
+      const { state } = describeExecutionStep(message, false);
+      return state === "running" || state === "preparing";
+    });
+  const visualState: AssistantVisualState = generating
+    ? toolRunning
+      ? "tool-running"
+      : "thinking"
+    : data.status === "failed" || data.error
+    ? "failed"
+    : data.status === "canceled" || data.status === "rejected"
+    ? "ready"
+    : "completed";
+
   if (
     !messages.length &&
     AgentScopeRuntimeResponseBuilder.maybeGenerating(data)
   ) {
-    return <Bubble.Spin />;
+    return (
+      <Flex align="center" gap={8} role="status">
+        <UgsciAssistantVisual state="thinking" size={32} />
+        <span>{t("chat.execution.thinking")}</span>
+      </Flex>
+    );
   }
 
   return (
     <>
       {avatar ? (
         <Flex align="center" gap={8} style={{ marginBottom: 8 }}>
-          <Avatar src={avatar} />
+          {typeof avatar === "string" &&
+          avatar.endsWith("ugsci-mono/avatars/assistant-256.png") ? (
+            <UgsciAssistantVisual state={visualState} size={32} />
+          ) : (
+            <Avatar src={avatar} />
+          )}
           {nickNode ? <span>{nickNode}</span> : null}
         </Flex>
       ) : null}
@@ -320,6 +358,9 @@ function DefaultHostResponseCard({
               ).client_message_id
             }
             completed
+            includeObservedChanges={mergedMessages.some((message) =>
+              isToolLikeResponseMessageType(message.type),
+            )}
             fallback={
               <ResponseArtifactList messages={messages} scope={fileScope} />
             }
@@ -486,15 +527,25 @@ export function HostResponseCard(props: {
   data: ChatResponseData;
   isLast?: boolean;
 }) {
+  // A transport/configuration error can arrive before the SDK finalizes its
+  // provisional response. Error evidence is terminal for every host consumer.
+  const error = props.data.error;
+  const data = useMemo(
+    () =>
+      error
+        ? { ...props.data, status: AgentScopeRuntimeRunStatus.Failed }
+        : props.data,
+    [props.data, error],
+  );
   // Tool cards cannot tell a running call from one whose turn was interrupted
   // because both lack a result message. Wrapping the whole card publishes the
   // turn state without re-rendering its body: the memoized content bails out
   // on unchanged props.
   return (
-    <ToolCallTurnBoundary
-      data={props.data as unknown as IAgentScopeRuntimeResponse}
-    >
-      <MemoizedHostResponseCard {...props} />
+    <ToolCallTurnBoundary data={data as unknown as IAgentScopeRuntimeResponse}>
+      <div data-global-search-message={props.data.id || props.id}>
+        <MemoizedHostResponseCard {...props} data={data} />
+      </div>
     </ToolCallTurnBoundary>
   );
 }

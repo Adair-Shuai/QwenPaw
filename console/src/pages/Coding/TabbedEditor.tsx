@@ -13,6 +13,7 @@
 
 import {
   useCallback,
+  useMemo,
   useEffect,
   useRef,
   useState,
@@ -100,6 +101,7 @@ interface TabbedEditorProps {
   onDownloadFile?: (path: string) => Promise<void>;
   onRevealFile?: (path: string) => Promise<void>;
   headerActions?: ReactNode;
+  headerLeading?: ReactNode;
   chatId?: string;
   projectDirOverride?: string;
   /** Keep editor state while suspending resource-heavy previews in hidden panels. */
@@ -222,6 +224,7 @@ export default function TabbedEditor({
   onDownloadFile,
   onRevealFile,
   headerActions,
+  headerLeading,
   chatId,
   projectDirOverride,
   previewActive = true,
@@ -404,10 +407,13 @@ export default function TabbedEditor({
   activeDisplayPathRef.current = activeDisplayPath;
   const activeDiffRaw = activeTabPath ? pendingDiffs[activeTabPath] : undefined;
   // Only render the diff editor once the modified side has been hydrated.
-  const activeDiff =
-    activeDiffRaw && activeDiffRaw.modified !== null
-      ? { original: activeDiffRaw.original, modified: activeDiffRaw.modified }
-      : undefined;
+  const activeDiff = useMemo(
+    () =>
+      activeDiffRaw && activeDiffRaw.modified !== null
+        ? { original: activeDiffRaw.original, modified: activeDiffRaw.modified }
+        : undefined,
+    [activeDiffRaw],
+  );
   const activeRenderedContent =
     activeDiff?.modified ?? activeTab?.content ?? "";
 
@@ -526,7 +532,7 @@ export default function TabbedEditor({
     const editor =
       diffEditorRef.current?.getModifiedEditor() ?? editorRef.current;
     if (editor) revealNavigation(editor);
-  }, [navigation, revealNavigation]);
+  }, [activeTabPath, navigation, revealNavigation]);
 
   /**
    * Cmd/Ctrl+C in any of our editors (normal or diff-modified): let
@@ -1025,8 +1031,11 @@ export default function TabbedEditor({
   if (tabs.length === 0) {
     return (
       <div className={styles.wrap}>
-        {headerActions && (
+        {(headerActions || headerLeading) && (
           <div className={styles.tabBar}>
+            {headerLeading && (
+              <div className={styles.tabBarLeading}>{headerLeading}</div>
+            )}
             <div className={styles.tabViewport} />
             <div className={styles.tabBarActions}>{headerActions}</div>
           </div>
@@ -1104,6 +1113,9 @@ export default function TabbedEditor({
     <div className={styles.wrap} onKeyDown={handleKeyDown}>
       {/* ── Tab bar ────────────────────────────────────────────────────── */}
       <div className={styles.tabBar}>
+        {headerLeading && (
+          <div className={styles.tabBarLeading}>{headerLeading}</div>
+        )}
         <div className={styles.tabViewport} ref={tabViewportRef} role="tablist">
           <div className={styles.tabRail}>
             {tabs.map((tab, index) => {

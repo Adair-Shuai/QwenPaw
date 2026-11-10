@@ -136,7 +136,6 @@ def resolve_switch_pet_path(
             return direct
         except ValueError:
             pass
-
     for child in sorted(pets_root.iterdir(), key=lambda p: p.name.lower()):
         if not child.is_dir():
             continue
@@ -154,7 +153,6 @@ def resolve_switch_pet_path(
                 return child.resolve()
             except ValueError:
                 continue
-
     raise ValueError(
         f"no pet folder or pet.json id matching {id_s!r} under {pets_root}",
     )

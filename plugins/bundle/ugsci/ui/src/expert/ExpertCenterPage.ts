@@ -1,3 +1,4 @@
+import { ExpertIcon, ExpertTeamIcon, WorkflowIcon } from "../navigationIcons";
 import { EXPERT_STYLES } from "./expertStyles";
 import {
   EXPERT_CATEGORIES,
@@ -82,6 +83,7 @@ import {
   type ExpertTeam,
 } from "../team/model";
 import { ExpertAvatar, TeamAvatar } from "../components/avatars";
+import { ExpertAvatarModal } from "./avatar/ExpertAvatarModal";
 import { KnowledgeBaseTab, PresetPromptsTab } from "./expertTabs";
 import { CollaborationWorkflowSection } from "../workflow/CollaborationWorkflowSection";
 
@@ -143,13 +145,8 @@ export function ExpertCenterPage() {
     Modal,
     Typography,
   } = getHost().antd;
-  const {
-    ReloadOutlined,
-    PlusOutlined,
-    SearchOutlined,
-    TeamOutlined,
-    UserOutlined,
-  } = getHost().antdIcons || {};
+  const { ReloadOutlined, PlusOutlined, SearchOutlined } =
+    getHost().antdIcons || {};
   const { Text, Paragraph } = Typography;
 
   const [experts, setExperts] = useState<ExpertData[]>([]);
@@ -167,6 +164,7 @@ export function ExpertCenterPage() {
   const [teamLaunching, setTeamLaunching] = useState(false);
   const [configModalOpen, setConfigModalOpen] = useState(false);
   const [configExpert, setConfigExpert] = useState<ExpertData | null>(null);
+  const [avatarExpert, setAvatarExpert] = useState<ExpertData | null>(null);
 
   // Cache the raw agent list for team matching
   const [rawAgents, setRawAgents] = useState<AgentSummary[]>([]);
@@ -397,9 +395,7 @@ export function ExpertCenterPage() {
       label: React.createElement(
         "span",
         { style: { display: "flex", alignItems: "center", gap: 6 } },
-        UserOutlined
-          ? React.createElement(UserOutlined, { style: { fontSize: 14 } })
-          : null,
+        React.createElement(ExpertIcon, { size: 16 }),
         "专家",
       ),
       children: React.createElement(
@@ -501,6 +497,7 @@ export function ExpertCenterPage() {
                     onClick: () => handleCardClick(expert),
                     onSummon: () => handleSummonExpert(expert),
                     onConfigure: () => handleConfigureExpert(expert),
+                    onEditAvatar: () => setAvatarExpert(expert),
                   }),
                 ),
               ),
@@ -512,9 +509,7 @@ export function ExpertCenterPage() {
       label: React.createElement(
         "span",
         { style: { display: "flex", alignItems: "center", gap: 6 } },
-        TeamOutlined
-          ? React.createElement(TeamOutlined, { style: { fontSize: 14 } })
-          : null,
+        React.createElement(ExpertTeamIcon, { size: 16 }),
         "专家团",
       ),
       children: React.createElement(ExpertTeamSection, {
@@ -527,11 +522,7 @@ export function ExpertCenterPage() {
       label: React.createElement(
         "span",
         { style: { display: "flex", alignItems: "center", gap: 6 } },
-        getHost().antdIcons?.ApartmentOutlined
-          ? React.createElement(getHost().antdIcons.ApartmentOutlined, {
-              style: { fontSize: 14 },
-            })
-          : null,
+        React.createElement(WorkflowIcon, { size: 16 }),
         "协作工作流",
       ),
       children: React.createElement(CollaborationWorkflowSection),
@@ -590,7 +581,6 @@ export function ExpertCenterPage() {
       expert: activeExpert,
       open: drawerOpen,
       onClose: () => setDrawerOpen(false),
-      onRefresh: () => loadExperts(),
     }),
     // Template Modal
     React.createElement(ExpertTemplateModal, {
@@ -599,6 +589,15 @@ export function ExpertCenterPage() {
       onCreated: () => loadExperts(),
     }),
     // Config Modal (gear icon)
+    avatarExpert &&
+      React.createElement(ExpertAvatarModal, {
+        key: avatarExpert.agent.id,
+        expert: avatarExpert,
+        onClose: () => setAvatarExpert(null),
+        onSaved: () => {
+          void loadExperts();
+        },
+      }),
     React.createElement(ExpertConfigModal, {
       expert: configExpert,
       open: configModalOpen,

@@ -211,7 +211,6 @@ async def test_transient_replace_is_atomic_on_init_failure(
             "scope-a",
             [_card("new"), _card("broken", fail=True)],
         )
-
     names = {
         item.driver_name
         for item in await manager.list_capabilities(
@@ -349,7 +348,6 @@ async def test_persistent_registration_rejects_transient_name(
 
     with pytest.raises(ValueError, match="collides with a transient"):
         await manager.register_driver(_card("shared"))
-
     assert await manager.card_store.stored_path("shared") is None
     capabilities = await manager.list_capabilities(
         request_context=_scope_context("scope-a"),
@@ -368,7 +366,6 @@ async def test_transient_registration_rejects_disabled_persistent_name(
             "scope-a",
             [_card("shared")],
         )
-
     assert await manager.card_store.stored_path("shared") is not None
     assert (
         await manager.list_capabilities(

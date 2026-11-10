@@ -273,6 +273,9 @@ class VoicePlatform:  # pylint: disable=too-many-instance-attributes
         event_queue_size: int = _DEFAULT_EVENT_QUEUE_SIZE,
         shutdown_timeout_s: float = _DEFAULT_SHUTDOWN_TIMEOUT_S,
     ) -> None:
+        # Preserve native event routing, media fallbacks and cleanup in SDK
+        # order.
+        # pylint: disable=R0915
         if token_ttl_s <= 0:
             raise ValueError("Voice token_ttl_s must be positive")
         if max_tokens <= 0:
@@ -903,6 +906,9 @@ class VoicePlatform:  # pylint: disable=too-many-instance-attributes
             return
 
     def set_forwarding(self, value: object) -> None:
+        # Keep the existing URL, identity and value validation as one checked
+        # contract.
+        # pylint: disable=R0916
         """Consume the trusted endpoint ACK; never infer a host URL/port."""
         fields = {
             "route_query_key",
@@ -946,6 +952,9 @@ class VoicePlatform:  # pylint: disable=too-many-instance-attributes
         )
 
     def _forwarded_url(self, request: web.Request) -> str | None:
+        # Keep the existing URL, identity and value validation as one checked
+        # contract.
+        # pylint: disable=R0911
         binding = self._forwarding
         if binding is None:
             return None
@@ -1478,6 +1487,9 @@ class VoicePlatform:  # pylint: disable=too-many-instance-attributes
                 self._bindings.pop(connection.session_binding, None)
 
     def connection(self, binding: str) -> _Connection:
+        # Keep the existing URL, identity and value validation as one checked
+        # contract.
+        # pylint: disable=R0916
         connection = self._bindings.get(binding)
         if (
             connection is None

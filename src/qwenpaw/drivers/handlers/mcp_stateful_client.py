@@ -237,13 +237,18 @@ class _MCPClientMixin:
                         stack,
                     )
 
-                    self.session = ClientSession(read_stream, write_stream)
+                    self.session = ClientSession(
+                        read_stream,
+                        write_stream,
+                        message_handler=self._handle_server_message,
+                    )
                     await stack.enter_async_context(self.session)
                     await self.session.initialize()
 
                     self._session_closed = asyncio.Event()
                     self.is_connected = True
                     self._ready_event.set()
+                    self._notify_tools_changed()
                     # Reset backoff & circuit breaker on success
                     self._reconnect_delay = 1.0
                     self._consecutive_failures = 0
@@ -463,6 +468,23 @@ class _MCPClientMixin:
     # Public API
     # ------------------------------------------------------------------
 
+    def set_tools_changed_callback(self, callback) -> None:
+        """Subscribe the directory owner to reconnects and list changes."""
+        self._tools_changed_callback = callback
+
+    def _notify_tools_changed(self) -> None:
+        callback = getattr(self, "_tools_changed_callback", None)
+        if callback is not None:
+            callback()
+
+    async def _handle_server_message(self, message) -> None:
+        notification = getattr(message, "root", None)
+        if (
+            getattr(notification, "method", None)
+            == "notifications/tools/list_changed"
+        ):
+            self._notify_tools_changed()
+
     async def list_tools(self):  # noqa: C901 pylint: disable=too-many-branches
         """Return all tools available from the MCP server.
 
@@ -486,6 +508,7 @@ class _MCPClientMixin:
                 or if the reconnect does not complete within
                 ``_LIST_TOOLS_RECONNECT_WAIT`` seconds.
         """
+        # pylint: disable=too-many-statements
         if self._circuit_open:
             raise self._circuit_open_error()
 
@@ -519,6 +542,21 @@ class _MCPClientMixin:
                 break
             try:
                 res = await self._await_rpc(session.list_tools(), closed)
+                tools = list(res.tools)
+                seen_cursors = set()
+                cursor = getattr(res, "nextCursor", None)
+                while cursor:
+                    if cursor in seen_cursors or len(seen_cursors) >= 50:
+                        raise RuntimeError(
+                            "MCP tool pagination did not terminate",
+                        )
+                    seen_cursors.add(cursor)
+                    res = await self._await_rpc(
+                        session.list_tools(cursor=cursor),
+                        closed,
+                    )
+                    tools.extend(res.tools)
+                    cursor = getattr(res, "nextCursor", None)
             except Exception as exc:
                 last_exc = exc
                 gone = isinstance(exc, _SessionGoneError)
@@ -540,8 +578,8 @@ class _MCPClientMixin:
                         raise self._not_connected_error() from exc
                     continue
                 break
-            self._cached_tools = res.tools
-            return res.tools
+            self._cached_tools = tools
+            return tools
 
         cached = self._cached_tools_if_disconnected()
         if cached is not None:

@@ -360,7 +360,6 @@ async def test_acp_new_session_rolls_back_failed_mcp_registration(
             cwd=str(tmp_path),
             mcp_servers=[_stdio_server()],
         )
-
     assert not agent._sessions
     assert len(workspace.driver_manager.removals) == 1
 
@@ -384,7 +383,6 @@ async def test_acp_load_session_restores_metadata_on_mcp_failure(
             session_id="session-1",
             mcp_servers=[_stdio_server()],
         )
-
     assert agent._sessions["session-1"] == previous
 
 
@@ -401,7 +399,6 @@ async def test_acp_resume_session_removes_new_metadata_on_mcp_failure(
             session_id="session-1",
             mcp_servers=[_stdio_server()],
         )
-
     assert not agent._sessions
 
 

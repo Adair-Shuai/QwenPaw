@@ -116,14 +116,12 @@ def _parse_selected_files(raw: str) -> tuple[str, ...] | None:
         elif token.startswith("--files="):
             saw_files = True
             values.append(token.split("=", 1)[1])
-
         for value in values:
             for part in _strip_quotes(value).split(","):
                 path = part.strip()
                 if path and path not in selected:
                     selected.append(path)
         index += 1
-
     if saw_files and not selected:
         raise CheckpointError(
             "`--files` requires at least one workspace-relative path.",
@@ -302,14 +300,12 @@ class CheckpointCommandHandler(BaseControlCommandHandler):
             raise CheckpointError(
                 "`--dry-run` and `--confirm` cannot be used together.",
             )
-
         target = _first_positional(raw)
         if not target:
             raise CheckpointError(
                 "Usage: /checkpoint restore <N | snap_name | sha> "
                 "[--dry-run | --confirm]",
             )
-
         if include_files and selected_files is None and not dry_run:
             memory_flag = " --include-memory" if include_memory else ""
             if confirm:
@@ -327,7 +323,6 @@ class CheckpointCommandHandler(BaseControlCommandHandler):
                 f"- Apply: `/checkpoint restore {target}{memory_flag} "
                 "--include-files --files <path...> --confirm`"
             )
-
         if not dry_run and not confirm:
             extra_flags = ""
             if include_memory:
@@ -350,7 +345,6 @@ class CheckpointCommandHandler(BaseControlCommandHandler):
                 "--confirm`\n\n"
                 "A safety checkpoint is created before applying changes."
             )
-
         engine = await RUNTIME.get_for_workspace_async(context.workspace)
         chan = context_channel(context)
         if include_files:

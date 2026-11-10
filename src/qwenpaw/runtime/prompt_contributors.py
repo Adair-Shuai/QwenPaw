@@ -231,7 +231,13 @@ class WorkspacePromptFilesContributor(SyncPromptContributor):
                 content = self._process_agents_md(content, extras)
             if not content:
                 continue
-            parts.append(f"# {filename}\n\n{content}")
+            rendered = f"# {filename}\n\n{content}"
+            parts.append(rendered)
+            # Request-local provenance; the final model-call observer verifies
+            # this exact fragment survived assembly and middleware processing.
+            extras.setdefault("context_inspection_prompt_sources", []).append(
+                {"label": filename, "path": filename, "content": rendered},
+            )
         return "\n\n".join(parts) or None
 
     @staticmethod
@@ -443,6 +449,30 @@ class EnvContextContributor(SyncPromptContributor):
         return extras.get("env_context") or None
 
 
+class FileReferenceContributor(SyncPromptContributor):
+    """Describe file links supported by the chat's native file viewer."""
+
+    name = "file_references"
+    priority = 85
+
+    def contribute_sync(self, ctx: "HookContext") -> str:
+        return (
+            "### File references\n\n"
+            "When referring to a local file in your answer, use a Markdown "
+            "link with a short descriptive label or filename. Use a path "
+            "relative to the primary project directory, or an absolute path "
+            "for another bound directory. Use forward slashes on Windows. "
+            "Examples: [app.py](src/app.py), "
+            "[implementation](src/app.py#L12), "
+            "[relevant code](src/app.py#L12-L18). "
+            "Enclose destinations containing spaces in angle brackets, "
+            "for example [notes](<docs/research notes.md#L8>). "
+            "Only cite paths and line numbers verified from available file "
+            "content or tool results. Omit line numbers when unknown. "
+            "File links open the file viewer in the user's current session."
+        )
+
+
 class DriverPolicyHintContributor(SyncPromptContributor):
     """Append request-time Driver policy guidance when tools are exposed."""
 
@@ -503,6 +533,7 @@ _ALL_CONTRIBUTORS = (
     MultimodalHintContributor,
     DirectoryContextContributor,
     CodingModeContributor,
+    FileReferenceContributor,
     ScrollContextContributor,
     DriverPolicyHintContributor,
     EnvContextContributor,
@@ -527,6 +558,7 @@ __all__ = [
     "MultimodalHintContributor",
     "DirectoryContextContributor",
     "CodingModeContributor",
+    "FileReferenceContributor",
     "ScrollContextContributor",
     "DriverPolicyHintContributor",
     "EnvContextContributor",

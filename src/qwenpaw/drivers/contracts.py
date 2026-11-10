@@ -181,7 +181,6 @@ def _validate_driver_policy(card: DriverCard) -> None:
             f"DriverCard {card.name} has invalid default policy effect: "
             f"{card.policy.default_effect}",
         )
-
     for rule in card.policy.rules:
         if rule.effect not in ALLOWED_POLICY_EFFECTS:
             raise DriverCardError(

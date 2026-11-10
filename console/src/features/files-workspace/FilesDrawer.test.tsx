@@ -1,8 +1,15 @@
 import { renderWithProviders } from "@/test/common_setup";
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import FilesDrawer from "./FilesDrawer";
+import i18n from "../../i18n";
 import { filesDrawerReducer } from "./filesDrawerState";
 import { workspaceApi } from "../../api/modules/workspace";
 import { agentsApi } from "../../api/modules/agents";
@@ -144,6 +151,52 @@ describe("FilesDrawer", () => {
     agentId: "default",
     sessionId: "interactions",
   };
+
+  it("keeps seven labelled side activities and docked controls available with an empty workspace", async () => {
+    const dispatch = vi.fn();
+    renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={dispatch}
+        scope={{ ...interactionScope, sessionId: "layout-empty" }}
+      />,
+    );
+    await screen.findByTestId("file-navigator", {}, { timeout: 12_000 });
+    const rail = screen.getByRole("navigation", {
+      name: i18n.t("workbench.activities"),
+    });
+    const activities = [
+      "files",
+      "interactions",
+      "browser",
+      "agents",
+      "genui",
+      "compute",
+      "simulation",
+    ];
+    expect(within(rail).getAllByRole("button")).toHaveLength(7);
+    for (const activity of activities) {
+      const name = i18n.t(`workbench.activity.${activity}`);
+      const button = within(rail).getByRole("button", { name });
+      expect(button).toHaveTextContent(
+        i18n.t(`workbench.activityShort.${activity}`),
+      );
+      expect(button).toHaveAttribute("title", name);
+    }
+    const drawer = screen.getByRole("region", { name: /files|文件/i });
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("files.maximizeWorkspace") }),
+    );
+    expect(drawer.className).toContain("drawerMaximized");
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("files.restoreWorkspace") }),
+    );
+    expect(drawer.className).not.toContain("drawerMaximized");
+    const close = screen.getByRole("button", { name: i18n.t("common.close") });
+    expect(close.closest('[class*="tabBar"]')).not.toBeNull();
+    fireEvent.click(close);
+    expect(dispatch).toHaveBeenCalledWith({ type: "CLOSE" });
+  });
 
   it("exposes its DOM element to the open and close animation container", () => {
     const ref = createRef<HTMLElement>();
@@ -336,7 +389,11 @@ describe("FilesDrawer", () => {
     });
     consumed.preventDefault();
     fireEvent(drawer, consumed);
-    fireEvent.click(screen.getByRole("button", { name: "浏览器" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: i18n.t("workbench.activity.browser"),
+      }),
+    );
     fireEvent.keyDown(
       screen.getByRole("textbox", { name: /浏览器地址|Browser address/ }),
       { key: "Escape" },
@@ -400,10 +457,11 @@ describe("FilesDrawer", () => {
       />,
     );
     await waitFor(() => expect(workspaceApi.loadFileText).toHaveBeenCalled());
-    expect(screen.getByRole("button", { name: "计算轨道" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(
+      screen.getByRole("button", {
+        name: i18n.t("workbench.activity.compute"),
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
   });
 
   it("replaces the current tool immediately when a file is opened", async () => {
@@ -416,7 +474,11 @@ describe("FilesDrawer", () => {
         scope={scope}
       />,
     );
-    fireEvent.click(screen.getByRole("button", { name: "浏览器" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: i18n.t("workbench.activity.browser"),
+      }),
+    );
     vi.mocked(workspaceApi.loadFileText).mockImplementationOnce(
       () => new Promise(() => {}),
     );
@@ -431,10 +493,9 @@ describe("FilesDrawer", () => {
         scope={scope}
       />,
     );
-    expect(screen.getByRole("button", { name: "文件与预览" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(
+      screen.getByRole("button", { name: i18n.t("workbench.activity.files") }),
+    ).toHaveAttribute("aria-pressed", "true");
     await waitFor(() =>
       expect(workspaceApi.loadFileText).toHaveBeenCalledWith(
         "slow.txt",
@@ -519,7 +580,11 @@ describe("FilesDrawer", () => {
       scope: interactionScope,
     };
     const { rerender } = renderWithProviders(<FilesDrawer {...props} />);
-    fireEvent.click(screen.getByRole("button", { name: "浏览器" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: i18n.t("workbench.activity.browser"),
+      }),
+    );
     const address = screen.getByRole("textbox", {
       name: /浏览器地址|Browser address/,
     });
@@ -532,9 +597,15 @@ describe("FilesDrawer", () => {
     }
     const frame = screen.getByTitle(/工作台浏览器|Workbench browser/);
     fireEvent.change(address, { target: { value: "unfinished address" } });
-    fireEvent.click(screen.getByRole("button", { name: "文件与预览" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.activity.files") }),
+    );
     expect(frame).not.toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "浏览器" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: i18n.t("workbench.activity.browser"),
+      }),
+    );
     expect(screen.getByTitle(/工作台浏览器|Workbench browser/)).toBe(frame);
     expect(address).toHaveValue("unfinished address");
     fireEvent.click(screen.getByRole("button", { name: /^(后退|Back)$/ }));
@@ -581,7 +652,7 @@ describe("FilesDrawer", () => {
 
   it("restores per-style file widths without replacing the active editor or its unsaved draft", async () => {
     localStorage.setItem("qwenpaw-files-preview-width", "480");
-    localStorage.setItem("qwenpaw-files-preview-width:openai", "600");
+    localStorage.setItem("qwenpaw-files-preview-width:deepseek", "600");
     function Controls() {
       const { setPageStyle } = useTheme();
       return (
@@ -618,10 +689,8 @@ describe("FilesDrawer", () => {
     });
     const drawer = screen.getByRole("region", { name: /files|文件/i });
     expect(drawer).toHaveStyle({ width: "480px" });
-    fireEvent.click(screen.getByRole("button", { name: "openai" }));
-    expect(drawer).toHaveStyle({ width: "600px" });
     fireEvent.click(screen.getByRole("button", { name: "deepseek" }));
-    expect(drawer.style.width).toBe("");
+    expect(drawer).toHaveStyle({ width: "600px" });
     fireEvent.click(screen.getByRole("button", { name: "classic" }));
     expect(drawer).toHaveStyle({ width: "480px" });
     expect(screen.getByTestId("monaco-editor")).toBe(editing);
@@ -650,7 +719,11 @@ describe("FilesDrawer", () => {
         screen.queryByText("Registered computation"),
       ).not.toBeInTheDocument();
       expect(screen.getByText(/暂无推导记录/)).toBeVisible();
-      fireEvent.click(screen.getByRole("button", { name: "文件与预览" }));
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: i18n.t("workbench.activity.files"),
+        }),
+      );
       expect(await screen.findByTestId("file-navigator")).toBeVisible();
     } finally {
       act(() => registration.dispose());
@@ -686,9 +759,17 @@ describe("FilesDrawer", () => {
       await waitFor(() =>
         expect(screen.getByText("Live simulation view")).toBeVisible(),
       );
-      fireEvent.click(screen.getByRole("button", { name: "文件与预览" }));
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: i18n.t("workbench.activity.files"),
+        }),
+      );
       expect(released).toHaveBeenCalledOnce();
-      fireEvent.click(screen.getByRole("button", { name: "数模监测" }));
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: i18n.t("workbench.activity.simulation"),
+        }),
+      );
       await waitFor(() =>
         expect(screen.getByText("Live simulation view")).toBeVisible(),
       );
@@ -892,8 +973,14 @@ describe("FilesDrawer", () => {
       "true",
     );
     expect(screen.getByRole("tab", { name: /second.txt/ })).toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "浏览器" }));
-    fireEvent.click(screen.getByRole("button", { name: "文件与预览" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: i18n.t("workbench.activity.browser"),
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.activity.files") }),
+    );
     expect(screen.getByRole("tab", { name: /first.txt/ })).toHaveAttribute(
       "aria-selected",
       "true",
@@ -952,7 +1039,9 @@ describe("FilesDrawer", () => {
       />,
     );
 
-    fireEvent.click(screen.getByRole("button", { name: "智能体进程" }));
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.activity.agents") }),
+    );
     expect((await screen.findAllByText("研究报告")).length).toBeGreaterThan(0);
   });
 
@@ -1302,10 +1391,11 @@ describe("FilesDrawer", () => {
         />,
       );
       await waitFor(() =>
-        expect(screen.getByRole("button", { name: "浏览器" })).toHaveAttribute(
-          "aria-pressed",
-          "true",
-        ),
+        expect(
+          screen.getByRole("button", {
+            name: i18n.t("workbench.activity.browser"),
+          }),
+        ).toHaveAttribute("aria-pressed", "true"),
       );
       const frame = await findHtmlFrame(path);
       expect(frame).toBeVisible();
@@ -1326,7 +1416,11 @@ describe("FilesDrawer", () => {
       });
       fireEvent.click(screen.getByRole("button", { name: "GenUI" }));
       expect(frame).not.toBeVisible();
-      fireEvent.click(screen.getByRole("button", { name: "浏览器" }));
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: i18n.t("workbench.activity.browser"),
+        }),
+      );
       expect(
         screen
           .getAllByTitle(path)
@@ -1382,10 +1476,11 @@ describe("FilesDrawer", () => {
       }),
     );
     await waitFor(() =>
-      expect(screen.getByRole("button", { name: "浏览器" })).toHaveAttribute(
-        "aria-pressed",
-        "true",
-      ),
+      expect(
+        screen.getByRole("button", {
+          name: i18n.t("workbench.activity.browser"),
+        }),
+      ).toHaveAttribute("aria-pressed", "true"),
     );
     const frame = await findHtmlFrame("draft.html");
     expect(frame.getAttribute("srcdoc")).toContain("Unsaved webpage");
@@ -1443,7 +1538,11 @@ describe("FilesDrawer", () => {
       "title",
       "GenUI",
     );
-    fireEvent.click(screen.getByRole("button", { name: "浏览器" }));
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: i18n.t("workbench.activity.browser"),
+      }),
+    );
     expect((await findHtmlFrame("slow.html")).getAttribute("srcdoc")).toContain(
       "Slow web page",
     );
@@ -1495,10 +1594,11 @@ describe("FilesDrawer", () => {
       />,
     );
     const frame = await findHtmlFrame("index.html");
-    expect(screen.getByRole("button", { name: "浏览器" })).toHaveAttribute(
-      "aria-pressed",
-      "true",
-    );
+    expect(
+      screen.getByRole("button", {
+        name: i18n.t("workbench.activity.browser"),
+      }),
+    ).toHaveAttribute("aria-pressed", "true");
     expect(getArchive).toHaveBeenCalledWith(
       expect.objectContaining({
         sessionId: "runtime-original",

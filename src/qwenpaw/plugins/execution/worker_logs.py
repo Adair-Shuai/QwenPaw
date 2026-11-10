@@ -56,7 +56,8 @@ def _credentials(text: str) -> str:
 
 
 def _clean(text: str) -> str:
-    # This boundary handles recognizable credentials, not arbitrary SDK secrets.
+    # This boundary handles recognizable credentials, not arbitrary SDK
+    # secrets.
     text = _CONTROLS.sub("", _ANSI.sub("", text)).replace("\n", " ")
     text = _HEADERS.sub(r"\1[REDACTED]", text)
     text = _TELEGRAM.sub(r"\1[REDACTED]", text)

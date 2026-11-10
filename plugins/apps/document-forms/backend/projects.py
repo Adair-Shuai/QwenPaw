@@ -894,7 +894,7 @@ templates."""
                 continue
             try:
                 approved_at = date.fromisoformat(
-                    approval.get("approved_at", "")
+                    approval.get("approved_at", ""),
                 )
                 budget = next(
                     f["value"]
@@ -937,9 +937,6 @@ templates."""
             backup.write_bytes(source.read_bytes())
         for field in fixed:
             if field["key"] in old and not field.get("read_only"):
-                previous = next(
-                    f for f in case["fields"] if f["key"] == field["key"]
-                )
                 field["value"] = old[field["key"]]
                 if field.get("linked_parts"):
                     field.pop("linked_template", None)
@@ -1008,7 +1005,7 @@ form."""
             )
             backups = sorted(
                 history.glob(
-                    f"{case['id']}_before_selection_controls_r*.json"
+                    f"{case['id']}_before_selection_controls_r*.json",
                 ),
                 key=lambda path: int(path.stem.rsplit("r", 1)[-1]),
                 reverse=True,
@@ -1898,7 +1895,9 @@ def register_project_routes(router, scope, lock, store):
         workbook: UploadFile = File(...),
         root=Depends(scope),
     ):
-        """Preview known shared values; saving uses the normal profile route."""
+        """Preview known shared values; saving uses the normal profile
+        route.
+        """
         with lock:
             project = store.load(root, project_id)
             store.check(project, revision)
@@ -2073,6 +2072,8 @@ def register_material_routes(router, scope, lock, store):
 
 
 def register_file_routes(router, scope, lock, store):
+    # Keep related file handlers under the same scoped project store.
+    # pylint: disable=R0915
     host = store.host
 
     @router.post(
@@ -2139,7 +2140,10 @@ def register_file_routes(router, scope, lock, store):
             return store.public(root, project)
 
     @router.delete(
-        "/projects/{project_id}/stages/{stage_id}/materials/{material_id}/files/{file_id}",
+        (
+            "/projects/{project_id}/stages/{stage_id}/materials/{material_id}/"
+            "files/{file_id}"
+        ),
     )
     def delete_file(
         project_id: str,
@@ -2155,7 +2159,8 @@ def register_file_routes(router, scope, lock, store):
             stage, material = store.material(project, stage_id, material_id)
             store.ensure_file_versions(material)
             file = next(
-                (f for f in material["files"] if f["id"] == file_id), None
+                (f for f in material["files"] if f["id"] == file_id),
+                None,
             )
             if not file:
                 raise HTTPException(404, "材料文件不存在")
@@ -2176,7 +2181,10 @@ def register_file_routes(router, scope, lock, store):
             return store.public(root, project)
 
     @router.post(
-        "/projects/{project_id}/stages/{stage_id}/materials/{material_id}/files/{file_id}/restore",
+        (
+            "/projects/{project_id}/stages/{stage_id}/materials/{material_id}/"
+            "files/{file_id}/restore"
+        ),
     )
     def restore_file(
         project_id: str,

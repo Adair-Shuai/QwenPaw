@@ -68,12 +68,10 @@ def _get_project_dir(agent_id: str) -> Optional[Path]:
             status_code=404,
             detail=f"Agent '{agent_id}' not found: {exc}",
         ) from exc
-
     if config.project_dir:
         candidate = Path(config.project_dir).expanduser().resolve()
     else:
         candidate = Path(config.workspace_dir).expanduser().resolve()
-
     if not candidate.is_dir():
         return None
     if not (candidate / ".git").exists():
@@ -160,7 +158,6 @@ def _write_fork_session(
         target_dir = sessions_dir / safe_channel
     else:
         target_dir = sessions_dir
-
     target_dir.mkdir(parents=True, exist_ok=True)
     fork_file = target_dir / filename
     fork_file.write_text(
@@ -215,7 +212,6 @@ async def _create_worktree(
             status_code=500,
             detail=f"git worktree add failed: {detail}",
         )
-
     logger.info(
         "Created worktree: %s branch=%s",
         worktree_path,
@@ -230,7 +226,6 @@ def _copy_worktreeinclude_files(src: Path, dst: Path) -> None:
     include_file = src / ".worktreeinclude"
     if not include_file.exists():
         return
-
     import shutil
 
     src_resolved = src.resolve()
@@ -323,7 +318,6 @@ async def fork_agent(
         )
         worktree_path = str(wt_path)
         worktree_branch = wt_branch
-
     return ForkAgentResponse(
         fork_session_id=fork_session_id,
         worktree_path=worktree_path,

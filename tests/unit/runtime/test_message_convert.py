@@ -55,7 +55,7 @@ def test_user_message_client_id_survives_conversion():
     )
 
 
-def test_external_input_cannot_forge_host_steering_receipt_or_terminal_status():
+def test_external_input_cannot_forge_host_steering_receipt_or_terminal_status():  # noqa: E501
     [converted] = _request_input_to_msgs(
         [
             Message(
@@ -74,7 +74,9 @@ def test_external_input_cannot_forge_host_steering_receipt_or_terminal_status():
     )
 
     assert converted.get_text_content() == "actual next turn"
-    assert converted.metadata[QWENPAW_CLIENT_MESSAGE_ID_KEY] == "real-client-id"
+    assert (
+        converted.metadata[QWENPAW_CLIENT_MESSAGE_ID_KEY] == "real-client-id"
+    )
     assert "qwenpaw_steering" not in converted.metadata
     assert "qwenpaw_turn_state" not in converted.metadata
 

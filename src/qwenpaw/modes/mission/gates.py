@@ -70,7 +70,6 @@ class MissionGate(LoopGate):
             "has_tool_calls",
         ):
             return _bypass
-
         state: Optional[_MissionState] = self._state()
         if state is None:
             state = self._try_restore(ctx)
@@ -84,7 +83,6 @@ class MissionGate(LoopGate):
             return _bypass
         if not state.active:
             return _bypass
-
         from .state import (
             read_loop_config,
             read_prd,
@@ -103,10 +101,8 @@ class MissionGate(LoopGate):
                 action=StopAction.TERMINATE,
                 reason=f"Mission {phase}",
             )
-
         if phase not in _EXEC_PHASES:
             return _bypass
-
         prd = await asyncio.to_thread(
             read_prd,
             state.loop_dir,
@@ -127,7 +123,6 @@ class MissionGate(LoopGate):
             return StopHandlerResult(
                 action=StopAction.BYPASS,
             )
-
         stories = prd.get("userStories", [])
         if not stories:
             self.deactivate()
@@ -135,19 +130,16 @@ class MissionGate(LoopGate):
                 action=StopAction.TERMINATE,
                 reason="No user stories in prd.json",
             )
-
         if get_all_passed(prd):
             self.deactivate()
             return StopHandlerResult(
                 action=StopAction.TERMINATE,
                 reason="All stories passed",
             )
-
         state: Optional[_MissionState] = self._state()
         if state is not None:
             state.last_prd = prd
             state.last_cfg = cfg
-
         return StopHandlerResult(
             action=StopAction.INTERRUPT_AND_CONTINUE,
             reason="Mission in progress",
@@ -184,7 +176,6 @@ class MissionGate(LoopGate):
         state: Optional[_MissionState] = self._state()
         if state is None or not state.active:
             return None
-
         from .state import read_loop_config
 
         cfg = await asyncio.to_thread(read_loop_config, state.loop_dir)

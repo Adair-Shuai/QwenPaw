@@ -34,8 +34,6 @@ for _mod_name in _AGENTSCOPE_STUBS:
         # type: ignore[attr-defined]
         _stub.AgentState = type("AgentState", (), {})
         sys.modules[_mod_name] = _stub
-
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -268,7 +266,6 @@ class TestUninstallHook:
                 callback=callback,
                 priority=50,
             )
-
         hooks = fresh_registry.get_uninstall_hooks()
         assert len(hooks) == 1
         assert hooks[0].plugin_id == "test-plugin"
@@ -514,7 +511,6 @@ class TestPluginValidatorImports:
                     plugin_dir,
                     "plugin.py",
                 )
-
             # Verify cleanup still happened
             leaked = [
                 k
@@ -557,7 +553,6 @@ class TestRegisterSkillProvider:
                 enabled_by_default=True,
                 channels=["all"],
             )
-
         # Check startup hook registered
         startup_hooks = fresh_registry.get_startup_hooks()
         startup_names = [h.hook_name for h in startup_hooks]
@@ -589,7 +584,6 @@ class TestRegisterSkillProvider:
                 enabled_by_default=True,
                 channels=["all"],
             )
-
         hooks = fresh_registry.get_workspace_created_hooks()
         hook_names = [h.hook_name for h in hooks]
         assert "provision_skills_test-plugin" in hook_names

@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import NativeRequestBuilder from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/AgentScopeRuntime/Request/Builder";
 import {
   createRequestEditKeyResolver,
+  getRequestEditTarget,
   getRequestEditSnapshot,
 } from "./requestEditSnapshot";
 
@@ -14,6 +15,32 @@ const text = (value: string) => ({ type: "text", text: value });
 const input = (...content: unknown[]) => ({ input: [user(content)] });
 
 describe("request edit frame identities", () => {
+  it("resolves backend rewind targets from client or original IDs without inferring request IDs", () => {
+    expect(
+      getRequestEditTarget({
+        input: [
+          user([], {
+            metadata: { qwenpaw_client_message_id: "client" },
+            original_id: "native",
+          }),
+        ],
+      }),
+    ).toEqual({ client_message_id: "client" });
+    expect(
+      getRequestEditTarget({ input: [user([], { original_id: "native" })] }),
+    ).toEqual({ message_id: "native" });
+    expect(
+      getRequestEditTarget({
+        input: [user([], { metadata: { original_id: "wrapped" } })],
+      }),
+    ).toEqual({ message_id: "wrapped" });
+    expect(
+      getRequestEditTarget({
+        id: "request-only",
+        input: [user([text("same")])],
+      }),
+    ).toBeUndefined();
+  });
   it("keeps a client identity across live/history clones and prefers it over original IDs", () => {
     const resolve = createRequestEditKeyResolver();
     const live = {

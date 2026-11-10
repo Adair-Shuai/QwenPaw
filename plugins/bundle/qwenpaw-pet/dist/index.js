@@ -1,38 +1,38 @@
-const U = "language", _ = "qwenpaw-pet-language-change";
-function M() {
+const $ = "language", _ = "qwenpaw-pet-language-change";
+function Q() {
   try {
-    return localStorage.getItem(U) || "";
+    return localStorage.getItem($) || "";
   } catch {
     return "";
   }
 }
-function pe() {
+function ue() {
   const t = "__qwenpawPetLanguageHook", r = Storage.prototype;
   if (r[t]) return;
   const c = r.setItem;
   r.setItem = function(l, s) {
-    c.call(this, l, s), l === U && window.dispatchEvent(new CustomEvent(_, { detail: s }));
+    c.call(this, l, s), l === $ && window.dispatchEvent(new CustomEvent(_, { detail: s }));
   }, r[t] = !0;
 }
-function de(t) {
-  pe();
-  let r = M();
+function me(t) {
+  ue();
+  let r = Q();
   const c = (d) => {
     d !== r && (r = d, t(d));
   }, l = (d) => {
     c(String(d.detail ?? ""));
   }, s = (d) => {
-    d.key === U && c(d.newValue ?? "");
+    d.key === $ && c(d.newValue ?? "");
   };
   window.addEventListener(_, l), window.addEventListener("storage", s);
   const a = window.setInterval(() => {
-    c(M());
+    c(Q());
   }, 500);
   return () => {
     window.removeEventListener(_, l), window.removeEventListener("storage", s), window.clearInterval(a);
   };
 }
-const Z = {
+const X = {
   en: {
     routeLabel: "Pet",
     title: "QwenPaw Pet",
@@ -104,40 +104,84 @@ const Z = {
     importReplace: "若已存在相同 id 的宠物则覆盖"
   }
 };
-function ue(t) {
+function fe(t) {
   return String(t || "").trim().split("-")[0].toLowerCase() === "zh" ? "zh" : "en";
 }
-function Q(t) {
-  return ue(t ?? M());
+function U(t) {
+  return fe(t ?? Q());
 }
-function ee(t, r, c) {
-  let l = Z[t][r] ?? Z.en[r];
+function te(t, r, c) {
+  let l = X[t][r] ?? X.en[r];
   if (c)
     for (const [s, a] of Object.entries(c))
       l = l.split(`{${s}}`).join(String(a));
   return l;
 }
-function fe(t) {
+function we(t) {
   const [r, c] = t.useState(
-    () => Q()
+    () => U()
   );
   t.useEffect(() => {
     const s = (a) => {
       c((d) => {
-        const b = Q(a);
+        const b = U(a);
         return d === b ? d : b;
       });
     };
-    return de((a) => s(a));
+    return me((a) => s(a));
   }, []);
   const l = t.useCallback(
-    (s, a) => ee(r, s, a),
+    (s, a) => te(r, s, a),
     [r]
   );
   return { locale: r, tr: l };
 }
-const R = window.QwenPaw.host, n = R.React, me = R.antd, A = R.getApiUrl, B = R.getApiToken, { Button: L, Card: we, Space: j, Table: he, Typography: ge, message: u, Modal: ye, Checkbox: ke } = me, { Title: Ee, Text: h, Paragraph: Se } = ge;
-function be() {
+const R = window.QwenPaw.host, n = R.React;
+function he() {
+  return n.createElement(
+    "svg",
+    {
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: 1.6,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      "aria-hidden": !0,
+      focusable: "false",
+      width: "1em",
+      height: "1em"
+    },
+    n.createElement("path", {
+      d: "M7 12.9c-1.65 1.25-3.1 3.2-2.55 5.1.6 2 2.55 2.6 4.45 1.9 2.25-.8 3.95-.8 6.2 0 1.95.7 3.85.1 4.45-1.9.55-1.9-.9-3.85-2.55-5.1-1.55-1.05-2.35-3.05-5-3.05s-3.45 2-5 3.05Z"
+    }),
+    n.createElement("ellipse", {
+      cx: "4.9",
+      cy: "8.45",
+      rx: "1.55",
+      ry: "2.0",
+      transform: "rotate(-25 4.9 8.45)"
+    }),
+    n.createElement("ellipse", {
+      cx: "10.1",
+      cy: "5.1",
+      rx: "1.6",
+      ry: "2.1"
+    }),
+    n.createElement("ellipse", {
+      cx: "15.8",
+      cy: "5.7",
+      rx: "1.55",
+      ry: "2.0",
+      transform: "rotate(17 15.8 5.7)"
+    }),
+    n.createElement("path", {
+      d: "M20 8.1q1.35-1.45 1.75.3.25 1.3-.85 2.1"
+    })
+  );
+}
+const ge = R.antd, O = R.getApiUrl, M = R.getApiToken, { Button: z, Card: ye, Space: j, Table: ke, Typography: Ee, message: u, Modal: Se, Checkbox: be } = ge, { Title: ve, Text: h, Paragraph: Ie } = Ee;
+function Pe() {
   var t, r, c;
   try {
     const l = ((t = window.sessionStorage) == null ? void 0 : t.getItem("qwenpaw-agent-storage")) ?? ((r = window.localStorage) == null ? void 0 : r.getItem("qwenpaw-agent-storage"));
@@ -148,22 +192,22 @@ function be() {
     return null;
   }
 }
-function O() {
-  const t = {}, r = B == null ? void 0 : B();
+function A() {
+  const t = {}, r = M == null ? void 0 : M();
   r && (t.Authorization = `Bearer ${r}`);
-  const c = be();
+  const c = Pe();
   return c && (t["X-Agent-Id"] = c), t;
 }
-async function X(t) {
-  const r = await fetch(A(t), { headers: O() });
+async function Y(t) {
+  const r = await fetch(O(t), { headers: A() });
   if (!r.ok)
     throw new Error(`${r.status} ${await r.text()}`);
   return r.json();
 }
-async function Y(t, r) {
-  const c = await fetch(A(t), {
+async function ee(t, r) {
+  const c = await fetch(O(t), {
     method: "POST",
-    headers: { "Content-Type": "application/json", ...O() },
+    headers: { "Content-Type": "application/json", ...A() },
     body: JSON.stringify(r)
   }), l = await c.text();
   let s = null;
@@ -176,8 +220,8 @@ async function Y(t, r) {
     throw new Error(typeof (s == null ? void 0 : s.detail) == "string" ? s.detail : l);
   return s;
 }
-const ve = 192, Ie = 208;
-function Pe({ folder: t }) {
+const xe = 192, De = 208;
+function Ce({ folder: t }) {
   const r = n.useRef(null), [c, l] = n.useState(!1);
   return n.useEffect(() => {
     let s = !1;
@@ -188,17 +232,17 @@ function Pe({ folder: t }) {
     if (d)
       return (async () => {
         try {
-          const b = A(
+          const b = O(
             `/qwenpaw-pet/pets/${encodeURIComponent(t)}/spritesheet`
-          ), I = await fetch(b, { headers: O() });
+          ), I = await fetch(b, { headers: A() });
           if (!I.ok || s) throw new Error(String(I.status));
           const T = await I.blob(), v = await createImageBitmap(T);
           if (s) {
             v.close();
             return;
           }
-          const P = 96, D = 104;
-          a.width = P, a.height = D, d.imageSmoothingEnabled = !1, d.clearRect(0, 0, P, D), d.drawImage(v, 0, 0, ve, Ie, 0, 0, P, D), v.close();
+          const P = 96, x = 104;
+          a.width = P, a.height = x, d.imageSmoothingEnabled = !1, d.clearRect(0, 0, P, x), d.drawImage(v, 0, 0, xe, De, 0, 0, P, x), v.close();
         } catch {
           s || l(!0);
         }
@@ -218,13 +262,25 @@ function Pe({ folder: t }) {
     }
   });
 }
-function De() {
-  const { tr: t } = fe(n), [r, c] = n.useState([]), [l, s] = n.useState(""), [a, d] = n.useState(null), [b, I] = n.useState(!1), [T, v] = n.useState(!1), [P, D] = n.useState(!0), [g, $] = n.useState(!1), [y, x] = n.useState([]), [N, F] = n.useState(!1), [G, q] = n.useState(!1), J = n.useRef(null), k = n.useCallback(async () => {
+function Le() {
+  const { tr: t } = we(n), [r, c] = n.useState([]), [l, s] = n.useState(""), [a, d] = n.useState(null), [b, I] = n.useState(!1), [T, v] = n.useState(!1), [P, x] = n.useState(!0), [g, G] = n.useState(!1), [y, C] = n.useState([]), [N, L] = n.useState(!1), [J, q] = n.useState(!1), W = n.useRef(null), [H, ne] = n.useState(
+    () => document.documentElement.classList.contains("dark-mode")
+  );
+  n.useEffect(() => {
+    const e = new MutationObserver(() => {
+      ne(document.documentElement.classList.contains("dark-mode"));
+    });
+    return e.observe(document.documentElement, {
+      attributes: !0,
+      attributeFilter: ["class"]
+    }), () => e.disconnect();
+  }, []);
+  const k = n.useCallback(async () => {
     I(!0);
     try {
       const [e, o] = await Promise.all([
-        X("/qwenpaw-pet/pets"),
-        X("/qwenpaw-pet/status")
+        Y("/qwenpaw-pet/pets"),
+        Y("/qwenpaw-pet/status")
       ]);
       c(e.pets || []), s(e.petsDir || ""), d(o.desktop ?? null);
     } catch (e) {
@@ -236,21 +292,21 @@ function De() {
   n.useEffect(() => {
     k();
   }, [k]);
-  const C = (a == null ? void 0 : a.ok) === !0, z = G || (a == null ? void 0 : a.starting) === !0 || (a == null ? void 0 : a.running) === !0 && !C;
+  const D = (a == null ? void 0 : a.ok) === !0, F = J || (a == null ? void 0 : a.starting) === !0 || (a == null ? void 0 : a.running) === !0 && !D;
   n.useEffect(() => {
-    if (!z || C) return;
+    if (!F || D) return;
     const e = window.setInterval(() => {
       k();
     }, 1500);
     return () => window.clearInterval(e);
-  }, [z, C, k]), n.useEffect(() => {
-    C && q(!1);
-  }, [C]);
-  const te = async () => {
-    if (!z) {
+  }, [F, D, k]), n.useEffect(() => {
+    D && q(!1);
+  }, [D]);
+  const oe = async () => {
+    if (!F) {
       q(!0);
       try {
-        const e = await Y("/qwenpaw-pet/desktop/start", {}), o = e == null ? void 0 : e.desktop, i = [e == null ? void 0 : e.message, e == null ? void 0 : e.hint].filter(Boolean).join(" ");
+        const e = await ee("/qwenpaw-pet/desktop/start", {}), o = e == null ? void 0 : e.desktop, i = [e == null ? void 0 : e.message, e == null ? void 0 : e.hint].filter(Boolean).join(" ");
         e != null && e.alreadyRunning && (o != null && o.ok) ? u.success(i || t("desktopAlreadyRunning")) : (e == null ? void 0 : e.launchAttempted) === !1 && !(o != null && o.ok) ? typeof (e == null ? void 0 : e.message) == "string" && e.message.toLowerCase().includes("starting") ? u.warning(i || t("desktopStarting")) : u.error(i || t("desktopStartFailed")) : o != null && o.ok ? u.success(i || t("desktopReady")) : u.warning(i || t("desktopStarting")), await k();
       } catch (e) {
         u.error((e == null ? void 0 : e.message) || String(e));
@@ -258,84 +314,84 @@ function De() {
         q(!1);
       }
     }
-  }, ne = () => {
-    x([]), D(!0), F(!1), v(!0);
-  }, W = async (e, o, i) => {
+  }, re = () => {
+    C([]), x(!0), L(!1), v(!0);
+  }, Z = async (e, o, i) => {
     const p = o ? `${o}/${e.name}` : e.name;
     if (e.isFile) {
-      const f = await new Promise(
-        (E, m) => e.file(E, m)
+      const m = await new Promise(
+        (E, f) => e.file(E, f)
       );
-      i.push({ file: f, path: p });
+      i.push({ file: m, path: p });
       return;
     }
     if (!e.isDirectory) return;
     const w = e.createReader();
     for (; ; ) {
-      const f = await new Promise(
-        (E, m) => w.readEntries(E, m)
+      const m = await new Promise(
+        (E, f) => w.readEntries(E, f)
       );
-      if (f.length === 0) break;
-      for (const E of f)
-        await W(E, p, i);
+      if (m.length === 0) break;
+      for (const E of m)
+        await Z(E, p, i);
     }
-  }, oe = async (e) => {
-    var w, f, E;
-    if (e.preventDefault(), F(!1), g) return;
-    const o = (w = e.dataTransfer) == null ? void 0 : w.items, i = (f = e.dataTransfer) == null ? void 0 : f.files, p = [];
+  }, ae = async (e) => {
+    var w, m, E;
+    if (e.preventDefault(), L(!1), g) return;
+    const o = (w = e.dataTransfer) == null ? void 0 : w.items, i = (m = e.dataTransfer) == null ? void 0 : m.files, p = [];
     if (o && o.length > 0)
-      for (let m = 0; m < o.length; m++) {
-        const S = o[m];
+      for (let f = 0; f < o.length; f++) {
+        const S = o[f];
         if (S.kind !== "file") continue;
         const V = (E = S.webkitGetAsEntry) == null ? void 0 : E.call(S);
         if (V)
-          await W(V, "", p);
+          await Z(V, "", p);
         else {
-          const H = S.getAsFile();
-          H && p.push({ file: H, path: H.name });
+          const B = S.getAsFile();
+          B && p.push({ file: B, path: B.name });
         }
       }
     else if (i)
-      for (let m = 0; m < i.length; m++) {
-        const S = i[m];
+      for (let f = 0; f < i.length; f++) {
+        const S = i[f];
         p.push({ file: S, path: S.name });
       }
     if (p.length === 0) {
       u.warning(t("dropFolderOrZip"));
       return;
     }
-    x(p);
-  }, re = (e) => {
-    e.preventDefault(), g || F(!0);
-  }, ae = (e) => {
-    e.preventDefault(), F(!1);
+    C(p);
+  }, se = (e) => {
+    e.preventDefault(), g || L(!0);
+  }, ie = (e) => {
+    e.preventDefault(), L(!1);
   }, K = () => {
     var e;
-    g || (e = J.current) == null || e.click();
-  }, se = (e) => {
+    g || (e = W.current) == null || e.click();
+  }, le = (e) => {
     var p;
     const o = (p = e.target) == null ? void 0 : p.files;
     if (!o || o.length === 0) return;
     const i = [];
     for (let w = 0; w < o.length; w++) {
-      const f = o[w];
-      i.push({ file: f, path: f.name });
+      const m = o[w];
+      i.push({ file: m, path: m.name });
     }
-    x(i), e.target.value = "";
-  }, ie = async () => {
+    C(i), e.target.value = "";
+  }, ce = async () => {
     if (y.length === 0) {
       u.warning(t("importChooseFirst"));
       return;
     }
-    $(!0);
+    G(!0);
     try {
       const e = new FormData();
-      for (const { file: w, path: f } of y)
-        e.append("files", w, f);
+      for (const { file: w, path: m } of y)
+        e.append("files", w, m);
       e.append("replace", P ? "true" : "false");
-      const o = await fetch(A("/qwenpaw-pet/import-pet-upload"), {
+      const o = await fetch(O("/qwenpaw-pet/import-pet-upload"), {
         method: "POST",
-        headers: O(),
+        headers: A(),
         body: e
       }), i = await o.text();
       let p = null;
@@ -351,16 +407,16 @@ function De() {
           name: p.displayName || p.petId,
           path: p.path
         })
-      ), v(!1), x([]), await k();
+      ), v(!1), C([]), await k();
     } catch (e) {
       u.error((e == null ? void 0 : e.message) || String(e));
     } finally {
-      $(!1);
+      G(!1);
     }
-  }, le = async (e) => {
+  }, pe = async (e) => {
     const o = e.folder;
     try {
-      const i = await Y("/qwenpaw-pet/switch-pet", { pet_id: o });
+      const i = await ee("/qwenpaw-pet/switch-pet", { pet_id: o });
       if (i && i.ok === !1)
         throw new Error(i.error || i.detail || t("switchFailed"));
       u.success(
@@ -369,13 +425,13 @@ function De() {
     } catch (i) {
       u.error((i == null ? void 0 : i.message) || String(i));
     }
-  }, ce = n.useMemo(
+  }, de = n.useMemo(
     () => [
       {
         title: t("colPreview"),
         key: "preview",
         width: 112,
-        render: (e, o) => n.createElement(Pe, {
+        render: (e, o) => n.createElement(Ce, {
           key: o.folder,
           folder: o.folder
         })
@@ -391,11 +447,11 @@ function De() {
         title: t("colAction"),
         key: "act",
         render: (e, o) => n.createElement(
-          L,
+          z,
           {
             type: "primary",
             size: "small",
-            onClick: () => void le(o)
+            onClick: () => void pe(o)
           },
           t("switch")
         )
@@ -404,7 +460,7 @@ function De() {
     [t]
   );
   return n.createElement(
-    we,
+    ye,
     { style: { maxWidth: 880, margin: "24px auto" } },
     n.createElement(
       j,
@@ -414,12 +470,12 @@ function De() {
           "div",
           { key: "h" },
           n.createElement(
-            Ee,
+            ve,
             { level: 3, style: { marginBottom: 4 } },
             t("title")
           ),
           n.createElement(
-            Se,
+            Ie,
             { type: "secondary", style: { marginBottom: 0 } },
             t("intro")
           )
@@ -428,18 +484,18 @@ function De() {
           j,
           { key: "actions", wrap: !0 },
           n.createElement(
-            L,
+            z,
             {
               type: "primary",
-              onClick: te,
-              loading: G,
-              disabled: z
+              onClick: oe,
+              loading: J,
+              disabled: F
             },
             t("startDesktop")
           ),
-          n.createElement(L, { onClick: ne }, t("importPet")),
+          n.createElement(z, { onClick: re }, t("importPet")),
           n.createElement(
-            L,
+            z,
             { onClick: () => void k(), loading: b },
             t("refresh")
           )
@@ -468,31 +524,31 @@ function De() {
             a ? JSON.stringify(a) : t("desktopUnknown")
           )
         ),
-        n.createElement(he, {
+        n.createElement(ke, {
           key: "tbl",
           rowKey: "folder",
           loading: b,
           dataSource: r,
-          columns: ce,
+          columns: de,
           pagination: !1,
           locale: {
             emptyText: t("tableEmpty")
           }
         }),
         n.createElement(
-          ye,
+          Se,
           {
             key: "import-modal",
             title: t("modalImportTitle"),
             open: T,
-            onOk: () => void ie(),
+            onOk: () => void ce(),
             okText: t("modalImportOk"),
             okButtonProps: { loading: g },
             cancelButtonProps: { disabled: g },
             onCancel: () => {
               g || v(!1);
             },
-            destroyOnClose: !0
+            destroyOnHidden: !0
           },
           n.createElement(
             j,
@@ -503,22 +559,22 @@ function De() {
                 role: "button",
                 tabIndex: 0,
                 onClick: K,
-                onDrop: oe,
-                onDragOver: re,
-                onDragLeave: ae,
+                onDrop: ae,
+                onDragOver: se,
+                onDragLeave: ie,
                 onKeyDown: (e) => {
                   (e.key === "Enter" || e.key === " ") && (e.preventDefault(), K());
                 },
                 style: {
-                  border: `2px dashed ${N ? "#1677ff" : "#d9d9d9"}`,
+                  border: `2px dashed ${N ? "#1677ff" : H ? "rgba(255,255,255,0.15)" : "#d9d9d9"}`,
                   borderRadius: 8,
                   padding: "32px 16px",
                   textAlign: "center",
                   cursor: g ? "not-allowed" : "pointer",
-                  background: N ? "rgba(22, 119, 255, 0.06)" : "#fafafa",
+                  background: N ? "rgba(22, 119, 255, 0.06)" : H ? "rgba(255,255,255,0.04)" : "#fafafa",
                   transition: "border-color .15s ease, background .15s ease",
                   userSelect: "none",
-                  color: N ? "#1677ff" : void 0
+                  color: N ? "#1677ff" : H ? "rgba(255,255,255,0.85)" : void 0
                 }
               },
               // Line-art cube icon (matches the dropzone reference)
@@ -570,11 +626,11 @@ function De() {
               )
             ),
             n.createElement("input", {
-              ref: J,
+              ref: W,
               type: "file",
               accept: ".zip,application/zip",
               style: { display: "none" },
-              onChange: se
+              onChange: le
             }),
             y.length === 0 ? n.createElement(
               h,
@@ -589,10 +645,10 @@ function De() {
               })
             ),
             n.createElement(
-              ke,
+              be,
               {
                 checked: P,
-                onChange: (e) => D(!!e.target.checked),
+                onChange: (e) => x(!!e.target.checked),
                 disabled: g
               },
               t("importReplace")
@@ -603,22 +659,22 @@ function De() {
     )
   );
 }
-class Ce {
+class Fe {
   constructor() {
     this.id = "qwenpaw-pet";
   }
   setup() {
     var c, l;
-    const r = Q();
+    const r = U();
     (l = (c = window.QwenPaw).registerRoutes) == null || l.call(c, this.id, [
       {
         path: "/plugin/qwenpaw-pet/pets",
-        component: De,
-        label: ee(r, "routeLabel"),
-        icon: "🐾",
+        component: Le,
+        label: te(r, "routeLabel"),
+        icon: /* @__PURE__ */ n.createElement(he, null),
         priority: 42
       }
     ]);
   }
 }
-new Ce().setup();
+new Fe().setup();

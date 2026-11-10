@@ -176,7 +176,6 @@ def test_cron_header_jobs_create_three_then_list_returns_all(
         for name, user in expected:
             spec = _minimal_text_cron_spec(name=name, user_id=user)
             job_ids.append(_create_cron_job(app_server, spec))
-
         list_resp = app_server.api_request(
             "GET",
             "/api/cron/jobs",
@@ -187,7 +186,6 @@ def test_cron_header_jobs_create_three_then_list_returns_all(
         listed_ids = {item.get("id") for item in items}
         for job_id in job_ids:
             assert job_id in listed_ids, f"missing {job_id} in {listed_ids}"
-
         by_id = {
             item["id"]: item for item in items if item.get("id") in job_ids
         }

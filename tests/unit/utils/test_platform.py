@@ -127,7 +127,6 @@ class TestWarnUnelevatedSandbox:
             ),
         ):
             warn_unelevated_sandbox()
-
         assert any(
             "sandbox downgraded" in record.message for record in caplog.records
         )
@@ -153,7 +152,6 @@ class TestWarnUnelevatedSandbox:
             ),
         ):
             warn_unelevated_sandbox()
-
         assert not any(
             "sandbox downgraded" in record.message for record in caplog.records
         )
@@ -176,7 +174,6 @@ class TestWarnUnelevatedSandbox:
             ),
         ):
             warn_unelevated_sandbox()
-
         assert any(
             "unelevated sandbox check failed" in record.message
             for record in caplog.records

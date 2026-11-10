@@ -9,10 +9,20 @@ import {
 
 // VITE_API_BASE_URL / TOKEN are declared globals in config.ts — set via globalThis
 const setViteBase = (v: string) => {
-  (globalThis as any).VITE_API_BASE_URL = v;
+  (
+    globalThis as typeof globalThis & {
+      VITE_API_BASE_URL: string;
+      TOKEN: string;
+    }
+  ).VITE_API_BASE_URL = v;
 };
 const setToken = (v: string) => {
-  (globalThis as any).TOKEN = v;
+  (
+    globalThis as typeof globalThis & {
+      VITE_API_BASE_URL: string;
+      TOKEN: string;
+    }
+  ).TOKEN = v;
 };
 
 describe("getApiUrl", () => {

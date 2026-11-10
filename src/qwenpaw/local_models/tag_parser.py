@@ -173,16 +173,13 @@ def _parse_xml_tool_call(raw_text: str) -> ParsedToolCall | None:
             arguments=arguments,
             raw_arguments=json.dumps(arguments, ensure_ascii=False),
         )
-
     # Strict format failed — try lenient format (no closing tags).
     func_match_lenient = _XML_FUNC_LENIENT_RE.search(raw_text)
     if not func_match_lenient:
         return None
-
     name = func_match_lenient.group(1).strip()
     if not name:
         return None
-
     body = func_match_lenient.group(2)
     arguments = _extract_params_lenient(body)
 
@@ -193,7 +190,6 @@ def _parse_xml_tool_call(raw_text: str) -> ParsedToolCall | None:
             name,
         )
         return None
-
     logger.debug(
         "Parsed tool call via lenient XML format: name=%s, params=%s",
         name,
@@ -232,7 +228,6 @@ def _parse_single_tool_call(raw_text: str) -> ParsedToolCall | None:
         data = json.loads(stripped)
     except (json.JSONDecodeError, TypeError):
         data = None
-
     if data is not None:
         if not isinstance(data, dict):
             logger.warning(
@@ -240,7 +235,6 @@ def _parse_single_tool_call(raw_text: str) -> ParsedToolCall | None:
                 stripped[:200],
             )
             return None
-
         name = data.get("name", "")
         if not name:
             logger.warning(
@@ -248,21 +242,18 @@ def _parse_single_tool_call(raw_text: str) -> ParsedToolCall | None:
                 stripped[:200],
             )
             return None
-
         arguments = data.get("arguments", {})
         if isinstance(arguments, str):
             try:
                 arguments = json.loads(arguments)
             except (json.JSONDecodeError, TypeError):
                 arguments = {}
-
         return ParsedToolCall(
             id=_generate_call_id(),
             name=name,
             arguments=arguments,
             raw_arguments=json.dumps(arguments, ensure_ascii=False),
         )
-
     # JSON failed — try XML format.
     result = _parse_xml_tool_call(stripped)
     if result is None:
@@ -297,7 +288,6 @@ def extract_thinking_from_text(text: str) -> TextWithThinking:
             thinking=thinking,
             remaining_text=remaining,
         )
-
     # No complete block — check for an unclosed <think>.
     open_idx = text.find(THINK_START)
     if open_idx != -1:
@@ -308,7 +298,6 @@ def extract_thinking_from_text(text: str) -> TextWithThinking:
             remaining_text=remaining,
             has_open_tag=True,
         )
-
     return TextWithThinking(remaining_text=text)
 
 
@@ -341,7 +330,6 @@ def parse_tool_calls_from_text(text: str) -> TextWithToolCalls:
                 partial_tool_text=text[open_idx + len(TOOL_CALL_START) :],
             )
         return TextWithToolCalls(text_before=text)
-
     # --- Text before the first match ---
     text_before = text[: matches[0].start()].rstrip()
 
@@ -356,14 +344,12 @@ def parse_tool_calls_from_text(text: str) -> TextWithToolCalls:
         text_after = remaining.strip()
         has_open_tag = False
         partial_tool_text = ""
-
     # --- Parse each complete block ---
     tool_calls: list[ParsedToolCall] = []
     for match in matches:
         parsed = _parse_single_tool_call(match.group(1))
         if parsed is not None:
             tool_calls.append(parsed)
-
     return TextWithToolCalls(
         text_before=text_before,
         text_after=text_after,

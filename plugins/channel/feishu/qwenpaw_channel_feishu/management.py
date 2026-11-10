@@ -29,6 +29,8 @@ def _continuation(device_code, domain):
 
 
 def _decode(value):
+    # Reject malformed management envelopes before any operation.
+    # pylint: disable=R0916
     data = json.loads(base64.b64decode(value, altchars=b"-_", validate=True))
     if (
         not isinstance(data, dict)
@@ -43,6 +45,8 @@ def _decode(value):
 
 
 async def manage(request):
+    # Keep each native management command and its error boundary explicit.
+    # pylint: disable=R0911,R0912,R0915
     request = ManagementRequest.from_mapping(request.to_mapping())
     if request.plugin_id != "feishu" or request.channel_key != "feishu":
         return management_result(request, reason="IDENTITY_MISMATCH")
@@ -124,7 +128,8 @@ async def manage(request):
                     ),
                     headers=headers,
                 )
-                # OAuth errors can be useful JSON on HTTP400; preserve that path.
+                # OAuth errors can be useful JSON on HTTP400; preserve that
+                # path.
                 value = response.json()
                 if value.get("client_id") and value.get("client_secret"):
                     info = value.get("user_info", {})

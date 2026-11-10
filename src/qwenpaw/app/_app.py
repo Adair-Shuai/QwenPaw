@@ -227,7 +227,6 @@ async def _stop_workspaces_after_dependents_impl(
         # A bounded cancellation attempt is not proof that a worker has
         # released its workspace. The process watchdog is the cutoff.
         imports_quiesced = await import_jobs.drain()
-
     await _shutdown_plugins(app)
 
     # Hooks may access live workspaces. Stop them before unrelated cleanup
@@ -286,7 +285,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
         )
         logger.error(message, exc_info=True)
         raise RuntimeError(f"{message} Original error: {exc}") from exc
-
     auto_register_from_env()
     check_proxy_config_sanity()
 
@@ -306,7 +304,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             "Telemetry collection skipped due to error",
             exc_info=True,
         )
-
     logger.debug("Checking for legacy config migration...")
     migrate_legacy_workspace_to_default_agent()
     ensure_default_agent_exists()
@@ -330,7 +327,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             "Recovered %d interrupted PawPort import transaction(s)",
             len(recovered_transactions),
         )
-
     # Provider initialization scans and may migrate persisted configuration.
     provider_manager = await asyncio.to_thread(ProviderManager.get_instance)
     local_model_manager = await asyncio.to_thread(
@@ -392,7 +388,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 "@api_action auto-registration skipped",
                 exc_info=True,
             )
-
         # --- HITL slash commands ---
         try:
             from .app_services._builtin_tool_commands import (
@@ -408,7 +403,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 "HITL tool command registration skipped",
                 exc_info=True,
             )
-
         # --- Use shared bootstrap factory ---
         from .workspace.bootstrap_factory import WorkspaceBootstrapFactory
 
@@ -443,13 +437,11 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 "Descriptor cache warm-up skipped",
                 exc_info=True,
             )
-
     except Exception:
         logger.debug(
             "Runtime infrastructure init skipped",
             exc_info=True,
         )
-
     backup_manager = BackupManager()
 
     # Start token usage manager background tasks
@@ -504,7 +496,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
         prime_bridge_token()
     except Exception:
         logger.warning("Bridge token priming failed", exc_info=True)
-
     # Resolving the process timezone can run subprocess probes (POSIX
     # `timedatectl`), so warm the cache off the event loop here rather than
     # letting the first chat-history request pay for it. Best-effort: the
@@ -515,7 +506,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
         await asyncio.to_thread(_process_local_tz)
     except Exception:
         logger.debug("Timezone prewarm skipped", exc_info=True)
-
     fast_elapsed = time.time() - startup_start_time
     logger.info(
         f"Server ready in {fast_elapsed:.3f}s (agents loading in background)",
@@ -559,7 +549,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     "Component startup updates skipped",
                     exc_info=True,
                 )
-
             if app.state.component_updates_status.get(
                 "runtime_restart_required",
             ):
@@ -575,7 +564,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 raise RuntimeError(
                     "runtime update requires a desktop backend restart",
                 )
-
             component_updated_ids = {
                 str(result["component"])
                 for result in app.state.component_updates_status.get(
@@ -602,7 +590,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     "Unable to inspect pending component activations",
                     exc_info=True,
                 )
-
             from ..plugins.bundled import (
                 ensure_bundled_plugins_installed,
                 finalize_bundled_plugin_activation,
@@ -629,7 +616,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     "installed": [],
                     "error": str(exc),
                 }
-
             from ..config.utils import get_plugins_dir
             from ..plugins.loader import PluginLoader
             from ..plugins.runtime import RuntimeHelpers
@@ -647,7 +633,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 )
             except (OSError, ValueError, TimeoutError):
                 logger.exception("Could not initialize default Hub plugins")
-
             plugin_dirs = [get_plugins_dir()]
 
             from ..plugins.official_channels import (
@@ -782,7 +767,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                         plugin_id,
                     )
                 bundled_health_errors.append(plugin_id)
-
             if component_updated_ids:
                 try:
                     from ..components.service import (
@@ -833,7 +817,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                         "Component activation health recovery failed",
                         exc_info=True,
                     )
-
             app.state.bundled_plugins_status = {
                 "state": "registry_ready",
                 "installed": bundled_ready_ids,
@@ -877,7 +860,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 )
             elif app.state.startup_ready.is_set():
                 startup_display.mark_finalizing()
-
             provider_manager.start_local_model_resume(local_model_manager)
             startup_provider_ids = provider_manager.startup_sync_provider_ids()
             asyncio.create_task(
@@ -904,7 +886,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     )
             except Exception as e:
                 logger.warning(f"Approval service setup skipped: {e}")
-
             app.state.bundled_plugins_status = {
                 "state": "ready",
                 "installed": bundled_ready_ids,
@@ -930,7 +911,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     "Skill Pool automation skipped on startup",
                     exc_info=True,
                 )
-
             # ---- Orphan skill staging dirs ----
             # Best-effort housekeeping: a leaked stage dir is harmless, so
             # cleanup must never gate startup on temp-dir I/O.
@@ -952,7 +932,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     "Orphan skill staging cleanup skipped",
                     exc_info=True,
                 )
-
             startup_elapsed = time.time() - startup_start_time
             logger.info(
                 "Background startup completed in "
@@ -961,7 +940,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             if app.state.startup_ready.is_set():
                 startup_display.complete(startup_elapsed)
                 startup_state.mark_ready()
-
         except Exception as exc:
             if not app.state.startup_ready.is_set():
                 app.state.startup_failed = True
@@ -993,7 +971,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             _bg_task.cancel()
             with suppress(asyncio.CancelledError):
                 await _bg_task
-
         # Import jobs can write workspaces and install plugins. Stop them
         # before closing the services they depend on.
         from .routers.portability_imports import PORTABILITY_IMPORT_JOBS
@@ -1020,7 +997,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 )
                 with suppress(OSError, RuntimeError, ValueError):
                     local_model_mgr.shutdown_server_sync()
-
         # Stop AppServiceManager (ToolCoordinator shutdown, etc.)
         _app_svc = getattr(app.state, "app_services", None)
         if _app_svc is not None:
@@ -1028,7 +1004,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 await _app_svc.stop()
             except Exception as e:
                 logger.error(f"Error stopping AppServiceManager: {e}")
-
         # These three cleanup tasks are independent; run in parallel.
         from ..agents.skill_system.hub import aclose_hub_client
 
@@ -1066,7 +1041,6 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                 logger.info("Windows sandbox cleanup complete.")
             except Exception as e:
                 logger.error(f"Error during sandbox cleanup: {e}")
-
         logger.info("Application shutdown complete")
         startup_display.stop()
 
@@ -1100,8 +1074,6 @@ if CORS_ORIGINS:
         allow_headers=["*"],
         expose_headers=["Content-Disposition"],
     )
-
-
 _CONSOLE_STATIC_ENV = "QWENPAW_CONSOLE_STATIC_DIR"
 
 
@@ -1116,20 +1088,17 @@ def _resolve_console_static_dir() -> str:
     candidate = pkg_dir / "console"
     if candidate.is_dir() and (candidate / "index.html").exists():
         return str(candidate)
-
     # Fallback to repo data
     repo_dir = pkg_dir.parent.parent
     candidate = repo_dir / "console" / "dist"
     if candidate.is_dir() and (candidate / "index.html").exists():
         return str(candidate)
-
     # Fallback to cwd data
     cwd = Path(os.getcwd())
     for subdir in ("console/dist", "console_dist"):
         candidate = cwd / subdir
         if candidate.is_dir() and (candidate / "index.html").exists():
             return str(candidate)
-
     fallback = cwd / "console" / "dist"
     logger.warning(
         f"Console static directory not found. Falling back to '{fallback}'.",
@@ -1192,7 +1161,6 @@ def _fetch_update_version(*, desktop: bool) -> str:
         and now - cached[1] <= _DESKTOP_VERSION_CACHE_TTL_SECONDS
     ):
         return cached[0]
-
     lock = _desktop_version_lock if desktop else _core_version_lock
     url = DESKTOP_UPDATE_MANIFEST_URL if desktop else CORE_UPDATE_MANIFEST_URL
     with lock:
@@ -1359,7 +1327,6 @@ if os.path.isdir(_CONSOLE_STATIC_DIR):
                 _CONSOLE_INDEX,
                 headers=_INDEX_NO_CACHE_HEADERS,
             )
-
         raise HTTPException(status_code=404, detail="Not Found")
 
     _assets_dir = _console_path / "assets"
@@ -1390,7 +1357,6 @@ if os.path.isdir(_CONSOLE_STATIC_DIR):
         # Skip API routes (should already be matched due to registration order)
         if full_path.startswith("api/") or full_path == "api":
             raise HTTPException(status_code=404, detail="Not Found")
-
         # Serve static files from the console build directory (e.g. logo SVGs,
         # favicons, images placed in public/).  Only serve regular files whose
         # path does not escape the console directory.
@@ -1400,6 +1366,9 @@ if os.path.isdir(_CONSOLE_STATIC_DIR):
             except (OSError, ValueError):
                 return _serve_console_index()
             if file_stat and stat.S_ISREG(file_stat.st_mode):
-                return FileResponse(static_file, stat_result=file_stat)
-
+                return FileResponse(
+                    static_file,
+                    stat_result=file_stat,
+                    headers={"Cache-Control": "no-cache"},
+                )
         return _serve_console_index()

@@ -1,64 +1,17 @@
 /**
- * Expert card, drawer, template modal, and blank expert creation modal.
+ * Expert card, introduction, template modal, and blank expert creation modal.
  */
 
+import { getHost, apiFetch } from "../core/runtime";
+import { renderMarkdown } from "../core/shared";
+import type { ExpertData, PoolSkillSpec } from "../core/types";
+import { type ExpertTemplate, EXPERT_TEMPLATES } from "./bundles";
+import { writeKnowledgeFile, createMCPForAgent } from "./expertApi";
 import {
-  getHost,
-  clearApiCache,
-  clearAgentCache,
-  apiFetch,
-} from "../core/runtime";
-import { PRIMARY_BTN_STYLE, renderMarkdown, PageHeader } from "../core/shared";
-import type {
-  AgentSummary,
-  SkillSpec,
-  PoolSkillSpec,
-  MCPClientInfo,
-  ExpertData,
-} from "../core/types";
-import {
-  type ExpertBundle,
-  type ExpertTemplate,
-  EXPERT_BUNDLES,
-  EXPERT_TEMPLATES,
-  getBundleAvatarUrl,
-  BundleAvatar,
-} from "./bundles";
-import {
-  extractPromptFromSkills,
-  type PromptItem,
-  type KnowledgeFileInfo,
-  fetchKnowledgeFiles,
-  writeKnowledgeFile,
-  saveKnowledgeFile,
-  normalizeKnowledgeFilename,
-  updateAgentSystemPromptFiles,
-  installSkillFromPool,
-  enableSkillForAgent,
-  deleteSkillForAgent,
-  batchEnableSkillsForAgent,
-  batchDisableSkillsForAgent,
-  batchDeleteSkillsForAgent,
-  fetchAgentMCPClients,
-  deleteMCPForAgent,
-  createMCPForAgent,
-  toggleMCPForAgent,
-  fetchAgentLanguage,
-  updateAgentLanguage,
-  fetchUserTimezone,
-  updateUserTimezone,
-  fetchSystemPromptFiles,
-  updateSystemPromptFiles,
-  fetchHeartbeatConfig,
-  updateHeartbeatConfig,
-  runHeartbeatNow,
-  fetchRunningConfig,
-  updateRunningConfig,
-} from "./expertApi";
-import { DEFAULT_PROMPT_FILES, TagList, SkillPickerModal } from "./expertUtils";
-import { expertPresentation } from "./expertPresentation";
-import { ExpertConfigModal } from "./ExpertConfigModal";
-import { KnowledgeBaseTab, PresetPromptsTab } from "./expertTabs";
+  expertPresentation,
+  initializeExpertAvatar,
+} from "./expertPresentation";
+import { avatarForExpert } from "./avatar/expertAvatar";
 import { ExpertAvatar } from "../components/avatars";
 import { fetchPoolSkills, fetchAgentConfig } from "../core/api";
 
@@ -85,11 +38,13 @@ export function ExpertCard({
   onClick,
   onSummon,
   onConfigure,
+  onEditAvatar,
 }: {
   expert: ExpertData;
   onClick: () => void;
   onSummon?: () => void;
   onConfigure?: () => void;
+  onEditAvatar?: () => void;
 }) {
   const React = getHost().React;
   const { Card, Badge, Button } = getHost().antd;
@@ -115,13 +70,32 @@ export function ExpertCard({
     React.createElement(
       "div",
       { className: "ugsci-expert-card-top" },
-      React.createElement(ExpertAvatar, { name: agent.name, size: 36 }),
+      React.createElement(
+        "button",
+        {
+          type: "button",
+          className: "ugsci-expert-avatar-button",
+          "aria-label": `修改 ${display.name} 的头像`,
+          title: "修改专家头像",
+          onClick: onEditAvatar,
+        },
+        React.createElement(ExpertAvatar, {
+          name: display.name,
+          recipe: avatarForExpert(expert),
+          size: 40,
+        }),
+      ),
       React.createElement(
         "div",
         { className: "ugsci-expert-identity" },
         React.createElement(
           "button",
-          { type: "button", className: "ugsci-expert-name", onClick },
+          {
+            type: "button",
+            className: "ugsci-expert-name",
+            "aria-haspopup": "dialog",
+            onClick,
+          },
           display.name,
         ),
         React.createElement(
@@ -177,11 +151,6 @@ export function ExpertCard({
       ),
       React.createElement(
         Button,
-        { type: "link", size: "small", onClick },
-        "查看详情",
-      ),
-      React.createElement(
-        Button,
         {
           type: "primary",
           size: "small",
@@ -194,608 +163,120 @@ export function ExpertCard({
   );
 }
 
+/** Read-only introduction opened from an expert's name. */
 export function ExpertDrawer({
   expert,
   open,
   onClose,
-  onRefresh,
   onSummon,
 }: {
   expert: ExpertData | null;
   open: boolean;
   onClose: () => void;
-  onRefresh: () => void;
   onSummon: (expert: ExpertData) => void;
 }) {
   const React = getHost().React;
-  const {
-    Drawer,
-    Descriptions,
-    Tag,
-    Typography,
-    Space,
-    Button,
-    Empty,
-    Tabs,
-    List,
-    Spin,
-    Modal,
-    message: antdMsg,
-  } = getHost().antd;
-  const { Text, Paragraph } = Typography;
-  const {
-    EditOutlined,
-    ThunderboltOutlined,
-    FileTextOutlined,
-    ToolOutlined,
-    PlusOutlined,
-  } = getHost().antdIcons || {};
-
-  const [skillPickerOpen2, setSkillPickerOpen2] = React.useState(false);
-  const [poolSkillsList2, setPoolSkillsList2] = React.useState<PoolSkillSpec[]>(
-    [],
-  );
-  const [poolLoading2, setPoolLoading2] = React.useState(false);
-
+  const { Drawer, Badge, Button, Empty } = getHost().antd;
   if (!expert) return null;
 
-  const { agent, config, skills, mcps, loading } = expert;
-  const enabledSkills = skills.filter((s) => s.enabled !== false);
-
-  const navigateTo = (path: string) => {
-    window.history.pushState({}, "", path);
-    window.dispatchEvent(new PopStateEvent("popstate"));
-  };
-
-  const basicInfoTab = React.createElement(
-    "div",
-    null,
+  const { agent, config, skills, mcps } = expert;
+  const display = expertPresentation(expert);
+  const description =
+    config?.description?.trim() || agent.description?.trim() || display.summary;
+  const enabledSkills = skills.filter((skill) => skill.enabled !== false);
+  const enabledServices = mcps.filter((client) => client.enabled !== false);
+  const section = (title: string, content: any) =>
     React.createElement(
-      Descriptions,
-      { column: 1, bordered: true, size: "small" },
-      React.createElement(Descriptions.Item, { label: "专家名称" }, agent.name),
-      React.createElement(
-        Descriptions.Item,
-        { label: "专家 ID" },
-        React.createElement("code", { style: { fontSize: 12 } }, agent.id),
-      ),
-      React.createElement(
-        Descriptions.Item,
-        { label: "状态" },
-        React.createElement(
-          Tag,
-          { color: agent.enabled ? "green" : "default" },
-          agent.enabled ? "启用" : "停用",
-        ),
-      ),
-      React.createElement(
-        Descriptions.Item,
-        { label: "功能简介" },
-        agent.description
-          ? renderMarkdown(agent.description, React)
-          : "暂无描述",
-      ),
-      React.createElement(
-        Descriptions.Item,
-        { label: "使用模型" },
-        agent.active_model
-          ? `${agent.active_model.provider_id} / ${agent.active_model.model}`
-          : "使用全局默认模型",
-      ),
-      config?.workspace_dir
-        ? React.createElement(
-            Descriptions.Item,
-            { label: "工作区路径" },
-            React.createElement(
-              "code",
-              { style: { fontSize: 11 } },
-              config.workspace_dir,
-            ),
-          )
-        : null,
-      config?.approval_level
-        ? React.createElement(
-            Descriptions.Item,
-            { label: "审批级别" },
-            config.approval_level,
-          )
-        : null,
-    ),
-    // System prompt files
-    config?.system_prompt_files && config.system_prompt_files.length > 0
-      ? React.createElement(
-          "div",
-          { style: { marginTop: 16 } },
-          React.createElement(
-            "div",
-            {
-              style: {
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                marginBottom: 8,
-              },
-            },
-            FileTextOutlined
-              ? React.createElement(FileTextOutlined, {
-                  style: { fontSize: 14, color: "var(--app-action-link)" },
-                })
-              : null,
-            React.createElement(Text, { strong: true }, "系统提示词文件"),
-          ),
-          React.createElement(
-            Space,
-            { wrap: true },
-            ...config.system_prompt_files.map((file, i) =>
-              React.createElement(
-                Tag,
-                {
-                  key: i,
-                  icon: FileTextOutlined
-                    ? React.createElement(FileTextOutlined)
-                    : undefined,
-                  style: { fontSize: 12 },
-                },
-                file,
-              ),
-            ),
-          ),
-        )
-      : null,
-  );
-
-  const handleOpenSkillPicker = async () => {
-    setSkillPickerOpen2(true);
-    setPoolLoading2(true);
-    try {
-      const pool = await fetchPoolSkills(true);
-      setPoolSkillsList2(pool);
-    } catch (err: any) {
-      antdMsg.error(err.message || "加载技能池失败");
-    } finally {
-      setPoolLoading2(false);
-    }
-  };
-
-  const handleBatchInstallSkills = async (skillNames: string[]) => {
-    let successCount = 0;
-    let failCount = 0;
-    for (const skillName of skillNames) {
-      try {
-        await installSkillFromPool(agent.id, skillName);
-        successCount++;
-      } catch {
-        failCount++;
-      }
-    }
-    if (successCount > 0) {
-      antdMsg.success(
-        `成功添加 ${successCount} 个技能${
-          failCount > 0 ? `，${failCount} 个失败` : ""
-        }`,
-      );
-      onRefresh();
-    } else if (failCount > 0) {
-      antdMsg.error("添加技能失败");
-    }
-    setSkillPickerOpen2(false);
-  };
-
-  const handleRemoveSkill = async (skillName: string) => {
-    try {
-      await deleteSkillForAgent(agent.id, skillName);
-      antdMsg.success(`技能「${skillName}」已移除`);
-      onRefresh();
-    } catch (err: any) {
-      antdMsg.error(err.message || "移除技能失败");
-    }
-  };
-
-  const handleRemoveMCP = async (clientKey: string) => {
-    try {
-      await deleteMCPForAgent(agent.id, clientKey);
-      antdMsg.success(`MCP「${clientKey}」已移除`);
-      onRefresh();
-    } catch (err: any) {
-      antdMsg.error(err.message || "移除 MCP 失败");
-    }
-  };
-
-  const skillsTab = loading
-    ? React.createElement(
-        "div",
-        { style: { textAlign: "center", padding: 40 } },
-        React.createElement(Spin, { size: "large" }),
-      )
-    : React.createElement(
-        "div",
-        null,
-        React.createElement(
-          "div",
-          {
-            style: {
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 12,
-            },
-          },
-          React.createElement(
-            Text,
-            { strong: true },
-            `已启用技能 (${enabledSkills.length})`,
-          ),
-          React.createElement(
-            Button,
-            {
-              type: "primary",
-              size: "small",
-              icon: PlusOutlined
-                ? React.createElement(PlusOutlined)
-                : undefined,
-              onClick: handleOpenSkillPicker,
-            },
-            "从技能池添加",
-          ),
-        ),
-        enabledSkills.length === 0
-          ? React.createElement(Empty, {
-              description: "该专家暂无已启用的技能",
-              image: Empty.PRESENTED_IMAGE_SIMPLE,
-            })
-          : React.createElement(List, {
-              dataSource: enabledSkills,
-              renderItem: (skill: SkillSpec) =>
-                React.createElement(
-                  List.Item,
-                  {
-                    actions: [
-                      React.createElement(
-                        Button,
-                        {
-                          type: "link",
-                          size: "small",
-                          danger: true,
-                          onClick: () => handleRemoveSkill(skill.name),
-                        },
-                        "移除",
-                      ),
-                    ],
-                  },
-                  React.createElement(
-                    "div",
-                    { style: { width: "100%" } },
-                    React.createElement(
-                      "div",
-                      {
-                        style: {
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          marginBottom: 4,
-                        },
-                      },
-                      skill.emoji
-                        ? React.createElement(
-                            "span",
-                            { style: { fontSize: 16 } },
-                            skill.emoji,
-                          )
-                        : null,
-                      React.createElement(Text, { strong: true }, skill.name),
-                      skill.version_text
-                        ? React.createElement(
-                            Tag,
-                            { style: { fontSize: 10 } },
-                            `v${skill.version_text}`,
-                          )
-                        : null,
-                    ),
-                    skill.description
-                      ? React.createElement(
-                          Paragraph,
-                          {
-                            type: "secondary",
-                            style: { fontSize: 12, margin: 0 },
-                            ellipsis: { rows: 2 },
-                          },
-                          skill.description,
-                        )
-                      : null,
-                    skill.tags && skill.tags.length > 0
-                      ? React.createElement(
-                          "div",
-                          { style: { marginTop: 4 } },
-                          ...skill.tags.map((tag, i) =>
-                            React.createElement(
-                              Tag,
-                              {
-                                key: i,
-                                color: "cyan",
-                                style: { fontSize: 10 },
-                              },
-                              tag,
-                            ),
-                          ),
-                        )
-                      : null,
-                  ),
-                ),
-            }),
-        // Skill Picker Modal (card-grid style, consistent with Skill Center)
-        React.createElement(SkillPickerModal, {
-          open: skillPickerOpen2,
-          onClose: () => setSkillPickerOpen2(false),
-          poolSkills: poolSkillsList2,
-          installedSkillNames: enabledSkills.map((s: SkillSpec) => s.name),
-          loading: poolLoading2,
-          onInstall: handleBatchInstallSkills,
-        }),
-      );
-
-  const mcpTab = loading
-    ? React.createElement(
-        "div",
-        { style: { textAlign: "center", padding: 40 } },
-        React.createElement(Spin, { size: "large" }),
-      )
-    : React.createElement(
-        "div",
-        null,
-        React.createElement(
-          "div",
-          {
-            style: {
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginBottom: 12,
-            },
-          },
-          React.createElement(
-            Text,
-            { strong: true },
-            `MCP 客户端 (${mcps.length})`,
-          ),
-          React.createElement(
-            Button,
-            {
-              type: "primary",
-              size: "small",
-              icon: PlusOutlined
-                ? React.createElement(PlusOutlined)
-                : undefined,
-              onClick: () => {
-                window.history.pushState({}, "", `/agents/${agent.id}/mcp`);
-                window.dispatchEvent(new PopStateEvent("popstate"));
-              },
-            },
-            "配置 MCP",
-          ),
-        ),
-        mcps.length === 0
-          ? React.createElement(Empty, {
-              description: "该专家暂无关联的 MCP 客户端，点击「配置 MCP」添加",
-              image: Empty.PRESENTED_IMAGE_SIMPLE,
-            })
-          : React.createElement(List, {
-              dataSource: mcps,
-              renderItem: (mcp: MCPClientInfo) =>
-                React.createElement(
-                  List.Item,
-                  {
-                    actions: [
-                      React.createElement(
-                        Button,
-                        {
-                          type: "link",
-                          size: "small",
-                          danger: true,
-                          onClick: () => handleRemoveMCP(mcp.key),
-                        },
-                        "移除",
-                      ),
-                    ],
-                  },
-                  React.createElement(
-                    "div",
-                    { style: { width: "100%" } },
-                    React.createElement(
-                      "div",
-                      {
-                        style: {
-                          display: "flex",
-                          alignItems: "center",
-                          gap: 8,
-                          marginBottom: 4,
-                        },
-                      },
-                      React.createElement(
-                        "span",
-                        { style: { fontSize: 14 } },
-                        "🔌",
-                      ),
-                      React.createElement(
-                        Text,
-                        { strong: true },
-                        mcp.name || mcp.key,
-                      ),
-                      React.createElement(
-                        Tag,
-                        {
-                          color: mcp.enabled ? "green" : "default",
-                          style: { fontSize: 10 },
-                        },
-                        mcp.enabled ? "启用" : "停用",
-                      ),
-                      React.createElement(
-                        Tag,
-                        { color: "purple", style: { fontSize: 10 } },
-                        mcp.transport,
-                      ),
-                    ),
-                    mcp.description
-                      ? React.createElement(
-                          Paragraph,
-                          {
-                            type: "secondary",
-                            style: { fontSize: 12, margin: 0 },
-                            ellipsis: { rows: 2 },
-                          },
-                          mcp.description,
-                        )
-                      : null,
-                    mcp.tools && mcp.tools.length > 0
-                      ? React.createElement(
-                          "div",
-                          {
-                            style: {
-                              marginTop: 4,
-                              fontSize: 11,
-                              color: "var(--app-card-muted, #8c8c8c)",
-                            },
-                          },
-                          `提供 ${mcp.tools.length} 个工具`,
-                        )
-                      : null,
-                  ),
-                ),
-            }),
-      );
-
-  const toolsTab = config?.tools
-    ? React.createElement(
-        "div",
-        { style: { padding: 16 } },
-        React.createElement(
-          "div",
-          { style: { marginBottom: 12 } },
-          React.createElement(
-            "div",
-            {
-              style: {
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                marginBottom: 8,
-              },
-            },
-            ToolOutlined
-              ? React.createElement(ToolOutlined, {
-                  style: { fontSize: 14, color: "var(--app-action-link)" },
-                })
-              : null,
-            React.createElement(Text, { strong: true }, "工具配置"),
-          ),
-          React.createElement(
-            "pre",
-            {
-              style: {
-                background: "var(--app-fill-faint, #fafafa)",
-                padding: 12,
-                borderRadius: 6,
-                fontSize: 12,
-                overflow: "auto",
-                maxHeight: 300,
-              },
-            },
-            JSON.stringify(config.tools, null, 2),
-          ),
-        ),
-      )
-    : React.createElement(Empty, {
-        description: "暂无工具配置",
-        image: Empty.PRESENTED_IMAGE_SIMPLE,
-      });
-
-  const tabItems = [
-    { key: "basic", label: "基本信息", children: basicInfoTab },
-    {
-      key: "skills",
-      label: `技能 (${enabledSkills.length})`,
-      children: skillsTab,
-    },
-    {
-      key: "prompts",
-      label: "推荐提问",
-      children: React.createElement(PresetPromptsTab, {
-        skills: enabledSkills,
-        agentId: agent.id,
-      }),
-    },
-    {
-      key: "knowledge",
-      label: "专家记忆",
-      children: React.createElement(KnowledgeBaseTab, {
-        agentId: agent.id,
-        systemPromptFiles: config?.system_prompt_files || [],
-        onRefresh: () => onRefresh(),
-      }),
-    },
-    { key: "mcp", label: `MCP (${mcps.length})`, children: mcpTab },
-    { key: "tools", label: "工具配置", children: toolsTab },
-  ];
+      "section",
+      { className: "ugsci-expert-introduction-section" },
+      React.createElement("h3", null, title),
+      content,
+    );
 
   return React.createElement(
     Drawer,
     {
-      title: React.createElement(
-        "div",
-        { style: { display: "flex", alignItems: "center", gap: 8 } },
-        React.createElement(ExpertAvatar, { name: agent.name, size: 28 }),
-        React.createElement("span", null, agent.name),
-      ),
+      title: `${display.name} · 专家介绍`,
+      className: "ugsci-expert-introduction",
+      destroyOnHidden: true,
       open,
       onClose,
-      width: 560,
-      extra: React.createElement(
-        Space,
-        null,
-        React.createElement(
-          Button,
-          {
-            size: "small",
-            icon: EditOutlined ? React.createElement(EditOutlined) : undefined,
-            onClick: () => {
-              // Close the drawer first to avoid React unmount conflicts
-              onClose();
-              // Set the selected agent so /agents page knows which to edit
-              try {
-                const host = getHost();
-                if (host.setSelectedAgent) {
-                  host.setSelectedAgent(agent.id);
-                }
-              } catch (err) {
-                console.warn("[ugsci] Failed to set selected agent:", err);
-              }
-              // Defer navigation to allow React to process state updates
-              setTimeout(() => navigateTo("/agents"), 0);
-            },
+      width: 600,
+      footer: React.createElement(
+        Button,
+        {
+          type: "primary",
+          disabled: !agent.enabled,
+          onClick: () => {
+            onClose();
+            onSummon(expert);
           },
-          "编辑专家",
-        ),
-        React.createElement(
-          Button,
-          {
-            type: "primary",
-            size: "small",
-            icon: ThunderboltOutlined
-              ? React.createElement(ThunderboltOutlined)
-              : undefined,
-            disabled: !agent.enabled,
-            onClick: () => {
-              onClose();
-              onSummon(expert);
-            },
-          },
-          agent.managed_by_app ? "打开应用" : "开始对话",
-        ),
+        },
+        agent.managed_by_app ? "打开应用" : "开始对话",
       ),
     },
-    React.createElement(Tabs, {
-      items: tabItems,
-      defaultActiveKey: "basic",
-    }),
+    React.createElement(
+      "div",
+      { className: "ugsci-expert-introduction-identity" },
+      React.createElement(ExpertAvatar, {
+        name: display.name,
+        recipe: avatarForExpert(expert),
+        size: 64,
+      }),
+      React.createElement(
+        "div",
+        null,
+        React.createElement("h2", null, display.name),
+        React.createElement("p", null, display.specialty),
+        React.createElement(Badge, {
+          status: agent.enabled ? "success" : "default",
+          text: agent.enabled ? "启用" : "停用",
+        }),
+      ),
+    ),
+    section("专家简介", renderMarkdown(display.summary, React)),
+    description !== display.summary &&
+      section("职责与工作方式", renderMarkdown(description, React)),
+    section(
+      `已启用技能 · ${enabledSkills.length}`,
+      enabledSkills.length
+        ? React.createElement(
+            "ul",
+            null,
+            ...enabledSkills.map((skill) =>
+              React.createElement(
+                "li",
+                { key: skill.name },
+                React.createElement(
+                  "details",
+                  null,
+                  React.createElement("summary", null, skill.name),
+                  renderMarkdown(skill.description || "暂无技能说明", React),
+                ),
+              ),
+            ),
+          )
+        : React.createElement(Empty, {
+            description: "暂未启用技能",
+            image: Empty.PRESENTED_IMAGE_SIMPLE,
+          }),
+    ),
+    enabledServices.length > 0 &&
+      section(
+        `可用服务 · ${enabledServices.length}`,
+        React.createElement(
+          "ul",
+          null,
+          ...enabledServices.map((client) =>
+            React.createElement(
+              "li",
+              { key: client.key },
+              React.createElement("h4", null, client.name || client.key),
+              client.description && renderMarkdown(client.description, React),
+            ),
+          ),
+        ),
+      ),
   );
 }
 
@@ -849,6 +330,7 @@ export function ExpertTemplateModal({
           values.description ? `\n\n职责：${values.description}` : ""
         }\n`;
       const setupResults = await Promise.allSettled([
+        initializeExpertAvatar(agentRef.id, values.name, values.description),
         writeKnowledgeFile(agentRef.id, "AGENTS.md", systemPrompt),
         ...values.mcpClients.map(({ clientKey, client }) =>
           createMCPForAgent(agentRef.id, {
@@ -935,8 +417,19 @@ export function ExpertTemplateModal({
         body: JSON.stringify(config),
       });
 
+      const avatarSaved = await initializeExpertAvatar(
+        agentRef.id,
+        template.name,
+        template.description,
+      )
+        .then(() => true)
+        .catch(() => false);
       await selectCreatedAgent(agentRef.id);
-      antdMsg.success(`专家「${template.name}」创建成功`);
+      if (avatarSaved) antdMsg.success(`专家「${template.name}」创建成功`);
+      else
+        antdMsg.warning(
+          `专家「${template.name}」已创建，头像配置保存失败，可在专家卡片中重试`,
+        );
       onClose();
       onCreated();
     } catch (err: any) {

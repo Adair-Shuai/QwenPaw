@@ -80,20 +80,17 @@ def _is_development_environment() -> bool:
         return True
     if override in {"0", "false", "no", "off"}:
         return False
-
     # The desktop marker is set for packaged launches even when the Windows
     # fallback launcher invokes the standalone interpreter.  Treat that path
     # as production too; source-edit hashing can be explicitly re-enabled via
     # QWENPAW_BUNDLED_PLUGIN_HASH=1 when diagnosing a packaged build.
     if os.environ.get("QWENPAW_DESKTOP_APP") == "1":
         return False
-
     # A PyInstaller process is a packaged application even when the desktop
     # marker is present.  Never scan the full bundled tree in that process by
     # default.
     if bool(getattr(sys, "frozen", False)):
         return False
-
     here = Path(__file__).resolve()
     return any(
         (parent / "pyproject.toml").is_file()
@@ -153,7 +150,6 @@ def _get_bundled_plugins_dirs() -> list[Path]:
         add_candidate(package_root / "plugins_bundle")
     except Exception:
         pass
-
     # PyInstaller exposes the unpacked onedir root through ``_MEIPASS``.
     # Prefer the package-relative path above, then use these explicit fallbacks
     # for macOS .app relocations and alternate bootloader layouts.
@@ -176,7 +172,6 @@ def _get_bundled_plugins_dirs() -> list[Path]:
             executable_root / "_internal" / "qwenpaw" / "plugins_bundle",
         )
         add_candidate(executable_root / "qwenpaw" / "plugins_bundle")
-
     # Development mode only: look for plugins/bundle/. Frozen applications
     # must use only the signed package/_MEIPASS/executable roots above.
     # relative to repo root by walking up from this file.
@@ -184,14 +179,12 @@ def _get_bundled_plugins_dirs() -> list[Path]:
     # root, so walking up from __file__ will find it.
     if frozen_runtime:
         return result
-
     here = Path(__file__).resolve().parent
     for parent in [here, *here.parents]:
         candidate = parent / "plugins" / "bundle"
         if candidate.is_dir() and candidate not in result:
             result.append(candidate)
             break  # only need the first match
-
     # Also scan plugins/apps/ — app-type plugins (e.g. agent-kanban)
     # live at a separate level from regular bundle plugins but are
     # loaded through the same PluginLoader pipeline once installed
@@ -201,7 +194,6 @@ def _get_bundled_plugins_dirs() -> list[Path]:
         if candidate.is_dir() and candidate not in result:
             result.append(candidate)
             break  # only need the first match
-
     return result
 
 
@@ -752,7 +744,6 @@ def _compute_bundle_hash(plugin_dir: Path, manifest: dict[str, Any]) -> str:
         relative_name = f.relative_to(plugin_dir).as_posix()
         h.update(relative_name.encode("utf-8"))
         h.update(f.read_bytes())
-
     return h.hexdigest()
 
 
@@ -964,7 +955,6 @@ def _install_or_update_plugin(
             plugin_id,
         )
         return False
-
     if target_dir.exists():
         existing_manifest = _read_manifest(target_dir)
         if existing_manifest is not None and not force:
@@ -974,7 +964,6 @@ def _install_or_update_plugin(
 
             if existing_cmp > bundled_cmp:
                 return False  # Installed version is newer
-
             if existing_cmp == bundled_cmp:
                 # Packaged bundles are immutable. A matching version and all
                 # declared entry files are enough; do not read/hash the full
@@ -1035,7 +1024,6 @@ def _install_or_update_plugin(
                 "Force-updating bundled plugin '%s'",
                 plugin_id,
             )
-
         if bundled_hash is None:
             if hash_enabled:
                 bundled_hash = _bundle_hash_for_install(
@@ -1058,7 +1046,6 @@ def _install_or_update_plugin(
             plugin_id=plugin_id,
         )
         return True
-
     logger.info("Installing bundled plugin '%s'", plugin_id)
     try:
         if hash_enabled:
@@ -1116,7 +1103,6 @@ def ensure_bundled_plugins_installed(
     if not bundled_dirs:
         logger.debug("No bundled plugins directory found")
         return []
-
     plugins_dir = get_plugins_dir()
     plugins_dir.mkdir(parents=True, exist_ok=True)
 
@@ -1130,11 +1116,9 @@ def ensure_bundled_plugins_installed(
             manifest_path = item / "plugin.json"
             if not manifest_path.exists():
                 continue
-
             bundled_manifest = _read_manifest(item)
             if bundled_manifest is None:
                 continue
-
             plugin_id = bundled_manifest.get("id", item.name)
 
             if plugin_id in skip_ids:
@@ -1143,7 +1127,6 @@ def ensure_bundled_plugins_installed(
                     plugin_id,
                 )
                 continue
-
             if plugin_id in _BUNDLED_EXCLUDE:
                 logger.debug(
                     "Skipping bundled plugin '%s' - excluded"
@@ -1151,7 +1134,6 @@ def ensure_bundled_plugins_installed(
                     plugin_id,
                 )
                 continue
-
             target_dir = plugins_dir / plugin_id
 
             if is_plugin_uninstalled(
@@ -1164,7 +1146,6 @@ def ensure_bundled_plugins_installed(
                     plugin_id,
                 )
                 continue
-
             try:
                 # A prior process may have exited after publishing a bundled
                 # candidate but before PluginLoader could confirm it. Restore
@@ -1187,13 +1168,11 @@ def ensure_bundled_plugins_installed(
                     "Failed to sync bundled plugin '%s'",
                     plugin_id,
                 )
-
     if installed_or_updated:
         logger.info(
             "Bundled plugins installed/updated: %s",
             ", ".join(installed_or_updated),
         )
-
     return installed_or_updated
 
 

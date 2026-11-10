@@ -351,9 +351,11 @@ export default function AppBrand({
           <Slot name="header.logo" kind="replace">
             <img
               src={`${import.meta.env.BASE_URL}${
-                isDark ? "logo-dark.svg" : "logo-light.svg"
+                isDark
+                  ? "ugsci-mono/brand/lockup-white.svg"
+                  : "ugsci-mono/brand/lockup-black.svg"
               }`}
-              alt="QwenPaw"
+              alt="UGSci"
               className={styles.logoImg}
             />
           </Slot>

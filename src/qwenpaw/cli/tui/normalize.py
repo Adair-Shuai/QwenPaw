@@ -245,11 +245,9 @@ def normalize_update(update: Any) -> list[TuiEvent]:
         if isinstance(meta, dict) and meta.get(_ERROR_META_KEY):
             return [TransportError(text)]
         return [TextDelta(text)]
-
     if kind == "agent_thought_chunk":
         text = _block_text(getattr(update, "content", None))
         return [ThoughtDelta(text)] if text else []
-
     if kind in ("tool_call", "tool_call_update"):
         return [
             ToolCall(
@@ -267,7 +265,6 @@ def normalize_update(update: Any) -> list[TuiEvent]:
                 links=_tool_links(getattr(update, "content", None)),
             ),
         ]
-
     if kind == "plan":
         entries = [
             PlanEntry(
@@ -278,7 +275,6 @@ def normalize_update(update: Any) -> list[TuiEvent]:
             for e in (getattr(update, "entries", None) or [])
         ]
         return [PlanUpdate(entries=entries)]
-
     if kind == "usage_update":
         return [
             Usage(
@@ -287,7 +283,6 @@ def normalize_update(update: Any) -> list[TuiEvent]:
                 threshold=_usage_threshold(update),
             ),
         ]
-
     if kind == "available_commands_update":
         commands = [
             SlashCommand(
@@ -298,15 +293,12 @@ def normalize_update(update: Any) -> list[TuiEvent]:
             if (name := getattr(c, "name", "") or "")
         ]
         return [AvailableCommands(commands=commands)]
-
     if kind == "session_info_update":
         title = getattr(update, "title", None)
         return [SessionTitle(str(title))] if title else []
-
     if kind == "user_message_chunk":
         # Some transports surface prior user turns as session updates.
         text = _block_text(getattr(update, "content", None))
         return [UserTurn(text)] if text else []
-
     # current_mode / config_option: not surfaced in the chat transcript (yet).
     return []

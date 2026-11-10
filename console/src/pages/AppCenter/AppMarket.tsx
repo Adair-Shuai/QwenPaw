@@ -1,3 +1,4 @@
+import { UGSCI_BUTTON_LOADING } from "@/components/UgsciMotion";
 /**
  * AppMarket.tsx — App market view for the App Center.
  *
@@ -650,7 +651,11 @@ export function AppMarket({
             <Download size={14} />
           )
         }
-        loading={!isInstalled && !isQueued && installingId === entry.id}
+        loading={
+          !isInstalled && !isQueued && installingId === entry.id
+            ? UGSCI_BUTTON_LOADING
+            : false
+        }
         disabled={
           isInstalled ||
           isQueued ||
@@ -674,18 +679,6 @@ export function AppMarket({
 
   return (
     <div>
-      {usesSignedCatalog && (
-        <Alert
-          type="info"
-          showIcon
-          message={
-            channel === "ugsci"
-              ? t("appCenter.ugsciRoute")
-              : t("appCenter.officialRoute")
-          }
-          style={{ marginBottom: 16 }}
-        />
-      )}
       {isOfficial ? (
         <div className={styles.toolbar}>{searchControl}</div>
       ) : (
@@ -859,7 +852,10 @@ export function AppMarket({
             {!loading && plugins.length > 0 && (
               <div className={styles.loadMoreRow}>
                 {hasMore && autoLoadBlocked ? (
-                  <Button onClick={handleRetryLoadMore} loading={loadingMore}>
+                  <Button
+                    onClick={handleRetryLoadMore}
+                    loading={loadingMore ? UGSCI_BUTTON_LOADING : false}
+                  >
                     {t("appCenter.loadMore", "加载更多")}
                   </Button>
                 ) : hasMore ? (

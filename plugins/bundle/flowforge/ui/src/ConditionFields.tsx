@@ -1,3 +1,4 @@
+import { useWorkflowI18n } from "./i18n";
 import React from "react";
 
 /** Structured predicates with an advanced editor for nested logical expressions. */
@@ -9,63 +10,119 @@ export function ConditionFields({
 }: {
   value: any;
   onChange: (conditions: any[]) => void;
-  targets: { label: string; value: string }[];
+  targets: {
+    label: string;
+    value: string;
+  }[];
   antd: any;
 }) {
+  const { t } = useWorkflowI18n();
   const { Button, Input, Select, Form, Typography, Collapse, Alert } = antd;
   const conditions: any[] = Array.isArray(value) ? value : [];
   const change = (index: number, patch: any) =>
     onChange(
       conditions.map((condition, i) =>
-        i === index ? { ...condition, ...patch } : condition,
+        i === index
+          ? {
+              ...condition,
+              ...patch,
+            }
+          : condition,
       ),
     );
   const operators = [
-    { value: "eq", label: "等于" },
-    { value: "ne", label: "不等于" },
-    { value: "gt", label: "大于" },
-    { value: "ge", label: "大于等于" },
-    { value: "lt", label: "小于" },
-    { value: "le", label: "小于等于" },
-    { value: "contains", label: "包含" },
-    { value: "is_null", label: "为空" },
-    { value: "is_not_null", label: "不为空" },
+    {
+      value: "eq",
+      label: t("等于"),
+    },
+    {
+      value: "ne",
+      label: t("不等于"),
+    },
+    {
+      value: "gt",
+      label: t("大于"),
+    },
+    {
+      value: "ge",
+      label: t("大于等于"),
+    },
+    {
+      value: "lt",
+      label: t("小于"),
+    },
+    {
+      value: "le",
+      label: t("小于等于"),
+    },
+    {
+      value: "contains",
+      label: t("包含"),
+    },
+    {
+      value: "is_null",
+      label: t("为空"),
+    },
+    {
+      value: "is_not_null",
+      label: t("不为空"),
+    },
   ];
   return (
-    <div style={{ marginBottom: 18 }}>
-      <Typography.Title level={5}>条件分支</Typography.Title>
+    <div
+      style={{
+        marginBottom: 18,
+      }}
+    >
+      <Typography.Title level={5}>{t("条件分支")}</Typography.Title>
       {!Array.isArray(value) && value !== undefined && (
-        <Alert type="error" message="条件配置应为数组，请修正配置" />
+        <Alert type="error" message={t("条件配置应为数组，请修正配置")} />
       )}
       {conditions.map((condition, index) => {
         const expression = condition.if || condition.if_expr || {};
         const compound = ["and", "or", "not"].includes(expression.operator);
         const editExpression = (key: string, item: any) =>
           change(index, {
-            if: { ...expression, [key]: item },
+            if: {
+              ...expression,
+              [key]: item,
+            },
             if_expr: undefined,
           });
         return (
           <div className="ff-condition" key={index}>
-            <Typography.Text strong>分支 {index + 1}</Typography.Text>
+            <Typography.Text strong>
+              {t("分支 ")}
+              {index + 1}
+            </Typography.Text>
             {compound ? (
               <Alert
                 type="info"
-                message="复合逻辑条件"
-                description="使用下方高级配置编辑嵌套条件。"
+                message={t("复合逻辑条件")}
+                description={t("使用下方高级配置编辑嵌套条件。")}
               />
             ) : (
               <>
-                <Form.Item label="比较变量" style={{ margin: "10px 0" }}>
+                <Form.Item
+                  label={t("比较变量")}
+                  style={{
+                    margin: "10px 0",
+                  }}
+                >
                   <Input
                     value={expression.left || ""}
-                    placeholder="如 inventory.pressure"
+                    placeholder={t("如 inventory.pressure")}
                     onChange={(event: any) =>
                       editExpression("left", event.target.value)
                     }
                   />
                 </Form.Item>
-                <Form.Item label="判断条件" style={{ marginBottom: 10 }}>
+                <Form.Item
+                  label={t("判断条件")}
+                  style={{
+                    marginBottom: 10,
+                  }}
+                >
                   <Select
                     value={expression.operator || "eq"}
                     options={operators}
@@ -76,8 +133,10 @@ export function ConditionFields({
                 </Form.Item>
                 {!["is_null", "is_not_null"].includes(expression.operator) && (
                   <Form.Item
-                    label="比较值（数字、布尔值或文本）"
-                    style={{ marginBottom: 10 }}
+                    label={t("比较值（数字、布尔值或文本）")}
+                    style={{
+                      marginBottom: 10,
+                    }}
                   >
                     <Input
                       value={
@@ -99,15 +158,23 @@ export function ConditionFields({
                 )}
               </>
             )}
-            <Form.Item label="满足条件后执行" style={{ marginBottom: 10 }}>
+            <Form.Item
+              label={t("满足条件后执行")}
+              style={{
+                marginBottom: 10,
+              }}
+            >
               <Select
                 value={condition.then_node || condition.then}
                 options={targets}
-                placeholder="选择目标节点"
+                placeholder={t("选择目标节点")}
                 showSearch
                 optionFilterProp="label"
                 onChange={(target: string) =>
-                  change(index, { then_node: target, then: undefined })
+                  change(index, {
+                    then_node: target,
+                    then: undefined,
+                  })
                 }
               />
             </Form.Item>
@@ -116,18 +183,24 @@ export function ConditionFields({
               items={[
                 {
                   key: "advanced",
-                  label: "高级条件配置",
+                  label: t("高级条件配置"),
                   children: (
                     <Input.TextArea
                       defaultValue={JSON.stringify(expression, null, 2)}
                       key={JSON.stringify(expression)}
-                      autoSize={{ minRows: 3, maxRows: 12 }}
+                      autoSize={{
+                        minRows: 3,
+                        maxRows: 12,
+                      }}
                       onBlur={(event: any) => {
                         try {
                           const parsed = JSON.parse(event.target.value);
-                          change(index, { if: parsed, if_expr: undefined });
+                          change(index, {
+                            if: parsed,
+                            if_expr: undefined,
+                          });
                         } catch {
-                          antd.message.error("条件 JSON 格式错误，尚未应用");
+                          antd.message.error(t("条件 JSON 格式错误，尚未应用"));
                         }
                       }}
                     />
@@ -140,7 +213,7 @@ export function ConditionFields({
               size="small"
               onClick={() => onChange(conditions.filter((_, i) => i !== index))}
             >
-              删除分支
+              {t("删除分支")}
             </Button>
           </div>
         );
@@ -151,11 +224,17 @@ export function ConditionFields({
         onClick={() =>
           onChange([
             ...conditions,
-            { if: { left: "", operator: "eq", right: "" } },
+            {
+              if: {
+                left: "",
+                operator: "eq",
+                right: "",
+              },
+            },
           ])
         }
       >
-        + 添加条件分支
+        {t("+ 添加条件分支")}
       </Button>
     </div>
   );

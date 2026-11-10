@@ -112,7 +112,6 @@ class SkillScanner:
             self._analyzers = list(analyzers)
         else:
             self._analyzers = self._default_analyzers(self._policy)
-
         # --- file limits: explicit arg > policy > hardcoded fallback ------
         policy_limits = self._policy.file_limits
         self._max_files = (
@@ -177,7 +176,6 @@ class SkillScanner:
                 skill_directory=str(skill_path),
                 scan_duration_seconds=time.monotonic() - t0,
             )
-
         # 1. Discover files ------------------------------------------------
         files = self._discover_files(skill_path)
         logger.debug(
@@ -210,7 +208,6 @@ class SkillScanner:
                 analyzers_failed.append(
                     {"analyzer": analyzer.get_name(), "error": str(exc)},
                 )
-
         # 3. De-duplicate by finding id (if policy permits) ----------------
         if self._policy.rule_scoping.dedupe_duplicate_findings:
             seen: set[str] = set()
@@ -221,7 +218,6 @@ class SkillScanner:
                     unique.append(f)
         else:
             unique = all_findings
-
         elapsed = time.monotonic() - t0
         result = ScanResult(
             skill_name=name,
@@ -253,7 +249,6 @@ class SkillScanner:
         except OSError as exc:
             logger.warning("Cannot walk %s: %s", skill_dir, exc)
             return result
-
         for p in candidates:
             # Skip symlinks to prevent path-traversal attacks where a
             # malicious skill symlinks to sensitive files outside the
@@ -292,10 +287,8 @@ class SkillScanner:
                     skill_dir,
                 )
                 break
-
             sf = SkillFile.from_path(p, skill_dir)
             result.append(sf)
-
         return result
 
     # ------------------------------------------------------------------
@@ -314,5 +307,4 @@ class SkillScanner:
             analyzers.append(PatternAnalyzer(policy=policy))
         except Exception as exc:
             logger.error("Failed to load PatternAnalyzer: %s", exc)
-
         return analyzers

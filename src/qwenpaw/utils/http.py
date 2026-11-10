@@ -138,14 +138,12 @@ def apply_network_config(cfg: Any) -> None:
     else:
         # auto: restore original system proxy env vars.
         _restore_original_proxy_env()
-
     # Always ensure NO_PROXY includes the configured no_proxy_hosts
     # plus loopback addresses.
     no_proxy_hosts = list(getattr(cfg, "no_proxy_hosts", []) or [])
     for lb in ("localhost", "127.0.0.1", "::1"):
         if lb not in no_proxy_hosts:
             no_proxy_hosts.append(lb)
-
     # Merge with original NO_PROXY (if any) rather than overwriting,
     # so user-configured system NO_PROXY entries are preserved.
     original_no_proxy = (
@@ -215,7 +213,6 @@ def resolve_proxy_for_url(url: str) -> Optional[str]:
     """
     if is_loopback_url(url):
         return None
-
     if _network_config is not None:
         mode = getattr(_network_config, "proxy_mode", "auto")
         if mode == "disabled":
@@ -225,7 +222,6 @@ def resolve_proxy_for_url(url: str) -> Optional[str]:
                 getattr(_network_config, "custom_proxy_url", "") or ""
             ).strip()
             return proxy_url or None
-
     # auto: let httpx handle it via trust_env
     return None
 
@@ -268,12 +264,10 @@ def build_httpx_proxy_kwargs(base_url: str) -> dict:
     if _network_config is None:
         # No config loaded yet — preserve historical behaviour.
         return {"trust_env": not is_loopback_url(base_url)}
-
     mode = getattr(_network_config, "proxy_mode", "auto")
 
     if mode == "disabled":
         return {"trust_env": False}
-
     if mode == "custom":
         proxy_url = (
             getattr(_network_config, "custom_proxy_url", "") or ""
@@ -282,6 +276,5 @@ def build_httpx_proxy_kwargs(base_url: str) -> dict:
             return {"proxy": proxy_url, "trust_env": False}
         # Empty URL or loopback target → direct connection.
         return {"trust_env": False}
-
     # auto: let httpx read env vars, but still bypass for loopback.
     return {"trust_env": not is_loopback_url(base_url)}

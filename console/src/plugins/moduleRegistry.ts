@@ -9,6 +9,8 @@
  * 3. Host code accesses modules via moduleRegistry.get/call to ensure using plugin-modified versions
  */
 
+import type { WindowNamespace } from "./hostExternals";
+
 export interface ModuleRegistry {
   /**
    * Register a module (called by generated registerHostModules())
@@ -132,13 +134,13 @@ export const moduleRegistry = new ModuleRegistryImpl();
 // Set during initialization
 if (typeof window !== "undefined") {
   if (!window.QwenPaw) {
-    (window as any).QwenPaw = {};
+    window.QwenPaw = {} as WindowNamespace;
   }
 
   // Use Proxy for dynamic access, ensuring plugins always get latest module state
   Object.defineProperty(window.QwenPaw, "modules", {
     get() {
-      return (moduleRegistry as any).getAllModules();
+      return moduleRegistry.getAllModules();
     },
     configurable: true,
     enumerable: true,

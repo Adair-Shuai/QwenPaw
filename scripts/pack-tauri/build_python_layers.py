@@ -87,26 +87,61 @@ _UNUSED_DEPENDENCY_TREES = (
 )
 _GENERATED_DEPENDENCY_DIRECTORIES = {"__pycache__"}
 _GENERATED_DEPENDENCY_SUFFIXES = (".dSYM",)
+# Only these audited scientific packages lose their upstream test suites.
+# Never apply a blanket "tests/testing/data" rule: numpy.testing,
+# sympy.testing, pandas._testing, native headers and scientific reference
+# data are also used by real tools and must remain available offline.
+_TEST_SUITE_PACKAGES = frozenset(
+    {
+        "h5py",
+        "matplotlib",
+        "mpmath",
+        "numpy",
+        "pandas",
+        "pyarrow",
+        "scipy",
+        "shapely",
+        "sympy",
+    },
+)
+
+
+def _remove_dependency_tree(root: Path, target: Path) -> None:
+    # Staging must never prune a linked source checkout or another layer.
+    resolved = target.resolve()
+    if resolved == root or not resolved.is_relative_to(root):
+        raise ValueError(
+            f"dependency pruning path escapes its layer: {target}",
+        )
+    remove_tree(target)
 
 
 def prune_python_packages(root: Path) -> list[str]:
     """Remove unused or reproducible generated trees from the runtime layer."""
+    root = root.resolve(strict=True)
     removed: list[str] = []
     for parts in _UNUSED_DEPENDENCY_TREES:
         target = root.joinpath(*parts)
         if target.is_dir():
-            remove_tree(target)
+            _remove_dependency_tree(root, target)
             removed.append("/".join(parts))
     for current, directories, _names in os.walk(root, topdown=True):
         directories.sort()
+        relative = Path(current).relative_to(root)
         for name in list(directories):
+            is_test_suite = (
+                name == "tests"
+                and bool(relative.parts)
+                and relative.parts[0] in _TEST_SUITE_PACKAGES
+            )
             if (
-                name not in _GENERATED_DEPENDENCY_DIRECTORIES
+                not is_test_suite
+                and name not in _GENERATED_DEPENDENCY_DIRECTORIES
                 and not name.endswith(_GENERATED_DEPENDENCY_SUFFIXES)
             ):
                 continue
             target = Path(current) / name
-            remove_tree(target)
+            _remove_dependency_tree(root, target)
             directories.remove(name)
             removed.append(target.relative_to(root).as_posix())
     return removed

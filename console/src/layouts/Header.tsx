@@ -11,6 +11,7 @@ import { useTheme } from "../contexts/ThemeContext";
 import { Slot } from "../plugins/registry/Slot";
 import { applyLanguagePreference } from "../utils/languagePreference";
 import AppBrand from "./AppBrand";
+import { SearchTrigger } from "../features/global-search/SearchTrigger";
 import styles from "./index.module.less";
 
 const { Header: AntHeader } = Layout;
@@ -72,6 +73,7 @@ export default function Header({ showBrand = false }: { showBrand?: boolean }) {
         {showBrand && (
           <>
             <div className={styles.utilityGroup}>
+              <SearchTrigger compact />
               <span className={styles.hideOnMobile}>
                 <LanguageSwitcher />
               </span>

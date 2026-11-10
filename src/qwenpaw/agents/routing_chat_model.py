@@ -45,7 +45,6 @@ class RoutingPolicy:
                 route="cloud",
                 reasons=["mode:cloud_first"],
             )
-
         return RoutingDecision(
             route="local",
             reasons=["mode:local_first"],

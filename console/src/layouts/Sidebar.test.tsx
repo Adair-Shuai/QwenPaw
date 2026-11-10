@@ -81,6 +81,17 @@ vi.mock("@/plugins/registry/store", () => ({
 import { BUILTIN_MENU } from "./registry/builtinMenu";
 
 describe("Sidebar navigation — A#84552933 应用导航入口", () => {
+  it("registers Workflows after Experts against the optional FlowForge route", () => {
+    expect(
+      BUILTIN_MENU.find((item) => item.id === "flowforge.editor"),
+    ).toMatchObject({
+      location: "primary.agentScoped",
+      route: "flowforge.editor",
+      after: "ugsci.experts",
+      label: expect.any(Function),
+      icon: expect.anything(),
+    });
+  });
   it("uses a conversation icon for the sessions entry", () => {
     expect(BUILTIN_MENU.find((item) => item.id === "core.sessions")?.icon).toBe(
       MessagesSquare,

@@ -54,7 +54,6 @@ class NativeToolTextStream:
             raise NonNativeToolMarkupError(
                 "TextBlock contained textual tool-call markup",
             )
-
         # A tool tag may be split at any character, so retain one unfinished
         # angle-bracket suffix until its next chunk can classify it.
         last_open = self._pending.rfind("<")

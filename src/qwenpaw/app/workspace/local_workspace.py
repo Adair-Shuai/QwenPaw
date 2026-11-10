@@ -128,14 +128,20 @@ class QwenPawLocalWorkspace(AgentScopeLocalWorkspace):
             request_context=request_context,
         )
 
-        return [
-            PolicyGuardedTool(
-                d.func,
+        tools = []
+        for descriptor in descs:
+            tool = PolicyGuardedTool(
+                descriptor.func,
+                name=descriptor.name,
                 governor=self._governor,
                 request_context=request_context,
             )
-            for d in descs
-        ]
+            if descriptor.description not in tool.description:
+                tool.description = "\n\n".join(
+                    filter(None, (descriptor.description, tool.description)),
+                )
+            tools.append(tool)
+        return tools
 
     # -------------------------------------------------------------- internal
 

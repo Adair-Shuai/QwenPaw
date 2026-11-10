@@ -44,7 +44,6 @@ class ExecTracer:
             )
             if not should_trace:
                 return self.trace_calls
-
         co = frame.f_code
         func_name = co.co_name
         filename = co.co_filename
@@ -69,7 +68,6 @@ class ExecTracer:
                     class_name = type(instance).__name__
             except (AttributeError, TypeError):
                 class_name = type(instance).__name__
-
         descriptive_name = f"{module_name}.{class_name}.{func_name}"
 
         if event == "call":
@@ -106,7 +104,6 @@ class ExecTracer:
                     except (AttributeError, TypeError):
                         caller_class = "global"
                 caller_name = f"{caller_module}.{caller_class}.{caller_func}"
-
             call_info = {
                 "sequence": self.sequence_counter,
                 "function": descriptive_name,
@@ -120,7 +117,6 @@ class ExecTracer:
             }
             self.call_sequence.append(call_info)
             self.execution_order.append(call_info)
-
         elif event == "return":
             if self.call_stack:
                 func_name = self.call_stack.pop()
@@ -137,7 +133,6 @@ class ExecTracer:
                         call_info["exit_time"] = end_time * 1000
                         call_info["duration"] = duration * 1000
                         break
-
         elif event == "exception":
             exception_type, exception_value, tb = arg
             if self.call_stack:
@@ -150,7 +145,6 @@ class ExecTracer:
                             "traceback": "\n".join(traceback.format_tb(tb)),
                         }
                         break
-
         return self.trace_calls
 
     def generate_json(self, output_path):
@@ -174,7 +168,6 @@ class ExecTracer:
             total_time = latest_end - earliest_start
         else:
             total_time = 0
-
         json_data = {
             "metadata": {
                 "package_names": self.package_names,
@@ -202,7 +195,6 @@ def main():
     if len(sys.argv) < 2:
         print("Usage: python tracer.py <output_json>")
         sys.exit(1)
-
     output_path = sys.argv[1]
 
     tracer = ExecTracer(package_names=["qwenpaw"])

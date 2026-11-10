@@ -73,7 +73,6 @@ def _quote_windows_arg(arg: str, *, force: bool = False) -> str:
     rendered = subprocess.list2cmdline([arg])
     if not force or rendered.startswith('"'):
         return rendered
-
     escaped: list[str] = []
     backslashes = 0
     for char in arg:
@@ -150,7 +149,6 @@ def _build_transport(
     )
     if project_dir:
         description = f"{description} cwd={project_dir}"
-
     return (
         # Project-bound TUI sessions start ACP in the project root and also
         # send explicit metadata so Coding Mode can apply a request overlay.

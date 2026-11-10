@@ -229,6 +229,8 @@ async def test_cancel_during_config_save_keeps_runtime_and_disk_consistent(
     save_succeeds,
     bounded_dependency_environment,
 ):
+    # Retain fixture injection and substituted callback signatures.
+    # pylint: disable=unused-argument
     config_path = tmp_path / "config.json"
     monkeypatch.setattr(
         "qwenpaw.constant.WORKING_DIR",

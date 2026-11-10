@@ -75,6 +75,7 @@ async def begin_turn_files(
     agent_id: str,
     response_id: str,
     project_dirs: list[Path],
+    track_tools: bool = False,
 ) -> TurnFileTracker | None:
     if workspace_dir is None:
         return None
@@ -128,6 +129,7 @@ async def begin_turn_files(
             client_message_id=client_id,
             response_id=response_id,
             roots=roots,
+            track_tools=track_tools,
         )
         return store, capture
 
@@ -158,9 +160,19 @@ async def begin_turn_files(
         return None
 
 
+def record_tool_activity() -> None:
+    """Mark an actual invocation in this turn's inherited execution context."""
+    tracker = _current.get()
+    # pylint: disable-next=protected-access
+    if tracker is not None and tracker._finish_task is None:
+        tracker.capture.tool_activity = True
+
+
 async def record_delivered_file(path: str | Path) -> None:
     """Called only after send_file's content checks succeeded."""
     tracker = _current.get()
+    # The delivery lifecycle finalizes its paired immutable archive task.
+    # pylint: disable-next=protected-access
     if tracker is None or tracker._finish_task is not None:
         return
     try:

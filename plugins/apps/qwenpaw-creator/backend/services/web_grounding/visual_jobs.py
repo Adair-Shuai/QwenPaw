@@ -417,7 +417,6 @@ def _recover_person_entities_from_queries(
         name = _clean_text(match.group(1), max_chars=120)
         if name:
             names.append(name)
-
     # Prefer the most informative canonical form and collapse surname-only aliases.
     canonical: list[str] = []
     for name in sorted(

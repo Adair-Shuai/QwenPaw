@@ -1,4 +1,65 @@
 {
+  "delivery": {
+    "open": "打开",
+    "openWith": "打开方式",
+    "openUsing": "使用 {{application}} 打开",
+    "preview": "内置预览",
+    "systemDefault": "系统默认应用",
+    "default": "（默认）",
+    "showLocation": "显示文件位置",
+    "loadingApps": "正在读取打开方式…",
+    "appsFailed": "暂时无法读取系统应用",
+    "retryApps": "重新读取打开方式",
+    "openFailed": "文件未能打开，请重试或下载后打开",
+    "revealFailed": "无法显示交付文件位置，请重试"
+  },
+  "globalSearch": {
+    "user": "你",
+    "assistant": "助手",
+
+    "filters": "筛选",
+    "resultCount": "{{count}} 条结果",
+
+    "chatPreviewHint": "在原会话中继续查看消息、附件与交付成果。",
+    "scopeShort": "搜索所选专家的会话与文件记录",
+    "enterQuery": "输入关键词以检索此分类",
+    "title": "全局搜索",
+    "placeholder": "搜索会话、消息、文件和成果…",
+    "agent": "搜索专家",
+    "time": "会话更新时间",
+    "sort": "排序方式",
+    "days0": "全部时间",
+    "days7": "近 7 天更新",
+    "days30": "近 30 天更新",
+    "relevance": "相关优先",
+    "recent": "最近更新",
+    "archived": "包含归档",
+    "all": "全部",
+    "chat": "会话",
+    "message": "消息",
+    "file": "文件记录",
+    "artifact": "交付成果",
+    "recentSearches": "最近搜索",
+    "clear": "清除",
+    "error": "搜索失败，请检查连接后重试。",
+    "retry": "重试",
+    "results": "搜索结果",
+    "empty": "没有找到匹配结果，试试其他关键词或放宽筛选。",
+    "noRecent": "该分类暂无近期内容",
+    "reset": "重置筛选",
+    "preview": "结果预览",
+    "previewHint": "选择结果，查看来源和内容摘要。",
+    "locate": "打开会话并定位",
+    "open": "打开来源会话",
+    "isArchived": "已归档",
+    "progress": "{{count}} 条结果 · 已检索 {{scanned}} / {{total}} 个会话",
+    "partial": "{{count}} 项读取失败，结果可能不完整。",
+    "limited": "结果最多 500 条，每会话最多检索 100 轮文件记录。",
+    "more": "继续检索更早会话",
+    "scope": "当前所选专家；文件与成果仅检索会话记录的名称和路径",
+    "keys": "↑ ↓ 选择 · Enter 打开 · Esc 关闭",
+    "locateUnavailable": "会话已打开，目标消息暂未加载或不支持定位。"
+  },
   "turnFiles": {
     "capturing": "正在整理本轮文件归档…",
     "captureFailed": "本轮文件记录暂不可用，请重试。",
@@ -15,7 +76,7 @@
     "lineChanges": "已统计文本行增删",
     "deliveredCount": "{{count}} 个交付成果",
     "downloadTurn": "下载本轮归档",
-    "archiveHint": "文件名查看本轮版本 · 文件夹打开当前版本",
+    "archiveHint": "本轮交付版本独立保存，后续修改不会覆盖",
     "interrupted": "本轮未正常完成，已保留结束前捕获的文件。",
     "overlap": "本轮与其他任务同时操作目录，变更可能包含其他任务的写入。",
     "incomplete": "部分文件未能完整捕获；请查看记录详情。",
@@ -508,8 +569,20 @@
     },
     "pageStyles": {
       "classic": "原有布局",
-      "deepseek": "deepseek风格",
-      "openai": "openai风格"
+      "deepseek": "简洁风格",
+      "dual-sidebar": "双侧边栏"
+    },
+    "dualSidebar": {
+      "home": "主页",
+      "experts": "专家",
+      "workflows": "工作流",
+      "runs": "运行",
+      "schedules": "定时任务",
+      "navigation": "功能导航",
+      "collapse": "收起会话栏",
+      "expand": "展开会话栏",
+      "settings": "打开设置",
+      "account": "账户与外观"
     },
     "pageNavigation": "主导航",
     "searchConversations": "搜索对话",
@@ -3117,7 +3190,36 @@
       "oauthDescription": "将打开浏览器以授权使用 ChatGPT 订阅额度，完成后请返回 QwenPaw。"
     }
   },
+  "workbench": {
+    "activities": "工作台活动",
+    "activity": {
+      "files": "文件与预览",
+      "interactions": "任务交互",
+      "browser": "浏览器",
+      "agents": "智能体进程",
+      "genui": "GenUI",
+      "compute": "计算轨道",
+      "simulation": "数模监测"
+    },
+    "activityShort": {
+      "files": "文件",
+      "interactions": "交互",
+      "browser": "浏览器",
+      "agents": "智能体",
+      "genui": "GenUI",
+      "compute": "计算",
+      "simulation": "数模"
+    }
+  },
   "files": {
+    "fileTab": "文件",
+    "selectSource": "选择文件来源",
+    "showNavigator": "显示文件导航器",
+    "hideNavigator": "收起文件导航器",
+    "maximizeWorkspace": "最大化工作区",
+    "restoreWorkspace": "还原工作区视图",
+    "readOnly": "只读",
+    "generatedContent": "生成内容",
     "loadingMoreDeliverables": "正在加载历史成果…",
     "deliverablesMoreFailed": "历史成果加载失败，请重试。",
     "retryMoreDeliverables": "重试加载历史成果",
@@ -4277,7 +4379,7 @@
       "stepsRunning": "正在执行中… · {{count}} 个步骤",
       "stepsCanceled": "已取消 · {{count}} 个步骤",
       "stepsFailed": "执行失败 · {{count}} 个步骤",
-      "stepsCompleted": "已完成 {{count}} 个步骤"
+      "stepsCompleted": "{{count}} 个步骤已完成"
     },
     "statusIdle": "空闲",
     "statusInProgress": "进行中",
@@ -4288,6 +4390,14 @@
     "prompt1": "让我们开启一段新的旅程吧！",
     "prompt2": "能告诉我你有哪些技能吗？",
     "inputPlaceholder": "\"↑↓\" 浏览消息 · \"/\" 快捷指令 · \"@\" 指派 Agent",
+    "answerQuote": {
+      "action": "引用",
+      "selected": "已选引用",
+      "view": "查看引用：{{text}}",
+      "remove": "移除引用：{{text}}",
+      "count": "{{count}} 处引用",
+      "limit": "最多引用 12 处、共 32,000 字，请缩小选区或移除部分引用。"
+    },
     "composer": {
       "placeholder": "发送消息 · \"/\" 快捷指令 · \"@\" 指派 Agent · ↑↓ 浏览记录",
       "addContent": "添加内容",
@@ -4363,6 +4473,83 @@
     },
     "rateLimitHit": "当前模型已触发限流，请尝试切换其他免费模型。",
     "modelFallbackNotice": "模型已从 {{from}} 切换到 {{to}}（{{reason}}）。",
+    "contextInspector": {
+      "labels": {
+        "memory": "召回记忆",
+        "user": "用户消息",
+        "assistant": "助手消息",
+        "system": "系统提示",
+        "tool": "工具结果",
+        "quote": "回答引用"
+      },
+      "title": "上下文",
+      "close": "收起上下文",
+      "sections": "上下文详情内容",
+      "sources": "来源清单",
+      "summary": "压缩摘要",
+      "scope": "查看上下文范围",
+      "draft": "待发送材料",
+      "latest": "最近已保存",
+      "draftHint": "仅影响下一次发送",
+      "latestHint": "只读记录",
+      "loading": "正在读取上下文记录…",
+      "retry": "重试",
+      "emptyDraft": "还没有待发送的引用",
+      "emptyLatest": "暂无已保存的上下文记录",
+      "removed": "已移除 {{title}}",
+      "remove": "移除 {{title}}",
+      "undo": "撤销",
+      "sourcesNotice": "附件请在输入框预览区查看和移除。工作目录中的文件按需读取，可访问不代表已纳入模型请求。",
+      "retainedSummary": "当前保留的摘要",
+      "summaryUnavailable": "当前后端未提供压缩摘要。",
+      "emptySummary": "当前会话暂无压缩摘要。",
+      "summaryNotice": "这里只展示实际保存的压缩摘要；压缩不会删除完整聊天记录。",
+      "busyHint": "任务执行结束后可压缩",
+      "manageHint": "压缩沿用当前会话的处理方式",
+      "usageHint": "会话用量估算 · 当前草稿尚未计入",
+      "usageDetails": "用量详情",
+      "capturedAt": "记录时间：{{time}}。",
+      "summaryStale": "摘要可能早于当前记录。",
+      "sourceTruncated": "内容节选",
+      "status": {
+        "included": "已纳入模型请求",
+        "pending": "待发送",
+        "unknown": "加载情况未知",
+        "accessible": "可访问，尚未读取"
+      },
+      "kind": {
+        "attachment": "附件",
+        "quote": "引用",
+        "rule": "项目与系统规则",
+        "memory": "记忆",
+        "message": "对话",
+        "other": "其他来源"
+      },
+      "sourceKinds": {
+        "conversation": "对话记录",
+        "file": "文件",
+        "quote": "回答引用",
+        "system": "系统规则",
+        "summary": "压缩摘要",
+        "memory": "记忆"
+      },
+      "errors": {
+        "load": "上下文读取失败，请重试。",
+        "mismatch": "上下文所属会话已变化，请重试。"
+      },
+      "notices": {
+        "savedSession": "旧会话仅展示已保存材料，无法还原当时的完整模型请求。",
+        "latestSaved": "展示最近已保存的模型请求；发送后的来源仅供查看。",
+        "running": "任务正在执行，此处显示最近已保存记录，完成后会更新。",
+        "unsupported": "当前后端暂不支持上下文来源查询。"
+      },
+      "limitations": {
+        "legacy_snapshot": "旧会话没有模型请求来源快照。",
+        "runtime_sources_unavailable": "未记录的运行时规则与记忆无法确认。",
+        "snapshot_truncated": "为控制记录大小，部分材料仅保留节选。",
+        "provider_payload_not_recorded": "未保存供应商最终格式的完整请求。"
+      }
+    },
     "turnUsagePopover": {
       "ariaLabel": "上下文占用 {{contextRate}}，缓存命中 {{cacheRate}}，查看用量详情",
       "turn": "本轮",
@@ -4568,6 +4755,9 @@
       "action": "编辑并重新发送",
       "send": "重新发送",
       "description": "作为新消息发送，原记录保留。",
+      "keepOriginal": "保留原消息",
+      "replaceDescription": "从此处重新生成，清除原消息及后续对话。",
+      "missingTarget": "此消息缺少历史标识，请刷新后重试，或勾选“保留原消息”。",
       "message": "编辑消息内容",
       "attachments": "保留的附件",
       "queued": "已加入消息队列",

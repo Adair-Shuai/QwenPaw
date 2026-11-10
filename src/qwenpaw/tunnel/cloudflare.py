@@ -57,7 +57,6 @@ class CloudflareTunnelDriver:
         """
         if self._process and self._process.returncode is None:
             await self.stop()
-
         binary = await self._binary_mgr.get_binary_path()
 
         logger.info(
@@ -80,7 +79,6 @@ class CloudflareTunnelDriver:
             raise RuntimeError(
                 "cloudflared did not produce a tunnel URL within 30 seconds",
             )
-
         self._info = TunnelInfo(
             public_url=url,
             public_wss_url=url.replace("https://", "wss://"),
@@ -105,7 +103,6 @@ class CloudflareTunnelDriver:
             except asyncio.CancelledError:
                 pass
             self._monitor_task = None
-
         if self._process and self._process.returncode is None:
             logger.info("Stopping cloudflared (pid=%s)", self._process.pid)
             self._process.terminate()
@@ -133,7 +130,6 @@ class CloudflareTunnelDriver:
         """Read cloudflared stderr until the public URL appears."""
         if not self._process or not self._process.stderr:
             return None
-
         loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
         while loop.time() < deadline:
@@ -179,12 +175,10 @@ class CloudflareTunnelDriver:
 
         if not self._process:
             return
-
         try:
             await self._process.wait()
         except asyncio.CancelledError:
             return
-
         rc = self._process.returncode
         logger.warning(
             "cloudflared exited with code %s; not restarting Quick Tunnel "

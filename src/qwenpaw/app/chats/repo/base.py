@@ -81,7 +81,6 @@ class BaseChatRepository(ABC):
             ):
                 logger.debug(f"get_chat_by_id: Found match: {chat.id}")
                 return chat
-
         logger.debug("get_chat_by_id: No match found")
         return None
 
@@ -123,7 +122,6 @@ class BaseChatRepository(ABC):
         ]
         if not matching:
             return None
-
         index, existing = max(
             matching,
             key=lambda item: item[1].updated_at,
@@ -146,7 +144,6 @@ class BaseChatRepository(ABC):
         """
         if not chat_ids:
             return False
-
         cf = await self.load()
         before = len(cf.chats)
         cf.chats = [c for c in cf.chats if c.id not in chat_ids]
@@ -177,11 +174,8 @@ class BaseChatRepository(ABC):
 
         if user_id is not None:
             results = [c for c in results if c.user_id == user_id]
-
         if channel is not None:
             results = [c for c in results if c.channel == channel]
-
         if archived is not None:
             results = [c for c in results if c.archived == archived]
-
         return results

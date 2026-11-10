@@ -1,12 +1,27 @@
-import React, { useEffect, useState } from "react";
+import React, {
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useRef,
+  useState,
+} from "react";
 import { useOverlayVisibility } from "@/contexts/OverlayVisibilityContext";
-import { Button, Popover, Space } from "antd";
+import { Popover } from "antd";
 import { useTranslation } from "react-i18next";
 import { Gauge } from "lucide-react";
 import { formatCompact } from "../../../../utils/formatNumber";
 import { cacheHitRate, formatPercent } from "../../../../utils/cacheUsage";
 import { useTurnUsageStore } from "../../turnUsageStore";
 import type { ContextUsage, TurnUsage } from "../../turnUsage";
+import { ContextInspectorPanel } from "./ContextInspectorPanel";
+import type { ContextInspectorProps } from "./types";
+import styles from "./ContextUsageIndicator.module.less";
+
+export type {
+  ContextInspectorDetails,
+  ContextInspectorProps,
+  ContextInspectorSource,
+} from "./types";
 
 const DIAL_SIZE = 24;
 const DIAL_CENTER = DIAL_SIZE / 2;
@@ -14,9 +29,9 @@ const CONTEXT_RADIUS = 10.5;
 const CONTEXT_CIRCUMFERENCE = 2 * Math.PI * CONTEXT_RADIUS;
 
 function contextRingColor(ratio: number): string {
-  if (ratio >= 90) return "#cf1322";
-  if (ratio >= 75) return "#d48806";
-  return "#66756d";
+  if (ratio >= 90) return "var(--app-error-text, #cf1322)";
+  if (ratio >= 75) return "var(--app-warning-text, #d48806)";
+  return "var(--app-text-secondary, #66756d)";
 }
 
 function cacheDialColors(rate: number | null): {
@@ -24,9 +39,15 @@ function cacheDialColors(rate: number | null): {
   text: string;
 } {
   if (rate === null || rate <= 0) {
-    return { fill: "rgba(102, 117, 109, 0.10)", text: "#7f8983" };
+    return {
+      fill: "var(--app-surface-sunken, rgba(102, 117, 109, 0.10))",
+      text: "var(--app-text-secondary, #7f8983)",
+    };
   }
-  return { fill: "rgba(39, 139, 89, 0.12)", text: "#278b59" };
+  return {
+    fill: "var(--app-success-bg, rgba(39, 139, 89, 0.12))",
+    text: "var(--app-success-text, #278b59)",
+  };
 }
 
 function cacheDialText(rate: number | null): string {
@@ -119,44 +140,26 @@ function MetricRow({
   valueColor?: string;
 }) {
   return (
-    <div
-      style={{
-        display: "grid",
-        gridTemplateColumns: "1fr auto",
-        gap: 12,
-        alignItems: "baseline",
-      }}
-    >
+    <div className={styles.metric}>
       <div>
         <div style={{ fontWeight: 600 }}>{name}</div>
-        <div style={{ opacity: 0.68, fontSize: 12, marginTop: 2 }}>
+        <div className={styles.metricDetail}>
           {position} · {detail}
         </div>
       </div>
-      <div
-        style={{
-          color: valueColor,
-          fontSize: 15,
-          fontWeight: 700,
-          fontVariantNumeric: "tabular-nums",
-        }}
-      >
+      <div className={styles.metricValue} style={{ color: valueColor }}>
         {value}
       </div>
     </div>
   );
 }
 
-function PopoverBody({
+function UsageMetrics({
   usage,
   context,
-  onCompact,
-  onNew,
 }: {
   usage: TurnUsage | null;
   context: ContextUsage;
-  onCompact: () => void;
-  onNew: () => void;
 }) {
   const { t } = useTranslation();
   const contextRate = Math.max(
@@ -165,29 +168,40 @@ function PopoverBody({
   );
   const cacheRate = cacheRateFromUsage(usage);
   return (
-    <div
-      style={{
-        width: "min(260px, calc(100vw - 64px))",
-        fontSize: 13,
-        lineHeight: 1.5,
-        color: "var(--app-text)",
-      }}
-    >
-      <MetricRow
-        name={t("chat.turnUsagePopover.contextLabel")}
-        position={t("chat.turnUsagePopover.outerRing")}
-        detail={`${formatCompact(context.estimated_tokens)} / ${formatCompact(
-          context.max_input_length,
-        )}`}
-        value={formatPercent(contextRate)}
-      />
-      <div
-        style={{
-          marginTop: 12,
-          paddingTop: 12,
-          borderTop: "1px solid var(--app-border)",
-        }}
-      >
+    <>
+      {context.max_input_length ? (
+        <>
+          <MetricRow
+            name={t("chat.turnUsagePopover.contextLabel")}
+            position={t("chat.turnUsagePopover.outerRing")}
+            detail={`${formatCompact(
+              context.estimated_tokens,
+            )} / ${formatCompact(context.max_input_length)}`}
+            value={formatPercent(contextRate)}
+            valueColor={contextRingColor(contextRate)}
+          />
+          <div
+            className={styles.meter}
+            role="progressbar"
+            aria-label={t("chat.turnUsagePopover.contextLabel")}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={contextRate}
+          >
+            <div
+              style={{
+                width: `${contextRate}%`,
+                background: contextRingColor(contextRate),
+              }}
+            />
+          </div>
+        </>
+      ) : (
+        <p className={styles.muted}>{t("chat.composer.contextUnavailable")}</p>
+      )}
+      <div className={styles.muted}>{t("chat.contextInspector.usageHint")}</div>
+      <details className={styles.cacheDetails}>
+        <summary>{t("chat.contextInspector.usageDetails")}</summary>
         <MetricRow
           name={t("chat.turnUsagePopover.cacheLabel")}
           position={t("chat.turnUsagePopover.centerValue")}
@@ -203,45 +217,76 @@ function PopoverBody({
           }
           value={formatPercent(cacheRate)}
           valueColor={
-            cacheRate !== null && cacheRate > 0 ? "#278b59" : undefined
+            cacheRate !== null && cacheRate > 0
+              ? "var(--app-success-text, #278b59)"
+              : undefined
           }
         />
-      </div>
-      <div
-        style={{
-          marginTop: 12,
-          paddingTop: 12,
-          borderTop: "1px solid var(--app-border)",
-        }}
-      >
-        <div style={{ fontSize: 12, opacity: 0.65, marginBottom: 8 }}>
-          {t("chat.turnUsagePopover.manageContext")}
-        </div>
-        <Space size={8}>
-          <Button size="small" onClick={onCompact}>
-            {t("chat.turnUsagePopover.compact")}
-          </Button>
-          <Button size="small" onClick={onNew}>
-            {t("chat.turnUsagePopover.new")}
-          </Button>
-        </Space>
-      </div>
-    </div>
+      </details>
+    </>
   );
 }
 
-const ContextUsageIndicator: React.FC<{
-  onCompact: () => void;
-  onNew: () => void;
-  showValue?: boolean;
-}> = ({ onCompact, onNew, showValue = false }) => {
+const ContextUsageIndicator: React.FC<
+  ContextInspectorProps & {
+    onCompact: () => void;
+    onNew: () => void;
+    showValue?: boolean;
+  }
+> = ({ onCompact, onNew, showValue = false, ...inspector }) => {
   const { t } = useTranslation();
   const snapshot = useTurnUsageStore((state) => state.snapshot);
   const [open, setOpen] = useState(false);
+  const [availableHeight, setAvailableHeight] = useState<number>();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
+  const inspectRef = useRef(inspector.onInspect);
+  inspectRef.current = inspector.onInspect;
+  const openChangeRef = useRef(inspector.onOpenChange);
+  openChangeRef.current = inspector.onOpenChange;
+  const dialogId = useId();
   const overlayVisible = useOverlayVisibility();
   useEffect(() => {
     if (!overlayVisible) setOpen(false);
   }, [overlayVisible]);
+  useEffect(() => {
+    setOpen(false);
+  }, [inspector.scopeKey]);
+  useLayoutEffect(() => {
+    if (!open) return;
+    const measure = () => {
+      const bounds = triggerRef.current?.getBoundingClientRect();
+      if (!bounds) return;
+      const viewport = window.visualViewport;
+      const height = viewport?.height ?? window.innerHeight;
+      const top = viewport?.offsetTop ?? 0;
+      const above = Math.max(0, Math.min(height, bounds.top - top));
+      const below = Math.max(0, Math.min(height, top + height - bounds.bottom));
+      setAvailableHeight(Math.max(0, Math.max(above, below) - 24));
+    };
+    measure();
+    window.addEventListener("resize", measure);
+    window.addEventListener("scroll", measure, true);
+    window.visualViewport?.addEventListener("resize", measure);
+    window.visualViewport?.addEventListener("scroll", measure);
+    return () => {
+      window.removeEventListener("resize", measure);
+      window.removeEventListener("scroll", measure, true);
+      window.visualViewport?.removeEventListener("resize", measure);
+      window.visualViewport?.removeEventListener("scroll", measure);
+    };
+  }, [open]);
+  useEffect(() => {
+    openChangeRef.current?.(open);
+    if (!open) return;
+    inspectRef.current?.();
+    const frame = requestAnimationFrame(() => dialogRef.current?.focus());
+    return () => cancelAnimationFrame(frame);
+  }, [open]);
+  const closeAndFocus = () => {
+    setOpen(false);
+    triggerRef.current?.focus();
+  };
 
   const activeMax = useTurnUsageStore((state) => state.activeMaxInputLength);
   const maxInputLength = activeMax ?? snapshot?.context_usage?.max_input_length;
@@ -266,33 +311,60 @@ const ContextUsageIndicator: React.FC<{
     <Popover
       open={open}
       onOpenChange={setOpen}
-      trigger={["hover", "click"]}
-      mouseEnterDelay={0.15}
+      trigger="click"
+      placement="top"
+      autoAdjustOverflow
+      destroyOnHidden
+      overlayClassName={styles.popover}
       content={
-        maxInputLength ? (
-          <PopoverBody
-            usage={snapshot?.usage ?? null}
-            context={context}
-            onCompact={onCompact}
-            onNew={onNew}
+        <div
+          ref={dialogRef}
+          id={dialogId}
+          className={styles.dialog}
+          style={
+            availableHeight !== undefined
+              ? ({
+                  "--context-panel-max-height": `${availableHeight}px`,
+                } as React.CSSProperties)
+              : undefined
+          }
+          role="dialog"
+          aria-label={t("chat.contextInspector.title")}
+          tabIndex={-1}
+          onKeyDown={(event) => {
+            if (event.key !== "Escape" || event.nativeEvent.isComposing) return;
+            event.preventDefault();
+            event.stopPropagation();
+            closeAndFocus();
+          }}
+        >
+          <ContextInspectorPanel
+            key={inspector.scopeKey}
+            {...inspector}
+            metrics={
+              <UsageMetrics usage={snapshot?.usage ?? null} context={context} />
+            }
+            onClose={closeAndFocus}
+            onCompact={() => {
+              closeAndFocus();
+              onCompact();
+            }}
+            onNew={() => {
+              closeAndFocus();
+              onNew();
+            }}
           />
-        ) : (
-          <div style={{ color: "var(--app-text)", padding: 8 }}>
-            <p>{t("chat.composer.contextUnavailable")}</p>
-            <Space size={8}>
-              <Button size="small" onClick={onCompact}>
-                {t("chat.turnUsagePopover.compact")}
-              </Button>
-              <Button size="small" onClick={onNew}>
-                {t("chat.turnUsagePopover.new")}
-              </Button>
-            </Space>
-          </div>
-        )
+        </div>
       }
     >
       <button
         type="button"
+        ref={triggerRef}
+        className={styles.trigger}
+        data-show-value={showValue}
+        aria-haspopup="dialog"
+        aria-expanded={open}
+        aria-controls={open ? dialogId : undefined}
         aria-label={
           !maxInputLength
             ? t("chat.composer.contextUnavailable")
@@ -301,21 +373,6 @@ const ContextUsageIndicator: React.FC<{
                 cacheRate: formatPercent(cacheRate),
               })
         }
-        style={{
-          display: showValue ? "inline-flex" : "grid",
-          gap: 6,
-          alignItems: "center",
-          width: showValue ? "auto" : 32,
-          height: 32,
-          padding: 4,
-          placeItems: "center",
-          flex: "none",
-          cursor: "pointer",
-          color: "inherit",
-          background: "transparent",
-          border: 0,
-          borderRadius: 9,
-        }}
       >
         {maxInputLength ? (
           <FusionUsageDial contextRate={contextRate} cacheRate={cacheRate} />

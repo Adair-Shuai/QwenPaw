@@ -24,7 +24,6 @@ def resolve_launch(
         headless = False
     else:
         headless = in_container or not has_display
-
     default_kind, default_path = system_default
     engine = config.engine
     executable_path = config.executable_path
@@ -47,7 +46,6 @@ def resolve_launch(
             engine, executable_path = "chromium", default_path
         else:
             engine, executable_path = "chromium", bundled_path
-
     return {
         "headless": headless,
         "engine": engine,

@@ -7,11 +7,19 @@ import { resolve } from "path";
  * Loaded lazily by the bootstrap when user opens the visualization page.
  */
 export default defineConfig({
+  define: {
+    "process.env.NODE_ENV": JSON.stringify("production"),
+  },
+  resolve: {
+    dedupe: ["react", "react-dom", "three"],
+  },
+  // Emit escaped shader strings so whitespace hooks preserve GLSL content.
+  esbuild: { supported: { "template-literal": false } },
   build: {
     lib: {
       entry: resolve(__dirname, "src/visualization/viewer/index.tsx"),
       name: "OilGasViewerRuntime",
-      fileName: (chunk: any) => {
+      fileName: () => {
         // Content hash will be appended by Vite's assetFileName
         // For IIFE, we use a fixed name and rely on version
         return "viewer-runtime.js";

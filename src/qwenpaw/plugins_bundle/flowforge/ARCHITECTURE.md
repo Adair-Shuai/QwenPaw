@@ -1,6 +1,6 @@
 # FlowForge 工作流架构
 
-本文以 `lobehub-style` 分支的实现为准，更新于 2026-10-25。核心代码位于 `src/qwenpaw/plugins_bundle/flowforge/`；`plugins/bundle/flowforge/` 是随宿主分发的同步副本。FlowForge 借鉴 LeAgent 的文档、节点与调度模型，不依赖 `leagent` Python 包。实际工具、模型、专家与权限由 QwenPaw 宿主提供。
+本文以当前仓库实现为准，更新于 2026-11-07。核心代码位于 `src/qwenpaw/plugins_bundle/flowforge/`；`plugins/bundle/flowforge/` 是随宿主分发的同步副本。FlowForge 借鉴 LeAgent 的文档、节点与调度模型，不依赖 `leagent` Python 包。实际工具、模型、专家与权限由 QwenPaw 宿主提供。
 
 ## 模块职责
 
@@ -11,6 +11,7 @@
 | `lifecycle.py` | `RunLifecycleMixin`：运行、恢复、取消、父子运行关联、后台事件循环与持久记录 |
 | `flow_repository.py` | SQLite 工作流当前版本、不可变历史版本、AI 提案、单次恢复占用 |
 | `execution_repository.py` | 每次公共运行的 JSON 记录、事件、状态、定义快照及版本 |
+| `file_io.py` | Windows 短暂文件占用的有限重试；原子替换失败保留旧记录并继续报错 |
 | `node_catalog.py` | `AgentNodeCatalog` 按专家生成节点目录；`GovernedWorkflowTools` 执行当前仍可用的工具 |
 | `authoring.py` | 模型请求、凭据占位、结构解析、差异预览与提案生成；生成过程不执行工具 |
 | `engine/document.py` | 统一工作流契约、边与引用归一化、结构及能力验证 |
@@ -19,7 +20,11 @@
 | `engine/adapter/` | 宿主工具、模型、专家运行时以及脚本工作进程适配 |
 | `ui/src/index.ts` | 插件入口、工作流列表、模板和宿主集成 |
 | `ui/src/Editor.tsx`、`model.ts`、`editor.css` | 编辑器、AI 提案、属性配置、图与文档转换、样式 |
-| `ui/src/RunPanels.tsx` | 运行详情、审批、父子运行导航、历史、SSE 与轮询 |
+| `ui/src/graphContracts.ts`、`InputBindings.tsx` | 类型端口、单输入绑定、循环预检、诊断兼容及输入来源选择 |
+| `ui/src/NodeInspector.tsx`、`SchemaField.tsx`、`AgentField.tsx` | Schema 驱动属性、真实专家目录、字段错误定位与请求作用域 |
+| `ui/src/NodeCard.tsx`、`fieldPresentation.ts` | 类型端口、配置摘要、中文字段和状态呈现 |
+| `ui/src/RunPanels.tsx`、`RunInspector.tsx` | 运行详情、节点观察、审批、父子导航、历史、SSE 与轮询 |
+| `inspection.py` | 不可变运行快照到公开节点观察的投影，以及 HTTP/SSE/WebSocket 的凭据脱敏 |
 
 宿主实际服务通过启动钩子注入。独立 `WorkflowExecutor` 可以用于单元测试；它不等同于已连接工具目录、专家工作区和模型提供商的宿主部署。
 
@@ -91,6 +96,8 @@ AI 编排采用“生成提案 → 展示差异与校验 → 应用”的流程�
 
 `WorkflowService` 在专用后台事件循环运行流程，使其不随单个 HTTP 请求结束。`RunHandle.finalized` 仅在最终记录持久化后为真。每次执行与恢复都有独立公共 `run_id`；恢复继续原 `state_id`，通过 `resumed_from_run_id` 和旧记录的 `resumed_by_run_id` 关联。
 
+检查点和运行记录在写入临时文件后原子替换。Windows 的短暂访问／共享冲突（WinError 5、32、33）最多重试 5 次，总等待不超过 310 ms；其他错误立即传播，持续写入失败仍使运行失败，不降级为内存成功。运行级异常日志保留原始异常链，便于从通用检查点错误定位到实际文件错误。
+
 运行开始固定 `flow_snapshot` 和 `flow_revision`，后续修改或删除当前定义不能改写该运行。子流程已经启动并暂停时，也保留自己的快照。尚未创建的子流程仍需要有效定义。公共运行接口隐藏完整 `flow_snapshot`，提供版本和执行信息。
 
 父子运行通过 `parent_run_id`、`root_run_id` 和 `workflow_stack` 追溯；递归调用和过深调用被限制。取消父运行会传给活动或暂停的后代；取消后不可再恢复。取消能中止本地可取消任务，不能回滚已经提交到外部系统的副作用。
@@ -120,10 +127,35 @@ AI 编排采用“生成提案 → 展示差异与校验 → 应用”的流程�
 | `GET /flows/{id}/versions`、`POST /flows/{id}/versions/{revision}/restore` | 历史版本和恢复为新修订 |
 | `POST /authoring/proposals`、`POST /authoring/proposals/{id}/apply` | AI 预览与应用 |
 | `POST /flows/{id}/run`、`GET /runs`、`GET /runs/{id}` | 启动、历史和详情 |
+| `POST /flows/{id}/debug` | 带修订号的单节点调试或执行到目标节点 |
 | `POST /runs/{id}/resume`、`POST /runs/{id}/cancel` | 恢复或取消 |
 | `GET /runs/{id}/events`、`/ws` | SSE 历史/实时事件与 WebSocket |
 
 前端使用 ReactFlow，React 和 Ant Design 来自宿主插件 SDK。模块化编辑器负责节点、数据与控制连线、属性、删除、撤销/重做、保存状态、导入导出、校验及版本。运行面板显示节点状态、产物、错误、事件和父子关联，通过携带宿主认证头的流式请求消费 SSE，并保留轮询恢复能力。`ui/dist/index.js` 是构建产物，不能仅修改产物而遗漏源代码。
+
+## 编排与调试的分层契约
+
+本轮参考 Langflow **v1.13.1** 的职责划分，按现有宿主接口独立实现，没有引入 Langflow、LangChain 或新的生产依赖。参考点为 [连接合法性与类型端口](https://github.com/langflow-ai/langflow/blob/v1.13.1/src/frontend/src/utils/reactflowUtils.ts)、[画布运行状态](https://github.com/langflow-ai/langflow/blob/v1.13.1/src/frontend/src/stores/flowStore.ts)、[图执行边界](https://github.com/langflow-ai/langflow/blob/v1.13.1/src/lfx/src/lfx/graph/graph/base.py)。这不是上游源码分支：后续功能升级需要审阅差异、选择适用能力并通过本仓库回归，不能自动获得 Langflow 升级。
+
+1. **节点目录是编辑契约。** 宿主提供每个节点的输入、输出、默认值、必填标记及可用性。属性表单与画布端口读取同一目录，目录迟到时补齐视图；空 `options` 不把普通文本变成枚举，通配类型的对象值保留 JSON 控件。`AgentNode.agent_id` 从真实专家目录选择，保留已保存但当前不可用的 ID；目录错误允许重试，不自动替换原配置。`LLMNode` 沿用宿主模型。`LLMCallNode` 显示为模型调用，空模型继承当前专家配置，显式模型或供应商按适配器支持的覆盖规则解析；实际供应商、模型与用量记录在运行元数据中。温度为零与缺省值分别保留。
+2. **连线表达真实输入。** 属性面板可选择兼容的上游输出，也可断开。数据边按目标字段持久化为实际引用；绑定字段只读，避免固定值与来源争夺。单输入端口拒绝多个来源，控制句柄拒绝多个目标；普通回环在连接前被拒绝，显式有界优化回边继续有效。已有嵌套引用由序列化与运行器保留，快捷来源选择器编辑顶层输入。
+3. **后端验证是最终裁决。** 前端预检改善交互，不替代保存和执行的同源后端校验。验证返回兼容旧 `errors` 的 `diagnostics`，每项有稳定 `code`、`severity`、`message`，以及适用的 `node_id`、`field`、`edge_id`。警告不改变 `ok`。编辑器将诊断定位到节点、字段或连线；本地“未配置”不冒充运行失败。
+4. **异步结果属于发起时的访问。** 目录、校验、保存和运行查询隔离流程、专家及运行作用域。过期验证不能使更新后的草稿开始试运行，离开编辑器后的请求不能触发运行，A→B→A 的旧保存不能改写新访问的修订号。试运行依次验证当前草稿、保存对应版本，再交给原有输入对话框和运行接口。
+5. **节点观察只来自该次运行。** `node_details` 从固定 `flow_snapshot` 和记录事件构建，保留节点身份、状态、最后一次执行的输出／错误及可得耗时。未执行、等待、跳过和失败明确区分，不用当前工作流定义或同名业务产物补造节点结果。新运行在解析后记录实际输入、输出槽位和执行元数据，并从固定定义记录配置。旧记录缺少实际输入时仍返回 `inputs_available: false`，界面明确显示不可用。
+6. **公开投影与内部执行分离。** HTTP 详情／列表、记录事件、SSE 和 WebSocket 共用公开脱敏；内部恢复及子流程仍读取原始记录。按固定输出契约区分节点 ID 映射与业务字段，避免 `tokenizer` 等节点名称误隐藏正常结果。字段及已知凭据值扫描是展示防护，不等同于任意自由文本的敏感信息识别。原始磁盘记录继续受宿主文件访问控制保护。
+7. **实时与回放共用事件身份。** SSE 请求携带宿主认证；接受 CRLF 分帧，以事件索引衔接重连、历史和实时，保留内容相同但实际不同的事件。轮询仍作为恢复通道，旧运行的迟到响应不能污染当前运行；离开监控或 A→B→A 后，旧审批响应不能触发导航。审批、恢复、取消及父子导航继续走原有生命周期。
+
+新增行为由真实编辑器／ReactFlow、属性面板和运行面板集成测试保护：`flowForgeGraph.test.tsx`、`flowForgeEditor.test.tsx`、`flowForgeInspector.test.tsx`、`flowForgeRunInspector.test.tsx`。后端 `test_authoring_diagnostics.py` 与 `test_run_inspection.py` 同时运行 canonical 和分发副本，覆盖真实服务及公开 HTTP/SSE/WebSocket；上述套件与关键用例加入固定回归清单。
+
+## 编辑草稿与可重复调试
+
+工作区使用紧凑节点、可调整宽度的停靠属性面板和底部运行调试栏。中文与英文读取宿主语言并即时更新界面，用户命名、脚本、提示词和变量标识保持原值。草稿与命名测试案例保存在当前浏览器，按账户、执行专家和工作流隔离。每个编辑访问拥有独立草稿记录，恢复旧修订需要明确确认；保存只清理对应内容，跨页导航与浏览器返回提供保存、保留草稿及继续编辑操作。存储错误必须可见，损坏草稿原文继续保留。
+
+调试请求携带 `expected_revision`、`mode`、`target_node_id`、`inputs`、`pins` 与可选 `node_inputs`。`pins` 是节点 ID 到真实输出槽位数组的映射，单个数组类型输出也保留外层槽位。单节点模式要求依赖由固定输出或显式输入提供；执行到节点模式只调度目标的依赖与控制路径，到达目标后停止。目标节点必须实际执行，控制分支节点不能固定输出。调试执行边界、类型、能力和修订在接纳前验证，验证与运行使用同一份定义快照。
+
+固定输出仅由独立调试入口传递，生产运行沿原有入口执行。调试复用持久运行、SSE、取消和审批恢复链路，公开记录带有调试模式、目标、固定节点及源修订，内部恢复参数继续执行公开脱敏。变量面板仅从同一流程与专家的实际运行读取，编辑后的测试值保留来源信息。运行历史可按状态、修订、专家和时间筛选，选择同一工作流的两次运行比较已保存的实际输入、输出、配置、错误、元数据与耗时；旧记录缺失的观察值不从当前定义推断。
+
+`flowForgeApp.test.tsx`、`flowForgeWorkbench.test.tsx`、`flowForgeRunComparison.test.tsx`、`flowForgeI18n.test.ts` 和宿主 `NavigationGuard.test.tsx` 保护真实页面入口与组件挂载。`test_debug_execution.py`、`test_model_generation_contract.py` 运行两份实际插件，覆盖执行边界、固定槽位、生产隔离、并发修订、重启恢复、取消及模型参数解析。
 
 ## 适用范围与验收
 

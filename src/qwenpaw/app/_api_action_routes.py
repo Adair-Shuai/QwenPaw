@@ -22,7 +22,6 @@ if TYPE_CHECKING:
 
     from ..api_action import ApiActionSpec, ManagerRegistry
     from ..runtime.slash_command_registry import CommandSpec
-
 logger = logging.getLogger(__name__)
 
 
@@ -59,7 +58,6 @@ def _make_endpoint(
             return await getattr(mgr, spec.name)()
 
         return endpoint
-
     if request_model is None:
 
         async def endpoint_path(**kwargs: Any) -> Any:
@@ -77,7 +75,6 @@ def _make_endpoint(
             ],
         )
         return endpoint_path
-
     if not path_params:
 
         async def endpoint_body(body: Any) -> Any:
@@ -176,7 +173,6 @@ def collect_slash_specs_from_api_actions(
         for action_spec in getattr(mgr_cls, "_api_actions", []):
             if "slash" not in action_spec.methods:
                 continue
-
             cmd_name = action_spec.slash_command or action_spec.name
 
             async def _adapter(

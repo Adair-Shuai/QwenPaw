@@ -56,7 +56,6 @@ class AgentStartupDisplay:
         """Start the fixed terminal region when a TTY is available."""
         if self._live is not None or not self._console.is_terminal:
             return self
-
         try:
             self._live = Live(
                 self._renderable(),

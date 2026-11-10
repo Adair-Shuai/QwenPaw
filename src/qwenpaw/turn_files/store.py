@@ -23,6 +23,7 @@ from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 from typing import Any
 
+from ..checkpoints.policy import is_qwenpaw_state_path
 from ..utils.io_utils import write_json_atomic
 from . import scanner
 from .scanner import FileState, Root, Snapshot, normalize_roots, safe_path
@@ -87,6 +88,8 @@ class Capture:
     overlap: bool = False
     finished: bool = False
     owner: "TurnFileStore | None" = field(default=None, repr=False)
+    track_tools: bool = False
+    tool_activity: bool = False
 
 
 class TurnFileStore:
@@ -126,6 +129,7 @@ class TurnFileStore:
         client_message_id: str,
         response_id: str,
         roots: list[tuple[str, Path]],
+        track_tools: bool = False,
     ) -> Capture:
         if not session_id:
             raise ValueError("A session identity is required")
@@ -146,11 +150,15 @@ class TurnFileStore:
             "_user_id": user_id,
             "_channel": channel,
         }
+        if track_tools:
+            # None means the attempt has not reached a terminal assessment.
+            manifest["tool_activity"] = None
         capture = Capture(
             turn_id,
             normalize_roots(roots),
             manifest,
             owner=self,
+            track_tools=track_tools,
         )
         with _REGISTRY_LOCK:
             for other in _ACTIVE.values():
@@ -172,8 +180,15 @@ class TurnFileStore:
 
     def record_delivery(self, capture: Capture, path: str | Path) -> bool:
         """Freeze explicitly delivered bytes before later overwrites."""
+        # pylint: disable=too-many-return-statements
         if capture.owner is not self:
             raise ValueError("Capture belongs to another store")
+        with self._lock:
+            if capture.finished:
+                return False
+            capture.tool_activity = True
+            if capture.track_tools:
+                capture.manifest["tool_activity"] = True
         candidate = Path(path).expanduser()
         if not candidate.is_absolute():
             if not capture.roots:
@@ -333,10 +348,23 @@ class TurnFileStore:
                     _ACTIVE.pop(capture.id, None)
 
     def _finish(self, capture: Capture, status: str) -> dict:
+        # Keep archive discovery and finalization in the immutable-delivery
+        # transaction.
+        # pylint: disable=R0912,R0915,R1702
+        # pylint: disable=too-many-boolean-expressions
         with self._lock:
             if capture.finished:
                 return _public(capture.manifest)
-            after = scanner.scan(capture.roots)
+            if capture.track_tools and not capture.tool_activity:
+                # A conversation without tools cannot own ambient writes by
+                # other sessions or runtime database maintenance.
+                capture.before = Snapshot()
+                capture.overlap = False
+                after = Snapshot()
+            else:
+                after = scanner.scan(capture.roots)
+            if capture.track_tools:
+                capture.manifest["tool_activity"] = capture.tool_activity
             warnings = list(
                 dict.fromkeys(capture.before.warnings + after.warnings),
             )
@@ -358,7 +386,15 @@ class TurnFileStore:
                 if (
                     before
                     and end
-                    and before.fingerprint == end.fingerprint
+                    and (
+                        before.fingerprint == end.fingerprint
+                        or (
+                            (before.uncertain or end.uncertain)
+                            and before.metadata_fingerprint
+                            and before.metadata_fingerprint
+                            == end.metadata_fingerprint
+                        )
+                    )
                     and not delivered
                 ):
                     continue
@@ -524,9 +560,28 @@ class TurnFileStore:
                         *value.get("warnings", []),
                         "Capture interrupted before final snapshot",
                     ]
+        # Legacy snapshots may contain host database sidecars. Apply the same
+        # runtime-state boundary to reads without altering archived evidence.
+        value["files"] = [
+            row
+            for row in value.get("files", [])
+            if row.get("root") != "workspace"
+            or not is_qwenpaw_state_path(row.get("path", ""))
+        ]
+        if value.get("tool_activity") is False:
+            # Also support evidence-backed corrections to legacy manifests.
+            # The original rows and blobs remain immutable on disk, while all
+            # read/download entry points honor the corrected attribution.
+            value["files"] = [
+                row for row in value.get("files", []) if row.get("delivered")
+            ]
+            if not value["files"]:
+                value.update(incomplete=False, warnings=[], overlap=False)
         return value
 
     def get_turn(self, turn_id: str, **scope) -> dict:
+        # The required session identity is forwarded in the validated scope.
+        # pylint: disable-next=missing-kwoa
         return _public(self._load(turn_id, **scope))
 
     def list_turns(

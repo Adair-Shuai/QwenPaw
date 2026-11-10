@@ -51,7 +51,7 @@ from ...envs import load_envs
 from ...utils.io_utils import run_sync_io
 
 logger = logging.getLogger(__name__)
-_CAPABILITY_CACHE_TTL_SECONDS = 10.0
+_CAPABILITY_CACHE_TTL_SECONDS = 30.0
 
 
 class MCPDriverHandler(DriverHandler):
@@ -65,9 +65,17 @@ class MCPDriverHandler(DriverHandler):
             ]
             | None
         ) = None
+        self._catalog_generation = 0
+        self._catalog_refresh: asyncio.Task | None = None
+        self._catalog_maintenance: asyncio.Task | None = None
+        self._catalog_changed = asyncio.Event()
+        self._refresh_after = 0.0
+        self._closed = False
+        self._catalog_semaphore = asyncio.Semaphore(1)
 
     async def _setup(self) -> None:
         """Create and connect StdIO / Auto / HttpStateful MCP clients."""
+        self._closed = False
         endpoint = self._card.endpoint
         transport = str(endpoint.get("transport") or "stdio")
         credentials = await self._resolve_credentials()
@@ -117,18 +125,45 @@ class MCPDriverHandler(DriverHandler):
             )
 
         try:
+            subscribe = getattr(
+                self._client,
+                "set_tools_changed_callback",
+                None,
+            )
+            if callable(subscribe):
+                subscribe(self._tools_changed)  # pylint: disable=not-callable
             await self._client.connect(**connect_kwargs)
         except asyncio.CancelledError:
             await self._client.close(ignore_errors=True)
             self._client = None
             raise
+
         except Exception:
             await self._client.close(ignore_errors=True)
             self._client = None
             raise
 
+        self._catalog_maintenance = asyncio.create_task(
+            self._maintain_catalog(),
+            name=f"mcp-catalog:{self.name}",
+        )
+
     async def _teardown(self) -> None:
         """Close connected MCP client if present."""
+        self._closed = True
+        self._catalog_generation += 1
+        tasks = [
+            task
+            for task in (
+                self._catalog_maintenance,
+                self._catalog_refresh,
+            )
+            if task is not None
+        ]
+        for task in tasks:
+            task.cancel()
+        await asyncio.gather(*tasks, return_exceptions=True)
+        self._catalog_maintenance = self._catalog_refresh = None
         self._capability_cache = None
         if self._client is not None:
             await self._client.close()
@@ -138,7 +173,89 @@ class MCPDriverHandler(DriverHandler):
         """Refresh card metadata and drop stale capability cache on config."""
         if card.config != self._card.config:
             self._capability_cache = None
+            self._tools_changed()
         super().sync_runtime_metadata(card)
+
+    def _tools_changed(self) -> None:
+        """Invalidate in-flight generations and wake the background owner."""
+        self._catalog_generation += 1
+        self._refresh_after = 0.0
+        self._catalog_changed.set()
+
+    def set_catalog_refresh_semaphore(
+        self,
+        semaphore: asyncio.Semaphore,
+    ) -> None:
+        """Share the manager's discovery limit with background refreshes."""
+        self._catalog_semaphore = semaphore
+
+    def _start_catalog_refresh(self) -> asyncio.Task:
+        if self._catalog_refresh is None or self._catalog_refresh.done():
+            self._catalog_refresh = asyncio.create_task(
+                self._refresh_catalog(),
+                name=f"mcp-discover:{self.name}",
+            )
+            self._catalog_refresh.add_done_callback(self._catalog_finished)
+        return self._catalog_refresh
+
+    def _catalog_finished(self, task: asyncio.Task) -> None:
+        if not task.cancelled() and task.exception() is not None:
+            logger.warning(
+                "MCP catalog refresh failed for '%s': %s",
+                self.name,
+                task.exception(),
+            )
+
+    async def _refresh_catalog(self) -> list[DriverCapability]:
+        started = time.monotonic()
+        try:
+            while not self._closed:
+                generation = self._catalog_generation
+                async with self._catalog_semaphore:
+                    tools = await self.list_tools()
+                if generation != self._catalog_generation:
+                    continue
+                whitelist = self._card_tool_whitelist(warn=True)
+                capabilities = [
+                    _mcp_tool_to_capability(
+                        self.name,
+                        tool,
+                        display_name=str(
+                            self._card.config.get("display_name") or "",
+                        ),
+                        whitelist=whitelist,
+                    )
+                    for tool in tools
+                ]
+                self._capability_cache = (time.monotonic(), capabilities)
+                logger.debug(
+                    "MCP catalog '%s' tools=%d refresh_ms=%.1f",
+                    self.name,
+                    len(capabilities),
+                    (time.monotonic() - started) * 1000,
+                )
+                return capabilities
+            return []
+        finally:
+            self._refresh_after = (
+                time.monotonic() + _CAPABILITY_CACHE_TTL_SECONDS
+            )
+
+    async def _maintain_catalog(self) -> None:
+        while not self._closed:
+            self._catalog_changed.clear()
+            try:
+                await asyncio.shield(self._start_catalog_refresh())
+            except Exception:
+                # A failed refresh retains the last published generation.
+                pass
+            try:
+                await asyncio.wait_for(
+                    self._catalog_changed.wait(),
+                    timeout=_CAPABILITY_CACHE_TTL_SECONDS,
+                )
+            except asyncio.TimeoutError:
+                pass
 
     def _card_tool_whitelist(
         self,
@@ -182,25 +299,15 @@ class MCPDriverHandler(DriverHandler):
     ) -> list[DriverCapability]:
         """Expose MCP tools as protocol-neutral Driver capabilities."""
         del request_context
-        now = time.monotonic()
         if self._capability_cache is not None:
-            cached_at, cached = self._capability_cache
-            if now - cached_at <= _CAPABILITY_CACHE_TTL_SECONDS:
-                return list(cached)
-
-        tools = await self.list_tools()
-        whitelist = self._card_tool_whitelist(warn=True)
-        capabilities = [
-            _mcp_tool_to_capability(
-                self.name,
-                tool,
-                display_name=str(self._card.config.get("display_name") or ""),
-                whitelist=whitelist,
-            )
-            for tool in tools
-        ]
-        self._capability_cache = (now, capabilities)
-        return list(capabilities)
+            if not self._closed and time.monotonic() >= self._refresh_after:
+                self._start_catalog_refresh()
+            return list(self._capability_cache[1])
+        if self._closed:
+            return []
+        # Only cold discovery waits. Cancellation of a chat must not cancel
+        # the refresh shared by other chats and the lifecycle owner.
+        return list(await asyncio.shield(self._start_catalog_refresh()))
 
     async def invoke_capability(  # pylint: disable=too-many-return-statements
         self,

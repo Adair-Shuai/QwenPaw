@@ -266,6 +266,8 @@ class TestWriteFile:
 
 
 class TestEditFile:
+    # Keep the real lifecycle sequence and all behavior assertions together.
+    # pylint: disable=R0904
     """Tests for edit_file."""
 
     @pytest.mark.asyncio

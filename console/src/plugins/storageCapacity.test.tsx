@@ -92,10 +92,38 @@ const catalog = {
   unit_template: unit,
 };
 
+type StorageUnitFixture = Omit<typeof unit, "parameters" | "external"> & {
+  parameters: Record<string, number>;
+  external: Record<string, unknown>;
+  connectivity?: Record<string, unknown>;
+};
+type StorageCaseFixture = Omit<
+  ReturnType<typeof blank>,
+  "units" | "documents"
+> & {
+  documents: Array<Record<string, unknown>>;
+  units: StorageUnitFixture[];
+  [key: string]: unknown;
+};
+type StoredCaseFixture = {
+  id: string;
+  revision: number;
+  case: StorageCaseFixture;
+  latest_run: unknown;
+  nodeRuns?: Array<{
+    id: string;
+    status: string;
+    run: Record<string, unknown>;
+    [key: string]: unknown;
+  }>;
+  messages?: Array<{ role: string; text: string; applied?: number }>;
+  last_edit?: { ids: string[] };
+};
+
 describe("storage capacity packaged workbench", () => {
   let Component: React.ComponentType;
-  let record: any;
-  let result: any;
+  let record: StoredCaseFixture;
+  let result: unknown;
   const hostFetch = vi.fn();
   beforeEach(() => {
     record = {
@@ -110,7 +138,7 @@ describe("storage capacity packaged workbench", () => {
       .mockImplementation(async (url: string, init?: RequestInit) => {
         const body =
           typeof init?.body === "string" ? JSON.parse(init.body) : null;
-        let data: any = {};
+        let data: unknown = {};
         if (url.endsWith("/catalog")) data = catalog;
         else if (url.endsWith("/cases") && init?.method === "POST")
           data = record;
@@ -246,7 +274,10 @@ describe("storage capacity packaged workbench", () => {
       configurable: true,
       value: {
         host: { React, fetch: hostFetch },
-        registerRoutes: (_id: string, routes: any[]) => {
+        registerRoutes: (
+          _id: string,
+          routes: Array<{ component: React.ComponentType }>,
+        ) => {
           Component = routes[0].component;
         },
       },

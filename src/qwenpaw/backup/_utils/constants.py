@@ -56,7 +56,6 @@ def find_zip_path(backup_id: str) -> Path | None:
         return canonical
     if not BACKUP_DIR.is_dir():
         return None
-
     for path in sorted(BACKUP_DIR.iterdir(), key=lambda item: item.name):
         if path == canonical or not (path.is_file() and path.suffix == ".zip"):
             continue

@@ -26,7 +26,6 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
         raise RuntimeError(
             "Missing dependency nbformat — install with: pip install nbformat",
         ) from error
-
     from vendor.media_toolkit.renderers import DEFAULT_MAX_PAGES, meta_block
 
     nb = nbformat.read(path, as_version=4)
@@ -57,7 +56,6 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
             text = cell.source.strip()
             if text:
                 result.append({"type": "text", "text": text})
-
         elif cell.cell_type == "code":
             source = cell.source.strip()
             if source:
@@ -69,7 +67,6 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
                         "text": f"{header}:\n```python\n{source}\n```",
                     },
                 )
-
             for block in _output_blocks(cell):
                 if block["type"] == "image":
                     if images_emitted >= max_images:
@@ -78,7 +75,6 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
                     images_emitted += 1
                     block["page"] = images_emitted
                 result.append(block)
-
     if images_truncated:
         result.append(
             {
@@ -89,10 +85,8 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
                 ),
             },
         )
-
     if len(result) == 1 and not result[0]["text"]:
         raise ValueError("No renderable cells found in notebook")
-
     pages = list(range(1, images_emitted + 1))
     return [meta_block("ipynb", images_emitted or 1, pages), *result]
 
@@ -116,7 +110,6 @@ def _output_blocks(cell) -> list[dict[str, Any]]:
                 name = output.get("name", "stdout")
                 items.append({"type": "text", "text": f"[{name}]\n{text}"})
             continue
-
         if out_type == "error":
             ename = output.get("ename", "Error")
             evalue = output.get("evalue", "")
@@ -124,7 +117,6 @@ def _output_blocks(cell) -> list[dict[str, Any]]:
                 {"type": "text", "text": f"[error] {ename}: {evalue}"},
             )
             continue
-
         data = output.get("data", {})
 
         for mime in ("image/png", "image/jpeg", "image/gif"):
@@ -155,5 +147,4 @@ def _output_blocks(cell) -> list[dict[str, Any]]:
                     if len(text) > 2000:
                         text = text[:2000] + "\n... (truncated)"
                     items.append({"type": "text", "text": f"Out: {text}"})
-
     return items

@@ -181,12 +181,21 @@ def test_packager_prunes_bytecode_and_uses_verified_zip_builder() -> None:
 
 def test_installer_file_transactions_are_long_path_safe() -> None:
     script = _script()
+    io_source = (
+        REPO_ROOT / "scripts" / "pack-tauri" / "windows_installer_io.cs"
+    ).read_text(encoding="utf-8")
 
     assert "function ConvertTo-LongIoPath" in script
     assert "function Copy-DirectoryLongPathSafe" in script
     assert "function Remove-DirectoryLongPathSafe" in script
-    assert "[IO.Directory]::EnumerateFiles" in script
-    assert "[IO.File]::Copy" in script
+    assert (
+        "[UGSciInstallerIO]::CopyDirectory($Source, $Destination, "
+        "[bool]$AllowSourceRootLink)" in script
+    )
+    assert "EnumerateFileSystemInfos()" in io_source
+    assert "File.Copy(entry.FullName, target, true)" in io_source
+    assert 'return @"\\\\?\\" + path' in io_source
+    assert "RequireOrdinary(entry)" in io_source
     assert "Copy-DirectoryLongPathSafe -Source $payloadRoot" in script
     assert "Remove-DirectoryLongPathSafe -Path $installDir" in script
     assert (
@@ -197,7 +206,9 @@ def test_installer_file_transactions_are_long_path_safe() -> None:
         '$backupDir = Join-Path $transactionParent ".ug-b-$transactionId"'
         in script
     )
-    assert "[IO.Directory]::EnumerateFiles($rootIo" in script
+    assert "[UGSciInstallerIO]::VerifyPackage($sourceRoot" in script
+    assert "Unchecked package file:" in io_source
+    assert "Package checksum mismatch:" in io_source
 
 
 def test_first_level_install_does_not_recreate_drive_root() -> None:
@@ -460,6 +471,49 @@ def test_installer_preflights_aggregated_disk_space_before_mutation() -> None:
     )
     backup = script.index("New-UpdateDataBackup -ReleaseVersion")
     assert preflight < stop_apps < create_staging < backup
+
+
+def test_installer_verifies_in_elevated_process_before_any_mutation() -> None:
+    script = _script()
+    elevate = script.index(
+        "Invoke-ElevatedInstaller -ResolvedInstallDir $installDir",
+    )
+    privilege_check = script.index(
+        'throw "The elevated installer did not receive administrator',
+    )
+    compile_helper = script.index("Add-Type -TypeDefinition")
+    verify = script.index("$verifiedPackage = Test-PackageIntegrity")
+    create_parent = script.index(
+        "[IO.Directory]::CreateDirectory($installParent)",
+    )
+    assert elevate < privilege_check < compile_helper < verify < create_parent
+    assert verify < script.index("Stop-ScopedApplication -Root")
+    assert verify < script.index("New-UpdateDataBackup -ReleaseVersion")
+    assert "$payloadBytes = [int64]$verifiedPackage.PayloadBytes" in script
+    assert "Wait-InstallerProcessWithLog -Process $process" in script
+
+
+def test_installer_parallel_user_backup_keeps_complete_copy_and_failure_gate():
+    script = _script()
+    backup = script.split("function New-UpdateDataBackup {", 1)[1].split(
+        "function Test-WebView2RuntimeInstalled",
+        1,
+    )[0]
+    commands = [
+        line for line in backup.splitlines() if "& robocopy.exe" in line
+    ]
+    assert len(commands) == 3
+    for command in commands:
+        assert "/E /COPY:DAT /DCOPY:DAT /XJ /MT:4 /R:2 /W:1" in command
+    assert backup.count("if ($LASTEXITCODE -gt 7)") == 3
+    assert (
+        "Copy-DirectoryLongPathSafe -Source $oldPath -Destination $newPath "
+        "-AllowSourceRootLink" in script
+    )
+    assert (
+        "Copy-DirectoryLongPathSafe -Source $payloadRoot -Destination "
+        "$stagingDir -AllowSourceRootLink" not in script
+    )
 
 
 def test_failed_initial_rename_cannot_delete_the_original_install() -> None:

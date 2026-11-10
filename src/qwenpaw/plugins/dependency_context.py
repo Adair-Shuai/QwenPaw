@@ -264,7 +264,10 @@ class DependencyEnvironmentContext:
         )
         if result.returncode:
             raise RuntimeError(
-                "DEPENDENCY_INSTALLER_UNAVAILABLE: installer inspection failed.",
+                (
+                    "DEPENDENCY_INSTALLER_UNAVAILABLE: installer inspection fa"
+                    "iled."
+                ),
             )
         evidence = SimpleNamespace(**json.loads(result.stdout))
         if (

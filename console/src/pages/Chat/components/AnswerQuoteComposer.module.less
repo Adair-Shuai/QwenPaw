@@ -1,0 +1,88 @@
+.bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 9px 12px 4px;
+  background: var(--app-surface);
+  border-inline: 1px solid var(--app-border);
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  background: var(--app-bg);
+  border: 1px solid var(--app-border);
+  border-radius: 7px;
+  color: var(--app-text-secondary);
+  button {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border: 0;
+    padding: 4px 6px;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: var(--app-font-caption);
+    &:hover {
+      color: var(--app-text);
+    }
+  }
+  .label {
+    max-width: 210px;
+    min-width: 0;
+    padding-left: 8px;
+    span {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    svg {
+      flex-shrink: 0;
+    }
+  }
+}
+.preview {
+  max-width: min(420px, calc(100vw - 48px));
+  max-height: 260px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--app-font-caption);
+}
+.selection {
+  position: fixed;
+  z-index: 1050;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 10px;
+  border: 1px solid var(--app-border);
+  border-radius: 8px;
+  background: var(--app-surface);
+  color: var(--app-text);
+  box-shadow: 0 3px 12px rgb(0 0 0 / 12%);
+  font-size: var(--app-font-caption);
+  cursor: pointer;
+}
+.sent {
+  margin-bottom: 6px;
+  font-size: var(--app-font-caption);
+  color: var(--app-text-secondary);
+  summary {
+    cursor: pointer;
+  }
+  blockquote {
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    margin: 8px 0;
+    padding-left: 10px;
+    border-left: 2px solid var(--app-border);
+  }
+}
+@media (pointer: coarse) {
+  .chip button,
+  .selection {
+    min-height: 44px;
+  }
+}

@@ -261,6 +261,8 @@ async def test_channel_failed_stop_keeps_owner_until_real_stop(tmp_path):
 
 
 async def test_sdk_channel_cannot_replace_builtin_dingtalk(tmp_path):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     from qwenpaw.plugins import SDKError
     from qwenpaw.plugins.testing import PluginTestHost
 

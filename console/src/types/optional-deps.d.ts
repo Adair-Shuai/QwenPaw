@@ -4,28 +4,18 @@
  */
 
 declare module "@tiptap/static-renderer" {
-  export function renderToReactElement(options: any): React.ReactNode;
+  export function renderToReactElement(
+    options: Record<string, unknown>,
+  ): React.ReactNode;
 }
 
 declare module "@tiptap/starter-kit" {
-  const StarterKit: any;
+  const StarterKit: unknown;
   export default StarterKit;
 }
 
 declare module "@tiptap/markdown" {
-  export const Markdown: any;
+  export const Markdown: unknown;
 }
 
-declare module "react-pdf" {
-  export const pdfjs: {
-    GlobalWorkerOptions: { workerSrc: string };
-    version: string;
-  };
-  export function Document(props: any): React.ReactNode;
-  export function Page(props: any): React.ReactNode;
-}
-
-declare module "@codesandbox/sandpack-react" {
-  export function SandpackProvider(props: any): React.ReactNode;
-  export function SandpackPreview(props: any): React.ReactNode;
-}
+// react-pdf and Sandpack use the types shipped by their installed packages.

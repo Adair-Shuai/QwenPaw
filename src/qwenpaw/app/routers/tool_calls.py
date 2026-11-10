@@ -107,17 +107,14 @@ def _entry_to_info(entry: Any, coordinator: Any = None) -> ToolCallInfo:
     offload_remaining = None
     if ctx.offload_deadline is not None:
         offload_remaining = max(0.0, ctx.offload_deadline - now)
-
     kill_remaining = None
     if ctx.kill_deadline is not None:
         kill_remaining = max(0.0, ctx.kill_deadline - now)
-
     max_internal = None
     if coordinator is not None:
         hook = coordinator.hooks.get(ctx.tool_name)
         if hook is not None:
             max_internal = hook.max_internal_timeout_secs
-
     return ToolCallInfo(
         tool_call_id=ctx.tool_call_id,
         tool_name=ctx.tool_name,
@@ -243,13 +240,11 @@ async def extend_deadline(
             seconds=body.seconds,
             no_deadline=body.no_deadline,
         )
-
     if not ok:
         raise HTTPException(
             409,
             "Cannot extend deadline (capped or invalid)",
         )
-
     return {
         "status": "accepted",
         "tool_call_id": tool_call_id,

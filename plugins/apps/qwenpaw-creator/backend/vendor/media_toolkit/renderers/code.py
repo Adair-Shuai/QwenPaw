@@ -63,14 +63,12 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
 
     with open(path, "r", errors="replace", encoding="utf-8") as f:
         lines = f.readlines()
-
     total_lines = len(lines)
     full = "".join(lines)
     truncated = False
     if total_lines > max_lines:
         lines = lines[:max_lines]
         truncated = True
-
     code = "".join(lines)
 
     lang_label = lang.capitalize() if lang else ext.lstrip(".")
@@ -82,7 +80,6 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
     parts = [summary, f"```{lang}\n{code}\n```"]
     if truncated:
         parts.append(f"... ({total_lines - max_lines} more lines truncated)")
-
     blocks = [
         meta_block(ext.lstrip(".") or "text", 1, []),
         {"type": "text", "text": "\n\n".join(parts)},

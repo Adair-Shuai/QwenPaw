@@ -1,3 +1,4 @@
+import { UGSCI_BUTTON_LOADING } from "@/components/UgsciMotion";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -77,7 +78,7 @@ export function InstalledPluginList({
       <Button
         type="primary"
         icon={<Upload size={14} />}
-        loading={updatingId === plugin.id}
+        loading={updatingId === plugin.id ? UGSCI_BUTTON_LOADING : false}
         disabled={
           updatingAll || (updatingId !== null && updatingId !== plugin.id)
         }
@@ -103,7 +104,7 @@ export function InstalledPluginList({
             <Button
               type="default"
               icon={<Upload size={14} />}
-              loading={updatingAll}
+              loading={updatingAll ? UGSCI_BUTTON_LOADING : false}
               disabled={updatesLoading || updatingId !== null}
               onClick={onUpdateAll}
             >
@@ -184,7 +185,11 @@ export function InstalledPluginList({
                   <Button
                     danger
                     icon={<Trash2 size={14} />}
-                    loading={uninstallingId === plugin.id}
+                    loading={
+                      uninstallingId === plugin.id
+                        ? UGSCI_BUTTON_LOADING
+                        : false
+                    }
                     disabled={
                       uninstallingId !== null && uninstallingId !== plugin.id
                     }
@@ -236,7 +241,11 @@ export function InstalledPluginList({
                     <Button
                       danger
                       icon={<Trash2 size={14} />}
-                      loading={uninstallingId === plugin.id}
+                      loading={
+                        uninstallingId === plugin.id
+                          ? UGSCI_BUTTON_LOADING
+                          : false
+                      }
                       disabled={
                         uninstallingId !== null && uninstallingId !== plugin.id
                       }

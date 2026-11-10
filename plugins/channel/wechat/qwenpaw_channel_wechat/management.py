@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-"""One bounded explicit management operation; never runtime authentication files."""
+"""One bounded explicit management operation; never runtime authentication
+files.
+"""
 
 import asyncio
 
@@ -24,6 +26,8 @@ def _result(request, result=None, *, reason=None):
 
 
 async def manage(request):
+    # Return the native result of each explicit management command.
+    # pylint: disable=R0911
     config = request.parameters["config"]
     base_url = (
         request.parameters.get("options", {}).get(

@@ -11,7 +11,72 @@ from urllib.request import url2pathname
 CLIENT_ID = "qwenpaw_client_message_id"
 TURN_STATE = "qwenpaw_turn_state"
 REGENERATE_FROM = "qwenpaw_regenerate_from"
+EDIT_RESEND = "qwenpaw_edit_resend"
 STEERING = "qwenpaw_steering"
+
+
+def is_console_history_replacement(request: Any) -> bool:
+    """Failed or cancelled replacements must leave durable history intact."""
+    context = getattr(request, "request_context", None) or {}
+    edit = context.get(EDIT_RESEND)
+    return bool(context.get(REGENERATE_FROM)) or (
+        isinstance(edit, dict) and edit.get("keep_original") is False
+    )
+
+
+def prepare_console_edit_resend(data: dict, request: Any) -> None:
+    """Explicitly rewind a selected root user turn, only in the loaded session.
+
+    Unlike ordinary last-turn retry, editing may replace an older turn and
+    all its successors. The caller saves only after successful completion.
+    Missing, ambiguous or supplementary identities never fall back to text.
+    """
+    controls = getattr(request, "request_context", None) or {}
+    if EDIT_RESEND not in controls:
+        return
+    edit = controls[EDIT_RESEND]
+    if (
+        not isinstance(edit, dict)
+        or type(edit.get("keep_original")) is not bool
+    ):
+        raise ValueError(
+            "Edit resend requires an explicit keep_original boolean",
+        )
+    if controls.get(REGENERATE_FROM):
+        raise ValueError("Edit resend cannot be combined with regeneration")
+    if edit["keep_original"]:
+        return
+    if getattr(request, "channel", None) != "console":
+        raise ValueError(
+            "History replacement is only supported for console chats",
+        )
+    target = edit.get("target")
+    if not isinstance(target, dict) or len(target) != 1:
+        raise ValueError("Edit resend requires one original message identity")
+    key, value = next(iter(target.items()))
+    if key not in {"message_id", "client_message_id"} or not (
+        isinstance(value, str) and value.strip()
+    ):
+        raise ValueError("Invalid edit resend message identity")
+    state = data.get("state") or {}
+    context = state.get("context") or []
+    matches = [
+        index
+        for index, message in enumerate(context)
+        if message.get("role") == "user"
+        and (
+            message.get("id") == value
+            if key == "message_id"
+            else (message.get("metadata") or {}).get(CLIENT_ID) == value
+        )
+    ]
+    if len(matches) != 1 or _is_steering_message(context[matches[0]]):
+        raise ValueError(
+            "The original edit resend message was not found uniquely",
+        )
+    state["context"] = context[: matches[0]]
+    # Derived summaries and response IDs can still reference removed turns.
+    data.pop("scroll", None)
 
 
 def _is_steering_message(message: dict) -> bool:

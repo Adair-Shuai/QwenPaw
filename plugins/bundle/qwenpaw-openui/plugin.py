@@ -22,7 +22,8 @@ class OpenUIMiddleware(MiddlewareBase):
     def __init__(self, prompt: str):
         self.prompt = prompt
 
-    async def on_system_prompt(self, _agent, current_prompt: str) -> str:
+    async def on_system_prompt(self, agent, current_prompt: str) -> str:
+        del agent
         if self.prompt in current_prompt:
             return current_prompt
         return f"{current_prompt.rstrip()}\n\n{self.prompt}".strip()

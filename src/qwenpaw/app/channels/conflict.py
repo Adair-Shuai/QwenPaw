@@ -46,11 +46,9 @@ def get_channel_bot_identity(
     """Return a comparable Bot identity, or None when it is unavailable."""
     if config is None:
         return None
-
     fields = _CHANNEL_IDENTITY_FIELDS.get(channel_name)
     if fields is None:
         return None
-
     identity = tuple(
         (
             field,

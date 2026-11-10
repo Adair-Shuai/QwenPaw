@@ -32,6 +32,9 @@ class RawCompletedTextSources:
     error_source: str | None = None
 
     def __post_init__(self):
+        # Keep the existing URL, identity and value validation as one checked
+        # contract.
+        # pylint: disable=R0916
         if not isinstance(self.getter_state, str) or self.getter_state not in {
             "not_requested",
             "absent",
@@ -140,6 +143,8 @@ class _Budget:
 
 
 def project_completed_text(event, mode="content"):
+    # Keep the bounded content walk, mutation and fallback order together.
+    # pylint: disable=R0912
     """Return raw parts plus optional provenance; never serialize an object.
 
     The content projection never accesses a text accessor or nested message.
@@ -151,7 +156,7 @@ def project_completed_text(event, mode="content"):
         for part in budget.items(getattr(event, "content", None) or ()):
             kind = getattr(part, "type", None)
             kind = getattr(kind, "value", kind)
-            if kind != "text" and kind != "refusal":
+            if kind not in ("text", "refusal"):
                 continue
             value = getattr(part, kind, None)
             if value is not None:

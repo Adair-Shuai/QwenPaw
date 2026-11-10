@@ -262,7 +262,6 @@ class GitBlobBatch:
             watchdog.cancel()
             watchdog.join()
             self._watchdog = None
-
         process = self._process
         if process is None:
             return None, ""

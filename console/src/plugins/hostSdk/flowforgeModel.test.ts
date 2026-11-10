@@ -155,7 +155,7 @@ describe("FlowForge durable editor contract", () => {
         a: { class_type: "Source", control: { next: "b" } },
         b: { class_type: "Sink", inputs: { value: ["a", 0] } },
       },
-      edges: undefined as unknown as any[],
+      edges: undefined as unknown as FlowDocument["edges"],
     });
     const graph = canvasFromDocument(flow, types);
     expect(graph.edges).toHaveLength(2);
@@ -192,7 +192,7 @@ describe("FlowForge durable editor contract", () => {
           },
         },
       },
-      edges: undefined as unknown as any[],
+      edges: undefined as unknown as FlowDocument["edges"],
     });
     const graph = canvasFromDocument(flow, types);
     expect(graph.edges.map((edge) => [edge.source, edge.target])).toEqual([
@@ -318,6 +318,28 @@ describe("FlowForge durable editor contract", () => {
 });
 
 describe("FlowForge typed business input and keyboard safety", () => {
+  it("localizes model call presentation and runtime diagnostics while retaining legacy identities", () => {
+    const spec = { ...types[0], class_type: "LLMCallNode" };
+    expect(localizedSpec(spec, "zh")).toMatchObject({
+      class_type: "LLMCallNode",
+      display_name: "模型调用 / JSON",
+    });
+    expect(localizedSpec(spec, "en")).toMatchObject({
+      class_type: "LLMCallNode",
+      display_name: "Model call / JSON",
+    });
+    expect([spec].map(localizedSpec)[0].class_type).toBe("LLMCallNode");
+    expect(() =>
+      parseRuntimeInputs([{ name: "中文_input", required: true }], {}, "en"),
+    ).toThrow("Enter the required input: 中文_input");
+    expect(
+      parseRuntimeInputs(
+        [{ name: "中文_input", type: "number" }],
+        { 中文_input: 0 },
+        "en",
+      ),
+    ).toEqual({ 中文_input: 0 });
+  });
   it("parses numbers booleans arrays and objects while preserving zero and false", () => {
     expect(
       parseRuntimeInputs(

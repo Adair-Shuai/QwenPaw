@@ -32,11 +32,22 @@ describe("openExternalLink", () => {
     });
     windowOpen.mockReset();
     vi.spyOn(window, "open").mockImplementation(windowOpen);
-    delete (window as any).pywebview;
-    delete (window as any).__TAURI_INTERNALS__;
+    delete window.pywebview;
+    delete (window as Window & { __TAURI_INTERNALS__?: unknown })
+      .__TAURI_INTERNALS__;
     localStorage.clear();
-    (globalThis as any).VITE_API_BASE_URL = "";
-    (globalThis as any).TOKEN = "";
+    (
+      globalThis as typeof globalThis & {
+        VITE_API_BASE_URL: string;
+        TOKEN: string;
+      }
+    ).VITE_API_BASE_URL = "";
+    (
+      globalThis as typeof globalThis & {
+        VITE_API_BASE_URL: string;
+        TOKEN: string;
+      }
+    ).TOKEN = "";
     window.history.replaceState(null, "", "/");
   });
 
@@ -47,7 +58,7 @@ describe("openExternalLink", () => {
 
   it("uses the pywebview bridge for the legacy desktop app", () => {
     const openExternal = vi.fn();
-    (window as any).pywebview = {
+    window.pywebview = {
       api: {
         open_external_link: openExternal,
       },
@@ -65,7 +76,7 @@ describe("openExternalLink", () => {
 
   it("does not send non-HTTP links to the legacy pywebview bridge", () => {
     const openExternal = vi.fn();
-    (window as any).pywebview = {
+    window.pywebview = {
       api: {
         open_external_link: openExternal,
       },
@@ -121,9 +132,10 @@ describe("openExternalLink", () => {
   });
 
   it("uses injected Tauri internals when isTauri is false", () => {
-    (window as any).__TAURI_INTERNALS__ = {
-      invoke: vi.fn(),
-    };
+    (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ =
+      {
+        invoke: vi.fn(),
+      };
 
     openExternalLink("https://github.com/agentscope-ai/QwenPaw");
 
@@ -157,9 +169,10 @@ describe("openExternalLink", () => {
   });
 
   it("uses the Tauri command from backend-hosted Tauri consoles", () => {
-    (window as any).__TAURI_INTERNALS__ = {
-      invoke: vi.fn(),
-    };
+    (window as Window & { __TAURI_INTERNALS__?: unknown }).__TAURI_INTERNALS__ =
+      {
+        invoke: vi.fn(),
+      };
     window.history.replaceState(null, "", "/console/inbox");
 
     openExternalLink("https://github.com/agentscope-ai/QwenPaw");
@@ -239,7 +252,7 @@ describe("openExternalLink", () => {
 
   it("uses the pywebview save bridge for legacy desktop downloads", async () => {
     const saveFile = vi.fn().mockResolvedValue(true);
-    (window as any).pywebview = {
+    window.pywebview = {
       api: {
         save_file: saveFile,
       },
@@ -267,7 +280,7 @@ describe("openExternalLink", () => {
 
   it("keeps legacy pywebview downloads backward-compatible without headers", async () => {
     const saveFile = vi.fn().mockResolvedValue(true);
-    (window as any).pywebview = {
+    window.pywebview = {
       api: {
         save_file: saveFile,
       },

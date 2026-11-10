@@ -49,7 +49,13 @@ def wechat_auth_scopes(
             if port is None:
                 port = 443 if scheme == "https" else 80
             host = host.lower()
-            domain = f"{scheme}://{'[' + host + ']' if ':' in host else host}:{port}"
+            domain = (
+                f"{scheme}"
+                "://"
+                f"{('[' + host + ']' if ':' in host else host)}"
+                ":"
+                f"{port}"
+            )
         except (AttributeError, TypeError, ValueError):
             raise ManagementError("MANAGEMENT_INVALID_REQUEST") from None
         values.append("credential\0" + domain + "\0" + credential)

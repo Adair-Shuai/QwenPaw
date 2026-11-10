@@ -14,10 +14,19 @@ import {
   afterEach,
   afterAll,
 } from "vitest";
-import { act, screen, fireEvent, waitFor } from "@testing-library/react";
+import {
+  act,
+  screen,
+  fireEvent,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import React from "react";
 import { renderWithProviders } from "@/test/common_setup";
 import { useLocation } from "react-router-dom";
+import { pickSelectedKey } from "./MainLayout/routeSelection";
+import en from "../locales/en.json";
+import zh from "../locales/zh.json";
 import type { PageStyle } from "../utils/pageStyle";
 import type { InterfaceStyle } from "../utils/interfaceStyle";
 
@@ -59,7 +68,11 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("react-i18next", () => ({
   useTranslation: () => ({
-    t: (key: string, fallback?: string) => fallback ?? key,
+    t: (key: string, fallback?: string) =>
+      key === "sidebar.dualSidebar.workflows"
+        ? (mocks.language.startsWith("zh") ? zh : en).sidebar.dualSidebar
+            .workflows
+        : fallback ?? key,
     i18n: {
       get language() {
         return mocks.language;
@@ -214,6 +227,7 @@ vi.mock("./SidebarSessionList", () => ({
     onSessionClick?: (id: string) => void;
   }) => (
     <div data-testid="session-list">
+      <input aria-label="Conversation filter" defaultValue="" />
       <button data-testid="sl-new-chat" onClick={onNewChat}>
         new
       </button>
@@ -290,6 +304,8 @@ vi.mock("lucide-react", async () => {
 
 import Sidebar from "./Sidebar";
 import { clearAuthToken } from "../api/config";
+import { MarketplaceHeader } from "../pages/Market/components/MarketplaceHeader";
+import { marketplaceExtensionRegistry } from "../pages/Market/marketplaceRegistry";
 
 /** Renders the location so navigation can be asserted. */
 function LocationProbe() {
@@ -299,6 +315,15 @@ function LocationProbe() {
       {location.pathname}
       {location.search}
     </div>
+  );
+}
+
+function SettingsReturnProbe() {
+  const location = useLocation();
+  return (
+    <output data-testid="settings-return">
+      {location.state?.settingsReturnTo}
+    </output>
   );
 }
 
@@ -313,6 +338,21 @@ function renderSidebar(
       />
       <LocationProbe />
     </>,
+  );
+}
+
+function RoutedSidebar() {
+  const location = useLocation();
+  return (
+    <>
+      <Sidebar
+        selectedKey={pickSelectedKey(
+          location.pathname,
+          mocks.routes as Array<{ id: string; path: string }>,
+        )}
+      />
+      <LocationProbe />
+    </>
   );
 }
 
@@ -445,6 +485,7 @@ describe("Sidebar", () => {
       "soft-focus",
       "deepseek",
       "openai",
+      "dual-sidebar",
     ]) {
       localStorage.removeItem(`qwenpaw_sidebar_collapsed:${style}`);
       localStorage.removeItem(`qwenpaw_sidebar_width:${style}`);
@@ -572,9 +613,9 @@ describe("Sidebar", () => {
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
       width: "480px",
     });
-    switchStyle("openai");
+    switchStyle("classic");
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "180px",
+      width: "280px",
     });
     fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
     switchStyle("deepseek");
@@ -585,11 +626,11 @@ describe("Sidebar", () => {
       slot,
     );
     expect(slot).toHaveValue("keep this plugin draft");
-    switchStyle("openai");
-    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "66px",
-    });
     switchStyle("classic");
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "72px",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
       width: "280px",
     });
@@ -597,8 +638,605 @@ describe("Sidebar", () => {
     expect(localStorage.getItem("qwenpaw_sidebar_width")).toBeNull();
   });
 
+  it("connects Dual sidebar Home schedules experts workspace and plugin shortcuts through registered routes", async () => {
+    mocks.pageStyle = "dual-sidebar";
+    for (const [id, path, label] of [
+      ["core.files", "/files", "Files"],
+      ["core.app-center", "/apps", "Apps"],
+      ["core.cron-jobs", "/cron-jobs", "Scheduled tasks"],
+      ["ugsci.experts", "/ugsci-experts", "Experts"],
+      ["core.run-center", "/run-center", "Runs"],
+      ["plugin.other", "/other", "Other extension"],
+    ]) {
+      mocks.routes.push({ id, path });
+      mocks.menuItems.push({
+        id,
+        label,
+        route: id,
+        location: "primary.agentScoped",
+      });
+    }
+    renderSidebar({ selectedKey: "core.chat" });
+    const rail = within(
+      screen.getByRole("navigation", { name: "Feature navigation" }),
+    );
+    fireEvent.click(rail.getByRole("button", { name: "Home" }));
+    expect(screen.getByTestId("probe-path")).toHaveTextContent("/chat");
+    for (const [label, path] of [
+      ["Scheduled tasks", "/cron-jobs"],
+      ["Experts", "/ugsci-experts"],
+      ["Apps", "/apps"],
+      ["Runs", "/run-center"],
+    ]) {
+      fireEvent.click(rail.getByRole("button", { name: label }));
+      expect(screen.getByTestId("probe-path")).toHaveTextContent(path);
+    }
+    const onWorkspace = vi.fn();
+    window.addEventListener("qwenpaw:toggle-files-workspace", onWorkspace);
+    try {
+      fireEvent.click(rail.getByRole("button", { name: "Workspace" }));
+      expect(onWorkspace).not.toHaveBeenCalled();
+      expect(screen.getByTestId("probe-path")).toHaveTextContent("/files");
+    } finally {
+      window.removeEventListener("qwenpaw:toggle-files-workspace", onWorkspace);
+    }
+    fireEvent.click(rail.getByRole("button", { name: "More" }));
+    const more = await screen.findByRole("dialog", { name: "More" });
+    expect(more).toBeInTheDocument();
+    expect(within(more).queryByRole("button", { name: "Files" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "Models" }));
+    expect(screen.getByTestId("probe-path")).toHaveTextContent("/models");
+    fireEvent.click(rail.getByRole("button", { name: "Open settings" }));
+    expect(screen.getByTestId("probe-path")).toHaveTextContent(
+      "/settings/general",
+    );
+  });
+
+  it.each(["en", "zh"])(
+    "opens Workflows below Experts with a full workspace and restores conversation state in %s",
+    async (language) => {
+      mocks.pageStyle = "dual-sidebar";
+      mocks.language = language;
+      const workflowLabel = (language === "zh" ? zh : en).sidebar.dualSidebar
+        .workflows;
+      for (const [id, path, label] of [
+        ["ugsci.experts", "/ugsci-experts", "Experts"],
+        ["flowforge.editor", "/flowforge", workflowLabel],
+      ]) {
+        mocks.routes.push({ id, path });
+        mocks.menuItems.push({
+          id,
+          label,
+          route: id,
+          location: "primary.agentScoped",
+        });
+      }
+      renderWithProviders(<RoutedSidebar />);
+      const filter = screen.getByRole("textbox", {
+        name: "Conversation filter",
+      });
+      const plugin = screen.getByRole("textbox", { name: "Plugin sider.top" });
+      fireEvent.change(filter, { target: { value: "中文 English" } });
+      fireEvent.change(plugin, { target: { value: "未保存 draft" } });
+      const rail = within(
+        screen.getByRole("navigation", { name: "Feature navigation" }),
+      );
+      const workflow = rail.getByRole("button", { name: workflowLabel });
+      expect(
+        rail.getByRole("button", { name: "Experts" }).nextElementSibling,
+      ).toBe(workflow);
+      fireEvent.click(workflow);
+      expect(screen.getByTestId("probe-path")).toHaveTextContent("/flowforge");
+      expect(workflow).toHaveAttribute("aria-current", "page");
+      expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+        width: "66px",
+      });
+      expect(filter).not.toBeVisible();
+      expect(plugin).not.toBeVisible();
+      expect(
+        screen.queryByRole("button", { name: "Expand conversation pane" }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("separator", { name: "Resize sidebar" }),
+      ).toBeNull();
+      expect(
+        localStorage.getItem("qwenpaw_sidebar_collapsed:dual-sidebar"),
+      ).toBeNull();
+      fireEvent.click(rail.getByRole("button", { name: "More" }));
+      const more = await screen.findByRole("dialog", { name: "More" });
+      expect(
+        within(more).queryByRole("button", { name: workflowLabel }),
+      ).toBeNull();
+      fireEvent.click(rail.getByRole("button", { name: "Home" }));
+      expect(screen.getByTestId("probe-path")).toHaveTextContent("/chat");
+      expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+        width: "308px",
+      });
+      expect(screen.getByRole("textbox", { name: "Conversation filter" })).toBe(
+        filter,
+      );
+      expect(filter).toHaveValue("中文 English");
+      expect(screen.getByRole("textbox", { name: "Plugin sider.top" })).toBe(
+        plugin,
+      );
+      expect(plugin).toHaveValue("未保存 draft");
+    },
+  );
+
+  it.each([false, true])(
+    "keeps direct workflow links full width with saved conversation collapse %s",
+    (savedCollapsed) => {
+      mocks.pageStyle = "dual-sidebar";
+      localStorage.setItem(
+        "qwenpaw_sidebar_collapsed:dual-sidebar",
+        String(savedCollapsed),
+      );
+      mocks.routes.push({ id: "flowforge.editor", path: "/flowforge" });
+      mocks.menuItems.push({
+        id: "flowforge.editor",
+        label: "Workflows",
+        route: "flowforge.editor",
+        location: "primary.agentScoped",
+      });
+      renderWithProviders(<RoutedSidebar />, {
+        initialEntries: ["/flowforge?flow=中文-English#canvas"],
+      });
+      expect(screen.getByRole("button", { name: "Workflows" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+        width: "66px",
+      });
+      expect(screen.getByTestId("session-list")).not.toBeVisible();
+      fireEvent.click(screen.getByRole("button", { name: "Home" }));
+      expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+        width: savedCollapsed ? "66px" : "308px",
+      });
+      expect(
+        localStorage.getItem("qwenpaw_sidebar_collapsed:dual-sidebar"),
+      ).toBe(String(savedCollapsed));
+    },
+  );
+
+  it.each(
+    (["classic", "deepseek", "dual-sidebar"] as const).flatMap((pageStyle) =>
+      [
+        "/files/?root=中文",
+        "/apps",
+        "/apps/example-app?view=详情",
+        "/market",
+        "/market?tab=plugins",
+        "/market?tab=skills&target=pool",
+        "/market?tab=ugsci",
+        "/MARKET/?tab=other-extension",
+      ].flatMap((path) =>
+        [false, true].map((savedCollapsed) => ({
+          pageStyle,
+          path,
+          savedCollapsed,
+        })),
+      ),
+    ),
+  )(
+    "keeps workspace and app links full width in $pageStyle at $path with saved collapse $savedCollapsed",
+    ({ pageStyle, path, savedCollapsed }) => {
+      mocks.pageStyle = pageStyle;
+      const preferenceKey =
+        pageStyle === "classic"
+          ? "qwenpaw_sidebar_collapsed"
+          : `qwenpaw_sidebar_collapsed:${pageStyle}`;
+      localStorage.setItem(preferenceKey, String(savedCollapsed));
+      renderWithProviders(<RoutedSidebar />, { initialEntries: [path] });
+      const width = pageStyle === "classic" ? "72px" : "66px";
+      expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+        width,
+      });
+      expect(screen.queryByTestId("session-list")).not.toBeVisible();
+      expect(
+        screen.queryByRole("button", { name: "Expand sidebar" }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Expand conversation pane" }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "chat.chatHistoryTooltip" }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("separator", { name: "Resize sidebar" }),
+      ).toBeNull();
+      expect(localStorage.getItem(preferenceKey)).toBe(String(savedCollapsed));
+    },
+  );
+
+  it("keeps the full extension area on the rail across real marketplace tab navigation", () => {
+    mocks.pageStyle = "dual-sidebar";
+    mocks.routes.push(
+      { id: "core.app-center", path: "/apps" },
+      { id: "core.marketplace", path: "/market" },
+    );
+    const registration = marketplaceExtensionRegistry.add(
+      "sidebar-layout-test",
+      {
+        id: "ugsci",
+        label: "UGSci",
+        component: () => null,
+      },
+    );
+    function MarketplaceSidebar() {
+      const location = useLocation();
+      return (
+        <>
+          <RoutedSidebar />
+          {location.pathname !== "/chat" && (
+            <MarketplaceHeader
+              activeSection={
+                new URLSearchParams(location.search).get("tab") ?? "apps"
+              }
+            />
+          )}
+        </>
+      );
+    }
+    try {
+      renderWithProviders(<MarketplaceSidebar />);
+      const filter = screen.getByRole("textbox", {
+        name: "Conversation filter",
+      });
+      const plugin = screen.getByRole("textbox", { name: "Plugin sider.top" });
+      fireEvent.change(filter, { target: { value: "保留筛选" } });
+      fireEvent.change(plugin, { target: { value: "保留草稿" } });
+      const rail = within(
+        screen.getByRole("navigation", { name: "Feature navigation" }),
+      );
+      fireEvent.click(rail.getByRole("button", { name: "Apps" }));
+      for (const [label, path] of [
+        ["Plugins", "/market?tab=plugins"],
+        ["Skills", "/market?tab=skills"],
+        ["UGSci", "/market?tab=ugsci"],
+        ["Apps", "/market"],
+      ]) {
+        const header = within(
+          document.querySelector<HTMLElement>("[data-page-header]")!,
+        );
+        fireEvent.click(header.getByText(label, { exact: true }));
+        expect(screen.getByTestId("probe-path").textContent).toBe(path);
+        expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+          width: "66px",
+        });
+        expect(filter).not.toBeVisible();
+        expect(plugin).not.toBeVisible();
+        expect(rail.getByRole("button", { name: "Apps" })).toHaveAttribute(
+          "aria-current",
+          "page",
+        );
+        expect(
+          screen.queryByRole("button", { name: "Expand conversation pane" }),
+        ).toBeNull();
+      }
+      fireEvent.click(rail.getByRole("button", { name: "Home" }));
+      expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+        width: "308px",
+      });
+      expect(screen.getByRole("textbox", { name: "Conversation filter" })).toBe(
+        filter,
+      );
+      expect(filter).toHaveValue("保留筛选");
+      expect(screen.getByRole("textbox", { name: "Plugin sider.top" })).toBe(
+        plugin,
+      );
+      expect(plugin).toHaveValue("保留草稿");
+      expect(
+        localStorage.getItem("qwenpaw_sidebar_collapsed:dual-sidebar"),
+      ).toBeNull();
+    } finally {
+      act(() => registration.dispose());
+    }
+  });
+
+  it.each(["deepseek", "dual-sidebar"] as const)(
+    "opens workspace and apps full width from chat and restores drafts in %s",
+    (pageStyle) => {
+      mocks.pageStyle = pageStyle;
+      for (const [id, path, label] of [
+        ["core.files", "/files", "Files"],
+        ["core.app-center", "/apps", "Apps"],
+      ]) {
+        mocks.routes.push({ id, path });
+        mocks.menuItems.push({
+          id,
+          route: id,
+          label,
+          location: "primary.agentScoped",
+        });
+      }
+      renderWithProviders(<RoutedSidebar />);
+      const filter = screen.getByRole("textbox", {
+        name: "Conversation filter",
+      });
+      const plugin = screen.getByRole("textbox", { name: "Plugin sider.top" });
+      fireEvent.change(filter, { target: { value: "对话筛选" } });
+      fireEvent.change(plugin, { target: { value: "未保存草稿" } });
+      for (const [label, path] of [
+        ["Workspace", "/files"],
+        ["Apps", "/apps"],
+      ]) {
+        fireEvent.click(screen.getByRole("button", { name: label }));
+        expect(screen.getByTestId("probe-path")).toHaveTextContent(path);
+        expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+          width: "66px",
+        });
+        expect(filter).not.toBeVisible();
+        expect(plugin).not.toBeVisible();
+        fireEvent.click(
+          screen.getByRole("button", {
+            name: pageStyle === "dual-sidebar" ? "Home" : "New task",
+          }),
+        );
+        expect(screen.getByTestId("probe-path")).toHaveTextContent("/chat");
+        expect(
+          screen.getByRole("textbox", { name: "Conversation filter" }),
+        ).toBe(filter);
+        expect(filter).toHaveValue("对话筛选");
+        expect(screen.getByRole("textbox", { name: "Plugin sider.top" })).toBe(
+          plugin,
+        );
+        expect(plugin).toHaveValue("未保存草稿");
+      }
+      expect(
+        localStorage.getItem(`qwenpaw_sidebar_collapsed:${pageStyle}`),
+      ).toBeNull();
+    },
+  );
+
+  it.each(["classic", "deepseek", "dual-sidebar"] as const)(
+    "uses the navigation rail for direct workflow pages in %s",
+    (pageStyle) => {
+      mocks.pageStyle = pageStyle;
+      mocks.routes.push({ id: "flowforge.editor", path: "/flowforge" });
+      mocks.menuItems.push({
+        id: "flowforge.editor",
+        label: "Workflows",
+        route: "flowforge.editor",
+        location: "primary.agentScoped",
+      });
+      renderWithProviders(<RoutedSidebar />, {
+        initialEntries: ["/flowforge"],
+      });
+      expect(screen.getByRole("button", { name: "Workflows" })).toHaveAttribute(
+        "aria-current",
+        "page",
+      );
+      expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+        width: pageStyle === "classic" ? "72px" : "66px",
+      });
+      expect(screen.getByTestId("session-list")).not.toBeVisible();
+      expect(
+        screen.queryByRole("button", { name: "Expand sidebar" }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "chat.chatHistoryTooltip" }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("separator", { name: "Resize sidebar" }),
+      ).toBeNull();
+    },
+  );
+
+  it("keeps only the feature rail in settings and restores conversation state on return", () => {
+    mocks.pageStyle = "dual-sidebar";
+    const view = renderWithProviders(<Sidebar selectedKey="core.chat" />);
+    const filter = screen.getByLabelText("Conversation filter");
+    fireEvent.change(filter, { target: { value: "saved search" } });
+    const plugin = screen.getByLabelText("Plugin sider.top");
+    fireEvent.change(plugin, { target: { value: "saved plugin draft" } });
+
+    view.rerender(<Sidebar selectedKey="example.settings" settingsActive />);
+    expect(
+      screen.getByRole("navigation", { name: "Feature navigation" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "Open settings" }),
+    ).toHaveAttribute("aria-current", "page");
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "66px",
+    });
+    expect(filter).not.toBeVisible();
+    expect(
+      screen.queryByRole("button", { name: "Expand conversation pane" }),
+    ).toBeNull();
+    expect(
+      localStorage.getItem("qwenpaw_sidebar_collapsed:dual-sidebar"),
+    ).toBeNull();
+
+    view.rerender(<Sidebar selectedKey="core.chat" />);
+    expect(screen.getByLabelText("Conversation filter")).toBe(filter);
+    expect(filter).toBeVisible();
+    expect(filter).toHaveValue("saved search");
+    expect(screen.getByLabelText("Plugin sider.top")).toBe(plugin);
+    expect(plugin).toHaveValue("saved plugin draft");
+  });
+
+  it.each([false, true])(
+    "preserves the app return target when reopening settings from the rail (plugin %s)",
+    (plugin) => {
+      mocks.pageStyle = "dual-sidebar";
+      const returnTo = "/chat?session=1#messages";
+      renderWithProviders(
+        <>
+          <Sidebar selectedKey="example.settings" settingsActive />
+          <SettingsReturnProbe />
+        </>,
+        {
+          initialEntries: [
+            {
+              pathname: "/example-settings",
+              state: plugin
+                ? {
+                    settingsPluginContext: {
+                      source: "example",
+                      routeId: "example.settings",
+                      returnTo,
+                    },
+                  }
+                : { settingsReturnTo: returnTo },
+            },
+          ],
+        },
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Open settings" }));
+      expect(screen.getByTestId("settings-return")).toHaveTextContent(returnTo);
+    },
+  );
+
+  it("hides conversations before the workflow plugin finishes registering its route", () => {
+    mocks.pageStyle = "dual-sidebar";
+    const view = renderWithProviders(<RoutedSidebar />, {
+      initialEntries: ["/FlowForge/?flow=中文-English"],
+    });
+    const filter = screen.getByLabelText("Conversation filter");
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "66px",
+    });
+    expect(filter).not.toBeVisible();
+    mocks.routes.push({ id: "flowforge.editor", path: "/flowforge" });
+    mocks.menuItems.push({
+      id: "flowforge.editor",
+      label: "Workflows",
+      route: "flowforge.editor",
+      location: "primary.agentScoped",
+    });
+    view.rerender(<RoutedSidebar />);
+    expect(screen.getByRole("button", { name: "Workflows" })).toHaveAttribute(
+      "aria-current",
+      "page",
+    );
+    expect(screen.getByLabelText("Conversation filter")).toBe(filter);
+    expect(filter).not.toBeVisible();
+    expect(
+      localStorage.getItem("qwenpaw_sidebar_collapsed:dual-sidebar"),
+    ).toBeNull();
+  });
+
+  it("keeps the workflow rail compact across mobile and desktop viewports", () => {
+    mocks.pageStyle = "dual-sidebar";
+    mockMobileViewport(true);
+    mocks.routes.push({ id: "flowforge.editor", path: "/flowforge" });
+    mocks.menuItems.push({
+      id: "flowforge.editor",
+      label: "Workflows",
+      route: "flowforge.editor",
+      location: "primary.agentScoped",
+    });
+    renderWithProviders(<RoutedSidebar />, { initialEntries: ["/flowforge"] });
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "56px",
+    });
+    expect(screen.getByTestId("session-list")).not.toBeVisible();
+    act(() => {
+      viewportState.matches = false;
+      viewportState.listeners.forEach((listener) => listener());
+    });
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "66px",
+    });
+    expect(screen.getByTestId("session-list")).not.toBeVisible();
+    expect(
+      localStorage.getItem("qwenpaw_sidebar_collapsed:dual-sidebar"),
+    ).toBeNull();
+  });
+
+  it("hides the workflow shortcut when its route is unavailable or explicitly hidden", () => {
+    mocks.pageStyle = "dual-sidebar";
+    mocks.menuItems.push({
+      id: "flowforge.editor",
+      label: "Workflows",
+      route: "flowforge.editor",
+      location: "primary.agentScoped",
+    });
+    const view = renderWithProviders(<RoutedSidebar />);
+    expect(screen.queryByRole("button", { name: "Workflows" })).toBeNull();
+    mocks.routes.push({ id: "flowforge.editor", path: "/flowforge" });
+    view.rerender(<RoutedSidebar />);
+    expect(screen.getByRole("button", { name: "Workflows" })).toBeVisible();
+    mocks.sidebar.hiddenPluginItemIds = ["flowforge.editor"];
+    view.rerender(<RoutedSidebar />);
+    expect(screen.queryByRole("button", { name: "Workflows" })).toBeNull();
+  });
+
+  it("keeps Dual sidebar conversation and plugin drafts mounted while its second pane collapses and styles switch", () => {
+    mocks.pageStyle = "dual-sidebar";
+    const view = renderSidebar();
+    const filter = screen.getByRole("textbox", { name: "Conversation filter" });
+    const plugin = screen.getByRole("textbox", { name: "Plugin sider.top" });
+    fireEvent.change(filter, { target: { value: "retained search" } });
+    fireEvent.change(plugin, { target: { value: "retained plugin draft" } });
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "308px",
+    });
+    fireEvent.click(
+      screen.getByRole("button", { name: "Collapse conversation pane" }),
+    );
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "66px",
+    });
+    expect(filter).not.toBeVisible();
+    expect(plugin).not.toBeVisible();
+    expect(screen.getByRole("button", { name: "Home" })).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "globalSearch.title" }),
+    ).toBeVisible();
+    fireEvent.click(
+      screen.getByRole("button", { name: "Expand conversation pane" }),
+    );
+    expect(screen.getByRole("textbox", { name: "Conversation filter" })).toBe(
+      filter,
+    );
+    expect(filter).toHaveValue("retained search");
+    fireEvent.keyDown(
+      screen.getByRole("separator", { name: "Resize sidebar" }),
+      { key: "End" },
+    );
+    expect(localStorage.getItem("qwenpaw_sidebar_width:dual-sidebar")).toBe(
+      "480",
+    );
+    mocks.pageStyle = "deepseek";
+    view.rerender(
+      <>
+        <Sidebar selectedKey="core.workspace" />
+        <LocationProbe />
+      </>,
+    );
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "208px",
+    });
+    mocks.pageStyle = "dual-sidebar";
+    view.rerender(
+      <>
+        <Sidebar selectedKey="core.workspace" />
+        <LocationProbe />
+      </>,
+    );
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "480px",
+    });
+    expect(screen.getByRole("textbox", { name: "Conversation filter" })).toBe(
+      filter,
+    );
+    expect(screen.getByRole("textbox", { name: "Plugin sider.top" })).toBe(
+      plugin,
+    );
+    expect(plugin).toHaveValue("retained plugin draft");
+  });
+
   it("keeps prototype navigation connected to registered apps, automation, workspace and plugin shortcuts", () => {
-    mocks.pageStyle = "openai";
+    mocks.pageStyle = "deepseek";
+    mocks.menuItems.push({
+      id: "core.files",
+      location: "primary.agentScoped",
+      route: "core.files",
+      label: "Files",
+    });
     mocks.menuItems.push({
       id: "core.cron-jobs",
       location: "primary.agentScoped",
@@ -606,6 +1244,7 @@ describe("Sidebar", () => {
       label: "Automation",
     });
     mocks.routes.push(
+      { id: "core.files", path: "/files" },
       { id: "core.app-center", path: "/apps" },
       { id: "core.cron-jobs", path: "/cron-jobs" },
     );
@@ -615,10 +1254,13 @@ describe("Sidebar", () => {
       renderSidebar({ selectedKey: "core.chat" });
       fireEvent.click(screen.getByRole("button", { name: "Apps" }));
       expect(screen.getByTestId("probe-path")).toHaveTextContent("/apps");
+      fireEvent.click(screen.getByRole("button", { name: "New task" }));
       fireEvent.click(screen.getByRole("button", { name: "Automation" }));
       expect(screen.getByTestId("probe-path")).toHaveTextContent("/cron-jobs");
       fireEvent.click(screen.getByRole("button", { name: "Workspace" }));
-      expect(onWorkspace).toHaveBeenCalledOnce();
+      expect(onWorkspace).not.toHaveBeenCalled();
+      expect(screen.getByTestId("probe-path")).toHaveTextContent("/files");
+      fireEvent.click(screen.getByRole("button", { name: "New task" }));
       fireEvent.click(screen.getByRole("button", { name: "More" }));
       fireEvent.click(screen.getByRole("button", { name: "Models" }));
       expect(screen.getByTestId("probe-path")).toHaveTextContent("/models");
@@ -628,7 +1270,7 @@ describe("Sidebar", () => {
   });
 
   it("groups More shortcuts and keeps settings in the account menu", async () => {
-    mocks.pageStyle = "openai";
+    mocks.pageStyle = "deepseek";
     mocks.renderActualSettingsPanel = true;
     mocks.menuItems.push(inboxItem, {
       id: "plugin.tools",
@@ -1355,11 +1997,13 @@ describe("Sidebar", () => {
         handle.setPointerCapture = vi.fn();
         handle.hasPointerCapture = vi.fn(() => true);
         handle.releasePointerCapture = vi.fn();
-        fireEvent.pointerDown(handle, {
-          pointerId: 7,
-          button: 0,
-          clientX: 280,
-        });
+        expect(
+          fireEvent.pointerDown(handle, {
+            pointerId: 7,
+            button: 0,
+            clientX: 280,
+          }),
+        ).toBe(true);
         fireEvent.pointerMove(handle, { pointerId: 7, clientX: 360 });
         fireEvent.pointerUp(handle, { pointerId: 7, clientX: 360 });
         expect(renderedSider()).toHaveStyle({ width: "360px" });

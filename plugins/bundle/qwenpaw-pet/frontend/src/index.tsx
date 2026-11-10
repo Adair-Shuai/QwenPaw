@@ -19,6 +19,52 @@ import { usePetLocale } from "./usePetLocale";
 
 const host = window.QwenPaw.host;
 const React: typeof ReactNS = host.React;
+
+// Original geometry from UGSci-sidebar-icons.zip.
+function PetNavigationIcon(): ReactNS.ReactElement {
+  return React.createElement(
+    "svg",
+    {
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: 1.6,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      "aria-hidden": true,
+      focusable: "false",
+      width: "1em",
+      height: "1em",
+    },
+    React.createElement("path", {
+      d: "M7 12.9c-1.65 1.25-3.1 3.2-2.55 5.1.6 2 2.55 2.6 4.45 1.9 2.25-.8 3.95-.8 6.2 0 1.95.7 3.85.1 4.45-1.9.55-1.9-.9-3.85-2.55-5.1-1.55-1.05-2.35-3.05-5-3.05s-3.45 2-5 3.05Z",
+    }),
+    React.createElement("ellipse", {
+      cx: "4.9",
+      cy: "8.45",
+      rx: "1.55",
+      ry: "2.0",
+      transform: "rotate(-25 4.9 8.45)",
+    }),
+    React.createElement("ellipse", {
+      cx: "10.1",
+      cy: "5.1",
+      rx: "1.6",
+      ry: "2.1",
+    }),
+    React.createElement("ellipse", {
+      cx: "15.8",
+      cy: "5.7",
+      rx: "1.55",
+      ry: "2.0",
+      transform: "rotate(17 15.8 5.7)",
+    }),
+    React.createElement("path", {
+      d: "M20 8.1q1.35-1.45 1.75.3.25 1.3-.85 2.1",
+    }),
+  );
+}
+
 const antd = host.antd;
 const getApiUrl = host.getApiUrl;
 const getApiToken = host.getApiToken;
@@ -697,7 +743,7 @@ class QwenPawPetPlugin {
         path: "/plugin/qwenpaw-pet/pets",
         component: PetControlPage,
         label: t(locale, "routeLabel"),
-        icon: "🐾",
+        icon: <PetNavigationIcon />,
         priority: 42,
       },
     ]);

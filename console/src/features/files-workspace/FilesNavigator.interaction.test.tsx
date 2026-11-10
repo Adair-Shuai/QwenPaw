@@ -31,6 +31,7 @@ vi.mock("react-i18next", () => ({
         "files.digest": "Digest",
         "files.memoryTagsLabel": "Tags",
         "files.upload": "Upload",
+        "files.selectSource": "Choose file source",
         "files.addSystemPrompt": "Add from workspace",
         "files.addSystemPromptTitle": "Add a system prompt file",
         "files.addSystemPromptDescription": "Choose a file",
@@ -167,6 +168,45 @@ describe("FilesNavigator interactions", () => {
     mocks.getSystemPromptFiles.mockResolvedValue([]);
     mocks.setSystemPromptFiles.mockImplementation(async (files) => files);
     mocks.fileGlyphRender.mockClear();
+  });
+
+  it("switches compact file sources and memory tags through the actual source menu", async () => {
+    function CompactNavigator() {
+      const [tagsActive, setTagsActive] = useState(false);
+      return (
+        <FilesNavigator
+          compact
+          selectedPath=""
+          onSelect={vi.fn()}
+          activeMemoryGraphRoot={null}
+          onShowMemoryGraph={vi.fn()}
+          onShowFiles={() => setTagsActive(false)}
+          memoryTagsActive={tagsActive}
+          memoryTagsPanel={<div>Compact tag results</div>}
+          onShowMemoryTags={() => setTagsActive(true)}
+          scope={{ kind: "agent", agentId: "default" }}
+        />
+      );
+    }
+    render(<CompactNavigator />);
+    const source = screen.getByRole("button", { name: "Choose file source" });
+    expect(source).toHaveTextContent("Workspace");
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    fireEvent.click(source);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Tags" }));
+    expect(source).toHaveTextContent("Tags");
+    expect(screen.getByText("Compact tag results")).toBeVisible();
+    expect(screen.queryByRole("tree")).not.toBeInTheDocument();
+    fireEvent.click(source);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Daily" }));
+    expect(source).toHaveTextContent("Daily");
+    expect(screen.queryByText("Compact tag results")).not.toBeInTheDocument();
+    expect(await screen.findByRole("tree")).toBeVisible();
+    expect(mocks.listMemoryFiles).toHaveBeenCalled();
+    fireEvent.click(source);
+    fireEvent.click(await screen.findByRole("menuitem", { name: "Profile" }));
+    expect(source).toHaveTextContent("Profile");
+    await waitFor(() => expect(mocks.listFiles).toHaveBeenCalled());
   });
 
   it("keeps Tags in the same navigation bar and returns to the file tree", async () => {

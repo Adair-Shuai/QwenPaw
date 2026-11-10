@@ -1,4 +1,65 @@
 {
+  "delivery": {
+    "open": "Open",
+    "openWith": "Open with",
+    "openUsing": "Open with {{application}}",
+    "preview": "Built-in preview",
+    "systemDefault": "System default application",
+    "default": " (default)",
+    "showLocation": "Show file location",
+    "loadingApps": "Loading applications…",
+    "appsFailed": "Applications could not be loaded",
+    "retryApps": "Reload applications",
+    "openFailed": "Could not open the file. Retry or download it to open.",
+    "revealFailed": "Could not show the delivered file. Please retry."
+  },
+  "globalSearch": {
+    "user": "You",
+    "assistant": "Assistant",
+
+    "filters": "Filters",
+    "resultCount": "{{count}} results",
+
+    "chatPreviewHint": "Open this conversation to review messages, attachments and deliveries.",
+    "scopeShort": "Chats and file records from the selected agent",
+    "enterQuery": "Enter a keyword to search this category",
+    "title": "Global search",
+    "placeholder": "Search chats, messages, files and deliveries…",
+    "agent": "Search agent",
+    "time": "Chat update time",
+    "sort": "Sort order",
+    "days0": "Any time",
+    "days7": "Updated in 7 days",
+    "days30": "Updated in 30 days",
+    "relevance": "Relevance",
+    "recent": "Recently updated",
+    "archived": "Include archived",
+    "all": "All",
+    "chat": "Chats",
+    "message": "Messages",
+    "file": "File records",
+    "artifact": "Deliveries",
+    "recentSearches": "Recent searches",
+    "clear": "Clear",
+    "error": "Search failed. Check your connection and retry.",
+    "retry": "Retry",
+    "results": "Search results",
+    "empty": "No matches. Try another keyword or fewer filters.",
+    "noRecent": "No recent content in this category",
+    "reset": "Reset filters",
+    "preview": "Result preview",
+    "previewHint": "Select a result to preview its source and content.",
+    "locate": "Open chat and locate",
+    "open": "Open source chat",
+    "isArchived": "Archived",
+    "progress": "{{count}} results · {{scanned}} / {{total}} chats searched",
+    "partial": "{{count}} reads failed; results may be incomplete.",
+    "limited": "Up to 500 results and 100 file turns per chat.",
+    "more": "Search older chats",
+    "scope": "Selected agent only; files and deliveries match recorded names and paths",
+    "keys": "↑ ↓ Select · Enter Open · Esc Close",
+    "locateUnavailable": "Chat opened. The target message is not loaded or cannot be located."
+  },
   "turnFiles": {
     "capturing": "Preparing this turn's file archive…",
     "captureFailed": "This turn's file record is unavailable. Please retry.",
@@ -15,7 +76,7 @@
     "lineChanges": "Counted text lines added and removed",
     "deliveredCount": "{{count}} deliverables",
     "downloadTurn": "Download turn archive",
-    "archiveHint": "File name: archived version · Folder: current version",
+    "archiveHint": "This delivery is preserved independently of later changes",
     "interrupted": "This turn did not finish normally. Files captured before it ended remain available.",
     "overlap": "Other tasks used these directories at the same time. Changes may include their writes.",
     "incomplete": "Some files could not be captured fully. See capture details.",
@@ -508,8 +569,20 @@
     },
     "pageStyles": {
       "classic": "Original layout",
-      "deepseek": "deepseek style",
-      "openai": "openai style"
+      "deepseek": "Simple style",
+      "dual-sidebar": "Dual sidebar"
+    },
+    "dualSidebar": {
+      "home": "Home",
+      "experts": "Experts",
+      "workflows": "Workflows",
+      "runs": "Runs",
+      "schedules": "Scheduled tasks",
+      "navigation": "Feature navigation",
+      "collapse": "Collapse conversation pane",
+      "expand": "Expand conversation pane",
+      "settings": "Open settings",
+      "account": "Account and appearance"
     },
     "pageNavigation": "Main navigation",
     "searchConversations": "Search conversations",
@@ -3259,7 +3332,36 @@
       "oauthDescription": "A browser window will open to authorize use of your ChatGPT plan. Return to QwenPaw when you are done."
     }
   },
+  "workbench": {
+    "activities": "Workbench activities",
+    "activity": {
+      "files": "Files and preview",
+      "interactions": "Task interactions",
+      "browser": "Browser",
+      "agents": "Agent processes",
+      "genui": "GenUI",
+      "compute": "Compute track",
+      "simulation": "Simulation monitoring"
+    },
+    "activityShort": {
+      "files": "Files",
+      "interactions": "Tasks",
+      "browser": "Browser",
+      "agents": "Agents",
+      "genui": "GenUI",
+      "compute": "Compute",
+      "simulation": "Simulate"
+    }
+  },
   "files": {
+    "fileTab": "Files",
+    "selectSource": "Choose file source",
+    "showNavigator": "Show file navigator",
+    "hideNavigator": "Hide file navigator",
+    "maximizeWorkspace": "Maximize workspace",
+    "restoreWorkspace": "Restore workspace view",
+    "readOnly": "Read only",
+    "generatedContent": "Generated content",
     "loadingMoreDeliverables": "Loading older results…",
     "deliverablesMoreFailed": "Could not load older results. Try again.",
     "retryMoreDeliverables": "Retry older results",
@@ -4422,7 +4524,7 @@
       "stepsRunning": "Running… · {{count}} steps",
       "stepsCanceled": "Canceled · {{count}} steps",
       "stepsFailed": "Failed · {{count}} steps",
-      "stepsCompleted": "Completed {{count}} steps"
+      "stepsCompleted": "{{count}} steps completed"
     },
     "statusIdle": "Idle",
     "statusInProgress": "In progress",
@@ -4433,6 +4535,15 @@
     "prompt1": "Let's start a new journey!",
     "prompt2": "Can you tell me what skills you have?",
     "inputPlaceholder": "\"↑↓\" for message navigation · \"/\" for quick commands · \"@\" to assign an Agent",
+    "answerQuote": {
+      "action": "Quote",
+      "selected": "Selected quotes",
+      "view": "View quote: {{text}}",
+      "remove": "Remove quote: {{text}}",
+      "count_one": "{{count}} quote",
+      "count_other": "{{count}} quotes",
+      "limit": "You can quote up to 12 passages and 32,000 characters."
+    },
     "composer": {
       "placeholder": "Message · \"/\" for commands · \"@\" to assign an Agent · ↑↓ history",
       "addContent": "Add content",
@@ -4508,6 +4619,83 @@
     },
     "rateLimitHit": "The current model is rate-limited. Try switching to another free model.",
     "modelFallbackNotice": "Switched model from {{from}} to {{to}} ({{reason}}).",
+    "contextInspector": {
+      "labels": {
+        "memory": "Recalled memory",
+        "user": "User message",
+        "assistant": "Assistant message",
+        "system": "System prompt",
+        "tool": "Tool result",
+        "quote": "Answer quote"
+      },
+      "title": "Context",
+      "close": "Close context",
+      "sections": "Context details",
+      "sources": "Sources",
+      "summary": "Compaction summary",
+      "scope": "Context scope",
+      "draft": "Next message",
+      "latest": "Latest saved",
+      "draftHint": "Applies to the next send",
+      "latestHint": "Read-only record",
+      "loading": "Loading saved context…",
+      "retry": "Retry",
+      "emptyDraft": "No quoted passages pending",
+      "emptyLatest": "No saved context yet",
+      "removed": "Removed {{title}}",
+      "remove": "Remove {{title}}",
+      "undo": "Undo",
+      "sourcesNotice": "Manage attachments in the composer preview. Workspace files are read on demand; access does not mean inclusion in a model request.",
+      "retainedSummary": "Retained summary",
+      "summaryUnavailable": "This backend does not provide compaction summaries.",
+      "emptySummary": "This conversation has no compaction summary yet.",
+      "summaryNotice": "Only the saved compaction summary is shown. Compaction does not delete the full conversation history.",
+      "busyHint": "Available after the task finishes",
+      "manageHint": "Uses this conversation's compaction behavior",
+      "usageHint": "Estimated session usage · Draft not included",
+      "usageDetails": "Usage details",
+      "capturedAt": "Recorded: {{time}}.",
+      "summaryStale": "The summary may predate this record.",
+      "sourceTruncated": "Excerpt",
+      "status": {
+        "included": "Included in model request",
+        "pending": "Pending",
+        "unknown": "Inclusion unknown",
+        "accessible": "Accessible, not read"
+      },
+      "kind": {
+        "attachment": "Attachments",
+        "quote": "Quotes",
+        "rule": "Project and system rules",
+        "memory": "Memory",
+        "message": "Conversation",
+        "other": "Other sources"
+      },
+      "sourceKinds": {
+        "conversation": "Conversation",
+        "file": "File",
+        "quote": "Answer quote",
+        "system": "System rules",
+        "summary": "Compaction summary",
+        "memory": "Memory"
+      },
+      "errors": {
+        "load": "Could not load context. Please retry.",
+        "mismatch": "The context belongs to a different conversation. Please retry."
+      },
+      "notices": {
+        "savedSession": "Only saved materials are available for this older session. Its full model request cannot be reconstructed.",
+        "latestSaved": "The most recently saved model request is shown. Sent sources are read-only.",
+        "running": "The task is running. This is the latest saved record and will refresh after completion.",
+        "unsupported": "This backend does not support context inspection yet."
+      },
+      "limitations": {
+        "legacy_snapshot": "This older session has no model request source snapshot.",
+        "runtime_sources_unavailable": "Unrecorded runtime rules and memory cannot be confirmed.",
+        "snapshot_truncated": "Some materials are excerpts to keep the record bounded.",
+        "provider_payload_not_recorded": "The full provider-formatted request was not recorded."
+      }
+    },
     "turnUsagePopover": {
       "ariaLabel": "Context usage {{contextRate}}, cache hit rate {{cacheRate}}. View usage details",
       "turn": "This turn",
@@ -4713,6 +4901,9 @@
       "action": "Edit and resend",
       "send": "Resend",
       "description": "Send as a new message. Original history is preserved.",
+      "keepOriginal": "Keep original message",
+      "replaceDescription": "Regenerate from here, clearing the original message and all later conversation.",
+      "missingTarget": "This message has no history ID. Refresh and retry, or select Keep original message.",
       "message": "Edit message content",
       "attachments": "Retained attachments",
       "queued": "Added to the message queue",

@@ -2,10 +2,11 @@ import { render, type RenderOptions } from "@testing-library/react";
 import { MemoryRouter, type MemoryRouterProps } from "react-router-dom";
 import { type ReactNode, createContext, useState } from "react";
 import { App } from "antd";
+import type { PendingApproval } from "../api/modules/console";
 
 const ApprovalContext = createContext<{
-  approvals: any[];
-  setApprovals: (approvals: any[]) => void;
+  approvals: PendingApproval[];
+  setApprovals: (approvals: PendingApproval[]) => void;
 }>({
   approvals: [],
   setApprovals: () => {},
@@ -22,7 +23,7 @@ function AllProviders({
   children: ReactNode;
   routerProps?: MemoryRouterProps;
 }) {
-  const [approvals, setApprovals] = useState<any[]>([]);
+  const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   return (
     <ApprovalContext.Provider value={{ approvals, setApprovals }}>
       <App>

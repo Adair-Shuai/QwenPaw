@@ -240,7 +240,6 @@ def test_skills_batch_enable_disable_delete(app_server) -> None:
                 },
             )
             assert create_skill.status_code == 200, app_server.logs_tail()
-
         batch_enable = app_server.api_request(
             "POST",
             "/api/skills/batch-enable",
@@ -251,7 +250,6 @@ def test_skills_batch_enable_disable_delete(app_server) -> None:
         enable_results = batch_enable.json().get("results", {})
         for skill_name in skill_names:
             assert enable_results.get(skill_name, {}).get("success") is True
-
         batch_disable = app_server.api_request(
             "POST",
             "/api/skills/batch-disable",
@@ -262,7 +260,6 @@ def test_skills_batch_enable_disable_delete(app_server) -> None:
         disable_results = batch_disable.json().get("results", {})
         for skill_name in skill_names:
             assert disable_results.get(skill_name, {}).get("success") is True
-
         batch_delete = app_server.api_request(
             "POST",
             "/api/skills/batch-delete",
@@ -273,7 +270,6 @@ def test_skills_batch_enable_disable_delete(app_server) -> None:
         delete_results = batch_delete.json().get("results", {})
         for skill_name in skill_names:
             assert delete_results.get(skill_name, {}).get("success") is True
-
         list_after_delete = app_server.api_request(
             "GET",
             "/api/skills",

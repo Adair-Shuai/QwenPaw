@@ -626,7 +626,6 @@ def _build_git_sections(git_context: dict | None) -> dict[str, str]:
             ),
             "commit_or_save_reminder": "Commit frequently",
         }
-
     # ── Level 2: git installed, workspace is NOT a repo ──────────────
     if git_installed:
         return {
@@ -648,7 +647,6 @@ def _build_git_sections(git_context: dict | None) -> dict[str, str]:
             ),
             "commit_or_save_reminder": "Commit frequently",
         }
-
     # ── Level 3: git NOT installed ───────────────────────────────────
     return {
         "git_section": (
@@ -823,7 +821,6 @@ def build_verifier_prompt(
         verify_step = ""
     else:
         verify_step = f"7. **Run verification command**: `{verify_commands}`\n"
-
     return VERIFIER_PROMPT_TEMPLATE.format(
         loop_dir=loop_dir,
         verification_instructions=verification_instructions,
@@ -859,7 +856,6 @@ def build_master_prompt(
         verify_commands = "(none specified — rely on acceptance criteria)"
     if not source_project_dir:
         source_project_dir = loop_dir
-
     gsec = _build_git_sections(git_context)
 
     worker_tpl = WORKER_PROMPT_TEMPLATE.format(

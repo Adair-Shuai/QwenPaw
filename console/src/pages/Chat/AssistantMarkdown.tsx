@@ -2,6 +2,7 @@ import React, {
   createContext,
   useContext,
   useDeferredValue,
+  useMemo,
   useRef,
 } from "react";
 import { Markdown } from "@agentscope-ai/chat";
@@ -17,6 +18,12 @@ import {
 import type { ChatListSnapshot } from "../../plugins/registry/chatExtensions";
 import { resolveLanguage } from "../../components/RenderableCodeBlock/language";
 import { CodeBlockSlot, StableCodeBlocks } from "./StableCodeBlocks";
+import {
+  AssistantFileLink,
+  AssistantFileReferenceScope,
+} from "./AssistantFileLink";
+import { useTurnFilesScope } from "../../features/files-workspace/TurnFilesScope";
+import { prepareFileReferenceMarkdown } from "./fileReferenceMarkdown";
 
 import type { ComponentProps } from "@ant-design/x-markdown";
 
@@ -120,9 +127,16 @@ function AssistantCodeBlock(
 }
 
 // Keep the adapter type stable; portals also survive Markdown ancestor replacement.
-const assistantCodeComponents = { code: AssistantCodeBlock };
+const assistantCodeComponents = {
+  code: AssistantCodeBlock,
+  a: AssistantFileLink,
+};
+const assistantMarkdownComponents = {
+  ...renderableCodeComponents,
+  a: AssistantFileLink,
+};
 
-export function AssistantMarkdown({
+const MemoizedAssistantMarkdown = React.memo(function AssistantMarkdown({
   content,
   cursor,
   isStreaming = cursor,
@@ -134,50 +148,94 @@ export function AssistantMarkdown({
   messageId: string;
 }) {
   const deferredContent = useDeferredValue(content);
+  const markdownContent = useMemo(
+    () => prepareFileReferenceMarkdown(deferredContent),
+    [deferredContent],
+  );
   const baseFontSize = useEffectiveFontSize();
   const entries = useChatListSnapshot()["response.codeBlocks"];
   const agent = useHostSelectedAgent();
   const session = useHostCurrentSession();
-  const scope = useRef({ agentId: agent.id, sessionId: session?.id || "" });
+  const turnScope = useTurnFilesScope();
+  const scope = useRef({
+    agentId: turnScope?.agentId ?? agent.id,
+    sessionId: turnScope?.sessionId ?? session?.id ?? "",
+    chatId: turnScope?.chatId,
+  });
   // The SDK may allocate the session after the first render of a new response.
+  const allocatedSessionId = turnScope?.sessionId || session?.id;
   if (
-    !scope.current.sessionId &&
+    (!scope.current.sessionId || scope.current.sessionId === "new") &&
     agent.id === scope.current.agentId &&
-    session?.id
+    allocatedSessionId &&
+    allocatedSessionId !== "new"
   ) {
-    scope.current.sessionId = session.id;
+    scope.current.sessionId = allocatedSessionId;
   }
+  if (
+    turnScope?.agentId === scope.current.agentId &&
+    turnScope.sessionId === scope.current.sessionId
+  ) {
+    scope.current.chatId ??= turnScope.chatId;
+  }
+  const { agentId, sessionId, chatId } = scope.current;
+  const referenceScope = useMemo(
+    () => ({ agentId, sessionId: sessionId || "new", chatId }),
+    [agentId, sessionId, chatId],
+  );
+  const blockContext = useMemo(
+    () => ({
+      entries,
+      // Completion must not finalize a block against an older deferred delta.
+      streaming: isStreaming || deferredContent !== content,
+      messageId,
+      agentId,
+      sessionId,
+    }),
+    [
+      entries,
+      isStreaming,
+      deferredContent,
+      content,
+      messageId,
+      agentId,
+      sessionId,
+    ],
+  );
   const extended = entries.length > 0;
   if (!extended) {
     return (
-      <Markdown
-        baseFontSize={baseFontSize}
-        components={renderableCodeComponents}
-        content={deferredContent}
-        cursor={cursor}
-      />
+      <AssistantFileReferenceScope.Provider value={referenceScope}>
+        <Markdown
+          baseFontSize={baseFontSize}
+          components={assistantMarkdownComponents}
+          content={markdownContent}
+          cursor={cursor}
+        />
+      </AssistantFileReferenceScope.Provider>
     );
   }
   return (
-    <CodeBlockContext.Provider
-      value={{
-        entries,
-        // Do not finalize an unfinished block against the previous deferred
-        // source when the last delta and completion arrive together.
-        streaming: isStreaming || deferredContent !== content,
-        messageId,
-        ...scope.current,
-      }}
-    >
-      <StableCodeBlocks key={messageId}>
-        <Markdown
-          baseFontSize={baseFontSize}
-          components={assistantCodeComponents}
-          content={deferredContent}
-          // The vendor cursor appends a literal token, which corrupts unfinished DSL.
-          cursor={false}
-        />
-      </StableCodeBlocks>
-    </CodeBlockContext.Provider>
+    <AssistantFileReferenceScope.Provider value={referenceScope}>
+      <CodeBlockContext.Provider value={blockContext}>
+        <StableCodeBlocks key={messageId}>
+          <Markdown
+            baseFontSize={baseFontSize}
+            components={assistantCodeComponents}
+            content={markdownContent}
+            // The vendor cursor appends a literal token, which corrupts unfinished DSL.
+            cursor={false}
+          />
+        </StableCodeBlocks>
+      </CodeBlockContext.Provider>
+    </AssistantFileReferenceScope.Provider>
   );
+});
+
+// Keep the host's callable export while isolating the expensive Markdown tree
+// from unrelated parent updates.
+export function AssistantMarkdown(
+  props: React.ComponentProps<typeof MemoizedAssistantMarkdown>,
+) {
+  return <MemoizedAssistantMarkdown {...props} />;
 }

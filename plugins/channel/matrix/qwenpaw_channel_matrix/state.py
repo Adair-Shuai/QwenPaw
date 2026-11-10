@@ -569,6 +569,36 @@ class MatrixStateStore:
 
     # pylint: enable=R0912
 
+    def _reject_ambiguous_crypto_sources(
+        self,
+        crypto,
+        legacy,
+        user_id,
+        device_id,
+        database_name,
+    ):
+        legacy_database_name = f"{user_id}_{device_id}.db"
+        scope = crypto.parent.name
+        names = {legacy_database_name, "matrix.db", f"{scope}.db"}
+        # A retained global copy is expected after migration, but two
+        # unmigrated sources are ambiguous. Reject before renaming or
+        # backing up either database, even when their keys happen to match.
+        if (
+            self.legacy is not None
+            and self._matches(legacy, user_id, device_id)
+            and any(
+                _crypto_file_exists(crypto / name)
+                for name in names - {database_name}
+            )
+            and any(
+                _crypto_file_exists(
+                    self.legacy / "matrix_crypto_store" / name,
+                )
+                for name in names
+            )
+        ):
+            raise MatrixStateError("MATRIX_CRYPTO_STORE_CONFLICT")
+
     def bind(self, user_id, device_id, *, encryption_enabled=False):
         if not self._begun or not user_id:
             raise MatrixStateError("MATRIX_STATE_IDENTITY_REQUIRED")
@@ -603,14 +633,21 @@ class MatrixStateStore:
         if previous is not None and previous != owner:
             raise MatrixStateError("MATRIX_STATE_IDENTITY_CONFLICT")
         crypto = directory / "crypto_store"
+        legacy = self._legacy_identity()
         if crypto.exists():
+            self._reject_ambiguous_crypto_sources(
+                crypto,
+                legacy,
+                user_id,
+                device_id,
+                database_name,
+            )
             self._migrate_crypto_files(
                 crypto,
                 user_id,
                 device_id,
                 database_name,
             )
-        legacy = self._legacy_identity()
         latest_source = (
             self._latest_workspace_state(latest, owner, scope)
             if previous is None

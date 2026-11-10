@@ -4,7 +4,6 @@
 import asyncio
 import json
 import os
-from pathlib import Path
 import sqlite3
 import sys
 
@@ -62,13 +61,13 @@ print('sent')
     monkeypatch.setattr(native.sys, "platform", "darwin")
     driver = module("imessage").IMessageDriver()
     peer, identity = bind("imessage", driver, tmp_path)
-    config = dict(
-        enabled=True,
-        db_path=str(db),
-        poll_sec=0.01,
-        workspace_dir=str(tmp_path),
-        media_dir=str(tmp_path / "media"),
-    )
+    config = {
+        "enabled": True,
+        "db_path": str(db),
+        "poll_sec": 0.01,
+        "workspace_dir": str(tmp_path),
+        "media_dir": str(tmp_path / "media"),
+    }
     await driver.start(config)
     yield driver, peer, identity, db, tmp_path
     await driver.stop()
@@ -89,6 +88,8 @@ def insert(db, text, own=0, sender="+15550001111"):
 
 
 async def receive(value, text="hello", **fields):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     driver, peer, _, db, _ = value
     row = insert(db, text, **fields)
     await eventually(lambda: driver._platform._last_rowid >= row)
@@ -96,6 +97,8 @@ async def receive(value, text="hello", **fields):
 
 
 async def test_only_new_sqlite_rows_enter_host_with_native_identity(imessage):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     _, peer, identity, _, root = imessage
     event = await receive(imessage)
     assert len(peer.batches) == 1
@@ -126,10 +129,16 @@ async def test_outgoing_and_empty_rows_advance_cursor_without_admission(
     text,
     own,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     assert await receive(imessage, text, own=own) is None
 
 
 async def test_proactive_session_resolves_native_destination(imessage):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     driver, peer, identity, _, root = imessage
     handle = await open_route(peer, identity, "imessage:+15559990000")
     assert driver._route_attrs(handle)["sender"] == "+15559990000"
@@ -138,6 +147,10 @@ async def test_proactive_session_resolves_native_destination(imessage):
 
 
 async def test_stop_closes_sqlite_and_owned_watcher(imessage):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     driver, _, _, _, _ = imessage
     platform = driver._platform
     connection, watcher, http = (

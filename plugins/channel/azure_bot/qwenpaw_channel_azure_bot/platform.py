@@ -53,6 +53,9 @@ def _group(activity):
 
 
 def _service_url(value):
+    # Keep the existing URL, identity and value validation as one checked
+    # contract.
+    # pylint: disable=R0916
     parsed = urlsplit(value)
     if (
         parsed.scheme != "https"
@@ -152,6 +155,8 @@ class AzureBotPlatform:
             return
         self.site = site
         # Actual bound port (including ephemeral binding) belongs in the ACK.
+        # The aiohttp listener socket supplies the actual bound readiness port.
+        # pylint: disable-next=protected-access
         sockets = site._server.sockets
         if sockets:
             self.port = sockets[0].getsockname()[1]
@@ -232,6 +237,9 @@ class AzureBotPlatform:
         self.store.close()
 
     async def _handle_messages(self, request):
+        # Preserve native event routing, media fallbacks and cleanup in SDK
+        # order.
+        # pylint: disable=R0911
         task = asyncio.current_task()
         self._tasks.add(task)
         try:
@@ -304,7 +312,9 @@ class AzureBotPlatform:
         return route
 
     async def _message(self, activity):
-        sender, name, session, display, target, route = self._route(activity)
+        sender, name, session, display, _unused_target, route = self._route(
+            activity,
+        )
         if not sender or not route["conversation_id"]:
             return True
         bot_ids = {self.config["app_id"], route["bot_channel_id"]}
@@ -509,8 +519,6 @@ class AzureBotPlatform:
                     )
                 data = await response.read()
                 return json.loads(data) if data else {}
-        except AzureBotDeliveryError:
-            raise
         except (aiohttp.ClientError, asyncio.TimeoutError, ValueError) as exc:
             raise AzureBotDeliveryError(
                 "PLATFORM_RESULT_UNKNOWN",
@@ -595,6 +603,9 @@ class AzureBotPlatform:
             self._tasks.discard(task)
 
     async def _send_parts(self, route, parts, source):
+        # Preserve native event routing, media fallbacks and cleanup in SDK
+        # order.
+        # pylint: disable=R0912
         if not self.connected or self._stopping:
             raise AzureBotDeliveryError("NOT_CONNECTED")
         token = await self._get_bot_token()
@@ -656,8 +667,6 @@ class AzureBotPlatform:
                 receipts.append(
                     receipt.get("id", "") if isinstance(receipt, dict) else "",
                 )
-        except asyncio.CancelledError:
-            raise
         except Exception as exc:
             if isinstance(exc, AzureBotDeliveryError):
                 if effect:

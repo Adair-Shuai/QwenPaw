@@ -230,7 +230,8 @@ function deferred<T>() {
 
 describe("ACP load guard", () => {
   it("opens the Node path search target after loading without saving a path", async () => {
-    mocks.getACPConfig.mockReset().mockResolvedValue(loadedConfig);
+    const configuration = deferred<ACPConfig>();
+    mocks.getACPConfig.mockReset().mockReturnValue(configuration.promise);
     mocks.getACPNodeRuntime.mockResolvedValue({
       node_path: "/old/node",
       effective_node_path: "/old/node",
@@ -248,6 +249,13 @@ describe("ACP load guard", () => {
         <ACPPage />
       </SettingsSearchRequest.Provider>,
     );
+    expect(mocks.getACPConfig).toHaveBeenCalledWith("default");
+    expect(screen.queryByText("acp.nodePath")).toBeNull();
+    expect(mocks.getACPNodeRuntime).not.toHaveBeenCalled();
+    await act(async () => {
+      configuration.resolve(loadedConfig);
+      await configuration.promise;
+    });
     await waitFor(() => expect(screen.getByText("acp.nodePath")).toBeVisible());
     expect(mocks.getACPNodeRuntime).toHaveBeenCalledWith("default");
     expect(mocks.updateACPNodeRuntime).not.toHaveBeenCalled();

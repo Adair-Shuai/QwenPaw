@@ -694,7 +694,6 @@ def test_component_destination_rejects_duplicate_aliases(tmp_path):
             json.dumps({"id": "demo", "version": "1.0.0"}),
             encoding="utf-8",
         )
-
     try:
         resolve_component_destination(plugins, "demo")
     except ComponentUpdateError as exc:
@@ -755,7 +754,6 @@ def test_component_destination_rejects_direct_and_alias_duplicate(tmp_path):
             json.dumps({"id": "demo", "version": "1.0.0"}),
             encoding="utf-8",
         )
-
     try:
         resolve_component_destination(plugins, "demo")
     except ComponentUpdateError as exc:

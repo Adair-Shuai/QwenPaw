@@ -947,3 +947,58 @@ describe("visible session usage ownership", () => {
     ).toBe(500);
   });
 });
+
+describe("rapid session switch cancellation", () => {
+  beforeEach(() => {
+    sessionApi.resetForTests();
+    sessionApi.setActiveAgent("A");
+  });
+  afterEach(() => {
+    vi.restoreAllMocks();
+    sessionApi.resetForTests();
+  });
+
+  it("starts a fresh load when returning to an aborted in-flight session", async () => {
+    const old = deferred<ChatHistory>();
+    const fresh = deferred<ChatHistory>();
+    const getChat = vi
+      .spyOn(api, "getChat")
+      .mockReturnValueOnce(old.promise)
+      .mockReturnValueOnce(fresh.promise);
+    const selected = vi.fn();
+    sessionApi.onSessionSelected = selected;
+    const first = sessionApi.startNewSwitch();
+    const stale = sessionApi.preloadSession("one", first.signal);
+    const rejected = expect(stale).rejects.toMatchObject({
+      name: "AbortError",
+    });
+    // A -> B -> A before the first transport has finished aborting.
+    sessionApi.startNewSwitch();
+    const last = sessionApi.startNewSwitch();
+    const current = sessionApi.preloadSession("one", last.signal);
+    expect(getChat).toHaveBeenCalledTimes(2);
+    old.resolve({ messages: [], status: "idle" } as ChatHistory);
+    await rejected;
+    expect(selected).not.toHaveBeenCalled();
+    // The stale finally must not evict the new in-flight request.
+    const joined = sessionApi.getSession("one");
+    expect(getChat).toHaveBeenCalledTimes(2);
+    fresh.resolve({ messages: [], status: "idle" } as ChatHistory);
+    expect((await current).session).toBe(await joined);
+    expect(selected).toHaveBeenCalledExactlyOnceWith("one", null);
+  });
+
+  it("rejects an already aborted switch even when its history is cached", async () => {
+    const getChat = vi.spyOn(api, "getChat").mockResolvedValue({
+      messages: [],
+      status: "idle",
+    } as ChatHistory);
+    await sessionApi.preloadSession("one");
+    const controller = new AbortController();
+    controller.abort();
+    await expect(
+      sessionApi.getSession("one", controller.signal),
+    ).rejects.toMatchObject({ name: "AbortError" });
+    expect(getChat).toHaveBeenCalledTimes(1);
+  });
+});

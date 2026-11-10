@@ -14,12 +14,42 @@ import fs from "node:fs";
 import path from "node:path";
 import ts from "typescript";
 
-const win = window as any;
+type AdaptiveViewProps = {
+  run: Record<string, unknown>;
+  events: unknown[];
+  scope: { agentId: string; chatId: string };
+};
+type MonitorProps = {
+  runId: string;
+  scope?: { agentId: string; chatId: string };
+  subscribe?: boolean;
+  compact?: boolean;
+};
+type AdaptiveHost = {
+  host: Record<string, unknown>;
+  route: { add: ReturnType<typeof vi.fn> };
+  menu: { add: ReturnType<typeof vi.fn> };
+  chat: Record<string, unknown>;
+  ugsci: { visualization: { mount: ReturnType<typeof vi.fn> } };
+  runCenter?: {
+    AdaptiveRunView: React.ComponentType<AdaptiveViewProps>;
+    SimulationMonitor: React.ComponentType<MonitorProps>;
+  };
+  openui?: { dispose: () => void };
+};
+type AdaptiveWindow = Omit<Window, "QwenPaw"> & {
+  QwenPaw?: AdaptiveHost;
+  __qwenpawRunCenterRegistered?: boolean;
+  __adaptiveCharts?: (url: string) => Promise<Record<string, unknown>>;
+  injected?: unknown;
+};
+
+const win = window as unknown as AdaptiveWindow;
 const folder = path.resolve(
   process.cwd(),
   "../plugins/bundle/qwenpaw-run-center/ui/dist",
 );
-const charts: Record<string, any> = {};
+const charts: Record<string, unknown> = {};
 new Function(
   "exports",
   ts.transpileModule(
@@ -32,7 +62,7 @@ new Function(
     },
   ).outputText,
 )(charts);
-const makePlan = (extra: any = {}) => ({
+const makePlan = (extra = {}) => ({
   version: 1,
   task_type: "analysis",
   layout: "stack",
@@ -42,7 +72,7 @@ const makePlan = (extra: any = {}) => ({
   ],
   ...extra,
 });
-const run = (extra: any = {}) => ({
+const run = (extra = {}) => ({
   run_id: "run-a",
   operation: "storage.capacity.evaluate",
   status: "succeeded",
@@ -52,17 +82,33 @@ const scope = { agentId: "owner-a", chatId: "chat-a" };
 
 describe("Run Center adaptive results from the published bundle", () => {
   let fetchHost: ReturnType<typeof vi.fn>;
-  let saved: any;
-  let View: any;
-  let Monitor: any;
-  let viewer: any;
+  let saved: {
+    run_id: string;
+    revision: number;
+    plan:
+      | (Omit<ReturnType<typeof makePlan>, "panels"> & {
+          panels: Array<{
+            id: string;
+            kind: string;
+            options?: Record<string, unknown>;
+          }>;
+        })
+      | null;
+  };
+  let View: React.ComponentType<AdaptiveViewProps>;
+  let Monitor: React.ComponentType<MonitorProps>;
+  let viewer: {
+    ready: Promise<void>;
+    dispose: ReturnType<typeof vi.fn>;
+    executeCommand: ReturnType<typeof vi.fn>;
+  };
   let mount: ReturnType<typeof vi.fn>;
 
   beforeEach(() => {
     saved = { run_id: "run-a", revision: 0, plan: null };
     vi.spyOn(HTMLCanvasElement.prototype, "getContext").mockReturnValue({
       measureText: (value: string) => ({ width: String(value).length * 7 }),
-    } as any);
+    } as unknown as CanvasRenderingContext2D);
     vi.stubGlobal(
       "ResizeObserver",
       class {
@@ -120,8 +166,8 @@ describe("Run Center adaptive results from the published bundle", () => {
         .readFileSync(path.join(folder, "index.js"), "utf8")
         .replace("import(", "window.__adaptiveCharts("),
     )();
-    View = win.QwenPaw.runCenter.AdaptiveRunView;
-    Monitor = win.QwenPaw.runCenter.SimulationMonitor;
+    View = win.QwenPaw.runCenter!.AdaptiveRunView;
+    Monitor = win.QwenPaw.runCenter!.SimulationMonitor;
   });
   afterEach(() => {
     cleanup();
@@ -333,7 +379,7 @@ describe("Run Center adaptive results from the published bundle", () => {
     expect(viewer.dispose).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "保存展示" }));
     await screen.findByText("展示计划已保存");
-    expect(saved.plan.layout).toBe("tabs");
+    expect(saved.plan!.layout).toBe("tabs");
     const put = fetchHost.mock.calls.find(
       ([, init]) => init?.method === "PUT",
     )!;
@@ -561,14 +607,14 @@ describe("Run Center adaptive results from the published bundle", () => {
       within(screen.getByRole("table", { name: "结果明细" })).getByText("7"),
     ).toBeInTheDocument();
     act(() => {
-      win.QwenPaw.openui.dispose();
+      win.QwenPaw!.openui!.dispose();
     });
     expect(view.container.querySelector("[data-task-layout]")).not.toBeNull();
   });
 
   it("applies simulation plan defaults once while retaining manual filters and field state across plan changes", async () => {
     vi.useFakeTimers();
-    let snapshot: any = {
+    const snapshot = {
       schema_version: 1,
       run_id: "sim_case",
       status: "completed",
@@ -642,7 +688,7 @@ describe("Run Center adaptive results from the published bundle", () => {
       ...saved,
       revision: 2,
       plan: {
-        ...saved.plan,
+        ...saved.plan!,
         panels: [
           { id: "curves", kind: "curves", options: { series_ids: ["P:A"] } },
           { id: "fields", kind: "fields", options: { property: "sgas" } },
@@ -669,7 +715,7 @@ describe("Run Center adaptive results from the published bundle", () => {
       ...saved,
       revision: 2,
       plan: {
-        ...saved.plan,
+        ...saved.plan!,
         layout: "dashboard",
         panels: [
           {

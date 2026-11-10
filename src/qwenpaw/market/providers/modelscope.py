@@ -71,7 +71,6 @@ class ModelScopeProvider:
                 else "non-JSON response"
             )
             raise RuntimeError(f"ModelScope search failed: {message}")
-
         data = body.get("data") if isinstance(body, dict) else None
         items: list[dict[str, object]] = []
         upstream_total: int | None = None
@@ -81,13 +80,11 @@ class ModelScopeProvider:
             raw_total = data.get("total")
             if isinstance(raw_total, int) and raw_total >= 0:
                 upstream_total = raw_total
-
         results: list[MarketResult] = []
         for item in items:
             converted = _to_market_result(item, lang)
             if converted is not None:
                 results.append(converted)
-
         total = upstream_total if upstream_total is not None else len(results)
         has_more = page * page_size < total
         return results, has_more, total

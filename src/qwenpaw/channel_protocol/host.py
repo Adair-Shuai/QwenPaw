@@ -184,7 +184,9 @@ class SharedEndpointAuthority:
         )
 
     def fence(self):
-        """Revoke routing synchronously; never release a process/resource owner."""
+        """Revoke routing synchronously; never release a process/resource
+        owner.
+        """
         observation = self.process.endpoint_observation()
         generation = observation["generation"]
         if self._slot is not None:
@@ -196,6 +198,8 @@ class SharedEndpointAuthority:
         self._run_id = None
 
     def _current(self, *, allow_paused=False):
+        # Check every runtime identity field before accepting channel effects.
+        # pylint: disable=R0916
         observation = self.process.endpoint_observation()
         generation = observation["generation"]
         if self._slot is not None:
@@ -355,6 +359,7 @@ class SharedEndpointService:
         for operation in ("register", "update", "unregister"):
 
             async def handle(params, request, operation=operation):
+                del request  # Required RPC callback parameter.
                 return await getattr(self, operation)(params)
 
             peer.register_method("ingress.endpoint." + operation, handle)
@@ -392,6 +397,8 @@ class SharedEndpointService:
 
     @classmethod
     def _validate_endpoint(cls, endpoint):
+        # Validate endpoint ownership, generation and authority together.
+        # pylint: disable=R0916
         if endpoint.protocol not in {"http", "ws", "http+ws"}:
             raise cls._invalid("ENDPOINT_PROTOCOL_UNSUPPORTED")
         if endpoint.port > 65535 or (

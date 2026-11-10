@@ -2,6 +2,10 @@
 
 Run from **repo root**.
 
+See [repository layout and cleanup conventions](../docs/REPOSITORY_LAYOUT.md)
+for source, generated files, and local evidence locations. Historical one-shot
+tools are kept in [`archive/`](archive/README.md); they are not build entry points.
+
 ## Build wheel (with latest console)
 
 ```bash

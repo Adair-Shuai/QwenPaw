@@ -75,6 +75,8 @@ async def test_install_and_upgrade_all_selected_packages(
     tmp_path,
     monkeypatch,
 ):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     backend = backend_for(target, tmp_path / "bin")
     if upgrade:
         backend.target_dir.mkdir()
@@ -141,6 +143,8 @@ async def test_install_and_upgrade_all_selected_packages(
 
 
 def test_failed_swap_restores_the_previous_runtime(tmp_path, monkeypatch):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     backend = backend_for(RELEASE["targets"][0], tmp_path / "bin")
     backend.target_dir.mkdir()
     backend.executable.write_bytes(b"old runtime")
@@ -173,6 +177,8 @@ def test_bad_download_does_not_replace_installed_files(
     tmp_path,
     monkeypatch,
 ):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     target = RELEASE["targets"][0]
     backend = backend_for(target, tmp_path / "bin")
     backend.target_dir.mkdir()

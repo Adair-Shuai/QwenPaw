@@ -28,13 +28,11 @@ async def read_prd(
         snap_path = base / "snapshots" / f"{timestamp}.json"
         if snap_path.exists():
             prd_path = snap_path
-
     if not prd_path.exists():
         raise HTTPException(
             status_code=404,
             detail="prd.json not found",
         )
-
     try:
         return json.loads(prd_path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as exc:

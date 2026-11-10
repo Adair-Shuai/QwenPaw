@@ -372,6 +372,8 @@ def collect_deep_channel_connectivity_notes(
     cfg: Config,
     timeout: float,
 ) -> list[str]:
+    # Preserve the bounded diagnostic or update-worker event sequence.
+    # pylint: disable=R0915
     """Run reachability probes for each enabled channel (per agent profile)."""
     managed, notes = asyncio.run(_managed_connectivity_notes(cfg, timeout))
     reg = get_channel_registry()

@@ -1,5 +1,5 @@
 import { act, renderHook } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const getInfo = vi.fn();
 const getOffloadPolicy = vi.fn();
@@ -34,6 +34,11 @@ vi.mock("../stores/backgroundTasksStore", () => ({
 import { useToolCallControl } from "./useToolCallControl";
 
 describe("useToolCallControl", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
   beforeEach(() => {
     vi.clearAllTimers();
     vi.useFakeTimers();
@@ -43,6 +48,78 @@ describe("useToolCallControl", () => {
     getOffloadPolicy.mockResolvedValue({ default_action: "keep_foreground" });
     resolvePreferred = (preferred?: string | null) =>
       preferred || "backend-sid";
+  });
+
+  it("bounds slow polling requests and resumes after failure without losing offload detection", async () => {
+    const pending: Array<(value: unknown) => void> = [];
+    getInfo.mockImplementation(
+      () => new Promise((resolve) => pending.push(resolve)),
+    );
+    let resolvePolicy!: (value: unknown) => void;
+    getOffloadPolicy.mockReturnValue(
+      new Promise((resolve) => {
+        resolvePolicy = resolve;
+      }),
+    );
+    const { unmount } = renderHook(() =>
+      useToolCallControl("backend-sid", "tc-slow", true),
+    );
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000);
+    });
+    // Initial deadline lookup and ongoing status polling each allow one request.
+    expect(getInfo).toHaveBeenCalledTimes(2);
+    expect(getOffloadPolicy).toHaveBeenCalledTimes(1);
+    await act(async () => {
+      pending.splice(0).forEach((resolve) => resolve(null));
+      resolvePolicy({ default_action: "keep_foreground" });
+    });
+    getInfo.mockRejectedValueOnce(new Error("temporary backend failure"));
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    getInfo.mockResolvedValue({ status: "offloaded" });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(2000);
+    });
+    expect(registerBackgroundTask).toHaveBeenCalledTimes(1);
+    expect(registerBackgroundTask).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sessionId: "backend-sid",
+        toolCallId: "tc-slow",
+      }),
+    );
+    unmount();
+    const count = getInfo.mock.calls.length;
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(10000);
+    });
+    expect(getInfo).toHaveBeenCalledTimes(count);
+  });
+
+  it("ignores slow polling results from a previous tool after switching identity", async () => {
+    const pending: Array<(value: unknown) => void> = [];
+    getInfo.mockImplementation(
+      () => new Promise((resolve) => pending.push(resolve)),
+    );
+    const { result, rerender, unmount } = renderHook(
+      ({ id }) => useToolCallControl("backend-sid", id, true),
+      { initialProps: { id: "old-tool" } },
+    );
+    const oldRequests = pending.splice(0);
+    rerender({ id: "new-tool" });
+    await act(async () => {
+      oldRequests.forEach((resolve) =>
+        resolve({ status: "offloaded", offload_remaining: 20 }),
+      );
+    });
+    expect(registerBackgroundTask).not.toHaveBeenCalled();
+    expect(result.current.offloadRemaining).toBeNull();
+    unmount();
+    await act(async () => {
+      pending.forEach((resolve) => resolve({ status: "offloaded" }));
+    });
+    expect(registerBackgroundTask).not.toHaveBeenCalled();
   });
 
   it("keeps killRemaining ticking after offload countdown hits zero", async () => {

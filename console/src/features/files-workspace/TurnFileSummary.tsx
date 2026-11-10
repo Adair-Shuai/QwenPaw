@@ -18,7 +18,6 @@ import {
   FolderOpen,
   GitCompareArrows,
   LoaderCircle,
-  Package,
 } from "lucide-react";
 import prettyBytes from "pretty-bytes";
 import { useTranslation } from "react-i18next";
@@ -35,6 +34,7 @@ import { DownloadCancelledError } from "../../utils/downloadFileFromUrl";
 import { filesWorkspaceScopeKey } from "./filesWorkspaceScope";
 import { openFilePreview } from "./openFilePreview";
 import { turnFileTarget } from "./turnFileTarget";
+import DeliveryFileActions from "./DeliveryFileActions";
 import styles from "./TurnFileSummary.module.less";
 
 const DiffViewer = lazy(() => import("./TurnFileDiffViewer"));
@@ -85,6 +85,8 @@ export interface TurnFileSummaryProps {
   responseId?: string;
   clientMessageId?: string;
   completed: boolean;
+  /** Saved calls or trusted capture metadata must support ambient changes. */
+  includeObservedChanges?: boolean;
   fallback?: ReactNode;
 }
 
@@ -243,6 +245,7 @@ function SummaryContent({
           document: FileText,
         }[kind];
         const size = version === "before" ? file.before_size : file.size;
+        const target = turnFileTarget(archiveScope, turn, file, version);
         return (
           <li key={file.id} className={styles.file} data-featured={featured}>
             {featured &&
@@ -258,125 +261,113 @@ function SummaryContent({
                 />
               )}
             <div className={styles.row}>
-              <span
-                className={styles.fileIcon}
-                data-kind={kind}
-                aria-hidden="true"
+              <button
+                className={styles.previewButton}
+                type="button"
+                aria-label={`${t("turnFiles.openArchive")} ${file.name}`}
+                title={`${file.root}/${file.path}`}
+                disabled={!available}
+                onClick={(event) =>
+                  openFilePreview(target, event.currentTarget, scope)
+                }
               >
-                <FileIcon size={22} strokeWidth={1.6} />
-              </span>
-              <div className={styles.fileInfo}>
-                <button
-                  className={styles.fileName}
-                  type="button"
-                  aria-label={`${t("turnFiles.openArchive")} ${file.name}`}
-                  title={`${file.root}/${file.path}`}
-                  disabled={!available}
-                  onClick={(event) =>
-                    openFilePreview(
-                      turnFileTarget(archiveScope, turn, file, version),
-                      event.currentTarget,
-                      scope,
-                    )
-                  }
+                <span
+                  className={styles.fileIcon}
+                  data-kind={kind}
+                  aria-hidden="true"
                 >
-                  <strong>{file.name}</strong>
-                </button>
-                <div className={styles.fileMeta}>
-                  <span className={styles.fileType}>
-                    {extension && extension.length <= 6
-                      ? extension.toUpperCase()
-                      : t("turnFiles.file")}
+                  <FileIcon size={22} strokeWidth={1.6} />
+                </span>
+                <span className={styles.fileInfo}>
+                  <span className={styles.fileName}>
+                    <strong>{file.name}</strong>
                   </span>
-                  {size != null && <span>{prettyBytes(size)}</span>}
-                  <span className={styles.status} data-status={file.status}>
-                    {t(`turnFiles.status.${file.status}`)}
-                  </span>
-                  {!file.binary &&
-                    (file.additions != null || file.deletions != null) && (
-                      <span>
-                        <span className={styles.added}>
-                          +{file.additions ?? 0}
-                        </span>{" "}
-                        <span className={styles.removed}>
-                          −{file.deletions ?? 0}
+                  <span className={styles.fileMeta}>
+                    <span className={styles.fileType}>
+                      {extension && extension.length <= 6
+                        ? extension.toUpperCase()
+                        : t("turnFiles.file")}
+                    </span>
+                    {size != null && <span>{prettyBytes(size)}</span>}
+                    <span className={styles.status} data-status={file.status}>
+                      {t(`turnFiles.status.${file.status}`)}
+                    </span>
+                    {!file.binary &&
+                      (file.additions != null || file.deletions != null) && (
+                        <span>
+                          <span className={styles.added}>
+                            +{file.additions ?? 0}
+                          </span>{" "}
+                          <span className={styles.removed}>
+                            −{file.deletions ?? 0}
+                          </span>
                         </span>
-                      </span>
-                    )}
-                </div>
-                <div
-                  className={styles.filePath}
-                  title={`${file.root}/${file.path}`}
-                >
-                  {file.root} / {file.path}
-                </div>
-              </div>
-              <div className={styles.actions}>
-                {canDiff && (
-                  <button
-                    type="button"
-                    aria-expanded={diffId === file.id}
-                    aria-label={`${t("turnFiles.diff")} ${file.name}`}
-                    title={t("turnFiles.diff")}
-                    onClick={() => void showDiff(file)}
-                  >
-                    <GitCompareArrows size={15} />
-                  </button>
-                )}
-                {file.status !== "deleted" && (
-                  <button
-                    type="button"
-                    aria-label={`${t("turnFiles.openCurrent")} ${file.name}`}
-                    title={t("turnFiles.openCurrent")}
-                    onClick={(event) =>
-                      openFilePreview(
+                      )}
+                  </span>
+                </span>
+              </button>
+              <DeliveryFileActions
+                name={file.name}
+                target={target}
+                scope={archiveScope}
+                disabled={!available}
+                onPreview={(trigger) => openFilePreview(target, trigger, scope)}
+                moreActions={[
+                  ...(canDiff
+                    ? [
                         {
-                          source: "workspace",
-                          path: file.path,
-                          root: file.root,
+                          key: "diff",
+                          label: t("turnFiles.diff"),
+                          icon: <GitCompareArrows size={16} />,
+                          onSelect: () => void showDiff(file),
                         },
-                        event.currentTarget,
-                        scope,
-                      )
-                    }
-                  >
-                    <FolderOpen size={15} />
-                  </button>
-                )}
-                <button
-                  className={styles.download}
-                  type="button"
-                  aria-busy={busy === file.id}
-                  disabled={!available || Boolean(busy)}
-                  aria-label={`${t(
-                    version === "before"
-                      ? "turnFiles.downloadBefore"
-                      : "turnFiles.download",
-                  )} ${file.name}`}
-                  title={t(
-                    version === "before"
-                      ? "turnFiles.downloadBefore"
-                      : "turnFiles.download",
-                  )}
-                  onClick={() =>
-                    void download(file.id, () =>
-                      turnFilesApi.downloadFile(
-                        archiveScope,
-                        turn.id,
-                        file,
-                        version,
+                      ]
+                    : []),
+                  ...(file.status !== "deleted"
+                    ? [
+                        {
+                          key: "current",
+                          label: t("turnFiles.openCurrent"),
+                          icon: <FolderOpen size={16} />,
+                          onSelect: (trigger: HTMLElement) =>
+                            openFilePreview(
+                              {
+                                source: "workspace",
+                                path: file.path,
+                                root: file.root,
+                              },
+                              trigger,
+                              scope,
+                            ),
+                        },
+                      ]
+                    : []),
+                  {
+                    key: "download",
+                    label: t(
+                      version === "before"
+                        ? "turnFiles.downloadBefore"
+                        : "turnFiles.download",
+                    ),
+                    icon:
+                      busy === file.id ? (
+                        <LoaderCircle size={16} className={styles.spinner} />
+                      ) : (
+                        <Download size={16} />
                       ),
-                    )
-                  }
-                >
-                  {busy === file.id ? (
-                    <LoaderCircle size={15} className={styles.spinner} />
-                  ) : (
-                    <Download size={15} />
-                  )}
-                  <span>{t("turnFiles.downloadAction")}</span>
-                </button>
-              </div>
+                    disabled: !available || Boolean(busy),
+                    onSelect: () =>
+                      void download(file.id, () =>
+                        turnFilesApi.downloadFile(
+                          archiveScope,
+                          turn.id,
+                          file,
+                          version,
+                        ),
+                      ),
+                  },
+                ]}
+              />
             </div>
             {!available && (
               <span className={styles.unavailable}>
@@ -436,18 +427,12 @@ function SummaryContent({
       aria-label={t("turnFiles.title")}
       data-turn-id={turn.id}
     >
+      {renderFiles(
+        expanded ? primaryFiles : primaryFiles.slice(0, COLLAPSED_FILES),
+        deliveries.length > 0,
+      )}
       <header className={styles.header}>
-        <span className={styles.headingIcon} aria-hidden="true">
-          <Package size={19} strokeWidth={1.6} />
-        </span>
         <div className={styles.heading}>
-          <strong>
-            {t(
-              deliveries.length > 0
-                ? "turnFiles.deliveryTitle"
-                : "turnFiles.title",
-            )}
-          </strong>
           <div className={styles.subtitle}>
             {delivered > 0 && (
               <span>{t("turnFiles.deliveredCount", { count: delivered })}</span>
@@ -481,10 +466,6 @@ function SummaryContent({
           {t("turnFiles.downloadTurn")}
         </button>
       </header>
-      {renderFiles(
-        expanded ? primaryFiles : primaryFiles.slice(0, COLLAPSED_FILES),
-        deliveries.length > 0,
-      )}
       {primaryFiles.length > COLLAPSED_FILES && (
         <button
           className={styles.expand}
@@ -584,7 +565,7 @@ function SummaryContent({
             {t("turnFiles.overlap")}
           </p>
         )}
-        {turn.incomplete && (
+        {turn.incomplete && !turn.warnings?.length && (
           <p className={styles.notice}>
             <AlertCircle size={13} />
             {t("turnFiles.incomplete")}
@@ -592,7 +573,14 @@ function SummaryContent({
         )}
         {turn.warnings?.length > 0 && (
           <details className={styles.warnings}>
-            <summary>{t("turnFiles.captureDetails")}</summary>
+            <summary className={turn.incomplete ? styles.notice : undefined}>
+              {turn.incomplete && <AlertCircle size={13} />}
+              {t(
+                turn.incomplete
+                  ? "turnFiles.incomplete"
+                  : "turnFiles.captureDetails",
+              )}
+            </summary>
             <ul>
               {turn.warnings.map((warning, index) => (
                 <li key={`${index}:${warning}`}>{warning}</li>
@@ -616,6 +604,7 @@ export default function TurnFileSummary({
   responseId,
   clientMessageId,
   completed,
+  includeObservedChanges = true,
   fallback,
 }: TurnFileSummaryProps) {
   const { t } = useTranslation();
@@ -739,13 +728,30 @@ export default function TurnFileSummary({
   // A running manifest can be empty before FINALLY completes the snapshot.
   // Keep the usable legacy hints until there is an authoritative final record.
   const showTurn = turn && (turn.status !== "running" || turn.files.length > 0);
+  // Older snapshots watched the shared workspace even for plain conversation.
+  // Preserve their immutable records, but only present proven deliveries when
+  // neither saved tool calls nor capture metadata establish tool activity.
+  const displayTurn =
+    turn && !includeObservedChanges && !turn.tool_activity
+      ? {
+          ...turn,
+          files: turn.files.filter((file) => file.delivered),
+          incomplete: turn.files.some(
+            (file) => file.delivered && !file.after_available,
+          ),
+          warnings: (turn.warnings ?? []).filter((warning) =>
+            /deliver|archiv/i.test(warning),
+          ),
+          overlap: false,
+        }
+      : turn;
   return (
     <>
       {showTurn ? (
         <SummaryContent
           key={`${scopeKey}:${turn.id}`}
           scope={scope}
-          turn={turn}
+          turn={displayTurn!}
         />
       ) : (
         fallback

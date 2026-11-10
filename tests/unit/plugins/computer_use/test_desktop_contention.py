@@ -101,7 +101,6 @@ async def test_a_desktop_busy_for_too_long_is_reported(
 
     with pytest.raises(ComputerUseProtocolError) as refusal:
         await client.execute("click", {})
-
     assert refusal.value.code == "desktop_busy"
     assert transport.attempts == client_module._DESKTOP_BUSY_ATTEMPTS
 
@@ -173,7 +172,6 @@ async def test_other_failures_are_not_retried(
 
     with pytest.raises(ComputerUseProtocolError) as failure:
         await client.execute("click", {})
-
     assert failure.value.code == "request_timeout"
     assert transport.attempts == 1, "a timeout must be reported, not repeated"
 

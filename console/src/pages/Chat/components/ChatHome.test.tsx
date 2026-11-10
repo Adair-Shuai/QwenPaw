@@ -4,7 +4,12 @@ import { MemoryRouter, useLocation } from "react-router-dom";
 import ChatHome from "./ChatHome";
 import { useSessionListStore } from "@/stores/sessionListStore";
 
-const context = vi.hoisted(() => ({ approvals: [] as any[] }));
+const context = vi.hoisted(() => ({
+  approvals: [] as Pick<
+    import("@/api/modules/console").PendingApproval,
+    "owner_agent_id" | "agent_id" | "root_session_id"
+  >[],
+}));
 vi.mock("@/contexts/ApprovalContext", () => ({
   useApprovalContext: () => context,
 }));

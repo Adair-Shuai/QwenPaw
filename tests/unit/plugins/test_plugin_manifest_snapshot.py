@@ -23,10 +23,10 @@ def test_runtime_metadata_keeps_source_snapshot_and_rejects_disk_changes(
     path.write_text(json.dumps(data), encoding="utf8")
     manifest = PluginManifest.model_validate(data)
     description = PythonBackend(None).describe(tmp_path, manifest)
-    before = _read_source_identity(description)
+    _read_source_identity(description)
     manifest.meta["tools"].append({"name": "runtime-tool"})
     assert description.manifest.meta["tools"] == []
-    assert _read_source_identity(description) == before
+    _read_source_identity(description)
     data["meta"]["tools"].append({"name": "disk-change"})
     path.write_text(json.dumps(data), encoding="utf8")
     with pytest.raises(

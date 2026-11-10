@@ -97,7 +97,6 @@ def test_setup_runs_off_event_loop_and_serializes_requests(
             await first
             if second is not None:
                 await second
-
         assert second_started.is_set()
         assert calls == 2
 

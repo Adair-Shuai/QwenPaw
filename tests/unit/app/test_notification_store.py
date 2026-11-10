@@ -19,6 +19,8 @@ pytestmark = [pytest.mark.unit, pytest.mark.p1]
 @pytest.fixture(autouse=True)
 def clear_events():
     """Keep the shared feed isolated between tests."""
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     notification_store._EVENTS.clear()
     yield
     notification_store._EVENTS.clear()
@@ -39,6 +41,8 @@ def test_snapshots_are_non_consuming_bounded_and_expire(monkeypatch):
     assert first == notification_store.snapshot()
     assert len(first[0][f"body"]) == 500
     clock[0] += 301
+    # Preserve the exact empty-list result contract.
+    # pylint: disable-next=use-implicit-booleaness-not-comparison
     assert notification_store.snapshot() == []
 
 
@@ -102,6 +106,8 @@ async def test_saved_inbox_event_is_forwarded_and_can_be_found_by_id(
     [f"success", f"cancel", f"error", f"failed"],
 )
 async def test_only_successful_console_turns_publish(ending, monkeypatch):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     channel = ConsoleChannel(
         process=MagicMock(),
         enabled=True,

@@ -67,7 +67,6 @@ class JqProjectTransformer:
                 "jq program must be non-empty",
                 code="JQ_PROGRAM_EMPTY",
             )
-
         jq_command = [self.executable, "--compact-output", "--exit-status"]
         normalized_string_args = dict(string_args or {})
         normalized_json_args = dict(json_args or {})

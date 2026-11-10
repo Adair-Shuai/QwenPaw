@@ -129,6 +129,8 @@ class _HTTPResponse(Response):
 
 def route_is_unowned(registry, method, path, *, service=None):
     """Read host custody without selecting, forwarding or starting a route."""
+    # The forwarder checks the registry ownership snapshot directly.
+    # pylint: disable=protected-access
     if service is None and registry is not None:
         service = getattr(registry, "channel_ingress_service", None)
     routes = DEFAULT_ROUTES
@@ -275,7 +277,9 @@ class ChannelIngressService:
         return None
 
     def endpoint_changed(self, service, reference):
-        """Synchronous registration callback; starting is allowed, routing isn't."""
+        """Synchronous registration callback; starting is allowed, routing
+        isn't.
+        """
         self._sweep()
         routes = self.routes.get(
             (reference.plugin_id, reference.endpoint.channel_key),
@@ -436,6 +440,8 @@ class ChannelIngressService:
     @staticmethod
     def _canonical_origin(reference):
         """An approved owner's public origin authenticates no upstream URL."""
+        # Validate origin shape, authority and bounds as one trust boundary.
+        # pylint: disable=R0916
         origin = reference.endpoint.public_base_url
         if origin is None:
             return None
@@ -462,6 +468,8 @@ class ChannelIngressService:
         return origin.rstrip("/")
 
     def _original_url(self, request, reference):
+        # Reject invalid forwarded URL fields before forwarding any request.
+        # pylint: disable=R0916
         hosts = request.headers.getlist("host")
         if len(hosts) > 1:
             raise _Unavailable(400)
@@ -502,7 +510,7 @@ class ChannelIngressService:
                 or parsed.fragment
             ):
                 raise ValueError()
-            parsed.port
+            _ = parsed.port  # Access validates the port range and syntax.
         except ValueError:
             raise _Unavailable(400) from None
         canonical = self._canonical_origin(reference)
@@ -553,6 +561,8 @@ class ChannelIngressService:
         )
 
     def _session(self):
+        # Disable aiohttp implicit retries to preserve channel effect budgets.
+        # pylint: disable=protected-access
         if self._client is None:
             self._client = aiohttp.ClientSession(
                 trust_env=False,
@@ -576,7 +586,8 @@ class ChannelIngressService:
             original = self._client._request
 
             async def no_redirect(method, url, **kwargs):
-                # ws_connect doesn't expose allow_redirects on supported aiohttp.
+                # ws_connect doesn't expose allow_redirects on supported
+                # aiohttp.
                 kwargs["allow_redirects"] = False
                 return await original(method, url, **kwargs)
 
@@ -690,6 +701,8 @@ class ChannelIngressService:
                 await self._finish_forward(forward)
 
     async def forward_websocket(self, websocket):
+        # Use the owned websocket response for handshake cleanup.
+        # pylint: disable=protected-access
         forward = None
         try:
             forward = self._select(websocket, "WEBSOCKET")

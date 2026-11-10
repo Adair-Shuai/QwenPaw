@@ -168,7 +168,8 @@ internal static class PortableSetup
     }
 
     private static int RunInstaller(string packageRoot, string installDir, bool noCliPath,
-        bool noDesktopShortcut, bool deferredCommit, string transactionFile, out string logPath)
+        bool noDesktopShortcut, bool deferredCommit, string transactionFile, out string logPath,
+        Action<string> reportStage = null)
     {
         var arguments = new List<string> { "-Silent" };
         if (noCliPath) arguments.Add("-NoCliPath");
@@ -183,12 +184,13 @@ internal static class PortableSetup
         }
         if (!string.IsNullOrWhiteSpace(installDir)) arguments.Add("-InstallDir");
         if (!string.IsNullOrWhiteSpace(installDir)) arguments.Add(installDir);
-        ProcessResult result = RunPowerShell(packageRoot, Path.Combine(packageRoot, "install.ps1"), arguments, false);
+        ProcessResult result = RunPowerShell(packageRoot, Path.Combine(packageRoot, "install.ps1"), arguments, false, reportStage);
         logPath = result.LogPath;
         return result.ExitCode;
     }
 
-    private static ProcessResult RunPowerShell(string workingDirectory, string script, IEnumerable<string> scriptArguments, bool uninstall)
+    private static ProcessResult RunPowerShell(string workingDirectory, string script, IEnumerable<string> scriptArguments,
+        bool uninstall, Action<string> reportStage = null)
     {
         string powershell = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows),
             "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
@@ -210,25 +212,34 @@ internal static class PortableSetup
             StandardOutputEncoding = Encoding.UTF8,
             StandardErrorEncoding = Encoding.UTF8
         };
-        using (Process process = Process.Start(start))
+        string logPath = NewLogPath(uninstall ? "uninstall" : "setup");
+        // Flush as output arrives: a slow copy or interrupted installer must
+        // leave useful diagnostics without retaining every line in memory.
+        using (var log = new StreamWriter(new FileStream(logPath, FileMode.CreateNew,
+            FileAccess.Write, FileShare.Read), new UTF8Encoding(false)))
+        using (Process process = new Process { StartInfo = start })
         {
-            if (process == null) throw new InvalidOperationException("Installer process did not start.");
-            var stdoutBuilder = new StringBuilder();
-            var stderrBuilder = new StringBuilder();
+            log.AutoFlush = true;
+            var elapsed = Stopwatch.StartNew();
+            Action<string, string> writeLine = delegate(string channel, string line) {
+                lock (log) log.WriteLine("{0:o} +{1:F3}s [{2}] {3}", DateTime.UtcNow,
+                    elapsed.Elapsed.TotalSeconds, channel, line);
+            };
             process.OutputDataReceived += delegate(object sender, DataReceivedEventArgs e) {
-                if (e.Data != null) lock (stdoutBuilder) stdoutBuilder.AppendLine(e.Data);
+                if (e.Data == null) return;
+                writeLine("stdout", e.Data);
+                string stage = InstallerStage(e.Data);
+                if (stage != null && reportStage != null) reportStage(stage);
             };
             process.ErrorDataReceived += delegate(object sender, DataReceivedEventArgs e) {
-                if (e.Data != null) lock (stderrBuilder) stderrBuilder.AppendLine(e.Data);
+                if (e.Data != null) writeLine("stderr", e.Data);
             };
+            writeLine("setup", "Starting installation process.");
+            if (!process.Start()) throw new InvalidOperationException("Installer process did not start.");
             process.BeginOutputReadLine();
             process.BeginErrorReadLine();
             process.WaitForExit();
-            process.WaitForExit();
-            string stdout = stdoutBuilder.ToString();
-            string stderr = stderrBuilder.ToString();
-            string logPath = NewLogPath(uninstall ? "uninstall" : "setup");
-            File.WriteAllText(logPath, stdout + Environment.NewLine + stderr);
+            writeLine("setup", "Process exited with code " + process.ExitCode.ToString(CultureInfo.InvariantCulture) + ".");
             if (!uninstall)
             {
                 try { File.Copy(logPath, Path.Combine(Path.GetTempPath(), "ugsci-desktop-setup.log"), true); }
@@ -236,6 +247,15 @@ internal static class PortableSetup
             }
             return new ProcessResult(process.ExitCode, logPath);
         }
+    }
+
+    private static string InstallerStage(string line)
+    {
+        const string prefix = "[UGSCI-INSTALL] ";
+        if (line == null || !line.StartsWith(prefix, StringComparison.Ordinal)) return null;
+        string stage = line.Substring(prefix.Length).Trim();
+        if (stage.Length == 0) return null;
+        return stage.Length <= 240 ? stage : stage.Substring(0, 237) + "...";
     }
 
     private static string NewLogPath(string operation)
@@ -975,11 +995,17 @@ internal static class PortableSetup
             installProgress.Style = ProgressBarStyle.Marquee;
             installProgress.Value = 0;
             ShowPage(4);
-            installStatus.Text = "Backing up data and installing application files...";
+            installStatus.Text = "Preparing installation...";
             var thread = new Thread(new ThreadStart(delegate {
                 int code = 1; string error = null; string logPath = null;
                 try { code = RunInstaller(packageRoot, dir, forceNoCliPath || !addPath.Checked,
-                    !desktopShortcut.Checked, false, null, out logPath); }
+                    !desktopShortcut.Checked, false, null, out logPath, delegate(string stage) {
+                        if (IsDisposed || !IsHandleCreated) return;
+                        try { BeginInvoke((MethodInvoker)delegate {
+                            if (!IsDisposed && busy) installStatus.Text = stage;
+                        }); }
+                        catch (InvalidOperationException) { /* The form has closed. */ }
+                    }); }
                 catch (Exception ex) { error = ex.Message; logPath = WriteFailureLog("setup", ex); }
                 BeginInvoke((MethodInvoker)delegate {
                     busy = false;

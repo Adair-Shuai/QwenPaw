@@ -295,6 +295,9 @@ class ManagementResult(_ManagementIdentity):
 
     @classmethod
     def from_mapping(cls, value: object) -> ManagementResult:
+        # Preserve native event routing, media fallbacks and cleanup in SDK
+        # order.
+        # pylint: disable=R0912
         try:
             data = _packet(
                 value,

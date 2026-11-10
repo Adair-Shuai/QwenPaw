@@ -28,6 +28,10 @@ SYSTEM_PROMPT = (
     "出节点id],start_id,metadata:{positions:{节点id:{x,y}}},version:'1.0'。\n"
     "引用输出使用 [上游ID,槽位整数]，允许嵌套于ToolNode.inputs.args；优先使用typed "
     "Tool.<name>节点。\n"
+    "严格使用节点目录声明的输入参数。LLMCallNode的system传系统指令，prompt传用户内容。\n"
+    "ScriptNode.inputs将变量直接注入脚本全局，赋值result返回JSON可序列化结果。"
+    "仅导入节点描述列出的标准库，支持import和from-import；模块也已预加载。"
+    "文本统计应兼容中英文标点，英文逗号不作为句子终止符。\n"
     "若提供edges，必须与引用和控制字段完全一致：数据边{source,target,kind:'data',source"
     "_slot:0,target_handle:'真实输入字段'}；控制边{source,target,kind:'cont"
     "rol',source_handle:'next或condition:0或else_node'}。\n"
@@ -330,6 +334,7 @@ async def propose(
         if isinstance(warnings, list)
         else []
     )
+    warnings.extend(validation.get("warnings", []))
     if any(
         n.get("class_type")
         in {"CodeNode", "ScriptNode", "ScriptAgentNode", "CodingAgentNode"}

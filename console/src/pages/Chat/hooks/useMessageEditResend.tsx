@@ -6,7 +6,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { Button, Input, Select, Tag, Tooltip } from "antd";
+import { Button, Checkbox, Input, Select, Tag, Tooltip } from "antd";
 import { SquarePen } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { useAppMessage } from "../../../hooks/useAppMessage";
@@ -19,12 +19,16 @@ import type { SessionIdentity } from "../sessionApi";
 import { buildSubmissionBizParams } from "../submissionBizParams";
 import {
   getRequestEditSnapshot,
+  getRequestEditTarget,
   createRequestEditKeyResolver,
   type RequestEditSnapshot,
+  type RequestEditTarget,
 } from "../requestEditSnapshot";
 import type { AgentMentionModesSnapshot } from "../components/agentMentionModes";
 import { extractAgentMentions } from "../components/agentMentionUtils";
 import styles from "../components/MessageEditResend.module.less";
+import { ANSWER_QUOTES_KEY } from "../answerQuotes";
+import { AnswerQuoteSummary } from "../components/AnswerQuoteRequest";
 
 interface Options {
   visit: object;
@@ -83,6 +87,8 @@ interface Draft {
   snapshot: RequestEditSnapshot;
   text: string;
   modes: Record<string, "delegate" | "collaborate">;
+  keepOriginal: boolean;
+  target?: RequestEditTarget;
 }
 
 function sameIdentity(a: SessionIdentity, b: SessionIdentity): boolean {
@@ -95,7 +101,7 @@ function sameIdentity(a: SessionIdentity, b: SessionIdentity): boolean {
   );
 }
 
-/** Editing a past request creates a new queue item; history and composer stay intact. */
+/** Queue an independent edit; the backend commits the selected history policy. */
 export function useMessageEditResend(options: Options) {
   const { t } = useTranslation();
   const { message } = useAppMessage();
@@ -106,10 +112,11 @@ export function useMessageEditResend(options: Options) {
   const admitted = useRef(false);
   const activeEdit = useRef<object | null>(null);
   const visit = options.visit;
-  const resolveRequestKey = useMemo(
-    () => createRequestEditKeyResolver(),
-    [visit],
-  );
+  const resolveRequestKey = useMemo(() => {
+    // Preserve explicit invalidation when the surrounding owner or registry changes.
+    void visit;
+    return createRequestEditKeyResolver();
+  }, [visit]);
   const draftRef = useRef(draft);
   draftRef.current = draft;
   const presentRequests = useRef(new Map<RequestKey, number>());
@@ -170,6 +177,8 @@ export function useMessageEditResend(options: Options) {
         identity: { ...identity },
         snapshot,
         text: snapshot.text,
+        keepOriginal: false,
+        target: getRequestEditTarget(data),
         // Never inherit the unrelated composer/global mention preferences.
         modes: { ...snapshot.mentionModes },
       });
@@ -207,6 +216,10 @@ export function useMessageEditResend(options: Options) {
       setError(t("chat.editResend.unsupported"));
       return;
     }
+    if (!draft.keepOriginal && !draft.target) {
+      setError(t("chat.editResend.missingTarget"));
+      return;
+    }
     const text = draft.text.trim();
     if (!text && draft.snapshot.attachments.length === 0) return;
     const store = useMessageQueueStore.getState();
@@ -226,9 +239,16 @@ export function useMessageEditResend(options: Options) {
         backendSessionId: draft.identity.sessionId,
         userId: draft.identity.userId,
         channel: draft.identity.channel,
-        requestContext: now.captureContext(undefined, query, {
-          ...draft.modes,
-        }),
+        requestContext: {
+          ...now.captureContext(undefined, query, { ...draft.modes }),
+          ...(draft.snapshot.answerQuotes?.length
+            ? { [ANSWER_QUOTES_KEY]: draft.snapshot.answerQuotes }
+            : {}),
+          qwenpaw_edit_resend: {
+            keep_original: draft.keepOriginal,
+            ...(draft.target ? { target: draft.target } : {}),
+          },
+        },
         bizParams: buildSubmissionBizParams(draft.identity),
       });
       activeEdit.current = null;
@@ -287,6 +307,7 @@ export function useMessageEditResend(options: Options) {
       aria-label={t("chat.editResend.action")}
       className={styles.editor}
     >
+      <AnswerQuoteSummary quotes={activeDraft?.snapshot.answerQuotes ?? []} />
       <Input.TextArea
         aria-label={t("chat.editResend.message")}
         variant="borderless"
@@ -385,7 +406,27 @@ export function useMessageEditResend(options: Options) {
       )}
 
       <div className={styles.footer}>
-        <span className={styles.hint}>{t("chat.editResend.description")}</span>
+        <div className={styles.historyOption}>
+          <Checkbox
+            checked={activeDraft?.keepOriginal ?? false}
+            onChange={(event) => {
+              setDraft(
+                (value) =>
+                  value && { ...value, keepOriginal: event.target.checked },
+              );
+              setError(undefined);
+            }}
+          >
+            {t("chat.editResend.keepOriginal")}
+          </Checkbox>
+          <span className={styles.hint}>
+            {t(
+              activeDraft?.keepOriginal
+                ? "chat.editResend.description"
+                : "chat.editResend.replaceDescription",
+            )}
+          </span>
+        </div>
         <div className={styles.actions}>
           <Button onClick={cancel}>{t("common.cancel")}</Button>
           <Button
@@ -404,21 +445,24 @@ export function useMessageEditResend(options: Options) {
     </div>
   );
 
-  const renderRequest = useCallback(
-    ({ data, fallback }: { data: unknown; fallback: () => ReactNode }) => {
-      const key = resolveRequestKey(data);
-      return (
-        <InlineRequestFrame
-          requestKey={key}
-          editing={activeDraft?.requestKey === key}
-          original={fallback()}
-          editor={editor}
-          register={register}
-        />
-      );
-    },
-    [resolveRequestKey, activeDraft?.requestKey, editor, register],
-  );
+  const renderRequest = ({
+    data,
+    fallback,
+  }: {
+    data: unknown;
+    fallback: () => ReactNode;
+  }) => {
+    const key = resolveRequestKey(data);
+    return (
+      <InlineRequestFrame
+        requestKey={key}
+        editing={activeDraft?.requestKey === key}
+        original={fallback()}
+        editor={editor}
+        register={register}
+      />
+    );
+  };
 
   return { renderAction, renderRequest };
 }

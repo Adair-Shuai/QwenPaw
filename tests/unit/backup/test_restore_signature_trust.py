@@ -63,7 +63,6 @@ def test_restore_requires_explicit_trust_for_foreign_signature(
                 trust_mode=None,
                 operation="Restoring",
             )
-
         assert exc_info.value.code == "backup_signature_mismatch"
         with pytest.raises(BackupValidationError) as wrong_trust:
             resolve_signature_action(
@@ -73,7 +72,6 @@ def test_restore_requires_explicit_trust_for_foreign_signature(
                 trust_mode="legacy",
                 operation="Restoring",
             )
-
         assert wrong_trust.value.code == "backup_signature_mismatch"
         assert (
             resolve_signature_action(
@@ -106,7 +104,6 @@ def test_restore_trusted_foreign_backup_gets_local_signature(
     with zipfile.ZipFile(backup_path, "r") as zf:
         foreign_meta = BackupMeta.model_validate_json(zf.read(META_FILE))
         assert not verify_signature(zf, foreign_meta)
-
     trusted_meta = sign_trusted_backup(backup_path, foreign_meta)
 
     assert trusted_meta.accepted_via_trust is True

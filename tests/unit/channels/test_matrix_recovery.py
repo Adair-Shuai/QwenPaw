@@ -39,6 +39,9 @@ async def homeserver():
     }
 
     async def handle(request):
+        # Keep the real lifecycle sequence and all behavior assertions
+        # together.
+        # pylint: disable=R0911
         endpoint = request.path.rsplit("/", 1)[-1]
         if endpoint == "login":
             state["logins"].append(await request.json())

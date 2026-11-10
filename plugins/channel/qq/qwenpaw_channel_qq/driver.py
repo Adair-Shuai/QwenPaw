@@ -26,6 +26,8 @@ from .formatting import (
 )
 
 
+# Non-stream driver retains the fail-closed optional cleanup hook.
+# pylint: disable-next=abstract-method
 class QQDriver(SharedResponseDriver):
     def __init__(self):
         super().__init__("qq", "qq.shared.responses", QQDeliveryError)
@@ -129,6 +131,8 @@ class QQDriver(SharedResponseDriver):
         return route
 
     async def _open(self, params, request):
+        # Retain the native callback and lifecycle hook parameter names.
+        # pylint: disable=unused-argument
         self._identity(params)
         self._require_connected()
         handle = "qq:reply:" + uuid.uuid4().hex

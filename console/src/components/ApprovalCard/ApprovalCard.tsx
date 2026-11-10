@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from "react";
 import { Button, Card, Tag, Typography, Space, Tooltip } from "antd";
-import { Shield, Check, X, Clock, Copy, Info, AlertCircle } from "lucide-react";
+import { Check, X, Clock, Copy, Info, AlertCircle } from "lucide-react";
+import { UgsciAssistantVisual } from "../UgsciAssistantVisual";
 import { useTranslation } from "react-i18next";
 import { useAgentStore } from "../../stores/agentStore";
 import { getAgentDisplayName } from "../../utils/agentDisplayName";
@@ -57,7 +58,6 @@ export function ApprovalCard({
   similarTarget,
   onApprove,
   onDeny,
-  onCancel: _onCancel,
   onAcknowledge,
 }: ApprovalCardProps) {
   const { t } = useTranslation();
@@ -174,7 +174,10 @@ export function ApprovalCard({
     <Card className={styles.approvalCard} bordered={false}>
       <div className={styles.header}>
         <Space size={8} align="center" className={styles.titleRow}>
-          <Shield size={16} className={styles.icon} />
+          <UgsciAssistantVisual
+            state="needs-approval"
+            className={styles.icon}
+          />
           <Text className={styles.title}>
             {t("approval.title", "Security Approval Required")}
           </Text>

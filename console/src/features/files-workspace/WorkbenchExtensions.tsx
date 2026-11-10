@@ -15,6 +15,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
+import { Tooltip } from "antd";
 import { SlotErrorBoundary } from "../../plugins/registry/Slot";
 import type { FilesWorkspaceScope } from "./filesWorkspaceScope";
 import type {
@@ -97,6 +98,15 @@ const activities = [
   { id: "files" as const, label: "文件与预览", icon: FileText },
   ...panels,
 ];
+const shortLabels: Record<WorkbenchMode, string> = {
+  files: "文件",
+  interactions: "交互",
+  browser: "浏览器",
+  agents: "智能体",
+  genui: "GenUI",
+  compute: "计算",
+  simulation: "数模",
+};
 const MODE_STORAGE_KEY = "qwenpaw-workbench-mode";
 
 export function useWorkbenchSelection(
@@ -152,21 +162,27 @@ export function WorkbenchNavigation({
   const { t } = useTranslation();
   return (
     <nav
-      className={styles.activityRail}
+      className={styles.workbenchRail}
       aria-label={t("workbench.activities", "工作台活动")}
     >
       {activities.map(({ id, label, icon: Icon }) => (
-        <button
+        <Tooltip
           key={id}
-          type="button"
-          className={mode === id ? styles.activityActive : undefined}
-          aria-label={t(`workbench.activity.${id}`, label)}
           title={t(`workbench.activity.${id}`, label)}
-          aria-pressed={mode === id}
-          onClick={() => onSelect(id)}
+          placement="right"
         >
-          <Icon size={17} />
-        </button>
+          <button
+            type="button"
+            className={mode === id ? styles.activityActive : undefined}
+            aria-label={t(`workbench.activity.${id}`, label)}
+            title={t(`workbench.activity.${id}`, label)}
+            aria-pressed={mode === id}
+            onClick={() => onSelect(id)}
+          >
+            <Icon size={18} aria-hidden="true" />
+            <span>{t(`workbench.activityShort.${id}`, shortLabels[id])}</span>
+          </button>
+        </Tooltip>
       ))}
     </nav>
   );

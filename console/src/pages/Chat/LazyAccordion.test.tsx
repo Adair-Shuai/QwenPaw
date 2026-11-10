@@ -2,6 +2,7 @@ import React from "react";
 import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, it, vi } from "vitest";
 import LazyAccordion from "./LazyAccordion";
+import userEvent from "@testing-library/user-event";
 
 vi.mock("@agentscope-ai/chat", () => ({
   Accordion: ({
@@ -11,7 +12,7 @@ vi.mock("@agentscope-ai/chat", () => ({
   }: {
     children: React.ReactNode;
     open: boolean;
-    title: string;
+    title: React.ReactNode;
   }) => (
     <div data-testid="vendor-shell">
       <div
@@ -19,12 +20,11 @@ vi.mock("@agentscope-ai/chat", () => ({
           open ? "open" : "close"
         }`}
       >
-        <button
+        <div
           className={`sdk-accordion-group-header-${open ? "open" : "close"}`}
-          type="button"
         >
           {title}
-        </button>
+        </div>
         <div>{children}</div>
       </div>
     </div>
@@ -32,6 +32,25 @@ vi.mock("@agentscope-ai/chat", () => ({
 }));
 
 describe("LazyAccordion", () => {
+  it("supports keyboard disclosure and connects the summary to its process region", async () => {
+    render(
+      <LazyAccordion
+        title="3 steps completed"
+        renderChildren={() => <p>Process details</p>}
+      />,
+    );
+    const summary = screen.getByRole("button", { name: "3 steps completed" });
+    summary.focus();
+    expect(summary).toHaveAttribute("aria-expanded", "false");
+    await userEvent.keyboard("{Enter}");
+    expect(summary).toHaveAttribute("aria-expanded", "true");
+    expect(
+      screen.getByRole("region", { name: "3 steps completed" }),
+    ).toContainElement(screen.getByText("Process details"));
+    await userEvent.keyboard(" ");
+    expect(summary).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByText("Process details")).toBeNull();
+  });
   it("does not render process children until the closed group is opened", () => {
     const renderChildren = vi.fn(() => <div>expensive process content</div>);
 

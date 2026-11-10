@@ -1107,7 +1107,7 @@ export function useSkillPool() {
           {
             key: skillName,
             label: skillName,
-            suggested_name: detail.suggested_name,
+            suggested_name: String(detail.suggested_name),
           },
         ]);
         if (renameMap) {
@@ -1246,7 +1246,7 @@ export function useSkillPool() {
       if (handleScanError(error, t)) return;
       const detail = parseErrorDetail(error);
       if (detail?.suggested_name) {
-        const skillName = detail?.skill_name || "";
+        const skillName = String(detail?.skill_name || "");
         const renameMap = await showConflictRenameModal([
           {
             key: skillName,

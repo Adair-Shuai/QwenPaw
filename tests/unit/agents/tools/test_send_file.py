@@ -29,7 +29,6 @@ async def test_required_and_forbidden_text_assertions(tmp_path):
             "word/document.xml",
             "<w:document><w:t>北京某公司</w:t></w:document>",
         )
-
     ok = await send_file_to_user(
         str(path),
         required_text=["北京某公司"],

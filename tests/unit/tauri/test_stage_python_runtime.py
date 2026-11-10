@@ -122,3 +122,83 @@ def test_finds_exact_reusable_layered_runtime(tmp_path, monkeypatch):
 
     assert helper._find_reusable_runtime(dest, marker_value) == candidate
     assert helper._find_reusable_runtime(dest, marker_value + "x") is None
+
+
+def test_prunes_python_native_symbols_but_keeps_runtime_and_build_support(
+    tmp_path,
+):
+    helper = _load_helper()
+    removed = ("python/python.pdb", "python/DLLs/_ssl.pdb")
+    retained = (
+        "python/python.exe",
+        "python/python311.dll",
+        "python/DLLs/_ssl.pyd",
+        "python/Lib/pdb.py",
+        "python/Lib/site-packages/pip/__init__.py",
+        "python/include/Python.h",
+        "python/libs/python311.lib",
+    )
+    for relative in removed + retained:
+        path = tmp_path / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(relative.encode())
+
+    assert helper._prune_debug_symbols(tmp_path) == sum(map(len, removed))
+    assert all(not (tmp_path / name).exists() for name in removed)
+    for name in retained:
+        assert (tmp_path / name).read_bytes() == name.encode()
+
+
+def test_cached_python_runtime_is_pruned_without_download(
+    tmp_path,
+    monkeypatch,
+):
+    helper = _load_helper()
+    monkeypatch.setattr(helper.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(helper, "_host_triple", lambda: "windows-test")
+    monkeypatch.setattr(helper, "_preferred_release", lambda: "20260623")
+    dest = tmp_path / "python-runtime"
+    executable = dest / "python/python.exe"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"python")
+    symbols = dest / "python/python.pdb"
+    symbols.write_bytes(b"symbols")
+    (dest / ".python-runtime-version").write_text(
+        "3.11-windows-test-20260623-" + "a" * 64,
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "stage_python_runtime.py",
+            "--dest",
+            str(dest),
+            "--python-version",
+            "3.11",
+            "--sha256",
+            "a" * 64,
+        ],
+    )
+
+    def reject_download(*_args, **_kwargs):
+        pytest.fail("cached runtime must not download again")
+
+    monkeypatch.setattr(helper, "_find_asset_url", reject_download)
+    helper.main()
+    assert not symbols.exists()
+    assert executable.read_bytes() == b"python"
+
+
+def test_pruned_python_runtime_gets_new_component_identity(tmp_path):
+    helper = _load_helper()
+    from assemble_desktop_layout import _release_version
+
+    (tmp_path / "python.exe").write_bytes(b"interpreter")
+    (tmp_path / "python.pdb").write_bytes(b"debug symbols")
+    marker = "3.11-x86_64-pc-windows-msvc-20260623-" + "a" * 64
+    before = _release_version(marker, "2.2.2b9", tmp_path)
+    helper._prune_debug_symbols(tmp_path)
+    after = _release_version(marker, "2.2.2b9", tmp_path)
+    assert before != after
+    assert after == _release_version(marker, "2.2.2b9", tmp_path)

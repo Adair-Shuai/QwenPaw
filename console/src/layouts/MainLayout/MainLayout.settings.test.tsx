@@ -16,16 +16,22 @@ import { flattenMenu } from "@/layouts/registry/adapter";
 import SettingsCenter from "@/pages/SettingsCenter";
 import { renderWithProviders } from "@/test/common_setup";
 import MainLayout from ".";
+import type { PageStyle } from "@/utils/pageStyle";
+
+const theme = vi.hoisted(() => ({ pageStyle: "classic" as PageStyle }));
+vi.mock("@/contexts/ThemeContext", () => ({
+  useTheme: () => theme,
+}));
 
 vi.mock("../Sidebar", () => ({
-  default: function Sidebar() {
+  default: function Sidebar({ settingsActive }: { settingsActive?: boolean }) {
     const location = useLocation();
     const navigate = useNavigate();
     const menu = useMenuItems("primary.agentScoped");
     const routes = useRoutes();
     return (
       <aside>
-        Session sidebar
+        {settingsActive ? "Settings feature rail" : "Session sidebar"}
         <button
           onClick={() =>
             navigate("/settings/general", {
@@ -162,6 +168,7 @@ function registerSharedPlugin(withMeta = true) {
 }
 
 beforeEach(() => {
+  theme.pageStyle = "classic";
   vi.spyOn(Grid, "useBreakpoint").mockReturnValue({ md: true });
   menuRegistry.__resetForTests();
   routeRegistry.__resetForTests();
@@ -197,6 +204,30 @@ beforeEach(() => {
 });
 
 describe("plugin settings navigation", () => {
+  it("retains the dual-sidebar feature rail across core and plugin settings and history", async () => {
+    theme.pageStyle = "dual-sidebar";
+    registerSettingsPlugin("/my-plugin");
+    renderLayout("/chat?session=1#messages");
+    await userEvent.click(
+      screen.getByRole("button", { name: "Open settings" }),
+    );
+    expect(screen.getByText("General settings")).toBeVisible();
+    expect(screen.getByText("Settings feature rail")).toBeVisible();
+    await userEvent.click(
+      screen.getByRole("button", { name: "Example extension" }),
+    );
+    expect(screen.getByText("Plugin configuration")).toBeVisible();
+    expect(screen.getByText("Settings feature rail")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "History back" }));
+    expect(screen.getByText("General settings")).toBeVisible();
+    expect(screen.getByText("Settings feature rail")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "Back to app" }));
+    expect(screen.getByTestId("location")).toHaveTextContent(
+      "/chat?session=1#messages",
+    );
+    expect(screen.getByText("Session sidebar")).toBeVisible();
+  });
+
   it.each([true, false])(
     "uses the entry sidebar for a shared route with metadata %s and restores history",
     async (withMeta) => {

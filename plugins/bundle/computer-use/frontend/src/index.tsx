@@ -5,6 +5,32 @@ import manifest from "../../plugin.json";
 
 const host = window.QwenPaw.host;
 const React: typeof ReactNS = host.React;
+
+// Original geometry from UGSci-sidebar-icons.zip.
+function ComputerUseIcon(): ReactNS.ReactElement {
+  return React.createElement(
+    "svg",
+    {
+      viewBox: "0 0 24 24",
+      fill: "none",
+      stroke: "currentColor",
+      strokeWidth: 1.6,
+      strokeLinecap: "round",
+      strokeLinejoin: "round",
+      "aria-hidden": true,
+      focusable: "false",
+      width: "1em",
+      height: "1em",
+    },
+    React.createElement("path", {
+      d: "M11.3 17.4H4.25q-1.5 0-1.5-1.5V5.1q0-1.5 1.5-1.5h15.5q1.5 0 1.5 1.5v7.25M9.3 17.4v3m-3.2 0h6",
+    }),
+    React.createElement("path", {
+      d: "m14.2 10.9.55 9.5 2.65-2.85 2.8 3.05 1.7-1.55-2.8-3.05 3.0-1.5Z",
+    }),
+  );
+}
+
 const {
   Badge,
   Button,
@@ -489,7 +515,7 @@ window.QwenPaw.registerRoutes?.("computer-use", [
     path: "/plugin/computer-use",
     component: ComputerUsePage,
     label: t(storedLocale(), "routeLabel"),
-    icon: "🖥️",
+    icon: <ComputerUseIcon />,
     priority: 43,
   },
 ]);

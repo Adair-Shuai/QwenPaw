@@ -94,13 +94,11 @@ class TeamPipelineGate(LoopGate):
     ) -> Optional[StopHandlerResult]:
         if isinstance(ctx, dict) and ctx.get("has_tool_calls"):
             return StopHandlerResult(action=StopAction.BYPASS)
-
         st: _TeamState | None = self._state()
         if st is None:
             return StopHandlerResult(
                 action=StopAction.BYPASS,
             )
-
         wf = WorkflowState.from_existing(
             st.workspace_dir,
             "team",
@@ -133,7 +131,6 @@ class TeamPipelineGate(LoopGate):
                     action=StopAction.INTERRUPT_AND_CONTINUE,
                     reason="Team blocked: forks not integrated",
                 )
-
         if data.get("merge_blocked"):
             await asyncio.to_thread(
                 wf.update_state,
@@ -149,7 +146,6 @@ class TeamPipelineGate(LoopGate):
                 action=StopAction.TERMINATE,
                 reason=f"Iteration limit ({st.max_iterations})",
             )
-
         if phase == "completed":
             await asyncio.to_thread(wf.cleanup)
             self.deactivate()
@@ -157,7 +153,6 @@ class TeamPipelineGate(LoopGate):
                 action=StopAction.TERMINATE,
                 reason="Team pipeline completed",
             )
-
         # Count fix *rounds* (phase entry), not every agent turn.
         if phase == "fix" and prev_phase != "fix":
             st.fix_attempts += 1
@@ -172,7 +167,6 @@ class TeamPipelineGate(LoopGate):
                 wf.update_state,
                 {"fix_attempts": st.fix_attempts},
             )
-
         return StopHandlerResult(
             action=StopAction.INTERRUPT_AND_CONTINUE,
             reason="Team pipeline in progress",

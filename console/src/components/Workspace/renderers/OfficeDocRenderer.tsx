@@ -1,3 +1,4 @@
+import { UgsciMotion } from "../../UgsciMotion";
 /**
  * OfficeDocRenderer — Office 文档渲染器
  *
@@ -14,7 +15,7 @@
  * 支持的格式：DOCX、XLSX、PPTX（以及旧版 DOC/XLS/PPT，旧版只能走后端）
  */
 import React, { useEffect, useState, useCallback, useRef } from "react";
-import { Button, Space, Tooltip, Spin, Alert, Tag } from "antd";
+import { Button, Space, Tooltip, Alert, Tag } from "antd";
 import {
   DownloadOutlined,
   ReloadOutlined,
@@ -259,9 +260,10 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
   );
 
   useEffect(() => {
+    const conversionRefAtSetup = conversionRef;
     convertDocument();
     return () => {
-      conversionRef.current++;
+      conversionRefAtSetup.current++;
     };
   }, [convertDocument]);
 
@@ -277,7 +279,7 @@ const OfficeDocRenderer: React.FC<RendererContext> = ({
           background: theme === "dark" ? "#1e1e1e" : "#fff",
         }}
       >
-        <Spin size="large" />
+        <UgsciMotion theme={theme} variant="files" size={80} />
         <span style={{ marginTop: 12, color: "#999", fontSize: 12 }}>
           {t("workspace.converting")}
         </span>

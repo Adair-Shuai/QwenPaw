@@ -29,6 +29,8 @@ def ok(**values):
 
 class WebSocket:
     def __init__(self, *args, **kwargs):
+        # Retain fixture injection and substituted callback signatures.
+        # pylint: disable=unused-argument
         self._conn = None
 
     async def _connect(self):
@@ -77,6 +79,8 @@ class Api:
         return ok(message_id="reply")
 
     async def aget(self, request):
+        # Retain fixture injection and substituted callback signatures.
+        # pylint: disable=unused-argument
         return NS(success=lambda: True, file=io.BytesIO(b"inbound-image"))
 
     async def acontent(self, request):
@@ -216,6 +220,8 @@ def message(
 
 
 async def ingress(rt, value):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     await rt.driver._platform._dispatch_native_message(
         namespace(value),
         rt.driver._message,
@@ -246,6 +252,8 @@ async def test_dm_and_group_mention_keep_sender_and_reply_target(
     native,
     group,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     rt = native
     if group:
         await ingress(rt, message("ignored", group=True))
@@ -270,6 +278,8 @@ async def test_dm_and_group_mention_keep_sender_and_reply_target(
 
 
 async def test_image_download_and_upload_preserve_bytes(native, tmp_path):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     rt = native
     event = await ingress(
         rt,
@@ -302,6 +312,8 @@ async def test_image_download_and_upload_preserve_bytes(native, tmp_path):
 
 
 async def test_stream_finalizes_same_card(native):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     rt = native
     event = await ingress(rt, message("stream"))
     handle = event["response_handle"]
@@ -343,6 +355,10 @@ async def test_stream_finalizes_same_card(native):
 
 
 async def test_legitimate_approval_action_maps_authenticated_actor(native):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     rt = native
     event = await ingress(rt, message("approval", group=True, mentioned=True))
     assert (
@@ -383,6 +399,10 @@ async def test_legitimate_approval_action_maps_authenticated_actor(native):
 
 
 async def test_stop_joins_sdk_thread_and_closes_http(native):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     platform = native.driver._platform
     thread, client = platform._ws_thread, platform._http_client
     await native.driver.stop()

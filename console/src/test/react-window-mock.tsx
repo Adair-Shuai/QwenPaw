@@ -1,15 +1,19 @@
 import React from "react";
 
-export const FixedSizeList = ({
+export const FixedSizeList = <T,>({
   children,
   itemData,
   itemCount,
 }: {
-  children: React.ReactNode;
-  itemData: any;
+  children: React.ComponentType<{
+    index: number;
+    style: React.CSSProperties;
+    data: T;
+  }>;
+  itemData: T;
   itemCount: number;
 }) => {
-  const Row = children as unknown as React.ComponentType<any>;
+  const Row = children;
   return (
     <>
       {Array.from({ length: itemCount }, (_, i) => (

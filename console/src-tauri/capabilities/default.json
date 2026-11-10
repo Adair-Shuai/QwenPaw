@@ -18,6 +18,7 @@
     "dialog:allow-open",
     "dialog:allow-save",
     "open-external-link",
+    "delivery-files",
     "reveal-in-file-manager",
     "tray",
     "ui-verification",

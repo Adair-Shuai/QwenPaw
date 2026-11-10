@@ -397,7 +397,6 @@ class CdpControlLink(CdpVerbsMixin):
             )
             self._endpoints.setdefault(owner[0], "injected")
             self._subscribe_transport_events(owner[0], transport)
-
         if context == "profile":
             holder = next(
                 (
@@ -419,7 +418,6 @@ class CdpControlLink(CdpVerbsMixin):
                     reason="profile session already open",
                     detail=holder[1],
                 )
-
         browser_context_id = None
         if context == "incognito":
             browser_context = await self._transport_for(owner[0]).send(

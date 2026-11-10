@@ -1269,7 +1269,6 @@ class TestShutdownBudget:
                 side_effect=fake_run_cmd,
             ):
                 _run_icacls_sync_local(["C:\\fake_path"])
-
             # Timeout should be capped at ~2 seconds, not 180
             assert len(captured_timeouts) == 1
             assert captured_timeouts[0] <= 2

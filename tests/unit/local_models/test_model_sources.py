@@ -32,6 +32,8 @@ def test_downloaded_mirror_retains_source_and_role(
     role,
     tmp_path,
 ):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     manager = ModelManager()
     manager._model_dir = tmp_path
     repo = f"{owner}/{name}"
@@ -70,6 +72,8 @@ def test_modelscope_piccolo_downloads_every_shard_without_safetensors(
     tmp_path,
     monkeypatch,
 ):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     download = MagicMock(return_value=str(tmp_path))
     monkeypatch.setattr(
         ModelManager,
@@ -102,6 +106,8 @@ def test_modelscope_piccolo_downloads_every_shard_without_safetensors(
 
 
 def test_modelscope_size_uses_the_same_download_filter(monkeypatch):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     import importlib
     from types import SimpleNamespace
 

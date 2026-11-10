@@ -199,7 +199,7 @@ describe.each([
     expect(within(card).getByText("应用专属专家")).toBeVisible();
     if (drawer) {
       await userEvent.click(
-        within(card).getByRole("button", { name: "查看详情" }),
+        within(card).getByRole("button", { name: name as string }),
       );
       await userEvent.click(
         within(await screen.findByRole("dialog")).getByRole("button", {

@@ -58,13 +58,11 @@ def _create_key_atomic(path: Path) -> tuple[bytes, int]:
     _chmod_best_effort(path.parent, 0o700)
     if path.is_symlink():
         raise RuntimeError("refusing to write key over symlink")
-
     key = secrets.token_bytes(_KEY_BYTES)
     flags = os.O_CREAT | os.O_EXCL | os.O_WRONLY
     nofollow = getattr(os, "O_NOFOLLOW", 0)
     if nofollow:
         flags |= nofollow
-
     try:
         fd = os.open(path, flags, 0o600)
     except FileExistsError:
@@ -72,7 +70,6 @@ def _create_key_atomic(path: Path) -> tuple[bytes, int]:
         if existing is None:
             raise
         return existing
-
     with os.fdopen(fd, "w", encoding="ascii") as fh:
         fh.write(key.hex())
         fh.write("\n")
@@ -93,19 +90,15 @@ def get_signing_key() -> bytes:
         mtime_ns = path.stat().st_mtime_ns
     except FileNotFoundError:
         mtime_ns = None
-
     if _cached_key is not None and _cached_mtime_ns == mtime_ns:
         return _cached_key
-
     with _LOCK:
         try:
             current_mtime_ns = path.stat().st_mtime_ns
         except FileNotFoundError:
             current_mtime_ns = None
-
         if _cached_key is not None and _cached_mtime_ns == current_mtime_ns:
             return _cached_key
-
         if current_mtime_ns is None:
             key, new_mtime_ns = _create_key_atomic(path)
         else:
@@ -115,7 +108,6 @@ def get_signing_key() -> bytes:
                     "Signing key was rotated; pre-rotation backups will "
                     "require trust_mode=foreign on restore.",
                 )
-
         _cached_key = key
         _cached_mtime_ns = new_mtime_ns
         return key

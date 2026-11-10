@@ -1,3 +1,4 @@
+import { OilGasVisualizationIcon } from "../navigationIcons";
 /**
  * UGSci-owned visualization entry.
  *
@@ -6,10 +7,13 @@
  * do not see a second visualization plugin product entry.
  */
 
-import { getHost } from "../core/runtime";
 import { OilGasPluginPage } from "./PluginPage";
 import { OilGasWorkspaceRenderer } from "./WorkspaceRenderer";
 import { mountVisualization } from "./embed";
+import {
+  WORKSPACE_PREVIEW_EXTENSIONS,
+  WORKSPACE_PREVIEW_MIME_TYPES,
+} from "./imports/formats";
 
 export function registerVisualizationFrontend(QP: any, React: any): void {
   // The host can re-evaluate a plugin bundle during dev/HMR or after a
@@ -25,9 +29,6 @@ export function registerVisualizationFrontend(QP: any, React: any): void {
     ...QP.ugsci,
     visualization: { version: 1, mount: mountVisualization },
   };
-
-  const antdIcons = getHost().antdIcons || {};
-  const GlobalOutlined = antdIcons.GlobalOutlined || antdIcons.AppstoreOutlined;
 
   QP.route.add("ugsci", {
     id: "ugsci.visualization",
@@ -46,9 +47,7 @@ export function registerVisualizationFrontend(QP: any, React: any): void {
     id: "ugsci.visualization",
     location: "primary.agentScoped",
     label: () => "油气可视化",
-    icon: GlobalOutlined
-      ? React.createElement(GlobalOutlined, { style: { fontSize: 16 } })
-      : undefined,
+    icon: OilGasVisualizationIcon,
     route: "ugsci.visualization",
     order: 7,
     visible: () => true,
@@ -63,52 +62,8 @@ export function registerVisualizationFrontend(QP: any, React: any): void {
       component: OilGasWorkspaceRenderer,
       // Generic CSV belongs to the native table preview. Pipeline/network
       // CSV remains available through an explicit visualization import.
-      extensions: [
-        "egrid",
-        "grid",
-        "grdecl",
-        "init",
-        "unrst",
-        "roff",
-        "roffbin",
-        "dat",
-        "sr3",
-        "irf",
-        "data",
-        "model",
-        "tnav",
-        "tpr",
-        "las",
-        "las3",
-        "dlis",
-        "vtk",
-        "vtu",
-        "pvtu",
-        "vti",
-        "xdmf",
-        "arrow",
-        "parquet",
-        "well.json",
-        "surface.json",
-        "network.json",
-        "json",
-      ],
-      mimeTypes: [
-        "application/x-eclipse-grid",
-        "application/x-eclipse-init",
-        "application/x-eclipse-unrst",
-        "application/x-cmg-dat",
-        "application/x-cmg-sr3",
-        "application/x-tnavigator-data",
-        "application/x-roff",
-        "application/x-las",
-        "application/x-dlis",
-        "application/vnd.vtk",
-        "application/x-vtu",
-        "application/x-pvtu",
-        "application/x-xdmf",
-        "application/vnd.apache.arrow.file",
-      ],
+      extensions: WORKSPACE_PREVIEW_EXTENSIONS,
+      mimeTypes: WORKSPACE_PREVIEW_MIME_TYPES,
       priority: 200,
       description: "UGSci 油气三维网格、井、剖面和测井可视化",
     });

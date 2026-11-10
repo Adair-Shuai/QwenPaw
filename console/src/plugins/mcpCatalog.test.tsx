@@ -67,11 +67,23 @@ describe.each([
 ])("packaged MCP catalog: %s", (bundlePath) => {
   const fetchHost = vi.fn();
   const openExternalLink = vi.fn();
-  let posts: any[];
-  let updates: any[];
+  let posts: Array<{
+    client: {
+      url: string;
+      headers: Record<string, string>;
+      [key: string]: unknown;
+    };
+    [key: string]: unknown;
+  }>;
+  let updates: unknown[];
   let oauthPhase: string;
   let toolsFail: boolean;
-  let savedClients: any[];
+  let savedClients: Array<{
+    key: string;
+    url: string;
+    headers: Record<string, string>;
+    [key: string]: unknown;
+  }>;
   let oauth: boolean;
   beforeEach(() => {
     posts = [];

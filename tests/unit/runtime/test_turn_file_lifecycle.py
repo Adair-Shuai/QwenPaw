@@ -9,7 +9,6 @@ import pytest
 
 from qwenpaw.config import context
 from qwenpaw.runtime.hooks import HookResult
-from qwenpaw.runtime.phases import Phase
 from qwenpaw.runtime.runtime import Runtime
 from qwenpaw.turn_files.store import get_store
 
@@ -58,6 +57,8 @@ async def test_native_turn_archives_real_files_on_all_exit_paths(
     agent = SimpleNamespace(close=AsyncMock())
 
     async def hooks(phase, ctx):
+        # Retain fixture injection and substituted callback signatures.
+        # pylint: disable=unused-argument
         return HookResult()
 
     class Executor:
@@ -65,6 +66,9 @@ async def test_native_turn_archives_real_files_on_all_exit_paths(
             pass
 
         async def run(self, _messages):
+            from qwenpaw.turn_files.lifecycle import record_tool_activity
+
+            record_tool_activity()
             (project / "report.txt").write_text("after", encoding="utf-8")
             (project / "shell-result.txt").write_text(
                 "generated",
@@ -161,12 +165,12 @@ async def test_successful_send_freezes_delivered_bytes_before_later_overwrite(
     path.write_text("later", encoding="utf-8")
     await tracker.finish("completed")
     store = get_store(tmp_path)
-    scope = dict(
-        session_id="session",
-        user_id="user",
-        channel="console",
-        agent_id="agent",
-    )
+    scope = {
+        "session_id": "session",
+        "user_id": "user",
+        "channel": "console",
+        "agent_id": "agent",
+    }
     turn = store.list_turns(**scope)[0]
     delivered = next(item for item in turn["files"] if item["delivered"])
     assert (
@@ -228,6 +232,8 @@ async def test_third_party_turn_has_same_durable_file_contract(
     tmp_path,
     outcome,
 ):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     from qwenpaw.harnesses.runtime import HarnessRuntime
     from qwenpaw.harnesses.events import HarnessEvent, HarnessEventKind
     from qwenpaw.schemas import AgentRequest, Message, TextContent
@@ -240,6 +246,11 @@ async def test_third_party_turn_has_same_durable_file_contract(
 
     async def run_turn(**_kwargs):
         try:
+            yield HarnessEvent(
+                kind=HarnessEventKind.TOOL_STARTED,
+                item_id="external-write",
+                tool_name="execute_shell_command",
+            )
             (project / "external-result.txt").write_text(
                 "external",
                 encoding="utf-8",
@@ -316,6 +327,8 @@ async def test_harness_captures_bound_additional_project_roots(
     tmp_path,
     monkeypatch,
 ):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     from qwenpaw.harnesses.runtime import HarnessRuntime
     from qwenpaw.config import config
 
@@ -375,3 +388,122 @@ async def test_capture_storage_failure_does_not_abort_the_agent(
         )
         is None
     )
+
+
+@pytest.mark.asyncio
+async def test_no_tool_turn_does_not_claim_ambient_shared_workspace_writes(
+    tmp_path,
+    monkeypatch,
+):
+    from qwenpaw.turn_files import scanner
+    from qwenpaw.turn_files.lifecycle import begin_turn_files
+
+    (tmp_path / "large-existing.bin").write_bytes(b"old data")
+    monkeypatch.setattr(scanner, "MAX_FILE_BYTES", 4)
+    tracker = await begin_turn_files(
+        workspace_dir=tmp_path,
+        request=request(),
+        agent_id="agent",
+        response_id="response-greeting",
+        project_dirs=[tmp_path],
+        track_tools=True,
+    )
+    assert tracker is not None
+    assert tracker.capture.before.incomplete
+    (tmp_path / "other-session.txt").write_text(
+        "background result",
+        encoding="utf-8",
+    )
+    await tracker.finish("completed")
+    turn = tracker.store.get_turn(
+        tracker.capture.id,
+        session_id="session",
+        agent_id="agent",
+        user_id="user",
+        channel="console",
+    )
+    assert turn["files"] == []
+    assert turn["tool_activity"] is False
+    assert turn["warnings"] == []
+    assert turn["incomplete"] is False
+    assert (tmp_path / "other-session.txt").read_text(
+        "utf-8",
+    ) == "background result"
+    assert not tracker.store.record_delivery(
+        tracker.capture,
+        tmp_path / "other-session.txt",
+    )
+    assert tracker.store.finish(tracker.capture)["tool_activity"] is False
+
+
+@pytest.mark.asyncio
+async def test_actual_native_tool_funnel_marks_capture_before_filesystem_effects(  # noqa: E501
+    tmp_path,
+    monkeypatch,
+):
+    # pylint: disable=protected-access
+    from agentscope.agent import Agent
+    from agentscope.message import ToolCallBlock
+    from qwenpaw.agents.react_agent import QwenPawAgent
+    from qwenpaw.turn_files.lifecycle import begin_turn_files
+
+    tracker = await begin_turn_files(
+        workspace_dir=tmp_path,
+        request=request(),
+        agent_id="agent",
+        response_id="response-tool",
+        project_dirs=[tmp_path],
+        track_tools=True,
+    )
+    agent = object.__new__(QwenPawAgent)
+    agent._tool_schema_index = {}
+
+    async def execute(_self, _call, _kept_rules=None):
+        assert tracker.capture.tool_activity is True
+        (tmp_path / "tool-result.txt").write_bytes(b"real output")
+        yield "result"
+
+    monkeypatch.setattr(Agent, "_execute_tool_call", execute)
+    block = ToolCallBlock(id="write", name="write_file", input="{}")
+    assert [item async for item in agent._execute_tool_call(block)] == [
+        "result",
+    ]
+    await tracker.finish("completed")
+    turn = tracker.store.get_turn(tracker.capture.id, session_id="session")
+    assert turn["tool_activity"] is True
+    assert [row["path"] for row in turn["files"]] == ["tool-result.txt"]
+
+
+@pytest.mark.asyncio
+async def test_third_party_text_only_turn_does_not_claim_external_writes(
+    tmp_path,
+):
+    # pylint: disable=protected-access
+    from qwenpaw.harnesses.runtime import HarnessRuntime
+    from qwenpaw.harnesses.events import HarnessEvent, HarnessEventKind
+    from qwenpaw.schemas import AgentRequest, Message, TextContent
+
+    workspace, project = tmp_path / "agent", tmp_path / "project"
+    project.mkdir()
+    runtime = HarnessRuntime(workspace, agent_id="agent")
+    runtime._capability_resolver.resolve = AsyncMock(return_value={})
+
+    async def run_turn(**_kwargs):
+        (project / "unrelated.txt").write_bytes(b"external process")
+        yield HarnessEvent(kind=HarnessEventKind.TEXT_DELTA, text="Hello")
+        yield HarnessEvent(kind=HarnessEventKind.COMPLETED)
+
+    runtime._adapters["codex"] = SimpleNamespace(run_turn=run_turn)
+    req = AgentRequest(
+        session_id="text-only",
+        user_id="user",
+        channel="console",
+        input=[Message(role="user", content=[TextContent(text="Hello")])],
+    )
+    async for _ in runtime.stream(backend="codex", request=req, cwd=project):
+        pass
+    turn = get_store(workspace).list_turns(session_id="text-only")[0]
+    assert turn["tool_activity"] is False
+    assert turn["files"] == []
+    assert not turn["incomplete"]
+    assert (project / "unrelated.txt").read_bytes() == b"external process"

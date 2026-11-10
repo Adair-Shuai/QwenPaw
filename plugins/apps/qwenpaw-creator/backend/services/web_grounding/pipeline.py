@@ -215,7 +215,6 @@ async def ground_prompt_context(
             analysis.get("detector"),
         )
         return {"ok": True, "status": "detected", **analysis, "triage": triage}
-
     if not analysis["needs_grounding"]:
         logger.info(
             "Ground prompt context skipped needs_grounding=false detector=%s",
@@ -245,7 +244,6 @@ async def ground_prompt_context(
                 "Proceed without web grounding; prompt appears self-contained.",
             ],
         }
-
     max_primary_queries = grounding_triage.DEFAULT_MAX_PRIMARY_QUERIES
     suggested_queries = list(
         dict.fromkeys(analysis.get("queries") or _derive_queries(prompt)),
@@ -459,7 +457,6 @@ async def ground_prompt_context(
             if item
         )
         visual_search_trace.append(result_trace)
-
     lens_candidates: list[str] = []
     for source in all_visual_sources:
         if source.get("provider") != "serper_lens" or not source.get(
@@ -535,7 +532,6 @@ async def ground_prompt_context(
             "detail": "Lens candidates were cross-checked with web search and page extraction",
             "candidates": confirmation_trace,
         }
-
     sources = _dedupe_sources(all_sources, max_sources=max_sources)
     for index, source in enumerate(sources, start=1):
         source["index"] = index
@@ -599,7 +595,6 @@ async def ground_prompt_context(
             for job in missing_strict_jobs:
                 for retry_query in _strict_identity_retry_queries(job):
                     retry_jobs.append({**job, "query": retry_query})
-
             retry_visual_results = (
                 await asyncio.gather(
                     *[
@@ -655,7 +650,6 @@ async def ground_prompt_context(
                     )
                     if item
                 )
-
             existing_urls = {
                 str(source.get("url") or "").strip().casefold()
                 for source in visual_sources
@@ -677,7 +671,6 @@ async def ground_prompt_context(
                         max_sources=DEFAULT_MAX_SOURCES,
                     ),
                 )
-
             retry_download: dict[str, Any] = {
                 "status": "skipped",
                 "detail": "no strict identity retry candidates",
@@ -719,7 +712,6 @@ async def ground_prompt_context(
                 )
                 for rank, source in enumerate(visual_sources, start=1):
                     source["rank"] = rank
-
                 visual_verification = dict(visual_verification)
                 initial_groups = list(visual_verification.get("groups") or [])
                 retry_groups = []
@@ -753,7 +745,6 @@ async def ground_prompt_context(
                     for item in visual_sources
                     if not _is_accepted_visual_source(item)
                 )
-
             missing_after_retry = _strict_identity_jobs_without_accepted_refs(
                 planned_visual_jobs,
                 visual_sources,
@@ -799,7 +790,6 @@ async def ground_prompt_context(
         issues.append(
             f"strict_identity_reference_missing:{job.get('entity_name') or job.get('query') or 'unknown'}",
         )
-
     if effective_include_visuals and verify_visuals:
         usable_visual_sources = [
             source
@@ -817,7 +807,6 @@ async def ground_prompt_context(
         issues.append("no_sources_found")
     elif not sources:
         issues.append("no_text_sources_found")
-
     logger.info(
         "Ground prompt context completed status=%s queries=%d sources=%d visual_sources=%d issues=%d",
         status,

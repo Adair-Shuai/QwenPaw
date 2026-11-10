@@ -117,7 +117,9 @@ def _require_installer_version(
 
 
 def require_pip(python: str, *, isolated: bool = False) -> bool:
-    """Reject old pip in the selected execution mode; return False if absent."""
+    """Reject old pip in the selected execution mode; return False if
+    absent.
+    """
     return _require_installer_version(
         [
             python,

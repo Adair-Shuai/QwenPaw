@@ -631,7 +631,6 @@ def test_heartbeat_inbox_end_to_end(  # pylint: disable=redefined-outer-name
             "created_at",
         ):
             assert field in event, f"missing field: {field}"
-
         run_id = event["payload"]["run_id"]
         trace_resp = app_server.api_request(
             "GET",
@@ -693,7 +692,6 @@ def test_heartbeat_run_twice_creates_two_events(
             )
             assert run_resp.status_code == 200
             time.sleep(3.0)
-
         events = _poll_inbox_heartbeat(
             app_server,
             time.time() + 30.0,

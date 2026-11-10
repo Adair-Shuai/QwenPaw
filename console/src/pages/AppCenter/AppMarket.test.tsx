@@ -131,6 +131,11 @@ describe("AppMarket", () => {
         observe(element: Element) {
           this.record.elements.push(element);
         }
+        unobserve(element: Element) {
+          this.record.elements = this.record.elements.filter(
+            (target) => target !== element,
+          );
+        }
         disconnect() {}
       },
     );
@@ -185,10 +190,12 @@ describe("AppMarket", () => {
 
     render(<AppMarket channel="qwenpaw" onInstalled={onInstalled} />);
 
-    expect(await screen.findByText("appCenter.officialRoute")).toBeVisible();
     const update = await screen.findByRole("button", {
       name: "appCenter.update",
     });
+    expect(
+      screen.queryByText("appCenter.officialRoute"),
+    ).not.toBeInTheDocument();
     await waitFor(() => expect(update).toBeEnabled());
     fireEvent.click(update);
 
@@ -272,6 +279,12 @@ describe("AppMarket", () => {
       const action = await screen.findByRole("button", {
         name: wasInstalled ? "appCenter.update" : "appCenter.install",
       });
+      expect(
+        screen.queryByText("appCenter.ugsciRoute"),
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("appCenter.officialRoute"),
+      ).not.toBeInTheDocument();
       await waitFor(() => expect(action).toBeEnabled());
       fireEvent.click(action);
 

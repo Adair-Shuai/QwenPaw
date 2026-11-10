@@ -792,7 +792,6 @@ def test_mcp_agent_scoped_routes_update_toggle_delete(app_server) -> None:
         # affects Windows.
         if sys.platform == "win32":
             time.sleep(1.0)
-
         toggle_client = app_server.api_request(
             "PATCH",
             f"{scoped_base}/toggle/{client_key}",

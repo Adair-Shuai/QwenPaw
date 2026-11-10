@@ -15,13 +15,19 @@ afterEach(() => {
 
 function hostWith(declaration: unknown) {
   const api = {
-    get: vi.fn(async (path: string, _options?: PawRequestOptions) =>
-      path === "/.sdk" ? declaration : { run_id: "run" },
-    ),
+    get: vi.fn(async (path: string, _options?: PawRequestOptions) => {
+      void _options;
+      return path === "/.sdk" ? declaration : { run_id: "run" };
+    }),
     post: vi.fn(
-      async (_path: string, _body: unknown, _options?: PawRequestOptions) => ({
-        run_id: "run",
-      }),
+      async (_path: string, _body: unknown, _options?: PawRequestOptions) => {
+        void _path;
+        void _body;
+        void _options;
+        return {
+          run_id: "run",
+        };
+      },
     ),
   };
   const factory = vi.fn(() => ({ api }));
@@ -99,6 +105,9 @@ describe("published plugin SDK runtime", () => {
     const { api } = hostWith(supported);
     let closed = false;
     const events = vi.fn(async function* (_path: string, _options: unknown) {
+      void _path;
+      void _options;
+
       try {
         yield { data: JSON.stringify({ run_id: "run", status: "running" }) };
         yield { data: JSON.stringify({ run_id: "run", status: "completed" }) };

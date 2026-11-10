@@ -39,7 +39,6 @@ class AgentMdManager:
             digest_dir_name = reme_config.digest_dir
         else:
             memory_dir_name = "memory"
-
         self.memory_dir: Path = self.working_dir / memory_dir_name
         self.memory_dir.mkdir(parents=True, exist_ok=True)
         self.digest_dir: Path = self.working_dir / digest_dir_name
@@ -62,7 +61,6 @@ class AgentMdManager:
         filename = md_name.strip()
         if not filename:
             raise ValueError(f"Invalid md_name '{md_name}': filename is empty")
-
         if "/" in filename or "\\" in filename:
             raise ValueError(
                 f"Invalid md_name '{md_name}': "
@@ -85,7 +83,6 @@ class AgentMdManager:
             raise ValueError(
                 f"Invalid md_name '{md_name}': cannot end with a space or dot",
             )
-
         stem = filename.split(".", 1)[0].upper()
         reserved = {"CON", "PRN", "AUX", "NUL"}
         reserved.update(f"COM{i}" for i in range(1, 10))
@@ -98,7 +95,6 @@ class AgentMdManager:
             raise ValueError(
                 f"Invalid md_name '{md_name}': filename is too long",
             )
-
         return filename
 
     @classmethod
@@ -193,7 +189,6 @@ class AgentMdManager:
         self._assert_within_dir(file_path, self.working_dir)
         if not file_path.exists():
             raise FileNotFoundError(f"Working md file not found: {md_name}")
-
         return read_text_file_with_encoding_fallback(file_path)
 
     def write_working_md(self, md_name: str, content: str) -> str:
@@ -219,7 +214,6 @@ class AgentMdManager:
             target = base_dir / rel_path
             self._assert_within_dir(target, base_dir)
             return target
-
         # Legacy routing kept for clients that do not send an explicit
         # section. New callers should always select daily or digest directly.
         digest_prefix = self.digest_dir.name
@@ -343,7 +337,6 @@ class AgentMdManager:
         file_path = self._memory_path_for_read_write(md_name, section)
         if not file_path.exists():
             raise FileNotFoundError(f"Memory md file not found: {md_name}")
-
         return read_text_file_with_encoding_fallback(file_path).strip()
 
     def write_memory_md(

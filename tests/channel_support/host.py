@@ -10,6 +10,8 @@ import sys
 from types import SimpleNamespace as NS
 import zipfile
 
+# Retain the existing eventually export for host-fixture callers.
+# pylint: disable-next=unused-import
 from tests.channel_support.process import ROOT, alive, eventually
 
 KEY = "feishu"
@@ -61,6 +63,8 @@ async def saved_texts(ws, room, user="alice"):
 class Host:
     @classmethod
     async def create(cls, directory, monkeypatch):
+        # Exercise real internals and verify lifecycle state in this test.
+        # pylint: disable=protected-access
         self = cls()
         from qwenpaw.__version__ import __version__
         from qwenpaw.plugins.channel_adapter import ChannelRuntimeSettings
@@ -158,6 +162,8 @@ class Host:
         return source
 
     async def workspace(self, name, **settings):
+        # Exercise real internals and verify lifecycle state in this test.
+        # pylint: disable=protected-access
         from qwenpaw.app.channels.manager import ChannelManager
         from qwenpaw.app.chats.manager import ChatManager
         from qwenpaw.app.chats.repo.json_repo import JsonChatRepository
@@ -246,6 +252,8 @@ class Host:
         )
 
     async def close(self):
+        # Exercise real internals and verify lifecycle state in this test.
+        # pylint: disable=protected-access
         from qwenpaw.plugins.registry import PluginRegistry
 
         try:
@@ -259,6 +267,11 @@ class Host:
             PluginRegistry._instance = self.previous
 
     async def real_agent(self, ws, *, reply="actual agent answer"):
+        # Exercise real internals and verify lifecycle state in this test.
+        # pylint: disable=protected-access
+        # Keep the real lifecycle sequence and all behavior assertions
+        # together.
+        # pylint: disable=R0915
         from agentscope.formatter import OpenAIChatFormatter
         from agentscope.message import TextBlock
         from agentscope.model import ChatModelBase

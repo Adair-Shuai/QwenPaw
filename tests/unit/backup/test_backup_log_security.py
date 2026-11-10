@@ -42,6 +42,8 @@ def test_failed_restore_rollback_does_not_log_sensitive_paths(
     monkeypatch,
     caplog,
 ):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     destination = tmp_path / "private-customer-secret-store"
     destination.mkdir()
     (destination / "old.txt").write_text("old")
@@ -90,4 +92,4 @@ def test_mount_restore_failure_does_not_log_exception_paths(
     assert destination.name not in caplog.text
     assert str(tmp_path) not in caplog.text
     assert all(record.exc_info is None for record in caplog.records)
-    assert list(destination.iterdir()) == []
+    assert not list(destination.iterdir())

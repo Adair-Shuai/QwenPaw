@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Run by absolute path with -I -B -S: never import the environment being changed."""
+"""Run by absolute path with -I -B -S: never import the environment being
+changed.
+"""
 
 from __future__ import annotations
 
@@ -47,7 +49,8 @@ def _continue(directory, operation, *, preflight=False):
     code = (
         "import asyncio,sys;sys.path.insert(0,sys.argv[1]);"
         "from qwenpaw.plugins.dependency_upgrade import continue_operation;"
-        "asyncio.run(continue_operation(sys.argv[2],preflight=sys.argv[3]=='1'))"
+        "asyncio.run(continue_operation(sys.argv[2],preflight=sys.argv[3]="
+        "='1'))"
     )
     result = subprocess.run(
         [*command, "1" if preflight else "0"]
@@ -76,6 +79,8 @@ def _continue(directory, operation, *, preflight=False):
 
 def run(directory=None):
     """An operation derives its location from the copied trusted script."""
+    # Keep dependency mutation, commit and rollback in one transaction.
+    # pylint: disable=R0912,R0915
     directory = Path(
         directory or Path(__file__).resolve().parent.parent,
     ).resolve()
@@ -132,12 +137,18 @@ def run(directory=None):
                     transaction.restore_source(directory, operation)
                     transaction.finish(directory, operation, committed=False)
                     raise RuntimeError(
-                        "DEPENDENCY_INTERRUPTED: interrupted transaction was restored.",
+                        (
+                            "DEPENDENCY_INTERRUPTED: interrupted transaction w"
+                            "as restored."
+                        ),
                     )
                 _continue(directory, operation, preflight=True)
                 if maintenance.live_readers(operation["payload"]["sites"]):
                     raise RuntimeError(
-                        "DEPENDENCY_CONSUMER_BUSY: verification child did not exit.",
+                        (
+                            "DEPENDENCY_CONSUMER_BUSY: verification child did "
+                            "not exit."
+                        ),
                     )
                 target = (
                     Path(operation["plugin_dirs"][0]) / operation["plugin_id"]
@@ -154,7 +165,10 @@ def run(directory=None):
             _continue(directory, operation)
             if maintenance.live_readers(operation["payload"]["sites"]):
                 raise RuntimeError(
-                    "DEPENDENCY_CONSUMER_BUSY: continuation descendants did not exit.",
+                    (
+                        "DEPENDENCY_CONSUMER_BUSY: continuation descendants di"
+                        "d not exit."
+                    ),
                 )
             transaction.commit_result(
                 directory,
@@ -174,7 +188,9 @@ def run(directory=None):
             if mutated:
                 try:
                     if maintenance.live_readers(operation["payload"]["sites"]):
-                        raise RuntimeError("DEPENDENCY_REPAIR_REQUIRED")
+                        raise RuntimeError(
+                            "DEPENDENCY_REPAIR_REQUIRED",
+                        ) from exc
                     transaction.rollback(directory)
                     transaction.restore_source(directory, operation)
                     transaction.finish(directory, operation, committed=False)
@@ -185,7 +201,10 @@ def run(directory=None):
                 message=(
                     "Dependency maintenance failed; recovery is required."
                     if code == "DEPENDENCY_REPAIR_REQUIRED"
-                    else "Dependency maintenance failed; previous packages were preserved or restored."
+                    else (
+                        "Dependency maintenance failed; previous packages were"
+                        " preserved or restored."
+                    )
                 ),
                 error={"code": code, "message": code},
                 retryable=code != "DEPENDENCY_REPAIR_REQUIRED",
@@ -201,6 +220,8 @@ def run(directory=None):
     ):
         environment = dict(os.environ)
         environment.pop("QWENPAW_DEPENDENCY_MAINTENANCE", None)
+        # The restarted host must outlive this maintenance worker.
+        # pylint: disable-next=consider-using-with
         subprocess.Popen(
             restart["command"],
             cwd=restart["cwd"],
@@ -210,7 +231,7 @@ def run(directory=None):
     return 0 if operation["status"] == "succeeded" else 1
 
 
-if __name__ == "__main__":
+def _main():
     try:
         raise SystemExit(run())
     except Exception as error:
@@ -234,7 +255,11 @@ if __name__ == "__main__":
                     operation.update(
                         status="failed",
                         retryable=True,
-                        message="Offline maintenance could not start; installed packages were preserved.",
+                        message=(
+                            "Offline maintenance could not start; installe"
+                            "d packages were preserve"
+                            "d."
+                        ),
                         error={"code": code, "message": code},
                     )
                     transaction.atomic_json(
@@ -245,3 +270,7 @@ if __name__ == "__main__":
             pass
         sys.stderr.write(str(error).split(":", 1)[0] + "\n")
         raise SystemExit(1) from None
+
+
+if __name__ == "__main__":
+    _main()

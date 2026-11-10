@@ -1,3 +1,7 @@
+import {
+  StorageDynamicsIcon,
+  ExpertCollaborationIcon,
+} from "./navigationIcons";
 /**
  * UGSci frontend plugin for QwenPaw
  *
@@ -84,7 +88,6 @@ function buildPlugin() {
   // in the agent-scoped section, not under plugins-group.
 
   const antdIcons = getHost().antdIcons || {};
-  const UserSwitchOutlined = antdIcons.UserSwitchOutlined;
   const ToolOutlined = antdIcons.ToolOutlined;
 
   QP.route.add(PLUGIN_ID, {
@@ -96,11 +99,7 @@ function buildPlugin() {
     id: "ugsci.storage-dynamics",
     location: "primary.agentScoped",
     label: () => "储气库动态",
-    icon: antdIcons.LineChartOutlined
-      ? React.createElement(antdIcons.LineChartOutlined, {
-          style: { fontSize: 16 },
-        })
-      : undefined,
+    icon: StorageDynamicsIcon,
     route: "ugsci.storage-dynamics",
     order: 7,
   });
@@ -116,9 +115,7 @@ function buildPlugin() {
     id: "ugsci.experts",
     location: "primary.agentScoped",
     label: () => "专家·协作",
-    icon: UserSwitchOutlined
-      ? React.createElement(UserSwitchOutlined, { style: { fontSize: 16 } })
-      : undefined,
+    icon: ExpertCollaborationIcon,
     route: "ugsci.experts",
     order: 5,
   });

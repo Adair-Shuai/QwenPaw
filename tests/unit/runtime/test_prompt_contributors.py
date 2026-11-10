@@ -27,6 +27,15 @@ def _ctx(tmp_path, system_prompt_files):
     )
 
 
+def test_file_references_are_in_the_actual_default_prompt(tmp_path):
+    prompt = build_default_prompt_manager().build_sync(_ctx(tmp_path, []))
+    assert "### File references" in prompt
+    assert "[implementation](src/app.py#L12)" in prompt
+    assert "src/app.py#L12-L18" in prompt
+    assert "<docs/research notes.md#L8>" in prompt
+    assert "Only cite paths and line numbers verified" in prompt
+
+
 def test_workspace_prompt_files_respects_disabled_files(tmp_path):
     """Configured prompt file list gates SOUL.md and PROFILE.md."""
     (tmp_path / "AGENTS.md").write_text("agents body", encoding="utf-8")
@@ -102,7 +111,6 @@ def test_workspace_prompt_files_skips_symlink_escape(tmp_path):
         link.symlink_to(outside)
     except (OSError, NotImplementedError):
         pytest.skip("symlinks are not available on this platform")
-
     fragment = WorkspacePromptFilesContributor().contribute_sync(
         _ctx(tmp_path, ["LINK.md"]),
     )

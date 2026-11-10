@@ -280,7 +280,6 @@ async def test_first_service_initialization_does_not_block_event_loop(
     for _ in range(5):
         await asyncio.sleep(0.01)
         heartbeats += 1
-
     assert heartbeats == 5
     assert not init_task.done()
     assert not second_init_task.done()
@@ -431,7 +430,6 @@ async def test_control_restore_waits_for_active_agent(
         if not engine.query_gate.is_set():
             break
         await asyncio.sleep(0.01)
-
     assert "after" in session_path.read_text(encoding="utf-8")
     assert not restore_finished.is_set()
     assert not engine.query_gate.is_set()
@@ -442,7 +440,6 @@ async def test_control_restore_waits_for_active_agent(
         pass
     async for _ in tracker.stream_from_queue(restore_queue, "restore-command"):
         pass
-
     assert "**Restore complete**" in restore_result[0]
     assert "before" in session_path.read_text(encoding="utf-8")
     assert engine.query_gate.is_set()
@@ -531,7 +528,6 @@ async def test_workspace_gc_applies_keep_count_per_session(
                 channel=CHANNEL,
                 query=query,
             )
-
     retained = await engine.gc(
         session_id="console",
         user_id="console",
@@ -591,7 +587,6 @@ async def test_session_gc_only_computes_current_session_head(
             channel=CHANNEL,
             query=session_id,
         )
-
     current_key = session_key(
         channel=CHANNEL,
         user_id=USER_ID,

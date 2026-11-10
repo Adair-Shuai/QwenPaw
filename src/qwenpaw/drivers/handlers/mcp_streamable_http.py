@@ -949,6 +949,13 @@ class HttpAutoClient(_HttpClientBase):
             raise _not_connected(self.name)
         return self._impl
 
+    def set_tools_changed_callback(self, callback) -> None:
+        """Forward catalog invalidation to the negotiated stateful client."""
+        self._tools_changed_callback = callback
+        subscribe = getattr(self._impl, "set_tools_changed_callback", None)
+        if callable(subscribe):
+            subscribe(callback)  # pylint: disable=not-callable
+
     async def connect(self, timeout: float = 30.0) -> None:
         """Connect via modern client, falling back once to legacy if needed."""
         async with self._lifecycle_lock:
@@ -1003,6 +1010,11 @@ class HttpAutoClient(_HttpClientBase):
         from .mcp_stateful_client import HttpStatefulClient
 
         legacy = HttpStatefulClient(**shared)
+        subscribe = getattr(legacy, "set_tools_changed_callback", None)
+        if callable(subscribe):
+            subscribe(
+                getattr(self, "_tools_changed_callback", None),
+            )  # pylint: disable=not-callable
         try:
             await legacy.connect(timeout=remaining)
         except BaseException as exc:

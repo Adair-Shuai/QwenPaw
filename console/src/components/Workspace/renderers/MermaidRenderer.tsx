@@ -1,5 +1,5 @@
 /** MermaidRenderer — Mermaid 图表渲染器 */
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Button, Tooltip, Spin } from "antd";
 import {
   DownloadOutlined,
@@ -21,7 +21,7 @@ const MermaidRenderer: React.FC<RendererContext> = ({
   const [error, setError] = useState<string | null>(null);
   const content = artifact.textContent ?? "";
 
-  const renderMermaid = async () => {
+  const renderMermaid = useCallback(async () => {
     if (!content || !containerRef.current) return;
     setLoading(true);
     setError(null);
@@ -42,11 +42,11 @@ const MermaidRenderer: React.FC<RendererContext> = ({
     } finally {
       setLoading(false);
     }
-  };
+  }, [content, theme]);
 
   useEffect(() => {
     renderMermaid();
-  }, [content, theme]);
+  }, [content, theme, renderMermaid]);
 
   return (
     <div

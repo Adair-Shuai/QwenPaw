@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Generic Mattermost Driver with authenticated connection and scoped typing."""
+"""Generic Mattermost Driver with authenticated connection and scoped typing.
+"""
 
 from __future__ import annotations
 
@@ -19,6 +20,8 @@ from qwenpaw.channel_protocol.targets import decode_reply_target
 from .platform import MattermostDeliveryError, MattermostPlatform
 
 
+# Non-stream drivers never request cleanup; the base hook stays fail-closed.
+# pylint: disable-next=abstract-method
 class MattermostDriver(SharedResponseDriver):
     def __init__(self):
         super().__init__(
@@ -78,6 +81,7 @@ class MattermostDriver(SharedResponseDriver):
         )
 
     async def _open(self, params, request):
+        del request  # Required RPC callback parameter.
         self._identity(params)
         self._require_connected()
         target, root = self._target(

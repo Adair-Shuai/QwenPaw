@@ -1,0 +1,43 @@
+.reference {
+  display: inline;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--app-info-text);
+  font: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  overflow-wrap: anywhere;
+
+  svg {
+    width: 0.9em;
+    height: 0.9em;
+    margin-inline-end: 0.2em;
+    vertical-align: -0.1em;
+  }
+  code {
+    padding: 0;
+    border: 0;
+    background: transparent;
+    color: inherit;
+    font: inherit;
+  }
+  &:hover {
+    text-decoration: underline;
+    text-underline-offset: 0.15em;
+  }
+  &:focus-visible {
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
+}
+
+.label {
+  white-space: normal;
+}
+
+.location {
+  font-size: 0.9em;
+  opacity: 0.8;
+  white-space: nowrap;
+}

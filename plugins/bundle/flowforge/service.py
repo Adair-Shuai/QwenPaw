@@ -24,6 +24,7 @@ from uuid import UUID
 from .execution_repository import ExecutionRepository
 from .flow_repository import FlowRepository, RevisionConflict
 from .engine.errors import ValidationError as WorkflowValidationError
+from .engine.document import ValidationResult
 from .lifecycle import RunLifecycleMixin
 from .service_lifetime import WorkflowLifetimeMixin, run_background_loop
 from .engine import (
@@ -74,6 +75,10 @@ class RunHandle:
     # durable state immediately.
     finalized: bool = False
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Private redaction context, never emitted by to_dict or persisted as a
+    # second copy of user input. Durable runs recover it from their
+    # state store.
+    inspection_secrets: set[str] = field(default_factory=set, repr=False)
 
     @property
     def status(self) -> WorkflowStatus:
@@ -246,6 +251,7 @@ class WorkflowService(RunLifecycleMixin, WorkflowLifetimeMixin):
         node_registry=None,
         executor=None,
         resuming=False,
+        pinned_node_ids: set[str] | None = None,
     ) -> dict[str, Any]:
         executor = executor or self._executor
         try:
@@ -261,10 +267,16 @@ class WorkflowService(RunLifecycleMixin, WorkflowLifetimeMixin):
             }
             tools = self.available_tool_names(executor)
             for node_id, node in doc.nodes.items():
+                if node_id in (pinned_node_ids or ()):
+                    continue
                 kind = node.get("class_type")
                 if kind in unavailable:
-                    result.errors.append(
+                    result.add_error(
                         f"节点 {node_id} 当前不可用：{unavailable[kind]}",
+                        code="NODE_UNAVAILABLE",
+                        message=f"节点当前不可用：{unavailable[kind]}",
+                        node_id=node_id,
+                        field="class_type",
                     )
                 values = node.get("inputs") or {}
                 if not isinstance(values, dict):
@@ -276,20 +288,28 @@ class WorkflowService(RunLifecycleMixin, WorkflowLifetimeMixin):
                         else values.get("tool")
                     )
                     if not isinstance(tool, str) or tool not in tools:
-                        result.errors.append(
+                        result.add_error(
                             f"节点 {node_id} 引用了当前专家未启用的工具：{tool}",
+                            code="TOOL_UNAVAILABLE",
+                            message="当前专家未启用此工具，请选择可用工具。",
+                            node_id=node_id,
+                            field=(
+                                "inputs.tool_name"
+                                if kind == "ToolNode"
+                                else "inputs.tool"
+                            ),
                         )
                 if kind == "SubworkflowNode" and not resuming:
                     target = values.get("subworkflow_id")
                     if isinstance(target, str) and not self.get_flow(target):
-                        result.errors.append(
+                        result.add_error(
                             f"节点 {node_id} 引用了不存在的子工作流：{target}",
+                            code="SUBWORKFLOW_MISSING",
+                            message="所选子工作流不存在，请重新选择。",
+                            node_id=node_id,
+                            field="inputs.subworkflow_id",
                         )
-            return {
-                "ok": not result.errors,
-                "errors": result.errors,
-                "output_nodes": result.output_nodes,
-            }
+            return result.to_dict()
         except (
             ValueError,
             TypeError,
@@ -297,7 +317,13 @@ class WorkflowService(RunLifecycleMixin, WorkflowLifetimeMixin):
             KeyError,
             WorkflowValidationError,
         ) as exc:
-            return {"ok": False, "errors": [str(exc)], "output_nodes": []}
+            result = ValidationResult(False)
+            result.add_error(
+                str(exc),
+                code="DOCUMENT_INVALID",
+                message="工作流文档格式无效，请检查节点、连线和输入配置。",
+            )
+            return result.to_dict()
 
     async def authoring_executor(self, agent_id: str | None = None):
         from qwenpaw.app.agent_context import get_current_agent_id

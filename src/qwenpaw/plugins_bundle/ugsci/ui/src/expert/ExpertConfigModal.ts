@@ -2,6 +2,7 @@ import { EXPERT_STYLES } from "./expertStyles";
 import { ExpertBasicSettings } from "./ExpertBasicSettings";
 import { ExpertAvatar } from "../components/avatars";
 import { expertPresentation } from "./expertPresentation";
+import { avatarForExpert } from "./avatar/expertAvatar";
 import { useExpertDraft } from "./useExpertDraft";
 /**
  * Expert configuration modal with tabs for heartbeat, skills, MCP, and running config.
@@ -1750,11 +1751,6 @@ export function ExpertConfigModal({
         width: 940,
         centered: true,
         styles: {
-          body: {
-            maxHeight: "calc(100dvh - 200px)",
-            overflowY: "auto",
-            overflowX: "hidden",
-          },
           footer: { margin: 0, textAlign: "start" },
         },
       },
@@ -1765,7 +1761,11 @@ export function ExpertConfigModal({
             React.createElement(
               "div",
               { className: "ugsci-expert-settings-identity" },
-              React.createElement(ExpertAvatar, { name: agent.name, size: 36 }),
+              React.createElement(ExpertAvatar, {
+                name: display.name,
+                recipe: avatarForExpert(expert),
+                size: 36,
+              }),
               React.createElement(
                 "div",
                 null,

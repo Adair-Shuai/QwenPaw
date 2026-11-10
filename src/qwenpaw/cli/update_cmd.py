@@ -635,6 +635,8 @@ def _load_worker_plan(plan_path: str | Path) -> dict[str, Any]:
 
 
 def run_update_worker(plan_path: str | Path) -> int:
+    # Preserve the bounded diagnostic or update-worker event sequence.
+    # pylint: disable=R0912
     """Run the update worker and stream installer output."""
     path = Path(plan_path)
     plan = _load_worker_plan(path)

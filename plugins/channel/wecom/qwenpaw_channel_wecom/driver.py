@@ -139,6 +139,7 @@ class WeComDriver(SharedResponseDriver):
         return route
 
     async def _open(self, params, request):
+        del request  # Required RPC callback parameter.
         self._identity(params)
         self._require_connected()
         handle = "wecom:reply:" + uuid.uuid4().hex
@@ -243,10 +244,11 @@ class WeComDriver(SharedResponseDriver):
                 self._routes.record_delivery(handle, previous)
                 await self._checkpoint()
             raise
-        else:
-            await self._mark_processing(handle, final=True)
+        await self._mark_processing(handle, final=True)
 
     async def _perform_prepare(self, params):
+        # The paired platform constructs authenticated native frames.
+        # pylint: disable=protected-access
         platform = self._require_connected()
         route = self._route_attrs(params.to_handle)
         async with platform.delivery():
@@ -300,6 +302,8 @@ class WeComDriver(SharedResponseDriver):
         )
 
     async def _perform_send(self, params):
+        # Keep native card transitions and delivery receipts in order.
+        # pylint: disable=R0912
         platform = self._require_connected()
         route = self._route_attrs(params.to_handle)
         operation = params.operation.value
@@ -559,8 +563,10 @@ class WeComDriver(SharedResponseDriver):
                     ),
                 ),
             )
-        # Ephemeral native targets cannot be reconstructed after reconnect/restart.
-        # Unknown stream references remain evidence, never a replay instruction.
+        # Ephemeral native targets cannot be reconstructed after
+        # reconnect/restart.
+        # Unknown stream references remain evidence, never a replay
+        # instruction.
         if any(
             dict(ref.attributes).get("state") == "unknown"
             for ref in compact.resource_refs

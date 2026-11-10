@@ -211,6 +211,9 @@ class PyVoIPBackend:
         await run_native(call.write_audio, audio)
 
     def _on_call(self, call):
+        # Preserve native event routing, media fallbacks and cleanup in SDK
+        # order.
+        # pylint: disable=R0912
         from pyVoIP.VoIP import CallState, InvalidStateError
 
         call_id = self._extract_call_id(call)

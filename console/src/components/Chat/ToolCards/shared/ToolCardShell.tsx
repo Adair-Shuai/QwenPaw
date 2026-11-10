@@ -21,6 +21,7 @@ import React, {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { Settings } from "lucide-react";
+import { UgsciAssistantVisual } from "@/components/UgsciAssistantVisual";
 import type { ToolCallContent } from "./types";
 import DefaultBlock from "./DefaultBlock";
 import { formatRawToolValue } from "./rawToolDisplay";
@@ -182,7 +183,7 @@ const ToolCardShell: React.FC<ToolCardShellProps> = ({
       >
         <summary className={styles.toolCallCompactSummary}>
           {isLoading ? (
-            <span key="spinner" className={styles.toolCallSpinner} />
+            <UgsciAssistantVisual state="tool-running" size={24} />
           ) : (
             <span
               key="icon"

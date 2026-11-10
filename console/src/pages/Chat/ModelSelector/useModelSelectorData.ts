@@ -1,5 +1,5 @@
 import type { SessionModelScope } from "../../../features/session-settings/sessionModel";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import type { ActiveModelsInfo, ProviderInfo } from "../../../api/types";
 import { modelSelectorApi } from "./modelSelectorApi";
@@ -15,6 +15,12 @@ export function useModelSelectorData({
   session,
   onActiveModels,
 }: UseModelSelectorDataOptions) {
+  const sessionId = session?.sessionId;
+  const chatId = session?.chatId;
+  const sessionScope = useMemo(
+    () => (sessionId === undefined ? undefined : { sessionId, chatId }),
+    [sessionId, chatId],
+  );
   const [providers, setProviders] = useState<ProviderInfo[]>([]);
   const [activeModels, setActiveModels] = useState<ActiveModelsInfo | null>(
     null,
@@ -46,7 +52,7 @@ export function useModelSelectorData({
       const result = await modelSelectorApi.loadModelSelectorData(
         agentId,
         undefined,
-        session,
+        sessionScope,
         (value) => {
           if (providersRequestId !== providersRequestRef.current) return;
           setProviders(value);
@@ -65,13 +71,16 @@ export function useModelSelectorData({
         setLoading(false);
       }
     }
-  }, [agentId, session?.sessionId, session?.chatId, applyActiveModels]);
+  }, [agentId, sessionScope, applyActiveModels]);
 
   const refreshActiveModels = useCallback(async () => {
     const requestId = ++activeRequestRef.current;
-    const value = await modelSelectorApi.loadActiveModels(agentId, session);
+    const value = await modelSelectorApi.loadActiveModels(
+      agentId,
+      sessionScope,
+    );
     if (requestId === activeRequestRef.current) applyActiveModels(value);
-  }, [agentId, session?.sessionId, session?.chatId, applyActiveModels]);
+  }, [agentId, sessionScope, applyActiveModels]);
 
   useEffect(() => {
     setActiveModels(null);

@@ -216,7 +216,9 @@ def _save_channel_updates(agent_id: str, updates: dict) -> ChannelConfig:
 
 
 async def _save_channel_updates_async(request, agent_id, updates):
-    """Finish publication and captured-agent reload before caller cancellation."""
+    """Finish publication and captured-agent reload before caller
+    cancellation.
+    """
 
     async def persist():
         saved = await run_sync_io(_save_channel_updates, agent_id, updates)
@@ -298,6 +300,8 @@ async def list_channel_types(request: Request) -> List[str]:
 
 @router.get("/channels/schemas", summary="Get editable channel schemas")
 async def list_channel_schemas(request: Request) -> dict:
+    # Merge builtin and plugin schemas with their source diagnostics.
+    # pylint: disable=R0912
     from ...channel_protocol.management import MANAGEMENT_CAPABILITIES
     from ..agent_context import get_agent_for_request
 

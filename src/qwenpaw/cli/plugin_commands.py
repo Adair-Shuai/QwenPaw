@@ -56,10 +56,16 @@ def _echo_dependency_operation(operation):
         click.echo(instruction)
     if operation["status"] == "needs_confirmation":
         click.echo(
-            f"Review/apply: qwenpaw plugin dependency-upgrade apply {operation['id']}",
+            (
+                "Review/apply: qwenpaw plugin dependency-upgrade apply "
+                f"{operation['id']}"
+            ),
         )
         click.echo(
-            f"Cancel: qwenpaw plugin dependency-upgrade cancel {operation['id']}",
+            (
+                "Cancel: qwenpaw plugin dependency-upgrade cancel "
+                f"{operation['id']}"
+            ),
         )
 
 
@@ -743,9 +749,6 @@ def uninstall(plugin_id: str):
         click.echo("Cancelled.")
         return
 
-    from ..plugins.lifecycle import UnloadMode
-    from ..plugins.loader import PluginLoader
-
     # Mark as uninstalled so bundled plugins don't get re-installed
     # on next startup (hot-pluggable behavior)
     try:
@@ -923,7 +926,8 @@ def _dependency_operation(action, operation_id):
             if action == "apply" and operation["status"] == "waiting_restart":
                 import subprocess
 
-                # Offline maintenance consumes the manager's authenticated record.
+                # Offline maintenance consumes the manager's authenticated
+                # record.
                 # pylint: disable=protected-access
                 script = (
                     manager._directory(operation_id)
@@ -952,9 +956,10 @@ def _dependency_operation(action, operation_id):
                         stderr=subprocess.STDOUT,
                         **options,
                     )
-                operation[
-                    "message"
-                ] = "Maintenance starts when this CLI exits. Query this operation for its result."
+                operation["message"] = (
+                    "Maintenance starts when this CLI exits. Query this operat"
+                    "ion for its result."
+                )
         except Exception as exc:
             raise click.ClickException(str(exc)) from exc
     _echo_dependency_operation(operation)

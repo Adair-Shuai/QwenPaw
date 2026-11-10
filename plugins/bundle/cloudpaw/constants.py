@@ -10,7 +10,6 @@ PLUGIN_DIR = Path(__file__).parent
 _plugin_dir_str = str(PLUGIN_DIR)
 if _plugin_dir_str not in sys.path:
     sys.path.insert(0, _plugin_dir_str)
-
 BUILTIN_ORCHESTRATION_AGENT_ID = "cloud-orchestrator"
 BUILTIN_EXECUTOR_AGENT_ID = "cloud-executor"
 BUILTIN_VERIFIER_AGENT_ID = "cloud-verifier"

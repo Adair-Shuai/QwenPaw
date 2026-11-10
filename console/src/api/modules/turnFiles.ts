@@ -41,6 +41,7 @@ export interface TurnFileManifest {
   incomplete: boolean;
   warnings: string[];
   overlap: boolean;
+  tool_activity?: boolean | null;
   files: TurnFileEntry[];
 }
 export interface TurnFileDiff {

@@ -90,7 +90,6 @@ async def execute_restore(
     detail = await get_backup(backup_id)
     if detail is None:
         raise FileNotFoundError(f"Backup not found: {backup_id}")
-
     # Trust/signature validation must happen before stopping workspaces.  The
     # legacy trust prompt is a validation step; stopping and background
     # reloading agents before the user confirms can race the second restore
@@ -104,7 +103,6 @@ async def execute_restore(
         ]
     else:
         affected_agents = []
-
     # When restoring secrets or the skill pool, ALL running agents may hold
     # open file handles inside those directories (especially on Windows).
     # Expand the stop set to every currently running agent so that directory
@@ -122,7 +120,6 @@ async def execute_restore(
                 extra,
             )
             agents_to_stop = agents_to_stop + extra
-
     logger.info(
         "execute_restore: backup_id=%s affected_agents=%s agents_to_stop=%s",
         backup_id,
@@ -140,7 +137,6 @@ async def execute_restore(
                 logger.info("Stopping agent '%s' before restore", agent_id)
                 if await stop_agent_fn(agent_id):
                     stopped_agents.append(agent_id)
-
         if affected_agents and stop_browsers_fn is not None:
             logger.info("Stopping managed browsers before workspace restore")
             await stop_browsers_fn(_workspace_dirs_for_agents(agents_to_stop))

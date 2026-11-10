@@ -390,6 +390,45 @@ def test_sqlite_layout_migration_preserves_committed_wal(
         store.close()
 
 
+@pytest.mark.parametrize("layout", ["raw", "alternate"])
+def test_local_and_global_sqlite_sources_are_rejected_before_migration(
+    tmp_path_factory,
+    layout,
+):
+    # Keep the scoped legacy SQLite filename within Windows native limits.
+    root = tmp_path_factory.mktemp("mc")
+    workspace, legacy = root / "w", root / "legacy"
+    write_legacy(legacy)
+    directory = write_existing_owner(workspace)
+    crypto = directory / "crypto_store"
+    crypto.mkdir()
+    scope = directory.name
+    alternate = f"{scope}.db" if os.name == "nt" else "matrix.db"
+    local = crypto / (LEGACY_DATABASE_NAME if layout == "raw" else alternate)
+    global_database = legacy / "matrix_crypto_store" / LEGACY_DATABASE_NAME
+    for source, proof in ((local, "local"), (global_database, "global")):
+        source.unlink(missing_ok=True)
+        with sqlite3.connect(source) as database:
+            database.execute(
+                "CREATE TABLE accounts (user_id TEXT, device_id TEXT)",
+            )
+            database.execute(
+                "INSERT INTO accounts VALUES (?, ?)",
+                (USER, DEVICE),
+            )
+            database.execute("CREATE TABLE proof (value TEXT)")
+            database.execute("INSERT INTO proof VALUES (?)", (proof,))
+    before = local.read_bytes(), global_database.read_bytes()
+    store = make_store(workspace, legacy)
+    try:
+        with pytest.raises(MatrixStateError, match="STORE_CONFLICT"):
+            store.bind(USER, DEVICE, encryption_enabled=True)
+        assert (local.read_bytes(), global_database.read_bytes()) == before
+        assert not (crypto / DATABASE_NAME).exists()
+    finally:
+        store.close()
+
+
 def test_sqlite_migration_rejects_foreign_keys_without_changing_files(
     tmp_path,
 ):

@@ -356,7 +356,6 @@ class EvictionIndex:
             or self._lines_size(expanded) <= detail_char_budget
         ):
             return expanded
-
         endpoints = self._endpoint_tier_lines()
         if self._lines_size(endpoints) <= detail_char_budget:
             return endpoints

@@ -78,11 +78,9 @@ def main() -> int:
     if evaluation.status == ProofStatus.SKIPPED:
         print("  → SKIPPED (maintainer/bot/override)")
         return 0
-
     if evaluation.status == ProofStatus.PASSED:
         print("  → PASSED ✓")
         return 0
-
     # MISSING
     print(f"  → MISSING sections: {evaluation.missing_sections}")
     print()

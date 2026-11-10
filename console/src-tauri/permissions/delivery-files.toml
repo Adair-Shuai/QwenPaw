@@ -1,0 +1,4 @@
+[[permission]]
+identifier = "delivery-files"
+description = "Allows staging archived delivery bytes and opening or revealing only the resulting session-owned copies."
+commands.allow = ["stage_delivery_file", "list_delivery_file_applications", "open_delivery_file", "reveal_delivery_file"]

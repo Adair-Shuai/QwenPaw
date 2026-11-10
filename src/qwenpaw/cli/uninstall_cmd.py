@@ -28,7 +28,6 @@ def _remove_path_entry(profile: Path) -> bool:
     """
     if not profile.is_file():
         return False
-
     text = profile.read_text()
     # Remove the "# QwenPaw" comment line and the export PATH line
     cleaned = re.sub(
@@ -38,7 +37,6 @@ def _remove_path_entry(profile: Path) -> bool:
     )
     if cleaned == text:
         return False
-
     profile.write_text(cleaned)
     return True
 
@@ -61,29 +59,24 @@ def uninstall_cmd(purge: bool, yes: bool) -> None:
             "This will remove the QwenPaw Python environment and CLI wrapper.",
         )
         click.echo(f"Your configuration and data in {wd} will be preserved.")
-
     if not yes:
         ok = click.confirm("Continue?", default=False)
         if not ok:
             click.echo("Cancelled.")
             return
-
     # Remove installer-managed directories
     for dirname in _INSTALLER_DIRS:
         d = wd / dirname
         if d.exists():
             shutil.rmtree(d)
             click.echo(f"  Removed {d}")
-
     # Purge everything if requested
     if purge and wd.exists():
         shutil.rmtree(wd)
         click.echo(f"  Removed {wd}")
-
     # Clean shell profiles
     for profile in _SHELL_PROFILES:
         if _remove_path_entry(profile):
             click.echo(f"  Cleaned {profile}")
-
     click.echo("")
     click.echo("QwenPaw uninstalled. Please restart your terminal.")

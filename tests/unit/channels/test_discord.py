@@ -46,6 +46,8 @@ class Attachment:
 
 class Client:
     def __init__(self, **kwargs):
+        # Retain fixture injection and substituted callback signatures.
+        # pylint: disable=unused-argument
         self.user, self.handlers, self.channels = Author(99, True), {}, {}
         self.closed = False
 
@@ -54,6 +56,8 @@ class Client:
         return callback
 
     async def start(self, token, reconnect):
+        # Retain fixture injection and substituted callback signatures.
+        # pylint: disable=unused-argument
         self.token = token
         await self.handlers["on_ready"]()
         await asyncio.Event().wait()
@@ -62,6 +66,8 @@ class Client:
         return self.channels[ident]
 
     def get_user(self, ident):
+        # Retain fixture injection and substituted callback signatures.
+        # pylint: disable=unused-argument
         return NS(dm_channel=self.channels[123])
 
     async def close(self):
@@ -73,6 +79,8 @@ class Client:
 
 @pytest.fixture
 async def discord(tmp_path, monkeypatch):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     native = module("discord", "platform")
     monkeypatch.setattr(native.discord, "Client", Client)
     monkeypatch.setattr(native.discord, "Thread", Thread)
@@ -80,11 +88,11 @@ async def discord(tmp_path, monkeypatch):
     driver = module("discord").DiscordDriver()
     peer, identity = bind("discord", driver, tmp_path)
     await driver.start(
-        dict(
-            bot_token="test-token",
-            workspace_dir=str(tmp_path),
-            media_dir=str(tmp_path / "media"),
-        ),
+        {
+            "bot_token": "test-token",
+            "workspace_dir": str(tmp_path),
+            "media_dir": str(tmp_path / "media"),
+        },
     )
     await eventually(lambda: driver._connected)
     yield driver, peer, identity, driver._platform._client, tmp_path
@@ -117,7 +125,9 @@ async def test_native_dm_group_and_thread_keep_exact_reply_channel(
     discord,
     kind,
 ):
-    driver, peer, identity, client, _ = discord
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    _unused_driver, peer, identity, _unused_client, _ = discord
     event, channel = await receive(discord, kind)
     assert event["content_parts"] == [{"type": "text", "text": "hello"}]
     assert event["acl_sender_id"] == "42" and event["sender_id"] == "Human"
@@ -137,6 +147,8 @@ async def test_native_dm_group_and_thread_keep_exact_reply_channel(
 
 
 async def test_own_message_and_other_bot_are_filtered(discord):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     _, peer, _, client, _ = discord
     await receive(discord, author=client.user)
     await receive(discord, author=Author(88, True), ident=2)
@@ -146,6 +158,8 @@ async def test_own_message_and_other_bot_are_filtered(discord):
 
 
 async def test_attachment_is_downloaded_classified_and_sent_as_file(discord):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     _, peer, identity, _, root = discord
     event, channel = await receive(discord, attachments=[Attachment()])
     part = event["content_parts"][1]
@@ -164,6 +178,10 @@ async def test_attachment_is_downloaded_classified_and_sent_as_file(discord):
 
 
 async def test_duplicate_callback_and_stop_gateway(discord):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     driver, peer, _, client, _ = discord
     await receive(discord)
     await receive(discord)

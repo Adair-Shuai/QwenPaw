@@ -65,7 +65,6 @@ async def get_agent_status(
             status_code=400,
             detail="agentId is required",
         )
-
     # Load config once to check agent existence and enabled status
     config = load_config()
     if agent_id not in config.agents.profiles:
@@ -73,7 +72,6 @@ async def get_agent_status(
             status_code=404,
             detail=f"Agent '{agent_id}' not found",
         )
-
     agent_ref = config.agents.profiles[agent_id]
     is_enabled = getattr(agent_ref, "enabled", True)
 
@@ -85,7 +83,6 @@ async def get_agent_status(
             last_run_at=None,
             last_finish_at=None,
         )
-
     # If enabled, get workspace and task tracker status
     # get_agent_for_request will use the agent_id from request.path_params
     workspace = await get_agent_for_request(request)

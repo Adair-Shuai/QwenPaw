@@ -346,7 +346,9 @@ describe("ToolCardShell lazy body", () => {
         isStreaming
       />,
     );
-    const spinner = container.querySelector('[class*="toolCallSpinner"]');
+    const spinner = container.querySelector(
+      '[data-assistant-state="tool-running"]',
+    );
 
     expect(spinner).not.toBeNull();
 

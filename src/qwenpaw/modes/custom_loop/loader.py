@@ -19,7 +19,6 @@ def load_custom_loop_modes(workspace: object) -> None:
     enabled = [config for config in configs if config.enabled]
     if not enabled:
         return
-
     registry = workspace.plugins.slash_command_registry
     reserved = set(registry.names())
     store = LoopModeActivationStore()
@@ -44,7 +43,6 @@ def load_custom_loop_modes(workspace: object) -> None:
             continue
         reserved.add(config.slash_command)
         loaded += 1
-
     if loaded and "mode" not in reserved:
         workspace.plugins.register_mode(CustomLoopController(store), workspace)
 

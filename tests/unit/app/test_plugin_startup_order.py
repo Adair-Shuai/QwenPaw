@@ -108,7 +108,6 @@ def test_registry_and_runtime_readiness_are_distinct() -> None:
             )
         ):
             hook_invoke_lines.append(node.lineno)
-
     assert state_lines.get("registry_ready")
     assert state_lines.get("ready")
     assert hook_invoke_lines
@@ -171,7 +170,6 @@ def test_bundled_candidates_are_health_checked_before_agent_startup() -> None:
         )
         if name in calls:
             calls[name].append(node.lineno)
-
     assert calls["finalize_bundled_plugin_activation"]
     assert calls["rollback_bundled_plugin_activation"]
     assert max(calls["load_all_plugins"]) < min(

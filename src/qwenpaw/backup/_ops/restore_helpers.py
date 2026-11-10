@@ -93,12 +93,10 @@ def resolve_workspace_dst(
             return dst.resolve(), False
         # Existing agent in config but local path is absent (cross-machine
         # restore or manually deleted directory) – fall through to defaults.
-
     if default_workspace_dir:
         dst = Path(default_workspace_dir).expanduser() / aid
     else:
         dst = Path(WORKING_DIR) / "workspaces" / aid
-
     # Resolve even when the directory does not yet exist so that the returned
     # path string is always in fully-qualified, canonical form.
     try:
@@ -167,18 +165,14 @@ def handle_master_key_conflict(
         current_master_key.is_file() and master_key_zip_entry in zf.namelist()
     ):
         return None
-
     with zf.open(master_key_zip_entry) as f:
         backup_mk_bytes = f.read()
     with open(current_master_key, "rb") as f:
         current_mk_bytes = f.read()
-
     if backup_mk_bytes == current_mk_bytes:
         return None
-
     if bak_dir is None:
         bak_dir = BACKUP_DIR / "_pre_restore_keys"
-
     ts = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
     bak = bak_dir / f"{ts}.master_key.bak"
     try:

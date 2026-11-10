@@ -100,7 +100,6 @@ def _transition_run_from_task(
     run = executions.get_run(task.project_id, task.run_id)
     if run.status in TERMINAL_SPECIALIST_STATUSES:
         return False
-
     # SUCCEEDED is intentionally not a legal direct transition from admission
     # or authorization-wait states.  Bridge through RUNNING_MODEL so startup
     # repair obeys the same state machine as live execution.
@@ -119,7 +118,6 @@ def _transition_run_from_task(
             run = executions.get_run(task.project_id, run.run_id)
             if run.status in TERMINAL_SPECIALIST_STATUSES:
                 return False
-
     updates = {
         "final_marker": _FINAL_MARKERS[target],
         "final_summary_text": _summary(task),

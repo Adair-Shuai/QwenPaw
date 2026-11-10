@@ -73,13 +73,11 @@ def test_agent_scoped_skills_create_list_batch_delete(app_server) -> None:
                 },
             )
             assert create_skill.status_code == 200, app_server.logs_tail()
-
         list_before = app_server.api_request("GET", base)
         assert list_before.status_code == 200, app_server.logs_tail()
         names_before = {item["name"] for item in list_before.json()}
         for skill_name in skill_names:
             assert skill_name in names_before
-
         batch_delete = app_server.api_request(
             "POST",
             f"{base}/batch-delete",
@@ -89,7 +87,6 @@ def test_agent_scoped_skills_create_list_batch_delete(app_server) -> None:
         results = batch_delete.json().get("results", {})
         for skill_name in skill_names:
             assert results.get(skill_name, {}).get("success") is True
-
         list_after = app_server.api_request("GET", base)
         assert list_after.status_code == 200, app_server.logs_tail()
         names_after = {item["name"] for item in list_after.json()}
@@ -149,7 +146,6 @@ def test_agent_scoped_skills_batch_enable_disable(app_server) -> None:
                 },
             )
             assert create_skill.status_code == 200, app_server.logs_tail()
-
         batch_en = app_server.api_request(
             "POST",
             f"{base}/batch-enable",
@@ -159,13 +155,11 @@ def test_agent_scoped_skills_batch_enable_disable(app_server) -> None:
         en_results = batch_en.json().get("results", {})
         for skill_name in skill_names:
             assert en_results.get(skill_name, {}).get("success") is True
-
         list_after_en = app_server.api_request("GET", base)
         assert list_after_en.status_code == 200, app_server.logs_tail()
         by_name = {item["name"]: item for item in list_after_en.json()}
         for skill_name in skill_names:
             assert by_name[skill_name]["enabled"] is True
-
         batch_dis = app_server.api_request(
             "POST",
             f"{base}/batch-disable",
@@ -175,13 +169,11 @@ def test_agent_scoped_skills_batch_enable_disable(app_server) -> None:
         dis_results = batch_dis.json().get("results", {})
         for skill_name in skill_names:
             assert dis_results.get(skill_name, {}).get("success") is True
-
         list_after_dis = app_server.api_request("GET", base)
         assert list_after_dis.status_code == 200, app_server.logs_tail()
         by_name2 = {item["name"]: item for item in list_after_dis.json()}
         for skill_name in skill_names:
             assert by_name2[skill_name]["enabled"] is False
-
         batch_del = app_server.api_request(
             "POST",
             f"{base}/batch-delete",

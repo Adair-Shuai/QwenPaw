@@ -557,5 +557,63 @@
   "releaseNotes": {
     "title": "Release Notes",
     "noReleases": "No release notes available"
+  },
+  "studio": {
+    "release": "Explore the latest release",
+    "title": "Space to think.",
+    "titleSecond": "Tools to do.",
+    "description": "A focused workspace to research, analyze, and create with your AI agents. From the first conversation to work you can build on.",
+    "notes": {
+      "local": "Local or cloud",
+      "agents": "Multi-agent teams",
+      "extensible": "Built to extend"
+    },
+    "tryPlatform": "Try the AgentScope platform",
+    "bottomline": "Conversations. Knowledge. Tools. Work, connected.",
+    "preview": {
+      "label": "Illustrative workflow",
+      "sidebar": "Illustrative workspace sidebar",
+      "newTask": "New task",
+      "search": "Search",
+      "workspace": "Workspace",
+      "team": "Agent team",
+      "files": "Project files",
+      "project": "MY PROJECTS",
+      "projectName": "Research & discovery",
+      "personal": "Personal workspace",
+      "task": "Research brief",
+      "prompt": "Review the project materials, identify key findings, and prepare a research brief.",
+      "collaboration": "Collaboration",
+      "response": "From source material to insight, together.",
+      "steps": {
+        "research": "Review sources and background",
+        "analysis": "Analyze the key findings",
+        "report": "Organize results and references"
+      },
+      "artifact": "Research brief.md",
+      "ready": "Ready to preview",
+      "composer": "What comes next…",
+      "footnote": "A clear path from your task to your results."
+    },
+    "principles": {
+      "title": "Make room for your best work.",
+      "description": "Bring your agents, context, and tools around the task at hand.",
+      "collaborate": {
+        "title": "Expertise, working together",
+        "description": "Configure agents for different tasks and move complex work forward through collaboration."
+      },
+      "context": {
+        "title": "Context that carries forward",
+        "description": "Connect conversations and memory so your next task can build on the work already done."
+      },
+      "extend": {
+        "title": "A workspace that grows with you",
+        "description": "Connect tools through Skills, MCP, and plugins to shape workflows around the way you work."
+      }
+    },
+    "final": {
+      "title": "Your next step starts here.",
+      "description": "Open your workspace. Give your next idea room to become something."
+    }
   }
 }

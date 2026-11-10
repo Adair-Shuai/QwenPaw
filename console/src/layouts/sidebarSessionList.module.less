@@ -299,6 +299,11 @@
 .searchContainer[hidden] {
   display: none;
 }
+
+:global(html[data-page-style="dual-sidebar"]) .sessionList.sessionList {
+  --sidebar-header-bg: var(--app-surface-subtle);
+  --sidebar-sticky-bg: var(--app-surface-subtle);
+}
 :global(html[data-page-style]:not([data-page-style="classic"])) {
   .historyHeaderRow {
     min-height: 28px;

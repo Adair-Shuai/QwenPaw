@@ -244,13 +244,11 @@ class TestBuiltinDescriptorGovernance:
                 DEFAULT_REGISTRY.get_mapped_policy_name(python_name)
                 == policy_name
             )
-
         smart_policy = GovernancePolicy(execution_level="smart")
         for policy_name in expected_mappings.values():
             decision = smart_policy.evaluate(_tc(policy_name))
             assert decision.action is GovernanceAction.ALLOW
             assert "Unregistered tool" not in (decision.reason or "")
-
         strict_policy = GovernancePolicy(execution_level="strict")
         for policy_name in ("MemoryRemember",):
             assert (
@@ -303,7 +301,6 @@ class TestPluginGovernanceIssue6114:
                 python_name=py_name,
                 tool_type="network",
             )
-
         policy = GovernancePolicy(execution_level="smart")
         for py_name in plugin_tools:
             pname = DEFAULT_REGISTRY.python_to_policy_name(py_name)
@@ -659,7 +656,6 @@ class TestRegisterToolRollback:
                 pytest.raises(ProjectionError, match=str(error)),
             ):
                 await hooks[0].callback()
-
             assert tool_name not in runtime_tr
             assert not bootstrap["builtin_tool_funcs"]
             assert not hasattr(tools, tool_name)
@@ -708,7 +704,6 @@ class TestRegisterToolRollback:
                 with pytest.raises(ProjectionError):
                     for hook in preg.get_startup_hooks():
                         await hook.callback()
-
             assert tool_name not in _TOOL_PLUGIN_OWNERS
             assert DEFAULT_REGISTRY.get_type(policy) == "unknown"
             assert DEFAULT_REGISTRY.get_owner(tool_name) is None
@@ -771,7 +766,6 @@ class TestRegisterToolRollback:
                 with pytest.raises(ProjectionError):
                     for hook in preg.get_startup_hooks():
                         await hook.callback()
-
             assert tool_name not in runtime_tr
             assert _tool not in bootstrap["builtin_tool_funcs"]
             assert tool_name not in _TOOL_PLUGIN_OWNERS
@@ -832,7 +826,6 @@ class TestRegisterToolRollback:
                 "",
                 plugin_id="ugsci",
             )
-
         assert observed["agent_id"] == "default"
         assert "get_genui_guide" in agent_config.tools.builtin_tools
         assert root_config.agents.active_agent == "cloud-orchestrator"

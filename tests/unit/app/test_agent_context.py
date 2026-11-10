@@ -39,7 +39,6 @@ async def test_get_agent_preserves_deliberate_http_error(monkeypatch):
 
     with pytest.raises(HTTPException) as exc_info:
         await agent_context.get_agent_for_request(_request(manager))
-
     assert exc_info.value.status_code == 404
     assert exc_info.value.detail == "Agent 'reviewer' not found"
 

@@ -1,7 +1,6 @@
 # -*- coding: utf-8 -*-
 """XiaoYi socket authentication and routed A2A replies."""
 
-import asyncio
 import base64
 import hashlib
 import hmac
@@ -31,6 +30,8 @@ def inbound(message="message-A", session="session-A"):
 
 @pytest.fixture
 async def xiaoyi(tmp_path, monkeypatch):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     connections, headers, frames = {}, {}, []
 
     async def gateway(request):
@@ -66,13 +67,13 @@ async def xiaoyi(tmp_path, monkeypatch):
     peer, identity = bind("xiaoyi", driver, tmp_path)
     try:
         await driver.start(
-            dict(
-                enabled=True,
-                ak="local-ak",
-                sk="local-sk",
-                agent_id="local-agent",
-                workspace_dir=str(tmp_path),
-            ),
+            {
+                "enabled": True,
+                "ak": "local-ak",
+                "sk": "local-sk",
+                "agent_id": "local-agent",
+                "workspace_dir": str(tmp_path),
+            },
         )
         await eventually(lambda: len(connections) == 2)
         yield driver, peer, identity, connections, headers, frames
@@ -99,6 +100,8 @@ async def receive(value, server="primary", **kwargs):
 
 
 async def test_both_connections_authenticate_with_hmac_and_native_init(xiaoyi):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     _, _, _, _, headers, frames = xiaoyi
     for name in ("primary", "backup"):
         fields = {key.lower(): val for key, val in headers[name].items()}
@@ -132,6 +135,10 @@ async def test_native_text_keeps_session_task_and_same_server_reply(
     xiaoyi,
     server,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     driver, peer, identity, _, _, _ = xiaoyi
     event = await receive(xiaoyi, server)
     assert event["content_parts"] == [{"type": "text", "text": "hello"}]
@@ -154,6 +161,8 @@ async def test_native_text_keeps_session_task_and_same_server_reply(
 async def test_completed_response_sends_status_then_final_empty_artifact_once(
     xiaoyi,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     _, peer, identity, _, _, _ = xiaoyi
     event = await receive(xiaoyi)
     await send(peer, identity, event["response_handle"])
@@ -176,6 +185,10 @@ async def test_completed_response_sends_status_then_final_empty_artifact_once(
 
 
 async def test_one_primary_disconnect_falls_back_to_backup_for_reply(xiaoyi):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     driver, peer, identity, connections, _, _ = xiaoyi
     event = await receive(xiaoyi)
     await connections["primary"].close()
@@ -189,6 +202,10 @@ async def test_one_primary_disconnect_falls_back_to_backup_for_reply(xiaoyi):
 
 
 async def test_stop_releases_both_socket_readers_and_sessions(xiaoyi):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     driver, _, _, _, _, _ = xiaoyi
     platform = driver._platform
     connections = [platform._conn_primary, platform._conn_backup]
@@ -208,6 +225,8 @@ async def test_stop_releases_both_socket_readers_and_sessions(xiaoyi):
 
 
 def test_local_media_authorizes_workspace_and_rejects_outside(tmp_path):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     from types import SimpleNamespace
 
     native = module("xiaoyi", "platform")

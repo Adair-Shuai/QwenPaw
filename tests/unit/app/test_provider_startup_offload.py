@@ -4,7 +4,6 @@
 import importlib
 import inspect
 import threading
-from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import FastAPI

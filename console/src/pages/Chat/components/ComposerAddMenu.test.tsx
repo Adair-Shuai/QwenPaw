@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
-import { Upload } from "antd";
+import { Upload, type UploadProps } from "antd";
 import { renderWithProviders } from "@/test/common_setup";
 import i18n, { i18nReady } from "@/i18n";
 import ComposerAddMenu from "./ComposerAddMenu";
@@ -19,9 +19,11 @@ beforeEach(async () => {
 
 describe("ComposerAddMenu", () => {
   it("delegates file selection to the original Upload without opening it for menu navigation", async () => {
-    const request = vi.fn((options: any) => {
-      options.onSuccess?.({ url: "test.pdf" });
-    });
+    const request = vi.fn(
+      (options: Parameters<NonNullable<UploadProps["customRequest"]>>[0]) => {
+        options.onSuccess?.({ url: "test.pdf" });
+      },
+    );
     const view = renderWithProviders(
       <div className="qwenpaw-sender">
         <textarea aria-label="Draft" />

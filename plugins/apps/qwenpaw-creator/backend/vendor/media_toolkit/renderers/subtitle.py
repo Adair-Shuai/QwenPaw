@@ -26,25 +26,21 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
 
     with open(path, "r", errors="replace", encoding="utf-8") as f:
         text = f.read()
-
     if ext == ".vtt":
         entries = _parse_vtt(text)
     elif ext == ".ass":
         entries = _parse_ass(text)
     else:
         entries = _parse_srt(text)
-
     doc_format = ext.lstrip(".") or "srt"
     if not entries:
         return [
             meta_block(doc_format, 1, []),
             {"type": "text", "text": f"Subtitle: {path} (empty)"},
         ]
-
     lines = [f"Subtitle: {os.path.basename(path)} | {len(entries)} entries"]
     for ts, content in entries:
         lines.append(f"[{ts}] {content}")
-
     return [
         meta_block(doc_format, 1, []),
         {"type": "text", "text": "\n".join(lines)},

@@ -299,6 +299,12 @@ class QwenPawAgent(Agent):
         # the tool list the model sees on every call.
         self._tool_schema_index: dict[str, dict[str, Any]] = {}
 
+        # Observe after temporary memory/plugin injections, immediately before
+        # the model is invoked. The observer does not mutate request inputs.
+        from .context_inspection import ContextInspectionMiddleware
+
+        middlewares = [*middlewares, ContextInspectionMiddleware()]
+
         init_kwargs: dict[str, Any] = {
             "name": name,
             "model": model,
@@ -474,6 +480,9 @@ class QwenPawAgent(Agent):
         cm = getattr(self, "_context_manager", None)
         if cm is not None and hasattr(cm, "to_dict"):
             out["scroll"] = cm.to_dict()
+        inspection = getattr(self, "_context_inspection", None)
+        if isinstance(inspection, dict):
+            out["context_inspection"] = inspection
         return out
 
     def load_state_dict(self, state_dict: dict, strict: bool = True) -> None:
@@ -490,6 +499,9 @@ class QwenPawAgent(Agent):
                 raise KeyError("state_dict is not a dict")
             return
 
+        # Loading another session must not retain prior request evidence.
+        self._context_inspection = None
+
         # --- 2.0 format (preferred) ---
         raw = state_dict.get("state")
         if raw is not None:
@@ -503,6 +515,14 @@ class QwenPawAgent(Agent):
             # persist in session JSON from an evicted tool_call and leak
             # across session boundaries when the session is reloaded.
             self._sanitize_loaded_context()
+            inspection = state_dict.get("context_inspection")
+            if isinstance(inspection, dict) and any(
+                msg.id == inspection.get("root_message_id")
+                for msg in self.state.context
+            ):
+                self._context_inspection = inspection
+            else:
+                self._context_inspection = None
             # Rehydrate the scroll manager's bookkeeping so the restored window
             # is recognized as already durable (no re-append on resume).
             cm = getattr(self, "_context_manager", None)
@@ -1170,6 +1190,9 @@ class QwenPawAgent(Agent):
         concurrent tool call.
         """
         self._coerce_tool_call_input(tool_call)
+        from ..turn_files.lifecycle import record_tool_activity
+
+        record_tool_activity()
         async for evt in super()._execute_tool_call(tool_call, kept_rules):
             yield evt
 

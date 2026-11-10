@@ -1,6 +1,7 @@
 import type { ExpertData, ExpertPresentation } from "../core/types";
 import { apiFetch } from "../core/runtime";
 import { EXPERT_BUNDLES } from "./bundles";
+import { matchExpertAvatar } from "./avatar/expertAvatar";
 
 export const EXPERT_CATEGORIES = [
   "全部专家",
@@ -10,10 +11,10 @@ export const EXPERT_CATEGORIES = [
   "应用专家",
 ] as const;
 
-export function fetchExpertPresentation(id: string) {
+export function fetchExpertPresentation(id: string, refresh = false) {
   return apiFetch<ExpertPresentation>(
     `/ugsci/experts/${encodeURIComponent(id)}/presentation`,
-    { headers: { "X-Agent-Id": id } },
+    { headers: { "X-Agent-Id": id }, bypassCache: refresh },
   );
 }
 
@@ -26,6 +27,19 @@ export function saveExpertPresentation(id: string, value: ExpertPresentation) {
       body: JSON.stringify(value),
     },
   );
+}
+
+export async function initializeExpertAvatar(
+  id: string,
+  name: string,
+  description: string,
+) {
+  const current = await fetchExpertPresentation(id, true);
+  if (current.avatar) return current;
+  return saveExpertPresentation(id, {
+    ...current,
+    avatar: matchExpertAvatar(name, description),
+  });
 }
 
 // Display summaries only. Never rewrite PROFILE.md or other role instructions.

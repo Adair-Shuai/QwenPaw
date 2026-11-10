@@ -133,6 +133,14 @@ async def test_runner_preserves_resolution_retry_lazy_cache_and_progress(
     assert result.cached is False
     assert cached.cached is True
     assert cached.output is result.output
+    input_events = [
+        event.data["inputs"]
+        for event in progress.history()
+        if event.type == "node_inputs"
+    ]
+    assert len(input_events) == 2
+    assert input_events[0]["value"] == {"nested": 7, "literal": ["p", True]}
+    assert input_events[0]["options"] == {"values": []}
     assert events == [
         "instance",
         "fingerprint",
@@ -151,7 +159,7 @@ async def test_runner_preserves_resolution_retry_lazy_cache_and_progress(
     assert [
         event.state.status.value
         for event in progress.history()
-        if event.type != "progress"
+        if event.type != "progress" and event.state is not None
     ] == [
         "running",
         "running",

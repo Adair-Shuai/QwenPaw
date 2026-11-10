@@ -21,7 +21,7 @@ import {
   checkScanWarnings,
 } from "./scanError";
 
-const t = ((key: string) => key) as any;
+const t = ((key: string) => key) as unknown as import("i18next").TFunction;
 
 beforeEach(() => {
   modalError.mockClear();
@@ -84,7 +84,10 @@ describe("checkScanWarnings", () => {
   };
 
   const noAlerts = () => Promise.resolve([]);
-  const defaultCfg = () => Promise.resolve({ whitelist: [] } as any);
+  const defaultCfg = () =>
+    Promise.resolve({ whitelist: [] } as unknown as Awaited<
+      ReturnType<Parameters<typeof checkScanWarnings>[2]>
+    >);
 
   it("does nothing when there are no alerts", async () => {
     await checkScanWarnings("my-skill", noAlerts, defaultCfg, t);
@@ -92,15 +95,25 @@ describe("checkScanWarnings", () => {
   });
 
   it("does nothing when the skill is whitelisted", async () => {
-    const alerts = () => Promise.resolve([warnedAlert] as any);
+    const alerts = () =>
+      Promise.resolve([warnedAlert] as unknown as Awaited<
+        ReturnType<Parameters<typeof checkScanWarnings>[1]>
+      >);
     const cfg = () =>
-      Promise.resolve({ whitelist: [{ skill_name: "my-skill" }] } as any);
+      Promise.resolve({
+        whitelist: [{ skill_name: "my-skill" }],
+      } as unknown as Awaited<
+        ReturnType<Parameters<typeof checkScanWarnings>[2]>
+      >);
     await checkScanWarnings("my-skill", alerts, cfg, t);
     expect(modalWarning).not.toHaveBeenCalled();
   });
 
   it("shows a warning modal for the latest warned alert of the skill", async () => {
-    const alerts = () => Promise.resolve([warnedAlert] as any);
+    const alerts = () =>
+      Promise.resolve([warnedAlert] as unknown as Awaited<
+        ReturnType<Parameters<typeof checkScanWarnings>[1]>
+      >);
     await checkScanWarnings("my-skill", alerts, defaultCfg, t);
     expect(modalWarning).toHaveBeenCalledTimes(1);
     expect(modalWarning.mock.calls[0][0].title).toBe(
@@ -113,7 +126,9 @@ describe("checkScanWarnings", () => {
       Promise.resolve([
         { skill_name: "other-skill", action: "warned", findings: [] },
         { skill_name: "my-skill", action: "blocked", findings: [] },
-      ] as any);
+      ] as unknown as Awaited<
+        ReturnType<Parameters<typeof checkScanWarnings>[1]>
+      >);
     await checkScanWarnings("my-skill", alerts, defaultCfg, t);
     expect(modalWarning).not.toHaveBeenCalled();
   });

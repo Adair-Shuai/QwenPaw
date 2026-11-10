@@ -65,13 +65,11 @@ async def format_history_str(
                 for b in msg_stat.content
             ]
             blocks_info = f"\n    content: [{', '.join(block_strs)}]"
-
         lines.append(
             f"[{i}] **{msg_stat.role}** "
             f"(total_tokens={msg_stat.total_tokens})"
             f"{blocks_info}\n    preview: {msg_stat.preview}",
         )
-
     return (
         f"**Conversation History**\n\n"
         f"- Total messages: {stats['total_messages']}\n"

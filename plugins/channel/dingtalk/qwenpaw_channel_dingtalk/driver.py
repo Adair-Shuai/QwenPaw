@@ -549,7 +549,7 @@ class DingTalkDriver(SharedResponseDriver):
             admission = await self._admit_event(event, created)
             if admission is None:
                 return
-            ack, uncertain = admission
+            _unused_ack, _unused_uncertain = admission
         finally:
             self._ingress.discard(task)
 

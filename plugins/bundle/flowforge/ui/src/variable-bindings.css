@@ -1,0 +1,132 @@
+.ff-binding-tools {
+  margin-top: 4px;
+}
+.ff-binding-tools > button,
+.ff-variable-editor button {
+  color: inherit;
+  background: var(--ant-color-bg-container, #fff);
+  border: 1px solid var(--ant-color-border, #ddd);
+  border-radius: 5px;
+  padding: 4px 7px;
+  cursor: pointer;
+  font: inherit;
+}
+.ff-variable-editor button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.ff-variable-editor {
+  padding: 10px;
+  border: 1px solid var(--ant-color-border-secondary, #ddd);
+  border-radius: 7px;
+  overflow-wrap: anywhere;
+}
+.ff-variable-snapshot {
+  font-size: 11px;
+  color: var(--ant-color-text-secondary, #666);
+}
+.ff-variable-tree {
+  max-height: 340px;
+  overflow: auto;
+  margin-bottom: 12px;
+}
+.ff-variable-tree details > summary {
+  padding: 7px 0;
+  cursor: pointer;
+  font-weight: 600;
+}
+.ff-variable-tree summary code {
+  margin-left: 5px;
+  font-weight: 400;
+  font-size: 10px;
+}
+.ff-variable-tree ul {
+  list-style: none;
+  padding-left: 12px;
+  margin: 0;
+}
+.ff-variable-item {
+  border-left: 1px solid var(--ant-color-border-secondary, #ddd);
+  padding: 5px 0 5px 8px;
+}
+.ff-variable-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.ff-variable-row code {
+  flex: 1;
+  min-width: 70px;
+}
+.ff-variable-row .ff-variable-toggle {
+  border: 0;
+  padding: 0 3px;
+}
+.ff-variable-type {
+  font-size: 10px;
+  color: var(--ant-color-text-secondary, #666);
+}
+.ff-variable-preview {
+  font-size: 11px;
+  color: var(--ant-color-text-secondary, #666);
+  white-space: pre-wrap;
+  max-height: 64px;
+  overflow: auto;
+  margin: 4px 0;
+}
+.ff-variable-editor textarea {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--ant-color-border, #ddd);
+  border-radius: 5px;
+  padding: 8px;
+  color: inherit;
+  background: var(--ant-color-bg-container, #fff);
+  font-family: ui-monospace, monospace;
+  resize: vertical;
+}
+.ff-variable-completions {
+  max-height: 200px;
+  overflow: auto;
+  list-style: none;
+  padding: 0;
+  border: 1px solid var(--ant-color-border, #ddd);
+}
+.ff-variable-completions li > button {
+  width: 100%;
+  text-align: left;
+  border: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.ff-variable-completions [aria-selected="true"] {
+  background: var(--ant-color-primary-bg, #eff6ff);
+}
+.ff-variable-completions span {
+  color: var(--ant-color-text-secondary, #666);
+  font-size: 10px;
+}
+.ff-variable-errors {
+  color: var(--ant-color-error, #d32f2f);
+  padding-left: 18px;
+}
+.ff-variable-warnings {
+  color: var(--ant-color-warning-text, #ad6800);
+  padding-left: 18px;
+}
+.ff-variable-valid {
+  color: var(--ant-color-success-text, #237804);
+}
+.ff-output-field {
+  border: 1px solid var(--ant-color-border-secondary, #ddd);
+  padding: 7px;
+  margin: 6px 0;
+  border-radius: 5px;
+}
+.ff-output-field:focus,
+.ff-output-field[data-focused="true"] {
+  outline: 2px solid var(--ant-color-primary, #1677ff);
+}

@@ -194,7 +194,7 @@ def text_frame(mid="native-msg", *, group=False, actor="sender-A"):
 
 
 async def ingress(native, frame=None):
-    driver, peer, identity, server = native
+    _unused_driver, peer, _unused_identity, server = native
     previous = len(peer.batches)
     server.push(frame or text_frame())
     await eventually(lambda: len(peer.batches) > previous)
@@ -209,7 +209,7 @@ async def send(
     operation="message.create",
     **fields,
 ):
-    driver, peer, identity, server = native
+    _unused_driver, peer, identity, _unused_server = native
     params = SendParams.from_mapping(
         {
             **identity,
@@ -223,7 +223,7 @@ async def send(
 
 
 async def prepare(native, handle):
-    driver, peer, identity, server = native
+    _unused_driver, peer, identity, _unused_server = native
     return await peer.methods["channel.response.prepare"](
         {
             **identity,
@@ -238,6 +238,10 @@ async def prepare(native, handle):
 
 @pytest_asyncio.fixture
 async def wecom_native(wecom_external, tmp_path):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     driver = module("wecom").WeComDriver()
     peer, identity = bind("wecom", driver, tmp_path)
     try:
@@ -260,7 +264,11 @@ async def wecom_native(wecom_external, tmp_path):
 async def test_native_subscribe_processing_first_stream_sid_and_final(
     wecom_native,
 ):
-    driver, peer, identity, server = wecom_native
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
+    driver, peer, _unused_identity, server = wecom_native
     assert server.rows("aibot_subscribe")[0]["body"] == {
         "bot_id": "native-bot",
         "secret": "native-secret",
@@ -311,7 +319,11 @@ async def test_native_upload_init_chunks_finish_ack_and_reply(
     wecom_native,
     tmp_path,
 ):
-    driver, peer, identity, server = wecom_native
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
+    driver, _unused_peer, _unused_identity, server = wecom_native
     event = await ingress(wecom_native)
     data = b"ordinary-file\x00" * 10
     path = tmp_path / "upload.bin"
@@ -357,7 +369,11 @@ async def test_native_upload_init_chunks_finish_ack_and_reply(
 async def test_native_stop_settles_owned_sdk_thread_loop_and_keepalive(
     wecom_native,
 ):
-    driver, peer, identity, server = wecom_native
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
+    driver, _unused_peer, _unused_identity, server = wecom_native
     event = await ingress(wecom_native)
     await prepare(wecom_native, event["response_handle"])
     platform = driver._platform
@@ -383,6 +399,8 @@ async def test_native_stop_settles_owned_sdk_thread_loop_and_keepalive(
     )
     assert client._ws_manager._ws is None
     assert driver._platform is None
+    # Poll the current close event after native SDK cleanup.
+    # pylint: disable-next=unnecessary-lambda
     await eventually(lambda: server.closed.is_set())
 
 
@@ -396,6 +414,8 @@ async def test_native_dm_and_group_keep_authenticated_sender(
     session,
     kind,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     frame = text_frame(group=group)
     text = "@native-bot hello native" if group else "hello native"
     frame["body"]["text"]["content"] = text

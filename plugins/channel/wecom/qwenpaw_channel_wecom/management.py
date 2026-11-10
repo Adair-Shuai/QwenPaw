@@ -72,9 +72,21 @@ async def _execute(request):
     fetch = request.operation == "qrcode.fetch"
     if fetch:
         state = secrets.token_urlsafe(16)
-        url = f"{_AUTH_ORIGIN}/ai/qc/gen?source={_SOURCE}&state={state}&timestamp={int(time.time() * 1000)}"
+        url = (
+            f"{_AUTH_ORIGIN}"
+            "/ai/qc/gen?source="
+            f"{_SOURCE}"
+            "&state="
+            f"{state}"
+            "&timestamp="
+            f"{int(time.time() * 1000)}"
+        )
     else:
-        url = f"{_AUTH_ORIGIN}/ai/qc/query_result?scode={quote(request.parameters['continuation'])}"
+        url = (
+            f"{_AUTH_ORIGIN}"
+            "/ai/qc/query_result?scode="
+            f"{quote(request.parameters['continuation'])}"
+        )
     try:
         async with asyncio.timeout(request.timeout_ms / 1000):
             async with httpx.AsyncClient(

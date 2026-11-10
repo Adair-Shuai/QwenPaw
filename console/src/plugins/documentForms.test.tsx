@@ -1,3 +1,79 @@
+import type { RendererContext } from "@/components/Workspace/types";
+
+type FormFieldFixture = {
+  key: string;
+  value?: unknown;
+  linked_template?: string;
+  [key: string]: unknown;
+};
+type FormRecipientFixture = {
+  name: string;
+  start?: string;
+  end?: string;
+  [key: string]: unknown;
+};
+type FormProjectSummary = {
+  id: string;
+  name: string;
+  revision?: number;
+  updated_at?: string;
+  fields: FormFieldFixture[];
+  generations?: unknown[];
+  [key: string]: unknown;
+};
+type FormGenerationFixture = {
+  files: Array<{ name: string; [key: string]: unknown }>;
+  [key: string]: unknown;
+};
+type FormCaseFixture = FormProjectSummary & {
+  revision: number;
+  generations: FormGenerationFixture[];
+  recipients: FormRecipientFixture[];
+  templates: unknown[];
+};
+type FormSaveFixture = {
+  values: Record<string, unknown>;
+  recipients?: FormRecipientFixture[];
+  [key: string]: unknown;
+};
+type MaterialFileFixture = {
+  id: string;
+  name: string;
+  size: number;
+  uploaded_at: string;
+  mime?: string;
+  preview_url?: string;
+  approval_review?: {
+    status: string;
+    approved_at: string;
+    fields: Array<{
+      key: string;
+      label: string;
+      current: unknown;
+      value: unknown;
+      changed: boolean;
+    }>;
+    change_count: number;
+  };
+};
+type FormProjectFixture = {
+  id: string;
+  name: string;
+  revision: number;
+  fields: FormFieldFixture[];
+  forms: unknown[];
+  stages: Array<{
+    id: string;
+    materials: Array<{
+      id: string;
+      files: MaterialFileFixture[];
+      [key: string]: unknown;
+    }>;
+    [key: string]: unknown;
+  }>;
+  [key: string]: unknown;
+};
+
 import fs from "node:fs";
 import path from "node:path";
 import React from "react";
@@ -95,7 +171,7 @@ async function exerciseWorkflowTabs(
 ) {
   const user = userEvent.setup();
   let Page: React.ComponentType = () => null;
-  const state: any = {
+  const state = {
     id: "tabbed-form",
     name: "流程表单",
     revision: 1,
@@ -144,9 +220,9 @@ async function exerciseWorkflowTabs(
     required: false,
     status: "pending",
     note: "",
-    files: [] as any[],
+    files: [] as MaterialFileFixture[],
   };
-  const project: any = {
+  const project = {
     id: "tabs-project",
     name: "标签页测试项目",
     revision: 1,
@@ -170,9 +246,12 @@ async function exerciseWorkflowTabs(
       submission_ref: "",
     })),
   };
-  const saves: any[] = [];
+  const saves: FormSaveFixture[] = [];
   const downloads: string[] = [];
-  const createToolbarUrl = vi.fn((_blob: Blob) => "blob:toolbar-download");
+  const createToolbarUrl = vi.fn((_blob: Blob) => {
+    void _blob;
+    return "blob:toolbar-download";
+  });
   const excelImports: FormData[] = [];
   const templateImports: File[][] = [];
   const defaultRevisions: number[] = [];
@@ -241,7 +320,7 @@ async function exerciseWorkflowTabs(
     }
     if (url.includes("/templates/") && init?.method === "DELETE") {
       const id = url.split("/templates/")[1].split("?")[0];
-      state.templates = state.templates.filter((item: any) => item.id !== id);
+      state.templates = state.templates.filter((item) => item.id !== id);
       state.revision++;
       return reply(state);
     }
@@ -274,7 +353,7 @@ async function exerciseWorkflowTabs(
             status: 503,
           });
         }
-        state.fields = state.fields.map((field: any) => ({
+        state.fields = state.fields.map((field) => ({
           ...field,
           value: body.values[field.key],
         }));
@@ -312,7 +391,10 @@ async function exerciseWorkflowTabs(
         getSelectedAgentId: () => "default",
       },
       workspace: {},
-      registerRoutes: (_id: string, routes: any[]) => {
+      registerRoutes: (
+        _id: string,
+        routes: Array<{ component: React.ComponentType }>,
+      ) => {
         Page = routes[0].component;
       },
     },
@@ -706,7 +788,7 @@ it("restores the live stage header and its actions after returning from overview
   await exerciseWorkflowTabs("plan", false, true);
 }, 30000);
 
-function formProjectApi(getCase: () => any) {
+function formProjectApi(getCase: () => FormProjectSummary) {
   let imported = false;
   return (url: string, init?: RequestInit) => {
     const state = getCase();
@@ -733,7 +815,7 @@ function formProjectApi(getCase: () => any) {
         code: "P001",
         owner: "经办人",
         revision: 1,
-        fields: state.fields.filter((f: any) =>
+        fields: state.fields.filter((f) =>
           /^(project|research|org|contact)\./.test(f.key),
         ),
         forms: imported
@@ -772,8 +854,8 @@ function formProjectApi(getCase: () => any) {
 it("organizes projects into seven stages and keeps material versions and submission details on the packaged page", async () => {
   const user = userEvent.setup();
   let Page: React.ComponentType = () => null;
-  let project: any = null;
-  const calls: Array<{ url: string; body: any }> = [];
+  let project: FormProjectFixture | null = null;
+  const calls: Array<{ url: string; body: unknown }> = [];
   const downloads: string[] = [];
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
     this: HTMLAnchorElement,
@@ -803,7 +885,7 @@ it("organizes projects into seven stages and keeps material versions and submiss
         revision: 1,
         fields: [
           {
-            key: "project.name",
+            key: "project!.name",
             label: "项目名称",
             group: "项目资料",
             kind: "text",
@@ -843,8 +925,8 @@ it("organizes projects into seven stages and keeps material versions and submiss
     if (url.endsWith("/project-new") && !init?.method) return reply(project);
     if (url.includes("/materials/") && url.endsWith("/files")) {
       const file = (body as FormData).get("file") as File;
-      const material = project.stages[0].materials[0];
-      const uploaded: any = {
+      const material = project!.stages[0].materials[0];
+      const uploaded: MaterialFileFixture = {
         id: "f" + material.files.length,
         name: file.name,
         mime: file.type,
@@ -858,9 +940,9 @@ it("organizes projects into seven stages and keeps material versions and submiss
           approved_at: "2026-08-06",
           fields: [
             {
-              key: "project.name",
+              key: "project!.name",
               label: "项目名称",
-              current: project.name,
+              current: project!.name,
               value: "批复项目名称",
               changed: true,
             },
@@ -877,13 +959,13 @@ it("organizes projects into seven stages and keeps material versions and submiss
       material.files.push(uploaded);
       material.status = uploaded.approval_review ? "done" : "preparing";
       if (uploaded.approval_review) {
-        Object.assign(project.stages[0], {
+        Object.assign(project!.stages[0], {
           status: "completed",
           approval_date: uploaded.approval_review.approved_at,
           completion_file_id: uploaded.id,
         });
       }
-      project.revision++;
+      project!.revision++;
       return reply(project);
     }
     if (url.startsWith("/document-forms/projects/project-new/files/"))
@@ -891,27 +973,27 @@ it("organizes projects into seven stages and keeps material versions and submiss
         headers: { "Content-Type": "application/pdf" },
       });
     if (url.endsWith("/stages/plan/approval/apply")) {
-      project.name = "批复项目名称";
-      project.fields[0].value = project.name;
-      const approval = project.stages[0].materials[0].files.at(-1);
-      for (const field of approval.approval_review.fields) {
+      project!.name = "批复项目名称";
+      project!.fields[0].value = project!.name;
+      const approval = project!.stages[0].materials[0].files.slice(-1)[0];
+      for (const field of approval.approval_review!.fields) {
         if (body.keys.includes(field.key)) {
           field.current = field.value;
           field.changed = false;
         }
       }
-      approval.approval_review.change_count = 0;
-      project.revision++;
+      approval.approval_review!.change_count = 0;
+      project!.revision++;
       return reply(project);
     }
     if (url.endsWith("/materials/m-plan") && init?.method === "PUT") {
-      Object.assign(project.stages[0].materials[0], body);
-      project.revision++;
+      Object.assign(project!.stages[0].materials[0], body);
+      project!.revision++;
       return reply(project);
     }
     if (url.endsWith("/stages/plan") && init?.method === "PUT") {
-      Object.assign(project.stages[0], body);
-      project.revision++;
+      Object.assign(project!.stages[0], body);
+      project!.revision++;
       return reply(project);
     }
     if (url.includes("/bundle"))
@@ -931,7 +1013,10 @@ it("organizes projects into seven stages and keeps material versions and submiss
         getSelectedAgentId: () => "default",
       },
       workspace: {},
-      registerRoutes: (_id: string, routes: any[]) => {
+      registerRoutes: (
+        _id: string,
+        routes: Array<{ component: React.ComponentType }>,
+      ) => {
         Page = routes[0].component;
       },
     },
@@ -1037,10 +1122,11 @@ it("organizes projects into seven stages and keeps material versions and submiss
   expect(
     calls.some(
       (call) =>
-        call.url.endsWith("/stages/plan") && call.body?.status === "completed",
+        call.url.endsWith("/stages/plan") &&
+        (call.body as { status?: unknown })?.status === "completed",
     ),
   ).toBe(false);
-  expect(project.name).toBe("储气库项目");
+  expect(project!.name).toBe("储气库项目");
   await user.click(screen.getByRole("button", { name: /查看比对结果/ }));
   const approval = await screen.findByRole("dialog", {
     name: "核对计划审批结果",
@@ -1072,7 +1158,8 @@ it("organizes projects into seven stages and keeps material versions and submiss
   expect(
     calls.some(
       (call) =>
-        call.url.endsWith("/stages/plan") && call.body.status === "completed",
+        call.url.endsWith("/stages/plan") &&
+        (call.body as { status?: unknown }).status === "completed",
     ),
   ).toBe(false);
   await user.click(screen.getByLabelText("确认本阶段已办结"));
@@ -1080,7 +1167,11 @@ it("organizes projects into seven stages and keeps material versions and submiss
   await screen.findByRole("link", { name: "计划管理系统 ↗" });
   expect(screen.getByText("PLAN-001")).toBeInTheDocument();
   expect(
-    calls.find((call) => call.url.endsWith("/stages/plan"))?.body.confirmed,
+    (
+      calls.find((call) => call.url.endsWith("/stages/plan")) as
+        | { body: { confirmed?: unknown } }
+        | undefined
+    )?.body.confirmed,
   ).toBe(true);
   await user.click(screen.getByRole("button", { name: "下载本阶段材料" }));
   await waitFor(() => expect(downloads).toContain("批复项目名称_上报计划.zip"));
@@ -1092,7 +1183,7 @@ it("organizes projects into seven stages and keeps material versions and submiss
 it("opens the response review agent only in negotiation and starts with explicitly selected project files", async () => {
   const user = userEvent.setup();
   let Page: React.ComponentType = () => null;
-  let record: any = null;
+  let record: unknown = null;
   let attempts = 0;
   const submissions: FormData[] = [];
   const downloads: string[] = [];
@@ -1160,7 +1251,10 @@ it("opens the response review agent only in negotiation and starts with explicit
         useTheme: () => "light",
         getSelectedAgentId: () => "default",
       },
-      registerRoutes: (_id: string, routes: any[]) => {
+      registerRoutes: (
+        _id: string,
+        routes: Array<{ component: React.ComponentType }>,
+      ) => {
         Page = routes[0].component;
       },
     },
@@ -1254,7 +1348,7 @@ it("keeps a single project form in the middle while questions and Office preview
       },
     ],
   };
-  const state: any = {
+  const state = {
     id: "project-form",
     name: "项目表单",
     stage_id: "negotiation",
@@ -1286,9 +1380,9 @@ it("keeps a single project form in the middle while questions and Office preview
   };
   let stageId = "negotiation",
     projectRevision = 1;
-  const messages: any[] = [],
+  const messages: unknown[] = [],
     opens: string[] = [],
-    questions: any[] = [];
+    questions: Record<string, unknown>[] = [];
   const downloaded: string[] = [];
   vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(function (
     this: HTMLAnchorElement,
@@ -1308,7 +1402,7 @@ it("keeps a single project form in the middle while questions and Office preview
     )}-${String(date.getDate()).padStart(2, "0")}`;
   };
 
-  const materialFiles: any[] = [];
+  const materialFiles: MaterialFileFixture[] = [];
   const project = (id = "p1") => ({
     id,
     name: id === "p1" ? "三栏测试项目" : "另一个项目",
@@ -1442,11 +1536,14 @@ it("keeps a single project form in the middle while questions and Office preview
       workspace: {
         loadPreview:
           async () =>
-          ({ artifact }: any) => (
+          ({ artifact }: Pick<RendererContext, "artifact">) => (
             <div data-testid="right-office-preview">{artifact.title}</div>
           ),
       },
-      registerRoutes: (_id: string, routes: any[]) => {
+      registerRoutes: (
+        _id: string,
+        routes: Array<{ component: React.ComponentType }>,
+      ) => {
         Page = routes[0].component;
       },
     },
@@ -1634,7 +1731,7 @@ it("fills plan-specific information, keeps common fields in the basic profile an
       scope: "shared",
     },
   ];
-  const state: any = {
+  const state: FormCaseFixture = {
     id: "plan-single",
     name: "项目表单",
     revision: 1,
@@ -1742,8 +1839,8 @@ it("fills plan-specific information, keeps common fields in the basic profile an
       submission_ref: "",
     })),
   });
-  const saved: any[] = [],
-    previews: any[] = [];
+  const saved: FormSaveFixture[] = [],
+    previews: RendererContext["artifact"][] = [];
   const fetch = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === "/document-forms/projects") return reply([project()]);
     if (url === "/document-forms/projects/p-plan") return reply(project());
@@ -1753,7 +1850,7 @@ it("fills plan-specific information, keeps common fields in the basic profile an
       if (init?.method === "PUT") {
         const body = JSON.parse(String(init.body));
         saved.push(body);
-        state.fields = state.fields.map((f: any) => ({
+        state.fields = state.fields.map((f) => ({
           ...f,
           value: body.values[f.key],
         }));
@@ -1825,7 +1922,7 @@ it("fills plan-specific information, keeps common fields in the basic profile an
       workspace: {
         loadPreview:
           async () =>
-          ({ artifact }: any) => {
+          ({ artifact }: Pick<RendererContext, "artifact">) => {
             previews.push(artifact);
             return (
               <div data-testid="plan-office-preview">
@@ -1834,7 +1931,10 @@ it("fills plan-specific information, keeps common fields in the basic profile an
             );
           },
       },
-      registerRoutes: (_id: string, routes: any[]) => {
+      registerRoutes: (
+        _id: string,
+        routes: Array<{ component: React.ComponentType }>,
+      ) => {
         Page = routes[0].component;
       },
     },
@@ -1945,7 +2045,7 @@ it("fills plan-specific information, keeps common fields in the basic profile an
 it("reviews shared project differences before selectively updating a stage form and protects unsaved edits", async () => {
   const user = userEvent.setup();
   let Page: React.ComponentType = () => null;
-  let state: any = {
+  let state = {
     id: "case-shared",
     name: "谈判资料",
     revision: 1,
@@ -2011,7 +2111,7 @@ it("reviews shared project differences before selectively updating a stage form 
       due_date: "",
     })),
   });
-  const calls: Array<{ url: string; body: any }> = [];
+  const calls: Array<{ url: string; body: unknown }> = [];
   const hostFetch = vi.fn(async (url: string, init?: RequestInit) => {
     const body = typeof init?.body === "string" ? JSON.parse(init.body) : null;
     calls.push({ url, body });
@@ -2032,7 +2132,7 @@ it("reviews shared project differences before selectively updating a stage form 
       state = {
         ...state,
         revision: state.revision + 1,
-        fields: state.fields.map((f: any) =>
+        fields: state.fields.map((f) =>
           body.keys.includes(f.key)
             ? { ...f, value: common.find((p) => p.key === f.key)!.value }
             : f,
@@ -2045,7 +2145,7 @@ it("reviews shared project differences before selectively updating a stage form 
         state = {
           ...state,
           revision: state.revision + 1,
-          fields: state.fields.map((f: any) => ({
+          fields: state.fields.map((f) => ({
             ...f,
             value: body.values[f.key],
           })),
@@ -2066,7 +2166,10 @@ it("reviews shared project differences before selectively updating a stage form 
         getSelectedAgentId: () => "default",
       },
       workspace: {},
-      registerRoutes: (_id: string, routes: any[]) => {
+      registerRoutes: (
+        _id: string,
+        routes: Array<{ component: React.ComponentType }>,
+      ) => {
         Page = routes[0].component;
       },
     },
@@ -2125,11 +2228,11 @@ it("automatically loads the five bundled templates and downloads their blank Exc
     name: "新填报",
     revision: 1,
     updated_at: "2026-10-22T00:00:00Z",
-    fields: fields.map((field: any) => ({ ...field, value: "" })),
+    fields: fields.map((field: FormFieldFixture) => ({ ...field, value: "" })),
     recipients: [{ name: "", start: "", end: "" }],
     rules: [],
     generations: [],
-    templates: entries.map((entry: any, index: number) => ({
+    templates: entries.map((entry: Record<string, unknown>, index: number) => ({
       ...entry,
       id: `builtin-${index}`,
       from_default: true,
@@ -2177,7 +2280,10 @@ it("automatically loads the five bundled templates and downloads their blank Exc
         getSelectedAgentId: () => "default",
       },
       workspace: {},
-      registerRoutes: (_id: string, routes: any[]) => {
+      registerRoutes: (
+        _id: string,
+        routes: Array<{ component: React.ComponentType }>,
+      ) => {
         Page = routes[0].component;
       },
     },
@@ -2217,7 +2323,7 @@ describe.each(["embedded", "compatible"])(
     it("imports Excel, edits the real form, requires review and confirmation, then previews generated Word with the host Office component", async () => {
       const user = userEvent.setup();
       let Page: React.ComponentType = () => null;
-      let state: any = {
+      let state: FormCaseFixture = {
         id: "case-1",
         name: "商务文书",
         revision: 1,
@@ -2271,7 +2377,7 @@ describe.each(["embedded", "compatible"])(
         generations: [],
         rules: [],
       };
-      const calls: Array<{ url: string; body: any }> = [];
+      const calls: Array<{ url: string; body: unknown }> = [];
       let zipFails = false;
       const downloadClicks: Array<{ name: string; attached: boolean }> = [];
       vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
@@ -2284,7 +2390,7 @@ describe.each(["embedded", "compatible"])(
       );
       const projectApi = formProjectApi(() => state);
       const hostFetch = vi.fn(async (url: string, init?: RequestInit) => {
-        let result: any;
+        let result: unknown;
         const body =
           typeof init?.body === "string" ? JSON.parse(init.body) : init?.body;
         calls.push({ url, body });
@@ -2342,7 +2448,7 @@ describe.each(["embedded", "compatible"])(
             ...state,
             name: body.name,
             revision: state.revision + 1,
-            fields: state.fields.map((f: any) => ({
+            fields: state.fields.map((f) => ({
               ...f,
               value: body.values[f.key],
             })),
@@ -2435,7 +2541,10 @@ describe.each(["embedded", "compatible"])(
           },
           workspace:
             previewMode === "embedded" ? createWorkspaceNamespace() : {},
-          registerRoutes: (_id: string, routes: any[]) => {
+          registerRoutes: (
+            _id: string,
+            routes: Array<{ component: React.ComponentType }>,
+          ) => {
             Page = routes[0].component;
           },
         },
@@ -2701,7 +2810,7 @@ async function exerciseSelectionPage(linked = false, paste = false) {
       scope: "shared",
     },
   ];
-  const state: any = {
+  const state: FormCaseFixture = {
     id: "selection-case",
     name: "项目表单",
     revision: 1,
@@ -2784,7 +2893,7 @@ async function exerciseSelectionPage(linked = false, paste = false) {
       },
     ],
   };
-  const savedValues: any[] = [];
+  const savedValues: Record<string, unknown>[] = [];
   const reliabilityPrefix =
     "《论证测试项目》为2026年审查通过的技术服务实施计划，计划金额为45万元。依托《依托主项目》，WBS编码WBS-001，依托项目经费为200万元，";
   const reliabilityTemplate =
@@ -2902,7 +3011,7 @@ async function exerciseSelectionPage(linked = false, paste = false) {
       submission_ref: "",
     })),
   });
-  const previews: any[] = [];
+  const previews: RendererContext["artifact"][] = [];
   const fetch = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === "/document-forms/projects") return reply([project()]);
     if (url === "/document-forms/projects/p-selection") return reply(project());
@@ -2912,17 +3021,15 @@ async function exerciseSelectionPage(linked = false, paste = false) {
       if (init?.method === "PUT") {
         const body = JSON.parse(String(init.body));
         savedValues.push(body.values);
-        state.fields = state.fields.map((f: any) => ({
+        state.fields = state.fields.map((f) => ({
           ...f,
           value: body.values[f.key],
         }));
         if (linked) {
-          for (const field of state.fields.filter(
-            (f: any) => f.linked_template,
-          )) {
+          for (const field of state.fields.filter((f) => f.linked_template)) {
             expect(body.opinion_templates[field.key]).toBeDefined();
             field.linked_template = body.opinion_templates[field.key];
-            field.linked_parts = makeLinkedParts(field.linked_template, {
+            field.linked_parts = makeLinkedParts(field.linked_template!, {
               ...linkedVariables,
               "selection.partner3_name": "新第三家",
             });
@@ -2934,8 +3041,8 @@ async function exerciseSelectionPage(linked = false, paste = false) {
     }
     if (url.endsWith("/review")) {
       const memberName = state.fields.find(
-        (f: any) => f.key === "selection.member1_name",
-      ).value;
+        (f) => f.key === "selection.member1_name",
+      )!.value;
       return reply({
         checks: memberName
           ? []
@@ -3002,12 +3109,15 @@ async function exerciseSelectionPage(linked = false, paste = false) {
       workspace: {
         loadPreview:
           async () =>
-          ({ artifact }: any) => {
+          ({ artifact }: Pick<RendererContext, "artifact">) => {
             previews.push(artifact);
             return <div data-testid="selection-office">{artifact.title}</div>;
           },
       },
-      registerRoutes: (_id: string, routes: any[]) => {
+      registerRoutes: (
+        _id: string,
+        routes: Array<{ component: React.ComponentType }>,
+      ) => {
         Page = routes[0].component;
       },
     },
@@ -3173,7 +3283,7 @@ async function exerciseSelectionPage(linked = false, paste = false) {
       "通过调研优选三家单位，分别为【候选甲】、【候选乙】、【新第三家】。需补充资质证据。另需确认授权。",
     );
     expect(
-      state.fields.find((f: any) => f.key === "selection.budget_wan").value,
+      state.fields.find((f) => f.key === "selection.budget_wan")!.value,
     ).toBe("45");
     if (paste) {
       const editor = screen.getByRole("textbox", {
@@ -3214,7 +3324,7 @@ it("edits inline opinion prose and pastes plain text without detached reference 
 it("imports shared information from the existing Excel template into a reviewed profile draft and preserves blank and unselected values", async () => {
   const user = userEvent.setup();
   let Page: React.ComponentType = () => null;
-  const project: any = {
+  const project = {
     id: "profile-import",
     name: "原项目",
     code: "P001",
@@ -3255,7 +3365,7 @@ it("imports shared information from the existing Excel template into a reviewed 
     single_form: true,
   };
   let fail = true;
-  const saves: any[] = [];
+  const saves: FormSaveFixture[] = [];
   const hostFetch = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === "/document-forms/projects") return reply([project]);
     if (url.endsWith("/assistant")) return reply({ messages: [] });
@@ -3286,7 +3396,7 @@ it("imports shared information from the existing Excel template into a reviewed 
         project.name = body.name;
         project.code = body.code;
         project.owner = body.owner;
-        project.fields = project.fields.map((f: any) => ({
+        project.fields = project.fields.map((f) => ({
           ...f,
           value: body.values[f.key],
         }));
@@ -3307,7 +3417,10 @@ it("imports shared information from the existing Excel template into a reviewed 
         getSelectedAgentId: () => "default",
       },
       workspace: {},
-      registerRoutes: (_id: string, routes: any[]) => {
+      registerRoutes: (
+        _id: string,
+        routes: Array<{ component: React.ComponentType }>,
+      ) => {
         Page = routes[0].component;
       },
     },
@@ -3359,7 +3472,7 @@ it("imports shared information from the existing Excel template into a reviewed 
 async function exerciseApprovalViewer(deleting = false) {
   const user = userEvent.setup();
   let Page: React.ComponentType = () => null;
-  const files = [
+  const files: Array<MaterialFileFixture & { version?: number }> = [
     {
       id: "approval-pdf",
       name: "批复.pdf",
@@ -3376,7 +3489,7 @@ async function exerciseApprovalViewer(deleting = false) {
     },
   ];
   files.forEach((file, index) => Object.assign(file, { version: index + 1 }));
-  const project: any = {
+  const project = {
     id: "approval-project",
     name: "审批预览项目",
     code: "",
@@ -3433,7 +3546,7 @@ async function exerciseApprovalViewer(deleting = false) {
   const binaryCalls: string[] = [];
   let deleteCalls = 0,
     restoreCalls = 0;
-  const trash = new Map<string, any>();
+  const trash = new Map<string, (typeof files)[number]>();
   const hostFetch = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === "/document-forms/projects") return reply([project]);
     if (url === "/document-forms/projects/approval-project")
@@ -3448,10 +3561,10 @@ async function exerciseApprovalViewer(deleting = false) {
         });
       const id = url.split("/").slice(-1)[0] as string;
       const material = project.stages[0].materials[0];
-      const file = material.files.find((f: any) => f.id === id);
+      const file = material.files.find((f) => f.id === id);
       expect(file).toBeTruthy();
-      trash.set(id, file);
-      material.files = material.files.filter((f: any) => f.id !== id);
+      trash.set(id, file!);
+      material.files = material.files.filter((f) => f.id !== id);
       if (!material.files.length) material.status = "pending";
       project.revision++;
       return reply(project);
@@ -3465,9 +3578,9 @@ async function exerciseApprovalViewer(deleting = false) {
         });
       const id = url.split("/").slice(-2)[0] as string;
       const material = project.stages[0].materials[0];
-      material.files.push(trash.get(id));
+      material.files.push(trash.get(id)!);
       trash.delete(id);
-      material.files.sort((a: any, b: any) => a.version - b.version);
+      material.files.sort((a, b) => a.version! - b.version!);
       project.revision++;
       return reply(project);
     }
@@ -3509,7 +3622,10 @@ async function exerciseApprovalViewer(deleting = false) {
         getSelectedAgentId: () => "default",
       },
       workspace: { loadPreview, loadPdfPreview },
-      registerRoutes: (_id: string, routes: any[]) => {
+      registerRoutes: (
+        _id: string,
+        routes: Array<{ component: React.ComponentType }>,
+      ) => {
         Page = routes[0].component;
       },
     },
@@ -3680,7 +3796,7 @@ it("groups negotiation content into five ordered tabs without duplicating fields
     ["budget.ceiling_number", "最高限价", "费用信息"],
     ["implementation.year", "实施年度", "服务选商实施方案"],
   ];
-  const state: any = {
+  const state = {
     id: "grouped-case",
     name: "商务谈判",
     stage_id: "negotiation",
@@ -3703,7 +3819,7 @@ it("groups negotiation content into five ordered tabs without duplicating fields
     generations: [],
     rules: [],
   };
-  const project: any = {
+  const project = {
     id: "grouped-project",
     name: "分组项目",
     code: "",
@@ -3728,7 +3844,7 @@ it("groups negotiation content into five ordered tabs without duplicating fields
       submission_ref: "",
     })),
   };
-  const saves: any[] = [];
+  const saves: FormSaveFixture[] = [];
   const hostFetch = vi.fn(async (url: string, init?: RequestInit) => {
     if (url === "/document-forms/projects") return reply([project]);
     if (url === "/document-forms/projects/grouped-project")
@@ -3739,7 +3855,7 @@ it("groups negotiation content into five ordered tabs without duplicating fields
       if (init?.method === "PUT") {
         const body = JSON.parse(String(init.body));
         saves.push(body);
-        state.fields = state.fields.map((f: any) => ({
+        state.fields = state.fields.map((f) => ({
           ...f,
           value: body.values[f.key],
         }));
@@ -3773,7 +3889,10 @@ it("groups negotiation content into five ordered tabs without duplicating fields
         getSelectedAgentId: () => "default",
       },
       workspace: {},
-      registerRoutes: (_id: string, routes: any[]) => {
+      registerRoutes: (
+        _id: string,
+        routes: Array<{ component: React.ComponentType }>,
+      ) => {
         Page = routes[0].component;
       },
     },
@@ -3853,7 +3972,7 @@ it("groups negotiation content into five ordered tabs without duplicating fields
   expect(saves).toHaveLength(1);
   expect(saves[0].values["project.background"]).toBe("项目背景原文追加原句。");
   expect(saves[0].values["workload.items"]).toBe("实物工作量原文新增工作量。");
-  expect(saves[0].recipients.map((r: any) => r.name)).toEqual([
+  expect(saves[0].recipients!.map((r) => r.name)).toEqual([
     "甲单位（保留）",
     "乙单位",
   ]);

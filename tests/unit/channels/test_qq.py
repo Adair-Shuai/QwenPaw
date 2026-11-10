@@ -118,6 +118,8 @@ class Gateway:
 
 @pytest_asyncio.fixture
 async def native_driver(tmp_path, monkeypatch):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     server = Gateway().start()
     monkeypatch.setenv("QQ_API_BASE", server.base)
     monkeypatch.setenv("QQ_TOKEN_URL", server.base + "/token")
@@ -185,7 +187,9 @@ TEXT = [{"type": "text", "text": "  exact answer  "}]
     ],
 )
 async def test_native_text_targets(native_driver, target, path):
-    driver, peer, identity, server = native_driver
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    _unused_driver, peer, identity, server = native_driver
     handle = await open_route(
         peer,
         identity,
@@ -207,6 +211,8 @@ async def test_native_text_targets(native_driver, target, path):
 
 
 async def test_image_upload_then_native_media_reply(native_driver):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     _, peer, identity, server = native_driver
     handle = await open_route(peer, identity)
     result = await send(
@@ -270,6 +276,10 @@ async def test_native_events_map_sender_and_conversation(
     session,
     conversation,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     driver, peer, _, server = native_driver
     server.push(
         {
@@ -310,6 +320,10 @@ async def test_native_events_map_sender_and_conversation(
 async def test_heartbeat_and_stop_close_native_resources(
     native_driver,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     driver, _, _, server = native_driver
     platform = driver._platform
     await eventually(lambda: any(frame["op"] == 1 for frame in server.frames))

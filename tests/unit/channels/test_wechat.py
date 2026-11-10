@@ -118,6 +118,8 @@ async def runtime(tmp_path, monkeypatch):
 
 
 def sent(runtime):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     return [
         json.loads(r.content)["msg"]
         for r in runtime.requests
@@ -141,6 +143,10 @@ async def send(rt, handle, parts):
 
 
 async def test_existing_login_connects_without_qr(runtime):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     rt = await runtime.start()
     assert rt.driver._connected
     assert rt.driver._platform._client.bot_token == "existing-token"
@@ -151,6 +157,10 @@ async def test_first_scan_transitions_from_auth_required_to_connected(
     runtime,
     tmp_path,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     starting = asyncio.create_task(runtime.start(token=""))
     async with asyncio.timeout(2):
         while not any(
@@ -184,6 +194,10 @@ async def test_native_dm_and_group_routes_send_with_context(
     session,
     kind,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     rt = await runtime.start()
     await rt.driver._platform._message(message(1, group=group))
     event = rt.peer.batches[0]["events"][0]
@@ -209,6 +223,10 @@ async def test_outbound_image_encrypts_and_sends_native_media(
     runtime,
     tmp_path,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     rt = await runtime.start()
     await rt.driver._platform._message(message(2))
     event = rt.peer.batches[0]["events"][0]
@@ -238,6 +256,10 @@ async def test_outbound_image_encrypts_and_sends_native_media(
 
 
 async def test_stop_cancels_poll_and_closes_clients(runtime):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     rt = await runtime.start()
     platform = rt.driver._platform
     poll = platform._poll_task
@@ -256,9 +278,12 @@ async def test_auth_admission_scans_off_loop_and_releases_claims(
     monkeypatch,
     entry,
 ):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
+    # Keep the real lifecycle sequence and all behavior assertions together.
+    # pylint: disable=R0912,R0915
     import threading
     import sys
-    from types import SimpleNamespace
 
     from qwenpaw.app.channels import wechat_auth_custody as custody
     from qwenpaw.app.channels.isolated_proxy import IsolatedChannelProxy
@@ -328,6 +353,8 @@ async def test_auth_admission_scans_off_loop_and_releases_claims(
     )
 
     async def process(request):
+        # The auth-only fixture supplies an empty async response iterator.
+        # pylint: disable-next=using-constant-test
         if False:
             yield request
 

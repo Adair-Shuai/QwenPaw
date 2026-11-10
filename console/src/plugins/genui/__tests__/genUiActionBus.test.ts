@@ -16,23 +16,31 @@ import {
   resetActionBus,
 } from "@genui-src/lib/genUiActionBus";
 
+// Malformed configuration remains unknown input to the real action validator.
+const fixtureWindow = window as unknown as {
+  QwenPaw: {
+    chat: { sendMessage?: (content: string) => unknown };
+    genui?: { config?: { allow_actions?: unknown } };
+  };
+};
+
 describe("dispatchGenUiAction", () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
   let infoSpy: ReturnType<typeof vi.spyOn>;
-  let sendMessage: ReturnType<typeof vi.fn>;
+  let sendMessage: ReturnType<typeof vi.fn<(content: string) => boolean>>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     resetActionBus();
-    sendMessage = vi.fn(() => true);
-    (window as any).QwenPaw = { chat: { sendMessage } };
+    sendMessage = vi.fn<(content: string) => boolean>(() => true);
+    fixtureWindow.QwenPaw = { chat: { sendMessage } };
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     infoSpy = vi.spyOn(console, "info").mockImplementation(() => {});
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-    delete (window as any).QwenPaw;
+    Reflect.deleteProperty(fixtureWindow, "QwenPaw");
   });
 
   it("dispatches send_message action with content", () => {
@@ -129,7 +137,7 @@ describe("dispatchGenUiAction", () => {
   });
 
   it("logs info when the host sender API is unavailable", () => {
-    (window as any).QwenPaw.chat = {};
+    fixtureWindow.QwenPaw.chat = {};
     dispatchGenUiAction({
       type: "send_message",
       payload: { content: "fallback test" },
@@ -145,19 +153,19 @@ describe("dispatchGenUiAction", () => {
 
 describe("config-based allowed actions", () => {
   let warnSpy: ReturnType<typeof vi.spyOn>;
-  let sendMessage: ReturnType<typeof vi.fn>;
+  let sendMessage: ReturnType<typeof vi.fn<(content: string) => boolean>>;
 
   beforeEach(() => {
     vi.clearAllMocks();
     resetActionBus();
-    sendMessage = vi.fn(() => true);
-    (window as any).QwenPaw = { chat: { sendMessage } };
+    sendMessage = vi.fn<(content: string) => boolean>(() => true);
+    fixtureWindow.QwenPaw = { chat: { sendMessage } };
     warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
   });
 
   afterEach(() => {
     vi.restoreAllMocks();
-    delete (window as any).QwenPaw;
+    Reflect.deleteProperty(fixtureWindow, "QwenPaw");
   });
 
   it("defaults to send_message only when no config", () => {
@@ -167,7 +175,7 @@ describe("config-based allowed actions", () => {
   });
 
   it("reads allowed actions from host config", () => {
-    (window as any).QwenPaw.genui = {
+    fixtureWindow.QwenPaw.genui = {
       config: {
         allow_actions: ["send_message", "open_url", "navigate"],
       },
@@ -179,21 +187,21 @@ describe("config-based allowed actions", () => {
   });
 
   it("falls back to default when config has empty allow_actions", () => {
-    (window as any).QwenPaw.genui = {
+    fixtureWindow.QwenPaw.genui = {
       config: { allow_actions: [] },
     };
     expect(isActionAllowed("send_message")).toBe(true);
   });
 
   it("falls back to default when config has invalid allow_actions", () => {
-    (window as any).QwenPaw.genui = {
+    fixtureWindow.QwenPaw.genui = {
       config: { allow_actions: "not-an-array" },
     };
     expect(isActionAllowed("send_message")).toBe(true);
   });
 
   it("falls back to default when genui config is missing", () => {
-    (window as any).QwenPaw.genui = {};
+    fixtureWindow.QwenPaw.genui = {};
     expect(isActionAllowed("send_message")).toBe(true);
   });
 
@@ -204,7 +212,7 @@ describe("config-based allowed actions", () => {
   });
 
   it("getAllowedActionsList reflects config changes", () => {
-    (window as any).QwenPaw.genui = {
+    fixtureWindow.QwenPaw.genui = {
       config: { allow_actions: ["send_message", "open_url"] },
     };
     const list = getAllowedActionsList();
@@ -216,7 +224,7 @@ describe("config-based allowed actions", () => {
   it("opens http(s) URLs when open_url is allowed", () => {
     const open = vi.fn();
     window.open = open;
-    (window as any).QwenPaw.genui = {
+    fixtureWindow.QwenPaw.genui = {
       config: { allow_actions: ["send_message", "open_url"] },
     };
     const result = dispatchGenUiAction({
@@ -235,7 +243,7 @@ describe("config-based allowed actions", () => {
   it("rejects javascript and relative URLs even when open_url is allowed", () => {
     const open = vi.fn();
     window.open = open;
-    (window as any).QwenPaw.genui = {
+    fixtureWindow.QwenPaw.genui = {
       config: { allow_actions: ["open_url"] },
     };
     expect(
@@ -252,7 +260,7 @@ describe("config-based allowed actions", () => {
   });
 
   it("blocks actions not in config allow list", () => {
-    (window as any).QwenPaw.genui = {
+    fixtureWindow.QwenPaw.genui = {
       config: { allow_actions: ["open_url"] }, // send_message NOT in list
     };
     dispatchGenUiAction({

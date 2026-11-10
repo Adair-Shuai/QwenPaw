@@ -5,21 +5,20 @@
  */
 import React from "react";
 
-const passThrough = ({ children, ...props }: Record<string, unknown>) =>
-  React.createElement("div", props, children as any);
+const passThrough = ({
+  children,
+  ...props
+}: React.HTMLAttributes<HTMLDivElement>) =>
+  React.createElement("div", props, children);
 
 const buttonLike = ({
   children,
   onClick,
   icon,
   ...props
-}: Record<string, unknown>) =>
-  React.createElement(
-    "button",
-    { onClick, ...props },
-    icon as any,
-    children as any,
-  );
+}: React.ButtonHTMLAttributes<HTMLButtonElement> & {
+  icon?: React.ReactNode;
+}) => React.createElement("button", { onClick, ...props }, icon, children);
 
 const tabsLike = ({
   items = [],
@@ -55,15 +54,15 @@ export const IconButton = buttonLike;
 export const Dropdown = passThrough;
 export const Button = buttonLike;
 export const Input = Object.assign(
-  (props: Record<string, unknown>) =>
-    React.createElement("input", props as any),
+  (props: React.InputHTMLAttributes<HTMLInputElement>) =>
+    React.createElement("input", props),
   {
-    TextArea: (props: Record<string, unknown>) =>
-      React.createElement("textarea", props as any),
-    Search: (props: Record<string, unknown>) =>
-      React.createElement("input", { ...props, type: "search" } as any),
-    Password: (props: Record<string, unknown>) =>
-      React.createElement("input", { ...props, type: "password" } as any),
+    TextArea: (props: React.TextareaHTMLAttributes<HTMLTextAreaElement>) =>
+      React.createElement("textarea", props),
+    Search: (props: React.InputHTMLAttributes<HTMLInputElement>) =>
+      React.createElement("input", { ...props, type: "search" }),
+    Password: (props: React.InputHTMLAttributes<HTMLInputElement>) =>
+      React.createElement("input", { ...props, type: "password" }),
     Group: passThrough,
   },
 );
@@ -95,8 +94,9 @@ export const Form = Object.assign(passThrough, {
   Item: passThrough,
   useForm: () => [{}],
 });
-export const InputNumber = (props: Record<string, unknown>) =>
-  React.createElement("input", { type: "number", ...props } as any);
+export const InputNumber = (
+  props: React.InputHTMLAttributes<HTMLInputElement>,
+) => React.createElement("input", { type: "number", ...props });
 export const Spin = passThrough;
 export const Tabs = Object.assign(tabsLike, { TabPane: passThrough });
 

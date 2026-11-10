@@ -1,3 +1,4 @@
+import { UgsciMotion } from "../../components/UgsciMotion";
 /**
  * AppCenter/index.tsx — App Center page: grid of installed PawApps.
  *
@@ -17,16 +18,7 @@ import {
 } from "react";
 import { useTranslation } from "react-i18next";
 import { useParams, useSearchParams } from "react-router-dom";
-import {
-  Empty,
-  Input,
-  Spin,
-  Select,
-  Modal,
-  Button,
-  Dropdown,
-  Tabs,
-} from "antd";
+import { Empty, Input, Select, Modal, Button, Dropdown, Tabs } from "antd";
 import type { MenuProps } from "antd";
 import {
   AppWindow,
@@ -194,11 +186,12 @@ export default function AppCenterPage() {
   );
 
   useEffect(() => {
+    const appsRequestIdAtSetup = appsRequestId;
     void fetchApps();
     const unsubscribe = subscribeToPluginChanges(() => void fetchApps());
     return () => {
       unsubscribe();
-      ++appsRequestId.current;
+      ++appsRequestIdAtSetup.current;
     };
   }, [fetchApps]);
 
@@ -532,7 +525,7 @@ export default function AppCenterPage() {
       {/* App Grid */}
       {loading ? (
         <div className={styles.stateBlock}>
-          <Spin />
+          <UgsciMotion variant="content" size={176} />
         </div>
       ) : loadError ? (
         <Empty
@@ -612,13 +605,6 @@ export default function AppCenterPage() {
 
       <div className={styles.pageBody}>
         <div className={styles.pageInner}>
-          <p className={styles.subtitle}>
-            {t(
-              "appCenter.subtitle",
-              "管理已安装的应用，或从官方与社区渠道扩展工作空间。",
-            )}
-          </p>
-
           {/* Tabs act purely as the accessible view switcher; content is
               rendered in mutually exclusive branches below so official /
               market data components are only mounted while active. */}
@@ -682,7 +668,7 @@ export default function AppCenterPage() {
             <Suspense
               fallback={
                 <div className={styles.stateBlock}>
-                  <Spin />
+                  <UgsciMotion variant="content" size={176} />
                 </div>
               }
             >
@@ -697,7 +683,7 @@ export default function AppCenterPage() {
             <Suspense
               fallback={
                 <div className={styles.stateBlock}>
-                  <Spin />
+                  <UgsciMotion variant="content" size={176} />
                 </div>
               }
             >
@@ -712,7 +698,7 @@ export default function AppCenterPage() {
             <Suspense
               fallback={
                 <div className={styles.stateBlock}>
-                  <Spin />
+                  <UgsciMotion variant="content" size={176} />
                 </div>
               }
             >

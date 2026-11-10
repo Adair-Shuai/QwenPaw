@@ -1,3 +1,26 @@
+import type { FixedSizeListProps } from "react-window";
+import type { CheckpointNode } from "@/api/types/checkpoints";
+type GraphListData = {
+  rows: GraphRow[];
+  graphWidth: number;
+  selectedCommit: string | null;
+  onSelect: (node: CheckpointNode) => void;
+  colors: Map<string, string>;
+  locale: string;
+  labels: Record<string, string>;
+};
+type GraphListProps = Omit<
+  FixedSizeListProps<GraphListData>,
+  "itemData" | "itemKey"
+> & {
+  itemData: GraphListData;
+  itemKey: NonNullable<FixedSizeListProps<GraphListData>["itemKey"]>;
+};
+function renderedList(): GraphListProps {
+  const props = listSpy.current;
+  if (!props) throw new Error("The checkpoint graph did not mount its list");
+  return props;
+}
 /**
  * CheckpointGraph — the virtualised Git-lane graph of the Checkpoints page.
  *
@@ -25,15 +48,15 @@ import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import { render, screen, fireEvent, waitFor } from "@testing-library/react";
 import React from "react";
 
-const listSpy = vi.hoisted(() => ({ current: null as any }));
+const listSpy = vi.hoisted(() => ({ current: null as GraphListProps | null }));
 const i18nState = vi.hoisted(() => ({
   resolvedLanguage: "en" as string | undefined,
 }));
 
 vi.mock("react-window", () => ({
-  FixedSizeList: (props: any) => {
+  FixedSizeList: (props: GraphListProps) => {
     listSpy.current = props;
-    const Row = props.children as React.ComponentType<any>;
+    const Row = props.children;
     return (
       <div data-testid="virtual-list">
         {Array.from({ length: props.itemCount }, (_, i) => (
@@ -72,7 +95,9 @@ const PALETTE = [
   "#3b8793",
 ];
 
-function makeNode(over: Record<string, unknown> = {}) {
+function makeNode(
+  over: Omit<Partial<CheckpointNode>, "kind"> & { kind?: string } = {},
+): CheckpointNode {
   return {
     ref: "refs/heads/main",
     kind: "auto",
@@ -91,7 +116,7 @@ function makeNode(over: Record<string, unknown> = {}) {
     session_id: "sid-1",
     session_title: "Session One",
     ...over,
-  } as any;
+  } as CheckpointNode;
 }
 
 function setSize(width: number, height: number) {
@@ -105,9 +130,12 @@ function setSize(width: number, height: number) {
   });
 }
 
-function renderGraph(nodes: any[], over: Record<string, unknown> = {}) {
+function renderGraph(
+  nodes: CheckpointNode[],
+  over: Partial<React.ComponentProps<typeof CheckpointGraph>> = {},
+) {
   const rows = (over.rows as GraphRow[]) ?? buildGraphRows(nodes);
-  const onSelect = (over.onSelect as any) ?? vi.fn();
+  const onSelect = over.onSelect ?? vi.fn();
   const utils = render(
     <CheckpointGraph
       rows={rows}
@@ -146,8 +174,8 @@ beforeEach(() => {
 afterEach(() => {
   vi.restoreAllMocks();
   vi.unstubAllGlobals();
-  delete (HTMLElement.prototype as any).clientWidth;
-  delete (HTMLElement.prototype as any).clientHeight;
+  Reflect.deleteProperty(HTMLElement.prototype, "clientWidth");
+  Reflect.deleteProperty(HTMLElement.prototype, "clientHeight");
 });
 
 describe("CheckpointGraph — render arms", () => {
@@ -203,7 +231,7 @@ describe("CheckpointGraph — render arms", () => {
       makeNode(),
       makeNode({ commit: "c2", sha: "c2short", ref: "refs/heads/b" }),
     ]);
-    const props = listSpy.current;
+    const props = renderedList();
     expect(props.height).toBe(480);
     expect(props.width).toBe(760);
     expect(props.itemSize).toBe(ROW_HEIGHT);
@@ -233,7 +261,7 @@ describe("CheckpointGraph — render arms", () => {
         session_key: "console:sess-b",
       }),
     ]);
-    const { itemData, itemKey } = listSpy.current;
+    const { itemData, itemKey } = renderedList();
     expect(itemKey(0, itemData)).toBe("refs/heads/main");
     expect(itemKey(1, itemData)).toBe("refs/tags/v1");
   });
@@ -257,7 +285,7 @@ describe("CheckpointGraph — render arms", () => {
     ]);
     const buttons = screen.getAllByRole("button");
     expect(buttons).toHaveLength(3);
-    expect(listSpy.current.itemCount).toBe(3);
+    expect(renderedList().itemCount).toBe(3);
   });
 });
 
@@ -454,13 +482,13 @@ describe("CheckpointGraph — row content and fallback chains", () => {
   it("passes the resolved language through to the row data", () => {
     i18nState.resolvedLanguage = "zh-CN";
     renderGraph([makeNode()]);
-    expect(listSpy.current.itemData.locale).toBe("zh-CN");
+    expect(renderedList().itemData.locale).toBe("zh-CN");
   });
 
   it("falls back to English when the resolved language is absent", () => {
     i18nState.resolvedLanguage = undefined;
     renderGraph([makeNode()]);
-    expect(listSpy.current.itemData.locale).toBe("en");
+    expect(renderedList().itemData.locale).toBe("en");
   });
 });
 
@@ -768,7 +796,7 @@ describe("CheckpointGraph — svg lane drawing", () => {
         parent_commit: "c1",
       }),
     ]);
-    const colors: Map<string, string> = listSpy.current.itemData.colors;
+    const colors: Map<string, string> = renderedList().itemData.colors;
     expect(colors.size).toBe(3);
     expect(colors.get("c1")).not.toBe(colors.get("c3"));
     const svg = graphSvg(container, 2) as SVGSVGElement;
@@ -793,7 +821,7 @@ describe("CheckpointGraph — svg lane drawing", () => {
       }),
     ]);
     expect(rows[0].lanesAfter).toEqual(["ghostcommit"]);
-    const colors: Map<string, string> = listSpy.current.itemData.colors;
+    const colors: Map<string, string> = renderedList().itemData.colors;
     expect(colors.has("ghostcommit")).toBe(false);
     const svg = graphSvg(container) as SVGSVGElement;
     const bottoms = lanesOf(svg, "bottom");
@@ -824,7 +852,7 @@ describe("CheckpointGraph — svg lane drawing", () => {
       ),
       { laneCount: keys.length },
     );
-    const colors: Map<string, string> = listSpy.current.itemData.colors;
+    const colors: Map<string, string> = renderedList().itemData.colors;
     expect(colors.size).toBe(keys.length);
     colors.forEach((c) => expect(PALETTE).toContain(c));
     // Each row's own glyph is filled with its session colour.
@@ -852,7 +880,7 @@ describe("CheckpointGraph — svg lane drawing", () => {
         parent_commit: "c1",
       }),
     ]);
-    const colors: Map<string, string> = listSpy.current.itemData.colors;
+    const colors: Map<string, string> = renderedList().itemData.colors;
     expect(colors.get("c1")).toBe(colors.get("c2"));
   });
 
@@ -1041,8 +1069,8 @@ describe("CheckpointGraph — container size observation", () => {
     setSize(700, 420);
     triggerRef.current?.();
     await screen.findByTestId("virtual-list");
-    expect(listSpy.current.width).toBe(700);
-    expect(listSpy.current.height).toBe(420);
+    expect(renderedList().width).toBe(700);
+    expect(renderedList().height).toBe(420);
     rerender(<CheckpointGraph {...props} />);
     expect(screen.getByTestId("virtual-list")).toBeInTheDocument();
   });
@@ -1050,7 +1078,7 @@ describe("CheckpointGraph — container size observation", () => {
   it("keeps rendering the list across a re-render with new rows", async () => {
     setSize(700, 420);
     const { rerender } = renderGraph([makeNode({ commit: "c1", sha: "s1" })]);
-    expect(listSpy.current.itemCount).toBe(1);
+    expect(renderedList().itemCount).toBe(1);
     rerender(
       <CheckpointGraph
         rows={buildGraphRows([
@@ -1068,7 +1096,7 @@ describe("CheckpointGraph — container size observation", () => {
         emptyDescription="no checkpoints yet"
       />,
     );
-    expect(listSpy.current.itemCount).toBe(2);
+    expect(renderedList().itemCount).toBe(2);
     expect(screen.getAllByRole("button")).toHaveLength(2);
   });
 });

@@ -104,8 +104,6 @@ class IMessagePlatform:
         while not self._stopping:
             try:
                 await self._poll_once()
-            except asyncio.CancelledError:
-                raise
             except Exception:
                 logger.exception(
                     "iMessage poll/admission failed; row retained",
@@ -190,6 +188,9 @@ class IMessagePlatform:
         return False
 
     async def _send_command(self, target, text, file_path=None):
+        # Preserve native event routing, media fallbacks and cleanup in SDK
+        # order.
+        # pylint: disable=R0912
         if self._stopping or not self._imsg_path:
             raise IMessageDeliveryError("IMESSAGE_NOT_STARTED")
         command = [self._imsg_path, "send", "--to", target]
@@ -329,6 +330,9 @@ class IMessagePlatform:
         return {"sent": "true" if sent else "false"}
 
     async def stop(self):
+        # Preserve native event routing, media fallbacks and cleanup in SDK
+        # order.
+        # pylint: disable=R0912
         self._stopping = True
         failures = []
         watcher = self._watcher

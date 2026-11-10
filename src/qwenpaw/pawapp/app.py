@@ -455,7 +455,6 @@ class PawApp:  # pylint: disable=too-many-public-methods
                     )(
                         path,
                     )(func)
-
             return func
 
         return decorator
@@ -879,23 +878,18 @@ class PawApp:  # pylint: disable=too-many-public-methods
         aggregate_router = APIRouter(dependencies=[app_id_injector])
         if self._standard_capabilities_enabled:
             aggregate_router.include_router(self._capability_router)
-
         if self._router.routes:
             aggregate_router.include_router(self._router)
-
         for router in self._routers:
             aggregate_router.include_router(router)
-
         if len(self.dependencies):
             aggregate_router.include_router(self.dependencies.router())
-
         if aggregate_router.routes:
             api.register_http_router(
                 aggregate_router,
                 prefix=prefix,
                 tags=[f"pawapp:{self.app_id or self.name}"],
             )
-
         # Register tools
         for tool_info in self._tools:
             api.register_tool(
@@ -907,7 +901,6 @@ class PawApp:  # pylint: disable=too-many-public-methods
                 tool_type=tool_info.get("tool_type", "network"),
                 target_param=tool_info.get("target_param", ""),
             )
-
         for command_info in self._commands:
             api.register_slash_command(
                 command_info["name"],
@@ -915,13 +908,11 @@ class PawApp:  # pylint: disable=too-many-public-methods
                 category=f"pawapp:{self.app_id or self.name}",
                 help_text=command_info.get("description", ""),
             )
-
         for middleware_info in self._middlewares:
             api.register_middleware(
                 middleware_info["factory"],
                 priority=middleware_info["priority"],
             )
-
         if self._dependency_agent_tools_enabled and len(self.dependencies):
 
             async def dependency_status(
@@ -966,23 +957,18 @@ class PawApp:  # pylint: disable=too-many-public-methods
                 tool_type="internal",
                 target_param="dependency_id",
             )
-
         for provider in self._skill_providers:
             api.register_skill_provider(**provider)
-
         for section in self._prompt_sections:
             api.register_prompt_section(**section)
-
         for index, workspace_hook in enumerate(self._workspace_hooks):
             api.register_workspace_created_hook(
                 hook_name=f"pawapp_{self.app_id}_workspace_{index}",
                 callback=workspace_hook["func"],
                 priority=workspace_hook["priority"],
             )
-
         for runtime_hook in self._runtime_hooks:
             api.register_runtime_hook(runtime_hook)
-
         for profile in self._agent_profiles:
 
             async def ensure_profile(
@@ -1021,10 +1007,8 @@ class PawApp:  # pylint: disable=too-many-public-methods
                 callback=detach_profile,
                 priority=110,
             )
-
         for service in self._services:
             self._register_service(api, service)
-
         # Register startup/shutdown hooks
         for hook_info in self._hooks:
             phase = hook_info["phase"]
@@ -1040,7 +1024,6 @@ class PawApp:  # pylint: disable=too-many-public-methods
                     callback=hook_info["func"],
                     priority=hook_info["priority"],
                 )
-
         # Register lifecycle hooks via startup/shutdown
         if "install" in self._lifecycle:
             api.register_startup_hook(
@@ -1065,7 +1048,6 @@ class PawApp:  # pylint: disable=too-many-public-methods
                 hook_name=f"pawapp_{self.app_id}_on_uninstall",
                 callback=self._lifecycle["uninstall"],
             )
-
         logger.info(
             "PawApp '%s' registered via PluginApi (routes=%d, tools=%d)",
             self.app_id or self.name,

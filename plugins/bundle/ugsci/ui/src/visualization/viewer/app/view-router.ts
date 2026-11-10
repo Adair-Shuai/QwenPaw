@@ -7,6 +7,7 @@
 
 import type { ViewType } from "../contracts/types";
 import { ViewerStore } from "../stores/viewerState";
+import { VIEW_IDS, VIEW_LABELS } from "../capabilities/views";
 
 export class ViewRouter {
   private currentView: ViewType = "reservoir";
@@ -15,16 +16,9 @@ export class ViewRouter {
   private onChange: ((view: ViewType) => void) | null;
 
   // View tab labels
-  static readonly VIEW_LABELS: Record<ViewType, string> = {
-    reservoir: "储层 3D",
-    wellbore: "井筒 3D",
-    intersection: "剖面",
-    welllog: "测井",
-    network: "管网",
-    benchmark: "基准测试",
-  };
+  static readonly VIEW_LABELS = VIEW_LABELS;
 
-  static readonly VIEWS = Object.keys(ViewRouter.VIEW_LABELS) as ViewType[];
+  static readonly VIEWS = VIEW_IDS;
 
   constructor(
     _container: HTMLElement,
@@ -52,7 +46,7 @@ export class ViewRouter {
     return this.currentView;
   }
 
-  createTabs(): HTMLElement {
+  createTabs(views: readonly ViewType[] = ViewRouter.VIEWS): HTMLElement {
     const tabs = document.createElement("div");
     tabs.setAttribute("role", "tablist");
     tabs.setAttribute("aria-label", "可视化视图");
@@ -65,7 +59,7 @@ export class ViewRouter {
       zIndex: "50",
     } as CSSStyleDeclaration);
 
-    for (const view of ViewRouter.VIEWS) {
+    for (const view of views) {
       const tab = document.createElement("button");
       tab.type = "button";
       tab.setAttribute("role", "tab");
@@ -84,22 +78,22 @@ export class ViewRouter {
 
       tab.addEventListener("click", () => this.switchTo(view));
       tab.addEventListener("keydown", (event) => {
-        const index = ViewRouter.VIEWS.indexOf(view);
+        const index = views.indexOf(view);
         const next =
           event.key === "ArrowRight"
-            ? (index + 1) % ViewRouter.VIEWS.length
+            ? (index + 1) % views.length
             : event.key === "ArrowLeft"
-            ? (index + ViewRouter.VIEWS.length - 1) % ViewRouter.VIEWS.length
+            ? (index + views.length - 1) % views.length
             : event.key === "Home"
             ? 0
             : event.key === "End"
-            ? ViewRouter.VIEWS.length - 1
+            ? views.length - 1
             : -1;
         if (next < 0) return;
         event.preventDefault();
         event.stopPropagation();
-        this.switchTo(ViewRouter.VIEWS[next]);
-        this.tabs.get(ViewRouter.VIEWS[next])?.focus();
+        this.switchTo(views[next]);
+        this.tabs.get(views[next])?.focus();
       });
       tab.addEventListener("mouseenter", () => {
         tab.style.background = "rgba(88,166,255,0.15)";

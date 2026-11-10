@@ -378,7 +378,7 @@ export function FAQ() {
       aria-labelledby="qwenpaw-faq-heading"
     >
       <div className="mx-auto max-w-7xl">
-        <div className="grid gap-8 md:grid-cols-[40%_60%] md:gap-12">
+        <div className="grid gap-8 md:grid-cols-[minmax(0,2fr)_minmax(0,3fr)] md:gap-12">
           <motion.div variants={itemVariants}>
             <h2 id="qwenpaw-faq-heading" className={sectionStyles.title}>
               {t("homeFaq.title")}

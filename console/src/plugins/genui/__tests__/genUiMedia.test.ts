@@ -13,11 +13,9 @@ import {
 } from "@genui-src/lib/genUiMedia";
 
 describe("genUiMedia", () => {
-  const originalWindow = global.window;
-
   beforeEach(() => {
     // Reset window.QwenPaw
-    (global as any).window = {
+    vi.stubGlobal("window", {
       QwenPaw: {
         host: {
           React: global.React,
@@ -31,12 +29,12 @@ describe("genUiMedia", () => {
           buildAuthHeaders: () => ({ Authorization: "Bearer test" }),
         },
       },
-    };
+    });
     clearMediaCache();
   });
 
   afterEach(() => {
-    (global as any).window = originalWindow;
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 

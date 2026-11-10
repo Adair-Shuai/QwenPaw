@@ -45,7 +45,6 @@ def get_node_runtime_status(node_path: str = "") -> ACPNodeRuntimeStatus:
                 label="bundled",
             ),
         )
-
     system_node = shutil.which("node")
     if system_node:
         _append_unique(
@@ -65,7 +64,6 @@ def get_node_runtime_status(node_path: str = "") -> ACPNodeRuntimeStatus:
                 reason="System Node was not detected",
             ),
         )
-
     if configured and not any(
         _same_path(configured, candidate.node_path) for candidate in candidates
     ):
@@ -76,7 +74,6 @@ def get_node_runtime_status(node_path: str = "") -> ACPNodeRuntimeStatus:
                 label="custom",
             ),
         )
-
     effective = _effective_node_path(configured, candidates)
     return ACPNodeRuntimeStatus(
         node_path=configured,
@@ -101,21 +98,18 @@ def resolve_node_runtime(
         candidate.reason_code = "node_missing"
         candidate.reason = "Node path does not exist"
         return candidate
-
     env = _prepend_path(dict(os.environ), node.parent)
     node_version, error = _version(str(node), env)
     if error:
         candidate.reason_code = "version_check_failed"
         candidate.reason = error
         return candidate
-
     npx = _npx_path(node)
     if not npx:
         candidate.node_version = node_version
         candidate.reason_code = "npx_missing"
         candidate.reason = "npx was not found"
         return candidate
-
     npx_version, error = _version(str(npx), env)
     if error:
         candidate.node_version = node_version
@@ -123,7 +117,6 @@ def resolve_node_runtime(
         candidate.reason_code = "version_check_failed"
         candidate.reason = error
         return candidate
-
     candidate.node_version = node_version
     candidate.npx_path = str(npx)
     candidate.npx_version = npx_version
@@ -154,11 +147,9 @@ def _effective_node_path_for_process(
         node = _normalize_node_path(configured)
         if _runtime_files_available(node):
             return node
-
     bundled = _bundled_node_path()
     if _runtime_files_available(bundled):
         return bundled
-
     system_node = shutil.which("node", path=env.get(_path_env_key(env)))
     if system_node:
         node = _normalize_node_path(system_node)

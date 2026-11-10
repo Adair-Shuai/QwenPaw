@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Real HTTP routes, durable SQLite and scoped Agent tool integration."""
+# pylint: disable=protected-access
 
 from __future__ import annotations
 
@@ -14,7 +15,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 from fastapi import FastAPI
-from agentscope.message import ToolCallBlock
+from agentscope.message import ToolCallBlock, ToolResultState
 from agentscope.state import AgentState
 from agentscope.tool import FunctionTool, Toolkit
 
@@ -194,6 +195,106 @@ async def invoke(module, service, ctx, definition=None):
         )
     ]
     return json.loads(events[0].content[0].text)
+
+
+@pytest.mark.parametrize(
+    "overrides,eligible",
+    [
+        ({}, True),
+        ({"ui_capabilities": {}}, False),
+        ({"channel": "cli"}, False),
+        ({"source": "cron"}, False),
+        ({"source": "subagent"}, False),
+        ({"root_session_id": "parent"}, False),
+        ({"subagent_allowed_tools": ["request_user_input"]}, False),
+    ],
+)
+async def test_discovery_respects_ui_capability_and_executes_scoped_tool(
+    environment,
+    module,
+    tmp_path,
+    overrides,
+    eligible,
+):
+    from qwenpaw.app.workspace.local_workspace import QwenPawLocalWorkspace
+    from qwenpaw.runtime.tool_discovery import DiscoveryToolkit
+    from qwenpaw.runtime.tool_registry import ToolDescriptor, ToolRegistry
+    from tests.unit.runtime.test_tool_discovery import CatalogTool
+    from tests.unit.runtime.test_tool_discovery_accuracy import (
+        RecordingGovernor,
+    )
+
+    ctx = context(environment)
+    request_context = {
+        **ctx.request.request_context,
+        "session_id": ctx.session_id,
+        "root_session_id": ctx.root_session_id,
+        "channel": ctx.request.channel,
+        "approval_level": "auto",
+        **overrides,
+    }
+    registry = ToolRegistry()
+    registry.register(
+        ToolDescriptor(
+            name="request_user_input",
+            func=module.build_tool(environment.service),
+            metadata={
+                "allowed_channels": ("console",),
+                "availability_check": module.is_available,
+            },
+        ),
+    )
+    workspace = QwenPawLocalWorkspace(registry, workdir=str(tmp_path))
+    workspace.set_governor(RecordingGovernor())
+    toolkit = DiscoveryToolkit(
+        tools=[
+            *await workspace.list_tools(request_context=request_context),
+            *[CatalogTool(f"other_tool_{index}") for index in range(30)],
+        ],
+    )
+    state = AgentState()
+    state.tool_context.activated_groups = ["qwenpaw:tool:request_user_input"]
+    found = await toolkit.search("request_user_input", "", 1, state)
+    assert bool(found["tools"]) is eligible
+    assert (
+        await toolkit.get_tool("request_user_input") is not None
+    ) is eligible
+    if not eligible:
+        assert (
+            "qwenpaw:tool:request_user_input"
+            not in state.tool_context.activated_groups
+        )
+        return
+
+    from agentscope.agent import Agent
+    from unittest.mock import AsyncMock
+
+    agent = Agent(
+        name="discovered-form",
+        system_prompt="Test",
+        model=SimpleNamespace(count_tokens=AsyncMock(return_value=1)),
+        toolkit=toolkit,
+        state=state,
+        middlewares=[module.InteractionMiddleware(ctx)],
+    )
+    events = [
+        event
+        async for event in agent._execute_tool_call(
+            ToolCallBlock(
+                id="discovered-form",
+                name="request_user_input",
+                input=json.dumps(form()),
+            ),
+        )
+    ]
+    assert events[-1].state == ToolResultState.SUCCESS
+    response = await environment.client.get(
+        "",
+        params={"session_id": "session-1"},
+    )
+    assert response.status_code == 200
+    assert len(response.json()["requests"]) == 1
+    assert response.json()["requests"][0]["agent_id"] == "alpha"
 
 
 @pytest.mark.asyncio

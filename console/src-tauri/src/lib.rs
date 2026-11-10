@@ -8,6 +8,7 @@ mod computer_use_helper;
 mod computer_use_protocol;
 mod computer_use_runtime;
 mod external_link;
+mod delivery_files;
 mod reveal;
 mod notifications;
 mod notification_delivery;
@@ -71,6 +72,10 @@ fn build_desktop() -> tauri::Result<tauri::App> {
             backend::backend_startup_error,
             backend::restart_backend,
             external_link::open_external_link,
+            delivery_files::stage_delivery_file,
+            delivery_files::list_delivery_file_applications,
+            delivery_files::open_delivery_file,
+            delivery_files::reveal_delivery_file,
             reveal::reveal_in_file_manager,
             external_link::open_workspace_html,
             updates::coordination::confirm_desktop_update,
@@ -92,6 +97,7 @@ fn build_desktop() -> tauri::Result<tauri::App> {
         .manage(registration)
         .manage(updates::coordination::Confirmation::default())
         .manage(backend::BackendState::default())
+        .manage(delivery_files::DeliveryFileState::default())
         .manage(computer_use_runtime::ComputerUseRuntimeState::default())
         .manage(tray::TrayState::default())
         .manage(notifications::NotificationState::default())
@@ -165,7 +171,9 @@ pub fn run() {
                     #[cfg(not(target_os = "macos"))]
                     let _ = (&api, &code);
                     backend::detach(app_handle);
-                    computer_use_runtime::stop(app_handle);
+                    if let Err(error) = computer_use_runtime::stop(app_handle) {
+                        log::warn!("[computer-use] helper shutdown failed: {error}");
+                    }
                 }
                 // macOS emits this when the user clicks the Dock icon. Without
                 // it, a window hidden via "minimize to tray" can only be

@@ -16,6 +16,8 @@ from ..cron.cron_hook import restore_cron_context
 from ...agents.acp.meta import ACP_EPHEMERAL_META_KEY
 from ...runtime._state_utils import StateProxy
 from ...runtime.console_turn_state import (
+    is_console_history_replacement,
+    prepare_console_edit_resend,
     prepare_console_regeneration,
     repair_invalid_history_images,
     stamp_console_turn,
@@ -80,6 +82,10 @@ class SessionLoadHook(LifecycleHook):
             )
         except Exception:
             logger.debug("session_load: failed", exc_info=True)
+        prepare_console_edit_resend(
+            getattr(ctx, "session_state", None) or {},
+            ctx.request,
+        )
         if ctx.session_state:
             prepare_console_regeneration(ctx.session_state, ctx.request)
             if getattr(ctx.request, "channel", None) == "console":
@@ -133,6 +139,8 @@ class SessionSaveHook(LifecycleHook):
             ctx.extras[SESSION_SAVE_SUCCEEDED_KEY] = True
         except Exception:
             logger.debug("session_save: failed", exc_info=True)
+            if is_console_history_replacement(ctx.request):
+                raise
         return HookResult()
 
 

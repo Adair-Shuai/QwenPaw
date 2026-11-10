@@ -11,15 +11,21 @@ from tests.channel_support.protocol import eventually, send
 
 class WebClient:
     def __init__(self, **kwargs):
+        # Retain fixture injection and substituted callback signatures.
+        # pylint: disable=unused-argument
         self.calls, self.session = [], None
 
     async def auth_test(self):
         return {"user_id": "UBOT"}
 
     async def users_info(self, **kwargs):
+        # Retain fixture injection and substituted callback signatures.
+        # pylint: disable=unused-argument
         return {"user": {"profile": {"display_name": "Human"}}}
 
     async def conversations_replies(self, **kwargs):
+        # Retain fixture injection and substituted callback signatures.
+        # pylint: disable=unused-argument
         return {
             "messages": [
                 {
@@ -41,6 +47,8 @@ class WebClient:
 
 class App:
     def __init__(self, **kwargs):
+        # Retain fixture injection and substituted callback signatures.
+        # pylint: disable=unused-argument
         self.handlers = {}
 
     def event(self, name):
@@ -51,11 +59,15 @@ class App:
         return register
 
     def command(self, expression):
+        # Retain fixture injection and substituted callback signatures.
+        # pylint: disable=unused-argument
         return lambda callback: callback
 
 
 class Socket:
     def __init__(self, *args, **kwargs):
+        # Retain fixture injection and substituted callback signatures.
+        # pylint: disable=unused-argument
         self.connected, self.closed = False, False
         self.client = NS(
             process_messages=self.idle,
@@ -80,6 +92,8 @@ class Socket:
 
 @pytest.fixture
 async def slack(tmp_path, monkeypatch):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     native = module("slack", "platform")
     monkeypatch.setattr(native, "AsyncApp", App)
     monkeypatch.setattr(native, "AsyncWebClient", WebClient)
@@ -87,13 +101,13 @@ async def slack(tmp_path, monkeypatch):
     driver = module("slack").SlackDriver()
     peer, identity = bind("slack", driver, tmp_path)
     await driver.start(
-        dict(
-            bot_token="xoxb-test",
-            app_token="xapp-test",
-            workspace_dir=str(tmp_path),
-            media_dir=str(tmp_path / "media"),
-            streaming_enabled=True,
-        ),
+        {
+            "bot_token": "xoxb-test",
+            "app_token": "xapp-test",
+            "workspace_dir": str(tmp_path),
+            "media_dir": str(tmp_path / "media"),
+            "streaming_enabled": True,
+        },
     )
     await eventually(lambda: driver._connected)
     yield driver, peer, identity, driver._platform
@@ -108,6 +122,8 @@ async def receive(
     ident="2.0",
     callback="message",
 ):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     _, peer, _, platform = value
     acks = []
 
@@ -144,6 +160,10 @@ async def test_dm_group_and_thread_route_to_exact_slack_target(
     thread,
     text,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     _, peer, identity, platform = slack
     event = await receive(slack, channel, thread, text)
     assert event["conversation"] == {
@@ -168,6 +188,8 @@ async def test_dm_group_and_thread_route_to_exact_slack_target(
 async def test_unmentioned_group_is_filtered_and_app_mention_is_admitted_once(
     slack,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     _, peer, _, _ = slack
     assert await receive(slack, "C123", text="hello") is None
     event = await receive(
@@ -185,6 +207,10 @@ async def test_unmentioned_group_is_filtered_and_app_mention_is_admitted_once(
 async def test_stream_final_edits_native_placeholder_with_final_formatting(
     slack,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     _, peer, identity, platform = slack
     handle = (
         await receive(slack, "C123", "1000000000.000001", "<@UBOT> hello")
@@ -225,6 +251,10 @@ async def test_stream_final_edits_native_placeholder_with_final_formatting(
 
 
 async def test_stop_closes_socket_and_owned_connection_tasks(slack):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     driver, _, _, platform = slack
     handler, task, watch = (
         platform._handler,
@@ -244,6 +274,10 @@ async def test_unknown_stream_retires_to_durable_receipt(
     monkeypatch,
     unknown_at,
 ):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
+    # Keep the real lifecycle sequence and all behavior assertions together.
+    # pylint: disable=R0915
     import json
     import qwenpaw.channel_protocol.shared_response_driver as shared
     from tests.channel_support.protocol import finish, open_route
@@ -256,9 +290,13 @@ async def test_unknown_stream_retires_to_durable_receipt(
 
     class Platform:
         async def start_stream(self, route, kind):
+            # Retain fixture injection and substituted callback signatures.
+            # pylint: disable=unused-argument
             return {"ts": "1.0", "channel_id": "D123", "final": "false"}
 
         async def update_stream(self, resource, text, *, final):
+            # Retain fixture injection and substituted callback signatures.
+            # pylint: disable=unused-argument
             updates.append(dict(resource))
             raise error("UPDATE_UNKNOWN", side_effect_possible=True)
 
@@ -275,14 +313,14 @@ async def test_unknown_stream_retires_to_durable_receipt(
         operation="stream.start",
         stream_type="message",
     )
-    ending = dict(
-        delivery="end",
-        operation="stream.end",
-        stream_type="message",
-        target_delivery_id="start",
-        sequence=1,
-        accumulated_text="hello",
-    )
+    ending = {
+        "delivery": "end",
+        "operation": "stream.end",
+        "stream_type": "message",
+        "target_delivery_id": "start",
+        "sequence": 1,
+        "accumulated_text": "hello",
+    }
     if unknown_at == "end":
         assert (await send(peer, identity, handle, **ending))[
             "state"

@@ -139,6 +139,8 @@ async def run(
     *,
     input_handle: Any,
 ) -> None:
+    # Keep transport admission, handoff and owned-process cleanup in order.
+    # pylint: disable=R0912,R0915
     from .errors import ProtocolValidationError
     from .framing import FramedTransport
     from .payloads import PayloadStore

@@ -479,6 +479,8 @@ class FramedTransport:
         on_write_failed: Callable[[], None] | None = None,
         on_write_deferred: Callable[[], None] | None = None,
     ) -> None:
+        # Keep transport admission, handoff and owned-process cleanup in order.
+        # pylint: disable=R0912,R0915
         """Enqueue one frame and wait until the OS stream accepts it."""
         if self._closed:
             raise FrameClosedError("stdio transport is closed")

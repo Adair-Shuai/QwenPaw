@@ -134,6 +134,8 @@ class SlackPlatform:
         )
 
     async def _configure_request_client(self, client, next):
+        # Slack injects middleware by its public next parameter name.
+        # pylint: disable=redefined-builtin
         _apply_slack_proxy(client, self._proxy_url)
         return await next()
 
@@ -252,8 +254,6 @@ class SlackPlatform:
         while self._running and handler is self._handler:
             try:
                 connected = await handler.client.is_connected()
-            except asyncio.CancelledError:
-                raise
             except Exception:
                 connected = False
             if connected != self.connected:
@@ -288,6 +288,8 @@ class SlackPlatform:
         )
 
     async def _restart_socket_mode(self, reason):
+        # Retain the native callback and lifecycle hook parameter names.
+        # pylint: disable=unused-argument
         async with self._socket_reconnect_lock:
             if not self._running:
                 return
@@ -420,6 +422,9 @@ class SlackPlatform:
                 self.bot_prefix,
                 self.config.get("require_mention", True),
             )
+        # Paired driver/platform callbacks share this lifecycle and receipt
+        # ledger.
+        # pylint: disable-next=protected-access
         return await self._event_handler._download_slack_file(url, filename)
 
     async def send_parts(self, route, parts):

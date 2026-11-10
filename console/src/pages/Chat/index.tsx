@@ -8,6 +8,18 @@ import { useChatRouteResolution } from "./hooks/useChatRouteResolution";
 import { useAdvisorDecisionAvailability } from "./hooks/useAdvisorDecisionAvailability";
 import { useQueueSteering } from "./hooks/useQueueSteering";
 import { useMessageEditResend } from "./hooks/useMessageEditResend";
+import { useContextInspection } from "./hooks/useContextInspection";
+import { useContextDraftSources } from "./hooks/useContextDraftSources";
+import {
+  ANSWER_QUOTES_KEY,
+  readAnswerQuotes,
+  consumeAnswerQuotes,
+  attachAnswerQuotes,
+  quotesFromContext,
+  withoutAnswerQuoteContent,
+} from "./answerQuotes";
+import { AnswerQuoteComposer } from "./components/AnswerQuoteComposer";
+import { renderQuotedRequest } from "./components/AnswerQuoteRequest";
 import { recoverQueuedSteering } from "./queueSteeringRecovery";
 import { loadSessionModel } from "../../features/session-settings/sessionModel";
 import {
@@ -223,6 +235,14 @@ import { scrollReverseMessageList } from "./messageScroll";
 import { LONG_CHAT_USER_MESSAGE_ANCHORS } from "./longChatPerformance";
 import { isApprovalInCurrentScope } from "./approvalScope";
 import { buildSubmissionBizParams } from "./submissionBizParams";
+
+type SdkResponseParser = NonNullable<
+  NonNullable<IAgentScopeRuntimeWebUIOptions["api"]>["responseParser"]
+>;
+type ParsedWireChunk =
+  | ReturnType<SdkResponseParser>
+  | { object: "message"; type: "heartbeat" }
+  | null;
 
 interface ApprovalMessageData {
   requestId: string;
@@ -1098,30 +1118,33 @@ function useMessageHistoryNavigation(
     text: string;
   }
 
-  const findMessageInDirection = (
-    messages: string[],
-    startIndex: number,
-    direction: 1 | -1,
-  ): MessageResult | null => {
-    const MAX_LOOKUP = 100;
-    let lookupIndex = startIndex;
-    let steps = 0;
+  const findMessageInDirection = useCallback(
+    (
+      messages: string[],
+      startIndex: number,
+      direction: 1 | -1,
+    ): MessageResult | null => {
+      const MAX_LOOKUP = 100;
+      let lookupIndex = startIndex;
+      let steps = 0;
 
-    while (
-      lookupIndex >= 0 &&
-      lookupIndex < messages.length &&
-      steps < MAX_LOOKUP
-    ) {
-      const messageText = messages[messages.length - 1 - lookupIndex];
-      if (messageText) {
-        return { index: lookupIndex, text: messageText };
+      while (
+        lookupIndex >= 0 &&
+        lookupIndex < messages.length &&
+        steps < MAX_LOOKUP
+      ) {
+        const messageText = messages[messages.length - 1 - lookupIndex];
+        if (messageText) {
+          return { index: lookupIndex, text: messageText };
+        }
+        lookupIndex += direction;
+        steps += 1;
       }
-      lookupIndex += direction;
-      steps += 1;
-    }
 
-    return null;
-  };
+      return null;
+    },
+    [],
+  );
 
   const isSuggestionPopupOpen = (textarea: HTMLTextAreaElement): boolean =>
     textarea.value.startsWith("/");
@@ -1203,7 +1226,12 @@ function useMessageHistoryNavigation(
       document.removeEventListener("keydown", handleKeyDown, true);
       document.removeEventListener("focusin", handleFocus, true);
     };
-  }, [isChatActive, isComposingRef, getUserMessagesWithText]);
+  }, [
+    isChatActive,
+    isComposingRef,
+    getUserMessagesWithText,
+    findMessageInDirection,
+  ]);
 }
 
 function RuntimeLoadingBridge({
@@ -1283,6 +1311,34 @@ const timestampStyle: React.CSSProperties = {
 const isLocalTimestampId = (id: string | null | undefined): boolean =>
   !!id && /^\d+-[a-z0-9]+$/.test(id);
 
+// Registry snapshots can change when unrelated plugins register. Keep existing
+// component types stable for the lifetime of the registered renderer itself.
+const pluginRendererWrappers = new WeakMap<object, Map<string, unknown>>();
+const wrapPluginRenderer = <Props extends object>(
+  pluginId: string,
+  toolName: string,
+  FC: React.FC<Props>,
+) => {
+  let wrappers = pluginRendererWrappers.get(FC);
+  if (!wrappers) {
+    wrappers = new Map();
+    pluginRendererWrappers.set(FC, wrappers);
+  }
+  const key = JSON.stringify([pluginId, toolName]);
+  const cached = wrappers.get(key) as React.FC<Props> | undefined;
+  if (cached) return cached;
+  const Wrapped: React.FC<Props> = (props) => (
+    <PluginSlotBoundary
+      slot={`customToolRender:${toolName}`}
+      pluginId={pluginId}
+    >
+      <FC {...props} />
+    </PluginSlotBoundary>
+  );
+  wrappers.set(key, Wrapped);
+  return Wrapped;
+};
+
 export default function ChatPage() {
   const { t, i18n } = useTranslation();
   const navigate = useNavigate();
@@ -1356,18 +1412,18 @@ export default function ChatPage() {
     useState<HTMLDivElement | null>(null);
   const queueSessionId = chatId ?? "new";
   const queueKey = getQueueKey(selectedAgent, queueSessionId);
-  const sdkSessionAdapter = useMemo(
-    () =>
-      createSdkSessionAdapter(sessionApi.bindToOwner(), (id, session) => {
-        // SDK 1.2 only clears hydrated idle state when its own queue is enabled.
-        // CoPaw owns the queue: clear the loaded Chat's cached connection state
-        // before readiness wakes its sender. Never clear another Chat's stream.
-        if (session && !session.generating) {
-          runtimeLoadingBridgeRef.current?.setSessionLoading?.(id, false);
-        }
-      }),
-    [selectedAgent],
-  );
+  const sdkSessionAdapter = useMemo(() => {
+    // Preserve explicit invalidation when the surrounding owner or registry changes.
+    void selectedAgent;
+    return createSdkSessionAdapter(sessionApi.bindToOwner(), (id, session) => {
+      // SDK 1.2 only clears hydrated idle state when its own queue is enabled.
+      // CoPaw owns the queue: clear the loaded Chat's cached connection state
+      // before readiness wakes its sender. Never clear another Chat's stream.
+      if (session && !session.generating) {
+        runtimeLoadingBridgeRef.current?.setSessionLoading?.(id, false);
+      }
+    });
+  }, [selectedAgent]);
   const sdkSessionApi = sdkSessionAdapter.api;
   const {
     enabled: terminalEnabled,
@@ -1405,16 +1461,23 @@ export default function ChatPage() {
     : getPendingProjectDirectory(selectedAgent, queueSessionId) ?? undefined;
   const sessionScope = useMemo<
     Extract<FilesWorkspaceScope, { kind: "session" }>
-  >(
-    () => ({
+  >(() => {
+    // Preserve explicit invalidation when the surrounding owner or registry changes.
+    void queueKey;
+    return {
       kind: "session",
       agentId: selectedAgent,
       sessionId: queueSessionId,
       chatId: backendChatId,
       projectDirOverride: pendingProjectDir,
-    }),
-    [backendChatId, pendingProjectDir, queueSessionId, selectedAgent, queueKey],
-  );
+    };
+  }, [
+    backendChatId,
+    pendingProjectDir,
+    queueSessionId,
+    selectedAgent,
+    queueKey,
+  ]);
   const currentSessionFilesScopeKey = sessionFilesScopeKey(
     selectedAgent,
     queueSessionId,
@@ -1504,6 +1567,7 @@ export default function ChatPage() {
       if (!(element instanceof Element)) return;
       const anchor = element.closest<HTMLAnchorElement>("a[href]");
       if (!anchor) return;
+      if (anchor.hasAttribute("data-file-reference")) return;
       const target = parseInternalFileLink(anchor.getAttribute("href") ?? "");
       if (!target) return;
       event.preventDefault();
@@ -1556,8 +1620,14 @@ export default function ChatPage() {
     chatId: backendChatId,
     onChange: handleDecisionConfiguredChange,
   });
-  const backendCommands = backendCapabilities?.commands ?? [];
-  const approvalPresets = backendCapabilities?.approval_presets ?? [];
+  const backendCommands = useMemo(
+    () => backendCapabilities?.commands ?? [],
+    [backendCapabilities?.commands],
+  );
+  const approvalPresets = useMemo(
+    () => backendCapabilities?.approval_presets ?? [],
+    [backendCapabilities?.approval_presets],
+  );
   const supportsAttachments = supportsAgentAttachments(
     selectedAgentBackend,
     backendCapabilities,
@@ -1565,6 +1635,36 @@ export default function ChatPage() {
   const { toolRenderConfig } = usePlugins();
   const extScalar = useChatScalarSnapshot();
   const extLists = useChatListSnapshot();
+  // Renderer functions are React component types. Recreating them for sender,
+  // ownership or route updates remounts plugin cards and restarts their work.
+  const pluginToolRenderers = useMemo(() => {
+    const pluginToolRenderers: Record<string, ChatToolRendererItem["render"]> =
+      {};
+    for (const e of extLists[ChatList.customToolRender]) {
+      pluginToolRenderers[e.item.toolName] = wrapPluginRenderer(
+        e.pluginId,
+        e.item.toolName,
+        e.item.render,
+      );
+    }
+    return pluginToolRenderers;
+  }, [extLists[ChatList.customToolRender]]);
+  const pluginCards = useMemo(() => {
+    const pluginCards: Record<string, ChatCardItem["render"]> = {};
+    for (const e of extLists[ChatList.cards]) {
+      pluginCards[e.item.cardName] = wrapPluginRenderer(
+        e.pluginId,
+        e.item.cardName,
+        e.item.render,
+      );
+    }
+
+    return pluginCards;
+  }, [extLists[ChatList.cards]]);
+  const customToolRenderConfig = useMemo(
+    () => withGenericFallback({ ...toolRenderConfig, ...pluginToolRenderers }),
+    [toolRenderConfig, pluginToolRenderers],
+  );
   const [refreshKey, setRefreshKey] = useState(0);
   const retrySession = useCallback(() => {
     retryRouteResolution();
@@ -1584,7 +1684,12 @@ export default function ChatPage() {
   queueKeyRef.current = queueKey;
   // A -> new -> A is a new visit even when its queue key is identical. Late
   // async completions from the first visit must not replace the new timer.
-  const queueVisit = useMemo(() => ({}), [queueKey, selectedAgent]);
+  const queueVisit = useMemo(() => {
+    // Preserve explicit invalidation when the surrounding owner or registry changes.
+    void queueKey;
+    void selectedAgent;
+    return {};
+  }, [queueKey, selectedAgent]);
   const queueVisitRef = useRef(queueVisit);
   queueVisitRef.current = queueVisit;
   const { begin: beginAdmission, isPending: isAdmissionPending } =
@@ -1676,6 +1781,10 @@ export default function ChatPage() {
    * CoPaw keeps ordering/persistence/Web Locks; the SDK owns message creation,
    * request acceptance, SSE parsing and the mounted component lifecycle.
    */
+  const [editHistoryRefresh, setEditHistoryRefresh] = useState<{
+    queueKey: string;
+    clientMessageId: string;
+  } | null>(null);
   const executeQueuedItem = useCallback(
     async (item: QueueItem, allowPaused = false): Promise<boolean> => {
       const signal = queueExecutionScopeRef.current.signal;
@@ -1797,6 +1906,15 @@ export default function ChatPage() {
           if (currentQueueId) {
             useMessageQueueStore.getState().remove(currentQueueId, item.id);
           }
+          const edit = item.requestContext?.qwenpaw_edit_resend as
+            | { keep_original?: boolean }
+            | undefined;
+          if (edit?.keep_original === false) {
+            setEditHistoryRefresh({
+              queueKey,
+              clientMessageId: item.clientMessageId ?? item.id,
+            });
+          }
           return true;
         }
 
@@ -1850,13 +1968,20 @@ export default function ChatPage() {
   // are queue-only (input is enqueued instead of submitted). The owner is
   // determined by an exclusive Web Lock keyed by sessionId; when the owner
   // tab closes, another tab acquires the lock and becomes the owner.
-  const [isOwner, setIsOwner] = useState(false);
-  const [ownershipResolved, setOwnershipResolved] = useState(false);
+  const [ownership, setOwnership] = useState({
+    visit: queueVisit,
+    owner: false,
+    resolved: false,
+  });
+  // A new route cannot inherit the previous Chat's queue-only/owner state,
+  // even for the render before the ownership effect resets it.
+  const isOwner = ownership.visit === queueVisit && ownership.owner;
+  const ownershipResolved =
+    ownership.visit === queueVisit && ownership.resolved;
   const isOwnerRef = useRef(false);
   isOwnerRef.current = isOwner;
   useEffect(() => {
-    setIsOwner(false);
-    setOwnershipResolved(false);
+    setOwnership({ visit: queueVisit, owner: false, resolved: false });
     const ctrl = new AbortController();
     let requested = false;
     let fallbackTimer: ReturnType<typeof setTimeout> | undefined;
@@ -1877,8 +2002,12 @@ export default function ChatPage() {
           return holdOwnershipLock(
             queueKey,
             () => {
-              setIsOwner(true);
-              setOwnershipResolved(true);
+              if (!ctrl.signal.aborted)
+                setOwnership({
+                  visit: queueVisit,
+                  owner: true,
+                  resolved: true,
+                });
             },
             ctrl.signal,
           );
@@ -1888,7 +2017,14 @@ export default function ChatPage() {
             console.error("Unable to recover chat queue", error);
         });
       // Only a valid loaded session can be classified as a queue-only tab.
-      fallbackTimer = setTimeout(() => setOwnershipResolved(true), 300);
+      fallbackTimer = setTimeout(() => {
+        if (!ctrl.signal.aborted)
+          setOwnership((current) =>
+            current.visit === queueVisit
+              ? { ...current, resolved: true }
+              : current,
+          );
+      }, 300);
     };
     const unsubscribe = sdkSessionAdapter.subscribe(acquireWhenReady);
     acquireWhenReady();
@@ -1897,7 +2033,7 @@ export default function ChatPage() {
       unsubscribe();
       clearTimeout(fallbackTimer);
     };
-  }, [chatId, queueKey, sdkSessionAdapter, isSessionTransition]);
+  }, [chatId, queueKey, queueVisit, sdkSessionAdapter, isSessionTransition]);
 
   const syncLoopModeStatus = useCallback(() => {
     if (isSessionTransition) return Promise.resolve();
@@ -2042,7 +2178,14 @@ export default function ChatPage() {
         await executeQueuedItem(fresh[0]);
       });
     }, 500);
-  }, [executeQueuedItem, queueSessionId, queueKey, queueVisit]);
+  }, [
+    executeQueuedItem,
+    queueSessionId,
+    queueKey,
+    queueVisit,
+    i18n,
+    selectedAgent,
+  ]);
 
   // Reload queue when switching sessions or on first mount
   const prevQueueSessionIdRef = useRef<string | null>(null);
@@ -2091,8 +2234,9 @@ export default function ChatPage() {
   const refreshedSteeringHistory = useRef(0);
   useEffect(() => {
     if (
-      !queueSteering.historyRevision ||
-      queueSteering.historyRevision === refreshedSteeringHistory.current ||
+      ((!queueSteering.historyRevision ||
+        queueSteering.historyRevision === refreshedSteeringHistory.current) &&
+        editHistoryRefresh?.queueKey !== queueKey) ||
       chatLoading ||
       !isOwner ||
       !backendChatId ||
@@ -2100,6 +2244,8 @@ export default function ChatPage() {
     )
       return;
     const revision = queueSteering.historyRevision;
+    const edited =
+      editHistoryRefresh?.queueKey === queueKey ? editHistoryRefresh : null;
     const ctrl = new AbortController();
     void (async () => {
       const idle = await waitForChatIdle(
@@ -2109,6 +2255,12 @@ export default function ChatPage() {
         queueKey,
       );
       if (!idle || ctrl.signal.aborted || chatLoadingRef.current) return;
+      if (edited) {
+        sessionApi.discardLastUserMessage(
+          [queueSessionId, backendChatId],
+          edited.clientMessageId,
+        );
+      }
       const recovered = await sessionApi.refreshSession(
         queueSessionId,
         ctrl.signal,
@@ -2125,12 +2277,15 @@ export default function ChatPage() {
         recovered.messages,
       );
       refreshedSteeringHistory.current = revision;
+      if (edited)
+        setEditHistoryRefresh((value) => (value === edited ? null : value));
     })().catch(() => {
       /* The next normal history load also restores the instruction. */
     });
     return () => ctrl.abort();
   }, [
     queueSteering.historyRevision,
+    editHistoryRefresh,
     chatLoading,
     isOwner,
     backendChatId,
@@ -2577,6 +2732,53 @@ export default function ChatPage() {
 
   useMessageHistoryNavigation(chatRef, isChatActive, isComposingRef);
   useChatInputDraft(isChatActiveRef.current, selectedAgent, routeChatId);
+  const quoteDraftKey = getDraftStorageKey(selectedAgent, routeChatId);
+  const {
+    draftSources: contextDraftSources,
+    onRemoveSource: removeContextSource,
+    removedSource: removedContextSource,
+    onUndoRemove: undoContextRemoval,
+    invalidateUndo: invalidateContextUndo,
+  } = useContextDraftSources({ scopeKey: queueKey, quoteScope: quoteDraftKey });
+  const contextAdmissions = useRef(new Map<object, number>());
+  const [contextAdmissionRevision, setContextAdmissionRevision] = useState(0);
+  const contextAdmissionBusy = contextAdmissions.current.has(queueVisit);
+  const visibleContextDraftSources = useMemo(
+    () =>
+      contextAdmissionBusy
+        ? contextDraftSources.map((source) => ({ ...source, removable: false }))
+        : contextDraftSources,
+    [contextDraftSources, contextAdmissionBusy],
+  );
+  const handleRemoveContextSource = useCallback(
+    (id: string) => {
+      if (!contextAdmissions.current.has(queueVisitRef.current))
+        removeContextSource(id);
+    },
+    [removeContextSource],
+  );
+  const handleUndoContextRemoval = useCallback(() => {
+    if (contextAdmissions.current.has(queueVisitRef.current)) return;
+    if (!undoContextRemoval()) message.warning(t("chat.answerQuote.limit"));
+  }, [undoContextRemoval, message, t]);
+  const contextIdentity = sessionApi.getSessionIdentity(chatId);
+  const contextExecutionBusy = Boolean(chatLoading || steeringRunId);
+  const {
+    inspectionScopeKey: contextInspectionScopeKey,
+    details: contextDetails,
+    detailsLoading: contextDetailsLoading,
+    detailsError: contextDetailsError,
+    onOpenChange: onContextOpenChange,
+    onRetry: retryContextInspection,
+  } = useContextInspection({
+    scopeKey: queueKey,
+    agentId: selectedAgent,
+    chatId: backendChatId,
+    sessionId: contextIdentity.sessionId || undefined,
+    userId: contextIdentity.userId || undefined,
+    enabled: usesQwenPawBackend && isChatActivePage && !isSessionTransition,
+    executionBusy: contextExecutionBusy,
+  });
   // ── Message Queue ───────────────────────────────────────────────────────
 
   // Stop background sender for THIS session when ChatPage mounts (foreground
@@ -2754,6 +2956,8 @@ export default function ChatPage() {
         return;
       }
       const queueText = prepareLoopModeMessage(val);
+      invalidateContextUndo();
+      const submittedQuotes = readAnswerQuotes(quoteDraftKey);
       const enqueueIdentity = sessionApi.getSessionIdentity(
         queueSessionId === "new" ? "" : queueSessionId,
       );
@@ -2772,9 +2976,15 @@ export default function ChatPage() {
         backendSessionId: enqueueIdentity.sessionId,
         userId: enqueueIdentity.userId,
         channel: enqueueIdentity.channel,
-        requestContext: captureRequestContext(undefined, queueText),
+        requestContext: captureRequestContext(
+          submittedQuotes.length
+            ? { [ANSWER_QUOTES_KEY]: submittedQuotes }
+            : undefined,
+          queueText,
+        ),
         bizParams: buildSubmissionBizParams(enqueueIdentity),
       });
+      consumeAnswerQuotes(quoteDraftKey, submittedQuotes);
       // Clear tracked attachments after enqueuing
       pendingFileListRef.current = [];
       setTextareaValue(textarea, "");
@@ -2795,10 +3005,18 @@ export default function ChatPage() {
     sdkSessionAdapter,
     isSessionTransition,
     isAdmissionPending,
+    quoteDraftKey,
+    invalidateContextUndo,
+    isComposingRef,
+    message,
+    t,
   ]);
 
   const handleQueueRemove = useCallback(
     (id: string) => {
+      // Preserve explicit invalidation when the surrounding owner or registry changes.
+      void queueSessionId;
+
       useMessageQueueStore.getState().remove(queueKey, id);
     },
     [queueSessionId, queueKey],
@@ -2806,6 +3024,9 @@ export default function ChatPage() {
 
   const handleQueueEdit = useCallback(
     (id: string, text: string) => {
+      // Preserve explicit invalidation when the surrounding owner or registry changes.
+      void queueSessionId;
+
       const previous = useMessageQueueStore
         .getState()
         .getQueue(queueKey)
@@ -2834,6 +3055,9 @@ export default function ChatPage() {
 
   const handleQueueReorder = useCallback(
     (reordered: QueueItem[]) => {
+      // Preserve explicit invalidation when the surrounding owner or registry changes.
+      void queueSessionId;
+
       useMessageQueueStore.getState().reorder(queueKey, reordered);
     },
     [queueSessionId, queueKey],
@@ -2910,14 +3134,20 @@ export default function ChatPage() {
         }
       });
     },
-    [executeQueuedItem, queueSessionId, selectedAgent, queueKey],
+    [executeQueuedItem, queueSessionId, selectedAgent, queueKey, i18n],
   );
 
   const handleQueueClear = useCallback(() => {
+    // Preserve explicit invalidation when the surrounding owner or registry changes.
+    void queueSessionId;
+
     useMessageQueueStore.getState().clear(queueKey);
   }, [queueSessionId, queueKey]);
 
   const handleQueuePauseResume = useCallback(() => {
+    // Preserve explicit invalidation when the surrounding owner or registry changes.
+    void queueSessionId;
+
     const current = useMessageQueueStore.getState().getRunState(queueKey);
     if (current === "paused" || current === "error") {
       const store = useMessageQueueStore.getState();
@@ -2942,6 +3172,9 @@ export default function ChatPage() {
 
   const handleQueueRetry = useCallback(
     (id: string) => {
+      // Preserve explicit invalidation when the surrounding owner or registry changes.
+      void queueSessionId;
+
       useMessageQueueStore.getState().setItemStatus(queueKey, id, "pending");
       useMessageQueueStore.getState().setRunState(queueKey, "running");
       // Trigger send if idle
@@ -3105,7 +3338,14 @@ export default function ChatPage() {
 
   const handleCompactCommand = useCallback(() => {
     const execution = chatRef.current?.execution;
-    if (!execution || !queueSessionId || queueSessionId === "new") return;
+    if (
+      !execution ||
+      !queueSessionId ||
+      queueSessionId === "new" ||
+      chatLoadingRef.current ||
+      steeringRunId
+    )
+      return;
     const identity = sessionApi.getSessionIdentity(queueSessionId);
     execution.execute(
       {
@@ -3122,19 +3362,25 @@ export default function ChatPage() {
       },
       { sessionId: queueSessionId, source: "direct" },
     );
-  }, [queueSessionId, selectedAgent, captureRequestContext]);
+  }, [queueSessionId, selectedAgent, captureRequestContext, steeringRunId]);
 
   const handleNewCommand = useCallback(() => {
-    const current = useTurnUsageStore.getState().snapshot;
-    const maxInputLength = current?.context_usage?.max_input_length ?? 131072;
-    useTurnUsageStore.getState().setSnapshot({
-      usage: null,
-      context_usage: {
-        estimated_tokens: 0,
-        max_input_length: maxInputLength,
-        context_usage_ratio: 0,
-      },
-    });
+    const usageState = useTurnUsageStore.getState();
+    const maxInputLength =
+      usageState.activeMaxInputLength ??
+      usageState.snapshot?.context_usage?.max_input_length;
+    usageState.setSnapshot(
+      maxInputLength
+        ? {
+            usage: null,
+            context_usage: {
+              estimated_tokens: 0,
+              max_input_length: maxInputLength,
+              context_usage_ratio: 0,
+            },
+          }
+        : null,
+    );
     chatRef.current?.input.submit({ query: "/new" });
   }, []);
 
@@ -3472,6 +3718,7 @@ export default function ChatPage() {
     getLastChatId,
     agentSwitchTarget,
     approvalRequestId,
+    routeChatId,
   ]);
 
   useEffect(() => {
@@ -3546,7 +3793,11 @@ export default function ChatPage() {
       const mentionContext = getSubmittedAgentMention(entrySnapshot.context)
         ? entrySnapshot.context
         : captureAgentMentionContext(
-            data.input.slice(-1).map(extractUserMessageText).join("\n"),
+            data.input
+              .slice(-1)
+              .map(withoutAnswerQuoteContent)
+              .map(extractUserMessageText)
+              .join("\n"),
             agents,
             (agent) => getAgentDisplayName(agent, t),
             entrySnapshot.context,
@@ -3652,7 +3903,10 @@ export default function ChatPage() {
                         ...card.data,
                         input: card.data.input.map(
                           (entry: Record<string, unknown>) =>
-                            attachClientMessageId(entry, clientMessageId),
+                            attachAnswerQuotes(
+                              attachClientMessageId(entry, clientMessageId),
+                              quotesFromContext(mentionContext),
+                            ),
                         ),
                       },
                     }
@@ -3841,9 +4095,11 @@ export default function ChatPage() {
         onError?.(e instanceof Error ? e : new Error(String(e)));
       }
     },
-    [multimodalCaps, t, usesQwenPawBackend],
+    [multimodalCaps, t, usesQwenPawBackend, message],
   );
 
+  const { renderAction: renderEditAction, renderRequest: renderEditRequest } =
+    editResend;
   const compactSender =
     filesDrawerState.kind === "workspace" ||
     (pageStyle !== "classic" && filesDrawerState.kind === "preview");
@@ -3873,6 +4129,15 @@ export default function ChatPage() {
   }, []);
 
   const options = useMemo(() => {
+    // Retain the existing sender and owner invalidation boundaries.
+    void bgTaskCount;
+    void compactSender;
+    void contextAdmissionRevision;
+    void contextDraftSources;
+    void hasQueueItems;
+    void isOwner;
+    void isWideMode;
+    void pageStyle;
     const i18nConfig = getDefaultConfig(t);
     const hostCommands: CommandSuggestion[] = [
       {
@@ -3959,6 +4224,8 @@ export default function ChatPage() {
       const val = data.query.trim() || textarea?.value.trim() || "";
       const draftStorageKey = getDraftStorageKey(selectedAgent, chatId);
       const submittedDraft = localStorage.getItem(draftStorageKey);
+      invalidateContextUndo();
+      const submittedQuotes = readAnswerQuotes(quoteDraftKey);
       const submittedFiles = new Set(pendingFileListRef.current);
       const submittedAttachments = getSubmissionAttachments(data);
       const queueAttachments =
@@ -3972,7 +4239,12 @@ export default function ChatPage() {
             }));
       const mentionModesAtSubmission = { ...getAgentMentionModesSnapshot() };
       const requestContext = captureRequestContext(
-        data.context,
+        {
+          ...data.context,
+          ...(submittedQuotes.length
+            ? { [ANSWER_QUOTES_KEY]: submittedQuotes }
+            : {}),
+        },
         val,
         mentionModesAtSubmission,
       );
@@ -4026,6 +4298,7 @@ export default function ChatPage() {
             ...buildSubmissionBizParams(enqueueIdentity),
           },
         });
+        consumeAnswerQuotes(quoteDraftKey, submittedQuotes);
         if (sameVisit) {
           pendingFileListRef.current = [];
           localStorage.removeItem(getDraftStorageKey(selectedAgent, chatId));
@@ -4049,6 +4322,7 @@ export default function ChatPage() {
       const prepared = usesQwenPawBackend
         ? beginLoopModeSubmission(data.query)
         : data.query;
+      consumeAnswerQuotes(quoteDraftKey, submittedQuotes);
       // Consume this submission before model lookup, session allocation or
       // transport. Preserve any draft and files added during the status check.
       if (localStorage.getItem(draftStorageKey) === submittedDraft) {
@@ -4097,10 +4371,22 @@ export default function ChatPage() {
       });
       // Keep the input intact: the first admission owns its exact cleanup.
       if (!release) return false;
+      const contextVisit = queueVisitRef.current;
+      contextAdmissions.current.set(
+        contextVisit,
+        (contextAdmissions.current.get(contextVisit) ?? 0) + 1,
+      );
+      setContextAdmissionRevision((revision) => revision + 1);
       try {
         return await resolveSubmission(data);
       } finally {
         release();
+        const remaining =
+          (contextAdmissions.current.get(contextVisit) ?? 1) - 1;
+        if (remaining > 0)
+          contextAdmissions.current.set(contextVisit, remaining);
+        else contextAdmissions.current.delete(contextVisit);
+        setContextAdmissionRevision((revision) => revision + 1);
       }
     };
 
@@ -4240,11 +4526,12 @@ export default function ChatPage() {
     const requestRender = requestRenderEntry?.value;
     const requestOptions: IAgentScopeRuntimeWebUIOptions["request"] = {
       render: ({ data, fallback }) =>
-        editResend.renderRequest({
+        renderEditRequest({
           data,
           fallback: () => {
-            if (!(requestRenderEntry && requestRender)) return fallback();
-            const fallbackNode = fallback();
+            if (!(requestRenderEntry && requestRender))
+              return renderQuotedRequest(data, fallback());
+            const fallbackNode = renderQuotedRequest(data, fallback());
             return (
               <PluginSlotBoundary
                 slot={ChatScalar.requestRender}
@@ -4284,44 +4571,6 @@ export default function ChatPage() {
         ),
       })),
     };
-
-    const wrapToolFC = <Props extends object>(
-      pluginId: string,
-      toolName: string,
-      FC: React.FC<Props>,
-    ) => {
-      const Wrapped: React.FC<Props> = (props) => (
-        <PluginSlotBoundary
-          slot={`customToolRender:${toolName}`}
-          pluginId={pluginId}
-        >
-          <FC {...props} />
-        </PluginSlotBoundary>
-      );
-      return Wrapped;
-    };
-    const pluginToolRenderers: Record<string, ChatToolRendererItem["render"]> =
-      {};
-    for (const e of extLists[ChatList.customToolRender]) {
-      pluginToolRenderers[e.item.toolName] = wrapToolFC(
-        e.pluginId,
-        e.item.toolName,
-        e.item.render,
-      );
-    }
-    const mergedToolRenderers = {
-      ...toolRenderConfig,
-      ...pluginToolRenderers,
-    };
-
-    const pluginCards: Record<string, ChatCardItem["render"]> = {};
-    for (const e of extLists[ChatList.cards]) {
-      pluginCards[e.item.cardName] = wrapToolFC(
-        e.pluginId,
-        e.item.cardName,
-        e.item.render,
-      );
-    }
 
     const baseSuggestions = [
       ...commandSuggestions,
@@ -4414,7 +4663,9 @@ export default function ChatPage() {
       welcome: {
         ...i18nConfig.welcome,
         nick: extNick ?? selectedAgentDisplayName,
-        avatar: extAvatar ?? `${import.meta.env.BASE_URL}qwenpaw.png`,
+        avatar:
+          extAvatar ??
+          `${import.meta.env.BASE_URL}ugsci-mono/avatars/assistant-256.png`,
         ...(extGreeting !== undefined ? { greeting: extGreeting } : {}),
         ...(extDescription !== undefined
           ? { description: extDescription }
@@ -4503,6 +4754,19 @@ export default function ChatPage() {
                     <span className={styles.senderContextAffix}>
                       <ContextUsageIndicator
                         showValue
+                        scopeKey={contextInspectionScopeKey}
+                        draftSources={visibleContextDraftSources}
+                        details={contextDetails}
+                        detailsLoading={contextDetailsLoading}
+                        detailsError={contextDetailsError}
+                        onOpenChange={onContextOpenChange}
+                        onRetry={retryContextInspection}
+                        onRemoveSource={handleRemoveContextSource}
+                        removedSource={
+                          contextAdmissionBusy ? null : removedContextSource
+                        }
+                        onUndoRemove={handleUndoContextRemoval}
+                        executionBusy={contextExecutionBusy}
                         onCompact={handleCompactCommand}
                         onNew={handleNewCommand}
                       />
@@ -4536,6 +4800,12 @@ export default function ChatPage() {
                 ) : null}
               </ComposerOptions>
             </div>
+            <AnswerQuoteComposer
+              key={quoteDraftKey}
+              scope={quoteDraftKey}
+              rootRef={chatMessagesAreaRef}
+              enabled={!isSessionTransition && isChatActivePage}
+            />
           </>
         ),
         prefix: (
@@ -4641,15 +4911,17 @@ export default function ChatPage() {
       api: {
         ...defaultConfig.api,
         fetch: customFetch,
-        responseParser: (chunk: string) => {
+        // The installed SDK filters null frames and short wire heartbeats;
+        // its parser declaration only lists complete message models.
+        responseParser: ((chunk: string): ParsedWireChunk => {
           let payload: Record<string, unknown>;
           try {
             payload = JSON.parse(chunk) as Record<string, unknown>;
           } catch {
-            return { object: "message", type: "heartbeat" } as any;
+            return { object: "message", type: "heartbeat" };
           }
           if (!payload || typeof payload !== "object") {
-            return { object: "message", type: "heartbeat" } as any;
+            return { object: "message", type: "heartbeat" };
           }
           // CoPaw's wire enum uses "cancelled"; the SDK uses "canceled".
           // Preserve cancellation instead of fabricating a completed, empty
@@ -4771,7 +5043,7 @@ export default function ChatPage() {
               >["responseParser"]
             >
           >;
-        },
+        }) as SdkResponseParser,
         replaceMediaURL: (url: string) => {
           return toDisplayUrl(url);
         },
@@ -4853,7 +5125,7 @@ export default function ChatPage() {
           );
         },
       },
-      customToolRenderConfig: withGenericFallback(mergedToolRenderers),
+      customToolRenderConfig,
       request: requestOptions,
       cards: {
         // CoPaw still owns assistant Markdown/media/artifact rendering. User
@@ -4911,7 +5183,11 @@ export default function ChatPage() {
                 <Copy />
               </span>
             ),
-            onClick: ({ data }: { data: { input?: unknown[] } }) => {
+            onClick: ({
+              data,
+            }: {
+              data: { input?: Array<{ content?: unknown }> };
+            }) => {
               const text = (data?.input || [])
                 .map(extractUserMessageText)
                 .join("\n")
@@ -4923,7 +5199,7 @@ export default function ChatPage() {
               }
             },
           },
-          { render: editResend.renderAction },
+          { render: renderEditAction },
           ...pluginRequestActions,
         ],
       },
@@ -4931,15 +5207,16 @@ export default function ChatPage() {
   }, [
     customFetch,
     copyResponse,
-    editResend.renderAction,
-    editResend.renderRequest,
+    renderEditAction,
+    renderEditRequest,
     handleFileUpload,
     t,
     i18n.language,
     isDark,
     previewTheme,
     multimodalCaps,
-    toolRenderConfig,
+    customToolRenderConfig,
+    pluginCards,
     extScalar,
     extLists,
     scheduleHistoryClear,
@@ -4994,12 +5271,31 @@ export default function ChatPage() {
     isOwner,
     bgTaskCount,
     bgBackendSessionId,
-    queueSessionId,
     chatId,
     sdkSessionApi,
     sdkSessionAdapter,
     isSessionTransition,
     queueKey,
+    quoteDraftKey,
+    isChatActivePage,
+    contextDraftSources,
+    visibleContextDraftSources,
+    contextAdmissionBusy,
+    contextAdmissionRevision,
+    contextDetails,
+    contextInspectionScopeKey,
+    contextDetailsLoading,
+    contextDetailsError,
+    onContextOpenChange,
+    retryContextInspection,
+    handleRemoveContextSource,
+    removedContextSource,
+    handleUndoContextRemoval,
+    invalidateContextUndo,
+    contextExecutionBusy,
+    agents,
+    isComposingRef,
+    message,
   ]);
 
   const filesDrawerClass =
@@ -5018,6 +5314,8 @@ export default function ChatPage() {
     >
       <div
         data-chat-home-host
+        data-global-search-chat={chatId}
+        data-global-search-agent={selectedAgent}
         className={`${styles.chatPageRoot} ${filesDrawerClass}`}
         onClickCapture={handleInternalFileLink}
       >

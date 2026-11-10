@@ -156,7 +156,6 @@ def test_api_chats_batch_delete(app_server) -> None:
             )
             assert resp.status_code == 200, app_server.logs_tail()
             chat_ids.append(resp.json()["id"])
-
         list_before = app_server.api_request(
             "GET",
             "/api/chats",
@@ -166,7 +165,6 @@ def test_api_chats_batch_delete(app_server) -> None:
         before_ids = {item["id"] for item in list_before.json()}
         for chat_id in chat_ids:
             assert chat_id in before_ids
-
         batch_delete = app_server.api_request(
             "POST",
             "/api/chats/batch-delete",

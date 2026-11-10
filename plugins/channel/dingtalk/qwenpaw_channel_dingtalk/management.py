@@ -19,6 +19,8 @@ def _text(value):
 
 
 async def manage(request):
+    # Preserve native event routing, media fallbacks and cleanup in SDK order.
+    # pylint: disable=R0911,R0912
     request = ManagementRequest.from_mapping(request.to_mapping())
     if request.plugin_id != "dingtalk" or request.channel_key != "dingtalk":
         return management_result(request, reason="IDENTITY_MISMATCH")

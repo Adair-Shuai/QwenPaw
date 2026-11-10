@@ -24,7 +24,6 @@ def build_continuation(
             "7.6. Re-run tests/build/lint to verify "
             "no regressions from deslop.\n"
         )
-
     reviewer = resolve_role(critic_type)
     # Sequential story loop runs in the main workspace (no fork): each
     # story must land on the shared tree before the next story starts.

@@ -28,7 +28,6 @@ def test_supplement_upload_is_indexed_in_project(page, api, project, tmp_path):
     if accepted.get("status") != "SUCCEEDED":
         task = api.wait_task(project_id, accepted["taskId"])
         assert task["status"] == "SUCCEEDED", task
-
     snapshot = api.project_snapshot(project_id)["project"]
     versions = snapshot["assets"]["source_versions_by_id"]
     assert versions, "upload must register a SourceAssetVersion"

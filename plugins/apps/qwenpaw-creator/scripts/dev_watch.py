@@ -149,7 +149,6 @@ def main() -> None:
                     file=sys.stderr,
                 )
                 time.sleep(2)
-
         be_now = snapshot(BACKEND_SRC, (".py", ".json", ".txt"))
         if be_now != be_state:
             rsync(BACKEND_SRC, os.path.join(INSTALLED_DIR, "backend"))

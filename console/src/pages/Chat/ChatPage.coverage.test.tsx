@@ -1,3 +1,8 @@
+import type {
+  CapturedChatOptions,
+  CapturedChatProps,
+  NativeRequestData,
+} from "@/test/chatOptionsFixture";
 /**
  * ChatPage coverage tests
  *
@@ -35,6 +40,7 @@ import { INTERFACE_STYLES } from "@/utils/interfaceStyle";
 import { ChatRunLifecycle } from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Execution/runLifecycle";
 import sessionApi from "./sessionApi";
 import { getDraftStorageKey } from "./chatInputDraft";
+import { addAnswerQuote, readAnswerQuotes } from "./answerQuotes";
 import { stopBackgroundQueue } from "./backgroundQueueRegistry";
 import { chatExtensions } from "@/plugins/registry/chatExtensions";
 import { useSessionFilesDrawer } from "@/stores/filesSurfaceStore";
@@ -77,8 +83,12 @@ const {
   mockRenderWelcome,
   mockPendingApprovals,
   mockUseActualTheme,
+  mockUseActualContext,
+  mockUseActualContextUsageStore,
+  mockGetContext,
   mockAgentList,
   mockHistoryRequests,
+  mockSetSessionMessages,
 } = vi.hoisted(() => ({
   mockListProviders: vi.fn(),
   mockPreviewModelInfo: vi.fn(),
@@ -106,13 +116,20 @@ const {
   mockHydrateBackgroundTasksForSession: vi.fn(() => Promise.resolve()),
   mockRenderSender: vi.fn(() => false),
   mockRenderWelcome: vi.fn(() => false),
-  mockPendingApprovals: vi.fn(() => [] as any[]),
+  mockPendingApprovals: vi.fn(() => [] as unknown[]),
   mockUseActualTheme: vi.fn(() => false),
+  mockUseActualContext: vi.fn(() => false),
+  mockUseActualContextUsageStore: vi.fn(() => false),
+  mockGetContext: vi.fn(),
   mockAgentList: vi.fn(),
-  mockHistoryRequests: vi.fn((_sessionId?: string): unknown[] => []),
+  mockHistoryRequests: vi.fn((_sessionId?: string): unknown[] => {
+    void _sessionId;
+    return [];
+  }),
+  mockSetSessionMessages: vi.fn(),
 }));
 
-let capturedOptions: any = null;
+let capturedOptions: CapturedChatOptions | null = null;
 
 // ---------------------------------------------------------------------------
 // Module mocks
@@ -136,7 +153,9 @@ vi.mock("../../plugins/PluginContext", () => ({
     registerPlugin: vi.fn(),
     toolRenderConfig: {},
   }),
-  PluginContext: { Provider: ({ children }: any) => children },
+  PluginContext: {
+    Provider: ({ children }: import("react").PropsWithChildren) => children,
+  },
 }));
 
 vi.mock("./components/ChatSessionInitializer", () => ({
@@ -144,8 +163,8 @@ vi.mock("./components/ChatSessionInitializer", () => ({
 }));
 
 vi.mock("@agentscope-ai/chat", () => ({
-  AgentScopeRuntimeWebUI: forwardRef((props: any, ref) => {
-    capturedOptions = props.options;
+  AgentScopeRuntimeWebUI: forwardRef((props: CapturedChatProps, ref) => {
+    capturedOptions = props.options as unknown as CapturedChatOptions;
     useEffect(() => {
       const id = props.options?.session?.currentSessionId;
       if (id) void props.options.session.api.getSession(id);
@@ -160,7 +179,7 @@ vi.mock("@agentscope-ai/chat", () => ({
         removeAllMessages: vi.fn(),
         getSessionMessages: vi.fn(() => []),
         getMessages: vi.fn(() => []),
-        setSessionMessages: vi.fn(),
+        setSessionMessages: mockSetSessionMessages,
       },
       execution: {
         execute: mockRuntimeSubmit,
@@ -194,13 +213,20 @@ vi.mock("@agentscope-ai/chat", () => ({
                 </p>
                 <div data-testid={`historical-user-actions-${index}`}>
                   {(props.options?.requestActions?.list ?? []).map(
-                    (action: any, actionIndex: number) =>
+                    (action, actionIndex: number) =>
                       action.render ? (
-                        createElement(action.render, { key: actionIndex, data })
+                        createElement(action.render, {
+                          key: actionIndex,
+                          data: data as import("@/test/chatOptionsFixture").CapturedWireFrame,
+                        })
                       ) : action.onClick ? (
                         <button
                           key={actionIndex}
-                          onClick={() => action.onClick({ data })}
+                          onClick={() =>
+                            action.onClick!({
+                              data: data as import("@/test/chatOptionsFixture").CapturedWireFrame,
+                            })
+                          }
                         >
                           {action.icon}
                         </button>
@@ -212,7 +238,10 @@ vi.mock("@agentscope-ai/chat", () => ({
             return (
               <section data-testid={`historical-user-${index}`} key={index}>
                 {props.options?.request?.render
-                  ? props.options.request.render({ data, fallback })
+                  ? props.options.request.render({
+                      data: data as NativeRequestData,
+                      fallback,
+                    })
                   : fallback()}
               </section>
             );
@@ -252,21 +281,32 @@ vi.mock("@agentscope-ai/chat", () => ({
     setSessions: vi.fn(),
   })),
   useChatAnywhereSessions: vi.fn(() => ({ createSession: vi.fn() })),
-  useChatAnywhereInput: vi.fn((select: any) =>
-    select({
-      loading: false,
-      setLoading: vi.fn(),
-      getLoading: vi.fn(() => false),
-      setSessionLoading: vi.fn(),
-      setDisabled: vi.fn(),
-    }),
+  useChatAnywhereInput: vi.fn(
+    (
+      select: (state: {
+        loading: boolean;
+        setLoading: (loading: boolean) => void;
+        getLoading: () => boolean;
+        setSessionLoading: (...args: unknown[]) => void;
+        setDisabled: (disabled: boolean) => void;
+      }) => unknown,
+    ) =>
+      select({
+        loading: false,
+        setLoading: vi.fn(),
+        getLoading: vi.fn(() => false),
+        setSessionLoading: vi.fn(),
+        setDisabled: vi.fn(),
+      }),
   ),
 }));
 
 vi.mock(
   "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Context/ChatAnywhereI18nContext",
   () => ({
-    useChatAnywhereI18n: (select: any) => select({ setLocale: vi.fn() }),
+    useChatAnywhereI18n: (
+      select: (state: { setLocale: (locale: string) => void }) => unknown,
+    ) => select({ setLocale: vi.fn() }),
   }),
 );
 
@@ -449,7 +489,7 @@ vi.mock("@/api/modules/commands", () => ({
 
 vi.mock("@/stores/loopStore", () => ({
   useLoopStore: Object.assign(
-    vi.fn((selector?: any) => {
+    vi.fn((selector?: (state: Record<string, unknown>) => unknown) => {
       const state = {
         availableModes: [],
         selectedMode: null,
@@ -521,12 +561,28 @@ vi.mock("@/plugins/registry/useChatExtensions", () => ({
   ),
 }));
 
-vi.mock("./components/ContextUsageIndicator", () => ({
-  default: ({ onCompact }: { onCompact: () => void }) => (
-    <div data-testid="context-usage">
-      <button data-testid="context-usage-compact" onClick={onCompact} />
-    </div>
-  ),
+vi.mock("./components/ContextUsageIndicator", async () => {
+  const actual = await vi.importActual<
+    typeof import("./components/ContextUsageIndicator")
+  >("./components/ContextUsageIndicator");
+  return {
+    ...actual,
+    default: (props: import("react").ComponentProps<typeof actual.default>) =>
+      mockUseActualContext() ? (
+        <actual.default {...props} />
+      ) : (
+        <div data-testid="context-usage">
+          <button
+            data-testid="context-usage-compact"
+            onClick={props.onCompact}
+          />
+        </div>
+      ),
+  };
+});
+
+vi.mock("../../api/modules/chatContext", () => ({
+  chatContextApi: { get: mockGetContext },
 }));
 
 vi.mock("../../components/ApprovalCard/ApprovalCard", () => ({
@@ -578,7 +634,7 @@ vi.mock("./components/HarnessModelSelector", () => ({
 }));
 
 vi.mock("./replayFastForward", () => ({
-  wrapReplayFastForward: vi.fn((opts: any) => opts),
+  wrapReplayFastForward: vi.fn((opts: unknown) => opts),
 }));
 
 vi.mock("../../components/Chat/MediaDownload", () => ({
@@ -586,11 +642,11 @@ vi.mock("../../components/Chat/MediaDownload", () => ({
 }));
 
 vi.mock("../../components/Chat/ToolCards/adapters/v1Adapter", () => ({
-  withGenericFallback: vi.fn((fn: any) => fn),
+  withGenericFallback: vi.fn((fn: unknown) => fn),
 }));
 
 vi.mock("./approvalPayload", () => ({
-  applyApprovalLevelToRequestBody: vi.fn((body: any) => body),
+  applyApprovalLevelToRequestBody: vi.fn((body: unknown) => body),
 }));
 
 vi.mock("../../api/modules/chatProjectDirectory", () => ({
@@ -611,24 +667,39 @@ vi.mock("../../api/modules/projectDirectory", () => ({
 }));
 
 vi.mock("./turnUsage", () => ({
-  patchContextMaxInputLength: vi.fn((body: any) => body),
-  wrapChatResponseUsageStream: vi.fn((stream: any) => stream),
+  patchContextMaxInputLength: vi.fn((body: unknown) => body),
+  wrapChatResponseUsageStream: vi.fn((stream: unknown) => stream),
   useStreamingTokens: vi.fn(() => ({ estimatedTokens: 0, isStreaming: false })),
 }));
 
-vi.mock("./turnUsageStore", () => ({
-  useTurnUsageStore: Object.assign(
-    vi.fn(() => ({})),
-    {
-      getState: vi.fn(() => ({
-        beginTurn: vi.fn(() => ({ turnId: "t1" })),
-        setSnapshot: vi.fn(),
-        snapshot: null,
-        invalidateTurn: vi.fn(),
-      })),
-    },
-  ),
-}));
+vi.mock("./turnUsageStore", async () => {
+  const actual = await vi.importActual<typeof import("./turnUsageStore")>(
+    "./turnUsageStore",
+  );
+  return {
+    useTurnUsageStore: Object.assign(
+      vi.fn((selector) =>
+        mockUseActualContextUsageStore()
+          ? actual.useTurnUsageStore(selector)
+          : mockUseActualContext()
+          ? selector({ snapshot: null, activeMaxInputLength: 100000 })
+          : {},
+      ),
+      {
+        getState: vi.fn(() =>
+          mockUseActualContextUsageStore()
+            ? actual.useTurnUsageStore.getState()
+            : {
+                beginTurn: vi.fn(() => ({ turnId: "t1" })),
+                setSnapshot: vi.fn(),
+                snapshot: null,
+                invalidateTurn: vi.fn(),
+              },
+        ),
+      },
+    ),
+  };
+});
 
 vi.mock("./HostBubbles", () => ({
   HostRequestCard: () => null,
@@ -636,7 +707,8 @@ vi.mock("./HostBubbles", () => ({
 }));
 
 vi.mock("../../plugins/registry/PluginSlotBoundary", () => ({
-  PluginSlotBoundary: ({ children }: any) => children,
+  PluginSlotBoundary: ({ children }: import("react").PropsWithChildren) =>
+    children,
 }));
 
 vi.mock("../../stores/filesSurfaceStore", () => ({
@@ -689,6 +761,27 @@ vi.mock("./utils", async () => {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+function savedContextSnapshot(chatId: string, agentId = "default") {
+  return {
+    agent_id: agentId,
+    chat_id: chatId,
+    session_id: "test-session",
+    user_id: "test-user",
+    channel: "console",
+    status: "saved",
+    snapshot: {
+      id: "context-record-1",
+      captured_at: null,
+      basis: "model_request",
+      message_count: 2,
+      tool_count: 0,
+    },
+    sources: [],
+    summary: { kind: "none", content: "", stale: false },
+    limitations: [],
+  };
+}
+
 describe("ChatPage coverage", () => {
   beforeEach(() => {
     clearAgentMentionModes();
@@ -702,6 +795,13 @@ describe("ChatPage coverage", () => {
     mockHistoryRequests.mockReset().mockReturnValue([]);
     mockPendingApprovals.mockReturnValue([]);
     mockUseActualTheme.mockReturnValue(false);
+    mockUseActualContext.mockReturnValue(false);
+    mockUseActualContextUsageStore.mockReturnValue(false);
+    mockGetContext
+      .mockReset()
+      .mockImplementation((chatId, agentId) =>
+        Promise.resolve(savedContextSnapshot(chatId, agentId)),
+      );
     mockAgentList.mockReturnValue([
       { id: "default", name: "Default", backend: "qwenpaw" },
     ]);
@@ -792,13 +892,55 @@ describe("ChatPage coverage", () => {
       status: 200,
       headers: new Headers({ "Content-Type": "application/json" }),
       json: () => Promise.resolve({}),
-    }) as any;
+    });
   });
 
   afterEach(() => {
     stopBackgroundQueue();
     chatExtensions.__resetForTests();
     vi.clearAllMocks();
+  });
+
+  it("does not inherit queue-only ownership or reload history when switching chats", async () => {
+    vi.mocked(sessionApi.refreshSession).mockClear();
+    mockHoldOwnershipLock.mockImplementation(
+      (key: string, onAcquired: () => void, signal: AbortSignal) => {
+        if (key.includes("second-chat")) onAcquired();
+        return new Promise<void>((resolve) => {
+          signal.addEventListener("abort", () => resolve(), { once: true });
+        });
+      },
+    );
+    function SwitchChat() {
+      const navigate = useNavigate();
+      return (
+        <button onClick={() => navigate("/chat/second-chat")}>
+          Switch chat
+        </button>
+      );
+    }
+    renderWithProviders(
+      <>
+        <SwitchChat />
+        <ChatPage />
+      </>,
+      {
+        initialEntries: ["/chat/first-chat"],
+      },
+    );
+    await screen.findByTestId("chat-ui");
+    await screen.findByText(i18n.t("chat.queue.otherTabOwner"));
+    fireEvent.click(screen.getByRole("button", { name: "Switch chat" }));
+    await waitFor(() =>
+      expect(mockHoldOwnershipLock).toHaveBeenCalledWith(
+        expect.stringContaining("second-chat"),
+        expect.any(Function),
+        expect.any(AbortSignal),
+      ),
+    );
+    await act(async () => {});
+    expect(screen.queryByText(i18n.t("chat.queue.otherTabOwner"))).toBeNull();
+    expect(sessionApi.refreshSession).not.toHaveBeenCalled();
   });
 
   it("does not remount the chat SDK after delayed ownership acquisition", async () => {
@@ -869,13 +1011,13 @@ describe("ChatPage coverage", () => {
     const approval = screen.getByTestId("approval-toggle");
     const usage = screen.getByTestId("context-usage");
     for (const [style, accent] of [
-      ["warm-minimal", "#292826"],
+      ["warm-minimal", "#252724"],
       ["cool-workspace", "#4269cc"],
       ["soft-focus", "#45685a"],
     ]) {
       fireEvent.click(screen.getByRole("button", { name: style }));
       await waitFor(() =>
-        expect(capturedOptions.theme.colorPrimary.toLowerCase()).toBe(accent),
+        expect(capturedOptions!.theme.colorPrimary.toLowerCase()).toBe(accent),
       );
       expect(screen.getByTestId("chat-ui")).toBe(chat);
       expect(screen.getByTestId("mention-sender")).toBe(sender);
@@ -972,8 +1114,8 @@ describe("ChatPage coverage", () => {
     fireEvent.click(screen.getByRole("button", { name: "/compact" }));
     expect(sender).toHaveValue("/compact Keep the unsent research notes");
     expect(mockRuntimeSubmit).not.toHaveBeenCalled();
-    expect(capturedOptions.sender.placeholder).toContain("/");
-    expect(capturedOptions.sender.placeholder).toContain("@");
+    expect(capturedOptions!.sender.placeholder).toContain("/");
+    expect(capturedOptions!.sender.placeholder).toContain("@");
     expect(screen.getByTestId("session-project-directory")).toBeVisible();
     expect(screen.getByTestId("approval-toggle")).toBeVisible();
     expect(screen.getByTestId("context-usage")).toBeVisible();
@@ -1074,7 +1216,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.fetch) {
-      await capturedOptions.api.fetch({
+      await capturedOptions!.api.fetch({
         input: [{ role: "user", content: "hello" }],
         signal: undefined,
       });
@@ -1090,7 +1232,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
@@ -1118,7 +1260,7 @@ describe("ChatPage coverage", () => {
       const smallFile = new File(["content"], "img.png", { type: "image/png" });
       const onSuccess = vi.fn();
       const onError = vi.fn();
-      await capturedOptions.sender.attachments.customRequest({
+      await capturedOptions!.sender.attachments.customRequest({
         file: smallFile,
         onSuccess,
         onError,
@@ -1171,7 +1313,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
@@ -1202,7 +1344,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response.delta",
           delta: "hello world",
@@ -1221,7 +1363,7 @@ describe("ChatPage coverage", () => {
 
     if (capturedOptions?.api?.responseParser) {
       // Exercise the payloadRequestsHistoryClear / messageRequestsHistoryClear paths
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "message",
           metadata: { clear_history: true },
@@ -1239,14 +1381,14 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
           output: [],
         }),
       );
-      expect(parsed.output).toBeDefined();
+      expect(parsed!.output).toBeDefined();
     }
   });
 
@@ -1259,7 +1401,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({ type: "turn_usage", tokens: 1234 }),
       );
       expect(parsed).toBeNull();
@@ -1275,11 +1417,11 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({ type: "replay_end" }),
       );
       expect(parsed).toBeTruthy();
-      expect(parsed.type).toBe("heartbeat");
+      expect(parsed!.type).toBe("heartbeat");
     }
   });
 
@@ -1292,7 +1434,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           type: "rate_limited",
           alternatives: [
@@ -1319,11 +1461,11 @@ describe("ChatPage coverage", () => {
 
     if (capturedOptions?.api?.responseParser) {
       // First send some delta content to build up trailing text
-      capturedOptions.api.responseParser(
+      capturedOptions!.api.responseParser(
         JSON.stringify({ object: "response.delta", delta: "partial text" }),
       );
       // Then complete with empty output — should fill from trailing
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
@@ -1331,8 +1473,8 @@ describe("ChatPage coverage", () => {
         }),
       );
       expect(parsed).toBeTruthy();
-      expect(parsed.output).toBeDefined();
-      expect(Array.isArray(parsed.output)).toBe(true);
+      expect(parsed!.output).toBeDefined();
+      expect(Array.isArray(parsed!.output)).toBe(true);
     }
   });
 
@@ -1346,7 +1488,7 @@ describe("ChatPage coverage", () => {
 
     if (capturedOptions?.api?.responseParser) {
       // Send a fallback event
-      capturedOptions.api.responseParser(
+      capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response.delta",
           delta: "hello",
@@ -1363,7 +1505,7 @@ describe("ChatPage coverage", () => {
         }),
       );
       // Complete the response
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
@@ -1378,8 +1520,8 @@ describe("ChatPage coverage", () => {
       );
       expect(parsed).toBeTruthy();
       // Output should have fallback notice prepended
-      expect(Array.isArray(parsed.output)).toBe(true);
-      expect(parsed.output.length).toBeGreaterThanOrEqual(1);
+      expect(Array.isArray(parsed!.output)).toBe(true);
+      expect(parsed!.output!.length).toBeGreaterThanOrEqual(1);
     }
   });
 
@@ -1395,7 +1537,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.fetch) {
-      const result = await capturedOptions.api.fetch({
+      const result = await capturedOptions!.api.fetch({
         input: [{ role: "user", content: "hello" }],
         signal: undefined,
       });
@@ -1414,7 +1556,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.fetch) {
-      const result = await capturedOptions.api.fetch({
+      const result = await capturedOptions!.api.fetch({
         input: [{ role: "user", content: "hello" }],
         signal: undefined,
       });
@@ -1440,7 +1582,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.cancel) {
-      capturedOptions.api.cancel({ session_id: "test-session" });
+      capturedOptions!.api.cancel({ session_id: "test-session" });
       // stopChat should have been called
       await waitFor(() => expect(chatApi.stopChat).toHaveBeenCalled());
     }
@@ -1462,7 +1604,7 @@ describe("ChatPage coverage", () => {
     sessionApi.lastActiveChatId = "chat-B";
 
     await act(async () => {
-      await capturedOptions.api.cancel({
+      await capturedOptions!.api.cancel({
         session_id: "runtime-A",
         chatSessionId: "chat-A",
       });
@@ -1491,7 +1633,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.reconnect) {
-      const result = await capturedOptions.api.reconnect({
+      const result = await capturedOptions!.api.reconnect({
         session_id: "test-session",
         signal: undefined,
       });
@@ -1514,7 +1656,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.replaceMediaURL) {
-      const result = capturedOptions.api.replaceMediaURL(
+      const result = capturedOptions!.api.replaceMediaURL(
         "http://example.com/file.png",
       );
       expect(typeof result).toBe("string");
@@ -1532,7 +1674,7 @@ describe("ChatPage coverage", () => {
     const copyAction = capturedOptions?.actions?.list?.[0];
     expect(copyAction?.onClick).toBeTypeOf("function");
 
-    await copyAction.onClick({
+    await copyAction!.onClick!({
       data: {
         output: [
           {
@@ -1630,7 +1772,7 @@ describe("ChatPage coverage", () => {
         within(bubble).getByText("Inspect the original evidence"),
       ).toBeVisible(),
     );
-    expect(capturedOptions.requestActions.list[2].render).toBeTypeOf(
+    expect(capturedOptions!.requestActions!.list![2].render).toBeTypeOf(
       "function",
     );
     fireEvent.click(
@@ -1648,6 +1790,11 @@ describe("ChatPage coverage", () => {
       within(bubble).getByTestId("historical-user-text-0"),
     ).not.toBeVisible();
     expect(within(editing).getByText("evidence.csv")).toBeVisible();
+    const keepOriginal = within(editing).getByRole("checkbox", {
+      name: i18n.t("chat.editResend.keepOriginal"),
+    });
+    expect(keepOriginal).not.toBeChecked();
+    fireEvent.click(keepOriginal);
     expect(composer).toHaveValue(draft);
     expect(useMessageQueueStore.getState().getQueue(chatId)).toEqual([]);
     expect(mockRuntimeSubmit).not.toHaveBeenCalled();
@@ -1684,6 +1831,10 @@ describe("ChatPage coverage", () => {
     });
     expect(queue[0].clientMessageId).toEqual(expect.any(String));
     expect(queue[0].clientMessageId).not.toBe("historical-client-id");
+    expect(queue[0].requestContext?.qwenpaw_edit_resend).toEqual({
+      keep_original: true,
+      target: { client_message_id: "historical-client-id" },
+    });
     expect(queue[0].requestContext).not.toHaveProperty(
       "qwenpaw_regenerate_from",
     );
@@ -1715,6 +1866,7 @@ describe("ChatPage coverage", () => {
             role: "user",
             content: [{ type: "text", text: "@Reviewer check this result" }],
             metadata: {
+              original_id: "mention-history",
               qwenpaw_agent_mention_dispatch: {
                 requestText: "check this result",
                 targetAgentId: "reviewer",
@@ -1793,6 +1945,7 @@ describe("ChatPage coverage", () => {
           {
             role: "user",
             content: [{ type: "text", text: "Historical task" }],
+            metadata: { original_id: "full-queue-history" },
           },
         ],
       },
@@ -1880,7 +2033,7 @@ describe("ChatPage coverage", () => {
     });
     await screen.findByTestId("chat-ui");
     await act(async () => {});
-    const oldAction = capturedOptions.requestActions.list[2];
+    const oldAction = capturedOptions!.requestActions!.list![2];
     const bubble = screen.getByTestId("historical-user-0");
     fireEvent.click(
       within(bubble).getByRole("button", {
@@ -1900,7 +2053,7 @@ describe("ChatPage coverage", () => {
     // action closure after the live user-message surface has been replaced.
     renderWithProviders(
       <aside data-testid="retained-history-action">
-        {createElement(oldAction.render, { data: original })}
+        {createElement(oldAction.render!, { data: original })}
       </aside>,
     );
     const retainedButton = within(
@@ -1952,6 +2105,7 @@ describe("ChatPage coverage", () => {
             {
               role: "user",
               content: [{ type: "text", text: "Revisable history" }],
+              metadata: { original_id: "keyboard-history" },
             },
           ],
         },
@@ -2048,6 +2202,103 @@ describe("ChatPage coverage", () => {
     expect(useMessageQueueStore.getState().getQueue(chatId)).toEqual([]);
     expect(mockRuntimeSubmit).not.toHaveBeenCalled();
   });
+
+  it.each([false, true])(
+    "UGSci fork feature: historical edit keep-original %s reaches the transport and refreshes replacement history",
+    async (keepOriginal) => {
+      const chatId = "ed170000-0000-4000-8000-000000000008";
+      const store = useMessageQueueStore.getState();
+      store.setRunState(chatId, "paused");
+      mockHistoryRequests.mockReturnValue([
+        {
+          input: [
+            {
+              role: "user",
+              content: [{ type: "text", text: "Original question" }],
+              metadata: { original_id: "original-native" },
+            },
+          ],
+        },
+      ]);
+      global.fetch = vi.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        headers: new Headers({ "Content-Type": "application/json" }),
+        json: async () => ({ status: "idle", messages: [] }),
+      } as Response);
+      mockRuntimeSubmit.mockImplementation(async (data, options) => {
+        await capturedOptions!.api.fetch({
+          ...data,
+          chatSessionId: chatId,
+          clientRequestId: options.clientRequestId,
+          input: [
+            { role: "user", content: [{ type: "text", text: data.query }] },
+          ],
+        });
+        const lifecycle = new ChatRunLifecycle({
+          runId: "edit-run",
+          source: "host-queue",
+          sessionId: chatId,
+          cancel: vi.fn(),
+        });
+        lifecycle.markAccepted(chatId);
+        return lifecycle.handle;
+      });
+      renderWithProviders(<ChatPage />, {
+        initialEntries: [`/chat/${chatId}`],
+      });
+      await screen.findByTestId("chat-ui");
+      fireEvent.click(
+        screen.getByRole("button", { name: i18n.t("chat.editResend.action") }),
+      );
+      const editing = await screen.findByRole("group", {
+        name: i18n.t("chat.editResend.action"),
+      });
+      const checkbox = within(editing).getByRole("checkbox", {
+        name: i18n.t("chat.editResend.keepOriginal"),
+      });
+      expect(checkbox).not.toBeChecked();
+      if (keepOriginal) fireEvent.click(checkbox);
+      fireEvent.change(within(editing).getByRole("textbox"), {
+        target: { value: "Revised question" },
+      });
+      fireEvent.click(
+        within(editing).getByRole("button", {
+          name: i18n.t("chat.editResend.send"),
+        }),
+      );
+      expect(store.getQueue(chatId)).toHaveLength(1);
+      act(() => store.setRunState(chatId, "running"));
+      await waitFor(() => expect(mockRuntimeSubmit).toHaveBeenCalledTimes(1), {
+        timeout: 3000,
+      });
+      await waitFor(() => expect(store.getQueue(chatId)).toEqual([]));
+      const post = vi
+        .mocked(fetch)
+        .mock.calls.find(
+          ([url, opts]) =>
+            String(url).endsWith("/console/chat") && opts?.method === "POST",
+        );
+      expect(post).toBeDefined();
+      const body = JSON.parse(String(post![1]!.body));
+      expect(body.request_context.qwenpaw_edit_resend).toEqual({
+        keep_original: keepOriginal,
+        target: { message_id: "original-native" },
+      });
+      expect(body.input[0].metadata.qwenpaw_client_message_id).toBeTruthy();
+      if (!keepOriginal) {
+        await waitFor(() =>
+          expect(mockSetSessionMessages).toHaveBeenCalledWith(chatId, []),
+        );
+        expect(sessionApi.refreshSession).toHaveBeenCalledWith(
+          chatId,
+          expect.any(AbortSignal),
+        );
+      } else {
+        expect(mockSetSessionMessages).not.toHaveBeenCalled();
+      }
+    },
+  );
 
   // ── requestActions: timestamp render ───────────────────────────────────
   it("requestActions timestamp render returns element", async () => {
@@ -2193,16 +2444,22 @@ describe("ChatPage coverage", () => {
       mockBeginLoopModeSubmission.mockImplementation(
         (text: string) => `/goal ${text}`,
       );
-      let submitted: any;
+      let submitted!: Exclude<
+        Awaited<ReturnType<CapturedChatOptions["sender"]["beforeSubmit"]>>,
+        boolean
+      >;
       await act(async () => {
-        submitted = await capturedOptions.sender.beforeSubmit({
+        const result = await capturedOptions!.sender.beforeSubmit({
           query: "@Reviewer analyze",
           context: { keep: "value" },
         });
+        if (typeof result !== "object")
+          throw new Error("Routing must return a submission object");
+        submitted = result;
       });
       expect(submitted.proceed).toBe(true);
       act(() => clearAgentMentionModes());
-      await capturedOptions.api.fetch({
+      await capturedOptions!.api.fetch({
         context: submitted.context,
         input: [
           {
@@ -2258,7 +2515,9 @@ describe("ChatPage coverage", () => {
       setAgentMentionMode("reviewer", "collaborate");
     });
     await act(async () => {
-      await capturedOptions.sender.beforeSubmit({ query: "@Reviewer analyze" });
+      await capturedOptions!.sender.beforeSubmit({
+        query: "@Reviewer analyze",
+      });
     });
     const item = useMessageQueueStore
       .getState()
@@ -2266,7 +2525,7 @@ describe("ChatPage coverage", () => {
       .find((entry) => entry.text.includes("@Reviewer"));
     expect(item).toBeDefined();
     act(() => clearAgentMentionModes());
-    await capturedOptions.api.fetch({
+    await capturedOptions!.api.fetch({
       context: item!.requestContext,
       input: [{ role: "user", content: [{ type: "text", text: item!.text }] }],
     });
@@ -2307,7 +2566,7 @@ describe("ChatPage coverage", () => {
       mentions: [{ value: "@reviewer", type: "user" }],
     };
     const capturedQuery = inputData.query;
-    const result = await beforeSubmit(inputData);
+    const result = await beforeSubmit!(inputData);
     const submitted = {
       ...inputData,
       query:
@@ -2337,7 +2596,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     const beforeSubmit = capturedOptions?.sender?.beforeSubmit;
-    const result = await beforeSubmit({ query: "do the task" });
+    const result = await beforeSubmit!({ query: "do the task" });
 
     expect(result).toMatchObject({ proceed: true, query: "do the task" });
     expect(mockBeginLoopModeSubmission).not.toHaveBeenCalled();
@@ -2763,7 +3022,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
     await act(async () => {});
     await act(async () => {
-      await capturedOptions.sender.beforeSubmit({
+      await capturedOptions!.sender.beforeSubmit({
         query: "Check data quality first",
       });
     });
@@ -2972,7 +3231,7 @@ describe("ChatPage coverage", () => {
     try {
       await screen.findByTestId("chat-ui");
       await act(async () => {
-        await capturedOptions.sender.beforeSubmit({
+        await capturedOptions!.sender.beforeSubmit({
           query: "Inspect dates without interrupting",
         });
       });
@@ -3112,7 +3371,7 @@ describe("ChatPage coverage", () => {
     try {
       await screen.findByTestId("chat-ui");
       await act(async () => {
-        await capturedOptions.sender.beforeSubmit({
+        await capturedOptions!.sender.beforeSubmit({
           query: "Use the latest report while continuing",
         });
       });
@@ -3371,7 +3630,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     const beforeSubmit = capturedOptions?.sender?.beforeSubmit;
-    const result = await beforeSubmit({
+    const result = await beforeSubmit!({
       query: "inspect this file",
       fileList: [
         {
@@ -3409,6 +3668,566 @@ describe("ChatPage coverage", () => {
     act(() => useMessageQueueStore.getState().clear(chatId));
   });
 
+  it("UGSci fork feature: mounted context inspector removes and restores real draft quotes before submission and invalidates undo", async () => {
+    const chatId = "17222222-2222-4222-8222-222222222222";
+    const scope = getDraftStorageKey("default", chatId);
+    mockUseActualContext.mockReturnValue(true);
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    await screen.findByTestId("chat-ui");
+    await act(async () => {});
+    act(() => {
+      addAnswerQuote(scope, {
+        messageId: "kept-reply",
+        text: "Keep this evidence",
+      });
+      addAnswerQuote(scope, {
+        messageId: "removed-reply",
+        text: "Exclude this evidence",
+      });
+    });
+    const originalQuotes = readAnswerQuotes(scope);
+    fireEvent.click(screen.getByRole("button", { name: /^Context usage / }));
+    const dialog = await screen.findByRole("dialog", { name: "Context" });
+    expect(within(dialog).getByLabelText("Context scope")).toHaveValue("draft");
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Remove Exclude this evidence",
+      }),
+    );
+    expect(readAnswerQuotes(scope)).toEqual([originalQuotes[0]]);
+    expect(screen.getByLabelText("Selected quotes")).not.toHaveTextContent(
+      "Exclude this evidence",
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Undo" }));
+    expect(readAnswerQuotes(scope)).toEqual(originalQuotes);
+    expect(screen.getByLabelText("Selected quotes")).toHaveTextContent(
+      "Exclude this evidence",
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: "Remove Exclude this evidence",
+      }),
+    );
+    expect(
+      within(dialog).getByRole("button", { name: "Undo" }),
+    ).toBeInTheDocument();
+
+    let admitted!: Awaited<
+      ReturnType<CapturedChatOptions["sender"]["beforeSubmit"]>
+    >;
+    await act(async () => {
+      admitted = await capturedOptions!.sender.beforeSubmit({
+        query: "Use the selected evidence",
+      });
+    });
+    expect(admitted).toMatchObject({
+      proceed: true,
+      context: { qwenpaw_answer_quotes: [originalQuotes[0]] },
+    });
+    expect(
+      within(dialog).queryByRole("button", { name: "Undo" }),
+    ).not.toBeInTheDocument();
+    expect(readAnswerQuotes(scope)).toEqual([]);
+    act(() =>
+      addAnswerQuote(scope, {
+        messageId: "new-reply",
+        text: "For the next question",
+      }),
+    );
+    expect(
+      within(dialog).getByRole("button", {
+        name: "Remove For the next question",
+      }),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("button", {
+        name: "Remove Exclude this evidence",
+      }),
+    ).not.toBeInTheDocument();
+
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: null,
+      json: async () => ({}),
+    });
+    await act(async () => {
+      if (typeof admitted !== "object")
+        throw new Error("Expected routed submission");
+      await capturedOptions!.api.fetch({
+        ...admitted,
+        input: [
+          { role: "user", content: [{ type: "text", text: admitted.query }] },
+        ],
+      });
+    });
+    const call = vi
+      .mocked(fetch)
+      .mock.calls.find(
+        ([url, init]) =>
+          String(url).includes("/console/chat") && init?.method === "POST",
+      )!;
+    const body = JSON.parse(call[1]!.body as string);
+    expect(body.input[0].content[1].text).toContain("Keep this evidence");
+    expect(body.input[0].content[1].text).not.toContain(
+      "Exclude this evidence",
+    );
+    expect(body.input[0].content[1].text).not.toContain(
+      "For the next question",
+    );
+    expect(readAnswerQuotes(scope).map((quote) => quote.text)).toEqual([
+      "For the next question",
+    ]);
+  });
+
+  it("UGSci fork feature: mounted context inspector retries scoped inspection and keeps saved sources and summaries read-only", async () => {
+    const chatId = "18222222-2222-4222-8222-222222222222";
+    mockUseActualContext.mockReturnValue(true);
+    mockSelectedAgent.mockReturnValue("research-agent");
+    mockAgentList.mockReturnValue([
+      { id: "research-agent", name: "Research", backend: "qwenpaw" },
+    ]);
+    mockGetContext.mockRejectedValueOnce(
+      new Error("temporary context failure"),
+    );
+    mockGetContext.mockResolvedValueOnce({
+      ...savedContextSnapshot(chatId, "research-agent"),
+      sources: [
+        {
+          id: "saved-evidence",
+          kind: "file",
+          label: "evidence.csv",
+          provenance: "model_request",
+          path: "/project/evidence.csv",
+          content: "Measured pressure: 15 MPa",
+          truncated: false,
+        },
+      ],
+      summary: {
+        kind: "native",
+        content: "Retain the measured pressure and parameter decisions.",
+        stale: false,
+      },
+    });
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    await screen.findByTestId("chat-ui");
+    await act(async () => {});
+    expect(mockGetContext).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: /^Context usage / }));
+    const dialog = await screen.findByRole("dialog", { name: "Context" });
+    fireEvent.change(within(dialog).getByLabelText("Context scope"), {
+      target: { value: "latest" },
+    });
+    expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+      "Could not load context. Please retry.",
+    );
+    expect(mockGetContext).toHaveBeenCalledWith(
+      chatId,
+      "research-agent",
+      expect.objectContaining({
+        sessionId: "test-session",
+        userId: "test-user",
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    fireEvent.click(within(dialog).getByRole("button", { name: "Retry" }));
+    expect(await within(dialog).findByText("evidence.csv")).toBeInTheDocument();
+    expect(
+      within(dialog).getByText("Included in model request"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole("button", { name: /^Remove / }),
+    ).not.toBeInTheDocument();
+    fireEvent.click(
+      within(dialog).getByRole("tab", { name: "Compaction summary" }),
+    );
+    expect(
+      await within(dialog).findByText(
+        "Retain the measured pressure and parameter decisions.",
+      ),
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByRole("textbox")).not.toBeInTheDocument();
+    expect(mockGetContext).toHaveBeenCalledTimes(2);
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+  });
+
+  it("UGSci fork feature: mounted context inspector discards a previous chat response after navigation", async () => {
+    const firstChatId = "19222222-2222-4222-8222-222222222222";
+    const nextChatId = "20222222-2222-4222-8222-222222222222";
+    mockUseActualContext.mockReturnValue(true);
+    let resolveOld!: (value: ReturnType<typeof savedContextSnapshot>) => void;
+    mockGetContext.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveOld = resolve;
+        }),
+    );
+    mockGetContext.mockResolvedValueOnce({
+      ...savedContextSnapshot(nextChatId),
+      summary: {
+        kind: "native",
+        content: "The new conversation summary",
+        stale: false,
+      },
+    });
+    function NavigateContextChat() {
+      const navigate = useNavigate();
+      return (
+        <button onClick={() => navigate(`/chat/${nextChatId}`)}>
+          Next context chat
+        </button>
+      );
+    }
+    renderWithProviders(
+      <>
+        <NavigateContextChat />
+        <ChatPage />
+      </>,
+      { initialEntries: [`/chat/${firstChatId}`] },
+    );
+    await screen.findByTestId("chat-ui");
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: /^Context usage / }));
+    await screen.findByRole("dialog", { name: "Context" });
+    await waitFor(() =>
+      expect(mockGetContext).toHaveBeenCalledWith(
+        firstChatId,
+        "default",
+        expect.any(Object),
+      ),
+    );
+    const oldSignal = mockGetContext.mock.calls[0][2].signal as AbortSignal;
+    fireEvent.click(screen.getByRole("button", { name: "Next context chat" }));
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /^Context usage / }),
+      ).toHaveAttribute("aria-expanded", "false"),
+    );
+    expect(oldSignal.aborted).toBe(true);
+    fireEvent.click(screen.getByRole("button", { name: /^Context usage / }));
+    const dialog = await screen.findByRole("dialog", { name: "Context" });
+    fireEvent.click(
+      within(dialog).getByRole("tab", { name: "Compaction summary" }),
+    );
+    expect(
+      await within(dialog).findByText("The new conversation summary"),
+    ).toBeInTheDocument();
+    await act(async () =>
+      resolveOld({
+        ...savedContextSnapshot(firstChatId),
+        summary: {
+          kind: "native",
+          content: "Old private conversation summary",
+          stale: false,
+        },
+      }),
+    );
+    expect(
+      within(dialog).queryByText("Old private conversation summary"),
+    ).not.toBeInTheDocument();
+    expect(
+      within(dialog).getByText("The new conversation summary"),
+    ).toBeInTheDocument();
+    expect(mockGetContext).toHaveBeenLastCalledWith(
+      nextChatId,
+      "default",
+      expect.objectContaining({
+        sessionId: "test-session",
+        userId: "test-user",
+      }),
+    );
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+  });
+
+  it("UGSci fork feature: mounted context inspector closes when runtime identity changes within the same chat", async () => {
+    const chatId = "21222222-2222-4222-8222-222222222222";
+    mockUseActualContext.mockReturnValue(true);
+    let runtimeIdentity = {
+      sessionId: "initial-runtime",
+      userId: "initial-user",
+    };
+    vi.mocked(sessionApi.getSessionIdentity).mockImplementation(
+      (referenceId?: string | null) => ({
+        ...runtimeIdentity,
+        sdkSessionId: referenceId || chatId,
+        chatId: referenceId || chatId,
+        channel: "console",
+      }),
+    );
+    mockGetContext.mockImplementation((requestedChatId, agentId, options) =>
+      Promise.resolve({
+        ...savedContextSnapshot(requestedChatId, agentId),
+        session_id: options.sessionId,
+        user_id: options.userId,
+        summary: {
+          kind: "native",
+          content: `Summary for ${options.userId}`,
+          stale: false,
+        },
+      }),
+    );
+    const view = renderWithProviders(<ChatPage />, {
+      initialEntries: [`/chat/${chatId}`],
+    });
+    await screen.findByTestId("chat-ui");
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: /^Context usage / }));
+    let dialog = await screen.findByRole("dialog", { name: "Context" });
+    fireEvent.click(
+      within(dialog).getByRole("tab", { name: "Compaction summary" }),
+    );
+    expect(
+      await within(dialog).findByText("Summary for initial-user"),
+    ).toBeInTheDocument();
+    expect(mockGetContext).toHaveBeenLastCalledWith(
+      chatId,
+      "default",
+      expect.objectContaining({
+        sessionId: "initial-runtime",
+        userId: "initial-user",
+      }),
+    );
+    const previousSignal = mockGetContext.mock.calls[0][2]
+      .signal as AbortSignal;
+
+    runtimeIdentity = {
+      sessionId: "resolved-runtime",
+      userId: "resolved-user",
+    };
+    view.rerender(<ChatPage />);
+    await waitFor(() =>
+      expect(
+        screen.getByRole("button", { name: /^Context usage / }),
+      ).toHaveAttribute("aria-expanded", "false"),
+    );
+    expect(previousSignal.aborted).toBe(true);
+    expect(mockGetContext).toHaveBeenCalledTimes(1);
+    fireEvent.click(screen.getByRole("button", { name: /^Context usage / }));
+    dialog = await screen.findByRole("dialog", { name: "Context" });
+    fireEvent.click(
+      within(dialog).getByRole("tab", { name: "Compaction summary" }),
+    );
+    expect(
+      await within(dialog).findByText("Summary for resolved-user"),
+    ).toBeInTheDocument();
+    expect(
+      within(dialog).queryByText("Summary for initial-user"),
+    ).not.toBeInTheDocument();
+    expect(mockGetContext).toHaveBeenLastCalledWith(
+      chatId,
+      "default",
+      expect.objectContaining({
+        sessionId: "resolved-runtime",
+        userId: "resolved-user",
+        signal: expect.any(AbortSignal),
+      }),
+    );
+    expect(mockGetContext).toHaveBeenCalledTimes(2);
+    expect(mockRuntimeSubmit).not.toHaveBeenCalled();
+  });
+
+  it("UGSci fork feature: mounted context inspector new chat preserves unknown capacity and resets only known context windows", async () => {
+    mockUseActualContext.mockReturnValue(true);
+    mockUseActualContextUsageStore.mockReturnValue(true);
+    const { useTurnUsageStore: usageStore } = await vi.importActual<
+      typeof import("./turnUsageStore")
+    >("./turnUsageStore");
+    usageStore.setState({ snapshot: null, activeMaxInputLength: null });
+    const view = renderWithProviders(<ChatPage />, {
+      initialEntries: ["/chat/22222222-3333-4333-8333-333333333333"],
+    });
+    await screen.findByTestId("chat-ui");
+    await act(async () => {});
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: "Choose a model to see context usage",
+      }),
+    );
+    let dialog = await screen.findByRole("dialog", { name: "Context" });
+    expect(within(dialog).queryByRole("progressbar")).not.toBeInTheDocument();
+    fireEvent.click(within(dialog).getByRole("button", { name: "New chat" }));
+    expect(usageStore.getState().snapshot).toBeNull();
+    expect(
+      screen.getByRole("button", {
+        name: "Choose a model to see context usage",
+      }),
+    ).toHaveTextContent("—");
+    expect(mockRuntimeSubmit).toHaveBeenLastCalledWith({ query: "/new" });
+
+    for (const activeMaxInputLength of [64000, null]) {
+      act(() =>
+        usageStore.setState({
+          activeMaxInputLength,
+          snapshot: {
+            usage: null,
+            context_usage: {
+              estimated_tokens: 8000,
+              max_input_length: 32000,
+              context_usage_ratio: 25,
+            },
+          },
+        }),
+      );
+      fireEvent.click(screen.getByRole("button", { name: /^Context usage / }));
+      dialog = await screen.findByRole("dialog", { name: "Context" });
+      fireEvent.click(within(dialog).getByRole("button", { name: "New chat" }));
+      expect(usageStore.getState().snapshot).toEqual({
+        usage: null,
+        context_usage: {
+          estimated_tokens: 0,
+          max_input_length: activeMaxInputLength ?? 32000,
+          context_usage_ratio: 0,
+        },
+      });
+      expect(
+        screen.getByRole("button", { name: /^Context usage 0%/ }),
+      ).toHaveTextContent("0%");
+    }
+    expect(mockRuntimeSubmit).toHaveBeenCalledTimes(3);
+    view.unmount();
+    usageStore.setState({ snapshot: null, activeMaxInputLength: null });
+  });
+
+  it("UGSci fork feature: answer quote admission freezes multiple passages and keeps newer selections", async () => {
+    const chatId = "13222222-2222-4222-8222-222222222222";
+    const scope = getDraftStorageKey("default", chatId);
+    let resolveStatus!: (value: { status: "idle" }) => void;
+    mockGetChatStatus.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          resolveStatus = resolve;
+        }),
+    );
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    await screen.findByTestId("chat-ui");
+    await act(async () => {});
+    act(() => {
+      addAnswerQuote(scope, { messageId: "reply1", text: "first" });
+      addAnswerQuote(scope, { messageId: "reply2", text: "@Other /new" });
+    });
+    expect(screen.getByLabelText("Selected quotes")).toHaveTextContent("first");
+    const submitted = capturedOptions!.sender.beforeSubmit({
+      query: "adjust both",
+    });
+    await waitFor(() => expect(mockGetChatStatus).toHaveBeenCalled());
+    act(() => {
+      addAnswerQuote(scope, { messageId: "reply3", text: "later selection" });
+    });
+    let admitted!: Awaited<
+      ReturnType<CapturedChatOptions["sender"]["beforeSubmit"]>
+    >;
+    await act(async () => {
+      resolveStatus({ status: "idle" });
+      admitted = await submitted;
+    });
+    expect(admitted).toMatchObject({
+      proceed: true,
+      query: "adjust both",
+      context: {
+        qwenpaw_answer_quotes: [{ text: "first" }, { text: "@Other /new" }],
+      },
+    });
+    expect(readAnswerQuotes(scope).map((q) => q.text)).toEqual([
+      "later selection",
+    ]);
+    global.fetch = vi.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      body: null,
+      json: async () => ({}),
+    });
+    await act(async () => {
+      if (typeof admitted !== "object")
+        throw new Error("Expected routed submission");
+      await capturedOptions!.api.fetch({
+        ...admitted,
+        input: [
+          { role: "user", content: [{ type: "text", text: admitted.query }] },
+        ],
+      });
+    });
+    const call = vi
+      .mocked(fetch)
+      .mock.calls.find(
+        ([url, init]) =>
+          String(url).includes("/console/chat") && init?.method === "POST",
+      )!;
+    const body = JSON.parse(call[1]!.body as string);
+    expect(body.input[0].content[1].text).toContain("@Other /new");
+    expect(body.input[0].content[1].text).not.toContain("later selection");
+    expect(body.target_agent_id).toBeUndefined();
+  });
+
+  it("UGSci fork feature: answer quotes survive durable queue admission and full queue rejection", async () => {
+    const chatId = "14222222-2222-4222-8222-222222222222",
+      scope = getDraftStorageKey("default", chatId);
+    mockGetChatStatus.mockResolvedValue({ status: "running" });
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    await screen.findByTestId("chat-ui");
+    await act(async () => {});
+    act(() =>
+      addAnswerQuote(scope, { messageId: "reply1", text: "queued quote" }),
+    );
+    let result: unknown;
+    await act(async () => {
+      result = await capturedOptions!.sender.beforeSubmit({
+        query: "queued question",
+      });
+    });
+    expect(result).toMatchObject({ proceed: false, clear: true });
+    expect(useMessageQueueStore.getState().getQueue(chatId)[0]).toMatchObject({
+      text: "queued question",
+      requestContext: { qwenpaw_answer_quotes: [{ text: "queued quote" }] },
+    });
+    expect(readAnswerQuotes(scope)).toEqual([]);
+    act(() => {
+      for (let i = 1; i < MAX_QUEUE_SIZE; i++)
+        useMessageQueueStore
+          .getState()
+          .enqueue(chatId, { text: `filler ${i}` });
+      addAnswerQuote(scope, {
+        messageId: "reply2",
+        text: "retain on rejection",
+      });
+    });
+    await act(async () => {
+      result = await capturedOptions!.sender.beforeSubmit({
+        query: "queue full",
+      });
+    });
+    expect(result).toBe(false);
+    expect(readAnswerQuotes(scope)[0].text).toBe("retain on rejection");
+    act(() => useMessageQueueStore.getState().clear(chatId));
+  });
+
+  it("UGSci fork feature: keyboard queue submission includes the mounted compact quote draft", async () => {
+    const chatId = "15222222-2222-4222-8222-222222222222",
+      scope = getDraftStorageKey("default", chatId);
+    mockRenderSender.mockReturnValue(true);
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    await screen.findByTestId("mention-sender");
+    await act(async () => {});
+    act(() => addAnswerQuote(scope, { messageId: "code", text: "print(42)" }));
+    const utils = await import("./utils");
+    vi.mocked(utils.getActiveSenderTextarea).mockReturnValue(
+      screen.getByTestId("mention-sender") as HTMLTextAreaElement,
+    );
+    fireEvent.input(screen.getByTestId("mention-sender"), {
+      target: { value: "explain" },
+    });
+    fireEvent.keyDown(screen.getByTestId("mention-sender"), {
+      key: "Enter",
+      ctrlKey: true,
+    });
+    expect(useMessageQueueStore.getState().getQueue(chatId)[0]).toMatchObject({
+      text: "explain",
+      requestContext: { qwenpaw_answer_quotes: [{ text: "print(42)" }] },
+    });
+    expect(screen.queryByLabelText("Selected quotes")).not.toBeInTheDocument();
+    vi.mocked(utils.getActiveSenderTextarea).mockReturnValue(null);
+    act(() => useMessageQueueStore.getState().clear(chatId));
+  });
+
   it("allows a submission when the backend chat is idle", async () => {
     const chatId = "22222222-2222-4222-8222-222222222222";
     mockGetChatStatus.mockResolvedValue({ status: "idle" });
@@ -3419,7 +4238,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     const beforeSubmit = capturedOptions?.sender?.beforeSubmit;
-    const result = await beforeSubmit({ query: "next turn" });
+    const result = await beforeSubmit!({ query: "next turn" });
 
     expect(result).toMatchObject({ proceed: true, query: "next turn" });
     expect(mockGetChatStatus).toHaveBeenCalledWith(chatId, {
@@ -3442,11 +4261,11 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
     await act(async () => {});
     const input = { query: "use OpenUI for the design" };
-    const first = capturedOptions.sender.beforeSubmit(input);
+    const first = capturedOptions!.sender.beforeSubmit(input);
     await waitFor(() => expect(mockGetChatStatus).toHaveBeenCalledTimes(1));
     let duplicate: unknown;
     await act(async () => {
-      duplicate = await capturedOptions.sender.beforeSubmit({ ...input });
+      duplicate = await capturedOptions!.sender.beforeSubmit({ ...input });
     });
     // A repeated Enter/click during async admission must neither send nor queue.
     expect(duplicate).toBe(false);
@@ -3461,7 +4280,7 @@ describe("ChatPage coverage", () => {
     expect(useMessageQueueStore.getState().getQueue(chatId)).toEqual([]);
     // This is admission protection, not permanent deduplication by message text.
     mockGetChatStatus.mockResolvedValue({ status: "idle" });
-    expect(await capturedOptions.sender.beforeSubmit(input)).toMatchObject({
+    expect(await capturedOptions!.sender.beforeSubmit(input)).toMatchObject({
       proceed: true,
       query: input.query,
     });
@@ -3490,7 +4309,7 @@ describe("ChatPage coverage", () => {
       try {
         fireEvent.input(textarea, { target: { value: "one request" } });
         await act(async () => {});
-        const first = capturedOptions.sender.beforeSubmit({
+        const first = capturedOptions!.sender.beforeSubmit({
           query: "one request",
         });
         await waitFor(() => expect(mockGetChatStatus).toHaveBeenCalledTimes(1));
@@ -3528,7 +4347,7 @@ describe("ChatPage coverage", () => {
     const textarea = await screen.findByTestId("mention-sender");
     fireEvent.input(textarea, { target: { value: "same words" } });
     await act(async () => {});
-    const first = capturedOptions.sender.beforeSubmit({ query: "same words" });
+    const first = capturedOptions!.sender.beforeSubmit({ query: "same words" });
     await waitFor(() => expect(mockGetChatStatus).toHaveBeenCalledTimes(1));
     // Editing produces a new composer revision even if the final text repeats.
     fireEvent.input(textarea, { target: { value: "" } });
@@ -3536,7 +4355,7 @@ describe("ChatPage coverage", () => {
     mockGetChatStatus.mockResolvedValue({ status: "running" });
     let second: unknown;
     await act(async () => {
-      second = await capturedOptions.sender.beforeSubmit({
+      second = await capturedOptions!.sender.beforeSubmit({
         query: "same words",
       });
       useMessageQueueStore.getState().setRunState(chatId, "paused");
@@ -3579,10 +4398,10 @@ describe("ChatPage coverage", () => {
         },
       ],
     };
-    const first = capturedOptions.sender.beforeSubmit(input);
+    const first = capturedOptions!.sender.beforeSubmit(input);
     await waitFor(() => expect(mockGetChatStatus).toHaveBeenCalledTimes(1));
     expect(
-      await capturedOptions.sender.beforeSubmit(structuredClone(input)),
+      await capturedOptions!.sender.beforeSubmit(structuredClone(input)),
     ).toBe(false);
     await act(async () => {
       resolveStatus({ status: "running" });
@@ -3612,7 +4431,7 @@ describe("ChatPage coverage", () => {
     renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
     await screen.findByTestId("chat-ui");
     await act(async () => {});
-    const admission = capturedOptions.sender.beforeSubmit({
+    const admission = capturedOptions!.sender.beforeSubmit({
       query: "after existing queue",
     });
     await waitFor(() => expect(mockGetChatStatus).toHaveBeenCalledTimes(1));
@@ -3659,7 +4478,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
     await act(async () => {});
 
-    const first = await capturedOptions.sender.beforeSubmit({
+    const first = await capturedOptions!.sender.beforeSubmit({
       query: "abandoned direct send",
     });
     expect(first).toMatchObject({
@@ -3673,7 +4492,7 @@ describe("ChatPage coverage", () => {
 
     let second: unknown;
     await act(async () => {
-      second = await capturedOptions.sender.beforeSubmit({
+      second = await capturedOptions!.sender.beforeSubmit({
         query: "send after switch",
       });
     });
@@ -3699,7 +4518,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
     await act(async () => {});
 
-    const result = await capturedOptions.sender.beforeSubmit({
+    const result = await capturedOptions!.sender.beforeSubmit({
       query: "stay in source",
     });
     expect(result).toMatchObject({ proceed: true, query: "stay in source" });
@@ -3711,7 +4530,10 @@ describe("ChatPage coverage", () => {
       userId: "target-user",
       channel: "console",
     });
-    await capturedOptions.api.fetch({
+    if (typeof result === "boolean") {
+      throw new Error("Expected the frozen submission routing context");
+    }
+    await capturedOptions!.api.fetch({
       session_id: result.session_id,
       context: result.context,
       input: [
@@ -3768,25 +4590,32 @@ describe("ChatPage coverage", () => {
         } as Response;
       },
     );
-    mockRuntimeSubmit.mockImplementation(async (data: any, options: any) => {
-      const lifecycle = new ChatRunLifecycle({
-        runId: "queue-run",
-        source: "host-queue",
-        sessionId: options.sessionId,
-        cancel: vi.fn(),
-      });
-      await capturedOptions.api.fetch({
-        ...data,
-        chatSessionId: options.sessionId,
-        submission: {
+    mockRuntimeSubmit.mockImplementation(
+      async (
+        data: Parameters<
+          import("@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/types/IExecution").IAgentScopeRuntimeWebUIExecutionController["execute"]
+        >[0],
+        options: { sessionId: string; clientRequestId: string },
+      ) => {
+        const lifecycle = new ChatRunLifecycle({
+          runId: "queue-run",
           source: "host-queue",
-          queueItemId: options.clientRequestId,
-        },
-        input: [{ role: "user", content: data.query }],
-      });
-      lifecycle.markAccepted(options.sessionId);
-      return lifecycle.handle;
-    });
+          sessionId: options.sessionId,
+          cancel: vi.fn(),
+        });
+        await capturedOptions!.api.fetch({
+          ...data,
+          chatSessionId: options.sessionId,
+          submission: {
+            source: "host-queue",
+            queueItemId: options.clientRequestId,
+          },
+          input: [{ role: "user", content: data.query }],
+        });
+        lifecycle.markAccepted(options.sessionId);
+        return lifecycle.handle;
+      },
+    );
 
     renderWithProviders(<ChatPage />, {
       initialEntries: [`/chat/${chatId}`],
@@ -3798,7 +4627,7 @@ describe("ChatPage coverage", () => {
     // while TaskTracker still reports the previous run as active.
     let result: unknown;
     await act(async () => {
-      result = await capturedOptions.sender.beforeSubmit({
+      result = await capturedOptions!.sender.beforeSubmit({
         query: "follow-up during cleanup",
         fileList: [
           {
@@ -3898,7 +4727,7 @@ describe("ChatPage coverage", () => {
       });
       const onSuccess = vi.fn();
       const onError = vi.fn();
-      await capturedOptions.sender.attachments.customRequest({
+      await capturedOptions!.sender.attachments.customRequest({
         file: smallFile,
         onSuccess,
         onError,
@@ -3922,7 +4751,7 @@ describe("ChatPage coverage", () => {
       const smallFile = new File(["content"], "img.png", { type: "image/png" });
       const onSuccess = vi.fn();
       const onError = vi.fn();
-      await capturedOptions.sender.attachments.customRequest({
+      await capturedOptions!.sender.attachments.customRequest({
         file: smallFile,
         onSuccess,
         onError,
@@ -3941,7 +4770,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.onFileCardClick) {
-      capturedOptions.api.onFileCardClick({
+      capturedOptions!.api.onFileCardClick({
         name: "test.txt",
         size: 100,
         url: "http://example.com/test.txt",
@@ -3960,7 +4789,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.onFileCardClick) {
-      capturedOptions.api.onFileCardClick({ name: "test.txt", size: 100 });
+      capturedOptions!.api.onFileCardClick({ name: "test.txt", size: 100 });
       expect(true).toBe(true);
     }
   });
@@ -3974,7 +4803,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
@@ -4001,7 +4830,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "message",
           metadata: {
@@ -4021,7 +4850,7 @@ describe("ChatPage coverage", () => {
       body: null,
       json: () => Promise.resolve({}),
     };
-    global.fetch = vi.fn().mockResolvedValue(mockResponse) as any;
+    global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
     renderWithProviders(<ChatPage />, {
       initialEntries: ["/chat/test-session"],
@@ -4030,7 +4859,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.fetch) {
-      const result = await capturedOptions.api.fetch({
+      const result = await capturedOptions!.api.fetch({
         input: [
           {
             role: "user",
@@ -4048,12 +4877,14 @@ describe("ChatPage coverage", () => {
         }),
       );
       // Verify the body contains expected fields
-      const callArgs = (fetch as any).mock.calls.find(
-        (c: any) =>
-          c[0]?.includes?.("/console/chat") && c[1]?.method === "POST",
-      );
+      const callArgs = vi
+        .mocked(fetch)
+        .mock.calls.find(
+          (c) =>
+            String(c[0]).includes("/console/chat") && c[1]?.method === "POST",
+        );
       if (callArgs) {
-        const body = JSON.parse(callArgs[1].body);
+        const body = JSON.parse(callArgs[1]!.body as string);
         expect(body.stream).toBe(true);
         expect(body.input).toBeDefined();
       }
@@ -4074,7 +4905,7 @@ describe("ChatPage coverage", () => {
     expect(toggle.decisionModelConfigured).toBeUndefined();
     act(() => toggle.onChange("JEV"));
 
-    await capturedOptions.api.fetch({
+    await capturedOptions!.api.fetch({
       input: [{ role: "user", content: "hello" }],
       signal: undefined,
     });
@@ -4092,7 +4923,7 @@ describe("ChatPage coverage", () => {
   // ── customFetch: with biz_params ───────────────────────────────────────
   it("customFetch merges biz_params into request body", async () => {
     const mockResponse = { ok: true, status: 200, body: null };
-    global.fetch = vi.fn().mockResolvedValue(mockResponse) as any;
+    global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
     renderWithProviders(<ChatPage />, {
       initialEntries: ["/chat/test-session"],
@@ -4101,17 +4932,19 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.fetch) {
-      await capturedOptions.api.fetch({
+      await capturedOptions!.api.fetch({
         input: [{ role: "user", content: "test" }],
         biz_params: { custom_field: "custom_value" },
         signal: undefined,
       });
-      const callArgs = (fetch as any).mock.calls.find(
-        (c: any) =>
-          c[0]?.includes?.("/console/chat") && c[1]?.method === "POST",
-      );
+      const callArgs = vi
+        .mocked(fetch)
+        .mock.calls.find(
+          (c) =>
+            String(c[0]).includes("/console/chat") && c[1]?.method === "POST",
+        );
       if (callArgs) {
-        const body = JSON.parse(callArgs[1].body);
+        const body = JSON.parse(callArgs[1]!.body as string);
         expect(body.custom_field).toBe("custom_value");
       }
     }
@@ -4126,7 +4959,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
@@ -4139,8 +4972,8 @@ describe("ChatPage coverage", () => {
           ],
         }),
       );
-      expect(parsed.output).toHaveLength(1);
-      expect(parsed.output[0].content[0].text).toBe("full answer");
+      expect(parsed!.output).toHaveLength(1);
+      expect(parsed!.output![0].content![0].text).toBe("full answer");
     }
   });
 
@@ -4153,7 +4986,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.responseParser) {
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
@@ -4161,9 +4994,9 @@ describe("ChatPage coverage", () => {
           error: { message: "something went wrong" },
         }),
       );
-      expect(parsed.output).toBeDefined();
+      expect(parsed!.output).toBeDefined();
       // Should contain the error message
-      const textContent = parsed.output?.[0]?.content?.[0]?.text;
+      const textContent = parsed!.output?.[0]?.content?.[0]?.text;
       expect(textContent).toBe("something went wrong");
     }
   });
@@ -4171,7 +5004,7 @@ describe("ChatPage coverage", () => {
   // ── customFetch: non-ok response discards last user message ────────────
   it("customFetch discards last user message on non-ok response", async () => {
     const mockResponse = { ok: false, status: 500, body: null };
-    global.fetch = vi.fn().mockResolvedValue(mockResponse) as any;
+    global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
     renderWithProviders(<ChatPage />, {
       initialEntries: ["/chat/test-session"],
@@ -4180,7 +5013,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.fetch) {
-      const result = await capturedOptions.api.fetch({
+      const result = await capturedOptions!.api.fetch({
         input: [{ role: "user", content: "hello" }],
         signal: undefined,
       });
@@ -4244,7 +5077,9 @@ describe("ChatPage coverage", () => {
 
     expect(Array.isArray(capturedOptions?.sender?.suggestions)).toBe(true);
     // Should have at least /new and /clear commands
-    expect(capturedOptions.sender.suggestions.length).toBeGreaterThanOrEqual(2);
+    expect(capturedOptions!.sender.suggestions!.length).toBeGreaterThanOrEqual(
+      2,
+    );
   });
 
   // ── session config ─────────────────────────────────────────────────────
@@ -4405,7 +5240,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     expect(capturedOptions?.customToolRenderConfig).toBeTruthy();
-    expect(typeof capturedOptions.customToolRenderConfig).toBe("object");
+    expect(typeof capturedOptions!.customToolRenderConfig).toBe("object");
   });
 
   // ── cards config ───────────────────────────────────────────────────────
@@ -4468,7 +5303,7 @@ describe("ChatPage coverage", () => {
 
     if (capturedOptions?.api?.responseParser) {
       expect(
-        capturedOptions.api.responseParser("not valid json"),
+        capturedOptions!.api.responseParser("not valid json"),
       ).toMatchObject({
         object: "message",
         type: "heartbeat",
@@ -4492,7 +5327,7 @@ describe("ChatPage coverage", () => {
       });
       const onSuccess = vi.fn();
       const onError = vi.fn();
-      await capturedOptions.sender.attachments.customRequest({
+      await capturedOptions!.sender.attachments.customRequest({
         file: pdfFile,
         onSuccess,
         onError,
@@ -4517,7 +5352,7 @@ describe("ChatPage coverage", () => {
       });
       const onSuccess = vi.fn();
       const onError = vi.fn();
-      await capturedOptions.sender.attachments.customRequest({
+      await capturedOptions!.sender.attachments.customRequest({
         file: videoFile,
         onSuccess,
         onError,
@@ -4599,10 +5434,10 @@ describe("ChatPage coverage", () => {
         },
       };
       // Send same fallback twice — should be deduplicated
-      capturedOptions.api.responseParser(JSON.stringify(fallbackPayload));
-      capturedOptions.api.responseParser(JSON.stringify(fallbackPayload));
+      capturedOptions!.api.responseParser(JSON.stringify(fallbackPayload));
+      capturedOptions!.api.responseParser(JSON.stringify(fallbackPayload));
       // Complete
-      const parsed = capturedOptions.api.responseParser(
+      const parsed = capturedOptions!.api.responseParser(
         JSON.stringify({
           object: "response",
           status: "completed",
@@ -4617,8 +5452,8 @@ describe("ChatPage coverage", () => {
       );
       expect(parsed).toBeTruthy();
       // Output should have at least the original content
-      expect(Array.isArray(parsed.output)).toBe(true);
-      expect(parsed.output.length).toBeGreaterThanOrEqual(1);
+      expect(Array.isArray(parsed!.output)).toBe(true);
+      expect(parsed!.output!.length).toBeGreaterThanOrEqual(1);
     }
   });
 
@@ -4751,7 +5586,7 @@ describe("ChatPage coverage", () => {
 
     if (capturedOptions?.api?.responseParser) {
       // Send rate_limited payload to set rateLimitAlternatives
-      capturedOptions.api.responseParser(
+      capturedOptions!.api.responseParser(
         JSON.stringify({
           type: "rate_limited",
           alternatives: [
@@ -4789,7 +5624,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.fetch) {
-      await capturedOptions.api.fetch({
+      await capturedOptions!.api.fetch({
         input: [{ role: "user", content: "hello" }],
         signal: undefined,
       });
@@ -4810,7 +5645,7 @@ describe("ChatPage coverage", () => {
 
     if (capturedOptions?.api?.cancel) {
       await expect(
-        capturedOptions.api.cancel({ session_id: "" }),
+        capturedOptions!.api.cancel({ session_id: "" }),
       ).rejects.toThrow("Missing chat identity for cancellation");
     }
   });
@@ -4833,7 +5668,7 @@ describe("ChatPage coverage", () => {
 
     if (capturedOptions?.api?.reconnect) {
       const controller = new AbortController();
-      const result = await capturedOptions.api.reconnect({
+      const result = await capturedOptions!.api.reconnect({
         session_id: "test-session",
         signal: controller.signal,
       });
@@ -4849,7 +5684,7 @@ describe("ChatPage coverage", () => {
     await screen.findByTestId("chat-ui");
     await act(async () => {});
     const count = vi.mocked(fetch).mock.calls.length;
-    await expect(capturedOptions.api.fetch({ input: [] })).rejects.toThrow(
+    await expect(capturedOptions!.api.fetch({ input: [] })).rejects.toThrow(
       "Chat submission has no input",
     );
     expect(fetch).toHaveBeenCalledTimes(count);
@@ -4858,7 +5693,7 @@ describe("ChatPage coverage", () => {
   // ── customFetch with session in input ──────────────────────────────────
   it("customFetch extracts session from input", async () => {
     const mockResponse = { ok: true, status: 200, body: null };
-    global.fetch = vi.fn().mockResolvedValue(mockResponse) as any;
+    global.fetch = vi.fn().mockResolvedValue(mockResponse);
 
     renderWithProviders(<ChatPage />, {
       initialEntries: ["/chat/test-session"],
@@ -4867,7 +5702,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.fetch) {
-      const result = await capturedOptions.api.fetch({
+      const result = await capturedOptions!.api.fetch({
         input: [
           {
             role: "user",
@@ -4878,12 +5713,14 @@ describe("ChatPage coverage", () => {
         signal: undefined,
       });
       expect(result).toBeTruthy();
-      const callArgs = (fetch as any).mock.calls.find(
-        (c: any) =>
-          c[0]?.includes?.("/console/chat") && c[1]?.method === "POST",
-      );
+      const callArgs = vi
+        .mocked(fetch)
+        .mock.calls.find(
+          (c) =>
+            String(c[0]).includes("/console/chat") && c[1]?.method === "POST",
+        );
       if (callArgs) {
-        const body = JSON.parse(callArgs[1].body);
+        const body = JSON.parse(callArgs[1]!.body as string);
         expect(body.session_id).toBeDefined();
       }
     }
@@ -4900,7 +5737,7 @@ describe("ChatPage coverage", () => {
     if (capturedOptions?.api?.responseParser) {
       // Send a string payload (not an object); should not crash
       expect(() =>
-        capturedOptions.api.responseParser(JSON.stringify("just a string")),
+        capturedOptions!.api.responseParser(JSON.stringify("just a string")),
       ).not.toThrow();
     }
   });
@@ -4916,7 +5753,7 @@ describe("ChatPage coverage", () => {
     if (capturedOptions?.api?.responseParser) {
       // null payload causes parseModelFallbackEvents to throw (accessing .metadata on null)
       expect(() => {
-        capturedOptions.api.responseParser(JSON.stringify(null));
+        capturedOptions!.api.responseParser(JSON.stringify(null));
       }).not.toThrow();
     }
   });
@@ -4934,7 +5771,7 @@ describe("ChatPage coverage", () => {
       const onSuccess = vi.fn();
       const onError = vi.fn();
       const onProgress = vi.fn();
-      await capturedOptions.sender.attachments.customRequest({
+      await capturedOptions!.sender.attachments.customRequest({
         file: smallFile,
         onSuccess,
         onError,
@@ -4954,7 +5791,7 @@ describe("ChatPage coverage", () => {
     await act(async () => {});
 
     if (capturedOptions?.api?.onFileCardClick) {
-      capturedOptions.api.onFileCardClick({
+      capturedOptions!.api.onFileCardClick({
         name: "test.txt",
         size: 100,
         url: "http://example.com/test.txt?token=abc123",

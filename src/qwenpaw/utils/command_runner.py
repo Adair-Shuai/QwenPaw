@@ -151,7 +151,6 @@ class ManagedProcess:
     async def wait(self) -> int:
         if hasattr(self._process, "wait"):
             return await self._process.wait()
-
         return await asyncio.to_thread(self._wait_via_join)
 
     def _wait_via_join(self) -> int:
@@ -169,7 +168,6 @@ class ManagedProcess:
             with suppress(ProcessLookupError):
                 os.killpg(os.getpgid(self.pid), signal.SIGTERM)
             return
-
         with suppress(ProcessLookupError):
             self._process.terminate()
 
@@ -178,7 +176,6 @@ class ManagedProcess:
             with suppress(ProcessLookupError):
                 os.killpg(os.getpgid(self.pid), signal.SIGKILL)
             return
-
         with suppress(ProcessLookupError):
             self._process.kill()
 
@@ -237,7 +234,6 @@ def run_command(
             command_list,
             f"Failed to run command: {exc}",
         ) from exc
-
     command_result = CommandResult(
         command=command_list,
         returncode=result.returncode,
@@ -351,7 +347,6 @@ def start_multiprocessing_process(
             command_list,
             f"Failed to start process: {exc}",
         ) from exc
-
     return ManagedProcess(
         process,
         command=command_list,
@@ -404,7 +399,6 @@ async def shutdown_process(
             timed_out=False,
             returncode=process.returncode,
         )
-
     process.terminate()
     returncode = await _wait_for_process_exit_async(
         process,
@@ -420,7 +414,6 @@ async def shutdown_process(
             timed_out=False,
             returncode=returncode,
         )
-
     process.kill()
     returncode = await _wait_for_process_exit_async(
         process,
@@ -436,7 +429,6 @@ async def shutdown_process(
             timed_out=False,
             returncode=returncode,
         )
-
     return ShutdownResult(
         command=process.command,
         pid=process.pid,
@@ -464,7 +456,6 @@ def shutdown_process_sync(
             timed_out=False,
             returncode=process.returncode,
         )
-
     process.terminate()
     if _wait_for_process_exit(process, graceful_timeout):
         return ShutdownResult(
@@ -476,7 +467,6 @@ def shutdown_process_sync(
             timed_out=False,
             returncode=process.returncode,
         )
-
     process.kill()
     if _wait_for_process_exit(process, kill_timeout):
         return ShutdownResult(
@@ -488,7 +478,6 @@ def shutdown_process_sync(
             timed_out=False,
             returncode=process.returncode,
         )
-
     return ShutdownResult(
         command=process.command,
         pid=process.pid,
@@ -520,13 +509,11 @@ def _wait_for_process_exit(
     if not process.is_alive():
         process.join(timeout=0)
         return True
-
     if timeout is None:
         while process.is_alive():
             time.sleep(0.1)
         process.join(timeout=0)
         return True
-
     deadline = time.monotonic() + timeout
     while True:
         if not process.is_alive():
@@ -609,7 +596,6 @@ def _is_pid_running(
             # short-circuit the kill escalation in shutdown_process_sync().
             return True
         return str(pid) in output
-
     try:
         os.kill(pid, 0)
     except ProcessLookupError:

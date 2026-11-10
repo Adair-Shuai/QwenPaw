@@ -6,6 +6,7 @@
  */
 
 import { apiUrl, getHost } from "../core/runtime";
+import { ExpertAvatar } from "../components/avatars";
 
 // ─── Expert Bundles ────────────────────────────────────────────────────────
 //
@@ -109,6 +110,13 @@ export function BundleAvatar({
 }) {
   const React = getHost().React;
   const [retry, setRetry] = React.useState(0);
+  if (!bundle.avatar_url)
+    return React.createElement(ExpertAvatar, {
+      name: bundle.name,
+      description: bundle.description,
+      size,
+      borderRadius,
+    });
   const baseUrl = getBundleAvatarUrl(bundle);
   const src = retry === 0 ? baseUrl : `${baseUrl}?_r=${retry}`;
   return React.createElement("img", {

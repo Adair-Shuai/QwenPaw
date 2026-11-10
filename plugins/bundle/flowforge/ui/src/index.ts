@@ -19,42 +19,25 @@
  *   - RunMonitorDrawer: real-time run progress via SSE + node timeline
  */
 
-import React, {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
-import { NodeIcon } from "./NodeIcon";
+import React, { useCallback, useEffect, useRef, useState } from "react";
+import { NodeCard } from "./NodeCard";
 import { WorkflowEditor } from "./Editor";
-import { ConditionFields } from "./ConditionFields";
+import { NodeInspector } from "./NodeInspector";
+import { SchemaField } from "./SchemaField";
 import { RunInputDialog, RunMonitor, RunHistory } from "./RunPanels";
 import { parseRuntimeInputs } from "./model";
+import type { RunRecord } from "./runRecord";
+import { useWorkflowI18n, translateWorkflow, workflowLocale } from "./i18n";
+import { useWorkflowIdentity } from "./useWorkflowIdentity";
 // @ts-ignore — embedded stylesheet for blob-loaded plugin
 import editorCss from "./editor.css?inline";
+// @ts-ignore — embedded variable binding styles for blob-loaded plugins
+import variableBindingsCss from "./variable-bindings.css?inline";
 // @ts-ignore — @xyflow/react is bundled by vite, types resolved at build time
 import {
-  ReactFlow,
-  Background,
-  Controls,
-  MiniMap,
-  addEdge,
-  useNodesState,
-  useEdgesState,
-  Handle,
-  Position,
-  type Node,
-  type Edge,
-  type Connection,
-  type NodeProps,
   type EdgeProps,
-  BackgroundVariant,
-  getConnectedEdges,
-  MarkerType,
   getBezierPath,
   EdgeLabelRenderer,
-  Panel,
 } from "@xyflow/react";
 // Import ReactFlow CSS as a string and inject at runtime.
 // In blob URL loading context, external CSS files are not loaded,
@@ -67,7 +50,8 @@ if (typeof document !== "undefined") {
   if (!document.getElementById(styleId)) {
     const styleEl = document.createElement("style");
     styleEl.id = styleId;
-    styleEl.textContent = reactFlowCss + "\n" + editorCss;
+    styleEl.textContent =
+      reactFlowCss + "\n" + editorCss + "\n" + variableBindingsCss;
     document.head.appendChild(styleEl);
   }
 }
@@ -84,7 +68,9 @@ function getHost() {
     getApiUrl: (path: string) => string;
     getApiToken: () => string;
     getSelectedAgentId?: () => string;
-    useSelectedAgent?: () => { id: string };
+    useSelectedAgent?: () => { id: string; name?: string };
+    useLocale?: () => string;
+    useLocation?: () => { pathname: string; search: string; hash: string };
   };
 }
 
@@ -128,7 +114,11 @@ async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
     } catch {}
     throw new Error(
       resp.status === 409 && !path.includes("/runs/")
-        ? `版本已变化，请重新打开最新版本后合并修改。${detail}`
+        ? `${translateWorkflow(
+            "版本已变化，请重新打开最新版本后合并修改。",
+            workflowLocale(),
+            "The revision changed. Open the latest revision to merge your edits.",
+          )}${detail}`
         : detail || `HTTP ${resp.status}`,
     );
   }
@@ -143,20 +133,9 @@ interface FlowSummary {
   name: string;
   description: string;
   version: string;
+  revision?: number;
   node_count: number;
   updated_at: number;
-}
-interface NodeTypeSpec {
-  class_type: string;
-  display_name: string;
-  description: string;
-  category: string;
-  icon: string;
-  inputs_schema: any[];
-  outputs_schema: any[];
-  control_schema: string[];
-  available?: boolean;
-  unavailable_reason?: string;
 }
 interface FlowDocument {
   id: string;
@@ -171,280 +150,11 @@ interface FlowDocument {
   version: string;
   revision?: number;
 }
-interface RunStatus {
-  run_id: string;
-  flow_id: string;
-  state_id: string;
-  status: string;
-  started_at: number;
-  finished_at: number | null;
-  error: string | null;
-  node_statuses: Record<string, string>;
-  outputs: Record<string, any>;
-  errors: string[];
-  duration_ms: number;
-}
-
-// ─── Node category colors ───────────────────────────────────────────────────
-
-const NODE_COLORS: Record<string, string> = {
-  StartNode: "#52c41a",
-  EndNode: "#fa541c",
-  InputNode: "#52c41a",
-  OutputNode: "#fa541c",
-  ToolCallNode: "#1677ff",
-  ToolNode: "#1677ff",
-  AgentNode: "#722ed1",
-  ConditionNode: "#faad14",
-  LLMCallNode: "#13c2c2",
-  LLMNode: "#13c2c2",
-  CodeNode: "#eb2f96",
-  ScriptNode: "#eb2f96",
-  ParallelNode: "#874d00",
-  WaitNode: "#8c8c8c",
-  TransformNode: "#0958d9",
-  ErrorHandlerNode: "#cf1322",
-  HumanReviewNode: "#d4380d",
-  SubworkflowNode: "#5b8c00",
-  QualityGateNode: "#7cb305",
-  IterativeRefineNode: "#08979c",
-  AssetExportNode: "#c41d7f",
-};
-
-function nodeColor(classType: string): string {
-  return NODE_COLORS[classType] || "#1677ff";
-}
-
-function statusColor(s: string): string {
-  return s === "completed" || s === "success"
-    ? "#52c41a"
-    : s === "running"
-    ? "#1677ff"
-    : s === "failed" || s === "error"
-    ? "#ff4d4f"
-    : s === "skipped"
-    ? "#bfbfbf"
-    : s === "blocked"
-    ? "#faad14"
-    : s === "cancelled"
-    ? "#fa8c16"
-    : "#d9d9d9";
-}
-
-// ─── Custom Node Card (240×120, matching LeAgent) ──────────────────────────
-
-function NodeCard({ id, data, selected }: NodeProps) {
-  const antd = getHost().antd;
-  const Tag = antd?.Tag;
-  const d = data as any;
-  const classType: string = d?.class_type || d?.type || "ToolNode";
-  const label: string = d?.label || d?._displayLabel || classType;
-  const color = nodeColor(classType);
-  const st: string = d?._status || "pending";
-  const stColor = statusColor(st);
-  const inputSockets = [...(d?.inputs_schema || [])];
-  for (const name of d?._targetHandles || [])
-    if (!inputSockets.some((field: any) => field.name === name))
-      inputSockets.push({ name, type: "any" });
-  const controlHandles = [
-    ...new Set<string>([
-      ...(d?._controlHandles || []),
-      ...(Array.isArray(d?.control?.conditions)
-        ? d.control.conditions.map(
-            (_: any, index: number) => `condition:${index}`,
-          )
-        : []),
-      ...(classType === "ConditionNode"
-        ? [
-            (d?._controlHandles || []).includes("else_node")
-              ? "else_node"
-              : "else",
-          ]
-        : []),
-      ...(classType === "HumanReviewNode" ? ["next", "on_reject"] : []),
-      ...(classType === "QualityGateNode" ? ["pass_node", "fail_node"] : []),
-      ...(classType === "IterativeRefineNode"
-        ? ["retry_node", "exhausted_node"]
-        : []),
-    ]),
-  ];
-  const outputSockets = d?.outputs_schema || [];
-
-  return React.createElement(
-    "div",
-    {
-      style: {
-        padding: "10px 14px",
-        borderRadius: 8,
-        border: `2px solid ${selected ? color : stColor}`,
-        background: "var(--ant-color-bg-container, #fff)",
-        width: "240px",
-        minWidth: "240px",
-        maxWidth: "240px",
-        minHeight: `${Math.max(
-          120,
-          65 +
-            Math.max(inputSockets.length, (d?.outputs_schema || []).length) *
-              18,
-        )}px`,
-        fontSize: 12,
-        boxShadow:
-          st === "running"
-            ? `0 0 0 3px ${color}33`
-            : selected
-            ? "0 2px 8px rgba(0,0,0,0.12)"
-            : "0 1px 4px rgba(0,0,0,0.08)",
-        transition: "border-color 0.2s, box-shadow 0.2s",
-        display: "flex",
-        flexDirection: "column",
-      },
-    },
-    ...(inputSockets.length
-      ? inputSockets.map((field: any, index: number) =>
-          React.createElement(Handle, {
-            key: `in-${field.name}`,
-            id: field.name,
-            type: "target",
-            position: Position.Left,
-            style: { top: 38 + index * 18, background: field.color || color },
-            title: `${field.name}: ${field.type}`,
-          }),
-        )
-      : [
-          React.createElement(Handle, {
-            key: "in-default",
-            type: "target",
-            position: Position.Left,
-          }),
-        ]),
-    ...controlHandles.map((handle, index) =>
-      React.createElement(Handle, {
-        key: `control-${handle}`,
-        id: handle,
-        type: "source",
-        position: Position.Bottom,
-        title: `控制分支：${handle}`,
-        style: {
-          left: `${((index + 1) * 100) / (controlHandles.length + 1)}%`,
-          background: "#d97706",
-          borderRadius: 2,
-        },
-      }),
-    ),
-    // Header row: icon + label + status tag
-    React.createElement(
-      "div",
-      { style: { display: "flex", alignItems: "center", gap: 6 } },
-      React.createElement(NodeIcon, { classType, icon: d?.icon }),
-      React.createElement(
-        "strong",
-        {
-          style: {
-            color,
-            flex: 1,
-            overflow: "hidden",
-            textOverflow: "ellipsis",
-            whiteSpace: "nowrap",
-          },
-        },
-        label,
-      ),
-      Tag
-        ? React.createElement(
-            Tag,
-            { color: stColor, style: { marginLeft: "auto", fontSize: 10 } },
-            (
-              {
-                pending: "待执行",
-                running: "执行中",
-                success: "完成",
-                failed: "失败",
-                error: "错误",
-                blocked: "待审核",
-                skipped: "已跳过",
-                cancelled: "已取消",
-              } as Record<string, string>
-            )[st] || st,
-          )
-        : null,
-    ),
-    d?._unavailableReason
-      ? React.createElement(
-          "div",
-          { style: { color: "#dc2626", fontSize: 11, marginTop: 6 } },
-          "当前不可用：",
-          d._unavailableReason,
-        )
-      : null,
-    // Description
-    d?.description
-      ? React.createElement(
-          "div",
-          {
-            style: {
-              color: "var(--ant-color-text-tertiary, #8c8c8c)",
-              marginTop: 4,
-              fontSize: 11,
-              maxWidth: 212,
-              overflow: "hidden",
-              textOverflow: "ellipsis",
-              whiteSpace: "nowrap",
-            },
-          },
-          d.description,
-        )
-      : null,
-    // Node ID footer
-    React.createElement(
-      "div",
-      {
-        style: {
-          marginTop: "auto",
-          paddingTop: 4,
-          color: "var(--ant-color-text-quaternary, #bfbfbf)",
-          fontSize: 10,
-          fontFamily: "monospace",
-        },
-      },
-      id,
-      controlHandles.length
-        ? React.createElement(
-            "div",
-            {
-              style: {
-                marginTop: 6,
-                color: "#b7791f",
-                fontFamily: "sans-serif",
-              },
-            },
-            controlHandles.join(" · "),
-          )
-        : null,
-    ),
-    ...(outputSockets.length
-      ? outputSockets.map((field: any, index: number) =>
-          React.createElement(Handle, {
-            key: `out-${field.name}`,
-            id: field.name,
-            type: "source",
-            position: Position.Right,
-            style: { top: 38 + index * 18, background: field.color || color },
-            title: `${field.name}: ${field.type}`,
-          }),
-        )
-      : [
-          React.createElement(Handle, {
-            key: "out-default",
-            type: "source",
-            position: Position.Right,
-          }),
-        ]),
-  );
-}
 
 // ─── Custom Bezier Edge with label editing and delete ───────────────────────
 
 function LabeledEdge(props: EdgeProps & any) {
+  const { t } = useWorkflowI18n();
   const {
     id,
     sourceX,
@@ -564,7 +274,7 @@ function LabeledEdge(props: EdgeProps & any) {
                   textOverflow: "ellipsis",
                   whiteSpace: "nowrap",
                 },
-                title: "双击编辑标签",
+                title: t("双击编辑标签", "Double-click to edit label"),
               },
               data?.label || "···",
             ),
@@ -588,7 +298,7 @@ function LabeledEdge(props: EdgeProps & any) {
                   lineHeight: 1,
                   padding: 0,
                 },
-                title: "删除连线",
+                title: t("删除连线", "Delete connection"),
               },
               "×",
             )
@@ -601,158 +311,21 @@ function LabeledEdge(props: EdgeProps & any) {
 const nodeTypes = { workflow: NodeCard };
 const edgeTypes = { labeled: LabeledEdge };
 
-// ─── Typed Input Field Renderer ─────────────────────────────────────────────
-
-function TypedInput({
-  field,
-  value,
-  onChange,
-}: {
+// Runtime input dialogs share literal field rendering with the inspector.
+function TypedInput(props: {
   field: any;
   value: any;
-  onChange: (v: any) => void;
+  onChange: (value: any) => void;
 }) {
-  const antd = getHost().antd;
-  const {
-    Input,
-    InputNumber,
-    Select,
-    Switch,
-    Upload,
-    Button,
-    Input: { TextArea },
-  } = antd;
-  const type = String(field?.type || "any").toLowerCase();
-  const name = field?.name || "";
-  const required = field?.required;
-  const label = name + (required ? " *" : "");
-  const placeholder = `${type}`;
-  if (
-    Array.isArray(value) &&
-    value.length === 2 &&
-    typeof value[0] === "string" &&
-    typeof value[1] === "number"
-  ) {
-    return React.createElement(
-      antd.Form.Item,
-      {
-        key: name,
-        label,
-        help: "此参数由画布连线提供，删除连线后可手动输入。",
-      },
-      React.createElement(Input, {
-        disabled: true,
-        value: `${value[0]} → 输出 ${value[1]}`,
-      }),
-    );
-  }
-
-  if (["number", "int", "float", "integer"].includes(type)) {
-    return React.createElement(
-      antd.Form.Item,
-      { key: name, label },
-      React.createElement(InputNumber, {
-        value: value ?? "",
-        onChange: (v: any) => onChange(v),
-        placeholder,
-        min: field.min,
-        max: field.max,
-        precision: ["int", "integer"].includes(type) ? 0 : undefined,
-        style: { width: "100%" },
-      }),
-    );
-  }
-  if (type === "boolean" || type === "bool") {
-    return React.createElement(
-      antd.Form.Item,
-      { key: name, label },
-      React.createElement(Switch, {
-        checked: !!value,
-        onChange: (v: any) => onChange(v),
-      }),
-    );
-  }
-  if (type === "select" || type === "enum") {
-    const options = (field?.options || []).map((o: any) => ({
-      label: typeof o === "string" ? o : o.label,
-      value: typeof o === "string" ? o : o.value,
-    }));
-    return React.createElement(
-      antd.Form.Item,
-      { key: name, label },
-      React.createElement(Select, {
-        value: value ?? "",
-        onChange: (v: any) => onChange(v),
-        options,
-        placeholder,
-        allowClear: true,
-      }),
-    );
-  }
-  if (type === "object" || type === "array") {
-    const rendered =
-      typeof value === "string"
-        ? value
-        : JSON.stringify(value ?? (type === "array" ? [] : {}), null, 2);
-    return React.createElement(
-      antd.Form.Item,
-      { key: name, label },
-      React.createElement(TextArea, {
-        value: rendered,
-        autoSize: { minRows: 3, maxRows: 10 },
-        onChange: (e: any) => {
-          try {
-            onChange(JSON.parse(e.target.value));
-          } catch {
-            onChange(e.target.value);
-          }
-        },
-        placeholder: type === "array" ? "[]" : "{}",
-      }),
-    );
-  }
-  if (["file", "image", "video", "audio"].includes(type)) {
-    return React.createElement(
-      antd.Form.Item,
-      {
-        key: name,
-        label,
-        help: "填写运行环境可访问的文件路径或已上传的资源引用",
-      },
-      React.createElement(Input, {
-        value: typeof value === "string" ? value : value?.path || "",
-        onChange: (event: any) => onChange(event.target.value),
-        placeholder: "文件路径 / 资源 URI",
-      }),
-    );
-  }
-  if (
-    type === "textarea" ||
-    type === "multiline" ||
-    name === "prompt" ||
-    name === "system" ||
-    name === "instruction"
-  ) {
-    return React.createElement(
-      antd.Form.Item,
-      { key: name, label },
-      React.createElement(TextArea, {
-        value: value ?? "",
-        onChange: (e: any) => onChange(e.target.value),
-        placeholder,
-        autoSize: { minRows: 2, maxRows: 6 },
-      }),
-    );
-  }
-  return React.createElement(
-    antd.Form.Item,
-    { key: name, label },
-    React.createElement(Input, {
-      value: value ?? "",
-      onChange: (e: any) => onChange(e.target.value),
-      placeholder,
-    }),
-  );
+  return React.createElement(SchemaField, {
+    ...props,
+    antd: getHost().antd,
+    api: apiFetch,
+    agentId: getHost().getSelectedAgentId?.() || "default",
+    classType: "RuntimeInput",
+    nodeId: "runtime",
+    scopeKey: "runtime",
+  });
 }
 
 // ─── Flow List Page ─────────────────────────────────────────────────────────
@@ -783,6 +356,7 @@ function FlowListPage({
   const PlusOutlined = antdIcons?.PlusOutlined;
   const ReloadOutlined = antdIcons?.ReloadOutlined;
 
+  const { t } = useWorkflowI18n();
   const [flows, setFlows] = useState<FlowSummary[]>([]);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
@@ -795,7 +369,7 @@ function FlowListPage({
       const data = await apiFetch<FlowSummary[]>("/flowforge/flows");
       setFlows(data || []);
     } catch (e: any) {
-      message?.error(`加载失败: ${e.message}`);
+      message?.error(`${t("加载失败", "Load failed")}: ${e.message}`);
     } finally {
       setLoading(false);
     }
@@ -825,12 +399,12 @@ function FlowListPage({
           outputs: [],
         }),
       });
-      message?.success(`已创建工作流 ${doc.id}`);
+      message?.success(`${t("已创建工作流", "Created workflow")} ${doc.id}`);
       setNewName("");
       setNewModalOpen(false);
       onEdit(doc.id);
     } catch (e: any) {
-      message?.error(`创建失败: ${e.message}`);
+      message?.error(`${t("创建失败", "Creation failed")}: ${e.message}`);
     }
   }, [newName, onEdit]);
 
@@ -842,16 +416,16 @@ function FlowListPage({
         );
         const newId = `${id}_copy_${Date.now().toString(36)}`;
         doc.id = newId;
-        doc.name = `${doc.name} (副本)`;
+        doc.name = `${doc.name} (${t("副本", "copy")})`;
         delete doc.revision;
         await apiFetch(`/flowforge/flows/${encodeURIComponent(newId)}`, {
           method: "PUT",
           body: JSON.stringify(doc),
         });
-        message?.success(`已复制为 ${newId}`);
+        message?.success(`${t("已复制为", "Copied to")} ${newId}`);
         refresh();
       } catch (e: any) {
-        message?.error(`复制失败: ${e.message}`);
+        message?.error(`${t("复制失败", "Copy failed")}: ${e.message}`);
       }
     },
     [refresh],
@@ -860,18 +434,22 @@ function FlowListPage({
   const deleteFlow = useCallback(
     async (id: string) => {
       Modal.confirm({
-        title: "删除工作流",
-        content: `确认删除 "${id}" 吗？此操作不可恢复。`,
+        title: t("删除工作流", "Delete workflow"),
+        content: t(
+          "确认删除 {id} 吗？此操作不可恢复。",
+          "Delete {id}? This operation cannot be undone.",
+          { id },
+        ),
         okType: "danger",
         onOk: async () => {
           try {
             await apiFetch(`/flowforge/flows/${encodeURIComponent(id)}`, {
               method: "DELETE",
             });
-            message?.success("已删除");
+            message?.success(t("已删除", "Deleted"));
             refresh();
           } catch (e: any) {
-            message?.error(`删除失败: ${e.message}`);
+            message?.error(`${t("删除失败", "Delete failed")}: ${e.message}`);
           }
         },
       });
@@ -881,7 +459,7 @@ function FlowListPage({
 
   const columns = [
     {
-      title: "ID",
+      title: t("ID", "ID"),
       dataIndex: "id",
       key: "id",
       render: (id: string) =>
@@ -891,17 +469,27 @@ function FlowListPage({
           id,
         ),
     },
-    { title: "名称", dataIndex: "name", key: "name" },
+    { title: t("名称", "Name"), dataIndex: "name", key: "name" },
     {
-      title: "描述",
+      title: t("描述", "Description"),
       dataIndex: "description",
       key: "description",
       ellipsis: true,
     },
-    { title: "节点", dataIndex: "node_count", key: "node_count", width: 70 },
-    { title: "版本", dataIndex: "version", key: "version", width: 70 },
     {
-      title: "操作",
+      title: t("节点", "Nodes"),
+      dataIndex: "node_count",
+      key: "node_count",
+      width: 70,
+    },
+    {
+      title: t("版本", "Revision"),
+      dataIndex: "revision",
+      key: "revision",
+      width: 70,
+    },
+    {
+      title: t("操作", "Actions"),
       key: "actions",
       width: 280,
       render: (_: any, row: FlowSummary) =>
@@ -911,22 +499,22 @@ function FlowListPage({
           React.createElement(
             Button,
             { size: "small", onClick: () => onEdit(row.id) },
-            "编辑",
+            t("编辑", "Edit"),
           ),
           React.createElement(
             Button,
             { size: "small", onClick: () => duplicateFlow(row.id) },
-            "复制",
+            t("复制", "Duplicate"),
           ),
           React.createElement(
             Button,
             { size: "small", type: "primary", onClick: () => onRun(row.id) },
-            "运行",
+            t("运行", "Run"),
           ),
           React.createElement(
             Button,
             { size: "small", danger: true, onClick: () => deleteFlow(row.id) },
-            "删除",
+            t("删除", "Delete"),
           ),
         ),
     },
@@ -948,7 +536,7 @@ function FlowListPage({
       React.createElement(
         Title,
         { level: 4, style: { margin: 0 } },
-        "工作流",
+        t("工作流", "Workflow"),
         React.createElement(
           "span",
           {
@@ -958,15 +546,19 @@ function FlowListPage({
               marginLeft: 8,
             },
           },
-          "可视化 DAG 工作流引擎",
+          t("可视化 DAG 工作流引擎", "Visual DAG workflow engine"),
         ),
       ),
       React.createElement(
         Space,
         null,
-        React.createElement(Button, { onClick: onHistory }, "运行记录"),
+        React.createElement(
+          Button,
+          { onClick: onHistory },
+          t("运行记录", "Run history"),
+        ),
         React.createElement(Input.Search, {
-          placeholder: "搜索工作流",
+          placeholder: t("搜索工作流", "Search workflows"),
           value: search,
           onChange: (e: any) => setSearch(e.target.value),
           style: { width: 220 },
@@ -986,7 +578,7 @@ function FlowListPage({
             icon: PlusOutlined ? React.createElement(PlusOutlined) : undefined,
             onClick: () => setNewModalOpen(true),
           },
-          "新建工作流",
+          t("新建工作流", "New workflow"),
         ),
       ),
     ),
@@ -999,26 +591,29 @@ function FlowListPage({
       size: "small",
       locale: {
         emptyText: React.createElement(Empty, {
-          description: "暂无工作流，点击「新建工作流」创建",
+          description: t(
+            "暂无工作流，点击「新建工作流」创建",
+            "No workflows yet. Create a new workflow to begin.",
+          ),
         }),
       },
     }),
     React.createElement(
       Modal,
       {
-        title: "新建工作流",
+        title: t("新建工作流", "New workflow"),
         open: newModalOpen,
         onOk: createFlow,
         onCancel: () => {
           setNewModalOpen(false);
           setNewName("");
         },
-        okText: "创建",
-        cancelText: "取消",
+        okText: t("创建", "Create"),
+        cancelText: t("取消", "Cancel"),
         okButtonProps: { disabled: !newName.trim() },
       },
       React.createElement(Input, {
-        placeholder: "输入工作流名称（如：库存日评估）",
+        placeholder: t("输入工作流名称（如：库存日评估）", "Workflow name"),
         value: newName,
         onChange: (e: any) => setNewName(e.target.value),
         onPressEnter: createFlow,
@@ -1030,6 +625,9 @@ function FlowListPage({
 // ─── Flow Editor Page ───────────────────────────────────────────────────────
 
 interface EditorProps {
+  debugRecord?: RunRecord;
+  onDebugRun?: (runId: string) => void;
+  userId?: string;
   flowId: string;
   onBack: () => void;
   onRun: (id: string) => void;
@@ -1053,267 +651,6 @@ function FlowEditorPage(props: EditorProps) {
   });
 }
 
-// ─── Node Inspector ─────────────────────────────────────────────────────────
-
-function NodeInspector({
-  node,
-  nodeTypes,
-  availableNodes = [],
-  onUpdate,
-}: {
-  node: Node;
-  nodeTypes: NodeTypeSpec[];
-  availableNodes?: Node[];
-  onUpdate: (n: Node) => void;
-}) {
-  const antd = getHost().antd;
-  const { Form, Input, Select, Typography, Divider, Collapse } = antd;
-  const { Title: AntTitle, Text: AntText, Paragraph } = Typography;
-  const data = (node.data || {}) as any;
-  const classType = data.class_type || "ToolNode";
-  const spec = nodeTypes.find((t) => t.class_type === classType);
-  const targetOptions = availableNodes
-    .filter((entry) => entry.id !== node.id)
-    .map((entry) => ({
-      label: `${entry.data.label || entry.id} · ${entry.id}`,
-      value: entry.id,
-    }));
-  const controlLabels: Record<string, string> = {
-    next: "完成后继续",
-    else: "条件不匹配时",
-    else_node: "条件不匹配时",
-    on_reject: "审核拒绝时",
-    error_handler: "失败处理节点",
-    branches: "并行分支配置",
-    pass_node: "质量达标时",
-    fail_node: "质量未达标时",
-    retry_node: "重新执行节点",
-    exhausted_node: "迭代次数耗尽时",
-  };
-
-  const update = (key: string, value: any) => {
-    onUpdate({ ...node, data: { ...data, [key]: value } });
-  };
-  const updateInput = (name: string, value: any) => {
-    update("inputs", { ...(data.inputs || {}), [name]: value });
-  };
-  const updateControl = (key: string, value: any) => {
-    update("control", { ...(data.control || {}), [key]: value });
-  };
-
-  const controlItems: any[] = [
-    React.createElement(
-      Form.Item,
-      { key: "retry_count", label: "重试次数" },
-      React.createElement(antd.InputNumber, {
-        value: data.control?.max_retries ?? data.control?.retry_count ?? 0,
-        onChange: (v: any) => updateControl("max_retries", v ?? 0),
-        min: 0,
-        max: 10,
-        style: { width: "100%" },
-      }),
-    ),
-    React.createElement(
-      Form.Item,
-      { key: "retry_delay", label: "重试延迟(秒)" },
-      React.createElement(antd.InputNumber, {
-        value: data.control?.retry_delay_sec ?? 1,
-        onChange: (v: any) => updateControl("retry_delay_sec", v ?? 1),
-        min: 0,
-        step: 0.5,
-        style: { width: "100%" },
-      }),
-    ),
-    React.createElement(
-      Form.Item,
-      { key: "output_var", label: "输出变量名" },
-      React.createElement(Input, {
-        value: data.control?.output || "",
-        onChange: (e: any) => updateControl("output", e.target.value),
-        placeholder: "如：result",
-      }),
-    ),
-    React.createElement(
-      Form.Item,
-      { key: "mode", label: "执行模式" },
-      React.createElement(Select, {
-        value: data.control?.mode || "run",
-        onChange: (v: any) => updateControl("mode", v),
-        options: [
-          { label: "正常运行 (run)", value: "run" },
-          { label: "静默跳过 (mute)", value: "mute" },
-          { label: "直通上游 (bypass)", value: "bypass" },
-        ],
-      }),
-    ),
-  ];
-  controlItems.push(
-    React.createElement(
-      Form.Item,
-      { key: "timeout_sec", label: "节点超时（秒）" },
-      React.createElement(antd.InputNumber, {
-        value: data.control?.timeout_sec,
-        min: 0.1,
-        placeholder: "使用默认超时",
-        style: { width: "100%" },
-        onChange: (value: any) => updateControl("timeout_sec", value),
-      }),
-    ),
-  );
-  const classControls: Record<string, string[]> = {
-    HumanReviewNode: ["next", "on_reject", "error_handler"],
-    QualityGateNode: ["pass_node", "fail_node", "error_handler"],
-    IterativeRefineNode: ["retry_node", "exhausted_node", "error_handler"],
-  };
-  for (const field of [
-    ...new Set(classControls[classType] || spec?.control_schema || []),
-  ]) {
-    if (
-      [
-        "mode",
-        "retry_count",
-        "max_retries",
-        "timeout_sec",
-        "retry_delay_sec",
-        "output",
-      ].includes(field)
-    )
-      continue;
-    if (field === "conditions") {
-      controlItems.push(
-        React.createElement(ConditionFields, {
-          key: field,
-          value: data.control?.conditions,
-          targets: targetOptions,
-          antd,
-          onChange: (value: any[]) => updateControl("conditions", value),
-        }),
-      );
-    } else if (field === "branches") {
-      const rendered =
-        typeof data.control?.[field] === "string"
-          ? data.control[field]
-          : JSON.stringify(data.control?.[field] || [], null, 2);
-      controlItems.push(
-        React.createElement(
-          Form.Item,
-          { key: field, label: controlLabels[field] || field },
-          React.createElement(antd.Input.TextArea, {
-            value: rendered,
-            autoSize: { minRows: 4, maxRows: 12 },
-            onChange: (event: any) => {
-              try {
-                updateControl(field, JSON.parse(event.target.value));
-              } catch {
-                updateControl(field, event.target.value);
-              }
-            },
-          }),
-        ),
-      );
-    } else {
-      controlItems.push(
-        React.createElement(
-          Form.Item,
-          { key: field, label: controlLabels[field] || field },
-          React.createElement(Select, {
-            value: data.control?.[field] || undefined,
-            options: targetOptions,
-            allowClear: true,
-            onChange: (value: any) => updateControl(field, value),
-            placeholder: "选择目标节点",
-            showSearch: true,
-            optionFilterProp: "label",
-          }),
-        ),
-      );
-    }
-  }
-
-  return React.createElement(
-    Form,
-    { layout: "vertical" },
-    spec?.available === false
-      ? React.createElement(antd.Alert, {
-          type: "warning",
-          showIcon: true,
-          message: "此能力当前不可用",
-          description: spec.unavailable_reason,
-          style: { marginBottom: 16 },
-        })
-      : null,
-    React.createElement(
-      Form.Item,
-      { label: "节点 ID" },
-      React.createElement(Input, {
-        value: node.id,
-        disabled: true,
-        style: { fontFamily: "monospace", fontSize: 11 },
-      }),
-    ),
-    React.createElement(
-      Form.Item,
-      { label: "节点类型" },
-      React.createElement(Select, {
-        value: classType,
-        onChange: (v: string) => update("class_type", v),
-        options: nodeTypes.map((t) => ({
-          label: t.display_name,
-          value: t.class_type,
-        })),
-        showSearch: true,
-        optionFilterProp: "label",
-      }),
-    ),
-    React.createElement(
-      Form.Item,
-      { label: "显示标签" },
-      React.createElement(Input, {
-        value: data.label || "",
-        onChange: (e: any) => update("label", e.target.value),
-        placeholder: "节点显示名称",
-      }),
-    ),
-    spec?.description
-      ? React.createElement(
-          Paragraph,
-          {
-            type: "secondary",
-            style: {
-              fontSize: 12,
-              background: "var(--ant-color-fill-tertiary, #f5f5f5)",
-              padding: 8,
-              borderRadius: 4,
-            },
-          },
-          spec.description,
-        )
-      : null,
-    React.createElement(Divider, { style: { margin: "12px 0" } }),
-    React.createElement(AntTitle, { level: 5 }, "输入参数"),
-    (spec?.inputs_schema || []).length === 0
-      ? React.createElement(
-          AntText,
-          { type: "secondary", style: { fontSize: 12 } },
-          "此节点类型没有定义输入参数",
-        )
-      : (spec?.inputs_schema || []).map((field: any) =>
-          React.createElement(TypedInput, {
-            key: field.name,
-            field,
-            value: (data.inputs || {})[field.name],
-            onChange: (v: any) => updateInput(field.name, v),
-          }),
-        ),
-    React.createElement(Divider, { style: { margin: "12px 0" } }),
-    React.createElement(Collapse, {
-      ghost: true,
-      defaultActiveKey: ["control"],
-      items: [{ key: "control", label: "执行控制", children: controlItems }],
-    }),
-  );
-}
-
 // ─── IO Config Modal ────────────────────────────────────────────────────────
 
 function IoConfigModal({
@@ -1327,6 +664,7 @@ function IoConfigModal({
   onClose: () => void;
   onSave: (inputs: any[], outputs: any, startId: string | null) => void;
 }) {
+  const { t, locale } = useWorkflowI18n();
   const antd = getHost().antd;
   const {
     Modal: AntModal,
@@ -1356,14 +694,14 @@ function IoConfigModal({
   return React.createElement(
     AntModal,
     {
-      title: "工作流输入/输出配置",
+      title: t("工作流输入/输出配置", "Workflow input/output configuration"),
       open,
       onCancel: onClose,
       width: 600,
       footer: React.createElement(
         Space,
         null,
-        React.createElement(Button, { onClick: onClose }, "取消"),
+        React.createElement(Button, { onClick: onClose }, t("取消", "Cancel")),
         React.createElement(
           Button,
           {
@@ -1375,6 +713,7 @@ function IoConfigModal({
                   Object.fromEntries(
                     inputs.map((field) => [field.name, field.default]),
                   ),
+                  locale,
                 );
                 onSave(
                   inputs.map((field) => ({
@@ -1389,32 +728,43 @@ function IoConfigModal({
               }
             },
           },
-          "确定",
+          t("确定", "Confirm"),
         ),
       ),
     },
     // Start node
     React.createElement(
       Form.Item,
-      { label: "起始节点" },
+      { label: t("起始节点", "Start node") },
       React.createElement(Select, {
         value: startId,
         onChange: (v: any) => setStartId(v || null),
         options: nodeIds.map((id) => ({ label: id, value: id })),
         allowClear: true,
-        placeholder: "自动选择起始节点",
+        placeholder: t(
+          "自动选择起始节点",
+          "Choose the start node automatically",
+        ),
       }),
     ),
-    React.createElement(AntTitle, { level: 5 }, "工作流输入参数"),
+    React.createElement(
+      AntTitle,
+      { level: 5 },
+      t("工作流输入参数", "Workflow inputs"),
+    ),
     inputs.length === 0
-      ? React.createElement(AntText, { type: "secondary" }, "无输入参数定义")
+      ? React.createElement(
+          AntText,
+          { type: "secondary" },
+          t("无输入参数定义", "No input parameters"),
+        )
       : null,
     inputs.map((inp, idx) =>
       React.createElement(
         Space,
         { key: idx, style: { marginBottom: 8 } },
         React.createElement(Input, {
-          placeholder: "名称",
+          placeholder: t("名称", "Name"),
           value: inp.name || "",
           onChange: (e: any) => {
             const ni = [...inputs];
@@ -1440,7 +790,7 @@ function IoConfigModal({
           style: { width: 100 },
         }),
         React.createElement(Input, {
-          placeholder: "默认值",
+          placeholder: t("默认值", "Default value"),
           value:
             typeof inp.default === "object"
               ? JSON.stringify(inp.default)
@@ -1462,7 +812,7 @@ function IoConfigModal({
               setInputs(ni);
             },
           },
-          "必填",
+          t("必填", "Required"),
         ),
         React.createElement(
           Button,
@@ -1471,7 +821,7 @@ function IoConfigModal({
             size: "small",
             onClick: () => setInputs(inputs.filter((_, i) => i !== idx)),
           },
-          "删除",
+          t("删除", "Delete"),
         ),
       ),
     ),
@@ -1484,19 +834,19 @@ function IoConfigModal({
           setInputs([...inputs, { name: "", type: "any", default: "" }]),
         style: { marginTop: 4 },
       },
-      "+ 添加输入",
+      t("+ 添加输入", "+ Add input"),
     ),
     React.createElement(
       AntTitle,
       { level: 5, style: { marginTop: 16 } },
-      "工作流输出",
+      t("工作流输出", "Workflow outputs"),
     ),
     React.createElement(Select, {
       mode: "multiple",
       value: Array.isArray(outputs) ? outputs : [],
       onChange: (v: any) => setOutputs(v),
       options: nodeIds.map((id) => ({ label: id, value: id })),
-      placeholder: "选择输出节点ID",
+      placeholder: t("选择输出节点ID", "Select output node IDs"),
       style: { width: "100%" },
     }),
   );
@@ -1505,6 +855,13 @@ function IoConfigModal({
 // ─── Top-level App ──────────────────────────────────────────────────────────
 
 function FlowForgeApp() {
+  const { t } = useWorkflowI18n();
+  const host = getHost();
+  const location = host.useLocation?.();
+  const selectedAgent = host.useSelectedAgent?.();
+  const agentId = selectedAgent?.id || host.getSelectedAgentId?.() || "default";
+  const { identity, error: identityError } = useWorkflowIdentity(apiFetch);
+  const [debugRecord, setDebugRecord] = useState<RunRecord | undefined>();
   const initialFlowId = new URLSearchParams(window.location.search).get("flow");
   const initialRunId = new URLSearchParams(window.location.search).get("run");
   const [route, setRoute] = useState<"list" | "editor">(
@@ -1515,46 +872,145 @@ function FlowForgeApp() {
   const [runStatuses, setRunStatuses] = useState<Record<string, string>>({});
   const [pendingRun, setPendingRun] = useState<FlowDocument | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
+  const selectRun = useCallback((nextRunId: string | null) => {
+    setRunId(nextRunId);
+    const url = new URL(window.location.href);
+    if (nextRunId) url.searchParams.set("run", nextRunId);
+    else url.searchParams.delete("run");
+    window.history.replaceState(
+      { ...window.history.state },
+      "",
+      url.pathname + url.search + url.hash,
+    );
+  }, []);
+  const inputRequest = useRef(0);
+  const activePage = useRef({ flowId, route });
+  if (
+    activePage.current.flowId !== flowId ||
+    activePage.current.route !== route
+  )
+    activePage.current = { flowId, route };
+  useEffect(() => {
+    ++inputRequest.current;
+    setPendingRun(null);
+  }, [flowId, route, agentId, identity]);
+  const requestScope = useRef({ agentId, identity });
+  if (
+    requestScope.current.agentId !== agentId ||
+    requestScope.current.identity !== identity
+  )
+    requestScope.current = { agentId, identity };
+  const renderScope = requestScope.current;
+  const previousScope = useRef({ agentId, identity });
+  useEffect(() => {
+    const previous = previousScope.current;
+    if (
+      previous.agentId !== agentId ||
+      (previous.identity !== undefined && previous.identity !== identity)
+    ) {
+      selectRun(null);
+      setRunStatuses({});
+      setDebugRecord(undefined);
+      setHistoryOpen(false);
+      setPendingRun(null);
+    }
+    previousScope.current = { agentId, identity };
+  }, [agentId, identity, selectRun]);
+
+  useEffect(() => {
+    const syncRoute = () => {
+      if (!/\/flowforge\/?$/i.test(window.location.pathname)) return;
+      const params = new URLSearchParams(window.location.search);
+      const selected = params.get("flow");
+      setRunId(params.get("run"));
+      setFlowId(selected);
+      setRoute(selected ? "editor" : "list");
+      setRunStatuses({});
+      setDebugRecord(undefined);
+    };
+    window.addEventListener("popstate", syncRoute);
+    return () => window.removeEventListener("popstate", syncRoute);
+  }, []);
+
+  useEffect(() => {
+    if (!location || !/\/flowforge\/?$/i.test(location.pathname)) return;
+    const params = new URLSearchParams(location.search);
+    const selected = params.get("flow");
+    setRunId(params.get("run"));
+    setFlowId(selected);
+    setRoute(selected ? "editor" : "list");
+    setRunStatuses({});
+    setDebugRecord(undefined);
+  }, [location?.pathname, location?.search]);
 
   const editFlow = useCallback((id: string) => {
+    ++inputRequest.current;
+    setPendingRun(null);
     setFlowId(id);
     setRunStatuses({});
+    setDebugRecord(undefined);
     setRoute("editor");
     window.history.replaceState(
-      {},
+      { ...window.history.state },
       "",
-      `/flowforge?flow=${encodeURIComponent(id)}`,
+      `${window.location.pathname}?flow=${encodeURIComponent(id)}`,
     );
   }, []);
   const backToList = useCallback(() => {
+    ++inputRequest.current;
+    setPendingRun(null);
     setRoute("list");
     setFlowId(null);
     setRunStatuses({});
-    window.history.replaceState({}, "", "/flowforge");
+    setDebugRecord(undefined);
+    window.history.replaceState(
+      { ...window.history.state },
+      "",
+      window.location.pathname,
+    );
   }, []);
-  const runFlow = useCallback(async (id: string) => {
+  const runFlow = async (id: string) => {
+    const visit = renderScope;
+    const page = activePage.current;
+    const request = ++inputRequest.current;
+    const current = () =>
+      requestScope.current === visit &&
+      activePage.current === page &&
+      inputRequest.current === request;
     try {
-      setPendingRun(
-        await apiFetch<FlowDocument>(
-          `/flowforge/flows/${encodeURIComponent(id)}`,
-        ),
+      const flow = await apiFetch<FlowDocument>(
+        `/flowforge/flows/${encodeURIComponent(id)}`,
+        { headers: { "X-Agent-Id": agentId } },
       );
+      if (current()) setPendingRun(flow);
     } catch (error: any) {
-      getHost().antd.message.error(`读取运行参数失败：${error.message}`);
+      if (current())
+        getHost().antd.message.error(
+          `${t("读取运行参数失败", "Cannot load run inputs")}：${
+            error.message
+          }`,
+        );
     }
-  }, []);
+  };
   const startRun = useCallback(
     async (inputs: Record<string, any>) => {
       if (!pendingRun) return;
+      const visit = renderScope;
+      const page = activePage.current;
       const result = await apiFetch<{ run_id: string }>(
         `/flowforge/flows/${encodeURIComponent(pendingRun.id)}/run`,
-        { method: "POST", body: JSON.stringify({ inputs }) },
+        {
+          method: "POST",
+          headers: { "X-Agent-Id": agentId },
+          body: JSON.stringify({ inputs }),
+        },
       );
+      if (requestScope.current !== visit || activePage.current !== page) return;
       setRunStatuses({});
-      setRunId(result.run_id);
+      selectRun(result.run_id);
       setPendingRun(null);
     },
-    [pendingRun],
+    [pendingRun, renderScope, agentId, selectRun],
   );
   const handleStatusUpdate = useCallback(
     (statuses: Record<string, string>, runFlowId: string) => {
@@ -1564,37 +1020,68 @@ function FlowForgeApp() {
   );
 
   const handleCloseRun = useCallback(() => {
-    setRunId(null);
+    selectRun(null);
     setRunStatuses({});
-  }, []);
+  }, [selectRun]);
 
+  if (identityError)
+    return React.createElement(host.antd.Alert, {
+      type: "error",
+      showIcon: true,
+      message: t("无法读取账户身份", "Cannot load account identity"),
+      description: identityError,
+      action: React.createElement(
+        host.antd.Button,
+        {
+          onClick: () =>
+            window.dispatchEvent(new Event("qwenpaw:auth-changed")),
+        },
+        t("重试", "Retry"),
+      ),
+    });
+  if (identity === undefined)
+    return React.createElement(host.antd.Spin, {
+      "aria-label": t("加载工作流", "Loading workflow"),
+    });
   return React.createElement(
-    React.Fragment,
-    null,
-    route === "editor" && flowId
-      ? React.createElement(FlowEditorPage, {
-          flowId,
-          onBack: backToList,
-          onRun: runFlow,
-          onHistory: () => setHistoryOpen(true),
-          runStatuses,
-        })
-      : React.createElement(FlowListPage, {
-          onEdit: editFlow,
-          onRun: runFlow,
-          onHistory: () => setHistoryOpen(true),
-        }),
+    "div",
+    { className: "ff-app-shell" },
+    React.createElement(
+      "div",
+      { className: "ff-app-page" },
+      route === "editor" && flowId
+        ? React.createElement(FlowEditorPage, {
+            flowId,
+            onBack: backToList,
+            onRun: runFlow,
+            onHistory: () => setHistoryOpen(true),
+            runStatuses,
+            debugRecord,
+            onDebugRun: selectRun,
+            userId: identity,
+          })
+        : React.createElement(FlowListPage, {
+            onEdit: editFlow,
+            onRun: runFlow,
+            onHistory: () => setHistoryOpen(true),
+          }),
+    ),
     React.createElement(RunMonitor, {
       runId,
+      key: `${identity}:${agentId}`,
+      agentId,
+      docked: route === "editor",
+      onRecord: setDebugRecord,
       onClose: handleCloseRun,
       onStatusUpdate: handleStatusUpdate,
-      onResumed: setRunId,
+      onResumed: selectRun,
       antd: getHost().antd,
       api: apiFetch,
       streamUrl: apiUrl,
       headers: authHeaders,
     }),
     React.createElement(RunInputDialog, {
+      key: JSON.stringify([identity, agentId, route, flowId, pendingRun?.id]),
       flow: pendingRun,
       onClose: () => setPendingRun(null),
       onRun: startRun,
@@ -1603,11 +1090,12 @@ function FlowForgeApp() {
     }),
     React.createElement(RunHistory, {
       open: historyOpen,
+      agentId,
       flowId,
       onClose: () => setHistoryOpen(false),
       onSelect: (id: string) => {
         setHistoryOpen(false);
-        setRunId(id);
+        selectRun(id);
       },
       antd: getHost().antd,
       api: apiFetch,
@@ -1630,11 +1118,17 @@ function buildPlugin() {
     id: "flowforge.editor",
     path: "/flowforge",
     component: FlowForgeApp,
+    meta: {
+      domain: "workspace",
+      title: (locale: string) =>
+        translateWorkflow("工作流", locale, "Workflow"),
+      scope: "agent",
+      layout: "workbench",
+      navigation: "rail",
+    },
   });
 
-  // FlowForge is the execution/editor surface behind
-  // “专家·协作 / 协作工作流”, so it intentionally has no competing top-level
-  // sidebar entry. The route remains directly navigable from that module.
+  // The host owns the standalone Workflows rail entry and its availability.
   console.info("[flowforge] Plugin registered: DAG editor route active");
 }
 

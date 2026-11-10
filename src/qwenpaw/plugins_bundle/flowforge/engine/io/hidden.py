@@ -62,6 +62,8 @@ class HiddenHolder:
     abort_event: Any = None
     #: Per-execution extra data bag (run_id, session_id, user_id, etc.).
     extra_data: dict[str, Any] | None = None
+    #: Validated options from the explicit debug API, scoped to this run.
+    debug_options: dict[str, Any] | None = None
 
     def resolve(self, key: Hidden) -> Any:
         return getattr(self, key.value, None)
@@ -84,4 +86,5 @@ class HiddenHolder:
             progress=self.progress,
             abort_event=self.abort_event,
             extra_data=self.extra_data,
+            debug_options=self.debug_options,
         )

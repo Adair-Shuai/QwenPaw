@@ -1,3 +1,4 @@
+import { UgsciLoading, UgsciMotion } from "./components/UgsciMotion";
 import { createGlobalStyle } from "antd-style";
 import {
   ConfigProvider,
@@ -49,6 +50,8 @@ import {
   getRouterBasename,
   isOsPath,
 } from "./utils/navigationMode";
+
+const contentSpin = { indicator: <UgsciMotion variant="content" size={32} /> };
 
 const LoginPage = lazyImportWithRetry("./pages/Login/index");
 const HubPage = lazyImportWithRetry("./pages/Hub/index");
@@ -473,7 +476,7 @@ function AppInner({
         );
     }
     useUploadLimitStore.getState().fetch();
-  }, []);
+  }, [i18n]);
 
   useEffect(() => {
     const handleLanguageChanged = (lng: string) => {
@@ -489,7 +492,7 @@ function AppInner({
     return () => {
       i18n.off("languageChanged", handleLanguageChanged);
     };
-  }, [i18n]);
+  }, [i18n, lang]);
 
   // Disable the default browser context menu in the Tauri desktop build so
   // users cannot open DevTools via right-click. DevTools is still available
@@ -603,7 +606,7 @@ function AppInner({
           ),
         }}
       >
-        <AntdConfigProvider locale={antdLocale}>
+        <AntdConfigProvider locale={antdLocale} spin={contentSpin}>
           <AntdApp>
             {isDesktopApp() && <CloseWindowPrompt />}
             <DesktopUpdateProvider>
@@ -623,7 +626,7 @@ function AppInner({
 }
 
 function App({
-  loadingFallback = null,
+  loadingFallback = <UgsciLoading variant="startup" label="UGSci" />,
 }: {
   loadingFallback?: React.ReactNode;
 }) {

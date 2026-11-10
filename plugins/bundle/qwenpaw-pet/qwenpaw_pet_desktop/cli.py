@@ -44,7 +44,6 @@ def command_start(args: argparse.Namespace) -> int:
             return 0
     except Exception:
         pass
-
     if args.foreground:
         from .app import main as app_main
 
@@ -52,7 +51,6 @@ def command_start(args: argparse.Namespace) -> int:
         if args.pet_dir:
             app_args.extend(["--pet-dir", args.pet_dir])
         return app_main(app_args)
-
     # log_file is held open for the lifetime of the spawned child;
     # a ``with`` block would close it before the child writes anything.
     log_file = runtime.log_path().open(  # pylint: disable=consider-using-with

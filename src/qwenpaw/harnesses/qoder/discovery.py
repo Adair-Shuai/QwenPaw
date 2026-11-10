@@ -102,7 +102,6 @@ def resolve_qoder_binary_info(
             if resolved is not None
             else None
         )
-
     environment_binary = environment.get("QODERCLI_PATH")
     if environment_binary:
         resolved = _resolve_configured(
@@ -114,7 +113,6 @@ def resolve_qoder_binary_info(
             if resolved is not None
             else None
         )
-
     bundled = (
         sdk_candidate
         if sdk_candidate is not None
@@ -125,11 +123,9 @@ def resolve_qoder_binary_info(
         platform_name=platform_name,
     ):
         return QoderBinaryResolution(bundled.resolve(), "python-sdk")
-
     on_path = shutil.which("qodercli")
     if on_path:
         return QoderBinaryResolution(Path(on_path).resolve(), "path")
-
     candidates = (
         install_candidates
         if install_candidates is not None

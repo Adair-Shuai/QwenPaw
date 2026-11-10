@@ -41,7 +41,6 @@ def collect_import_time(output_dir):
 
     with open(log_file, "w", encoding="utf-8") as f:
         f.write(output)
-
     print(f"   ✓ {log_file.name}")
     return log_file
 
@@ -64,7 +63,6 @@ def collect_execution_trace(output_dir, script_dir):
     if not tracer_script.exists():
         print(f"   ⚠ {tracer_script.name} not found")
         return None
-
     # Run the tracer script
     try:
         subprocess.run(
@@ -106,7 +104,6 @@ def parse_import_log(log_file):
                         "cumulative_ms": int(match.group(2)) / 1000,
                     },
                 )
-
     # Filter QwenPaw and third-party
     qwenpaw = [i for i in imports if "qwenpaw" in i["package"]]
     third_party = [
@@ -145,13 +142,11 @@ def parse_execution_trace(trace_file):
     """Parse execution trace data."""
     if not trace_file or not trace_file.exists():
         return None
-
     print("🔬 Parsing execution trace...")
 
     try:
         with open(trace_file, encoding="utf-8") as f:
             data = json.load(f)
-
         functions = [
             {
                 "function": func,
@@ -218,7 +213,6 @@ def main():  # pylint: disable=too-many-statements
         encoding="utf-8",
     ) as f:
         json.dump(report, f, indent=2, ensure_ascii=False)
-
     print("   ✓ analysis.json")
     print()
 
@@ -280,7 +274,6 @@ def main():  # pylint: disable=too-many-statements
                 break
             except OSError:
                 continue
-
         if httpd is None:
             print(
                 "⚠ Could not find available port, please run manually:",
@@ -311,7 +304,6 @@ def main():  # pylint: disable=too-many-statements
                 time.sleep(1)
         except KeyboardInterrupt:
             print("\n👋 Server stopped")
-
     print()
     print("=" * 60)
     print(f"✅ Done in {time.time() - start:.1f}s")

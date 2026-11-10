@@ -149,6 +149,8 @@ async def connect(
     callee="+15550002",
     setup=True,
 ):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     relay = await incoming(r, call=call, caller=caller, callee=callee)
     parsed = urlsplit(relay.attrib["url"])
     target = parsed.path + "?" + parsed.query
@@ -175,6 +177,8 @@ async def prompt(r, ws, text="same text"):
 
 
 async def send(r, event, parts, *, source="event", delivery="delivery-one"):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     return await r.driver._send(
         SendParams.from_mapping(
             {
@@ -202,7 +206,7 @@ async def voice(monkeypatch, tmp_path):
         driver_module = module("voice")
         monkeypatch.setattr(driver_module, "VoicePlatform", lambda: platform)
         driver = driver_module.VoiceDriver()
-        peer, identity = bind("voice", driver, tmp_path)
+        peer, _unused_identity = bind("voice", driver, tmp_path)
         call = peer.call
 
         async def forwarding(name, params):
@@ -241,6 +245,10 @@ async def voice(monkeypatch, tmp_path):
 
 
 async def test_signed_full_original_query_twiml_and_committed_cleanup(voice):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     async with voice() as r:
         relay = await incoming(r)
         assert relay.attrib["welcomeGreeting"] == "Hello & welcome"
@@ -265,6 +273,10 @@ async def test_signed_full_original_query_twiml_and_committed_cleanup(voice):
 
 
 async def test_completed_fragments_and_finish_do_not_hang_up(voice):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     async with voice() as r:
         ws, _ = await connect(r)
         event = await prompt(r, ws)
@@ -316,6 +328,10 @@ async def test_completed_fragments_and_finish_do_not_hang_up(voice):
 
 
 async def test_transcription_maps_caller_and_new_turn(voice):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     async with voice() as r:
         ws, _ = await connect(r)
         first = await prompt(r, ws, "first question")
@@ -337,6 +353,10 @@ async def test_transcription_maps_caller_and_new_turn(voice):
 
 
 async def test_status_callback_cleans_hung_up_call(voice):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     async with voice() as r:
         ws, _ = await connect(r)
         await prompt(r, ws)
@@ -351,6 +371,10 @@ async def test_status_callback_cleans_hung_up_call(voice):
 
 
 async def test_stop_cleans_live_socket_and_listener(voice):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     async with voice() as r:
         ws, _ = await connect(r)
         await prompt(r, ws)

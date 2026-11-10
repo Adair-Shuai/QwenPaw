@@ -307,8 +307,6 @@ class XiaoYiPlatform:
                     return
             except XiaoYiDeliveryError:
                 raise
-            except asyncio.CancelledError:
-                raise
             except Exception as exc:
                 raise XiaoYiDeliveryError(
                     "PLATFORM_RESULT_UNKNOWN",
@@ -354,7 +352,8 @@ class XiaoYiPlatform:
             self._session_task_map.pop(session, None)
 
     async def _handle_tasks_cancel(self, message, server_name="primary"):
-        # The old protocol only acknowledges cancel; it does not cancel Agent work.
+        # The old protocol only acknowledges cancel; it does not cancel Agent
+        # work.
         await self._send_control_response(
             message.get("id") or "",
             message.get("sessionId") or "",
@@ -407,6 +406,8 @@ class XiaoYiPlatform:
         )
 
     async def _handle_a2a_request(self, message, server_name="primary"):
+        # Keep A2A request validation and response ownership together.
+        # pylint: disable=R0912
         params = message.get("params") or {}
         session = params.get("sessionId") or message.get("sessionId")
         if not session:

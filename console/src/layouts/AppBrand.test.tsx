@@ -78,9 +78,9 @@ describe("AppBrand", () => {
   it("keeps the shared logo, version, and action without consulting public PyPI", async () => {
     render(<AppBrand action={<button type="button">Collapse</button>} />);
 
-    expect(screen.getByRole("img", { name: "QwenPaw" })).toHaveAttribute(
+    expect(screen.getByRole("img", { name: "UGSci" })).toHaveAttribute(
       "src",
-      "/logo-light.svg",
+      "/ugsci-mono/brand/lockup-black.svg",
     );
     expect(screen.getByRole("button", { name: "Collapse" })).toBeVisible();
     expect(await screen.findByText("v1.0.0")).toBeVisible();
@@ -101,7 +101,7 @@ describe("AppBrand", () => {
     rerender(<AppBrand hidden version="1.2.3" />);
 
     expect(
-      container.querySelector('img[alt="QwenPaw"]')?.closest("div"),
+      container.querySelector('img[alt="UGSci"]')?.closest("div"),
     ).toHaveAttribute("hidden");
     expect(fetch).not.toHaveBeenCalled();
   });

@@ -42,6 +42,8 @@ def record(kind, **values):
         )
 
 
+# The test adapter intentionally retains unsupported base hooks.
+# pylint: disable-next=abstract-method
 class Driver(SharedResponseDriver):
     def __init__(self):
         super().__init__("sample", "sample.responses", DeliveryError)

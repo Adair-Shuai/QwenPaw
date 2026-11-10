@@ -113,7 +113,6 @@ def restrict_private_file(path: Path) -> None:
     if os.name != "nt":
         path.chmod(0o600)
         return
-
     import ctypes
 
     security, kernel = _windows_api()

@@ -37,7 +37,6 @@ def test_chrome_plugin_bundle_is_self_contained() -> None:
     for relative_path in required:
         path = PLUGIN / relative_path
         assert path.is_file() and path.stat().st_size > 0
-
     assert not (PLUGIN / "main.py").exists()
     assert not (PLUGIN / "action_runtime").exists()
     assert not (PLUGIN / "backend").exists()

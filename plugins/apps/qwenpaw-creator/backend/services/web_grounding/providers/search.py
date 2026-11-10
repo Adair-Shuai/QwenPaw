@@ -207,7 +207,6 @@ async def search_web(
                 "Web grounding provider skipped query=%r provider=tavily reason=api_key_missing",
                 query,
             )
-
         if not sources:
             if _serper_api_key():
                 providers_attempted.append("serper")
@@ -236,7 +235,6 @@ async def search_web(
                     "Web grounding provider skipped query=%r provider=serper reason=api_key_missing",
                     query,
                 )
-
         if not sources:
             native_search_key = _dashscope_web_search_api_key()
             native_search_issue = _dashscope_native_search_unavailable_reason(

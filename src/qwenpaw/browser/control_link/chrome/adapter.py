@@ -281,7 +281,6 @@ class ChromeControlLink(CdpVerbsMixin):
         ):
             if tab_id not in extension_tab_ids:
                 self._forget_page((workspace_id, session_id), page_id, tab_id)
-
         known_tab_ids = set(self._pages.values())
         for tab in extension_tabs:
             tab_id = int(tab["tabId"])

@@ -65,7 +65,6 @@ async def a2a_discover(
             info.get("name"),
             agent_url,
         )
-
     except Exception as e:
         logger.error("a2a_discover failed for %s: %s", agent_url, e)
         result = json.dumps(
@@ -76,7 +75,6 @@ async def a2a_discover(
             },
             ensure_ascii=False,
         )
-
     return ToolChunk(
         state=ToolResultState.SUCCESS,
         content=[TextBlock(type="text", text=result)],

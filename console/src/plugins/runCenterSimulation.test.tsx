@@ -20,12 +20,23 @@ type MonitorProps = {
   subscribe?: boolean;
   compact?: boolean;
 };
-type HostWindow = Window & {
-  QwenPaw?: any;
+type HostWindow = Omit<Window, "QwenPaw"> & {
+  QwenPaw?: {
+    host: Record<string, unknown> & { getSelectedAgentId: () => string };
+    route: {
+      add: (
+        _id: string,
+        definition: { component: React.ComponentType },
+      ) => void;
+    };
+    menu: { add: ReturnType<typeof vi.fn> };
+    ugsci?: { visualization: { mount: ReturnType<typeof vi.fn> } };
+    runCenter?: { SimulationMonitor: React.ComponentType<MonitorProps> };
+  };
   __qwenpawRunCenterRegistered?: boolean;
   __loadSimulationCharts?: (url: string) => Promise<unknown>;
 };
-const win = window as HostWindow;
+const win = window as unknown as HostWindow;
 const bundleFolder = path.resolve(
   process.cwd(),
   "../plugins/bundle/qwenpaw-run-center/ui/dist",
@@ -220,7 +231,7 @@ describe("Run Center published simulation monitor", () => {
     const source = fs.readFileSync(path.join(bundleFolder, "index.js"), "utf8");
     expect(source.match(/import\(/g)).toHaveLength(1);
     new Function(source.replace("import(", "window.__loadSimulationCharts("))();
-    Monitor = win.QwenPaw.runCenter.SimulationMonitor;
+    Monitor = win.QwenPaw.runCenter!.SimulationMonitor;
   });
 
   afterEach(() => {
@@ -634,7 +645,7 @@ describe("Run Center published simulation monitor", () => {
         JSON.stringify({ ...snapshot, simulation_time: "new-run-time" }),
       );
     });
-    delete win.QwenPaw.ugsci;
+    delete win.QwenPaw!.ugsci;
     const rendered = render(<Monitor runId="old" subscribe={false} />);
     rendered.rerender(
       <Monitor
@@ -655,7 +666,7 @@ describe("Run Center published simulation monitor", () => {
     });
     expect(screen.queryByText("old-run-time")).not.toBeInTheDocument();
     expect(screen.getByText(/UGSci 场图查看器尚未加载/)).toBeInTheDocument();
-    win.QwenPaw.host.getSelectedAgentId = () => "another-agent";
+    win.QwenPaw!.host.getSelectedAgentId = () => "another-agent";
     fireEvent.click(screen.getByRole("button", { name: "重新采集结果" }));
     await waitFor(() =>
       expect(

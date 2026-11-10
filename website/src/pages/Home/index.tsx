@@ -10,6 +10,7 @@ import { QuickStart } from "./components/QuickStart";
 import { WhatYouCanDo } from "./components/WhatYouCanDo";
 import { WorksForYou } from "./components/WorksForYou";
 import { Why } from "./components/Why";
+import "./home.css";
 
 export default function Home() {
   const config = useSiteConfig();
@@ -38,7 +39,7 @@ export default function Home() {
   }, []);
 
   return (
-    <main className="min-h-screen bg-(--bg) text-(--text)">
+    <main className="home-page min-h-screen bg-(--bg) text-(--text)">
       <Hero />
       <QuickStart docsBase={docsBase} />
       <Channels />

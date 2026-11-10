@@ -22,7 +22,6 @@ def _find_balanced_json(text: str) -> str:
     )
     if start < 0:
         raise json.JSONDecodeError("No JSON object or array found", text, 0)
-
     stack: list[str] = []
     in_string = False
     escaped = False
@@ -39,7 +38,6 @@ def _find_balanced_json(text: str) -> str:
             elif char == '"':
                 in_string = False
             continue
-
         if char == '"':
             in_string = True
         elif char in pairs:
@@ -48,7 +46,6 @@ def _find_balanced_json(text: str) -> str:
             stack.pop()
             if not stack:
                 return text[start : index + 1]
-
     raise json.JSONDecodeError(
         "Unterminated JSON object or array",
         text,
@@ -75,7 +72,6 @@ def extract_json_payload(response_text: str) -> Any:
                 return json.loads(_find_balanced_json(fenced))
             except json.JSONDecodeError:
                 pass
-
     try:
         return json.loads(response_text.strip())
     except json.JSONDecodeError:

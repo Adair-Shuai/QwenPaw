@@ -33,7 +33,22 @@ vi.mock("./openExternalLink", () => ({
   isDesktopTauriRuntime: () => mockIsDesktopTauriRuntime(),
 }));
 
-const mockGetPyWebViewApi = vi.fn(() => undefined);
+const mockGetPyWebViewApi = vi.fn<
+  () =>
+    | (Omit<
+        Partial<import("./pywebview").PyWebViewApi>,
+        "open_workspace_html"
+      > & {
+        open_workspace_html?: (
+          ...args: Parameters<
+            NonNullable<
+              import("./pywebview").PyWebViewApi["open_workspace_html"]
+            >
+          >
+        ) => Promise<boolean | void>;
+      })
+    | undefined
+>(() => undefined);
 vi.mock("./pywebview", () => ({
   getPyWebViewApi: () => mockGetPyWebViewApi(),
 }));
@@ -168,7 +183,7 @@ describe("openHtmlFile", () => {
     const openWorkspaceHtml = vi.fn(() => Promise.resolve());
     mockGetPyWebViewApi.mockReturnValue({
       open_workspace_html: openWorkspaceHtml,
-    } as any);
+    });
     openHtmlFile({ ...baseOptions, workspaceBacked: true, chatId: "chat-1" });
     expect(openWorkspaceHtml).toHaveBeenCalledWith(
       "/api/html?path=report.html&root=project",
@@ -184,7 +199,7 @@ describe("openHtmlFile", () => {
     const openWorkspaceHtml = vi.fn(() => Promise.resolve());
     mockGetPyWebViewApi.mockReturnValue({
       open_workspace_html: openWorkspaceHtml,
-    } as any);
+    });
     openHtmlFile({
       ...baseOptions,
       workspaceBacked: true,
@@ -219,7 +234,7 @@ describe("openHtmlFile", () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
     mockGetPyWebViewApi.mockReturnValue({
       open_workspace_html: openWorkspaceHtml,
-    } as any);
+    });
     openHtmlFile({ ...baseOptions, workspaceBacked: true });
     // Let the rejection settle
     await Promise.resolve();

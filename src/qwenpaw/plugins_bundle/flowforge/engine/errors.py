@@ -7,6 +7,8 @@ hierarchy so exception-handling code stays portable.
 
 from __future__ import annotations
 
+from typing import Any
+
 
 class WorkflowEngineError(Exception):
     """Base class for every workflow-engine error."""
@@ -38,11 +40,13 @@ class NodeExecutionError(WorkflowEngineError):
         message: str,
         *,
         retryable: bool | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> None:
         super().__init__(f"{node_id}: {message}")
         self.node_id = node_id
         self.message = message
         self.retryable = retryable
+        self.metadata = dict(metadata or {})
 
 
 class BlockedError(WorkflowEngineError):

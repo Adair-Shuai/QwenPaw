@@ -205,6 +205,9 @@ const WorkspacePanel: React.FC = () => {
 
   // ── 匹配渲染器 ──
   const rendererMatch = useMemo(() => {
+    // Preserve explicit invalidation when the surrounding owner or registry changes.
+    void rendererRegistryVersion;
+
     if (!activeArtifact) return null;
     return rendererRegistry.match(activeArtifact);
   }, [activeArtifact, rendererRegistryVersion]);

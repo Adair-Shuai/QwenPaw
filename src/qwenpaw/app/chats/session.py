@@ -43,7 +43,6 @@ def session_filename(session_id: str, user_id: str = "") -> str:
     """Return the filename used by ``SafeJSONSession`` for one conversation."""
     if not session_id:
         raise ValueError("session_id must not be None or empty")
-
     safe_sid = sanitize_filename(session_id)
     safe_uid = sanitize_filename(user_id) if user_id else ""
     if safe_uid and safe_uid == safe_sid:
@@ -242,7 +241,6 @@ class SafeJSONSession:
                 "session_id is None or empty, cannot construct save path",
             )
             raise ValueError("session_id must not be None or empty")
-
         filename = session_filename(session_id, user_id)
 
         if channel:
@@ -269,9 +267,7 @@ class SafeJSONSession:
                         target_path,
                         exc,
                     )
-
             return target_path
-
         os.makedirs(self.save_dir, exist_ok=True)
         return os.path.join(self.save_dir, filename)
 
@@ -299,7 +295,6 @@ class SafeJSONSession:
                 state_dicts,
                 indent=None,
             )
-
         logger.info(
             "Saved session state to %s successfully.",
             session_save_path,
@@ -335,13 +330,11 @@ class SafeJSONSession:
                 "Load session state from %s successfully.",
                 session_save_path,
             )
-
         elif allow_not_exist:
             logger.info(
                 "Session file %s does not exist. Skip loading session state.",
                 session_save_path,
             )
-
         else:
             raise AgentStateError(
                 session_id=session_id,
@@ -373,7 +366,6 @@ class SafeJSONSession:
                 config_key="session.key",
                 message="key path is empty",
             )
-
         async with get_path_lock(session_save_path):
             try:
                 states = await run_sync_io(
@@ -390,13 +382,11 @@ class SafeJSONSession:
                         ),
                     ) from exc
                 states = {}
-
             cur = states
             for k in path[:-1]:
                 if k not in cur or not isinstance(cur[k], dict):
                     cur[k] = {}
                 cur = cur[k]
-
             cur[path[-1]] = value
 
             await write_json_atomic_async(
@@ -404,7 +394,6 @@ class SafeJSONSession:
                 states,
                 indent=None,
             )
-
         logger.info(
             "Updated session state key '%s' in %s successfully.",
             key,
@@ -456,14 +445,12 @@ class SafeJSONSession:
                 session_save_path,
             )
             return states
-
         if allow_not_exist:
             logger.info(
                 "Session file %s does not exist. Return empty state dict.",
                 session_save_path,
             )
             return {}
-
         raise AgentStateError(
             session_id=session_id,
             message=(

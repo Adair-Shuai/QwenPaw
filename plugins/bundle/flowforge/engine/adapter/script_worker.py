@@ -2,6 +2,7 @@
 """JSON worker for trusted local snippets; not a security sandbox."""
 from __future__ import annotations
 
+import ast
 import builtins
 import contextlib
 import importlib
@@ -10,7 +11,7 @@ import json
 import sys
 import types
 
-_ALLOWED = {
+ALLOWED_MODULES = {
     "math",
     "json",
     "re",
@@ -24,6 +25,7 @@ _ALLOWED = {
     "random",
     "decimal",
     "fractions",
+    "unicodedata",
 }
 _NAMES = (
     "abs all any ascii bin bool bytes bytearray callable chr dict divmod "
@@ -34,6 +36,32 @@ _NAMES = (
     "StopIteration ZeroDivisionError ImportError NotImplementedError "
     "ArithmeticError LookupError OverflowError"
 ).split()
+
+
+def validate_source(source: str) -> None:
+    """Check syntax and declared imports without executing the snippet."""
+    tree = ast.parse(source, filename="<flowforge-script>")
+    compile(tree, "<flowforge-script>", "exec")
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom):
+            names = ["." * node.level + (node.module or "")]
+        else:
+            continue
+        unknown = set(names) - ALLOWED_MODULES
+        if unknown:
+            raise ValueError(
+                "module is not permitted: " + ", ".join(sorted(unknown)),
+            )
+
+
+def restricted_import(name, globals=None, locals=None, fromlist=(), level=0):
+    # pylint: disable=redefined-builtin
+    """Support ordinary imports of the same preloaded standard modules."""
+    if level or name not in ALLOWED_MODULES:
+        raise ImportError(f"module is not permitted: {name}")
+    return builtins.__import__(name, globals, locals, fromlist, level)
 
 
 class CappedOutput(io.StringIO):
@@ -63,17 +91,21 @@ def main() -> None:
         )
     except (ImportError, OSError, ValueError):
         pass
-    unknown = set(payload.get("allow_modules") or []) - _ALLOWED
+    unknown = set(payload.get("allow_modules") or []) - ALLOWED_MODULES
     if unknown:
         raise ValueError(
             "module is not permitted: " + ", ".join(sorted(unknown)),
         )
     stream = CappedOutput(int(payload.get("max_stdout", 65536)))
-    namespace = {name: importlib.import_module(name) for name in _ALLOWED}
+    validate_source(payload["source"])
+    namespace = {
+        name: importlib.import_module(name) for name in ALLOWED_MODULES
+    }
     namespace.update(payload.get("inputs") or {})
     namespace["__builtins__"] = {
         name: getattr(builtins, name) for name in _NAMES
     }
+    namespace["__builtins__"]["__import__"] = restricted_import
     namespace["print"] = lambda *args, **kwargs: print(
         *args,
         file=stream,

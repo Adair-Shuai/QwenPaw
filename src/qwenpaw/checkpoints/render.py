@@ -34,7 +34,6 @@ def render_timeline(
             lines.extend(_render_timeline_graph(session_entries))
     else:
         lines.extend(_render_timeline_graph(entries))
-
     header = "| # | HEAD | Type | Name | SHA | Time | Query |"
     separator = "|--:|:----:|------|------|-----|------|-------|"
     if show_sessions:
@@ -81,7 +80,6 @@ def render_timeline(
         if show_sessions:
             values.insert(1, f"`{_escape_table(entry.session_key)}`")
         lines.append("| " + " | ".join(values) + " |")
-
     lines.extend(
         [
             "",
@@ -117,7 +115,6 @@ def _render_timeline_graph(entries: list[CheckpointEntry]) -> list[str]:
     while current is not None and current.commit not in active:
         active.add(current.commit)
         current = by_commit.get(current.parent_commit or "")
-
     children: dict[str | None, list[CheckpointEntry]] = {}
     for entry in entries:
         parent = (
@@ -128,7 +125,6 @@ def _render_timeline_graph(entries: list[CheckpointEntry]) -> list[str]:
         siblings.sort(
             key=lambda item: (item.commit not in active, item.timestamp_ms),
         )
-
     graph_lines = ["ROOT"]
     visited: set[str] = set()
 
@@ -193,13 +189,11 @@ def render_restore(result: RestoreResult) -> str:
         title = "Restore complete"
         action = "Restored"
         delete_action = "Deleted"
-
     scope_parts = ["conversation"]
     if result.include_memory:
         scope_parts.append("memory")
     if result.include_files:
         scope_parts.append("files")
-
     conversation_paths = [
         path for path in result.restored_paths if path.startswith("sessions/")
     ]
@@ -256,7 +250,6 @@ def render_restore(result: RestoreResult) -> str:
         lines.extend(
             ["", f"Safety checkpoint: `{result.pre_restore_ref}`"],
         )
-
     if result.dry_run:
         lines.extend(
             [
@@ -281,7 +274,6 @@ def render_gc(result: GcResult) -> str:
         title = "Checkpoint cleanup preview"
     else:
         title = "Checkpoint cleanup complete"
-
     lines = [
         f"**{title}**",
         "",
@@ -303,7 +295,6 @@ def render_gc(result: GcResult) -> str:
             )
     else:
         lines.extend(["", "Nothing is eligible for cleanup."])
-
     if result.dry_run:
         lines.extend(["", "No changes were made. Add `--confirm` to apply."])
     return "\n".join(lines)

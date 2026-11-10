@@ -856,6 +856,7 @@ export default function SidebarSessionList({
       pinGroup,
       handleDeleteGroup,
       handleMoveGroup,
+      toggleDateGroup,
     ],
   );
 

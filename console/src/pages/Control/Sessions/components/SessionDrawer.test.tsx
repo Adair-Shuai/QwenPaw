@@ -36,7 +36,14 @@
  */
 import { fireEvent, render, screen, within } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import type { FormInstance } from "antd";
+import type {
+  FormInstance,
+  DrawerProps,
+  FormItemProps,
+  FormProps,
+  InputProps,
+  ButtonProps,
+} from "antd";
 import type { Session } from "./constants";
 import { SessionDrawer } from "./SessionDrawer";
 import styles from "../index.module.less";
@@ -75,7 +82,9 @@ vi.mock("@agentscope-ai/design", () => {
     width,
     placement,
     destroyOnHidden,
-  }: any) => {
+  }: Omit<DrawerProps, "onClose"> & {
+    onClose?: React.MouseEventHandler<HTMLButtonElement>;
+  }) => {
     if (!open) return null;
     return (
       <div
@@ -95,7 +104,14 @@ vi.mock("@agentscope-ai/design", () => {
     );
   };
 
-  const FormItem = ({ children, name, label, rules }: any) => {
+  const FormItem = ({
+    children,
+    name,
+    label,
+    rules,
+  }: Omit<FormItemProps, "children"> & {
+    children?: import("react").ReactNode;
+  }) => {
     const key = nameKey(name);
     if (name !== undefined) {
       h.rules[key] = rules ?? [];
@@ -115,7 +131,14 @@ vi.mock("@agentscope-ai/design", () => {
     );
   };
 
-  const Form = ({ children, form, onFinish, layout }: any) => {
+  const Form = ({
+    children,
+    form,
+    onFinish,
+    layout,
+  }: Omit<FormProps<unknown>, "children"> & {
+    children?: import("react").ReactNode;
+  }) => {
     // Record both halves of the submit chain (note 2 above).
     h.onFinish = onFinish ?? null;
     h.formOnDrawer = form ?? null;
@@ -133,7 +156,9 @@ vi.mock("@agentscope-ai/design", () => {
     type,
     suffix,
     onChange,
-  }: any) => (
+  }: Omit<InputProps, "value"> & {
+    value?: React.InputHTMLAttributes<HTMLInputElement>["value"];
+  }) => (
     <input
       value={value ?? ""}
       placeholder={placeholder}
@@ -144,7 +169,12 @@ vi.mock("@agentscope-ai/design", () => {
     />
   );
 
-  const Button = ({ children, onClick, type, loading }: any) => (
+  const Button = ({
+    children,
+    onClick,
+    type,
+    loading,
+  }: Omit<ButtonProps, "loading"> & { loading?: boolean }) => (
     <button
       type="button"
       onClick={onClick}

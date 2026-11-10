@@ -1,3 +1,4 @@
+import { UGSCI_BUTTON_LOADING } from "@/components/UgsciMotion";
 import { InteractiveCard } from "@/components/interaction/InteractiveCard";
 import styles from "./ModelConfigEditor.module.less";
 import InlineHelp from "../../../../../components/InlineHelp";
@@ -413,7 +414,7 @@ export function ModelConfigEditor({
         <Button
           type="primary"
           size="small"
-          loading={saving}
+          loading={saving ? UGSCI_BUTTON_LOADING : false}
           disabled={!dirty}
           onClick={handleSave}
         >

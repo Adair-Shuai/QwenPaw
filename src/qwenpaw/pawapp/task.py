@@ -69,7 +69,6 @@ class SSEChannel:
             # Check if channel is closed and queue is empty
             if self._closed and self._queue.empty():
                 break
-
             try:
                 event = await asyncio.wait_for(
                     self._queue.get(),
@@ -79,11 +78,9 @@ class SSEChannel:
                 # Send keepalive comment
                 yield ": keepalive\n\n"
                 continue
-
             if event is None:
                 # Channel closed sentinel
                 break
-
             yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
 
 
@@ -172,7 +169,6 @@ class TaskManager:
             )
             yield f"data: {payload}\n\n"
             return
-
         async for event_str in record.channel:
             yield event_str
 

@@ -63,7 +63,6 @@ def test_concurrent_chat_creation_no_500(app_server) -> None:
     chat_ids: list[str] = []
     with ThreadPoolExecutor(max_workers=5) as ex:
         results = list(ex.map(_post, bodies))
-
     try:
         for resp in results:
             assert (
@@ -121,12 +120,10 @@ def test_concurrent_config_read_write_no_corruption(app_server) -> None:
 
     with ThreadPoolExecutor(max_workers=5) as ex:
         results = list(ex.map(_do, range(10)))
-
     for resp in results:
         assert (
             resp.status_code < 500
         ), f"5xx during concurrent R/W: {resp.status_code} {resp.text}"
-
     # Final GET — config still valid.
     final = app_server.api_request(
         "GET",
@@ -159,12 +156,10 @@ def test_concurrent_workspace_file_writes(app_server) -> None:
 
     with ThreadPoolExecutor(max_workers=5) as ex:
         results = list(ex.map(_put, range(5)))
-
     for resp in results:
         assert (
             resp.status_code < 500
         ), f"5xx on workspace file PUT: {resp.status_code}"
-
     # File must be readable.
     get_resp = app_server.api_request(
         "GET",
@@ -199,7 +194,6 @@ def test_concurrent_inbox_list_does_not_crash(app_server) -> None:
 
     with ThreadPoolExecutor(max_workers=10) as ex:
         results = list(ex.map(_get, range(20)))
-
     for resp in results:
         assert (
             resp.status_code == 200

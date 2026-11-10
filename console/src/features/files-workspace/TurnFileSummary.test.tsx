@@ -105,6 +105,20 @@ function renderSummary(
   );
 }
 
+async function openFileMenu(name: string) {
+  const trigger = await screen.findByRole("button", {
+    name: `delivery.openWith ${name}`,
+  });
+  if (trigger.getAttribute("aria-expanded") !== "true")
+    fireEvent.click(trigger);
+  return screen.findByRole("menu");
+}
+
+async function fileMenuItem(name: string, label: string) {
+  const menu = await openFileMenu(name);
+  return within(menu).findByRole("menuitem", { name: label });
+}
+
 beforeEach(() => {
   vi.clearAllMocks();
   mocks.list.mockResolvedValue({ turns: [manifest()] });
@@ -117,6 +131,107 @@ afterEach(() => {
 });
 
 describe("TurnFileSummary", () => {
+  it("keeps browser card and primary preview on the archived version with menu downloads", async () => {
+    const turn = manifest();
+    const preview = vi.fn();
+    window.addEventListener("qwenpaw:open-file-preview", preview);
+    try {
+      renderSummary();
+      fireEvent.click(
+        await screen.findByRole("button", {
+          name: "turnFiles.openArchive report.md",
+        }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "delivery.open report.md" }),
+      );
+      expect(preview).toHaveBeenCalledTimes(2);
+      for (const [event] of preview.mock.calls) {
+        expect((event as CustomEvent).detail).toMatchObject({
+          agentId: scope.agentId,
+          sessionId: scope.sessionId,
+          chatId: scope.chatId,
+          target: {
+            source: "artifact",
+            path: "output/report.md",
+            artifact: {
+              sessionId: "runtime-a",
+              meta: {
+                turnFileArchive: true,
+                turnId: "turn-a",
+                fileId: "file-a",
+                version: "after",
+              },
+            },
+          },
+        });
+      }
+      expect(
+        screen.queryByRole("menuitem", { name: "turnFiles.download" }),
+      ).not.toBeInTheDocument();
+      fireEvent.click(await fileMenuItem("report.md", "turnFiles.download"));
+      await waitFor(() =>
+        expect(mocks.downloadFile).toHaveBeenCalledWith(
+          { ...scope, sessionId: "runtime-a" },
+          "turn-a",
+          turn.files[0],
+          "after",
+        ),
+      );
+      expect(mocks.downloadFile).toHaveBeenCalledTimes(1);
+      expect(preview).toHaveBeenCalledTimes(2);
+    } finally {
+      window.removeEventListener("qwenpaw:open-file-preview", preview);
+    }
+  });
+
+  it("disables unavailable browser delivery actions while retaining the available turn archive", async () => {
+    const turn = manifest();
+    turn.files.push({
+      ...turn.files[0],
+      id: "unavailable",
+      name: "missing.pdf",
+      path: "output/missing.pdf",
+      binary: true,
+      before_available: false,
+      after_available: false,
+    });
+    mocks.list.mockResolvedValue({ turns: [turn] });
+    const preview = vi.fn();
+    window.addEventListener("qwenpaw:open-file-preview", preview);
+    try {
+      renderSummary();
+      const card = await screen.findByRole("button", {
+        name: "turnFiles.openArchive missing.pdf",
+      });
+      expect(card).toBeDisabled();
+      fireEvent.click(card);
+      const primary = screen.getByRole("button", {
+        name: "delivery.open missing.pdf",
+      });
+      expect(primary).toBeDisabled();
+      fireEvent.click(primary);
+      const download = await fileMenuItem("missing.pdf", "turnFiles.download");
+      expect(download).toHaveAttribute("aria-disabled", "true");
+      fireEvent.click(download);
+      expect(mocks.downloadFile).not.toHaveBeenCalled();
+      expect(preview).not.toHaveBeenCalled();
+      const bundle = screen.getByRole("button", {
+        name: "turnFiles.downloadTurn",
+      });
+      expect(bundle).toBeEnabled();
+      fireEvent.click(bundle);
+      await waitFor(() =>
+        expect(mocks.downloadBundle).toHaveBeenCalledWith(
+          { ...scope, sessionId: "runtime-a" },
+          "turn-a",
+        ),
+      );
+    } finally {
+      window.removeEventListener("qwenpaw:open-file-preview", preview);
+    }
+  });
+
   it("shows delivered images inline and links archived sibling pages without inventing deliveries", async () => {
     const image = {
       ...manifest().files[0],
@@ -184,8 +299,8 @@ describe("TurnFileSummary", () => {
         }),
       ).toBeEnabled();
       expect(
-        screen.getByRole("button", { name: "turnFiles.download preview.png" }),
-      ).toBeEnabled();
+        await fileMenuItem("preview.png", "turnFiles.download"),
+      ).not.toHaveAttribute("aria-disabled", "true");
     } finally {
       window.removeEventListener("qwenpaw:open-file-preview", open);
     }
@@ -222,14 +337,11 @@ describe("TurnFileSummary", () => {
     expect(before).not.toBeVisible();
     fireEvent.click(within(secondary).getByText("turnFiles.otherChanges"));
     expect(before).toBeVisible();
+    await openFileMenu("old.md");
     expect(
-      within(secondary).queryByRole("button", {
-        name: "turnFiles.openCurrent old.md",
-      }),
+      screen.queryByRole("menuitem", { name: "turnFiles.openCurrent" }),
     ).not.toBeInTheDocument();
-    fireEvent.click(
-      within(secondary).getByRole("button", { name: "turnFiles.diff old.md" }),
-    );
+    fireEvent.click(screen.getByRole("menuitem", { name: "turnFiles.diff" }));
     expect(await screen.findByTestId("read-only-diff")).toHaveTextContent(
       "old →",
     );
@@ -238,11 +350,7 @@ describe("TurnFileSummary", () => {
     fireEvent.click(within(secondary).getByText("turnFiles.otherChanges"));
     expect(screen.getByTestId("read-only-diff")).toBeVisible();
     expect(mocks.diff).toHaveBeenCalledTimes(1);
-    fireEvent.click(
-      within(secondary).getByRole("button", {
-        name: "turnFiles.downloadBefore old.md",
-      }),
-    );
+    fireEvent.click(await fileMenuItem("old.md", "turnFiles.downloadBefore"));
     await waitFor(() =>
       expect(mocks.downloadFile).toHaveBeenCalledWith(
         { ...scope, sessionId: "runtime-a" },
@@ -408,9 +516,7 @@ describe("TurnFileSummary", () => {
       expect(historical.target.artifactUrl).toContain(
         "/turn-a/files/file-a?version=after",
       );
-      fireEvent.click(
-        screen.getByRole("button", { name: "turnFiles.openCurrent report.md" }),
-      );
+      fireEvent.click(await fileMenuItem("report.md", "turnFiles.openCurrent"));
       expect((preview.mock.calls[1][0] as CustomEvent).detail).toMatchObject({
         sessionId: "route-a",
         target: {
@@ -419,9 +525,7 @@ describe("TurnFileSummary", () => {
           root: "project",
         },
       });
-      fireEvent.click(
-        screen.getByRole("button", { name: "turnFiles.download report.md" }),
-      );
+      fireEvent.click(await fileMenuItem("report.md", "turnFiles.download"));
       await waitFor(() =>
         expect(mocks.downloadFile).toHaveBeenCalledWith(
           { ...scope, sessionId: "runtime-a" },
@@ -463,13 +567,12 @@ describe("TurnFileSummary", () => {
     expect(
       await screen.findByText("turnFiles.beforeVersion"),
     ).toBeInTheDocument();
+    await openFileMenu("report.md");
     expect(
-      screen.queryByRole("button", { name: "turnFiles.openCurrent report.md" }),
+      screen.queryByRole("menuitem", { name: "turnFiles.openCurrent" }),
     ).not.toBeInTheDocument();
     fireEvent.click(
-      screen.getByRole("button", {
-        name: "turnFiles.downloadBefore report.md",
-      }),
+      screen.getByRole("menuitem", { name: "turnFiles.downloadBefore" }),
     );
     expect(mocks.downloadFile).toHaveBeenCalledWith(
       expect.anything(),
@@ -497,13 +600,12 @@ describe("TurnFileSummary", () => {
     expect(
       screen.getByRole("button", { name: "turnFiles.openArchive report.md" }),
     ).toBeDisabled();
+    const download = await fileMenuItem("report.md", "turnFiles.download");
+    expect(download).toHaveAttribute("aria-disabled", "true");
+    fireEvent.click(download);
+    expect(mocks.downloadFile).not.toHaveBeenCalled();
     expect(
-      screen.getByRole("button", {
-        name: "turnFiles.download report.md",
-      }),
-    ).toBeDisabled();
-    expect(
-      screen.queryByRole("button", { name: "turnFiles.diff report.md" }),
+      screen.queryByRole("menuitem", { name: "turnFiles.diff" }),
     ).not.toBeInTheDocument();
     expect(
       screen.getByText("File exceeded the capture limit"),
@@ -601,9 +703,7 @@ describe("TurnFileSummary", () => {
       truncated: true,
     });
     renderSummary();
-    fireEvent.click(
-      await screen.findByRole("button", { name: "turnFiles.diff report.md" }),
-    );
+    fireEvent.click(await fileMenuItem("report.md", "turnFiles.diff"));
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "turnFiles.diffFailed",
     );
@@ -627,11 +727,8 @@ describe("TurnFileSummary", () => {
       }),
     );
     renderSummary();
-    const button = await screen.findByRole("button", {
-      name: "turnFiles.diff report.md",
-    });
-    fireEvent.click(button);
-    fireEvent.click(button);
+    fireEvent.click(await fileMenuItem("report.md", "turnFiles.diff"));
+    fireEvent.click(await fileMenuItem("report.md", "turnFiles.diff"));
     await act(async () => {
       resolveDiff({ before: "old", after: "new", truncated: false });
     });
@@ -643,4 +740,38 @@ describe("TurnFileSummary", () => {
     const { container } = renderSummary();
     await waitFor(() => expect(container).toBeEmptyDOMElement());
   });
+});
+
+it("opens concrete capture reasons directly from the incomplete warning", async () => {
+  const warning = "File exceeds snapshot size limit: BAI6_run/grid.EGRID";
+  mocks.list.mockResolvedValue({
+    turns: [manifest({ incomplete: true, warnings: [warning] })],
+  });
+  renderSummary();
+  const notice = await screen.findByText("turnFiles.incomplete");
+  const disclosure = notice.closest("summary");
+  expect(disclosure).not.toBeNull();
+  expect(screen.getByText(warning)).not.toBeVisible();
+  fireEvent.click(disclosure!);
+  expect(screen.getByText(warning)).toBeVisible();
+});
+
+it("keeps proven deliveries when hiding unowned ambient changes from a legacy turn", async () => {
+  const delivered = manifest().files[0];
+  const ambient = {
+    ...delivered,
+    id: "ambient",
+    path: "other-session.txt",
+    name: "other-session.txt",
+    delivered: false,
+  };
+  mocks.list.mockResolvedValue({
+    turns: [manifest({ files: [delivered, ambient] })],
+  });
+  renderSummary({ includeObservedChanges: false });
+  expect(await screen.findByText("report.md")).toBeVisible();
+  expect(screen.queryByText("other-session.txt")).toBeNull();
+  expect(
+    screen.getByRole("button", { name: "turnFiles.openArchive report.md" }),
+  ).toBeEnabled();
 });

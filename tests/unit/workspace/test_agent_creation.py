@@ -51,7 +51,6 @@ def test_generate_short_id_collision_handling():
             new_id = mock_fn()
             if new_id not in existing_ids:
                 break
-
         # Verify the mock was called
         assert mock_fn.call_count > 0
 

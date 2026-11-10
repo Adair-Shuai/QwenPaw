@@ -521,6 +521,22 @@ async def post_console_chat(
         native_payload = _extract_session_and_payload(request_data)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
+    edit = (native_payload["meta"].get("request_context") or {}).get(
+        "qwenpaw_edit_resend",
+    )
+    if (
+        isinstance(edit, dict)
+        and edit.get("keep_original") is False
+        and getattr(getattr(workspace, "config", None), "backend", "qwenpaw")
+        != "qwenpaw"
+    ):
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                "This backend cannot replace history; "
+                "keep the original message"
+            ),
+        )
     session_id = console_channel.resolve_session_id(
         sender_id=native_payload["sender_id"],
         channel_meta=native_payload["meta"],

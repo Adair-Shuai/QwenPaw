@@ -71,7 +71,6 @@ def get_or_create_installation_id(host_working_dir: str | Path) -> str:
         pass
     else:
         raise ValueError(f"Invalid OpenViking installation id in {marker}")
-
     marker.parent.mkdir(parents=True, exist_ok=True)
     generated = uuid.uuid4().hex
     descriptor, temporary_path = tempfile.mkstemp(
@@ -188,7 +187,6 @@ class OpenVikingMemoryManager(BaseMemoryManager):
     def list_memory_tools(self) -> list[Callable[..., ToolChunk]]:
         if self._client is None:
             return []
-
         search_tool = self.memory_search
         # Plugin metadata registers the network policy, but the toolkit
         # builder does not bind it to the callable. Tag the underlying method
@@ -309,7 +307,6 @@ class OpenVikingMemoryManager(BaseMemoryManager):
             raise OpenVikingConfigurationError(
                 "OpenViking persistence requires a session ID.",
             )
-
         sanitized = self._messages_without_auto_memory_search(messages)
         candidates = [
             message
@@ -339,7 +336,6 @@ class OpenVikingMemoryManager(BaseMemoryManager):
                 self._pending_commit_msg_ids[remote_session_id] = pending
             else:
                 self._remember_persisted_message_ids(new_ids)
-
         if self._config and self._config.commit_policy == "every_turn":
             if pending:
                 await client.commit(remote_session_id)
@@ -396,7 +392,6 @@ class OpenVikingMemoryManager(BaseMemoryManager):
                 "OpenViking is temporarily unavailable.",
                 ok=False,
             )
-
         return self._render_search_results(results[:limit])
 
     def _render_search_results(

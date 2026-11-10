@@ -162,6 +162,7 @@ class HarnessRuntime:
                                 agent_id=self._agent_id,
                                 response_id=item.id,
                                 project_dirs=capture_dirs,
+                                track_tools=True,
                             )
                             if tracker is not None and capture_warning:
                                 tracker.capture.before.warn(capture_warning)
@@ -178,6 +179,14 @@ class HarnessRuntime:
                         )
                         if tracker is not None:
                             await tracker.finish(status)
+                if tracker is not None and getattr(item, "type", None) in {
+                    "function_call",
+                    "plugin_call",
+                    "tool_call",
+                    "mcp_call",
+                    "component_call",
+                }:
+                    tracker.capture.tool_activity = True
                 yield item
         except BaseException as exc:
             error = exc

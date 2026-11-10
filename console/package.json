@@ -6,10 +6,10 @@
   "scripts": {
     "postinstall": "node scripts/prepare-ugsci-ui.mjs",
     "dev": "vite --host",
-    "build": "tsc -b && node --max-old-space-size=8192 ./node_modules/vite/bin/vite.js build && npm run verify:monaco-css && npm run precompress && npm run verify:initial-bundle",
-    "build:prod": "tsc -b && node --max-old-space-size=8192 ./node_modules/vite/bin/vite.js build --mode production && npm run verify:monaco-css && npm run precompress && npm run verify:initial-bundle",
-    "build:tauri-bootstrap": "tsc -b && node --max-old-space-size=8192 ./node_modules/vite/bin/vite.js build --mode tauri --config src-tauri/vite.bootstrap.config.ts && node ../scripts/pack-tauri/finalize_tauri_bootstrap.mjs",
-    "build:test": "tsc -b && node --max-old-space-size=8192 ./node_modules/vite/bin/vite.js build --mode test",
+    "build": "npm run verify:brand && tsc -b && node --max-old-space-size=8192 ./node_modules/vite/bin/vite.js build && npm run verify:monaco-css && npm run precompress && npm run verify:initial-bundle && node scripts/verify-brand-assets.mjs --scope console --dist console/dist",
+    "build:prod": "npm run verify:brand && tsc -b && node --max-old-space-size=8192 ./node_modules/vite/bin/vite.js build --mode production && npm run verify:monaco-css && npm run precompress && npm run verify:initial-bundle && node scripts/verify-brand-assets.mjs --scope console --dist console/dist",
+    "build:tauri-bootstrap": "npm run verify:brand && tsc -b && node --max-old-space-size=8192 ./node_modules/vite/bin/vite.js build --mode tauri --config src-tauri/vite.bootstrap.config.ts && node ../scripts/pack-tauri/finalize_tauri_bootstrap.mjs && node scripts/verify-brand-assets.mjs --scope console --dist console/dist-tauri",
+    "build:test": "npm run verify:brand && tsc -b && node --max-old-space-size=8192 ./node_modules/vite/bin/vite.js build --mode test && node scripts/verify-brand-assets.mjs --scope console --dist console/dist",
     "format": "tsc -b --noEmit && prettier --write --cache .",
     "format:check": "tsc -b --noEmit && prettier --check .",
     "lint": "eslint .",
@@ -22,7 +22,8 @@
     "test": "vitest",
     "test:run": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs run",
     "test:fork-features": "node scripts/verify-fork-features.mjs",
-    "test:coverage": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs run --coverage"
+    "test:coverage": "node --max-old-space-size=4096 ./node_modules/vitest/vitest.mjs run --coverage",
+    "verify:brand": "node scripts/verify-brand-assets.mjs --scope console"
   },
   "dependencies": {
     "3d-force-graph": "1.80.0",
@@ -59,6 +60,7 @@
     "lucide-react": "^0.562.0",
     "mammoth": "^1.12.0",
     "mermaid": "^11.12.2",
+    "mdast-util-from-markdown": "^2.0.3",
     "monaco-editor": "0.55.1",
     "motion": "^12.42.2",
     "pdfjs-dist": "^6.1.200",

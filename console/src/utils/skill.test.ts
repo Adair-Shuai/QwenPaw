@@ -1,3 +1,4 @@
+import type { TFunction } from "i18next";
 /**
  * Skill source / automation / install-origin helpers used across the
  * skill pool UI. Pure presentation logic; defects here mislabel skill
@@ -112,7 +113,7 @@ describe("getPoolSkillAutomationState", () => {
 
 describe("getPoolBuiltinStatusLabel", () => {
   // t stub returns the key so assertions read the translation key used
-  const t = ((key: string) => key) as any;
+  const t = ((key: string) => key) as unknown as TFunction;
 
   it("maps each known sync status to its translation key", () => {
     expect(getPoolBuiltinStatusLabel("synced", t)).toBe(

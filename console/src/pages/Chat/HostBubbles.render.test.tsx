@@ -4,6 +4,7 @@ import {
   fireEvent,
   render,
   screen,
+  waitFor,
 } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ReactNode } from "react";
@@ -85,7 +86,9 @@ vi.mock("@agentscope-ai/chat/lib/Bubble", () => ({
     ),
     {
       Spin: () => <span>loading</span>,
-      Interrupted: () => <span>interrupted</span>,
+      Interrupted: ({ desc }: { desc?: ReactNode }) => (
+        <span>interrupted{desc && <span>{desc}</span>}</span>
+      ),
     },
   ),
 }));
@@ -110,12 +113,12 @@ vi.mock(
   }),
 );
 
-function provider(children: ReactNode, nick?: string) {
+function provider(children: ReactNode, nick?: string, avatar = "/qwenpaw.png") {
   return (
     <ComposedProvider
       options={{
         api: {},
-        ...(nick ? { welcome: { nick, avatar: "/qwenpaw.png" } } : {}),
+        ...(nick ? { welcome: { nick, avatar } } : {}),
         session: {
           currentSessionId: undefined,
           api: {
@@ -145,6 +148,122 @@ beforeEach(() => {
   extensions.scalar = {};
   extensions.lists = {};
   localStorage.clear();
+});
+
+it("turns a historical inline PROFILE.md mention in the real assistant response into a scoped configuration link", async () => {
+  const scope = {
+    kind: "session" as const,
+    agentId: "agent",
+    sessionId: "session",
+    chatId: "chat",
+  };
+  const open = vi.fn();
+  window.addEventListener("qwenpaw:open-file-preview", open);
+  try {
+    const view = render(
+      provider(
+        <TurnFilesScopeProvider value={scope}>
+          <HostResponseCard
+            id="profile-host"
+            data={{
+              id: "profile-response",
+              status: AgentScopeRuntimeRunStatus.Completed,
+              output: [
+                {
+                  id: "profile-message",
+                  type: AgentScopeRuntimeMessageType.MESSAGE,
+                  role: "assistant",
+                  status: AgentScopeRuntimeRunStatus.Completed,
+                  content: [
+                    {
+                      type: "text",
+                      text: "当前的实情是：`PROFILE.md` 仍为空。定完我就写进 PROFILE.md，身份是 `default`。",
+                      status: AgentScopeRuntimeRunStatus.Completed,
+                    },
+                  ],
+                },
+              ],
+            }}
+            isLast
+          />
+        </TurnFilesScopeProvider>,
+      ),
+    );
+    const links = await screen.findAllByRole("link", { name: "PROFILE.md" });
+    expect(links).toHaveLength(2);
+    fireEvent.click(links[0]);
+    expect(open.mock.calls[0][0].detail).toMatchObject({
+      agentId: "agent",
+      sessionId: "session",
+      chatId: "chat",
+      target: { source: "profile", path: "PROFILE.md" },
+    });
+    expect(links[0].closest("[data-answer-quote-source]")).toHaveAttribute(
+      "data-answer-quote-source",
+      "profile-message:0",
+    );
+    expect(view.container.querySelector("code")).toHaveTextContent("default");
+  } finally {
+    window.removeEventListener("qwenpaw:open-file-preview", open);
+  }
+});
+
+it("opens a file citation from the actual assistant response with its original session and line range", async () => {
+  const scope = {
+    kind: "session" as const,
+    agentId: "agent",
+    sessionId: "session",
+    chatId: "chat",
+  };
+  const open = vi.fn();
+  window.addEventListener("qwenpaw:open-file-preview", open);
+  try {
+    render(
+      provider(
+        <TurnFilesScopeProvider value={scope}>
+          <HostResponseCard
+            id="host-reference"
+            data={{
+              id: "response-reference",
+              status: AgentScopeRuntimeRunStatus.Completed,
+              output: [
+                {
+                  id: "reference-message",
+                  type: AgentScopeRuntimeMessageType.MESSAGE,
+                  role: "assistant",
+                  status: AgentScopeRuntimeRunStatus.Completed,
+                  content: [
+                    {
+                      type: "text",
+                      text: "See [implementation](src/app.ts#L12-L18)",
+                      status: AgentScopeRuntimeRunStatus.Completed,
+                    },
+                  ],
+                },
+              ],
+            }}
+            isLast
+          />
+        </TurnFilesScopeProvider>,
+      ),
+    );
+    fireEvent.click(
+      await screen.findByRole("link", { name: "implementation L12–18" }),
+    );
+    expect(open.mock.calls[0][0].detail).toMatchObject({
+      agentId: "agent",
+      sessionId: "session",
+      chatId: "chat",
+      target: {
+        source: "workspace",
+        path: "src/app.ts",
+        line: 12,
+        endLine: 18,
+      },
+    });
+  } finally {
+    window.removeEventListener("qwenpaw:open-file-preview", open);
+  }
 });
 
 it("mounts the persisted turn file summary in the real response and opens an immutable scoped version", async () => {
@@ -219,6 +338,10 @@ it("mounts the persisted turn file summary in the real response and opens an imm
     const report = await screen.findByRole("button", {
       name: "turnFiles.openArchive report.txt",
     });
+    expect(report.closest("[data-global-search-message]")).toHaveAttribute(
+      "data-global-search-message",
+      "response_archive",
+    );
     expect(screen.getByRole("img", { name: "preview.png" })).toHaveAttribute(
       "src",
       expect.stringContaining("turn/files/image"),
@@ -281,6 +404,9 @@ it.each([
       );
       expect(screen.getByText("储气库专家")).toBeInTheDocument();
       expect(screen.queryByText("QwenPaw")).not.toBeInTheDocument();
+      expect(
+        screen.getByText("A test reply").closest("[data-answer-quote-source]"),
+      ).toHaveAttribute("data-answer-quote-source", "message:0");
     } finally {
       markdown.mockRestore();
     }
@@ -485,7 +611,7 @@ it("shows real execution transitions in the mounted response without mistaking d
       { type: "data", data: { call_id: "call-1", output: "File content" } },
     ],
   };
-  const view = (status: any, messages: any[]) =>
+  const view = (status: unknown, messages: unknown[]) =>
     provider(
       <HostResponseCard
         id="response"
@@ -547,4 +673,189 @@ it("shows real execution transitions in the mounted response without mistaking d
   fireEvent.click(canceled);
   expect(screen.getByText("tool content")).toBeVisible();
   expect(container.querySelector("[data-execution-process]")).toBeNull();
+});
+
+it("uses supplied assistant motion for active tools and static results after the turn ends", () => {
+  const avatar = "/ugsci-mono/avatars/assistant-256.png";
+  const call = {
+    id: "mono-call",
+    type: AgentScopeRuntimeMessageType.FUNCTION_CALL,
+    role: "assistant",
+    status: AgentScopeRuntimeRunStatus.Completed,
+    content: [
+      {
+        type: "data",
+        data: {
+          name: "read_file",
+          call_id: "mono",
+          arguments: { path: "sample.txt" },
+        },
+      },
+    ],
+  };
+  const view = (status: unknown, output: unknown[]) =>
+    provider(
+      <HostResponseCard
+        id="mono-response"
+        data={{ id: "mono-response", status, output }}
+      />,
+      "UGSci",
+      avatar,
+    );
+  const { container, rerender } = render(
+    view(AgentScopeRuntimeRunStatus.InProgress, []),
+  );
+  expect(container.querySelector("[data-assistant-state]")).toHaveAttribute(
+    "data-assistant-state",
+    "thinking",
+  );
+  rerender(view(AgentScopeRuntimeRunStatus.InProgress, [call]));
+  expect(container.querySelector("[data-assistant-state]")).toHaveAttribute(
+    "data-assistant-state",
+    "tool-running",
+  );
+  rerender(view(AgentScopeRuntimeRunStatus.Completed, [call]));
+  expect(container.querySelector("[data-assistant-state]")).toHaveAttribute(
+    "data-assistant-state",
+    "completed",
+  );
+  rerender(view(AgentScopeRuntimeRunStatus.Failed, [call]));
+  expect(container.querySelector("[data-assistant-state]")).toHaveAttribute(
+    "data-assistant-state",
+    "failed",
+  );
+  rerender(view(AgentScopeRuntimeRunStatus.Canceled, [call]));
+  expect(container.querySelector("[data-assistant-state]")).toHaveAttribute(
+    "data-assistant-state",
+    "ready",
+  );
+});
+
+it("keeps an errored provisional response terminal after a later response completes", () => {
+  const avatar = "/ugsci-mono/avatars/assistant-256.png";
+  const failed = (
+    <HostResponseCard
+      id="failed"
+      data={{
+        id: "failed",
+        status: AgentScopeRuntimeRunStatus.InProgress,
+        output: [],
+        error: { code: 400, message: "Model not configured" },
+      }}
+    />
+  );
+  const { container, rerender } = render(provider(failed, "UGSci", avatar));
+  expect(container.querySelector("[data-assistant-state]")).toHaveAttribute(
+    "data-assistant-state",
+    "failed",
+  );
+  expect(screen.getByText("Model not configured")).toBeVisible();
+  expect(
+    container.querySelector('[data-assistant-state="thinking"]'),
+  ).toBeNull();
+  rerender(
+    provider(
+      <>
+        {failed}
+        <HostResponseCard
+          id="later"
+          data={{
+            id: "later",
+            status: AgentScopeRuntimeRunStatus.Completed,
+            output: [],
+          }}
+        />
+      </>,
+      "UGSci",
+      avatar,
+    ),
+  );
+  expect(
+    container.querySelector(
+      '[data-global-search-message="failed"] [data-assistant-state]',
+    ),
+  ).toHaveAttribute("data-assistant-state", "failed");
+  expect(
+    container.querySelector('[data-assistant-state="thinking"]'),
+  ).toBeNull();
+});
+
+it("does not attribute legacy ambient files or snapshot warnings to a saved greeting without tools", async () => {
+  const file = {
+    id: "ambient",
+    root: "workspace" as const,
+    path: "BAI6_run/bai6_sch.inc",
+    name: "bai6_sch.inc",
+    status: "modified" as const,
+    size: 120563,
+    binary: true,
+    before_available: true,
+    after_available: false,
+    delivered: false,
+  };
+  const list = vi.spyOn(turnFilesApi, "list").mockResolvedValue({
+    turns: [
+      {
+        id: "greeting-turn",
+        response_id: "greeting",
+        session_id: "session",
+        agent_id: "agent",
+        status: "completed",
+        started_at: "2026-11-09",
+        incomplete: true,
+        overlap: false,
+        warnings: ["Snapshot byte budget reached; some contents unavailable"],
+        files: [
+          file,
+          {
+            ...file,
+            id: "wal",
+            name: "history.db-wal",
+            path: "history.db-wal",
+          },
+        ],
+      },
+    ],
+  });
+  const updated = vi.fn();
+  window.addEventListener("qwenpaw:turn-files-updated", updated);
+  try {
+    render(
+      provider(
+        <TurnFilesScopeProvider
+          value={{
+            kind: "session",
+            agentId: "agent",
+            sessionId: "session",
+            chatId: "chat",
+          }}
+        >
+          <HostResponseCard
+            id="greeting"
+            data={{
+              id: "greeting",
+              status: AgentScopeRuntimeRunStatus.Completed,
+              output: [
+                {
+                  id: "answer",
+                  type: AgentScopeRuntimeMessageType.MESSAGE,
+                  role: "assistant",
+                  status: AgentScopeRuntimeRunStatus.Completed,
+                  content: [{ type: "text", text: "Hello without tools" }],
+                },
+              ],
+            }}
+          />
+        </TurnFilesScopeProvider>,
+      ),
+    );
+    await waitFor(() => expect(updated).toHaveBeenCalled());
+    expect(list).toHaveBeenCalled();
+    expect(screen.getByText("Hello without tools")).toBeVisible();
+    expect(screen.queryByText("bai6_sch.inc")).toBeNull();
+    expect(screen.queryByText("history.db-wal")).toBeNull();
+    expect(screen.queryByText("turnFiles.incomplete")).toBeNull();
+  } finally {
+    window.removeEventListener("qwenpaw:turn-files-updated", updated);
+  }
 });

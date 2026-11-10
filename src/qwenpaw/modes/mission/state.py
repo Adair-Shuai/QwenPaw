@@ -283,7 +283,6 @@ def get_active_loop_dir(
     base = project_dir / ".qwenpaw" / "missions"
     if not base.exists():
         return None
-
     # Get all mission dirs sorted by creation time (newest first)
     dirs = sorted(
         (
@@ -298,14 +297,12 @@ def get_active_loop_dir(
     # If no session_id, return the globally latest (backward compat)
     if not session_id:
         return dirs[0] if dirs else None
-
     # Scan recent loops (limit to 20 to avoid perf issues)
     for loop_dir in dirs[:20]:
         cfg = read_loop_config(loop_dir)
         loop_session = cfg.get("session_id", "")
         if loop_session == session_id:
             return loop_dir
-
     return None
 
 

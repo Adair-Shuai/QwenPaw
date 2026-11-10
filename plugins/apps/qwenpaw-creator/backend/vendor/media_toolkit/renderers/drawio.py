@@ -36,7 +36,6 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
     diagrams = root.findall(".//diagram")
     if not diagrams:
         raise ValueError("No diagrams found in DrawIO file")
-
     pages = opts.get("pages")
     indices = (
         parse_pages(pages, len(diagrams))
@@ -66,7 +65,6 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
                 "label": f"[{name}]",
             },
         )
-
     if len(content) == 1:
         raise ValueError(
             "Failed to extract renderable content from DrawIO file",
@@ -82,7 +80,6 @@ def _diagram_to_svg(diagram) -> str | None:
         if mx is not None:
             return _mxgraph_to_svg(mx)
         return None
-
     try:
         decoded = base64.b64decode(text)
         xml_str = zlib.decompress(decoded, -zlib.MAX_WBITS).decode("utf-8")
@@ -91,14 +88,12 @@ def _diagram_to_svg(diagram) -> str | None:
             xml_str = urllib.parse.unquote(text)
         except Exception:
             return None
-
     try:
         inner = ElementTree.fromstring(xml_str.encode("utf-8"))  # nosec B314
         if inner.tag == "mxGraphModel":
             return _mxgraph_to_svg(inner)
     except Exception:
         pass
-
     return None
 
 
@@ -113,7 +108,6 @@ def _mxgraph_to_svg(mx_model) -> str:
         geom = cell.find("mxGeometry")
         if geom is None:
             continue
-
         x = float(geom.get("x", 0))
         y = float(geom.get("y", 0))
         w = float(geom.get("width", 0))
@@ -163,7 +157,6 @@ def _mxgraph_to_svg(mx_model) -> str:
                     f'<rect x="{x}" y="{y}" width="{w}" height="{h}" '
                     f'fill="{fill}" stroke="{stroke}" stroke-width="1.5"/>',
                 )
-
             if label:
                 tx = x + w / 2
                 ty = y + h / 2
@@ -172,7 +165,6 @@ def _mxgraph_to_svg(mx_model) -> str:
                     f'<text x="{tx}" y="{ty}" text-anchor="middle" dominant-baseline="central" '
                     f'font-family="sans-serif" font-size="{font_size}">{escape(label)}</text>',
                 )
-
     arrow_marker = (
         '<defs><marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" '
         'markerWidth="6" markerHeight="6" orient="auto-start-reverse">'

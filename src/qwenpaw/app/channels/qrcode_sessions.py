@@ -88,7 +88,9 @@ def _read_scope(workspace_id, channel_key, principal_id=None):
 
 
 async def resolve_channel_management_scope_async(request, channel_key):
-    """Capture request values on-loop; resolve disk-backed scope in a worker."""
+    """Capture request values on-loop; resolve disk-backed scope in a
+    worker.
+    """
     workspace_id = getattr(
         request.state,
         "agent_id",
@@ -247,6 +249,8 @@ class ChannelQRCodeSessions:
             raise _SessionExpired()
 
     async def _scan_session(self, session, source=None):
+        # QR sessions compare the captured admission source snapshot.
+        # pylint: disable=protected-access
         self._check_session(session)
         row, description = await self._source(session.scope, source)
         record = self._loader.get_loaded_plugin(row.plugin_id)
@@ -443,6 +447,8 @@ class ChannelQRCodeSessions:
             raise asyncio.CancelledError
 
     async def _execute(self, session, operation):
+        # Reject stale QR session and source identities before execution.
+        # pylint: disable=R0916
         remaining = session.expires - monotonic()
         if remaining < 0.001:
             raise ManagementError("MANAGEMENT_TIMEOUT")
@@ -514,6 +520,10 @@ class ChannelQRCodeSessions:
                     pass
 
     async def fetch(self, scope, options: Mapping[str, str]) -> QRCodeResult:
+        # Preserve QR session claim, refresh and cleanup ordering.
+        # pylint: disable=R0912,R0915
+        # QR sessions compare the captured admission source snapshot.
+        # pylint: disable=protected-access
         self._check_admission(scope)
         row = self._loader.registry.get_channel_catalog_entry(
             scope.channel_key,
@@ -640,6 +650,8 @@ class ChannelQRCodeSessions:
             raise
 
     async def poll(self, scope, token: str) -> PollResult:
+        # Keep terminal QR states and stale-response rejection together.
+        # pylint: disable=R0911,R0912,R0915
         session = self._lookup(scope, token)
         if session.status == "expired":
             return PollResult("expired", {})
@@ -817,7 +829,11 @@ class ChannelQRCodeSessions:
             raise errors[0]
 
     async def save_confirmed(self, scope, token, values, persist):
-        """Authorize once, then retain custody until the real commit settles."""
+        """Authorize once, then retain custody until the real commit
+        settles.
+        """
+        # Keep identity revalidation and credential commit under the claim.
+        # pylint: disable=R0912
         session = self._lookup(scope, token)
         if session.commit is not None:
             raise HTTPException(409, "QR save is already in progress")

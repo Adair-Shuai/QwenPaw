@@ -46,6 +46,7 @@ import {
   MessagesSquare as SparkSessionsLine,
   AudioLines as SparkVoiceChat01Line,
   Wifi as SparkWifiLine,
+  Workflow,
 } from "lucide-react";
 import i18next from "../../i18n";
 import { menuRegistry } from "../../plugins/registry/store";
@@ -57,6 +58,15 @@ const navLabel = (key: string, defaultValue?: string) => (): string =>
 
 export const BUILTIN_MENU: MenuItem[] = [
   // ── Agent-scoped (Sidebar Menu #1) ───────────────────────────────────────
+  {
+    id: "flowforge.editor",
+    location: "primary.agentScoped",
+    label: navLabel("sidebar.dualSidebar.workflows", "Workflows"),
+    icon: Workflow,
+    route: "flowforge.editor",
+    after: "ugsci.experts",
+    order: 6,
+  },
   {
     id: "core.inbox",
     location: "primary.agentScoped",

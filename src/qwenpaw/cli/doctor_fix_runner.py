@@ -293,7 +293,6 @@ def _plan_fixes(
                     "Use `qwenpaw doctor fix --dry-run --only ...` to preview "
                     "the plan without -y.",
                 )
-
     needs_existing_wd = bool(
         set(fix_ids)
         & {
@@ -315,7 +314,6 @@ def _plan_fixes(
             "ensure-working-dir in --only or run `qwenpaw doctor fix` without "
             "--only (safe fixes include it when needed).",
         )
-
     skip_msgs: list[str] = []
     planned: list[PlannedFix] = []
 
@@ -343,7 +341,6 @@ def _plan_fixes(
                     _mk,
                 ),
             )
-
     config_ok, _cfg_msg = strict_validate_config_file()
     cfg = None
     if config_ok:
@@ -354,7 +351,6 @@ def _plan_fixes(
                 f"config-dependent fixes skipped: load_config failed: {exc}",
             )
             cfg = None
-
     if "validate-all-jobs-json" in fix_ids:
         if cfg is None:
             skip_msgs.append(
@@ -366,7 +362,6 @@ def _plan_fixes(
             skip_msgs.append(
                 f"validate-all-jobs-json: {'OK' if ok else 'FAIL'} — {det}",
             )
-
     if cfg is not None and "ensure-workspace-dirs" in fix_ids:
         for agent_id, ref in cfg.agents.profiles.items():
             wsp = Path(ref.workspace_dir).expanduser()
@@ -389,7 +384,6 @@ def _plan_fixes(
                     _mk_ws,
                 ),
             )
-
     if cfg is not None and "seed-missing-agent-json" in fix_ids:
         for agent_id in cfg.agents.profiles:
             ref = cfg.agents.profiles[agent_id]
@@ -401,7 +395,6 @@ def _plan_fixes(
                 continue
             if not wsp.is_dir():
                 continue
-
             profile = build_fallback_agent_profile_config(agent_id, cfg)
             payload = profile.model_dump(exclude_none=True)
             text = json.dumps(payload, ensure_ascii=False, indent=2) + "\n"
@@ -426,7 +419,6 @@ def _plan_fixes(
                     _seed,
                 ),
             )
-
     if cfg is not None and "reset-invalid-agent-json" in fix_ids:
         for agent_id in cfg.agents.profiles:
             ref = cfg.agents.profiles[agent_id]
@@ -463,7 +455,6 @@ def _plan_fixes(
                     _reset,
                 ),
             )
-
     if cfg is not None and "write-empty-jobs-json" in fix_ids:
         empty = JobsFile(version=1, jobs=[])
         body = (
@@ -501,7 +492,6 @@ def _plan_fixes(
                     _jobs,
                 ),
             )
-
     if cfg is not None and "reconcile-workspace-skills" in fix_ids:
         for agent_id, ref in cfg.agents.profiles.items():
             wsp = Path(ref.workspace_dir).expanduser()
@@ -526,7 +516,6 @@ def _plan_fixes(
                     _rec,
                 ),
             )
-
     if cfg is not None and "normalize-jobs-cron" in fix_ids:
         for agent_id, ref in cfg.agents.profiles.items():
             wsp = Path(ref.workspace_dir).expanduser()
@@ -591,7 +580,6 @@ def _plan_fixes(
                     _write_norm,
                 ),
             )
-
     if "rebuild-console-npm" in fix_ids:
         repo = find_qwenpaw_source_repo_root()
         if repo is None:
@@ -680,7 +668,6 @@ def _plan_fixes(
                     _rebuild_console,
                 ),
             )
-
     return skip_msgs, planned
 
 
@@ -712,7 +699,6 @@ def run_doctor_fix(
     except ValueError as exc:
         echo_err(str(exc))
         return 1
-
     if non_interactive:
         disallowed = sorted(set(fix_ids) - NONINTERACTIVE_FIX_IDS)
         if disallowed:
@@ -721,7 +707,6 @@ def run_doctor_fix(
                 f"{sorted(NONINTERACTIVE_FIX_IDS)}; disallowed: {disallowed}",
             )
             return 1
-
     try:
         skip_msgs, planned = _plan_fixes(
             fix_ids,
@@ -733,10 +718,8 @@ def run_doctor_fix(
     except ValueError as exc:
         echo_err(str(exc))
         return 1
-
     for msg in skip_msgs:
         echo(f"  (note) {msg}")
-
     validate_failed = any(
         m.startswith("validate-all-jobs-json: FAIL") for m in skip_msgs
     )
@@ -750,28 +733,23 @@ def run_doctor_fix(
             return 1 if validate_failed else 0
         echo("Nothing to do (already satisfied).")
         return 0
-
     echo("Planned operations:")
     for p in planned:
         echo(f"  [{p.fix_id}] {p.description}")
-
     if dry_run:
         echo("(dry-run: no files modified)")
         return 1 if validate_failed else 0
-
     if no_backup:
         echo_err(
             "WARNING: --no-backup — no copies under doctor-fix-backups if "
             "something goes wrong.",
         )
-
     skip_confirm = yes or non_interactive
     if not skip_confirm:
         fn = confirm_fn or (lambda _m: False)
         if not fn("Apply these changes?"):
             echo("Aborted (no changes written).")
             return 0
-
     mkdir_wd_ops = [p for p in planned if p.fix_id == "ensure-working-dir"]
     rest_ops = [p for p in planned if p.fix_id != "ensure-working-dir"]
 
@@ -781,12 +759,10 @@ def run_doctor_fix(
     except Exception as exc:  # pylint: disable=broad-exception-caught
         echo_err(f"Stopped after error: {exc}")
         return 1
-
     wd = _working_dir_resolved(working_dir or WORKING_DIR)
     if not wd.is_dir():
         echo_err(f"working directory still missing after fixes: {wd}")
         return 1
-
     session_dir: Path | None = None
     session_files: Path | None = None
     backed_rels: list[str] = []
@@ -802,11 +778,9 @@ def run_doctor_fix(
             if backup_dir is not None:
                 echo_err("--backup-dir must be inside the working directory.")
                 return 1
-
         session_dir = base / BACKUP_SUBDIR / _utc_session_id()
         session_files = session_dir / "files"
         session_dir.mkdir(parents=True, exist_ok=True)
-
     all_applied_ids: list[str] = [p.fix_id for p in mkdir_wd_ops]
 
     try:
@@ -826,7 +800,6 @@ def run_doctor_fix(
         if session_dir is not None:
             echo_err(f"Partial backup may be under: {session_dir}")
         return 1
-
     if session_dir is not None and session_files is not None:
         _write_meta(
             session_dir,
@@ -842,6 +815,5 @@ def run_doctor_fix(
             cli_api_port=cli_api_port,
         )
         echo(f"Backup session: {session_dir}")
-
     echo("Done.")
     return 1 if validate_failed else 0

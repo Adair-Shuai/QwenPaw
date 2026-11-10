@@ -72,7 +72,7 @@ describe("routeRegistry.replace", () => {
   it("LIFO winner; rendered Component reflects override", () => {
     routeRegistry.add("core", { id: "p", path: "/p", component: Base });
     routeRegistry.replace("p1", "p", PluginPage);
-    const Comp = routeRegistry.snapshot().find((r) => r.id === "p")?.Component!;
+    const Comp = routeRegistry.snapshot().find((r) => r.id === "p")!.Component;
     expect(Comp).toBeTruthy();
     const { getByTestId } = render(<Comp />);
     expect(getByTestId("plugin")).toBeInTheDocument();
@@ -82,7 +82,7 @@ describe("routeRegistry.replace", () => {
     routeRegistry.add("core", { id: "p", path: "/p", component: Base });
     const d = routeRegistry.replace("p1", "p", PluginPage);
     d.dispose();
-    const Comp = routeRegistry.snapshot().find((r) => r.id === "p")?.Component!;
+    const Comp = routeRegistry.snapshot().find((r) => r.id === "p")!.Component;
     const { getByTestId } = render(<Comp />);
     expect(getByTestId("base")).toBeInTheDocument();
   });
@@ -121,7 +121,7 @@ describe("routeRegistry.wrap — onion composition", () => {
         <Inner />
       </div>
     ));
-    const Comp = routeRegistry.snapshot().find((r) => r.id === "p")?.Component!;
+    const Comp = routeRegistry.snapshot().find((r) => r.id === "p")!.Component;
     const { getByTestId, container } = render(<Comp />);
     // p2 should wrap p1 (p2 is last registered → outermost)
     const outerP2 = getByTestId("outer-p2");
@@ -138,7 +138,7 @@ describe("routeRegistry.wrap — onion composition", () => {
         <Inner />
       </div>
     ));
-    const Comp = routeRegistry.snapshot().find((r) => r.id === "p")?.Component!;
+    const Comp = routeRegistry.snapshot().find((r) => r.id === "p")!.Component;
     const { queryByTestId } = render(<Comp />);
     expect(queryByTestId("wrap")).toBeInTheDocument();
     expect(queryByTestId("plugin")).toBeInTheDocument();
@@ -153,7 +153,7 @@ describe("routeRegistry.wrap — onion composition", () => {
       </div>
     ));
     d.dispose();
-    const Comp = routeRegistry.snapshot().find((r) => r.id === "p")?.Component!;
+    const Comp = routeRegistry.snapshot().find((r) => r.id === "p")!.Component;
     const { queryByTestId } = render(<Comp />);
     expect(queryByTestId("wrap")).not.toBeInTheDocument();
     expect(queryByTestId("base")).toBeInTheDocument();

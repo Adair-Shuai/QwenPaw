@@ -74,7 +74,6 @@ class FileLoopGate(LoopGate):
             return StopHandlerResult(
                 action=StopAction.BYPASS,
             )
-
         state.iteration += 1
 
         if state.iteration > self._MAX_ITERATIONS:
@@ -85,7 +84,6 @@ class FileLoopGate(LoopGate):
                     f"{self.name} max iterations " f"({self._MAX_ITERATIONS})"
                 ),
             )
-
         state_dir = self._build_state_dir(
             state.workspace_dir or Path("."),
             self._session_id(),
@@ -96,7 +94,6 @@ class FileLoopGate(LoopGate):
                 action=StopAction.TERMINATE,
                 reason=f"{self.name} completed",
             )
-
         return StopHandlerResult(
             action=StopAction.INTERRUPT_AND_CONTINUE,
             reason=(

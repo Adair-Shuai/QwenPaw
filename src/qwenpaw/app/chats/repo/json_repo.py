@@ -94,11 +94,9 @@ def migrate_legacy_weixin_chats_file(chats_path: Path | str) -> None:
         return
     if not isinstance(data, dict):
         return
-
     chats = data.get("chats")
     if not isinstance(chats, list):
         return
-
     mutated = False
     for chat in chats:
         if not isinstance(chat, dict):
@@ -107,10 +105,8 @@ def migrate_legacy_weixin_chats_file(chats_path: Path | str) -> None:
         if isinstance(sid, str) and sid.startswith("weixin:"):
             chat["session_id"] = "wechat:" + sid[len("weixin:") :]
             mutated = True
-
     if not mutated:
         return
-
     try:
         backup_path = path.with_suffix(
             path.suffix + f".{uuid.uuid4().hex[:8]}.weixin-migrate.bak",

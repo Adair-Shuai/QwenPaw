@@ -72,10 +72,8 @@ def _classify_event(
     object_kind = getattr(event, "object", None)
     if object_kind is None and isinstance(event, dict):
         object_kind = event.get("object")
-
     if object_kind != "message":
         return None, None
-
     msg_type = getattr(event, "type", None)
     if msg_type is None and isinstance(event, dict):
         msg_type = event.get("type")
@@ -100,10 +98,8 @@ def _classify_event(
         data = _content_data(content_list[0]) if content_list else None
         name = (data or {}).get("name") or "tool"
         return "tool.detected", f"Using {str(name)[:40]}"
-
     if msg_type_val == "plugin_call_output" and status_val == "completed":
         return "tool.result", "Tool result"
-
     # Fire on the empty in_progress envelope, not the completed one —
     # TextContent deltas arrive as separate ``object="content"`` events
     # which the classifier ignores, so "Replying" needs to flip when the
@@ -114,7 +110,6 @@ def _classify_event(
         and not seen_first_text
     ):
         return "query.first_token", "Replying"
-
     return None, None
 
 
@@ -124,7 +119,6 @@ def patch_agent_runner() -> None:
 
     if _PATCHED:
         return
-
     from qwenpaw.app.workspace.workspace import Workspace
 
     _ORIGINAL_STREAM_QUERY = Workspace.stream_query
@@ -151,20 +145,16 @@ def patch_agent_runner() -> None:
                 event, text = _classify_event(envelope, seen_first_text)
                 if event == "query.first_token":
                     seen_first_text = True
-
                 if event and event != last_event:
                     schedule_emit_pet_event(event, text=text, **meta)
                     last_event = event
-
                 yield envelope
-
             await asyncio.to_thread(
                 emit_pet_event,
                 "query.done",
                 text="Done",
                 **meta,
             )
-
         except asyncio.CancelledError:
             schedule_emit_pet_event(
                 "query.cancelled",
@@ -206,7 +196,6 @@ def _wire_existing_channels(patched_fn) -> None:
     except Exception:
         logger.debug("Pet patch: FastAPI app not importable; skip rewire")
         return
-
     manager = getattr(
         getattr(fastapi_app, "state", None),
         "multi_agent_manager",
@@ -215,7 +204,6 @@ def _wire_existing_channels(patched_fn) -> None:
     if manager is None:
         logger.debug("Pet patch: no multi_agent_manager; skip rewire")
         return
-
     workspaces = getattr(manager, "agents", {}) or {}
     rewired = 0
     for ws in workspaces.values():
@@ -262,7 +250,6 @@ def _patch_make_process_factory(patched_fn) -> None:
             "Pet patch: channels.utils not importable; skip factory patch",
         )
         return
-
     original = getattr(ch_utils, "make_process_from_runner", None)
     if original is None or getattr(original, "_pet_patched", False):
         return
@@ -285,7 +272,6 @@ def restore_agent_runner() -> None:
 
     if not _PATCHED or _ORIGINAL_STREAM_QUERY is None:
         return
-
     from qwenpaw.app.workspace.workspace import Workspace
 
     Workspace.stream_query = _ORIGINAL_STREAM_QUERY

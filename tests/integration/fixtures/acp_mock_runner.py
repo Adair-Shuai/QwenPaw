@@ -121,7 +121,6 @@ class _Runner:
             if self._permission_future and not self._permission_future.done():
                 self._permission_future.set_result(msg)
             return
-
         if method == "initialize":
             if self.fail_initialize:
                 _emit(_err(msg_id, -32603, "mock failure"))
@@ -199,7 +198,6 @@ class _Runner:
             if chosen == "deny" or chosen.startswith("reject"):
                 _emit(_ok(msg_id, {"stopReason": "refusal"}))
                 return
-
         # Stream a single agent_message_chunk update.
         _emit(
             _notification(

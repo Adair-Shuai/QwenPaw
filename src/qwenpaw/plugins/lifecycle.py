@@ -537,6 +537,9 @@ class PluginLifecycle:
         **kwargs,
     ):
         """Check execution eligibility before destructive lifecycle changes."""
+        # The loader lifecycle owns this verified registration and preflight
+        # handoff.
+        # pylint: disable-next=protected-access
         async with self._loader._dependency_registration(
             binding,
             attach=False,
@@ -547,6 +550,9 @@ class PluginLifecycle:
                 probe=probe,
                 **kwargs,
             )
+            # The loader lifecycle owns this verified registration and
+            # preflight handoff.
+            # pylint: disable-next=protected-access
             return await self._loader._admit_dependencies(
                 binding,
                 token,

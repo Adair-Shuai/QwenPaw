@@ -696,7 +696,6 @@ class ProviderManagerPersistenceMixin(
         tracked_path = self._provider_storage_paths.get(storage_key)
         if tracked_path is not None:
             return tracked_path
-
         provider_dir = {
             "builtin": self.builtin_path,
             "custom": self.custom_path,
@@ -721,7 +720,6 @@ class ProviderManagerPersistenceMixin(
         tracked_path = self._provider_storage_paths.get(storage_key)
         if tracked_path is not None:
             return tracked_path
-
         provider_dir = {
             "builtin": self.builtin_path,
             "custom": self.custom_path,
@@ -812,7 +810,6 @@ class ProviderManagerPersistenceMixin(
         try:
             with open(provider_path, "r", encoding="utf-8") as f:
                 data = json.load(f)
-
             needs_rewrite = migrate_provider_snapshot(data)
             needs_rewrite = (
                 self._maybe_migrate_plaintext(
@@ -833,7 +830,6 @@ class ProviderManagerPersistenceMixin(
                 provider_path,
             ):
                 return None
-
             if needs_rewrite:
                 try:
                     self._save_provider(
@@ -848,7 +844,6 @@ class ProviderManagerPersistenceMixin(
                         provider_id,
                         enc_err,
                     )
-
             return provider
         except Exception as e:
             logger.warning(
@@ -884,7 +879,6 @@ class ProviderManagerPersistenceMixin(
             and chat_model == builtin.chat_model
         ):
             return type(builtin).model_validate(data)
-
         if provider_id == "openrouter":
             provider_type = OpenRouterProvider
         elif provider_id == "anthropic" or chat_model == "AnthropicChatModel":
@@ -1056,22 +1050,18 @@ class ProviderManagerPersistenceMixin(
                 "Migrated active model provider from "
                 "'copaw-local' to 'qwenpaw-local'",
             )
-
         # 2. Migrate stored provider config file
         copaw_config_path = self.builtin_path / "copaw-local.json"
         if not copaw_config_path.exists():
             return
-
         try:
             # Load old config and apply to new provider instance
             with open(copaw_config_path, "r", encoding="utf-8") as f:
                 old_config = json.load(f)
-
             # Get the new built-in provider instance
             provider = self.builtin_providers.get("qwenpaw-local")
             if not provider:
                 return
-
             # Apply migrated configuration (preserve extra_models as-is)
             if "extra_models" in old_config:
                 provider.extra_models = [
@@ -1082,7 +1072,6 @@ class ProviderManagerPersistenceMixin(
                 provider.base_url = old_config["base_url"]
             if "generate_kwargs" in old_config:
                 provider.generate_kwargs = old_config["generate_kwargs"]
-
             # Save using standard persistence logic (with encryption)
             self._save_provider(provider, is_builtin=True)
 
@@ -1233,7 +1222,6 @@ class ProviderManagerPersistenceMixin(
             self.default_models[model_type] = self.load_active_model(
                 model_type,
             )
-
         # Migrate copaw-local to qwenpaw-local for backwards compatibility
         self._migrate_copaw_config()
 
@@ -1254,7 +1242,6 @@ class ProviderManagerPersistenceMixin(
             builtin.custom_headers = provider.custom_headers
         if hasattr(builtin, "max_inline_media_bytes"):
             builtin.max_inline_media_bytes = provider.max_inline_media_bytes
-
         builtin_model_ids = {model.id for model in builtin.models}
         builtin.extra_models = [
             model

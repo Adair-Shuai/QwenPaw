@@ -25,7 +25,6 @@ from .models import (
 
 if TYPE_CHECKING:
     from .service import CheckpointService
-
 logger = logging.getLogger("qwenpaw.checkpoints")
 
 
@@ -98,7 +97,6 @@ class WorkspaceMutationGuard:
                     "not be paused.",
                 ) from exc
             return resume_callbacks
-
         cron_manager = getattr(self.workspace, "cron_manager", None)
         scheduler = getattr(cron_manager, "_scheduler", None)
         if scheduler is not None and hasattr(scheduler, "pause"):
@@ -348,14 +346,12 @@ class RestoreService:
                             prepared.plan,
                             dry_run=True,
                         )
-
                     if include_files:
                         description = f"Before file restore to {target}"
                     elif include_memory:
                         description = f"Before memory restore to {target}"
                     else:
                         description = f"Before restore to {target}"
-
                     pre_ref = await run_sync_io(
                         self._apply_restore_transaction_sync,
                         prepared,
@@ -373,7 +369,6 @@ class RestoreService:
                     mutation_guard.resume(resume_callbacks)
                 if not dry_run:
                     service.query_gate.set()
-
         assert prepared is not None
         return self._result_from_plan(
             prepared.plan,
@@ -611,7 +606,6 @@ class RestoreService:
         }
         if selected_files is None:
             return candidates
-
         selected = {
             self._normalize_selected_file(rel, conv_rel=conv_rel)
             for rel in selected_files

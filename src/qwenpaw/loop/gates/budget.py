@@ -69,7 +69,6 @@ class BudgetGate(LoopGate):
         state: Optional[_BudgetState] = self._state()
         if state is None:
             return _bypass
-
         if state.tokens_used >= state.max_tokens:
             self.deactivate()
             return StopHandlerResult(

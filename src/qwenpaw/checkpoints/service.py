@@ -380,7 +380,6 @@ class CheckpointService:
                 now_ms += 1
                 ref = f"refs/pre-restore/{now_ms}-{key}"
             subject = f"pre-restore {key} {now_ms}"
-
         tree = tree_override or self.repository.write_workspace_tree()
         body = message.strip() if message else subject
         query = query_override
@@ -883,7 +882,6 @@ class CheckpointService:
             # Malformed refs must not share one accidental global quota.
             group_key = record_key or record.ref
             records_by_session.setdefault(group_key, []).append(record)
-
         kept: set[str] = set()
         for session_records in records_by_session.values():
             session_records.sort(
@@ -969,7 +967,6 @@ class CheckpointService:
                 keep_refs.append(ref)
             else:
                 delete_refs.append(ref)
-
         pre_records = [
             record
             for record in scoped_records
@@ -983,7 +980,6 @@ class CheckpointService:
                 delete_refs.append(ref)
             else:
                 keep_refs.append(ref)
-
         if not dry_run and delete_refs:
             commits_by_ref = {
                 record.ref: record.commit for record in scoped_records

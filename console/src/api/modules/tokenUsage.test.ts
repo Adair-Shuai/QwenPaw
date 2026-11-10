@@ -17,7 +17,7 @@ describe("tokenUsageApi", () => {
   });
 
   it("getTokenUsage builds query with start_date + end_date only", async () => {
-    const summary = { total_tokens: 100 } as any;
+    const summary = { total_tokens: 100 };
     vi.mocked(request).mockResolvedValue(summary);
     const result = await tokenUsageApi.getTokenUsage({
       start_date: "2026-01-01",
@@ -30,7 +30,7 @@ describe("tokenUsageApi", () => {
   });
 
   it("getTokenUsageDetails includes model + provider when provided", async () => {
-    const records = [{ id: "r1" }] as any;
+    const records = [{ id: "r1" }];
     vi.mocked(request).mockResolvedValue(records);
     const result = await tokenUsageApi.getTokenUsageDetails({
       start_date: "2026-01-01",
@@ -45,7 +45,7 @@ describe("tokenUsageApi", () => {
   });
 
   it("getTokenUsageDetails omits model/provider query when not provided", async () => {
-    const records = [] as any;
+    const records = [] as unknown;
     vi.mocked(request).mockResolvedValue(records);
     await tokenUsageApi.getTokenUsageDetails({
       start_date: "2026-02-01",

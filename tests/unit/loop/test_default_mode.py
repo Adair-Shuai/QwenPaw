@@ -1,4 +1,6 @@
 # -*- coding: utf-8 -*-
+# Pytest injects the public decision_check fixture by its declared name.
+# pylint: disable=redefined-outer-name
 # pylint: disable=protected-access
 """Tests for DefaultMode gate ownership and lifecycle."""
 from __future__ import annotations
@@ -283,6 +285,8 @@ async def test_jev_deadline_does_not_wait_for_provider_cleanup(
     phase,
     cancel,
 ):
+    # Keep the complete cancellation lifecycle and its assertions visible.
+    # pylint: disable=R0915
     ctx, resolve, _ = decision_check
     provider = typesafe_provider.TypeSafeProvider(
         id="typesafe",
@@ -303,7 +307,8 @@ async def test_jev_deadline_does_not_wait_for_provider_cleanup(
             try:
                 await release_async.wait()
             except asyncio.CancelledError:
-                # A late provider result must not delay fallback or cancellation.
+                # A late provider result must not delay fallback or
+                # cancellation.
                 await release_async.wait()
         return SimpleNamespace(
             content={

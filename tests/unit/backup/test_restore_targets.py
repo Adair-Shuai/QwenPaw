@@ -37,7 +37,6 @@ def test_busy_restore_target_reports_user_actionable_error(
 
     with pytest.raises(BackupValidationError) as exc_info:
         restore._assert_restore_targets_available([target])
-
     assert exc_info.value.code == "restore_target_busy"
     assert exc_info.value.details["locked_paths"] == [
         str(target / "browser"),

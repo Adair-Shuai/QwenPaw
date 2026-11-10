@@ -1,3 +1,4 @@
+import type { TFunction } from "i18next";
 import { describe, it, expect } from "vitest";
 import { getAgentDisplayName } from "./agentDisplayName";
 import { parseMarkdownFrontmatter, stripFrontmatter } from "./markdown";
@@ -6,42 +7,43 @@ import { parseMarkdownFrontmatter, stripFrontmatter } from "./markdown";
 // getAgentDisplayName
 // ---------------------------------------------------------------------------
 
-const t = (key: string) => key; // test t function: returns the key as-is
+const t = ((key: string) => key) as unknown as TFunction; // test t function: returns the key as-is
 
 describe("getAgentDisplayName", () => {
   it('returns i18n key when id is "default" and name is the default placeholder', () => {
     expect(
-      getAgentDisplayName({ id: "default", name: "Default Agent" }, t as any),
+      getAgentDisplayName({ id: "default", name: "Default Agent" }, t),
     ).toBe("agent.defaultDisplayName");
   });
 
   it('returns i18n key when id is "default" and name is empty', () => {
-    expect(getAgentDisplayName({ id: "default", name: "" }, t as any)).toBe(
+    expect(getAgentDisplayName({ id: "default", name: "" }, t)).toBe(
       "agent.defaultDisplayName",
     );
   });
 
   it('returns custom name when id is "default" but name is customized', () => {
     expect(
-      getAgentDisplayName({ id: "default", name: "My Custom Name" }, t as any),
+      getAgentDisplayName({ id: "default", name: "My Custom Name" }, t),
     ).toBe("My Custom Name");
   });
 
   it('returns name when id is not "default"', () => {
-    expect(
-      getAgentDisplayName({ id: "agent-1", name: "My Agent" }, t as any),
-    ).toBe("My Agent");
+    expect(getAgentDisplayName({ id: "agent-1", name: "My Agent" }, t)).toBe(
+      "My Agent",
+    );
   });
 
   it("falls back to id when name is empty", () => {
-    expect(getAgentDisplayName({ id: "agent-1", name: "" }, t as any)).toBe(
-      "agent-1",
-    );
+    expect(getAgentDisplayName({ id: "agent-1", name: "" }, t)).toBe("agent-1");
   });
 
   it("falls back to id when name is undefined", () => {
     expect(
-      getAgentDisplayName({ id: "agent-1", name: undefined as any }, t as any),
+      getAgentDisplayName(
+        { id: "agent-1", name: undefined as unknown as string },
+        t,
+      ),
     ).toBe("agent-1");
   });
 });

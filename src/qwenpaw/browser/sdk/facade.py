@@ -217,7 +217,6 @@ def _render_method(prefix: str, name: str, member: object) -> list[str]:
         return [header] + [
             f"    {line}" if line else "" for line in doc.splitlines()
         ]
-
     if isinstance(member, (staticmethod, classmethod)):
         member = member.__func__
     signature = inspect.signature(cast(Callable[..., object], member))

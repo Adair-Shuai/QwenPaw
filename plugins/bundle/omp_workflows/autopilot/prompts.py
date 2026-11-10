@@ -150,7 +150,6 @@ def _qa(ctx: AutopilotPromptCtx) -> str:
         return f"""\
 Autopilot Controller — phase: qa (SKIPPED via --skip-qa).
 Update {ctx.loop_dir}/state.json: set phase="validation"."""
-
     architect = format_spawn_call(
         "architect",
         "DIAGNOSE FAILURE: paste test output; give root cause + fixes.",
@@ -182,7 +181,6 @@ def _validation(ctx: AutopilotPromptCtx) -> str:
 Autopilot Controller — phase: validation \
 (SKIPPED via --skip-validation).
 Update {ctx.loop_dir}/state.json: set phase="cleanup"."""
-
     verifier = format_batch_item(
         "verifier",
         "REVIEW - Functional Completeness: Verify all spec requirements...",

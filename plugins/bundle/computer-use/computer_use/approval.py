@@ -44,12 +44,10 @@ class ComputerUseApprovalCoordinator:
             return {"allowed": False, "source": "invalid"}
         if not self._matches_active_session(request):
             return {"allowed": False, "source": "session_mismatch"}
-
         store = get_computer_use_access_store()
         existing = store.resolve(request)
         if existing is not None:
             return {"allowed": existing.allowed, "source": existing.source}
-
         pending = await self._create_pending(request)
         try:
             decision = await get_approval_service().wait_for_approval(

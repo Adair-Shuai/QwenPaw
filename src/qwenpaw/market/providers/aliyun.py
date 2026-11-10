@@ -225,7 +225,6 @@ class AliyunProvider:
                 raise RuntimeError(
                     f"Aliyun SearchSkills failed: {msg}",
                 ) from exc
-
             items = _extract_skill_items(resp_body)
             next_token = _opt_str((resp_body or {}).get("nextToken"))
 
@@ -241,7 +240,6 @@ class AliyunProvider:
                 # Upstream exhausted before reaching target_page — caller
                 # asked for a page past the end.
                 break
-
         return target_results, has_more, total
 
 

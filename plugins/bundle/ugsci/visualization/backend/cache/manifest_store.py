@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import json
 import logging
-import os
-import tempfile
 import threading
 from pathlib import Path
 from typing import Any
+
+from qwenpaw.utils.io_utils import write_text_atomic
 
 from .layout import CacheLayout
 
@@ -103,21 +103,7 @@ class ManifestStore:
         """Write manifest atomically: temp file + rename."""
         content = json.dumps(data, indent=2, ensure_ascii=False)
         try:
-            with tempfile.NamedTemporaryFile(
-                mode="w",
-                encoding="utf-8",
-                newline="\n",
-                dir=self.bin_dir,
-                prefix=".manifest_",
-                suffix=".tmp",
-                delete=False,
-            ) as tmp:
-                tmp.write(content)
-                tmp_path = Path(tmp.name)
-
-            os.replace(tmp_path, self.manifest_path)
+            write_text_atomic(self.manifest_path, content, encoding="utf-8")
         except Exception as exc:
             logger.error("Atomic manifest write failed: %s", exc)
-            if "tmp_path" in locals() and tmp_path.exists():
-                tmp_path.unlink()
             raise

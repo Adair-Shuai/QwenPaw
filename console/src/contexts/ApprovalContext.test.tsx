@@ -10,6 +10,7 @@
 import { describe, it, expect, vi } from "vitest";
 import { renderHook, act } from "@testing-library/react";
 import { ReactNode } from "react";
+import type { PendingApproval } from "../api/modules/console";
 import { ApprovalProvider, useApprovalContext } from "./ApprovalContext";
 
 // Mock the API module that PendingApproval depends on
@@ -32,7 +33,7 @@ describe("ApprovalProvider + useApprovalContext", () => {
 
     const mockApprovals = [
       { id: "1", type: "tool_call", status: "pending" },
-    ] as any;
+    ] as unknown as PendingApproval[];
 
     act(() => {
       result.current.setApprovals(mockApprovals);
@@ -45,7 +46,9 @@ describe("ApprovalProvider + useApprovalContext", () => {
     const { result } = renderHook(() => useApprovalContext(), { wrapper });
 
     act(() => {
-      result.current.setApprovals([{ id: "1" }] as any);
+      result.current.setApprovals([
+        { id: "1" },
+      ] as unknown as PendingApproval[]);
     });
     act(() => {
       result.current.setApprovals([]);

@@ -102,7 +102,6 @@ def test_run_command_raises_for_non_zero_exit(
 
     with pytest.raises(CommandExecutionError, match="failure") as exc_info:
         run_command(["demo"], check=True)
-
     assert exc_info.value.returncode == 2
     assert exc_info.value.command == ["demo"]
 

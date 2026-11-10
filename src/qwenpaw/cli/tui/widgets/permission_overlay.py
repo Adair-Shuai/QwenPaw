@@ -116,7 +116,6 @@ class PermissionOverlay(OptionList):
                     disabled=True,
                 ),
             )
-
         for option in request.options:
             label = Text(option.name or option.option_id)
             if option.kind.startswith("allow"):
@@ -126,7 +125,6 @@ class PermissionOverlay(OptionList):
             else:
                 label.stylize("bold")
             self.add_option(Option(label, id=option.option_id))
-
         self.display = True
         self.highlighted = self._first_action_index()
         self._start_countdown_timer()
@@ -234,7 +232,6 @@ def _param_text(line: str) -> Text:
     key, separator, value = line.partition(":")
     if not separator:
         return Text(_truncate_line(line), style="#d8dee9")
-
     normalized = key.strip()
     label = _IMPORTANT_PARAM_LABELS.get(
         normalized,
@@ -253,7 +250,6 @@ def _param_text(line: str) -> Text:
     elif normalized == "approve_exact_target":
         label_style = "bold #8fd3ff"
         value_style = "bold #d8dee9"
-
     text = Text()
     text.append(f"{label}: ", style=label_style)
     text.append(_truncate_line(value), style=value_style)

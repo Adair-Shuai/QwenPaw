@@ -222,7 +222,6 @@ class MemoryToolkit:
             macro_list = se.sub_macro_ids
         else:
             macro_list = [me.macro_id for me in self.memory.macro_events]
-
         macros = []
         for mid in macro_list:
             me = self._macro_map.get(mid)
@@ -245,7 +244,6 @@ class MemoryToolkit:
             return {"error": f"Macro event {macro_id} not found"}
         if not me.subgraph:
             return {"error": f"No subgraph for {macro_id}"}
-
         sg = me.subgraph
         result = {
             "macro_id": macro_id,
@@ -345,7 +343,6 @@ class MemoryToolkit:
             orig_id = node_id
             if node_id.startswith("slot") and "_" in node_id:
                 orig_id = node_id.split("_", 1)[1]
-
             macro_id = r.get("macro_id", "")
             prefixed = self._prefixed(macro_id, orig_id) if macro_id else ""
             node_info = (
@@ -356,7 +353,6 @@ class MemoryToolkit:
                 if macro_id:
                     prefixed = self._prefixed(macro_id, orig_id)
                     node_info = self._node_map.get(prefixed, {})
-
             macro = self._macro_map.get(macro_id)
 
             node_type = node_info.get("type") or r.get("node_type", "unknown")
@@ -508,7 +504,6 @@ class MemoryToolkit:
                         break
                 if output:
                     return output
-
         query_lower = query.lower()
         matches = []
         for me in self.memory.macro_events:
@@ -570,7 +565,6 @@ class MemoryToolkit:
                         break
                 if output:
                     return output
-
         query_lower = query.lower()
         matches = []
         for me in self.memory.macro_events:

@@ -1,3 +1,5 @@
+import { translateWorkflow, workflowLocale } from "./i18n";
+
 // Serialization uses plain canvas records so host consumers do not need the
 // editor's ReactFlow dependency just to inspect or convert a workflow.
 interface Node {
@@ -64,7 +66,7 @@ const names: Record<string, [string, string]> = {
   ToolNode: ["工具调用", "调用已注册的专业能力"],
   ToolCallNode: ["能力调用", "调用已注册的工具与专业能力"],
   LLMNode: ["模型调用", "根据提示词生成内容"],
-  LLMCallNode: ["模型调用", "调用模型生成结构化内容"],
+  LLMCallNode: ["模型调用 / JSON", "生成文本或按 JSON Schema 校验结构化结果"],
   ConditionNode: ["条件分支", "按业务条件选择后续执行路径"],
   HumanReviewNode: ["人工审核", "暂停执行，等待审核决定"],
   ParallelNode: ["并行分支", "并行处理任务并合并结果"],
@@ -77,25 +79,48 @@ const names: Record<string, [string, string]> = {
   WaitNode: ["等待", "延迟后继续执行"],
   ErrorHandlerNode: ["异常处理", "处理失败信息并执行补救流程"],
   PreviewNode: ["结果预览", "查看上游生成的结果"],
+  "Art.Preview": ["产物预览", "预览生成的图片、音视频与三维文件"],
+  "Agent.control_agent": ["调度智能体", "按任务目标协调后续步骤"],
+  LoadImage: ["加载图片", "从文件路径加载图片"],
+  LoadMesh3D: ["加载三维模型", "从文件路径加载 GLB、GLTF 或 OBJ 模型"],
   AssetExportNode: ["产物导出", "导出文件与业务成果"],
   ControlAgentNode: ["调度智能体", "按任务目标协调后续步骤"],
   CodingAgentNode: ["编程智能体", "通过编程解决指定任务"],
   ScriptAgentNode: ["脚本智能体", "生成并执行任务脚本"],
 };
-export function localizedSpec(spec: NodeTypeSpec): NodeTypeSpec {
+export function localizedSpec(
+  spec: NodeTypeSpec,
+  locale: string | number = workflowLocale(),
+): NodeTypeSpec {
+  const language = typeof locale === "string" ? locale : workflowLocale();
   const label = names[spec.class_type];
   const categories: Record<string, string> = {
     "workflow/io": "输入与输出",
     "workflow/action": "模型与能力",
+    "workflow/ai": "模型与能力",
+    "workflow/code": "代码与脚本",
     "workflow/control": "控制逻辑",
     "workflow/human": "人工协作",
     "workflow/data": "数据处理",
     "art/evaluate": "质量与优化",
+    "art/preview": "预览与导出",
+    "art/export": "预览与导出",
+    "builtin/media": "媒体与文件",
+    agents: "智能体",
   };
   return {
     ...spec,
-    ...(label ? { display_name: label[0], description: label[1] } : {}),
-    category: categories[spec.category] || spec.category,
+    ...(label
+      ? {
+          display_name: translateWorkflow(label[0], language),
+          description: translateWorkflow(label[1], language),
+        }
+      : {}),
+    category: translateWorkflow(
+      categories[spec.category] ||
+        (spec.category?.startsWith("tools/") ? "已注册工具" : spec.category),
+      language,
+    ),
   };
 }
 export function controlEdges(node: Pick<Node, "id" | "data">): Edge[] {
@@ -312,16 +337,33 @@ export function isTypingTarget(target: EventTarget | null): boolean {
 export function parseRuntimeInputs(
   fields: any[],
   values: Record<string, any>,
+  locale = workflowLocale(),
 ): Record<string, any> {
+  const t = (
+    source: string,
+    english: string,
+    args?: Record<string, string | number>,
+  ) => translateWorkflow(source, locale, english, args);
   const result: Record<string, any> = {},
     names = new Set<string>();
   for (const field of fields) {
     const name = String(field.name || "").trim();
-    if (!name || names.has(name)) throw new Error("输入参数名称不能为空或重复");
+    if (!name || names.has(name))
+      throw new Error(
+        t(
+          "输入参数名称不能为空或重复",
+          "Input names must be non-empty and unique",
+        ),
+      );
     names.add(name);
     let value = values[name] ?? field.default;
     if (value === undefined || value === "") {
-      if (field.required) throw new Error(`请填写必填参数：${name}`);
+      if (field.required)
+        throw new Error(
+          t("请填写必填参数：{name}", "Enter the required input: {name}", {
+            name,
+          }),
+        );
       continue;
     }
     const type = String(field.type || "any").toLowerCase();
@@ -332,21 +374,33 @@ export function parseRuntimeInputs(
         (["int", "integer"].includes(type) && !Number.isInteger(value))
       )
         throw new Error(
-          `${name} 必须是有效数字${
-            ["int", "integer"].includes(type) ? "（整数）" : ""
-          }`,
+          ["int", "integer"].includes(type)
+            ? t(
+                "{name} 必须是有效数字（整数）",
+                "{name} must be a valid integer",
+                { name },
+              )
+            : t("{name} 必须是有效数字", "{name} must be a valid number", {
+                name,
+              }),
         );
       if (
         (field.min !== undefined && value < field.min) ||
         (field.max !== undefined && value > field.max)
       )
-        throw new Error(`${name} 超出允许范围`);
+        throw new Error(
+          t("{name} 超出允许范围", "{name} is outside the allowed range", {
+            name,
+          }),
+        );
     } else if (["object", "array"].includes(type)) {
       if (typeof value === "string") {
         try {
           value = JSON.parse(value);
         } catch {
-          throw new Error(`${name} 不是有效 JSON`);
+          throw new Error(
+            t("{name} 不是有效 JSON", "{name} is not valid JSON", { name }),
+          );
         }
       }
       if (
@@ -354,14 +408,19 @@ export function parseRuntimeInputs(
           ? !Array.isArray(value)
           : !value || typeof value !== "object" || Array.isArray(value)
       )
-        throw new Error(`${name} 必须是 ${type}`);
+        throw new Error(
+          t("{name} 必须是 {type}", "{name} must be an {type}", { name, type }),
+        );
     } else if (
       ["boolean", "bool"].includes(type) &&
       typeof value !== "boolean"
     ) {
       if (value === "true") value = true;
       else if (value === "false") value = false;
-      else throw new Error(`${name} 必须是布尔值`);
+      else
+        throw new Error(
+          t("{name} 必须是布尔值", "{name} must be a boolean", { name }),
+        );
     }
     result[name] = value;
   }

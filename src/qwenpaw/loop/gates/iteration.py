@@ -62,7 +62,6 @@ class IterationGate(LoopGate):
             return StopHandlerResult(
                 action=StopAction.BYPASS,
             )
-
         state.iteration += 1
         logger.debug(
             "IterationGate: %d/%d",

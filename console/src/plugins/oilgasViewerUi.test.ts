@@ -64,7 +64,7 @@ const host = (container: HTMLElement) => ({
   onStatus: vi.fn(),
   onImported: vi.fn().mockResolvedValue(undefined),
 });
-const setFetch = (fetch: (...args: any[]) => Promise<Response>) =>
+const setFetch = (fetch: (...args: unknown[]) => Promise<Response>) =>
   Object.assign(window, { QwenPaw: { host: { fetch } } });
 const grid: DatasetInfo = {
   id: "reservoir",
@@ -88,15 +88,15 @@ describe("Oilgas viewer UI behavior", () => {
       ...Object.values(second.panes),
     );
     const tabs = within(first.tabBar);
-    expect(tabs.getByRole("tab", { name: /属性/ })).toHaveAttribute(
+    expect(tabs.getByRole("tab", { name: /对象/ })).toHaveAttribute(
       "aria-selected",
       "true",
     );
-    fireEvent.keyDown(tabs.getByRole("tab", { name: /属性/ }), {
+    fireEvent.keyDown(tabs.getByRole("tab", { name: /对象/ }), {
       key: "ArrowRight",
     });
     expect(first.active()).toBe("actions");
-    expect(tabs.getByRole("tab", { name: /操作/ })).toHaveFocus();
+    expect(tabs.getByRole("tab", { name: /分析/ })).toHaveFocus();
     expect(first.panes.actions).toBeVisible();
     expect(first.panes.controls).not.toBeVisible();
     const ids = Array.from(root.querySelectorAll("[id]")).map(

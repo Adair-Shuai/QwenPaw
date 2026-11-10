@@ -1,3 +1,4 @@
+import { UgsciMotion } from "../../../components/UgsciMotion";
 import {
   useLayoutEffect,
   useRef,
@@ -58,6 +59,7 @@ export function ChatSessionTransition(props: Props) {
           className={`${styles.status} ${failed ? styles.error : ""}`}
           role={failed ? "alert" : "status"}
         >
+          {!failed && <UgsciMotion variant="content" size={160} />}
           <span>{t(failed ? errorKey : "common.loading")}</span>
           {failed && props.onRetry && (
             <Button size="small" type="default" onClick={props.onRetry}>

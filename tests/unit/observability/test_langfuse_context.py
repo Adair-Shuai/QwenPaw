@@ -97,7 +97,6 @@ async def test_agent_trace_scope_creates_root_span_and_restores_context():
         client_factory=lambda: client,
     ):
         kwargs = lf.current_generation_kwargs("qwen-max")
-
     assert len(client.started) == 1
     assert client.started[0]["as_type"] == "span"
     assert client.started[0]["name"] == "agent.react_loop"
@@ -123,7 +122,6 @@ async def test_tool_span_records_input_output_and_error_status():
         ) as span:
             assert span is not None
             raise RuntimeError("boom")
-
     assert len(client.started) == 1
     assert client.started[0]["as_type"] == "tool"
     assert client.started[0]["name"] == "tool.execute_shell_command"
@@ -164,7 +162,6 @@ async def test_agent_trace_scope_propagates_user_session_and_version(
         client_factory=lambda: client,
     ):
         pass
-
     assert captured == {
         "user_id": "user-42",
         "session_id": "session-a",
@@ -183,7 +180,6 @@ async def test_agent_trace_scope_uses_client_trace_id_when_available():
         client_factory=lambda: client,
     ):
         ctx = lf.get_current_trace()
-
     assert ctx.trace_id == "client-trace-99"
     assert ctx.parent_observation_id == "obs-1"
 
@@ -199,7 +195,6 @@ async def test_agent_trace_scope_falls_back_to_caller_trace_id():
         client_factory=lambda: client,
     ):
         ctx = lf.get_current_trace()
-
     assert ctx.trace_id == "caller-trace"
 
 
@@ -216,7 +211,6 @@ async def test_agent_trace_scope_marks_span_error_and_reraises():
         ) as root_span:
             assert root_span is not None
             raise RuntimeError("boom")
-
     assert root_span.updates[-1] == {
         "level": "ERROR",
         "status_message": "boom",
@@ -238,6 +232,5 @@ async def test_agent_trace_scope_none_client_sets_trace_without_parent():
         ctx = lf.get_current_trace()
         assert ctx.trace_id == "trace-1"
         assert ctx.parent_observation_id is None
-
     # no previous trace -> cleared on exit
     assert lf.get_current_trace() is None

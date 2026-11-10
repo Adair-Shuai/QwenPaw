@@ -1,3 +1,4 @@
+import { UGSCI_BUTTON_LOADING } from "@/components/UgsciMotion";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
@@ -192,7 +193,7 @@ export function MarketPluginList({
             : "primary"
         }
         icon={<Download size={14} />}
-        loading={installingId === entry.id}
+        loading={installingId === entry.id ? UGSCI_BUTTON_LOADING : false}
         disabled={
           (Boolean(getInstalledVersion(entry)) &&
             compareVersions(entry.version, getInstalledVersion(entry)!) <= 0) ||
@@ -456,7 +457,10 @@ export function MarketPluginList({
         {!loading && plugins.length > 0 && (
           <div className={marketStyles.loadMoreRow}>
             {hasMore && autoLoadBlocked ? (
-              <Button onClick={handleRetryLoadMore} loading={loadingMore}>
+              <Button
+                onClick={handleRetryLoadMore}
+                loading={loadingMore ? UGSCI_BUTTON_LOADING : false}
+              >
                 {t("common.retry")}
               </Button>
             ) : hasMore ? (

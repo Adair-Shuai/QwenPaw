@@ -216,7 +216,7 @@ describe("convertMessages — large session regression for #5479", () => {
     const assistantCard = result![1];
     expect(assistantCard.role).toBe("assistant");
     // The card must carry the giant content intact (not truncated to empty).
-    const output = (assistantCard.cards?.[0]?.data as any)?.output;
+    const output = assistantCard.cards?.[0]?.data?.output;
     expect(Array.isArray(output)).toBe(true);
     expect(output.length).toBe(1);
     expect(extractTextFromContent(output[0].content).length).toBeGreaterThan(
@@ -286,7 +286,7 @@ describe("convertMessages — streaming segments stay separate (PR #5487)", () =
 
     const card = result[1];
     expect(card.role).toBe("assistant");
-    const output = (card.cards?.[0]?.data as any)?.output;
+    const output = card.cards?.[0]?.data?.output;
     expect(Array.isArray(output)).toBe(true);
     // REGRESSION: must be 3 separate entries, not 1 merged block.
     expect(output).toHaveLength(3);
@@ -332,8 +332,8 @@ describe("convertMessages — streaming segments stay separate (PR #5487)", () =
     expect(result[2].role).toBe("user");
     expect(result[3].role).toBe("assistant");
 
-    const out1 = (result[1].cards?.[0]?.data as any).output;
-    const out2 = (result[3].cards?.[0]?.data as any).output;
+    const out1 = result[1].cards![0].data.output;
+    const out2 = result[3].cards![0].data.output;
     expect(out1).toHaveLength(2);
     expect(out2).toHaveLength(1); // not merged with the previous turn
     expect(extractTextFromContent(out1[0].content)).toBe("a1.1");
@@ -362,7 +362,7 @@ describe("convertMessages — streaming segments stay separate (PR #5487)", () =
     expect(result).toHaveLength(400);
     // Spot-check a middle turn: each assistant card should hold exactly 4 segments.
     const mid = result[201]; // first assistant card is index 1; turn 100 → index 201
-    const output = (mid.cards?.[0]?.data as any).output;
+    const output = mid.cards![0].data.output;
     expect(output).toHaveLength(4);
     // No segment merged into a single block — content strings still distinct.
     expect(output[0].content).not.toEqual(output[1].content);
@@ -392,7 +392,7 @@ describe("convertMessages — streaming segments stay separate (PR #5487)", () =
       },
     ];
     const result = convertMessages(messages);
-    const output = (result[1].cards?.[0]?.data as any).output;
+    const output = result[1].cards![0].data.output;
     expect(extractTextFromContent(output[0].content)).toBe("first");
     expect(extractTextFromContent(output[1].content)).toBe("second");
     expect(extractTextFromContent(output[2].content)).toBe("third");
@@ -482,7 +482,7 @@ describe("convertMessages — structural correctness on large input", () => {
       },
     ];
     const result = convertMessages(messages);
-    const data = result[1].cards![0].data as any;
+    const data = result[1].cards![0].data;
     expect(data.usage).toMatchObject({ total_tokens: 999 });
   });
 });
@@ -494,7 +494,7 @@ describe("convertMessages — structural correctness on large input", () => {
 describe("buildUserCard / buildResponseCard helpers", () => {
   it("buildUserCard wraps a string content into a single text part", () => {
     const card = buildUserCard({ role: "user", content: "hi" });
-    const input = (card.cards![0].data as any).input[0];
+    const input = card.cards![0].data.input[0];
     expect(input.role).toBe("user");
     expect(input.content[0].type).toBe("text");
     expect(input.content[0].text).toBe("hi");
@@ -509,7 +509,7 @@ describe("buildUserCard / buildResponseCard helpers", () => {
         { type: "file", file_url: "/foo/bar.pdf", filename: "bar.pdf" },
       ],
     });
-    const parts = (card.cards![0].data as any).input[0].content;
+    const parts = card.cards![0].data.input[0].content;
     expect(parts).toHaveLength(2);
     expect(parts[1].type).toBe("file");
     expect(parts[1].file_url).toContain("/files/preview/");
@@ -526,7 +526,7 @@ describe("buildUserCard / buildResponseCard helpers", () => {
     expect(outMsg.role).toBe("tool");
     const card = buildResponseCard([outMsg]);
     expect(card.role).toBe("assistant");
-    const output = (card.cards![0].data as any).output;
+    const output = card.cards![0].data.output;
     expect(output[0].role).toBe("tool");
   });
 
@@ -537,27 +537,25 @@ describe("buildUserCard / buildResponseCard helpers", () => {
         content: "a",
         metadata: null,
         sequence_number: 5,
-      } as any,
+      },
       {
         role: "assistant",
         content: "b",
         metadata: null,
         sequence_number: 12,
-      } as any,
+      },
     ]);
-    const data = card.cards![0].data as any;
+    const data = card.cards![0].data;
     expect(data.sequence_number).toBe(13);
   });
 
   it("parseTimestamp handles malformed timestamps without throwing", () => {
-    expect(parseTimestamp({ metadata: {} } as any)).toBe(0);
-    expect(
-      parseTimestamp({ metadata: { timestamp: "not-a-date" } } as any),
-    ).toBe(0);
+    expect(parseTimestamp({ metadata: {} })).toBe(0);
+    expect(parseTimestamp({ metadata: { timestamp: "not-a-date" } })).toBe(0);
     expect(
       parseTimestamp({
         metadata: { timestamp: "2026-06-01 10:00:00.000" },
-      } as any),
+      }),
     ).toBeGreaterThan(0);
   });
 
@@ -586,8 +584,8 @@ describe("buildUserCard / buildResponseCard helpers", () => {
       { type: "file", file_url: "/x" },
       { type: "text", text: "y" },
     ]);
-    expect((out as any[])[0].file_name).toBe("file");
-    expect((out as any[])[1]).toEqual({ type: "text", text: "y" });
+    expect((out as Array<{ file_name?: string }>)[0].file_name).toBe("file");
+    expect((out as unknown[])[1]).toEqual({ type: "text", text: "y" });
   });
 
   it("normalizes upstream single-object and primitive content", () => {
@@ -623,21 +621,29 @@ describe("session id + status helpers", () => {
   });
 
   it("resolveRealId prefers an already-resolved realId", () => {
-    const list: any[] = [{ id: "ts-1", sessionId: "ts-1", realId: "uuid-1" }];
+    const list = [
+      { id: "ts-1", sessionId: "ts-1", realId: "uuid-1" },
+    ] as unknown as Parameters<typeof resolveRealId>[0];
     const { realId } = resolveRealId(list, "ts-1");
     expect(realId).toBe("uuid-1");
   });
 
   it("resolveRealId matches a backend chat by session_id and rewrites id", () => {
-    const list: any[] = [{ id: "uuid-9", sessionId: "ts-1" }];
+    const list = [{ id: "uuid-9", sessionId: "ts-1" }] as unknown as Parameters<
+      typeof resolveRealId
+    >[0];
     const { realId, list: newList } = resolveRealId(list, "ts-1");
     expect(realId).toBe("uuid-9");
-    expect((newList[0] as any).realId).toBe("uuid-9");
+    expect(
+      (newList[0] as (typeof newList)[number] & { realId?: string }).realId,
+    ).toBe("uuid-9");
     expect(newList[0].id).toBe("ts-1");
   });
 
   it("resolveRealId returns null when nothing matches (no crash)", () => {
-    const list: any[] = [{ id: "uuid-9", sessionId: "other" }];
+    const list = [
+      { id: "uuid-9", sessionId: "other" },
+    ] as unknown as Parameters<typeof resolveRealId>[0];
     const { realId } = resolveRealId(list, "ts-missing");
     expect(realId).toBeNull();
   });
@@ -652,10 +658,11 @@ describe("SessionApi.getSession — large payload integration (#5479)", () => {
   beforeEach(() => {
     // Reset internal sessionList + caches between tests so the cache never
     // masks a regression introduced by another test.
-    (sessionApiDefaultExport as any).sessionList = [];
-    (sessionApiDefaultExport as any).convertedSessionCache.clear();
-    (sessionApiDefaultExport as any).sessionResultCache.clear();
-    (sessionApiDefaultExport as any).sessionRequests.clear();
+    sessionApiDefaultExport["sessionList"] =
+      [] as unknown as (typeof sessionApiDefaultExport)["sessionList"];
+    sessionApiDefaultExport["convertedSessionCache"].clear();
+    sessionApiDefaultExport["sessionResultCache"].clear();
+    sessionApiDefaultExport["sessionRequests"].clear();
   });
 
   afterEach(() => {
@@ -680,7 +687,7 @@ describe("SessionApi.getSession — large payload integration (#5479)", () => {
     // getChat is invoked via the `api` import inside sessionApi/index.ts.
     // Pre-seed the session list so getSession finds an entry (and resolves
     // the backend id directly through the UUID branch).
-    (sessionApiDefaultExport as any).sessionList = [
+    sessionApiDefaultExport["sessionList"] = [
       {
         id: "uuid-big",
         sessionId: "uuid-big",
@@ -688,15 +695,15 @@ describe("SessionApi.getSession — large payload integration (#5479)", () => {
         channel: "c",
         name: "big",
       },
-    ];
+    ] as unknown as (typeof sessionApiDefaultExport)["sessionList"];
 
     const session = await sessionApiDefaultExport.getSession("uuid-big");
-    const ext = session as any;
+    const ext = session!;
     expect(ext.messages.length).toBeGreaterThan(0);
     // First message is a user card.
     expect(ext.messages[0].role).toBe("user");
     // No exception was thrown — this is the #5479 regression.
-    expect(typeof ext.messages[0].cards[0].code).toBe("string");
+    expect(typeof ext.messages[0].cards![0].code).toBe("string");
   });
 
   it("reports a missing persisted Chat to the history failure boundary", async () => {
@@ -718,7 +725,7 @@ describe("SessionApi.getSession — large payload integration (#5479)", () => {
     } as ChatHistory);
     const chatId = "33b8b00e-012e-448d-ba12-5563952c45ba";
     const runtimeId = "9a8f4757-69c8-4179-b8a4-f02471bba385";
-    (sessionApiDefaultExport as any).sessionList = [
+    sessionApiDefaultExport["sessionList"] = [
       {
         id: chatId,
         sessionId: runtimeId,
@@ -726,11 +733,9 @@ describe("SessionApi.getSession — large payload integration (#5479)", () => {
         channel: "console",
         name: "runtime alias",
       },
-    ];
+    ] as unknown as (typeof sessionApiDefaultExport)["sessionList"];
 
-    const session = (await sessionApiDefaultExport.getSession(
-      runtimeId,
-    )) as any;
+    const session = await sessionApiDefaultExport.getSession(runtimeId);
 
     expect(getChat).toHaveBeenCalledWith(
       chatId,
@@ -746,10 +751,10 @@ describe("SessionApi.getSession — large payload integration (#5479)", () => {
 
   it("does not guess when multiple Chats share one runtime session_id", () => {
     const runtimeId = "shared-runtime-id";
-    (sessionApiDefaultExport as any).sessionList = [
+    sessionApiDefaultExport["sessionList"] = [
       { id: "chat-a", sessionId: runtimeId },
       { id: "chat-b", sessionId: runtimeId },
-    ];
+    ] as unknown as (typeof sessionApiDefaultExport)["sessionList"];
 
     expect(sessionApiDefaultExport.getRealIdForSession(runtimeId)).toBeNull();
   });
@@ -762,7 +767,7 @@ describe("SessionApi.getSession — large payload integration (#5479)", () => {
       .spyOn(apiImport.api, "getChat")
       .mockResolvedValue({ messages, status: "running" } as ChatHistory);
 
-    (sessionApiDefaultExport as any).sessionList = [
+    sessionApiDefaultExport["sessionList"] = [
       {
         id: "gen-1",
         sessionId: "gen-1",
@@ -770,7 +775,7 @@ describe("SessionApi.getSession — large payload integration (#5479)", () => {
         channel: "c",
         name: "gen",
       },
-    ];
+    ] as unknown as (typeof sessionApiDefaultExport)["sessionList"];
 
     await sessionApiDefaultExport.getSession("gen-1");
     // Second call should hit the network again (not the LRU cache) because
@@ -787,7 +792,7 @@ describe("SessionApi.getSession — large payload integration (#5479)", () => {
       .spyOn(apiImport.api, "getChat")
       .mockResolvedValue({ messages, status: "idle" } as ChatHistory);
 
-    (sessionApiDefaultExport as any).sessionList = [
+    sessionApiDefaultExport["sessionList"] = [
       {
         id: "idle-1",
         sessionId: "idle-1",
@@ -795,7 +800,7 @@ describe("SessionApi.getSession — large payload integration (#5479)", () => {
         channel: "c",
         name: "idle",
       },
-    ];
+    ] as unknown as (typeof sessionApiDefaultExport)["sessionList"];
 
     await sessionApiDefaultExport.getSession("idle-1");
     await sessionApiDefaultExport.getSession("idle-1");

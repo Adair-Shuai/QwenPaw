@@ -52,7 +52,6 @@ def test_agent_scoped_acp_put_get_roundtrip(app_server) -> None:
             if name == changed_agent:
                 cfg_dict["enabled"] = not bool(cfg_dict.get("enabled", False))
             updated["agents"][name] = cfg_dict
-
         put_resp = app_server.api_request("PUT", endpoint, json=updated)
         assert put_resp.status_code == 200, app_server.logs_tail()
         assert bool(

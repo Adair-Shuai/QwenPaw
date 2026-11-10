@@ -52,7 +52,6 @@ def _load_scene(path: str):
 
     if not meshes:
         raise ValueError("No renderable mesh found in file")
-
     total_verts = sum(len(m.vertices) for m in meshes)
     total_faces = sum(len(m.faces) for m in meshes)
     return meshes, total_verts, total_faces
@@ -63,7 +62,6 @@ def _sample_face_colors(mesh, np):
     vis = getattr(mesh, "visual", None)
     if vis is None:
         return None
-
     if type(vis).__name__ == "TextureVisuals":
         uv = getattr(vis, "uv", None)
         mat = getattr(vis, "material", None)
@@ -87,12 +85,10 @@ def _sample_face_colors(mesh, np):
             colors[i, :3] = pixel[:3] / 255.0
             colors[i, 3] = pixel[3] / 255.0 if len(pixel) > 3 else 1.0
         return colors
-
     if type(vis).__name__ == "ColorVisuals":
         fc = getattr(vis, "face_colors", None)
         if fc is not None and len(fc) == len(mesh.faces):
             return fc.astype(np.float64) / 255.0
-
     return None
 
 
@@ -101,7 +97,6 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
         import trimesh  # noqa: F401  # pylint: disable=unused-import
     except ImportError as error:
         raise RuntimeError(_TRIMESH_HINT) from error
-
     import matplotlib
 
     matplotlib.use("Agg")
@@ -133,7 +128,6 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
             )
             all_colors.append(default)
         offset += len(m.vertices)
-
     vertices = np.vstack(all_verts)
     faces = np.vstack(all_faces)
     face_colors = np.vstack(all_colors)
@@ -147,13 +141,11 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
         )
         faces = faces[idx]
         face_colors = face_colors[idx]
-
     center = vertices.mean(axis=0)
     vertices = vertices - center
     scale = np.abs(vertices).max()
     if scale > 0:
         vertices = vertices / scale
-
     info = f"{total_verts} vertices, {total_faces} faces"
     content: list[dict[str, Any]] = [
         meta_block("model3d", max_pages, list(range(1, max_pages + 1))),
@@ -213,6 +205,5 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
                 "label": f"[{title}] {info}",
             },
         )
-
     content.append({"type": "full_text", "text": f"[3D model] {info}"})
     return content

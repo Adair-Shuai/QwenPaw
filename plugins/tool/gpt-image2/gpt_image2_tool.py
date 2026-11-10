@@ -69,7 +69,6 @@ async def generate_image_gpt(
                     ),
                 ],
             )
-
         api_key = tool_config.get("api_key")
         if not api_key:
             return ToolChunk(
@@ -84,19 +83,16 @@ async def generate_image_gpt(
                     ),
                 ],
             )
-
         # Get endpoint from config, use default if not set
         endpoint = tool_config.get("endpoint")
         if not endpoint or not endpoint.strip():
             endpoint = "https://api.openai.com/v1/images/generations"
-
         # Get timeout from config, use default if not set
         timeout = tool_config.get("timeout")
         if timeout is None or timeout <= 0:
             timeout = 60.0
         else:
             timeout = float(timeout)
-
         # Validate parameters
         valid_sizes = {"1024x1024", "1024x1792", "1792x1024"}
         if size not in valid_sizes:
@@ -112,7 +108,6 @@ async def generate_image_gpt(
                     ),
                 ],
             )
-
         # Validate quality parameter
         # GPT Image 2 supports: low, medium, high, auto
         valid_quality = {"low", "medium", "high", "auto"}
@@ -130,7 +125,6 @@ async def generate_image_gpt(
                     ),
                 ],
             )
-
         # Call OpenAI API
         logger.info(
             f"Generating image with GPT Image 2: "
@@ -152,7 +146,6 @@ async def generate_image_gpt(
                     "n": 1,
                 },
             )
-
         if response.status_code != 200:
             error_msg = f"OpenAI API error: {response.status_code}"
             try:
@@ -171,7 +164,6 @@ async def generate_image_gpt(
                     ),
                 ],
             )
-
         # Parse response
         # GPT Image 2 returns b64_json, not url
         data = response.json()
@@ -205,7 +197,6 @@ async def generate_image_gpt(
                     ),
                 ],
             )
-
         # Return image with local file path
         return ToolChunk(
             state=ToolResultState.SUCCESS,
@@ -228,7 +219,6 @@ async def generate_image_gpt(
                 ),
             ],
         )
-
     except httpx.TimeoutException:
         logger.error("Image generation timed out")
         return ToolChunk(
@@ -311,7 +301,6 @@ async def edit_image_gpt(  # pylint: disable=too-many-statements
                     ),
                 ],
             )
-
         if len(reference_images) > 16:
             return ToolChunk(
                 state=ToolResultState.ERROR,
@@ -325,7 +314,6 @@ async def edit_image_gpt(  # pylint: disable=too-many-statements
                     ),
                 ],
             )
-
         # Get tool config
         tool_config = get_tool_config("edit_image_gpt")
         if not tool_config:
@@ -341,7 +329,6 @@ async def edit_image_gpt(  # pylint: disable=too-many-statements
                     ),
                 ],
             )
-
         api_key = tool_config.get("api_key")
         if not api_key:
             return ToolChunk(
@@ -356,19 +343,16 @@ async def edit_image_gpt(  # pylint: disable=too-many-statements
                     ),
                 ],
             )
-
         # Get endpoint from config, use default if not set
         endpoint = tool_config.get("endpoint")
         if not endpoint or not endpoint.strip():
             endpoint = "https://api.openai.com/v1/images/edits"
-
         # Get timeout from config
         timeout = tool_config.get("timeout")
         if timeout is None or timeout <= 0:
             timeout = 60.0
         else:
             timeout = float(timeout)
-
         # Validate parameters
         valid_sizes = {"auto", "1024x1024", "1024x1536", "1536x1024"}
         if size not in valid_sizes:
@@ -384,7 +368,6 @@ async def edit_image_gpt(  # pylint: disable=too-many-statements
                     ),
                 ],
             )
-
         valid_quality = {"low", "medium", "high", "auto"}
         if quality not in valid_quality:
             return ToolChunk(
@@ -400,7 +383,6 @@ async def edit_image_gpt(  # pylint: disable=too-many-statements
                     ),
                 ],
             )
-
         # Process reference images
         try:
             images_payload = []
@@ -430,7 +412,6 @@ async def edit_image_gpt(  # pylint: disable=too-many-statements
                     ),
                 ],
             )
-
         # Call OpenAI API
         logger.info(
             f"Editing image with GPT Image 2: {len(reference_images)} "
@@ -455,7 +436,6 @@ async def edit_image_gpt(  # pylint: disable=too-many-statements
                     "n": 1,
                 },
             )
-
         if response.status_code != 200:
             error_msg = f"OpenAI API error: {response.status_code}"
             try:
@@ -474,7 +454,6 @@ async def edit_image_gpt(  # pylint: disable=too-many-statements
                     ),
                 ],
             )
-
         # Parse response
         data = response.json()
         b64_json = data["data"][0]["b64_json"]
@@ -505,7 +484,6 @@ async def edit_image_gpt(  # pylint: disable=too-many-statements
                     ),
                 ],
             )
-
         # Return image with local file path
         return ToolChunk(
             state=ToolResultState.SUCCESS,
@@ -529,7 +507,6 @@ async def edit_image_gpt(  # pylint: disable=too-many-statements
                 ),
             ],
         )
-
     except httpx.TimeoutException:
         logger.error("Image editing timed out")
         return ToolChunk(
@@ -570,16 +547,13 @@ def _process_image_url(image_path: str) -> dict:
     if image_path.startswith(("http://", "https://")):
         # Web URL - use directly
         return {"image_url": image_path}
-
     # Local file - convert to base64 data URL
     path_obj = Path(image_path)
 
     if not path_obj.exists():
         raise FileNotFoundError(f"Image file not found: {image_path}")
-
     if not path_obj.is_file():
         raise ValueError(f"Not a file: {image_path}")
-
     # Detect MIME type from extension
     ext = path_obj.suffix.lower()
     mime_type_map = {
@@ -594,11 +568,9 @@ def _process_image_url(image_path: str) -> dict:
             f"Unsupported image format: {ext}. "
             f"Supported formats: {', '.join(mime_type_map.keys())}",
         )
-
     mime_type = mime_type_map[ext]
 
     # Read and encode image
     with open(path_obj, "rb") as f:
         image_data = base64.b64encode(f.read()).decode("utf-8")
-
     return {"image_url": f"data:{mime_type};base64,{image_data}"}

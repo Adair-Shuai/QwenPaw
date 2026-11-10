@@ -59,7 +59,6 @@ def prune_bundle(bundle: Path, *, dry_run: bool = False) -> int:
             "Refusing to prune a directory that is not a PyInstaller backend: "
             f"{bundle}",
         )
-
     removed_bytes = 0
     for current, directories, files in os.walk(bundle, topdown=True):
         current_path = Path(current)
@@ -80,7 +79,6 @@ def prune_bundle(bundle: Path, *, dry_run: bool = False) -> int:
                 removed_bytes += _size(candidate)
                 if not dry_run:
                     candidate.unlink(missing_ok=True)
-
     if not dry_run and any(bundle.rglob("node_modules")):
         raise RuntimeError(f"node_modules remained in pruned bundle: {bundle}")
     return removed_bytes

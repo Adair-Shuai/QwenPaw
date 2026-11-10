@@ -1,5 +1,11 @@
 // @vitest-environment jsdom
-import { act, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { MemoryRouter, useLocation, useNavigate } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -13,7 +19,8 @@ const routeControl = vi.hoisted(() => ({
 vi.mock("react-i18next", () => ({
   initReactI18next: { type: "3rdParty", init: vi.fn() },
   useTranslation: () => ({
-    t: (_key: string, fallback?: string) => fallback ?? _key,
+    t: (_key: string, fallback?: unknown) =>
+      typeof fallback === "string" ? fallback : _key,
     i18n: { language: "en" },
   }),
 }));
@@ -101,6 +108,17 @@ function HistoryControls() {
 }
 
 describe("MainLayout accessibility", () => {
+  it("mounts global search without replacing the active route", async () => {
+    render(
+      <MemoryRouter initialEntries={["/chat"]}>
+        <MainLayout />
+      </MemoryRouter>,
+    );
+    fireEvent.keyDown(window, { key: "k", ctrlKey: true });
+    expect(await screen.findByRole("dialog")).toBeInTheDocument();
+    expect(screen.getByText("Chat route")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Close" }));
+  });
   afterEach(() => {
     routeControl.suspended = false;
     routeControl.promise = Promise.resolve();

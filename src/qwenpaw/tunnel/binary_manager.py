@@ -99,7 +99,6 @@ class BinaryManager:
         path = shutil.which("cloudflared")
         if path:
             return path
-
         bin_name = (
             "cloudflared.exe"
             if platform.system() == "Windows"
@@ -108,7 +107,6 @@ class BinaryManager:
         local = self._bin_dir / bin_name
         if local.is_file() and os.access(str(local), os.X_OK):
             return str(local)
-
         return await self._download()
 
     @staticmethod
@@ -138,7 +136,6 @@ class BinaryManager:
                 "/cloudflare-one/connections/connect-networks"
                 "/downloads/",
             )
-
         is_windows = key[0] == "Windows"
         self._bin_dir.mkdir(parents=True, exist_ok=True)
         bin_name = "cloudflared.exe" if is_windows else "cloudflared"
@@ -196,7 +193,6 @@ class BinaryManager:
             else:
                 await _download_file(client, url, str(dest))
                 self._verify_checksum(str(dest), expected_hash)
-
         if not is_windows:
             dest.chmod(
                 dest.stat().st_mode | stat.S_IXUSR | stat.S_IXGRP,

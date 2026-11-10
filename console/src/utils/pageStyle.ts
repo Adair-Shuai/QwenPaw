@@ -1,8 +1,8 @@
 /** Page geometry is independent of the color theme and light/dark mode. */
 export const PAGE_STYLES = [
   { id: "classic", label: "Original layout" },
-  { id: "deepseek", label: "deepseek style" },
-  { id: "openai", label: "openai style" },
+  { id: "deepseek", label: "Simple style" },
+  { id: "dual-sidebar", label: "Dual sidebar" },
 ] as const;
 
 export type PageStyle = (typeof PAGE_STYLES)[number]["id"];
@@ -15,10 +15,16 @@ export const PAGE_LAYOUTS = {
     sidebarMinWidth: 180,
     sidebarCollapsed: false,
   },
-  openai: { sidebarWidth: 180, sidebarMinWidth: 160, sidebarCollapsed: false },
+  "dual-sidebar": {
+    sidebarWidth: 308,
+    sidebarMinWidth: 274,
+    sidebarCollapsed: false,
+  },
 } as const;
 
 export function parsePageStyle(value: unknown): PageStyle {
+  // Retired layouts reopen in the supported compact layout.
+  if (value === "openai") return "deepseek";
   return PAGE_STYLES.find((style) => style.id === value)?.id ?? "classic";
 }
 
@@ -45,12 +51,12 @@ export function applyPageStyle(
           "--border-radius": "7px",
           "--app-radius-card": "9px",
           "--app-radius-panel": "12px",
-          "--app-composer-radius": style === "deepseek" ? "12px" : "10px",
+          "--app-composer-radius": "12px",
           "--app-chat-max-width": "796px",
-          "--app-chat-gutter": style === "deepseek" ? "28px" : "22px",
+          "--app-chat-gutter": "28px",
           "--app-message-max-width": "700px",
           "--app-preview-width": "30%",
-          "--app-workspace-width": style === "openai" ? "48%" : "42%",
+          "--app-workspace-width": "42%",
           "--app-shadow-sm": "none",
         };
   Object.entries(tokens).forEach(([key, value]) =>

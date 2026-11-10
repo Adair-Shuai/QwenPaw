@@ -125,4 +125,5 @@ export interface ExpertPresentation {
   category: "油气工程" | "数据与研究" | "通用助手" | "应用专家" | null;
   specialty: string;
   summary: string;
+  avatar?: import("../expert/avatar/expertAvatar").ExpertAvatarRecipe | null;
 }

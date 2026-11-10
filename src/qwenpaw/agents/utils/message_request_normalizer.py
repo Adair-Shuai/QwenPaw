@@ -406,6 +406,8 @@ def _strip_media_blocks_in_place(
     tool_result_only: bool = False,
     empty_only: bool = False,
 ) -> int:
+    # Keep the bounded content walk, mutation and fallback order together.
+    # pylint: disable=R0912
     """Strip media blocks from copied messages only.
 
     Handles both 1.x dict blocks and 2.0 Pydantic block objects. When

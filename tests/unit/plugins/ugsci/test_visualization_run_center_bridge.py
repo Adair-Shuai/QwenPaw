@@ -147,7 +147,7 @@ def test_manifest_commit_and_cancellation_are_serialized(
     manager = _manager_module()
     package = manager.__package__.split(".backend", 1)[0]
     formats = importlib.import_module(f"{package}.backend.formats")
-    api = importlib.import_module(f"{package}.backend.api")
+    catalog = importlib.import_module(f"{package}.backend.services.catalog")
     store = _MemoryJobStore()
     monkeypatch.setattr(manager, "_job_store", lambda: store)
     monkeypatch.setattr(
@@ -163,7 +163,7 @@ def test_manifest_commit_and_cancellation_are_serialized(
         commit_started.set()
         assert allow_commit.wait(timeout=5)
 
-    monkeypatch.setattr(api, "_update_manifest", _blocking_update)
+    monkeypatch.setattr(catalog, "publish_manifest", _blocking_update)
     upload = tmp_path / "grid.grdecl"
     upload.write_text("GRID", encoding="utf-8")
     job_manager = manager.JobManager()
@@ -186,7 +186,6 @@ def test_manifest_commit_and_cancellation_are_serialized(
         and time.time() < deadline
     ):
         time.sleep(0.01)
-
     assert result == [False]
     assert job.status == "completed"
     assert store.jobs[job.job_id]["status"] == "completed"
@@ -201,7 +200,7 @@ def test_cancelled_converter_never_publishes_manifest(
     manager = _manager_module()
     package = manager.__package__.split(".backend", 1)[0]
     formats = importlib.import_module(f"{package}.backend.formats")
-    api = importlib.import_module(f"{package}.backend.api")
+    catalog = importlib.import_module(f"{package}.backend.services.catalog")
     store = _MemoryJobStore()
     monkeypatch.setattr(manager, "_job_store", lambda: store)
     entered = threading.Event()
@@ -217,8 +216,8 @@ def test_cancelled_converter_never_publishes_manifest(
 
     monkeypatch.setattr(formats, "convert_source", convert)
     monkeypatch.setattr(
-        api,
-        "_update_manifest",
+        catalog,
+        "publish_manifest",
         lambda _bin_dir, dataset: published.append(dataset),
     )
     upload = tmp_path / ".upload_cancel.grdecl"
@@ -240,7 +239,6 @@ def test_cancelled_converter_never_publishes_manifest(
             assert job_manager.cancel_job(job.job_id) is True
         finally:
             release.set()
-
     assert job.status == "cancelled"
     assert job.result is None
     assert job.error is None

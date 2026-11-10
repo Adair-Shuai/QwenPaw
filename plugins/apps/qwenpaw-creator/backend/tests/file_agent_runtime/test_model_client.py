@@ -233,7 +233,6 @@ def test_media_bearing_automatic_history_is_elided_under_budget():
                 ],
             },
         )
-
     result = compact_conversation_history(history, max_bytes=4096)
 
     assert result[0]["source"] == "context_compaction"
@@ -457,7 +456,6 @@ def test_temperature_refusal_rebuilds_cached_model_without_it(
                     tools=[],
                 ),
             )
-
         # The refusal was learned and the cached model dropped, so the next
         # turn rebuilds and omits the temperature entirely.
         assert model_config.chat_temperature("brand-new-model", 0.2) is None

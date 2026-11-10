@@ -1,3 +1,4 @@
+import { UGSCI_BUTTON_LOADING } from "@/components/UgsciMotion";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import { Alert, Button, Input, Select, Spin, Tag, Typography } from "antd";
@@ -139,7 +140,9 @@ export function OfficialPluginList({ onInstalled }: OfficialPluginListProps) {
       <Button
         type="primary"
         icon={<Download size={14} />}
-        loading={installingId === catalogEntry.id}
+        loading={
+          installingId === catalogEntry.id ? UGSCI_BUTTON_LOADING : false
+        }
         disabled={installingId !== null && installingId !== catalogEntry.id}
         onClick={() => requestInstall(selection)}
       >

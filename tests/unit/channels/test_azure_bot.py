@@ -105,16 +105,16 @@ async def azure(tmp_path, monkeypatch):
     peer, identity = bind("azure_bot", driver, tmp_path)
     try:
         await driver.start(
-            dict(
-                enabled=True,
-                app_id=APP_ID,
-                app_password="local-secret",
-                workspace_dir=str(tmp_path),
-                http_host="127.0.0.1",
-                http_port=port,
-                require_mention=True,
-                share_session_in_group=True,
-            ),
+            {
+                "enabled": True,
+                "app_id": APP_ID,
+                "app_password": "local-secret",
+                "workspace_dir": str(tmp_path),
+                "http_host": "127.0.0.1",
+                "http_port": port,
+                "require_mention": True,
+                "share_session_in_group": True,
+            },
         )
         yield driver, peer, identity, private, external
     finally:
@@ -168,6 +168,8 @@ def token(private, **changes):
 
 
 async def post(value, body, auth=None):
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     driver, _, _, private, _ = value
     async with REAL_SESSION() as client:
         async with client.post(
@@ -181,6 +183,8 @@ async def post(value, body, auth=None):
 async def test_signed_activity_keeps_acl_identity_and_conversation(
     azure,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     _, peer, identity, _, external = azure
     assert await post(azure, activity()) == 200
     event = peer.batches[0]["events"][0]
@@ -209,6 +213,8 @@ async def test_group_requires_native_mention_and_uses_shared_group_identity(
     mentioned,
     admitted,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     _, peer, identity, _, external = azure
     assert await post(azure, activity(group, mentioned)) == 200
     assert bool(peer.batches) is admitted
@@ -240,6 +246,8 @@ async def test_group_requires_native_mention_and_uses_shared_group_identity(
 
 
 async def test_invalid_audience_or_service_binding_never_admits(azure):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     _, peer, _, private, _ = azure
     assert (
         await post(azure, activity(), token(private, aud="foreign-app")) == 401
@@ -256,6 +264,10 @@ async def test_invalid_audience_or_service_binding_never_admits(azure):
 
 
 async def test_stop_releases_webhook_watchdog_and_unregisters_endpoint(azure):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
+    # Exercise real internals and verify lifecycle state in this test.
+    # pylint: disable=protected-access
     driver, peer, _, _, external = azure
     platform = driver._platform
     watchdog, port = platform.watchdog, platform.port

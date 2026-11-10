@@ -2,7 +2,11 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/online.svg" />
+    <link
+      rel="icon"
+      type="image/svg+xml"
+      href="/ugsci-mono/brand/web/favicon.svg"
+    />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover"
@@ -32,9 +36,9 @@
         gap: 18px;
       }
       .qwenpaw-boot__logo {
-        height: 68px;
+        height: 96px;
         object-fit: contain;
-        width: 68px;
+        width: 96px;
       }
       .qwenpaw-boot__label {
         color: #70706c;
@@ -125,6 +129,9 @@
         background: #ed6f08;
       }
       @media (prefers-color-scheme: dark) {
+        .qwenpaw-boot__logo {
+          filter: invert(1);
+        }
         .qwenpaw-boot {
           background: #141414;
           color: #f4f4f1;
@@ -148,7 +155,19 @@
     <div id="root">
       <div class="qwenpaw-boot" role="status" aria-live="polite">
         <div class="qwenpaw-boot__content">
-          <img class="qwenpaw-boot__logo" src="/qwenpaw.png" alt="UGSci" />
+          <picture>
+            <source
+              media="(prefers-reduced-motion: reduce)"
+              srcset="/src/assets/ugsci-motion/startup-static.svg?no-inline"
+            />
+            <img
+              class="qwenpaw-boot__logo"
+              src="/src/assets/ugsci-motion/startup.svg?no-inline"
+              alt="UGSci"
+              width="96"
+              height="96"
+            />
+          </picture>
           <span class="qwenpaw-boot__label">Loading Console</span>
         </div>
       </div>

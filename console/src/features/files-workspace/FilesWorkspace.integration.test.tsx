@@ -134,6 +134,77 @@ describe("FilesWorkspace native editor integration", () => {
     api.deliveries.mockReset().mockResolvedValue({ turns: [] });
   });
 
+  it("keeps docked controls and native drafts while folding the file navigator", async () => {
+    const mention = vi.fn();
+    render(
+      <FilesWorkspace
+        scope={scope}
+        initialTarget={{
+          source: "workspace",
+          path: "report.md",
+          root: "project",
+        }}
+        headerActions={<button type="button">Panel action</button>}
+        footerActions={
+          <button type="button" onClick={mention}>
+            Mention file
+          </button>
+        }
+      />,
+    );
+    await waitFor(() => expect(currentTabs()).toHaveLength(1));
+    const path = activeTab()!.path;
+    act(() => {
+      useCodingTabsStore.getState().setTabContent(key, path, "unsaved report");
+      useCodingTabsStore.getState().setTabDirty(key, path, true);
+    });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /files.hideNavigator|Hide file navigator|收起文件导航器/,
+      }),
+    );
+    expect(
+      screen.getByText("file navigator").closest("[hidden]"),
+    ).not.toBeNull();
+    expect(
+      screen
+        .getByRole("button", { name: "Panel action" })
+        .closest('[class*="tabBar"]'),
+    ).not.toBeNull();
+    expect(activeTab()).toMatchObject({
+      content: "unsaved report",
+      dirty: true,
+    });
+    expect(
+      screen.getByText(/workspace.unsaved|Unsaved|未保存/),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Mention file" }));
+    expect(mention).toHaveBeenCalledTimes(1);
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /files.showNavigator|Show file navigator|显示文件导航器/,
+      }),
+    );
+    expect(screen.getByText("file navigator").closest("[hidden]")).toBeNull();
+    expect(activeTab()).toMatchObject({
+      content: "unsaved report",
+      dirty: true,
+    });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: /files.hideNavigator|Hide file navigator|收起文件导航器/,
+      }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: /report\.md/ }));
+    await waitFor(() => expect(currentTabs()).toHaveLength(0));
+    await waitFor(() =>
+      expect(screen.getByText("file navigator").closest("[hidden]")).toBeNull(),
+    );
+    expect(
+      screen.getByRole("button", { name: "Panel action" }),
+    ).toBeInTheDocument();
+  });
+
   it("opens persistent delivered versions through the native editor without losing workspace drafts", async () => {
     api.deliveries.mockResolvedValue({
       turns: ["turn-a", "turn-b"].map((id) => ({

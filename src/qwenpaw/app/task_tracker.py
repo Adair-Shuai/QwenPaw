@@ -353,6 +353,9 @@ class TaskTracker:
         channel_id: str | None = None,
         steering: Any = None,
     ) -> tuple[asyncio.Queue, bool]:
+        # Keep producer ownership, admission and cancellation cleanup in one
+        # lifecycle.
+        # pylint: disable=R0915
         """Attach to an existing run or start a new one.
 
         Returns ``(queue, is_new_run)``.
@@ -365,7 +368,6 @@ class TaskTracker:
                     q.put_nowait(sse)
                 state.queues.append(q)
                 return q, False
-
             my_queue: asyncio.Queue = asyncio.Queue()
             run = _RunState(
                 task=asyncio.Future(),  # placeholder, replaced below
@@ -377,10 +379,12 @@ class TaskTracker:
             )
             if steering is not None:
                 run.run_id = steering.run_id
-
             tracker_ref = weakref.ref(self)
 
             async def _producer() -> None:
+                # Keep producer ownership, admission and cancellation cleanup
+                # in one lifecycle.
+                # pylint: disable=R0912
                 start_time = datetime.now(timezone.utc)
                 from .steering import CURRENT_STEERING
 
@@ -393,7 +397,6 @@ class TaskTracker:
                             run.start_time = start_time
                             # pylint: disable=protected-access
                             tracker._global_last_run_at = start_time
-
                     await _broadcast_stream(
                         tracker_ref,
                         run,

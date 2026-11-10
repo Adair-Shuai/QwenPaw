@@ -1,4 +1,5 @@
 import { NotificationBell } from "@/components/interaction/NotificationBell";
+import { SearchTrigger } from "../features/global-search/SearchTrigger";
 import {
   Layout,
   Button,
@@ -29,6 +30,7 @@ import {
   RotateCw,
   Settings,
   ShieldCheck,
+  HardDrive,
 } from "lucide-react";
 import { useAppMessage } from "../hooks/useAppMessage";
 import AgentSelector from "../components/AgentSelector";
@@ -96,6 +98,11 @@ import { getAgentDisplayName } from "../utils/agentDisplayName";
 import { isAgentAvailableInChat } from "../utils/agentVisibility";
 import { PAGE_LAYOUTS } from "../utils/pageStyle";
 import AppearanceNavigation from "./AppearanceNavigation";
+import DualSidebarNavigation, {
+  DUAL_SIDEBAR_PRIMARY_KEYS,
+} from "./DualSidebarNavigation";
+import dualStyles from "./dualSidebar.module.less";
+import type { SettingsNavigationState } from "../pages/SettingsCenter/usePluginSettingsNavigation";
 
 // ── Layout ────────────────────────────────────────────────────────────────
 
@@ -134,6 +141,7 @@ interface SidebarProps {
   /** Route id of the currently active page (e.g. "core.workspace"). */
   selectedKey: string;
   hubMode?: boolean;
+  settingsActive?: boolean;
 }
 
 // ── Sidebar ───────────────────────────────────────────────────────────────
@@ -141,6 +149,7 @@ interface SidebarProps {
 export default function Sidebar({
   selectedKey,
   hubMode = false,
+  settingsActive = false,
 }: SidebarProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -180,15 +189,31 @@ export default function Sidebar({
   const settingsTriggerRef = useRef<HTMLButtonElement>(null);
   const [historyPopoverOpen, setHistoryPopoverOpen] = useState(false);
   const redesigned = pageStyle !== "classic";
+  const dualSidebar = pageStyle === "dual-sidebar";
   const [agentPopoverOpen, setAgentPopoverOpen] = useState(false);
   const [version, setVersion] = useState("");
   const [accountForm] = Form.useForm();
   // Start collapsed on mobile so the first paint does not overlay/obscure
   // the main content on narrow viewports. On desktop, restore the persisted
   // preference so a reload keeps the last collapsed/expanded state.
-  const [collapsed, setCollapsed] = useState(
+  const [sidebarCollapsed, setCollapsed] = useState(
     () => isMobileSidebarViewport() || getSidebarCollapsedPreference(pageStyle),
   );
+  // Plugin routes register asynchronously, so direct links also own the first paint.
+  const fullWidthPage =
+    settingsActive ||
+    [
+      "flowforge.editor",
+      "core.files",
+      "core.app-center",
+      "core.app-center.embed",
+      "core.marketplace",
+    ].includes(selectedKey) ||
+    /^\/(?:flowforge\/?|files\/?|market\/?|apps(?:\/.*)?)$/i.test(
+      location.pathname,
+    );
+  // Full-width pages temporarily use the rail, retaining the chat preference.
+  const collapsed = sidebarCollapsed || fullWidthPage;
   const [isMobile, setIsMobile] = useState(isMobileSidebarViewport);
   const [customWidth, setCustomWidth] = useState(() =>
     readStoredSidebarWidth(localStorage, pageStyle),
@@ -301,6 +326,9 @@ export default function Sidebar({
   );
 
   const selectedFlatNav = useMemo(() => {
+    // Preserve explicit invalidation when the surrounding owner or registry changes.
+    void language;
+
     const entries = [
       ...flattenMenu(agentMenu, routes, 16),
       ...flattenMenu(selectedSettingsMenu, routes, 16),
@@ -311,6 +339,9 @@ export default function Sidebar({
     return orderSidebarEntries(uniqueEntries, focusItemIds);
   }, [agentMenu, focusItemIds, routes, selectedSettingsMenu, language]);
   const allNavigation = useMemo(() => {
+    // Preserve explicit invalidation when the surrounding owner or registry changes.
+    void language;
+
     const entries = [
       ...flattenMenu(visibleAgentMenu, routes, 17),
       ...flattenMenu(rawSettingsMenu, routes, 17),
@@ -496,6 +527,9 @@ export default function Sidebar({
   }, []);
 
   const collapsedNavItems = useMemo(() => {
+    // Preserve explicit invalidation when the surrounding owner or registry changes.
+    void language;
+
     // Inbox in collapsed mode shows a dot overlay on its icon (kept Sidebar-local
     // for the same reason as decorateLabel: live state isn't menu data).
     const scrollableEntries = [
@@ -572,12 +606,17 @@ export default function Sidebar({
   }, [location.pathname, navigate]);
 
   const handleOpenSettings = useCallback(() => {
+    const state = location.state as SettingsNavigationState | null;
     navigate("/settings/general", {
       state: {
-        settingsReturnTo: `${location.pathname}${location.search}${location.hash}`,
+        settingsReturnTo: settingsActive
+          ? state?.settingsPluginContext?.returnTo ||
+            state?.settingsReturnTo ||
+            "/chat"
+          : `${location.pathname}${location.search}${location.hash}`,
       },
     });
-  }, [location.hash, location.pathname, location.search, navigate]);
+  }, [location, navigate, settingsActive]);
 
   const handleOpenDesktopMode = useCallback(() => {
     window.location.assign(getOsRootHref(window.location.pathname));
@@ -712,12 +751,32 @@ export default function Sidebar({
   // ── Render ────────────────────────────────────────────────────────────────
 
   const isChatActive = selectedKey === "core.chat";
+  const navigateEntry = (entry: FlatMenuEntry) => {
+    if (entry.key === "core.inbox") handleInboxHover();
+    if (entry.href) openExternalLink(entry.href);
+    else
+      navigate(
+        entry.key === "core.inbox" && hasPendingApprovals
+          ? `${entry.path}?tab=approvals`
+          : entry.path,
+      );
+    if (dualSidebar && isMobile) handleSetCollapsed(true);
+  };
+  const openWorkspace = () => {
+    const entry = allNavigation.find((item) => item.key === "core.files");
+    if (entry) navigateEntry(entry);
+  };
 
   const renderCollapsedNavItem = (item: FlatMenuEntry) => {
     const isActive =
       item.key === "core.chat" ? isChatActive : selectedKey === item.key;
     return (
-      <Tooltip key={item.key} title={item.label} placement="right">
+      <Tooltip
+        key={item.key}
+        title={item.label}
+        placement="right"
+        styles={{ root: { pointerEvents: "none" } }}
+      >
         <button
           type="button"
           aria-label={typeof item.label === "string" ? item.label : undefined}
@@ -803,6 +862,9 @@ export default function Sidebar({
   };
 
   const expandedWidth = PAGE_LAYOUTS[pageStyle].sidebarWidth;
+  const mobileExpandedWidth = dualSidebar
+    ? Math.min(expandedWidth, window.innerWidth - 12)
+    : 240;
   const siderWidth = collapsed
     ? isMobile
       ? 56
@@ -810,7 +872,7 @@ export default function Sidebar({
       ? 66
       : 72
     : isMobile
-    ? 240
+    ? mobileExpandedWidth
     : customWidth ?? expandedWidth;
 
   return (
@@ -825,44 +887,115 @@ export default function Sidebar({
     >
       <Sider
         width={siderWidth}
+        data-dual-sidebar-collapsed={dualSidebar ? collapsed : undefined}
         data-page-navigation={redesigned ? pageStyle : undefined}
         className={`${styles.sider} ${skin.surface} ${
-          collapsed ? skin.compactRail : ""
-        }${collapsed ? ` ${styles.siderCollapsed}` : ""}${
-          isDark ? ` ${styles.siderDark}` : ""
-        }${!collapsed ? ` ${styles.siderExpanded}` : ""}`}
+          dualSidebar ? dualStyles.surface : ""
+        } ${collapsed ? skin.compactRail : ""}${
+          collapsed ? ` ${styles.siderCollapsed}` : ""
+        }${isDark ? ` ${styles.siderDark}` : ""}${
+          !collapsed ? ` ${styles.siderExpanded}` : ""
+        }`}
       >
+        {dualSidebar && (
+          <DualSidebarNavigation
+            entries={allNavigation.filter(
+              (entry) => !hiddenPluginItemIdSet.has(entry.key),
+            )}
+            selectedKey={settingsActive ? "core.settings-center" : selectedKey}
+            collapsed={collapsed}
+            onExpand={
+              fullWidthPage ? undefined : () => handleSetCollapsed(false)
+            }
+            onHome={() => {
+              handleNewChat();
+              if (isMobile) handleSetCollapsed(true);
+            }}
+            onNavigate={navigateEntry}
+            onWorkspace={
+              backendCapabilities?.workspace_ui === false
+                ? undefined
+                : openWorkspace
+            }
+            onSettings={handleOpenSettings}
+            inboxIcon={
+              <NotificationBell
+                count={unreadCount}
+                attention={hasPendingApprovals}
+                animate={wobbleEnabled}
+                ring={effectiveShake}
+              />
+            }
+          >
+            <AppearanceNavigation
+              entries={allNavigation}
+              shortcuts={selectedFlatNav}
+              selectedKey={selectedKey}
+              onNavigate={navigateEntry}
+              renderEntry={(entry) => renderNavItem(entry, true)}
+              showPrimary={false}
+              excludedKeys={DUAL_SIDEBAR_PRIMARY_KEYS}
+            />
+          </DualSidebarNavigation>
+        )}
+        <div className={dualStyles.heading} hidden={!dualSidebar || collapsed}>
+          <HardDrive size={16} aria-hidden />
+          <strong>{t("sidebar.localWorkspace", "Local workspace")}</strong>
+          <button
+            type="button"
+            aria-label={t(
+              "sidebar.dualSidebar.collapse",
+              "Collapse conversation pane",
+            )}
+            aria-expanded={!collapsed}
+            aria-controls="ugsci-sidebar-conversations"
+            onClick={() => handleSetCollapsed(true)}
+          >
+            <PanelLeftClose size={18} />
+          </button>
+        </div>
+        <span
+          className={dualStyles.deviceLabel}
+          hidden={!dualSidebar || collapsed}
+        >
+          {t("sidebar.localMode", "This device")}
+        </span>
         <AppBrand
           hidden={collapsed}
           version={version}
           action={
-            <Button
-              type="text"
-              icon={<PanelLeftClose size={18} />}
-              onClick={() => handleSetCollapsed(true)}
-              className={styles.brandCollapseToggle}
-              aria-label={t("sidebar.collapse", "Collapse sidebar")}
-            />
+            <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+              <SearchTrigger compact />
+              <Button
+                type="text"
+                icon={<PanelLeftClose size={18} />}
+                onClick={() => handleSetCollapsed(true)}
+                className={styles.brandCollapseToggle}
+                aria-label={t("sidebar.collapse", "Collapse sidebar")}
+              />
+            </div>
           }
         />
 
-        {collapsed && (
+        {collapsed && !dualSidebar && (
           <nav className={styles.collapsedNav}>
             <div className={styles.collapsedNavPinned}>
-              <Tooltip
-                title={t("sidebar.expand", "Expand sidebar")}
-                placement="right"
-                mouseEnterDelay={0.5}
-              >
-                <button
-                  type="button"
-                  className={styles.collapsedNavItem}
-                  aria-label={t("sidebar.expand", "Expand sidebar")}
-                  onClick={() => handleSetCollapsed(false)}
+              {!fullWidthPage && (
+                <Tooltip
+                  title={t("sidebar.expand", "Expand sidebar")}
+                  placement="right"
+                  mouseEnterDelay={0.5}
                 >
-                  <PanelLeftOpen size={18} />
-                </button>
-              </Tooltip>
+                  <button
+                    type="button"
+                    className={styles.collapsedNavItem}
+                    aria-label={t("sidebar.expand", "Expand sidebar")}
+                    onClick={() => handleSetCollapsed(false)}
+                  >
+                    <PanelLeftOpen size={18} />
+                  </button>
+                </Tooltip>
+              )}
               <Popover
                 open={agentPopoverOpen}
                 onOpenChange={(open) => {
@@ -944,50 +1077,57 @@ export default function Sidebar({
                   <SparkNewChatLine size={18} />
                 </button>
               </Tooltip>
-              <Popover
-                open={historyPopoverOpen}
-                onOpenChange={setHistoryPopoverOpen}
-                placement="rightTop"
-                trigger="click"
-                arrow={false}
-                classNames={{ root: styles.collapsedHistoryPopover }}
-                content={
-                  <div className={styles.collapsedHistoryPanel}>
-                    <SidebarSessionList
-                      onNewChat={() => {
-                        setHistoryPopoverOpen(false);
-                        handleNewChat();
-                      }}
-                      onSessionClick={(sessionId) => {
-                        setHistoryPopoverOpen(false);
-                        handleSidebarSessionClick(sessionId);
-                      }}
-                    />
-                  </div>
-                }
-              >
-                <Tooltip
-                  title={t("chat.chatHistoryTooltip")}
-                  placement="right"
-                  mouseEnterDelay={0.5}
+              {!fullWidthPage && (
+                <Popover
+                  open={historyPopoverOpen}
+                  onOpenChange={setHistoryPopoverOpen}
+                  placement="rightTop"
+                  trigger="click"
+                  arrow={false}
+                  classNames={{ root: styles.collapsedHistoryPopover }}
+                  content={
+                    <div className={styles.collapsedHistoryPanel}>
+                      <SidebarSessionList
+                        onNewChat={() => {
+                          setHistoryPopoverOpen(false);
+                          handleNewChat();
+                        }}
+                        onSessionClick={(sessionId) => {
+                          setHistoryPopoverOpen(false);
+                          handleSidebarSessionClick(sessionId);
+                        }}
+                      />
+                    </div>
+                  }
                 >
-                  <button
-                    type="button"
-                    className={styles.collapsedNavItem}
-                    aria-label={t("chat.chatHistoryTooltip")}
-                    aria-expanded={historyPopoverOpen}
+                  <Tooltip
+                    title={t("chat.chatHistoryTooltip")}
+                    placement="right"
+                    mouseEnterDelay={0.5}
                   >
-                    <History size={18} />
-                  </button>
-                </Tooltip>
-              </Popover>
+                    <button
+                      type="button"
+                      className={styles.collapsedNavItem}
+                      aria-label={t("chat.chatHistoryTooltip")}
+                      aria-expanded={historyPopoverOpen}
+                    >
+                      <History size={18} />
+                    </button>
+                  </Tooltip>
+                </Popover>
+              )}
             </div>
             <div className={styles.collapsedNavScroll}>
+              <SearchTrigger compact />
               {collapsedNavItems.map(renderCollapsedNavItem)}
             </div>
           </nav>
         )}
-        <div className={styles.expandedSidebarContent} hidden={collapsed}>
+        <div
+          id="ugsci-sidebar-conversations"
+          className={styles.expandedSidebarContent}
+          hidden={collapsed}
+        >
           {!collapsed && (
             <>
               <InteractiveCard
@@ -1106,17 +1246,20 @@ export default function Sidebar({
                   )}
                 </AnimatePresence>
               </InteractiveCard>
-              <button
-                type="button"
-                data-press
-                data-page-new-task={redesigned || undefined}
-                className={skin.newTask}
-                onClick={handleNewChat}
-              >
-                <SparkNewChatLine size={18} />
-                <span>{t("chat.newTask", "New task")}</span>
-              </button>
-              {redesigned && (
+              <div className={dualStyles.createRow}>
+                <button
+                  type="button"
+                  data-press
+                  data-page-new-task={redesigned || undefined}
+                  className={skin.newTask}
+                  onClick={handleNewChat}
+                >
+                  <SparkNewChatLine size={18} />
+                  <span>{t("chat.newTask", "New task")}</span>
+                </button>
+                {dualSidebar && <SearchTrigger compact />}
+              </div>
+              {redesigned && !dualSidebar && (
                 <AppearanceNavigation
                   entries={allNavigation}
                   shortcuts={selectedFlatNav}
@@ -1129,21 +1272,7 @@ export default function Sidebar({
                   onWorkspace={
                     backendCapabilities?.workspace_ui === false
                       ? undefined
-                      : (trigger) => {
-                          if (isChatActive)
-                            window.dispatchEvent(
-                              new CustomEvent(
-                                "qwenpaw:toggle-files-workspace",
-                                { detail: { trigger } },
-                              ),
-                            );
-                          else {
-                            const entry = allNavigation.find(
-                              (item) => item.key === "core.files",
-                            );
-                            if (entry) navigate(entry.path);
-                          }
-                        }
+                      : openWorkspace
                   }
                   renderEntry={(entry) => renderNavItem(entry, true)}
                 />
@@ -1155,8 +1284,8 @@ export default function Sidebar({
           </div>
 
           {/* Session list — fills the primary space. */}
-          {!collapsed && (
-            <div className={styles.sessionArea}>
+          {(!collapsed || dualSidebar || fullWidthPage) && (
+            <div hidden={collapsed} className={styles.sessionArea}>
               <SidebarSessionList
                 defaultSearchOpen
                 minimal={redesigned}
@@ -1185,7 +1314,11 @@ export default function Sidebar({
           </div>
         )}
 
-        <div className={styles.collapseToggleContainer}>
+        <div
+          className={`${styles.collapseToggleContainer} ${
+            dualSidebar ? dualStyles.accountDock : ""
+          }`}
+        >
           <Popover
             open={settingsOpen}
             onOpenChange={setSettingsOpen}
@@ -1222,12 +1355,18 @@ export default function Sidebar({
               type="button"
               data-press
               title={t("sidebar.quickMenu.settings", "Settings")}
-              aria-label={t("sidebar.quickMenu.settings", "Settings")}
+              aria-label={
+                dualSidebar
+                  ? t("sidebar.dualSidebar.account", "Account and appearance")
+                  : t("sidebar.quickMenu.settings", "Settings")
+              }
               aria-haspopup="dialog"
               aria-expanded={settingsOpen}
-              className={collapsed ? styles.collapseToggle : skin.identity}
+              className={`${
+                collapsed ? styles.collapseToggle : skin.identity
+              } ${dualSidebar ? dualStyles.account : ""}`}
             >
-              {collapsed ? (
+              {collapsed && !dualSidebar ? (
                 <Settings size={18} />
               ) : (
                 <>

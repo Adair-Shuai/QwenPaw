@@ -11,12 +11,15 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import FilesWorkspace from "./FilesWorkspace";
 import { notifyProjectDirectoryChanged } from "../project-directory/projectDirectoryChangeEvent";
 import type { EditorTab } from "../../stores/codingTabsStore";
+const translation = vi.hoisted(() => ({ t: (key: string) => key }));
 vi.mock("react-i18next", async (importOriginal) => ({
   ...(await importOriginal<typeof import("react-i18next")>()),
-  useTranslation: () => ({ t: (key: string) => key, i18n: { language: "en" } }),
+  useTranslation: () => ({ t: translation.t, i18n: { language: "en" } }),
 }));
 import type { FileTarget } from "./types";
 import { agentsApi } from "../../api/modules/agents";
+import { projectDirectoryApi } from "../../api/modules/projectDirectory";
+import { setPendingProjectDirectory } from "../project-directory/pendingProjectDirectory";
 
 const lifecycle = vi.hoisted(() => ({
   clearProjectTabs: vi.fn(),
@@ -58,6 +61,12 @@ const lifecycle = vi.hoisted(() => ({
     onSaveFile: (path: string, content: string) => Promise<void>;
     onTabClose: (path: string) => void;
     onTabSelect: (path: string) => void;
+    navigation?: {
+      path: string;
+      line: number;
+      endLine: number;
+      column?: number;
+    };
   } | null,
 }));
 
@@ -66,6 +75,17 @@ vi.mock("../../stores/codingModeStore", () => ({
 }));
 
 vi.mock("../../stores/codingTabsStore", () => {
+  const refreshTab = (
+    scopeKey: string,
+    path: string,
+    content: string,
+    etag: string,
+  ) => {
+    const tab = lifecycle.tabs.find((item) => item.path === path);
+    if (tab?.etag !== etag) lifecycle.setTabEtag(scopeKey, path, etag);
+    if (tab?.content !== content)
+      lifecycle.setTabContent(scopeKey, path, content);
+  };
   const useCodingTabsStore = Object.assign(
     () => ({
       clearProjectTabs: lifecycle.clearProjectTabs,
@@ -75,17 +95,7 @@ vi.mock("../../stores/codingTabsStore", () => {
       setTabContent: lifecycle.setTabContent,
       setTabDirty: lifecycle.setTabDirty,
       setTabEtag: lifecycle.setTabEtag,
-      refreshTab: (
-        scopeKey: string,
-        path: string,
-        content: string,
-        etag: string,
-      ) => {
-        const tab = lifecycle.tabs.find((item) => item.path === path);
-        if (tab?.etag !== etag) lifecycle.setTabEtag(scopeKey, path, etag);
-        if (tab?.content !== content)
-          lifecycle.setTabContent(scopeKey, path, content);
-      },
+      refreshTab,
     }),
     {
       getState: () => ({
@@ -201,6 +211,86 @@ describe("FilesWorkspace directory changes", () => {
     lifecycle.loadFileText.mockResolvedValue({ content: "", etag: "v1" });
     lifecycle.loadMemoryFile.mockResolvedValue({ content: "" });
     lifecycle.loadDailyMemory.mockResolvedValue({ content: "" });
+  });
+
+  it("opens absolute answer references in a secondary bound directory and forwards line navigation", async () => {
+    const directory = vi.spyOn(projectDirectoryApi, "get").mockResolvedValue({
+      path: "C:/Projects/main",
+      name: "main",
+      is_workspace_default: false,
+      workspace_dir: "C:/Agents/workspace",
+    });
+    setPendingProjectDirectory("agent-a", "reference-session", [
+      { path: "C:/Projects/main", label: null },
+      { path: "C:/Projects/secondary", label: null },
+    ]);
+    try {
+      render(
+        <FilesWorkspace
+          scope={{
+            kind: "session",
+            agentId: "agent-a",
+            sessionId: "reference-session",
+          }}
+          initialTarget={{
+            source: "workspace",
+            path: "C:/Projects/secondary/src/app.ts",
+            line: 12,
+            endLine: 18,
+            column: 4,
+          }}
+        />,
+      );
+      await waitFor(() =>
+        expect(lifecycle.loadFileText).toHaveBeenCalledWith(
+          "src/app.ts",
+          undefined,
+          "project:C:/Projects/secondary",
+          "C:/Projects/main",
+        ),
+      );
+      expect(lifecycle.editorProps?.navigation).toMatchObject({
+        path: "project:C:/Projects/secondary::src/app.ts",
+        line: 12,
+        endLine: 18,
+        column: 4,
+      });
+    } finally {
+      directory.mockRestore();
+      setPendingProjectDirectory("agent-a", "reference-session", null);
+    }
+  });
+
+  it("rejects absolute answer references outside the session directories", async () => {
+    const directory = vi.spyOn(projectDirectoryApi, "get").mockResolvedValue({
+      path: "C:/Projects/main",
+      name: "main",
+      is_workspace_default: false,
+      workspace_dir: "C:/Agents/workspace",
+    });
+    setPendingProjectDirectory("agent-a", "reference-session", [
+      { path: "C:/Projects/main", label: null },
+    ]);
+    try {
+      render(
+        <FilesWorkspace
+          scope={{
+            kind: "session",
+            agentId: "agent-a",
+            sessionId: "reference-session",
+          }}
+          initialTarget={{ source: "workspace", path: "C:/Other/secret.txt" }}
+        />,
+      );
+      expect(await screen.findByRole("alert")).toHaveTextContent(
+        "files.loadFailed",
+      );
+      expect(lifecycle.loadFileText).not.toHaveBeenCalled();
+      expect(lifecycle.openTab).not.toHaveBeenCalled();
+    } finally {
+      directory.mockRestore();
+      setPendingProjectDirectory("agent-a", "reference-session", null);
+    }
   });
 
   it("opens preview links with their selected root and session context", async () => {
@@ -871,6 +961,83 @@ describe("FilesWorkspace directory changes", () => {
       expect(lifecycle.tabs).toEqual([existing]);
     },
   );
+
+  it("opens a bare configuration citation through the original agent configuration API", async () => {
+    lifecycle.loadFile.mockResolvedValue({ content: "actual agent profile" });
+    render(
+      <FilesWorkspace
+        scope={{
+          kind: "session",
+          agentId: "agent-a",
+          sessionId: "session-a",
+          chatId: "chat-a",
+        }}
+        initialTarget={{ source: "profile", path: "PROFILE.md", line: 8 }}
+      />,
+    );
+    await waitFor(() =>
+      expect(lifecycle.loadFile).toHaveBeenCalledWith("PROFILE.md", "agent-a"),
+    );
+    expect(lifecycle.loadFileText).not.toHaveBeenCalled();
+    expect(lifecycle.openTab).toHaveBeenCalledWith(
+      "session:agent-a:session-a",
+      expect.objectContaining({
+        path: "profile::PROFILE.md",
+        source: "profile",
+        content: "actual agent profile",
+      }),
+    );
+    expect(lifecycle.editorProps?.navigation).toMatchObject({
+      path: "profile::PROFILE.md",
+      line: 8,
+      endLine: 8,
+    });
+  });
+
+  it("reuses a dirty configuration buffer for an absolute agent workspace citation", async () => {
+    const directory = vi.spyOn(projectDirectoryApi, "get").mockResolvedValue({
+      path: "C:/Agents",
+      name: "main",
+      is_workspace_default: false,
+      workspace_dir: "C:/Agents/workspace",
+    });
+    lifecycle.tabs = [
+      {
+        path: "profile::PROFILE.md",
+        displayPath: "PROFILE.md",
+        source: "profile",
+        content: "unsaved profile",
+        dirty: true,
+      },
+    ];
+    try {
+      render(
+        <FilesWorkspace
+          scope={{ kind: "agent", agentId: "agent-a" }}
+          initialTarget={{
+            source: "workspace",
+            path: "C:/Agents/workspace/PROFILE.md",
+            line: 3,
+          }}
+        />,
+      );
+      await waitFor(() =>
+        expect(lifecycle.setActiveTab).toHaveBeenCalledWith(
+          "agent:agent-a",
+          "profile::PROFILE.md",
+        ),
+      );
+      expect(lifecycle.openTab).not.toHaveBeenCalled();
+      expect(lifecycle.loadFileText).not.toHaveBeenCalled();
+      expect(lifecycle.setTabContent).not.toHaveBeenCalled();
+      expect(lifecycle.tabs[0]).toMatchObject({
+        content: "unsaved profile",
+        dirty: true,
+      });
+    } finally {
+      directory.mockRestore();
+    }
+  });
 
   it("loads and saves profile files using the workspace agent", async () => {
     lifecycle.tabs = [

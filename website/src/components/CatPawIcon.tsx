@@ -1,5 +1,5 @@
 /**
- * QwenPaw branding logo (logo.png). Favicon uses qwenpaw-symbol.svg.
+ * UGSci brand mark shared with the desktop and browser extension.
  */
 interface CatPawIconProps {
   size: number;

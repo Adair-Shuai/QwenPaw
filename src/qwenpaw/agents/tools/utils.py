@@ -653,7 +653,7 @@ def _next_line_ending(text: str, start: int) -> tuple[int, str] | None:
     line_feed = text.find("\n", start)
     if carriage < 0 and line_feed < 0:
         return None
-    if carriage < 0 or (line_feed >= 0 and line_feed < carriage):
+    if carriage < 0 or (0 <= line_feed < carriage):
         return line_feed, "\n"
     if carriage + 1 < limit and text[carriage + 1] == "\n":
         return carriage, "\r\n"
@@ -748,7 +748,7 @@ def _split_line_at(text: str, start: int) -> tuple[str, str, int]:
     line_feed = text.find("\n", start)
     if carriage < 0 and line_feed < 0:
         return text[start:], "", len(text)
-    if carriage < 0 or (line_feed >= 0 and line_feed < carriage):
+    if carriage < 0 or (0 <= line_feed < carriage):
         return text[start:line_feed], "\n", line_feed + 1
     if carriage + 1 < len(text) and text[carriage + 1] == "\n":
         return text[start:carriage], "\r\n", carriage + 2
@@ -856,7 +856,7 @@ def _line_endings_in_span(text: str, start: int, end: int) -> list[str]:
         line_feed = text.find("\n", index, end)
         if carriage < 0 and line_feed < 0:
             break
-        if carriage < 0 or (line_feed >= 0 and line_feed < carriage):
+        if carriage < 0 or (0 <= line_feed < carriage):
             endings.append("\n")
             index = line_feed + 1
             continue

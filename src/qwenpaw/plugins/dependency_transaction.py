@@ -851,11 +851,27 @@ def _source_files(root):
     return files
 
 
+def _sync_source_file(path):
+    """Flush an owned backup/staging file, preserving its original mode."""
+    mode = stat.S_IMODE(path.stat().st_mode)
+    read_only = os.name == "nt" and not mode & stat.S_IWRITE
+    try:
+        if read_only:
+            os.chmod(path, mode | stat.S_IWRITE)
+        # Windows FlushFileBuffers requires a writable file handle.
+        with path.open("r+b" if os.name == "nt" else "rb") as stream:
+            if read_only:
+                os.chmod(path, mode)
+            os.fsync(stream.fileno())
+    finally:
+        if read_only:
+            os.chmod(path, mode)
+
+
 def _sync_source(root):
     for path in root.rglob("*"):
         if path.is_file():
-            with path.open("rb") as stream:
-                os.fsync(stream.fileno())
+            _sync_source_file(path)
     _sync_directories(
         {
             root,

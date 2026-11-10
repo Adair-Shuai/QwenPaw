@@ -244,7 +244,6 @@ async def test_request_approval_passes_channel_routing_fields_to_pending(
             await asyncio.sleep(0)
             if svc._pending:
                 break
-
         pending = next(iter(svc._pending.values()))
 
         # Verify the channel routing fields were propagated unconditionally

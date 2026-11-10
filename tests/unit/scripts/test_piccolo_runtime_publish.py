@@ -80,6 +80,8 @@ def test_publish_credentials_manifest_last_and_retry(
     monkeypatch,
     tmp_path,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     config = None
     if source == "sts-env":
         monkeypatch.setenv("OSS_SESSION_TOKEN", "test-session")
@@ -118,6 +120,8 @@ def test_publish_credentials_manifest_last_and_retry(
 
 
 def test_bad_local_checksum_prevents_any_upload(bundles, oss):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     next(bundles.glob("*.sha256")).write_text("incorrect  archive\n")
     with pytest.raises(ValueError, match="Local checksum mismatch"):
         runtime.publish(bundles)
@@ -131,6 +135,8 @@ def test_existing_conflict_prevents_manifest_publication(
     bundles,
     oss,
 ):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     path = bundles / runtime.archive_name(runtime.CONFIG["targets"][0]["id"])
     key = f"files/models/llama_cpp/{runtime.CONFIG['release']}/{path.name}"
     oss.objects[key] = (
@@ -151,6 +157,8 @@ def test_existing_conflict_prevents_manifest_publication(
 
 @pytest.mark.parametrize("corrupt", [False, True])
 def test_public_download_checks_actual_bytes(bundles, tmp_path, corrupt):
+    # Pytest injects the declared fixture by its public name.
+    # pylint: disable=redefined-outer-name
     runtime.make_manifest(bundles)
     first = bundles / runtime.archive_name(runtime.CONFIG["targets"][0]["id"])
     if corrupt:

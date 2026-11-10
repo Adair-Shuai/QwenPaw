@@ -102,8 +102,6 @@ class LiveKitBackend:
             try:
                 await self._connect_and_wait()
                 return
-            except asyncio.CancelledError:
-                raise
             except Exception:
                 await self._disconnect_room()
                 if not self._running:
@@ -159,6 +157,8 @@ class LiveKitBackend:
 
         @room.on("track_subscribed")
         def track_subscribed(remote_track, publication, participant):
+            # Retain the native callback and lifecycle hook parameter names.
+            # pylint: disable=unused-argument
             binding = self._accepted
             if (
                 binding
@@ -180,6 +180,8 @@ class LiveKitBackend:
 
         @room.on("disconnected")
         def disconnected(*args):
+            # Retain the native callback and lifecycle hook parameter names.
+            # pylint: disable=unused-argument
             if not self._current_room(room, epoch):
                 return
             self._schedule_end(self._accepted, room, epoch)
@@ -290,6 +292,8 @@ class LiveKitBackend:
         task.add_done_callback(done)
 
     async def _read_audio_track(self, call_id, track, *, binding=None):
+        # Retain the native callback and lifecycle hook parameter names.
+        # pylint: disable=unused-argument
         from livekit import rtc
 
         binding = self._accepted if binding is None else binding

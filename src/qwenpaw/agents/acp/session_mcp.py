@@ -78,7 +78,6 @@ def build_acp_mcp_driver_cards(
                 f"Unsupported ACP MCP server type: "
                 f"{type(server).__name__}",
             )
-
         cards.append(
             DriverCard(
                 name=_transient_driver_name(session_id, name),

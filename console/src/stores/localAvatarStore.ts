@@ -1,7 +1,9 @@
 import { create } from "zustand";
 import { avatarApi, type AvatarProfile } from "../api/modules/avatars";
 
-export const DEFAULT_AVATAR = `${import.meta.env.BASE_URL}ugsci-avatar.webp`;
+export const DEFAULT_AVATAR = `${
+  import.meta.env.BASE_URL
+}ugsci-mono/avatars/assistant-128.png`;
 export const BUILTIN_AVATARS = [
   { id: null, src: DEFAULT_AVATAR, label: "sidebar.defaultAvatar" },
   {

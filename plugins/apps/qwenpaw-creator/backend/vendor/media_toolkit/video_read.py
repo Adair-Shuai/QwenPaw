@@ -100,7 +100,6 @@ def get_video_info(ffprobe: str, video_path: str) -> dict:
     duration = float(stream.get("duration", 0))
     if duration <= 0:
         duration = float(probe.get("format", {}).get("duration", 0))
-
     native_fps = 30.0
     r_frame_rate = stream.get("r_frame_rate", "")
     if r_frame_rate and "/" in r_frame_rate:
@@ -109,7 +108,6 @@ def get_video_info(ffprobe: str, video_path: str) -> dict:
         # here would divide by zero downstream; keep the 30.0 fallback.
         if int(den) > 0 and int(num) > 0:
             native_fps = int(num) / int(den)
-
     return {
         "width": width,
         "height": height,

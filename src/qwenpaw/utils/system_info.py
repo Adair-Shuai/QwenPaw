@@ -68,13 +68,11 @@ def get_macos_version() -> tuple[int, ...] | None:
     """Return the full macOS version as a tuple, or None when unavailable."""
     if get_os_name() != "macos":
         return None
-
     version = platform.mac_ver()[0].strip()
     if not version:
         version = (_run_command(["sw_vers", "-productVersion"]) or "").strip()
     if not version:
         return None
-
     parts = tuple(int(part) for part in version.split(".") if part.isdigit())
     if not parts:
         return None
@@ -117,7 +115,6 @@ def get_vram_size_gb() -> float:
     )
     if not output:
         return 0.0
-
     best_memory_mb = 0.0
     for line in output.splitlines():
         value = line.strip()
@@ -127,7 +124,6 @@ def get_vram_size_gb() -> float:
             best_memory_mb = max(best_memory_mb, float(value))
         except ValueError:
             continue
-
     if best_memory_mb <= 0:
         return 0.0
     return round(best_memory_mb / 1024.0, 2)
@@ -158,7 +154,6 @@ def _run_command(args: list[str], timeout: int = 5) -> str | None:
         )
     except (OSError, subprocess.SubprocessError):
         return None
-
     output = ((result.stdout or "") + "\n" + (result.stderr or "")).strip()
     if not output and result.returncode != 0:
         return None
@@ -169,35 +164,29 @@ def _get_total_memory_bytes() -> int:
     memory_bytes = _get_total_memory_bytes_from_sysconf()
     if memory_bytes:
         return memory_bytes
-
     if get_os_name() == "macos":
         memory_bytes = _get_total_memory_bytes_from_sysctl()
         if memory_bytes:
             return memory_bytes
-
     if get_os_name() == "linux":
         memory_bytes = _get_total_memory_bytes_from_proc_meminfo()
         if memory_bytes:
             return memory_bytes
-
     if get_os_name() == "windows":
         memory_bytes = _get_total_memory_bytes_from_windows_api()
         if memory_bytes:
             return memory_bytes
-
     return 0
 
 
 def _get_total_memory_bytes_from_sysconf() -> int:
     if not hasattr(os, "sysconf"):
         return 0
-
     try:
         page_size = os.sysconf("SC_PAGE_SIZE")
         phys_pages = os.sysconf("SC_PHYS_PAGES")
     except (OSError, ValueError):
         return 0
-
     if not isinstance(page_size, int) or not isinstance(phys_pages, int):
         return 0
     if page_size <= 0 or phys_pages <= 0:
@@ -247,7 +236,6 @@ def _get_total_memory_bytes_from_windows_api() -> int:
     kernel32 = getattr(getattr(ctypes, "windll", None), "kernel32", None)
     if kernel32 is None:
         return 0
-
     status = _MemoryStatus(ctypes.sizeof(_MemoryStatus))
     if not kernel32.GlobalMemoryStatusEx(ctypes.byref(status)):
         return 0

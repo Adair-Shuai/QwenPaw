@@ -69,13 +69,11 @@ class RalphGate(LoopGate):
     async def check(self, ctx: Any) -> Optional[StopHandlerResult]:
         if isinstance(ctx, dict) and ctx.get("has_tool_calls"):
             return StopHandlerResult(action=StopAction.BYPASS)
-
         st: _RalphState | None = self._state()
         if st is None:
             return StopHandlerResult(
                 action=StopAction.BYPASS,
             )
-
         wf = WorkflowState.from_existing(
             st.workspace_dir,
             "ralph",
@@ -93,7 +91,6 @@ class RalphGate(LoopGate):
                 action=StopAction.TERMINATE,
                 reason=f"Reached max iterations ({st.max_iterations})",
             )
-
         st.prd_summary = _summarize_prd(prd)
         completed = bool(data.get("completed")) or _all_stories_passed(prd)
         if completed:
@@ -103,7 +100,6 @@ class RalphGate(LoopGate):
                 action=StopAction.TERMINATE,
                 reason="All stories completed and verified",
             )
-
         await asyncio.to_thread(
             wf.update_state,
             {"iteration": st.iteration},

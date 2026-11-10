@@ -209,7 +209,6 @@ def read_video_frames_sync(
     duration = info["duration"]
     if duration <= 0:
         raise ValidationError("cannot determine video duration")
-
     start_sec = (start_ms or 0) / 1000.0
     end_sec = end_ms / 1000.0 if end_ms is not None else None
     start_sec = max(start_sec, 0.0)
@@ -248,7 +247,6 @@ def read_video_frames_sync(
             max_frames,
             DEFAULT_FPS,
         )
-
     # ── Stage 2: probe one mid-window frame to pre-cap the count ───────
     response_budget = _response_budget_bytes()
     sample = extract_frames_by_seeking(

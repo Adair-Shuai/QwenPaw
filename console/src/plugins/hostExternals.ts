@@ -9,6 +9,12 @@
  */
 
 import React from "react";
+import type { IAgentScopeRuntimeWebUIOptions } from "@agentscope-ai/chat";
+
+// Keep the renderer map aligned with the public chat SDK contract.
+type ToolRendererMap = NonNullable<
+  IAgentScopeRuntimeWebUIOptions["customToolRenderConfig"]
+>;
 import i18n from "../i18n";
 import ReactDOM from "react-dom";
 import { useLocation, useNavigate } from "react-router-dom";
@@ -156,7 +162,7 @@ export interface PluginRegistration {
    *  External (non-builtin) renderers for the same tool name take priority. */
   isBuiltin: boolean;
   routes: PluginRouteDeclaration[];
-  toolRenderers: Record<string, React.FC<any>>;
+  toolRenderers: ToolRendererMap;
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -177,7 +183,7 @@ class PluginSystem {
 
   addToolRenderers(
     pluginId: string,
-    renderers: Record<string, React.FC<any>>,
+    renderers: ToolRendererMap,
     options?: { isBuiltin?: boolean },
   ): void {
     const rec = this._record(pluginId);
@@ -195,9 +201,9 @@ class PluginSystem {
   /** Merged map of all tool renderers across all plugins.
    *  Builtin renderers are applied first, then external plugin renderers
    *  overlay on top — so external plugins take priority over builtins. */
-  getToolRenderConfig(): Record<string, React.FC<any>> {
-    const builtinRenderers: Record<string, React.FC<any>> = {};
-    const externalRenderers: Record<string, React.FC<any>> = {};
+  getToolRenderConfig(): ToolRendererMap {
+    const builtinRenderers: ToolRendererMap = {};
+    const externalRenderers: ToolRendererMap = {};
     for (const rec of this.records.values()) {
       const target = rec.isBuiltin ? builtinRenderers : externalRenderers;
       Object.assign(target, rec.toolRenderers);
@@ -258,10 +264,7 @@ export interface WindowNamespace {
   /** Register page routes for a plugin. Translates to menu.add + route.add. */
   registerRoutes?: (pluginId: string, routes: PluginRouteDeclaration[]) => void;
   /** Register tool-call renderers for a plugin. */
-  registerToolRender?: (
-    pluginId: string,
-    renderers: Record<string, React.FC<any>>,
-  ) => void;
+  registerToolRender?: (pluginId: string, renderers: ToolRendererMap) => void;
   /** Console-wide plugin Menu API. Attached by installHostExternals(). */
   menu?: QwenPawMenuNamespace;
   /** Console-wide plugin Route API. */
@@ -334,8 +337,16 @@ export function installHostExternals(): void {
   // throw `ReferenceError: process is not defined` when loaded in the
   // browser.  Set it BEFORE any plugin bundle is imported so it is always
   // available, regardless of the plugin's own build config.
-  if (typeof (window as any).process === "undefined") {
-    (window as any).process = {
+  const browserWindow = window as Window & {
+    process?: {
+      env: Record<string, string | undefined>;
+      platform: string;
+      versions: Record<string, string>;
+      cwd: () => string;
+    };
+  };
+  if (typeof browserWindow.process === "undefined") {
+    browserWindow.process = {
       env: {
         NODE_ENV: import.meta.env.PROD ? "production" : "development",
       },
@@ -346,7 +357,7 @@ export function installHostExternals(): void {
   }
 
   if (!window.QwenPaw) {
-    (window as any).QwenPaw = {} as WindowNamespace;
+    window.QwenPaw = {} as WindowNamespace;
   }
 
   if (!window.QwenPaw.host) {

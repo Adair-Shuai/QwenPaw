@@ -15,6 +15,13 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import { render, act } from "@testing-library/react";
 import * as React from "react";
+
+// Minimal host surface deliberately supplied by this isolated fixture.
+const fixtureWindow = window as unknown as {
+  QwenPaw: {
+    host: { React: typeof React; getCurrentSessionId?: () => string };
+  };
+};
 import {
   GenUiStoreProvider,
   useGenUiStore,
@@ -108,13 +115,13 @@ function makeOutput(
 
 beforeEach(() => {
   resetGenUiStore();
-  (window as any).QwenPaw = {
+  fixtureWindow.QwenPaw = {
     host: { React },
   };
 });
 
 afterEach(() => {
-  delete (window as any).QwenPaw;
+  Reflect.deleteProperty(fixtureWindow, "QwenPaw");
   storeState = null;
 });
 
@@ -211,7 +218,7 @@ describe("applyPatch", () => {
     };
 
     // Mock getCurrentSessionId
-    (window as any).QwenPaw.host.getCurrentSessionId = () => "s1";
+    fixtureWindow.QwenPaw.host.getCurrentSessionId = () => "s1";
 
     act(() => {
       storeState!.applyPatch(payload, newTree, 2);
@@ -245,7 +252,7 @@ describe("applyPatch", () => {
       patches: [{ op: "replace", path: "/root/props/value", value: "stale" }],
     };
 
-    (window as any).QwenPaw.host.getCurrentSessionId = () => "s1";
+    fixtureWindow.QwenPaw.host.getCurrentSessionId = () => "s1";
 
     act(() => {
       storeState!.applyPatch(payload, newTree, 2);
@@ -260,7 +267,7 @@ describe("applyPatch", () => {
   it("does nothing when ui_id not found", () => {
     renderProvider();
 
-    (window as any).QwenPaw.host.getCurrentSessionId = () => "s1";
+    fixtureWindow.QwenPaw.host.getCurrentSessionId = () => "s1";
 
     const payload: GenUiPatchPayload = {
       ui_id: "ui_nonexistent",

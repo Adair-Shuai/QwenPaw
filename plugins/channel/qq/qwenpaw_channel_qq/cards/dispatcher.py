@@ -12,4 +12,7 @@ class QQCardHandler:
         parsed = parse_interaction_event(event_data)
         if parsed is None:
             return True
+        # Paired driver/platform callbacks share this lifecycle and receipt
+        # ledger.
+        # pylint: disable-next=protected-access
         return await self._platform._handle_approval(event_data, parsed)

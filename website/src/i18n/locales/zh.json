@@ -557,5 +557,63 @@
   "releaseNotes": {
     "title": "更新日志",
     "noReleases": "暂无更新日志"
+  },
+  "studio": {
+    "release": "探索最新版本",
+    "title": "让想法向前，",
+    "titleSecond": "让工作发生。",
+    "description": "在一个安静、专注的工作空间，与 AI 智能体一起研究、分析、创作。从第一句对话，到可交付的成果。",
+    "notes": {
+      "local": "本地与云端部署",
+      "agents": "多智能体协作",
+      "extensible": "自由扩展能力"
+    },
+    "tryPlatform": "体验 AgentScope 平台",
+    "bottomline": "对话 · 知识 · 工具 · 成果，在此连接。",
+    "preview": {
+      "label": "工作流示意",
+      "sidebar": "工作区示意侧栏",
+      "newTask": "新建任务",
+      "search": "搜索",
+      "workspace": "工作空间",
+      "team": "智能体团队",
+      "files": "项目文件",
+      "project": "我的项目",
+      "projectName": "研究与探索",
+      "personal": "个人工作区",
+      "task": "研究简报",
+      "prompt": "整理项目资料，分析关键发现，生成一份研究简报。",
+      "collaboration": "协作模式",
+      "response": "从资料到洞察，我们一起完成。",
+      "steps": {
+        "research": "梳理资料与研究背景",
+        "analysis": "协作分析关键发现",
+        "report": "整理结果与参考来源"
+      },
+      "artifact": "研究简报.md",
+      "ready": "可预览",
+      "composer": "继续你的下一步…",
+      "footnote": "从任务出发，让过程与成果清晰可见。"
+    },
+    "principles": {
+      "title": "复杂的工作，也可以有序展开。",
+      "description": "围绕你的任务，连接智能体、上下文与工具。",
+      "collaborate": {
+        "title": "让专业能力一起工作",
+        "description": "为不同任务配置智能体，通过分工与协作推进复杂工作。"
+      },
+      "context": {
+        "title": "让上下文持续积累",
+        "description": "连接对话与记忆，让后续工作可以沿着已有思路继续。"
+      },
+      "extend": {
+        "title": "让工作空间随需生长",
+        "description": "通过 Skills、MCP 与插件连接工具，组合适合自己的工作流。"
+      }
+    },
+    "final": {
+      "title": "下一步，从这里开始。",
+      "description": "打开你的工作空间，让一个想法逐步成为成果。"
+    }
   }
 }

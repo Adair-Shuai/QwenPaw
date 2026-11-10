@@ -24,7 +24,6 @@ try:  # ``fcntl`` is Unix-only; without it the repo lock is a no-op.
     import fcntl
 except ImportError:  # pragma: no cover - non-Unix platforms
     fcntl = None
-
 import httpx
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -248,7 +247,6 @@ def _git_bounded(
         finally:
             if watchdog is not None:
                 watchdog.cancel()
-
         if proc.returncode == 0 or truncated:
             # Either a clean read, or we stopped git ourselves -- a
             # non-zero code from our own kill is not a failure. Checked
@@ -256,10 +254,8 @@ def _git_bounded(
             # between a completed read and ``cancel()`` cannot discard
             # output we already hold.
             return text, truncated
-
         err_file.seek(0)
         stderr_text = err_file.read().decode("utf-8", "replace").strip()
-
     if expired.is_set():
         raise subprocess.TimeoutExpired(argv, timeout, stderr=stderr_text)
     raise subprocess.CalledProcessError(
@@ -353,7 +349,6 @@ def prepare_repo(
                 os.replace(tmp_dir, repo_dir)
             finally:
                 shutil.rmtree(tmp_dir, ignore_errors=True)
-
         # Fetch the base branch tip and the PR head. The PR head is
         # exposed on the base repo at refs/pull/<n>/head even for
         # forks, so this works without knowing the fork remote.
@@ -378,7 +373,6 @@ def prepare_repo(
         head_sha = _git(repo_dir, "rev-parse", head_local)
 
         merge_base = _git(repo_dir, "merge-base", base_tip, head_sha)
-
     return repo_dir, merge_base, head_sha
 
 
@@ -539,7 +533,6 @@ def _diff_with_adaptive_context(
             f"in Step 2) ...",
         )
         return floor, True
-
     # Case 2: room to spare -> prefer whole-file context if it fits.
     full, full_overflowed = _file_diff(
         repo_dir,
@@ -550,7 +543,6 @@ def _diff_with_adaptive_context(
     )
     if not full_overflowed:
         return full, False
-
     # Case 3: whole file too big -> climb the ladder, keep the widest fit.
     best = floor
     for ctx in MAP_CONTEXT_LADDER:
@@ -615,7 +607,6 @@ def _render_file_chunk(
             0,
             False,
         )
-
     # git puts "deleted file mode <mode>" right after the "diff --git"
     # line, so this is reliable even when the body was truncated.
     deleted = any(
@@ -642,7 +633,6 @@ def build_change_map(repo_dir: str, from_sha: str, to_sha: str) -> str:
     entries = _numstat(repo_dir, from_sha, to_sha)
     if not entries:
         return ""
-
     chunks: list[str] = []
     total_lines = 0
     truncated_files: list[str] = []
@@ -661,7 +651,6 @@ def build_change_map(repo_dir: str, from_sha: str, to_sha: str) -> str:
         if total_lines >= MAP_MAX_LINES or deadline_hit:
             skipped_files.append(display)
             continue
-
         chunk, n_lines, truncated = _render_file_chunk(
             repo_dir,
             from_sha,
@@ -672,7 +661,6 @@ def build_change_map(repo_dir: str, from_sha: str, to_sha: str) -> str:
             truncated_files.append(display)
         chunks.append(chunk)
         total_lines += n_lines
-
     if skipped_files:
         chunks.append(
             "### (change map truncated)\n"
@@ -694,7 +682,6 @@ def build_change_map(repo_dir: str, from_sha: str, to_sha: str) -> str:
         print(
             f"  change map: omitted {len(skipped_files)} file(s) {reason}",
         )
-
     return "\n".join(chunks)
 
 
@@ -703,7 +690,6 @@ def _extract_stream_text(evt: dict) -> str:
     text = extract_agent_text_content(evt)
     if text:
         return text
-
     content = evt.get("content")
     if isinstance(content, str):
         return content
@@ -715,7 +701,6 @@ def _extract_stream_text(evt: dict) -> str:
             elif isinstance(item, dict) and "text" in item:
                 parts.append(str(item["text"]))
         return "".join(parts)
-
     fallback = evt.get("text")
     return fallback if isinstance(fallback, str) else ""
 
@@ -729,7 +714,6 @@ def _collect_sse(resp) -> tuple[dict | None, list]:
             continue
         if line[6:] == "[DONE]":
             break
-
         parsed = parse_agent_sse_line(line)
         if not parsed:
             continue
@@ -772,16 +756,12 @@ def call_qwenpaw(prompt: str, session_id: str) -> str:
                         print(f"  HTTP {resp.status_code}, retrying...")
                         time.sleep(5)
                         continue
-
                     final_event, stream_errors = _collect_sse(resp)
-
             if stream_errors:
                 print(f"  Stream errors: {'; '.join(stream_errors)}")
-
             response = _extract_stream_text(final_event or {})
             if response.strip() and not _is_degenerate_review(response):
                 return response
-
             if not response.strip():
                 print("  Empty response, retrying...")
             else:
@@ -790,11 +770,9 @@ def call_qwenpaw(prompt: str, session_id: str) -> str:
                     "retrying with a fresh session...",
                 )
             time.sleep(5)
-
         except (httpx.TimeoutException, httpx.ConnectError) as e:
             print(f"  Error: {e}, retrying...")
             time.sleep(5)
-
     return ""
 
 
@@ -845,11 +823,9 @@ def parse_verdict(response: str) -> dict:
         result = json.loads(match.group(1))
     except json.JSONDecodeError:
         return default
-
     verdict = result.get("verdict", "REQUEST_CHANGES")
     if verdict not in ("APPROVE", "REQUEST_CHANGES"):
         verdict = "REQUEST_CHANGES"
-
     return {
         "verdict": verdict,
         "high_count": int(result.get("high_count", -1)),
@@ -868,7 +844,6 @@ def _strip_summary_verdict_json(text: str) -> str:
     summary_match = re.search(r"(###\s*6[.\s])", text)
     if not summary_match:
         return text
-
     before = text[: summary_match.start()]
     summary_section = text[summary_match.start() :]
 
@@ -930,7 +905,6 @@ def _fix_nested_code_fences(text: str) -> str:
             out.append(lines[i])
             i += 1
             continue
-
         info = m.group(2).strip()
         n = len(m.group(1))
         body, close = _scan_fence_block(lines, i + 1, n)
@@ -940,7 +914,6 @@ def _fix_nested_code_fences(text: str) -> str:
             im = re.match(r"^(`{3,})", bline)
             if im and len(im.group(1)) > max_inner:
                 max_inner = len(im.group(1))
-
         if max_inner >= n:
             fence = "`" * (max_inner + 1)
             tag = f"{fence}{info}" if info else fence
@@ -953,9 +926,7 @@ def _fix_nested_code_fences(text: str) -> str:
             out.extend(body)
             if close >= 0:
                 out.append(lines[close])
-
         i = close + 1 if close >= 0 else len(lines)
-
     return "\n".join(out)
 
 
@@ -1023,7 +994,6 @@ def write_outputs(verdict_info: dict, review_text: str):
             f.write(f"verdict={verdict_info['verdict']}\n")
             f.write(f"high_count={verdict_info['high_count']}\n")
             f.write(f"medium_count={verdict_info['medium_count']}\n")
-
     clean_text = _strip_summary_verdict_json(review_text)
     clean_text = _fix_nested_code_fences(clean_text)
 
@@ -1033,7 +1003,6 @@ def write_outputs(verdict_info: dict, review_text: str):
             print(f"  🚨 SECRET LEAK DETECTED: {w}")
         clean_text = _redact_secrets(clean_text)
         print("  Secrets have been redacted from review output.")
-
     with open("/tmp/review_result.md", "w", encoding="utf-8") as f:
         f.write(clean_text)
 
@@ -1107,7 +1076,6 @@ def main():
             "are required.",
         )
         sys.exit(1)
-
     pr_number = int(pr_number)
     print(f"\nTarget: {repo} PR #{pr_number}")
 
@@ -1131,12 +1099,10 @@ def main():
     if not response.strip():
         print("\n❌ ERROR: Got empty response from QwenPaw")
         sys.exit(1)
-
     warnings = validate_response(response, pr_number)
     if warnings:
         for w in warnings:
             print(f"  ⚠️  {w}")
-
     verdict_info = parse_verdict(response)
     verdict = verdict_info["verdict"]
     high = verdict_info["high_count"]

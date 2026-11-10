@@ -171,7 +171,6 @@ async def test_runtime_recreates_adapter_when_binary_changes(
         first = await runtime.adapter("codex", {"binary": "/first/codex"})
         reused = await runtime.adapter("codex", {"binary": "/first/codex"})
         second = await runtime.adapter("codex", {"binary": "/second/codex"})
-
     assert reused is first
     assert second is not first
     assert first.stopped is True

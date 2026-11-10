@@ -226,16 +226,13 @@ def evaluate_pull_request_context(
     # --- Skip rules -------------------------------------------------------
     if author_type == "Bot":
         return ProofEvaluation(status=ProofStatus.SKIPPED)
-
     if author_association in PRIVILEGED_ASSOCIATIONS:
         return ProofEvaluation(status=ProofStatus.SKIPPED)
-
     # The override label lets a maintainer force-skip — but it does NOT
     # auto-pass; the PR still needs context unless a maintainer explicitly
     # marks it proof-sufficient.
     if PROOF_SUFFICIENT_LABEL in labels:
         return ProofEvaluation(status=ProofStatus.SKIPPED)
-
     # --- Parse body -------------------------------------------------------
     sections = _extract_sections(body)
 
@@ -244,18 +241,15 @@ def evaluate_pull_request_context(
     problem_text = _find_section(sections, _PROBLEM_ALIASES)
     if problem_text is None or not _has_real_content(problem_text):
         missing.append("What Problem This Solves")
-
     evidence_text = _find_section(sections, _EVIDENCE_ALIASES)
     if evidence_text is None or not _has_real_content(evidence_text):
         missing.append("Evidence")
-
     if missing:
         return ProofEvaluation(
             status=ProofStatus.MISSING,
             missing_sections=missing,
             labels=[NEEDS_PR_CONTEXT_LABEL],
         )
-
     return ProofEvaluation(
         status=ProofStatus.PASSED,
         labels=[PROOF_SUFFICIENT_LABEL],

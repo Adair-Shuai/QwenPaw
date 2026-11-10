@@ -65,7 +65,6 @@ async def a2a_call(  # pylint: disable=too-many-branches,too-many-statements
     except ImportError:
         stream_queue = None
         _has_call_stream = False
-
     manager = get_a2a_manager()
     resolved_url = agent_url
     auth_type = ""
@@ -119,13 +118,11 @@ async def a2a_call(  # pylint: disable=too-many-branches,too-many-statements
                     f"连接 '{agent_alias}' ({resolved_url}) 失败: {e}",
                 )
                 return
-
     if not resolved_url:
         if _has_call_stream:
             finish_stream()
         yield _error_response("必须提供 agent_alias 或 agent_url 之一。")
         return
-
     events: list[dict] = []
     try:
         logger.info(
@@ -169,7 +166,6 @@ async def a2a_call(  # pylint: disable=too-many-branches,too-many-statements
                         ),
                     ],
                 )
-
         result = _build_result(events, context_id)
         result["steps"] = tracker.snapshot()
         logger.info(
@@ -181,7 +177,6 @@ async def a2a_call(  # pylint: disable=too-many-branches,too-many-statements
 
         if stream_queue is not None:
             _push(stream_queue, {**result, "final": True})
-
     except Exception as e:
         logger.exception("A2A call failed: %s — %s", resolved_url, e)
         result = {
@@ -194,11 +189,9 @@ async def a2a_call(  # pylint: disable=too-many-branches,too-many-statements
         }
         if stream_queue is not None:
             _push(stream_queue, {**result, "final": True})
-
     finally:
         if _has_call_stream:
             finish_stream()
-
     yield ToolChunk(
         state=ToolResultState.SUCCESS,
         is_last=True,
@@ -250,7 +243,6 @@ class _StepTracker:
                 self._thinking_buf.append(meta.get("thinking", ""))
                 self._ensure_thinking_step()
                 return
-
             self._finalize_thinking()
 
             if msg_type == "tool_use":
@@ -266,7 +258,6 @@ class _StepTracker:
                 self._steps.append(step)
                 if tool_id:
                     self._active_tools[tool_id] = len(self._steps) - 1
-
             elif msg_type == "tool_result":
                 tool_id = meta.get("tool_use_id", "")
                 is_error = meta.get("is_error", False)
@@ -284,21 +275,18 @@ class _StepTracker:
                             "status": "error" if is_error else "done",
                         },
                     )
-
             else:
                 text = _extract_text_from_parts(
                     su.get("status", {}).get("message", {}).get("parts", []),
                 )
                 if text:
                     self._append_text(text)
-
         elif ev_type == "artifact_update":
             self._finalize_thinking()
             artifact = event.get("artifactUpdate", {}).get("artifact", {})
             text = _extract_text_from_parts(artifact.get("parts", []))
             if text:
                 self._append_text(text)
-
         elif ev_type == "task":
             self._finalize_thinking()
             task_data = event.get("task", {})
@@ -306,7 +294,6 @@ class _StepTracker:
                 text = _extract_text_from_parts(artifact.get("parts", []))
                 if text:
                     self._append_text(text)
-
         elif ev_type == "message":
             self._finalize_thinking()
             text = _extract_text_from_parts(
@@ -381,7 +368,6 @@ def _build_result(  # pylint: disable=too-many-branches,too-many-statements
                 text = _extract_text_from_parts(artifact.get("parts", []))
                 if text:
                     artifact_texts.append(text)
-
         elif ev_type == "status_update":
             su = ev.get("statusUpdate", {})
             if "taskId" in su:
@@ -395,7 +381,6 @@ def _build_result(  # pylint: disable=too-many-branches,too-many-statements
             text = _extract_text_from_parts(msg.get("parts", []))
             if text:
                 status_texts.append(text)
-
         elif ev_type == "artifact_update":
             au = ev.get("artifactUpdate", {})
             if "taskId" in au:
@@ -406,19 +391,16 @@ def _build_result(  # pylint: disable=too-many-branches,too-many-statements
             text = _extract_text_from_parts(artifact.get("parts", []))
             if text:
                 artifact_texts.append(text)
-
         elif ev_type == "message":
             msg = ev.get("message", {})
             text = _extract_text_from_parts(msg.get("parts", []))
             if text:
                 artifact_texts.append(text)
-
     response_text = "".join(artifact_texts)
     if not response_text and status_texts:
         response_text = "\n".join(status_texts)
     if not response_text and final_state:
         response_text = f"[任务状态: {final_state}]"
-
     return {
         "response_text": response_text,
         "task_id": final_task_id,

@@ -66,7 +66,6 @@ def test_uninstall_tombstone_rejects_unsafe_plugin_ids(
 
     with pytest.raises(ValueError, match="unsafe plugin id"):
         bundled.mark_plugin_uninstalled(plugin_id, plugins_dir=plugins)
-
     assert not (tmp_path / "escape").exists()
 
 
@@ -378,7 +377,6 @@ def test_failed_update_keeps_previous_plugin(monkeypatch, tmp_path) -> None:
             "critical-plugin",
             manifest,
         )
-
     plugin_source = (target / "plugin.py").read_text(encoding="utf-8")
     assert plugin_source == 'VERSION = "1.0.0"\n'
     assert (target / "ui" / "dist" / "index.js").is_file()
@@ -410,7 +408,6 @@ def test_failed_rollback_retains_previous_plugin_backup(
             "critical-plugin",
             manifest,
         )
-
     backups = list(
         (tmp_path / "installed").glob(
             ".critical-plugin.previous-*",

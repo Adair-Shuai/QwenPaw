@@ -90,7 +90,7 @@ echo "== Step 1: Building Console Static Assets =="
 cd console
 pnpm install --frozen-lockfile
 echo "Generating Tauri icons..."
-pnpm exec tauri icon ../scripts/pack/assets/icon.svg
+node scripts/verify-brand-assets.mjs --scope native
 echo "Syncing Tauri version..."
 node ../scripts/pack-tauri/sync_tauri_version.mjs
 echo "Building console frontend..."

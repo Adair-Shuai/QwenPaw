@@ -26,7 +26,6 @@ def materialize_skill_plugin(
     target = root / capabilities.fingerprint
     if target.is_dir():
         return target
-
     root.mkdir(parents=True, exist_ok=True)
     temporary = Path(
         tempfile.mkdtemp(

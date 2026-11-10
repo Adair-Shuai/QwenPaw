@@ -19,6 +19,8 @@ import i18n, { i18nReady } from "../../../i18n";
 import { useMessageQueueStore } from "../../../stores/messageQueueStore";
 import { extractClientMessageId } from "../../../utils/clientMessageId";
 import { useMessageEditResend } from "../hooks/useMessageEditResend";
+import { applyAnswerQuotePayload } from "../answerQuotes";
+import { renderQuotedRequest } from "./AnswerQuoteRequest";
 
 // Preserve the actual Request/Card, native action dispatcher, Bubble and SDK
 // contexts. The shared design alias only needs Ant's real ConfigContext so
@@ -145,7 +147,9 @@ function Fixture({ rows }: { rows: Row[] }) {
         edit.renderRequest({
           data,
           fallback: () => (
-            <OriginalPlugin data={data}>{fallback()}</OriginalPlugin>
+            <OriginalPlugin data={data}>
+              {renderQuotedRequest(data, fallback())}
+            </OriginalPlugin>
           ),
         }),
       prepend: [
@@ -237,6 +241,67 @@ afterEach(() => {
 });
 
 describe("inline message editing through the installed SDK request card", () => {
+  it.each([false, true])(
+    "persists the explicit keep-original choice %s and resets each new edit to replacement",
+    async (keepOriginal) => {
+      render(tree([{ id: "one", data: request("one") }]));
+      fireEvent.click(screen.getByRole("button", { name: "Edit and resend" }));
+      const checkbox = screen.getByRole("checkbox", {
+        name: "Keep original message",
+      });
+      expect(checkbox).not.toBeChecked();
+      if (keepOriginal) fireEvent.click(checkbox);
+      expect(
+        screen.getByText(
+          keepOriginal
+            ? "Send as a new message. Original history is preserved."
+            : "Regenerate from here, clearing the original message and all later conversation.",
+        ),
+      ).toBeVisible();
+      fireEvent.keyDown(
+        screen.getByRole("textbox", { name: "Edit message content" }),
+        { key: "Enter", ctrlKey: true },
+      );
+      const store = useMessageQueueStore.getState();
+      const queued = store.getQueue("chat-inline")[0];
+      expect(queued.requestContext?.qwenpaw_edit_resend).toEqual({
+        keep_original: keepOriginal,
+        target: { client_message_id: "one" },
+      });
+      act(() => {
+        useMessageQueueStore.setState({ queues: {} });
+        store.loadFromStorage("chat-inline");
+      });
+      expect(store.getQueue("chat-inline")[0].requestContext).toEqual(
+        queued.requestContext,
+      );
+      fireEvent.click(screen.getByRole("button", { name: "Edit and resend" }));
+      expect(
+        screen.getByRole("checkbox", { name: "Keep original message" }),
+      ).not.toBeChecked();
+      fireEvent.click(screen.getByRole("button", { name: "Cancel" }));
+      expect(store.getQueue("chat-inline")).toHaveLength(1);
+    },
+  );
+
+  it("blocks replacement without a durable target and permits explicit preservation", async () => {
+    render(tree([{ id: "legacy", data: request() }]));
+    fireEvent.click(screen.getByRole("button", { name: "Edit and resend" }));
+    fireEvent.click(screen.getByRole("button", { name: "Resend" }));
+    expect(screen.getByRole("alert")).toHaveTextContent(
+      "This message has no history ID",
+    );
+    expect(useMessageQueueStore.getState().getQueue("chat-inline")).toEqual([]);
+    fireEvent.click(
+      screen.getByRole("checkbox", { name: "Keep original message" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Resend" }));
+    expect(
+      useMessageQueueStore.getState().getQueue("chat-inline")[0].requestContext
+        ?.qwenpaw_edit_resend,
+    ).toEqual({ keep_original: true });
+  });
+
   it("edits at the original bubble while retaining plugin fallback, slots and footer instances through cancellation", async () => {
     const source = request("one", true);
     render(tree([{ id: "one", data: source }]));
@@ -330,6 +395,10 @@ describe("inline message editing through the installed SDK request card", () => 
       attachments: [{ url: "/synthetic.csv", name: "synthetic.csv", size: 12 }],
     });
     expect(queued[0].clientMessageId).not.toBe("second");
+    expect(queued[0].requestContext?.qwenpaw_edit_resend).toEqual({
+      keep_original: false,
+      target: { client_message_id: "second" },
+    });
     expect(useMessageQueueStore.getState().getRunState("chat-inline")).toBe(
       "paused",
     );
@@ -392,5 +461,37 @@ describe("inline message editing through the installed SDK request card", () => 
       screen.getByRole("textbox", { name: "Edit message content" }),
     ).toHaveValue("Identical original question");
     expect(useMessageQueueStore.getState().getQueue("chat-inline")).toEqual([]);
+  });
+  it("preserves quoted passages when editing and resending a real SDK request", async () => {
+    const quotes = [
+      {
+        id: "quote-edit",
+        messageId: "source",
+        text: "Quoted original guidance",
+      },
+    ];
+    const data = applyAnswerQuotePayload(
+      request("quoted", true) as unknown as Record<string, unknown>,
+      quotes,
+    ) as unknown as RequestData;
+    render(tree([{ id: "quoted", data }]));
+    expect(screen.queryByText(/Quoted passages from/)).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "Edit and resend" }));
+    const editor = screen.getByRole("textbox", {
+      name: "Edit message content",
+    });
+    expect(editor).toHaveValue("Identical original question");
+    fireEvent.change(editor, { target: { value: "Revised question" } });
+    fireEvent.click(screen.getByRole("button", { name: "Resend" }));
+    expect(
+      useMessageQueueStore.getState().getQueue("chat-inline")[0],
+    ).toMatchObject({
+      text: "Revised question",
+      requestContext: { qwenpaw_answer_quotes: quotes },
+      attachments: [{ name: "synthetic.csv" }],
+    });
+    expect(screen.getByLabelText("Unrelated composer draft")).toHaveValue(
+      "Keep this draft",
+    );
   });
 });

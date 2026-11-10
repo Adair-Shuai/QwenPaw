@@ -146,7 +146,6 @@ def make_cron_job_spec(
         kwargs["text"] = text or "Hello"
     else:
         kwargs["request"] = CronJobRequest(input="ping")
-
     return CronJobSpec(**kwargs)
 
 

@@ -352,12 +352,10 @@ def _dashscope_web_search_image_items(payload: Any) -> list[Any]:
         return raw_items
     if not isinstance(payload, dict):
         return []
-
     for key in ("images", "results", "data"):
         value = payload.get(key)
         if isinstance(value, list):
             raw_items.extend(value)
-
     output = payload.get("output")
     if isinstance(output, list):
         for item in output:
@@ -372,7 +370,6 @@ def _dashscope_web_search_image_items(payload: Any) -> list[Any]:
             raw_items.extend(_dashscope_web_search_image_items(tool_output))
     elif isinstance(output, dict):
         raw_items.extend(_dashscope_web_search_image_items(output))
-
     return raw_items
 
 

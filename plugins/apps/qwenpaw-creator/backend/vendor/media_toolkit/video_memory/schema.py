@@ -168,7 +168,6 @@ class HierarchicalGraphMemory:
                     key_entities=se.get("key_entities", []),
                 ),
             )
-
         for me in data.get("macro_events", []):
             sg_data = me.get("subgraph")
             sg = None
@@ -211,12 +210,10 @@ class HierarchicalGraphMemory:
                     super_id=me.get("super_id", ""),
                 ),
             )
-
         for mr in data.get("macro_relations", []):
             mem.macro_relations.append(MacroRelation(**mr))
         for sr in data.get("super_relations", []):
             mem.super_relations.append(SuperRelation(**sr))
-
         return mem
 
     def get_all_nodes(self) -> list[dict]:

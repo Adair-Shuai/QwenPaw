@@ -60,11 +60,9 @@ def _tracing_factory(ctx: Any, agent_config: Any) -> TracingMiddleware | None:
     del agent_config
     if not os.environ.get("QWENPAW_TRACE"):
         return None
-
     workspace_dir = getattr(ctx, "workspace_dir", None)
     if workspace_dir is None:
         return None
-
     trace_file = Path(workspace_dir) / ".qwenpaw" / "trace.log"
     return TracingMiddleware(trace_file=trace_file)
 

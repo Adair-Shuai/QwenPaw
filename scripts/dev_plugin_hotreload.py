@@ -101,7 +101,6 @@ def cmd_link(plugin_id: str) -> None:
         for d in BUNDLE_DIRS:
             print(f"  - {d}")
         sys.exit(1)
-
     target = get_runtime_plugin_dir(plugin_id)
 
     print(f"Linking: {target}")
@@ -130,7 +129,6 @@ def cmd_link(plugin_id: str) -> None:
                 shutil.rmtree(backup, ignore_errors=True)
             shutil.move(str(target), str(backup))
             print(f"  [OK] Backed up existing dir → {backup}")
-
     # Create junction (Windows) or symlink (Unix)
     target.parent.mkdir(parents=True, exist_ok=True)
 
@@ -142,7 +140,6 @@ def cmd_link(plugin_id: str) -> None:
         )
     else:
         os.symlink(source, target, target_is_directory=True)
-
     print("\n[DONE] Junction created:")
     print(f"  {target} → {source}")
     print(f"  Plugin: {plugin_id} v{src_version}")
@@ -157,13 +154,11 @@ def cmd_unlink(plugin_id: str) -> None:
     if not target.exists():
         print(f"[INFO] Runtime dir does not exist: {target}")
         return
-
     if not is_junction_or_symlink(target):
         print(
             f"[INFO] {target} is not a junction/symlink — nothing to unlink.",
         )
         return
-
     # Remove the junction/symlink
     if platform.system() == "Windows":
         subprocess.run(
@@ -173,7 +168,6 @@ def cmd_unlink(plugin_id: str) -> None:
         )
     else:
         target.unlink()
-
     print(f"[OK] Removed link: {target}")
 
     # Restore backup if exists
@@ -187,7 +181,6 @@ def cmd_unlink(plugin_id: str) -> None:
         if source:
             shutil.copytree(source, target)
             print(f"[OK] Re-synced from source → {target}")
-
     print("\nRun `qwenpaw plugin sync-bundled --force` to ensure clean state.")
 
 
@@ -268,11 +261,9 @@ def cmd_status() -> None:
                 pid = manifest.get("id", item.name)
                 if pid not in all_plugins:
                     all_plugins[pid] = item
-
     if not all_plugins:
         print("No bundled plugins found.")
         return
-
     print(
         f"{'Plugin ID':<20} {'Source':<12} {'Runtime':<12} {'Linked':<8} {'Version'}",
     )
@@ -297,12 +288,10 @@ def cmd_build_ui(plugin_id: str) -> None:
     if source is None:
         print(f"[ERROR] Plugin '{plugin_id}' not found in bundle dirs.")
         sys.exit(1)
-
     ui_dir = source / "ui"
     if not ui_dir.is_dir():
         print(f"[ERROR] No 'ui/' directory in plugin '{plugin_id}'.")
         sys.exit(1)
-
     # Check node_modules
     node_modules = ui_dir / "node_modules"
     if not node_modules.exists():
@@ -314,7 +303,6 @@ def cmd_build_ui(plugin_id: str) -> None:
             check=True,
             shell=True,
         )
-
     print("[INFO] Building UI (vite build)...")
     subprocess.run(
         ["npx", "vite", "build"],
@@ -329,7 +317,6 @@ def cmd_build_ui(plugin_id: str) -> None:
         print(f"     Size: {dist_file.stat().st_size:,} bytes")
     else:
         print(f"\n[WARNING] Build output not found: {dist_file}")
-
     # If linked, the build output is already at runtime
     rt_dir = get_runtime_plugin_dir(plugin_id)
     if rt_dir.exists() and is_junction_or_symlink(rt_dir):
@@ -345,12 +332,10 @@ def cmd_watch_ui(plugin_id: str) -> None:
     if source is None:
         print(f"[ERROR] Plugin '{plugin_id}' not found in bundle dirs.")
         sys.exit(1)
-
     ui_dir = source / "ui"
     if not ui_dir.is_dir():
         print(f"[ERROR] No 'ui/' directory in plugin '{plugin_id}'.")
         sys.exit(1)
-
     # Check node_modules
     node_modules = ui_dir / "node_modules"
     if not node_modules.exists():
@@ -362,7 +347,6 @@ def cmd_watch_ui(plugin_id: str) -> None:
             check=True,
             shell=True,
         )
-
     rt_dir = get_runtime_plugin_dir(plugin_id)
     is_linked = rt_dir.exists() and is_junction_or_symlink(rt_dir)
 

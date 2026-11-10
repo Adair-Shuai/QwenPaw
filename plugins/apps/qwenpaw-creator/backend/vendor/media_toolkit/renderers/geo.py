@@ -28,7 +28,6 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
         import geopandas as gpd
     except ImportError as error:
         raise RuntimeError(_GEOPANDAS_HINT) from error
-
     import matplotlib
 
     matplotlib.use("Agg")
@@ -53,10 +52,8 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
         gdf = gpd.read_file(path, driver="KML")
     else:
         gdf = gpd.read_file(path)
-
     if gdf.empty:
         raise ValueError("No features found in GIS file")
-
     fig, ax = plt.subplots(figsize=(12, 10))
 
     has_numeric = any(
@@ -70,7 +67,6 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
             if col != "geometry" and gdf[col].dtype.kind in "iuf":
                 numeric_col = col
                 break
-
     if numeric_col:
         gdf_with = gdf[gdf[numeric_col].notna()]
         gdf_without = gdf[gdf[numeric_col].isna()]
@@ -114,7 +110,6 @@ def render(path: str, **opts: Any) -> list[dict[str, Any]]:
                 linewidth=0.5,
                 alpha=0.7,
             )
-
     ax.set_title(
         os.path.basename(path),
         fontsize=14,

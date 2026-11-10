@@ -18,6 +18,9 @@ from qwenpaw.app.channels.utils import (
     file_url_to_local_path,
     materialize_data_url,
 )
+
+# Retain the existing formatting exports for channel integrations.
+# pylint: disable-next=unused-import
 from .formatting import (
     build_stream_display_text,
     chunk_text,
@@ -116,8 +119,6 @@ class DiscordPlatform:
     async def _gateway(self):
         try:
             await self._client.start(self.config["bot_token"], reconnect=True)
-        except asyncio.CancelledError:
-            raise
         except Exception:
             logger.exception("Discord Gateway failed")
             if not self._stopping:
@@ -156,6 +157,9 @@ class DiscordPlatform:
                 self._message_locks.pop(message_id, None)
 
     async def _on_message(self, message, epoch):
+        # Preserve native event routing, media fallbacks and cleanup in SDK
+        # order.
+        # pylint: disable=R0912
         async with self._message_lock(str(message.id)):
             if not self._current(epoch):
                 return
@@ -329,8 +333,6 @@ class DiscordPlatform:
                 side_effect_possible=not rejected,
                 retryable=exc.status == 429,
             ) from exc
-        except asyncio.CancelledError:
-            raise
         except Exception as exc:
             raise DiscordDeliveryError(
                 "DISCORD_RESULT_UNKNOWN",
@@ -396,6 +398,9 @@ class DiscordPlatform:
             attachment.close()
 
     async def _send_media(self, target, part):
+        # Preserve native event routing, media fallbacks and cleanup in SDK
+        # order.
+        # pylint: disable=R0911
         url = (
             part.get("image_url")
             or part.get("video_url")

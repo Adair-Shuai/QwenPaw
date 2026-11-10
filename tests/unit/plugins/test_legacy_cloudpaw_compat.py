@@ -361,7 +361,6 @@ async def test_legacy_cleanup_failure_keeps_retry_marker(
     assert set(profiles).issubset(disk_config["agents"]["profiles"])
     for agent_id in profiles:
         assert (work / "workspaces" / agent_id / "history.txt").exists()
-
     original_code = (root / "plugin.py").read_bytes()
     retry = PluginLoader([root.parent])
     retry.registry = loader.registry

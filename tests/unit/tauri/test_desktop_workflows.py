@@ -25,6 +25,30 @@ RELEASE_HELPERS = (
 )
 
 
+def test_windows_build_creates_portable_package_once_and_keeps_signing() -> (
+    None
+):
+    build = (
+        REPO_ROOT / "scripts/pack-tauri/build_win_pyinstaller.ps1"
+    ).read_text(encoding="utf-8")
+    # Layered builds always take the no-NSIS branch. Building there and again
+    # in the common path doubled full-tree copies, compression and CRC reads.
+    assert (
+        build.count(
+            '"scripts\\pack-tauri\\create_windows_portable_installer.ps1"',
+        )
+        == 1
+    )
+    assert build.count('"scripts\\pack-tauri\\copy_windows_tree.py"') == 1
+    assert build.count("pnpm exec tauri signer sign $ZipPath") == 1
+    assert build.index("foreach ($staleArtifact") < build.index(
+        '"scripts\\pack-tauri\\create_windows_portable_installer.ps1"',
+    )
+    assert 'Test-Path -LiteralPath "$ZipPath.sig" -PathType Leaf' in build
+    assert 'throw "Portable Windows updater ZIP signature is missing"' in build
+    assert "build_windows_migration_bridge.ps1" in build
+
+
 def _load_workflow(name: str) -> dict:
     return yaml.safe_load(
         (REPO_ROOT / ".github" / "workflows" / name).read_text(

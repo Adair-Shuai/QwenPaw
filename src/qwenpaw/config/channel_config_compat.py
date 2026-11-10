@@ -33,6 +33,9 @@ def normalize_channel_config(
     *,
     dictionary: bool = True,
 ) -> dict:
+    # Preserve legacy configuration precedence and environment aliases in
+    # order.
+    # pylint: disable=R0912,R0915
     """Read legacy config input into a detached, schema-valid value mapping."""
     values = deepcopy(dict(config))
     if channel_key == "telegram":

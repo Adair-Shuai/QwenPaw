@@ -276,6 +276,20 @@ def _is_staged(dest: Path, marker: Path, marker_value: str) -> bool:
     )
 
 
+def _prune_debug_symbols(dest: Path) -> int:
+    """Exclude native debugger symbols, preserving the complete interpreter."""
+    root = dest.resolve(strict=True)
+    removed = 0
+    for path in sorted(root.rglob("*.pdb")):
+        if not path.resolve().is_relative_to(root):
+            raise ValueError(f"Python debug symbol escapes staging: {path}")
+        if not path.is_file():
+            continue
+        removed += path.stat().st_size
+        path.unlink()
+    return removed
+
+
 def _find_reusable_runtime(dest: Path, marker_value: str) -> Path | None:
     """Return an already verified versioned runtime from a prior build.
 
@@ -345,6 +359,7 @@ def main() -> None:  # pylint: disable=too-many-statements
         marker,
         marker_value,
     ):
+        _prune_debug_symbols(dest)
         print(f"python-runtime already staged ({marker_value}); skipping")
         return
     if preferred_release.lower() != "latest":
@@ -359,6 +374,7 @@ def main() -> None:  # pylint: disable=too-many-statements
                 raise SystemExit(
                     "reused Python runtime failed marker validation",
                 )
+            _prune_debug_symbols(dest)
             return
 
     print(f"Resolving standalone CPython {xy} for {triple}...")
@@ -370,6 +386,7 @@ def main() -> None:  # pylint: disable=too-many-statements
     )
     marker_value = f"{xy}-{triple}-{release}-{args.sha256.lower()}"
     if _is_staged(dest, marker, marker_value):
+        _prune_debug_symbols(dest)
         print(f"python-runtime already staged ({marker_value}); skipping")
         return
 
@@ -395,6 +412,10 @@ def main() -> None:  # pylint: disable=too-many-statements
                 raise SystemExit(
                     f"staging failed: interpreter missing at {staged_exe}",
                 )
+            removed = _prune_debug_symbols(staged_dest)
+            print(
+                f"Pruned {removed / (1024 * 1024):.1f} MiB of Python symbols",
+            )
             atomic_install_tree(staged_dest, dest)
     finally:
         os.unlink(archive)

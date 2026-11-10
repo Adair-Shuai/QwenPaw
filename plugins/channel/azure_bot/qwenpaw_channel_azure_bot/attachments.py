@@ -18,6 +18,9 @@ _TOKEN_HOSTS = {
 
 
 def _public_address(host):
+    # Keep the existing URL, identity and value validation as one checked
+    # contract.
+    # pylint: disable=R0916
     address = ipaddress.ip_address(host)
     if (
         not address.is_global
@@ -39,6 +42,9 @@ def _public_address(host):
 
 
 def attachment_url(value):
+    # Keep the existing URL, identity and value validation as one checked
+    # contract.
+    # pylint: disable=R0916
     """Validate the same normalized URL that aiohttp will actually request."""
     if not isinstance(value, str) or any(
         ord(character) <= 32 or ord(character) == 127 or character == "\\"
@@ -66,7 +72,7 @@ def attachment_url(value):
         # Older aiohttp connectors bypass the resolver for padded IPv4 forms
         # that ipaddress rejects but the OS can interpret as private addresses.
         if ":" in host or all(c in "0123456789." for c in host):
-            raise ValueError("AZURE_ATTACHMENT_URL_UNSAFE")
+            raise ValueError("AZURE_ATTACHMENT_URL_UNSAFE") from None
         # The connector's resolver checks every DNS answer for other names.
     else:
         _public_address(host)

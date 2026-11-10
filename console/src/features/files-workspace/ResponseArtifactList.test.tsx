@@ -129,7 +129,7 @@ function failedSendFile(path: string, serializedOutput = false) {
 }
 
 describe("ResponseArtifactList", () => {
-  it("isolates response files by agent and session and scopes file actions", () => {
+  it("isolates response files by agent and session and scopes file actions", async () => {
     const scope: ResponseArtifactScope = {
       kind: "session",
       agentId: "agent-a",
@@ -137,7 +137,9 @@ describe("ResponseArtifactList", () => {
       chatId: "chat-a",
     };
     const preview = vi.fn();
+    const reveal = vi.fn();
     window.addEventListener("qwenpaw:open-file-preview", preview);
+    window.addEventListener("qwenpaw:reveal-file", reveal);
     try {
       render(
         <>
@@ -164,8 +166,25 @@ describe("ResponseArtifactList", () => {
         sessionId: "session-a",
         chatId: "chat-a",
       });
+      fireEvent.click(
+        screen.getByRole("button", { name: "delivery.openWith ours.md" }),
+      );
+      fireEvent.click(
+        await screen.findByRole("menuitem", {
+          name: "workspace.revealInFileManager",
+        }),
+      );
+      expect(reveal).toHaveBeenCalledTimes(1);
+      expect((reveal.mock.calls[0][0] as CustomEvent).detail).toMatchObject({
+        agentId: "agent-a",
+        sessionId: "session-a",
+        chatId: "chat-a",
+        target: { source: "workspace", root: "project", path: "ours.md" },
+      });
+      expect(preview).toHaveBeenCalledTimes(1);
     } finally {
       window.removeEventListener("qwenpaw:open-file-preview", preview);
+      window.removeEventListener("qwenpaw:reveal-file", reveal);
     }
   });
 
@@ -227,7 +246,7 @@ describe("ResponseArtifactList", () => {
     ["~/reports/summary.md", "~/reports/summary.md", "attachment"],
   ])(
     "reveals the card's file without opening preview: %s",
-    (path, expectedPath, source) => {
+    async (path, expectedPath, source) => {
       const reveal = vi.fn();
       const preview = vi.fn();
       window.addEventListener("qwenpaw:reveal-file", reveal);
@@ -237,7 +256,14 @@ describe("ResponseArtifactList", () => {
           <ResponseArtifactList messages={successfulFileIo(path)} />,
         );
         fireEvent.click(
-          screen.getByRole("button", { name: /workspace.revealInFileManager/ }),
+          screen.getByRole("button", {
+            name: `delivery.openWith ${expectedPath.split("/").pop()}`,
+          }),
+        );
+        fireEvent.click(
+          await screen.findByRole("menuitem", {
+            name: "workspace.revealInFileManager",
+          }),
         );
         expect(reveal).toHaveBeenCalledTimes(1);
         expect(
@@ -280,6 +306,8 @@ describe("ResponseArtifactList", () => {
     expect(screen.getByText("package.json")).toBeInTheDocument();
     expect(screen.getAllByText("已写入")).toHaveLength(2);
     expect(screen.getAllByText("已写入")[0].tagName).toBe("SMALL");
+    expect(screen.getByText("JS")).toBeInTheDocument();
+    expect(screen.getByText("JSON")).toBeInTheDocument();
   });
 
   it("marks edit and append operations as modified", () => {
@@ -315,7 +343,7 @@ describe("ResponseArtifactList", () => {
     const rect = vi
       .spyOn(HTMLElement.prototype, "getBoundingClientRect")
       .mockReturnValue({ width: 700 } as DOMRect);
-    render(
+    const { container } = render(
       <ResponseArtifactList
         messages={Array.from({ length: 5 }, (_, index) =>
           successfulFileIo(`wide-${index}.md`),
@@ -326,8 +354,29 @@ describe("ResponseArtifactList", () => {
     expect(
       screen.queryByRole("button", { name: "wide-0.md wide-0.md" }),
     ).not.toBeInTheDocument();
+    // Keep the historical regression name while guarding the approved
+    // single-column layout: widening the reply cannot expose more than two rows.
+    expect(
+      container.querySelectorAll('button[class*="previewButton"]'),
+    ).toHaveLength(2);
+    expect(
+      screen.getByRole("button", { name: "wide-4.md wide-4.md" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole("button", { name: "wide-3.md wide-3.md" }),
+    ).toBeInTheDocument();
+    expect(
+      screen.queryByRole("button", { name: "wide-2.md wide-2.md" }),
+    ).not.toBeInTheDocument();
     expect(
       screen.getByRole("button", { name: /展开更多/ }),
+    ).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: /展开更多/ }));
+    expect(
+      container.querySelectorAll('button[class*="previewButton"]'),
+    ).toHaveLength(5);
+    expect(
+      screen.getByRole("button", { name: "wide-0.md wide-0.md" }),
     ).toBeInTheDocument();
     rect.mockRestore();
   });

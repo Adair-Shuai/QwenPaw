@@ -17,6 +17,11 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { loadReactPdf, type RawOutlineItem } from "./pdfjs";
 import type { PdfOutlineNode } from "./types";
+import type { DocumentProps } from "react-pdf";
+
+type LoadedPdfDocument = Parameters<
+  NonNullable<DocumentProps["onLoadSuccess"]>
+>[0];
 
 export interface UsePdfDocumentResult {
   /** react-pdf 模块（加载后可用） */
@@ -35,7 +40,7 @@ export interface UsePdfDocumentResult {
    * 接收 react-pdf <Document> 组件 onLoadSuccess 回调中的 PDFDocumentProxy。
    * 从中提取页数、大纲等信息，不再单独加载文档。
    */
-  onDocumentLoad: (pdf: any) => void;
+  onDocumentLoad: (pdf: LoadedPdfDocument) => void;
   /** 加载某页文本（懒加载，搜索时按需调用） */
   loadPageText: (pageNum: number) => Promise<string>;
 }
@@ -46,7 +51,7 @@ export interface UsePdfDocumentResult {
  */
 async function convertOutline(
   items: RawOutlineItem[],
-  pdf: any,
+  pdf: LoadedPdfDocument,
   depth = 0,
 ): Promise<PdfOutlineNode[]> {
   const result: PdfOutlineNode[] = [];
@@ -54,7 +59,7 @@ async function convertOutline(
     let destPage: number | undefined;
     if (item.dest && pdf) {
       try {
-        let dest = item.dest;
+        let dest: unknown = item.dest;
         if (typeof dest === "string") {
           dest = await pdf.getDestination(dest);
         }
@@ -89,7 +94,7 @@ export function usePdfDocument(): UsePdfDocumentResult {
   const [outline, setOutline] = useState<PdfOutlineNode[]>([]);
   const [pageTexts, setPageTexts] = useState<Map<number, string>>(new Map());
 
-  const pdfDocRef = useRef<any>(null);
+  const pdfDocRef = useRef<LoadedPdfDocument | null>(null);
 
   // 加载 react-pdf 模块
   useEffect(() => {
@@ -116,7 +121,7 @@ export function usePdfDocument(): UsePdfDocumentResult {
    * 这取代了之前单独调用 pdfjs.getDocument() 的方式，
    * 避免了 PDF 文件被下载和解析两次。
    */
-  const onDocumentLoad = useCallback((pdf: any) => {
+  const onDocumentLoad = useCallback((pdf: LoadedPdfDocument) => {
     pdfDocRef.current = pdf;
     setNumPages(pdf.numPages);
     // 立即解除 loading 状态，让 PDF 页面开始渲染
@@ -150,7 +155,9 @@ export function usePdfDocument(): UsePdfDocumentResult {
       try {
         const page = await pdfDocRef.current.getPage(pageNum);
         const textContent = await page.getTextContent();
-        const text = textContent.items.map((item: any) => item.str).join(" ");
+        const text = textContent.items
+          .map((item) => ("str" in item ? item.str : ""))
+          .join(" ");
         setPageTexts((prev) => new Map(prev).set(pageNum, text));
         return text;
       } catch {

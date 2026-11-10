@@ -139,6 +139,5 @@ def test_builder_skips_empty_and_failed_providers():
             agent_id="datapaw",
             workspace="WORKSPACE",
         )
-
     assert result == "WORKSPACE"
     log_exc.assert_called_once()

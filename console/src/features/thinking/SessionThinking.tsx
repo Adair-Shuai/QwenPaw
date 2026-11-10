@@ -1,5 +1,5 @@
 import { ModelPickerPopover } from "../../pages/Chat/ModelSelector/ModelPickerPopover";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Spin, Tooltip } from "antd";
 import { ChevronDown, ArrowLeft, RotateCcw, Layers2 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -39,6 +39,9 @@ export function SessionThinking({
 }) {
   const { t } = useTranslation();
   const { message } = useAppMessage();
+  // Notifications can change without changing the session or its pending load.
+  const loadMessageRef = useRef(message);
+  loadMessageRef.current = message;
   const [view, setView] = useState<ThinkingView>();
   const [open, setOpen] = useState(false);
   const [choosing, setChoosing] = useState(false);
@@ -52,29 +55,7 @@ export function SessionThinking({
   const scope = sessionThinkingScope(agentId, sessionId, chatId);
   const identityRef = useRef(identity);
   identityRef.current = identity;
-  useEffect(() => {
-    generation.current += 1;
-    onDecisionConfiguredChange?.(undefined);
-    setOpen(false);
-    setChoosing(false);
-    setView(undefined);
-    setPreview(undefined);
-    setBusy(false);
-    setSaving(false);
-    revision.current += 1;
-    void load();
-    const refresh = (event: Event) => {
-      if (isSessionModelChangedFor(event, { agentId, sessionId, chatId }))
-        void load();
-    };
-    window.addEventListener("session-model-changed", refresh);
-    return () => {
-      generation.current += 1;
-      revision.current += 1;
-      window.removeEventListener("session-model-changed", refresh);
-    };
-  }, [identity, onDecisionConfiguredChange]);
-  async function load() {
+  const load = useCallback(async () => {
     const version = ++revision.current;
     setBusy(true);
     try {
@@ -98,14 +79,37 @@ export function SessionThinking({
         .setActiveMaxInputLength(next.effective_max_input_length ?? null);
     } catch (error) {
       if (identityRef.current === identity && revision.current === version)
-        message.error(String(error));
+        loadMessageRef.current.error(String(error));
     } finally {
       if (identityRef.current === identity && revision.current === version) {
         setBusy(false);
         setSaving(false);
       }
     }
-  }
+  }, [agentId, chatId, sessionId, identity, scope, onDecisionConfiguredChange]);
+  useEffect(() => {
+    generation.current += 1;
+    onDecisionConfiguredChange?.(undefined);
+    setOpen(false);
+    setChoosing(false);
+    setView(undefined);
+    setPreview(undefined);
+    setBusy(false);
+    setSaving(false);
+    revision.current += 1;
+    void load();
+    const refresh = (event: Event) => {
+      if (isSessionModelChangedFor(event, { agentId, sessionId, chatId }))
+        void load();
+    };
+    window.addEventListener("session-model-changed", refresh);
+    return () => {
+      generation.current += 1;
+      revision.current += 1;
+      window.removeEventListener("session-model-changed", refresh);
+    };
+  }, [identity, onDecisionConfiguredChange, agentId, chatId, sessionId, load]);
+
   function updatePreview(value: ThinkingPreference) {
     previewRevision.current += 1;
     setPreview(value);

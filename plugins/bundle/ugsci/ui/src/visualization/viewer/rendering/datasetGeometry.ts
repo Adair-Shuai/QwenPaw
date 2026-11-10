@@ -1,14 +1,13 @@
 import type { DatasetInfo } from "../contracts/types";
+import { datasetProfile } from "../capabilities/datasetProfile";
 
 export type ScalarAssociation = "cell" | "point";
 
 /** Explicit converter metadata wins; legacy sources remain readable. */
 export function geometryPrimitive(dataset: DatasetInfo): "lines" | "triangles" {
-  const primitive = dataset.metadata?.geometry_primitive;
-  if (primitive === "lines" || primitive === "triangles") return primitive;
   // Tube converters emit triangles. Treating them as line pairs destroys the
   // surface and breaks segment selection and property coloring.
-  return dataset.source === "network" ? "lines" : "triangles";
+  return datasetProfile(dataset).primitive;
 }
 
 export function scalarAssociation(
@@ -21,9 +20,7 @@ export function scalarAssociation(
     dataset.properties?.[property]?.association ??
     dataset.metadata?.scalar_association;
   if (association === "cell" || association === "point") return association;
-  return ["las", "dlis", "wellbore", "network"].includes(
-    dataset.source || "",
-  ) && count === vertexCount
+  return datasetProfile(dataset).pointScalarFallback && count === vertexCount
     ? "point"
     : "cell";
 }

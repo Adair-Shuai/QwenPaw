@@ -1,3 +1,4 @@
+import { UgsciMotion } from "../../UgsciMotion";
 import React, {
   useCallback,
   useEffect,
@@ -5,7 +6,7 @@ import React, {
   useRef,
   useState,
 } from "react";
-import { Button, InputNumber, Space, Spin, Tooltip } from "antd";
+import { Button, InputNumber, Space, Tooltip } from "antd";
 import {
   ColumnWidthOutlined,
   ReloadOutlined,
@@ -201,7 +202,7 @@ const PdfPageRow: React.FC<ListChildComponentProps<PageRowData>> = ({
               boxShadow: "0 2px 12px rgba(0,0,0,0.12)",
             }}
           >
-            <Spin size="small" />
+            <UgsciMotion theme="light" variant="files" size={32} />
           </div>
         ) : null}
         {status === "error" ? (
@@ -593,7 +594,7 @@ const LightweightPdfViewer: React.FC<LightweightPdfViewerProps> = ({
               background: "#f5f5f5",
             }}
           >
-            <Spin />
+            <UgsciMotion theme="light" variant="files" size={80} />
             <span style={{ fontSize: 12 }}>
               {t("workspace.loadingPdf", "正在加载 PDF")}
             </span>

@@ -117,7 +117,6 @@ async def test_qoder_logout_returns_structured_conflict(
             harnesses.HarnessStatusRequest(),
             cast(Request, object()),
         )
-
     assert exc_info.value.status_code == 409
     assert exc_info.value.detail == {
         "code": "logout_not_supported",

@@ -35,7 +35,6 @@ class LangfuseTraceHook(LifecycleHook):
 
         if not is_langfuse_enabled():
             return HookResult()
-
         from ...runtime.message_convert import _get_last_user_text
 
         trace_id = uuid.uuid4().hex

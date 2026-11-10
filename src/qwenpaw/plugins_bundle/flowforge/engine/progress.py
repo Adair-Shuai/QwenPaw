@@ -46,6 +46,7 @@ class NodeProgressState:
     message: str = ""
     started_at_ms: int | None = None
     finished_at_ms: int | None = None
+    execution_index: int = 0
     error: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -59,6 +60,7 @@ class NodeProgressState:
             "message": self.message,
             "started_at_ms": self.started_at_ms,
             "finished_at_ms": self.finished_at_ms,
+            "execution_index": self.execution_index,
             "error": self.error,
             "metadata": self.metadata,
         }
@@ -218,6 +220,20 @@ class ProgressRegistry:
         duration_ms: int | None = None,
     ) -> None:
         st = self.state(node_id)
+        if status == NodeStatus.RUNNING and st.status != NodeStatus.RUNNING:
+            st.execution_index += 1
+            st.started_at_ms = int(time.time() * 1000)
+            st.finished_at_ms = None
+            st.error = None
+            st.metadata = {}
+        elif status == NodeStatus.CACHED:
+            st.execution_index += 1
+            st.started_at_ms = None
+            st.finished_at_ms = int(time.time() * 1000)
+            st.error = None
+        elif status not in {NodeStatus.PENDING, NodeStatus.RUNNING}:
+            if st.finished_at_ms is None:
+                st.finished_at_ms = int(time.time() * 1000)
         st.status = status
         if error is not None:
             st.error = error

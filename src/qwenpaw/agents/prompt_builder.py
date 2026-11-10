@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any, List, Optional
 
 if TYPE_CHECKING:
     from ..plugins.registry import PluginRegistry
-
 logger = logging.getLogger(__name__)
 
 
@@ -57,7 +56,6 @@ class PromptBuilder:
                 rendered = self._render(reg, agent)
                 if rendered:
                     sections.append(PromptSection(reg.name, rendered))
-
         return "\n\n".join(s.content for s in sections)
 
     def _get_plugin_sections(self, anchor: str, agent_id: Optional[str]):

@@ -46,6 +46,9 @@ def test_windows_update_assistant_changes_require_a_host_upgrade(tmp_path):
     inputs = (
         "scripts/pack-tauri/windows_update_assistant.cs",
         "scripts/pack-tauri/build_windows_update_assistant.ps1",
+        "scripts/pack-tauri/windows_portable_bootstrap.cs",
+        "scripts/pack-tauri/windows_installer_io.cs",
+        "scripts/pack-tauri/create_windows_portable_installer.ps1",
     )
     rust_build = (ROOT / "console/src-tauri/build.rs").read_text(
         encoding="utf-8",
@@ -462,6 +465,11 @@ def test_host_fingerprint_is_platform_independent_and_detects_native_changes(
     source_icon.write_text("<svg/>")
     assert host_fingerprint(tmp_path) != initial
     source_icon.unlink()
+    for name in ("icon.ico", "icon.icns"):
+        native_icon = source_icon.with_name(name)
+        native_icon.write_bytes(b"canonical native icon")
+        assert host_fingerprint(tmp_path) != initial
+        native_icon.unlink()
     file.write_bytes(b"fn main() { changed(); }\n")
     assert host_fingerprint(tmp_path) != initial
 

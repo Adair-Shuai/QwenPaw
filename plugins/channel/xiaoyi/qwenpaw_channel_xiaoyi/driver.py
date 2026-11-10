@@ -25,6 +25,8 @@ from .errors import XiaoYiDeliveryError
 from .platform import XiaoYiPlatform
 
 
+# Non-stream driver retains the fail-closed optional cleanup hook.
+# pylint: disable-next=abstract-method
 class XiaoYiDriver(SharedResponseDriver):
     def __init__(self):
         super().__init__(
@@ -61,6 +63,9 @@ class XiaoYiDriver(SharedResponseDriver):
         self._connected = connected
         await self._context.set_platform_state(state)
         if connected and self._platform is not None:
+            # Paired driver/platform callbacks share this lifecycle and receipt
+            # ledger.
+            # pylint: disable-next=protected-access
             self._platform._spawn(self._resume_cleanups())
 
     async def _resume_cleanups(self):
@@ -101,6 +106,8 @@ class XiaoYiDriver(SharedResponseDriver):
         return ResponsePolicy(continue_on_delivery_error=True)
 
     async def _open(self, params, request):
+        # Retain the native callback and lifecycle hook parameter names.
+        # pylint: disable=unused-argument
         self._identity(params)
         platform = self._require_connected()
         meta = dict(params.get("meta") or {})

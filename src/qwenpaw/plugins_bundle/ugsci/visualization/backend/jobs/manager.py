@@ -291,7 +291,7 @@ class ImportJob:
 
     def _commit_manifest(self, bin_dir: Path, ds_info: dict):
         """Publish manifests and durable completion under one lock."""
-        from ..api import _update_manifest
+        from ..services.catalog import publish_manifest
 
         related = list(ds_info.get("related_datasets") or [])
         primary = {
@@ -303,13 +303,13 @@ class ImportJob:
             if self.status == "cancelled":
                 self.finished_at = self.finished_at or time.time()
                 return
-            _update_manifest(bin_dir, primary)
+            publish_manifest(bin_dir, primary)
             for extra in related:
                 extra.setdefault("metadata", {})["managed"] = True
                 extra.setdefault("metadata", {})[
                     "parent_dataset"
                 ] = primary.get("id")
-                _update_manifest(bin_dir, extra)
+                publish_manifest(bin_dir, extra)
             self.stages[5].finished_at = time.time()
             self.stages[5].status = "completed"
             self.progress = 1.0

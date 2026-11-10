@@ -68,9 +68,12 @@ const B_CHAT = "22222222-bbbb-4bbb-8bbb-222222222222";
 // obtains the UUID before sending; do not make createChat fake the old contract.
 function seedLegacyDraft(id = "1788430000000-legacy1") {
   const legacy = sessionApi as unknown as {
-    createEmptySession: (id: string, owner: unknown) => any;
+    createEmptySession: (
+      id: string,
+      owner: unknown,
+    ) => NonNullable<Awaited<ReturnType<typeof sessionApi.getSession>>>;
     getActiveOwner: () => unknown;
-    sessionList: any[];
+    sessionList: unknown[];
   };
   const draft = legacy.createEmptySession(id, legacy.getActiveOwner());
   legacy.sessionList.unshift(draft);

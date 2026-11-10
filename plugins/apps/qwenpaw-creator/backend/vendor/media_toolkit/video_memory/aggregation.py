@@ -130,7 +130,6 @@ def _parse_window_result(
             for m in macros:
                 if m.macro_id == mid:
                     m.super_id = sid
-
     macro_rels = [
         MacroRelation(
             source=r["source"],
@@ -184,7 +183,6 @@ async def _single_pass(
     except json.JSONDecodeError:
         logger.warning("aggregation JSON parse failed, using fallback")
         agg = _fallback_aggregation(macros)
-
     root_data = agg.get("root", {})
     root = VideoRoot(
         title=root_data.get("title", ""),
@@ -211,7 +209,6 @@ async def _single_pass(
             for m in macros:
                 if m.macro_id == mid:
                     m.super_id = sid
-
     macro_rels = [
         MacroRelation(
             source=r["source"],
@@ -297,7 +294,6 @@ async def _sliding_window(
                 ],
                 "macro_relations": [],
             }
-
         window_supers, window_rels, super_counter = _parse_window_result(
             agg,
             macros,
@@ -311,7 +307,6 @@ async def _sliding_window(
             )
             window_start = window_end
             continue
-
         if is_last_window or len(window_supers) <= 1:
             all_supers.extend(window_supers)
             all_macro_rels.extend(window_rels)
@@ -348,12 +343,10 @@ async def _sliding_window(
                     window_start = window_end
             else:
                 window_start = window_end
-
             for mid in dropped_macro_ids:
                 for m in macros:
                     if m.macro_id == mid:
                         m.super_id = ""
-
             logger.info(
                 "dropped last super '%s' (%d macros), next window from "
                 "macro index %d",
@@ -361,7 +354,6 @@ async def _sliding_window(
                 len(dropped_macro_ids),
                 window_start,
             )
-
     logger.info(
         "sliding window done: %d super events from %d windows",
         len(all_supers),
@@ -388,7 +380,6 @@ async def _synthesize_root(
                 "key_entities": se.key_entities,
             },
         )
-
     input_data = json.dumps(super_list, ensure_ascii=False, indent=2)
     prompt = (
         f"Here are the chronologically ordered Super Events:\n\n"
@@ -410,7 +401,6 @@ async def _synthesize_root(
             },
             "super_relations": [],
         }
-
     root_data = result.get("root", {})
     root = VideoRoot(
         title=root_data.get("title", ""),

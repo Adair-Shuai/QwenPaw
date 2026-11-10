@@ -87,7 +87,6 @@ def build_source_intelligence_index(
                 f"Source Intelligence provider claimed unsupported {modality} coverage",
             )
         coverage[modality] = item
-
     provenance = set(provenance_refs)
     if not provenance or len(provenance) != len(provenance_refs):
         raise ValidationError(

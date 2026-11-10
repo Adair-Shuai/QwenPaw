@@ -264,17 +264,21 @@ def _make_control_adapter(
                 DenyCommandHandler,
             ),
         ):
-            # Host-private state binds this reply to its original channel actor.
+            # Host-private state binds this reply to its original channel
+            # actor.
             state = (
+                # pylint: disable-next=protected-access
                 request._channel_control_state
             )  # pylint: disable=protected-access
             result = ctrl_ctx.approval_resolution
             if isinstance(state, ControlCommandState) and result is not None:
+                # pylint: disable-next=protected-access
                 actor = ApprovalCommandHandler._actor(
                     ctrl_ctx,
                 )  # pylint: disable=protected-access
                 binding = state.binding
-                # Verify every identity field together before recording resolution.
+                # Verify every identity field together before recording
+                # resolution.
                 if (  # pylint: disable=too-many-boolean-expressions
                     binding.channel_key == actor.channel
                     and binding.user_id == actor.user_id

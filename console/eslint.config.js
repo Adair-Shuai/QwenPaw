@@ -5,7 +5,18 @@ import reactRefresh from "eslint-plugin-react-refresh";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["dist", "dist-tauri", "src-tauri/target"] },
+  {
+    // Build copies and local preview caches are generated, ignored files.
+    // Current application source and tests keep all existing lint rules.
+    ignores: [
+      "dist",
+      "dist-tauri",
+      "src-tauri/target",
+      "src-tauri/binaries",
+      ".vite",
+      ".codex-tmp",
+    ],
+  },
   {
     extends: [js.configs.recommended, ...tseslint.configs.recommended],
     files: ["**/*.{ts,tsx}"],

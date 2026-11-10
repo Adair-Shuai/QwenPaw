@@ -13,11 +13,18 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
 import { render, act } from "@testing-library/react";
 import * as React from "react";
+
+// Minimal host surface deliberately supplied by this isolated fixture.
+const fixtureWindow = window as unknown as {
+  QwenPaw: {
+    host: { React: typeof React; getCurrentSessionId?: () => string };
+  };
+};
 import { GenUiStoreProvider } from "@genui-src/stores/genUi";
 import { GenUiInline } from "@genui-src/components/GenUiInline";
 
 beforeEach(() => {
-  (window as any).QwenPaw = {
+  fixtureWindow.QwenPaw = {
     host: {
       React,
       getCurrentSessionId: () => "test-session",
@@ -26,7 +33,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
-  delete (window as any).QwenPaw;
+  Reflect.deleteProperty(fixtureWindow, "QwenPaw");
   vi.restoreAllMocks();
 });
 
@@ -219,7 +226,7 @@ describe("GenUiInline — History Recovery (PLAN §9.3: 刷新页面恢复)", ()
   });
 
   it("renders nothing when session has no matching snapshots", async () => {
-    (window as any).QwenPaw.host.getCurrentSessionId = () => "other-session";
+    fixtureWindow.QwenPaw.host.getCurrentSessionId = () => "other-session";
 
     const output = makeOutput("ui_session_test", 1, "test");
     const { container } = renderInline({ output });

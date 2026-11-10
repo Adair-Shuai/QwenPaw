@@ -1,5 +1,5 @@
 /**
- * Right-rail inspector: Controls / Actions / Addons tabs and Name/Control rows.
+ * Right-rail inspector with stable tab IDs and contextual Name/Control rows.
  */
 
 import { controlLabel } from "./labels";
@@ -10,9 +10,9 @@ export const INSPECTOR_TABS: ReadonlyArray<{
   id: InspectorTabId;
   label: string;
 }> = [
-  { id: "controls", label: "属性" },
-  { id: "actions", label: "操作" },
-  { id: "addons", label: "扩展" },
+  { id: "controls", label: "对象" },
+  { id: "actions", label: "分析" },
+  { id: "addons", label: "场景" },
 ];
 
 let inspectorSequence = 0;
@@ -152,6 +152,7 @@ export function createControlTable(): {
   body: HTMLElement;
 } {
   const table = document.createElement("div");
+  table.dataset.controlTable = "true";
   table.style.cssText = "display:flex;flex-direction:column;gap:0;";
   const head = document.createElement("div");
   head.style.cssText = [
@@ -174,8 +175,9 @@ export function appendControlRow(
   name: string,
   control: HTMLElement,
 ): HTMLElement {
-  name = controlLabel(name);
   const row = document.createElement("div");
+  row.dataset.controlName = name;
+  name = controlLabel(name);
   row.style.cssText = [
     "display:grid;grid-template-columns:42% 1fr;gap:8px;align-items:center;",
     "padding:7px 2px;border-bottom:1px solid rgba(48,54,61,.45);",
@@ -225,6 +227,8 @@ export function createBoolSwitch(
   const trueBtn = pill("开启");
   const paint = () => {
     const on = input.checked;
+    falseBtn.disabled = input.disabled;
+    trueBtn.disabled = input.disabled;
     falseBtn.style.background = on ? "transparent" : "#1f6feb";
     falseBtn.style.color = on ? "#8b949e" : "#fff";
     trueBtn.style.background = on ? "#1f6feb" : "transparent";
@@ -233,7 +237,7 @@ export function createBoolSwitch(
     trueBtn.setAttribute("aria-pressed", String(on));
   };
   const set = (value: boolean) => {
-    if (input.checked === value) return;
+    if (input.disabled || input.checked === value) return;
     input.checked = value;
     paint();
     onChange(value);
@@ -242,6 +246,7 @@ export function createBoolSwitch(
   trueBtn.addEventListener("click", () => set(true));
   input.addEventListener("change", () => {
     paint();
+    if (input.disabled) return;
     onChange(input.checked);
   });
   input.addEventListener("ugsci-sync", () => paint());

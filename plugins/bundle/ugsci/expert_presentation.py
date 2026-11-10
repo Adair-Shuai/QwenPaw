@@ -7,13 +7,88 @@ import json
 import os
 import uuid
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Annotated, Callable, Literal
 
 from fastapi import APIRouter, HTTPException
 from filelock import FileLock
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    StringConstraints,
+    model_validator,
+)
 
 Category = Literal["油气工程", "数据与研究", "通用助手", "应用专家"]
+_AVATAR_ROLES = json.loads(
+    Path(__file__).with_name("avatar_catalog.json").read_text("utf-8"),
+)
+
+
+AvatarColor = Annotated[
+    str,
+    StringConstraints(pattern=r"^(?:auto|#[0-9a-fA-F]{6})$"),
+]
+TransparentAvatarColor = Annotated[
+    str,
+    StringConstraints(pattern=r"^(?:auto|transparent|#[0-9a-fA-F]{6})$"),
+]
+
+
+class ExpertAvatarColors(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    shell: AvatarColor = "auto"
+    visor: AvatarColor = "auto"
+    eyes: TransparentAvatarColor = "auto"
+    crown: AvatarColor = "auto"
+    badge: AvatarColor = "auto"
+    badge_ring: AvatarColor = "auto"
+    background: TransparentAvatarColor = "auto"
+
+
+class ExpertAvatarRecipe(BaseModel):
+    """Validated composition inputs for the bundled vector renderer."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+
+    domain: str = Field(min_length=1, max_length=40)
+    role: str = Field(min_length=1, max_length=40)
+    shell: Literal["auto", "round", "faceted", "shield", "industrial"] = "auto"
+    visor: Literal["classic", "soft", "angular"] = "classic"
+    expression: Literal["focused", "friendly", "thinking"] = "focused"
+    badge: Literal[
+        "none",
+        "analysis",
+        "teaching",
+        "research",
+        "coding",
+        "safety",
+        "documents",
+        "planning",
+        "operations",
+        "collaboration",
+        "design",
+    ] = "none"
+    crown_domain: str = Field(default="auto", max_length=40)
+    crown_role: str = Field(default="auto", max_length=40)
+    category_label: str = Field(default="", max_length=64)
+    colors: ExpertAvatarColors | None = None
+
+    @model_validator(mode="after")
+    def validate_roles(self):
+        if self.role not in _AVATAR_ROLES.get(self.domain, []):
+            raise ValueError("头像领域或岗位无效")
+        crown_domain = (
+            self.domain if self.crown_domain == "auto" else self.crown_domain
+        )
+        if crown_domain not in _AVATAR_ROLES or (
+            self.crown_role != "auto"
+            and self.crown_role not in _AVATAR_ROLES[crown_domain]
+        ):
+            raise ValueError("头像头饰领域或岗位无效")
+        return self
 
 
 def _containment_path(path: Path) -> Path:
@@ -36,6 +111,7 @@ class ExpertPresentation(BaseModel):
     category: Category | None = None
     specialty: str = Field(default="", max_length=50)
     summary: str = Field(default="", max_length=180)
+    avatar: ExpertAvatarRecipe | None = None
 
 
 def registered_workspace(agent_id: str) -> Path | None:
@@ -95,8 +171,24 @@ def build_expert_presentation_router(
             current = read(path)
             if body.revision != current.revision:
                 raise HTTPException(409, "显示配置已被更新，请重新打开设置后重试")
+            avatar = (
+                body.avatar
+                if "avatar" in body.model_fields_set
+                else current.avatar
+            )
+            if (
+                avatar is not None
+                and current.avatar is not None
+                and "colors" not in avatar.model_fields_set
+            ):
+                avatar = avatar.model_copy(
+                    update={"colors": current.avatar.colors},
+                )
             updated = body.model_copy(
-                update={"revision": current.revision + 1},
+                update={
+                    "revision": current.revision + 1,
+                    "avatar": avatar,
+                },
             )
             temporary = path.with_name(f".{path.name}.{uuid.uuid4().hex}.tmp")
             try:

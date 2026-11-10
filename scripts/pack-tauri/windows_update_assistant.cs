@@ -970,6 +970,7 @@ internal static class UGSciUpdateAssistant
                 "UGSci Desktop.lnk");
             CreateShortcut(startMenu, executable, installDirectory);
             CreateShortcut(desktop, executable, installDirectory);
+            RefreshShellIcons(executable, new[] { startMenu, desktop });
         }
 
         private static void RestorePreviousShortcuts(InstallTransaction value, string executable,
@@ -984,6 +985,24 @@ internal static class UGSciUpdateAssistant
             }
             RestoreShortcutBytes(value.start_menu_shortcut_path, value.start_menu_shortcut_base64);
             RestoreShortcutBytes(value.desktop_shortcut_path, value.desktop_shortcut_base64);
+            RefreshShellIcons(executable, new[] { value.start_menu_shortcut_path, value.desktop_shortcut_path });
+        }
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode, ExactSpelling = true)]
+        private static extern void SHChangeNotify(uint eventId, uint flags, string item, IntPtr unused);
+
+        private static void RefreshShellIcons(string executable, string[] shortcuts)
+        {
+            try
+            {
+                // Invalidate cached icons, then refresh the executable and links
+                // with SHCNF_PATHW | SHCNF_FLUSHNOWAIT.
+                SHChangeNotify(0x08000000, 0, null, IntPtr.Zero);
+                if (File.Exists(executable)) SHChangeNotify(0x00002000, 0x2005, executable, IntPtr.Zero);
+                foreach (string path in shortcuts)
+                    if (File.Exists(path)) SHChangeNotify(0x00002000, 0x2005, path, IntPtr.Zero);
+            }
+            catch (Exception error) { Debug.WriteLine("UGSci icon refresh: " + error.Message); }
         }
 
         private static void RestoreShortcutBytes(string path, string base64)

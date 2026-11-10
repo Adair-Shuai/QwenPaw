@@ -7,6 +7,37 @@
   background: var(--ant-color-bg-container, #fff);
   color: var(--ant-color-text, #172b4d);
 }
+.ff-diagnostic {
+  color: inherit;
+  background: transparent;
+  border: 0;
+  padding: 3px 0;
+  text-align: left;
+  font: inherit;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+.ff-diagnostic:not(:disabled):hover {
+  text-decoration: underline;
+}
+.ff-diagnostic:disabled { cursor: default; opacity: 1; }
+.ff-diagnostic:focus-visible { outline: 2px solid var(--ant-color-primary, #2563eb); }
+.ff-bindings {
+  margin-top: 20px;
+  padding-top: 12px;
+  border-top: 1px solid var(--ant-color-border-secondary, #ddd);
+}
+.ff-binding-row { display: grid; gap: 5px; margin: 12px 0; }
+.ff-binding-row select {
+  width: 100%;
+  min-width: 0;
+  padding: 7px;
+  border-radius: 6px;
+  border: 1px solid var(--ant-color-border, #ddd);
+  background: var(--ant-color-bg-container, #fff);
+  color: inherit;
+}
+.ff-errors { max-height: 150px; overflow: auto; margin: 0; padding-left: 20px; }
 .ff-center {
   height: 100%;
   min-height: 340px;
@@ -320,4 +351,151 @@
   margin: 10px 0;
   border: 1px solid var(--ant-color-border-secondary, #e8edf3);
   border-radius: 8px;
+}
+
+/* The canvas and property inspector share the available workbench width. */
+.ff-title {
+  max-width: min(440px, 36vw);
+  min-width: 150px;
+}
+.ff-title strong {
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+.ff-agent-scope {
+  display: block;
+}
+.ff-properties {
+  position: relative;
+  flex-shrink: 0;
+  min-width: 300px;
+  display: flex;
+  flex-direction: column;
+  border-left: 1px solid var(--ant-color-border-secondary, #ddd);
+  background: var(--ant-color-bg-container, #fff);
+}
+.ff-properties > header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid var(--ant-color-border-secondary, #ddd);
+}
+.ff-properties > header > strong {
+  margin-right: auto;
+}
+.ff-properties-content {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 16px;
+}
+.ff-properties-resize {
+  position: absolute;
+  z-index: 6;
+  left: -4px;
+  top: 0;
+  bottom: 0;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+.ff-properties-resize:focus-visible {
+  outline: 2px solid var(--ant-color-primary, #2563eb);
+}
+.ff-expand-ports {
+  background: transparent;
+  color: var(--ant-color-primary, #2563eb);
+  border: 0;
+  cursor: pointer;
+  padding: 4px 0;
+  margin-top: 4px;
+  font-size: 10px;
+}
+.ff-draft-status {
+  padding: 4px 16px;
+  color: var(--ant-color-text-secondary, #777);
+  font-size: 11px;
+  border-bottom: 1px solid var(--ant-color-border-secondary, #ddd);
+}
+.ff-draft-entry {
+  padding: 12px 0;
+  border-top: 1px solid var(--ant-color-border-secondary, #ddd);
+}
+.ff-debug-workspace {
+  flex-shrink: 0;
+  max-height: 32vh;
+  overflow: auto;
+  padding: 12px 16px;
+  border-top: 1px solid var(--ant-color-border-secondary, #ddd);
+  background: var(--ant-color-bg-container, #fff);
+}
+.ff-debug-workspace > header {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 10px;
+}
+.ff-debug-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18px;
+}
+.ff-debug-grid label {
+  display: block;
+  margin: 8px 0 5px;
+}
+.ff-debug-grid textarea {
+  font-family: ui-monospace, monospace;
+}
+.ff-debug-grid .ant-space {
+  margin-top: 8px;
+}
+.ff-debug-pin {
+  margin: 10px 0;
+  padding: 8px;
+  border: 1px solid var(--ant-color-border-secondary, #ddd);
+  border-radius: 6px;
+}
+.ff-debug-cases {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding-top: 12px;
+  margin-top: 12px;
+  border-top: 1px solid var(--ant-color-border-secondary, #ddd);
+}
+.ff-debug-cases > input {
+  flex: 1;
+  min-width: 160px;
+}
+.ff-debug-cases > p {
+  width: 100%;
+}
+@media (max-width: 720px) {
+  .ff-title {
+    max-width: calc(100vw - 150px);
+  }
+  .ff-debug-grid {
+    grid-template-columns: 1fr;
+  }
+  .ff-debug-workspace {
+    padding: 10px;
+    max-height: 32vh;
+  }
+}
+
+.ff-editor:has(.ff-debug-workspace) .ff-editor-body {
+  min-height: 0;
+}
+@media (max-width: 720px) {
+  .ff-editor:has(.ff-debug-workspace) .ff-canvas {
+    min-height: 0;
+  }
+  .ff-editor:has(.ff-debug-workspace) .ff-debug-workspace {
+    max-height: 32vh;
+  }
 }

@@ -1,8 +1,10 @@
 import { useCallback, useMemo } from "react";
-import { Layout, Spin } from "antd";
+import { Layout } from "antd";
+import { UgsciLoading } from "../../components/UgsciMotion";
 import { Routes, Route, useLocation, useNavigate } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import Sidebar from "../Sidebar";
+import GlobalSearch from "../../features/global-search/GlobalSearch";
 import AmbientLight from "../AmbientLight";
 import Header from "../Header";
 import ConsolePollService from "../../components/ConsolePollService";
@@ -17,6 +19,7 @@ import { Slot } from "../../plugins/registry/Slot";
 import { PageShell } from "../../components/PageShell";
 import { pickSelectedKey } from "./routeSelection";
 import { RouteDocumentTitle } from "./RouteDocumentTitle";
+import { NavigationGuard } from "./NavigationGuard";
 import { getRouteTitle } from "./routeTitle";
 import {
   buildApprovalNavigationPath,
@@ -26,11 +29,13 @@ import {
 import { HubModeContext } from "../../contexts/HubModeContext";
 import { SettingsSearchNavigation } from "../../pages/SettingsCenter/SettingsSearchNavigation";
 import { usePluginSettingsNavigation } from "../../pages/SettingsCenter/usePluginSettingsNavigation";
+import { useTheme } from "../../contexts/ThemeContext";
 
 const { Content } = Layout;
 
 export default function MainLayout({ hubMode = false }: { hubMode?: boolean }) {
   const { t, i18n } = useTranslation();
+  const { pageStyle } = useTheme();
   const location = useLocation();
   const navigate = useNavigate();
   const openApprovals = useCallback(
@@ -91,6 +96,7 @@ export default function MainLayout({ hubMode = false }: { hubMode?: boolean }) {
     selectedKey === "core.settings-center" ||
     Boolean(SettingsCenterPage && pluginSettingsContext);
   const pageTitle = getRouteTitle(selectedRoute, i18n.language);
+  const showSidebar = !settingsCenterActive || pageStyle === "dual-sidebar";
 
   // PawApp inline routes (`/apps/<id>`) are rendered *inside* the App Center
   // page (with its "← App Center" bar), never as standalone full-page routes.
@@ -105,7 +111,9 @@ export default function MainLayout({ hubMode = false }: { hubMode?: boolean }) {
   return (
     <HubModeContext.Provider value={hubMode}>
       <Layout className={styles.mainLayout}>
+        <NavigationGuard />
         <SettingsSearchNavigation />
+        <GlobalSearch />
         <RouteDocumentTitle title={pageTitle} />
         <a
           className={styles.skipLink}
@@ -115,11 +123,15 @@ export default function MainLayout({ hubMode = false }: { hubMode?: boolean }) {
           {t("accessibility.skipToContent", "Skip to content")}
         </a>
         <AmbientLight />
-        {!settingsCenterActive && (
-          <Sidebar selectedKey={selectedKey} hubMode={hubMode} />
+        {showSidebar && (
+          <Sidebar
+            selectedKey={selectedKey}
+            hubMode={hubMode}
+            settingsActive={settingsCenterActive}
+          />
         )}
         <Layout className={styles.mainContentLayout}>
-          <Header showBrand={settingsCenterActive} />
+          <Header showBrand={!showSidebar} />
           <Content
             id="main-content"
             role="main"
@@ -139,10 +151,7 @@ export default function MainLayout({ hubMode = false }: { hubMode?: boolean }) {
               >
                 <ChunkRecoverySuspense
                   fallback={
-                    <Spin
-                      aria-label={t("common.loading")}
-                      style={{ display: "block", margin: "20vh auto" }}
-                    />
+                    <UgsciLoading variant="page" label={t("common.loading")} />
                   }
                 >
                   <Routes>

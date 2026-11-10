@@ -22,14 +22,12 @@ def _install_msg_dict_shim(module=None) -> None:
     Msg = getattr(module, "Msg", None)
     if Msg is None:
         return
-
     if not hasattr(Msg, "to_dict"):
 
         def _to_dict(self):
             return self.model_dump()
 
         Msg.to_dict = _to_dict
-
     if not hasattr(Msg, "from_dict"):
 
         def _from_dict(cls, data):  # pylint: disable=unused-argument
@@ -38,7 +36,6 @@ def _install_msg_dict_shim(module=None) -> None:
             return msg_from_dict(data)
 
         Msg.from_dict = classmethod(_from_dict)
-
     # ``Msg.timestamp`` (1.x format ``"YYYY-mm-dd HH:MM:SS.fff"``) was
     # renamed to ``Msg.created_at`` (ISO-8601 ``"YYYY-mm-ddTHH:MM:SS.fff"``)
     # in 2.0.  Keep a read-only alias so legacy call sites (notably the

@@ -88,7 +88,10 @@ def test_windows_file_uri_reaches_image_validation(monkeypatch, url, expected):
     image_open.assert_called_once_with(path_factory.return_value)
     message = data["state"]["context"][0]
     assert message["content"][0]["type"] == "text"
-    assert message["metadata"]["qwenpaw_invalid_images"][0]["source"]["url"] == url
+    assert (
+        message["metadata"]["qwenpaw_invalid_images"][0]["source"]["url"]
+        == url
+    )
 
 
 def _regeneration_request(target):
@@ -110,7 +113,11 @@ def _steered_turn():
                     "content": [{"type": "text", "text": "original task"}],
                     "metadata": {console_turn_state.CLIENT_ID: "root-client"},
                 },
-                {"id": "first-step", "role": "assistant", "content": "working"},
+                {
+                    "id": "first-step",
+                    "role": "assistant",
+                    "content": "working",
+                },
                 {
                     "id": "supplement",
                     "role": "user",
@@ -163,11 +170,19 @@ def test_regeneration_cannot_target_only_in_flight_supplement(target):
 
 @pytest.mark.parametrize(
     "marker",
-    [None, True, {}, {"run_id": "active-run"}, {"request_id": "r", "run_id": " "}],
+    [
+        None,
+        True,
+        {},
+        {"run_id": "active-run"},
+        {"request_id": "r", "run_id": " "},
+    ],
 )
 def test_regeneration_never_skips_ordinary_or_malformed_later_user(marker):
     data = _steered_turn()
-    data["state"]["context"][4]["metadata"][console_turn_state.STEERING] = marker
+    data["state"]["context"][4]["metadata"][
+        console_turn_state.STEERING
+    ] = marker
     original = deepcopy(data)
 
     with pytest.raises(ValueError, match="no longer the last turn"):
@@ -204,7 +219,11 @@ def test_terminal_stamp_stays_on_original_user_after_in_flight_supplement():
     data = _steered_turn()
     request = SimpleNamespace(
         channel="console",
-        input=[SimpleNamespace(metadata={console_turn_state.CLIENT_ID: "root-client"})],
+        input=[
+            SimpleNamespace(
+                metadata={console_turn_state.CLIENT_ID: "root-client"},
+            ),
+        ],
     )
 
     console_turn_state.stamp_console_turn(
@@ -214,8 +233,13 @@ def test_terminal_stamp_stays_on_original_user_after_in_flight_supplement():
         response_id="same-response",
     )
 
-    assert data["state"]["context"][2]["metadata"][console_turn_state.TURN_STATE] == {
+    assert data["state"]["context"][2]["metadata"][
+        console_turn_state.TURN_STATE
+    ] == {
         "status": "completed",
         "response_id": "same-response",
     }
-    assert console_turn_state.TURN_STATE not in data["state"]["context"][4]["metadata"]
+    assert (
+        console_turn_state.TURN_STATE
+        not in data["state"]["context"][4]["metadata"]
+    )

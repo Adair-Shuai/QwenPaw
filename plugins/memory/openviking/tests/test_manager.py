@@ -201,7 +201,6 @@ def test_installation_id_rejects_invalid_existing_file(tmp_path, existing):
 
     with pytest.raises(ValueError, match="Invalid OpenViking installation id"):
         manager_module.get_or_create_installation_id(tmp_path)
-
     assert marker.read_text(encoding="utf-8") == existing
     assert not list(marker.parent.glob(".installation-id-*"))
 
@@ -246,7 +245,6 @@ def test_installation_id_does_not_expose_an_unwritten_file(
         finally:
             release_writer.set()
         assert first.result(timeout=10) == installation_id
-
     assert marker.read_text(encoding="utf-8") == installation_id
     assert not list(marker.parent.glob(".installation-id-*"))
 
@@ -265,7 +263,6 @@ def test_installation_id_cleans_temporary_file_on_failure(
 
     with pytest.raises(OSError, match="Simulated filesystem failure"):
         manager_module.get_or_create_installation_id(tmp_path)
-
     state_dir = tmp_path / "plugin-state" / "memory-openviking"
     assert not (state_dir / "installation-id").exists()
     assert not list(state_dir.glob(".installation-id-*"))
@@ -736,7 +733,6 @@ async def test_retry_exhaustion_exposes_safe_failure_and_worker_continues(
         else:
             client.commit.assert_not_awaited()
             assert not manager._pending_commit_msg_ids
-
         # Exhaustion does not kill the worker; a later submitted task can run.
         failing_call.side_effect = None
         later_id = manager.submit_auto_memory(messages, session_id="chat-1")

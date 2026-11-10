@@ -59,7 +59,6 @@ def test_startup_display_prints_final_banner_without_tty() -> None:
         "qwenpaw.utils.startup_display.print_ready_banner",
     ) as print_banner:
         display.complete(2.0)
-
     print_banner.assert_called_once_with(None, 2.0)
 
 
@@ -104,7 +103,6 @@ def test_startup_display_preserves_file_logging(tmp_path) -> None:
             assert isinstance(terminal_handler.stream, FileProxy)
             print_banner.assert_not_called()
             display.stop()
-
         assert terminal_handler.stream is terminal_output
         assert log_path.read_text(encoding="utf-8") == ("INFO | startup log\n")
         assert "startup log" in terminal_output.getvalue()

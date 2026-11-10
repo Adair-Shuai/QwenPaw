@@ -77,7 +77,9 @@ def _result(request, payload=None, *, reason=None, unsupported=False):
 
 
 async def manage(request):
-    """Cancel the one native operation once, then settle its real HTTP cleanup."""
+    """Cancel the one native operation once, then settle its real HTTP
+    cleanup.
+    """
     task = asyncio.create_task(_execute(request))
     try:
         return await asyncio.shield(task)
@@ -97,6 +99,8 @@ async def manage(request):
 
 
 async def _execute(request):
+    # Keep native command cases and their validation boundaries together.
+    # pylint: disable=R0911,R0912,R0915
     request = ManagementRequest.from_mapping(request.to_mapping())
     if request.channel_key != "qq" or request.plugin_id != "qq":
         return _result(request, reason="IDENTITY_MISMATCH")
@@ -107,7 +111,8 @@ async def _execute(request):
             unsupported=True,
         )
     host = os.getenv("QQ_PORTAL_HOST", "q.qq.com")
-    # This is the historical trusted environment override, never browser config.
+    # This is the historical trusted environment override, never browser
+    # config.
     if any(c in host for c in "/?#@\\") or not host:
         return _result(request, reason="MANAGEMENT_INVALID_REQUEST")
     continuation = None
@@ -145,7 +150,12 @@ async def _execute(request):
                     return _result(
                         request,
                         {
-                            "scan_url": f"https://{host}/qqbot/openclaw/connect.html?{query}",
+                            "scan_url": (
+                                "https://"
+                                f"{host}"
+                                "/qqbot/openclaw/connect.html?"
+                                f"{query}"
+                            ),
                             "continuation": _encode_poll_token(task_id, key),
                         },
                     )

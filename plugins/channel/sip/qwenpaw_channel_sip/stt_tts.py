@@ -166,6 +166,8 @@ async def _stream_aliyun(
             _enqueue(None)
 
         def on_error(self, message: str) -> None:
+            # Retain the native callback and lifecycle hook parameter names.
+            # pylint: disable=unused-argument
             if not errors:
                 errors.append("TTS_STREAM_FAILED")
             _enqueue(None)

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
-"""Connector JWT authentication; no untrusted tenant/issuer substring matching."""
+"""Connector JWT authentication; no untrusted tenant/issuer substring matching.
+"""
 
 import asyncio
 import json
@@ -37,6 +38,8 @@ class AzureBotTokenValidator:
             return await response.json()
 
     async def _key(self, kid):
+        # Validate all JWK shape and algorithm constraints before use.
+        # pylint: disable=R0916
         async with self._lock:
             now = time.monotonic()
             match = next((k for k in self._keys if k.get("kid") == kid), None)

@@ -263,7 +263,6 @@ async def test_file_restore_requires_an_explicit_selection(
 
     with pytest.raises(HTTPException) as caught:
         await router.apply_checkpoint_restore(body, SimpleNamespace())
-
     assert caught.value.status_code == 400
     assert all(
         call[0] != "restore_with_files" for call in checkpoint_service.calls

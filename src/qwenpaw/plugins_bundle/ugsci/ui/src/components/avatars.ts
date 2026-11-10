@@ -1,42 +1,73 @@
-import { apiUrl, getHost } from "../core/runtime";
+// Original role SVG geometry from the supplied UGSci-Mono assets.
+import { getHost } from "../core/runtime";
+import {
+  matchExpertAvatar,
+  renderExpertAvatar,
+  type ExpertAvatarRecipe,
+} from "../expert/avatar/expertAvatar";
 
-function expertAvatarUrl(seed: string): string {
-  return apiUrl(`/ugsci/avatar/${encodeURIComponent(seed)}`);
-}
+const TEAM_SVG =
+  '<title>专家团</title>\n  <g fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><circle cx="32" cy="32" r="29.8" stroke-opacity=".38"/></g><g transform="translate(7.0 9.5) scale(0.5)"><path d="M6 18.5L10 14.5H14.5V32.6C14.5 38.4 18 42 23.7 42H40.3C46 42 49.5 38.4 49.5 32.6V14.5H54L58 18.5V32.6C58 43.1 51.3 50.2 40.8 50.2H23.2C12.7 50.2 6 43.1 6 32.6Z"/><path fill-rule="evenodd" d="M22.8 20.1H40.1L46.5 25.0V33.5C46.5 36.6 44.2 39 41 39H23C19.9 39 17.5 36.6 17.5 33.5V25.4C17.5 22.4 19.8 20.1 22.8 20.1ZM24.25 26.9a1.9 1.9 0 0 1 3.8 0v4.2a1.9 1.9 0 0 1 -3.8 0ZM35.95 26.9a1.9 1.9 0 0 1 3.8 0v4.2a1.9 1.9 0 0 1 -3.8 0Z"/></g><g transform="translate(20.0 22.4) scale(0.63)"><path d="M6 18.5L10 14.5H14.5V32.6C14.5 38.4 18 42 23.7 42H40.3C46 42 49.5 38.4 49.5 32.6V14.5H54L58 18.5V32.6C58 43.1 51.3 50.2 40.8 50.2H23.2C12.7 50.2 6 43.1 6 32.6Z"/><path fill-rule="evenodd" d="M22.8 20.1H40.1L46.5 25.0V33.5C46.5 36.6 44.2 39 41 39H23C19.9 39 17.5 36.6 17.5 33.5V25.4C17.5 22.4 19.8 20.1 22.8 20.1ZM24.25 26.9a1.9 1.9 0 0 1 3.8 0v4.2a1.9 1.9 0 0 1 -3.8 0ZM35.95 26.9a1.9 1.9 0 0 1 3.8 0v4.2a1.9 1.9 0 0 1 -3.8 0Z"/></g>';
 
-function teamAvatarUrl(memberNames: string[]): string {
-  const joined = memberNames.map(encodeURIComponent).join(",");
-  return apiUrl(`/ugsci/avatar/team/${joined}`);
+function RoleAvatar({
+  markup,
+  label,
+  size,
+  borderRadius,
+}: {
+  markup: string;
+  label: string;
+  size: number;
+  borderRadius: string | number;
+}) {
+  const React = getHost().React;
+  const id = React.useId().replace(/:/g, "");
+  return React.createElement("svg", {
+    viewBox: "0 0 64 64",
+    fill: "currentColor",
+    role: "img",
+    "aria-label": label,
+    width: size,
+    height: size,
+    style: { borderRadius, flexShrink: 0 },
+    dangerouslySetInnerHTML: {
+      __html: markup.replace(/safe-expert/g, "ugsci-expert-" + id),
+    },
+  });
 }
 
 export function ExpertAvatar({
   name,
   size = 32,
   borderRadius = "50%",
+  recipe,
+  description = "",
 }: {
   name: string;
   size?: number;
   borderRadius?: string | number;
+  recipe?: ExpertAvatarRecipe | null;
+  description?: string;
 }) {
   const React = getHost().React;
-  const [retry, setRetry] = React.useState(0);
-  const source =
-    retry === 0
-      ? expertAvatarUrl(name)
-      : `${expertAvatarUrl(name)}?_r=${retry}`;
-
-  return React.createElement("img", {
-    src: source,
-    alt: name,
-    onError: () => {
-      if (retry < 1) setRetry(retry + 1);
-    },
+  const id = React.useId();
+  const selected = React.useMemo(
+    () => recipe || matchExpertAvatar(name, description),
+    [recipe, name, description],
+  );
+  return React.createElement("span", {
+    className: "ugsci-generated-avatar",
+    "data-avatar-domain": selected.domain,
+    "data-avatar-role": selected.role,
     style: {
+      display: "inline-flex",
       width: size,
       height: size,
       borderRadius,
-      objectFit: "cover",
       flexShrink: 0,
+    },
+    dangerouslySetInnerHTML: {
+      __html: renderExpertAvatar(selected, name, size, id),
     },
   });
 }
@@ -50,33 +81,10 @@ export function TeamAvatar({
   size?: number;
   borderRadius?: string | number;
 }) {
-  const React = getHost().React;
-  const [retry, setRetry] = React.useState(0);
-  if (!members || members.length === 0) {
-    return React.createElement("span", {
-      style: {
-        width: size,
-        height: size,
-        display: "inline-block",
-      },
-    });
-  }
-
-  const names = members.slice(0, 5);
-  const source =
-    retry === 0 ? teamAvatarUrl(names) : `${teamAvatarUrl(names)}?_r=${retry}`;
-  return React.createElement("img", {
-    src: source,
-    alt: "team",
-    onError: () => {
-      if (retry < 1) setRetry(retry + 1);
-    },
-    style: {
-      width: size,
-      height: size,
-      borderRadius,
-      objectFit: "cover",
-      flexShrink: 0,
-    },
+  return getHost().React.createElement(RoleAvatar, {
+    markup: TEAM_SVG,
+    label: members.join(", ") || "team",
+    size,
+    borderRadius,
   });
 }

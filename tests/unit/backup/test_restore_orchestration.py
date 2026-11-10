@@ -116,7 +116,6 @@ def test_restore_preflight_failure_does_not_stop_agents(
                 stop_browsers_fn=fake_stop_browsers,
             ),
         )
-
     assert not stopped
 
 

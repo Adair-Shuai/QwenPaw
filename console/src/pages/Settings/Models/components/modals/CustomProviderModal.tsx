@@ -1,3 +1,4 @@
+import { UGSCI_BUTTON_LOADING } from "@/components/UgsciMotion";
 import { useEffect, useState } from "react";
 import { Button, Form, Input, Modal, Select } from "@agentscope-ai/design";
 import api from "../../../../../api";
@@ -68,7 +69,11 @@ export function CustomProviderModal({
           <Button disabled={saving} onClick={onClose}>
             {t("models.cancel")}
           </Button>
-          <Button type="primary" loading={saving} onClick={handleSave}>
+          <Button
+            type="primary"
+            loading={saving ? UGSCI_BUTTON_LOADING : false}
+            onClick={handleSave}
+          >
             {t("models.save")}
           </Button>
         </div>

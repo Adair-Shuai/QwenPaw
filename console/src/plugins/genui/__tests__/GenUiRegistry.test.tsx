@@ -16,37 +16,64 @@ import { GenUiInteractionProvider } from "@genui-src/components/GenUiInteraction
 import { resetActionBus } from "@genui-src/lib/genUiActionBus";
 import type { GenUiNode } from "@genui-src/types/genUi";
 
+type ChildrenProps = { children?: React.ReactNode };
+type TableStubProps = {
+  dataSource?: Array<Record<string, React.ReactNode> & { key: React.Key }>;
+  columns?: Array<{
+    key?: React.Key;
+    title?: React.ReactNode;
+    dataIndex: string;
+  }>;
+};
+type SelectStubProps = ChildrenProps & {
+  value?: string | number | readonly string[];
+  onChange?: (value: string) => void;
+};
+interface FixtureNamespace {
+  host: {
+    React: typeof React;
+    antd: Record<string, unknown> & { Divider: React.FC<ChildrenProps> };
+  };
+  chat?: { sendMessage: (text: string) => boolean };
+  genui?: { config: { allow_actions: string[] } };
+}
+// This fixture intentionally provides just the host surfaces used by GenUI.
+const fixtureWindow = window as unknown as { QwenPaw: FixtureNamespace };
+
 // Set up window.QwenPaw.host with React and minimal antd stubs
 beforeEach(() => {
   resetActionBus();
-  (window as any).QwenPaw = {
+  fixtureWindow.QwenPaw = {
     host: {
       React,
       antd: {
-        Card: ({ children, title }: any) =>
+        Card: ({
+          children,
+          title,
+        }: ChildrenProps & { title?: React.ReactNode }) =>
           React.createElement(
             "div",
             { className: "antd-card" },
             title ? React.createElement("div", null, title) : null,
             children,
           ),
-        Divider: ({ children }: any) =>
+        Divider: ({ children }: ChildrenProps) =>
           React.createElement("hr", null, children),
-        Badge: ({ count }: any) =>
+        Badge: ({ count }: { count?: React.ReactNode }) =>
           React.createElement("span", { className: "antd-badge" }, count),
-        Tag: ({ children, color }: any) =>
+        Tag: ({ children, color }: ChildrenProps & { color?: string }) =>
           React.createElement(
             "span",
             { className: `antd-tag ${color}` },
             children,
           ),
-        Progress: ({ percent }: any) =>
+        Progress: ({ percent }: { percent?: number }) =>
           React.createElement(
             "div",
             { className: "antd-progress" },
             `${percent}%`,
           ),
-        Table: ({ dataSource, columns }: any) =>
+        Table: ({ dataSource, columns }: TableStubProps) =>
           React.createElement(
             "table",
             { className: "antd-table" },
@@ -56,7 +83,7 @@ beforeEach(() => {
               React.createElement(
                 "tr",
                 null,
-                columns?.map((c: any) =>
+                columns?.map((c) =>
                   React.createElement("th", { key: c.key }, c.title),
                 ),
               ),
@@ -64,47 +91,59 @@ beforeEach(() => {
             React.createElement(
               "tbody",
               null,
-              dataSource?.map((row: any) =>
+              dataSource?.map((row) =>
                 React.createElement(
                   "tr",
                   { key: row.key },
-                  columns?.map((c: any) =>
+                  columns?.map((c) =>
                     React.createElement("td", { key: c.key }, row[c.dataIndex]),
                   ),
                 ),
               ),
             ),
           ),
-        List: ({ children }: any) =>
+        List: ({ children }: ChildrenProps) =>
           React.createElement("ul", { className: "antd-list" }, children),
-        Typography: ({ children }: any) =>
+        Typography: ({ children }: ChildrenProps) =>
           React.createElement(
             "div",
             { className: "antd-typography" },
             children,
           ),
-        Alert: ({ message, description }: any) =>
+        Alert: ({
+          message,
+          description,
+        }: {
+          message?: React.ReactNode;
+          description?: React.ReactNode;
+        }) =>
           React.createElement(
             "div",
             { className: "antd-alert" },
             message,
             description,
           ),
-        Button: ({ children, onClick }: any) =>
+        Button: ({
+          children,
+          onClick,
+        }: ChildrenProps & {
+          onClick?: React.MouseEventHandler<HTMLButtonElement>;
+        }) =>
           React.createElement(
             "button",
             { onClick, className: "antd-button" },
             children,
           ),
-        Input: (props: any) =>
+        Input: (props: React.InputHTMLAttributes<HTMLInputElement>) =>
           React.createElement("input", { ...props, className: "antd-input" }),
-        Select: ({ children, onChange, value }: any) =>
+        Select: ({ children, onChange, value }: SelectStubProps) =>
           React.createElement(
             "select",
             {
               className: "antd-select",
               value,
-              onChange: (event: any) => onChange?.(event.target.value),
+              onChange: (event: React.ChangeEvent<HTMLSelectElement>) =>
+                onChange?.(event.target.value),
             },
             children,
           ),
@@ -131,7 +170,7 @@ describe("GenUiTreeView — Interaction", () => {
 
   it("submits current named form values through the host chat sender", () => {
     const sendMessage = vi.fn(() => true);
-    (window as any).QwenPaw.chat = { sendMessage };
+    fixtureWindow.QwenPaw.chat = { sendMessage };
     const node: GenUiNode = {
       nodeId: "form1",
       kind: "Form",
@@ -174,7 +213,7 @@ describe("GenUiTreeView — Interaction", () => {
 
   it("blocks a required form submission and shows feedback", () => {
     const sendMessage = vi.fn(() => true);
-    (window as any).QwenPaw.chat = { sendMessage };
+    fixtureWindow.QwenPaw.chat = { sendMessage };
     const node: GenUiNode = {
       nodeId: "form1",
       kind: "Form",
@@ -196,7 +235,7 @@ describe("GenUiTreeView — Interaction", () => {
 
   it("uses a field label as a readable legacy form key", () => {
     const sendMessage = vi.fn(() => true);
-    (window as any).QwenPaw.chat = { sendMessage };
+    fixtureWindow.QwenPaw.chat = { sendMessage };
     const node: GenUiNode = {
       nodeId: "form1",
       kind: "Form",
@@ -400,7 +439,7 @@ describe("GenUiTreeView — Interaction", () => {
   it("opens a LinkButton href when open_url is allowed", () => {
     const open = vi.fn();
     window.open = open;
-    (window as any).QwenPaw.genui = {
+    fixtureWindow.QwenPaw.genui = {
       config: { allow_actions: ["open_url"] },
     };
     const node: GenUiNode = {
@@ -420,14 +459,14 @@ describe("GenUiTreeView — Interaction", () => {
 });
 
 afterEach(() => {
-  delete (window as any).QwenPaw;
+  Reflect.deleteProperty(fixtureWindow, "QwenPaw");
 });
 
 describe("GenUiTreeView — Unknown Nodes", () => {
   it("renders unknown kind without crashing", () => {
     const node: GenUiNode = {
       nodeId: "n1",
-      kind: "NonExistentKind" as any,
+      kind: "NonExistentKind",
       props: { foo: "bar" },
       children: [],
     };
@@ -440,7 +479,7 @@ describe("GenUiTreeView — Unknown Nodes", () => {
   it("renders unknown kind with dashed border style", () => {
     const node: GenUiNode = {
       nodeId: "n1",
-      kind: "FakeComponent" as any,
+      kind: "FakeComponent",
       props: {},
       children: [],
     };
@@ -453,7 +492,7 @@ describe("GenUiTreeView — Unknown Nodes", () => {
   it("does not render raw HTML for unknown kind", () => {
     const node: GenUiNode = {
       nodeId: "n1",
-      kind: "<script>alert(1)</script>" as any,
+      kind: "<script>alert(1)</script>",
       props: {},
       children: [],
     };
@@ -741,7 +780,7 @@ describe("GenUiTreeView — Edge Cases", () => {
     const node: GenUiNode = {
       nodeId: "n1",
       kind: "Text",
-      props: { value: null as any, size: undefined as any },
+      props: { value: null, size: undefined },
       children: [],
     };
     const { container } = render(React.createElement(GenUiTreeView, { node }));
@@ -754,7 +793,7 @@ describe("GenUiTreeView — Edge Cases", () => {
       kind: "Stack",
       props: {},
       children: [
-        { nodeId: "n2", kind: "FakeKind" as any, props: {}, children: [] },
+        { nodeId: "n2", kind: "FakeKind", props: {}, children: [] },
         { nodeId: "n3", kind: "Text", props: { value: "OK" }, children: [] },
       ],
     };
@@ -764,7 +803,7 @@ describe("GenUiTreeView — Edge Cases", () => {
   });
 
   it("returns null when host React is not available", () => {
-    delete (window as any).QwenPaw;
+    Reflect.deleteProperty(fixtureWindow, "QwenPaw");
     const node: GenUiNode = {
       nodeId: "n1",
       kind: "Stack",
@@ -925,7 +964,7 @@ describe("GenUiTreeView — Edge Cases", () => {
 
   it("catches a throwing descendant at the tree root only", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    (window as any).QwenPaw.host.antd.Divider = () => {
+    fixtureWindow.QwenPaw.host.antd.Divider = () => {
       throw new Error("divider boom");
     };
     const node: GenUiNode = {
@@ -957,7 +996,7 @@ describe("GenUiTreeView — Edge Cases", () => {
 
   it("does not wrap Form children in nested error boundaries", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    (window as any).QwenPaw.host.antd.Divider = () => {
+    fixtureWindow.QwenPaw.host.antd.Divider = () => {
       throw new Error("form divider boom");
     };
     const node: GenUiNode = {
@@ -991,7 +1030,7 @@ describe("GenUiTreeView — Edge Cases", () => {
 
   it("clears the tree-root error when the node is replaced", () => {
     const spy = vi.spyOn(console, "error").mockImplementation(() => {});
-    (window as any).QwenPaw.host.antd.Divider = () => {
+    fixtureWindow.QwenPaw.host.antd.Divider = () => {
       throw new Error("divider boom");
     };
     const boom: GenUiNode = {
@@ -1004,7 +1043,7 @@ describe("GenUiTreeView — Edge Cases", () => {
       React.createElement(GenUiTreeView, { node: boom }),
     );
     expect(container.textContent).toContain("Component error: Stack");
-    (window as any).QwenPaw.host.antd.Divider = ({ children }: any) =>
+    fixtureWindow.QwenPaw.host.antd.Divider = ({ children }: ChildrenProps) =>
       React.createElement("hr", null, children);
     const ok: GenUiNode = {
       nodeId: "root",
