@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   mkdirSync,
   mkdtempSync,
+  readFileSync,
   rmSync,
   symlinkSync,
   writeFileSync,
@@ -10,6 +11,30 @@ import { tmpdir } from "node:os";
 import { delimiter, dirname, join } from "node:path";
 import { mock, test } from "node:test";
 import { assertSupportedNode, prepareUgsciUi } from "./prepare-ugsci-ui.mjs";
+
+test("shipped UGSci lockfiles use registry packages accepted by npm 12", () => {
+  for (const directory of [
+    "plugins/bundle/ugsci/ui",
+    "src/qwenpaw/plugins_bundle/ugsci/ui",
+  ]) {
+    const lock = JSON.parse(
+      readFileSync(
+        new URL(`../../${directory}/package-lock.json`, import.meta.url),
+        "utf8",
+      ),
+    );
+    for (const [name, entry] of Object.entries(lock.packages)) {
+      if (entry.resolved) {
+        assert.equal(
+          new URL(entry.resolved).origin,
+          "https://registry.npmjs.org",
+          name,
+        );
+        assert.ok(entry.integrity, `${name} must retain its integrity digest`);
+      }
+    }
+  }
+});
 
 function fixture(t, installedNpm = "10.9.9") {
   const temporary = mkdtempSync(join(tmpdir(), "ugsci-prepare-"));
