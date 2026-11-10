@@ -1,0 +1,135 @@
+{
+  "executed_at": "2026-11-10T21:51:12.5236245+08:00",
+  "pushed_commit": "45b2ddd9ff6fa94e25a61e182d1b518eb75ac4e9",
+  "remote_verified_before_deletion": "45b2ddd9ff6fa94e25a61e182d1b518eb75ac4e9",
+  "before_free_bytes": 31074041856,
+  "after_free_bytes": 52163817472,
+  "results": [
+    {
+      "path": "console/src-tauri/target",
+      "family": "desktop-build",
+      "bytes": 16813435538,
+      "files": 273920,
+      "removed": true,
+      "seconds": 306.2164882
+    },
+    {
+      "path": "console/src-tauri/binaries",
+      "family": "desktop-build",
+      "bytes": 3364483406,
+      "files": 102767,
+      "removed": true,
+      "seconds": 99.1829619
+    },
+    {
+      "path": "build",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": "dist",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": "console/dist",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": "console/dist-tauri",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": "website/dist",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": ".mypy_cache",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": ".ruff_cache",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": "tmp/ci-node22",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": ".codex-tmp/document-forms/ci-env",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": ".codex-tmp/release-beta4-windows-bm25-42145710955/desktop-lock-env",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": ".codex-tmp/release-beta4-windows-bm25-42145710955/installed-backend",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": ".codex-tmp/release-beta4-windows-bm25-42145710955/exact-runtime",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": ".codex-tmp/ugsci-size-bvix35t6/candidate",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": ".codex-tmp/ugsci-size-bvix35t6/candidate-full.zip",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": ".codex-tmp/ugsci-size-bvix35t6/candidate-delta-estimate.zip",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": ".codex-tmp/ugsci-size-8gstqytb/candidate",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": ".codex-tmp/ugsci-size-8gstqytb/candidate-full.zip",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": ".codex-tmp/ugsci-size-8gstqytb/candidate-delta-estimate.zip",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": ".codex-tmp/current-component/artifacts",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": ".codex-tmp/prev-component/artifacts",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": "deliverables/release-beta3/postpublish-cache/desktop",
+      "removed": false,
+      "reason": "调用已取消 "
+    },
+    {
+      "path": "deliverables/release-beta3/postpublish-cache/cdn/artifacts",
+      "removed": false,
+      "reason": "调用已取消 "
+    }
+  ]
+}

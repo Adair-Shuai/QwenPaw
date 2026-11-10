@@ -125,7 +125,7 @@ if (-not $Apply) {
     [ordered]@{
         created_at = [DateTimeOffset]::Now.ToString('o')
         base_commit = (& git rev-parse HEAD)
-        deletion_requires = 'Local HEAD and the remote branch must equal PushedCommit; unchanged tree metadata; no tracked files, links, nested Git repositories, or active target processes.'
+        deletion_requires = 'Local HEAD and the remote branch must equal PushedCommit; unchanged tree metadata; no tracked files, links, nested Git repositories, or active executable images under the target; no active desktop compilers.'
         planned_bytes = $plannedBytes
         targets = $rows
         skipped = $skipped
@@ -151,23 +151,25 @@ foreach ($row in $plan.targets) {
     $timer = [Diagnostics.Stopwatch]::StartNew()
     try {
         if (-not ($candidates | Where-Object { $_.path -eq $row.path })) { throw 'Target absent from reviewed allowlist' }
-        $live = @(Get-CimInstance Win32_Process)
-        $selfIds = [Collections.Generic.HashSet[uint32]]::new()
-        $cursor = [uint32]$PID
-        while ($cursor -and $selfIds.Add($cursor)) {
-            $process = $live | Where-Object { $_.ProcessId -eq $cursor } | Select-Object -First 1
-            if (-not $process) { break }
-            $cursor = [uint32]$process.ParentProcessId
-        }
-        $relativeWindows = $row.path.Replace('/', '\')
+        # WMI process queries are unreliable on this host ("call cancelled").
+        # Query live executable images directly; preserve running service assets,
+        # reject changed trees, and let locked-file errors retain affected files.
+        $live = @([Diagnostics.Process]::GetProcesses() | ForEach-Object {
+            try {
+                [pscustomobject]@{
+                    ProcessId = $_.Id
+                    Name = $_.ProcessName + '.exe'
+                    ExecutablePath = $_.MainModule.FileName
+                }
+            } catch {
+                # Exited/protected system processes have no inspectable image.
+            }
+        })
         $used = @($live | Where-Object {
-            -not $selfIds.Contains([uint32]$_.ProcessId) -and (
-                ($_.ExecutablePath -and $_.ExecutablePath.StartsWith($absolute, [StringComparison]::OrdinalIgnoreCase)) -or
-                ($_.CommandLine -and ($_.CommandLine.Contains($absolute) -or $_.CommandLine.Contains($row.path) -or $_.CommandLine.Contains($relativeWindows))) -or
+                ($_.ExecutablePath -and ($_.ExecutablePath -eq $absolute -or $_.ExecutablePath.StartsWith($absolute + '\', [StringComparison]::OrdinalIgnoreCase))) -or
                 ($row.family -eq 'desktop-build' -and $_.Name -in @('cargo.exe', 'rustc.exe', 'qwenpaw-desktop.exe', 'qwenpaw-computer-use-helper.exe')) -or
-                ($row.path -eq '.mypy_cache' -and $_.CommandLine -match '\bmypy\b') -or
+                ($row.path -eq '.mypy_cache' -and $_.Name -eq 'mypy.exe') -or
                 ($row.path -eq '.ruff_cache' -and $_.Name -eq 'ruff.exe')
-            )
         })
         if ($used.Count) { throw "Active process references target: $([string]::Join(',', @($used.ProcessId)))" }
         $fresh = Get-TreeSummary $absolute

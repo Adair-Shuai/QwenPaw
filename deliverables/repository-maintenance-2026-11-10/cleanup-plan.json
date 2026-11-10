@@ -1,25 +1,9 @@
 {
-  "created_at": "2026-11-10T21:40:26.6910197+08:00",
-  "base_commit": "5e9213d036a5208e9ef842db3e0bceecef233d9f",
-  "deletion_requires": "Local HEAD and the remote branch must equal PushedCommit; unchanged tree metadata; no tracked files, links, nested Git repositories, or active target processes.",
-  "planned_bytes": 32338754078,
+  "created_at": "2026-11-10T21:55:07.8843793+08:00",
+  "base_commit": "45b2ddd9ff6fa94e25a61e182d1b518eb75ac4e9",
+  "deletion_requires": "Local HEAD and the remote branch must equal PushedCommit; unchanged tree metadata; no tracked files, links, nested Git repositories, or active executable images under the target; no active desktop compilers.",
+  "planned_bytes": 12160835134,
   "targets": [
-    {
-      "path": "console/src-tauri/target",
-      "reason": "Local Rust compilation and desktop package outputs",
-      "family": "desktop-build",
-      "bytes": 16813435538,
-      "files": 273920,
-      "metadata_sha256": "97d5f225505c0b1b76804f10ef31b6cf6bd6eaae412ef9c2e4bfa47b904a0359"
-    },
-    {
-      "path": "console/src-tauri/binaries",
-      "reason": "Generated desktop packaging runtimes and staging",
-      "family": "desktop-build",
-      "bytes": 3364483406,
-      "files": 102767,
-      "metadata_sha256": "fc8384bdc4b1ce8bf0bc00fc1106ff52d4c8f1fb036da4b31b1358de47e9bd03"
-    },
     {
       "path": "build",
       "reason": "Generated Python wheel/sdist staging",
