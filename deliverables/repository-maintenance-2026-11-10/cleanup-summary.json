@@ -1,0 +1,34 @@
+{
+  "completed_at": "2026-11-10T22:11:47+0800",
+  "source_checkpoint_commit": "5e9213d036a5208e9ef842db3e0bceecef233d9f",
+  "pushed_commits_before_deletions": [
+    "45b2ddd9ff6fa94e25a61e182d1b518eb75ac4e9",
+    "124aefda3b1fcc92777ce5dae1e39787d8e62b62",
+    "345e218355c0bbc2e161a28537fc9c355fa10d6e"
+  ],
+  "original_targets": 24,
+  "fully_removed_targets": 22,
+  "original_target_bytes": 32338754078,
+  "removed_logical_bytes": 32256677758,
+  "removed_files": 458720,
+  "retained_bytes": 82076320,
+  "retained_files": 49,
+  "retained": [
+    {
+      "path": ".codex-tmp/document-forms/ci-env",
+      "bytes": 27214416,
+      "files": 13,
+      "reason": "Permission denied; retained without changing ACLs"
+    },
+    {
+      "path": ".codex-tmp/release-beta4-windows-bm25-42145710955/desktop-lock-env",
+      "bytes": 54861904,
+      "files": 36,
+      "reason": "Permission denied; retained without changing ACLs"
+    }
+  ],
+  "before_free_bytes": 31074041856,
+  "after_free_bytes": 62866710528,
+  "free_space_delta_bytes": 31792668672,
+  "note": "Free-space delta also includes filesystem metadata and concurrent tasks; exact cleanup logical bytes are reported separately."
+}

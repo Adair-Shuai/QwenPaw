@@ -1,0 +1,88 @@
+{
+  "measured_at": "2026-11-10T22:12:31+0800",
+  "scope": "Logical bytes of regular files; reparse points and inaccessible trees excluded; concurrent development may change totals.",
+  "before_bytes": 53786263894,
+  "before_files": 984242,
+  "after_bytes": 21421458428,
+  "after_files": 519013,
+  "after_top_level": [
+    {
+      "path": ".codex-tmp",
+      "bytes": 6560966572,
+      "files": 57871
+    },
+    {
+      "path": "deliverables",
+      "bytes": 3925510544,
+      "files": 35861
+    },
+    {
+      "path": "console",
+      "bytes": 2866703157,
+      "files": 184374
+    },
+    {
+      "path": "plugins",
+      "bytes": 2077338388,
+      "files": 99222
+    },
+    {
+      "path": ".venv",
+      "bytes": 2065154212,
+      "files": 79705
+    },
+    {
+      "path": ".scratch",
+      "bytes": 1224743447,
+      "files": 7309
+    },
+    {
+      "path": ".git",
+      "bytes": 907497118,
+      "files": 1527
+    },
+    {
+      "path": "COMSOL_Multiphysics_MCP",
+      "bytes": 689009943,
+      "files": 213
+    },
+    {
+      "path": "website",
+      "bytes": 427512432,
+      "files": 34128
+    },
+    {
+      "path": "src",
+      "bytes": 275044621,
+      "files": 13226
+    },
+    {
+      "path": "scripts",
+      "bytes": 268468738,
+      "files": 360
+    },
+    {
+      "path": "tests",
+      "bytes": 116654304,
+      "files": 4607
+    },
+    {
+      "path": "e2e",
+      "bytes": 6503823,
+      "files": 328
+    },
+    {
+      "path": "tmp",
+      "bytes": 3943257,
+      "files": 12
+    },
+    {
+      "path": "uv.lock",
+      "bytes": 910838,
+      "files": 1
+    }
+  ],
+  "after_reparse_points_skipped": 6373,
+  "after_inaccessible_entries": 15,
+  "scan_seconds": 43.66
+}

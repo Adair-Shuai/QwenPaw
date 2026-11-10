@@ -1,179 +1,25 @@
 {
-  "executed_at": "2026-11-10T21:58:00.6779071+08:00",
-  "pushed_commit": "124aefda3b1fcc92777ce5dae1e39787d8e62b62",
-  "remote_verified_before_deletion": "124aefda3b1fcc92777ce5dae1e39787d8e62b62",
-  "before_free_bytes": 52158242816,
-  "after_free_bytes": 62978342912,
+  "executed_at": "2026-11-10T22:07:26.1245730+08:00",
+  "pushed_commit": "345e218355c0bbc2e161a28537fc9c355fa10d6e",
+  "remote_verified_before_deletion": "345e218355c0bbc2e161a28537fc9c355fa10d6e",
+  "before_free_bytes": 62779203584,
+  "after_free_bytes": 62866710528,
   "results": [
-    {
-      "path": "build",
-      "family": "python-build",
-      "bytes": 653917190,
-      "files": 3241,
-      "removed": true,
-      "seconds": 3.9971469
-    },
-    {
-      "path": "dist",
-      "family": "package-output",
-      "bytes": 76726422,
-      "files": 18,
-      "removed": true,
-      "seconds": 0.4859482
-    },
-    {
-      "path": "console/dist",
-      "family": "frontend-build",
-      "bytes": 60296430,
-      "files": 2169,
-      "removed": true,
-      "seconds": 1.6621143
-    },
-    {
-      "path": "console/dist-tauri",
-      "family": "frontend-build",
-      "bytes": 3606693,
-      "files": 37,
-      "removed": true,
-      "seconds": 1.2095976
-    },
-    {
-      "path": "website/dist",
-      "family": "frontend-build",
-      "bytes": 50523270,
-      "files": 796,
-      "removed": true,
-      "seconds": 0.9393196
-    },
-    {
-      "path": ".mypy_cache",
-      "family": "tool-cache",
-      "bytes": 271470120,
-      "files": 12703,
-      "removed": true,
-      "seconds": 11.2708381
-    },
-    {
-      "path": ".ruff_cache",
-      "family": "tool-cache",
-      "bytes": 185466,
-      "files": 231,
-      "removed": true,
-      "seconds": 0.7943978
-    },
-    {
-      "path": "tmp/ci-node22",
-      "family": "test-environment",
-      "bytes": 185905130,
-      "files": 2074,
-      "removed": true,
-      "seconds": 4.7386978
-    },
     {
       "path": ".codex-tmp/document-forms/ci-env",
       "removed": false,
-      "reason": "Access to the path 'C:\\Users\\shuai\\Documents\\QwenPaw\\.codex-tmp\\document-forms\\ci-env\\Lib\\site-packages\\crcmod\\_crcfunext.cp311-win_amd64.pyd' is denied."
+      "reason": "Some files could not be removed; retained without changing permissions (26 errors)",
+      "remaining_bytes": 27214416,
+      "remaining_files": 13,
+      "bytes_removed": 189219578
     },
     {
       "path": ".codex-tmp/release-beta4-windows-bm25-42145710955/desktop-lock-env",
       "removed": false,
-      "reason": "Access to the path 'C:\\Users\\shuai\\Documents\\QwenPaw\\.codex-tmp\\release-beta4-windows-bm25-42145710955\\desktop-lock-env\\Lib\\site-packages\\aiohttp\\_websocket\\mask.cp311-win_amd64.pyd' is denied."
-    },
-    {
-      "path": ".codex-tmp/release-beta4-windows-bm25-42145710955/installed-backend",
-      "family": "test-environment",
-      "bytes": 158386074,
-      "files": 5729,
-      "removed": true,
-      "seconds": 6.7156607
-    },
-    {
-      "path": ".codex-tmp/release-beta4-windows-bm25-42145710955/exact-runtime",
-      "family": "test-environment",
-      "bytes": 154318147,
-      "files": 4061,
-      "removed": true,
-      "seconds": 5.31045
-    },
-    {
-      "path": ".codex-tmp/ugsci-size-bvix35t6/candidate",
-      "family": "package-output",
-      "bytes": 547463780,
-      "files": 693,
-      "removed": true,
-      "seconds": 3.0792906
-    },
-    {
-      "path": ".codex-tmp/ugsci-size-bvix35t6/candidate-full.zip",
-      "family": "package-output",
-      "bytes": 132641884,
-      "files": 1,
-      "removed": true,
-      "seconds": 1.4195619
-    },
-    {
-      "path": ".codex-tmp/ugsci-size-bvix35t6/candidate-delta-estimate.zip",
-      "family": "package-output",
-      "bytes": 6351738,
-      "files": 1,
-      "removed": true,
-      "seconds": 0.4681395
-    },
-    {
-      "path": ".codex-tmp/ugsci-size-8gstqytb/candidate",
-      "family": "package-output",
-      "bytes": 548675308,
-      "files": 693,
-      "removed": true,
-      "seconds": 1.3507321
-    },
-    {
-      "path": ".codex-tmp/ugsci-size-8gstqytb/candidate-full.zip",
-      "family": "package-output",
-      "bytes": 132650632,
-      "files": 1,
-      "removed": true,
-      "seconds": 0.4769342
-    },
-    {
-      "path": ".codex-tmp/ugsci-size-8gstqytb/candidate-delta-estimate.zip",
-      "family": "package-output",
-      "bytes": 215776,
-      "files": 1,
-      "removed": true,
-      "seconds": 0.5842608
-    },
-    {
-      "path": ".codex-tmp/current-component/artifacts",
-      "family": "package-output",
-      "bytes": 906195837,
-      "files": 58,
-      "removed": true,
-      "seconds": 1.4316979
-    },
-    {
-      "path": ".codex-tmp/prev-component/artifacts",
-      "family": "package-output",
-      "bytes": 887564173,
-      "files": 70,
-      "removed": true,
-      "seconds": 1.5815141
-    },
-    {
-      "path": "deliverables/release-beta3/postpublish-cache/desktop",
-      "family": "package-output",
-      "bytes": 3816781099,
-      "files": 6,
-      "removed": true,
-      "seconds": 1.5957052
-    },
-    {
-      "path": "deliverables/release-beta3/postpublish-cache/cdn/artifacts",
-      "family": "package-output",
-      "bytes": 2361967488,
-      "files": 87,
-      "removed": true,
-      "seconds": 1.5807327
+      "reason": "Some files could not be removed; retained without changing permissions (69 errors)",
+      "remaining_bytes": 54861904,
+      "remaining_files": 36,
+      "bytes_removed": 890592412
     }
   ]
 }

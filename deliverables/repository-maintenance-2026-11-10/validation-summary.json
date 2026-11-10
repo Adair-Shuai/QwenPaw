@@ -1,0 +1,38 @@
+{
+  "recorded_at": "2026-11-10T22:15:14+0800",
+  "typecheck_before_exit": 0,
+  "typecheck_after_exit": 0,
+  "backend_focused": {
+    "passed": 97,
+    "includes": [
+      "plugins/apps/document-forms/tests",
+      "tests/unit/plugins/ugsci/test_derivation_workbench_frontend.py"
+    ]
+  },
+  "backend_inventory_suites": 194,
+  "update_inventory_suites": 46,
+  "frontend_inventory_selftests_passed": 13,
+  "frontend_full": {
+    "suites_passed": 177,
+    "suites_failed": 2,
+    "tests_passed": 2735,
+    "tests_failed": 2,
+    "duration_seconds": 2438.65,
+    "log": ".codex-tmp/repository-maintenance-20261110/frontend.log"
+  },
+  "frontend_two_suites_rerun": {
+    "passed": 27,
+    "failed": 2,
+    "duration_seconds": 69.37,
+    "log": "console/.codex-tmp/cleanup-frontend-rerun.log"
+  },
+  "unresolved_frontend_cases": [
+    "visualizationEmbedding.test.tsx: previews ordinary delivered CSV through the native table with the real visualization bundle installed",
+    "openHtmlFile.test.ts: reserves a browser window before loading relative HTML resources"
+  ],
+  "limitations": [
+    "Concurrent source edits during frontend execution; not a frozen-source final acceptance run",
+    "Full backend and full update regressions were not run by this cleanup task",
+    "No local packaging or installer end-to-end verification was performed"
+  ]
+}
