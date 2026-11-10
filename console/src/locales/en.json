@@ -122,7 +122,10 @@
     "resize": "Resize terminal",
     "reconnect": "Reconnect",
     "exited": "Process exited",
-    "inputTooLarge": "Input is too large; reconnect to continue."
+    "inputTooLarge": "Input is too large; reconnect to continue.",
+    "inBottomPanel": "The terminal is open in the bottom panel.",
+    "moveToWorkspace": "Move to workspace",
+    "closeView": "Close terminal view"
   },
   "common": {
     "save": "Save",
@@ -293,7 +296,7 @@
     "aboutApp": "About App",
     "exitApp": "Exit App",
     "moreOptions": "More Options",
-    "backToListHint": "Back to app list (ESC)",
+    "backToListHint": "Close app and return (ESC)",
     "version": "Version",
     "id": "ID",
     "category": "Category",
@@ -3343,7 +3346,8 @@
       "agents": "Agent processes",
       "genui": "GenUI",
       "compute": "Compute track",
-      "simulation": "Simulation monitoring"
+      "simulation": "Simulation monitoring",
+      "terminal": "Terminal"
     },
     "activityShort": {
       "files": "Files",
@@ -3352,7 +3356,8 @@
       "agents": "Agents",
       "genui": "GenUI",
       "compute": "Compute",
-      "simulation": "Simulate"
+      "simulation": "Simulate",
+      "terminal": "Terminal"
     },
     "tabs": {
       "workspace": "Workspace",

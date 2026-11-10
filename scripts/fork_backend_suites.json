@@ -228,7 +228,14 @@
       "tests/unit/runtime/test_tool_discovery_accuracy.py",
       "tests/unit/drivers/handlers/test_mcp_catalog_refresh.py"
     ],
-    "contextInspection": ["tests/unit/app/chats/test_context_inspection.py"]
+    "contextInspection": ["tests/unit/app/chats/test_context_inspection.py"],
+    "workspaceTerminals": [
+      "tests/unit/routers/test_terminal_router.py",
+      "tests/unit/services/test_terminal.py",
+      "tests/unit/services/test_terminal_windows.py",
+      "tests/unit/services/test_terminal_windows_control.py",
+      "tests/unit/services/test_terminal_availability.py"
+    ]
   },
   "required_cases": {
     "tests/unit/runtime/test_tool_discovery_accuracy.py": [
@@ -304,13 +311,13 @@
       "test_debug_cancellation_uses_normal_lifecycle_and_leaves_no_active_runner",
       "test_debug_review_resume_after_restart_keeps_execution_limit",
       "test_old_records_do_not_invent_resolved_inputs"
-],
+    ],
     "tests/unit/plugins/flowforge/test_model_generation_contract.py": [
       "test_zero_temperature_is_preserved_and_metadata_uses_resolved_model",
       "test_legacy_omitted_and_null_generation_settings_use_defaults",
       "test_invalid_generation_settings_fail_before_provider_call",
       "test_adapter_override_and_agent_inheritance_are_reflected_in_node_metadata"
-],
+    ],
     "tests/unit/plugins/flowforge/test_checkpoint_storage.py": [
       "test_configured_storage_failure_does_not_fall_back_to_memory",
       "test_disk_full_preserves_previous_checkpoint_and_logs_cause",
@@ -1178,6 +1185,30 @@
       "test_real_agent_stream_final_reply_and_saved_session",
       "test_update_replaces_worker_and_preserves_data",
       "test_channel_preflight_rechecks_metadata_read_during_probe"
+    ],
+    "tests/unit/routers/test_terminal_router.py": [
+      "test_creation_resolves_directory_and_scopes_agent",
+      "test_terminal_auth_gate_covers_every_operation",
+      "test_rejects_cross_site_shell_creation",
+      "test_unknown_or_foreign_terminal_is_404",
+      "test_router_lifespan_stops_owned_processes"
+    ],
+    "tests/unit/services/test_terminal.py": [
+      "test_replay_is_bounded_and_cursor_detects_loss",
+      "test_limits_and_owner_isolation",
+      "test_append_tolerates_event_loop_shutdown_race"
+    ],
+    "tests/unit/services/test_terminal_windows.py": [
+      "test_worker_protocol_and_eof",
+      "test_output_decoder_handles_split_utf8_and_incomplete_eof",
+      "test_close_reclaims_only_owned_worker_tree"
+    ],
+    "tests/unit/services/test_terminal_windows_control.py": [
+      "test_control_c_uses_owned_pty_and_preserves_text_order",
+      "test_failed_interrupt_does_not_write_following_command"
+    ],
+    "tests/unit/services/test_terminal_availability.py": [
+      "test_app_starts_without_winpty"
     ]
   }
 }

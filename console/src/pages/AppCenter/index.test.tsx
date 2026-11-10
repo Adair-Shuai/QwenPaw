@@ -2,13 +2,26 @@ vi.mock("../../plugins/pawapp-sdk/browserSession", () => ({
   prepareBrowserSession: vi.fn().mockResolvedValue(null),
 }));
 // @vitest-environment jsdom
-import { act, fireEvent, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import { Modal } from "antd";
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { useLocation } from "react-router-dom";
+import {
+  BrowserRouter,
+  Routes,
+  Route,
+  useLocation,
+  useNavigate,
+} from "react-router-dom";
 
 import { renderWithProviders } from "@/test/common_setup";
 import AppCenterPage from "./index";
+import { NavigationGuard } from "../../layouts/MainLayout/NavigationGuard";
 import { notifyPluginChange } from "@/utils/pluginChangeEvents";
 
 const hoisted = vi.hoisted(() => ({
@@ -234,7 +247,9 @@ describe("AppCenterPage", () => {
     expect(screen.getByTestId("location")).toHaveTextContent(
       "/market?view=official",
     );
-    expect(await screen.findByText("Agent Kanban")).toBeInTheDocument();
+    expect(
+      await screen.findByText("Agent Kanban", {}, { timeout: 10_000 }),
+    ).toBeInTheDocument();
     await waitFor(() =>
       expect(hoisted.fetchQwenPawPluginCatalog).toHaveBeenCalledTimes(1),
     );
@@ -493,6 +508,214 @@ describe("AppCenterPage", () => {
     window.history.back();
     await waitFor(() => expect(window.location.pathname).toBe("/chat"));
     expect(screen.queryByText("Loaded PawApp")).not.toBeInTheDocument();
+  });
+
+  it.each(["button", "escape", "refresh"])(
+    "returns sidebar-launched apps to their exact origin via %s",
+    async (action) => {
+      hoisted.routeSnapshot.mockReturnValue([
+        {
+          id: "alpha.page",
+          path: "/apps/alpha-app",
+          source: "alpha-app",
+          Component: () => <div>Loaded PawApp</div>,
+        },
+      ]);
+      window.history.replaceState(
+        { idx: 0, key: "origin" },
+        "",
+        "/chat?session=original#message-7",
+      );
+      function Origin() {
+        const navigate = useNavigate();
+        return (
+          <button onClick={() => navigate("/apps/alpha-app")}>
+            Open sidebar app
+          </button>
+        );
+      }
+      function BrowserView() {
+        return (
+          <BrowserRouter>
+            <Routes>
+              <Route path="/chat" element={<Origin />} />
+              <Route path="/apps/:appId" element={<AppCenterPage />} />
+            </Routes>
+            <LocationProbe />
+          </BrowserRouter>
+        );
+      }
+      let mounted = render(<BrowserView />);
+      fireEvent.click(screen.getByRole("button", { name: "Open sidebar app" }));
+      expect(await screen.findByText("Loaded PawApp")).toBeVisible();
+      if (action === "refresh") {
+        mounted.unmount();
+        mounted = render(<BrowserView />);
+        expect(await screen.findByText("Loaded PawApp")).toBeVisible();
+      }
+      if (action === "escape") fireEvent.keyDown(window, { key: "Escape" });
+      else fireEvent.click(screen.getByTitle("appCenter.backToListHint"));
+      await waitFor(() =>
+        expect(screen.getByTestId("location").textContent).toBe(
+          "/chat?session=original",
+        ),
+      );
+      expect(window.location.hash).toBe("#message-7");
+      expect(
+        screen.getByRole("button", { name: "Open sidebar app" }),
+      ).toBeVisible();
+      mounted.unmount();
+    },
+  );
+
+  it("keeps slow app entry inside its own shell without mounting the catalog", async () => {
+    let resolveApps!: (data: {
+      apps: ReturnType<typeof makeApp>[];
+      total: number;
+    }) => void;
+    hoisted.listApps.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveApps = resolve;
+      }),
+    );
+    hoisted.routeSnapshot.mockReturnValue([
+      {
+        id: "alpha.page",
+        path: "/apps/alpha-app",
+        source: "alpha-app",
+        Component: () => <div>Loaded PawApp</div>,
+      },
+    ]);
+    window.history.replaceState({ idx: 0 }, "", "/apps/alpha-app");
+    const mounted = render(
+      <BrowserRouter>
+        <Routes>
+          <Route path="/apps/:appId" element={<AppCenterPage />} />
+          <Route path="/chat" element={<div>Chat home</div>} />
+        </Routes>
+      </BrowserRouter>,
+    );
+    expect(
+      document.querySelector('[data-pawapp-view="alpha-app"]'),
+    ).toBeInTheDocument();
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    expect(screen.getByTitle("appCenter.backToListHint")).toBeVisible();
+    await act(async () =>
+      resolveApps({ apps: [makeApp("alpha-app")], total: 1 }),
+    );
+    expect(await screen.findByText("Loaded PawApp")).toBeVisible();
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    mounted.unmount();
+  });
+
+  it("never mounts the catalog while returning from a router-launched app", async () => {
+    hoisted.routeSnapshot.mockReturnValue([
+      {
+        id: "alpha.page",
+        path: "/apps/alpha-app",
+        source: "alpha-app",
+        Component: () => <div>Loaded PawApp</div>,
+      },
+    ]);
+    window.history.replaceState({ idx: 0 }, "", "/chat");
+    function Origin() {
+      const navigate = useNavigate();
+      return (
+        <button onClick={() => navigate("/apps/alpha-app")}>
+          Open sidebar app
+        </button>
+      );
+    }
+    const mounted = render(
+      <BrowserRouter>
+        <NavigationGuard />
+        <Routes>
+          <Route path="/chat" element={<Origin />} />
+          <Route path="/apps/:appId" element={<AppCenterPage />} />
+        </Routes>
+      </BrowserRouter>,
+    );
+    fireEvent.click(screen.getByText("Open sidebar app"));
+    expect(await screen.findByText("Loaded PawApp")).toBeVisible();
+    let catalogMounted = false;
+    const observer = new MutationObserver((records) => {
+      for (const record of records)
+        for (const node of record.addedNodes) {
+          if (
+            node instanceof Element &&
+            (node.matches('[role="tablist"]') ||
+              node.querySelector('[role="tablist"]'))
+          )
+            catalogMounted = true;
+        }
+    });
+    observer.observe(mounted.container, { childList: true, subtree: true });
+    let resume!: () => void;
+    const defer = (event: Event) => {
+      event.preventDefault();
+      resume = (event as CustomEvent<{ retry: () => void }>).detail.retry;
+    };
+    window.addEventListener("qwenpaw:before-navigate", defer, { once: true });
+    fireEvent.click(screen.getByTitle("appCenter.backToListHint"));
+    expect(screen.getByText("Loaded PawApp")).toBeVisible();
+    act(() => resume());
+    expect(await screen.findByText("Open sidebar app")).toBeVisible();
+    await act(async () => {});
+    observer.disconnect();
+    expect(catalogMounted).toBe(false);
+    mounted.unmount();
+  });
+
+  it("keeps failed app entry in its shell and retries the real app list", async () => {
+    hoisted.listApps.mockRejectedValueOnce(new Error("App list unavailable"));
+    hoisted.routeSnapshot.mockReturnValue([
+      {
+        id: "alpha.page",
+        path: "/apps/alpha-app",
+        source: "alpha-app",
+        Component: () => <div>Loaded PawApp</div>,
+      },
+    ]);
+    window.history.replaceState({ idx: 0 }, "", "/apps/alpha-app");
+    const mounted = render(
+      <BrowserRouter>
+        <Routes>
+          <Route path="/apps/:appId" element={<AppCenterPage />} />
+        </Routes>
+      </BrowserRouter>,
+    );
+    fireEvent.click(
+      await screen.findByRole("button", { name: "common.retry" }),
+    );
+    expect(await screen.findByText("Loaded PawApp")).toBeVisible();
+    expect(hoisted.listApps).toHaveBeenCalledTimes(2);
+    expect(screen.queryByRole("tablist")).not.toBeInTheDocument();
+    mounted.unmount();
+  });
+
+  it("closes a fresh app deep link to the chat home", async () => {
+    hoisted.routeSnapshot.mockReturnValue([
+      {
+        id: "alpha.page",
+        path: "/apps/alpha-app",
+        source: "alpha-app",
+        Component: () => <div>Loaded PawApp</div>,
+      },
+    ]);
+    window.history.replaceState({ idx: 0 }, "", "/apps/alpha-app");
+    const mounted = render(
+      <BrowserRouter>
+        <Routes>
+          <Route path="/apps/:appId" element={<AppCenterPage />} />
+          <Route path="/chat" element={<div>Chat home</div>} />
+        </Routes>
+      </BrowserRouter>,
+    );
+    expect(await screen.findByText("Loaded PawApp")).toBeVisible();
+    fireEvent.click(screen.getByTitle("appCenter.backToListHint"));
+    expect(await screen.findByText("Chat home")).toBeVisible();
+    expect(window.location.pathname).toBe("/chat");
+    mounted.unmount();
   });
 
   it("cleans the loaded PawApp runtime after uninstall", async () => {

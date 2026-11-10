@@ -7,7 +7,13 @@ import { WorkbenchIcon, WorkbenchTitle } from "./WorkbenchExtensions";
 import { ContentDescription, ContentIcon } from "./WorkbenchTabBar";
 import styles from "./WorkbenchTabs.module.less";
 
-const TOOLS: WorkbenchMode[] = ["files", "browser", "interactions", "agents"];
+const TOOLS: WorkbenchMode[] = [
+  "files",
+  "browser",
+  "terminal",
+  "interactions",
+  "agents",
+];
 const COMMON_VIEWS: WorkbenchMode[] = ["genui", "compute", "simulation"];
 
 export default function WorkbenchStartPage({

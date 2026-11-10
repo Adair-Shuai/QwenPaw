@@ -173,3 +173,73 @@
     padding-inline: 4px;
   }
 }
+
+// The workspace presentation follows the shared control geometry.
+.workspace {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  background: var(--app-surface);
+  color: var(--app-text);
+
+  .toolbar {
+    height: 40px;
+    flex-basis: 40px;
+    padding: 0 10px;
+    border-bottom: 1px solid var(--app-border);
+  }
+
+  .dock button,
+  .empty button {
+    border-radius: var(--app-radius);
+    font-size: var(--app-font-caption);
+    min-height: var(--app-icon-button);
+  }
+
+  .toolbar > button {
+    width: var(--app-icon-button);
+    height: var(--app-icon-button);
+  }
+
+  .tab {
+    height: max(32px, var(--app-icon-button));
+    border-radius: var(--app-radius);
+  }
+
+  .empty {
+    flex-direction: column;
+    gap: 10px;
+    padding: 24px;
+    text-align: center;
+    font-size: var(--app-font-caption);
+  }
+
+  .empty p {
+    margin: 0;
+  }
+
+  .empty button {
+    border: 1px solid var(--app-border);
+    padding: 6px 12px;
+    color: var(--app-text);
+    background: var(--app-surface);
+    cursor: pointer;
+  }
+}
+
+.workspace button:focus-visible {
+  outline: 2px solid var(--app-focus-ring);
+  outline-offset: -2px;
+}
+@media (pointer: coarse) {
+  .workspace .toolbar {
+    height: 48px;
+    flex-basis: 48px;
+  }
+  .workspace .dock button,
+  .workspace .empty button {
+    min-height: 44px;
+    min-width: 44px;
+  }
+}

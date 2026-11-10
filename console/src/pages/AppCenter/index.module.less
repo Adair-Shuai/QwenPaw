@@ -553,10 +553,10 @@
   }
 }
 
-// ── Embedded PawApp runtime (unchanged design) ──────────────────────────────
+// ── Embedded PawApp runtime ──────────────────────────────
 
 .embedPage {
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   right: 0;
@@ -565,7 +565,6 @@
   display: flex;
   flex-direction: column;
   background: var(--app-surface);
-  animation: slideIn 0.3s cubic-bezier(0.4, 0, 0.2, 1);
 
   // Safe area CSS variables for PawApp developers
   // Minimal safe area - floating capsule button overlays content like WeChat mini-programs
@@ -582,17 +581,6 @@
   }
 }
 
-@keyframes slideIn {
-  from {
-    opacity: 0;
-    transform: translateY(20px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-
 @keyframes pulse {
   0%,
   100% {
@@ -605,7 +593,7 @@
 
 // WeChat mini-program style capsule button
 .floatingCapsule {
-  position: fixed;
+  position: absolute;
   top: 24px;
   right: 24px;
   z-index: 1001;

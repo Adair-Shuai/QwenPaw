@@ -1,4 +1,4 @@
-import { UgsciMotion } from "../../components/UgsciMotion";
+import { UgsciLoading, UgsciMotion } from "../../components/UgsciMotion";
 /**
  * AppCenter/index.tsx — App Center page: grid of installed PawApps.
  *
@@ -17,7 +17,7 @@ import {
   useState,
 } from "react";
 import { useTranslation } from "react-i18next";
-import { useParams, useSearchParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { Empty, Input, Select, Modal, Button, Dropdown, Tabs } from "antd";
 import type { MenuProps } from "antd";
 import {
@@ -88,6 +88,7 @@ function featuredRank(id: string): number {
 export default function AppCenterPage() {
   const { t, i18n } = useTranslation();
   const { appId } = useParams();
+  const navigate = useNavigate();
   const { message } = useAppMessage();
   const routes = useRoutes();
   const selectedAgent = useAgentStore((state) => state.selectedAgent);
@@ -96,7 +97,11 @@ export default function AppCenterPage() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
-  const [activeApp, setActiveApp] = useState<AppCardData | null>(null);
+  const [inlineApp, setInlineApp] = useState<AppCardData | null>(null);
+  // Router entries select their app during render, including the first frame.
+  const selectedApp = appId ? apps.find((app) => app.id === appId) : inlineApp;
+  const activeApp = selectedApp && canOpenApp(selectedApp) ? selectedApp : null;
+  const embeddedAppId = appId || activeApp?.id;
   const [loadError, setLoadError] = useState(false);
   const [publisherOpen, setPublisherOpen] = useState(false);
   const appsRequestId = useRef(0);
@@ -195,15 +200,6 @@ export default function AppCenterPage() {
     };
   }, [fetchApps]);
 
-  // Deep-link / refresh support: when the URL carries an app id (e.g. a hard
-  // reload at /apps/<id>), open that app inline once the list has loaded so
-  // the App Center wrapper (with its back bar) stays in place.
-  useEffect(() => {
-    if (!appId) return;
-    const found = apps.find((a) => a.id === appId);
-    setActiveApp(found && canOpenApp(found) ? found : null);
-  }, [appId, apps]);
-
   useEffect(() => {
     setActivePawAppId(activeApp?.id ?? null);
     return () => setActivePawAppId(null);
@@ -211,7 +207,7 @@ export default function AppCenterPage() {
 
   // A refresh can disable or fail an app that is currently open.
   useEffect(() => {
-    setActiveApp((current) => {
+    setInlineApp((current) => {
       if (!current) return null;
       const latest = apps.find((app) => app.id === current.id);
       return latest && canOpenApp(latest) ? latest : null;
@@ -284,7 +280,7 @@ export default function AppCenterPage() {
         addRouterBasename(window.location.pathname, target),
       );
     }
-    setActiveApp(latest);
+    setInlineApp(latest);
   };
 
   const handleBack = () => {
@@ -298,19 +294,24 @@ export default function AppCenterPage() {
         "",
         getOsRootHref(window.location.pathname),
       );
-      setActiveApp(null);
+      setInlineApp(null);
       return;
     }
     if (window.history.state?.pawappInline === true) {
       window.history.back();
       return;
     }
-    window.history.pushState(
-      {},
-      "",
-      addRouterBasename(window.location.pathname, "/market"),
-    );
-    setActiveApp(null);
+    // Sidebar and other router links already pushed the originating location.
+    if (
+      typeof window.history.state?.idx === "number" &&
+      window.history.state.idx > 0
+    ) {
+      navigate(-1);
+      return;
+    }
+    // A fresh deep link has no in-app history to return to.
+    navigate("/chat", { replace: true });
+    setInlineApp(null);
   };
 
   const handleUninstall = (app: AppCardData) => {
@@ -346,23 +347,25 @@ export default function AppCenterPage() {
   // Keep the inline view in sync with browser back/forward.
   useEffect(() => {
     const onPop = (event: PopStateEvent) => {
-      const appId = isOsPath(window.location.pathname)
+      // Router-owned app pages leave atomically with their parent route.
+      if (appId) return;
+      const inlineAppId = isOsPath(window.location.pathname)
         ? getOsPawAppIdFromHistoryState(event.state)
         : getPawAppIdFromPath(window.location.pathname);
-      if (!appId) {
-        setActiveApp(null);
+      if (!inlineAppId) {
+        setInlineApp(null);
         return;
       }
-      const found = apps.find((app) => app.id === appId);
-      setActiveApp(found && canOpenApp(found) ? found : null);
+      const found = apps.find((app) => app.id === inlineAppId);
+      setInlineApp(found && canOpenApp(found) ? found : null);
     };
     window.addEventListener("popstate", onPop);
     return () => window.removeEventListener("popstate", onPop);
-  }, [apps]);
+  }, [apps, appId]);
 
-  // ESC key to close app and return to list
+  // Escape follows the same return path as the close button.
   useEffect(() => {
-    if (!activeApp) return;
+    if (!embeddedAppId) return;
     const handleEsc = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         handleBack();
@@ -370,10 +373,10 @@ export default function AppCenterPage() {
     };
     window.addEventListener("keydown", handleEsc);
     return () => window.removeEventListener("keydown", handleEsc);
-  }, [activeApp]);
+  }, [embeddedAppId]);
 
   // ── Embedded app view ─────────────────────────────────────────────────────
-  if (activeApp) {
+  if (embeddedAppId) {
     const AppComponent = activeRoute?.Component;
     // App menu items
     const appMenuItems: MenuProps["items"] = [
@@ -381,7 +384,9 @@ export default function AppCenterPage() {
         key: "about",
         icon: <Info size={14} />,
         label: t("appCenter.aboutApp", "关于应用"),
+        disabled: !activeApp,
         onClick: () => {
+          if (!activeApp) return;
           Modal.info({
             title: activeApp.name,
             width: 500,
@@ -423,7 +428,7 @@ export default function AppCenterPage() {
     ];
 
     return (
-      <div className={styles.embedPage}>
+      <div className={styles.embedPage} data-pawapp-view={embeddedAppId}>
         {/* Floating capsule button - WeChat mini-program style */}
         <div className={styles.floatingCapsule}>
           <Dropdown
@@ -446,29 +451,43 @@ export default function AppCenterPage() {
           <button
             className={styles.capsuleBtn}
             onClick={handleBack}
-            title={t("appCenter.backToListHint", "返回应用列表 (ESC)")}
+            title={t("appCenter.backToListHint", "关闭应用并返回 (ESC)")}
           >
             <CircleX className={styles.capsuleCloseIcon} size={20} />
           </button>
         </div>
 
         <div className={styles.embedFrame}>
-          <PawAppAccessGate appId={activeApp.id} loadEntry>
-            {AppComponent ? (
-              <ChunkErrorBoundary resetKey={activeApp.id}>
-                <AppComponent />
-              </ChunkErrorBoundary>
-            ) : (
-              <Empty
-                image={<AppWindow size={48} strokeWidth={1} />}
-                description={t(
-                  "appCenter.appNotLoaded",
-                  "This app is not loaded yet.",
-                )}
-                style={{ marginTop: 48 }}
-              />
-            )}
-          </PawAppAccessGate>
+          {activeApp ? (
+            <PawAppAccessGate appId={activeApp.id} loadEntry>
+              {AppComponent ? (
+                <ChunkErrorBoundary resetKey={activeApp.id}>
+                  <AppComponent />
+                </ChunkErrorBoundary>
+              ) : (
+                <Empty
+                  image={<AppWindow size={48} strokeWidth={1} />}
+                  description={t(
+                    "appCenter.appNotLoaded",
+                    "This app is not loaded yet.",
+                  )}
+                  style={{ marginTop: 48 }}
+                />
+              )}
+            </PawAppAccessGate>
+          ) : loading ? (
+            <UgsciLoading variant="page" label={t("common.loading")} />
+          ) : (
+            <Empty
+              description={t(
+                loadError ? "appCenter.loadFailed" : "appCenter.appNotLoaded",
+              )}
+            >
+              <Button onClick={() => void fetchApps()}>
+                {t("common.retry")}
+              </Button>
+            </Empty>
+          )}
         </div>
       </div>
     );

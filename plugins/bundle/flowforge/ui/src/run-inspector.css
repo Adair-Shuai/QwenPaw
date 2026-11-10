@@ -199,7 +199,9 @@
   overflow: auto;
 }
 .ff-run-dock {
-  max-height: 45vh;
+  position: relative;
+  box-sizing: border-box;
+  max-height: min(700px, 75%);
   flex-shrink: 0;
   min-width: 0;
   display: flex;
@@ -220,8 +222,33 @@
   min-width: 120px;
   overflow-wrap: anywhere;
 }
-.ff-run-dock-header input[type="range"] {
-  width: 90px;
+.ff-run-dock-resize {
+  position: absolute;
+  z-index: 2;
+  inset: -5px 0 auto;
+  height: 10px;
+  cursor: row-resize;
+  touch-action: none;
+  user-select: none;
+}
+.ff-run-dock-resize::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  left: calc(50% - 18px);
+  width: 36px;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--ant-color-border, #bfbfbf);
+}
+.ff-run-dock-resize:hover::after,
+.ff-run-dock-resize:active::after,
+.ff-run-dock-resize:focus-visible::after {
+  background: var(--ant-color-primary, #1677ff);
+}
+.ff-run-dock-resize:focus-visible {
+  outline: 2px solid var(--ant-color-primary, #1677ff);
+  outline-offset: -2px;
 }
 .ff-run-dock-body {
   overflow: auto;
@@ -268,14 +295,15 @@
   .ff-compare-summary {
     grid-template-columns: minmax(0, 1fr);
   }
-  .ff-run-dock-header input[type="range"] {
-    display: none;
-  }
 }
 
-@media (max-width: 1000px) {
-  .ff-run-dock {
-    max-height: 35vh;
+@media (pointer: coarse) {
+  .ff-run-dock-resize {
+    top: -10px;
+    height: 20px;
+  }
+  .ff-run-dock-resize::after {
+    top: 9px;
   }
 }
 

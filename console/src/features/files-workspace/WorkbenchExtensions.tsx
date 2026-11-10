@@ -1,4 +1,6 @@
 import {
+  lazy,
+  Suspense,
   useEffect,
   useLayoutEffect,
   useState,
@@ -13,6 +15,7 @@ import {
   Globe2,
   Network,
   ListChecks,
+  SquareTerminal,
   type LucideIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -37,6 +40,21 @@ import type { BrowserSession } from "./workbenchTabsStore";
 import type { InteractionRequest } from "../user-input/types";
 import { InteractionPanel } from "../user-input/InteractionPanel";
 
+const TerminalWorkbenchPanel = lazy(
+  () => import("../terminal/TerminalWorkbenchPanel"),
+);
+
+function WorkbenchTerminalPanel(context: WorkbenchPanelContext) {
+  const { t } = useTranslation();
+  return (
+    <Suspense
+      fallback={<div className={styles.empty}>{t("common.loading")}</div>}
+    >
+      <TerminalWorkbenchPanel {...context} />
+    </Suspense>
+  );
+}
+
 /** Extensions receive the native session scope; they do not own file tabs. */
 export interface WorkbenchPanelContext {
   browserStartContent?: ReactNode;
@@ -51,6 +69,7 @@ export interface WorkbenchPanelContext {
   browserFile?: WorkbenchBrowserFile;
   active: boolean;
   onOpenFiles: () => void;
+  onClose?: () => void;
   onClearTarget: () => void;
 }
 
@@ -77,6 +96,13 @@ const panels: readonly WorkbenchPanelDefinition[] = [
     label: "浏览器",
     icon: Globe2,
     component: WorkbenchBrowserPanel,
+    retainWhenHidden: true,
+  },
+  {
+    id: "terminal",
+    label: "终端",
+    icon: SquareTerminal,
+    component: WorkbenchTerminalPanel,
     retainWhenHidden: true,
   },
   {
@@ -109,6 +135,7 @@ const shortLabels: Record<WorkbenchMode, string> = {
   files: "文件",
   interactions: "交互",
   browser: "浏览器",
+  terminal: "终端",
   agents: "智能体",
   genui: "GenUI",
   compute: "计算",
@@ -255,7 +282,7 @@ export function WorkbenchContentPanel({
   ...context
 }: WorkbenchPanelContext & { mode: Exclude<WorkbenchMode, "files"> }) {
   const panel = panels.find((item) => item.id === mode);
-  if (!panel || (!context.active && mode !== "browser")) return null;
+  if (!panel || (!context.active && !panel.retainWhenHidden)) return null;
   const Panel = panel.component;
   return (
     <SlotErrorBoundary slot={`chat.workbench.${mode}`} pluginId="workbench">

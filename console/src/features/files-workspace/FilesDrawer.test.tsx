@@ -174,12 +174,13 @@ describe("FilesDrawer", () => {
       "files",
       "interactions",
       "browser",
+      "terminal",
       "agents",
       "genui",
       "compute",
       "simulation",
     ];
-    expect(within(rail).getAllByRole("button")).toHaveLength(7);
+    expect(within(rail).getAllByRole("button")).toHaveLength(8);
     for (const activity of activities) {
       const name = i18n.t(`workbench.activity.${activity}`);
       const button = within(rail).getByRole("button", { name });

@@ -122,7 +122,10 @@
     "resize": "调整终端高度",
     "reconnect": "重新连接",
     "exited": "进程已退出",
-    "inputTooLarge": "输入内容过大，请重新连接后继续。"
+    "inputTooLarge": "输入内容过大，请重新连接后继续。",
+    "inBottomPanel": "终端已在底部面板打开。",
+    "moveToWorkspace": "移至工作区",
+    "closeView": "关闭终端视图"
   },
   "common": {
     "save": "保存",
@@ -293,7 +296,7 @@
     "aboutApp": "关于应用",
     "exitApp": "退出应用",
     "moreOptions": "更多选项",
-    "backToListHint": "返回应用列表 (ESC)",
+    "backToListHint": "关闭应用并返回 (ESC)",
     "version": "版本",
     "id": "ID",
     "category": "分类",
@@ -3201,7 +3204,8 @@
       "agents": "智能体进程",
       "genui": "GenUI",
       "compute": "计算轨道",
-      "simulation": "数模监测"
+      "simulation": "数模监测",
+      "terminal": "终端"
     },
     "activityShort": {
       "files": "文件",
@@ -3210,7 +3214,8 @@
       "agents": "智能体",
       "genui": "GenUI",
       "compute": "计算",
-      "simulation": "数模"
+      "simulation": "数模",
+      "terminal": "终端"
     },
     "tabs": {
       "workspace": "工作区",

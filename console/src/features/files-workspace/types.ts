@@ -38,6 +38,7 @@ export interface FileTarget {
 export type WorkbenchMode =
   | "files"
   | "browser"
+  | "terminal"
   | "agents"
   | "genui"
   | "compute"

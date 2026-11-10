@@ -207,12 +207,13 @@ export default function Sidebar({
     settingsActive ||
     [
       "flowforge.editor",
+      "ugsci.visualization",
       "core.files",
       "core.app-center",
       "core.app-center.embed",
       "core.marketplace",
     ].includes(selectedKey) ||
-    /^\/(?:flowforge\/?|files\/?|market\/?|apps(?:\/.*)?)$/i.test(
+    /^\/(?:flowforge\/?|oilgas-visualization\/?|files\/?|market\/?|apps(?:\/.*)?)$/i.test(
       location.pathname,
     );
   // Full-width pages temporarily use the rail, retaining the chat preference.

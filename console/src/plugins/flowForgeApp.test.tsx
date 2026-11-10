@@ -73,10 +73,21 @@ let App: React.ComponentType;
 let language = "zh",
   agentId = "expert-a";
 let fetchMock: ReturnType<typeof vi.fn>;
+class WorkflowPointerEvent extends MouseEvent {
+  readonly pointerId: number;
+  readonly pointerType: string;
+  constructor(type: string, options: PointerEventInit = {}) {
+    super(type, options);
+    this.pointerId = options.pointerId ?? 1;
+    this.pointerType = options.pointerType ?? "mouse";
+  }
+}
 beforeEach(() => {
   localStorage.clear();
   language = "zh";
   agentId = "expert-a";
+  vi.stubGlobal("PointerEvent", WorkflowPointerEvent);
+  vi.stubGlobal("innerHeight", 1000);
   window.history.replaceState({ idx: 3 }, "", "/flowforge");
   (window as any).QwenPaw = {
     host: {
@@ -160,7 +171,166 @@ const renderApp = () =>
     ),
   });
 
+async function renderDock() {
+  window.history.replaceState(
+    { idx: 3 },
+    "",
+    "/flowforge?flow=app-flow&run=run-deep",
+  );
+  const view = renderApp();
+  const panel = await screen.findByRole("region", { name: "工作流调试栏" });
+  await within(panel).findByRole("region", { name: "节点详情 中英文节点" });
+  return { view, panel };
+}
+
+function resizeHandle(name = "调整调试栏高度") {
+  const handle = screen.getByRole("separator", { name });
+  let captured = false;
+  Object.assign(handle, {
+    setPointerCapture: vi.fn(() => {
+      captured = true;
+    }),
+    hasPointerCapture: vi.fn(() => captured),
+    releasePointerCapture: vi.fn(() => {
+      captured = false;
+    }),
+  });
+  return handle;
+}
+
 describe("FlowForge real application entry", () => {
+  it("resizes the mounted debug dock with mouse and touch while preserving bilingual run content", async () => {
+    const { view, panel } = await renderDock();
+    const handle = resizeHandle();
+    expect(within(panel).queryByRole("slider")).toBeNull();
+    expect(handle).toHaveAttribute("aria-orientation", "horizontal");
+    expect(panel).toHaveStyle({ height: "340px" });
+    fireEvent.pointerDown(handle, { button: 2, pointerId: 1, clientY: 600 });
+    expect(handle.setPointerCapture).not.toHaveBeenCalled();
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientY: 600 });
+    expect(handle.setPointerCapture).toHaveBeenCalledWith(1);
+    fireEvent.pointerMove(handle, { pointerId: 2, clientY: 200 });
+    expect(panel).toHaveStyle({ height: "340px" });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 500 });
+    expect(panel).toHaveStyle({ height: "440px" });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientY: 520 });
+    expect(panel).toHaveStyle({ height: "420px" });
+    expect(handle.releasePointerCapture).toHaveBeenCalledWith(1);
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: 100 });
+    expect(panel).toHaveStyle({ height: "420px" });
+    language = "en";
+    view.rerender(<App />);
+    expect(screen.getByRole("separator", { name: "Resize debug panel" })).toBe(
+      handle,
+    );
+    fireEvent.pointerDown(handle, {
+      button: 0,
+      pointerId: 3,
+      pointerType: "touch",
+      clientY: 500,
+    });
+    fireEvent.pointerMove(handle, {
+      pointerId: 3,
+      pointerType: "touch",
+      clientY: 600,
+    });
+    fireEvent.pointerUp(handle, {
+      pointerId: 3,
+      pointerType: "touch",
+      clientY: 600,
+    });
+    expect(panel).toHaveStyle({ height: "320px" });
+    expect(handle).toHaveAttribute("aria-valuenow", "320");
+    expect(
+      within(panel).getByRole("region", { name: "Node details 中英文节点" }),
+    ).toBeVisible();
+    expect(
+      within(panel).getByRole("button", { name: "Collapse debug panel" }),
+    ).toBeVisible();
+    expect(
+      within(panel).getByRole("button", { name: "Close debug panel" }),
+    ).toBeVisible();
+    expect(within(panel).queryByRole("slider")).toBeNull();
+    expect(
+      fetchMock.mock.calls.some(([, options]) => options?.method === "POST"),
+    ).toBe(false);
+  });
+
+  it("clamps dragged and keyboard dock heights to the real available workspace", async () => {
+    const { panel } = await renderDock();
+    const handle = resizeHandle();
+    fireEvent.pointerDown(handle, { button: 0, pointerId: 1, clientY: 600 });
+    fireEvent.pointerMove(handle, { pointerId: 1, clientY: -1000 });
+    expect(panel).toHaveStyle({ height: "700px" });
+    fireEvent.pointerUp(handle, { pointerId: 1, clientY: 2000 });
+    expect(panel).toHaveStyle({ height: "180px" });
+    fireEvent.keyDown(handle, { key: "ArrowUp" });
+    expect(handle).toHaveAttribute("aria-valuenow", "200");
+    fireEvent.keyDown(handle, { key: "ArrowDown" });
+    expect(handle).toHaveAttribute("aria-valuenow", "180");
+    fireEvent.keyDown(handle, { key: "End" });
+    expect(panel).toHaveStyle({ height: "700px" });
+    fireEvent.keyDown(handle, { key: "Home" });
+    expect(panel).toHaveStyle({ height: "180px" });
+    fireEvent.keyDown(handle, { key: "End" });
+    const shell = panel.parentElement!;
+    const geometry = vi.spyOn(shell, "getBoundingClientRect");
+    geometry.mockReturnValue({ height: 400 } as DOMRect);
+    act(() => window.dispatchEvent(new Event("resize")));
+    expect(panel).toHaveStyle({ height: "300px" });
+    expect(handle).toHaveAttribute("aria-valuemax", "300");
+    const observers = vi.mocked(ResizeObserver);
+    const index = observers.mock.results.findIndex(
+      (result) =>
+        result.type === "return" &&
+        vi
+          .mocked(result.value.observe)
+          .mock.calls.some(([target]) => target === shell),
+    );
+    expect(index).toBeGreaterThanOrEqual(0);
+    geometry.mockReturnValue({ height: 160 } as DOMRect);
+    act(() =>
+      observers.mock.calls[index][0]([], observers.mock.results[index].value),
+    );
+    expect(panel).toHaveStyle({ height: "120px" });
+    expect(handle).toHaveAttribute("aria-valuemin", "120");
+    expect(handle).toHaveAttribute("aria-valuemax", "120");
+    geometry.mockRestore();
+  });
+
+  it("releases dock resize capture on cancellation blur collapse close and unmount", async () => {
+    const { view, panel } = await renderDock();
+    let handle = resizeHandle();
+    const begin = (id: number) =>
+      fireEvent.pointerDown(handle, { button: 0, pointerId: id, clientY: 600 });
+    begin(1);
+    fireEvent.pointerCancel(handle, { pointerId: 2 });
+    expect(handle.releasePointerCapture).not.toHaveBeenCalled();
+    fireEvent.pointerCancel(handle, { pointerId: 1 });
+    expect(handle.releasePointerCapture).toHaveBeenCalledWith(1);
+    begin(2);
+    act(() => window.dispatchEvent(new Event("blur")));
+    expect(handle.releasePointerCapture).toHaveBeenCalledWith(2);
+    begin(3);
+    fireEvent.click(within(panel).getByRole("button", { name: "收起调试栏" }));
+    expect(handle.releasePointerCapture).toHaveBeenCalledWith(3);
+    expect(
+      screen.queryByRole("separator", { name: "调整调试栏高度" }),
+    ).toBeNull();
+    fireEvent.click(within(panel).getByRole("button", { name: "展开调试栏" }));
+    handle = resizeHandle();
+    begin(4);
+    fireEvent.click(within(panel).getByRole("button", { name: "关闭调试栏" }));
+    expect(handle.releasePointerCapture).toHaveBeenCalledWith(4);
+    expect(screen.queryByRole("region", { name: "工作流调试栏" })).toBeNull();
+    view.unmount();
+    const reopened = await renderDock();
+    handle = resizeHandle();
+    begin(5);
+    reopened.view.unmount();
+    expect(handle.releasePointerCapture).toHaveBeenCalledWith(5);
+  });
+
   it("opens the actual editor from the workflow list and preserves router history state", async () => {
     renderApp();
     expect(

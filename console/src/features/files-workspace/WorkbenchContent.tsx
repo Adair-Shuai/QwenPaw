@@ -22,6 +22,7 @@ import {
   selectTasksForSession,
   useBackgroundTasksStore,
 } from "../../stores/backgroundTasksStore";
+import { useTerminalSurfaceStore } from "../../stores/terminalSurfaceStore";
 import BackgroundTaskPanel from "../../pages/Chat/components/BackgroundTaskPanel";
 import { listenForProjectDirectoryChanges } from "../project-directory/projectDirectoryChangeEvent";
 import { isProjectRoot } from "./directorySources";
@@ -62,6 +63,7 @@ function ToolTab({
   scope,
   runtimeSessionId,
   onOpenFiles,
+  onClose,
   onRequestsChange,
   browserStartContent,
 }: {
@@ -70,6 +72,7 @@ function ToolTab({
   scope: Extract<FilesWorkspaceScope, { kind: "session" }>;
   runtimeSessionId?: string;
   onOpenFiles: () => void;
+  onClose: () => void;
   onRequestsChange: (requests: InteractionRequest[]) => void;
   browserStartContent: ReactNode;
 }) {
@@ -117,6 +120,7 @@ function ToolTab({
       onRequestsChange={onRequestsChange}
       onClearTarget={clearTarget}
       onOpenFiles={onOpenFiles}
+      onClose={onClose}
     />
   );
 }
@@ -216,6 +220,8 @@ export default function WorkbenchContent({
 
   const select = useCallback(
     (tab: WorkbenchTab) => {
+      if (tab.kind === "terminal")
+        useTerminalSurfaceStore.getState().setSessionOpen(scopeKey, false);
       useWorkbenchTabsStore.getState().select(scopeKey, tab.id);
       setBrowsing(false);
       if (tab.kind === "files" && tab.filePath)
@@ -247,6 +253,8 @@ export default function WorkbenchContent({
       fresh = false,
       details: Partial<WorkbenchTab> = {},
     ) => {
+      if (kind === "terminal")
+        useTerminalSurfaceStore.getState().setSessionOpen(scopeKey, false);
       if (kind === "files") {
         openFiles();
         return;
@@ -734,6 +742,7 @@ export default function WorkbenchContent({
                   scope={scope}
                   runtimeSessionId={runtimeSessionId}
                   onOpenFiles={openFiles}
+                  onClose={() => requestClose([tab])}
                   browserStartContent={startContent}
                   onRequestsChange={setRequests}
                 />

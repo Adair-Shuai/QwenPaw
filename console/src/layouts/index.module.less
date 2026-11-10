@@ -32,6 +32,11 @@
   overflow: hidden;
 }
 
+// Bound an open application to the content region beside the navigation.
+.mainContentLayout:has([data-pawapp-view]) {
+  position: relative;
+}
+
 @supports (height: 100dvh) {
   @media (max-width: 768px) {
     .mainLayout {

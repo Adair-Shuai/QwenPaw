@@ -40,6 +40,16 @@ if (!existsSync(teamArtifactsSuite))
 // Keep this inventory separate from Vitest discovery: deleting a feature's
 // tests during a merge must fail verification instead of silently reducing it.
 const suites = {
+  workspaceTerminals: [
+    "src/features/terminal/TerminalDock.test.tsx",
+    "src/features/terminal/TerminalView.test.tsx",
+    "src/features/terminal/terminalApi.test.ts",
+    "src/features/terminal/terminalIdentity.test.ts",
+    "src/features/terminal/terminalInput.test.ts",
+    "src/features/terminal/terminalStyles.test.ts",
+    "src/features/terminal/useTerminalEnabled.test.tsx",
+    "src/stores/terminalSurfaceStore.test.ts",
+  ],
   toolControlPolling: ["src/hooks/useToolCallControl.test.ts"],
   answerFileReferences: [
     "src/pages/Chat/fileReferenceMarkdown.test.ts",
@@ -194,6 +204,7 @@ const suites = {
     "src/pages/Chat/ChatPage.openFilePreview.test.tsx",
     "src/features/files-workspace/FilesDrawer.test.tsx",
     "src/features/files-workspace/workbenchTabsStore.test.ts",
+    "src/features/terminal/TerminalWorkbench.integration.test.tsx",
     "src/features/files-workspace/FilesWorkspace.test.tsx",
     "src/features/files-workspace/FilesWorkspace.integration.test.tsx",
     "src/features/files-workspace/FilesWorkspace.pending-diff.test.tsx",
@@ -908,6 +919,8 @@ requireCases("src/layouts/Sidebar.test.tsx", [
   "registers Workflows after Experts against the optional FlowForge route",
 ]);
 requireCases("src/layouts/Sidebar.render.test.tsx", [
+  "keeps visualization full width through late registration and restores the saved sidebar in $pageStyle with collapse $savedCollapsed",
+  "opens visualization from the rail and restores mounted conversation and plugin drafts on return",
   "keeps workspace and app links full width in $pageStyle at $path with saved collapse $savedCollapsed",
   "opens workspace and apps full width from chat and restores drafts in %s",
   "keeps the full extension area on the rail across real marketplace tab navigation",
@@ -1405,6 +1418,9 @@ requireCases("src/layouts/MainLayout/NavigationGuard.test.tsx", [
 ]);
 
 requireCases("src/plugins/flowForgeApp.test.tsx", [
+  "resizes the mounted debug dock with mouse and touch while preserving bilingual run content",
+  "clamps dragged and keyboard dock heights to the real available workspace",
+  "releases dock resize capture on cancellation blur collapse close and unmount",
   "opens the actual editor from the workflow list and preserves router history state",
   "mounts a deep-linked run in the bottom debugger and clears it when the selected agent changes",
   "switches the real workflow list to English while preserving names and revision values",
@@ -1588,8 +1604,56 @@ requireCases("src/features/user-input/InteractionPanel.integration.test.tsx", [
   "preserves the shipped interaction form draft across content tabs and suspends hidden panel polling",
 ]);
 
+requireCases("src/features/terminal/TerminalWorkbench.integration.test.tsx", [
+  "opens a scoped terminal from the mounted new tab and restores its process after closing only the view",
+  "moves the same terminal between the workspace and bottom panel with only one active rendering surface",
+  "keeps the existing terminal authentication requirement and never creates a process when capability is disabled",
+  "keeps terminal ownership separate when the mounted workspace changes experts",
+]);
+
 requireCases("src/styles/layout.test.ts", [
   "uses shared control metrics and inverse foregrounds on accent-filled workspace buttons",
+]);
+
+requireCases("src/pages/AppCenter/index.test.tsx", [
+  "returns sidebar-launched apps to their exact origin via %s",
+  "closes a fresh app deep link to the chat home",
+  "keeps slow app entry inside its own shell without mounting the catalog",
+  "never mounts the catalog while returning from a router-launched app",
+  "keeps failed app entry in its shell and retries the real app list",
+]);
+
+requireCases("src/features/terminal/TerminalDock.test.tsx", [
+  "adds and switches independent tabs, and collapses without terminating",
+  "does not remount the chat SDK or show another conversation's tabs",
+  "closes the selected process only when its close button is pressed",
+]);
+requireCases("src/features/terminal/TerminalView.test.tsx", [
+  "delivers accepted input even when the user switches tabs immediately",
+  "waits for rendering before requesting more output and cancels on unmount",
+  "preserves paste order and changes theme without restarting the PTY view",
+]);
+requireCases("src/features/terminal/terminalApi.test.ts", [
+  "uses the server chat directory for a saved conversation",
+  "does not create a terminal in a fallback directory while loading a chat",
+]);
+requireCases("src/features/terminal/terminalIdentity.test.ts", [
+  "keeps the PTY group through both stages of draft allocation",
+  "isolates different agents and conversations",
+]);
+requireCases("src/features/terminal/terminalInput.test.ts", [
+  "keeps supplementary Unicode intact at the frame boundary",
+]);
+requireCases("src/features/terminal/terminalStyles.test.ts", [
+  "covers the unused row space with the terminal theme, not xterm black",
+]);
+requireCases("src/features/terminal/useTerminalEnabled.test.tsx", [
+  "fails closed when capability loading fails",
+  "restores the cached status when switching back to an agent",
+]);
+requireCases("src/stores/terminalSurfaceStore.test.ts", [
+  "isolates visibility by session",
+  "migrates an open draft to its persisted session",
 ]);
 
 if (!process.argv.includes("--check")) {

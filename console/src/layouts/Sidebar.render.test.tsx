@@ -810,6 +810,101 @@ describe("Sidebar", () => {
 
   it.each(
     (["classic", "deepseek", "dual-sidebar"] as const).flatMap((pageStyle) =>
+      [false, true].map((savedCollapsed) => ({ pageStyle, savedCollapsed })),
+    ),
+  )(
+    "keeps visualization full width through late registration and restores the saved sidebar in $pageStyle with collapse $savedCollapsed",
+    ({ pageStyle, savedCollapsed }) => {
+      mocks.pageStyle = pageStyle;
+      const preferenceKey =
+        pageStyle === "classic"
+          ? "qwenpaw_sidebar_collapsed"
+          : `qwenpaw_sidebar_collapsed:${pageStyle}`;
+      localStorage.setItem(preferenceKey, String(savedCollapsed));
+      const view = renderWithProviders(<RoutedSidebar />, {
+        initialEntries: ["/OILGAS-Visualization/?datasetId=中文-grid#scene"],
+      });
+      const width = pageStyle === "classic" ? "72px" : "66px";
+      const filter = screen.getByLabelText("Conversation filter");
+      expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+        width,
+      });
+      expect(filter).not.toBeVisible();
+      mocks.routes.push({
+        id: "ugsci.visualization",
+        path: "/oilgas-visualization",
+      });
+      view.rerender(<RoutedSidebar />);
+      expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+        width,
+      });
+      expect(screen.getByLabelText("Conversation filter")).toBe(filter);
+      expect(filter).not.toBeVisible();
+      expect(
+        screen.queryByRole("separator", { name: "Resize sidebar" }),
+      ).toBeNull();
+      expect(
+        screen.queryByRole("button", { name: "Expand conversation pane" }),
+      ).toBeNull();
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: pageStyle === "dual-sidebar" ? "Home" : "New task",
+        }),
+      );
+      expect(screen.getByTestId("probe-path")).toHaveTextContent("/chat");
+      expect(
+        screen.queryByRole("textbox", { name: "Conversation filter" }),
+      ).toBe(savedCollapsed ? null : filter);
+      expect(localStorage.getItem(preferenceKey)).toBe(String(savedCollapsed));
+    },
+  );
+
+  it("opens visualization from the rail and restores mounted conversation and plugin drafts on return", () => {
+    mocks.pageStyle = "dual-sidebar";
+    mocks.sidebar.railItemIds = ["ugsci.visualization"];
+    mocks.routes.push({
+      id: "ugsci.visualization",
+      path: "/oilgas-visualization",
+    });
+    mocks.menuItems.push({
+      id: "ugsci.visualization",
+      route: "ugsci.visualization",
+      label: "Visualization",
+      location: "primary.agentScoped",
+    });
+    renderWithProviders(<RoutedSidebar />);
+    const filter = screen.getByRole("textbox", { name: "Conversation filter" });
+    const plugin = screen.getByRole("textbox", { name: "Plugin sider.top" });
+    fireEvent.change(filter, { target: { value: "保留筛选" } });
+    fireEvent.change(plugin, { target: { value: "未保存草稿" } });
+    fireEvent.click(screen.getByRole("button", { name: "Visualization" }));
+    expect(screen.getByTestId("probe-path")).toHaveTextContent(
+      "/oilgas-visualization",
+    );
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "66px",
+    });
+    expect(filter).not.toBeVisible();
+    expect(plugin).not.toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "Home" }));
+    expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
+      width: "308px",
+    });
+    expect(screen.getByRole("textbox", { name: "Conversation filter" })).toBe(
+      filter,
+    );
+    expect(filter).toHaveValue("保留筛选");
+    expect(screen.getByRole("textbox", { name: "Plugin sider.top" })).toBe(
+      plugin,
+    );
+    expect(plugin).toHaveValue("未保存草稿");
+    expect(
+      localStorage.getItem("qwenpaw_sidebar_collapsed:dual-sidebar"),
+    ).toBeNull();
+  });
+
+  it.each(
+    (["classic", "deepseek", "dual-sidebar"] as const).flatMap((pageStyle) =>
       [
         "/files/?root=中文",
         "/apps",

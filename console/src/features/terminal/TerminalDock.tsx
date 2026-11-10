@@ -96,7 +96,7 @@ export default function TerminalDock({
           }
         }}
       >
-        <Dock
+        <TerminalSessionPanel
           key={group}
           group={group}
           scope={scope}
@@ -109,18 +109,20 @@ export default function TerminalDock({
   );
 }
 
-function Dock({
+export function TerminalSessionPanel({
   scope,
   group,
   isDark,
   open,
   setOpen,
+  hideLabel,
 }: {
   scope: TerminalScope;
   group: string;
   isDark: boolean;
   open: boolean;
   setOpen: (open: boolean) => void;
+  hideLabel?: string;
 }) {
   const { t } = useTranslation();
   const { agentId, sessionId, chatId, projectDirOverride } = scope;
@@ -405,8 +407,8 @@ function Dock({
         )}
         <button
           className={styles.collapse}
-          aria-label={t("terminal.hide", "Hide terminal panel")}
-          title={t("terminal.hide", "Hide terminal panel")}
+          aria-label={hideLabel ?? t("terminal.hide", "Hide terminal panel")}
+          title={hideLabel ?? t("terminal.hide", "Hide terminal panel")}
           onClick={() => setOpen(false)}
         >
           <X size={16} />
