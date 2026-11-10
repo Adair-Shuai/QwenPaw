@@ -12,10 +12,12 @@ import { delimiter, dirname, join } from "node:path";
 import { mock, test } from "node:test";
 import { assertSupportedNode, prepareUgsciUi } from "./prepare-ugsci-ui.mjs";
 
-test("shipped UGSci lockfiles use registry packages accepted by npm 12", () => {
+test("shipped frontend lockfiles use registry packages accepted by npm 12", () => {
   for (const directory of [
     "plugins/bundle/ugsci/ui",
     "src/qwenpaw/plugins_bundle/ugsci/ui",
+    "plugins/bundle/flowforge/ui",
+    "src/qwenpaw/plugins_bundle/flowforge/ui",
   ]) {
     const lock = JSON.parse(
       readFileSync(
@@ -101,6 +103,30 @@ test("the matching host npm installs directly without npm exec", (t) => {
     "--no-audit",
     "--no-fund",
   ]);
+});
+
+test("clean checkouts install the distributed FlowForge editor's locked dependencies", (t) => {
+  const { spawn, options } = fixture(t);
+  const flowforge = join(
+    options.repository,
+    "src/qwenpaw/plugins_bundle/flowforge/ui",
+  );
+  mkdirSync(flowforge, { recursive: true });
+  writeFileSync(join(flowforge, "package-lock.json"), "{}");
+  assert.equal(prepareUgsciUi(options), "installed");
+  assert.equal(spawn.mock.callCount(), 3);
+  const [, args, childOptions] = spawn.mock.calls[2].arguments;
+  assert.equal(childOptions.cwd, flowforge);
+  assert.deepEqual(args, [
+    ...spawn.mock.calls[1].arguments[1],
+    "--ignore-scripts",
+  ]);
+
+  spawn.mock.mockImplementationOnce(() => ({ status: 19 }), 5);
+  assert.throws(
+    () => prepareUgsciUi(options),
+    (error) => error.exitCode === 19,
+  );
 });
 
 test("unsupported Node fails before spawning with an actionable repository version", (t) => {

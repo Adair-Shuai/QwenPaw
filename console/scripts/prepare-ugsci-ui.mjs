@@ -115,6 +115,24 @@ export function prepareUgsciUi({
   // and no extra dependency in the shipped plugin are needed.
   const installed = spawn(execPath, args, { ...options, stdio: "inherit" });
   checkResult(installed, "Installing the UGSci frontend dependencies");
+  // Console suites bundle the real distributed FlowForge editor sources.
+  // Its own locked ReactFlow dependencies must exist on clean checkouts too.
+  const flowforge = join(repository, "src/qwenpaw/plugins_bundle/flowforge/ui");
+  if (existsSync(join(flowforge, "package-lock.json"))) {
+    const location = relative(
+      realpathSync(repository),
+      realpathSync(flowforge),
+    );
+    if (location.startsWith("..") || isAbsolute(location)) {
+      throw new Error("FlowForge frontend must be inside the repository");
+    }
+    const result = spawn(execPath, [...args, "--ignore-scripts"], {
+      ...options,
+      cwd: flowforge,
+      stdio: "inherit",
+    });
+    checkResult(result, "Installing the FlowForge frontend test dependencies");
+  }
   return "installed";
 }
 

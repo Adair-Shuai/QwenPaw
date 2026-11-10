@@ -266,6 +266,9 @@ importers:
       globals:
         specifier: ^16.0.0
         version: 16.5.0
+      html-react-parser:
+        specifier: 5.2.17
+        version: 5.2.17(@types/react@18.3.31)(react@18.3.1)
       jsdom:
         specifier: ^29.0.2
         version: 29.1.1
