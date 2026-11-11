@@ -435,3 +435,118 @@
     min-width: 80px;
   }
 }
+
+.panes {
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  position: relative;
+}
+.paneGroup {
+  height: 100%;
+  min-height: 0;
+}
+.secondaryPane {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+.portalHost {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+.paneHeading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: var(--app-font-caption);
+  border-bottom: 1px solid var(--app-border);
+  background: var(--app-surface-subtle);
+}
+.paneHeading button,
+.review button {
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: var(--app-surface);
+  color: var(--app-text);
+  min-height: var(--app-icon-button);
+  cursor: pointer;
+}
+.paneSeparator {
+  background: var(--app-border);
+  flex: 0 0 5px;
+  border: 2px solid var(--app-surface);
+}
+.paneSeparator:focus-visible {
+  outline: 2px solid var(--app-focus-ring);
+  outline-offset: -2px;
+}
+.dropTarget {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-items: center;
+  color: var(--app-text);
+  background: color-mix(in srgb, var(--app-surface) 85%, transparent);
+  border: 2px solid var(--app-border);
+  font-size: var(--app-font-caption);
+}
+.dropTarget[data-edge="left"] {
+  border-left: 5px solid var(--app-accent);
+}
+.dropTarget[data-edge="right"] {
+  border-right: 5px solid var(--app-accent);
+}
+.dropTarget[data-edge="top"] {
+  border-top: 5px solid var(--app-accent);
+}
+.dropTarget[data-edge="bottom"] {
+  border-bottom: 5px solid var(--app-accent);
+}
+.review {
+  height: 100%;
+  overflow: auto;
+  padding: 16px;
+  min-width: 0;
+  box-sizing: border-box;
+}
+.reviewToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.review label {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+.review select {
+  flex: 1;
+  min-width: 0;
+  max-width: 100%;
+  padding: 7px;
+  border: 1px solid var(--app-border);
+  border-radius: var(--app-radius);
+  background: var(--app-surface);
+  color: var(--app-text);
+  font: inherit;
+}
+@media (max-width: 600px) {
+  .paneHeading {
+    overflow-wrap: anywhere;
+  }
+}
+
+.paneGroup .content {
+  height: 100%;
+}

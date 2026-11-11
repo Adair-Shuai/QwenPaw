@@ -3205,7 +3205,8 @@
       "genui": "GenUI",
       "compute": "计算轨道",
       "simulation": "数模监测",
-      "terminal": "终端"
+      "terminal": "终端",
+      "review": "逐轮修改"
     },
     "activityShort": {
       "files": "文件",
@@ -3215,7 +3216,8 @@
       "genui": "GenUI",
       "compute": "计算",
       "simulation": "数模",
-      "terminal": "终端"
+      "terminal": "终端",
+      "review": "修改"
     },
     "tabs": {
       "workspace": "工作区",
@@ -3254,6 +3256,32 @@
       "common": "常用视图",
       "noRecent": "关闭的内容可在这里重新打开。",
       "openView": "打开{{name}}"
+    },
+    "quotes": {
+      "ask": "添加到聊天",
+      "locate": "定位来源 {{name}}",
+      "source": "定位"
+    },
+    "review": {
+      "newer": "较新记录",
+      "older": "更早记录",
+      "empty": "当前会话暂无文件修改记录。",
+      "turn": "选择轮次",
+      "incomplete": "归档不完整",
+      "loadFailed": "轮次记录加载失败，请刷新重试。"
+    },
+    "split": {
+      "right": "在右侧分屏打开",
+      "down": "在下方分屏打开",
+      "merge": "合并分屏",
+      "resize": "调整分屏大小",
+      "drop": {
+        "left": "释放以在左侧分屏",
+        "right": "释放以在右侧分屏",
+        "top": "释放以在上方分屏",
+        "bottom": "释放以在下方分屏",
+        "center": "释放以合并并打开"
+      }
     }
   },
   "files": {

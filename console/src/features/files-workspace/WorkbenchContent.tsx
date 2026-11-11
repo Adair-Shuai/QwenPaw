@@ -9,6 +9,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import { Group, Panel, Separator } from "react-resizable-panels";
 import { Alert, Button, Modal } from "antd";
 import { ArrowUpRight, ListChecks, Network } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -51,11 +52,23 @@ import {
 import styles from "./WorkbenchTabs.module.less";
 import workspaceStyles from "./FilesWorkspace.module.less";
 
+const MemoryGraphView = lazy(() => import("./MemoryGraphView"));
 const FilesWorkspace = lazy(() => import("./FilesWorkspace"));
 const fileId = (path: string) => `file:${path}`;
 const basename = (path: string) =>
   path.replace(/\\/g, "/").split("/").pop() || path;
 const EMPTY_BROWSER: BrowserSession = { pages: [], index: -1, input: "" };
+
+function dropEdgeAt(element: HTMLElement, clientX: number, clientY: number) {
+  const rect = element.getBoundingClientRect();
+  const x = (clientX - rect.left) / rect.width;
+  const y = (clientY - rect.top) / rect.height;
+  if (y < 0.2) return "top";
+  if (y > 0.8) return "bottom";
+  if (x < 0.25) return "left";
+  if (x > 0.75) return "right";
+  return "center";
+}
 
 function ToolTab({
   tab,
@@ -93,6 +106,14 @@ function ToolTab({
       .getState()
       .update(scopeKey, tab.id, { target: undefined, title: "GenUI" });
   }, [scopeKey, tab.id]);
+  const reviewChanged = useCallback(
+    (reviewState: { offset: number; turnId: string }) => {
+      useWorkbenchTabsStore
+        .getState()
+        .update(scopeKey, tab.id, { reviewState });
+    },
+    [scopeKey, tab.id],
+  );
   if (tab.kind === "files" || tab.kind === "graph") return null;
   if (tab.taskId)
     return active ? (
@@ -108,6 +129,9 @@ function ToolTab({
     <WorkbenchContentPanel
       key={tab.browserRevision ?? 0}
       mode={tab.kind}
+      terminalTarget={tab.terminalTarget}
+      reviewState={tab.reviewState}
+      onReviewStateChange={reviewChanged}
       active={active}
       scope={scope}
       runtimeSessionId={runtimeSessionId}
@@ -152,6 +176,25 @@ export default function WorkbenchContent({
   const nativeDiffs = useDiffsForScope(scopeKey);
   const nativeActive = useActiveTabPathForScope(scopeKey);
   const activeTab = model.tabs.find((tab) => tab.id === model.activeId);
+  const secondaryTab = model.tabs.find(
+    (tab) => tab.id === model.secondaryId && tab.id !== model.activeId,
+  );
+  const [secondaryHost, setSecondaryHost] = useState<HTMLDivElement | null>(
+    null,
+  );
+  const [dragging, setDragging] = useState(false);
+  const [dropEdge, setDropEdge] = useState("right");
+  const panesRef = useRef<HTMLDivElement>(null);
+  const [compact, setCompact] = useState(false);
+  useEffect(() => {
+    const host = panesRef.current;
+    if (!host) return;
+    const observer = new ResizeObserver(() =>
+      setCompact(host.clientWidth > 0 && host.clientWidth < 900),
+    );
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, []);
   const activeRef = useRef(activeTab);
   activeRef.current = activeTab;
   const controller = useRef<FilesWorkspaceController | null>(null);
@@ -647,6 +690,55 @@ export default function WorkbenchContent({
   const filesVisible =
     browsing || activeTab?.kind === "files" || activeTab?.kind === "graph";
 
+  const secondaryPane = secondaryTab ? (
+    <Panel key="secondary" id="secondary" minSize="20%" defaultSize="50%">
+      <div
+        className={styles.secondaryPane}
+        id={`${idPrefix}-secondary`}
+        role="tabpanel"
+        aria-labelledby={`${idPrefix}-tab-${encodeURIComponent(
+          secondaryTab.id,
+        )}`}
+      >
+        <div className={styles.paneHeading}>
+          {secondaryTab.title}
+          <button
+            type="button"
+            aria-label={t("workbench.split.merge")}
+            onClick={() => useWorkbenchTabsStore.getState().merge(scopeKey)}
+          >
+            ×
+          </button>
+        </div>
+        {secondaryTab.kind === "files" ? (
+          <div className={styles.portalHost} ref={setSecondaryHost} />
+        ) : secondaryTab.kind === "graph" ? (
+          <Suspense fallback={<div>{t("common.loading")}</div>}>
+            <MemoryGraphView
+              agentId={scope.agentId}
+              root={secondaryTab.graphRoot ?? "wiki"}
+              onOpenFile={(source, path) => {
+                setRequestedFile({ source, path });
+                setBrowsing(true);
+              }}
+            />
+          </Suspense>
+        ) : (
+          <ToolTab
+            tab={secondaryTab}
+            active
+            scope={scope}
+            runtimeSessionId={runtimeSessionId}
+            onOpenFiles={openFiles}
+            onClose={() => requestClose([secondaryTab])}
+            onRequestsChange={setRequests}
+            browserStartContent={startContent}
+          />
+        )}
+      </div>
+    </Panel>
+  ) : null;
+
   return (
     <>
       <WorkbenchTabBar
@@ -663,6 +755,12 @@ export default function WorkbenchContent({
           requestClose(model.tabs.filter((item) => item.id !== tab.id))
         }
         onCloseAll={() => requestClose(model.tabs)}
+        secondaryId={secondaryTab?.id}
+        onDragging={setDragging}
+        onSplit={(tab, axis) =>
+          useWorkbenchTabsStore.getState().split(scopeKey, tab.id, axis)
+        }
+        onMerge={() => useWorkbenchTabsStore.getState().merge(scopeKey)}
         onNew={() => openTool("browser", true)}
         actions={panelActions}
       />
@@ -678,81 +776,164 @@ export default function WorkbenchContent({
           onSelect={(kind) => openTool(kind)}
           indicators={{ interactions: pending.length, agents: tasks.length }}
         />
-        <div className={styles.content}>
-          <div
-            className={styles.panel}
-            hidden={!filesVisible}
-            role="tabpanel"
-            id={`${idPrefix}-files`}
-            aria-labelledby={
-              activeTab?.kind === "files" || activeTab?.kind === "graph"
-                ? `${idPrefix}-tab-${encodeURIComponent(activeTab.id)}`
-                : undefined
-            }
-          >
-            <Suspense
-              fallback={
-                <div className={workspaceStyles.empty}>
-                  {t("common.loading")}
-                </div>
-              }
+        <div className={styles.panes} ref={panesRef}>
+          {dragging && (
+            <div
+              className={styles.dropTarget}
+              data-edge={dropEdge}
+              onDragOver={(event) => {
+                event.preventDefault();
+                setDropEdge(
+                  dropEdgeAt(event.currentTarget, event.clientX, event.clientY),
+                );
+              }}
+              onDrop={(event) => {
+                event.preventDefault();
+                setDragging(false);
+                try {
+                  const data = JSON.parse(
+                    event.dataTransfer.getData(
+                      "application/x-qwenpaw-workbench-tab",
+                    ),
+                  );
+                  const tab = model.tabs.find((item) => item.id === data.id);
+                  if (data.scope !== idPrefix || !tab) return;
+                  const edge = dropEdgeAt(
+                    event.currentTarget,
+                    event.clientX,
+                    event.clientY,
+                  );
+                  if (edge === "center") {
+                    useWorkbenchTabsStore.getState().merge(scopeKey);
+                    select(tab);
+                  } else
+                    useWorkbenchTabsStore
+                      .getState()
+                      .split(
+                        scopeKey,
+                        tab.id,
+                        edge === "top" || edge === "bottom"
+                          ? "vertical"
+                          : "horizontal",
+                        edge === "top" || edge === "left",
+                      );
+                } catch {
+                  /* Ignore unrelated or malformed drag data. */
+                }
+              }}
             >
-              <FilesWorkspace
-                controllerRef={controllerReady}
-                unifiedTabs
-                emptyContent={empty}
-                initialTarget={requestedFile}
-                scope={scope}
-                active={filesVisible}
-                hideNavigator={state.kind !== "workspace" && !browsing}
-                onActiveTargetChange={onActiveTargetChange}
-                onFileActivated={fileActivated}
-                onGraphSelect={(root) => {
-                  useWorkbenchTabsStore.getState().open(scopeKey, {
-                    id: `graph:${root}`,
-                    kind: "graph",
-                    graphRoot: root,
-                    title: t("workbench.tabs.memoryGraph", "记忆图谱"),
-                  });
-                  setBrowsing(false);
-                }}
-                onOpenBrowser={openBrowserFile}
-                onBrowseMemoryTag={onBrowseMemoryTag}
-                footerActions={footerActions}
-              />
-            </Suspense>
-          </div>
-          {!filesVisible && !activeTab && empty}
-          {model.tabs
-            .filter((tab) => tab.kind !== "files" && tab.kind !== "graph")
-            .map((tab) => (
-              <div
-                key={tab.id}
-                className={styles.panel}
-                role="tabpanel"
-                id={`${idPrefix}-panel-${encodeURIComponent(tab.id)}`}
-                aria-labelledby={`${idPrefix}-tab-${encodeURIComponent(
-                  tab.id,
-                )}`}
-                hidden={browsing || tab.id !== model.activeId}
-              >
-                <ToolTab
-                  tab={tab}
-                  active={!browsing && tab.id === model.activeId}
-                  scope={scope}
-                  runtimeSessionId={runtimeSessionId}
-                  onOpenFiles={openFiles}
-                  onClose={() => requestClose([tab])}
-                  browserStartContent={startContent}
-                  onRequestsChange={setRequests}
-                />
-              </div>
-            ))}
-          {!filesVisible && !activeTab && state.kind === "preview" && (
-            <footer className={workspaceStyles.documentFooter}>
-              {footerActions}
-            </footer>
+              {t(`workbench.split.drop.${dropEdge}`)}
+            </div>
           )}
+          <Group
+            orientation={compact ? "vertical" : model.splitAxis ?? "horizontal"}
+            className={styles.paneGroup}
+          >
+            {model.splitBefore && secondaryPane}
+            {secondaryTab && model.splitBefore && (
+              <Separator
+                className={styles.paneSeparator}
+                aria-label={t("workbench.split.resize")}
+              />
+            )}
+            <Panel key="primary" id="primary" minSize="20%">
+              <div className={styles.content}>
+                <div
+                  className={styles.panel}
+                  hidden={!filesVisible}
+                  role="tabpanel"
+                  id={`${idPrefix}-files`}
+                  aria-labelledby={
+                    activeTab?.kind === "files" || activeTab?.kind === "graph"
+                      ? `${idPrefix}-tab-${encodeURIComponent(activeTab.id)}`
+                      : undefined
+                  }
+                >
+                  <Suspense
+                    fallback={
+                      <div className={workspaceStyles.empty}>
+                        {t("common.loading")}
+                      </div>
+                    }
+                  >
+                    <FilesWorkspace
+                      controllerRef={controllerReady}
+                      secondaryFile={
+                        secondaryTab?.kind === "files" &&
+                        secondaryHost &&
+                        secondaryTab.filePath
+                          ? { path: secondaryTab.filePath, host: secondaryHost }
+                          : undefined
+                      }
+                      unifiedTabs
+                      emptyContent={empty}
+                      initialTarget={requestedFile}
+                      scope={scope}
+                      active={filesVisible}
+                      hideNavigator={state.kind !== "workspace" && !browsing}
+                      onActiveTargetChange={onActiveTargetChange}
+                      onFileActivated={fileActivated}
+                      onGraphSelect={(root) => {
+                        useWorkbenchTabsStore.getState().open(scopeKey, {
+                          id: `graph:${root}`,
+                          kind: "graph",
+                          graphRoot: root,
+                          title: t("workbench.tabs.memoryGraph", "记忆图谱"),
+                        });
+                        setBrowsing(false);
+                      }}
+                      onOpenBrowser={openBrowserFile}
+                      onBrowseMemoryTag={onBrowseMemoryTag}
+                      footerActions={footerActions}
+                    />
+                  </Suspense>
+                </div>
+                {!filesVisible && !activeTab && empty}
+                {model.tabs
+                  .filter(
+                    (tab) =>
+                      tab.kind !== "files" &&
+                      tab.kind !== "graph" &&
+                      tab.id !== secondaryTab?.id,
+                  )
+                  .map((tab) => (
+                    <div
+                      key={tab.id}
+                      className={styles.panel}
+                      role="tabpanel"
+                      id={`${idPrefix}-panel-${encodeURIComponent(tab.id)}`}
+                      aria-labelledby={`${idPrefix}-tab-${encodeURIComponent(
+                        tab.id,
+                      )}`}
+                      hidden={browsing || tab.id !== model.activeId}
+                    >
+                      <ToolTab
+                        tab={tab}
+                        active={!browsing && tab.id === model.activeId}
+                        scope={scope}
+                        runtimeSessionId={runtimeSessionId}
+                        onOpenFiles={openFiles}
+                        onClose={() => requestClose([tab])}
+                        browserStartContent={startContent}
+                        onRequestsChange={setRequests}
+                      />
+                    </div>
+                  ))}
+                {!filesVisible && !activeTab && state.kind === "preview" && (
+                  <footer className={workspaceStyles.documentFooter}>
+                    {footerActions}
+                  </footer>
+                )}
+              </div>
+            </Panel>
+            {secondaryTab && !model.splitBefore && (
+              <Separator
+                className={styles.paneSeparator}
+                aria-label={t("workbench.split.resize")}
+              />
+            )}
+            {!model.splitBefore && secondaryPane}
+          </Group>
         </div>
       </div>
       <Modal

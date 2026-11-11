@@ -3347,7 +3347,8 @@
       "genui": "GenUI",
       "compute": "Compute track",
       "simulation": "Simulation monitoring",
-      "terminal": "Terminal"
+      "terminal": "Terminal",
+      "review": "Turn review"
     },
     "activityShort": {
       "files": "Files",
@@ -3357,7 +3358,8 @@
       "genui": "GenUI",
       "compute": "Compute",
       "simulation": "Simulate",
-      "terminal": "Terminal"
+      "terminal": "Terminal",
+      "review": "Review"
     },
     "tabs": {
       "workspace": "Workspace",
@@ -3396,6 +3398,32 @@
       "common": "Common views",
       "noRecent": "Reopen recently closed content here.",
       "openView": "Open {{name}}"
+    },
+    "quotes": {
+      "ask": "Add to chat",
+      "locate": "Locate source {{name}}",
+      "source": "Locate"
+    },
+    "review": {
+      "newer": "Newer",
+      "older": "Older",
+      "empty": "No file changes recorded for this chat.",
+      "turn": "Choose a turn",
+      "incomplete": "Incomplete archive",
+      "loadFailed": "Could not load turn history. Refresh to retry."
+    },
+    "split": {
+      "right": "Open in right split",
+      "down": "Open in bottom split",
+      "merge": "Merge panes",
+      "resize": "Resize split",
+      "drop": {
+        "left": "Drop to split left",
+        "right": "Drop to split right",
+        "top": "Drop to split above",
+        "bottom": "Drop to split below",
+        "center": "Drop to merge and open"
+      }
     }
   },
   "files": {

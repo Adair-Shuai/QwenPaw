@@ -1,17 +1,32 @@
-import { act, cleanup, render, waitFor } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  waitFor,
+  fireEvent,
+  screen,
+} from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  WorkspaceQuoteProvider,
+  openQuoteSource,
+} from "../files-workspace/workspaceQuotes";
+import { useWorkbenchTabsStore } from "../files-workspace/workbenchTabsStore";
+import { readAnswerQuotes } from "../../pages/Chat/answerQuotes";
 import TerminalView from "./TerminalView";
 import type { TerminalApi } from "./terminalApi";
 import styles from "./TerminalDock.module.less";
 
 const state = vi.hoisted(() => ({
+  selection: undefined as (() => void) | undefined,
+  selectedText: "",
   input: undefined as ((data: string) => void) | undefined,
   write: vi.fn(),
   dispose: vi.fn(),
   reset: vi.fn(),
   construct: vi.fn(),
   open: vi.fn(),
-  t: (_key: string, fallback: string) => fallback,
+  t: (key: string, fallback?: string) => fallback ?? key,
 }));
 vi.mock("react-i18next", () => ({ useTranslation: () => ({ t: state.t }) }));
 vi.mock("@xterm/addon-fit", () => ({
@@ -34,6 +49,20 @@ vi.mock("@xterm/xterm", () => ({
     reset = state.reset;
     write = state.write;
     dispose = state.dispose;
+    getSelection() {
+      return state.selectedText;
+    }
+    clearSelection() {
+      state.selectedText = "";
+    }
+    onSelectionChange(callback: () => void) {
+      state.selection = callback;
+      return {
+        dispose() {
+          state.selection = undefined;
+        },
+      };
+    }
     onData(callback: (data: string) => void) {
       state.input = callback;
       return { dispose() {} };
@@ -166,4 +195,47 @@ describe("PTY output and input lifecycle", () => {
     expect(state.construct).toHaveBeenCalledTimes(1);
     expect(api.close).not.toHaveBeenCalled();
   });
+});
+
+it("quotes native terminal output with its owning session and never sends the selection as shell input", () => {
+  const draftKey = crypto.randomUUID();
+  const scope = {
+    kind: "session" as const,
+    agentId: "expert",
+    sessionId: "session",
+  };
+  const view = render(
+    <WorkspaceQuoteProvider scope={scope} draftKey={draftKey} enabled>
+      <TerminalView api={api} terminal={terminal} isDark={false} />
+    </WorkspaceQuoteProvider>,
+  );
+  act(() => {
+    state.selectedText = "selected terminal output";
+    state.selection?.();
+  });
+  fireEvent.click(screen.getByRole("button", { name: "workbench.quotes.ask" }));
+  expect(readAnswerQuotes(draftKey)).toEqual([
+    expect.objectContaining({
+      text: "selected terminal output",
+      source: { kind: "terminal", scope, terminalId: "pty", title: "sh" },
+    }),
+  ]);
+  const source = readAnswerQuotes(draftKey)[0].source!;
+  openQuoteSource(
+    { ...source, scope: { ...scope, sessionId: "new" } },
+    { ...scope, sessionId: "resolved-terminal", chatId: "saved-terminal" },
+  );
+  expect(
+    useWorkbenchTabsStore.getState().scopes["session:expert:resolved-terminal"]
+      .tabs,
+  ).toEqual([
+    expect.objectContaining({
+      kind: "terminal",
+      terminalTarget: { id: "pty", nonce: expect.any(String) },
+    }),
+  ]);
+  expect(api.input).not.toHaveBeenCalled();
+  expect(api.close).not.toHaveBeenCalled();
+  view.unmount();
+  expect(state.selection).toBeUndefined();
 });

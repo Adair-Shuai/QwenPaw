@@ -1,3 +1,5 @@
+import { cloneElement } from "react";
+import { createPortal } from "react-dom";
 import {
   ArrowLeft,
   FileWarning,
@@ -80,6 +82,7 @@ export interface FilesWorkspaceController {
 }
 
 interface FilesWorkspaceProps {
+  secondaryFile?: { path: string; host: HTMLElement };
   controllerRef?: Ref<FilesWorkspaceController>;
   unifiedTabs?: boolean;
   emptyContent?: ReactNode;
@@ -131,6 +134,7 @@ function loadedFileSize(file: {
 
 export default function FilesWorkspace({
   controllerRef,
+  secondaryFile,
   unifiedTabs = false,
   emptyContent,
   onFileActivated,
@@ -981,6 +985,90 @@ export default function FilesWorkspace({
   );
   const activeDiff = diffsByAgent?.[scopeKey]?.[activeTabPath];
 
+  const fileEditor = (
+    <TabbedEditor
+      key={`${scopeKey}:${editorRevision}`}
+      tabs={tabs}
+      previewActive={active}
+      previewManagedUpdates
+      emptyContent={emptyContent}
+      hideTabBar={unifiedTabs}
+      headerActions={headerActions}
+      headerLeading={(headerActions || unifiedTabs) && navigatorControls}
+      activeTabPath={activeTabPath}
+      scopeKey={scopeKey}
+      onTabSelect={activateTab}
+      onTabClose={handleClose}
+      onCloseOtherTabs={handleCloseOthers}
+      onTabDirtyChange={(path, dirty) => setTabDirty(scopeKey, path, dirty)}
+      onTabContentChange={(path, content) =>
+        setTabContent(scopeKey, path, content)
+      }
+      onLoadFile={loadTabContent}
+      chatId={chatId}
+      projectDirOverride={projectDirOverride}
+      navigation={editorNavigation}
+      onRevealFile={async (path) => {
+        const tab = tabsRef.current.find((item) => item.path === path);
+        const target = revealTargetFromEditorTab(tab, path);
+        if (target)
+          await revealWorkspacePath({
+            ...target,
+            chatId,
+            projectDirOverride,
+          });
+      }}
+      onMemoryTagClick={memoryTagsSupported ? showMemoryTag : undefined}
+      onOpenFile={openTarget}
+      onOpenHtmlInBrowser={onOpenBrowser ? openTarget : undefined}
+      onFileSaved={() => setMemoryTagsRevision((value) => value + 1)}
+      onDownloadFile={async (path) => {
+        const tab = tabsRef.current.find((item) => item.path === path);
+        const target = fileTabTarget(
+          tab ?? { path, content: "", dirty: false },
+        );
+        const sourcePath = target.path;
+        const filename = sourcePath.split("/").pop() ?? sourcePath;
+        if (tab?.artifactUrl) {
+          await downloadFileFromUrl(tab.artifactUrl, filename, {
+            headers: buildAuthHeaders(),
+            errorMessage: t("files.downloadFailed"),
+          });
+          return;
+        }
+        if (target.source === "workspace") {
+          await downloadFileFromUrl(
+            workspaceApi.getFileDownloadUrl(sourcePath, target.root),
+            filename,
+            {
+              headers: {
+                ...buildAuthHeaders(),
+                ...(chatId ? { "X-Chat-Id": chatId } : {}),
+                ...(!chatId && projectDirOverride
+                  ? {
+                      "X-Session-Project-Dir": projectDirOverride,
+                    }
+                  : {}),
+              },
+              errorMessage: t("files.downloadFailed"),
+            },
+          );
+          return;
+        }
+        const blob = new Blob([tab?.content ?? ""], {
+          type: "text/plain;charset=utf-8",
+        });
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        anchor.click();
+        URL.revokeObjectURL(url);
+      }}
+      onSaveFile={saveFile}
+    />
+  );
+
   return (
     <div
       className={`${styles.workspace} ${
@@ -1209,91 +1297,7 @@ export default function FilesWorkspace({
               }}
             />
           ) : (
-            <TabbedEditor
-              key={`${scopeKey}:${editorRevision}`}
-              tabs={tabs}
-              previewActive={active}
-              previewManagedUpdates
-              emptyContent={emptyContent}
-              hideTabBar={unifiedTabs}
-              headerActions={headerActions}
-              headerLeading={
-                (headerActions || unifiedTabs) && navigatorControls
-              }
-              activeTabPath={activeTabPath}
-              scopeKey={scopeKey}
-              onTabSelect={activateTab}
-              onTabClose={handleClose}
-              onCloseOtherTabs={handleCloseOthers}
-              onTabDirtyChange={(path, dirty) =>
-                setTabDirty(scopeKey, path, dirty)
-              }
-              onTabContentChange={(path, content) =>
-                setTabContent(scopeKey, path, content)
-              }
-              onLoadFile={loadTabContent}
-              chatId={chatId}
-              projectDirOverride={projectDirOverride}
-              navigation={editorNavigation}
-              onRevealFile={async (path) => {
-                const tab = tabsRef.current.find((item) => item.path === path);
-                const target = revealTargetFromEditorTab(tab, path);
-                if (target)
-                  await revealWorkspacePath({
-                    ...target,
-                    chatId,
-                    projectDirOverride,
-                  });
-              }}
-              onMemoryTagClick={memoryTagsSupported ? showMemoryTag : undefined}
-              onOpenFile={openTarget}
-              onOpenHtmlInBrowser={onOpenBrowser ? openTarget : undefined}
-              onFileSaved={() => setMemoryTagsRevision((value) => value + 1)}
-              onDownloadFile={async (path) => {
-                const tab = tabsRef.current.find((item) => item.path === path);
-                const target = fileTabTarget(
-                  tab ?? { path, content: "", dirty: false },
-                );
-                const sourcePath = target.path;
-                const filename = sourcePath.split("/").pop() ?? sourcePath;
-                if (tab?.artifactUrl) {
-                  await downloadFileFromUrl(tab.artifactUrl, filename, {
-                    headers: buildAuthHeaders(),
-                    errorMessage: t("files.downloadFailed"),
-                  });
-                  return;
-                }
-                if (target.source === "workspace") {
-                  await downloadFileFromUrl(
-                    workspaceApi.getFileDownloadUrl(sourcePath, target.root),
-                    filename,
-                    {
-                      headers: {
-                        ...buildAuthHeaders(),
-                        ...(chatId ? { "X-Chat-Id": chatId } : {}),
-                        ...(!chatId && projectDirOverride
-                          ? {
-                              "X-Session-Project-Dir": projectDirOverride,
-                            }
-                          : {}),
-                      },
-                      errorMessage: t("files.downloadFailed"),
-                    },
-                  );
-                  return;
-                }
-                const blob = new Blob([tab?.content ?? ""], {
-                  type: "text/plain;charset=utf-8",
-                });
-                const url = URL.createObjectURL(blob);
-                const anchor = document.createElement("a");
-                anchor.href = url;
-                anchor.download = filename;
-                anchor.click();
-                URL.revokeObjectURL(url);
-              }}
-              onSaveFile={saveFile}
-            />
+            fileEditor
           )}
         </div>
         {footerActions && !memoryGraphRoot && (
@@ -1376,6 +1380,22 @@ export default function FilesWorkspace({
           }}
         />
       )}
+      {secondaryFile &&
+        tabs.some((tab) => tab.path === secondaryFile.path) &&
+        createPortal(
+          cloneElement(fileEditor, {
+            key: `secondary:${scopeKey}`,
+            preserveModel: true,
+            activeTabPath: secondaryFile.path,
+            hideTabBar: true,
+            headerLeading: undefined,
+            headerActions: undefined,
+            navigation: null,
+            emptyContent: undefined,
+            previewActive: true,
+          }),
+          secondaryFile.host,
+        )}
     </div>
   );
 }

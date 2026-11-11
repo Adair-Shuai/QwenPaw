@@ -11,6 +11,7 @@ const TOOLS: WorkbenchMode[] = [
   "files",
   "browser",
   "terminal",
+  "review",
   "interactions",
   "agents",
 ];

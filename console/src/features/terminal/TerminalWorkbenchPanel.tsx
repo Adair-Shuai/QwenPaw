@@ -16,10 +16,12 @@ export default function TerminalWorkbenchPanel({
   scope,
   active,
   onClose,
+  terminalTarget,
 }: {
   scope: TerminalScope;
   active: boolean;
   onClose?: () => void;
+  terminalTarget?: { id: string; nonce: string };
 }) {
   const { t } = useTranslation();
   const { isDark } = useTheme();
@@ -60,6 +62,7 @@ export default function TerminalWorkbenchPanel({
         <TerminalSessionPanel
           key={group}
           group={group}
+          terminalTarget={terminalTarget}
           scope={scope}
           isDark={isDark}
           open={active}
