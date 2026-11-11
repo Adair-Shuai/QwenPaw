@@ -201,14 +201,15 @@ jobs:
       - name: Patch main metadata index to advertise plugins product
         if: inputs.upload_to_oss
         run: |
-          ossutil cp "oss://${OSS_BUCKET}/metadata/index.json" \
-            main-index.json 2>/dev/null || cat > main-index.json << 'EOF'
-          {
-            "version": "1.0",
-            "updated_at": "",
-            "products": {}
-          }
-          EOF
+          if stat_out=$(ossutil stat "oss://${OSS_BUCKET}/metadata/index.json" 2>&1); then
+            ossutil cp "oss://${OSS_BUCKET}/metadata/index.json" main-index.json
+          elif grep -qiE 'NoSuchKey|StatusCode=404' <<< "$stat_out"; then
+            printf '%s\n' '{"version":"1.0","updated_at":"","products":{}}' > main-index.json
+          else
+            echo "::error::Cannot read the authoritative main index"
+            echo "$stat_out" >&2
+            exit 1
+          fi
 
           python3 scripts/pack/patch_main_index.py \
             --index main-index.json \
