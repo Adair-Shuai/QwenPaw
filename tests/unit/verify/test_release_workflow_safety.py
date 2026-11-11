@@ -20,6 +20,76 @@ def _workflow(name: str) -> str:
     )
 
 
+def test_windows_release_cleanup_uses_native_owned_pid(tmp_path):
+    import os
+    import shutil
+
+    if os.name != "nt":
+        pytest.skip("Executes the Windows PowerShell cleanup branch")
+    shell = shutil.which("pwsh") or shutil.which("powershell")
+    assert shell, "PowerShell is required for Windows release verification"
+    workflow = yaml.safe_load(_workflow("release-verify.yml"))
+    steps = [
+        step
+        for job in workflow["jobs"].values()
+        for step in job.get("steps", [])
+        if step.get("name") == "Stop server"
+    ]
+    assert len(steps) == 2
+    for index, step in enumerate(steps):
+        directory = tmp_path / str(index)
+        directory.mkdir()
+        pid_file = directory / "qwenpaw.pid"
+        pid_file.write_text("12345", encoding="ascii")
+        probe = directory / "probe.ps1"
+        probe.write_text(
+            """
+$script:stopped = @()
+function Stop-Process {
+  [CmdletBinding()] param([int]$Id, [switch]$Force)
+  $script:stopped += $Id
+}
+function Get-NetTCPConnection {
+  [CmdletBinding()] param($LocalPort, $State)
+  [pscustomobject]@{OwningProcess=9876}
+}
+function Get-CimInstance {
+  [CmdletBinding()] param($ClassName, $Filter)
+  [pscustomobject]@{
+    ExecutablePath=(Join-Path $installRoot 'venv/python.exe')
+    CommandLine='python -m qwenpaw app'
+  }
+}
+"""
+            + step["run"].rsplit("exit 0", 1)[0]
+            + "\n$script:stopped | ConvertTo-Json -Compress\n",
+            encoding="utf-8",
+        )
+        result = subprocess.run(
+            [
+                shell,
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(probe),
+            ],
+            env={
+                **os.environ,
+                "RUNNER_OS": "Windows",
+                "RUNNER_TEMP": str(directory),
+            },
+            capture_output=True,
+            text=True,
+            timeout=30,
+            check=False,
+            creationflags=subprocess.CREATE_NO_WINDOW,
+        )
+        assert result.returncode == 0, result.stdout + result.stderr
+        assert json.loads(result.stdout) == 9876
+        assert not pid_file.exists()
+
+
 def test_clean_release_and_frontend_checks_build_openui_runtime() -> None:
     for name, gate in (
         ("release-resume.yml", "Pack plugins and build index"),
