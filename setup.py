@@ -1,6 +1,7 @@
 # -*- coding: utf-8 -*-
 """Setuptools hooks for the dormant official channel resources."""
 
+import json
 from pathlib import Path
 import runpy
 import shutil
@@ -9,6 +10,20 @@ from setuptools import find_namespace_packages, setup
 from setuptools.command.build_py import build_py
 from setuptools.command.sdist import sdist
 
+BUNDLED_PLUGIN_IDS = runpy.run_path(
+    str(
+        Path(__file__).resolve().parent
+        / "src/qwenpaw/bundled_plugin_policy.py",
+    ),
+)["BUNDLED_PLUGIN_IDS"]
+
+
+def prune_optional_plugins(package_dir):
+    """Remove optional payloads only from the generated distribution tree."""
+    for directory in (Path(package_dir) / "plugins_bundle").glob("*"):
+        if directory.is_dir() and directory.name not in BUNDLED_PLUGIN_IDS:
+            shutil.rmtree(directory)
+
 
 def bundle(destination, version):
     root = Path(__file__).resolve().parent
@@ -16,6 +31,14 @@ def bundle(destination, version):
         str(root / "scripts/pack/generate_plugin_metadata.py"),
     )["build_official_channel_bundle"]
     builder(root, Path(destination), host_version=version)
+
+
+def verify_bundled_plugin_policy(package_dir):
+    """Enforce independent application publishing for Python distributions."""
+    for path in (Path(package_dir) / "plugins_bundle").glob("*/plugin.json"):
+        manifest = json.loads(path.read_text(encoding="utf-8"))
+        if manifest.get("type") == "app":
+            raise ValueError("Applications require an independent release")
 
 
 class BuildPy(build_py):
@@ -28,6 +51,9 @@ class BuildPy(build_py):
             if getattr(self, "editable_mode", False)
             else Path(self.build_lib) / "qwenpaw"
         )
+        verify_bundled_plugin_policy(package_dir)
+        if not getattr(self, "editable_mode", False):
+            prune_optional_plugins(package_dir)
         bundle(
             package_dir / "official_channels",
             self.distribution.get_version(),
@@ -68,6 +94,8 @@ class SDist(sdist):
 
     def make_release_tree(self, base_dir, files):
         super().make_release_tree(base_dir, files)
+        verify_bundled_plugin_policy(Path(base_dir) / "src/qwenpaw")
+        prune_optional_plugins(Path(base_dir) / "src/qwenpaw")
         root = Path(__file__).resolve().parent
         builder = runpy.run_path(
             str(root / "scripts/pack/generate_plugin_metadata.py"),

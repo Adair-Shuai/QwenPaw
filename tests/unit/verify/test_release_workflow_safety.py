@@ -7,6 +7,8 @@ from importlib.util import module_from_spec, spec_from_file_location
 import json
 from pathlib import Path
 import subprocess
+import hashlib
+import zipfile
 
 import pytest
 import yaml
@@ -92,8 +94,7 @@ function Get-CimInstance {
 
 def test_clean_release_and_frontend_checks_build_openui_runtime() -> None:
     for name, gate in (
-        ("release-resume.yml", "Pack plugins and build index"),
-        ("plugins-build.yml", "Pack plugins and build index"),
+        ("plugins-release.yml", "Pack plugins and build index"),
         ("frontend-tests.yml", "Verify fork feature regression inventory"),
         ("full-tests-nightly.yml", "Verify fork feature regression inventory"),
     ):
@@ -125,7 +126,7 @@ def test_clean_release_and_frontend_checks_build_openui_runtime() -> None:
         assert "system-prompt.txt" in text
         assert "npm ci --prefix" in text and "npm run build --prefix" in text
     for name, gate in (
-        ("release.yml", "Build package"),
+        ("release-resume.yml", "Build package"),
         ("publish-pypi.yml", "Build package"),
         ("fork-verify.yml", "Build package"),
         ("release-verify.yml", "Run install script (Linux/macOS)"),
@@ -150,7 +151,7 @@ def test_clean_release_and_frontend_checks_build_openui_runtime() -> None:
 
 
 def test_reusable_plugin_build_matches_release_artifact_scope() -> None:
-    for name in ("release-resume.yml", "plugins-build.yml"):
+    for name in ("plugins-release.yml",):
         workflow = _workflow(name)
         pack = workflow.index("Pack plugins and build index")
         for stage in (
@@ -165,21 +166,12 @@ def test_reusable_plugin_build_matches_release_artifact_scope() -> None:
                 f"npm --prefix plugins/bundle/qwenpaw-run-center/ui {command}"
                 in workflow
             )
-        for plugin in (
-            "qwenpaw-creator",
-            "uproject",
-            "datapaw",
-            "qwenpaw-data",
-        ):
-            assert f"--exclude {plugin}" in workflow[pack:]
+        assert "--exclude-apps" in workflow[pack:]
 
 
 @pytest.mark.parametrize(
     "workflow_name,job",
     [
-        ("release.yml", "build-plugins"),
-        ("release-resume.yml", "build-plugins"),
-        ("plugins-build.yml", "build-plugins"),
         ("plugins-release.yml", "upload-oss"),
     ],
 )
@@ -245,7 +237,7 @@ def test_resumed_wheel_validates_contracts_and_stages_tested_openui() -> None:
 
 
 def test_release_builds_run_center_and_docker_runtime_dependencies() -> None:
-    release = _workflow("release.yml")
+    release = _workflow("release-resume.yml")
     resumable = _workflow("release-resume.yml")
     standalone = _workflow("plugins-release.yml")
     dockerfile = (REPO_ROOT / "deploy" / "Dockerfile").read_text(
@@ -260,9 +252,17 @@ def test_release_builds_run_center_and_docker_runtime_dependencies() -> None:
             "npm --prefix plugins/bundle/qwenpaw-run-center/ui run build"
             in workflow
         )
-        assert workflow.index("Build Run Center frontend") < workflow.index(
-            "Pack plugins and build index",
+        stage = (
+            "Build Run Center frontend"
+            if workflow == standalone
+            else "Build bundled Run Center frontend"
         )
+        gate = (
+            "Pack plugins and build index"
+            if workflow == standalone
+            else "Build package"
+        )
+        assert workflow.index(stage) < workflow.index(gate)
     assert (
         "COPY scripts/pack-tauri/runtime_staging.py /tmp/runtime_staging.py"
         in dockerfile
@@ -275,14 +275,13 @@ def test_release_builds_run_center_and_docker_runtime_dependencies() -> None:
         "rm /tmp/stage_python_runtime.py /tmp/runtime_staging.py "
         "/tmp/copy_windows_tree.py"
     ) in dockerfile
-    assert "[-.](a|b|rc|dev)" in release
+    assert "beta|alpha|rc|dev" in release
 
 
 def test_resumable_release_publish_waits_for_full_test_gate() -> None:
     release = _workflow("release-resume.yml")
     for job, following in (
-        ("publish-desktop", "publish-plugins"),
-        ("publish-plugins", "publish-components"),
+        ("publish-desktop", "publish-components"),
         ("publish-components", "full-test-gate"),
     ):
         block = release.split(f"  {job}:\n", 1)[1].split(
@@ -295,7 +294,6 @@ def test_resumable_release_publish_waits_for_full_test_gate() -> None:
 
 def test_distribution_builds_embed_run_center_frontend() -> None:
     for workflow in (
-        "release.yml",
         "release-resume.yml",
         "publish-pypi.yml",
         "fork-verify.yml",
@@ -303,9 +301,11 @@ def test_distribution_builds_embed_run_center_frontend() -> None:
     ):
         text = _workflow(workflow)
         assert text.index("Build bundled Run Center frontend") < text.index(
-            "python -m build"
-            if workflow != "release-verify.yml"
-            else "Run install script",
+            (
+                "python -m build"
+                if workflow != "release-verify.yml"
+                else "Run install script"
+            ),
         )
         assert "python scripts/sync_run_center_bundle.py --sync" in text
         assert (
@@ -348,7 +348,6 @@ def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
     assert "verify_cleanup_only_failure" in release
     assert "only Stop server cleanup was incomplete" in release
     assert 'validate_artifact_reuse_diff "$windows_sha" "$sha"' in release
-    assert 'validate_artifact_reuse_diff "$plugins_sha" "$sha"' in release
     assert 'validate_artifact_reuse_diff "$replacement_sha" "$sha"' in release
     assert "grep -qx 'tauri-updater-meta-windows'" in release
     assert "grep -qx 'tauri-updater-meta-macos'" in release
@@ -364,11 +363,10 @@ def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
     assert release.count('[ -z "$MACOS_ARTIFACTS_RUN_ID" ]') >= 1
     assert release.count('[ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]') >= 1
     assert release.count(".github/workflows/desktop-build.yml") >= 2
-    assert ".github/workflows/plugins-build.yml" in release
+    assert "plugins_artifacts_run_id" not in release
     assert ".github/workflows/component-release.yml" in release
     assert 'grep -Fqx "build-tauri-windows"$\'\\t\'"success"' in release
     assert 'grep -Fqx "build-tauri-macos"$\'\\t\'"success"' in release
-    assert 'grep -Fqx "build-plugins"$\'\\t\'"success"' in release
     assert "build-components (windows-x86_64)" in release
     assert "build-components (macos-aarch64)" in release
     assert "component-release-windows-x86_64" in release
@@ -484,7 +482,8 @@ def test_component_release_stages_plugins_and_versioned_desktop_layers() -> (
 ):
     component_release = _workflow("component-release.yml")
 
-    assert "--plugin-roots bundle apps" in component_release
+    assert "--plugin-roots bundle" in component_release
+    assert "--plugin-roots bundle apps" not in component_release
     assert "stage_bundled_plugins.py" in component_release
     assert "stage_desktop_components.py" in component_release
     assert "desktop-components-${{ matrix.target }}" in component_release
@@ -514,30 +513,24 @@ def test_component_release_stages_plugins_and_versioned_desktop_layers() -> (
 
 def test_mutable_release_metadata_is_promoted_only_after_finalize() -> None:
     release = _workflow("release-resume.yml")
-    publish_plugins = release.index("  publish-plugins:")
     publish_components = release.index("  publish-components:")
     finalize = release.index("  finalize:")
     promote = release.index("  promote-release-metadata:")
     desktop_promote = release.index("  promote-desktop:")
 
-    assert publish_plugins < finalize < promote < desktop_promote
+    assert finalize < promote < desktop_promote
     assert publish_components < finalize < promote
-    assert "name: plugin-promotion-metadata" in release
+    assert "plugin-promotion-metadata" not in release
     assert "name: component-promotion-metadata" in release
-    assert (
-        "needs: [resolve, publish-plugins, publish-components, finalize]"
-        in release
-    )
+    assert "needs: [resolve, publish-components, finalize]" in release
     pre_finalize = release[:finalize]
     assert "metadata/plugins/.staging" not in pre_finalize
     assert "metadata/.staging" not in pre_finalize
     assert "Phase 2: switch all platform pointers" not in pre_finalize
     promotion_block = release[promote:desktop_promote]
-    assert (
-        "find promotion/plugins -type f -name 'index.json'" in promotion_block
-    )
-    assert "metadata/plugins/index.json" in promotion_block
-    assert "metadata/index.json" in promotion_block
+    assert "promotion/plugins" not in promotion_block
+    assert "metadata/plugins/index.json" not in promotion_block
+    assert "metadata/index.json" not in promotion_block
     assert "metadata/ugsci-core-latest.json" in promotion_block
     assert "metadata/components/stable/$base" in promotion_block
     assert "rollback_metadata" in promotion_block
@@ -942,8 +935,6 @@ def _mock_oss_transport(monkeypatch, uploader, remote):
 @pytest.mark.parametrize(
     "workflow_name,job",
     [
-        ("release.yml", "publish-plugins"),
-        ("release-resume.yml", "publish-plugins"),
         ("plugins-release.yml", "upload-oss"),
     ],
 )
@@ -1001,6 +992,88 @@ def test_plugin_upload_conflict_blocks_every_new_object(
             "release-test",
             preflight_only=preflight_only,
         )
+    assert not uploads
+
+
+def test_independent_release_versions_advance_only_changed_payloads(
+    tmp_path,
+    monkeypatch,
+):
+    """Reuse unchanged ZIPs without altering compatibility bounds."""
+    import io
+
+    root, files = _pack_upload_fixture(tmp_path)
+    repo = tmp_path / "repo"
+    for row in files.values():
+        archive = root / row["url"].removeprefix("/files/plugins/")
+        with zipfile.ZipFile(archive) as package:
+            name = next(
+                name
+                for name in package.namelist()
+                if name.endswith("/plugin.json")
+            )
+            payload = package.read(name)
+        for directory in (
+            repo / "plugins" / row["platform"] / row["plugin_id"],
+            repo / "src/qwenpaw/plugins_bundle" / row["plugin_id"],
+        ):
+            directory.mkdir(parents=True)
+            (directory / "plugin.json").write_bytes(payload)
+    uploader = _upload_module()
+    remote = {
+        f"oss://release-test{row['url']}": (
+            root / row["url"].removeprefix("/files/plugins/")
+        ).read_bytes()
+        for row in files.values()
+    }
+    uploads = _mock_oss_transport(monkeypatch, uploader, remote)
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "scripts/pack"))
+    spec = spec_from_file_location(
+        "version_reconciliation_test",
+        REPO_ROOT / "scripts/pack/prepare_plugin_versions.py",
+    )
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(
+        module,
+        "_oss",
+        uploader._oss,  # pylint: disable=protected-access
+    )
+    index = {"files": files, "_bucket": "release-test"}
+    assert module.reconcile(repo, root, index) == []
+    row = next(
+        row for row in files.values() if row["plugin_id"] == "release-hub"
+    )
+    uri = f"oss://release-test{row['url']}"
+    older = io.BytesIO()
+    with (
+        zipfile.ZipFile(io.BytesIO(remote[uri])) as original,
+        zipfile.ZipFile(older, "w") as archive,
+    ):
+        for name in original.namelist():
+            archive.writestr(
+                name,
+                (
+                    b"VALUE = 0\n"
+                    if name.endswith("plugin.py")
+                    else original.read(name)
+                ),
+            )
+    remote[uri] = older.getvalue()
+    manifest = repo / "plugins/hub/release-hub/plugin.json"
+    before = json.loads(manifest.read_text("utf-8"))
+    changed = module.reconcile(repo, root, index)
+    assert len(changed) == 2
+    after = json.loads(manifest.read_text("utf-8"))
+    assert after == {**before, "version": "1.0.1"}
+    assert (
+        json.loads(
+            (
+                repo / "src/qwenpaw/plugins_bundle/release-hub/plugin.json"
+            ).read_text("utf-8"),
+        )
+        == after
+    )
     assert not uploads
 
 
@@ -1091,39 +1164,30 @@ def test_plugin_preflight_reads_actual_objects_without_uploading(
     assert not uploads
 
 
-@pytest.mark.parametrize(
-    "workflow_name",
-    ["release.yml", "release-resume.yml"],
-)
-def test_release_expensive_jobs_require_immutable_plugin_preflight(
-    workflow_name,
-):
-    jobs = yaml.safe_load(_workflow(workflow_name))["jobs"]
-    steps = jobs["build-plugins"]["steps"]
+def test_release_expensive_jobs_require_immutable_plugin_preflight():
+    """Core builds are independent; market uploads still fail closed."""
+    jobs = yaml.safe_load(_workflow("release-resume.yml"))["jobs"]
+    assert "build-plugins" not in jobs and "publish-plugins" not in jobs
+    for name in ("build-wheel", "build-desktop", "full-test-gate"):
+        assert jobs[name]["needs"] == ["resolve"]
+    steps = yaml.safe_load(_workflow("plugins-release.yml"))["jobs"][
+        "upload-oss"
+    ]["steps"]
+    names = [step.get("name") for step in steps]
     preflight = next(
         step
         for step in steps
         if step.get("name") == "Preflight immutable plugin versions"
     )
-    assert (
-        '--root dist/plugins --bucket "$OSS_BUCKET" --preflight'
-        in preflight["run"]
-    )
-    assert preflight["if"] == "${{ !inputs.dry_run }}"
+    assert "--preflight" in preflight["run"]
+    assert "--reject-apps" in preflight["run"]
     assert not preflight.get("continue-on-error", False)
-    names = [step.get("name") for step in steps]
     assert names.index("Pack plugins and build index") < names.index(
         preflight["name"],
     )
-    assert names.index(preflight["name"]) < names.index("Upload plugins dist")
-    for name in ("build-wheel", "build-desktop", "full-test-gate"):
-        assert "build-plugins" in jobs[name]["needs"]
-    if workflow_name == "release-resume.yml":
-        assert (
-            "needs.build-plugins.result == 'skipped'"
-            in jobs["full-test-gate"]["if"]
-        )
-        assert "inputs.artifacts_run_id != ''" in jobs["full-test-gate"]["if"]
+    assert names.index(preflight["name"]) < names.index(
+        "Sync plugin zips to OSS (long-cache, immutable)",
+    )
 
 
 def test_console_checkout_preserves_formatter_line_endings(tmp_path):
@@ -1182,3 +1246,242 @@ def test_console_checkout_preserves_formatter_line_endings(tmp_path):
         assert path.read_bytes() == text, path.name
     assert binary.read_bytes() == binary_bytes
     assert batch.read_bytes() == b"@echo off\r\necho verify\r\n"
+
+
+@pytest.mark.parametrize("kind", ["apps", "hub"])
+def test_main_plugin_publisher_rejects_actual_application_archives(
+    tmp_path,
+    monkeypatch,
+    kind,
+):
+    root, files = _pack_upload_fixture(tmp_path)
+    row = next(row for row in files.values() if row["platform"] == "hub")
+    original = root / row["url"].removeprefix("/files/plugins/")
+    with zipfile.ZipFile(original) as archive:
+        members = {name: archive.read(name) for name in archive.namelist()}
+    manifest_name = f"{row['plugin_id']}/plugin.json"
+    manifest = json.loads(members[manifest_name])
+    manifest["type"] = "app"
+    members[manifest_name] = json.dumps(manifest).encode()
+    destination = root / kind / row["plugin_id"] / row["filename"]
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    original.unlink()
+    with zipfile.ZipFile(destination, "w") as archive:
+        for name, content in members.items():
+            archive.writestr(name, content)
+    row.update(
+        url=f"/files/plugins/{kind}/{row['plugin_id']}/{row['filename']}",
+        sha256=hashlib.sha256(destination.read_bytes()).hexdigest(),
+        size_bytes=destination.stat().st_size,
+    )
+    (root / "index.json").write_text(json.dumps({"files": files}), "utf-8")
+    uploader = _upload_module()
+
+    def forbidden_transport(_arguments):
+        raise AssertionError("Application rejection must precede OSS access")
+
+    monkeypatch.setattr(uploader, "_oss", forbidden_transport)
+    with pytest.raises(ValueError, match="independent release"):
+        uploader.upload_artifacts(root, "release-test", reject_apps=True)
+    assert len(uploader.artifact_plan(root)) == 2
+
+
+@pytest.mark.parametrize(
+    "workflow_name,job",
+    [
+        ("plugins-release.yml", "upload-oss"),
+    ],
+)
+def test_main_release_workflows_exclude_every_application(workflow_name, job):
+    steps = yaml.safe_load(_workflow(workflow_name))["jobs"][job]["steps"]
+    pack = next(
+        step
+        for step in steps
+        if step.get("name") == "Pack plugins and build index"
+    )
+    assert "--exclude-apps" in pack["run"]
+    assert all(
+        step.get("name") != "Build app plugin frontends" for step in steps
+    )
+    for step in steps:
+        command = step.get("run", "")
+        if "python scripts/pack/upload_plugin_artifacts.py" in command:
+            assert "--reject-apps" in command
+
+
+@pytest.mark.parametrize(
+    "name",
+    [
+        "creator",
+        "qwenpaw-data",
+        "uproject",
+        "document-forms",
+        "storage-capacity",
+        "wellbore-pressure",
+    ],
+)
+def test_application_releases_prepare_versions_without_force_overwrites(name):
+    workflow = yaml.safe_load(_workflow(f"{name}-release.yml"))
+    assert workflow["permissions"]["contents"] == "write"
+    assert workflow["concurrency"]["group"] == "oss-production-metadata"
+    assert "check-version" not in workflow["jobs"]
+    steps = next(iter(workflow["jobs"].values()))["steps"]
+    prepare = next(
+        step
+        for step in steps
+        if step.get("name") == "Prepare independent application version"
+    )
+    for argument in ("--sdk", "--commit", "--branch", "--repack"):
+        assert argument in prepare["run"]
+    assert not prepare.get("continue-on-error", False)
+    assert "github.event.inputs.force" not in _workflow(f"{name}-release.yml")
+
+
+@pytest.mark.parametrize(
+    "current,releases,channel,expected,tag",
+    [
+        ("2.3.0b5", ["v2.3.0-beta.6"], "beta", "2.3.0b7", "v2.3.0-beta.7"),
+        ("2.3.0b5", [], "stable", "2.3.0", "v2.3.0"),
+        ("2.3.0", ["bad-tag"], "beta", "2.3.1b1", "v2.3.1-beta.1"),
+        ("2.3.0", [], "stable", "2.3.1", "v2.3.1"),
+    ],
+)
+def test_core_release_allocates_monotonic_independent_versions(
+    current,
+    releases,
+    channel,
+    expected,
+    tag,
+):
+    spec = spec_from_file_location(
+        "core_version_test",
+        REPO_ROOT / "scripts/pack/prepare_core_release.py",
+    )
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    version = module.next_version(current, releases, channel)
+    assert version == expected
+    assert module.release_tag(version) == tag
+
+
+def test_application_version_preparation_commits_and_repacks_real_artifact(
+    tmp_path,
+    monkeypatch,
+):
+    import sys
+
+    repo = tmp_path / "repo"
+    source = repo / "plugins/apps/release-app"
+    source.mkdir(parents=True)
+    manifest = {
+        "id": "release-app",
+        "version": "1.0.0",
+        "type": "app",
+        "entry": {"backend": "plugin.py"},
+        "qwenpaw_version": ">=2.2.0,<3.0.0",
+    }
+    (source / "plugin.json").write_text(json.dumps(manifest), "utf-8")
+    (source / "plugin.py").write_bytes(b"VALUE = 2\n")
+    (repo / ".gitignore").write_text("dist/\n", "utf-8")
+    remote_git = tmp_path / "remote.git"
+    for arguments in (
+        ["init", "--bare", str(remote_git)],
+        ["init", "-b", "main"],
+        ["config", "user.name", "Release test"],
+        ["config", "user.email", "test@example.com"],
+        ["add", "."],
+        ["commit", "-m", "initial"],
+        ["remote", "add", "origin", str(remote_git)],
+        ["push", "origin", "main"],
+    ):
+        subprocess.run(
+            ["git", *arguments],
+            cwd=repo,
+            check=True,
+            capture_output=True,
+        )
+    dist = repo / "dist/app"
+    subprocess.run(
+        [
+            sys.executable,
+            str(REPO_ROOT / "scripts/pack/generate_plugin_metadata.py"),
+            "--plugins-root",
+            str(repo / "plugins"),
+            "--dist",
+            str(dist),
+            "--metadata-out",
+            str(dist / "index.json"),
+            "--cdn-prefix",
+            "/files/plugins",
+            "--only",
+            "release-app",
+        ],
+        check=True,
+        capture_output=True,
+    )
+    index = json.loads((dist / "index.json").read_text("utf-8"))
+    row = next(iter(index["files"].values()))
+    remote = {
+        "oss://release-test/metadata/plugins/index.json": json.dumps(
+            index,
+        ).encode(),
+        f"oss://release-test{row['url']}": b"previous immutable package",
+    }
+    uploader = _upload_module()
+    uploads = _mock_oss_transport(monkeypatch, uploader, remote)
+    monkeypatch.syspath_prepend(str(REPO_ROOT / "scripts/pack"))
+    spec = spec_from_file_location(
+        "app_version_cli_test",
+        REPO_ROOT / "scripts/pack/prepare_plugin_versions.py",
+    )
+    module = module_from_spec(spec)
+    spec.loader.exec_module(module)
+    monkeypatch.setattr(
+        module,
+        "_oss",
+        uploader._oss,  # pylint: disable=protected-access
+    )
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "prepare_plugin_versions.py",
+            "--repo",
+            str(repo),
+            "--dist",
+            str(dist),
+            "--bucket",
+            "release-test",
+            "--commit",
+            "--branch",
+            "main",
+            "--repack",
+        ],
+    )
+    module.main()
+    assert not uploads
+    assert json.loads((source / "plugin.json").read_text("utf-8")) == {
+        **manifest,
+        "version": "1.0.1",
+    }
+    new_index = json.loads((dist / "index.json").read_text("utf-8"))
+    new_row = next(iter(new_index["files"].values()))
+    assert new_row["version"] == "1.0.1"
+    archives = list(dist.rglob("*.zip"))
+    assert len(archives) == 1
+    with zipfile.ZipFile(archives[0]) as package:
+        assert package.read("release-app/plugin.py") == b"VALUE = 2\n"
+        assert json.loads(package.read("release-app/plugin.json")) == {
+            **manifest,
+            "version": "1.0.1",
+        }
+    published_manifest = subprocess.check_output(
+        [
+            "git",
+            "--git-dir",
+            str(remote_git),
+            "show",
+            "main:plugins/apps/release-app/plugin.json",
+        ],
+    )
+    assert json.loads(published_manifest)["version"] == "1.0.1"

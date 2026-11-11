@@ -10,6 +10,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SUITES = (
+    "tests/unit/plugins/test_generate_plugin_metadata.py",
+    "tests/unit/tauri/test_frozen_plugin_archive.py",
+    "tests/unit/tauri/test_bundled_plugin_packaging.py",
     "tests/unit/tauri/test_desktop_sqlite_paths.py",
     "tests/unit/app/test_console_static_security.py",
     "tests/unit/tauri/test_update_release_contract.py",
@@ -59,6 +62,15 @@ SUITES = (
     "tests/unit/plugins/test_dependency_source_sync.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/plugins/test_generate_plugin_metadata.py": {
+        "test_main_release_excludes_apps_and_preserves_independent_packing",
+    },
+    "tests/unit/tauri/test_frozen_plugin_archive.py": {
+        "test_desktop_publication_rejects_application_payloads",
+    },
+    "tests/unit/tauri/test_bundled_plugin_packaging.py": {
+        "test_main_release_staging_excludes_apps_from_explicit_roots",
+    },
     "tests/unit/tauri/test_desktop_sqlite_paths.py": {
         "test_desktop_history_recall_and_snapshots_preserve_native_paths",
         "test_desktop_dependency_executor_accepts_native_path_aliases",
@@ -240,6 +252,12 @@ REQUIRED_CASES = {
         "test_directory_candidate_snapshot_is_isolated",
     },
     "tests/unit/verify/test_release_workflow_safety.py": {
+        "test_independent_release_versions_advance_only_changed_payloads",
+        "test_application_releases_prepare_versions_without_force_overwrites",
+        "test_core_release_allocates_monotonic_independent_versions",
+        "test_application_version_preparation_commits_and_repacks_real_artifact",
+        "test_main_plugin_publisher_rejects_actual_application_archives",
+        "test_main_release_workflows_exclude_every_application",
         "test_clean_release_and_frontend_checks_build_openui_runtime",
         "test_reusable_plugin_build_matches_release_artifact_scope",
         "test_plugin_pack_jobs_install_channel_contract_dependencies",
@@ -260,6 +278,7 @@ REQUIRED_CASES = {
         "test_binary_verification_rejects_mutation_during_probe",
     },
     "tests/unit/tauri/test_update_release_contract.py": {
+        "test_publication_gate_rejects_apps_in_signed_update_payloads",
         "test_publication_gate_verifies_full_fallback_and_all_deltas",
         "test_publication_gate_blocks_broken_but_present_artifacts",
         "test_current_updater_preserves_data_across_future_release_routes",
@@ -269,6 +288,7 @@ REQUIRED_CASES = {
         "test_builds_ten_direct_deltas_and_binds_signed_history",
     },
     "tests/unit/tauri/test_ugsci_release_data.py": {
+        "test_python_distributions_reject_embedded_application_payloads",
         "test_release_staging_and_market_zip_exclude_local_visualization_data",
         "test_python_wheel_and_sdist_exclude_visualization_test_data",
         "test_signed_component_gate_rejects_visualization_test_payload",

@@ -11,9 +11,16 @@ import argparse
 import stat
 import tarfile
 import zipfile
+import runpy
 from pathlib import Path, PurePosixPath
 from typing import Callable
 
+BUNDLED_PLUGIN_IDS = runpy.run_path(
+    str(
+        Path(__file__).resolve().parents[2]
+        / "src/qwenpaw/bundled_plugin_policy.py",
+    ),
+)["BUNDLED_PLUGIN_IDS"]
 CRITICAL_PLUGINS = frozenset(
     {"flowforge", "qwenpaw-run-center", "ugsci", "ugsci_research"},
 )
@@ -56,6 +63,12 @@ def verify(root: Path) -> None:
         if not plugin_id or plugin_id in seen:
             raise ValueError(
                 f"invalid or duplicate plugin id: {manifest_path}",
+            )
+        if manifest.get("type") == "app":
+            raise ValueError("Applications require an independent release")
+        if plugin_id not in BUNDLED_PLUGIN_IDS:
+            raise ValueError(
+                f"Optional plugin must not be bundled: {plugin_id}",
             )
         seen.add(plugin_id)
         if plugin_id == "ugsci" and any(
@@ -268,6 +281,12 @@ def _verify_archive_files(
         if not plugin_id or plugin_id in seen:
             raise ValueError(
                 f"invalid or duplicate plugin id in archive: {manifest_name}",
+            )
+        if manifest.get("type") == "app":
+            raise ValueError("Applications require an independent release")
+        if plugin_id not in BUNDLED_PLUGIN_IDS:
+            raise ValueError(
+                f"Optional plugin must not be bundled: {plugin_id}",
             )
         seen.add(plugin_id)
         if plugin_id == "ugsci" and any(

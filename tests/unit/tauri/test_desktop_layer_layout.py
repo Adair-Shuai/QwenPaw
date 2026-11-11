@@ -192,6 +192,7 @@ def _write_layer_fixture_plugins(repo):
         "qwenpaw-run-center",
         "ugsci",
         "ugsci_research",
+        "qwenpaw-openui",
         "qwenpaw-data",
     ):
         category = "apps" if identifier == "qwenpaw-data" else "bundle"
@@ -260,8 +261,7 @@ def test_python_layers_real_installs_stay_stable_after_import_validation(
         encoding="utf-8",
     )
     original_run = helper._run  # pylint: disable=protected-access
-    validations = []
-    wheel_paths = []
+    validations, wheel_paths = [], []
 
     def run_with_fixture_wheel(command, *, cwd, env=None):
         if command[1:3] == ["-m", "build"]:
@@ -312,11 +312,12 @@ def test_python_layers_real_installs_stay_stable_after_import_validation(
             "qwenpaw-run-center",
             "ugsci",
             "ugsci_research",
-            "qwenpaw-data",
+            "qwenpaw-openui",
         }
         assert not (plugins / "obsolete").exists()
         assert not (plugins / "ugsci/visualization/data").exists()
-        assert (plugins / "qwenpaw-data/ui/dist/index.js").is_file()
+        assert not (plugins / "qwenpaw-data").exists()
+        assert (plugins / "qwenpaw-openui/ui/dist/index.js").is_file()
         record = next(backend.glob("qwenpaw-*.dist-info/RECORD"))
         with record.open(encoding="utf-8", newline="") as stream:
             rows = {row[0]: row[1:] for row in csv.reader(stream)}
@@ -370,12 +371,12 @@ def test_backend_plugin_staging_rejects_incomplete_canonical_payload(
     helper = _load_python_layers()
     repo = tmp_path / "repo"
     _write_layer_fixture_plugins(repo)
-    (repo / "plugins/apps/qwenpaw-data" / missing).unlink()
+    (repo / "plugins/bundle/qwenpaw-openui" / missing).unlink()
     backend = tmp_path / "backend"
     record = backend / "qwenpaw-2.2.2b9.dist-info/RECORD"
     record.parent.mkdir(parents=True)
     record.write_text("qwenpaw-2.2.2b9.dist-info/RECORD,,\n", encoding="utf-8")
-    with pytest.raises(ValueError, match="qwenpaw-data is missing"):
+    with pytest.raises(ValueError, match="qwenpaw-openui is missing"):
         helper._stage_backend_plugins(repo, backend)
 
 

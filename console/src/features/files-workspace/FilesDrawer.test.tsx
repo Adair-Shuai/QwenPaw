@@ -14,6 +14,10 @@ import { AnswerQuoteComposer } from "../../pages/Chat/components/AnswerQuoteComp
 import { readAnswerQuotes } from "../../pages/Chat/answerQuotes";
 import { OPEN_FILE_PREVIEW_EVENT } from "./openFilePreview";
 import FilesDrawer from "./FilesDrawer";
+// Transform real lazy modules before measuring mounted-page interactions.
+import "./FilesWorkspace";
+import "../../components/Workspace/renderers/MarkdownRenderer";
+import "../../components/Workspace/renderers/HtmlRenderer";
 import { notifyProjectDirectoryChanged } from "../project-directory/projectDirectoryChangeEvent";
 import { useWorkbenchTabsStore } from "./workbenchTabsStore";
 import i18n from "../../i18n";

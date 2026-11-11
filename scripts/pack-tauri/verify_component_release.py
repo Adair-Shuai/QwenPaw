@@ -11,7 +11,7 @@ import mmap
 import os
 import stat
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib.parse import unquote, urlsplit
 
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PublicKey
@@ -193,6 +193,7 @@ def _verify_archive(
     component: str,
     entry: dict,
     delta: dict | None,
+    independent_application: str | None = None,
 ) -> None:
     with zipfile.ZipFile(path) as archive:
         infos = archive.infolist()
@@ -220,6 +221,21 @@ def _verify_archive(
                 if delta is not None
                 else info.filename
             )
+            parts = PurePosixPath(relative).parts
+            if relative == "plugin.json" or (
+                len(parts) >= 3
+                and parts[-3] == "plugins_bundle"
+                and parts[-1] == "plugin.json"
+            ):
+                plugin = json.loads(archive.read(info.filename))
+                if plugin.get("type") == "app" and not (
+                    relative == "plugin.json"
+                    and component == independent_application
+                    and plugin.get("id") == independent_application
+                ):
+                    raise ValueError(
+                        "Applications require an independent release",
+                    )
             if component == "ugsci" and (
                 relative == "visualization/data"
                 or relative.startswith("visualization/data/")
@@ -240,6 +256,7 @@ def verify_release(
     target: str,
     base_url: str,
     public_key: str,
+    independent_application: str | None = None,
 ) -> dict:
     key = Ed25519PublicKey.from_public_bytes(
         decode_base64(public_key, label="public key"),
@@ -268,7 +285,13 @@ def verify_release(
             ):
                 raise ValueError(f"artifact size/hash mismatch: {component}")
             _verify_signature(path, item["signature"], key)
-            _verify_archive(path, component, entry, delta)
+            _verify_archive(
+                path,
+                component,
+                entry,
+                delta,
+                independent_application,
+            )
             count += 1
     return {
         "target": target,

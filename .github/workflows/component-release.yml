@@ -143,13 +143,13 @@ jobs:
         if: ${{ !inputs.include_desktop_components }}
         run: bash scripts/pack-tauri/build_plugin_uis.sh
 
-      - name: Stage managed bundled plugins and apps
+      - name: Stage managed bundled extensions
         if: ${{ !inputs.include_desktop_components }}
         run: |
           python scripts/pack-tauri/stage_bundled_plugins.py \
             --repo . \
             --dest component-staging \
-            --plugin-roots bundle apps
+            --plugin-roots bundle
           python scripts/pack-tauri/verify_frozen_plugins.py component-staging
 
       - name: Resolve desktop component artifact source

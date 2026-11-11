@@ -355,7 +355,7 @@ def test_update_release_gates_cannot_be_bypassed_by_publication():
 
     for name, job in [
         ("component-release.yml", "build-components"),
-        ("component-publish.yml", "publish"),
+        ("release-resume.yml", "publish-components"),
     ]:
         workflow = yaml.safe_load(
             (ROOT / ".github/workflows" / name).read_text(encoding="utf-8"),
@@ -367,7 +367,10 @@ def test_update_release_gates_cannot_be_bypassed_by_publication():
             if "python scripts/pack-tauri/verify_component_release.py"
             in step.get("run", "")
         )
-        assert not steps[gate].get("if")
+        if name == "release-resume.yml":
+            assert steps[gate].get("if") == "${{ !inputs.dry_run }}"
+        else:
+            assert not steps[gate].get("if")
         assert not steps[gate].get("continue-on-error", False)
         upload = next(
             index
@@ -392,3 +395,64 @@ def test_update_release_gates_cannot_be_bypassed_by_publication():
         assert run.index(
             "scripts/verify_update_regressions.py --check",
         ) < run.index("pytest tests/unit")
+
+
+@pytest.mark.parametrize("embedded", [False, True])
+def test_publication_gate_rejects_apps_in_signed_update_payloads(
+    release,
+    embedded,
+):
+    _, output, manifest_path, private, public = release
+    document = json.loads(manifest_path.read_text())
+    entry = document["components"]["demo"]
+    item = entry["full"]
+    path = local_artifact(output, item["url"])
+    with zipfile.ZipFile(path) as archive:
+        members = {name: archive.read(name) for name in archive.namelist()}
+    name = (
+        "qwenpaw/plugins_bundle/application/plugin.json"
+        if embedded
+        else "plugin.json"
+    )
+    application = {"id": "application", "version": "1.0.0", "type": "app"}
+    if not embedded:
+        application.update(json.loads(members[name]))
+    members[name] = canonical_json(application)
+    entry["files"][name] = {
+        "sha256": hashlib.sha256(members[name]).hexdigest(),
+        "size": len(members[name]),
+        "mode": 420,
+    }
+    entry["deltas"] = []
+    with zipfile.ZipFile(
+        path,
+        "w",
+        compression=zipfile.ZIP_DEFLATED,
+    ) as archive:
+        for member, content in members.items():
+            archive.writestr(member, content)
+    raw = path.read_bytes()
+    item.update(
+        size=len(raw),
+        sha256=hashlib.sha256(raw).hexdigest(),
+        signature=base64.b64encode(private.sign(raw)).decode(),
+    )
+    resign_manifest(manifest_path, document, private)
+    with pytest.raises(ValueError, match="independent release"):
+        verify_release(
+            output,
+            manifest_path,
+            target=document["target"],
+            base_url=BASE_URL,
+            public_key=public,
+        )
+    if not embedded:
+        result = verify_release(
+            output,
+            manifest_path,
+            target=document["target"],
+            base_url=BASE_URL,
+            public_key=public,
+            independent_application="demo",
+        )
+        assert result["artifacts"] == 2
