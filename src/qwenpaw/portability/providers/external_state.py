@@ -8,6 +8,7 @@ from heapq import nlargest
 import sqlite3
 import tomllib
 from pathlib import Path
+from urllib.parse import quote
 from typing import Any
 
 from ..codex_plugin_adapter import ADAPTER as CODEX_PLUGIN_ADAPTER
@@ -93,7 +94,7 @@ def _codex_stage1_count(codex_home: Path) -> int:
     if _unsafe_source(database, root=codex_home) or not database.is_file():
         return 0
     try:
-        uri = f"{database.resolve().as_uri()}?mode=ro"
+        uri = "file:" + quote(str(database.resolve()), safe="/") + "?mode=ro"
         with sqlite3.connect(uri, uri=True, timeout=2.0) as connection:
             value = connection.execute(
                 "SELECT COUNT(*) FROM stage1_outputs WHERE "

@@ -404,6 +404,8 @@ def test_layered_channel_rejects_stale_wheel_pool(tmp_path):
 @pytest.mark.parametrize("suffix", ["ps1", "sh"])
 def test_desktop_build_wires_independent_layered_channel_pool(suffix):
     source = (PACK / f"build_pyinstaller.{suffix}").read_text("utf-8")
+    assembly = source.split("assemble_desktop_layout.py", 1)[1]
+    assert "--verify-runtime" in assembly.split("Layered", 1)[0]
     setup = source.split("skipping PyInstaller", 1)[1].split(
         "Building readable channel runtime",
         1,

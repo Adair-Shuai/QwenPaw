@@ -363,7 +363,7 @@ if [ "$LAYERED_DESKTOP" = true ]; then
     "$PYTHON_BIN" "${REPO_ROOT}/scripts/pack-tauri/assemble_desktop_layout.py" \
         --binaries "${BINARIES_DIR}" \
         --version "${VERSION}" \
-        --target macos-aarch64
+        --target macos-aarch64 --verify-runtime
     # assemble_desktop_layout moves the runtime backing the venv's Python
     # symlink, so use the host interpreter for these JSON-only lookups.
     DEPENDENCY_PATH=$("$BOOTSTRAP_PYTHON" -c 'import json,sys; print(json.load(open(sys.argv[1], encoding="utf-8"))["components"]["python-packages"]["path"])' "${BINARIES_DIR}/state/active.json")

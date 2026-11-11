@@ -11,7 +11,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Iterator, Mapping
-from urllib.parse import unquote, urlparse
+from urllib.parse import quote, unquote, urlparse
 
 from ...harnesses.events import (
     HarnessHistoryItem,
@@ -190,7 +190,7 @@ def load_qoder_index(
     if not database.is_file() or database.is_symlink():
         return index, []
     try:
-        uri = f"{database.resolve().as_uri()}?mode=ro"
+        uri = "file:" + quote(str(database.resolve()), safe="/") + "?mode=ro"
         with sqlite3.connect(uri, uri=True) as connection:
             rows = connection.execute(
                 "SELECT key, value FROM ItemTable "

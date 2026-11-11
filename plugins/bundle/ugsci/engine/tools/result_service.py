@@ -23,6 +23,7 @@ import threading
 import time
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 from typing import Any
 
 from . import job_store
@@ -80,7 +81,7 @@ files."""
     if not database.is_file():
         return None
     with sqlite3.connect(
-        database.as_uri() + "?mode=ro",
+        "file:" + quote(str(database), safe="/") + "?mode=ro",
         uri=True,
         timeout=10,
     ) as connection:
@@ -97,7 +98,7 @@ initialization."""
     database = job_store.database_path()
     if database.is_file():
         with sqlite3.connect(
-            database.resolve().as_uri() + "?mode=ro",
+            "file:" + quote(str(database.resolve()), safe="/") + "?mode=ro",
             uri=True,
             timeout=10,
         ) as connection:

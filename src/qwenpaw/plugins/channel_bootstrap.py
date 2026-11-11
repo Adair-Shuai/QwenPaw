@@ -107,15 +107,18 @@ def runtime_manifest():
     sites = tuple(
         _resource_path(root, value) for value in data["dependency_paths"]
     )
-    if launcher_paths is not None and (
-        str(executable) != str(Path(launcher_paths[0]).resolve())
-        or str(support) != str(Path(launcher_paths[1]).resolve())
-        or sites
-        != tuple(
-            Path(item).resolve() for item in json.loads(launcher_paths[2])
-        )
-    ):
-        raise ValueError("CHANNEL_RUNTIME_MANIFEST_MISMATCH")
+    if launcher_paths is not None:
+        launcher_sites = json.loads(launcher_paths[2])
+        if (
+            not executable.samefile(launcher_paths[0])
+            or not support.samefile(launcher_paths[1])
+            or len(sites) != len(launcher_sites)
+            or any(
+                not site.samefile(selected)
+                for site, selected in zip(sites, launcher_sites)
+            )
+        ):
+            raise ValueError("CHANNEL_RUNTIME_MANIFEST_MISMATCH")
     index_path = support / "qwenpaw/official_channels/index.json"
     if not index_path.resolve().is_relative_to(root):
         raise ValueError("CHANNEL_RUNTIME_MANIFEST_INVALID")

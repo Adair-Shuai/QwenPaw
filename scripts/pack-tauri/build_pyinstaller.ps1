@@ -453,7 +453,7 @@ if ($LAYERED_DESKTOP) {
     & $PYTHON_BIN (Join-Path $REPO_ROOT "scripts\pack-tauri\assemble_desktop_layout.py") `
         --binaries $BINARIES_DIR `
         --version $VERSION `
-        --target windows-x86_64
+        --target windows-x86_64 --verify-runtime
     Assert-LastExit "Failed to assemble versioned desktop runtime layout"
 
     $previousPythonPath = $env:PYTHONPATH

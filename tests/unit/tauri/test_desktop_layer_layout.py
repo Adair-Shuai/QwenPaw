@@ -476,7 +476,53 @@ def test_python_layer_main_preserves_virtualenv_interpreter_symlink(
     assert captured["host"] != venv_python.resolve()
 
 
-def test_assemble_moves_stable_resources_into_versioned_boundaries(tmp_path):
+def _stage_test_channel_runtime(binaries, interpreter):
+    from qwenpaw.__version__ import __version__
+
+    python = binaries / "python-runtime" / interpreter
+    python.parent.mkdir(parents=True)
+    python.write_bytes(b"interpreter")
+    support = binaries / "channel-runtime/site"
+    index = support / "qwenpaw/official_channels/index.json"
+    index.parent.mkdir(parents=True)
+    index.write_bytes(b"{}")
+    manifest = binaries / "channel-runtime/runtime.json"
+    original = {
+        "schema_version": 1,
+        "host_version": __version__,
+        "preset": "light",
+        "python_executable": python.relative_to(binaries.parent).as_posix(),
+        "support_root": support.relative_to(binaries.parent).as_posix(),
+        "dependency_paths": [support.relative_to(binaries.parent).as_posix()],
+        "python": {
+            "version": [3, 12],
+            "implementation": "cpython",
+            "cache_tag": "cpython-312",
+            "sys_platform": "darwin",
+            "system": "Darwin",
+            "machine": "arm64",
+            "supported_tags": ["py3-none-any"],
+        },
+        "python_runtime_release": "python-3.12-sha",
+        "host_wheel_sha256": "0" * 64,
+        "official_index_sha256": hashlib.sha256(
+            index.read_bytes(),
+        ).hexdigest(),
+    }
+    manifest.write_text(json.dumps(original), encoding="utf-8")
+
+    return manifest, support, original
+
+
+@pytest.mark.parametrize(
+    "interpreter",
+    ["python/bin/python3", "python/python.exe"],
+)
+def test_assemble_moves_stable_resources_into_versioned_boundaries(
+    tmp_path,
+    monkeypatch,
+    interpreter,
+):
     helper = _load()
     binaries = tmp_path / "src-tauri" / "binaries"
     for name, marker, version in (
@@ -495,7 +541,42 @@ def test_assemble_moves_stable_resources_into_versioned_boundaries(tmp_path):
     helper_root.mkdir(parents=True)
     (helper_root / "qwenpaw-computer-use-helper.exe").write_bytes(b"MZ")
 
+    from qwenpaw.plugins.channel_bootstrap import runtime_manifest
+
+    manifest, support, original = _stage_test_channel_runtime(
+        binaries,
+        interpreter,
+    )
+
     active = helper.assemble(binaries, "2.1.1b7", "windows-x86_64")
+
+    relocated_python = (
+        binaries / "runtimes/python/python-3.12-sha" / interpreter
+    )
+    for name, value in {
+        "QWENPAW_TAURI_RESOURCE_DIR": binaries.parent,
+        "QWENPAW_CHANNEL_RUNTIME_MANIFEST": manifest,
+        "QWENPAW_DESKTOP_PY_RUNTIME": relocated_python,
+        "QWENPAW_CHANNEL_SUPPORT_ROOT": support,
+        "QWENPAW_CHANNEL_DEPENDENCY_PATHS": json.dumps([str(support)]),
+        "QWENPAW_CHANNEL_PRESET": "light",
+    }.items():
+        monkeypatch.setenv(name, str(value))
+    executable, actual_support, sites, identity, preset = runtime_manifest()
+    assert executable == relocated_python.resolve()
+    assert actual_support == support.resolve()
+    assert sites == (support.resolve(),)
+    assert identity == original["python"]
+    assert preset == "light"
+    updated = json.loads(manifest.read_text(encoding="utf-8"))
+    assert (
+        updated.pop("python_executable")
+        == relocated_python.relative_to(
+            binaries.parent,
+        ).as_posix()
+    )
+    original.pop("python_executable")
+    assert updated == original
 
     assert not (binaries / "python-runtime").exists()
     assert (binaries / "runtimes/python/python-3.12-sha").is_dir()
@@ -522,6 +603,38 @@ def test_assemble_moves_stable_resources_into_versioned_boundaries(tmp_path):
         assert descriptor["version"] == record["version"]
         assert file_inventory(bundled, ()) == file_inventory(staged, ())
         assert b"\r\n" not in (bundled / "component.json").read_bytes()
+
+
+@pytest.mark.parametrize(
+    "executable",
+    [
+        "binaries/python-runtime/../../outside/python",
+        "binaries/python-runtime",
+        "binaries/other/python",
+        "/outside/python",
+        "binaries/python-runtime/C:/outside/python",
+        "binaries/python-runtime/..\\outside\\python",
+    ],
+)
+def test_channel_interpreter_relocation_rejects_unsafe_paths(
+    tmp_path,
+    executable,
+):
+    helper = _load()
+    binaries = tmp_path / "binaries"
+    manifest = binaries / "channel-runtime/runtime.json"
+    manifest.parent.mkdir(parents=True)
+    manifest.write_text(
+        json.dumps({"python_executable": executable}),
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError):
+        # pylint: disable=protected-access
+        helper._relocate_channel_interpreter(
+            binaries,
+            binaries / "python-runtime",
+            binaries / "runtimes/python/version",
+        )
 
 
 def test_assemble_flattens_macos_java_home_for_component_signing(tmp_path):
@@ -696,3 +809,31 @@ def test_assemble_accepts_extensionless_macos_helper(tmp_path, monkeypatch):
         "/tools/computer-use/2.1.1b7",
     )
     assert active["target"] == "macos-aarch64"
+
+
+def test_runtime_manifest_accepts_equivalent_windows_path_spellings(
+    tmp_path,
+    monkeypatch,
+):
+    from qwenpaw.plugins.channel_bootstrap import runtime_manifest
+
+    binaries = tmp_path / "binaries"
+    manifest, support, _data = _stage_test_channel_runtime(
+        binaries,
+        "python/python.exe",
+    )
+    executable = binaries / "python-runtime/python/python.exe"
+    prefix = "\\\\?\\" if sys.platform == "win32" else ""
+    for name, value in {
+        "QWENPAW_TAURI_RESOURCE_DIR": prefix + str(tmp_path),
+        "QWENPAW_CHANNEL_RUNTIME_MANIFEST": prefix + str(manifest),
+        "QWENPAW_DESKTOP_PY_RUNTIME": str(executable),
+        "QWENPAW_CHANNEL_SUPPORT_ROOT": prefix + str(support),
+        "QWENPAW_CHANNEL_DEPENDENCY_PATHS": json.dumps([str(support)]),
+        "QWENPAW_CHANNEL_PRESET": "light",
+    }.items():
+        monkeypatch.setenv(name, value)
+    actual, actual_support, sites, _identity, _preset = runtime_manifest()
+    assert actual.samefile(executable)
+    assert actual_support.samefile(support)
+    assert sites[0].samefile(support)

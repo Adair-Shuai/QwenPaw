@@ -212,6 +212,7 @@
       "tests/unit/tauri/test_windows_portable_installer_contract.py"
     ],
     "windows_lifecycle": [
+      "tests/unit/tauri/test_desktop_sqlite_paths.py",
       "tests/unit/plugins/test_bundle_marker_scan.py",
       "tests/unit/tauri/test_windows_update_extraction.py"
     ],
@@ -470,6 +471,7 @@
       "test_generic_result_and_stage_binding_inventory_has_no_values_or_private_paths"
     ],
     "tests/unit/plugins/ugsci/test_simulation_results.py": [
+      "test_result_and_job_readers_accept_extended_windows_paths",
       "test_real_csv_incremental_half_write_preserves_snapshot_and_restart",
       "test_case_scope_isolates_output_and_full_export_is_unsampled",
       "test_text_eclipse_uses_physical_time_not_row_index",
@@ -875,6 +877,7 @@
       "test_job_releases_log_file_even_when_close_reports_error"
     ],
     "tests/unit/plugins/ugsci/test_storage_dynamics.py": [
+      "test_dataset_reader_accepts_extended_windows_paths",
       "test_explicit_gas_units_are_converted_before_aggregation"
     ],
     "tests/unit/plugins/ugsci/test_roff_conversion_contract.py": [
@@ -1060,7 +1063,13 @@
       "test_layered_channel_missing_dependency_stops_build",
       "test_desktop_build_wires_independent_layered_channel_pool"
     ],
+    "tests/unit/tauri/test_desktop_sqlite_paths.py": [
+      "test_desktop_history_recall_and_snapshots_preserve_native_paths",
+      "test_desktop_dependency_executor_accepts_native_path_aliases"
+    ],
     "tests/unit/tauri/test_desktop_layer_layout.py": [
+      "test_runtime_manifest_accepts_equivalent_windows_path_spellings",
+      "test_assemble_moves_stable_resources_into_versioned_boundaries",
       "test_python_layers_real_installs_stay_stable_after_import_validation"
     ],
     "tests/unit/pack/test_measure_desktop_footprint.py": [

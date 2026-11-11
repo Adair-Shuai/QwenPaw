@@ -8,6 +8,7 @@ import json
 import math
 import re
 import sqlite3
+from urllib.parse import quote
 from typing import Any
 
 from fastapi import Request
@@ -213,7 +214,7 @@ paths."""
         return {}
     try:
         with sqlite3.connect(
-            database.resolve().as_uri() + "?mode=ro",
+            "file:" + quote(str(database.resolve()), safe="/") + "?mode=ro",
             uri=True,
         ) as conn:
             row = conn.execute(
@@ -565,7 +566,9 @@ class PresentationStore:
             return
         try:
             with sqlite3.connect(
-                database.resolve().as_uri() + "?mode=ro",
+                "file:"
+                + quote(str(database.resolve()), safe="/")
+                + "?mode=ro",
                 uri=True,
             ) as conn:
                 source_id = _source_id(run)

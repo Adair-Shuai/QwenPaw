@@ -9,6 +9,7 @@ import csv
 import io
 import json
 import struct
+import sys
 import threading
 import time
 from pathlib import Path
@@ -58,6 +59,20 @@ def _case_fixture(tmp_path, monkeypatch):
 
 def write_csv(case: Path, rows: str):
     (case / "CASE.csv").write_text("Time,pressure\n" + rows, encoding="utf-8")
+
+
+def test_result_and_job_readers_accept_extended_windows_paths(
+    case,
+    tmp_path,
+    monkeypatch,
+):
+    prefix = "\\\\?\\" if sys.platform == "win32" else ""
+    database = Path(prefix + str(tmp_path / "state/jobs.json"))
+    monkeypatch.setattr(job_store, "_store_file", lambda: database)
+    write_csv(case, "0,10\n1,11\n")
+    snapshot = service.collect_once("sim-test")
+    assert service.load_snapshot("sim-test") == snapshot
+    assert service.read_job("sim-test")["status"] == "running"
 
 
 def test_real_csv_incremental_half_write_preserves_snapshot_and_restart(case):

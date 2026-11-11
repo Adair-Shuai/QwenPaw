@@ -14,6 +14,7 @@ import tomllib
 from contextlib import closing, contextmanager
 from datetime import datetime
 from pathlib import Path
+from urllib.parse import quote
 from typing import Any, Iterator
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
@@ -677,7 +678,11 @@ def _read_sqlite_target(
         query = "?mode=ro"
         if immutable:
             query += "&immutable=1"
-        uri = f"{database.resolve(strict=True).as_uri()}{query}"
+        uri = (
+            "file:"
+            + quote(str(database.resolve(strict=True)), safe="/")
+            + query
+        )
         with closing(
             sqlite3.connect(uri, uri=True, timeout=2.0),
         ) as connection:

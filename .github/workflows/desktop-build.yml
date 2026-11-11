@@ -527,6 +527,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: desktop-verify-logs-tauri-macos-${{ steps.version.outputs.version }}
+          include-hidden-files: true
           path: |
             ${{ runner.temp }}/qwenpaw-desktop-stdout.log
             ${{ runner.temp }}/qwenpaw-desktop-stderr.log

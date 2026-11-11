@@ -21,6 +21,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
+from urllib.parse import quote
 
 _DEFAULT_ROW_CAP = 1000
 _DEFAULT_SEARCH_TURN_MAX_BYTES = 4 * 1024 * 1024
@@ -388,7 +389,7 @@ class MemorySpace:
             self._history_root = abs_path.parent
             self._conn.execute(
                 "ATTACH DATABASE ? AS hist",
-                (f"file:{abs_path}?mode=ro",),
+                ("file:" + quote(str(abs_path), safe="/") + "?mode=ro",),
             )
         # Lock the connection down AFTER our own ATTACH: the model runs
         # arbitrary SQL through sql_query/sql_exec, so guard at the engine
