@@ -2691,7 +2691,7 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
 
         # Requirement and distribution metadata reads can be slow on Windows.
         # Ranking is only a hint; load_plugin still performs fresh admission.
-        await run_sync_io(discovered.sort, key=startup_order)
+        await run_sync_io(lambda: discovered.sort(key=startup_order))
 
         for manifest, plugin_dir in discovered:
             from .settings import is_plugin_enabled
