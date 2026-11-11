@@ -168,7 +168,9 @@ jobs:
               (Get-Content -LiteralPath $pidFile -Raw).Trim(),
               [ref]$serverPid
             )
-            if ($serverPid -gt 0) {
+            # Git Bash writes an MSYS PID, which can identify an unrelated
+            # native Windows process. Windows cleanup uses the owned listener below.
+            if ($env:RUNNER_OS -ne "Windows" -and $serverPid -gt 0) {
               Stop-Process -Id $serverPid -Force -ErrorAction SilentlyContinue
             }
             Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
@@ -450,7 +452,9 @@ jobs:
               (Get-Content -LiteralPath $pidFile -Raw).Trim(),
               [ref]$serverPid
             )
-            if ($serverPid -gt 0) {
+            # Git Bash writes an MSYS PID, which can identify an unrelated
+            # native Windows process. Windows cleanup uses the owned listener below.
+            if ($env:RUNNER_OS -ne "Windows" -and $serverPid -gt 0) {
               Stop-Process -Id $serverPid -Force -ErrorAction SilentlyContinue
             }
             Remove-Item -LiteralPath $pidFile -Force -ErrorAction SilentlyContinue
