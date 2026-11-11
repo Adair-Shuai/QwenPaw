@@ -255,6 +255,7 @@ REQUIRED_CASES = {
     "tests/unit/verify/test_release_workflow_safety.py": {
         "test_core_artifact_reuse_only_allows_exact_extension_tooling_paths",
         "test_full_unit_gate_builds_actual_computer_use_version_bundle",
+        "test_optional_frontend_locks_use_public_registry_without_entering_core",
         "test_independent_release_versions_advance_only_changed_payloads",
         "test_application_releases_prepare_versions_without_force_overwrites",
         "test_every_application_has_an_independent_release_entry",

@@ -415,6 +415,31 @@ def test_core_artifact_reuse_only_allows_exact_extension_tooling_paths():
         assert not any(fnmatch.fnmatchcase(path, rule) for rule in allowed)
 
 
+def test_optional_frontend_locks_use_public_registry_without_entering_core():
+    from urllib.parse import urlparse
+    from qwenpaw.bundled_plugin_policy import BUNDLED_PLUGIN_IDS
+
+    # These lockfiles are permitted in the core-artifact resume allowlist
+    # only while their plugins remain outside every core distribution.
+    for plugin in ("computer-use", "chrome"):
+        assert plugin not in BUNDLED_PLUGIN_IDS
+        lock = json.loads(
+            (
+                REPO_ROOT
+                / "plugins/bundle"
+                / plugin
+                / "frontend/package-lock.json"
+            ).read_text("utf-8"),
+        )
+        for package in lock["packages"].values():
+            if "resolved" in package:
+                assert (
+                    urlparse(package["resolved"]).hostname
+                    == "registry.npmjs.org"
+                )
+                assert package["integrity"].startswith("sha512-")
+
+
 def test_full_unit_gate_builds_actual_computer_use_version_bundle():
     workflow = yaml.safe_load(_workflow("full-tests-nightly.yml"))
     shared = workflow["jobs"]["build-console"]["steps"]
