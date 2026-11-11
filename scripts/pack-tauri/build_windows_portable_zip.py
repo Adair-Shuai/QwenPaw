@@ -12,7 +12,7 @@ from pathlib import Path, PurePosixPath
 def _manifest_entries(root: Path) -> set[str]:
     manifest = root / "checksums.sha256"
     entries: set[str] = set()
-    for raw_line in manifest.read_text(encoding="ascii").splitlines():
+    for raw_line in manifest.read_text(encoding="utf-8").splitlines():
         if not raw_line.strip():
             continue
         digest, separator, relative = raw_line.partition("  ")

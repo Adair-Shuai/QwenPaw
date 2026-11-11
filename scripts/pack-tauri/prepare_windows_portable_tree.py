@@ -98,7 +98,7 @@ def prepare(  # pylint: disable=too-many-branches
                 digest.update(chunk)
         lines.append(f"{digest.hexdigest()}  {relative}\n")
     os.makedirs(os.path.dirname(native_manifest), exist_ok=True)
-    with open(native_manifest, "w", encoding="ascii", newline="\n") as output:
+    with open(native_manifest, "w", encoding="utf-8", newline="\n") as output:
         output.writelines(lines)
 
 
