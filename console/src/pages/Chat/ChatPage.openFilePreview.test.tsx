@@ -5,8 +5,11 @@
  * This file covers the same user path with a thinner render surface.
  */
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { act, fireEvent, screen } from "@testing-library/react";
+import { act, fireEvent, screen, waitFor } from "@testing-library/react";
 import { Children, isValidElement } from "react";
+import { useWorkspaceQuotes } from "../../features/files-workspace/workspaceQuotes";
+import { readAnswerQuotes, consumeAnswerQuotes } from "./answerQuotes";
+import { getDraftStorageKey } from "./chatInputDraft";
 import ChatActionGroup from "./components/ChatActionGroup";
 import { renderWithProviders } from "@/test/common_setup";
 import { openFilePreview } from "@/features/files-workspace/openFilePreview";
@@ -25,6 +28,7 @@ import { DIRECTORY_REFERENCE_HREF_PREFIX } from "./fileReferenceMarkdown";
 
 const fileReferenceFixture = vi.hoisted(() => ({
   visible: false,
+  workspaceQuote: false,
   href: "src/app.ts#L12-L18",
 }));
 
@@ -87,6 +91,30 @@ vi.mock("./RichFileReferenceInput", () => ({
   }: import("react").PropsWithChildren) => children,
 }));
 
+function WorkspaceQuoteProbe() {
+  const quotes = useWorkspaceQuotes();
+  return (
+    <button
+      disabled={!quotes}
+      onClick={() =>
+        quotes?.add("@Other /new selected text", {
+          kind: "file",
+          scope: quotes.scope,
+          target: {
+            source: "workspace",
+            path: "source.py",
+            root: "workspace",
+            line: 4,
+            endLine: 5,
+          },
+        })
+      }
+    >
+      Quote workspace selection
+    </button>
+  );
+}
+
 vi.mock("@agentscope-ai/chat", () => ({
   AgentScopeRuntimeMessageType: {
     MESSAGE: "message",
@@ -119,6 +147,7 @@ vi.mock("@agentscope-ai/chat", () => ({
       return (
         <div data-testid="chat-ui">
           {actions}
+          {fileReferenceFixture.workspaceQuote && <WorkspaceQuoteProbe />}
           {fileReferenceFixture.visible && (
             <AssistantFileReferenceScope.Provider
               value={{ agentId: "default", sessionId: "new" }}
@@ -276,6 +305,7 @@ import ChatPage from "./index";
 describe("ChatPage message Markdown action", () => {
   beforeEach(() => {
     fileReferenceFixture.visible = false;
+    fileReferenceFixture.workspaceQuote = false;
     fileReferenceFixture.href = "src/app.ts#L12-L18";
     chatExtensions.__resetForTests();
     mockListProviders.mockResolvedValue([]);
@@ -727,6 +757,39 @@ describe("ChatPage message Markdown action", () => {
       view.unmount();
       getIdentity.mockImplementation(originalIdentity);
       backgroundTasks.mockRestore();
+    }
+  });
+  it("binds workspace selections to the actual mounted chat draft owner", async () => {
+    fileReferenceFixture.workspaceQuote = true;
+    const view = renderWithProviders(<ChatPage />);
+    const draftKey = getDraftStorageKey("default", "new");
+    try {
+      const button = await screen.findByRole("button", {
+        name: "Quote workspace selection",
+      });
+      await waitFor(() => expect(button).toBeEnabled());
+      fireEvent.click(button);
+      expect(readAnswerQuotes(draftKey)).toEqual([
+        expect.objectContaining({
+          text: "@Other /new selected text",
+          source: expect.objectContaining({
+            kind: "file",
+            scope: expect.objectContaining({
+              agentId: "default",
+              sessionId: "new",
+            }),
+            target: expect.objectContaining({
+              path: "source.py",
+              line: 4,
+              endLine: 5,
+            }),
+          }),
+        }),
+      ]);
+    } finally {
+      consumeAnswerQuotes(draftKey, readAnswerQuotes(draftKey));
+      view.unmount();
+      fileReferenceFixture.workspaceQuote = false;
     }
   });
 });

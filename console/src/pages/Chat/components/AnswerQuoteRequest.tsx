@@ -11,16 +11,31 @@ import {
   withoutAnswerQuoteContent,
   type AnswerQuote,
 } from "../answerQuotes";
+import {
+  openQuoteSource,
+  useWorkspaceQuotes,
+} from "../../../features/files-workspace/workspaceQuotes";
 import styles from "./AnswerQuoteComposer.module.less";
 
 export function AnswerQuoteSummary({ quotes }: { quotes: AnswerQuote[] }) {
   const { t } = useTranslation();
+  const workspace = useWorkspaceQuotes();
   if (!quotes.length) return null;
   return (
     <details className={styles.sent} data-sent-answer-quotes>
       <summary>{t("chat.answerQuote.count", { count: quotes.length })}</summary>
       {quotes.map((quote) => (
-        <blockquote key={quote.id}>{quote.text}</blockquote>
+        <blockquote key={quote.id}>
+          {quote.source && (
+            <button
+              type="button"
+              onClick={() => openQuoteSource(quote.source!, workspace?.scope)}
+            >
+              {quote.messageId}
+            </button>
+          )}
+          {quote.text}
+        </blockquote>
       ))}
     </details>
   );

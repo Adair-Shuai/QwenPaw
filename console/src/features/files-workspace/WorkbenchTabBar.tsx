@@ -31,6 +31,10 @@ export default function WorkbenchTabBar({
   onCloseAll,
   onNew,
   actions,
+  secondaryId,
+  onSplit,
+  onMerge,
+  onDragging,
 }: {
   tabs: WorkbenchTab[];
   idPrefix: string;
@@ -43,6 +47,10 @@ export default function WorkbenchTabBar({
   onCloseAll: () => void;
   onNew: () => void;
   actions: ReactNode;
+  secondaryId?: string;
+  onSplit?: (tab: WorkbenchTab, axis: "horizontal" | "vertical") => void;
+  onMerge?: () => void;
+  onDragging?: (dragging: boolean) => void;
 }) {
   const { t } = useTranslation();
   const [listOpen, setListOpen] = useState(false);
@@ -89,6 +97,7 @@ export default function WorkbenchTabBar({
         <div
           className={styles.tabViewport}
           role="tablist"
+          aria-multiselectable={Boolean(secondaryId)}
           aria-label={t("workbench.tabs.label", "工作区内容")}
         >
           {tabs.map((tab, index) => (
@@ -104,8 +113,21 @@ export default function WorkbenchTabBar({
                     disabled: tabs.length < 2,
                   },
                   { key: "all", label: closeAllLabel },
+                  { type: "divider" },
+                  {
+                    key: "split-right",
+                    label: t("workbench.split.right"),
+                    disabled: tabs.length < 2,
+                  },
+                  {
+                    key: "split-down",
+                    label: t("workbench.split.down"),
+                    disabled: tabs.length < 2,
+                  },
                 ],
                 onClick: ({ key }) => {
+                  if (key === "split-right") onSplit?.(tab, "horizontal");
+                  if (key === "split-down") onSplit?.(tab, "vertical");
                   if (key === "close") onClose(tab);
                   if (key === "others") onCloseOthers(tab);
                   if (key === "all") onCloseAll();
@@ -117,14 +139,26 @@ export default function WorkbenchTabBar({
                   if (element) elements.current.set(tab.id, element);
                   else elements.current.delete(tab.id);
                 }}
+                draggable
+                onDragStart={(event) => {
+                  event.dataTransfer.setData(
+                    "application/x-qwenpaw-workbench-tab",
+                    JSON.stringify({ scope: idPrefix, id: tab.id }),
+                  );
+                  event.dataTransfer.effectAllowed = "move";
+                  onDragging?.(true);
+                }}
+                onDragEnd={() => onDragging?.(false)}
                 role="tab"
                 id={`${idPrefix}-tab-${encodeURIComponent(tab.id)}`}
                 aria-controls={
-                  tab.kind === "files" || tab.kind === "graph"
+                  tab.id === secondaryId
+                    ? `${idPrefix}-secondary`
+                    : tab.kind === "files" || tab.kind === "graph"
                     ? `${idPrefix}-files`
                     : `${idPrefix}-panel-${encodeURIComponent(tab.id)}`
                 }
-                aria-selected={tab.id === activeId}
+                aria-selected={tab.id === activeId || tab.id === secondaryId}
                 tabIndex={
                   tab.id === activeId || (!activeId && index === 0) ? 0 : -1
                 }
@@ -196,6 +230,16 @@ export default function WorkbenchTabBar({
         </span>
       )}
       <div className={styles.actions}>
+        {secondaryId && (
+          <button
+            type="button"
+            className={styles.iconButton}
+            aria-label={t("workbench.split.merge")}
+            onClick={onMerge}
+          >
+            <X size={15} />
+          </button>
+        )}
         <Tooltip title={t("workbench.tabs.addTab")}>
           <button
             type="button"

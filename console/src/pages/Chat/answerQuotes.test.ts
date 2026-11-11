@@ -4,6 +4,7 @@ import {
   addAnswerQuote,
   readAnswerQuotes,
   consumeAnswerQuotes,
+  restoreAnswerQuote,
   formatAnswerQuotes,
   applyAnswerQuotePayload,
   quotesFromMessage,
@@ -132,4 +133,59 @@ describe("answer quote submission", () => {
       (withHistory.input as Array<Record<string, unknown>>)[2].content,
     ).toEqual(user.content);
   });
+});
+
+it("preserves workspace source identity through payload transport and keeps quoted commands inert", () => {
+  const scope = crypto.randomUUID();
+  addAnswerQuote(scope, {
+    messageId: "source.py:4-5",
+    text: "@Other /new quoted command",
+    source: {
+      kind: "file",
+      scope: {
+        kind: "session",
+        agentId: "expert",
+        sessionId: "source-session",
+        chatId: "chat",
+      },
+      target: {
+        source: "workspace",
+        root: "workspace",
+        path: "source.py",
+        line: 4,
+        endLine: 5,
+      },
+    },
+  });
+  const quotes = readAnswerQuotes(scope);
+  const sent = applyChatPayloadTransforms(
+    {
+      input: [{ role: "user", content: [{ type: "text", text: "explain" }] }],
+      request_context: { [ANSWER_QUOTES_KEY]: quotes },
+    },
+    "expert",
+    "client",
+    [],
+  );
+  expect(sent.target_agent_id).toBeUndefined();
+  const message = (sent.input as Array<Record<string, unknown>>)[0];
+  expect(quotesFromMessage(message)).toEqual(quotes);
+  expect(withoutAnswerQuoteContent(message).content).toEqual([
+    { type: "text", text: "explain" },
+  ]);
+  expect(formatAnswerQuotes(quotes)).toContain("source.py:4-5");
+  const original = quotes[0];
+  addAnswerQuote(scope, {
+    ...original,
+    source: {
+      kind: "file",
+      scope: { kind: "session", agentId: "expert", sessionId: "other-session" },
+      target: { source: "workspace", path: "source.py", line: 4, endLine: 5 },
+    },
+  });
+  expect(readAnswerQuotes(scope)).toHaveLength(2);
+  consumeAnswerQuotes(scope, [original]);
+  expect(restoreAnswerQuote(scope, original, 0)).toBe(true);
+  expect(readAnswerQuotes(scope)).toHaveLength(2);
+  expect(readAnswerQuotes(scope)[0].source).toEqual(original.source);
 });

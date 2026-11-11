@@ -39,6 +39,7 @@ export type WorkbenchMode =
   | "files"
   | "browser"
   | "terminal"
+  | "review"
   | "agents"
   | "genui"
   | "compute"

@@ -71,6 +71,8 @@ import {
   getEditorLanguage,
   visibleEditorPath,
 } from "./editorCopyFormatting";
+import WorkspaceSelection from "../../features/files-workspace/WorkspaceSelection";
+import { useWorkspaceQuotes } from "../../features/files-workspace/workspaceQuotes";
 import styles from "./TabbedEditor.module.less";
 
 const subscribeRendererRegistry = (listener: () => void) =>
@@ -110,6 +112,7 @@ interface TabbedEditorProps {
   previewActive?: boolean;
   /** Disable local artifact subscriptions only when the host owns updates. */
   previewManagedUpdates?: boolean;
+  preserveModel?: boolean;
   navigation?: {
     path: string;
     line: number;
@@ -232,10 +235,12 @@ export default function TabbedEditor({
   chatId,
   projectDirOverride,
   previewActive = true,
+  preserveModel = false,
   previewManagedUpdates = false,
   navigation,
 }: TabbedEditorProps) {
   const { t } = useTranslation();
+  const workspaceQuotes = useWorkspaceQuotes();
   const { message } = useAppMessage();
   const { isDark } = useTheme();
   useSyncExternalStore(
@@ -767,15 +772,23 @@ export default function TabbedEditor({
       return;
     }
     const { mode, code, startLine, endLine } = detectCopyMode(selection, model);
+    if (workspaceQuotes) {
+      const tab = tabs.find((item) => item.path === activeTabPath);
+      if (
+        tab &&
+        !workspaceQuotes.add(code, {
+          kind: "file",
+          scope: workspaceQuotes.scope,
+          target: { ...fileTabTarget(tab), line: startLine, endLine },
+        })
+      )
+        message.warning(t("chat.answerQuote.limit"));
+      return;
+    }
     appendToChat(
       formatSelectionForChat(activeDisplayPath, code, startLine, endLine, mode),
     );
-  }, [activeDisplayPath, activeTabPath]);
-
-  // Keep the hidden button implementation available for future restoration.
-  void MessageSquarePlus;
-  void hasSelection;
-  void handleCopyToChat;
+  }, [activeDisplayPath, activeTabPath, workspaceQuotes, tabs, message, t]);
 
   // ---- Diff actions -------------------------------------------------------
 
@@ -1115,7 +1128,7 @@ export default function TabbedEditor({
   const activeCanCopy =
     Boolean(activeTab) &&
     !["image", "pdf", "binary"].includes(activeTab?.previewKind ?? "text");
-  return (
+  const editorSurface = (
     <div className={styles.wrap} onKeyDown={handleKeyDown}>
       {/* ── Tab bar ────────────────────────────────────────────────────── */}
       {!hideTabBar && (
@@ -1471,22 +1484,26 @@ export default function TabbedEditor({
             )}
             {!activeDiff && (isGeneratedArtifact || !activeInPreview) && (
               <>
-                {/* <Tooltip
-                  title={
-                    hasSelection
-                      ? t("files.copySelectionToChat")
-                      : t("files.copyFileToChat")
-                  }
-                >
-                  <button
-                    type="button"
-                    className={styles.iconBtn}
-                    onClick={handleCopyToChat}
-                    disabled={!activeTabPath}
+                {workspaceQuotes && hasSelection && (
+                  <Tooltip
+                    title={
+                      hasSelection
+                        ? t("files.copySelectionToChat")
+                        : t("files.copyFileToChat")
+                    }
                   >
-                    <MessageSquarePlus size={13} />
-                  </button>
-                </Tooltip> */}
+                    <button
+                      type="button"
+                      className={styles.iconBtn}
+                      aria-label={t("files.copySelectionToChat")}
+                      onPointerDown={(event) => event.preventDefault()}
+                      onClick={handleCopyToChat}
+                      disabled={!activeTabPath}
+                    >
+                      <MessageSquarePlus size={13} />
+                    </button>
+                  </Tooltip>
+                )}
                 <Tooltip
                   title={
                     isGeneratedArtifact
@@ -1634,6 +1651,7 @@ export default function TabbedEditor({
             /* ── Normal editor ──────────────────────────────────────────── */
             <Editor
               height="100%"
+              keepCurrentModel={preserveModel}
               path={`${scopeKey}/${activeTab.path}`}
               value={activeTab.content}
               language={getEditorLanguage(activeDisplayPath)}
@@ -1665,5 +1683,14 @@ export default function TabbedEditor({
         )}
       </div>
     </div>
+  );
+  return (
+    <WorkspaceSelection
+      target={activeTab ? fileTabTarget(activeTab) : undefined}
+      content={activeTab?.content ?? ""}
+      active={previewActive}
+    >
+      {editorSurface}
+    </WorkspaceSelection>
   );
 }

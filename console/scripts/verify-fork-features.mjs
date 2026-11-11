@@ -204,6 +204,7 @@ const suites = {
     "src/pages/Chat/ChatPage.openFilePreview.test.tsx",
     "src/features/files-workspace/FilesDrawer.test.tsx",
     "src/features/files-workspace/workbenchTabsStore.test.ts",
+    "src/features/files-workspace/TurnReviewPanel.test.tsx",
     "src/features/terminal/TerminalWorkbench.integration.test.tsx",
     "src/features/files-workspace/FilesWorkspace.test.tsx",
     "src/features/files-workspace/FilesWorkspace.integration.test.tsx",
@@ -1654,6 +1655,29 @@ requireCases("src/features/terminal/useTerminalEnabled.test.tsx", [
 requireCases("src/stores/terminalSurfaceStore.test.ts", [
   "isolates visibility by session",
   "migrates an open draft to its persisted session",
+]);
+
+requireCases("src/features/files-workspace/FilesDrawer.test.tsx", [
+  "quotes a selection from the mounted workspace preview and locates its original scoped file lines",
+  "splits two native file views and keeps both dirty buffers after merging",
+]);
+requireCases("src/features/files-workspace/workbenchTabsStore.test.ts", [
+  "isolates split layouts and promotes or merges panes without stale references on close and rebind",
+]);
+requireCases("src/features/files-workspace/TurnReviewPanel.test.tsx", [
+  "reviews the selected real archived turn and requests its exact diff instead of current file contents",
+  "shows archive errors and retries the scoped turn history through its normal refresh control",
+  "shows an empty review for an unsaved chat without requesting a nonexistent archive",
+]);
+requireCases("src/pages/Chat/ChatPage.openFilePreview.test.tsx", [
+  "binds workspace selections to the actual mounted chat draft owner",
+]);
+requireCases("src/pages/Chat/answerQuotes.test.ts", [
+  "preserves workspace source identity through payload transport and keeps quoted commands inert",
+]);
+
+requireCases("src/features/terminal/TerminalView.test.tsx", [
+  "quotes native terminal output with its owning session and never sends the selection as shell input",
 ]);
 
 if (!process.argv.includes("--check")) {

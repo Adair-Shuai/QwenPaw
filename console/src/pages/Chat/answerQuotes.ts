@@ -1,8 +1,17 @@
+import type { FileTarget } from "../../features/files-workspace/types";
+import type { FilesWorkspaceScope } from "../../features/files-workspace/filesWorkspaceScope";
+
+type QuoteScope = Extract<FilesWorkspaceScope, { kind: "session" }>;
+export type AnswerQuoteSource =
+  | { kind: "file"; scope: QuoteScope; target: FileTarget }
+  | { kind: "terminal"; scope: QuoteScope; terminalId: string; title: string };
+
 export const ANSWER_QUOTES_KEY = "qwenpaw_answer_quotes";
 export interface AnswerQuote {
   id: string;
   messageId: string;
   text: string;
+  source?: AnswerQuoteSource;
 }
 const EMPTY: AnswerQuote[] = [];
 const drafts = new Map<string, AnswerQuote[]>();
@@ -24,7 +33,94 @@ export function parseAnswerQuotes(value: unknown): AnswerQuote[] {
     value.reduce((n, q) => n + q.text.length, 0) > 32000
   )
     return EMPTY;
-  return value;
+  return value.map((quote) => ({
+    ...quote,
+    source: parseSource(quote.source),
+  }));
+}
+
+function parseSource(value: unknown): AnswerQuoteSource | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const source = value as AnswerQuoteSource;
+  const scope = source.scope;
+  if (
+    !scope ||
+    scope.kind !== "session" ||
+    typeof scope.agentId !== "string" ||
+    typeof scope.sessionId !== "string" ||
+    (scope.chatId !== undefined && typeof scope.chatId !== "string")
+  )
+    return undefined;
+  if (source.kind === "terminal")
+    return typeof source.terminalId === "string" &&
+      typeof source.title === "string"
+      ? source
+      : undefined;
+  if (source.kind !== "file" || !source.target) return undefined;
+  const target = source.target;
+  if (
+    typeof target.path !== "string" ||
+    ![
+      "workspace",
+      "profile",
+      "memory",
+      "daily",
+      "digest",
+      "attachment",
+      "artifact",
+    ].includes(target.source)
+  )
+    return undefined;
+  if (
+    target.root !== undefined &&
+    (typeof target.root !== "string" ||
+      !(
+        target.root === "project" ||
+        target.root === "workspace" ||
+        target.root.startsWith("project:")
+      ))
+  )
+    return undefined;
+  for (const number of [target.line, target.endLine, target.column]) {
+    if (number !== undefined && (!Number.isSafeInteger(number) || number < 1))
+      return undefined;
+  }
+  if (target.artifactUrl) {
+    try {
+      const url = new URL(target.artifactUrl, window.location.origin);
+      if (
+        url.origin !== window.location.origin ||
+        !/^https?:$/.test(url.protocol)
+      )
+        return undefined;
+    } catch {
+      return undefined;
+    }
+  }
+  // Only source identity is used for navigation. Embedded media is loaded by the host.
+  return {
+    kind: "file",
+    scope,
+    target: {
+      source: target.source,
+      path: target.path,
+      root: target.root,
+      line: target.line,
+      endLine: target.endLine,
+      column: target.column,
+      artifactUrl: target.artifactUrl,
+      artifact:
+        typeof target.artifact?.id === "string"
+          ? {
+              id: target.artifact.id,
+              title: target.path,
+              source: "tool_call",
+              mimeType: target.artifact.mimeType,
+              binaryUrl: target.artifactUrl,
+            }
+          : undefined,
+    },
+  };
 }
 
 export function readAnswerQuotes(scope: string): AnswerQuote[] {
@@ -75,9 +171,13 @@ export function addAnswerQuote(
   quote: Omit<AnswerQuote, "id">,
 ): boolean {
   const current = readAnswerQuotes(scope);
+  const source = parseSource(quote.source);
   if (
     current.some(
-      (q) => q.messageId === quote.messageId && q.text === quote.text,
+      (q) =>
+        q.messageId === quote.messageId &&
+        q.text === quote.text &&
+        JSON.stringify(q.source) === JSON.stringify(source),
     )
   )
     return true;
@@ -89,7 +189,12 @@ export function addAnswerQuote(
     return false;
   write(scope, [
     ...current,
-    { messageId: quote.messageId, text: quote.text, id: crypto.randomUUID() },
+    {
+      messageId: quote.messageId,
+      text: quote.text,
+      source,
+      id: crypto.randomUUID(),
+    },
   ]);
   return true;
 }
@@ -116,10 +221,17 @@ export function restoreAnswerQuote(
   const current = readAnswerQuotes(scope);
   const sameId = current.find((item) => item.id === quote.id);
   if (sameId)
-    return sameId.messageId === quote.messageId && sameId.text === quote.text;
+    return (
+      sameId.messageId === quote.messageId &&
+      sameId.text === quote.text &&
+      JSON.stringify(sameId.source) === JSON.stringify(quote.source)
+    );
   if (
     current.some(
-      (item) => item.messageId === quote.messageId && item.text === quote.text,
+      (item) =>
+        item.messageId === quote.messageId &&
+        item.text === quote.text &&
+        JSON.stringify(item.source) === JSON.stringify(quote.source),
     )
   )
     return true;
@@ -149,7 +261,9 @@ export function quotesFromMessage(
 
 export function formatAnswerQuotes(quotes: readonly AnswerQuote[]) {
   return (
-    "Quoted passages from assistant replies:\n" +
+    (quotes.some((quote) => quote.source)
+      ? "Quoted passages from workspace and assistant replies:\n"
+      : "Quoted passages from assistant replies:\n") +
     quotes
       .map(
         (q) =>

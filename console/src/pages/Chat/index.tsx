@@ -196,6 +196,7 @@ import {
 } from "../../features/files-workspace/openFilePreview";
 import { headerWorkspaceToggleEvent } from "../../features/files-workspace/filesDrawerState";
 import SessionProjectDirectory from "../../features/project-directory/SessionProjectDirectory";
+import { WorkspaceQuoteProvider } from "../../features/files-workspace/workspaceQuotes";
 import TerminalDock from "../../features/terminal/TerminalDock";
 import { useTerminalEnabled } from "../../features/terminal/useTerminalEnabled";
 import { migrateTerminalGroup } from "../../features/terminal/terminalIdentity";
@@ -5309,7 +5310,7 @@ export default function ChatPage() {
       ? styles.filesPreviewOpen
       : styles.filesWorkspaceOpen;
 
-  return (
+  const chatSurface = (
     <TerminalDock
       scope={sessionScope}
       isDark={isDark}
@@ -5578,5 +5579,14 @@ export default function ChatPage() {
         </AnimatePresence>
       </div>
     </TerminalDock>
+  );
+  return (
+    <WorkspaceQuoteProvider
+      scope={sessionScope}
+      draftKey={quoteDraftKey}
+      enabled={!isSessionTransition && isChatActivePage}
+    >
+      {chatSurface}
+    </WorkspaceQuoteProvider>
   );
 }
