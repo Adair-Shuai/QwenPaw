@@ -28,6 +28,26 @@ def _load(name):
     return module
 
 
+@pytest.mark.parametrize(
+    "git_relative",
+    ["cmd/git.exe", "bin/git.exe", "mingw64/bin/git.exe"],
+)
+def test_data_context_finds_git_bash_in_supported_layouts(
+    tmp_path,
+    monkeypatch,
+    git_relative,
+):
+    helper = _load("prepare_data_context_console")
+    git = tmp_path / "Git" / git_relative
+    git.parent.mkdir(parents=True, exist_ok=True)
+    git.write_bytes(b"git")
+    bash = tmp_path / "Git/bin/bash.exe"
+    bash.parent.mkdir(parents=True, exist_ok=True)
+    bash.write_bytes(b"bash")
+    monkeypatch.setattr(helper.shutil, "which", lambda _name: str(git))
+    assert helper.git_bash() == bash
+
+
 def _write(root, relative, data=b"export {};\n"):
     path = root / relative
     path.parent.mkdir(parents=True, exist_ok=True)

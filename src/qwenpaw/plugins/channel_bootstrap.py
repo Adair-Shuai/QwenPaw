@@ -273,7 +273,10 @@ def resolve_default_channel_runtime(*, provision=True):
     )
 
     runtime = None
-    if getattr(sys, "frozen", False):
+    packaged = bool(getattr(sys, "frozen", False)) or (
+        os.environ.get("QWENPAW_DESKTOP_APP") == "1"
+    )
+    if packaged:
         runtime = runtime_manifest()
         executable, support, sites, identity, _preset = runtime
     else:
@@ -333,7 +336,7 @@ def resolve_default_channel_runtime(*, provision=True):
             )
         ),
         dependency_install_target=selected,
-        runtime_identity=identity if getattr(sys, "frozen", False) else None,
+        runtime_identity=identity if packaged else None,
         send_timeouts=send_timeouts,
     )
 

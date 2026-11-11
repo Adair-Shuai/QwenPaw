@@ -15,6 +15,17 @@ DATA_REPOSITORY = "https://github.com/agentscope-ai/QwenPaw-Data.git"
 DATA_REF = "v0.3.3"
 
 
+def git_bash() -> Path:
+    """Locate Git Bash across the cmd, bin and mingw64 Git layouts."""
+    git = shutil.which("git")
+    if git:
+        for parent in Path(git).resolve().parents:
+            candidate = parent / "bin/bash.exe"
+            if candidate.is_file():
+                return candidate
+    raise ValueError("Git Bash is required to build the Data context console")
+
+
 def prepare(repo: Path) -> None:
     """Use an explicit local checkout or an isolated pinned source checkout."""
     repo = repo.resolve(strict=True)
@@ -55,15 +66,7 @@ def prepare(repo: Path) -> None:
         environment["QWENPAW_DATA_SOURCE_DIR"] = source.as_posix()
         shell = "bash"
         if os.name == "nt":
-            git = shutil.which("git")
-            candidate = (
-                Path(git).parent.parent / "bin/bash.exe" if git else None
-            )
-            if candidate is None or not candidate.is_file():
-                raise ValueError(
-                    "Git Bash is required to build the Data context console",
-                )
-            shell = str(candidate)
+            shell = str(git_bash())
         subprocess.run(
             [shell, script.as_posix()],
             cwd=repo,

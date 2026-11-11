@@ -585,7 +585,13 @@ async def test_payload_quota_waits_for_confirmed_discard(monkeypatch):
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("layout", "supplied_snapshot"),
-    [("source", False), ("frozen", False), ("frozen", True)],
+    [
+        ("source", False),
+        ("frozen", False),
+        ("frozen", True),
+        ("desktop", False),
+        ("desktop", True),
+    ],
 )
 # Keep the transaction and verification boundary intact.
 # pylint: disable-next=R0915
@@ -604,8 +610,11 @@ async def test_runtime_roots_interpreter_and_dependency_visible_in_worker(
         "qwenpaw.config.utils.get_config_path",
         lambda: tmp_path / "config.json",
     )
-    if layout == "frozen":
+    if layout in {"frozen", "desktop"}:
         expected_support, site = runtime_layout(tmp_path, monkeypatch)
+        if layout == "desktop":
+            monkeypatch.delattr(sys, "frozen", raising=False)
+            monkeypatch.setenv("QWENPAW_DESKTOP_APP", "1")
         # Desktop staging shares support and configured dependency roots;
         # the interpreter also contributes its own native site-packages.
         import json
@@ -694,7 +703,7 @@ async def test_runtime_roots_interpreter_and_dependency_visible_in_worker(
         validate=lambda: None,
     )
     assert str(canonical_environment_path(site)) in admitted.dependency_sites
-    if layout == "frozen":
+    if layout in {"frozen", "desktop"}:
         assert expected_support in runtime.dependency_paths
         assert (
             str(canonical_environment_path(expected_support))
