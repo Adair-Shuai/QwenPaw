@@ -30,6 +30,7 @@ SUITES = (
     "tests/unit/tauri/test_plugin_payload_completeness.py",
     "tests/unit/app/test_desktop_update_manifest.py",
     "tests/unit/verify/test_release_workflow_safety.py",
+    "tests/unit/verify/test_unit_sharding.py",
     "tests/unit/tauri/test_stage_officecli.py",
     "tests/unit/tauri/test_ugsci_release_data.py",
     "tests/unit/tauri/test_storage_capacity_publication.py",
@@ -272,6 +273,11 @@ REQUIRED_CASES = {
         "test_console_checkout_preserves_formatter_line_endings",
         "test_plugin_upload_rejects_incomplete_local_artifacts",
         "test_plugin_upload_transport_failures_do_not_pass",
+    },
+    "tests/unit/verify/test_unit_sharding.py": {
+        "test_unit_shards_execute_every_case_once_and_propagate_failures",
+        "test_unit_shards_reject_invalid_partition",
+        "test_windows_matrix_runs_all_four_unit_shards_and_app_contracts_once",
     },
     "tests/unit/tauri/test_stage_officecli.py": {
         "test_reviewed_pin_does_not_query_latest",

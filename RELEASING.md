@@ -10,7 +10,8 @@ Use **Release Core (build, verify, resume)** (`.github/workflows/release-resume.
 
 Wheel verification, desktop builds and full regressions start independently after resolution. Signed component archives reuse the verified desktop layers. Core publication requires the installation, startup, archive-content, signature and update gates. The draft becomes public before mutable core and desktop pointers are promoted. Core publication never rewrites the plugin market index.
 
-Backend test matrices share one console build. Every consumer checks the archive SHA-256 and brand assets before running the unchanged platform test suite.
+Backend test matrices share one console build and one build of the portable plugin frontends needed by unit contracts. Every consumer checks archive SHA-256 values and brand assets before running the unchanged platform test suite.
+Windows unit tests run in four independent jobs with deterministic, disjoint node-ID partitioning. Their union executes every collected test exactly once; document forms and OfficeCLI contracts run once per supported platform.
 
 Every historical component manifest is authenticated before reuse. Identical selected core baselines left by independent extension releases are downloaded and extracted once; the original signed history and distinct core versions remain intact.
 

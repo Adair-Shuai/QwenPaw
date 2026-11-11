@@ -107,6 +107,11 @@ jobs:
                 scripts/fork_backend_suites.json|\
                 scripts/verify_update_regressions.py|\
                 scripts/pack/prepare_plugin_versions.py|\
+                scripts/run_unit_tests.py|\
+                scripts/pack-tauri/prepare_component_base.py|\
+                tests/unit/verify/test_unit_sharding.py|\
+                tests/unit/verify/test_fork_regression_inventory.py|\
+                tests/unit/tauri/test_component_release.py|\
                 scripts/pack-tauri/build_python_layers.py|\
                 scripts/pack-tauri/stage_node_runtime.py|\
                 tests/unit/tauri/test_stage_node_runtime.py|\
@@ -123,8 +128,7 @@ jobs:
                 tests/integration/conftest.py|\
                 e2e/tests/test_agent_stats.py)
                   ;;
-                scripts/pack-tauri/build_component_release.py|\
-                tests/unit/tauri/test_component_release.py)
+                scripts/pack-tauri/build_component_release.py)
                   if [ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]; then
                     echo "::error::Component archive changes require replacement component artifacts"
                     exit 1

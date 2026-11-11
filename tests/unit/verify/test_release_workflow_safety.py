@@ -417,12 +417,25 @@ def test_core_artifact_reuse_only_allows_exact_extension_tooling_paths():
 
 def test_full_unit_gate_builds_actual_computer_use_version_bundle():
     workflow = yaml.safe_load(_workflow("full-tests-nightly.yml"))
+    shared = workflow["jobs"]["build-console"]["steps"]
+    build_commands = "\n".join(step.get("run", "") for step in shared)
+    for frontend in (
+        "plugins/bundle/qwenpaw-openui/frontend",
+        "plugins/memory/powercontext/frontend",
+        "plugins/bundle/computer-use/frontend",
+    ):
+        assert f"npm --prefix {frontend} ci" in build_commands
+        assert f"npm --prefix {frontend} run build" in build_commands
+    assert (
+        "sha256sum console-build.tar.gz unit-plugin-build.tar.gz"
+        in build_commands
+    )
+    assert "build-console" in workflow["jobs"]["unit-tests"]["needs"]
     steps = workflow["jobs"]["unit-tests"]["steps"]
     build = next(
         index
         for index, step in enumerate(steps)
-        if step.get("name")
-        == "Build Computer Use runtime for manifest contracts"
+        if step.get("name") == "Extract verified plugin test runtimes"
     )
     test = next(
         index
@@ -430,11 +443,12 @@ def test_full_unit_gate_builds_actual_computer_use_version_bundle():
         if step.get("name") == "Run unit tests"
     )
     assert build < test
-    assert "npm --prefix plugins/bundle/computer-use/frontend ci" in (
-        steps[build]["run"]
+    assert (
+        "tar -xzf .test-console/unit-plugin-build.tar.gz"
+        in steps[build]["run"]
     )
-    assert "npm --prefix plugins/bundle/computer-use/frontend run build" in (
-        steps[build]["run"]
+    assert any(
+        "sha256sum --check" in step.get("run", "") for step in steps[:build]
     )
 
 

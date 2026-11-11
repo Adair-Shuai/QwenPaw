@@ -242,7 +242,8 @@
       "tests/unit/tauri/test_frozen_plugin_archive.py",
       "tests/unit/plugins/test_generate_plugin_metadata.py",
       "tests/unit/tauri/test_update_release_contract.py",
-      "tests/unit/verify/test_release_workflow_safety.py"
+      "tests/unit/verify/test_release_workflow_safety.py",
+      "tests/unit/verify/test_unit_sharding.py"
     ]
   },
   "required_cases": {
@@ -1242,6 +1243,11 @@
       "test_console_checkout_preserves_formatter_line_endings",
       "test_main_plugin_publisher_rejects_actual_application_archives",
       "test_main_release_workflows_exclude_every_application"
+    ],
+    "tests/unit/verify/test_unit_sharding.py": [
+      "test_unit_shards_execute_every_case_once_and_propagate_failures",
+      "test_unit_shards_reject_invalid_partition",
+      "test_windows_matrix_runs_all_four_unit_shards_and_app_contracts_once"
     ],
     "tests/unit/tauri/test_bundled_plugin_packaging.py": [
       "test_main_release_staging_excludes_apps_from_explicit_roots"
