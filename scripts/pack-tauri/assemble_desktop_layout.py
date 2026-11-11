@@ -8,10 +8,13 @@ import argparse
 import hashlib
 import importlib.util
 import json
-from pathlib import Path
+import os
+from pathlib import Path, PurePosixPath
 import re
 import shutil
+import subprocess
 import sys
+import tempfile
 
 from packaging.version import InvalidVersion, Version
 
@@ -99,6 +102,36 @@ def _component_directory(version: str) -> str:
     return f"{prefix}-{digest}"
 
 
+def _relocate_channel_interpreter(
+    root: Path,
+    source: Path,
+    destination: Path,
+) -> None:
+    manifest = root / "channel-runtime" / "runtime.json"
+    if not manifest.is_file():
+        return
+    data = json.loads(manifest.read_text(encoding="utf-8"))
+    value = data["python_executable"]
+    if not isinstance(value, str) or "\\" in value or ":" in value:
+        raise ValueError("invalid channel interpreter path")
+    executable = PurePosixPath(value)
+    relative = executable.relative_to(
+        source.relative_to(root.parent).as_posix(),
+    )
+    if not relative.parts or ".." in relative.parts:
+        raise ValueError(
+            "channel interpreter must remain inside Python runtime",
+        )
+    relocated = destination.joinpath(*relative.parts)
+    if not relocated.is_file():
+        raise FileNotFoundError(f"channel interpreter is missing: {relocated}")
+    data["python_executable"] = relocated.relative_to(root.parent).as_posix()
+    manifest.write_text(
+        json.dumps(data, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 def assemble(
     root: Path,
     desktop_version: str,
@@ -130,6 +163,7 @@ def assemble(
         root / "tools" / "computer-use" / desktop_version
     )
     _move(python_source, python_destination)
+    _relocate_channel_interpreter(root, python_source, python_destination)
     _move(node_source, node_destination)
     java_home = java_source / "Contents" / "Home"
     if (java_home / "bin" / "java").is_file():
@@ -226,19 +260,78 @@ def assemble(
     return refresh(root, desktop_version, active)
 
 
+def verify_channel_runtime(root: Path, active: dict) -> None:
+    """Read staged policy under the relocated interpreter before native builds."""
+    resource = root.parent
+    components = active["components"]
+    runtime = resource / components["python-runtime"]["path"] / "python"
+    executable = runtime / (
+        "python.exe"
+        if active["target"].startswith("windows-")
+        else "bin/python3"
+    )
+    backend = resource / components["backend"]["path"]
+    dependencies = resource / components["python-packages"]["path"]
+    support = root / "channel-runtime/site"
+    environment = dict(os.environ)
+    for key in ("PYTHONHOME", "PYTHONPATH", "PYTHONPYCACHEPREFIX"):
+        environment.pop(key, None)
+    with tempfile.TemporaryDirectory(
+        prefix="qwenpaw-runtime-check-",
+    ) as working:
+        environment.update(
+            {
+                "QWENPAW_DESKTOP_APP": "1",
+                "QWENPAW_TAURI_RESOURCE_DIR": str(resource),
+                "QWENPAW_CHANNEL_RUNTIME_MANIFEST": str(
+                    root / "channel-runtime/runtime.json",
+                ),
+                "QWENPAW_DESKTOP_PY_RUNTIME": str(executable),
+                "QWENPAW_CHANNEL_SUPPORT_ROOT": str(support),
+                "QWENPAW_CHANNEL_DEPENDENCY_PATHS": json.dumps([str(support)]),
+                "QWENPAW_WORKING_DIR": working,
+                "QWENPAW_SECRET_DIR": working,
+                "PYTHONDONTWRITEBYTECODE": "1",
+                "OFFICECLI_SKIP_UPDATE": "1",
+            },
+        )
+        subprocess.run(
+            [
+                str(executable),
+                "-I",
+                "-B",
+                "-c",
+                "import sys; sys.path[:0] = sys.argv[1:]; "
+                "from qwenpaw.plugins.channel_bootstrap import "
+                "resolve_default_channel_runtime; "
+                "runtime = resolve_default_channel_runtime(provision=False); "
+                "\nif runtime.runtime_identity is None:\n"
+                "    raise RuntimeError('Desktop runtime identity is missing')\n"
+                "print('PASS relocated desktop channel runtime')",
+                str(backend),
+                str(dependencies),
+            ],
+            env=environment,
+            cwd=working,
+            check=True,
+            timeout=60,
+        )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--binaries", type=Path, required=True)
     parser.add_argument("--version", required=True)
     parser.add_argument("--target", required=True)
+    parser.add_argument("--verify-runtime", action="store_true")
     args = parser.parse_args()
+    root = args.binaries.resolve()
+    active = assemble(root, args.version.strip(), args.target.strip())
+    if args.verify_runtime:
+        verify_channel_runtime(root, active)
     print(
         json.dumps(
-            assemble(
-                args.binaries.resolve(),
-                args.version.strip(),
-                args.target.strip(),
-            ),
+            active,
             sort_keys=True,
         ),
     )

@@ -10,6 +10,7 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SUITES = (
+    "tests/unit/tauri/test_desktop_sqlite_paths.py",
     "tests/unit/app/test_console_static_security.py",
     "tests/unit/tauri/test_update_release_contract.py",
     "tests/unit/tauri/test_incremental_update_regressions.py",
@@ -58,6 +59,10 @@ SUITES = (
     "tests/unit/plugins/test_dependency_source_sync.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/tauri/test_desktop_sqlite_paths.py": {
+        "test_desktop_history_recall_and_snapshots_preserve_native_paths",
+        "test_desktop_dependency_executor_accepts_native_path_aliases",
+    },
     "tests/unit/app/test_console_static_security.py": {
         "test_console_static_symlinks_stay_within_build",
         "test_console_brand_assets_revalidate_after_upgrade",
@@ -161,6 +166,8 @@ REQUIRED_CASES = {
         "test_desktop_build_wires_independent_layered_channel_pool",
     },
     "tests/unit/tauri/test_desktop_layer_layout.py": {
+        "test_runtime_manifest_accepts_equivalent_windows_path_spellings",
+        "test_assemble_moves_stable_resources_into_versioned_boundaries",
         "test_backend_plugin_staging_rejects_incomplete_canonical_payload",
         "test_python_layers_real_installs_stay_stable_after_import_validation",
     },

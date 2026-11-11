@@ -29,6 +29,17 @@ afterEach(() => {
 });
 
 describe("FlowForge interface language resources", () => {
+  it("declares the parser required by its source translation checks", () => {
+    const manifest = JSON.parse(fs.readFileSync("package.json", "utf8"));
+    const lock = JSON.parse(fs.readFileSync("package-lock.json", "utf8"));
+    const declaration = manifest.devDependencies["@babel/parser"];
+    expect(typeof declaration).toBe("string");
+    expect(declaration).toBeTruthy();
+    expect(lock.packages[""].devDependencies["@babel/parser"]).toBe(
+      declaration,
+    );
+  });
+
   it("localizes unavailable structured output diagnostics while retaining field and edge locations", () => {
     const diagnostic = {
       code: "OUTPUT_SLOT_UNAVAILABLE",

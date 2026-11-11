@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import csv
 import json
+from pathlib import Path
+import sys
 import time
 from datetime import date, timedelta
 
@@ -48,6 +50,19 @@ def import_rows(tmp_path, rows, **kwargs):
     path = source(tmp_path, rows, **kwargs)
     manifest = store.import_path(str(path))
     return store, manifest
+
+
+def test_dataset_reader_accepts_extended_windows_paths(tmp_path):
+    root = tmp_path / "中文 dataset #100%"
+    prefix = "\\\\?\\" if sys.platform == "win32" else ""
+    store = DatasetStore(Path(prefix + str(root)))
+    path = source(
+        tmp_path,
+        [["库A", "井1", "2026-01-01", 12, 10, 15, 2, ""]],
+    )
+    manifest = store.import_path(str(path))
+    result = analyze(store, manifest["id"])
+    assert result["summary"]["withdrawal"] == pytest.approx(10)
 
 
 @pytest.mark.parametrize(
@@ -272,8 +287,6 @@ def test_report_persists_exact_parameters_and_provenance(tmp_path):
     saved = save_report(store, r)
     assert "井口油压" in saved["markdown"]
     assert m["files"][0]["sha256"] in saved["markdown"]
-    from pathlib import Path
-
     snapshot = json.loads(
         Path(saved["analysis_path"]).read_text(encoding="utf-8"),
     )

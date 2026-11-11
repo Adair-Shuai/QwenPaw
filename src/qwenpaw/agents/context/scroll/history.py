@@ -15,6 +15,7 @@ from collections.abc import Callable, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from urllib.parse import quote
 from typing import Any
 
 from ..types import LogEntry
@@ -214,7 +215,7 @@ def validate_history_database(
     if not path.is_file():
         raise FileNotFoundError(path)
     conn = sqlite3.connect(
-        path.as_uri() + "?mode=ro",
+        "file:" + quote(str(path), safe="/") + "?mode=ro",
         uri=True,
         timeout=_BUSY_TIMEOUT_MS / 1000,
     )
@@ -256,7 +257,7 @@ def backup_history_database(
     target.parent.mkdir(parents=True, exist_ok=True)
 
     conn = sqlite3.connect(
-        source_path.as_uri() + "?mode=ro",
+        "file:" + quote(str(source_path), safe="/") + "?mode=ro",
         uri=True,
         timeout=_BUSY_TIMEOUT_MS / 1000,
     )
@@ -360,8 +361,11 @@ class HistoryStore:
     def _open(self, *, initialize: bool) -> None:
         # Maintenance opens an existing schema without creating or upgrading
         # it.
+        # Encode native paths so Windows device prefixes stay in the filename,
+        # rather than becoming a URI authority through Path.as_uri().
         self._conn = sqlite3.connect(
-            self._path.resolve().as_uri()
+            "file:"
+            + quote(str(self._path.resolve()), safe="/")
             + ("?mode=rwc" if initialize else "?mode=rw"),
             uri=True,
             check_same_thread=False,

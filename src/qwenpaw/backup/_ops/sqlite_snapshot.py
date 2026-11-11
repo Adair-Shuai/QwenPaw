@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from urllib.parse import quote
 import sqlite3
 import shutil
 import subprocess
@@ -81,7 +82,10 @@ def _snapshot(source: Path, destination: Path) -> None:
         if time.monotonic() >= deadline:
             raise TimeoutError(f"SQLite snapshot timed out: {source}")
 
-    src = sqlite3.connect(source.resolve().as_uri() + "?mode=ro", uri=True)
+    src = sqlite3.connect(
+        "file:" + quote(str(source.resolve()), safe="/") + "?mode=ro",
+        uri=True,
+    )
     try:
         dst = sqlite3.connect(destination)
         try:

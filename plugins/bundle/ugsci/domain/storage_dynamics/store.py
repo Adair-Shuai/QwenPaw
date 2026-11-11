@@ -13,6 +13,7 @@ import tempfile
 from contextlib import closing
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib.parse import quote
 from typing import BinaryIO
 
 from .reader import read_file
@@ -55,7 +56,10 @@ class DatasetStore:
         path = self.path(dataset_id) / "records.sqlite"
         if not path.is_file():
             raise FileNotFoundError("数据集不存在")
-        db = sqlite3.connect(path.as_uri() + "?mode=ro", uri=True)
+        db = sqlite3.connect(
+            "file:" + quote(str(path), safe="/") + "?mode=ro",
+            uri=True,
+        )
         db.row_factory = sqlite3.Row
         return db
 

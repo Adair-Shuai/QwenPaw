@@ -17,6 +17,7 @@ Covers:
 
 # pylint: disable=protected-access,unused-argument
 
+from contextlib import suppress
 import os
 import shlex
 import signal
@@ -1689,9 +1690,7 @@ async def test_sandbox_extend_kill_survives_then_cancel_stops(tmp_path):
             await asyncio.wait_for(sandbox.stop(), 6)
         # Only process objects captured from this test's private ready file
         # are eligible for cleanup; psutil checks creation time on kill.
-        for process in reversed(processes):
-            if process.is_running():
-                process.kill()
+        _kill_test_processes(processes)
         for task in (controller, stream):
             if task is not None and not task.done():
                 task.cancel()
@@ -1753,9 +1752,7 @@ async def test_none_sandbox_execute_cancel_calls_stop(tmp_path):
         assert sandbox._process.returncode is not None
     finally:
         await asyncio.wait_for(sandbox.stop(), 6)
-        for process in reversed(processes):
-            if process.is_running():
-                process.kill()
+        _kill_test_processes(processes)
         if not task.done():
             task.cancel()
         await asyncio.wait_for(
@@ -2832,3 +2829,12 @@ async def test_shell_keeps_managed_officecli_updates_disabled(
     assert os.environ["OFFICECLI_SKIP_UPDATE"] == "0"
     assert policy_environment["OFFICECLI_SKIP_UPDATE"] == "0"
     assert policy_environment["officecli_skip_update"] == "0"
+
+
+def _kill_test_processes(processes):
+    import psutil
+
+    for process in reversed(processes):
+        with suppress(psutil.NoSuchProcess):
+            if process.is_running():
+                process.kill()

@@ -9,7 +9,9 @@ from __future__ import annotations
 import copy
 import importlib
 import json
+from pathlib import Path
 import sqlite3
+import sys
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
 
@@ -101,8 +103,15 @@ def _environment_fixture(tmp_path, monkeypatch):
 
 def test_http_plan_persists_without_changing_run_and_projects_true_binding_ids(
     environment,
+    monkeypatch,
 ):
     repository, client, root = environment
+    if sys.platform == "win32":
+        monkeypatch.setattr(
+            repository_module,
+            "_working_dir",
+            lambda: Path("\\\\?\\" + str(root)),
+        )
     database = root / "ugsci/simulation-results/results.sqlite3"
     database.parent.mkdir(parents=True)
     with sqlite3.connect(database) as conn:
