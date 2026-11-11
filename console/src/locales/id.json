@@ -512,7 +512,11 @@
     "preview": "Pratinjau",
     "previewCaption": "Perubahan disimpan otomatis",
     "removeEntry": "Hapus {{name}}",
-    "sidebarPreview": "Entri terlihat"
+    "sidebarPreview": "Entri terlihat",
+    "dualSidebarEntries": "Pintasan khusus",
+    "dualSidebarMore": "Menu lainnya",
+    "dualSidebarEntriesHelp": "Pilih aplikasi dan modul yang ditampilkan di bawah Lainnya dalam navigasi fitur. Seret untuk mengubah urutan. Perubahan disimpan secara otomatis.",
+    "sidebarAppsError": "Tidak dapat memuat aplikasi."
   },
   "hub": {
     "brand": {

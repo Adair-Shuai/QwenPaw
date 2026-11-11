@@ -3395,7 +3395,11 @@
     "preview": "Предпросмотр",
     "previewCaption": "Изменения сохраняются автоматически",
     "removeEntry": "Убрать {{name}}",
-    "sidebarPreview": "Видимые пункты"
+    "sidebarPreview": "Видимые пункты",
+    "dualSidebarEntries": "Свои ярлыки",
+    "dualSidebarMore": "Меню «Ещё»",
+    "dualSidebarEntriesHelp": "Выберите приложения и модули для отображения под пунктом «Ещё» в навигации. Перетаскивайте для изменения порядка. Изменения сохраняются автоматически.",
+    "sidebarAppsError": "Не удалось загрузить приложения."
   },
   "chat": {
     "longTextPaste": {

@@ -151,7 +151,7 @@ describe("console font-size coverage", () => {
     expect(fileRule).toContain("var(--app-font-scale)");
     expect(detailsRule).toContain("font-size: var(--app-font-body)");
     expect(detailsRule).toContain("font-size: var(--app-font-caption)");
-    expect(readRule(artifactStyles, ".status")).toContain(
+    expect(readRule(artifactStyles, ".meta .status")).toContain(
       "font-size: var(--app-font-caption)",
     );
     expect(readRule(artifactStyles, ".toggle")).toContain(
@@ -555,16 +555,19 @@ describe("console font-size coverage", () => {
     expect(triggerRule).toContain("overflow: hidden");
   });
 
-  it("scales collapsed-step text, status icon, arrow, and header height", () => {
-    const rule = readRule(hostBubbleStyles, ".collapsedSteps");
+  it("scales collapsed-step disclosure text, arrow, and header height", () => {
+    const rule = readRule(hostBubbleStyles, ".disclosureButton");
 
     expect(rule).toContain("font-size: var(--app-font-caption)");
     expect(rule).toContain("min-height: var(--app-icon-button)");
-    expect(rule).toContain("width: var(--app-icon-md)");
-    expect(rule).toContain("width: 1em");
-    expect(rule).toContain("font-size: var(--app-icon-sm)");
-    expect(rule).toContain("[data-spark-icon]");
-    expect(rule).toContain("transform: none");
+    expect(rule).toContain("border-top: 0.333em solid transparent");
+    expect(rule).toContain("border-bottom: 0.333em solid transparent");
+    expect(rule).toContain("border-left: 0.417em solid currentColor");
+    expect(rule).toContain('[aria-expanded="true"]::before');
+    expect(rule).toContain("transform: rotate(90deg)");
+    expect(readRule(hostBubbleStyles, ".collapsedSteps")).toContain(
+      "min-height: var(--app-icon-button)",
+    );
   });
 
   it("keeps the model picker inside its flex anchor without covering counters", () => {

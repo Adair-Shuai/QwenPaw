@@ -2738,7 +2738,7 @@
   border-radius: var(--app-radius);
   color: var(--app-text-inverse);
   background: var(--app-accent);
-  font-size: 9px;
+  font-size: calc(9px * var(--app-font-scale));
   font-style: normal;
   line-height: 14px;
 }
@@ -2751,4 +2751,13 @@
     order: 1;
     flex-basis: 100%;
   }
+}
+
+.fileMark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  color: var(--app-text-secondary);
 }

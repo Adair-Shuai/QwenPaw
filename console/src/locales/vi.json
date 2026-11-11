@@ -483,7 +483,11 @@
     "preview": "Xem trước",
     "previewCaption": "Thay đổi được tự động lưu",
     "removeEntry": "Bỏ {{name}}",
-    "sidebarPreview": "Mục đang hiển thị"
+    "sidebarPreview": "Mục đang hiển thị",
+    "dualSidebarEntries": "Lối tắt tùy chỉnh",
+    "dualSidebarMore": "Menu Thêm",
+    "dualSidebarEntriesHelp": "Chọn ứng dụng và mô-đun hiển thị bên dưới Thêm trong điều hướng tính năng. Kéo để sắp xếp lại. Các thay đổi được lưu tự động.",
+    "sidebarAppsError": "Không thể tải ứng dụng."
   },
   "theme": {
     "dark": "Tối",
