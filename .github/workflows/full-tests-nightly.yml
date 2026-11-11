@@ -151,6 +151,12 @@ jobs:
           npm --prefix plugins/memory/powercontext/frontend ci
           npm --prefix plugins/memory/powercontext/frontend run build
 
+      - name: Build Computer Use runtime for manifest contracts
+        shell: bash
+        run: |
+          npm --prefix plugins/bundle/computer-use/frontend ci
+          npm --prefix plugins/bundle/computer-use/frontend run build
+
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:

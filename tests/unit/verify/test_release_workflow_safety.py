@@ -385,6 +385,59 @@ def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
     assert 'expected_job="build-desktop / ${expected_job}"' in components
 
 
+def test_core_artifact_reuse_only_allows_exact_extension_tooling_paths():
+    import fnmatch
+    import re
+
+    release = _workflow("release-resume.yml")
+    rules = release.split('case "$file" in', 1)[1].split("esac", 1)[0]
+    first_arm = rules.split(";;", 1)[0].split(")", 1)[0]
+    allowed = [
+        value.strip() for value in first_arm.replace("\\\n", "").split("|")
+    ]
+    assert all(not re.search(r"[?*\[]", value) for value in allowed)
+    for path in (
+        ".github/workflows/apps-release.yml",
+        ".github/workflows/plugins-release.yml",
+        "scripts/pack/prepare_plugin_versions.py",
+        "scripts/verify_update_regressions.py",
+        "scripts/fork_backend_suites.json",
+    ):
+        assert path in allowed
+    for path in (
+        "src/qwenpaw/__version__.py",
+        "src/qwenpaw/bundled_plugin_policy.py",
+        "plugins/bundle/ugsci/plugin.json",
+        "plugins/bundle/computer-use/plugin.json",
+        "scripts/pack-tauri/build_component_release.py",
+        "scripts/pack-tauri/assemble_desktop_layout.py",
+    ):
+        assert not any(fnmatch.fnmatchcase(path, rule) for rule in allowed)
+
+
+def test_full_unit_gate_builds_actual_computer_use_version_bundle():
+    workflow = yaml.safe_load(_workflow("full-tests-nightly.yml"))
+    steps = workflow["jobs"]["unit-tests"]["steps"]
+    build = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name")
+        == "Build Computer Use runtime for manifest contracts"
+    )
+    test = next(
+        index
+        for index, step in enumerate(steps)
+        if step.get("name") == "Run unit tests"
+    )
+    assert build < test
+    assert "npm --prefix plugins/bundle/computer-use/frontend ci" in (
+        steps[build]["run"]
+    )
+    assert "npm --prefix plugins/bundle/computer-use/frontend run build" in (
+        steps[build]["run"]
+    )
+
+
 def test_published_release_resume_is_attested_and_has_no_duty_issue() -> None:
     release = _workflow("release-resume.yml")
 
