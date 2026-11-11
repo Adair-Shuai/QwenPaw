@@ -5,6 +5,7 @@ import json
 import os
 from pathlib import Path
 import re
+import runpy
 import subprocess
 import sys
 import tomllib
@@ -579,9 +580,13 @@ def test_fork_beta_promotion_retains_checked_desktop_manifest(
         target = tmp_path / directory
         target.mkdir()
         (target / filename).write_text("gate fixture", encoding="utf-8")
-    git = Path(shutil.which("git") or "")
     bash = (
-        git.parent.parent / "bin/bash.exe"
+        runpy.run_path(
+            str(
+                REPO_ROOT
+                / "scripts/pack-tauri/prepare_data_context_console.py",
+            ),
+        )["git_bash"]()
         if os.name == "nt"
         else Path(shutil.which("bash") or "")
     )
