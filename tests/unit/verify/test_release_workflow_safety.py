@@ -1362,6 +1362,18 @@ def test_core_release_allocates_monotonic_independent_versions(
     version = module.next_version(current, releases, channel)
     assert version == expected
     assert module.release_tag(version) == tag
+    # GitHub JSON is UTF-8 even on a Windows host using a GBK locale.
+    import sys
+
+    assert (
+        module.command(
+            sys.executable,
+            "-c",
+            "import sys; "
+            "sys.stdout.buffer.write(bytes([229,143,145,229,184,131]))",
+        )
+        == "发布"
+    )
 
 
 def test_application_version_preparation_commits_and_repacks_real_artifact(

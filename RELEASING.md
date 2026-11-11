@@ -10,6 +10,8 @@ Use **Release Core (build, verify, resume)** (`.github/workflows/release-resume.
 
 Wheel verification, desktop builds and full regressions start independently after resolution. Signed component archives reuse the verified desktop layers. Core publication requires the installation, startup, archive-content, signature and update gates. The draft becomes public before mutable core and desktop pointers are promoted. Core publication never rewrites the plugin market index.
 
+Backend test matrices share one console build. Every consumer checks the archive SHA-256 and brand assets before running the unchanged platform test suite.
+
 Failed jobs can be retried. `artifacts_run_id` enables attested artifact reuse; product changes require rebuilding affected artifacts. `dry_run` does not publish the draft or production pointers. Existing stable/prerelease channel policies remain in effect.
 
 ## Bundled scope

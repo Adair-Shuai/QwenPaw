@@ -48,7 +48,7 @@ def release_tag(version: str) -> str:
 
 
 def command(*arguments: str) -> str:
-    return subprocess.check_output(arguments, text=True).strip()
+    return subprocess.check_output(arguments, text=True, encoding="utf-8").strip()
 
 
 def main() -> None:
