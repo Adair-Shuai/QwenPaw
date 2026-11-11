@@ -44,9 +44,7 @@ describe("Sidebar overflow layout", () => {
     expect(headerSource).toContain('<Slot name="header.left" kind="fill" />');
     expect(headerSource).toContain('<Slot name="header.right" kind="fill" />');
     expect(headerSource).toContain("showBrand && <AppBrand />");
-    expect(mainLayoutSource).toContain(
-      "<Header showBrand={settingsCenterActive} />",
-    );
+    expect(mainLayoutSource).toContain("<Header showBrand={!showSidebar} />");
   });
 
   it("places the sidebar beside the header and content column", () => {

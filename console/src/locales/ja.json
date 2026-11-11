@@ -3378,7 +3378,11 @@
     "preview": "プレビュー",
     "previewCaption": "変更は自動保存されます",
     "removeEntry": "{{name}} を削除",
-    "sidebarPreview": "表示中の項目"
+    "sidebarPreview": "表示中の項目",
+    "dualSidebarEntries": "カスタムショートカット",
+    "dualSidebarMore": "その他のメニュー",
+    "dualSidebarEntriesHelp": "機能ナビゲーションの「その他」の下に表示するアプリとモジュールを選択します。ドラッグして並べ替えできます。変更は自動的に保存されます。",
+    "sidebarAppsError": "アプリを読み込めませんでした。"
   },
   "chat": {
     "longTextPaste": {

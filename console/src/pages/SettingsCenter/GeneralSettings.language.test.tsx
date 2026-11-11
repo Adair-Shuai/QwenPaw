@@ -16,7 +16,8 @@ vi.mock("@/hooks/useIsMobile", () => ({
   useIsMobile: () => true,
 }));
 
-vi.mock("react-i18next", () => ({
+vi.mock("react-i18next", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("react-i18next")>()),
   useTranslation: () => ({
     i18n: {
       language: "en",

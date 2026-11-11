@@ -3632,7 +3632,11 @@
     "preview": "Prévia",
     "previewCaption": "Alterações salvas automaticamente",
     "removeEntry": "Remover {{name}}",
-    "sidebarPreview": "Itens visíveis"
+    "sidebarPreview": "Itens visíveis",
+    "dualSidebarEntries": "Atalhos personalizados",
+    "dualSidebarMore": "Menu Mais",
+    "dualSidebarEntriesHelp": "Escolha os aplicativos e módulos exibidos abaixo de Mais na navegação de recursos. Arraste para reordenar. As alterações são salvas automaticamente.",
+    "sidebarAppsError": "Não foi possível carregar os aplicativos."
   },
   "chat": {
     "longTextPaste": {

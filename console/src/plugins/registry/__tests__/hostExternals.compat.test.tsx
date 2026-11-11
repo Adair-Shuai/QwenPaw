@@ -232,12 +232,12 @@ describe("localized legacy route declarations", () => {
     const view = render(<Consumer />);
     try {
       expect(screen.getByRole("heading").textContent).toBe("Author workspace");
-      expect(document.title).toBe("Author workspace · QwenPaw");
+      expect(document.title).toBe("Author workspace · UGSci");
       await act(async () => {
         await i18n.changeLanguage("zh");
       });
       expect(screen.getByRole("heading").textContent).toBe("作者工作区");
-      expect(document.title).toBe("作者工作区 · QwenPaw");
+      expect(document.title).toBe("作者工作区 · UGSci");
     } finally {
       view.unmount();
       await i18n.changeLanguage("en");
