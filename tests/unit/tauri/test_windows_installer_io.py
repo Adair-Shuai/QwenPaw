@@ -180,6 +180,7 @@ def _package(root):
         "payload/required.txt": b"required",
         "version.json": b'{"version":"test"}',
         "payload/empty.bin": b"",
+        "payload/模板/井筒-é-Δ.txt": "中文模板与数值 0".encode("utf-8"),
         "payload/big.bin": b"large payload\x00" * 150_000,
         **{
             f"payload/group-{index % 5}/file-{index}.py": (

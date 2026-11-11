@@ -320,6 +320,37 @@ def test_verified_zip_builder_preserves_nested_manifest_members(
         assert archive.read(relative) == b"payload"
 
 
+def test_portable_manifest_and_zip_preserve_unicode_paths(tmp_path: Path):
+    modules = []
+    for name, path in (
+        ("prepare_windows_portable_tree", TREE_PREPARER),
+        ("build_windows_portable_zip", ZIP_BUILDER),
+    ):
+        spec = importlib.util.spec_from_file_location(name, path)
+        assert spec is not None and spec.loader is not None
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        modules.append(module)
+    preparer, builder = modules
+    root = tmp_path / "portable"
+    relative = "payload/模板/井筒-é-Δ.txt"
+    payload = root / relative
+    payload.parent.mkdir(parents=True)
+    content = "中文模板与数值 0".encode("utf-8")
+    payload.write_bytes(content)
+    manifest = root / "checksums.sha256"
+    preparer.prepare(root, manifest)
+    expected = f"{hashlib.sha256(content).hexdigest()}  {relative}\n"
+    assert manifest.read_bytes() == expected.encode("utf-8")
+    preparer.prepare(root, manifest)
+    assert manifest.read_bytes() == expected.encode("utf-8")
+    destination = tmp_path / "portable.zip"
+    builder.build_archive(root, destination)
+    with zipfile.ZipFile(destination) as archive:
+        assert archive.read(relative) == content
+        assert archive.read("checksums.sha256") == expected.encode("utf-8")
+
+
 def test_prepare_portable_tree_rejects_windows_breaking_paths(
     tmp_path: Path,
 ) -> None:

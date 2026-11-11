@@ -145,6 +145,7 @@ REQUIRED_CASES = {
         "test_best_deflate_archives_pass_signed_runtime_installation",
     },
     "tests/unit/tauri/test_windows_portable_installer_contract.py": {
+        "test_portable_manifest_and_zip_preserve_unicode_paths",
         "test_cli_launcher_uses_python_module_entry_point",
         "test_installer_verifies_in_elevated_process_before_any_mutation",
         "test_installer_parallel_user_backup_keeps_complete_copy_and_failure_gate",
