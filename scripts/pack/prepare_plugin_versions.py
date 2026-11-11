@@ -13,6 +13,7 @@ import json
 import os
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -58,7 +59,8 @@ def object_exists(uri: str) -> bool:
         return True
     if re.search(
         r"StatusCode.?[:=]? ?404|NoSuchKey|ObjectNotExist",
-        result.stdout + result.stderr, re.I,
+        result.stdout + result.stderr,
+        re.I,
     ):
         return False
     raise RuntimeError(result.stdout + result.stderr)
@@ -123,7 +125,9 @@ def reconcile(repo: Path, dist: Path, remote_index: dict) -> list[Path]:
             if not object_exists(candidate):
                 break
             version = Version(next_version)
-            next_version = f"{version.major}.{version.minor}.{version.micro + 1}"
+            next_version = (
+                f"{version.major}.{version.minor}.{version.micro + 1}"
+            )
         updates.append((source, manifest, next_version))
     for source, manifest, version in updates:
         print(f"{manifest['id']}: {manifest['version']} -> {version}")
@@ -147,6 +151,59 @@ def reconcile(repo: Path, dist: Path, remote_index: dict) -> list[Path]:
                 )
                 changed.append(mirror)
     return changed
+
+
+def rebuild_frontend(repo: Path, identifier: str) -> None:
+    """Refresh bundles that can embed the newly allocated manifest version."""
+    manifest = next(
+        path
+        for path in (repo / "plugins").glob("*/*/plugin.json")
+        if json.loads(path.read_text("utf-8"))["id"] == identifier
+    )
+    for name in ("frontend", "ui"):
+        directory = manifest.parent / name
+        package = directory / "package.json"
+        if not package.is_file():
+            continue
+        if (
+            json.loads(package.read_text("utf-8"))
+            .get("scripts", {})
+            .get("build")
+        ):
+            npm = shutil.which("npm")
+            if npm is None:
+                raise RuntimeError("npm is required to rebuild this extension")
+            subprocess.run(
+                [npm, "--prefix", str(directory), "run", "build"],
+                check=True,
+            )
+
+
+def commit_versions(
+    repo: Path, changes: list[Path], branch: str | None
+) -> None:
+    """Record the prepared package version and push without rewriting history."""
+    subprocess.run(
+        ["git", "add", "--", *(str(path) for path in changes)],
+        cwd=repo,
+        check=True,
+    )
+    subprocess.run(
+        [
+            "git",
+            "commit",
+            "-m",
+            "chore: advance changed extension release versions",
+        ],
+        cwd=repo,
+        check=True,
+    )
+    if branch:
+        subprocess.run(
+            ["git", "push", "origin", f"HEAD:refs/heads/{branch}"],
+            cwd=repo,
+            check=True,
+        )
 
 
 def main():
@@ -187,29 +244,9 @@ def main():
             check=True,
         )
     changes = reconcile(args.repo.resolve(), args.dist.resolve(), remote)
-    if args.commit and changes:
-        subprocess.run(
-            ["git", "add", "--", *(str(path) for path in changes)],
-            cwd=args.repo,
-            check=True,
-        )
-        subprocess.run(
-            [
-                "git",
-                "commit",
-                "-m",
-                "chore: advance changed extension release versions",
-            ],
-            cwd=args.repo,
-            check=True,
-        )
-        if args.branch:
-            subprocess.run(
-                ["git", "push", "origin", f"HEAD:refs/heads/{args.branch}"],
-                cwd=args.repo,
-                check=True,
-            )
     if args.repack:
+        if changes:
+            rebuild_frontend(args.repo.resolve(), identifiers[0])
         # Delete only archives verified by the old local index, never a source tree.
         for archive, _ in artifact_plan(args.dist):
             archive.unlink()
@@ -230,6 +267,8 @@ def main():
             ],
             check=True,
         )
+    if args.commit and changes:
+        commit_versions(args.repo, changes, args.branch)
 
 
 if __name__ == "__main__":

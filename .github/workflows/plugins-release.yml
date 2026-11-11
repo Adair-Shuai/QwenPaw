@@ -159,10 +159,8 @@ jobs:
           test "${GITHUB_REF_TYPE}" = branch
           git config user.name 'github-actions[bot]'
           git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
-          python scripts/pack/prepare_plugin_versions.py --repo . --dist dist/plugins --index existing-index.json --bucket "$OSS_BUCKET" --commit
+          python scripts/pack/prepare_plugin_versions.py --repo . --dist dist/plugins --index existing-index.json --bucket "$OSS_BUCKET" --commit --repack
           git push origin "HEAD:refs/heads/$RELEASE_BRANCH"
-          rm -rf dist/plugins
-          python scripts/pack/generate_plugin_metadata.py --plugins-root plugins --dist dist/plugins --metadata-out dist/plugins/index.json --cdn-prefix /files/plugins --exclude-apps --only "$PLUGIN_ID"
 
       - name: Preflight immutable plugin versions
         if: inputs.upload_to_oss

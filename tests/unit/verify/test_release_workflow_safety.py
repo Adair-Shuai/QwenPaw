@@ -1420,6 +1420,21 @@ def test_application_version_preparation_commits_and_repacks_real_artifact(
     }
     (source / "plugin.json").write_text(json.dumps(manifest), "utf-8")
     (source / "plugin.py").write_bytes(b"VALUE = 2\n")
+    frontend = source / "ui"
+    frontend.mkdir()
+    (frontend / "index.js").write_text('version="1.0.0"', "utf-8")
+    (frontend / "package.json").write_text(
+        json.dumps({"scripts": {"build": "node build.cjs"}}),
+        "utf-8",
+    )
+    (frontend / "build.cjs").write_text(
+        "const fs=require('node:fs'); const path=require('node:path');\n"
+        "const manifest=JSON.parse(fs.readFileSync("
+        "path.join(__dirname,'../plugin.json'),'utf8'));\n"
+        "fs.writeFileSync(path.join(__dirname,'index.js'),"
+        "'version='+JSON.stringify(manifest.version));\n",
+        "utf-8",
+    )
     (repo / ".gitignore").write_text("dist/\n", "utf-8")
     remote_git = tmp_path / "remote.git"
     for arguments in (
@@ -1509,6 +1524,7 @@ def test_application_version_preparation_commits_and_repacks_real_artifact(
     assert len(archives) == 1
     with zipfile.ZipFile(archives[0]) as package:
         assert package.read("release-app/plugin.py") == b"VALUE = 2\n"
+        assert package.read("release-app/ui/index.js") == b'version="1.0.1"'
         assert json.loads(package.read("release-app/plugin.json")) == {
             **manifest,
             "version": "1.0.1",
