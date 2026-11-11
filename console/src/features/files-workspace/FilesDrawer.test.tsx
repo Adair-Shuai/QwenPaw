@@ -2244,7 +2244,9 @@ describe("FilesDrawer", () => {
           name: i18n.t("workbench.quotes.locate", { name: "quoted.md:5-6" }),
         }),
       );
-      expect(navigate.mock.calls.at(-1)?.[0].detail).toMatchObject({
+      expect(
+        navigate.mock.calls[navigate.mock.calls.length - 1][0].detail,
+      ).toMatchObject({
         agentId: "default",
         sessionId: "resolved-preview",
         chatId: "saved-preview",
