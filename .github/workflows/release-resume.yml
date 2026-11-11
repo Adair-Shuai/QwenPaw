@@ -111,6 +111,7 @@ jobs:
                 scripts/pack-tauri/prepare_component_base.py|\
                 tests/unit/verify/test_unit_sharding.py|\
                 tests/unit/verify/test_fork_regression_inventory.py|\
+                tests/unit/app/test_migration_skills_and_qa_agent.py|\
                 plugins/bundle/computer-use/frontend/package-lock.json|\
                 plugins/bundle/chrome/frontend/package-lock.json|\
                 tests/unit/tauri/test_component_release.py|\
