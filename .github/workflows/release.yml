@@ -319,7 +319,7 @@ jobs:
 
   # ── Prepare phase: build + verify everything, publish nothing ──────────────
   build-wheel:
-    needs: [resolve]
+    needs: [resolve, build-plugins]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -411,7 +411,7 @@ jobs:
     secrets: inherit
 
   build-desktop:
-    needs: [resolve]
+    needs: [resolve, build-plugins]
     uses: ./.github/workflows/desktop-build.yml
     with:
       ref: ${{ needs.resolve.outputs.sha }}
@@ -433,6 +433,8 @@ jobs:
   build-plugins:
     needs: [resolve]
     runs-on: ubuntu-latest
+    env:
+      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'qwenpaw-download' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -487,6 +489,29 @@ jobs:
             --cdn-prefix /files/plugins \
             --exclude qwenpaw-creator \
             --exclude qwenpaw-data
+
+      - name: Install ossutil
+        if: ${{ !inputs.dry_run }}
+        run: |
+          wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+          unzip -q ossutil-v1.7.18-linux-amd64.zip
+          chmod +x ossutil-v1.7.18-linux-amd64/ossutil64
+          sudo mv ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
+          ossutil --version
+
+      - name: Configure ossutil
+        if: ${{ !inputs.dry_run }}
+        run: |
+          ossutil config -e ${{ secrets.OSS_ENDPOINT }} \
+            -i ${{ secrets.OSS_ACCESS_KEY_ID }} \
+            -k ${{ secrets.OSS_ACCESS_KEY_SECRET }} \
+            -L CH
+
+      - name: Preflight immutable plugin versions
+        if: ${{ !inputs.dry_run }}
+        run: |
+          python scripts/pack/upload_plugin_artifacts.py \
+            --root dist/plugins --bucket "$OSS_BUCKET" --preflight
 
       - name: Upload plugins dist
         uses: actions/upload-artifact@v4
@@ -802,7 +827,7 @@ jobs:
   # also inherits it transitively through the publish jobs: an explicit edge
   # documents the intent and survives later edits to the publish needs lists.
   full-test-gate:
-    needs: [resolve]
+    needs: [resolve, build-plugins]
     uses: ./.github/workflows/full-tests-nightly.yml
     with:
       form: release

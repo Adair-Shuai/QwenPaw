@@ -475,7 +475,7 @@ jobs:
 
   # ── Prepare phase: build + verify everything, publish nothing ──────────────
   build-wheel:
-    needs: [resolve]
+    needs: [resolve, build-plugins]
     if: ${{ inputs.artifacts_run_id == '' }}
     runs-on: ubuntu-latest
     steps:
@@ -572,7 +572,7 @@ jobs:
     secrets: inherit
 
   build-desktop:
-    needs: [resolve]
+    needs: [resolve, build-plugins]
     if: ${{ inputs.artifacts_run_id == '' }}
     uses: ./.github/workflows/desktop-build.yml
     with:
@@ -584,6 +584,8 @@ jobs:
     needs: [resolve]
     if: ${{ inputs.artifacts_run_id == '' }}
     runs-on: ubuntu-latest
+    env:
+      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -639,6 +641,29 @@ jobs:
             --exclude uproject \
             --exclude datapaw \
             --exclude qwenpaw-data
+
+      - name: Install ossutil
+        if: ${{ !inputs.dry_run }}
+        run: |
+          wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+          unzip -q ossutil-v1.7.18-linux-amd64.zip
+          chmod +x ossutil-v1.7.18-linux-amd64/ossutil64
+          sudo mv ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
+          ossutil --version
+
+      - name: Configure ossutil
+        if: ${{ !inputs.dry_run }}
+        run: |
+          ossutil config -e ${{ secrets.OSS_ENDPOINT }} \
+            -i ${{ secrets.OSS_ACCESS_KEY_ID }} \
+            -k ${{ secrets.OSS_ACCESS_KEY_SECRET }} \
+            -L CH
+
+      - name: Preflight immutable plugin versions
+        if: ${{ !inputs.dry_run }}
+        run: |
+          python scripts/pack/upload_plugin_artifacts.py \
+            --root dist/plugins --bucket "$OSS_BUCKET" --preflight
 
       - name: Upload plugins dist
         uses: actions/upload-artifact@v4
@@ -963,7 +988,8 @@ jobs:
   # Release-time full regression gate against the exact release workflow SHA.
   # Mutable release metadata remains blocked until this reusable matrix passes.
   full-test-gate:
-    needs: [resolve]
+    needs: [resolve, build-plugins]
+    if: ${{ !cancelled() && needs.resolve.result == 'success' && (needs.build-plugins.result == 'success' || (inputs.artifacts_run_id != '' && needs.build-plugins.result == 'skipped')) }}
     uses: ./.github/workflows/full-tests-nightly.yml
     with:
       form: release
