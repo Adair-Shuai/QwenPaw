@@ -22,7 +22,9 @@ Failed jobs can be retried. `artifacts_run_id` enables attested artifact reuse; 
 
 `plugins-release.yml` publishes market plugins explicitly and never runs because a core release was published. Apps keep their dedicated `*-release.yml` workflows and their own functional validation. New users install apps from the market; existing users retain manual/automatic update behavior. PyPI and Docker also remain separate distribution entry points.
 
-`scripts/pack/prepare_plugin_versions.py` compares actual immutable OSS archives, increments only changed and occupied extension versions, and synchronizes source mirrors. Repack and run immutable upload preflight afterwards. A source-version commit must push without force before publishing. All six dedicated app workflows execute the same preparation tool while retaining their specialized packaging checks.
+`apps-release.yml` covers UIdeas, ULit and Agent Kanban. The other six apps retain their specialized workflows; all nine have an independent release path.
+
+`scripts/pack/prepare_plugin_versions.py` compares actual immutable OSS archives, increments only changed and occupied extension versions, and synchronizes source mirrors. Repack and run immutable upload preflight afterwards. A source-version commit must push without force before publishing. Every app workflow executes the same preparation tool while retaining its specialized packaging checks.
 
 Compatibility floors do not track routine version increments. Preserve genuine minimum requirements and the `<3.0.0` extension ceiling, SDK/protocol checks and native-host fingerprints. Component protocol 2 and core floor `2.2.2b9` remain unchanged. Never overwrite a released version or bypass signatures, archive validation, rollback or tests.
 

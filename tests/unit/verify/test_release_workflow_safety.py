@@ -1318,6 +1318,7 @@ def test_main_release_workflows_exclude_every_application(workflow_name, job):
         "document-forms",
         "storage-capacity",
         "wellbore-pressure",
+        "apps",
     ],
 )
 def test_application_releases_prepare_versions_without_force_overwrites(name):
@@ -1335,6 +1336,31 @@ def test_application_releases_prepare_versions_without_force_overwrites(name):
         assert argument in prepare["run"]
     assert not prepare.get("continue-on-error", False)
     assert "github.event.inputs.force" not in _workflow(f"{name}-release.yml")
+
+
+def test_every_application_has_an_independent_release_entry():
+    """Removing apps from core must never orphan an app's release path."""
+    workflow = yaml.safe_load(_workflow("apps-release.yml"))
+    events = workflow.get("on", workflow.get(True))
+    generic = set(events["workflow_dispatch"]["inputs"]["app_id"]["options"])
+    dedicated = {
+        "qwenpaw-creator": "creator",
+        "qwenpaw-data": "qwenpaw-data",
+        "uproject": "uproject",
+        "document-forms": "document-forms",
+        "storage-capacity": "storage-capacity",
+        "wellbore-pressure": "wellbore-pressure",
+    }
+    actual = {
+        json.loads(path.read_text("utf-8"))["id"]
+        for path in (REPO_ROOT / "plugins/apps").glob("*/plugin.json")
+    }
+    assert actual == generic | dedicated.keys()
+    assert not generic.intersection(dedicated)
+    for name in dedicated.values():
+        assert "Prepare independent application version" in _workflow(
+            f"{name}-release.yml",
+        )
 
 
 @pytest.mark.parametrize(

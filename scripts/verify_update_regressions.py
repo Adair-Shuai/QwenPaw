@@ -254,6 +254,7 @@ REQUIRED_CASES = {
     "tests/unit/verify/test_release_workflow_safety.py": {
         "test_independent_release_versions_advance_only_changed_payloads",
         "test_application_releases_prepare_versions_without_force_overwrites",
+        "test_every_application_has_an_independent_release_entry",
         "test_core_release_allocates_monotonic_independent_versions",
         "test_application_version_preparation_commits_and_repacks_real_artifact",
         "test_main_plugin_publisher_rejects_actual_application_archives",
