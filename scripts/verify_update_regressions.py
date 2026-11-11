@@ -248,6 +248,7 @@ REQUIRED_CASES = {
         "test_plugin_upload_conflict_blocks_every_new_object",
         "test_plugin_preflight_reads_actual_objects_without_uploading",
         "test_release_expensive_jobs_require_immutable_plugin_preflight",
+        "test_console_checkout_preserves_formatter_line_endings",
         "test_plugin_upload_rejects_incomplete_local_artifacts",
         "test_plugin_upload_transport_failures_do_not_pass",
     },

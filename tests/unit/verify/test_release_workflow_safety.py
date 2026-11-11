@@ -1124,3 +1124,61 @@ def test_release_expensive_jobs_require_immutable_plugin_preflight(
             in jobs["full-test-gate"]["if"]
         )
         assert "inputs.artifacts_run_id != ''" in jobs["full-test-gate"]["if"]
+
+
+def test_console_checkout_preserves_formatter_line_endings(tmp_path):
+    """Exercise real Git checkout with Windows automatic conversion."""
+    (tmp_path / ".gitattributes").write_bytes(
+        (REPO_ROOT / ".gitattributes").read_bytes(),
+    )
+    console = tmp_path / "console"
+    console.mkdir()
+    text = b"first line\nsecond line\n"
+    extensions = (
+        "ts",
+        "tsx",
+        "js",
+        "mjs",
+        "cjs",
+        "json",
+        "css",
+        "less",
+        "scss",
+        "html",
+        "md",
+        "mdx",
+        "yaml",
+        "yml",
+        "svg",
+    )
+    text_files = [console / f"format.{extension}" for extension in extensions]
+    binary = console / "sample.png"
+    batch = console / "verify.bat"
+    binary_bytes = b"\x89PNG\x00\r\n\x00payload\n"
+    for path in text_files:
+        path.write_bytes(text)
+    binary.write_bytes(binary_bytes)
+    batch.write_bytes(b"@echo off\necho verify\n")
+    for arguments in (
+        ["init", "--quiet"],
+        ["config", "core.autocrlf", "true"],
+        ["add", ".gitattributes", "console"],
+    ):
+        subprocess.run(
+            ["git", *arguments],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+    for path in [*text_files, binary, batch]:
+        path.unlink()
+    subprocess.run(
+        ["git", "checkout-index", "--all"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    for path in text_files:
+        assert path.read_bytes() == text, path.name
+    assert binary.read_bytes() == binary_bytes
+    assert batch.read_bytes() == b"@echo off\r\necho verify\r\n"
