@@ -59,6 +59,31 @@ def _write_report(path: Path, *, nonce: str, complete: bool = True) -> None:
     )
 
 
+def test_missing_plugins_report_backend_startup_failure(monkeypatch):
+    ticks = iter((0, 0, 2))
+    monkeypatch.setattr(desktop_verify, "DEFAULT_TIMEOUT", 1)
+    monkeypatch.setattr(
+        desktop_verify.time,
+        "monotonic",
+        lambda: next(ticks, 2),
+    )
+    monkeypatch.setattr(desktop_verify.time, "sleep", lambda _seconds: None)
+    responses = {
+        "frontend_plugin": "[]",
+        "startup/status": '{"state":"error","message":"missing dependency"}',
+        "plugins/bundled/status": '{"state":"error","loaded_count":0}',
+    }
+    monkeypatch.setattr(
+        desktop_verify,
+        "_http",
+        lambda _method, url: responses[url.split("/api/")[1]],
+    )
+    with pytest.raises(RuntimeError, match="missing dependency") as error:
+        desktop_verify.verify_bundled_plugins("http://127.0.0.1:9999")
+    assert "flowforge" in str(error.value)
+    assert "loaded_count" in str(error.value)
+
+
 def test_native_ui_report_accepts_required_capabilities(
     tmp_path: Path,
 ) -> None:

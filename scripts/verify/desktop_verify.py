@@ -253,9 +253,16 @@ def verify_bundled_plugins(base_url: str) -> None:
                 )
                 return
         time.sleep(2)
+    diagnostics = {}
+    for endpoint in ("startup/status", "plugins/bundled/status"):
+        try:
+            diagnostics[endpoint] = _http("GET", f"{base_url}/api/{endpoint}")
+        except Exception as error:
+            diagnostics[endpoint] = str(error)
     raise RuntimeError(
         "Critical bundled plugins did not load before timeout: "
-        f"{sorted(required)}; last response={last_body[:500]}",
+        f"{sorted(required)}; last response={last_body[:500]}; "
+        f"startup diagnostics={json.dumps(diagnostics, ensure_ascii=False)[:2000]}",
     )
 
 
