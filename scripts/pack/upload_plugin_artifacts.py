@@ -93,8 +93,13 @@ def _copy(source: str, destination: str, *, upload: bool = False) -> None:
         raise RuntimeError(result.stdout + result.stderr)
 
 
-def upload_artifacts(root: Path, bucket: str) -> None:
-    """Preflight all conflicts, then upload and read back every new object."""
+def upload_artifacts(
+    root: Path,
+    bucket: str,
+    *,
+    preflight_only: bool = False,
+) -> None:
+    """Validate immutable objects and optionally upload new archives."""
     plan = artifact_plan(root)
     existing, conflicts = set(), []
     with tempfile.TemporaryDirectory(prefix="qwenpaw-plugin-upload-") as work:
@@ -118,6 +123,12 @@ def upload_artifacts(root: Path, bucket: str) -> None:
                 "Plugin content changed without a version bump: "
                 + ", ".join(conflicts),
             )
+        if preflight_only:
+            print(
+                f"Verified {len(plan)} plugin versions "
+                "against immutable OSS objects",
+            )
+            return
         for index, (source, relative) in enumerate(plan):
             if relative in existing:
                 print(f"Reusing unchanged immutable plugin: {relative}")
@@ -135,12 +146,14 @@ def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=Path("dist/plugins"))
     parser.add_argument("--bucket", required=True)
-    parser.add_argument("--check", action="store_true")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--check", action="store_true")
+    mode.add_argument("--preflight", action="store_true")
     args = parser.parse_args()
     if args.check:
         print(f"Validated {len(artifact_plan(args.root))} indexed plugin ZIPs")
     else:
-        upload_artifacts(args.root, args.bucket)
+        upload_artifacts(args.root, args.bucket, preflight_only=args.preflight)
 
 
 if __name__ == "__main__":
