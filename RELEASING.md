@@ -12,6 +12,8 @@ Wheel verification, desktop builds and full regressions start independently afte
 
 Backend test matrices share one console build. Every consumer checks the archive SHA-256 and brand assets before running the unchanged platform test suite.
 
+Every historical component manifest is authenticated before reuse. Identical selected core baselines left by independent extension releases are downloaded and extracted once; the original signed history and distinct core versions remain intact.
+
 Failed jobs can be retried. `artifacts_run_id` enables attested artifact reuse; product changes require rebuilding affected artifacts. `dry_run` does not publish the draft or production pointers. Existing stable/prerelease channel policies remain in effect.
 
 ## Bundled scope

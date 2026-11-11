@@ -289,6 +289,7 @@ REQUIRED_CASES = {
     },
     "tests/unit/tauri/test_component_release.py": {
         "test_builds_ten_direct_deltas_and_binds_signed_history",
+        "test_history_preparation_reuses_identical_selected_components",
     },
     "tests/unit/tauri/test_ugsci_release_data.py": {
         "test_python_distributions_reject_embedded_application_payloads",

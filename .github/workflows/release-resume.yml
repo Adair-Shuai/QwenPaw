@@ -1016,7 +1016,6 @@ jobs:
       macos_artifacts_run_id: ${{ needs.resolve.outputs.macos_artifacts_run_id }}
     secrets: inherit
 
-  # ── Post-publish: create the Release Duty verification issue (inline) ───────
   # ── Post-publish: deploy the public website (stable + post only) ────────────
   # Skipped for pre-releases (beta/alpha/rc/dev) so the site advertises only
   # GA/post versions. Invoked inline because the finalize job flips the draft
