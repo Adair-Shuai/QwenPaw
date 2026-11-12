@@ -32,7 +32,7 @@ jobs:
         with:
           python-version: "3.11"
       - name: Install host and publication dependencies
-        run: python -m pip install -e ".[test]" oss2 segno
+        run: python -m pip install -e ".[test]" oss2 segno -r plugins/apps/document-forms/requirements.txt
       - name: Build and type-check the FlowForge frontend
         working-directory: plugins/bundle/flowforge/ui
         run: |
