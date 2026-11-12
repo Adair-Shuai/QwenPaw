@@ -43,6 +43,9 @@ jobs:
         run: |
           git diff --exit-code -- plugins/bundle/flowforge/ui/dist/index.js
           python scripts/sync_flowforge_bundle.py --check
+          # Exercise installation with the clean release tree. npm's Linux
+          # development executables include symlinks outside the plugin payload.
+          rm -rf plugins/bundle/flowforge/ui/node_modules
       - name: Verify workflow execution and signed publication transactions
         run: python -m pytest tests/unit/plugins/flowforge tests/unit/tauri/test_storage_capacity_publication.py tests/unit/tauri/test_flowforge_publication.py -q
       - name: Verify actual mounted workflow pages
