@@ -15,6 +15,10 @@ import {
   readAnswerQuotes,
   subscribeAnswerQuotes,
 } from "../answerQuotes";
+import {
+  openQuoteSource,
+  useWorkspaceQuotes,
+} from "../../../features/files-workspace/workspaceQuotes";
 import { getActiveSenderTextarea } from "../utils";
 import styles from "./AnswerQuoteComposer.module.less";
 
@@ -63,6 +67,7 @@ export function AnswerQuoteComposer({
   enabled: boolean;
 }) {
   const { t } = useTranslation();
+  const workspace = useWorkspaceQuotes();
   const { message } = useAppMessage();
   const quotes = useSyncExternalStore(subscribeAnswerQuotes, () =>
     readAnswerQuotes(scope),
@@ -131,9 +136,27 @@ export function AnswerQuoteComposer({
                   aria-label={t("chat.answerQuote.view", { text: quote.text })}
                 >
                   <Quote size={13} />
-                  <span>{quote.text}</span>
+                  <span>
+                    {quote.source?.kind === "file"
+                      ? quote.messageId
+                      : quote.text}
+                  </span>
                 </button>
               </Popover>
+              {quote.source && (
+                <button
+                  type="button"
+                  aria-label={t("workbench.quotes.locate", {
+                    name: quote.messageId,
+                  })}
+                  onClick={() =>
+                    openQuoteSource(quote.source!, workspace?.scope)
+                  }
+                >
+                  <Quote size={13} />
+                  {t("workbench.quotes.source")}
+                </button>
+              )}
               <button
                 type="button"
                 aria-label={t("chat.answerQuote.remove", { text: quote.text })}

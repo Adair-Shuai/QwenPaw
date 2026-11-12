@@ -89,7 +89,7 @@ beforeEach(() => {
   vi.stubGlobal("PointerEvent", WorkflowPointerEvent);
   vi.stubGlobal("innerHeight", 1000);
   window.history.replaceState({ idx: 3 }, "", "/flowforge");
-  (window as any).QwenPaw = {
+  (window as unknown as { QwenPaw: Record<string, unknown> }).QwenPaw = {
     host: {
       React,
       ReactDOM,
@@ -341,7 +341,7 @@ describe("FlowForge real application entry", () => {
     expect(window.location.search).toBe("?flow=app-flow");
     expect(window.history.state.idx).toBe(3);
     expect(screen.getByRole("button", { name: "调试与变量" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "← 返回" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回工作流列表" }));
     expect(
       await screen.findByText("中英文 App flow", {}, { timeout: 5000 }),
     ).toBeVisible();

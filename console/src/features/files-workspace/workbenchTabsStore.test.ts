@@ -146,3 +146,39 @@ describe("workbench content references", () => {
     expect(current.tabs[1].browserRevision).toBe(1);
   });
 });
+
+it("isolates split layouts and promotes or merges panes without stale references on close and rebind", () => {
+  useWorkbenchTabsStore.setState({ scopes: {} });
+  const store = useWorkbenchTabsStore.getState();
+  store.open("split", {
+    id: "file",
+    kind: "files",
+    filePath: "x",
+    title: "x",
+    target: { source: "workspace", path: "x", root: "project" },
+  });
+  store.open("split", { id: "browser", kind: "browser", title: "web" });
+  store.split("split", "file", "vertical", true);
+  expect(useWorkbenchTabsStore.getState().scopes.split).toMatchObject({
+    activeId: "browser",
+    secondaryId: "file",
+    splitAxis: "vertical",
+    splitBefore: true,
+  });
+  store.select("split", "file");
+  expect(useWorkbenchTabsStore.getState().scopes.split).toMatchObject({
+    activeId: "file",
+    secondaryId: "browser",
+  });
+  store.migrateScope("split", "saved");
+  expect(useWorkbenchTabsStore.getState().scopes.saved.secondaryId).toBe(
+    "browser",
+  );
+  store.clearProjectTabs("saved");
+  expect(
+    useWorkbenchTabsStore.getState().scopes.saved.secondaryId,
+  ).toBeUndefined();
+  expect(
+    useWorkbenchTabsStore.getState().scopes.saved.tabs.map((tab) => tab.id),
+  ).toEqual(["browser"]);
+});

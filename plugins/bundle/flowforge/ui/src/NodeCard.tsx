@@ -143,6 +143,7 @@ export function NodeCard({
   return (
     <div
       className="ff-node-card"
+      data-execution-mode={d.control?.mode || "run"}
       data-node-density={detailed ? "expanded" : "compact"}
       style={{
         width: 270,
@@ -184,7 +185,9 @@ export function NodeCard({
           data-run-status={status || "unrun"}
           style={{ color: statusColor, fontSize: 11, flexShrink: 0 }}
         >
-          {status
+          {d.control?.mode === "mute"
+            ? t("已禁用", "Disabled")
+            : status
             ? t(statusLabels[status] || status)
             : t("未执行", "Not executed")}
         </span>

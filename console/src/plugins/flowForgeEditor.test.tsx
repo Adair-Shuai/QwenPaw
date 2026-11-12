@@ -144,7 +144,9 @@ describe("FlowForge mounted editor architecture", () => {
         const more = screen.getByRole("button", {
           name: english ? "More actions" : "更多操作",
         });
-        fireEvent.click(more);
+        fireEvent.click(
+          screen.getByRole("button", { name: english ? "Arrange" : "排列" }),
+        );
         fireEvent.click(
           await screen.findByRole("menuitem", {
             name: english ? "Auto layout" : "自动布局",
@@ -365,6 +367,7 @@ describe("FlowForge mounted editor architecture", () => {
     expect(input).toBeDisabled();
     expect(input).toHaveValue("上游模型 → 文本");
     expect(input).not.toHaveValue(expect.stringContaining("来源已失效"));
+    fireEvent.click(screen.getByRole("tab", { name: "数据" }));
     expect(
       screen.getByRole("combobox", { name: "prompt 的数据来源" }),
     ).toHaveValue(JSON.stringify(["source", "text"]));

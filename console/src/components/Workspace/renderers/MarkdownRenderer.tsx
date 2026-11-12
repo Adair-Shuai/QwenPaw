@@ -90,6 +90,27 @@ function preserveMathCodeBlocks() {
   };
 }
 
+interface SourceNode {
+  type?: string;
+  position?: { start: { line: number }; end: { line: number } };
+  properties?: Record<string, unknown>;
+  children?: SourceNode[];
+}
+function markdownSourceLines(offset: number) {
+  return () => (tree: SourceNode) => {
+    const visit = (node: SourceNode) => {
+      if (node.type === "element" && node.position) {
+        node.properties ??= {};
+        node.properties["data-source-start"] =
+          node.position.start.line + offset;
+        node.properties["data-source-end"] = node.position.end.line + offset;
+      }
+      node.children?.forEach(visit);
+    };
+    visit(tree);
+  };
+}
+
 const MarkdownRenderer: React.FC<RendererContext> = ({
   artifact,
   workspace,
@@ -101,6 +122,16 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
   const parsedMarkdown = useMemo(
     () => parseMarkdownFrontmatter(content),
     [content],
+  );
+
+  const sourceLines = useMemo(
+    () =>
+      markdownSourceLines(
+        content
+          .slice(0, content.length - parsedMarkdown.body.length)
+          .split("\n").length - 1,
+      ),
+    [content, parsedMarkdown.body],
   );
 
   const tags = useMemo(() => parseMemoryTags(content), [content]);
@@ -356,7 +387,7 @@ const MarkdownRenderer: React.FC<RendererContext> = ({
       )}
       <ReactMarkdown
         remarkPlugins={[remarkGfm, remarkMath, preserveMathCodeBlocks]}
-        rehypePlugins={[rehypeKatex]}
+        rehypePlugins={[sourceLines, rehypeKatex]}
         components={markdownComponents}
       >
         {parsedMarkdown.body}

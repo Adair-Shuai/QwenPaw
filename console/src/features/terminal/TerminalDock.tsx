@@ -116,6 +116,7 @@ export function TerminalSessionPanel({
   open,
   setOpen,
   hideLabel,
+  terminalTarget,
 }: {
   scope: TerminalScope;
   group: string;
@@ -123,6 +124,7 @@ export function TerminalSessionPanel({
   open: boolean;
   setOpen: (open: boolean) => void;
   hideLabel?: string;
+  terminalTarget?: { id: string; nonce: string };
 }) {
   const { t } = useTranslation();
   const { agentId, sessionId, chatId, projectDirOverride } = scope;
@@ -154,6 +156,18 @@ export function TerminalSessionPanel({
     () => terminalApi({ kind: "session", agentId, sessionId: "new" }, group),
     [agentId, group],
   );
+  const lastTarget = useRef("");
+  useEffect(() => {
+    if (
+      open &&
+      terminalTarget &&
+      lastTarget.current !== terminalTarget.nonce &&
+      tabs.some((tab) => tab.id === terminalTarget.id)
+    ) {
+      setActive(terminalTarget.id);
+      lastTarget.current = terminalTarget.nonce;
+    }
+  }, [open, terminalTarget, tabs]);
   const selected = tabs.find((tab) => tab.id === active) ?? tabs[0];
   const markExited = useCallback(
     (terminalId: string, exitCode: number | null) => {

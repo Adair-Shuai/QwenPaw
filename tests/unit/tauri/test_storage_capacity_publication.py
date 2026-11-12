@@ -146,9 +146,11 @@ def test_catalog_and_immutable_publication_preserve_existing_versions():
     assert bucket.objects["app.zip"] == b"reviewed"
 
 
+@pytest.mark.parametrize("component_id", ["storage-capacity", "flowforge"])
 def test_signed_application_release_preserves_other_components_and_host_policy(
     tmp_path,
     monkeypatch,
+    component_id,
 ):
     if sys.platform == "win32":
         tmp_path = Path("\\\\?\\" + str(tmp_path))
@@ -170,7 +172,7 @@ def test_signed_application_release_preserves_other_components_and_host_policy(
     monkeypatch.setattr(publisher, "PUBLIC_KEY", public)
     base = "https://release.example"
     old_stage = tmp_path / "old-stage"
-    for app in ("storage-capacity", "unrelated"):
+    for app in (component_id, "unrelated"):
         directory = old_stage / app
         directory.mkdir(parents=True)
         (directory / "plugin.json").write_text(
@@ -206,12 +208,12 @@ def test_signed_application_release_preserves_other_components_and_host_policy(
             ] = path.read_bytes()
     original = json.loads(old_manifest.read_bytes())
     new_stage = tmp_path / "new-stage"
-    directory = new_stage / "storage-capacity"
+    directory = new_stage / component_id
     directory.mkdir(parents=True)
     (directory / "plugin.json").write_text(
         json.dumps(
             {
-                "id": "storage-capacity",
+                "id": component_id,
                 "version": "0.2.0",
                 "entry": {"backend": "backend.py"},
             },
@@ -228,12 +230,13 @@ def test_signed_application_release_preserves_other_components_and_host_policy(
         "app-0.2.0",
         2,
         1,
+        component_id=component_id,
     )
     pointer = json.loads(result[2])
     manifest = json.loads(
         bucket.objects[publisher.key_for(pointer["manifest_url"], base)],
     )
-    assert manifest["components"]["storage-capacity"]["version"] == "0.2.0"
+    assert manifest["components"][component_id]["version"] == "0.2.0"
     assert (
         manifest["components"]["unrelated"]
         == original["components"]["unrelated"]
@@ -258,4 +261,5 @@ def test_signed_application_release_preserves_other_components_and_host_policy(
             "app-retry",
             3,
             1,
+            component_id=component_id,
         )

@@ -1219,6 +1219,11 @@
     ],
     "tests/unit/services/test_terminal_availability.py": [
       "test_app_starts_without_winpty"
+    ],
+    "tests/unit/verify/test_release_workflow_safety.py": [
+      "test_plugin_preflight_reads_actual_objects_without_uploading",
+      "test_release_expensive_jobs_require_immutable_plugin_preflight",
+      "test_console_checkout_preserves_formatter_line_endings"
     ]
   }
 }

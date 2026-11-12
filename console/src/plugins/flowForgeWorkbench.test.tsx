@@ -154,6 +154,7 @@ afterEach(async () => {
   );
   antd.ConfigProvider.config({ holderRender: undefined });
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
   Reflect.deleteProperty(window, "QwenPaw");
 });
 
@@ -215,6 +216,92 @@ function localDrafts() {
 }
 
 describe("FlowForge mounted workbench drafts and debugging", () => {
+  it.each([false, true])(
+    "saves edits across all property tabs in the mounted editor with drawer=%s",
+    async (narrow) => {
+      vi.stubGlobal("matchMedia", (query: string) => ({
+        matches: query === "(max-width: 1000px)" && narrow,
+        media: query,
+        onchange: null,
+        addListener: vi.fn(),
+        removeListener: vi.fn(),
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        dispatchEvent: vi.fn(),
+      }));
+      const api = apiFor();
+      render(editor(api));
+      await editPrompt("分组配置 Chinese English");
+      const panel = within(
+        narrow
+          ? screen.getByRole("dialog")
+          : screen.getByRole("complementary", { name: "节点属性" }),
+      );
+      expect(panel.getAllByRole("tab").map((tab) => tab.textContent)).toEqual([
+        "参数",
+        "数据",
+        "输出",
+        "执行",
+        "基础",
+      ]);
+      expect(panel.getAllByRole("tabpanel")).toHaveLength(1);
+      expect(panel.queryByRole("spinbutton", { name: "重试次数" })).toBeNull();
+      fireEvent.click(panel.getByRole("tab", { name: "数据" }));
+      expect(
+        panel.getByRole("combobox", { name: "prompt 的数据来源" }),
+      ).toBeVisible();
+      fireEvent.click(panel.getByRole("tab", { name: "输出" }));
+      fireEvent.change(panel.getByRole("textbox", { name: "输出变量名" }), {
+        target: { value: "result_alias" },
+      });
+      expect(panel.getByRole("region", { name: "输出字段" })).toHaveTextContent(
+        "文本",
+      );
+      fireEvent.click(panel.getByRole("tab", { name: "执行" }));
+      fireEvent.change(
+        panel.getByRole("spinbutton", { name: "重试延迟（秒）" }),
+        { target: { value: "0" } },
+      );
+      fireEvent.change(
+        panel.getByRole("spinbutton", { name: "节点超时（秒）" }),
+        { target: { value: "25" } },
+      );
+      fireEvent.click(panel.getByRole("tab", { name: "基础" }));
+      fireEvent.change(panel.getByRole("textbox", { name: "显示标签" }), {
+        target: { value: "新节点名称" },
+      });
+      fireEvent.click(panel.getByRole("tab", { name: "参数" }));
+      expect(panel.getByRole("textbox", { name: "提示词" })).toHaveValue(
+        "分组配置 Chinese English",
+      );
+      if (narrow) fireEvent.click(panel.getByRole("button", { name: "Close" }));
+      fireEvent.click(screen.getByRole("button", { name: "保存" }));
+      await waitFor(() =>
+        expect(
+          vi
+            .mocked(api)
+            .mock.calls.some(([, request]) => request?.method === "PUT"),
+        ).toBe(true),
+      );
+      const request = vi
+        .mocked(api)
+        .mock.calls.find(([, request]) => request?.method === "PUT")![1]!;
+      expect(JSON.parse(String(request.body))).toMatchObject({
+        nodes: {
+          model: {
+            label: "新节点名称",
+            inputs: { prompt: "分组配置 Chinese English" },
+            control: {
+              output: "result_alias",
+              retry_delay_sec: 0,
+              timeout_sec: 25,
+            },
+          },
+        },
+      });
+    },
+  );
+
   it("recovers bilingual drafts after remount and clears only the successfully saved content", async () => {
     const api = apiFor();
     const first = render(editor(api));
@@ -968,5 +1055,285 @@ describe("FlowForge mounted workbench drafts and debugging", () => {
       "服务器内容",
     );
     expect(screen.getByText(flow.name)).toBeVisible();
+  });
+});
+
+describe("FlowForge layered toolbar", () => {
+  async function menu(label: string, item: string | RegExp) {
+    fireEvent.click(screen.getByRole("button", { name: label }));
+    fireEvent.click(await screen.findByRole("menuitem", { name: item }));
+  }
+  const twoNodes = (): FlowDocument => ({
+    ...structuredClone(flow),
+    nodes: {
+      source: {
+        class_type: "LLMNode",
+        label: "Source 中文",
+        inputs: { prompt: "原文" },
+        control: { mode: "bypass" },
+      },
+      target: {
+        class_type: "LLMNode",
+        label: "Target English",
+        inputs: {
+          prompt: ["source", 0],
+          system: '前缀 ${output_slots["source"][0]}',
+        },
+      },
+    },
+    edges: [
+      {
+        id: "wire",
+        source: "source",
+        target: "target",
+        source_handle: "text",
+        target_handle: "prompt",
+        source_slot: 0,
+        kind: "data",
+      },
+    ],
+    metadata: {
+      positions: { source: { x: 20, y: 30 }, target: { x: 350, y: 30 } },
+    },
+  });
+
+  it("duplicates a selected real subgraph with remapped bindings and supports undo", async () => {
+    const writes: FlowDocument[] = [];
+    const api = apiFor(twoNodes(), async (_url, request) => {
+      const value = JSON.parse(String(request?.body));
+      writes.push(value);
+      return { ...value, revision: 2 };
+    });
+    const view = render(editor(api));
+    await screen.findByText(flow.name);
+    expect(
+      screen.getByRole("toolbar", { name: "编辑与调试工具" }),
+    ).toBeVisible();
+    expect(
+      screen.getByRole("button", { name: "节点库" }).querySelector("svg"),
+    ).toBeTruthy();
+    await menu("编辑", /全选节点/);
+    fireEvent.click(
+      within(screen.getByRole("toolbar", { name: "选中节点操作" })).getByRole(
+        "button",
+        { name: "副本" },
+      ),
+    );
+    await waitFor(() =>
+      expect(
+        view.container.querySelectorAll(".react-flow__node-workflow"),
+      ).toHaveLength(4),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(writes).toHaveLength(1));
+    const doc = writes[0],
+      source = Object.keys(doc.nodes).find((id) =>
+        id.startsWith("source_copy_"),
+      )!,
+      target = Object.keys(doc.nodes).find((id) =>
+        id.startsWith("target_copy_"),
+      )!;
+    expect(doc.nodes[target].inputs.prompt).toEqual([source, 0]);
+    expect(doc.nodes[target].inputs.system).toBe(
+      `前缀 \${output_slots[${JSON.stringify(source)}][0]}`,
+    );
+    expect(doc.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source, target, target_handle: "prompt" }),
+      ]),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    await waitFor(() =>
+      expect(
+        view.container.querySelectorAll(".react-flow__node-workflow"),
+      ).toHaveLength(2),
+    );
+  });
+
+  it("persists grouping notes and mute controls through the real save and restores bypass when enabling", async () => {
+    const writes: FlowDocument[] = [];
+    const mixedModes = twoNodes();
+    mixedModes.nodes.target.control = { mode: "mute" };
+    const api = apiFor(mixedModes, async (_url, request) => {
+      const value = JSON.parse(String(request?.body));
+      writes.push(value);
+      return { ...value, revision: 2 };
+    });
+    const view = render(editor(api));
+    await screen.findByText(flow.name);
+    await menu("编辑", /全选节点/);
+    const selection = screen.getByRole("toolbar", { name: "选中节点操作" });
+    fireEvent.click(
+      within(selection).getByRole("button", { name: "创建分组" }),
+    );
+    await waitFor(() =>
+      expect(
+        view.container.querySelector(".ff-canvas-group"),
+      ).toBeInTheDocument(),
+    );
+    fireEvent.click(
+      within(selection).getByRole("button", { name: "禁用节点" }),
+    );
+    await menu("编辑", "添加备注");
+    fireEvent.change(await screen.findByRole("textbox", { name: "备注内容" }), {
+      target: { value: "中文流程 English note" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0].metadata.canvas_tools.groups[0].nodeIds).toEqual([
+      "source",
+      "target",
+    ]);
+    expect(writes[0].metadata.canvas_tools.notes[0].text).toBe(
+      "中文流程 English note",
+    );
+    expect(writes[0].nodes.source.control.mode).toBe("mute");
+    expect(writes[0].nodes.target.control.mode).toBe("mute");
+    fireEvent.click(
+      within(selection).getByRole("button", { name: "启用节点" }),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(writes).toHaveLength(2));
+    expect(writes[1].nodes.source.control.mode).toBe("bypass");
+    expect(writes[1].nodes.target.control.mode).toBe("run");
+    await waitFor(() =>
+      expect(view.container.querySelector(".ff-save-status")).toHaveTextContent(
+        "已保存",
+      ),
+    );
+    view.unmount();
+    render(editor(apiFor(writes[1])));
+    await screen.findByText(flow.name, { selector: ".ff-title strong" });
+    expect(
+      await screen.findByRole("textbox", { name: "备注内容" }),
+    ).toHaveValue("中文流程 English note");
+    expect(document.querySelector(".ff-canvas-group")).toBeInTheDocument();
+  });
+
+  it("finds real nodes and locks canvas edits while keeping view controls available", async () => {
+    const writes: FlowDocument[] = [];
+    const view = render(
+      editor(
+        apiFor(twoNodes(), async (_url, request) => {
+          const value = JSON.parse(String(request?.body));
+          writes.push(value);
+          return { ...value, revision: 2 };
+        }),
+      ),
+    );
+    await screen.findByText(flow.name);
+    fireEvent.click(screen.getByRole("button", { name: "查找画布节点" }));
+    fireEvent.change(
+      screen.getByRole("textbox", { name: "查找节点名称或 ID" }),
+      { target: { value: "Target" } },
+    );
+    const search = screen.getByRole("search", { name: "查找画布节点" });
+    expect(within(search).queryByRole("button", { name: /Source/ })).toBeNull();
+    fireEvent.click(
+      within(search).getByRole("button", { name: /Target English/ }),
+    );
+    await waitFor(() =>
+      expect(
+        view.container.querySelector('.react-flow__node[data-id="target"]'),
+      ).toHaveClass("selected"),
+    );
+    await menu("视图", /显示网格/);
+    expect(view.container.querySelector(".react-flow__background")).toBeNull();
+    await menu("视图", /锁定画布编辑/);
+    expect(
+      within(screen.getByRole("toolbar", { name: "选中节点操作" })).getByRole(
+        "button",
+        { name: "副本" },
+      ),
+    ).toBeDisabled();
+    fireEvent.keyDown(window, { key: "Delete" });
+    fireEvent.keyDown(window, { key: "d", ctrlKey: true });
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(Object.keys(writes[0].nodes)).toEqual(["source", "target"]);
+    await menu("视图", /聚焦选中节点/);
+    expect(
+      view.container.querySelectorAll(".react-flow__node-workflow"),
+    ).toHaveLength(2);
+  });
+
+  it("previews JSON import as an undoable draft preserving workflow identity and rejects malformed documents", async () => {
+    const writes: FlowDocument[] = [];
+    const view = render(
+      editor(
+        apiFor(flow, async (_url, request) => {
+          const value = JSON.parse(String(request?.body));
+          writes.push(value);
+          return { ...value, revision: 2 };
+        }),
+      ),
+    );
+    await screen.findByText(flow.name);
+    await menu("更多操作", "导入 JSON");
+    fireEvent.change(screen.getByRole("textbox", { name: "工作流 JSON" }), {
+      target: { value: '{"nodes":[]}' },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "应用到当前草稿" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "完整的工作流 JSON",
+    );
+    expect(writes).toHaveLength(0);
+    fireEvent.change(screen.getByRole("textbox", { name: "工作流 JSON" }), {
+      target: {
+        value: JSON.stringify({
+          ...twoNodes(),
+          id: "foreign-flow",
+          revision: 99,
+        }),
+      },
+    });
+    await waitFor(() =>
+      expect(screen.getByText("将导入 2 个节点")).toBeVisible(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "应用到当前草稿" }));
+    await waitFor(() =>
+      expect(
+        view.container.querySelectorAll(".react-flow__node-workflow"),
+      ).toHaveLength(2),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "保存" }));
+    await waitFor(() => expect(writes).toHaveLength(1));
+    expect(writes[0].id).toBe(flow.id);
+    expect(writes[0]).toMatchObject({ expected_revision: 1 });
+    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    await waitFor(() =>
+      expect(
+        view.container.querySelectorAll(".react-flow__node-workflow"),
+      ).toHaveLength(1),
+    );
+  });
+
+  it("pastes real copied nodes and clears the clipboard when the execution agent changes", async () => {
+    const api = apiFor(twoNodes());
+    const view = render(editor(api));
+    await screen.findByText(flow.name);
+    await menu("编辑", /全选节点/);
+    await menu("编辑", /^复制/);
+    await menu("编辑", /^粘贴/);
+    await waitFor(() =>
+      expect(
+        view.container.querySelectorAll(".react-flow__node-workflow"),
+      ).toHaveLength(4),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "撤销" }));
+    await waitFor(() =>
+      expect(
+        view.container.querySelectorAll(".react-flow__node-workflow"),
+      ).toHaveLength(2),
+    );
+    view.rerender(editor(api, { agentId: "expert-b" }));
+    await screen.findByText(flow.name, { selector: ".ff-title strong" });
+    fireEvent.click(screen.getByRole("button", { name: "编辑" }));
+    expect(
+      await screen.findByRole("menuitem", { name: /^粘贴/ }),
+    ).toHaveAttribute("aria-disabled", "true");
+    expect(
+      view.container.querySelectorAll(".react-flow__node-workflow"),
+    ).toHaveLength(2);
   });
 });

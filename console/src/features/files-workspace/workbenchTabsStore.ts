@@ -25,9 +25,14 @@ export interface WorkbenchTab {
   taskId?: string;
   browser?: BrowserSession;
   browserRevision?: number;
+  reviewState?: { offset: number; turnId: string };
+  terminalTarget?: { id: string; nonce: string };
 }
 
 interface WorkspaceTabs {
+  secondaryId?: string;
+  splitAxis?: "horizontal" | "vertical";
+  splitBefore?: boolean;
   tabs: WorkbenchTab[];
   activeId: string;
   recent: WorkbenchTab[];
@@ -40,6 +45,13 @@ export const EMPTY_WORKBENCH: WorkspaceTabs = {
 
 interface WorkbenchTabsState {
   scopes: Record<string, WorkspaceTabs>;
+  split: (
+    scope: string,
+    id: string,
+    axis: "horizontal" | "vertical",
+    before?: boolean,
+  ) => void;
+  merge: (scope: string) => void;
   open: (scope: string, tab: WorkbenchTab, focus?: boolean) => void;
   select: (scope: string, id: string) => void;
   update: (scope: string, id: string, patch: Partial<WorkbenchTab>) => void;
@@ -89,6 +101,44 @@ function withoutProjectContent(tab: WorkbenchTab): WorkbenchTab | undefined {
 
 export const useWorkbenchTabsStore = create<WorkbenchTabsState>((set) => ({
   scopes: {},
+  split: (scope, id, axis, before = false) =>
+    set((state) => {
+      const current = state.scopes[scope];
+      if (
+        !current ||
+        current.tabs.length < 2 ||
+        !current.tabs.some((tab) => tab.id === id)
+      )
+        return state;
+      const activeId =
+        current.activeId === id
+          ? current.tabs.find((tab) => tab.id !== id)!.id
+          : current.activeId;
+      return {
+        scopes: {
+          ...state.scopes,
+          [scope]: {
+            ...current,
+            activeId,
+            secondaryId: id,
+            splitAxis: axis,
+            splitBefore: before,
+          },
+        },
+      };
+    }),
+  merge: (scope) =>
+    set((state) => {
+      const current = state.scopes[scope];
+      return current
+        ? {
+            scopes: {
+              ...state.scopes,
+              [scope]: { ...current, secondaryId: undefined },
+            },
+          }
+        : state;
+    }),
   open: (scope, tab, focus = true) =>
     set((state) => {
       const current = state.scopes[scope] ?? EMPTY_WORKBENCH;
@@ -97,6 +147,11 @@ export const useWorkbenchTabsStore = create<WorkbenchTabsState>((set) => ({
         scopes: {
           ...state.scopes,
           [scope]: {
+            ...current,
+            secondaryId:
+              focus && tab.id === current.secondaryId
+                ? current.activeId
+                : current.secondaryId,
             tabs: exists
               ? current.tabs.map((item) =>
                   item.id === tab.id ? { ...item, ...tab } : item,
@@ -113,7 +168,17 @@ export const useWorkbenchTabsStore = create<WorkbenchTabsState>((set) => ({
       const current = state.scopes[scope];
       if (!current?.tabs.some((item) => item.id === id)) return state;
       return {
-        scopes: { ...state.scopes, [scope]: { ...current, activeId: id } },
+        scopes: {
+          ...state.scopes,
+          [scope]: {
+            ...current,
+            activeId: id,
+            secondaryId:
+              id === current.secondaryId
+                ? current.activeId
+                : current.secondaryId,
+          },
+        },
       };
     }),
   update: (scope, id, patch) =>
@@ -148,7 +213,15 @@ export const useWorkbenchTabsStore = create<WorkbenchTabsState>((set) => ({
         scopes: {
           ...state.scopes,
           [scope]: {
+            ...current,
             tabs,
+            secondaryId:
+              ids.includes(current.secondaryId ?? "") ||
+              (ids.includes(current.activeId) &&
+                tabs[Math.min(previousIndex, tabs.length - 1)]?.id ===
+                  current.secondaryId)
+                ? undefined
+                : current.secondaryId,
             activeId: ids.includes(current.activeId)
               ? tabs[Math.min(previousIndex, tabs.length - 1)]?.id ?? ""
               : current.activeId,
@@ -192,6 +265,8 @@ export const useWorkbenchTabsStore = create<WorkbenchTabsState>((set) => ({
       if (
         existing &&
         current.activeId === activeId &&
+        (!current.secondaryId ||
+          tabs.some((tab) => tab.id === current.secondaryId)) &&
         current.tabs.length === tabs.length &&
         current.tabs.every((tab, index) => tab === tabs[index])
       )
@@ -202,6 +277,11 @@ export const useWorkbenchTabsStore = create<WorkbenchTabsState>((set) => ({
           [scope]: {
             ...current,
             tabs,
+            secondaryId:
+              tabs.some((tab) => tab.id === current.secondaryId) &&
+              current.secondaryId !== activeId
+                ? current.secondaryId
+                : undefined,
             activeId,
             recent: current.recent.filter((item) => !fileIds.has(item.id)),
           },
@@ -215,7 +295,14 @@ export const useWorkbenchTabsStore = create<WorkbenchTabsState>((set) => ({
       const target = state.scopes[to] ?? EMPTY_WORKBENCH;
       const scopes = { ...state.scopes };
       delete scopes[from];
+      const activeId = target.activeId || source.activeId;
+      const secondaryId = target.secondaryId ?? source.secondaryId;
       scopes[to] = {
+        secondaryId: secondaryId !== activeId ? secondaryId : undefined,
+        splitAxis: target.secondaryId ? target.splitAxis : source.splitAxis,
+        splitBefore: target.secondaryId
+          ? target.splitBefore
+          : source.splitBefore,
         tabs: [
           ...target.tabs,
           ...source.tabs.filter(
@@ -254,6 +341,12 @@ export const useWorkbenchTabsStore = create<WorkbenchTabsState>((set) => ({
         scopes: {
           ...state.scopes,
           [scope]: {
+            ...current,
+            secondaryId:
+              tabs.some((tab) => tab.id === current.secondaryId) &&
+              tabs.some((tab) => tab.id === current.activeId)
+                ? current.secondaryId
+                : undefined,
             tabs,
             recent,
             activeId: tabs.some((tab) => tab.id === current.activeId)

@@ -4,6 +4,7 @@ import { Terminal } from "@xterm/xterm";
 import { FitAddon } from "@xterm/addon-fit";
 import "@xterm/xterm/css/xterm.css";
 import type { TerminalApi, TerminalInfo } from "./terminalApi";
+import { useWorkspaceQuotes } from "../files-workspace/workspaceQuotes";
 import styles from "./TerminalDock.module.less";
 import { terminalInputChunks } from "./terminalInput";
 
@@ -19,6 +20,9 @@ export default function TerminalView({
   onExit?: (terminalId: string, exitCode: number | null) => void;
 }) {
   const { t } = useTranslation();
+  const quotes = useWorkspaceQuotes();
+  const [selectionText, setSelectionText] = useState("");
+  const [quoteError, setQuoteError] = useState("");
   const host = useRef<HTMLDivElement>(null);
   const instance = useRef<Terminal>();
   const [error, setError] = useState("");
@@ -39,6 +43,10 @@ export default function TerminalView({
     const fit = new FitAddon();
     term.loadAddon(fit);
     term.open(host.current);
+    setSelectionText("");
+    const selectionListener = term.onSelectionChange?.(() =>
+      setSelectionText(term.getSelection()),
+    );
     // A program must not read/write the system clipboard via OSC 52.
     const clipboard = term.parser.registerOscHandler(52, () => true);
     let frame = 0;
@@ -145,6 +153,7 @@ export default function TerminalView({
       controller.abort();
       cancelAnimationFrame(frame);
       observer.disconnect();
+      selectionListener?.dispose();
       input.dispose();
       clipboard.dispose();
       term.dispose();
@@ -171,6 +180,31 @@ export default function TerminalView({
 
   return (
     <div className={styles.view} data-dark={isDark}>
+      {quotes && selectionText && (
+        <button
+          type="button"
+          onPointerDown={(event) => event.preventDefault()}
+          onClick={() => {
+            if (
+              !quotes.add(selectionText, {
+                kind: "terminal",
+                scope: quotes.scope,
+                terminalId: terminal.id,
+                title: terminal.title,
+              })
+            )
+              setQuoteError(t("chat.answerQuote.limit"));
+            else {
+              setQuoteError("");
+              setSelectionText("");
+              instance.current?.clearSelection();
+            }
+          }}
+        >
+          {t("workbench.quotes.ask")}
+        </button>
+      )}
+      {quoteError && <span role="alert">{quoteError}</span>}
       <div className={styles.screen}>
         <div ref={host} className={styles.terminalHost} />
       </div>

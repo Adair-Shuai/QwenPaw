@@ -982,7 +982,12 @@ def test_plugin_publish_jobs_upload_indexed_azure_and_hub_artifacts(
     assert not uploads
 
 
-def test_plugin_upload_conflict_blocks_every_new_object(tmp_path, monkeypatch):
+@pytest.mark.parametrize("preflight_only", [False, True])
+def test_plugin_upload_conflict_blocks_every_new_object(
+    tmp_path,
+    monkeypatch,
+    preflight_only,
+):
     root, files = _pack_upload_fixture(tmp_path)
     uploader = _upload_module()
     hub = next(row for row in files.values() if row["platform"] == "hub")
@@ -991,7 +996,11 @@ def test_plugin_upload_conflict_blocks_every_new_object(tmp_path, monkeypatch):
     }
     uploads = _mock_oss_transport(monkeypatch, uploader, remote)
     with pytest.raises(ValueError, match="without a version bump"):
-        uploader.upload_artifacts(root, "release-test")
+        uploader.upload_artifacts(
+            root,
+            "release-test",
+            preflight_only=preflight_only,
+        )
     assert not uploads
 
 
@@ -1057,3 +1066,119 @@ def test_plugin_upload_transport_failures_do_not_pass(
         uploader.upload_artifacts(root, "release-test")
     if failure == "denied":
         assert not uploads
+
+
+@pytest.mark.parametrize("existing", [False, True])
+def test_plugin_preflight_reads_actual_objects_without_uploading(
+    tmp_path,
+    monkeypatch,
+    existing,
+):
+    root, files = _pack_upload_fixture(tmp_path)
+    uploader = _upload_module()
+    remote = {}
+    if existing:
+        remote = {
+            f"oss://release-test{row['url']}": (
+                root / row["url"].removeprefix("/files/plugins/")
+            ).read_bytes()
+            for row in files.values()
+        }
+    before = dict(remote)
+    uploads = _mock_oss_transport(monkeypatch, uploader, remote)
+    uploader.upload_artifacts(root, "release-test", preflight_only=True)
+    assert remote == before
+    assert not uploads
+
+
+@pytest.mark.parametrize(
+    "workflow_name",
+    ["release.yml", "release-resume.yml"],
+)
+def test_release_expensive_jobs_require_immutable_plugin_preflight(
+    workflow_name,
+):
+    jobs = yaml.safe_load(_workflow(workflow_name))["jobs"]
+    steps = jobs["build-plugins"]["steps"]
+    preflight = next(
+        step
+        for step in steps
+        if step.get("name") == "Preflight immutable plugin versions"
+    )
+    assert (
+        '--root dist/plugins --bucket "$OSS_BUCKET" --preflight'
+        in preflight["run"]
+    )
+    assert preflight["if"] == "${{ !inputs.dry_run }}"
+    assert not preflight.get("continue-on-error", False)
+    names = [step.get("name") for step in steps]
+    assert names.index("Pack plugins and build index") < names.index(
+        preflight["name"],
+    )
+    assert names.index(preflight["name"]) < names.index("Upload plugins dist")
+    for name in ("build-wheel", "build-desktop", "full-test-gate"):
+        assert "build-plugins" in jobs[name]["needs"]
+    if workflow_name == "release-resume.yml":
+        assert (
+            "needs.build-plugins.result == 'skipped'"
+            in jobs["full-test-gate"]["if"]
+        )
+        assert "inputs.artifacts_run_id != ''" in jobs["full-test-gate"]["if"]
+
+
+def test_console_checkout_preserves_formatter_line_endings(tmp_path):
+    """Exercise real Git checkout with Windows automatic conversion."""
+    (tmp_path / ".gitattributes").write_bytes(
+        (REPO_ROOT / ".gitattributes").read_bytes(),
+    )
+    console = tmp_path / "console"
+    console.mkdir()
+    text = b"first line\nsecond line\n"
+    extensions = (
+        "ts",
+        "tsx",
+        "js",
+        "mjs",
+        "cjs",
+        "json",
+        "css",
+        "less",
+        "scss",
+        "html",
+        "md",
+        "mdx",
+        "yaml",
+        "yml",
+        "svg",
+    )
+    text_files = [console / f"format.{extension}" for extension in extensions]
+    binary = console / "sample.png"
+    batch = console / "verify.bat"
+    binary_bytes = b"\x89PNG\x00\r\n\x00payload\n"
+    for path in text_files:
+        path.write_bytes(text)
+    binary.write_bytes(binary_bytes)
+    batch.write_bytes(b"@echo off\necho verify\n")
+    for arguments in (
+        ["init", "--quiet"],
+        ["config", "core.autocrlf", "true"],
+        ["add", ".gitattributes", "console"],
+    ):
+        subprocess.run(
+            ["git", *arguments],
+            cwd=tmp_path,
+            check=True,
+            capture_output=True,
+        )
+    for path in [*text_files, binary, batch]:
+        path.unlink()
+    subprocess.run(
+        ["git", "checkout-index", "--all"],
+        cwd=tmp_path,
+        check=True,
+        capture_output=True,
+    )
+    for path in text_files:
+        assert path.read_bytes() == text, path.name
+    assert binary.read_bytes() == binary_bytes
+    assert batch.read_bytes() == b"@echo off\r\necho verify\r\n"

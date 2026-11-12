@@ -16,6 +16,7 @@ import {
   Network,
   ListChecks,
   SquareTerminal,
+  GitCompareArrows,
   type LucideIcon,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
@@ -35,6 +36,7 @@ import {
   WorkbenchGenUiPanel,
   WorkbenchSimulationPanel,
 } from "./WorkbenchPanels";
+import TurnReviewPanel from "./TurnReviewPanel";
 import styles from "./FilesWorkspace.module.less";
 import type { BrowserSession } from "./workbenchTabsStore";
 import type { InteractionRequest } from "../user-input/types";
@@ -57,6 +59,9 @@ function WorkbenchTerminalPanel(context: WorkbenchPanelContext) {
 
 /** Extensions receive the native session scope; they do not own file tabs. */
 export interface WorkbenchPanelContext {
+  reviewState?: { offset: number; turnId: string };
+  onReviewStateChange?: (state: { offset: number; turnId: string }) => void;
+  terminalTarget?: { id: string; nonce: string };
   browserStartContent?: ReactNode;
   browserSession?: BrowserSession;
   onBrowserSessionChange?: (session: BrowserSession) => void;
@@ -85,6 +90,13 @@ interface WorkbenchPanelDefinition {
 // One integration boundary for fork panels. Existing plugin Slot/global APIs
 // remain inside their adapters; adding a panel does not change the file shell.
 const panels: readonly WorkbenchPanelDefinition[] = [
+  {
+    id: "review",
+    label: "逐轮修改",
+    icon: GitCompareArrows,
+    component: TurnReviewPanel,
+    retainWhenHidden: true,
+  },
   {
     id: "interactions",
     label: "任务交互",
@@ -136,6 +148,7 @@ const shortLabels: Record<WorkbenchMode, string> = {
   interactions: "交互",
   browser: "浏览器",
   terminal: "终端",
+  review: "修改",
   agents: "智能体",
   genui: "GenUI",
   compute: "计算",
