@@ -51,8 +51,10 @@ jobs:
       - name: Verify actual mounted workflow pages
         run: |
           npm --prefix console ci --ignore-scripts
+          npm --prefix src/qwenpaw/plugins_bundle/flowforge/ui ci
           cd console
           npx vitest run src/plugins/flowForge*.test.tsx --maxWorkers=2
+          rm -rf ../src/qwenpaw/plugins_bundle/flowforge/ui/node_modules
       - name: Verify update compatibility and signed package contents
         run: python scripts/verify_update_regressions.py
       - name: Package FlowForge
