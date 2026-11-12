@@ -507,6 +507,285 @@ def test_published_release_resume_is_attested_and_has_no_duty_issue() -> None:
     assert "issues: write" not in release
 
 
+def test_release_job_conditions_handle_resume_and_skipped_uploads():
+    """Execute conditions for fresh, resumed and partial release runs."""
+    import itertools
+    import re
+    import shutil
+
+    jobs = yaml.safe_load(_workflow("release-resume.yml"))["jobs"]
+    expressions = {
+        name: re.sub(
+            r"\bneeds\.([\w-]+)\.",
+            r'needs["\1"].',
+            jobs[name]["if"][3:-2].strip(),
+        )
+        for name in ("publish-desktop", "publish-components", "finalize")
+    }
+    cases = []
+    for was_draft, dry_run, reuse, cleanup in itertools.product(
+        ("true", "false"),
+        (True, False),
+        (True, False),
+        ("success", "skipped", "failure"),
+    ):
+        cases.append(
+            {
+                "checks": ["publish-desktop", "publish-components"],
+                "inputs": {
+                    "dry_run": dry_run,
+                    "artifacts_run_id": "123" if reuse else "",
+                },
+                "needs": {
+                    name: {
+                        "result": (
+                            cleanup
+                            if name == "cleanup-draft-immutable-artifacts"
+                            else "skipped"
+                            if reuse and name.startswith("build-")
+                            else "success"
+                        ),
+                        "outputs": {"was_draft": was_draft},
+                    }
+                    for name in jobs["publish-components"]["needs"]
+                },
+                "cancelled": False,
+            },
+        )
+    # Upload failures, skipped tests and cancellation must block finalization.
+    for job in jobs["finalize"]["needs"]:
+        for result in ("success", "skipped", "failure", "cancelled"):
+            cases.append(
+                {
+                    "checks": ["finalize"],
+                    "inputs": {"dry_run": False, "artifacts_run_id": "123"},
+                    "needs": {
+                        name: {"result": result if name == job else "success"}
+                        for name in jobs["finalize"]["needs"]
+                    },
+                    "cancelled": result == "cancelled",
+                },
+            )
+    node = shutil.which("node")
+    assert node, "Node is required to execute release workflow conditions"
+    result = subprocess.run(
+        [
+            node,
+            "-e",
+            """
+const fs = require('node:fs');
+const vm = require('node:vm');
+const {expressions, cases} = JSON.parse(fs.readFileSync(0, 'utf8'));
+const results = cases.map(context => {
+  const globals = {
+    ...context,
+    always: () => true,
+    failure: () => Object.values(context.needs).some(
+      dependency => dependency.result === 'failure'
+    ),
+    cancelled: () => context.cancelled
+  };
+  return Object.fromEntries(context.checks.map(name => [
+    name, vm.runInNewContext(expressions[name], globals, {timeout: 1000})
+  ]));
+});
+console.log(JSON.stringify(results));
+""",
+        ],
+        input=json.dumps({"expressions": expressions, "cases": cases}),
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+    assert result.returncode == 0, result.stderr
+    for case, actual in zip(cases, json.loads(result.stdout)):
+        needs = case["needs"]
+        # Missing dependencies in a case represent skipped upstream jobs.
+        if "cleanup-draft-immutable-artifacts" in needs:
+            cleanup = needs["cleanup-draft-immutable-artifacts"]["result"]
+            expected = cleanup == "success" or (
+                cleanup == "skipped"
+                and (
+                    case["inputs"]["dry_run"]
+                    or needs["resolve"]["outputs"]["was_draft"] == "false"
+                )
+            )
+            assert actual["publish-desktop"] is expected, case
+            assert actual["publish-components"] is expected, case
+        else:
+            expected = all(
+                dependency["result"] == "success"
+                for dependency in needs.values()
+            )
+            assert actual["finalize"] is expected, case
+
+
+def _release_bash_probe(script, environment):
+    import os
+    import shutil
+
+    if os.name == "nt":
+        git = shutil.which("git")
+        assert git, "Git for Windows is required for release shell checks"
+        bash = str(Path(git).resolve().parents[1] / "usr/bin/bash.exe")
+        # Native jq.exe emits CRLF into Git Bash pipes. Linux/macOS jq uses
+        # LF, which is what the production workflow's Ubuntu runner consumes.
+        script = 'jq() { command jq "$@" | /usr/bin/tr -d "\\r"; }\n' + script
+    else:
+        bash = shutil.which("bash")
+    assert bash and shutil.which("jq"), "Release shell checks require bash/jq"
+    return subprocess.run(
+        [bash, "-c", script],
+        env={**os.environ, **environment},
+        text=True,
+        capture_output=True,
+        check=False,
+        timeout=30,
+    )
+
+
+@pytest.mark.parametrize(
+    "paths,replacements,allowed",
+    [
+        ([{"filename": "RELEASING.md"}], False, True),
+        (
+            [{"filename": "scripts/pack-tauri/stage_node_runtime.py"}],
+            False,
+            False,
+        ),
+        (
+            [{"filename": "scripts/pack-tauri/stage_node_runtime.py"}],
+            True,
+            True,
+        ),
+        (
+            [{"filename": "scripts/pack-tauri/build_python_layers.py"}],
+            False,
+            False,
+        ),
+        (
+            [{"filename": "scripts/pack-tauri/stage_desktop_components.py"}],
+            False,
+            False,
+        ),
+        ([{"filename": ".github/workflows/desktop-build.yml"}], False, False),
+        (
+            [{"filename": ".github/workflows/component-release.yml"}],
+            False,
+            False,
+        ),
+        (
+            [
+                {
+                    "filename": "RELEASING.md",
+                    "previous_filename": "src/qwenpaw/app.py",
+                },
+            ],
+            False,
+            False,
+        ),
+        ([{"filename": "RELEASING.md"}] * 300, False, False),
+    ],
+)
+def test_release_reuse_executes_product_and_rename_guards(
+    paths,
+    replacements,
+    allowed,
+):
+    workflow = yaml.safe_load(_workflow("release-resume.yml"))
+    script = workflow["jobs"]["resolve"]["steps"][0]["run"]
+    function = script.split("validate_artifact_reuse_diff() {", 1)[1]
+    function = (
+        "validate_artifact_reuse_diff() {"
+        + function.split(
+            "verify_cleanup_only_failure() {",
+            1,
+        )[0]
+    )
+    response = json.dumps({"status": "ahead", "files": paths})
+    prelude = (
+        "set -euo pipefail\n"
+        "gh() { printf '%s' \"$COMPARE_RESPONSE\"; }\n"
+        "REPO=example/repo\n"
+        "WINDOWS_ARTIFACTS_RUN_ID=1\nMACOS_ARTIFACTS_RUN_ID=2\n"
+        "COMPONENTS_ARTIFACTS_RUN_ID=3\n"
+    )
+    probe = _release_bash_probe(
+        prelude
+        + function
+        + "\nvalidate_artifact_reuse_diff old new "
+        + ("true" if replacements else "false"),
+        {"COMPARE_RESPONSE": response},
+    )
+    assert (probe.returncode == 0) is allowed, probe.stdout + probe.stderr
+
+
+@pytest.mark.parametrize("draft", (True, False))
+def test_release_draft_cleanup_executes_only_exact_desktop_deletes(draft):
+    workflow = yaml.safe_load(_workflow("release-resume.yml"))
+    steps = workflow["jobs"]["cleanup-draft-immutable-artifacts"]["steps"]
+    script = steps[-1]["run"]
+    # Execute the deletion plan with recording transports and the real jq
+    # filter, including a future beta whose version starts with the draft's.
+    prelude = """
+set -euo pipefail
+python() { printf '%s\n' 2.3.0b5; }
+ossutil() { printf 'OSS %s\n' "$*"; }
+gh() {
+  if [[ "$*" == *'--jq .draft' ]]; then
+    printf '%s\n' "$DRAFT"
+  elif [[ "$*" == *'/assets?per_page=100'* ]]; then
+    printf '%s' "$ASSETS" | jq "${@: -1}"
+  elif [[ "$*" == *'-X DELETE'* ]]; then
+    printf 'DELETE %s\n' "${@: -1}"
+  else
+    return 1
+  fi
+}
+"""
+    suffixes = (
+        "Windows-portable.zip",
+        "Windows-updater.exe",
+        "macOS.zip",
+        "macOS.app.tar.gz",
+    )
+    assets = [
+        {"id": index, "name": f"UGSci-Tauri-2.3.0b5-{suffix}"}
+        for index, suffix in enumerate(suffixes, 1)
+    ] + [{"id": 50, "name": "UGSci-Tauri-2.3.0b50-Windows-updater.exe"}]
+    probe = _release_bash_probe(
+        prelude + script,
+        {
+            "DRAFT": str(draft).lower(),
+            "ASSETS": json.dumps(assets),
+            "GITHUB_REPOSITORY": "example/repo",
+            "RELEASE_ID": "1",
+            "OSS_BUCKET": "test-bucket",
+        },
+    )
+    if not draft:
+        assert probe.returncode != 0
+        assert "OSS " not in probe.stdout and "DELETE " not in probe.stdout
+        return
+    assert probe.returncode == 0, probe.stdout + probe.stderr
+    deletes = [
+        line
+        for line in probe.stdout.splitlines()
+        if line.startswith("DELETE ")
+    ]
+    assert deletes == [
+        f"DELETE repos/example/repo/releases/assets/{i}" for i in range(1, 5)
+    ]
+    objects = [
+        line for line in probe.stdout.splitlines() if line.startswith("OSS ")
+    ]
+    assert len(objects) == 8
+    assert all(
+        "2.3.0b5-" in line and "--recursive" not in line for line in objects
+    )
+
+
 def test_replacement_desktop_runs_overlay_pair() -> None:
     publish = _workflow("desktop-publish.yml")
     promote = _workflow("desktop-promote.yml")

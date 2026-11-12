@@ -253,6 +253,9 @@ REQUIRED_CASES = {
         "test_directory_candidate_snapshot_is_isolated",
     },
     "tests/unit/verify/test_release_workflow_safety.py": {
+        "test_release_job_conditions_handle_resume_and_skipped_uploads",
+        "test_release_reuse_executes_product_and_rename_guards",
+        "test_release_draft_cleanup_executes_only_exact_desktop_deletes",
         "test_core_artifact_reuse_only_allows_exact_extension_tooling_paths",
         "test_full_unit_gate_builds_actual_computer_use_version_bundle",
         "test_optional_frontend_locks_use_public_registry_without_entering_core",

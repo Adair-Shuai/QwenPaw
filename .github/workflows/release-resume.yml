@@ -88,11 +88,18 @@ jobs:
           set -euo pipefail
           validate_artifact_reuse_diff() {
             local base_sha="$1" head_sha="$2"
+            local allow_replacements="${3:-false}"
             local comparison status file
             comparison="$(gh api "repos/$REPO/compare/${base_sha}...${head_sha}")"
             status="$(jq -r .status <<<"$comparison")"
             if [ "$status" != "ahead" ] && [ "$status" != "identical" ]; then
               echo "::error::Artifact source $base_sha is not an ancestor of release commit $head_sha"
+              exit 1
+            fi
+            # GitHub caps compare responses at 300 changed files. At the cap,
+            # completeness cannot be established for this reuse attestation.
+            if [ "$(jq '.files | length' <<<"$comparison")" -ge 300 ]; then
+              echo "::error::Artifact comparison may be truncated; build from the release commit"
               exit 1
             fi
             while IFS= read -r file; do
@@ -101,8 +108,6 @@ jobs:
                 .github/workflows/full-tests-nightly.yml|\
                 .github/workflows/apps-release.yml|\
                 .github/workflows/plugins-release.yml|\
-                .github/workflows/desktop-build.yml|\
-                .github/workflows/component-release.yml|\
                 RELEASING.md|RELEASING_zh.md|\
                 scripts/fork_backend_suites.json|\
                 scripts/verify_update_regressions.py|\
@@ -115,10 +120,7 @@ jobs:
                 plugins/bundle/computer-use/frontend/package-lock.json|\
                 plugins/bundle/chrome/frontend/package-lock.json|\
                 tests/unit/tauri/test_component_release.py|\
-                scripts/pack-tauri/build_python_layers.py|\
-                scripts/pack-tauri/stage_node_runtime.py|\
                 tests/unit/tauri/test_stage_node_runtime.py|\
-                scripts/pack-tauri/stage_desktop_components.py|\
                 tests/unit/tauri/test_stage_desktop_components.py|\
                 tests/unit/verify/test_release_workflow_safety.py|\
                 tests/unit/config/test_config_utils_runtime_paths.py|\
@@ -131,15 +133,20 @@ jobs:
                 tests/integration/conftest.py|\
                 e2e/tests/test_agent_stats.py)
                   ;;
+                .github/workflows/component-release.yml|\
                 scripts/pack-tauri/build_component_release.py)
-                  if [ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]; then
+                  if [ "$allow_replacements" != true ] || [ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]; then
                     echo "::error::Component archive changes require replacement component artifacts"
                     exit 1
                   fi
                   ;;
-                scripts/pack-tauri/assemble_desktop_layout.py|\
-                tests/unit/tauri/test_desktop_layer_layout.py)
-                  if [ -z "$WINDOWS_ARTIFACTS_RUN_ID" ] || \
+                .github/workflows/desktop-build.yml|\
+                scripts/pack-tauri/build_python_layers.py|\
+                scripts/pack-tauri/stage_node_runtime.py|\
+                scripts/pack-tauri/stage_desktop_components.py|\
+                scripts/pack-tauri/assemble_desktop_layout.py)
+                  if [ "$allow_replacements" != true ] || \
+                     [ -z "$WINDOWS_ARTIFACTS_RUN_ID" ] || \
                      [ -z "$MACOS_ARTIFACTS_RUN_ID" ] || \
                      [ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]; then
                     echo "::error::Desktop layout changes require Windows, macOS, and component replacement artifacts"
@@ -151,7 +158,7 @@ jobs:
                   exit 1
                   ;;
               esac
-            done < <(jq -r '.files[]?.filename' <<<"$comparison")
+            done < <(jq -r '.files[] | .filename, (.previous_filename // empty)' <<<"$comparison")
             echo "Reusing product artifacts across release-tooling-only changes"
           }
           verify_cleanup_only_failure() {
@@ -244,7 +251,7 @@ jobs:
               exit 1
             fi
             if [ "$source_sha" != "$sha" ]; then
-              validate_artifact_reuse_diff "$source_sha" "$sha"
+              validate_artifact_reuse_diff "$source_sha" "$sha" true
             fi
             source_jobs="$(gh api --paginate "repos/$REPO/actions/runs/$ARTIFACTS_RUN_ID/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
             require_source_job_success() {
@@ -621,19 +628,12 @@ jobs:
             ossutil rm "oss://${OSS_BUCKET}/${object}" --force || true
           done
 
-          for target in windows-x86_64 macos-aarch64; do
-            for component in officecli backend python-packages python-runtime tools; do
-              ossutil rm "oss://${OSS_BUCKET}/artifacts/components/${target}/${component}/${VERSION}/" \
-                --recursive --force || true
-            done
-            ossutil rm "oss://${OSS_BUCKET}/artifacts/components/${target}/" \
-              --include "*${VERSION}*" --recursive --force || true
-            ossutil rm "oss://${OSS_BUCKET}/metadata/components/stable/" \
-              --include "*${VERSION}*" --recursive --force || true
-          done
+          # Component archives are content-addressed and shared with signed
+          # history. Their immutable uploads already accept identical bytes.
+          # Draft cleanup must not remove them or match other version prefixes.
 
           gh api "repos/${GITHUB_REPOSITORY}/releases/${RELEASE_ID}/assets?per_page=100" \
-            --jq ".[] | select(.name | contains(\"$VERSION\")) | .id" |
+            --jq ".[] | select(.name == \"UGSci-Tauri-${VERSION}-Windows-portable.zip\" or .name == \"UGSci-Tauri-${VERSION}-Windows-updater.exe\" or .name == \"UGSci-Tauri-${VERSION}-macOS.zip\" or .name == \"UGSci-Tauri-${VERSION}-macOS.app.tar.gz\") | .id" |
             while IFS= read -r asset_id; do
               [ -n "$asset_id" ] && gh api -X DELETE \
                 "repos/${GITHUB_REPOSITORY}/releases/assets/${asset_id}"
@@ -643,7 +643,7 @@ jobs:
 
   publish-desktop:
     needs: [resolve, build-wheel, verify-web, build-desktop, build-components, cleanup-draft-immutable-artifacts, full-test-gate]
-    if: ${{ always() && needs.resolve.result == 'success' && needs.full-test-gate.result == 'success' && (needs.cleanup-draft-immutable-artifacts.result == 'success' || (inputs.dry_run && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-components.result == 'success')) }}
+    if: ${{ always() && !cancelled() && needs.resolve.result == 'success' && needs.full-test-gate.result == 'success' && (needs.cleanup-draft-immutable-artifacts.result == 'success' || ((inputs.dry_run || needs.resolve.outputs.was_draft == 'false') && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-components.result == 'success')) }}
     uses: ./.github/workflows/desktop-publish.yml
     with:
       tag: ${{ needs.resolve.outputs.tag }}
@@ -657,7 +657,7 @@ jobs:
 
   publish-components:
     needs: [resolve, build-wheel, verify-web, build-desktop, build-components, cleanup-draft-immutable-artifacts, full-test-gate]
-    if: ${{ always() && needs.resolve.result == 'success' && needs.full-test-gate.result == 'success' && (needs.cleanup-draft-immutable-artifacts.result == 'success' || (inputs.dry_run && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-components.result == 'success')) }}
+    if: ${{ always() && !cancelled() && needs.resolve.result == 'success' && needs.full-test-gate.result == 'success' && (needs.cleanup-draft-immutable-artifacts.result == 'success' || ((inputs.dry_run || needs.resolve.outputs.was_draft == 'false') && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-components.result == 'success')) }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -771,7 +771,7 @@ jobs:
 
   finalize:
     needs: [resolve, publish-desktop, publish-components, full-test-gate]
-    if: ${{ always() && !inputs.dry_run && !failure() && !cancelled() }}
+    if: ${{ always() && !inputs.dry_run && !cancelled() && needs.resolve.result == 'success' && needs.publish-desktop.result == 'success' && needs.publish-components.result == 'success' && needs.full-test-gate.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: write

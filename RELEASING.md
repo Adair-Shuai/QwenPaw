@@ -17,6 +17,8 @@ Every historical component manifest is authenticated before reuse. Identical sel
 
 Failed jobs can be retried. `artifacts_run_id` enables attested artifact reuse; product changes require rebuilding affected artifacts. `dry_run` does not publish the draft or production pointers. Existing stable/prerelease channel policies remain in effect.
 
+To resume after the GitHub Release becomes public, pass `allow_published_resume=true` with verified `artifacts_run_id`. Draft cleanup is skipped and publication continues. Finalization requires successful desktop upload, component upload and full tests. Packaging changes require replacement artifacts covering those changes, and each replacement must pass its own commit comparison. Draft cleanup selects exact desktop filenames. Content-addressed component archives are reused through immutable uploads.
+
 ## Bundled scope
 
 `src/qwenpaw/bundled_plugin_policy.py` is the explicit allowlist: UGSci, research, FlowForge, OpenUI and Run Center. Pet, browser and other optional plugins, all apps and local UGSci visualization test data are excluded from core distributions. Source data and installed user extensions are preserved.
