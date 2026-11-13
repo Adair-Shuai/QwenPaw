@@ -1538,9 +1538,11 @@ describe("FlowForge layered toolbar", () => {
         view.container.querySelector(".ff-ai-edge-removed"),
       ).toBeInTheDocument(),
     );
-    expect(
-      view.container.querySelector(".ff-ai-edge-added"),
-    ).toBeInTheDocument();
+    await waitFor(() =>
+      expect(
+        view.container.querySelector(".ff-ai-edge-added"),
+      ).toBeInTheDocument(),
+    );
     expect(
       view.container.querySelector('.ff-ai-removed[data-id="target"]'),
     ).toBeInTheDocument();
