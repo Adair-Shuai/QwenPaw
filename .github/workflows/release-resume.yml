@@ -823,7 +823,7 @@ jobs:
               # The resolve gate already verified the release target. Publishing
               # must not also mutate target_commitish: GitHub can reject that
               # combined PATCH for the Actions integration even with contents:write.
-              gh api --method PATCH "repos/$REPO/releases/$RELEASE_ID" -F draft=false >/dev/null
+              gh api --method PATCH "repos/$REPO/releases/$RELEASE_ID" -F draft=false -f tag_name="$TAG" >/dev/null
               ;;
             false)
               echo "Release $TAG is already published; verifying instead of mutating it"
@@ -836,9 +836,11 @@ jobs:
 
           published="$(gh api "repos/$REPO/releases/$RELEASE_ID")"
           published_is_draft="$(jq -r '.draft' <<<"$published")"
+          published_tag="$(jq -r '.tag_name' <<<"$published")"
           published_target="$(jq -r '.target_commitish' <<<"$published")"
           published_sha="$(gh api "repos/$REPO/commits/$published_target" --jq '.sha')"
           test "$published_is_draft" = "false" || { echo "::error::Release $TAG is still a draft after finalize"; exit 1; }
+          test "$published_tag" = "$TAG" || { echo "::error::Finalized release tag is $published_tag, expected $TAG"; exit 1; }
           test "$published_sha" = "$SHA" || { echo "::error::Finalized release $TAG targets $published_sha, expected $SHA"; exit 1; }
 
   promote-release-metadata:

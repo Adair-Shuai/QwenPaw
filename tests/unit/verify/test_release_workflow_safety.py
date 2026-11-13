@@ -713,6 +713,8 @@ def test_published_release_resume_is_attested_and_has_no_duty_issue() -> None:
     assert "already published; verifying instead of mutating it" in release
     assert 'test "$target_sha" = "$SHA"' in release
     assert 'test "$published_is_draft" = "false"' in release
+    assert '-F draft=false -f tag_name="$TAG"' in release
+    assert 'test "$published_tag" = "$TAG"' in release
     assert 'test "$published_sha" = "$SHA"' in release
     assert "uses: ./.github/workflows/release-duty.yml" not in release
     assert "issues: write" not in release
