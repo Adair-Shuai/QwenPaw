@@ -195,9 +195,7 @@ class TestAgentStatsDatePicker:
 
             # Check whether calendar panel is expanded
             panel = page.locator(
-                '.qwenpaw-picker-dropdown, .qwenpaw-picker-panel-container, '
-                '.qwenpaw-picker-panel, '
-                '[class*="pickerPanel"], [class*="calendar"]'
+                'div.qwenpaw-picker-dropdown:visible'
             ).first
             expect(panel).to_be_visible(timeout=5000)
             logger.info("Calendar panel expanded")
