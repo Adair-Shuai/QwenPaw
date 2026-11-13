@@ -14,6 +14,10 @@ import { AnswerQuoteComposer } from "../../pages/Chat/components/AnswerQuoteComp
 import { readAnswerQuotes } from "../../pages/Chat/answerQuotes";
 import { OPEN_FILE_PREVIEW_EVENT } from "./openFilePreview";
 import FilesDrawer from "./FilesDrawer";
+// Transform real lazy modules before measuring mounted-page interactions.
+import "./FilesWorkspace";
+import "../../components/Workspace/renderers/MarkdownRenderer";
+import "../../components/Workspace/renderers/HtmlRenderer";
 import { notifyProjectDirectoryChanged } from "../project-directory/projectDirectoryChangeEvent";
 import { useWorkbenchTabsStore } from "./workbenchTabsStore";
 import i18n from "../../i18n";
@@ -2393,6 +2397,187 @@ describe("FilesDrawer", () => {
       useWorkbenchTabsStore.getState().scopes["session:default:interactions"]
         .recent,
     ).toEqual([]);
+  });
+  it("quotes a selection from the mounted workspace preview and locates its original scoped file lines", async () => {
+    const scope = {
+      kind: "session" as const,
+      agentId: "default",
+      sessionId: "new",
+    };
+    const draftKey = crypto.randomUUID();
+    vi.mocked(workspaceApi.loadFileText).mockResolvedValue({
+      content:
+        "---\ntitle: Example\n---\n\n> selected passage\n> continuation\n\nlast",
+      etag: "quote",
+    });
+    const quoteView = (
+      <WorkspaceQuoteProvider scope={scope} draftKey={draftKey} enabled>
+        <FilesDrawer
+          state={{
+            kind: "workspace",
+            target: {
+              source: "workspace",
+              path: "quoted.md",
+              root: "workspace",
+            },
+            trigger: null,
+          }}
+          dispatch={vi.fn()}
+          scope={scope}
+        />
+        <div className="sender">
+          <textarea
+            data-sender-input="true"
+            aria-label="Question draft"
+            defaultValue="Keep my question"
+          />
+        </div>
+        <AnswerQuoteComposer
+          scope={draftKey}
+          rootRef={createRef<HTMLDivElement>()}
+          enabled
+        />
+      </WorkspaceQuoteProvider>
+    );
+    const view = renderWithProviders(quoteView);
+    const text = await screen.findByText(
+      "selected passage continuation",
+      {},
+      { timeout: 12000 },
+    );
+    const range = document.createRange();
+    range.selectNodeContents(text);
+    Object.defineProperty(range, "getBoundingClientRect", {
+      value: () => ({ left: 40, top: 100, bottom: 120 }),
+    });
+    act(() => {
+      window.getSelection()!.removeAllRanges();
+      window.getSelection()!.addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    view.rerender(cloneElement(quoteView, { scope: { ...scope } }));
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.quotes.ask") }),
+    );
+    expect(readAnswerQuotes(draftKey)[0]).toMatchObject({
+      text: "selected passage\ncontinuation",
+      source: {
+        kind: "file",
+        scope,
+        target: { path: "quoted.md", root: "workspace", line: 5, endLine: 6 },
+      },
+    });
+    expect(screen.getByRole("textbox", { name: "Question draft" })).toHaveValue(
+      "Keep my question",
+    );
+    const navigate = vi.fn();
+    window.addEventListener(OPEN_FILE_PREVIEW_EVENT, navigate);
+    try {
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: i18n.t("workbench.quotes.locate", { name: "quoted.md:5-6" }),
+        }),
+      );
+      expect(navigate.mock.calls[0][0].detail).toMatchObject({
+        agentId: "default",
+        sessionId: "new",
+        target: { path: "quoted.md", line: 5, endLine: 6 },
+      });
+      view.rerender(
+        cloneElement(quoteView, {
+          scope: {
+            ...scope,
+            sessionId: "resolved-preview",
+            chatId: "saved-preview",
+          },
+        }),
+      );
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: i18n.t("workbench.quotes.locate", { name: "quoted.md:5-6" }),
+        }),
+      );
+      expect(
+        navigate.mock.calls[navigate.mock.calls.length - 1][0].detail,
+      ).toMatchObject({
+        agentId: "default",
+        sessionId: "resolved-preview",
+        chatId: "saved-preview",
+        target: { path: "quoted.md", line: 5, endLine: 6 },
+      });
+    } finally {
+      window.removeEventListener(OPEN_FILE_PREVIEW_EVENT, navigate);
+      window.getSelection()?.removeAllRanges();
+    }
+  });
+
+  it("splits two native file views and keeps both dirty buffers after merging", async () => {
+    const scope = {
+      kind: "session" as const,
+      agentId: "default",
+      sessionId: "split-native",
+    };
+    const view = renderWithProviders(
+      <FilesDrawer
+        state={{
+          kind: "workspace",
+          target: {
+            source: "workspace",
+            path: "first.txt",
+            preferredView: "text",
+          },
+          trigger: null,
+        }}
+        dispatch={vi.fn()}
+        scope={scope}
+      />,
+    );
+    const first = await screen.findByTestId("monaco-editor");
+    fireEvent.change(first, { target: { value: "first draft" } });
+    view.rerender(
+      <FilesDrawer
+        state={{
+          kind: "workspace",
+          target: {
+            source: "workspace",
+            path: "second.txt",
+            preferredView: "text",
+          },
+          trigger: null,
+        }}
+        dispatch={vi.fn()}
+        scope={scope}
+      />,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /second.txt/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
+    fireEvent.contextMenu(screen.getByRole("tab", { name: /first.txt/ }));
+    fireEvent.click(await screen.findByText(i18n.t("workbench.split.right")));
+    const secondary = await screen.findByRole("tabpanel", {
+      name: /first.txt/,
+    });
+    const editor = within(secondary).getByTestId("monaco-editor");
+    expect(editor).toHaveValue("first draft");
+    expect(editor).toHaveAttribute("data-preserve-model", "true");
+    fireEvent.change(editor, { target: { value: "split draft" } });
+    expect(screen.getAllByTestId("monaco-editor")).toHaveLength(2);
+    fireEvent.click(
+      within(secondary).getByRole("button", {
+        name: i18n.t("workbench.split.merge"),
+      }),
+    );
+    expect(screen.getAllByTestId("monaco-editor")).toHaveLength(1);
+    expect(
+      useCodingTabsStore
+        .getState()
+        .tabsByAgent["session:default:split-native"].find(
+          (tab) => tab.path === "first.txt",
+        ),
+    ).toMatchObject({ dirty: true, content: "split draft" });
   });
   it("quotes a selection from the mounted workspace preview and locates its original scoped file lines", async () => {
     const scope = {

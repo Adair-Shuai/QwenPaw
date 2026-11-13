@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""Discover and stage desktop-bundled plugins with a denylist policy."""
+"""Stage only the explicitly selected core plugins, never applications."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import argparse
 import json
 import os
 import shutil
+import runpy
 from pathlib import Path, PurePosixPath
 
 # Plugins excluded from the desktop bundle. Users install these on demand
@@ -21,7 +22,13 @@ from pathlib import Path, PurePosixPath
 PLUGIN_DENYLIST = frozenset(
     {"cloudpaw", "qwenpaw-pet", "qwenpaw-creator", "azure-bot"},
 )
-DEFAULT_PLUGIN_ROOTS = ("bundle", "apps")
+DEFAULT_PLUGIN_ROOTS = ("bundle",)
+BUNDLED_PLUGIN_IDS = runpy.run_path(
+    str(
+        Path(__file__).resolve().parents[2]
+        / "src/qwenpaw/bundled_plugin_policy.py",
+    ),
+)["BUNDLED_PLUGIN_IDS"]
 _IGNORED_NAMES = frozenset(
     {
         ".git",
@@ -49,7 +56,7 @@ def discover_bundled_plugins(
     repo: Path,
     plugin_roots: tuple[str, ...] | None = None,
 ) -> list[Path]:
-    """Return every manifest plugin except explicitly denied plugin IDs."""
+    """Return the core plugin allowlist from the requested source roots."""
     plugins_root = repo / "plugins"
     selected: list[Path] = []
     destination_names: dict[str, Path] = {}
@@ -58,10 +65,15 @@ def discover_bundled_plugins(
         DEFAULT_PLUGIN_ROOTS if plugin_roots is None else tuple(plugin_roots)
     )
     for root_name in roots:
+        if root_name == "apps":
+            continue
         for manifest in sorted(
             (plugins_root / root_name).glob("*/plugin.json"),
         ):
             plugin_dir = manifest.parent
+            metadata = json.loads(manifest.read_text(encoding="utf-8"))
+            if metadata.get("type") == "app":
+                continue
             identifier = plugin_id(plugin_dir)
             previous_id = component_ids.get(identifier)
             if previous_id is not None:
@@ -70,7 +82,10 @@ def discover_bundled_plugins(
                     f"{previous_id} and {plugin_dir}",
                 )
             component_ids[identifier] = plugin_dir
-            if identifier in PLUGIN_DENYLIST:
+            if (
+                identifier in PLUGIN_DENYLIST
+                or identifier not in BUNDLED_PLUGIN_IDS
+            ):
                 continue
             previous = destination_names.get(plugin_dir.name)
             if previous is not None:

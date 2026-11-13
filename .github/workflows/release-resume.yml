@@ -1,24 +1,7 @@
-# QwenPaw unified release orchestrator (draft-driven, all-or-nothing).
-#
-# Flow (方案二 · 草稿变体):
-#   1. A maintainer creates a DRAFT GitHub Release (tag + notes), does NOT publish.
-#   2. They run this workflow (Actions ▸ Run workflow). It resolves the draft,
-#      pins every job to the draft's target commit, then builds + verifies ALL
-#      products in parallel (wheel verification / desktop win+mac / plugins).
-#   3. Only if EVERY prepare job is green does the publish phase run: desktop
-#      (GitHub assets + OSS), components and plugins. The draft is flipped to
-#      published LAST. Post-publish (inline): promote the desktop latest/updater,
-#      deploy the website (stable/post only — skipped for betas), and open the
-#      Release Duty issue.
-#   4. Failed build phases can be resumed with artifacts_run_id. Versioned OSS
-#      objects are immutable and idempotent; mutable indexes are promoted last.
-#
-# dry_run=true stubs OSS publishing so fork CI can exercise the
-# gating without touching prod.
-# Draft-asset upload, the draft→published flip and the duty issue still run for
-# real because on a fork they only affect the fork's own resources.
+# Core release: pinned sources, verified installers and signed components.
+# Optional plugins and applications publish independently.
 
-name: Release (resumable fork)
+name: Release Core (build, verify, resume)
 
 on:
   workflow_dispatch:
@@ -63,16 +46,6 @@ on:
         required: false
         type: string
         default: ""
-      components_promotion_run_id:
-        description: "Optional prior Release run containing prepared component promotion metadata"
-        required: false
-        type: string
-        default: ""
-      plugins_artifacts_run_id:
-        description: "Optional Plugins Build run ID containing replacement plugin artifacts"
-        required: false
-        type: string
-        default: ""
 
 permissions:
   actions: read
@@ -95,7 +68,6 @@ jobs:
       is_prerelease: ${{ steps.pick.outputs.is_prerelease }}
       artifacts_run_id: ${{ steps.pick.outputs.artifacts_run_id }}
       windows_artifacts_run_id: ${{ steps.pick.outputs.windows_artifacts_run_id }}
-      plugins_artifacts_run_id: ${{ steps.pick.outputs.plugins_artifacts_run_id }}
       macos_artifacts_run_id: ${{ steps.pick.outputs.macos_artifacts_run_id }}
       components_artifacts_run_id: ${{ steps.pick.outputs.components_artifacts_run_id }}
       was_draft: ${{ steps.pick.outputs.was_draft }}
@@ -110,7 +82,6 @@ jobs:
           ARTIFACTS_RUN_ID: ${{ inputs.artifacts_run_id }}
           ALLOW_PUBLISHED_RESUME: ${{ inputs.allow_published_resume }}
           WINDOWS_ARTIFACTS_RUN_ID: ${{ inputs.windows_artifacts_run_id }}
-          PLUGINS_ARTIFACTS_RUN_ID: ${{ inputs.plugins_artifacts_run_id }}
           MACOS_ARTIFACTS_RUN_ID: ${{ inputs.macos_artifacts_run_id }}
           COMPONENTS_ARTIFACTS_RUN_ID: ${{ inputs.components_artifacts_run_id }}
         run: |
@@ -126,11 +97,24 @@ jobs:
             fi
             while IFS= read -r file; do
               case "$file" in
-                .github/workflows/release.yml|\
                 .github/workflows/release-resume.yml|\
                 .github/workflows/full-tests-nightly.yml|\
+                .github/workflows/apps-release.yml|\
+                .github/workflows/plugins-release.yml|\
                 .github/workflows/desktop-build.yml|\
                 .github/workflows/component-release.yml|\
+                RELEASING.md|RELEASING_zh.md|\
+                scripts/fork_backend_suites.json|\
+                scripts/verify_update_regressions.py|\
+                scripts/pack/prepare_plugin_versions.py|\
+                scripts/run_unit_tests.py|\
+                scripts/pack-tauri/prepare_component_base.py|\
+                tests/unit/verify/test_unit_sharding.py|\
+                tests/unit/verify/test_fork_regression_inventory.py|\
+                tests/unit/app/test_migration_skills_and_qa_agent.py|\
+                plugins/bundle/computer-use/frontend/package-lock.json|\
+                plugins/bundle/chrome/frontend/package-lock.json|\
+                tests/unit/tauri/test_component_release.py|\
                 scripts/pack-tauri/build_python_layers.py|\
                 scripts/pack-tauri/stage_node_runtime.py|\
                 tests/unit/tauri/test_stage_node_runtime.py|\
@@ -147,8 +131,7 @@ jobs:
                 tests/integration/conftest.py|\
                 e2e/tests/test_agent_stats.py)
                   ;;
-                scripts/pack-tauri/build_component_release.py|\
-                tests/unit/tauri/test_component_release.py)
+                scripts/pack-tauri/build_component_release.py)
                   if [ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]; then
                     echo "::error::Component archive changes require replacement component artifacts"
                     exit 1
@@ -241,8 +224,7 @@ jobs:
           if [ -z "$ARTIFACTS_RUN_ID" ] && {
                [ -n "$WINDOWS_ARTIFACTS_RUN_ID" ] ||
                [ -n "$MACOS_ARTIFACTS_RUN_ID" ] ||
-               [ -n "$COMPONENTS_ARTIFACTS_RUN_ID" ] ||
-               [ -n "$PLUGINS_ARTIFACTS_RUN_ID" ];
+               [ -n "$COMPONENTS_ARTIFACTS_RUN_ID" ];
              }; then
             echo "::error::Replacement artifact run IDs require artifacts_run_id from the base unified release run"
             exit 1
@@ -311,9 +293,6 @@ jobs:
             require_source_job_success "resolve"
             require_source_job_success "build-wheel"
             require_source_gate_prefix "verify-web / "
-            if [ -z "$PLUGINS_ARTIFACTS_RUN_ID" ]; then
-              require_source_job_success "build-plugins"
-            fi
             if [ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]; then
               require_source_prefix_success "build-components / build-components ("
             fi
@@ -334,9 +313,6 @@ jobs:
             fi
             if [ -z "$MACOS_ARTIFACTS_RUN_ID" ]; then
               required_artifacts+=(UGSci-Desktop-Tauri-macOS- tauri-updater-meta-macos)
-            fi
-            if [ -z "$PLUGINS_ARTIFACTS_RUN_ID" ]; then
-              required_artifacts+=(qwenpaw-plugins-dist)
             fi
             # A Windows-only replacement run is intentionally allowed to provide the
             # Windows desktop artifact when the historical source run predates the
@@ -367,20 +343,6 @@ jobs:
             windows_artifacts="$(gh api --paginate "repos/$REPO/actions/runs/$WINDOWS_ARTIFACTS_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].name')"
             grep -q '^UGSci-Desktop-Tauri-Windows-' <<<"$windows_artifacts" || { echo "::error::Replacement run has no Windows desktop artifact"; exit 1; }
             grep -qx 'tauri-updater-meta-windows' <<<"$windows_artifacts" || { echo "::error::Replacement run has no Windows updater metadata"; exit 1; }
-          fi
-          if [ -n "$PLUGINS_ARTIFACTS_RUN_ID" ]; then
-            plugins_run="$(gh api "repos/$REPO/actions/runs/$PLUGINS_ARTIFACTS_RUN_ID")"
-            test "$(jq -r .status <<<"$plugins_run")" = completed
-            test "$(jq -r .conclusion <<<"$plugins_run")" = success
-            plugins_sha="$(jq -r .head_sha <<<"$plugins_run")"
-            if [ "$plugins_sha" != "$sha" ]; then
-              validate_artifact_reuse_diff "$plugins_sha" "$sha"
-            fi
-            test "$(jq -r .path <<<"$plugins_run")" = '.github/workflows/plugins-build.yml' || { echo "::error::Replacement plugin run must come from plugins-build.yml"; exit 1; }
-            plugins_jobs="$(gh api --paginate "repos/$REPO/actions/runs/$PLUGINS_ARTIFACTS_RUN_ID/jobs?per_page=100" --jq '.jobs[] | [.name, (.conclusion // "")] | @tsv')"
-            grep -Fqx "build-plugins"$'\t'"success" <<<"$plugins_jobs" || { echo "::error::Replacement plugin run has no successful build-plugins job"; exit 1; }
-            plugins_artifacts="$(gh api --paginate "repos/$REPO/actions/runs/$PLUGINS_ARTIFACTS_RUN_ID/artifacts?per_page=100" --jq '.artifacts[].name')"
-            grep -q '^qwenpaw-plugins-dist$' <<<"$plugins_artifacts" || { echo "::error::Replacement run has no qwenpaw-plugins-dist artifact"; exit 1; }
           fi
           for pair in "MACOS_ARTIFACTS_RUN_ID:UGSci-Desktop-Tauri-macOS-" "COMPONENTS_ARTIFACTS_RUN_ID:component-release-"; do
             run_id="${pair%%:*}"; prefix="${pair#*:}"; value="${!run_id}"
@@ -423,7 +385,6 @@ jobs:
             echo "is_prerelease=$is_prerelease"
             echo "artifacts_run_id=$ARTIFACTS_RUN_ID"
             echo "windows_artifacts_run_id=$WINDOWS_ARTIFACTS_RUN_ID"
-            echo "plugins_artifacts_run_id=$PLUGINS_ARTIFACTS_RUN_ID"
             echo "macos_artifacts_run_id=$MACOS_ARTIFACTS_RUN_ID"
             echo "components_artifacts_run_id=$COMPONENTS_ARTIFACTS_RUN_ID"
             echo "was_draft=$isDraft"
@@ -475,7 +436,7 @@ jobs:
 
   # ── Prepare phase: build + verify everything, publish nothing ──────────────
   build-wheel:
-    needs: [resolve, build-plugins]
+    needs: [resolve]
     if: ${{ inputs.artifacts_run_id == '' }}
     runs-on: ubuntu-latest
     steps:
@@ -541,6 +502,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install setuptools wheel build
 
+      - name: Verify shipped brand assets
+        run: node console/scripts/verify-brand-assets.mjs
+
       - name: Build package
         run: |
           python scripts/pack/validate_channel_contracts.py
@@ -572,105 +536,13 @@ jobs:
     secrets: inherit
 
   build-desktop:
-    needs: [resolve, build-plugins]
+    needs: [resolve]
     if: ${{ inputs.artifacts_run_id == '' }}
     uses: ./.github/workflows/desktop-build.yml
     with:
       ref: ${{ needs.resolve.outputs.sha }}
       require_updater_assets: true
     secrets: inherit
-
-  build-plugins:
-    needs: [resolve]
-    if: ${{ inputs.artifacts_run_id == '' }}
-    runs-on: ubuntu-latest
-    env:
-      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.resolve.outputs.sha }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Set up Node for memory plugin frontends
-        uses: actions/setup-node@v4
-        with:
-          node-version-file: .nvmrc
-
-      - name: Build OpenUI task layout runtime
-        run: |
-          npm --prefix plugins/bundle/qwenpaw-openui/frontend ci
-          npm --prefix plugins/bundle/qwenpaw-openui/frontend test
-
-      - name: Build memory plugin frontends
-        shell: bash
-        run: |
-          shopt -s nullglob
-          for frontend_dir in plugins/memory/*/frontend; do
-            echo "Building ${frontend_dir}"
-            npm --prefix "$frontend_dir" ci
-            npm --prefix "$frontend_dir" run build
-          done
-
-      - name: Build Run Center frontend
-        run: |
-          npm --prefix plugins/bundle/qwenpaw-run-center/ui ci
-          npm --prefix plugins/bundle/qwenpaw-run-center/ui run build
-
-      - name: Install channel contract preflight dependencies
-        run: python -m pip install -r scripts/pack/channel-contract-requirements.txt
-
-      - name: Verify shipped brand assets
-        run: node console/scripts/verify-brand-assets.mjs
-
-      - name: Pack plugins and build index
-        # qwenpaw-creator and datapaw are released through their own
-        # version-driven pipelines; datapaw requires its vendored context
-        # console to be staged before packing and is not a release artifact here.
-        run: |
-          python scripts/pack/generate_plugin_metadata.py \
-            --plugins-root plugins \
-            --dist dist/plugins \
-            --metadata-out dist/plugins/index.json \
-            --cdn-prefix /files/plugins \
-            --exclude qwenpaw-creator \
-            --exclude uproject \
-            --exclude datapaw \
-            --exclude qwenpaw-data
-
-      - name: Install ossutil
-        if: ${{ !inputs.dry_run }}
-        run: |
-          wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
-          unzip -q ossutil-v1.7.18-linux-amd64.zip
-          chmod +x ossutil-v1.7.18-linux-amd64/ossutil64
-          sudo mv ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
-          ossutil --version
-
-      - name: Configure ossutil
-        if: ${{ !inputs.dry_run }}
-        run: |
-          ossutil config -e ${{ secrets.OSS_ENDPOINT }} \
-            -i ${{ secrets.OSS_ACCESS_KEY_ID }} \
-            -k ${{ secrets.OSS_ACCESS_KEY_SECRET }} \
-            -L CH
-
-      - name: Preflight immutable plugin versions
-        if: ${{ !inputs.dry_run }}
-        run: |
-          python scripts/pack/upload_plugin_artifacts.py \
-            --root dist/plugins --bucket "$OSS_BUCKET" --preflight
-
-      - name: Upload plugins dist
-        uses: actions/upload-artifact@v4
-        with:
-          name: qwenpaw-plugins-dist
-          path: dist/plugins
-          retention-days: 7
 
   build-components:
     needs: [resolve, build-desktop]
@@ -772,8 +644,8 @@ jobs:
   # ── Gate: publish jobs below run only if every prepare job above is green ──
 
   publish-desktop:
-    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components, cleanup-draft-immutable-artifacts, full-test-gate]
-    if: ${{ always() && needs.resolve.result == 'success' && needs.full-test-gate.result == 'success' && (needs.cleanup-draft-immutable-artifacts.result == 'success' || (inputs.dry_run && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-plugins.result == 'success' && needs.build-components.result == 'success')) }}
+    needs: [resolve, build-wheel, verify-web, build-desktop, build-components, cleanup-draft-immutable-artifacts, full-test-gate]
+    if: ${{ always() && needs.resolve.result == 'success' && needs.full-test-gate.result == 'success' && (needs.cleanup-draft-immutable-artifacts.result == 'success' || (inputs.dry_run && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-components.result == 'success')) }}
     uses: ./.github/workflows/desktop-publish.yml
     with:
       tag: ${{ needs.resolve.outputs.tag }}
@@ -785,73 +657,9 @@ jobs:
       macos_artifacts_run_id: ${{ needs.resolve.outputs.macos_artifacts_run_id }}
     secrets: inherit
 
-  publish-plugins:
-    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components, cleanup-draft-immutable-artifacts, full-test-gate]
-    if: ${{ always() && needs.resolve.result == 'success' && needs.full-test-gate.result == 'success' && (needs.cleanup-draft-immutable-artifacts.result == 'success' || (inputs.dry_run && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-plugins.result == 'success' && needs.build-components.result == 'success')) }}
-    runs-on: ubuntu-latest
-    concurrency:
-      group: release-plugins-index
-      cancel-in-progress: false
-    env:
-      OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.resolve.outputs.sha }}
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: "3.11"
-
-      - name: Download plugins dist
-        uses: actions/download-artifact@v4
-        with:
-          name: qwenpaw-plugins-dist
-          path: dist/plugins
-          run-id: ${{ needs.resolve.outputs.plugins_artifacts_run_id || needs.resolve.outputs.artifacts_run_id || github.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Dry-run notice
-        if: ${{ inputs.dry_run }}
-        run: |
-          echo "DRY-RUN: would sync $(find dist/plugins -name '*.zip' | wc -l) immutable plugin zips to OSS"
-
-      - name: Install ossutil
-        if: ${{ !inputs.dry_run }}
-        run: |
-          wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
-          unzip -q ossutil-v1.7.18-linux-amd64.zip
-          chmod +x ossutil-v1.7.18-linux-amd64/ossutil64
-          sudo mv ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
-          ossutil --version
-
-      - name: Configure ossutil
-        if: ${{ !inputs.dry_run }}
-        run: |
-          ossutil config -e ${{ secrets.OSS_ENDPOINT }} \
-            -i ${{ secrets.OSS_ACCESS_KEY_ID }} \
-            -k ${{ secrets.OSS_ACCESS_KEY_SECRET }} \
-            -L CH
-
-      - name: Sync plugin zips to OSS (long-cache, immutable)
-        if: ${{ !inputs.dry_run }}
-        run: |
-          python scripts/pack/upload_plugin_artifacts.py \
-            --root dist/plugins --bucket "$OSS_BUCKET"
-
-      - name: Upload prepared plugin metadata
-        if: ${{ !inputs.dry_run }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: plugin-promotion-metadata
-          path: dist/plugins/index.json
-          if-no-files-found: error
-
-  # ── Finalize: flip the draft to published LAST (pinned to the built SHA) ────
   publish-components:
-    needs: [resolve, build-wheel, verify-web, build-desktop, build-plugins, build-components, cleanup-draft-immutable-artifacts, full-test-gate]
-    if: ${{ always() && needs.resolve.result == 'success' && needs.full-test-gate.result == 'success' && (needs.cleanup-draft-immutable-artifacts.result == 'success' || (inputs.dry_run && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-plugins.result == 'success' && needs.build-components.result == 'success')) }}
+    needs: [resolve, build-wheel, verify-web, build-desktop, build-components, cleanup-draft-immutable-artifacts, full-test-gate]
+    if: ${{ always() && needs.resolve.result == 'success' && needs.full-test-gate.result == 'success' && (needs.cleanup-draft-immutable-artifacts.result == 'success' || (inputs.dry_run && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-components.result == 'success')) }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -861,6 +669,8 @@ jobs:
       cancel-in-progress: false
     env:
       OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+      COMPONENT_BASE_URL: ${{ vars.COMPONENT_BASE_URL || 'https://ugsci-download.oss-cn-beijing.aliyuncs.com' }}
+      COMPONENT_SIGNING_PUBLIC_KEY: T0VO6V4iNHzSxU3eV68N4nifjq2CqtDfMO0QPtH72mw=
     steps:
       - name: Dry-run notice
         if: ${{ inputs.dry_run }}
@@ -878,72 +688,35 @@ jobs:
         if: ${{ !inputs.dry_run }}
         run: python -m pip install --quiet packaging cryptography
       - uses: actions/download-artifact@v4
-        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id == '' }}
+        if: ${{ !inputs.dry_run }}
         with:
           pattern: component-release-*
           path: component-release
           merge-multiple: true
           run-id: ${{ needs.resolve.outputs.components_artifacts_run_id || needs.resolve.outputs.artifacts_run_id || github.run_id }}
           github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Download prepared component promotion metadata from prior release run
-        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id != '' }}
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          name: component-promotion-metadata
-          path: component-release/metadata/components/stable
-          run-id: ${{ inputs.components_promotion_run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Retry prepared component promotion metadata through GitHub API
-        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id != '' }}
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        shell: bash
+      - name: Verify signed component content before upload
+        if: ${{ !inputs.dry_run }}
         run: |
           set -euo pipefail
-          shopt -s nullglob
-          files=(component-release/metadata/components/stable/*)
-          if [ "${#files[@]}" -gt 0 ]; then
-            exit 0
-          fi
-          artifact_id="$(gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/${{ inputs.components_promotion_run_id }}/artifacts?per_page=100" \
-            | jq -r '.artifacts[] | select(.name == "component-promotion-metadata" and .expired == false) | .id' | head -1)"
-          test -n "$artifact_id" || { echo "::error::Prepared component promotion metadata artifact not found"; exit 1; }
-          archive="$(mktemp)"
-          for attempt in 1 2 3 4 5; do
-            if curl --fail --location --silent --show-error \
-              --retry 3 --retry-all-errors --retry-delay 3 \
-              -H "Authorization: Bearer $GH_TOKEN" \
-              -H 'Accept: application/vnd.github+json' \
-              "https://api.github.com/repos/$GITHUB_REPOSITORY/actions/artifacts/$artifact_id/zip" \
-              -o "$archive"; then
-              mkdir -p component-release/metadata/components/stable
-              unzip -oq "$archive" -d component-release/metadata/components/stable
-              rm -f "$archive"
-              exit 0
-            fi
-            echo "Retrying component promotion metadata download (attempt $attempt)" >&2
-            sleep 5
+          for target in windows-x86_64 macos-aarch64; do
+            pointer="component-release/metadata/components/stable/${target}.current.json"
+            test -s "$pointer"
+            manifest=$(python -c 'import json,sys; from urllib.parse import urlparse; print(urlparse(json.load(open(sys.argv[1]))["manifest_url"]).path.lstrip("/"))' "$pointer")
+            python scripts/pack-tauri/verify_component_release.py \
+              --release-root component-release --manifest "component-release/$manifest" \
+              --target "$target" --base-url "$COMPONENT_BASE_URL"
           done
-          rm -f "$archive"
-          echo "::error::Unable to download component promotion metadata" >&2
-          exit 1
-      - name: Re-upload prepared component promotion metadata
-        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id != '' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: component-promotion-metadata
-          path: component-release/metadata/components/stable
-          if-no-files-found: error
+
       - name: Install and configure ossutil
-        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id == '' }}
+        if: ${{ !inputs.dry_run }}
         run: |
           wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
           unzip -q ossutil-v1.7.18-linux-amd64.zip
           sudo install ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
           ossutil config -e '${{ secrets.OSS_ENDPOINT }}' -i '${{ secrets.OSS_ACCESS_KEY_ID }}' -k '${{ secrets.OSS_ACCESS_KEY_SECRET }}' -L CH
       - name: Upload immutable component artifacts and manifests
-        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id == '' }}
+        if: ${{ !inputs.dry_run }}
         run: |
           set -euo pipefail
           publish_immutable() {
@@ -960,7 +733,7 @@ jobs:
               return
             fi
             ossutil cp "$file" "$uri" --acl public-read \
-              --meta "Cache-Control:public, max-age=31536000, immutable"
+              --meta "x-oss-forbid-overwrite:true#Cache-Control:public, max-age=31536000, immutable"
             ossutil cp "$uri" "$remote"
             cmp -s "$file" "$remote" || { echo "Remote component ${label} verification failed" >&2; exit 1; }
             rm -rf "$remote_dir"
@@ -977,7 +750,7 @@ jobs:
             publish_immutable "${manifest}.sig" "$manifest_sig_uri" "signature ${base}.sig"
           done < <(find component-release/metadata/components/stable -maxdepth 1 -type f -name '*-*.json' ! -name '*.current.json' ! -name '*.history.json' -print)
       - name: Upload prepared component promotion metadata
-        if: ${{ !inputs.dry_run && inputs.components_promotion_run_id == '' }}
+        if: ${{ !inputs.dry_run }}
         uses: actions/upload-artifact@v4
         with:
           name: component-promotion-metadata
@@ -990,8 +763,8 @@ jobs:
   # Release-time full regression gate against the exact release workflow SHA.
   # Mutable release metadata remains blocked until this reusable matrix passes.
   full-test-gate:
-    needs: [resolve, build-plugins]
-    if: ${{ !cancelled() && needs.resolve.result == 'success' && (needs.build-plugins.result == 'success' || (inputs.artifacts_run_id != '' && needs.build-plugins.result == 'skipped')) }}
+    needs: [resolve]
+    if: ${{ !cancelled() && needs.resolve.result == 'success' }}
     uses: ./.github/workflows/full-tests-nightly.yml
     with:
       form: release
@@ -999,7 +772,7 @@ jobs:
     secrets: inherit
 
   finalize:
-    needs: [resolve, publish-desktop, publish-plugins, publish-components, full-test-gate]
+    needs: [resolve, publish-desktop, publish-components, full-test-gate]
     if: ${{ always() && !inputs.dry_run && !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     permissions:
@@ -1045,8 +818,8 @@ jobs:
           test "$published_sha" = "$SHA" || { echo "::error::Finalized release $TAG targets $published_sha, expected $SHA"; exit 1; }
 
   promote-release-metadata:
-    needs: [resolve, publish-plugins, publish-components, finalize]
-    if: ${{ always() && needs.resolve.result == 'success' && needs.publish-plugins.result == 'success' && needs.publish-components.result == 'success' && needs.finalize.result == 'success' }}
+    needs: [resolve, publish-components, finalize]
+    if: ${{ always() && needs.resolve.result == 'success' && needs.publish-components.result == 'success' && needs.finalize.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       actions: read
@@ -1069,14 +842,6 @@ jobs:
       - name: Install metadata verification dependencies
         run: python -m pip install --quiet packaging cryptography
 
-      - name: Download prepared plugin metadata
-        uses: actions/download-artifact@v4
-        with:
-          name: plugin-promotion-metadata
-          path: promotion/plugins
-          run-id: ${{ github.run_id }}
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-
       - name: Download prepared component pointers
         uses: actions/download-artifact@v4
         with:
@@ -1092,13 +857,11 @@ jobs:
           sudo install ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
           ossutil config -e '${{ secrets.OSS_ENDPOINT }}' -i '${{ secrets.OSS_ACCESS_KEY_ID }}' -k '${{ secrets.OSS_ACCESS_KEY_SECRET }}' -L CH
 
-      - name: Promote plugin indexes and component pointers atomically
+      - name: Promote core version and component pointers atomically
         env:
           COMPONENT_SIGNING_PRIVATE_KEY: ${{ secrets.COMPONENT_SIGNING_PRIVATE_KEY }}
         run: |
           set -euo pipefail
-          plugin_index=$(find promotion/plugins -type f -name 'index.json' -print -quit)
-          test -s "$plugin_index"
           mapfile -t component_pointers < <(find promotion/components -type f -name '*.current.json' | sort)
           test "${#component_pointers[@]}" -eq 2
 
@@ -1117,15 +880,6 @@ jobs:
             fi
           }
 
-          read_remote_or_default 'metadata/plugins/index.json' existing-plugin-index.json '{}'
-          python3 scripts/pack/merge_plugin_index.py \
-            --new "$plugin_index" \
-            --old existing-plugin-index.json \
-            --out prepared-plugin-index.json \
-            --retire-plugin-id computer-use-tool
-          read_remote_or_default 'metadata/index.json' main-index.json '{"version":"1.0","updated_at":"","products":{}}'
-          python3 scripts/pack/patch_main_index.py --index main-index.json --out main-index.json
-
           publish_immutable() {
             local file="$1" uri="$2" label="$3"
             local remote_dir="$(mktemp -d)"
@@ -1136,7 +890,7 @@ jobs:
               return
             fi
             ossutil cp "$file" "$uri" --acl public-read \
-              --meta "Cache-Control:public, max-age=31536000, immutable"
+              --meta "x-oss-forbid-overwrite:true#Cache-Control:public, max-age=31536000, immutable"
             ossutil cp "$uri" "$remote"
             cmp -s "$file" "$remote" || { echo "remote ${label} verification failed" >&2; exit 1; }
             rm -rf "$remote_dir"
@@ -1194,8 +948,6 @@ jobs:
           : > "$entries"
           python -c 'from pathlib import Path; import json,re; text=Path("src/qwenpaw/__version__.py").read_text(encoding="utf-8"); m=re.search(r"__version__\s*=\s*\"([^\"]+)\"", text); assert m, "could not read __version__"; Path("ugsci-core-latest.json").write_text(json.dumps({"version": m.group(1)}, indent=2)+"\n", encoding="utf-8")'
           printf '%s\t%s\t%s\n' 'ugsci-core-latest.json' 'metadata/ugsci-core-latest.json' 'public, max-age=60, must-revalidate' >> "$entries"
-          printf '%s\t%s\t%s\n' 'prepared-plugin-index.json' 'metadata/plugins/index.json' 'public, max-age=60, must-revalidate' >> "$entries"
-          printf '%s\t%s\t%s\n' 'main-index.json' 'metadata/index.json' 'public, max-age=60, must-revalidate' >> "$entries"
           for pointer in "${component_pointers[@]}"; do
             base="$(basename "$pointer")"
             printf '%s\t%s\t%s\n' "$pointer" "metadata/components/stable/$base" 'public, max-age=0, must-revalidate' >> "$entries"
@@ -1273,7 +1025,6 @@ jobs:
       macos_artifacts_run_id: ${{ needs.resolve.outputs.macos_artifacts_run_id }}
     secrets: inherit
 
-  # ── Post-publish: create the Release Duty verification issue (inline) ───────
   # ── Post-publish: deploy the public website (stable + post only) ────────────
   # Skipped for pre-releases (beta/alpha/rc/dev) so the site advertises only
   # GA/post versions. Invoked inline because the finalize job flips the draft

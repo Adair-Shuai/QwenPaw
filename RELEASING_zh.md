@@ -1,116 +1,45 @@
-# 发布 QwenPaw
+# UGSci 发布规则
 
-_English: [RELEASING.md](RELEASING.md)_
+主程序、插件、应用有各自的版本和发布周期。主程序成功发布的条件是核心程序、必要内置功能、安装启动和签名更新通过验证；不等待市场插件或应用上传。
 
-QwenPaw 一个版本会发布四种产物——**PyPI** wheel、**Docker** 镜像、**桌面**应用
-（Tauri，Windows + macOS）和**插件**包。它们由一个统一编排的 workflow 一起发布：
-任一产物失败都会拦下整个发布，绝不会出现"Web 版发了、却没有对应桌面版"这种情况。
+## 三条交付路径
 
-> 编排器：[`.github/workflows/release.yml`](.github/workflows/release.yml)。
-> 旧的按产物拆分的 workflow 作为回退保留——见
-> [回退到旧流程](#回退到旧流程)。
+| 交付物 | 入口 | 内容与门禁 |
+| --- | --- | --- |
+| 主程序 | `release-resume.yml`，Actions 名称 Release Core | Windows x64、macOS Apple Silicon、签名组件更新；wheel 安装与服务启动验证、完整回归、安装包实际内容和签名验证 |
+| 插件 | `plugins-release.yml`，独立手动发布 | 仅插件市场；实际 ZIP 内容校验、版本冲突自动递增、禁止覆盖已发布版本；不会被软件 Release 事件自动触发 |
+| 应用 | `apps-release.yml` 及专用 `*-release.yml` | UIdeas、ULit、Agent Kanban 使用统一独立入口，其余六项保留专用构建与测试；新用户从应用中心安装，老用户沿用手动或自动更新设置 |
 
-## 速览
+软件中只内置 `src/qwenpaw/bundled_plugin_policy.py` 明确列出的五项：UGSci、科研扩展、FlowForge、GenUI/OpenUI、运行中心。它们共同提供现有核心工作流。宠物、浏览器扩展、其他可选插件及全部应用不进入桌面安装包、Python wheel/sdist 或 Docker 镜像。新增插件默认不内置，必须明确调整清单并补充产物回归。
 
-1. 建一个**草稿** GitHub Release（tag + 说明），**不要**点 *Publish*。
-2. Actions → **Release (unified)** → *Run workflow*（`dry_run` 不勾）。
-3. 它会构建 + 验证所有产物；只有全部通过，才发布全部产物并把 release 翻成
-   *published*。
-4. 任一步失败则什么都不发、草稿原样保留——修好后重跑即可。
+本地 `ugsci/visualization/data` 继续排除；源码、测试数据和用户已经安装的扩展均不因打包清理而删除。独立应用的签名更新采用明确的应用身份，只能发布该应用，不能借此向核心后端夹带应用。
 
-## 发布流程原理
+## 主程序流水线
 
-`release.yml` 分三个阶段：
+在干净、已登录 GitHub 的工作区执行 `python scripts/pack/prepare_core_release.py`：自动选择下一个 Beta 号、提交并推送核心版本、创建固定 SHA 的草稿，然后启动主流程。`--channel stable` 准备正式版，`--dry-run` 只显示版本计划；失败续发使用 `--resume v2.3.0-beta.5`，不会再升版。准备阶段不修改任何插件、应用或兼容范围。
 
-1. **Resolve（解析草稿）**——按 `tag` 输入找到目标草稿（留空则自动识别唯一草稿），
-   把草稿的 `target_commitish` 解析成具体 SHA，并把后续所有 job 钉在该 SHA 上
-   （保证*构建的代码 == 发布的代码*）。正式发布时若缺 DashScope secret 会直接 fail。
-2. **Prepare（构建 + 验证，不发布任何东西）**——并行：
-   - `build-wheel`——构建 Python wheel（含打包好的 console）。
-   - `verify-web`——pip 安装、Docker 健康检查、安装脚本三类验证。
-   - `build-desktop`——构建 Tauri Windows + macOS 应用，并跑
-     安装 → 启动 → 真实问答 的 UI 验证。
-   - `build-plugins`——打包插件。
-3. **Gate + Publish（门禁 + 发布）**——每个 publish job 都 `needs` **全部** prepare
-   job，因此上面任一失败都会跳过整个发布阶段。全绿后：发布 PyPI、推多架构 Docker
-   镜像、把桌面安装包挂到 release 并上传 OSS、发布插件——然后**最后一步**才把草稿翻成
-   *published*（tag 钉到构建用的 SHA）。发布后再：推桌面 `latest`/更新清单、部署官网
-   （仅正式版/post，beta 跳过）、创建 Release Duty 验收 issue。
+1. 以确定的 Git SHA 创建或更新草稿；版本必须与 `src/qwenpaw/__version__.py` 对应，例如 `v2.3.0-beta.5` / `2.3.0b5`。
+2. 运行 Release Core。解析草稿后，wheel、两个桌面平台和完整测试同时开始，均不依赖市场插件打包。
+   后端测试矩阵共用一次控制台和测试所需插件静态前端构建，各平台下载后校验 SHA-256 与品牌资源，再执行原有完整用例，避免二十多个作业重复构建控制台、各单元测试作业重复安装同一套前端依赖。
+   Windows 单元测试按完整用例身份固定分成四个独立作业，合计执行全部用例且各执行一次；文书填报与 OfficeCLI 实际契约检查仍在每个支持平台执行一次。
+3. 签名组件直接复用桌面已经构建并验证的运行时、后端和必要插件，避免重复构建这些层；保留最近十份可用历史基线，缺少差量时仍提供签名全量恢复。
+   历史清单逐一验签后，按本次所选核心组件内容去重；应用单独发布造成的相同核心基线只下载、解压一次，原始签名历史与不同核心版本全部保留。
+4. 核心构建和测试全部成功后上传安装包与组件；仍执行真实 ZIP 内容、哈希、签名、兼容性、安装启动及 Windows/macOS 更新器校验。
+5. 发布 GitHub 草稿，随后提升核心版本、组件指针和桌面更新元数据。核心发布不读写插件市场索引。
+6. 失败优先重跑失败作业。需要跨运行续发时传 `artifacts_run_id`，只有已验证且符合提交差异约束的产物可复用；不得为了复用跳过新产品改动的构建。
 
-整体约 60–75 分钟，主要耗时在桌面 Tauri 构建。
+`dry_run` 不发布草稿和 OSS 指针。预发行包按现有 Beta/稳定频道策略分发，不擅自改变用户选定的更新频道。PyPI 和 Docker 保留独立入口，不阻塞桌面发布。
 
-## 发一个版本
+## 版本与兼容
 
-1. **建草稿 Release**
-   - UI：Releases → *Draft a new release* → 填 tag + 说明 → **Save draft**
-     （**不要** publish）。预发布请勾 *Set as a pre-release*。
-   - CLI：
-     ```bash
-     gh release create v2.0.0-beta.8 --draft --prerelease \
-       --target main --title "v2.0.0-beta.8" --notes "..."
-     ```
-   - tag 应与 `src/qwenpaw/__version__.py` 对应（`resolve` 会用 `packaging` 归一化校验，
-     不一致直接 fail；如 tag `v2.0.1-beta.1` 须匹配版本 `2.0.1b1`）。
-   - 建议建草稿时用 `--target <sha>` 钉住 commit。若用 `--target main`，则建草稿到运行
-     workflow 之间**不要**再往 main 合入，否则构建的是更新后的 main HEAD。
-2. **运行 workflow**：Actions → **Release (unified)** → *Run workflow*，选 `main`。
-   `tag` 留空可自动识别唯一草稿（也可显式填）；`dry_run` **不勾**。
-3. **观察**：成功后 release 翻成 *published*、资产齐全，并开出一个 Release Duty
-   issue。失败见 [故障处理](#故障处理)。
+- 核心、插件、应用分别递增版本。核心 Beta 变化不会让所有扩展被迫跟随升版。
+- 发布内容未变时复用原版本；内容变化且旧版本已占用时，`scripts/pack/prepare_plugin_versions.py` 比较 OSS 实际 ZIP，选择尚未占用的下一补丁版本，并同步已有源码镜像。随后按需重建该扩展的前端、重新打包、只读预检、禁止覆盖上传和回读校验，确保界面内嵌版本也一致。版本提交必须成功推送，分支已被他人更新时拒绝强推。
+- 所有九项应用都有独立入口并执行同一版本准备器；专用发布器仍保留自身的功能测试与内容校验，不自动随主程序发布。独立版本更新不能改变宿主兼容声明。
+- 保留各扩展真实最低版本，兼容上限统一 `<3.0.0`；SDK、协议、原生宿主指纹有真实变化时才提高门槛。当前组件协议为 2，最低核心仍为 `2.2.2b9`。
+- 已发布 ZIP、签名清单和版本 URL 不覆盖。禁止通过放宽签名、删除测试、修改最低版本或重写旧包规避错误。
 
-## 版本类型：beta / 正式 / post
+## 清理及维护
 
-流程完全一样——类型由 **tag** 推断：
+删除旧 `release.yml` 全产品捆绑入口、它专用的 release-window sentinel/watchdog、发布值班 issue 生成器、重复的 plugins-build 及已无调用方的 component-publish。保留可复用的 desktop-build/publish/promote、component-release、release-verify，以及插件、应用的独立任务。GitHub 历史运行和历史下载不删除。
 
-| 类型 | tag 示例 | 草稿勾 pre-release？ | Docker 标签 | PyPI |
-|------|----------|---------------------|-------------|------|
-| beta / rc / alpha / dev | `v2.0.0-beta.8` | 是 | `<version>` + `pre`（无 `latest`） | 上传；pip 视为预发布（`--pre`） |
-| 正式 | `v2.0.0` | 否 | `<version>` + `pre` + `latest` | 正常 |
-| post | `v2.0.0.post4` | 否 | `<version>` + `pre` + `latest` | post 版本 |
-
-说明：
-
-- 预发布判定是**基于 tag** 的：tag 含 `beta`/`alpha`/`rc`/`dev` 即为预发布
-  （所以用 `-beta.N` 写法）；`stable` 与 `.postN` 会更新 Docker 的 `latest` 标签。
-- **官网**（GitHub Pages，`qwenpaw.agentscope.io`）只在**正式版**与 `.postN` 部署；
-  预发布跳过，保证官网只展示 GA 版本。
-- Tauri 自动更新清单只在**正式版**与 `.postN` 发布时更新，与浏览器控制台的稳定版策略一致。
-  预发布安装包仍可手动下载。
-
-## 故障处理
-
-**保证**：只有**全部** publish job 成功后，草稿才会被翻成 *published*；任一步失败，
-release 就仍是草稿。
-
-| 场景 | 发生了什么 | 怎么办 |
-|------|-----------|--------|
-| 准备阶段某 job 失败（桌面 / web 验证 / wheel / 插件） | 所有 publish + `finalize` + `duty-issue` 全被 **skip**；什么都没发；草稿不动 | 看失败 job 日志修复（flake 就直接重跑）→ **Re-run failed jobs** 或重跑 workflow。无需清理。 |
-| 发布阶段某 publish 失败（如 PyPI 已传、Docker 推失败） | `finalize` 需要全部 publish 成功，故草稿**未翻**；但部分产物可能已上线 | **Re-run failed jobs**（已成功的不会重跑；Docker 重推幂等、OSS 用 `--force`）→ 补齐后自动翻。若某个 PyPI 版本已被占用无法重用，改用 `.postN` 重发。 |
-| `finalize` 失败 | 产物都发了但 release 没翻 | 重跑 `finalize`，或手动 `gh release edit <tag> --draft=false --target <sha>`（或 UI 点 *Publish*）。 |
-| `duty-issue` 失败 | release 已发布，只是缺验收 issue | 重跑该 job，或用 `tag` 手动 dispatch `release-duty.yml`。不阻塞发布。 |
-| `promote-desktop` 失败 | release 已发布，但桌面 `latest` 文件 / 更新清单 / index 未刷新（存量用户的自动更新暂时看不到新版；版本化下载仍可用） | 重跑该 job，幂等（`ossutil cp --force`）。对首装用户不阻塞。 |
-| `deploy-website` 失败（仅正式/post） | release 已发布，但官网（`qwenpaw.agentscope.io`）仍是旧版本 | 重跑该 job，或手动 dispatch `deploy-website.yml`（workflow_dispatch）。幂等、不阻塞。 |
-| "Multiple draft releases found" | 存在多个草稿 | 重跑 *Run workflow* 时显式填 `tag`。 |
-| "No draft release found" / "not a draft" | 没有草稿，或 tag 填错 | 先建草稿 / 改正 tag，再重跑。 |
-| resolve 拒绝该 tag（版本不匹配） | 草稿 tag 与 `src/qwenpaw/__version__.py` 不一致 | 让 tag 与版本对齐（`packaging` 归一化，如 `v2.0.1-beta.1` ↔ `2.0.1b1`），再重跑。 |
-
-## 回退到旧流程
-
-旧的按产物拆分的 workflow 是特意保留的。如果编排器坏了，就用旧方式发布——把 GitHub
-Release **点 Publish**（或 `gh release create ...`），会在 `release: published` 上触发
-正式发布统一走 `release.yml`；旧的 `desktop-release` 和 `plugins-release`
-不再作为生产发布触发器。直接发布 GitHub Release 不再是受支持的回退路径，
-因为它会绕过统一发布门禁。
-
-> **警告**：旧流程**不会**用桌面构建来 gate Web 发布（这正是本编排器要修的问题），
-> 因此仅作应急回退使用。
-
-## Fork / dry-run 测试
-
-运行 **Release (unified)** 时勾 `dry_run: true`，可在**不触及生产**的前提下验证门禁与
-草稿→published 翻牌：PyPI 上传、Docker 推送、OSS 上传都变成 no-op，而桌面构建/验证、
-草稿翻牌、duty issue 仍会真实执行。（在 fork 上这些只影响 fork 自己的 release 页面。）
-
-注意：桌面构建的 装 → 启 → 问答 UI 验证在 `dry_run` 下**仍会真跑**，需要
-`QWENPAW_DASHSCOPE_API_KEY` secret——`dry_run` 只跳过 resolve 阶段的 fail-fast 检查，
-不跳过验证本身。
+发布修改必须通过 `python scripts/verify_update_regressions.py`、固定自有功能清单检查与相应行为回归。工作流回归同时检查：核心任务没有可选插件依赖、应用不能混入核心包、市场预检和不可变对象保护仍然执行。规则详见 `docs/UPDATE_COMPATIBILITY_GUARD.md`。

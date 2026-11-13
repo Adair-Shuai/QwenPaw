@@ -302,6 +302,7 @@ def build_release(
     history_signature_input: Path | None = None,
     history_count: int = 10,
     protocol_version: int = 1,
+    independent_application: str | None = None,
 ) -> Path:
     # pylint: disable=too-many-statements
     if not 0 < delta_max_ratio < 1:
@@ -327,6 +328,11 @@ def build_release(
         component, version, component_metadata = read_component_metadata(
             source,
         )
+        if (
+            component_metadata.get("type") == "app"
+            and component != independent_application
+        ):
+            raise ValueError("Applications require an independent release")
         if (source / "component.json").is_file():
             preserve_paths = tuple(
                 dict.fromkeys(component_metadata.get("preserve", [])),

@@ -391,3 +391,50 @@ def test_private_channel_zip_preserves_runtime_and_source_manifest(tmp_path):
         }
         assert zipped.read("channel-preview/plugin.json") == manifest_bytes
     assert (plugin_dir / "plugin.json").read_bytes() == manifest_bytes
+
+
+def test_main_release_excludes_apps_and_preserves_independent_packing(
+    tmp_path,
+):
+    plugins = tmp_path / "plugins"
+    for kind, name, plugin_type in (
+        ("bundle", "extension", "bundle"),
+        ("bundle", "misplaced-app", "app"),
+        ("apps", "application", "app"),
+    ):
+        source = plugins / kind / name
+        source.mkdir(parents=True)
+        (source / "plugin.json").write_text(
+            json.dumps(
+                {
+                    "id": name,
+                    "type": plugin_type,
+                    "version": "1.0.0",
+                    "entry": {"backend": "plugin.py"},
+                },
+            ),
+            encoding="utf-8",
+        )
+        (source / "plugin.py").write_text("VALUE = 1\n", encoding="utf-8")
+    index, failed = discover_and_pack(
+        plugins,
+        tmp_path / "main",
+        "/files/plugins",
+        exclude_apps=True,
+    )
+    assert not failed
+    assert set(index["files"]) == {"extension-1.0.0"}
+    assert len(list((tmp_path / "main").rglob("*.zip"))) == 1
+    standalone, failed = discover_and_pack(
+        plugins,
+        tmp_path / "standalone",
+        "/files/plugins",
+        only=["application"],
+    )
+    assert not failed
+    assert set(standalone["files"]) == {"application-1.0.0"}
+    with zipfile.ZipFile(
+        next((tmp_path / "standalone").rglob("*.zip")),
+    ) as archive:
+        manifest = json.loads(archive.read("application/plugin.json"))
+        assert manifest["type"] == "app"

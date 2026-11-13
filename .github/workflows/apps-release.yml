@@ -1,0 +1,215 @@
+name: Release Applications (UIdeas, ULit, Kanban)
+
+on:
+  workflow_dispatch:
+    inputs:
+      app_id:
+        description: "Application (specialized apps retain their own release workflows)"
+        required: true
+        type: choice
+        options: [uideas, ulit, agent-kanban]
+      upload_to_oss:
+        description: "Publish after verification; false only builds and tests"
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  # Serialize independent market index updates.
+  group: oss-production-metadata
+  cancel-in-progress: false
+
+env:
+  PLUGIN_DIR: plugins/apps/${{ inputs.app_id }}
+  PLUGIN_ID: ${{ inputs.app_id }}
+  OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+
+jobs:
+  upload-oss:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+
+      - name: Verify selected application behavior
+        run: |
+          case "$PLUGIN_ID" in uideas|ulit|agent-kanban) ;; *) exit 1 ;; esac
+          node --check "$PLUGIN_DIR/ui/index.js"
+          python -m compileall -q "$PLUGIN_DIR/backend"
+          python -m pip install -e ".[test]"
+          python -m pytest tests/unit/pawapp/test_app_contract.py -q
+          case "$PLUGIN_ID" in
+            uideas) python -m pytest tests/unit/plugins/test_uideas_workbench.py -q ;;
+            ulit) python -m pytest tests/unit/plugins/test_ulit_database.py -q ;;
+          esac
+
+      - name: Pack selected application and build index
+        run: |
+          python scripts/pack/generate_plugin_metadata.py \
+            --plugins-root plugins \
+            --dist dist/plugins \
+            --metadata-out dist/plugins/index.json \
+            --cdn-prefix /files/plugins \
+            --only "${PLUGIN_ID}"
+
+      - name: Prepare independent application version
+        if: inputs.upload_to_oss
+        env:
+          OSS_ENDPOINT: ${{ secrets.OSS_ENDPOINT }}
+          OSS_ACCESS_KEY_ID: ${{ secrets.OSS_ACCESS_KEY_ID }}
+          OSS_ACCESS_KEY_SECRET: ${{ secrets.OSS_ACCESS_KEY_SECRET }}
+          OSS_BUCKET: ${{ vars.OSS_BUCKET || 'ugsci-download' }}
+          RELEASE_BRANCH: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          test "$GITHUB_REF_TYPE" = branch
+          python -m pip install 'oss2==2.19.1' packaging
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          python scripts/pack/prepare_plugin_versions.py --repo . --dist dist/plugins --bucket "$OSS_BUCKET" --sdk --commit --branch "$RELEASE_BRANCH" --repack
+
+      - name: Verify packaged application identity and content
+        run: |
+          python - <<'PY'
+          import json, os, zipfile
+          from pathlib import Path
+          identifier = os.environ['PLUGIN_ID']
+          source = json.loads(Path(os.environ['PLUGIN_DIR'], 'plugin.json').read_text())
+          index = json.loads(Path('dist/plugins/index.json').read_text())
+          assert len(index['files']) == 1
+          row = next(iter(index['files'].values()))
+          assert row['plugin_id'] == identifier and row['platform'] == 'apps'
+          archive = Path('dist/plugins') / row['url'].removeprefix('/files/plugins/')
+          with zipfile.ZipFile(archive) as package:
+              assert json.loads(package.read(identifier + '/plugin.json')) == source
+              assert source['type'] == 'app'
+              for entry in source['entry'].values():
+                  assert package.read(identifier + '/' + entry)
+              assert not any('/__pycache__/' in name or '/node_modules/' in name for name in package.namelist())
+          PY
+
+      - name: Install ossutil
+        if: inputs.upload_to_oss
+        run: |
+          wget -q https://gosspublic.alicdn.com/ossutil/1.7.18/ossutil-v1.7.18-linux-amd64.zip
+          unzip -q ossutil-v1.7.18-linux-amd64.zip
+          chmod +x ossutil-v1.7.18-linux-amd64/ossutil64
+          sudo mv ossutil-v1.7.18-linux-amd64/ossutil64 /usr/local/bin/ossutil
+          ossutil --version
+
+      - name: Configure ossutil
+        if: inputs.upload_to_oss
+        run: |
+          ossutil config -e ${{ secrets.OSS_ENDPOINT }} \
+            -i ${{ secrets.OSS_ACCESS_KEY_ID }} \
+            -k ${{ secrets.OSS_ACCESS_KEY_SECRET }} \
+            -L CH
+
+      - name: Verify and upload immutable application ZIP
+        if: inputs.upload_to_oss
+        run: |
+          python scripts/pack/upload_plugin_artifacts.py --root dist/plugins --bucket "$OSS_BUCKET" --preflight
+          python scripts/pack/upload_plugin_artifacts.py --root dist/plugins --bucket "$OSS_BUCKET"
+
+      - name: Merge historical versions into index
+        if: inputs.upload_to_oss
+        run: |
+          # Fail closed: a fetch error must never masquerade as "no index
+          # yet" and shrink the authoritative file list to this plugin.
+          # Only a confirmed NoSuchKey/404 may bootstrap an empty index.
+          if stat_out=$(ossutil stat \
+            "oss://${OSS_BUCKET}/metadata/plugins/index.json" 2>&1); then
+            ossutil cp "oss://${OSS_BUCKET}/metadata/plugins/index.json" \
+              existing-index.json
+            python3 -c 'import json; json.load(open("existing-index.json"))' || {
+              echo "ERROR: existing plugins index is not valid JSON." >&2
+              exit 1
+            }
+          elif grep -qiE 'NoSuchKey|StatusCode=404' <<< "$stat_out"; then
+            echo "No plugins index on OSS yet; bootstrapping an empty one."
+            echo '{}' > existing-index.json
+          else
+            echo "ERROR: could not stat the plugins index on OSS:" >&2
+            echo "$stat_out" >&2
+            exit 1
+          fi
+
+          python3 scripts/pack/merge_plugin_index.py \
+            --new dist/plugins/index.json \
+            --old existing-index.json \
+            --out dist/plugins/index.json \
+            --retire-plugin-id computer-use-tool
+
+      - name: Upload plugins index (short-cache)
+        if: inputs.upload_to_oss
+        run: |
+          ossutil cp dist/plugins/index.json \
+            "oss://${OSS_BUCKET}/metadata/plugins/index.json" \
+            --acl public-read \
+            --force \
+            --meta "Cache-Control:public, max-age=60, must-revalidate"
+
+      - name: Patch main metadata index to advertise plugins product
+        if: inputs.upload_to_oss
+        run: |
+          # Same fail-closed rule for the top-level product index: only a
+          # confirmed NoSuchKey/404 may bootstrap a fresh skeleton.
+          if stat_out=$(ossutil stat \
+            "oss://${OSS_BUCKET}/metadata/index.json" 2>&1); then
+            ossutil cp "oss://${OSS_BUCKET}/metadata/index.json" \
+              main-index.json
+            python3 -c 'import json; json.load(open("main-index.json"))' || {
+              echo "ERROR: existing main index is not valid JSON." >&2
+              exit 1
+            }
+          elif grep -qiE 'NoSuchKey|StatusCode=404' <<< "$stat_out"; then
+            echo "No main index on OSS yet; bootstrapping a skeleton."
+            cat > main-index.json << 'EOF'
+          {
+            "version": "1.0",
+            "updated_at": "",
+            "products": {}
+          }
+          EOF
+          else
+            echo "ERROR: could not stat the main index on OSS:" >&2
+            echo "$stat_out" >&2
+            exit 1
+          fi
+
+          python3 scripts/pack/patch_main_index.py \
+            --index main-index.json \
+            --out   main-index.json
+
+          ossutil cp main-index.json \
+            "oss://${OSS_BUCKET}/metadata/index.json" \
+            --acl public-read \
+            --force \
+            --meta "Cache-Control:public, max-age=60, must-revalidate"
+
+      - name: Summary
+        if: inputs.upload_to_oss
+        run: |
+          VERSION="$(jq -r .version "${PLUGIN_DIR}/plugin.json")"
+          echo "Application ${PLUGIN_ID} ${VERSION} published. Index:"
+          cat dist/plugins/index.json | python3 -m json.tool | head -40 || true
+
+      - name: Preserve independent application artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: app-${{ inputs.app_id }}
+          path: dist/plugins
+          if-no-files-found: error

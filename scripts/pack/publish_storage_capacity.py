@@ -258,10 +258,12 @@ def prepare_target(
         private_key_b64=private_b64,
         release_version=old["release_version"],
         protocol_version=old["protocol_version"],
+        independent_application=APP,
     )
     # Full package content, signatures and file inventories are mandatory gates.
     verify_release(
-        folder, generated, target=target, base_url=base, public_key=PUBLIC_KEY
+        folder, generated, target=target, base_url=base, public_key=PUBLIC_KEY,
+        independent_application=APP,
     )
     single = json.loads(generated.read_bytes())
     incoming = single["components"][component_id]
@@ -344,7 +346,8 @@ def prepare_target(
     )
     # Recheck actual new archives immediately before upload, including signature.
     verify_release(
-        folder, generated, target=target, base_url=base, public_key=PUBLIC_KEY
+        folder, generated, target=target, base_url=base, public_key=PUBLIC_KEY,
+        independent_application=APP,
     )
     for path in sorted((folder / "artifacts").rglob("*.zip")):
         immutable(

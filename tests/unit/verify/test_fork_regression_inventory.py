@@ -105,19 +105,47 @@ def test_ci_retains_fork_inventory_gates_and_application_tests():
             "python scripts/verify_update_regressions.py --check" in commands
         )
         assert "pytest plugins/apps/document-forms/tests" in commands
-        build_index = next(
-            index
-            for index, step in enumerate(steps)
-            if step.get("name")
-            == "Build OpenUI runtime for plugin archive contracts"
-        )
         test_index = next(
             index
             for index, step in enumerate(steps)
             if step.get("name") == "Run unit tests"
         )
-        assert build_index < test_index
-        build = steps[build_index]
+        if name == "full-tests-nightly.yml":
+            assert "build-console" in workflow["jobs"]["unit-tests"]["needs"]
+            build = next(
+                step
+                for step in workflow["jobs"]["build-console"]["steps"]
+                if step.get("name") == "Build and verify console once"
+            )
+            extract_index = next(
+                index
+                for index, step in enumerate(steps)
+                if step.get("name") == "Extract verified plugin test runtimes"
+            )
+            assert extract_index < test_index
+            assert "unit-plugin-build.tar.gz" in steps[extract_index]["run"]
+            assert any(
+                "sha256sum --check" in step.get("run", "")
+                for step in steps[:extract_index]
+            )
+            powercontext_build = build
+        else:
+            build_index = next(
+                index
+                for index, step in enumerate(steps)
+                if step.get("name")
+                == "Build OpenUI runtime for plugin archive contracts"
+            )
+            assert build_index < test_index
+            build = steps[build_index]
+            powercontext_index = next(
+                index
+                for index, step in enumerate(steps)
+                if step.get("name")
+                == "Build PowerContext runtime for plugin archive contracts"
+            )
+            assert powercontext_index < test_index
+            powercontext_build = steps[powercontext_index]
         assert not build.get("continue-on-error", False)
         assert (
             "npm --prefix plugins/bundle/qwenpaw-openui/frontend ci"
@@ -127,14 +155,6 @@ def test_ci_retains_fork_inventory_gates_and_application_tests():
             "npm --prefix plugins/bundle/qwenpaw-openui/frontend run build"
             in build["run"]
         )
-        powercontext_index = next(
-            index
-            for index, step in enumerate(steps)
-            if step.get("name")
-            == "Build PowerContext runtime for plugin archive contracts"
-        )
-        assert powercontext_index < test_index
-        powercontext_build = steps[powercontext_index]
         assert not powercontext_build.get("continue-on-error", False)
         for command in ("ci", "run build"):
             assert (

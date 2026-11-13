@@ -65,3 +65,11 @@ cookbook
 # UGSci visualization examples and converted test caches stay local.
 plugins/bundle/ugsci/visualization/data
 src/qwenpaw/plugins_bundle/ugsci/visualization/data
+src/qwenpaw/plugins_bundle/*
+!src/qwenpaw/plugins_bundle/ugsci
+!src/qwenpaw/plugins_bundle/ugsci_research
+!src/qwenpaw/plugins_bundle/flowforge
+!src/qwenpaw/plugins_bundle/qwenpaw-openui
+!src/qwenpaw/plugins_bundle/qwenpaw-run-center
+src/qwenpaw/plugins_bundle/ugsci/visualization/data
+plugins/apps

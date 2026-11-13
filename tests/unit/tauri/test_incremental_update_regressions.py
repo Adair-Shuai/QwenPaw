@@ -608,7 +608,7 @@ def test_regular_release_gates_and_renewal_share_safe_publication_order():
 
     workflows = ROOT / ".github/workflows"
     release = yaml.safe_load(
-        (workflows / "release.yml").read_text(encoding="utf-8"),
+        (workflows / "release-resume.yml").read_text(encoding="utf-8"),
     )["jobs"]
     assert "build-desktop" in release["build-components"]["needs"]
     assert (
@@ -617,8 +617,8 @@ def test_regular_release_gates_and_renewal_share_safe_publication_order():
     )
     assert "build-components" in release["publish-desktop"]["needs"]
     assert "publish-components" in release["finalize"]["needs"]
-    assert "finalize" in release["promote-components"]["needs"]
-    assert "promote-components" in release["promote-desktop"]["needs"]
+    assert "finalize" in release["promote-release-metadata"]["needs"]
+    assert "promote-release-metadata" in release["promote-desktop"]["needs"]
     renewal = yaml.safe_load(
         (workflows / "component-pointer-renewal.yml").read_text(
             encoding="utf-8",

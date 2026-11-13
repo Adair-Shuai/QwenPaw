@@ -10,6 +10,7 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useEffect, type ComponentProps } from "react";
 import TabbedEditor from "./TabbedEditor";
+import "../../components/Workspace/renderers/MarkdownRenderer";
 import { useCodingTabsStore } from "../../stores/codingTabsStore";
 import { rendererRegistry } from "../../components/Workspace/store/rendererRegistry";
 import { updateArtifactPreview } from "../../features/files-workspace/openFilePreview";

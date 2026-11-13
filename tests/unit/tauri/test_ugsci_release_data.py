@@ -210,7 +210,25 @@ def test_mirror_keeps_visualization_samples_only_in_local_source(tmp_path):
     assert not mirror.find_drift(source, destination)
 
 
-def test_python_wheel_and_sdist_exclude_visualization_test_data(tmp_path):
+def _build_distribution(project, output, method):
+    return subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            f"import sys; from setuptools.build_meta import {method}; "
+            f"{method}(sys.argv[1])",
+            str(output),
+        ],
+        cwd=project,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+        check=False,
+    )
+
+
+def _python_package_project(tmp_path):
     project = tmp_path / "project"
     project.mkdir()
     for name in ("pyproject.toml", "setup.py", "MANIFEST.in"):
@@ -222,6 +240,7 @@ def test_python_wheel_and_sdist_exclude_visualization_test_data(tmp_path):
         "scripts/pack/validate_channel_contracts.py",
         "scripts/pack/channel-contract-requirements.txt",
         "src/qwenpaw/plugins/official_channel_catalog.py",
+        "src/qwenpaw/bundled_plugin_policy.py",
     ):
         destination = project / name
         destination.parent.mkdir(parents=True, exist_ok=True)
@@ -262,25 +281,31 @@ def test_python_wheel_and_sdist_exclude_visualization_test_data(tmp_path):
         )
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(source, target)
+    _write(
+        project,
+        "plugins/apps/application/plugin.json",
+        json.dumps({"id": "application", "type": "app"}).encode(),
+    )
+    _write(
+        project,
+        "plugins/apps/application/private-source.py",
+        b"VALUE = 1\n",
+    )
+    return project, runtime, prompt
+
+
+def test_python_wheel_and_sdist_exclude_visualization_test_data(tmp_path):
+    project, runtime, prompt = _python_package_project(tmp_path)
+    pet = _write(
+        project,
+        "src/qwenpaw/plugins_bundle/qwenpaw-pet/plugin.json",
+        json.dumps({"id": "qwenpaw-pet", "type": "general"}).encode(),
+    )
     output = tmp_path / "artifacts"
     # Build backends own process-global setuptools state; isolate the two
     # formats exactly as a frontend such as `python -m build` does.
     for method in ("build_wheel", "build_sdist"):
-        result = subprocess.run(
-            [
-                sys.executable,
-                "-c",
-                f"import sys; from setuptools.build_meta import {method}; "
-                f"{method}(sys.argv[1])",
-                str(output),
-            ],
-            cwd=project,
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            check=False,
-        )
+        result = _build_distribution(project, output, method)
         assert result.returncode == 0, (result.stdout + result.stderr)[-6000:]
     with zipfile.ZipFile(next(output.glob("*.whl"))) as archive:
         names = archive.namelist()
@@ -290,6 +315,8 @@ def test_python_wheel_and_sdist_exclude_visualization_test_data(tmp_path):
         assert archive.read(prefix + "dist/index.js") == runtime
         assert archive.read(prefix + "dist/system-prompt.txt") == prompt
         assert not any("qwenpaw-openui/frontend/" in p for p in names)
+        assert not any("plugins/apps/" in p for p in names)
+        assert not any("qwenpaw-pet/" in p for p in names)
     sdist = next(path for path in output.iterdir() if path.suffix != ".whl")
     if sdist.suffix == ".zip":
         with zipfile.ZipFile(sdist) as archive:
@@ -303,6 +330,33 @@ def test_python_wheel_and_sdist_exclude_visualization_test_data(tmp_path):
         p.endswith("qwenpaw-openui/dist/system-prompt.txt") for p in names
     )
     assert not any("qwenpaw-openui/frontend/" in p for p in names)
+
+    assert not any("plugins/apps/" in p for p in names)
+    assert not any("qwenpaw-pet/" in p for p in names)
+    assert pet.is_file()
+    assert (project / "plugins/apps/application/private-source.py").is_file()
+
+
+def test_python_distributions_reject_embedded_application_payloads(tmp_path):
+    project, _, _ = _python_package_project(tmp_path)
+    output = tmp_path / "rejected-artifacts"
+    _write(
+        project,
+        "src/qwenpaw/plugins_bundle/application/plugin.json",
+        json.dumps({"id": "application", "type": "app"}).encode(),
+    )
+    _write(
+        project,
+        "src/qwenpaw/plugins_bundle/application/plugin.py",
+        b"VALUE = 1\n",
+    )
+    for method in ("build_wheel", "build_sdist"):
+        result = _build_distribution(project, output, method)
+        assert result.returncode != 0
+        assert (
+            "Applications require an independent release"
+            in result.stdout + result.stderr
+        )
 
 
 def test_docker_context_excludes_both_visualization_fixture_trees():

@@ -12,6 +12,8 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ArtifactPreview from "../components/Workspace/ArtifactPreview";
+// Preload the real table renderer without replacing its registration or UI.
+import "../components/Workspace/renderers/CsvRenderer";
 import { rendererRegistry } from "../components/Workspace/store/rendererRegistry";
 import {
   registerBuiltinRenderers,

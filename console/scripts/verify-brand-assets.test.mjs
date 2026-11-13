@@ -19,10 +19,9 @@ const manifest = JSON.parse(
 );
 
 test("keeps content verification before every shared plugin release pack step", () => {
-  for (const name of [
-    "plugins-release.yml",
-    "release.yml",
-    "release-resume.yml",
+  for (const [name, command] of [
+    ["plugins-release.yml", "python scripts/pack/generate_plugin_metadata.py"],
+    ["release-resume.yml", "python -m build"],
   ]) {
     const workflow = readFileSync(
       path.join(repository, ".github/workflows", name),
@@ -31,9 +30,7 @@ test("keeps content verification before every shared plugin release pack step", 
     const check = workflow.indexOf(
       "run: node console/scripts/verify-brand-assets.mjs",
     );
-    const pack = workflow.indexOf(
-      "python scripts/pack/generate_plugin_metadata.py",
-    );
+    const pack = workflow.indexOf(command);
     assert.ok(check >= 0 && check < pack, name);
   }
 });

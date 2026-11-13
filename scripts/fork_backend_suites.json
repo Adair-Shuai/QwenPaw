@@ -261,6 +261,14 @@
       "tests/unit/services/test_terminal_windows.py",
       "tests/unit/services/test_terminal_windows_control.py",
       "tests/unit/services/test_terminal_availability.py"
+    ],
+    "mainReleasePolicy": [
+      "tests/unit/tauri/test_bundled_plugin_packaging.py",
+      "tests/unit/tauri/test_frozen_plugin_archive.py",
+      "tests/unit/plugins/test_generate_plugin_metadata.py",
+      "tests/unit/tauri/test_update_release_contract.py",
+      "tests/unit/verify/test_release_workflow_safety.py",
+      "tests/unit/verify/test_unit_sharding.py"
     ]
   },
   "required_cases": {
@@ -431,7 +439,9 @@
     "tests/unit/tauri/test_ugsci_release_data.py": [
       "test_runtime_bundle_install_excludes_samples_and_keeps_user_imports",
       "test_runtime_hash_matches_legacy_without_entering_excluded_trees",
-      "test_runtime_copy_uses_manifest_identity_and_ignores_pack_exclude"
+      "test_runtime_copy_uses_manifest_identity_and_ignores_pack_exclude",
+      "test_python_distributions_reject_embedded_application_payloads",
+      "test_python_wheel_and_sdist_exclude_visualization_test_data"
     ],
     "tests/unit/plugins/test_module_isolation_paths.py": [
       "test_existing_module_path_needs_one_native_resolution",
@@ -1307,7 +1317,17 @@
     "tests/unit/verify/test_release_workflow_safety.py": [
       "test_plugin_preflight_reads_actual_objects_without_uploading",
       "test_release_expensive_jobs_require_immutable_plugin_preflight",
-      "test_console_checkout_preserves_formatter_line_endings"
+      "test_console_checkout_preserves_formatter_line_endings",
+      "test_core_artifact_reuse_only_allows_exact_extension_tooling_paths",
+      "test_full_unit_gate_builds_actual_computer_use_version_bundle",
+      "test_optional_frontend_locks_use_public_registry_without_entering_core",
+      "test_independent_release_versions_advance_only_changed_payloads",
+      "test_application_releases_prepare_versions_without_force_overwrites",
+      "test_every_application_has_an_independent_release_entry",
+      "test_core_release_allocates_monotonic_independent_versions",
+      "test_application_version_preparation_commits_and_repacks_real_artifact",
+      "test_main_plugin_publisher_rejects_actual_application_archives",
+      "test_main_release_workflows_exclude_every_application"
     ],
     "tests/unit/plugins/flowforge/test_conversations.py": [
       "test_persistent_chat_apply_receipt_latest_canvas_and_workflow_isolation",
@@ -1319,6 +1339,23 @@
       "test_discussion_preserves_node_reference_labels_after_restart",
       "test_conversation_accepts_json_answer_with_native_footer",
       "test_parallel_chats_keep_context_and_revision_checks"
+    ],
+    "tests/unit/verify/test_unit_sharding.py": [
+      "test_unit_shards_execute_every_case_once_and_propagate_failures",
+      "test_unit_shards_reject_invalid_partition",
+      "test_windows_matrix_runs_all_four_unit_shards_and_app_contracts_once"
+    ],
+    "tests/unit/tauri/test_bundled_plugin_packaging.py": [
+      "test_main_release_staging_excludes_apps_from_explicit_roots"
+    ],
+    "tests/unit/tauri/test_frozen_plugin_archive.py": [
+      "test_desktop_publication_rejects_application_payloads"
+    ],
+    "tests/unit/plugins/test_generate_plugin_metadata.py": [
+      "test_main_release_excludes_apps_and_preserves_independent_packing"
+    ],
+    "tests/unit/tauri/test_update_release_contract.py": [
+      "test_publication_gate_rejects_apps_in_signed_update_payloads"
     ]
   }
 }

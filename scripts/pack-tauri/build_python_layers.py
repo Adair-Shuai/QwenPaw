@@ -220,7 +220,7 @@ def _stage_backend_plugins(repo: Path, backend: Path) -> list[str]:
     selected = stage_bundled_plugins(repo, plugins)
     verify_plugins(plugins)
     # The host wheel contains only the source mirrors. The final desktop layer
-    # also carries canonical bundle/apps plugins with their built frontends.
+    # also carries canonical extensions with their built frontends.
     # Keep installed-package integrity metadata consistent with that payload.
     for path in sorted(plugins.rglob("*")):
         if not path.is_file():

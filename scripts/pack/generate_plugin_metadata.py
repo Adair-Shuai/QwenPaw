@@ -740,6 +740,7 @@ def discover_and_pack(
     cdn_prefix: str,
     only: list[str] | None = None,
     exclude: list[str] | None = None,
+    exclude_apps: bool = False,
 ) -> tuple[dict[str, Any], list[str]]:
     """Scan, validate, zip, and assemble the plugins index.
 
@@ -763,12 +764,16 @@ def discover_and_pack(
         return index, failed
 
     for kind in KIND_DIRS:
+        if exclude_apps and kind == "apps":
+            continue
         kind_dir = plugins_root / kind
         if not kind_dir.is_dir():
             continue
         for plugin_dir in sorted(p for p in kind_dir.iterdir() if p.is_dir()):
             manifest = _read_manifest(plugin_dir)
             if manifest is None:
+                continue
+            if exclude_apps and manifest.get("type") == "app":
                 continue
             if manifest.get("publish") is False:
                 print(f"  - skip {plugin_dir.name} (publish=false)")
@@ -830,15 +835,20 @@ def _dry_run_scan(
     plugins_root: Path,
     only: list[str] | None,
     exclude: list[str] | None,
+    exclude_apps: bool = False,
 ) -> None:
     """List what would be packed without writing anything."""
     for kind in KIND_DIRS:
+        if exclude_apps and kind == "apps":
+            continue
         kind_dir = plugins_root / kind
         if not kind_dir.is_dir():
             continue
         for plugin_dir in sorted(p for p in kind_dir.iterdir() if p.is_dir()):
             manifest = _read_manifest(plugin_dir)
             if manifest is None:
+                continue
+            if exclude_apps and manifest.get("type") == "app":
                 continue
             if manifest.get("publish") is False:
                 print(f"  - skip {plugin_dir.name} (publish=false)")
@@ -905,6 +915,11 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--exclude-apps",
+        action="store_true",
+        help="Exclude applications from a main program release.",
+    )
+    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Scan + plan only; do not write zips or index.",
@@ -921,7 +936,7 @@ def main() -> int:
 
     print(f"Scanning plugins under: {plugins_root}")
     if args.dry_run:
-        _dry_run_scan(plugins_root, args.only, args.exclude)
+        _dry_run_scan(plugins_root, args.only, args.exclude, args.exclude_apps)
         return 0
 
     project_root = plugins_root.parent
@@ -973,6 +988,7 @@ def main() -> int:
         args.cdn_prefix,
         only=args.only,
         exclude=args.exclude,
+        exclude_apps=args.exclude_apps,
     )
 
     metadata_out.parent.mkdir(parents=True, exist_ok=True)

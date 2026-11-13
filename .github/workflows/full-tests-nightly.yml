@@ -20,7 +20,7 @@ name: Full Tests Nightly
 # which only combines and renders — it does not run pytest itself.
 
 on:
-  # Reusable so release.yml can invoke the release-time gate form
+  # Reusable so release-resume.yml can invoke the release-time gate form
   # (full-test-gate job) without duplicating any matrix definition.
   workflow_call:
     inputs:
@@ -56,8 +56,47 @@ on:
           - 'all'
 
 jobs:
+  build-console:
+    name: Build shared backend test console
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+          cache-dependency-path: console/package-lock.json
+      - name: Build and verify console once
+        env:
+          NODE_OPTIONS: "--max-old-space-size=8192"
+        run: |
+          npm --prefix console ci
+          npm --prefix console run build
+          npm --prefix plugins/bundle/qwenpaw-openui/frontend ci --no-audit --no-fund
+          npm --prefix plugins/bundle/qwenpaw-openui/frontend run build
+          npm --prefix plugins/memory/powercontext/frontend ci --no-audit --no-fund
+          npm --prefix plugins/memory/powercontext/frontend run build
+          npm --prefix plugins/bundle/computer-use/frontend ci --no-audit --no-fund
+          npm --prefix plugins/bundle/computer-use/frontend run build
+          tar -czf console-build.tar.gz -C console dist
+          tar -czf unit-plugin-build.tar.gz \
+            plugins/bundle/qwenpaw-openui/dist \
+            plugins/memory/powercontext/frontend/dist \
+            plugins/bundle/computer-use/dist
+          sha256sum console-build.tar.gz unit-plugin-build.tar.gz > console-build.sha256
+      - uses: actions/upload-artifact@v4
+        with:
+          name: backend-test-console-${{ github.sha }}
+          path: |
+            console-build.tar.gz
+            unit-plugin-build.tar.gz
+            console-build.sha256
+          if-no-files-found: error
+          retention-days: 2
+
   unit-tests:
-    name: Unit Tests - py${{ matrix.python-version }} - ${{ matrix.os }}
+    needs: [build-console]
+    name: Unit Tests - py${{ matrix.python-version }} - ${{ matrix.os }} - ${{ matrix.shard || 'all' }}
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -69,6 +108,20 @@ jobs:
             python-version: "3.11"
           - os: windows-latest
             python-version: "3.11"
+            shard: '1/4'
+            shard_index: 0
+          - os: windows-latest
+            python-version: "3.11"
+            shard: '2/4'
+            shard_index: 1
+          - os: windows-latest
+            python-version: "3.11"
+            shard: '3/4'
+            shard_index: 2
+          - os: windows-latest
+            python-version: "3.11"
+            shard: '4/4'
+            shard_index: 3
 
     steps:
       - uses: actions/checkout@v4
@@ -91,12 +144,18 @@ jobs:
           cache: 'npm'
           cache-dependency-path: console/package-lock.json
 
-      - name: Build console frontend
+      - name: Download verified console build
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-test-console-${{ github.sha }}
+          path: .test-console
+
+      - name: Verify and extract console build
         shell: bash
-        env:
-          NODE_OPTIONS: "--max-old-space-size=8192"
         run: |
-          cd console && npm ci && npm run build
+          (cd .test-console && sha256sum --check console-build.sha256)
+          tar -xzf .test-console/console-build.tar.gz -C console
+          node console/scripts/verify-brand-assets.mjs --scope console --dist console/dist
 
       - name: Copy console build into package
         shell: bash
@@ -105,17 +164,10 @@ jobs:
           mkdir -p src/qwenpaw/console
           cp -R console/dist/* src/qwenpaw/console/
 
-      - name: Build OpenUI runtime for plugin archive contracts
+      - name: Extract verified plugin test runtimes
         shell: bash
         run: |
-          npm --prefix plugins/bundle/qwenpaw-openui/frontend ci
-          npm --prefix plugins/bundle/qwenpaw-openui/frontend run build
-
-      - name: Build PowerContext runtime for plugin archive contracts
-        shell: bash
-        run: |
-          npm --prefix plugins/memory/powercontext/frontend ci
-          npm --prefix plugins/memory/powercontext/frontend run build
+          tar -xzf .test-console/unit-plugin-build.tar.gz
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -165,19 +217,22 @@ jobs:
               --cov=src/qwenpaw \
               --cov-report=xml:coverage.unit.xml \
               --cov-fail-under=0
+          elif [ "${{ runner.os }}" = "Windows" ]; then
+            python scripts/run_unit_tests.py --shard-count 4 \
+              --shard-index '${{ matrix.shard_index }}' tests/unit -v
           else
             pytest tests/unit -v
           fi
 
       - name: Verify document forms application contracts
-        if: matrix.python-version == '3.11'
+        if: matrix.python-version == '3.11' && (runner.os != 'Windows' || matrix.shard_index == 0)
         shell: bash
         run: |
           python -m pip install -r plugins/apps/document-forms/requirements.txt
           pytest plugins/apps/document-forms/tests -v
 
       - name: Verify real OfficeCLI engine contracts
-        if: matrix.python-version == '3.11'
+        if: matrix.python-version == '3.11' && (runner.os != 'Windows' || matrix.shard_index == 0)
         shell: bash
         run: |
           python scripts/pack-tauri/stage_officecli.py --dest console/src-tauri/binaries/officecli
@@ -198,6 +253,7 @@ jobs:
           include-hidden-files: true
 
   contract-tests:
+    needs: [build-console]
     name: Contract Tests - py${{ matrix.python-version }} - ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -221,12 +277,18 @@ jobs:
           cache: 'npm'
           cache-dependency-path: console/package-lock.json
 
-      - name: Build console frontend
+      - name: Download verified console build
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-test-console-${{ github.sha }}
+          path: .test-console
+
+      - name: Verify and extract console build
         shell: bash
-        env:
-          NODE_OPTIONS: "--max-old-space-size=8192"
         run: |
-          cd console && npm ci && npm run build
+          (cd .test-console && sha256sum --check console-build.sha256)
+          tar -xzf .test-console/console-build.tar.gz -C console
+          node console/scripts/verify-brand-assets.mjs --scope console --dist console/dist
 
       - name: Copy console build into package
         shell: bash
@@ -298,6 +360,7 @@ jobs:
           include-hidden-files: true
 
   integrated-tests:
+    needs: [build-console]
     name: Integrated Tests - py${{ matrix.python-version }} - ${{ matrix.os }} - ${{ matrix.shard }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -384,12 +447,18 @@ jobs:
           cache: 'npm'
           cache-dependency-path: console/package-lock.json
 
-      - name: Build console frontend
+      - name: Download verified console build
+        uses: actions/download-artifact@v4
+        with:
+          name: backend-test-console-${{ github.sha }}
+          path: .test-console
+
+      - name: Verify and extract console build
         shell: bash
-        env:
-          NODE_OPTIONS: "--max-old-space-size=8192"
         run: |
-          cd console && npm ci && npm run build
+          (cd .test-console && sha256sum --check console-build.sha256)
+          tar -xzf .test-console/console-build.tar.gz -C console
+          node console/scripts/verify-brand-assets.mjs --scope console --dist console/dist
 
       - name: Copy console build into package
         shell: bash
