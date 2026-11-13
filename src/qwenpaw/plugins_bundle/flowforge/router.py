@@ -337,7 +337,10 @@ def _register_authoring_routes(
 
     @router.post("/authoring/conversations/{chat_id}/messages/{turn_id}/apply")
     async def apply_chat(
-        chat_id: str, turn_id: str, request: Request, payload: RevisionRequest
+        chat_id: str,
+        turn_id: str,
+        request: Request,
+        payload: RevisionRequest,
     ):
         try:
             return await service.conversations.apply(
@@ -351,10 +354,13 @@ def _register_authoring_routes(
             raise _service_error(exc) from exc
 
     @router.post(
-        ("/authoring/conversations/{chat_id}/messages/{" "turn_id}/verify")
+        "/authoring/conversations/{chat_id}/messages/{turn_id}/verify",
     )
     async def verify_chat(
-        chat_id: str, turn_id: str, request: Request, payload: RevisionRequest
+        chat_id: str,
+        turn_id: str,
+        request: Request,
+        payload: RevisionRequest,
     ):
         from .assistant_verification import verify
 
@@ -379,7 +385,8 @@ def _register_authoring_routes(
     async def experience(flow_id: str, request: Request):
         try:
             return service.conversations.experiences(
-                flow_id, owner_id(request)
+                flow_id,
+                owner_id(request),
             )
         except (ValueError, FileNotFoundError) as exc:
             raise _service_error(exc) from exc

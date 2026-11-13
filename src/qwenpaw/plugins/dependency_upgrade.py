@@ -2310,7 +2310,10 @@ async def continue_operation(directory, *, preflight=False):
         from .downloaded_updates import install_confirmed_update
 
         record = await install_confirmed_update(
-            loader, source, operation, files_only=True,
+            loader,
+            source,
+            operation,
+            files_only=True,
         )
         atomic_json(directory / "continuation.json", install_result(record))
     finally:

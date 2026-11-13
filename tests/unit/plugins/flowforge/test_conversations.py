@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Persistent conversations use latest drafts and isolate workflow evidence."""
 
 import asyncio
@@ -39,7 +40,7 @@ class Model:
             draft = request["current_flow"]
             draft["description"] = "changed"
             return SimpleNamespace(
-                content=json.dumps({"reply": "已修改说明", "flow": draft})
+                content=json.dumps({"reply": "已修改说明", "flow": draft}),
             )
         return SimpleNamespace(content=json.dumps({"reply": "这是普通答复"}))
 
@@ -77,8 +78,12 @@ def test_persistent_chat_apply_receipt_latest_canvas_and_workflow_isolation(
         )
         applied = asyncio.run(
             service.conversations.apply(
-                chat["id"], "account", "default", turn["id"], 1
-            )
+                chat["id"],
+                "account",
+                "default",
+                turn["id"],
+                1,
+            ),
         )
         assert applied["name"] == "手工重命名"
         assert applied["revision"] == 2
@@ -91,8 +96,12 @@ def test_persistent_chat_apply_receipt_latest_canvas_and_workflow_isolation(
         assert (
             asyncio.run(
                 service.conversations.apply(
-                    chat["id"], "account", "default", turn["id"], 1
-                )
+                    chat["id"],
+                    "account",
+                    "default",
+                    turn["id"],
+                    1,
+                ),
             )
             == applied
         )
@@ -108,7 +117,9 @@ def test_persistent_chat_apply_receipt_latest_canvas_and_workflow_isolation(
     try:
         assert (
             len(
-                restarted.conversations.chat(chat["id"], "account")["messages"]
+                restarted.conversations.chat(chat["id"], "account")[
+                    "messages"
+                ],
             )
             == 3
         )
@@ -136,8 +147,8 @@ def test_conversation_http_validates_scope_and_deduplicates_requests(tmp_path):
             assert (
                 len(
                     client.get(
-                        f"/authoring/conversations/{chat['id']}"
-                    ).json()["messages"]
+                        f"/authoring/conversations/{chat['id']}",
+                    ).json()["messages"],
                 )
                 == 1
             )
@@ -188,8 +199,8 @@ def test_real_repair_verification_preserves_failed_attempt_and_current_code(
                 )
                 return SimpleNamespace(
                     content=json.dumps(
-                        {"reply": "修复除零", "flow": candidate}
-                    )
+                        {"reply": "修复除零", "flow": candidate},
+                    ),
                 )
 
         service.executor.llm_service = RepairModel()
@@ -206,7 +217,7 @@ def test_real_repair_verification_preserves_failed_attempt_and_current_code(
                     "repair_run_id": failed.run_id,
                     "repair_node_id": "compute",
                 },
-            )
+            ),
         )
         turn = response["messages"][-1]
         assert (
@@ -215,8 +226,12 @@ def test_real_repair_verification_preserves_failed_attempt_and_current_code(
         )
         applied = asyncio.run(
             service.conversations.apply(
-                chat["id"], "account", "default", turn["id"], 1
-            )
+                chat["id"],
+                "account",
+                "default",
+                turn["id"],
+                1,
+            ),
         )
         result = asyncio.run(
             verify(
@@ -226,7 +241,7 @@ def test_real_repair_verification_preserves_failed_attempt_and_current_code(
                 "default",
                 turn["id"],
                 applied["revision"],
-            )
+            ),
         )
         run_id = result["messages"][-1]["verification"]["run_id"]
         handle = service.get_run(run_id)
@@ -314,7 +329,7 @@ def test_normal_expert_text_is_saved_as_discussion_without_a_proposal(
                     "flow": saved,
                     "mode": "ask",
                 },
-            )
+            ),
         )
         assert result["messages"][0]["reply"] == "已记住，本流程使用验收总量。"
         assert "proposal" not in result["messages"][0]
@@ -340,8 +355,8 @@ def test_assistant_bridge_uses_stable_session_and_only_final_answer(
         "load_config",
         lambda: SimpleNamespace(
             agents=SimpleNamespace(
-                profiles={AGENT_ID: SimpleNamespace(enabled=True)}
-            )
+                profiles={AGENT_ID: SimpleNamespace(enabled=True)},
+            ),
         ),
     )
     requests = []
@@ -376,11 +391,11 @@ def test_assistant_bridge_uses_stable_session_and_only_final_answer(
     model = AssistantModel(catalog, "stable-workflow-chat", "account")
     for _ in range(2):
         result = asyncio.run(
-            model.complete(messages=[ChatMessage.user("问题")])
+            model.complete(messages=[ChatMessage.user("问题")]),
         )
         assert result.content == '{"reply":"最终答复"}'
     assert [item["session_id"] for item in requests] == [
-        "stable-workflow-chat"
+        "stable-workflow-chat",
     ] * 2
     assert requests[0]["request_context"]["subagent_allowed_tools"] == []
 
@@ -405,11 +420,11 @@ def test_discussion_preserves_node_reference_labels_after_restart(tmp_path):
                     "mode": "ask",
                     "selected_node_ids": ["input"],
                 },
-            )
+            ),
         )
         assert "proposal" not in answer["messages"][0]
         assert answer["messages"][0]["references"] == [
-            {"id": "input", "label": "原始输入"}
+            {"id": "input", "label": "原始输入"},
         ]
         saved["nodes"]["input"]["label"] = "已重命名"
         saved = service.save_flow("one", saved, expected_revision=1)
@@ -430,7 +445,7 @@ def test_discussion_preserves_node_reference_labels_after_restart(tmp_path):
                         "flow": saved,
                         "selected_node_ids": ["input"],
                     },
-                )
+                ),
             )
         failed = service.conversations.chat(chat["id"], "account")["messages"][
             1
@@ -443,7 +458,7 @@ def test_discussion_preserves_node_reference_labels_after_restart(tmp_path):
     try:
         restored = restarted.conversations.chat(chat["id"], "account")
         assert restored["messages"][0]["references"] == [
-            {"id": "input", "label": "原始输入"}
+            {"id": "input", "label": "原始输入"},
         ]
     finally:
         restarted.close(timeout=2)
@@ -452,7 +467,9 @@ def test_discussion_preserves_node_reference_labels_after_restart(tmp_path):
 @pytest.mark.parametrize("edit", [False, True])
 @pytest.mark.parametrize("fenced", [False, True])
 def test_conversation_accepts_json_answer_with_native_footer(
-    tmp_path, edit, fenced
+    tmp_path,
+    edit,
+    fenced,
 ):
     service = WorkflowService(flows_dir=tmp_path)
 
@@ -484,7 +501,7 @@ def test_conversation_accepts_json_answer_with_native_footer(
                     "prompt": "说明字段",
                     "flow": saved,
                 },
-            )
+            ),
         )
         turn = answer["messages"][0]
         assert turn["reply"] == "核对 **text** 字段"
@@ -527,8 +544,8 @@ def test_parallel_chats_keep_context_and_revision_checks(
                 flow["nodes"][node_id]["label"] = request["instruction"]
                 return SimpleNamespace(
                     content=json.dumps(
-                        {"reply": request["instruction"], "flow": flow}
-                    )
+                        {"reply": request["instruction"], "flow": flow},
+                    ),
                 )
 
         service.executor.llm_service = ParallelModel()
@@ -573,7 +590,11 @@ def test_parallel_chats_keep_context_and_revision_checks(
             completed_first = await tasks[0]
             second_turn = completed_second["messages"][0]
             applied = await service.conversations.apply(
-                second["id"], "account", "default", second_turn["id"], 1
+                second["id"],
+                "account",
+                "default",
+                second_turn["id"],
+                1,
             )
             assert applied["revision"] == 2
             assert applied["nodes"]["output"]["label"] == "输出方案"

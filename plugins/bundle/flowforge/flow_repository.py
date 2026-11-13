@@ -126,7 +126,7 @@ class FlowRepository:
             # authoring always supply a concrete revision (0 means create).
             if expected_revision is not None and expected_revision != actual:
                 raise RevisionConflict(
-                    f"工作流已更新（当前版本 {actual}），请重新载入后保存。"
+                    f"工作流已更新（当前版本 {actual}），请重新载入后保存。",
                 )
             if proposal_id:
                 row = db.execute(
@@ -135,7 +135,7 @@ class FlowRepository:
                 ).fetchone()
                 if not row or row[0] or row[1] <= time.time():
                     raise RevisionConflict(
-                        "修改建议已应用或已过期，请重新生成。"
+                        "修改建议已应用或已过期，请重新生成。",
                     )
                 db.execute(
                     "UPDATE proposals SET applied=1 WHERE id=?",
@@ -164,7 +164,7 @@ class FlowRepository:
             if (
                 proposal_id
                 and db.execute(
-                    "SELECT 1 FROM sqlite_master WHERE name='authoring_turns'"
+                    "SELECT 1 FROM sqlite_master WHERE name='authoring_turns'",
                 ).fetchone()
             ):
                 db.execute(

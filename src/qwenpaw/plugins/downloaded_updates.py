@@ -116,7 +116,11 @@ def acknowledge_downloaded_plugin(plugin_id, version, operation_id=None):
 
 
 def _prepare_downloaded_candidate(
-    updater, body, archive, destination, current_version,
+    updater,
+    body,
+    archive,
+    destination,
+    current_version,
 ):
     """Verify, preserve data and atomically stage one cold-start candidate."""
     import tempfile
@@ -140,7 +144,8 @@ def _prepare_downloaded_candidate(
         expected_version=body.version,
     )
     with tempfile.TemporaryDirectory(
-        prefix=".plugin-update-", dir=str(plugins),
+        prefix=".plugin-update-",
+        dir=str(plugins),
     ) as temporary:
         root = Path(temporary)
         extracted_archive = root / "plugin.zip"
@@ -153,7 +158,9 @@ def _prepare_downloaded_candidate(
                 encoding="utf-8",
             )
         manifest = PluginManifest.from_dict(
-            json.loads((candidate / "plugin.json").read_text(encoding="utf-8")),
+            json.loads(
+                (candidate / "plugin.json").read_text(encoding="utf-8"),
+            ),
         )
         compatible, reason = check_plugin_version_compat(manifest)
         if not compatible:
@@ -178,7 +185,10 @@ def _prepare_downloaded_candidate(
         backup = updater._backup_component_data(plan, destination, destination)
         updater._restore_backup_to_staging(backup, candidate, plan)
         updater._atomic_activate(
-            candidate, destination, plugin_id, body.version,
+            candidate,
+            destination,
+            plugin_id,
+            body.version,
         )
         updater._prune_backups(backup)
 
@@ -215,10 +225,14 @@ def prepare_downloaded_plugins():
             _validate_external_upgrade_source(body.source)
             destination = resolve_component_destination(plugins, plugin_id)
             if not destination.is_dir() or is_plugin_uninstalled(
-                plugin_id, plugins_dir=plugins, plugin_dir=destination,
+                plugin_id,
+                plugins_dir=plugins,
+                plugin_dir=destination,
             ):
                 acknowledge_downloaded_plugin(
-                    plugin_id, body.version, record.get("operation_id"),
+                    plugin_id,
+                    body.version,
+                    record.get("operation_id"),
                 )
                 continue
             current = json.loads(
@@ -242,7 +256,11 @@ def prepare_downloaded_plugins():
                     "Downloaded update archive is missing or corrupted",
                 )
             _prepare_downloaded_candidate(
-                updater, body, archive, destination, current["version"],
+                updater,
+                body,
+                archive,
+                destination,
+                current["version"],
             )
             prepared[plugin_id] = record
         except Exception:
@@ -264,17 +282,22 @@ async def reconcile_downloaded_plugins(loader, updater, prepared, configs):
 
     for plugin_id, record in prepared.items():
         destination = resolve_component_destination(
-            get_plugins_dir(), plugin_id,
+            get_plugins_dir(),
+            plugin_id,
         )
         try:
             healthy = await reconcile_plugin_activation(
                 loader,
                 plugin_id,
                 finalize=partial(
-                    updater.finalize_activation, plugin_id, destination,
+                    updater.finalize_activation,
+                    plugin_id,
+                    destination,
                 ),
                 rollback=partial(
-                    updater.rollback_activation, plugin_id, destination,
+                    updater.rollback_activation,
+                    plugin_id,
+                    destination,
                 ),
                 config=configs.get(plugin_id),
             )
@@ -317,7 +340,12 @@ def pending_update_summaries():
 
 
 async def pending_dependency_operation(
-    loader, pending, version, source=None, *, background=False,
+    loader,
+    pending,
+    version,
+    source=None,
+    *,
+    background=False,
 ):
     """Reuse a valid review or allow rebuilding an unavailable frozen plan."""
     from .dependency_upgrade import dependency_upgrades
@@ -343,7 +371,11 @@ async def pending_dependency_operation(
 
 
 async def install_confirmed_update(
-    loader, source, operation, *, files_only=False,
+    loader,
+    source,
+    operation,
+    *,
+    files_only=False,
 ):
     """Preserve current data when continuing a downloaded dependency review."""
     import tempfile
@@ -383,18 +415,31 @@ async def install_confirmed_update(
         else DEFAULT_PRESERVE_PATHS
     )
     plan = ComponentUpdatePlan(
-        plugin_id, None, version, "full", "", "", "", preserve, None,
+        plugin_id,
+        None,
+        version,
+        "full",
+        "",
+        "",
+        "",
+        preserve,
+        None,
     )
     temporary = Path(
         await asyncio.to_thread(
-            tempfile.mkdtemp, prefix="qwenpaw-approved-update-",
+            tempfile.mkdtemp,
+            prefix="qwenpaw-approved-update-",
         ),
     )
     candidate = temporary / "candidate"
     try:
         await asyncio.to_thread(shutil.copytree, source, candidate)
         await asyncio.to_thread(
-            preserve_candidate_data, updater, plan, destination, candidate,
+            preserve_candidate_data,
+            updater,
+            plan,
+            destination,
+            candidate,
         )
         return await install(candidate, force=operation["force"])
     finally:

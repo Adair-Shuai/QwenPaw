@@ -39,7 +39,9 @@ def cached_pending_manifest(service, records):
     if cache_root is None:
         return None
     ordered = sorted(
-        records.values(), key=lambda row: row["queued_at"], reverse=True,
+        records.values(),
+        key=lambda row: row["queued_at"],
+        reverse=True,
     )
     for record in ordered:
         cache_id = record.get("manifest_cache", "")
@@ -50,11 +52,13 @@ def cached_pending_manifest(service, records):
             continue
         try:
             return service.updater.load_manifest(
-                root / "manifest.json", root / "manifest.json.sig",
+                root / "manifest.json",
+                root / "manifest.json.sig",
             )
         except (OSError, ComponentUpdateError):
             logger.warning(
-                "Downloaded update manifest is unavailable", exc_info=True,
+                "Downloaded update manifest is unavailable",
+                exc_info=True,
             )
     return None
 
@@ -76,7 +80,8 @@ def unpin_pending(component, record, *, keep=None):
                 )
             except OSError:
                 logger.warning(
-                    "Pending update cache release failed", exc_info=True,
+                    "Pending update cache release failed",
+                    exc_info=True,
                 )
 
 
@@ -97,7 +102,9 @@ def _download_full(service, manifest, plan):
     )
     service.client.protected_paths.add(archive.parent)
     _verify_signature_file(
-        archive, full_plan.artifact_signature, service.updater.public_key_b64,
+        archive,
+        full_plan.artifact_signature,
+        service.updater.public_key_b64,
     )
     return full_plan, archive
 
@@ -178,11 +185,15 @@ async def _try_hot_update(service, manifest, plan, loader, destination):
     """Return a live result, or None when a fresh process is required."""
     component = plan.component
     full_plan, archive = await asyncio.to_thread(
-        _download_full, service, manifest, plan,
+        _download_full,
+        service,
+        manifest,
+        plan,
     )
     temporary = Path(
         await asyncio.to_thread(
-            tempfile.mkdtemp, prefix="qwenpaw-plugin-update-",
+            tempfile.mkdtemp,
+            prefix="qwenpaw-plugin-update-",
         ),
     )
     try:
@@ -196,7 +207,8 @@ async def _try_hot_update(service, manifest, plan, loader, destination):
         )
         async with loader.plugin_lifecycle(component):
             _, current = await asyncio.to_thread(
-                loader.read_source_manifest, destination,
+                loader.read_source_manifest,
+                destination,
             )
             if Version(current.version) >= Version(plan.target_version):
                 return {
@@ -249,7 +261,12 @@ async def _try_hot_update(service, manifest, plan, loader, destination):
 
 
 async def update_component(
-    component, loader, *, service=None, snapshot=None, background=False,
+    component,
+    loader,
+    *,
+    service=None,
+    snapshot=None,
+    background=False,
 ):
     """Hot-load a signed plugin or download its update for startup."""
     owns_service = service is None
@@ -263,11 +280,13 @@ async def update_component(
         )
         if component not in service.updater.managed_components:
             raise ComponentUpdateError(
-                f"component is not managed: {component}", reason="not_managed",
+                f"component is not managed: {component}",
+                reason="not_managed",
             )
         plans = [ComponentUpdatePlan(**row) for row in raw_plans]
         plan = next(
-            (item for item in plans if item.component == component), None,
+            (item for item in plans if item.component == component),
+            None,
         )
         if plan is None:
             return {
@@ -277,7 +296,8 @@ async def update_component(
                 "reason": "up-to-date",
             }
         destination = services.resolve_component_destination(
-            services.get_plugins_dir(), component,
+            services.get_plugins_dir(),
+            component,
         )
         if not destination.is_dir() or is_plugin_uninstalled(
             component,
@@ -295,13 +315,19 @@ async def update_component(
             await asyncio.to_thread(services._load_pending_records)
         ).get(component, {})
         operation = await pending_dependency_operation(
-            loader, pending, plan.target_version, background=background,
+            loader,
+            pending,
+            plan.target_version,
+            background=background,
         )
         if operation is not None:
             raise DependencyUpgradeRequired(operation)
         if loader is None or plan.migration:
             await asyncio.to_thread(
-                _queue_downloaded, service, manifest, deferred,
+                _queue_downloaded,
+                service,
+                manifest,
+                deferred,
             )
             return {
                 "component": component,
@@ -311,7 +337,11 @@ async def update_component(
             }
         try:
             applied = await _try_hot_update(
-                service, manifest, plan, loader, destination,
+                service,
+                manifest,
+                plan,
+                loader,
+                destination,
             )
         except DependencyUpgradeRequired as error:
             await asyncio.to_thread(
@@ -339,7 +369,9 @@ async def update_component(
                 >= Version(pending.get("target_version", "0"))
             ):
                 await asyncio.to_thread(
-                    services._acknowledge_pending, {component: pending}, {},
+                    services._acknowledge_pending,
+                    {component: pending},
+                    {},
                 )
             return applied
         await asyncio.to_thread(_queue_downloaded, service, manifest, deferred)

@@ -34,7 +34,7 @@ from ...distribution import (
     EXTERNAL_PLUGIN_UPGRADE_HOSTS,
     upgrade_source_requires_digest,
 )
-from ...utils.windows_paths import copy_tree, extract_zip, io_path, remove_tree
+from ...utils.windows_paths import copy_tree, extract_zip, io_path
 
 from ...plugins.dependency_upgrade import (
     DependencyUpgradeRequired,

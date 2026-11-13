@@ -86,7 +86,8 @@ async def update_plugin_component(component: str, request: Request):
 
     try:
         return await update_component(
-            component, getattr(request.app.state, "plugin_loader", None),
+            component,
+            getattr(request.app.state, "plugin_loader", None),
         )
     except DependencyUpgradeRequired as exc:
         return {
@@ -96,9 +97,11 @@ async def update_plugin_component(component: str, request: Request):
         }
     except ComponentUpdateError as exc:
         raise HTTPException(
-            status_code=409, detail={"reason": exc.reason, "message": str(exc)},
+            status_code=409,
+            detail={"reason": exc.reason, "message": str(exc)},
         ) from exc
     except Exception as exc:
         raise HTTPException(
-            status_code=502, detail=f"Plugin update failed: {exc}",
+            status_code=502,
+            detail=f"Plugin update failed: {exc}",
         ) from exc

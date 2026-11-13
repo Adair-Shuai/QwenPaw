@@ -1,3 +1,4 @@
+# -*- coding: utf-8 -*-
 """Replay a failed node's business values against current saved config."""
 
 from __future__ import annotations
@@ -11,7 +12,8 @@ from .engine.template_paths import template_expressions
 async def verify(conversations, chat_id, owner, agent_id, turn_id, revision):
     chat = conversations.chat(chat_id, owner)
     turn = next(
-        (item for item in chat["messages"] if item["id"] == turn_id), None
+        (item for item in chat["messages"] if item["id"] == turn_id),
+        None,
     )
     if not turn or not turn.get("applied"):
         raise ValueError("请先应用修复方案。")
@@ -49,8 +51,9 @@ async def verify(conversations, chat_id, owner, agent_id, turn_id, revision):
     with conversations.repository.transaction() as db:
         current = json.loads(
             db.execute(
-                "SELECT payload FROM authoring_turns WHERE id=?", (turn_id,)
-            ).fetchone()[0]
+                "SELECT payload FROM authoring_turns WHERE id=?",
+                (turn_id,),
+            ).fetchone()[0],
         )
         if current.get("verification"):
             raise ValueError("验证已提交，请刷新对话查看进度。")

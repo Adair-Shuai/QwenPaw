@@ -973,7 +973,8 @@ class ComponentUpdateService:
         return plans
 
     def snapshot(
-        self, manifest: dict[str, Any] | None = None,
+        self,
+        manifest: dict[str, Any] | None = None,
     ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """Fetch one manifest and derive plans from that snapshot."""
         if manifest is None:
@@ -1191,7 +1192,9 @@ class ComponentUpdateService:
                 "reason": "up-to-date",
             }
         if plan.artifact_kind == "delta" and not getattr(
-            self, "prefer_cached_full", False,
+            self,
+            "prefer_cached_full",
+            False,
         ):
             try:
                 artifact = self.client.download_artifact(
@@ -1422,18 +1425,21 @@ def _run_startup_updates() -> dict[str, Any]:
         if record.get("confirmation"):
             try:
                 destination = resolve_component_destination(
-                    get_plugins_dir(), component,
+                    get_plugins_dir(),
+                    component,
                 )
                 current = json.loads(
                     (destination / "plugin.json").read_text(encoding="utf-8"),
                 )
                 if _version(current["version"], "installed") >= _version(
-                    record["target_version"], "pending version",
+                    record["target_version"],
+                    "pending version",
                 ):
                     _acknowledge_pending({component: record}, {})
             except (OSError, ValueError, KeyError, ComponentUpdateError):
                 logger.debug(
-                    "Dependency review remains pending for %s", component,
+                    "Dependency review remains pending for %s",
+                    component,
                 )
             continue
         groups.setdefault(record.get("manifest_cache", ""), {})[

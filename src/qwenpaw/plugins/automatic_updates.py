@@ -66,7 +66,8 @@ class AutomaticPluginUpdates:
 
     def start(self):
         self._task = asyncio.create_task(
-            self._run(), name="plugin-auto-updates",
+            self._run(),
+            name="plugin-auto-updates",
         )
 
     async def aclose(self):
@@ -87,14 +88,16 @@ class AutomaticPluginUpdates:
                 delay = CHECK_INTERVAL_SECONDS
             except Exception:
                 logger.warning(
-                    "Background plugin updates will retry", exc_info=True,
+                    "Background plugin updates will retry",
+                    exc_info=True,
                 )
                 delay = RETRY_INTERVAL_SECONDS
 
     async def check_once(self):
         try:
             with plugin_install_lock(
-                WORKING_DIR / "plugin_updates" / ".automatic.lock", timeout=0,
+                WORKING_DIR / "plugin_updates" / ".automatic.lock",
+                timeout=0,
             ):
                 await self._check_installed()
         except InstallLockError:
@@ -136,7 +139,8 @@ class AutomaticPluginUpdates:
                 ):
                     continue
                 if not _newer(
-                    plan["target_version"], installed[plugin_id]["version"],
+                    plan["target_version"],
+                    installed[plugin_id]["version"],
                 ):
                     continue
                 if (
@@ -165,7 +169,8 @@ class AutomaticPluginUpdates:
             )
         except Exception:
             logger.warning(
-                "Signed background update discovery failed", exc_info=True,
+                "Signed background update discovery failed",
+                exc_info=True,
             )
             return set(service.updater.managed_components), False
         finally:
@@ -220,11 +225,15 @@ class AutomaticPluginUpdates:
                 continue
             source = entry.get("install_url", "")
             if not source.startswith("https://") or not _newer(
-                entry.get("version"), plugin["version"],
+                entry.get("version"),
+                plugin["version"],
             ):
                 continue
             await self._replace(
-                plugin, source, entry["version"], entry.get("sha256"),
+                plugin,
+                source,
+                entry["version"],
+                entry.get("sha256"),
             )
 
     async def _update_market(self, installed, managed):
@@ -242,7 +251,9 @@ class AutomaticPluginUpdates:
             if self._stop.is_set():
                 return
             payload = await search_market_plugins(
-                page_number=page, page_size=100, sort_by="updated_time",
+                page_number=page,
+                page_size=100,
+                sort_by="updated_time",
             )
             data = payload.get("data", {})
             entries = data.get("plugins", [])
@@ -260,7 +271,8 @@ class AutomaticPluginUpdates:
                     None,
                 )
                 if plugin is None or not _newer(
-                    entry.get("version"), plugin["version"],
+                    entry.get("version"),
+                    plugin["version"],
                 ):
                     continue
                 parts = str(entry["id"]).removeprefix("@").split("/")

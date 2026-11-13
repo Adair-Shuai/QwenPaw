@@ -798,9 +798,10 @@ async def test_signed_restart_update_downloads_then_activates_offline(
         lambda: service,
     )
     result = component_service.run_startup_updates()
-    assert result["errors"] == []
+    assert isinstance(result["errors"], list)
+    assert not result["errors"]
     assert result["updated"][0]["version"] == "2.0.0"
-    assert calls == []
+    assert not calls
     assert component_service._pending_snapshot() == {}
     assert (
         json.loads((installed / "plugin.json").read_text())["version"]
@@ -1060,6 +1061,8 @@ def test_downloaded_update_ack_preserves_newer_queue_generation(
 @pytest.mark.asyncio
 @pytest.mark.parametrize("signed", [False, True])
 @pytest.mark.parametrize("files_only", [False, True])
+# Keep the prepare, approval and resumed-install assertions in one transaction.
+# pylint: disable-next=too-many-statements
 async def test_background_shared_dependencies_wait_for_existing_confirmation(
     tmp_path,
     monkeypatch,
@@ -1165,7 +1168,7 @@ async def test_background_shared_dependencies_wait_for_existing_confirmation(
         assert record["confirmation"] == "dependencies"
         assert downloaded_updates.cached_archive(body).is_file()
         _updater, prepared = downloaded_updates.prepare_downloaded_plugins()
-        assert prepared == {}
+        assert not prepared
         with pytest.raises(HTTPException) as caught:
             await router.replace_installed_plugin(
                 body.model_copy(update={"background": False}),

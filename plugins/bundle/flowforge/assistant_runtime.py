@@ -60,7 +60,9 @@ class AssistantModel:
                             settings.system_prompt_files.append("FLOWFORGE.md")
 
                     await asyncio.to_thread(
-                        mutate_agent_config, AGENT_ID, configure
+                        mutate_agent_config,
+                        AGENT_ID,
+                        configure,
                     )
                 except Exception:
                     config = await asyncio.to_thread(load_config)
@@ -80,9 +82,9 @@ class AssistantModel:
                                 "text": "\n\n".join(
                                     message.content for message in messages
                                 ),
-                            }
+                            },
                         ],
-                    }
+                    },
                 ],
                 "session_id": self.session_id,
                 "user_id": self.user_id,
@@ -96,11 +98,14 @@ class AssistantModel:
             }
             reply = ""
             async for event in workspace.stream_query(request):
-                field = lambda key: (
-                    event.get(key)
-                    if isinstance(event, dict)
-                    else getattr(event, key, None)
-                )
+
+                def field(key, current=event):
+                    return (
+                        current.get(key)
+                        if isinstance(current, dict)
+                        else getattr(current, key, None)
+                    )
+
                 status = getattr(field("status"), "value", field("status"))
                 if field("error") or status in {"failed", "cancelled"}:
                     raise RuntimeError(str(field("error") or status))
@@ -125,4 +130,6 @@ class AssistantModel:
                         reply = "".join(blocks)
             return SimpleNamespace(content=reply)
 
+        # Use the catalog's owning event loop, as its discovery calls do.
+        # pylint: disable-next=protected-access
         return await self.catalog._on_host(invoke)

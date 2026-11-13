@@ -2359,7 +2359,10 @@ class ComponentUpdater:
         ) as temp:
             staged = Path(temp) / "component"
             self.prepare_full(
-                plan, archive, staged, expected_files=expected_files,
+                plan,
+                archive,
+                staged,
+                expected_files=expected_files,
             )
             backup = (
                 self._backup_component_data(plan, preserve_from, destination)

@@ -162,7 +162,9 @@ def workflow_diff(before, after):
         kind = (
             "added"
             if node_id not in old
-            else "removed" if node_id not in new else "modified"
+            else "removed"
+            if node_id not in new
+            else "modified"
         )
         if kind == "modified" and _same_value(old[node_id], new[node_id]):
             continue
@@ -470,7 +472,7 @@ async def propose(
             and not text.lstrip().startswith(("{", "["))
         ):
             return {
-                "reply": redact_public(text[:12000], set(secrets.values()))
+                "reply": redact_public(text[:12000], set(secrets.values())),
             }
         raise ValueError("模型返回的JSON无法解析；当前草稿未修改。") from exc
     if conversation_context is not None and isinstance(data, dict):
@@ -479,7 +481,7 @@ async def propose(
             if not isinstance(reply, str) or not reply.strip():
                 raise ValueError("助手未返回答复，请重试。")
             return {
-                "reply": redact_public(reply[:12000], set(secrets.values()))
+                "reply": redact_public(reply[:12000], set(secrets.values())),
             }
     candidate = data.get("flow", data) if isinstance(data, dict) else None
     if (
@@ -549,9 +551,7 @@ async def propose(
     if conversation_context is not None:
         proposal["reply"] = redact_public(
             str(
-                data.get("reply")
-                or data.get("explanation")
-                or "已准备修改方案。"
+                data.get("reply") or data.get("explanation") or "已准备修改方案。",
             )[:12000],
             set(secrets.values()),
         )

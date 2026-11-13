@@ -25,7 +25,8 @@ class Conversations:
         self.service = service
         self.repository = service._flow_repository
         with self.repository.transaction() as db:
-            db.executescript("""
+            db.executescript(
+                """
                 CREATE TABLE IF NOT EXISTS authoring_chats (
                     id TEXT PRIMARY KEY, owner TEXT NOT NULL,
                     flow_id TEXT NOT NULL, title TEXT NOT NULL,
@@ -39,7 +40,8 @@ class Conversations:
                 CREATE TABLE IF NOT EXISTS authoring_experience (
                     id TEXT PRIMARY KEY, owner TEXT NOT NULL,
                     flow_id TEXT NOT NULL, payload TEXT NOT NULL);
-            """)
+            """,
+            )
 
     def chat(self, chat_id, owner):
         with self.repository.transaction() as db:
@@ -61,7 +63,12 @@ class Conversations:
             ):
                 data = json.loads(payload)
                 messages.append(
-                    {"id": turn_id, "prompt": prompt, "status": status, **data}
+                    {
+                        "id": turn_id,
+                        "prompt": prompt,
+                        "status": status,
+                        **data,
+                    },
                 )
         if not row or not self.service.get_flow(row[0]):
             raise FileNotFoundError("工作流会话不存在。")
@@ -118,7 +125,8 @@ class Conversations:
     def update_experience(self, flow_id, owner, record_id, summary, status):
         records = self.experiences(flow_id, owner)
         record = next(
-            (item for item in records if item["id"] == record_id), None
+            (item for item in records if item["id"] == record_id),
+            None,
         )
         if not record:
             raise FileNotFoundError("经验记录不存在。")
@@ -156,20 +164,8 @@ class Conversations:
             )
         return record_id
 
-    async def send(self, chat_id, owner, agent_id, payload):
-        chat = self.chat(chat_id, owner)
-        draft = payload["flow"]
-        if draft.get("id") != chat["flow_id"]:
-            raise ValueError("草稿与会话工作流不匹配。")
-        references = [
-            {
-                "id": node_id,
-                "label": str(draft["nodes"][node_id].get("label") or node_id),
-            }
-            for node_id in payload.get("selected_node_ids") or []
-            if isinstance(node_id, str)
-            and isinstance(draft.get("nodes", {}).get(node_id), dict)
-        ]
+    def _reserve_turn(self, chat, payload, references):
+        chat_id = chat["id"]
         turn_id = payload["request_id"]
         now = time.time()
         with self.repository.transaction() as db:
@@ -185,7 +181,7 @@ class Conversations:
                     raise RevisionConflict("请求身份与会话不匹配。")
                 if existing[1] == "running":
                     raise RevisionConflict(
-                        "该消息仍在处理中，请稍后刷新会话。"
+                        "该消息仍在处理中，请稍后刷新会话。",
                     )
             else:
                 running = db.execute(
@@ -216,7 +212,8 @@ class Conversations:
                         payload["prompt"],
                         "running",
                         json.dumps(
-                            {"references": references}, ensure_ascii=False
+                            {"references": references},
+                            ensure_ascii=False,
                         ),
                         now,
                     ),
@@ -233,7 +230,24 @@ class Conversations:
                         chat_id,
                     ),
                 )
-        if existing:
+        return bool(existing)
+
+    async def send(self, chat_id, owner, agent_id, payload):
+        chat = self.chat(chat_id, owner)
+        draft = payload["flow"]
+        if draft.get("id") != chat["flow_id"]:
+            raise ValueError("草稿与会话工作流不匹配。")
+        references = [
+            {
+                "id": node_id,
+                "label": str(draft["nodes"][node_id].get("label") or node_id),
+            }
+            for node_id in payload.get("selected_node_ids") or []
+            if isinstance(node_id, str)
+            and isinstance(draft.get("nodes", {}).get(node_id), dict)
+        ]
+        turn_id = payload["request_id"]
+        if self._reserve_turn(chat, payload, references):
             return self.chat(chat_id, owner)
         try:
             evidence = None
@@ -308,7 +322,8 @@ class Conversations:
             )
             data = {
                 "reply": result.get(
-                    "reply", result.get("explanation", "已准备修改方案。")
+                    "reply",
+                    result.get("explanation", "已准备修改方案。"),
                 ),
                 "execution_agent_id": agent_id,
                 "references": references,
@@ -336,7 +351,7 @@ class Conversations:
                                 "turn_id": turn_id,
                                 "summary": data["reply"],
                                 "changes": result["changes"],
-                            }
+                            },
                         )
                         db.execute(
                             "UPDATE authoring_experience SET payload=? "
@@ -374,7 +389,8 @@ class Conversations:
     async def apply(self, chat_id, owner, agent_id, turn_id, revision):
         chat = self.chat(chat_id, owner)
         turn = next(
-            (item for item in chat["messages"] if item["id"] == turn_id), None
+            (item for item in chat["messages"] if item["id"] == turn_id),
+            None,
         )
         if not turn or not turn.get("proposal"):
             raise FileNotFoundError("修改卡片不存在。")
@@ -383,7 +399,9 @@ class Conversations:
         proposal = turn["proposal"]
         # Save and card receipt share the repository transaction below.
         result = await self.service.apply_proposal_for_agent(
-            proposal["proposal_id"], revision, agent_id
+            proposal["proposal_id"],
+            revision,
+            agent_id,
         )
         data = {
             key: value
