@@ -428,9 +428,11 @@ export function AppMarket({
             } else if (upgrade.method === "replaced") {
               setRefreshKey((key) => key + 1);
               message.success({
-                content: tRef.current("pluginManager.externalUpgradeReady", {
-                  version: upgrade.version,
-                }),
+                content: upgrade.restart_required
+                  ? tRef.current("pluginManager.updateRestartRequired")
+                  : tRef.current("pluginManager.externalUpgradeReady", {
+                      version: upgrade.version,
+                    }),
                 key: loadingKey,
               });
               await onInstalled({
@@ -469,16 +471,23 @@ export function AppMarket({
               pluginId: entry.plugin_id,
               version: entry.version,
               sha256: entry.sha256,
+              deferIfNeeded: true,
             });
             setRefreshKey((key) => key + 1);
+            if (replacement.queued)
+              setQueuedUpdates((current) => new Set([...current, entry.id]));
             await onInstalled({
               ...replacement,
-              method: "replaced",
+              method: replacement.queued ? "queued" : "replaced",
             });
             message.success({
-              content: tRef.current("pluginManager.externalUpgradeReady", {
-                version: replacement.version,
-              }),
+              content: replacement.queued
+                ? tRef.current("pluginManager.ugsciUpgradeQueued")
+                : replacement.restart_required
+                ? tRef.current("pluginManager.updateRestartRequired")
+                : tRef.current("pluginManager.externalUpgradeReady", {
+                    version: replacement.version,
+                  }),
               key: loadingKey,
             });
             return;

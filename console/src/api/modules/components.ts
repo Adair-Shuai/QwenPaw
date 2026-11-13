@@ -1,4 +1,5 @@
-import { request } from "../request";
+import type { DependencyUpgradeOperation } from "./plugin";
+import { ApiError, request } from "../request";
 
 export interface ComponentUpdateItem {
   component: string;
@@ -24,6 +25,10 @@ export interface QueueComponentUpdateResponse {
   queued: boolean;
   restart_required?: boolean;
   reason?: string;
+  updated?: boolean;
+  dependency_operation?: DependencyUpgradeOperation;
+  version?: string;
+  loaded?: boolean;
 }
 
 export const componentsApi = {
@@ -33,9 +38,19 @@ export const componentsApi = {
     request<QueueComponentUpdatesResponse>("/components/updates/install", {
       method: "POST",
     }),
-  queueComponentUpdate: (component: string) =>
-    request<QueueComponentUpdateResponse>(
-      `/components/${encodeURIComponent(component)}/install`,
-      { method: "POST" },
-    ),
+  queueComponentUpdate: async (component: string, hot = false) => {
+    const path = `/components/${encodeURIComponent(component)}`;
+    try {
+      return await request<QueueComponentUpdateResponse>(
+        `${path}/${hot ? "update" : "install"}`,
+        { method: "POST" },
+      );
+    } catch (error) {
+      if (!hot || !(error instanceof ApiError) || error.status !== 404)
+        throw error;
+      return request<QueueComponentUpdateResponse>(`${path}/install`, {
+        method: "POST",
+      });
+    }
+  },
 };

@@ -121,6 +121,7 @@ describe("terminal inside the real workspace", () => {
       <FilesDrawer state={state} dispatch={vi.fn()} scope={scope} />,
     );
     await openFromNewTab();
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
     const view = await screen.findByTestId(
       "terminal-screen",
       {},
@@ -145,7 +146,7 @@ describe("terminal inside the real workspace", () => {
     expect(screen.queryByTestId("terminal-screen")).not.toBeInTheDocument();
     expect(requests("DELETE")).toHaveLength(0);
     const page = screen.getByRole("region", {
-      name: i18n.t("workbench.tabs.newTab"),
+      name: i18n.t("workbench.empty.label"),
     });
     const recent = within(page).getByRole("region", {
       name: i18n.t("workbench.empty.recent"),

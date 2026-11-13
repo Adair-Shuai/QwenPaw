@@ -2,9 +2,9 @@
 """Startup component update orchestration.
 
 The production OSS endpoint, embedded verification key, and bundled-plugin
-allowlist are safe defaults. Remote checks are initiated by the desktop
-version/update control. Startup only activates updates explicitly queued by
-that user-facing flow.
+allowlist are safe defaults. Installed plugins can be checked and downloaded
+by the background updater or the manual update controls. Startup activates
+their durable queues before plugin discovery.
 All three values can be overridden with environment variables for testing.
 """
 
@@ -531,6 +531,16 @@ def _load_pending_records() -> dict[str, dict[str, Any]]:
         record["last_error"] = (
             str(last_error) if last_error is not None else None
         )
+        for field in (
+            "manifest_cache",
+            "target_version",
+            "artifact_sha256",
+            "confirmation",
+            "dependency_operation_id",
+            "source",
+        ):
+            if isinstance(raw.get(field), str):
+                record[field] = raw[field]
         records[component_id] = record
     return records
 
@@ -538,6 +548,8 @@ def _load_pending_records() -> dict[str, dict[str, Any]]:
 def _pending_expired(record: dict[str, Any]) -> bool:
     if int(record.get("attempts", 0)) >= _PENDING_MAX_ATTEMPTS:
         return True
+    if record.get("manifest_cache") and record.get("artifact_sha256"):
+        return False
     try:
         queued_at = datetime.fromisoformat(str(record["queued_at"]))
         if queued_at.tzinfo is None:
@@ -588,11 +600,16 @@ def _pending_transaction():
 
 def _pending_snapshot():
     with _pending_transaction():
+        pending = _load_pending_records()
         records = {
             key: value
-            for key, value in _load_pending_records().items()
+            for key, value in pending.items()
             if not _pending_expired(value)
         }
+        from .runtime_updates import unpin_pending
+
+        for component in pending.keys() - records.keys():
+            unpin_pending(component, pending[component])
         # Persist IDs for legacy queue entries before releasing exclusion.
         _store_pending_records(records)
         return records
@@ -610,6 +627,9 @@ def _acknowledge_pending(snapshot, remaining):
             result = remaining.get(component)
             if result is None or _pending_expired(result):
                 current.pop(component, None)
+                from .runtime_updates import unpin_pending
+
+                unpin_pending(component, original)
             else:
                 current[component] = result
         # A runtime transaction may discover companion components. Preserve
@@ -620,13 +640,34 @@ def _acknowledge_pending(snapshot, remaining):
         _store_pending_records(current)
 
 
-def _write_pending_components(components: set[str]) -> None:
+def _write_pending_components(components: set[str], *, versions=None) -> None:
     if not components:
         return
     with _pending_transaction():
         records = _load_pending_records()
         for component in components:
-            records[str(component)] = _new_pending_record()
+            previous = records.get(str(component), {})
+            record = _new_pending_record()
+            if previous.get("manifest_cache") and (
+                versions is None
+                or versions.get(component) == previous.get("target_version")
+            ):
+                for field in (
+                    "manifest_cache",
+                    "target_version",
+                    "artifact_sha256",
+                    "source",
+                ):
+                    if field in previous:
+                        record[field] = previous[field]
+                if previous.get("confirmation") == "dependencies":
+                    record.update(
+                        confirmation="dependencies",
+                        dependency_operation_id=previous.get(
+                            "dependency_operation_id",
+                        ),
+                    )
+            records[str(component)] = record
         _store_pending_records(records)
 
 
@@ -671,8 +712,12 @@ def queue_component_update(component: str) -> dict[str, Any]:
                 "queued": False,
                 "reason": "up-to-date",
             }
+        selected = {component} | (set(plans) & DIRECTORY_COMPONENT_IDS)
         _write_pending_components(
-            {component} | (set(plans) & DIRECTORY_COMPONENT_IDS),
+            selected,
+            versions={
+                key: plans[key].get("target_version") for key in selected
+            },
         )
         return {
             "component": component,
@@ -690,10 +735,9 @@ def queue_all_component_updates() -> dict[str, Any]:
     if service is None:
         return {"enabled": False, "queued": [], "restart_required": False}
     try:
+        plans = service.check()
         components = {
-            str(item["component"])
-            for item in service.check()
-            if item.get("component")
+            str(item["component"]) for item in plans if item.get("component")
         }
         if getattr(service, "last_check_deferred", False):
             raise ComponentUpdateError(
@@ -701,7 +745,13 @@ def queue_all_component_updates() -> dict[str, Any]:
                 "install the desktop update first",
                 reason="core_below_minimum",
             )
-        _write_pending_components(components)
+        _write_pending_components(
+            components,
+            versions={
+                str(row["component"]): row.get("target_version")
+                for row in plans
+            },
+        )
         return {
             "enabled": True,
             "queued": sorted(components),
@@ -922,10 +972,14 @@ class ComponentUpdateService:
                 plans.append(asdict(plan))
         return plans
 
-    def snapshot(self) -> tuple[dict[str, Any], list[dict[str, Any]]]:
+    def snapshot(
+        self,
+        manifest: dict[str, Any] | None = None,
+    ) -> tuple[dict[str, Any], list[dict[str, Any]]]:
         """Fetch one manifest and derive plans from that snapshot."""
-        with self._lock:
-            manifest = self.client.fetch_manifest(self.manifest_url)
+        if manifest is None:
+            with self._lock:
+                manifest = self.client.fetch_manifest(self.manifest_url)
         plugins = get_plugins_dir()
         self._adopt_signed_new_components(manifest, plugins)
         plans: list[dict[str, Any]] = []
@@ -1137,7 +1191,11 @@ class ComponentUpdateService:
                 "updated": False,
                 "reason": "up-to-date",
             }
-        if plan.artifact_kind == "delta":
+        if plan.artifact_kind == "delta" and not getattr(
+            self,
+            "prefer_cached_full",
+            False,
+        ):
             try:
                 artifact = self.client.download_artifact(
                     plan.artifact_url,
@@ -1360,12 +1418,51 @@ def run_startup_updates() -> dict[str, Any]:
 
 
 def _run_startup_updates() -> dict[str, Any]:
-    """Activate only updates explicitly queued by the desktop update UI.
+    """Activate downloaded snapshots with their own queue receipts."""
+    pending = _pending_snapshot()
+    groups: dict[str, dict[str, Any]] = {}
+    for component, record in pending.items():
+        if record.get("confirmation"):
+            try:
+                destination = resolve_component_destination(
+                    get_plugins_dir(),
+                    component,
+                )
+                current = json.loads(
+                    (destination / "plugin.json").read_text(encoding="utf-8"),
+                )
+                if _version(current["version"], "installed") >= _version(
+                    record["target_version"],
+                    "pending version",
+                ):
+                    _acknowledge_pending({component: record}, {})
+            except (OSError, ValueError, KeyError, ComponentUpdateError):
+                logger.debug(
+                    "Dependency review remains pending for %s",
+                    component,
+                )
+            continue
+        groups.setdefault(record.get("manifest_cache", ""), {})[
+            component
+        ] = record
+    result: dict[str, Any] = {"enabled": False, "updated": [], "errors": []}
+    for records in sorted(
+        groups.values(),
+        key=lambda rows: max(record["queued_at"] for record in rows.values()),
+        reverse=True,
+    ):
+        batch = _run_startup_batch(records)
+        result["enabled"] = result["enabled"] or batch["enabled"]
+        result["updated"].extend(batch["updated"])
+        result["errors"].extend(batch["errors"])
+        if batch.get("runtime_restart_required"):
+            result["runtime_restart_required"] = True
+            break
+    return result
 
-    Startup must never perform a fresh remote update on its own. The version
-    icon owns discovery and consent; restart merely consumes its durable queue.
-    """
-    pending_records = _pending_snapshot()
+
+def _run_startup_batch(pending_records) -> dict[str, Any]:
+    """Consume queued updates using their verified downloaded snapshots."""
     pending_components = sorted(pending_records)
     if not pending_components:
         return {"enabled": False, "updated": [], "errors": []}
@@ -1388,7 +1485,15 @@ def _run_startup_updates() -> dict[str, Any]:
     try:
         manifest: dict[str, Any] | None = None
         if hasattr(service, "snapshot"):
-            manifest, plans = service.snapshot()
+            from .runtime_updates import cached_pending_manifest
+
+            cached = cached_pending_manifest(service, pending_records)
+            service.prefer_cached_full = cached is not None
+            manifest, plans = (
+                service.snapshot(cached)
+                if cached is not None
+                else service.snapshot()
+            )
         else:
             plans = service.check()
         available = {str(plan["component"]) for plan in plans}

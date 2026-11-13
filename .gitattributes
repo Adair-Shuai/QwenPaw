@@ -42,3 +42,21 @@ console/**/*.mdx text eol=lf
 console/**/*.yaml text eol=lf
 console/**/*.yml text eol=lf
 console/**/*.svg text eol=lf
+
+# Keep website formatter inputs stable under Windows automatic conversion.
+website/**/*.ts text eol=lf
+website/**/*.tsx text eol=lf
+website/**/*.js text eol=lf
+website/**/*.jsx text eol=lf
+website/**/*.mjs text eol=lf
+website/**/*.cjs text eol=lf
+website/**/*.json text eol=lf
+website/**/*.css text eol=lf
+website/**/*.less text eol=lf
+website/**/*.scss text eol=lf
+website/**/*.html text eol=lf
+website/**/*.md text eol=lf
+website/**/*.mdx text eol=lf
+website/**/*.yaml text eol=lf
+website/**/*.yml text eol=lf
+website/**/*.svg text eol=lf

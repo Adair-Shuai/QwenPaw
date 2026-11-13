@@ -1,11 +1,12 @@
 /** Page geometry is independent of the color theme and light/dark mode. */
 export const PAGE_STYLES = [
+  { id: "dual-sidebar", label: "UGSci Yanjing layout" },
   { id: "classic", label: "Original layout" },
   { id: "deepseek", label: "Simple style" },
-  { id: "dual-sidebar", label: "Dual sidebar" },
 ] as const;
 
 export type PageStyle = (typeof PAGE_STYLES)[number]["id"];
+export const DEFAULT_PAGE_STYLE: PageStyle = "dual-sidebar";
 export const PAGE_STYLE_STORAGE_KEY = "qwenpaw-page-style";
 
 export const PAGE_LAYOUTS = {
@@ -25,7 +26,9 @@ export const PAGE_LAYOUTS = {
 export function parsePageStyle(value: unknown): PageStyle {
   // Retired layouts reopen in the supported compact layout.
   if (value === "openai") return "deepseek";
-  return PAGE_STYLES.find((style) => style.id === value)?.id ?? "classic";
+  return (
+    PAGE_STYLES.find((style) => style.id === value)?.id ?? DEFAULT_PAGE_STYLE
+  );
 }
 
 export function readPageStyle(): PageStyle {
@@ -34,7 +37,7 @@ export function readPageStyle(): PageStyle {
     // an explicit, independent preference rather than following that theme.
     return parsePageStyle(localStorage.getItem(PAGE_STYLE_STORAGE_KEY));
   } catch {
-    return "classic";
+    return DEFAULT_PAGE_STYLE;
   }
 }
 

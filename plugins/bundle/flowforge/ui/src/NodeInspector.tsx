@@ -1,5 +1,11 @@
 import { useWorkflowI18n } from "./i18n";
-import React, { useEffect } from "react";
+import React, {
+  useEffect,
+  useId,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { ConditionFields } from "./ConditionFields";
 import { SchemaField, type InputSource } from "./SchemaField";
 import { fieldLabel, controlLabels, typeLabel } from "./fieldPresentation";
@@ -20,6 +26,26 @@ interface InspectorEdge {
   targetHandle?: string | null;
   data?: Record<string, any>;
 }
+type InspectorTab = "inputs" | "bindings" | "outputs" | "control" | "general";
+
+function fieldTab(
+  field: string | null | undefined,
+  classType: string,
+): InspectorTab {
+  if (field?.startsWith("outputs.") || field === "control.output")
+    return "outputs";
+  if (field?.startsWith("control.")) return "control";
+  if (field && ["id", "class_type", "label"].includes(field)) return "general";
+  if (
+    ["LLMNode", "LLMCallNode"].includes(classType) &&
+    ["inputs.response_format", "inputs.output_schema"].includes(
+      field?.split("/")[0] || "",
+    )
+  )
+    return "outputs";
+  return "inputs";
+}
+
 export function NodeInspector({
   node,
   nodeTypes,
@@ -30,6 +56,7 @@ export function NodeInspector({
   agentId,
   flowId,
   focusedField,
+  bindings,
   diagnostics = [],
   onUpdate,
 }: {
@@ -42,6 +69,7 @@ export function NodeInspector({
   agentId: string;
   flowId: string;
   focusedField?: string | null;
+  bindings?: ReactNode;
   diagnostics?: {
     field?: string;
     message: string;
@@ -50,18 +78,35 @@ export function NodeInspector({
   onUpdate: (n: InspectorNode) => void;
 }) {
   const { t, locale } = useWorkflowI18n();
-  const { Form, Input, Select, Typography, Divider, Collapse } = antd;
+  const { Form, Input, Select, Typography } = antd;
   const { Title: AntTitle, Text: AntText, Paragraph } = Typography;
   const data = (node.data || {}) as any;
   const classType = data.class_type || "ToolNode";
   const spec = nodeTypes.find((t) => t.class_type === classType);
+  const tabId = useId();
+  const root = useRef<HTMLDivElement>(null);
+  const [activeTab, setActiveTab] = useState<InspectorTab>(() =>
+    fieldTab(focusedField, classType),
+  );
   useEffect(() => {
-    if (!focusedField) return;
+    setActiveTab(fieldTab(focusedField, classType));
+    root.current
+      ?.querySelectorAll<HTMLElement>("[role=tabpanel]")
+      .forEach((panel) => {
+        panel.scrollTop = 0;
+      });
+  }, [node.id, flowId, agentId, classType, focusedField]);
+  useEffect(() => {
+    if (!focusedField || activeTab !== fieldTab(focusedField, classType))
+      return;
     const output = focusedField.startsWith("outputs.");
-    const field = focusedField.replace(/^(inputs|outputs)\./, "");
+    const control = focusedField.startsWith("control.");
+    const field = focusedField.replace(/^(inputs|outputs|control)\./, "");
     const frame = requestAnimationFrame(() => {
       const exact = document.getElementById(
-        `ff-${output ? "output" : "input"}-${node.id}-${field}`,
+        `ff-${output ? "output" : control ? "control" : "input"}-${
+          node.id
+        }-${field}`,
       );
       const input =
         exact ||
@@ -79,7 +124,7 @@ export function NodeInspector({
       });
     });
     return () => cancelAnimationFrame(frame);
-  }, [focusedField, node.id]);
+  }, [focusedField, node.id, activeTab, classType]);
   const targetOptions = availableNodes
     .filter((entry) => entry.id !== node.id)
     .map((entry) => ({
@@ -167,6 +212,8 @@ export function NodeInspector({
         help: t("0 表示不重试；只对允许重试的失败生效。"),
       },
       React.createElement(antd.InputNumber, {
+        id: `ff-control-${node.id}-max_retries`,
+        "aria-label": t(controlLabels["max_retries"] || "重试次数"),
         value: data.control?.max_retries ?? data.control?.retry_count ?? 0,
         onChange: (v: any) => updateControl("max_retries", v ?? 0),
         min: 0,
@@ -184,6 +231,8 @@ export function NodeInspector({
         help: t("首次重试的等待时间，后续使用指数退避。"),
       },
       React.createElement(antd.InputNumber, {
+        id: `ff-control-${node.id}-retry_delay_sec`,
+        "aria-label": t(controlLabels["retry_delay_sec"] || "重试延迟（秒）"),
         value: data.control?.retry_delay_sec ?? 1,
         onChange: (v: any) => updateControl("retry_delay_sec", v ?? 1),
         min: 0,
@@ -196,22 +245,12 @@ export function NodeInspector({
     React.createElement(
       Form.Item,
       {
-        key: "output_var",
-        label: t("输出变量名"),
-      },
-      React.createElement(Input, {
-        value: data.control?.output || "",
-        onChange: (e: any) => updateControl("output", e.target.value),
-        placeholder: t("如：result"),
-      }),
-    ),
-    React.createElement(
-      Form.Item,
-      {
         key: "mode",
         label: t("执行模式"),
       },
       React.createElement(Select, {
+        id: `ff-control-${node.id}-mode`,
+        "aria-label": t(controlLabels["mode"] || "执行模式"),
         value: data.control?.mode || "run",
         onChange: (v: any) => updateControl("mode", v),
         options: [
@@ -240,6 +279,8 @@ export function NodeInspector({
         help: t("留空沿用运行时限制；填写时必须大于 0。"),
       },
       React.createElement(antd.InputNumber, {
+        id: `ff-control-${node.id}-timeout_sec`,
+        "aria-label": t(controlLabels["timeout_sec"] || "节点超时（秒）"),
         value: data.control?.timeout_sec,
         min: 0.1,
         placeholder: t("使用默认超时"),
@@ -292,6 +333,8 @@ export function NodeInspector({
             label: t(controlLabels[field] || field),
           },
           React.createElement(antd.Input.TextArea, {
+            id: `ff-control-${node.id}-${field}`,
+            "aria-label": t(controlLabels[field] || field),
             value: rendered,
             autoSize: {
               minRows: 4,
@@ -316,6 +359,8 @@ export function NodeInspector({
             label: t(controlLabels[field] || field),
           },
           React.createElement(Select, {
+            id: `ff-control-${node.id}-${field}`,
+            "aria-label": t(controlLabels[field] || field),
             value: data.control?.[field] || undefined,
             options: targetOptions,
             allowClear: true,
@@ -328,183 +373,262 @@ export function NodeInspector({
       );
     }
   }
-  return React.createElement(
-    Form,
+  const fields = spec?.inputs_schema || [];
+  const inputFields = fields.filter(
+    (field) => fieldTab(`inputs.${field.name}`, classType) === "inputs",
+  );
+  const outputFields = fields.filter(
+    (field) => fieldTab(`inputs.${field.name}`, classType) === "outputs",
+  );
+  const renderField = (field: NodeTypeSpec["inputs_schema"][number]) => (
+    <SchemaField
+      key={field.name}
+      field={field}
+      antd={antd}
+      api={api}
+      agentId={agentId}
+      classType={classType}
+      nodeId={node.id}
+      scopeKey={`${flowId}:${node.id}`}
+      sources={sourcesFor(field.name)}
+      diagnostics={diagnostics.filter(
+        (item) =>
+          item.field === `inputs.${field.name}` ||
+          item.field?.startsWith(`inputs.${field.name}/`),
+      )}
+      value={(data.inputs || {})[field.name]}
+      onChange={(value) => updateInput(field.name, value)}
+    />
+  );
+  const tabs: { key: InspectorTab; label: string; children: ReactNode }[] = [
     {
-      layout: "vertical",
-    },
-    spec?.available === false
-      ? React.createElement(antd.Alert, {
-          type: "warning",
-          showIcon: true,
-          message: t("此能力当前不可用"),
-          description: t(spec.unavailable_reason || ""),
-          style: {
-            marginBottom: 16,
-          },
-        })
-      : null,
-    React.createElement(
-      Form.Item,
-      {
-        label: t("节点 ID"),
-      },
-      React.createElement(Input, {
-        value: node.id,
-        disabled: true,
-        style: {
-          fontFamily: "monospace",
-          fontSize: 11,
-        },
-      }),
-    ),
-    React.createElement(
-      Form.Item,
-      {
-        label: t("节点类型"),
-      },
-      React.createElement(Select, {
-        value: classType,
-        onChange: (v: string) => update("class_type", v),
-        options: nodeTypes.map((t) => ({
-          label: t.display_name,
-          value: t.class_type,
-        })),
-        showSearch: true,
-        optionFilterProp: "label",
-      }),
-    ),
-    React.createElement(
-      Form.Item,
-      {
-        label: t("显示标签"),
-      },
-      React.createElement(Input, {
-        value: data.label || "",
-        onChange: (e: any) => update("label", e.target.value),
-        placeholder: t("节点显示名称"),
-      }),
-    ),
-    spec?.description
-      ? React.createElement(
-          Paragraph,
-          {
-            type: "secondary",
-            style: {
-              fontSize: 12,
-              background: "var(--ant-color-fill-tertiary, #f5f5f5)",
-              padding: 8,
-              borderRadius: 4,
-            },
-          },
-          t(spec.description),
-        )
-      : null,
-    React.createElement(Divider, {
-      style: {
-        margin: "12px 0",
-      },
-    }),
-    React.createElement(
-      AntTitle,
-      {
-        level: 5,
-      },
-      t("输入参数"),
-    ),
-    ["LLMNode", "LLMCallNode"].includes(classType)
-      ? React.createElement(antd.Alert, {
-          type: "info",
-          showIcon: true,
-          message: t("模型由宿主提供"),
-          description: React.createElement(
-            React.Fragment,
-            null,
-            React.createElement(
-              "div",
-              null,
-              t("运行专家：{agent}", "Run agent: {agent}", { agent: agentId }),
-            ),
-            t(
-              "留空模型字段时继承运行专家及宿主的当前模型；填写 model 或 provider/model 可显式覆盖。实际模型与供应商会记录在运行详情中。",
-            ),
-          ),
-          style: {
-            marginBottom: 16,
-          },
-        })
-      : null,
-    (spec?.inputs_schema || []).length === 0
-      ? React.createElement(
-          AntText,
-          {
-            type: "secondary",
-            style: {
-              fontSize: 12,
-            },
-          },
-          t("此节点类型没有定义输入参数"),
-        )
-      : (spec?.inputs_schema || []).map((field: any) =>
-          React.createElement(SchemaField, {
-            key: field.name,
-            field,
-            antd,
-            api,
-            agentId,
-            classType,
-            nodeId: node.id,
-            scopeKey: `${flowId}:${node.id}`,
-            sources: sourcesFor(field.name),
-            diagnostics: diagnostics.filter(
-              (item) =>
-                item.field === `inputs.${field.name}` ||
-                item.field?.startsWith(`inputs.${field.name}/`),
-            ),
-            value: (data.inputs || {})[field.name],
-            onChange: (v: any) => updateInput(field.name, v),
-          }),
-        ),
-    React.createElement(Divider, {
-      style: {
-        margin: "12px 0",
-      },
-    }),
-    (spec?.outputs_schema || []).length > 0 &&
-      React.createElement(
-        "section",
-        { "aria-label": t("输出字段", "Output fields") },
-        React.createElement(
-          AntTitle,
-          { level: 5 },
-          t("输出字段", "Output fields"),
-        ),
-        (spec?.outputs_schema || []).map((field: any) =>
-          React.createElement(
-            "div",
-            {
-              key: field.name,
-              id: `ff-output-${node.id}-${field.name}`,
-              tabIndex: -1,
-              className: "ff-output-field",
-              "data-focused": focusedField === `outputs.${field.name}`,
-            },
-            fieldLabel(field, locale),
-            " · ",
-            typeLabel(field.type, locale),
-          ),
-        ),
+      key: "inputs",
+      label: t("参数", "Inputs"),
+      children: (
+        <>
+          <AntTitle level={5}>{t("输入参数")}</AntTitle>
+          {["LLMNode", "LLMCallNode"].includes(classType) && (
+            <antd.Alert
+              type="info"
+              showIcon
+              message={t("模型由宿主提供")}
+              description={
+                <>
+                  <div>
+                    {t("运行专家：{agent}", "Run agent: {agent}", {
+                      agent: agentId,
+                    })}
+                  </div>
+                  {t(
+                    "留空模型字段时继承运行专家及宿主的当前模型；填写 model 或 provider/model 可显式覆盖。实际模型与供应商会记录在运行详情中。",
+                  )}
+                </>
+              }
+              style={{ marginBottom: 16 }}
+            />
+          )}
+          {inputFields.length ? (
+            inputFields.map(renderField)
+          ) : (
+            <AntText type="secondary">
+              {t("此节点类型没有定义输入参数")}
+            </AntText>
+          )}
+        </>
       ),
-    React.createElement(Collapse, {
-      ghost: true,
-      defaultActiveKey: ["control"],
-      items: [
-        {
-          key: "control",
-          label: t("执行控制"),
-          children: controlItems,
-        },
-      ],
-    }),
+    },
+    ...(bindings
+      ? [
+          {
+            key: "bindings" as const,
+            label: t("数据", "Data"),
+            children: bindings,
+          },
+        ]
+      : []),
+    {
+      key: "outputs",
+      label: t("输出", "Outputs"),
+      children: (
+        <>
+          <AntTitle level={5}>{t("输出配置", "Output settings")}</AntTitle>
+          {outputFields.map(renderField)}
+          <Form.Item
+            label={t("输出变量名")}
+            htmlFor={`ff-control-${node.id}-output`}
+          >
+            <Input
+              id={`ff-control-${node.id}-output`}
+              value={data.control?.output || ""}
+              onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+                updateControl("output", event.target.value)
+              }
+              placeholder={t("如：result")}
+            />
+          </Form.Item>
+          <section aria-label={t("输出字段", "Output fields")}>
+            <AntTitle level={5}>{t("输出字段", "Output fields")}</AntTitle>
+            {(spec?.outputs_schema || []).length ? (
+              spec!.outputs_schema.map((field) => (
+                <div
+                  key={field.name}
+                  id={`ff-output-${node.id}-${field.name}`}
+                  tabIndex={-1}
+                  className="ff-output-field"
+                  data-focused={focusedField === `outputs.${field.name}`}
+                >
+                  {fieldLabel(field, locale)} · {typeLabel(field.type, locale)}
+                </div>
+              ))
+            ) : (
+              <AntText type="secondary">
+                {t(
+                  "此节点类型没有定义输出字段",
+                  "This node type has no output fields",
+                )}
+              </AntText>
+            )}
+          </section>
+        </>
+      ),
+    },
+    {
+      key: "control",
+      label: t("执行", "Run"),
+      children: (
+        <>
+          <AntTitle level={5}>{t("执行控制")}</AntTitle>
+          {controlItems}
+        </>
+      ),
+    },
+    {
+      key: "general",
+      label: t("基础", "Info"),
+      children: (
+        <>
+          <AntTitle level={5}>{t("基本信息", "Basic information")}</AntTitle>
+          <Form.Item label={t("节点 ID")} htmlFor={`ff-input-${node.id}-id`}>
+            <Input
+              id={`ff-input-${node.id}-id`}
+              value={node.id}
+              disabled
+              style={{ fontFamily: "monospace", fontSize: 11 }}
+            />
+          </Form.Item>
+          <Form.Item
+            label={t("节点类型")}
+            htmlFor={`ff-input-${node.id}-class_type`}
+          >
+            <Select
+              id={`ff-input-${node.id}-class_type`}
+              value={classType}
+              onChange={(value: string) => update("class_type", value)}
+              options={nodeTypes.map((type) => ({
+                label: type.display_name,
+                value: type.class_type,
+              }))}
+              showSearch
+              optionFilterProp="label"
+            />
+          </Form.Item>
+          <Form.Item
+            label={t("显示标签")}
+            htmlFor={`ff-input-${node.id}-label`}
+          >
+            <Input
+              id={`ff-input-${node.id}-label`}
+              value={data.label || ""}
+              onChange={(event: React.ChangeEvent<HTMLInputElement>) =>
+                update("label", event.target.value)
+              }
+              placeholder={t("节点显示名称")}
+            />
+          </Form.Item>
+          {spec?.description && (
+            <Paragraph type="secondary">{t(spec.description)}</Paragraph>
+          )}
+        </>
+      ),
+    },
+  ];
+  return (
+    <div className="ff-node-inspector" ref={root}>
+      <div
+        className="ff-inspector-tabs"
+        role="tablist"
+        aria-label={t("节点配置分类", "Node configuration sections")}
+      >
+        {tabs.map((tab, index) => {
+          const errors = diagnostics.filter(
+            (item) =>
+              item.severity === "error" &&
+              fieldTab(item.field, classType) === tab.key,
+          ).length;
+          return (
+            <button
+              type="button"
+              role="tab"
+              key={tab.key}
+              id={`${tabId}-tab-${tab.key}`}
+              aria-controls={`${tabId}-panel-${tab.key}`}
+              aria-selected={activeTab === tab.key}
+              tabIndex={activeTab === tab.key ? 0 : -1}
+              onClick={() => setActiveTab(tab.key)}
+              onKeyDown={(event) => {
+                let next: number;
+                if (event.key === "ArrowRight")
+                  next = (index + 1) % tabs.length;
+                else if (event.key === "ArrowLeft")
+                  next = (index + tabs.length - 1) % tabs.length;
+                else if (event.key === "Home") next = 0;
+                else if (event.key === "End") next = tabs.length - 1;
+                else return;
+                event.preventDefault();
+                setActiveTab(tabs[next].key);
+                document
+                  .getElementById(`${tabId}-tab-${tabs[next].key}`)
+                  ?.focus();
+              }}
+            >
+              {tab.label}
+              {errors > 0 && (
+                <span
+                  className="ff-inspector-tab-error"
+                  aria-label={t("{count} 个错误", "{count} errors", {
+                    count: errors,
+                  })}
+                >
+                  {errors}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
+      {/* Keep fields mounted so incomplete JSON and expression drafts survive tab changes. */}
+      {tabs.map((tab) => (
+        <div
+          key={tab.key}
+          role="tabpanel"
+          id={`${tabId}-panel-${tab.key}`}
+          aria-labelledby={`${tabId}-tab-${tab.key}`}
+          className="ff-inspector-tabpanel"
+          hidden={activeTab !== tab.key}
+          tabIndex={0}
+        >
+          {spec?.available === false && (
+            <antd.Alert
+              type="warning"
+              showIcon
+              message={t("此能力当前不可用")}
+              description={t(spec.unavailable_reason || "")}
+              style={{ marginBottom: 16 }}
+            />
+          )}
+          <Form layout="vertical">{tab.children}</Form>
+        </div>
+      ))}
+    </div>
   );
 }

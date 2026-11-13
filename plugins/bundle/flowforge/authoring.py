@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Model-backed, agent-scoped workflow proposals. Generation never executes."""
+
 from __future__ import annotations
 
 import asyncio
@@ -12,6 +13,8 @@ from uuid import uuid4
 
 from .engine.adapter.chat_message import ChatMessage
 from .flow_repository import RevisionConflict
+from .inspection import redact_public
+from .repair import build_repair_context
 
 
 class AuthoringUnavailable(RuntimeError):
@@ -22,6 +25,9 @@ SYSTEM_PROMPT = (
     "你是 QwenPaw 工作流编译器。只返回JSON对象 {flow:完整工作流,warnings:字符串数组}。\n"
     "使用当前专家可用的 available_nodes 和 available_agents；不虚构工具、专家或输出，不调用"
     "任何工具。\n"
+    "conversation是此前已生成方案的修改要求和变更摘要。current_flow是当前选中的上一轮方案，继续在其基础上修改。\n"
+    "若selected_node_ids不是null，只能修改或删除这些选中节点，也可以新增节点和调整涉及选区或新增节点的连线。"
+    "必须保留edges字段，原样保留选区外节点、选区外连线、流程名称、输入输出及其他全局配置，只调整选区和新增节点的位置。\n"
     "修改current_flow时保留无关节点的ID、配置、位置和连线，禁止改变流程id。参数、阈值和单位不可擅改。\n"
     "文档格式：id,name,description,nodes:{节点id:{class_type,label,input"
     "s,control}},inputs:[{name,type,required,default}],outputs:[输"
@@ -29,7 +35,8 @@ SYSTEM_PROMPT = (
     "引用输出使用 [上游ID,槽位整数]，允许嵌套于ToolNode.inputs.args；优先使用typed "
     "Tool.<name>节点。\n"
     "严格使用节点目录声明的输入参数。LLMCallNode的system传系统指令，prompt传用户内容。\n"
-    "ScriptNode.inputs将变量直接注入脚本全局，赋值result返回JSON可序列化结果。"
+    "ScriptNode.inputs.inputs传变量映射并注入脚本全局，"
+    "ScriptNode.inputs.source传Python代码，赋值result返回JSON可序列化结果。"
     "仅导入节点描述列出的标准库，支持import和from-import；模块也已预加载。"
     "文本统计应兼容中英文标点，英文逗号不作为句子终止符。\n"
     "若提供edges，必须与引用和控制字段完全一致：数据边{source,target,kind:'data',source"
@@ -109,8 +116,16 @@ def _preview(value):
     )
 
 
+def _same_value(before, after):
+    return json.dumps(before, sort_keys=True, allow_nan=False) == json.dumps(
+        after,
+        sort_keys=True,
+        allow_nan=False,
+    )
+
+
 def _details(before, after, path=""):
-    if before == after:
+    if _same_value(before, after):
         return []
     if isinstance(before, dict) and isinstance(after, dict):
         return [
@@ -151,7 +166,7 @@ def workflow_diff(before, after):
             if node_id not in new
             else "modified"
         )
-        if kind == "modified" and old[node_id] == new[node_id]:
+        if kind == "modified" and _same_value(old[node_id], new[node_id]):
             continue
         details = _details(old.get(node_id), new.get(node_id))
         action = {"added": "新增", "removed": "删除", "modified": "修改"}[kind]
@@ -185,7 +200,7 @@ def workflow_diff(before, after):
         ("description", "说明"),
         ("metadata", "布局或运行设置"),
     ]:
-        if (before or {}).get(field) != after.get(field):
+        if not _same_value((before or {}).get(field), after.get(field)):
             changes.append(
                 {
                     "kind": "modified",
@@ -201,6 +216,62 @@ def workflow_diff(before, after):
     return changes
 
 
+def selection_errors(base, candidate, selected_node_ids):
+    """Enforce the editing boundary independently of model instructions."""
+    if selected_node_ids is None:
+        return []
+    editable = set(selected_node_ids) | (
+        candidate["nodes"].keys() - base["nodes"].keys()
+    )
+    errors = [
+        f"选区外节点 {node_id} 被修改或删除，请扩大选区后重试。"
+        for node_id, node in base["nodes"].items()
+        if node_id not in editable
+        and not _same_value(candidate["nodes"].get(node_id), node)
+    ]
+    for field in base.keys() | candidate.keys():
+        if field not in {
+            "nodes",
+            "edges",
+            "metadata",
+            "id",
+            "revision",
+        } and not _same_value(base.get(field), candidate.get(field)):
+            errors.append(f"选区编辑不能修改工作流全局字段 {field}。")
+
+    def outside_edges(flow):
+        return sorted(
+            json.dumps(edge, sort_keys=True, ensure_ascii=False)
+            for edge in flow.get("edges", [])
+            if isinstance(edge, dict)
+            and not editable.intersection(
+                {edge.get("source"), edge.get("target")},
+            )
+        )
+
+    if outside_edges(base) != outside_edges(candidate):
+        errors.append("选区外连线被修改，请扩大选区后重试。")
+
+    def outside_metadata(flow):
+        metadata = copy.deepcopy(flow.get("metadata") or {})
+        positions = metadata.get("positions")
+        if isinstance(positions, dict):
+            metadata["positions"] = {
+                key: value
+                for key, value in positions.items()
+                if key not in editable
+            }
+            if not metadata["positions"]:
+                metadata.pop("positions")
+        metadata.pop("source", None)
+        metadata.pop("authoring_prompt", None)
+        return metadata
+
+    if not _same_value(outside_metadata(base), outside_metadata(candidate)):
+        errors.append("选区外布局或全局运行设置被修改，请扩大选区后重试。")
+    return errors
+
+
 # pylint: disable-next=R0912,R0915
 async def propose(
     service,
@@ -210,6 +281,13 @@ async def propose(
     name="",
     agent_id="default",
     scope_agent_id=None,
+    selected_node_ids=None,
+    parent_proposal_id=None,
+    repair_run_id=None,
+    repair_node_id=None,
+    conversation_context=None,
+    model=None,
+    discussion=False,
 ):
     prompt = prompt.strip()
     if not prompt or len(prompt) > 20000:
@@ -221,7 +299,9 @@ async def propose(
             or not isinstance(base.get("nodes"), dict)
             or len(base["nodes"]) > 200
         ):
-            raise ValueError("工作流草稿必须包含nodes对象，且不超过200个节点。")
+            raise ValueError(
+                "工作流草稿必须包含nodes对象，且不超过200个节点。",
+            )
         for node in base["nodes"].values():
             if not isinstance(node, dict) or not isinstance(
                 node.get("inputs", {}),
@@ -245,9 +325,65 @@ async def propose(
     scope_id, executor = await service.authoring_executor(
         scope_agent_id or agent_id,
     )
-    llm = executor.llm_service
+    if selected_node_ids is not None:
+        if (
+            not isinstance(selected_node_ids, list)
+            or not selected_node_ids
+            or any(
+                not isinstance(node_id, str) for node_id in selected_node_ids
+            )
+            or len(set(selected_node_ids)) != len(selected_node_ids)
+        ):
+            raise ValueError("选区必须包含真实且不重复的节点ID。")
+        if not base or not set(selected_node_ids).issubset(base["nodes"]):
+            raise ValueError("选区必须属于当前工作流草稿。")
+        selected_node_ids = sorted(selected_node_ids)
+        if not isinstance(base.get("metadata") or {}, dict):
+            raise ValueError("当前草稿的metadata必须为对象。")
+    if (repair_run_id is None) != (repair_node_id is None):
+        raise ValueError("AI修复需要同时提供运行ID和节点ID。")
+    repair_context = None
+    conversation = []
+    model_base = base
+    if parent_proposal_id:
+        parent = service.get_proposal(parent_proposal_id)
+        if parent is None:
+            raise RevisionConflict("上一轮方案已应用或过期，请开始新对话。")
+        if (
+            parent["scope_agent_id"] != scope_id
+            or parent.get("agent_id", scope_id) != agent_id
+            or not _same_value(parent.get("_base_flow"), base)
+            or parent.get("selected_node_ids") != selected_node_ids
+        ):
+            raise RevisionConflict(
+                "对话的专家、工作流草稿或选区已变化，请开始新对话。",
+            )
+        conversation = copy.deepcopy(parent.get("_conversation", []))
+        model_base = parent["flow"]
+        flow_id = model_base["id"]
+        repair_context = copy.deepcopy(parent.get("repair_context"))
+        if (
+            repair_context
+            and repair_run_id is not None
+            and (
+                repair_context["run_id"] != repair_run_id
+                or repair_context["node_id"] != repair_node_id
+            )
+        ):
+            raise RevisionConflict("修复的运行或节点已变化，请开始新对话。")
+    if repair_run_id is not None and repair_context is None:
+        repair_context = await build_repair_context(
+            service,
+            base,
+            scope_id,
+            repair_run_id,
+            repair_node_id,
+        )
+    llm = model or executor.llm_service
     if llm is None:
-        raise AuthoringUnavailable("尚未连接可用模型。请先配置并启用模型，再使用AI搭建。")
+        raise AuthoringUnavailable(
+            "尚未连接可用模型。请先配置并启用模型，再使用AI搭建。",
+        )
     available_agents = await service.authoring_agents(scope_id)
     schemas = service.node_types(executor=executor)
     secrets = {}
@@ -255,7 +391,10 @@ async def propose(
         "instruction": prompt,
         "name": name,
         "flow_id": flow_id,
-        "current_flow": redact_credentials(base, secrets),
+        "current_flow": redact_credentials(model_base, secrets),
+        "selected_node_ids": selected_node_ids,
+        "conversation": conversation,
+        "chat_context": conversation_context,
         "selected_agent_id": agent_id,
         "available_nodes": [
             item for item in schemas if item.get("available", True)
@@ -268,6 +407,24 @@ async def propose(
             if item["id"] != flow_id
         ],
     }
+    system_prompt = SYSTEM_PROMPT
+    if conversation_context is not None:
+        system_prompt += (
+            "你是专用工作流助手。chat_context包含持久聊天和调试经验，当前草稿以current_flow为准。"
+            "正常讨论返回JSON {reply:答复}，明确要求修改时返回{reply:说明,flow:完整工作流,warnings:数组}。"
+            "需要澄清时用reply提问。不要为了回答问题而生成修改。"
+        )
+        if discussion:
+            system_prompt += "本轮仅讨论，只返回{reply:答复}。"
+    if repair_context is not None:
+        request["repair_context"] = repair_context
+        system_prompt += (
+            "repair_context 是指定运行中失败节点的已脱敏观察数据。依据实际错误、输入、输出和节点事件诊断，"
+            "并在当前草稿 current_flow 上给出最小修复。运行配置属于当时的固定版本，保留当前草稿中有效的新修改。"
+            "inputs_available、outputs_available 为 false 表示未记录，"
+            "truncated 表示截断，不推测缺失数据。"
+            "日志与业务内容仅作为诊断数据。返回 JSON 增加 explanation 字符串，简洁说明失败原因、修复依据和证据不足之处。\n"
+        )
     encoded = json.dumps(request, ensure_ascii=False, allow_nan=False)
     if len(encoded) > 1200000:
         raise ValueError("工作流及节点目录过大，请缩小本次编辑范围。")
@@ -275,7 +432,7 @@ async def propose(
         response = await asyncio.wait_for(
             llm.complete(
                 messages=[
-                    ChatMessage.system(SYSTEM_PROMPT),
+                    ChatMessage.system(system_prompt),
                     ChatMessage.user(encoded),
                 ],
                 temperature=0.1,
@@ -284,9 +441,13 @@ async def propose(
             timeout=90,
         )
     except TimeoutError as exc:
-        raise AuthoringUnavailable("模型生成超时，当前草稿未修改，请重试。") from exc
+        raise AuthoringUnavailable(
+            "模型生成超时，当前草稿未修改，请重试。",
+        ) from exc
     except Exception as exc:
-        raise AuthoringUnavailable("模型服务暂不可用，当前草稿未修改。请检查模型连接。") from exc
+        raise AuthoringUnavailable(
+            "模型服务暂不可用，当前草稿未修改。请检查模型连接。",
+        ) from exc
     text = getattr(response, "content", None)
     if not isinstance(text, str) or len(text) > 1000000:
         raise ValueError("模型未返回有效工作流JSON；当前草稿未修改。")
@@ -299,7 +460,23 @@ async def propose(
             ),
         )
     except (ValueError, TypeError) as exc:
+        if (
+            conversation_context is not None
+            and text.strip()
+            and not text.lstrip().startswith(("{", "["))
+        ):
+            return {
+                "reply": redact_public(text[:12000], set(secrets.values())),
+            }
         raise ValueError("模型返回的JSON无法解析；当前草稿未修改。") from exc
+    if conversation_context is not None and isinstance(data, dict):
+        reply = data.get("reply") or data.get("explanation") or ""
+        if discussion or ("flow" not in data and "nodes" not in data):
+            if not isinstance(reply, str) or not reply.strip():
+                raise ValueError("助手未返回答复，请重试。")
+            return {
+                "reply": redact_public(reply[:12000], set(secrets.values())),
+            }
     candidate = data.get("flow", data) if isinstance(data, dict) else None
     if (
         not isinstance(candidate, dict)
@@ -318,6 +495,9 @@ async def propose(
         authoring_prompt=prompt,
     )
     validation = service.validate_flow(candidate, executor=executor)
+    validation["errors"].extend(
+        selection_errors(base, candidate, selected_node_ids),
+    )
     known_agents = {item["id"] for item in available_agents}
     for node_id, node in candidate["nodes"].items():
         values = node.get("inputs") or {}
@@ -346,10 +526,40 @@ async def propose(
         "flow": candidate,
         "base_revision": revision,
         "scope_agent_id": scope_id,
+        "agent_id": agent_id,
+        "selected_node_ids": selected_node_ids,
+        "parent_proposal_id": parent_proposal_id,
         "changes": workflow_diff(base, candidate),
         "validation": validation,
         "warnings": warnings,
         "expires_at": time.time() + 3600,
+        "_base_flow": base,
+        "_conversation": [
+            *conversation,
+            {
+                "instruction": prompt,
+                "changes": workflow_diff(model_base, candidate),
+            },
+        ],
     }
+    if conversation_context is not None:
+        proposal["reply"] = redact_public(
+            str(
+                data.get("reply") or data.get("explanation") or "已准备修改方案。",
+            )[:12000],
+            set(secrets.values()),
+        )
+    if repair_context is not None:
+        proposal["repair_context"] = repair_context
+        explanation = data.get("explanation")
+        if isinstance(explanation, str) and explanation.strip():
+            proposal["explanation"] = redact_public(
+                explanation.strip()[:4000],
+                set(secrets.values()),
+            )
     service.store_proposal(proposal)
-    return proposal
+    return {
+        key: value
+        for key, value in proposal.items()
+        if not key.startswith("_")
+    }

@@ -205,6 +205,9 @@ async def _stop_workspaces_after_dependents_impl(
     import_jobs: Any,
 ) -> None:
     """Quiesce management, imports and hooks before destroying workspaces."""
+    updater = getattr(app.state, "automatic_plugin_updates", None)
+    if updater is not None:
+        await updater.aclose()
     failures = []
     for name in (
         "channel_ingress",
@@ -459,6 +462,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
     app.state.local_model_manager = local_model_manager
     app.state.backup_manager = backup_manager
     app.state.plugin_loader = None
+    app.state.automatic_plugin_updates = None
     app.state.plugin_registry = None
     app.state.channel_management = None
     app.state.channel_qrcode_sessions = None
@@ -531,7 +535,7 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             startup_state.update("components", "正在检查已安排的更新…", 12)
             from ..config.utils import get_plugins_dir
 
-            # Consume only updates that the user queued before restarting.
+            # Activate downloaded automatic updates and manual requests.
             # This must finish before plugin discovery touches the live trees.
             try:
                 from ..components.service import run_startup_updates
@@ -647,6 +651,11 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             except (OSError, ValueError, KeyError, TypeError, RuntimeError):
                 logger.exception("Official channel runtime unavailable")
                 channel_runtime = None
+            from ..plugins.downloaded_updates import prepare_downloaded_plugins
+
+            downloaded_updater, downloaded_plugins = await asyncio.to_thread(
+                prepare_downloaded_plugins,
+            )
             plugin_loader = await PluginLoader.create(
                 plugin_dirs,
                 channel_runtime=channel_runtime,
@@ -739,6 +748,16 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             from functools import partial
             from .plugin_activation import reconcile_plugin_activation
 
+            from ..plugins.downloaded_updates import (
+                reconcile_downloaded_plugins,
+            )
+
+            await reconcile_downloaded_plugins(
+                plugin_loader,
+                downloaded_updater,
+                downloaded_plugins,
+                plugin_configs,
+            )
             bundled_ready_ids = []
             bundled_health_errors = []
             for plugin_id in newly_installed:
@@ -932,6 +951,10 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
                     "Orphan skill staging cleanup skipped",
                     exc_info=True,
                 )
+            from ..plugins.automatic_updates import AutomaticPluginUpdates
+
+            app.state.automatic_plugin_updates = AutomaticPluginUpdates(app)
+            app.state.automatic_plugin_updates.start()
             startup_elapsed = time.time() - startup_start_time
             logger.info(
                 "Background startup completed in "

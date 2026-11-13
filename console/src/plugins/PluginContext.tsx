@@ -11,6 +11,7 @@
 import React, { createContext, useContext, useEffect, useState } from "react";
 import { pluginSystem } from "./hostExternals";
 import { loadAllPlugins } from "./usePluginLoader";
+import { usePluginUpdateSync } from "./usePluginUpdateSync";
 import { fetchBundledPluginStatus } from "../api/modules/plugin";
 import { reportPluginUiVerification } from "../tauri/uiVerification";
 import type { PluginRouteDeclaration } from "./hostExternals";
@@ -79,6 +80,7 @@ export function PluginProvider({ children }: { children: React.ReactNode }) {
   );
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  usePluginUpdateSync(!loading);
 
   useEffect(() => {
     let cancelled = false;

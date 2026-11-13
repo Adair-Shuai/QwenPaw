@@ -92,7 +92,11 @@ export default function WorkbenchTabBar({
   );
 
   return (
-    <header className={styles.tabBar}>
+    <header
+      className={styles.tabBar}
+      data-workbench-tabbar
+      data-tauri-drag-region
+    >
       {tabs.length ? (
         <div
           className={styles.tabViewport}

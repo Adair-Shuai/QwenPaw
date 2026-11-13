@@ -25,7 +25,7 @@ internal static class UGSciUpdateAssistant
         try { options = Options.Parse(args); }
         catch (Exception error)
         {
-            MessageBox.Show(error.Message, "UGSci Desktop Update",
+            MessageBox.Show(error.Message, "UGSci Update",
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
             return InvalidArguments;
         }
@@ -38,7 +38,7 @@ internal static class UGSciUpdateAssistant
             if (!acquired)
             {
                 WriteFailure(options, new InvalidOperationException(
-                    "Another UGSci Desktop update is already running."));
+                    "Another UGSci update is already running."));
                 return UpdateFailed;
             }
             try
@@ -137,7 +137,7 @@ internal static class UGSciUpdateAssistant
                 "yyyyMMdd-HHmmss-fff", CultureInfo.InvariantCulture) + ".log");
             journalPath = Path.Combine(stateRoot, "update-journal.json");
 
-            Text = "UGSci Desktop Update";
+            Text = "UGSci Update";
             Icon = TryLoadIcon();
             FormBorderStyle = FormBorderStyle.FixedDialog;
             MaximizeBox = false;
@@ -146,7 +146,7 @@ internal static class UGSciUpdateAssistant
             ClientSize = new Size(610, 270);
 
             var title = new Label {
-                Text = "Updating UGSci Desktop",
+                Text = "Updating UGSci",
                 Font = new Font(SystemFonts.MessageBoxFont.FontFamily, 16, FontStyle.Bold),
                 AutoSize = true, Location = new Point(32, 30)
             };
@@ -156,7 +156,7 @@ internal static class UGSciUpdateAssistant
                 Location = new Point(35, 88)
             };
             detailLabel = new Label {
-                Text = "UGSci Desktop will close after this update window is ready.",
+                Text = "UGSci will close after this update window is ready.",
                 AutoSize = false, Size = new Size(535, 42), Location = new Point(35, 118)
             };
             progress = new ProgressBar {
@@ -220,7 +220,7 @@ internal static class UGSciUpdateAssistant
                 if (!File.Exists(setup)) throw new InvalidDataException("The update package does not contain Setup.exe.");
                 WriteJournal("extracted", null);
 
-                SetStage("Waiting for UGSci Desktop to close", "Finishing the hand-off from the running application...", 72);
+                SetStage("Waiting for UGSci to close", "Finishing the hand-off from the running application...", 72);
                 WaitForParent(options.ParentPid, TimeSpan.FromMinutes(2));
                 WriteJournal("parent-exited", null);
 
@@ -232,27 +232,29 @@ internal static class UGSciUpdateAssistant
                     Guid.NewGuid().ToString("N") + ".json");
                 int exitCode = RunSetup(setup, stagingRoot, transactionFile);
                 if (exitCode != 0) throw new InvalidOperationException(
-                    "UGSci Desktop Setup failed with exit code " + exitCode.ToString(CultureInfo.InvariantCulture) + ".");
+                    "UGSci Setup failed with exit code " + exitCode.ToString(CultureInfo.InvariantCulture) + ".");
                 transaction = ReadTransaction(transactionFile);
                 WriteJournal("installed", null);
 
                 SetStage("Checking the new installation", "Verifying the installed executable and version...", 94);
                 string installed = FindInstalledExecutable();
                 DateTime markerBefore = LatestStartupMarkerTime();
-                SetStage("Starting UGSci Desktop", "Waiting for the new backend and plugins to become ready...", 96);
+                SetStage("Starting UGSci", "Waiting for the new backend and plugins to become ready...", 96);
                 launchedApplication = Process.Start(new ProcessStartInfo {
                     FileName = installed,
                     WorkingDirectory = Path.GetDirectoryName(installed),
                     UseShellExecute = true
                 });
                 if (launchedApplication == null)
-                    throw new InvalidOperationException("The updated UGSci Desktop process did not start.");
+                    throw new InvalidOperationException("The updated UGSci process did not start.");
                 WaitForStartupHealth(markerBefore, options.TargetVersion, launchedApplication, TimeSpan.FromMinutes(3));
                 WriteJournal("health-checked", null);
                 CommitTransaction(transaction);
                 transaction = null;
+                try { RepairApplicationShortcuts(installed, Path.GetDirectoryName(installed)); }
+                catch (Exception error) { AppendLog("Shortcut refresh failed: " + error.Message); }
                 WriteJournal("restarted", null);
-                SetStage("Update complete", "UGSci Desktop " + options.TargetVersion + " has been installed and restarted.", 100);
+                SetStage("Update complete", "UGSci " + options.TargetVersion + " has been installed and restarted.", 100);
                 BeginInvoke((MethodInvoker)delegate {
                     ResultCode = 0;
                     allowClose = true;
@@ -276,7 +278,7 @@ internal static class UGSciUpdateAssistant
                 {
                     SetStage("Restoring previous version", "The new version did not pass its health check.", 0);
                     RollbackTransaction(transaction, launchedApplication);
-                    rollback = " The previous UGSci Desktop version was restored and restarted.";
+                    rollback = " The previous UGSci version was restored and restarted.";
                     WriteJournal("rolled-back", error.Message);
                     transaction = null;
                 }
@@ -469,7 +471,7 @@ internal static class UGSciUpdateAssistant
             {
                 using (Process parent = Process.GetProcessById(pid))
                     if (!parent.WaitForExit((int)timeout.TotalMilliseconds))
-                        throw new TimeoutException("UGSci Desktop did not close in time. Close it and retry the update.");
+                        throw new TimeoutException("UGSci did not close in time. Close it and retry the update.");
             }
             catch (ArgumentException) { }
         }
@@ -496,7 +498,7 @@ internal static class UGSciUpdateAssistant
             }
             using (process)
             {
-                if (process == null) throw new InvalidOperationException("UGSci Desktop Setup did not start.");
+                if (process == null) throw new InvalidOperationException("UGSci Setup did not start.");
                 process.WaitForExit();
                 return process.ExitCode;
             }
@@ -609,7 +611,7 @@ internal static class UGSciUpdateAssistant
             string display = SnapshotValue(value, "DisplayName");
             string location = SnapshotValue(value, "InstallLocation");
             if (string.IsNullOrWhiteSpace(display) ||
-                (display.IndexOf("UGSci Desktop", StringComparison.OrdinalIgnoreCase) < 0 &&
+                (display.IndexOf("UGSci", StringComparison.OrdinalIgnoreCase) < 0 &&
                  display.IndexOf("QwenPaw", StringComparison.OrdinalIgnoreCase) < 0) ||
                 string.IsNullOrWhiteSpace(location))
                 throw new InvalidDataException("The previous uninstall registry snapshot is not a UGSci installation.");
@@ -637,7 +639,7 @@ internal static class UGSciUpdateAssistant
                     string display = key == null ? null : key.GetValue("DisplayName") as string;
                     string location = key == null ? null : key.GetValue("InstallLocation") as string;
                     if (!string.IsNullOrWhiteSpace(display) &&
-                        (display.IndexOf("UGSci Desktop", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                        (display.IndexOf("UGSci", StringComparison.OrdinalIgnoreCase) >= 0 ||
                          display.IndexOf("QwenPaw", StringComparison.OrdinalIgnoreCase) >= 0) &&
                         IsTrustedInstallLocation(location))
                         return Path.GetFullPath(location).TrimEnd(Path.DirectorySeparatorChar);
@@ -668,7 +670,9 @@ internal static class UGSciUpdateAssistant
                 : Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory);
             string full = Path.GetFullPath(path);
             string expected = Path.Combine(Path.GetFullPath(expectedRoot), "UGSci Desktop.lnk");
-            if (!string.Equals(full, expected, StringComparison.OrdinalIgnoreCase))
+            string current = Path.Combine(Path.GetFullPath(expectedRoot), "UGSci.lnk");
+            if (!string.Equals(full, expected, StringComparison.OrdinalIgnoreCase) &&
+                !string.Equals(full, current, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException("The deferred update shortcut path is outside the expected Windows folder.");
         }
 
@@ -680,6 +684,8 @@ internal static class UGSciUpdateAssistant
             // file must never turn a successful update into a rollback from a
             // partially deleted backup.
             try { File.Delete(value.transaction_file); } catch { }
+            if (File.Exists(value.transaction_file))
+                throw new IOException("Could not commit the installation transaction.");
             try
             {
                 if (Directory.Exists(value.backup_dir)) Directory.Delete(value.backup_dir, true);
@@ -912,7 +918,7 @@ internal static class UGSciUpdateAssistant
             while (DateTime.UtcNow < deadline)
             {
                 if (application.HasExited)
-                    throw new InvalidOperationException("The updated UGSci Desktop exited before startup completed.");
+                    throw new InvalidOperationException("The updated UGSci exited before startup completed.");
                 foreach (string path in StartupMarkers())
                 {
                     if (!File.Exists(path) || File.GetLastWriteTimeUtc(path) <= previousMarker) continue;
@@ -955,7 +961,6 @@ internal static class UGSciUpdateAssistant
                         StringComparison.OrdinalIgnoreCase))
                     throw new InvalidDataException("Installed version " + version +
                         " does not match the requested update " + options.TargetVersion + ".");
-                RepairApplicationShortcuts(executable, location);
                 return executable;
             }
         }
@@ -965,12 +970,46 @@ internal static class UGSciUpdateAssistant
             if (!File.Exists(executable))
                 throw new FileNotFoundException("Cannot create a shortcut for a missing UGSci.exe.", executable);
             string startMenu = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData),
-                "Microsoft", "Windows", "Start Menu", "Programs", "UGSci Desktop.lnk");
+                "Microsoft", "Windows", "Start Menu", "Programs", "UGSci.lnk");
             string desktop = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.DesktopDirectory),
-                "UGSci Desktop.lnk");
+                "UGSci.lnk");
             CreateShortcut(startMenu, executable, installDirectory);
-            CreateShortcut(desktop, executable, installDirectory);
+            RemoveLegacyShortcut(startMenu, executable);
+            string legacyDesktop = Path.Combine(Path.GetDirectoryName(desktop), "UGSci Desktop.lnk");
+            if (ShortcutTargetsExecutable(desktop, executable) || ShortcutTargetsExecutable(legacyDesktop, executable))
+            {
+                CreateShortcut(desktop, executable, installDirectory);
+                RemoveLegacyShortcut(desktop, executable);
+            }
             RefreshShellIcons(executable, new[] { startMenu, desktop });
+        }
+
+        private static void RemoveLegacyShortcut(string currentPath, string executable)
+        {
+            string legacyPath = Path.Combine(Path.GetDirectoryName(currentPath), "UGSci Desktop.lnk");
+            if (ShortcutTargetsExecutable(legacyPath, executable)) File.Delete(legacyPath);
+        }
+
+        private static bool ShortcutTargetsExecutable(string path, string executable)
+        {
+            if (!File.Exists(path)) return false;
+            Type shellType = Type.GetTypeFromProgID("WScript.Shell");
+            if (shellType == null) return false;
+            object shell = Activator.CreateInstance(shellType);
+            object shortcut = null;
+            try
+            {
+                shortcut = shellType.InvokeMember("CreateShortcut", BindingFlags.InvokeMethod,
+                    null, shell, new object[] { path });
+                string target = shortcut.GetType().InvokeMember("TargetPath", BindingFlags.GetProperty,
+                    null, shortcut, null) as string;
+                return string.Equals(target, executable, StringComparison.OrdinalIgnoreCase);
+            }
+            finally
+            {
+                if (shortcut != null && Marshal.IsComObject(shortcut)) Marshal.FinalReleaseComObject(shortcut);
+                if (Marshal.IsComObject(shell)) Marshal.FinalReleaseComObject(shell);
+            }
         }
 
         private static void RestorePreviousShortcuts(InstallTransaction value, string executable,
@@ -1043,7 +1082,7 @@ internal static class UGSciUpdateAssistant
                 if (Marshal.IsComObject(shell)) Marshal.FinalReleaseComObject(shell);
             }
             if (!File.Exists(shortcutPath))
-                throw new IOException("UGSci Desktop shortcut was not created: " + shortcutPath);
+                throw new IOException("UGSci shortcut was not created: " + shortcutPath);
         }
 
         private static string NormalizeVersion(string value)

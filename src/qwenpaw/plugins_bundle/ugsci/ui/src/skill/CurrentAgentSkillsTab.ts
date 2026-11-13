@@ -1,10 +1,11 @@
+import { skillDisplayName } from "../core/displayNames";
 /**
  * Current agent skills tab — shows skills installed for the selected agent.
  */
 
+import { SkillDefinition } from "./SkillDefinition";
 import { CapabilityDetail } from "../capability/CapabilityDetail";
 import { getHost, clearApiCache, clearAgentCache } from "../core/runtime";
-import { PRIMARY_BTN_STYLE, renderMarkdown, PageHeader } from "../core/shared";
 import type { SkillSpec, PoolSkillSpec } from "../core/types";
 import {
   fetchAgentSkills,
@@ -71,9 +72,12 @@ export function CurrentAgentSkillsTab({
     const query = searchText.trim().toLowerCase();
     return query
       ? skills.filter((skill) =>
-          [skill.name, skill.description, ...(skill.tags || [])].some(
-            (value) => value?.toLowerCase().includes(query),
-          ),
+          [
+            skill.name,
+            skillDisplayName(skill.name),
+            skill.description,
+            ...(skill.tags || []),
+          ].some((value) => value?.toLowerCase().includes(query)),
         )
       : skills;
   }, [skills, searchText]);
@@ -250,10 +254,10 @@ export function CurrentAgentSkillsTab({
     try {
       if (skill.enabled === false) {
         await enableSkillForAgent(agentId, skill.name);
-        antdMsg.success(`已启用技能「${skill.name}」`);
+        antdMsg.success(`已启用技能「${skillDisplayName(skill.name)}」`);
       } else {
         await disableSkillForAgent(agentId, skill.name);
-        antdMsg.success(`已禁用技能「${skill.name}」`);
+        antdMsg.success(`已禁用技能「${skillDisplayName(skill.name)}」`);
       }
       await loadSkills();
     } catch (err: any) {
@@ -265,7 +269,7 @@ export function CurrentAgentSkillsTab({
 
   const handleDelete = (skill: SkillSpec) => {
     Modal.confirm({
-      title: `确认删除技能「${skill.name}」？`,
+      title: `确认删除技能「${skillDisplayName(skill.name)}」？`,
       content:
         "删除后技能将从当前专家工作区移除，此操作不可撤销。技能池中的原始技能不受影响。",
       okText: "确认删除",
@@ -276,7 +280,7 @@ export function CurrentAgentSkillsTab({
         try {
           await deleteSkillForAgent(agentId, skill.name);
           if (currentAgent.current === agentId) setDrawerOpen(false);
-          antdMsg.success(`已删除技能「${skill.name}」`);
+          antdMsg.success(`已删除技能「${skillDisplayName(skill.name)}」`);
           await loadSkills();
         } catch (err: any) {
           antdMsg.error(err.message || "删除失败");
@@ -472,11 +476,11 @@ export function CurrentAgentSkillsTab({
                         setDrawerOpen(true);
                       },
                     },
-                    skill.name,
+                    skillDisplayName(skill.name),
                   ),
                   batchMode
                     ? React.createElement(Checkbox, {
-                        "aria-label": `选择 ${skill.name}`,
+                        "aria-label": `选择 ${skillDisplayName(skill.name)}`,
                         checked: selectedSkills.has(skill.name),
                         onChange: () => toggleSelect(skill.name),
                       })
@@ -513,7 +517,7 @@ export function CurrentAgentSkillsTab({
                             setActiveSkill(skill);
                             setDrawerOpen(true);
                           },
-                          "aria-label": `配置 ${skill.name}`,
+                          "aria-label": `配置 ${skillDisplayName(skill.name)}`,
                         },
                         "配置",
                       ),
@@ -537,7 +541,7 @@ export function CurrentAgentSkillsTab({
                           loading: actionLoading,
                           "aria-label": `${
                             skill.enabled === false ? "启用" : "禁用"
-                          } ${skill.name}`,
+                          } ${skillDisplayName(skill.name)}`,
                           onChange: () => handleToggleEnabled(skill),
                         }),
                       ),
@@ -560,11 +564,16 @@ export function CurrentAgentSkillsTab({
                 { style: { fontSize: 18 } },
                 activeSkill.emoji || "⚡",
               ),
-              React.createElement("span", null, activeSkill.name),
+              React.createElement(
+                "span",
+                null,
+                skillDisplayName(activeSkill.name),
+              ),
             ),
             open: focused,
             onClose: () => setDrawerOpen(false),
             width: 520,
+            rootClassName: "ugsci-skill-detail",
             footer: React.createElement(
               Button,
               {
@@ -589,11 +598,16 @@ export function CurrentAgentSkillsTab({
           },
           React.createElement(
             Descriptions,
-            { column: 1, bordered: true, size: "small" },
+            {
+              column: 1,
+              bordered: true,
+              size: "small",
+              labelStyle: { width: 96, whiteSpace: "nowrap" },
+            },
             React.createElement(
               Descriptions.Item,
               { label: "技能名称" },
-              activeSkill.name,
+              skillDisplayName(activeSkill.name),
             ),
             React.createElement(
               Descriptions.Item,
@@ -647,39 +661,12 @@ export function CurrentAgentSkillsTab({
                 ),
               )
             : null,
-          // Skill content preview
-          activeSkill.content
-            ? React.createElement(
-                "div",
-                { style: { marginTop: 16 } },
-                React.createElement(
-                  Text,
-                  {
-                    strong: true,
-                    style: { display: "block", marginBottom: 8 },
-                  },
-                  "技能内容",
-                ),
-                React.createElement(
-                  "div",
-                  {
-                    style: {
-                      maxHeight: 300,
-                      overflow: "auto",
-                      padding: 12,
-                      background: "var(--app-fill, #f5f5f5)",
-                      borderRadius: 6,
-                      fontSize: 12,
-                      whiteSpace: "pre-wrap",
-                    },
-                  },
-                  activeSkill.content.slice(0, 2000) +
-                    (activeSkill.content.length > 2000
-                      ? "\n\n... (内容已截断)"
-                      : ""),
-                ),
-              )
-            : null,
+          React.createElement(SkillDefinition, {
+            key: `${agentId}:${activeSkill.name}`,
+            agentId,
+            name: activeSkill.name,
+            content: activeSkill.content,
+          }),
         )
       : null,
   );

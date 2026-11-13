@@ -97,11 +97,7 @@ impl IClassFactory_Impl for Factory_Impl {
 
 pub(crate) fn setup(app: &tauri::AppHandle) -> Result<(), String> {
     let app_id = &app.config().identifier;
-    let name = app
-        .config()
-        .product_name
-        .as_deref()
-        .unwrap_or("QwenPaw Desktop");
+    let name = app.config().product_name.as_deref().unwrap_or("UGSci");
     let executable = std::env::current_exe().map_err(|error| error.to_string())?;
     let clsid = format!("{{{ACTIVATOR_CLSID:?}}}");
     let root = RegKey::predef(HKEY_CURRENT_USER);

@@ -7,6 +7,8 @@ import {
 } from "@testing-library/react";
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 import FilePreview, { getPreviewType, isPreviewable } from "./FilePreview";
+// Keep real renderer transformation outside the interaction timeout.
+import "../../components/Workspace/renderers/HtmlRenderer";
 import { openHtmlFile } from "../../utils/openHtmlFile";
 import { rendererRegistry } from "../../components/Workspace/store/rendererRegistry";
 import {

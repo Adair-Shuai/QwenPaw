@@ -1,3 +1,4 @@
+import { skillDisplayName } from "../core/displayNames";
 /**
  * Expert-domain API helpers — knowledge base, skills, MCP, heartbeat,
  * running config, language/timezone, system prompt files.
@@ -34,9 +35,9 @@ export function extractPromptFromSkills(skills: SkillSpec[]): PromptItem[] {
 
     // Use skill name as the short label (fall back to truncated description)
     const label =
-      (skill.name || desc).length > 20
-        ? (skill.name || desc).substring(0, 18) + "…"
-        : skill.name || desc;
+      (skillDisplayName(skill.name) || desc).length > 20
+        ? (skillDisplayName(skill.name) || desc).substring(0, 18) + "…"
+        : skillDisplayName(skill.name) || desc;
 
     // Transform description into a user-facing prompt
     let prompt = desc;

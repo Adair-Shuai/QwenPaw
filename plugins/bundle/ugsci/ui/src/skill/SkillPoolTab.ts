@@ -1,10 +1,12 @@
+import { skillDisplayName } from "../core/displayNames";
 /**
  * Skill pool tab — browse and manage the shared skill pool.
  */
 
+import { SkillDefinition } from "./SkillDefinition";
 import { CapabilityDetail } from "../capability/CapabilityDetail";
 import { getHost } from "../core/runtime";
-import { PRIMARY_BTN_STYLE, renderMarkdown } from "../core/shared";
+import { PRIMARY_BTN_STYLE } from "../core/shared";
 import type {
   PoolSkillSpec,
   WorkspaceSkillSummary,
@@ -86,6 +88,7 @@ export function SkillPoolTab({
     return poolSkills.filter(
       (s) =>
         s.name.toLowerCase().includes(q) ||
+        skillDisplayName(s.name).toLowerCase().includes(q) ||
         s.description?.toLowerCase().includes(q) ||
         s.tags?.some((t) => t.toLowerCase().includes(q)),
     );
@@ -207,7 +210,9 @@ export function SkillPoolTab({
     try {
       await installSkillFromPool(agentId, skill.name);
       antdMsg.success(
-        `已将技能「${skill.name}」加载到当前专家「${agentName}」`,
+        `已将技能「${skillDisplayName(
+          skill.name,
+        )}」加载到当前专家「${agentName}」`,
       );
       // Installing an agent skill does not change the pool itself. Avoid a
       // full pool reload so the user's current list and scroll position stay
@@ -226,7 +231,7 @@ export function SkillPoolTab({
       return;
     }
     Modal.confirm({
-      title: `确认从技能池删除「${skill.name}」？`,
+      title: `确认从技能池删除「${skillDisplayName(skill.name)}」？`,
       content:
         "删除后所有已安装此技能的专家将不受影响，但技能池中将不再包含此技能。此操作不可撤销。",
       okText: "确认删除",
@@ -236,7 +241,7 @@ export function SkillPoolTab({
         setActionLoading(true);
         try {
           await deletePoolSkill(skill.name);
-          antdMsg.success(`已从技能池删除「${skill.name}」`);
+          antdMsg.success(`已从技能池删除「${skillDisplayName(skill.name)}」`);
           await handleReload();
         } catch (err: any) {
           antdMsg.error(err.message || "删除失败");
@@ -247,7 +252,9 @@ export function SkillPoolTab({
     });
   };
 
+  const navigate = getHost().useNavigate?.();
   const navigateTo = (path: string) => {
+    if (navigate) return navigate(path);
     window.history.pushState({}, "", path);
     window.dispatchEvent(new PopStateEvent("popstate"));
   };
@@ -378,7 +385,7 @@ export function SkillPoolTab({
                           whiteSpace: "nowrap",
                         },
                       },
-                      skill.name,
+                      skillDisplayName(skill.name),
                     ),
                     skill.protected
                       ? React.createElement(
@@ -517,7 +524,11 @@ export function SkillPoolTab({
                 { style: { fontSize: 18 } },
                 activeSkill.emoji || "⚡",
               ),
-              React.createElement("span", null, activeSkill.name),
+              React.createElement(
+                "span",
+                null,
+                skillDisplayName(activeSkill.name),
+              ),
             ),
             open: drawerOpen,
             onClose: () => {
@@ -525,6 +536,7 @@ export function SkillPoolTab({
               setDrawerOpen(false);
             },
             width: 520,
+            rootClassName: "ugsci-skill-detail",
             extra: React.createElement(
               Button,
               {
@@ -540,11 +552,16 @@ export function SkillPoolTab({
           },
           React.createElement(
             Descriptions,
-            { column: 1, bordered: true, size: "small" },
+            {
+              column: 1,
+              bordered: true,
+              size: "small",
+              labelStyle: { width: 96, whiteSpace: "nowrap" },
+            },
             React.createElement(
               Descriptions.Item,
               { label: "技能名称" },
-              activeSkill.name,
+              skillDisplayName(activeSkill.name),
             ),
             React.createElement(
               Descriptions.Item,
@@ -649,45 +666,12 @@ export function SkillPoolTab({
                   "暂无专家安装此技能",
                 ),
           ),
-          // Skill content preview (lazy-loaded)
           contentLoading
-            ? React.createElement(
-                "div",
-                { style: { marginTop: 16, textAlign: "center" } },
-                React.createElement(Spin, { size: "small" }),
-              )
-            : activeSkill.content
-            ? React.createElement(
-                "div",
-                { style: { marginTop: 16 } },
-                React.createElement(
-                  Text,
-                  {
-                    strong: true,
-                    style: { display: "block", marginBottom: 8 },
-                  },
-                  "技能内容",
-                ),
-                React.createElement(
-                  "div",
-                  {
-                    style: {
-                      maxHeight: 300,
-                      overflow: "auto",
-                      padding: 12,
-                      background: "var(--app-fill, #f5f5f5)",
-                      borderRadius: 6,
-                      fontSize: 12,
-                      whiteSpace: "pre-wrap",
-                    },
-                  },
-                  activeSkill.content.slice(0, 2000) +
-                    (activeSkill.content.length > 2000
-                      ? "\n\n... (内容已截断)"
-                      : ""),
-                ),
-              )
-            : null,
+            ? React.createElement(Spin, { tip: "加载技能定义" })
+            : React.createElement(SkillDefinition, {
+                content: activeSkill.content,
+                poolName: activeSkill.name,
+              }),
         )
       : null,
   );

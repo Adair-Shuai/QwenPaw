@@ -972,6 +972,97 @@ async def test_config_read_save_restart_preserves_fields_and_exits_old_worker(
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("fail_start", [False, True])
+async def test_legacy_python_channel_migration_preserves_lifecycle(
+    host,
+    fail_start,
+):
+    ws = await host.workspace("migration")
+    source = host.artifact()
+    manifest = json.loads((source / "plugin.json").read_text())
+    manifest["entry"] = {"backend": "main.py"}
+    (source / "plugin.json").write_text(json.dumps(manifest))
+    marker = host.root / "legacy-active"
+    (source / "main.py").write_text(
+        "from pathlib import Path\n"
+        f"marker = Path({str(marker)!r})\n"
+        "class Plugin:\n"
+        "    def register(self, api):\n"
+        "        api.effect('legacy-channel',\n"
+        "                   lambda: marker.write_text('active'),\n"
+        "                   lambda: marker.unlink(missing_ok=True))\n"
+        "plugin = Plugin()\n",
+    )
+    await host.loader.load_plugin_from_path(source)
+    await host.loader.lifecycle.update_config(KEY, {"custom": "keep"})
+    legacy_bytes = (host.installed / "main.py").read_bytes()
+    assert marker.is_file()
+    business = ws.workspace_dir / "business.json"
+    business.write_text('{"retained":true}')
+    candidate = host.artifact("2.0.0", fail_start=fail_start)
+    report = await host.loader.lifecycle.reload(KEY, new_source=candidate)
+    assert report.ok is not fail_start, report.errors
+    current = host.loader.get_loaded_plugin(KEY)
+    assert current.status == "active" and current.global_enabled is True
+    assert host.loader.lifecycle.get_instance(KEY).config == {"custom": "keep"}
+    assert business.read_text() == '{"retained":true}'
+    if fail_start:
+        assert current.manifest.version == "1.0.0" and marker.is_file()
+        assert (host.installed / "main.py").read_bytes() == legacy_bytes
+        failed = rows(host.ledger, "start_failed")
+        assert failed and all(not alive(row["pid"]) for row in failed)
+        assert await ws.channel_manager.get_channel(KEY) is None
+    else:
+        assert current.manifest.version == "2.0.0" and not marker.exists()
+        _, identity = await host.identity(ws)
+        assert identity["version"] == "2.0.0"
+        await host.emit(ws, room="migrated")
+        await eventually(lambda: bool(rows(host.ledger, "finished")))
+        assert rows(host.ledger, "sent")[-1]["room"] == "migrated"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "invalid",
+    ["general", "identity", "reverse", "in_place", "unselected"],
+)
+async def test_channel_backend_migration_rejects_unsupported_changes(
+    host,
+    invalid,
+):
+    source = host.artifact()
+    legacy = host.artifact("0.5.0")
+    manifest = json.loads((legacy / "plugin.json").read_text())
+    manifest["entry"] = {"backend": "main.py"}
+    if invalid == "general":
+        manifest["type"] = "general"
+    if invalid == "identity":
+        manifest["id"] = "other-channel"
+    from qwenpaw.plugins.architecture import PluginManifest
+
+    previous = host.loader.backend_resolver.resolve(
+        legacy,
+        PluginManifest.from_dict(manifest),
+    )
+    candidate = host.loader.backend_resolver.resolve(
+        source,
+        PluginManifest.from_dict(
+            json.loads((source / "plugin.json").read_text()),
+        ),
+    )
+    if invalid == "reverse":
+        previous, candidate = candidate, previous
+    if invalid == "unselected":
+        host.registry.channel_runtime = None
+    with pytest.raises(
+        RuntimeError,
+        match="switching|in-place|not_integrated",
+    ):
+        previous.validate_update(candidate, in_place=invalid == "in_place")
+    assert not host.ledger.exists()
+
+
+@pytest.mark.asyncio
 @pytest.mark.parametrize("dependency_change", [False, True])
 async def test_update_replaces_worker_and_preserves_data(
     host,

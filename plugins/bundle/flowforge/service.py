@@ -115,6 +115,8 @@ class RunHandle:
         }
 
 
+# The service facade exposes flow, proposal and run lifecycle entry points.
+# pylint: disable-next=too-many-public-methods
 class WorkflowService(RunLifecycleMixin, WorkflowLifetimeMixin):
     """Top-level service: flow CRUD + run lifecycle + progress routing.
 
@@ -133,6 +135,9 @@ class WorkflowService(RunLifecycleMixin, WorkflowLifetimeMixin):
         self._flows_dir = Path(flows_dir)
         self._flows_dir.mkdir(parents=True, exist_ok=True)
         self._flow_repository = FlowRepository(self._flows_dir)
+        from .conversations import Conversations
+
+        self.conversations = Conversations(self)
         self._execution_repository = ExecutionRepository(self._flows_dir)
         recovered = self._execution_repository.recover_incomplete(
             active_owner_pid=os.getpid(),
@@ -340,7 +345,9 @@ class WorkflowService(RunLifecycleMixin, WorkflowLifetimeMixin):
         except RuntimeError as exc:
             from .authoring import AuthoringUnavailable
 
-            raise AuthoringUnavailable("专家能力目录暂不可用，请检查宿主服务后重试。") from exc
+            raise AuthoringUnavailable(
+                "专家能力目录暂不可用，请检查宿主服务后重试。",
+            ) from exc
 
     async def authoring_agents(self, scope_id: str) -> list[dict[str, str]]:
         if self.node_catalog is None:
@@ -395,6 +402,10 @@ class WorkflowService(RunLifecycleMixin, WorkflowLifetimeMixin):
         name="",
         agent_id="default",
         scope_agent_id=None,
+        selected_node_ids=None,
+        parent_proposal_id=None,
+        repair_run_id=None,
+        repair_node_id=None,
     ):
         from .authoring import propose
 
@@ -405,14 +416,22 @@ class WorkflowService(RunLifecycleMixin, WorkflowLifetimeMixin):
             name=name,
             agent_id=agent_id,
             scope_agent_id=scope_agent_id,
+            selected_node_ids=selected_node_ids,
+            parent_proposal_id=parent_proposal_id,
+            repair_run_id=repair_run_id,
+            repair_node_id=repair_node_id,
         )
 
     def store_proposal(self, proposal: dict[str, Any]) -> None:
         """Persist a validated authoring proposal for later revision checks."""
         self._flow_repository.put_proposal(proposal)
 
+    def get_proposal(self, proposal_id: str):
+        """Read an unexpired, unapplied authoring proposal."""
+        return self._flow_repository.proposal(proposal_id)
+
     def _proposal_to_apply(self, proposal_id, expected_revision):
-        proposal = self._flow_repository.proposal(proposal_id)
+        proposal = self.get_proposal(proposal_id)
         if proposal is None:
             raise RevisionConflict("修改建议已应用或已过期，请重新生成。")
         if expected_revision != proposal["base_revision"]:
@@ -423,7 +442,9 @@ class WorkflowService(RunLifecycleMixin, WorkflowLifetimeMixin):
 
     def apply_proposal(self, proposal_id: str, expected_revision: int):
         if self.node_catalog is not None:
-            raise ValueError("动态专家目录需通过异步apply_proposal_for_agent复核。")
+            raise ValueError(
+                "动态专家目录需通过异步apply_proposal_for_agent复核。",
+            )
         proposal = self._proposal_to_apply(proposal_id, expected_revision)
         return self._apply_validated_proposal(
             proposal,
@@ -435,7 +456,9 @@ class WorkflowService(RunLifecycleMixin, WorkflowLifetimeMixin):
         flow = proposal["flow"]
         validation = self.validate_flow(flow, executor=executor)
         if not validation["ok"]:
-            raise ValueError("修改建议已失效：" + "; ".join(validation["errors"]))
+            raise ValueError(
+                "修改建议已失效：" + "; ".join(validation["errors"]),
+            )
         return self.save_flow(
             flow["id"],
             flow,
@@ -452,7 +475,9 @@ class WorkflowService(RunLifecycleMixin, WorkflowLifetimeMixin):
         proposal = self._proposal_to_apply(proposal_id, expected_revision)
         scope = proposal["scope_agent_id"]
         if agent_id and agent_id != scope:
-            raise RevisionConflict("修改建议属于其他专家范围，请切换至原专家或重新生成。")
+            raise RevisionConflict(
+                "修改建议属于其他专家范围，请切换至原专家或重新生成。",
+            )
         _, executor = await self.authoring_executor(scope)
         agents = {item["id"] for item in await self.authoring_agents(scope)}
         for node in proposal["flow"]["nodes"].values():

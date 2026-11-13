@@ -1,4 +1,5 @@
 import App from "./App";
+import DesktopWindowFrame from "./tauri/DesktopWindowFrame";
 import { installHostExternals } from "./plugins/hostExternals";
 import { installThemeTokenSync } from "./plugins/themeTokens";
 import "./layouts/registry/builtinMenu";
@@ -10,4 +11,10 @@ installHostExternals();
 // render. The stylesheet is removed again when the last override is disposed.
 installThemeTokenSync();
 
-export default App;
+export default function ConsoleApp(props: React.ComponentProps<typeof App>) {
+  return (
+    <DesktopWindowFrame>
+      <App {...props} />
+    </DesktopWindowFrame>
+  );
+}

@@ -34,6 +34,7 @@ vi.mock("react-i18next", () => ({
   }),
 }));
 vi.mock("@/stores/sidebarStore", () => ({
+  DEFAULT_RAIL_ITEM_IDS: ["ugsci.tools-skills", "ugsci.visualization"],
   useSidebarStore: () => ({
     focusItemIds: ["core.tools", "unavailable.plugin"],
     hiddenPluginItemIds: ["plugin.extra"],
@@ -120,7 +121,10 @@ describe("sidebar entry editing", () => {
     });
     expect(mocks.setRailItemIds).toHaveBeenLastCalledWith(["core.tools"]);
     fireEvent.click(screen.getByRole("button", { name: "common.reset" }));
-    expect(mocks.setRailItemIds).toHaveBeenLastCalledWith([]);
+    expect(mocks.setRailItemIds).toHaveBeenLastCalledWith([
+      "ugsci.tools-skills",
+      "ugsci.visualization",
+    ]);
     expect(mocks.resetFocusItemIds).not.toHaveBeenCalled();
   });
   it("autosaves after one idle second without losing unavailable entries", async () => {

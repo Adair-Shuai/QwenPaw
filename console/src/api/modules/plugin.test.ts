@@ -48,7 +48,11 @@ function mockResponse({ status, json, text }: MockResponseOptions): Response {
       : json === undefined
       ? text ?? ""
       : JSON.stringify(json);
-  return new Response(body, { status });
+  return new Response(body, {
+    status,
+    headers:
+      json === undefined ? undefined : { "Content-Type": "application/json" },
+  });
 }
 
 describe("plugin module", () => {
@@ -473,6 +477,7 @@ describe("plugin module", () => {
       plugin_id: "ugsci",
       version: "2.0.0",
       sha256: "b".repeat(64),
+      defer_if_needed: true,
     });
   });
 
@@ -911,5 +916,73 @@ describe("dependency upgrade operation transport", () => {
     });
     expect((failure as Error).message).toContain("Environment changed");
     expect((failure as Error).message).toContain("Prepare a fresh plan");
+  });
+
+  it("keeps signed update queuing compatible with older backends", async () => {
+    const { componentsApi } = await vi.importActual<
+      typeof import("./components")
+    >("./components");
+    global.fetch = vi
+      .fn()
+      .mockResolvedValueOnce(
+        mockResponse({ ok: false, status: 404, json: { detail: "Not found" } }),
+      )
+      .mockResolvedValueOnce(
+        mockResponse({
+          ok: true,
+          status: 200,
+          json: { component: "ugsci", queued: true, restart_required: true },
+        }),
+      );
+    await expect(
+      componentsApi.queueComponentUpdate("ugsci", true),
+    ).resolves.toEqual({
+      component: "ugsci",
+      queued: true,
+      restart_required: true,
+    });
+    expect(vi.mocked(fetch).mock.calls.map(([url]) => url)).toEqual([
+      "http://test/components/ugsci/update",
+      "http://test/components/ugsci/install",
+    ]);
+  });
+
+  it.each([409, 500])(
+    "preserves signed update endpoint errors (%s)",
+    async (status) => {
+      const { componentsApi } = await vi.importActual<
+        typeof import("./components")
+      >("./components");
+      global.fetch = vi.fn().mockResolvedValue(
+        mockResponse({
+          ok: false,
+          status,
+          json: { detail: "Update rejected" },
+        }),
+      );
+      await expect(
+        componentsApi.queueComponentUpdate("ugsci", true),
+      ).rejects.toMatchObject({ status });
+      expect(fetch).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("preserves a signed shared-dependency operation for the existing confirmation flow", async () => {
+    const operation = {
+      id: "d".repeat(32),
+      plugin_id: "ugsci",
+      status: "needs_confirmation",
+      message: "Review shared dependencies",
+      changes: [],
+      affected_instances: [],
+      requires_restart: true,
+    };
+    hoisted.queueComponentUpdate.mockResolvedValue({
+      queued: false,
+      dependency_operation: operation,
+    });
+    await expect(
+      upgradeInstalledUGSciPlugin({ plugin_id: "ugsci", version: "2.0.0" }),
+    ).rejects.toMatchObject({ code: "DEPENDENCY_UPGRADE_REQUIRED", operation });
   });
 });

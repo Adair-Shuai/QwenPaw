@@ -465,7 +465,7 @@ def install_case(tmp_path, source, expected, *, repair=False, tool=False):
     shutil.copytree(
         Path(qwenpaw.__file__).resolve().parent,
         host_source / "qwenpaw",
-        ignore=shutil.ignore_patterns("__pycache__"),
+        ignore=shutil.ignore_patterns("__pycache__", "node_modules"),
     )
     code = """
 import asyncio, importlib, importlib.metadata, json, subprocess, sys

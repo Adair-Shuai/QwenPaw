@@ -43,10 +43,12 @@ let installed: Record<string, unknown>[];
 let catalog: Record<string, unknown>[];
 let market: Record<string, unknown>[];
 let queueResponse: { status: number; body: unknown };
+let dependencyOperation: Record<string, unknown> | null;
 
 beforeEach(() => {
   vi.clearAllMocks();
   requests = [];
+  dependencyOperation = null;
   installed = [
     {
       id: "probe",
@@ -89,10 +91,37 @@ beforeEach(() => {
           success: true,
           data: { plugins: market, total: market.length },
         });
-      if (path === `/api/components/${installed[0].id}/install`) {
+      if (path === `/api/components/${installed[0].id}/update`) {
         return Response.json(queueResponse.body, {
           status: queueResponse.status,
         });
+      }
+      if (
+        path.startsWith("/api/plugins/dependency-upgrades/") &&
+        dependencyOperation
+      ) {
+        if (path.endsWith("/apply")) {
+          dependencyOperation = {
+            ...dependencyOperation,
+            status: "succeeded",
+            result: {
+              id: "probe",
+              name: "Probe",
+              version: "1.0.1",
+              loaded: true,
+            },
+          };
+          installed = installed.map((plugin) => ({
+            ...plugin,
+            version: "1.0.1",
+            loaded: true,
+            status: "active",
+          }));
+          catalog = [];
+        } else if (init?.method === "DELETE") {
+          dependencyOperation = { ...dependencyOperation, status: "cancelled" };
+        }
+        return Response.json(dependencyOperation);
       }
       if (path === "/api/plugins/replace") {
         installed = installed.map((p) =>
@@ -190,6 +219,7 @@ describe("installed plugin page upgrade contract", () => {
           ?.body,
       ).toEqual({
         plugin_id: "matrix",
+        defer_if_needed: true,
         version: "0.1.0.dev2",
         source: source === "catalog" ? catalogUrl : marketUrl,
         ...(source === "catalog" ? { sha256: "b".repeat(64) } : {}),
@@ -209,7 +239,7 @@ describe("installed plugin page upgrade contract", () => {
       ).toBeInTheDocument(),
     );
     expect(
-      requests.some((r) => r.path === "/api/components/probe/install"),
+      requests.some((r) => r.path === "/api/components/probe/update"),
     ).toBe(true);
     expect(
       requests.some(
@@ -238,6 +268,7 @@ describe("installed plugin page upgrade contract", () => {
       requests.find((r) => r.path === "/api/plugins/replace")?.body,
     ).toEqual({
       plugin_id: "probe",
+      defer_if_needed: true,
       version: "1.0.1",
       sha256: "a".repeat(64),
       source:
@@ -271,4 +302,113 @@ describe("installed plugin page upgrade contract", () => {
     expect(requests.some((r) => r.path === "/api/plugins/replace")).toBe(false);
     expect(h.reload).not.toHaveBeenCalled();
   });
+});
+
+it("shows a restart activation message after a manual hot update requires restart", async () => {
+  queueResponse = {
+    status: 200,
+    body: {
+      component: "probe",
+      queued: false,
+      updated: true,
+      version: "1.0.1",
+      loaded: true,
+      restart_required: true,
+    },
+  };
+  await mountAndUpdate();
+  await waitFor(() => expect(h.reload).toHaveBeenCalledWith("probe"));
+  expect(h.message.success).toHaveBeenCalledWith(
+    "pluginManager.updateRestartRequired",
+  );
+  expect(h.message.success).not.toHaveBeenCalledWith(
+    "pluginManager.updateSuccess",
+  );
+});
+
+it.each([true, false])(
+  "keeps signed shared-dependency confirmation on the real page (apply=%s)",
+  async (apply) => {
+    installed = installed.map((plugin) => ({
+      ...plugin,
+      enabled: true,
+      loaded: true,
+      status: "active",
+    }));
+    dependencyOperation = {
+      id: (apply ? "e" : "f").repeat(32),
+      plugin_id: "probe",
+      status: "needs_confirmation",
+      requires_restart: true,
+      message: `Review shared dependencies ${apply ? "apply" : "cancel"}`,
+      changes: [
+        { name: "fixture", current_version: "1.0", target_version: "2.0" },
+      ],
+      affected_instances: [],
+    };
+    queueResponse = {
+      status: 202,
+      body: {
+        component: "probe",
+        queued: false,
+        dependency_operation: dependencyOperation,
+      },
+    };
+    await mountAndUpdate();
+    const impact = await screen.findByText(
+      `Review shared dependencies ${apply ? "apply" : "cancel"}`,
+    );
+    const dialog = impact.closest('[role="dialog"]') as HTMLElement;
+    expect(dialog).toHaveAccessibleName(
+      "pluginManager.dependencyUpgrade.title",
+    );
+    expect(h.reload).not.toHaveBeenCalled();
+    expect(requests.some((request) => request.path.endsWith("/apply"))).toBe(
+      false,
+    );
+    fireEvent.click(
+      within(dialog).getByRole("button", {
+        name: apply
+          ? "pluginManager.dependencyUpgrade.confirm"
+          : "common.cancel",
+      }),
+    );
+    if (apply) {
+      await waitFor(() => expect(h.reload).toHaveBeenCalledWith("probe"));
+      expect(dependencyOperation?.status).toBe("succeeded");
+    } else {
+      await waitFor(() =>
+        expect(dependencyOperation?.status).toBe("cancelled"),
+      );
+      expect(h.reload).not.toHaveBeenCalled();
+      expect(installed[0].version).toBe("1.0.0");
+    }
+  },
+);
+
+it("offers cached shared-dependency review when catalog discovery fails", async () => {
+  installed = installed.map((plugin) => ({
+    ...plugin,
+    pending_update: {
+      version: "1.0.1",
+      source: "https://download.qwenpaw.agentscope.io/probe.zip",
+      sha256: "a".repeat(64),
+      confirmation: "dependencies",
+    },
+  }));
+  catalog = [];
+  market = [];
+  render(
+    <MemoryRouter>
+      <PluginManagerPage />
+    </MemoryRouter>,
+  );
+  const review = await screen.findByRole("button", {
+    name: "pluginManager.confirmDependencyUpdate",
+  });
+  expect(review).toBeEnabled();
+  expect(requests.some((request) => request.path.endsWith("/apply"))).toBe(
+    false,
+  );
+  expect(h.reload).not.toHaveBeenCalled();
 });

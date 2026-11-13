@@ -53,6 +53,7 @@ interface WorkbenchTabsState {
   ) => void;
   merge: (scope: string) => void;
   open: (scope: string, tab: WorkbenchTab, focus?: boolean) => void;
+  replaceStartTab: (scope: string, id: string, tab: WorkbenchTab) => boolean;
   select: (scope: string, id: string) => void;
   update: (scope: string, id: string, patch: Partial<WorkbenchTab>) => void;
   close: (scope: string, ids: string[]) => void;
@@ -139,6 +140,44 @@ export const useWorkbenchTabsStore = create<WorkbenchTabsState>((set) => ({
           }
         : state;
     }),
+  replaceStartTab: (scope, id, tab) => {
+    let replaced = false;
+    set((state) => {
+      const current = state.scopes[scope];
+      const source = current?.tabs.find((item) => item.id === id);
+      // Only the originating empty page is disposable. Keep address drafts,
+      // navigation history and pages the user has since switched away from.
+      if (
+        !current ||
+        source?.kind !== "browser" ||
+        source.browser?.pages.length ||
+        source.browser?.input ||
+        (current.activeId !== id && current.secondaryId !== id)
+      )
+        return state;
+      const existing = current.tabs.find((item) => item.id === tab.id);
+      const replacement = { ...existing, ...tab };
+      const activeId = current.activeId === id ? tab.id : current.activeId;
+      const secondaryId =
+        current.secondaryId === id ? tab.id : current.secondaryId;
+      replaced = true;
+      return {
+        scopes: {
+          ...state.scopes,
+          [scope]: {
+            ...current,
+            tabs: current.tabs.flatMap((item) =>
+              item.id === id ? [replacement] : item.id === tab.id ? [] : [item],
+            ),
+            activeId,
+            secondaryId: secondaryId === activeId ? undefined : secondaryId,
+            recent: current.recent.filter((item) => item.id !== tab.id),
+          },
+        },
+      };
+    });
+    return replaced;
+  },
   open: (scope, tab, focus = true) =>
     set((state) => {
       const current = state.scopes[scope] ?? EMPTY_WORKBENCH;

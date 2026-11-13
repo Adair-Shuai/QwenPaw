@@ -217,11 +217,12 @@ FunctionEnd
   SetOutPath "$INSTDIR"
   File /oname=qwenpaw-desktop-debug.cmd "..\..\..\..\nsis\qwenpaw-desktop-debug.cmd"
   File /oname=qwenpaw-desktop-debug.ps1 "..\..\..\..\nsis\qwenpaw-desktop-debug.ps1"
-  CreateShortcut "$SMPROGRAMS\UGSci Desktop (Debug).lnk" "$INSTDIR\qwenpaw-desktop-debug.cmd" "" "$INSTDIR\qwenpaw-desktop.exe" 0
+  CreateShortcut "$SMPROGRAMS\UGSci (Debug).lnk" "$INSTDIR\qwenpaw-desktop-debug.cmd" "" "$INSTDIR\qwenpaw-desktop.exe" 0
 !macroend
 
 !macro QWENPAW_REMOVE_DEBUG_LAUNCHER
   Delete "$SMPROGRAMS\UGSci Desktop (Debug).lnk"
+  Delete "$SMPROGRAMS\UGSci (Debug).lnk"
   Delete "$INSTDIR\qwenpaw-desktop-debug.cmd"
   Delete "$INSTDIR\qwenpaw-desktop-debug.ps1"
 !macroend

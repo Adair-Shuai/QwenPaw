@@ -3,6 +3,7 @@
 
 import hashlib
 import importlib.util
+import json
 import zipfile
 from pathlib import Path
 
@@ -28,6 +29,53 @@ def _script() -> str:
     return INSTALLER.read_text(encoding="utf-8")
 
 
+def test_desktop_product_name_and_legacy_update_identity() -> None:
+    config = json.loads(
+        (REPO_ROOT / "console/src-tauri/tauri.conf.json").read_text(
+            encoding="utf-8",
+        ),
+    )
+    assert config["productName"] == "UGSci"
+    assert config["app"]["windows"][0]["title"] == "UGSci"
+    assert config["identifier"] == "io.agentscope.qwenpaw.desktop"
+    script = _script()
+    assert '-Name DisplayName -Value "UGSci"' in script
+    assert 'product = "UGSci Desktop"' in script
+    assert 'Uninstall\\UGSci Desktop"' in script
+    assert (
+        '$shortcutName = if ($DeferredCommit) { "UGSci Desktop.lnk" } '
+        'else { "UGSci.lnk" }' in script
+    )
+    assert "$shell.CreateShortcut($legacyShortcut).TargetPath -eq $appExe" in (
+        script
+    )
+    for locale in (REPO_ROOT / "console/src/locales").glob("*.json"):
+        assert "UGSci Desktop" not in locale.read_text(encoding="utf-8")
+
+
+def test_shortcut_rename_follows_health_and_preserves_rollback() -> None:
+    source = (
+        REPO_ROOT / "scripts/pack-tauri/windows_update_assistant.cs"
+    ).read_text(encoding="utf-8")
+    assert (
+        source.index("WaitForStartupHealth(markerBefore")
+        < source.index(
+            "CommitTransaction(transaction)",
+        )
+        < source.index("RepairApplicationShortcuts(installed")
+    )
+    assert '"UGSci.lnk"' in source
+    assert '"UGSci Desktop.lnk"' in source
+    assert "RestoreShortcutBytes(value.start_menu_shortcut_path" in source
+    assert "RestoreShortcutBytes(value.desktop_shortcut_path" in source
+    assert "if (File.Exists(value.transaction_file))" in source
+    assert "RemoveLegacyShortcut(startMenu, executable)" in source
+    assert (
+        "string.Equals(target, executable, StringComparison.OrdinalIgnoreCase)"
+        in source
+    )
+
+
 def test_packager_resolves_layered_backend_before_plugin_validation() -> None:
     script = _script()
 
@@ -44,7 +92,7 @@ def test_packager_resolves_layered_backend_before_plugin_validation() -> None:
 def test_successful_install_resets_native_tool_exit_code() -> None:
     script = _script()
     success_tail = script.split(
-        'Write-Host "UGSci Desktop $version installed to $installDir"',
+        'Write-Host "UGSci $version installed to $installDir"',
         1,
     )[1].split("'@ | Set-Content", 1)[0]
 
@@ -96,7 +144,7 @@ def test_installer_bundles_offline_webview2_and_continues_if_missing() -> None:
     assert "function Install-WebView2Runtime([string]$Installer)" in script
     assert "Write-WebView2MissingMarker $DestinationDir" in script
     assert "throw (Get-WebView2MissingMessage)" not in script
-    assert "UGSci Desktop Setup will continue." in script
+    assert "UGSci Setup will continue." in script
     assert "desktop window and visualization stay unavailable" in script
     assert "webview2-missing.txt" in script
     assert "Ensure-WebView2 -DestinationDir $stagingDir" in script
@@ -104,8 +152,8 @@ def test_installer_bundles_offline_webview2_and_continues_if_missing() -> None:
         'Path.Combine("payload", '
         '"MicrosoftEdgeWebView2RuntimeInstallerX64.exe")' in source
     )
-    assert "an internet connection is not required for that step" in source
-    assert "If WebView2 still cannot be installed, Setup continues." in source
+    assert "此步骤无需联网" in source
+    assert "如果系统组件安装失败，应用仍会完成安装" in source
     assert "webview2-missing.txt" in source
     assert "GetInstallCompleteMessage" in source
     assert '"type": "offlineInstaller"' in (
@@ -196,7 +244,10 @@ def test_installer_file_transactions_are_long_path_safe() -> None:
     assert "File.Copy(entry.FullName, target, true)" in io_source
     assert 'return @"\\\\?\\" + path' in io_source
     assert "RequireOrdinary(entry)" in io_source
-    assert "Copy-DirectoryLongPathSafe -Source $payloadRoot" in script
+    assert (
+        "[UGSciInstallerIO]::CopyDirectory("
+        "$payloadRoot, $stagingDir, $false, $payloadBytes)"
+    ) in script
     assert "Remove-DirectoryLongPathSafe -Path $installDir" in script
     assert (
         '$stagingDir = Join-Path $transactionParent ".ug-i-$transactionId"'
@@ -251,8 +302,8 @@ def test_setup_requires_administrator_by_default() -> None:
     assert 'level="requireAdministrator"' in manifest
     assert "/win32manifest:$setupManifest" in script
     assert "windows_portable_setup.manifest" in script
-    assert 'Join-Path $env:ProgramFiles "UGSci Desktop"' in script
-    assert 'Join-Path $env:LOCALAPPDATA "UGSci Desktop"' not in script
+    assert 'Join-Path $env:ProgramFiles "UGSci"' in script
+    assert 'Join-Path $env:LOCALAPPDATA "UGSci"' not in script
     assert "function Invoke-ElevatedInstaller" in script
     assert 'Verb = "RunAs"' in script
     assert '"-Elevated"' in script
@@ -264,12 +315,9 @@ def test_setup_requires_administrator_by_default() -> None:
     assert "$Elevated -and -not (Test-CurrentProcessElevated)" in script
     assert "$installRequiresElevation" not in script
     assert "function Test-DirectoryWriteRequiresElevation" not in script
-    assert "Administrator approval is required to install UGSci Desktop." in (
-        script
-    )
-    assert 'SpecialFolder.ProgramFiles), "UGSci Desktop"' in source
-    assert "Setup requires administrator permission." in source
-    assert "The default location is Program Files." in source
+    assert "Administrator approval is required to install UGSci." in (script)
+    assert 'SpecialFolder.ProgramFiles), "UGSci"' in source
+    assert "安装时需要管理员权限。" in source
 
 
 def test_installer_stages_at_short_same_volume_path() -> None:
@@ -287,7 +335,10 @@ def test_installer_stages_at_short_same_volume_path() -> None:
     )
     assert ".UGSci Desktop.install-" not in script
     assert "Copy-Item -Destination $stagingDir -Recurse -Force" not in script
-    assert "Copy-DirectoryLongPathSafe -Source $payloadRoot" in script
+    assert (
+        "[UGSciInstallerIO]::CopyDirectory("
+        "$payloadRoot, $stagingDir, $false, $payloadBytes)"
+    ) in script
 
 
 def test_verified_zip_builder_preserves_nested_manifest_members(
@@ -406,17 +457,13 @@ def test_bootstrap_explains_install_folder_failures_before_copy() -> None:
     )
     assert "AlreadyInstalledElsewhereMessage(registered)" in source
     assert "locationStatus.Text = FirstLine(validationError)" in source
-    assert "Click Next to check this folder before installing." in source
+    assert "请选择空文件夹或现有的 UGSci 安装目录" in source
+    assert "包括 desktop.ini" in source
+    assert "请沿用上述目录进行升级" in source
     assert (
-        "not empty and is not a recognized UGSci Desktop installation"
-        in source
-    )
-    assert "or the legacy name qwenpaw-desktop.exe" in source
-    assert "binaries\\\\state\\\\active.json" in source
-    assert "desktop.ini in this folder" in source
-    assert "Setup will not delete" in source
-    assert "cannot install to a second location" in source
-    assert "if (!TryAcceptInstallLocation())" in source
+        "if (!TryAcceptInstallLocation() || "
+        "!ConfirmCloseRunningApplications())"
+    ) in source
 
 
 def test_bootstrap_prompts_to_close_running_ugsci() -> None:
@@ -427,13 +474,11 @@ def test_bootstrap_prompts_to_close_running_ugsci() -> None:
     assert "QueryFullProcessImageNameW" in source
     assert "KillBlockingSetupProcesses(running)" in source
     assert "/PID " in source and " /T /F" in source
-    assert "Close these processes now?" in source
-    assert "including copies started from the extracted package" in source
-    assert (
-        "If UGSci Desktop is still running — including a copy started "
-        "from this extracted folder"
-    ) in source
-    assert "Setup could not close the following processes." in source
+    assert "现在关闭这些进程并继续安装？" in source
+    assert "包括从解压目录启动的副本" in source
+    assert "请先保存正在进行的工作" in source
+    assert "以下进程暂时无法关闭" in source
+    assert "MessageBoxDefaultButton.Button2" in source
 
 
 def test_installer_stops_package_processes_without_killing_setup() -> None:
@@ -475,7 +520,7 @@ def test_installer_script_matches_bootstrap_folder_failure_copy() -> None:
     assert "cannot install to a second location" in script
     assert (
         "The selected installation folder is not empty and is not a "
-        "recognized UGSci Desktop installation. Choose an empty folder."
+        "recognized UGSci installation. Choose an empty folder."
     ) not in script
     assert ("Uninstall it before choosing a different location.") not in script
 

@@ -10,6 +10,7 @@ import {
 } from "./RunInspector";
 
 import type { RunRecord } from "./runRecord";
+import type { RepairSource } from "./authoringModel";
 import { RunComparison } from "./RunComparison";
 import { RunSurface } from "./RunSurface";
 import { RunAnalytics } from "./RunAnalytics";
@@ -131,6 +132,7 @@ export function RunMonitor({
   docked = false,
   onRecord,
   agentId,
+  onRepair,
 }: {
   runId: string | null;
   onClose: () => void;
@@ -143,6 +145,7 @@ export function RunMonitor({
   docked?: boolean;
   onRecord?: (record: RunRecord) => void;
   agentId?: string;
+  onRepair?: (source: RepairSource) => void;
 }) {
   const { t } = useWorkflowI18n();
   const {
@@ -607,6 +610,20 @@ export function RunMonitor({
                     statuses={run.node_statuses || {}}
                     events={visibleEvents}
                     antd={antd}
+                    onRepair={
+                      onRepair &&
+                      run.run_id === runId &&
+                      (!agentId || (run.agent_id || "default") === agentId)
+                        ? (nodeId) => {
+                            if (ownsVisit())
+                              onRepair({
+                                runId: run.run_id,
+                                flowId: run.flow_id,
+                                nodeId,
+                              });
+                          }
+                        : undefined
+                    }
                   />
                 ),
               },

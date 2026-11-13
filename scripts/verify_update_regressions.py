@@ -10,6 +10,9 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 SUITES = (
+    "tests/unit/tauri/test_desktop_icons.py",
+    "tests/unit/tauri/test_macos_dmg.py",
+    "tests/unit/tauri/test_macos_dmg_native.py",
     "tests/unit/tauri/test_desktop_sqlite_paths.py",
     "tests/unit/app/test_console_static_security.py",
     "tests/unit/tauri/test_update_release_contract.py",
@@ -53,12 +56,36 @@ SUITES = (
     "tests/unit/tauri/test_windows_update_extraction.py",
     "tests/unit/tauri/test_windows_installer_io.py",
     "tests/unit/tauri/test_windows_setup_progress.py",
+    "tests/unit/tauri/test_windows_setup_ui.py",
     "tests/unit/tauri/test_windows_webview_install.py",
     "tests/unit/tauri/test_desktop_scientific_pruning.py",
     "tests/unit/tauri/test_stage_python_runtime.py",
     "tests/unit/plugins/test_dependency_source_sync.py",
+    "tests/unit/channels/test_channel_host.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/tauri/test_macos_dmg.py": {
+        "test_dmg_rejects_truncated_and_out_of_bounds_images",
+        "test_dmg_settings_keep_live_icons_and_retina_instruction_artwork",
+        "test_dmg_payload_comparison_detects_missing_changed_and_empty_paths",
+        "test_dmg_is_published_and_selected_after_updater_metadata",
+        "test_dmg_artifact_gate_preserves_zip_callers_and_checks_dmg_bytes",
+        "test_dmg_metadata_generates_the_public_installer_download",
+        "test_dmg_accepts_existing_tauri_notary_key_locations",
+        "test_dmg_release_checks_use_the_release_infrastructure_checkout",
+    },
+    "tests/unit/tauri/test_macos_dmg_native.py": {
+        "test_real_dmg_preserves_signed_payload_layout_and_drag_copy",
+    },
+    "tests/unit/tauri/test_desktop_icons.py": {
+        "test_actual_desktop_icon_inventory_and_pixel_content",
+        "test_small_representations_keep_two_high_contrast_eye_cutouts",
+        "test_each_size_is_rendered_directly_from_the_approved_vector",
+        "test_missing_dpi_frame_is_rejected_even_when_copies_agree",
+        "test_macos_bundle_uses_declared_retina_icon_and_rejects_stale_pixels",
+        "test_compiled_windows_executable_embeds_every_approved_icon_frame",
+        "test_native_icons_remain_part_of_host_identity_and_packaging_gates",
+    },
     "tests/unit/tauri/test_desktop_sqlite_paths.py": {
         "test_desktop_history_recall_and_snapshots_preserve_native_paths",
         "test_desktop_dependency_executor_accepts_native_path_aliases",
@@ -72,6 +99,8 @@ REQUIRED_CASES = {
         "test_source_sync_failure_preserves_original_read_only_mode",
     },
     "tests/unit/tauri/test_windows_installer_io.py": {
+        "test_deferred_installer_preserves_cli_path_preference",
+        "test_compiled_copy_reports_real_bytes_and_preserves_file_metadata",
         "test_installer_replaces_legacy_shortcut_icons_on_upgrade",
         "test_installer_compiled_verification_counts_payload_and_rechecks_changes",
         "test_installer_compiled_verification_rejects_unsafe_or_incomplete_package",
@@ -85,6 +114,10 @@ REQUIRED_CASES = {
     },
     "tests/unit/tauri/test_windows_setup_progress.py": {
         "test_setup_streams_stages_and_failure_log_before_process_exit",
+        "test_setup_passes_uninstall_directory_and_legacy_transaction_arguments",
+    },
+    "tests/unit/tauri/test_windows_setup_ui.py": {
+        "test_chinese_setup_renders_all_steps_and_measured_progress",
     },
     "tests/unit/tauri/test_windows_webview_install.py": {
         "test_webview_existing_runtime_skips_copy_launch_download_and_clears_marker",
@@ -132,6 +165,7 @@ REQUIRED_CASES = {
     },
     "tests/unit/tauri/test_windows_update_extraction.py": {
         "test_extractor_reuses_buffer_and_limits_progress_for_many_files",
+        "test_updater_shortcut_repair_preserves_desktop_preference",
         "test_extractor_keeps_unsafe_path_rejection",
         "test_extractor_rejects_links_and_preserves_existing_files",
         "test_extractor_does_not_report_success_before_later_invalid_entry",
@@ -150,6 +184,8 @@ REQUIRED_CASES = {
         "test_best_deflate_archives_pass_signed_runtime_installation",
     },
     "tests/unit/tauri/test_windows_portable_installer_contract.py": {
+        "test_desktop_product_name_and_legacy_update_identity",
+        "test_shortcut_rename_follows_health_and_preserves_rollback",
         "test_portable_manifest_and_zip_preserve_unicode_paths",
         "test_cli_launcher_uses_python_module_entry_point",
         "test_installer_verifies_in_elevated_process_before_any_mutation",
@@ -195,6 +231,7 @@ REQUIRED_CASES = {
         "test_disabled_candidate_invalid_entry_restores_without_import",
     },
     "tests/unit/plugins/test_plugin_update_transactions.py": {
+        "test_replace_legacy_azure_bot_preserves_disabled_config",
         "test_replace_disabled_plugin_commits_without_activation",
         "test_replace_disabled_plugin_rejects_incompatible_candidate",
         "test_failed_replace_cannot_reinstall_over_concurrent_success",
@@ -202,6 +239,20 @@ REQUIRED_CASES = {
         "test_replace_preserves_structured_dependency_confirmation",
         "test_replace_reports_post_commit_cleanup_restart",
         "test_stale_concurrent_update_does_not_downgrade_newer_version",
+        "test_signed_plugin_hot_update_preserves_data_and_enable_intent",
+        "test_signed_restart_update_downloads_then_activates_offline",
+        "test_failed_signed_hot_update_keeps_old_runtime_and_data",
+        "test_automatic_updates_only_touch_installed_plugins",
+        "test_downloaded_ordinary_update_activates_offline_after_restart",
+        "test_background_update_loop_retries_and_drains_on_shutdown",
+        "test_automatic_hot_update_keeps_market_provenance",
+        "test_downloaded_update_ack_preserves_newer_queue_generation",
+        "test_background_shared_dependencies_wait_for_existing_confirmation",
+        "test_signed_plugin_hot_update_ignores_unrelated_runtime_updates",
+    },
+    "tests/unit/channels/test_channel_host.py": {
+        "test_legacy_python_channel_migration_preserves_lifecycle",
+        "test_channel_backend_migration_rejects_unsupported_changes",
     },
     "tests/unit/plugins/test_pawapp_listing.py": {
         "test_app_listing_merges_failed_disabled_pending_and_active",

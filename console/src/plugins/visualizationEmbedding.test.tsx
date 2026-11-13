@@ -12,6 +12,8 @@ import {
 } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ArtifactPreview from "../components/Workspace/ArtifactPreview";
+// Exercise the actual table renderer after its module has transformed.
+import "../components/Workspace/renderers/CsvRenderer";
 import { rendererRegistry } from "../components/Workspace/store/rendererRegistry";
 import {
   registerBuiltinRenderers,

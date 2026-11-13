@@ -115,6 +115,9 @@ public static class UGSciInstallerIO
             throw new IOException("Package checksum manifest is missing");
         RequireOrdinary(new FileInfo(manifest));
         var expected = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        int totalFiles = 0;
+        foreach (string entry in File.ReadLines(manifest))
+            if (!String.IsNullOrWhiteSpace(entry)) totalFiles++;
         var result = new PackageInventory();
         var progress = Stopwatch.StartNew();
         // Reuse the hasher and read buffer for the whole package. The PowerShell
@@ -156,6 +159,7 @@ public static class UGSciInstallerIO
             if (progress.ElapsedMilliseconds >= 1000)
             {
                 Console.WriteLine("[UGSCI-INSTALL] Verifying package: " + result.FileCount + " files checked");
+                Console.WriteLine("[UGSCI-PROGRESS] verify|{0}|{1}", result.FileCount, totalFiles);
                 progress.Restart();
             }
         }
@@ -175,6 +179,7 @@ public static class UGSciInstallerIO
         foreach (string relative in required)
             if (!expected.Contains(relative))
                 throw new IOException("Required checksum entry is missing: " + relative);
+        Console.WriteLine("[UGSCI-PROGRESS] verify|{0}|{1}", result.FileCount, totalFiles);
         return result;
     }
 
@@ -249,6 +254,19 @@ public static class UGSciInstallerIO
 
     public static long CopyDirectory(string source, string destination, bool allowSourceRootLink)
     {
+        return CopyDirectory(source, destination, allowSourceRootLink, 0);
+    }
+
+    private delegate uint CopyProgressRoutine(long total, long transferred, long streamSize,
+        long streamTransferred, uint streamNumber, uint reason, IntPtr source, IntPtr destination, IntPtr data);
+
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool CopyFileExW(string source, string destination, CopyProgressRoutine progress,
+        IntPtr data, ref int cancel, uint flags);
+
+    public static long CopyDirectory(string source, string destination, bool allowSourceRootLink, long totalBytes)
+    {
         source = FullPath(source);
         destination = FullPath(destination);
         if (!allowSourceRootLink) RequireOrdinary(new DirectoryInfo(IoPath(source)));
@@ -263,6 +281,17 @@ public static class UGSciInstallerIO
         pending.Push(new KeyValuePair<DirectoryInfo, string>(new DirectoryInfo(sourceIo), destinationIo));
         var progress = Stopwatch.StartNew();
         long count = 0;
+        long copiedBytes = 0;
+        var byteProgress = Stopwatch.StartNew();
+        Action<long> reportBytes = delegate(long value) {
+            if (totalBytes > 0 && byteProgress.ElapsedMilliseconds >= 100)
+            {
+                // Completion is emitted only after traversal and every copy succeeds.
+                Console.WriteLine("[UGSCI-PROGRESS] copy|{0}|{1}",
+                    Math.Min(value, totalBytes - 1), totalBytes);
+                byteProgress.Restart();
+            }
+        };
         while (pending.Count != 0)
         {
             var current = pending.Pop();
@@ -285,7 +314,19 @@ public static class UGSciInstallerIO
                     pending.Push(new KeyValuePair<DirectoryInfo, string>(child, target));
                 else
                 {
-                    File.Copy(entry.FullName, target, true);
+                    if (totalBytes > 0)
+                    {
+                        int cancel = 0;
+                        CopyProgressRoutine callback = delegate(long total, long transferred, long streamSize,
+                            long streamTransferred, uint streamNumber, uint reason, IntPtr input, IntPtr output, IntPtr data) {
+                            reportBytes(copiedBytes + transferred);
+                            return 0;
+                        };
+                        if (!CopyFileExW(entry.FullName, target, callback, IntPtr.Zero, ref cancel, 0))
+                            throw new Win32Exception(Marshal.GetLastWin32Error(), "Cannot copy file: " + entry.FullName);
+                        copiedBytes += ((FileInfo)entry).Length;
+                    }
+                    else File.Copy(entry.FullName, target, true);
                     count++;
                 }
                 if (progress.ElapsedMilliseconds >= 1000)
@@ -295,6 +336,8 @@ public static class UGSciInstallerIO
                 }
             }
         }
+        if (totalBytes > 0)
+            Console.WriteLine("[UGSCI-PROGRESS] copy|{0}|{1}", Math.Min(copiedBytes, totalBytes), totalBytes);
         return count;
     }
 }

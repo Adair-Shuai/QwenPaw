@@ -270,10 +270,10 @@ jobs:
             ## macOS Desktop — ${mention('macos')}
 
             1. Go to the [Release page](${releaseUrl})
-            2. Download \`UGSci-${version}-macOS.zip\`
-            3. Unzip, drag \`UGSci.app\` to Applications, launch UGSci
+            2. Download \`UGSci-Tauri-${version}-macOS.dmg\`
+            3. Open the DMG, drag \`UGSci.app\` to Applications, launch UGSci
 
-            - [ ] Download and unzip succeed
+            - [ ] DMG opens and the app copies to Applications
             - [ ] App launches without crash
             - [ ] Model configured (API key + model saved without error)
             - [ ] Basic chat works (message sent, normal reply received)

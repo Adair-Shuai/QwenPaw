@@ -1126,13 +1126,14 @@ def test_release_expensive_jobs_require_immutable_plugin_preflight(
         assert "inputs.artifacts_run_id != ''" in jobs["full-test-gate"]["if"]
 
 
-def test_console_checkout_preserves_formatter_line_endings(tmp_path):
+@pytest.mark.parametrize("project", ["console", "website"])
+def test_console_checkout_preserves_formatter_line_endings(tmp_path, project):
     """Exercise real Git checkout with Windows automatic conversion."""
     (tmp_path / ".gitattributes").write_bytes(
         (REPO_ROOT / ".gitattributes").read_bytes(),
     )
-    console = tmp_path / "console"
-    console.mkdir()
+    frontend_root = tmp_path / project
+    frontend_root.mkdir()
     text = b"first line\nsecond line\n"
     extensions = (
         "ts",
@@ -1151,9 +1152,11 @@ def test_console_checkout_preserves_formatter_line_endings(tmp_path):
         "yml",
         "svg",
     )
-    text_files = [console / f"format.{extension}" for extension in extensions]
-    binary = console / "sample.png"
-    batch = console / "verify.bat"
+    text_files = [
+        frontend_root / f"format.{extension}" for extension in extensions
+    ]
+    binary = frontend_root / "sample.png"
+    batch = frontend_root / "verify.bat"
     binary_bytes = b"\x89PNG\x00\r\n\x00payload\n"
     for path in text_files:
         path.write_bytes(text)
@@ -1162,7 +1165,7 @@ def test_console_checkout_preserves_formatter_line_endings(tmp_path):
     for arguments in (
         ["init", "--quiet"],
         ["config", "core.autocrlf", "true"],
-        ["add", ".gitattributes", "console"],
+        ["add", ".gitattributes", project],
     ):
         subprocess.run(
             ["git", *arguments],

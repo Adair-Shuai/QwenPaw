@@ -150,6 +150,7 @@ export function RunInspector({
   events,
   antd,
   agentId,
+  onRepair,
 }: {
   runId: string;
   agentId?: string;
@@ -157,9 +158,10 @@ export function RunInspector({
   statuses: Record<string, string>;
   events: RunEvent[];
   antd: any;
+  onRepair?: (nodeId: string) => void;
 }) {
   const { t } = useWorkflowI18n();
-  const { Tag, Empty, Typography } = antd;
+  const { Tag, Empty, Typography, Button } = antd;
   const [selected, setSelected] = useState<string | null>(null);
   useEffect(() => setSelected(null), [runId]);
   // Never read the current editor graph: a historical run belongs to its own
@@ -224,6 +226,18 @@ export function RunInspector({
           })}
         >
           <strong>{labelOf(id)}</strong>
+          {onRepair &&
+            ["failed", "error", "timeout"].includes(statusOf(id)) && (
+              <Button
+                size="small"
+                aria-label={t("AI 修复节点 {label}", "AI repair node {label}", {
+                  label: labelOf(id),
+                })}
+                onClick={() => onRepair(id)}
+              >
+                {t("AI 修复", "AI repair")}
+              </Button>
+            )}
           <div className="ff-inspector-meta">
             <code>{id}</code>
             {detail?.class_type && <span>{detail.class_type}</span>}

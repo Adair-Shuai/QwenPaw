@@ -181,16 +181,16 @@
   },
   "desktop": {
     "update": {
-      "title": "更新 QwenPaw？",
+      "title": "更新 UGSci？",
       "otherWindows": "还有 {{count}} 个窗口正在使用。",
       "otherWindows_one": "还有 {{count}} 个窗口正在使用。",
       "otherWindows_other": "还有 {{count}} 个窗口正在使用。",
-      "description": "更新将关闭所有 QwenPaw 窗口，并中断正在运行的任务。",
-      "confirm": "关闭并更新",
+      "description": "更新将关闭所有 UGSci 窗口，并中断正在运行的任务。",
+      "confirm": "关闭并更新 UGSci",
       "preparing": "正在关闭窗口…"
     },
     "closeWindow": {
-      "title": "退出 QwenPaw？",
+      "title": "退出 UGSci？",
       "description": "后台继续运行会保留任务；完全退出会结束正在运行的任务。",
       "remember": "记住我的选择",
       "showWindow": "显示窗口",
@@ -199,7 +199,7 @@
       "keepRunning": "后台运行",
       "quitting": "正在退出…",
       "stopService": "完全退出",
-      "stopBlocked": "QwenPaw 仍在其他窗口或应用中使用，请先关闭它们，再完全退出。",
+      "stopBlocked": "UGSci 仍在其他窗口或应用中使用，请先关闭它们，再完全退出。",
       "preference": "关闭窗口",
       "askEveryTime": "每次询问"
     },
@@ -210,6 +210,13 @@
       "retry": "重试",
       "theme": "切换外观",
       "controls": "桌面控制"
+    },
+    "window": {
+      "minimize": "最小化窗口",
+      "maximize": "最大化窗口",
+      "restore": "还原窗口",
+      "close": "关闭窗口",
+      "failed": "窗口操作失败，请重试。"
     }
   },
   "chunkError": {
@@ -485,6 +492,7 @@
     "windows": "个窗口"
   },
   "sidebar": {
+    "pinEntry": "固定到侧边栏",
     "moreGroups": {
       "work": "工作与通知",
       "configuration": "配置与模型",
@@ -514,7 +522,13 @@
     "foldTools": "折叠菜单栏",
     "expandTools": "展开菜单栏",
     "dragHandle": "拖动侧栏悬浮；按回车切换停靠",
-    "dock": "侧栏归位",
+    "dock": {
+      "left": "吸附到左侧",
+      "right": "吸附到右侧",
+      "bottom": "吸附到底部",
+      "floating": "悬浮",
+      "handle": "拖动导航栏，或点击选择吸附位置"
+    },
     "newVersion": "发现新版本 v{{version}}，点击前往升级",
     "updateModal": {
       "checkUpdates": "检查更新",
@@ -532,7 +546,7 @@
       "title": "发现新版本 v{{version}}",
       "viewReleases": "查看 Releases",
       "installDesktopUpdate": "现在更新",
-      "desktopInstallHint": "QwenPaw 桌面端 {{version}} 已准备好安装，更新后应用将自动重启。",
+      "desktopInstallHint": "UGSci 桌面端 {{version}} 已准备好安装，更新后应用将自动重启。",
       "checking": "检查更新中…",
       "checkingHint": "正在确认最新版本",
       "downloading": "正在下载更新",
@@ -549,7 +563,7 @@
       "errors": {
         "network": "连接不上更新服务器，请检查网络后重试。",
         "signature": "更新文件签名校验失败，请重新尝试下载。",
-        "appLocation": "QwenPaw 正在从 macOS 只读位置运行。请先将 QwenPaw.app 移动到“应用程序”文件夹，从那里启动后再重试更新。",
+        "appLocation": "UGSci 正在从 macOS 只读位置运行。请先将 UGSci.app 移动到“应用程序”文件夹，从那里启动后再重试更新。",
         "other": "更新失败。"
       },
       "updateLater": "后台下载",
@@ -571,7 +585,7 @@
     "pageStyles": {
       "classic": "原有布局",
       "deepseek": "简洁风格",
-      "dual-sidebar": "双侧边栏"
+      "dual-sidebar": "研境布局"
     },
     "dualSidebar": {
       "home": "主页",
@@ -592,7 +606,7 @@
     "moreFeatures": "更多",
     "interfaceStyles": {
       "classic": "原有风格",
-      "warm-minimal": "暖白极简",
+      "warm-minimal": "研境暖白",
       "cool-workspace": "冷白工作台",
       "soft-focus": "柔灰专注"
     },
@@ -1095,6 +1109,13 @@
     "deleteSuccess": "智能体删除成功",
     "deleteFailed": "智能体删除失败",
     "selectAgent": "选择智能体",
+    "presetNames": {
+      "QwenPaw-Data": "数据分析专家",
+      "QA Agent": "质量审核专家",
+      "CloudPaw-Master": "云端统筹专家",
+      "CloudPaw-Executor": "云端执行专家",
+      "CloudPaw-Verifier": "云端验证专家"
+    },
     "defaultDisplayName": "默认智能体",
     "currentWorkspace": "当前智能体",
     "switchSuccess": "智能体切换成功",
@@ -6022,6 +6043,10 @@
     "update": "更新",
     "updateAll": "全部更新",
     "updateSuccess": "插件更新成功",
+    "confirmDependencyUpdate": "确认依赖升级",
+    "coreUpdateRequired": "此更新需要新版 UGSci，请先更新主程序。",
+    "updateRestartRequired": "更新已完成，重启后启用。",
+    "ugsciUpgradeQueued": "更新已安排，重启后启用。",
     "updateAllSuccess": "全部插件更新成功",
     "updateAllResult": "已更新 {{succeeded}} 个插件，{{failed}} 个失败：{{names}}",
     "updateFailed": "插件更新失败",

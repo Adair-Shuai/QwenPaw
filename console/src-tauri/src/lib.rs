@@ -7,13 +7,14 @@ mod channel_runtime;
 mod computer_use_helper;
 mod computer_use_protocol;
 mod computer_use_runtime;
-mod external_link;
 mod delivery_files;
-mod reveal;
-mod notifications;
-mod notification_delivery;
+mod desktop_icons;
+mod external_link;
 #[cfg(all(target_os = "macos", debug_assertions))]
 mod macos_dev_bundle;
+mod notification_delivery;
+mod notifications;
+mod reveal;
 mod runtime_env;
 mod runtime_layout;
 mod tray;
@@ -33,11 +34,12 @@ fn open_devtools(window: WebviewWindow) {
 }
 
 fn build_desktop() -> tauri::Result<tauri::App> {
-    let context = tauri::generate_context!();
+    let mut context = tauri::generate_context!();
+    context.set_default_window_icon(Some(desktop_icons::window_icon()));
     #[cfg(all(target_os = "macos", debug_assertions))]
     if let Err(error) = macos_dev_bundle::relaunch_if_needed(
         &context.config().identifier,
-        context.config().product_name.as_deref().unwrap_or("QwenPaw Desktop"),
+        context.config().product_name.as_deref().unwrap_or("UGSci"),
         env!("CARGO_PKG_VERSION"),
     ) {
         eprintln!("[desktop] {error}");
@@ -119,6 +121,7 @@ fn build_desktop() -> tauri::Result<tauri::App> {
             Ok(())
         })
         .on_window_event(|window, event| {
+            desktop_icons::on_window_event(window, event);
             if let WindowEvent::CloseRequested { api, .. } = event {
                 api.prevent_close();
                 tray::request_close(window.app_handle());
@@ -186,7 +189,7 @@ pub fn run() {
             });
         }
         Err(err) => {
-            eprintln!("[UGSci Desktop] Fatal startup error: {err}");
+            eprintln!("[UGSci] Fatal startup error: {err}");
             #[cfg(windows)]
             {
                 if is_webview2_startup_error(&err) {
@@ -223,7 +226,7 @@ fn try_install_bundled_webview2() -> bool {
             continue;
         }
         eprintln!(
-            "[UGSci Desktop] Installing Microsoft WebView2 Runtime from {}",
+            "[UGSci] Installing Microsoft WebView2 Runtime from {}",
             installer.display()
         );
         match std::process::Command::new(&installer)
@@ -232,10 +235,10 @@ fn try_install_bundled_webview2() -> bool {
         {
             Ok(status) if status.success() => return true,
             Ok(status) => {
-                eprintln!("[UGSci Desktop] WebView2 installer exited with {status}");
+                eprintln!("[UGSci] WebView2 installer exited with {status}");
             }
             Err(err) => {
-                eprintln!("[UGSci Desktop] WebView2 installer failed to start: {err}");
+                eprintln!("[UGSci] WebView2 installer failed to start: {err}");
             }
         }
     }
@@ -245,17 +248,14 @@ fn try_install_bundled_webview2() -> bool {
 #[cfg(windows)]
 fn notify_desktop_window_unavailable(err: &tauri::Error) {
     let text = format!(
-        "UGSci Desktop could not open the application window because Microsoft WebView2 Runtime is missing or failed to start.\n\nThe desktop window and visualization stay unavailable until WebView2 is installed. QwenPaw command-line tools in the install folder still work.\n\nDetails:\n{err}"
+        "UGSci could not open the application window because Microsoft WebView2 Runtime is missing or failed to start.\n\nThe desktop window and visualization stay unavailable until WebView2 is installed. QwenPaw command-line tools in the install folder still work.\n\nDetails:\n{err}"
     );
-    show_windows_message("UGSci Desktop", &text);
+    show_windows_message("UGSci", &text);
 }
 
 #[cfg(windows)]
 fn notify_fatal_startup_error(err: &tauri::Error) {
-    show_windows_message(
-        "UGSci Desktop",
-        &format!("UGSci Desktop could not start.\n\n{err}"),
-    );
+    show_windows_message("UGSci", &format!("UGSci could not start.\n\n{err}"));
 }
 
 #[cfg(windows)]

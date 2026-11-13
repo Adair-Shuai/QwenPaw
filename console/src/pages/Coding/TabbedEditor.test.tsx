@@ -10,6 +10,8 @@ import {
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useEffect, type ComponentProps } from "react";
 import TabbedEditor from "./TabbedEditor";
+import "../../components/Workspace/renderers/MarkdownRenderer";
+import "../../components/Workspace/renderers/HtmlRenderer";
 import { useCodingTabsStore } from "../../stores/codingTabsStore";
 import { rendererRegistry } from "../../components/Workspace/store/rendererRegistry";
 import { updateArtifactPreview } from "../../features/files-workspace/openFilePreview";
@@ -340,7 +342,7 @@ describe("TabbedEditor diff resolution", () => {
     const onSaveFile = vi.fn(async () => undefined);
     const { container } = render(<Harness onSaveFile={onSaveFile} />);
 
-    const undoLabel = await screen.findByText(/undoAll|全部回退/i);
+    const undoLabel = await screen.findByText(/undo\s*all|全部回退/i);
     fireEvent.click(undoLabel.closest("button") as HTMLButtonElement);
 
     await waitFor(() => {
@@ -426,7 +428,7 @@ describe("TabbedEditor tab context menu", () => {
     render(<Harness onSaveFile={vi.fn(async () => undefined)} />);
 
     fireEvent.contextMenu(screen.getByRole("tab", { name: /two\.txt/i }));
-    fireEvent.click(await screen.findByText(/closeTab|关闭标签页/i));
+    fireEvent.click(await screen.findByText(/close\s*tab|关闭标签页/i));
 
     await waitFor(() => {
       expect(
@@ -444,7 +446,9 @@ describe("TabbedEditor tab context menu", () => {
     render(<Harness onSaveFile={vi.fn(async () => undefined)} />);
 
     fireEvent.contextMenu(screen.getByRole("tab", { name: /two\.txt/i }));
-    fireEvent.click(await screen.findByText(/closeOtherTabs|关闭其他标签页/i));
+    fireEvent.click(
+      await screen.findByText(/close\s*other\s*tabs|关闭其他标签页/i),
+    );
 
     await waitFor(() => {
       expect(useCodingTabsStore.getState().tabsByAgent[SCOPE_KEY]).toHaveLength(
@@ -480,7 +484,7 @@ describe("TabbedEditor tab context menu", () => {
     render(<Harness onSaveFile={vi.fn(async () => undefined)} />);
 
     fireEvent.click(
-      screen.getByRole("button", { name: /openFiles|已打开文件/i }),
+      screen.getByRole("button", { name: /open\s*files|已打开文件/i }),
     );
     const dialog = screen.getByRole("dialog");
     fireEvent.change(within(dialog).getByRole("searchbox"), {
@@ -503,11 +507,11 @@ describe("TabbedEditor tab context menu", () => {
     render(<Harness onSaveFile={vi.fn(async () => undefined)} />);
 
     fireEvent.click(
-      screen.getByRole("button", { name: /openFiles|已打开文件/i }),
+      screen.getByRole("button", { name: /open\s*files|已打开文件/i }),
     );
     fireEvent.click(
       within(screen.getByRole("dialog")).getByRole("button", {
-        name: /closeAllTabs|关闭全部标签页/i,
+        name: /close\s*all\s*tabs|关闭全部标签页/i,
       }),
     );
 
@@ -595,6 +599,7 @@ describe("TabbedEditor hosted preview controls", () => {
       />,
     );
 
+    await screen.findByRole("heading", { name: "Hello" });
     fireEvent.click(
       screen.getByRole("button", { name: /saveToWorkspace|保存到工作区/i }),
     );

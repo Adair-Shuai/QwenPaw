@@ -54,6 +54,7 @@ vi.mock("./pywebview", () => ({
 }));
 
 import { openHtmlFile } from "./openHtmlFile";
+import "./htmlPreviewResources";
 import { invoke } from "@tauri-apps/api/core";
 import { workspaceApi } from "../api/modules/workspace";
 

@@ -7,6 +7,11 @@ const RAIL_ITEMS_STORAGE_KEY = "qwenpaw_sidebar_rail_items_v1";
 const HIDDEN_PLUGIN_ITEMS_STORAGE_KEY =
   "qwenpaw_sidebar_hidden_plugin_items_v1";
 
+export const DEFAULT_RAIL_ITEM_IDS = [
+  "ugsci.tools-skills",
+  "ugsci.visualization",
+];
+
 export const DEFAULT_FOCUS_ITEM_IDS = [
   "core.cron-jobs",
   "core.files",
@@ -116,18 +121,18 @@ function updateSidebarItemsVisibility(
 export const useSidebarStore = create<SidebarStoreState>((set) => ({
   railItemIds: (() => {
     try {
-      const stored: unknown = JSON.parse(
-        localStorage.getItem(RAIL_ITEMS_STORAGE_KEY) || "[]",
-      );
+      const raw = localStorage.getItem(RAIL_ITEMS_STORAGE_KEY);
+      if (raw === null) return [...DEFAULT_RAIL_ITEM_IDS];
+      const stored: unknown = JSON.parse(raw);
       return Array.isArray(stored)
         ? [
             ...new Set(
               stored.filter((id): id is string => typeof id === "string"),
             ),
           ]
-        : [];
+        : [...DEFAULT_RAIL_ITEM_IDS];
     } catch {
-      return [];
+      return [...DEFAULT_RAIL_ITEM_IDS];
     }
   })(),
   setRailItemIds: (itemIds) => {

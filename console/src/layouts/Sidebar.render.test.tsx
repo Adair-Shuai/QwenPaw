@@ -38,6 +38,7 @@ afterAll(() => vi.unstubAllEnvs());
 const mocks = vi.hoisted(() => ({
   sidebar: {
     railItemIds: [] as string[],
+    setRailItemIds: vi.fn(),
     focusItemIds: ["core.workspace", "core.models"] as string[],
     hiddenPluginItemIds: [] as string[],
   },
@@ -311,6 +312,7 @@ vi.mock("lucide-react", async () => {
 });
 
 import Sidebar from "./Sidebar";
+import DesktopWindowFrame from "../tauri/DesktopWindowFrame";
 import { clearAuthToken } from "../api/config";
 import { MarketplaceHeader } from "../pages/Market/components/MarketplaceHeader";
 import { marketplaceExtensionRegistry } from "../pages/Market/marketplaceRegistry";
@@ -333,6 +335,19 @@ function SettingsReturnProbe() {
       {location.state?.settingsReturnTo}
     </output>
   );
+}
+
+// The feature rail reserves its own width beside the conversation pane.
+function conversationWidth(width: string) {
+  return mocks.pageStyle === "dual-sidebar"
+    ? `${Math.max(0, parseInt(width) - 66)}px`
+    : width;
+}
+function queryRailExpand() {
+  const rail = screen.queryByRole("navigation", { name: "Feature navigation" });
+  return rail
+    ? within(rail).queryByRole("button", { name: "Expand conversation pane" })
+    : null;
 }
 
 function renderSidebar(
@@ -451,6 +466,57 @@ const modelsItem = {
 };
 
 describe("Sidebar", () => {
+  it("keeps the mounted feature navigation and account stable across docking and titlebar collapse", async () => {
+    mocks.pageStyle = "dual-sidebar";
+    renderWithProviders(
+      <DesktopWindowFrame>
+        <Sidebar selectedKey="core.chat" />
+      </DesktopWindowFrame>,
+    );
+    const rail = screen.getByRole("navigation", { name: "Feature navigation" });
+    const home = within(rail).getByRole("button", { name: "Home" });
+    const account = within(rail).getByRole("button", {
+      name: "Account and appearance",
+    });
+    const filter = screen.getByRole("textbox", { name: "Conversation filter" });
+    fireEvent.change(filter, { target: { value: "retained across docking" } });
+    for (const edge of ["bottom", "right", "floating", "left"]) {
+      fireEvent.click(
+        screen.getByRole("button", { name: "sidebar.dock.handle" }),
+      );
+      fireEvent.click(
+        await screen.findByRole("menuitem", { name: `sidebar.dock.${edge}` }),
+      );
+      expect(document.querySelector("[data-navigation-dock]")).toHaveAttribute(
+        "data-navigation-dock",
+        edge,
+      );
+      fireEvent.click(
+        screen.getByRole("button", { name: "Collapse conversation pane" }),
+      );
+      expect(filter).not.toBeVisible();
+      expect(within(rail).getByRole("button", { name: "Home" })).toBe(home);
+      expect(
+        within(rail).getByRole("button", { name: "Account and appearance" }),
+      ).toBe(account);
+      expect(
+        within(rail).queryByRole("button", { name: "globalSearch.title" }),
+      ).toBeNull();
+      fireEvent.click(
+        screen.getByRole("button", { name: "Expand conversation pane" }),
+      );
+      expect(screen.getByRole("textbox", { name: "Conversation filter" })).toBe(
+        filter,
+      );
+      expect(filter).toHaveValue("retained across docking");
+    }
+    fireEvent.click(account);
+
+    expect(account).toHaveAttribute("aria-expanded", "true");
+    expect(
+      await screen.findByRole("dialog", { name: "Settings" }),
+    ).toContainElement(screen.getByTestId("settings-panel"));
+  });
   it("opens deferred quick settings without deprecated Tooltip props", async () => {
     mocks.renderActualSettingsPanel = true;
     const consoleError = vi
@@ -484,6 +550,7 @@ describe("Sidebar", () => {
   });
 
   beforeEach(() => {
+    localStorage.removeItem("ugsci_navigation_dock_v1");
     mockMobileViewport(false);
     mocks.interfaceStyle = "classic";
     mocks.pageStyle = "classic";
@@ -605,11 +672,11 @@ describe("Sidebar", () => {
     };
     switchStyle("deepseek");
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "208px",
+      width: conversationWidth("208px"),
     });
     fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "66px",
+      width: conversationWidth("66px"),
     });
     expect(slot).toBeInTheDocument();
     expect(slot).not.toBeVisible();
@@ -620,16 +687,16 @@ describe("Sidebar", () => {
       { key: "End" },
     );
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "480px",
+      width: conversationWidth("480px"),
     });
     switchStyle("classic");
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "280px",
+      width: conversationWidth("280px"),
     });
     fireEvent.click(screen.getByRole("button", { name: "Collapse sidebar" }));
     switchStyle("deepseek");
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "480px",
+      width: conversationWidth("480px"),
     });
     expect(screen.getByRole("textbox", { name: "Plugin sider.top" })).toBe(
       slot,
@@ -637,11 +704,11 @@ describe("Sidebar", () => {
     expect(slot).toHaveValue("keep this plugin draft");
     switchStyle("classic");
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "72px",
+      width: conversationWidth("72px"),
     });
     fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "280px",
+      width: conversationWidth("280px"),
     });
     expect(localStorage.getItem("qwenpaw_sidebar_collapsed")).toBeNull();
     expect(localStorage.getItem("qwenpaw_sidebar_width")).toBeNull();
@@ -738,13 +805,11 @@ describe("Sidebar", () => {
       expect(screen.getByTestId("probe-path")).toHaveTextContent("/flowforge");
       expect(workflow).toHaveAttribute("aria-current", "page");
       expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-        width: "66px",
+        width: conversationWidth("66px"),
       });
       expect(filter).not.toBeVisible();
       expect(plugin).not.toBeVisible();
-      expect(
-        screen.queryByRole("button", { name: "Expand conversation pane" }),
-      ).toBeNull();
+      expect(queryRailExpand()).toBeNull();
       expect(
         screen.queryByRole("separator", { name: "Resize sidebar" }),
       ).toBeNull();
@@ -759,7 +824,7 @@ describe("Sidebar", () => {
       fireEvent.click(rail.getByRole("button", { name: "Home" }));
       expect(screen.getByTestId("probe-path")).toHaveTextContent("/chat");
       expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-        width: "308px",
+        width: conversationWidth("308px"),
       });
       expect(screen.getByRole("textbox", { name: "Conversation filter" })).toBe(
         filter,
@@ -795,12 +860,12 @@ describe("Sidebar", () => {
         "page",
       );
       expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-        width: "66px",
+        width: conversationWidth("66px"),
       });
       expect(screen.getByTestId("session-list")).not.toBeVisible();
       fireEvent.click(screen.getByRole("button", { name: "Home" }));
       expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-        width: savedCollapsed ? "66px" : "308px",
+        width: conversationWidth(savedCollapsed ? "66px" : "308px"),
       });
       expect(
         localStorage.getItem("qwenpaw_sidebar_collapsed:dual-sidebar"),
@@ -824,7 +889,9 @@ describe("Sidebar", () => {
       const view = renderWithProviders(<RoutedSidebar />, {
         initialEntries: ["/OILGAS-Visualization/?datasetId=中文-grid#scene"],
       });
-      const width = pageStyle === "classic" ? "72px" : "66px";
+      const width = conversationWidth(
+        pageStyle === "classic" ? "72px" : "66px",
+      );
       const filter = screen.getByLabelText("Conversation filter");
       expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
         width,
@@ -843,9 +910,7 @@ describe("Sidebar", () => {
       expect(
         screen.queryByRole("separator", { name: "Resize sidebar" }),
       ).toBeNull();
-      expect(
-        screen.queryByRole("button", { name: "Expand conversation pane" }),
-      ).toBeNull();
+      expect(queryRailExpand()).toBeNull();
       fireEvent.click(
         screen.getByRole("button", {
           name: pageStyle === "dual-sidebar" ? "Home" : "New task",
@@ -882,13 +947,13 @@ describe("Sidebar", () => {
       "/oilgas-visualization",
     );
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "66px",
+      width: conversationWidth("66px"),
     });
     expect(filter).not.toBeVisible();
     expect(plugin).not.toBeVisible();
     fireEvent.click(screen.getByRole("button", { name: "Home" }));
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "308px",
+      width: conversationWidth("308px"),
     });
     expect(screen.getByRole("textbox", { name: "Conversation filter" })).toBe(
       filter,
@@ -932,7 +997,9 @@ describe("Sidebar", () => {
           : `qwenpaw_sidebar_collapsed:${pageStyle}`;
       localStorage.setItem(preferenceKey, String(savedCollapsed));
       renderWithProviders(<RoutedSidebar />, { initialEntries: [path] });
-      const width = pageStyle === "classic" ? "72px" : "66px";
+      const width = conversationWidth(
+        pageStyle === "classic" ? "72px" : "66px",
+      );
       expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
         width,
       });
@@ -940,9 +1007,7 @@ describe("Sidebar", () => {
       expect(
         screen.queryByRole("button", { name: "Expand sidebar" }),
       ).toBeNull();
-      expect(
-        screen.queryByRole("button", { name: "Expand conversation pane" }),
-      ).toBeNull();
+      expect(queryRailExpand()).toBeNull();
       expect(
         screen.queryByRole("button", { name: "chat.chatHistoryTooltip" }),
       ).toBeNull();
@@ -1006,7 +1071,7 @@ describe("Sidebar", () => {
         fireEvent.click(header.getByText(label, { exact: true }));
         expect(screen.getByTestId("probe-path").textContent).toBe(path);
         expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-          width: "66px",
+          width: conversationWidth("66px"),
         });
         expect(filter).not.toBeVisible();
         expect(plugin).not.toBeVisible();
@@ -1014,13 +1079,11 @@ describe("Sidebar", () => {
           "aria-current",
           "page",
         );
-        expect(
-          screen.queryByRole("button", { name: "Expand conversation pane" }),
-        ).toBeNull();
+        expect(queryRailExpand()).toBeNull();
       }
       fireEvent.click(rail.getByRole("button", { name: "Home" }));
       expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-        width: "308px",
+        width: conversationWidth("308px"),
       });
       expect(screen.getByRole("textbox", { name: "Conversation filter" })).toBe(
         filter,
@@ -1068,7 +1131,7 @@ describe("Sidebar", () => {
         fireEvent.click(screen.getByRole("button", { name: label }));
         expect(screen.getByTestId("probe-path")).toHaveTextContent(path);
         expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-          width: "66px",
+          width: conversationWidth("66px"),
         });
         expect(filter).not.toBeVisible();
         expect(plugin).not.toBeVisible();
@@ -1112,7 +1175,7 @@ describe("Sidebar", () => {
         "page",
       );
       expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-        width: pageStyle === "classic" ? "72px" : "66px",
+        width: conversationWidth(pageStyle === "classic" ? "72px" : "66px"),
       });
       expect(screen.getByTestId("session-list")).not.toBeVisible();
       expect(
@@ -1126,6 +1189,59 @@ describe("Sidebar", () => {
       ).toBeNull();
     },
   );
+
+  it("renders the default tools and visualization below the divider after plugins register", () => {
+    mocks.pageStyle = "dual-sidebar";
+    mocks.sidebar.railItemIds = ["ugsci.tools-skills", "ugsci.visualization"];
+    const view = renderWithProviders(<RoutedSidebar />);
+    const rail = screen.getByRole("navigation", { name: "Feature navigation" });
+    const shortcuts = within(rail).getByRole("group", {
+      name: "Custom shortcuts",
+    });
+    expect(within(shortcuts).queryAllByRole("button")).toHaveLength(0);
+    for (const [id, label, path] of [
+      ["ugsci.tools-skills", "Tools and skills", "/ugsci-tools-skills"],
+      [
+        "ugsci.visualization",
+        "Oil and gas visualization",
+        "/oilgas-visualization",
+      ],
+    ]) {
+      mocks.routes.push({ id, path });
+      mocks.menuItems.push({
+        id,
+        route: id,
+        label,
+        location: "primary.agentScoped",
+      });
+    }
+    view.rerender(<RoutedSidebar />);
+    expect(shortcuts.previousElementSibling?.tagName).toBe("HR");
+    expect(
+      within(shortcuts)
+        .getAllByRole("button")
+        .map((button) => button.textContent),
+    ).toEqual(["Tools and skills", "Oil and gas visualization"]);
+    fireEvent.click(
+      within(shortcuts).getByRole("button", { name: "Tools and skills" }),
+    );
+    expect(screen.getByTestId("probe-path")).toHaveTextContent(
+      "/ugsci-tools-skills",
+    );
+    fireEvent.click(
+      within(shortcuts).getByRole("button", {
+        name: "Oil and gas visualization",
+      }),
+    );
+    expect(screen.getByTestId("probe-path")).toHaveTextContent(
+      "/oilgas-visualization",
+    );
+    expect(
+      within(shortcuts).getByRole("button", {
+        name: "Oil and gas visualization",
+      }),
+    ).toHaveAttribute("aria-current", "page");
+  });
 
   it("renders ordered custom apps and modules below More and follows their real routes", () => {
     mocks.pageStyle = "dual-sidebar";
@@ -1156,6 +1272,45 @@ describe("Sidebar", () => {
     mocks.sidebar.railItemIds = [];
   });
 
+  it("pins More entries and installed apps through the existing sidebar preference", async () => {
+    mocks.pageStyle = "dual-sidebar";
+    mocks.sidebar.railItemIds = [];
+    mocks.sidebar.setRailItemIds.mockImplementation((ids: string[]) => {
+      mocks.sidebar.railItemIds = ids;
+    });
+    const view = renderWithProviders(<RoutedSidebar />);
+    const rail = screen.getByRole("navigation", { name: "Feature navigation" });
+    fireEvent.click(within(rail).getByRole("button", { name: "More" }));
+    let dialog = await screen.findByRole("dialog", { name: "More" });
+    expect(
+      within(dialog).getByRole("button", { name: "Notes" }),
+    ).toBeInTheDocument();
+    const models = within(dialog).getByRole("button", { name: "Models" });
+    const pin =
+      models.parentElement!.querySelector<HTMLButtonElement>("button[title]")!;
+    fireEvent.click(pin);
+    expect(mocks.sidebar.setRailItemIds).toHaveBeenLastCalledWith([
+      "core.models",
+    ]);
+    view.rerender(<RoutedSidebar />);
+    dialog = screen.getByRole("dialog", { name: "More" });
+    expect(within(dialog).queryByRole("button", { name: "Models" })).toBeNull();
+    expect(within(rail).getByRole("button", { name: "Models" })).toBeVisible();
+    const notes = within(dialog).getByRole("button", { name: "Notes" });
+    fireEvent.click(
+      notes.parentElement!.querySelector<HTMLButtonElement>("button[title]")!,
+    );
+    expect(mocks.sidebar.setRailItemIds).toHaveBeenLastCalledWith([
+      "core.models",
+      "pawapp:notes",
+    ]);
+    view.rerender(<RoutedSidebar />);
+    expect(within(dialog).queryByRole("button", { name: "Notes" })).toBeNull();
+    fireEvent.click(within(rail).getByRole("button", { name: "Notes" }));
+    expect(screen.getByTestId("probe-path")).toHaveTextContent("/apps/notes");
+    mocks.sidebar.setRailItemIds.mockReset();
+  });
+
   it("keeps only the feature rail in settings and restores conversation state on return", () => {
     mocks.pageStyle = "dual-sidebar";
     const view = renderWithProviders(<Sidebar selectedKey="core.chat" />);
@@ -1172,12 +1327,10 @@ describe("Sidebar", () => {
       screen.getByRole("button", { name: "Open settings" }),
     ).toHaveAttribute("aria-current", "page");
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "66px",
+      width: conversationWidth("66px"),
     });
     expect(filter).not.toBeVisible();
-    expect(
-      screen.queryByRole("button", { name: "Expand conversation pane" }),
-    ).toBeNull();
+    expect(queryRailExpand()).toBeNull();
     expect(
       localStorage.getItem("qwenpaw_sidebar_collapsed:dual-sidebar"),
     ).toBeNull();
@@ -1229,7 +1382,7 @@ describe("Sidebar", () => {
     });
     const filter = screen.getByLabelText("Conversation filter");
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "66px",
+      width: conversationWidth("66px"),
     });
     expect(filter).not.toBeVisible();
     mocks.routes.push({ id: "flowforge.editor", path: "/flowforge" });
@@ -1263,7 +1416,7 @@ describe("Sidebar", () => {
     });
     renderWithProviders(<RoutedSidebar />, { initialEntries: ["/flowforge"] });
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "56px",
+      width: conversationWidth("56px"),
     });
     expect(screen.getByTestId("session-list")).not.toBeVisible();
     act(() => {
@@ -1271,7 +1424,7 @@ describe("Sidebar", () => {
       viewportState.listeners.forEach((listener) => listener());
     });
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "66px",
+      width: conversationWidth("66px"),
     });
     expect(screen.getByTestId("session-list")).not.toBeVisible();
     expect(
@@ -1305,20 +1458,20 @@ describe("Sidebar", () => {
     fireEvent.change(filter, { target: { value: "retained search" } });
     fireEvent.change(plugin, { target: { value: "retained plugin draft" } });
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "308px",
+      width: conversationWidth("308px"),
     });
     fireEvent.click(
       screen.getByRole("button", { name: "Collapse conversation pane" }),
     );
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "66px",
+      width: conversationWidth("66px"),
     });
     expect(filter).not.toBeVisible();
     expect(plugin).not.toBeVisible();
     expect(screen.getByRole("button", { name: "Home" })).toBeVisible();
     expect(
-      screen.getByRole("button", { name: "globalSearch.title" }),
-    ).toBeVisible();
+      screen.queryByRole("button", { name: "globalSearch.title" }),
+    ).toBeNull();
     fireEvent.click(
       screen.getByRole("button", { name: "Expand conversation pane" }),
     );
@@ -1341,7 +1494,7 @@ describe("Sidebar", () => {
       </>,
     );
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "208px",
+      width: conversationWidth("208px"),
     });
     mocks.pageStyle = "dual-sidebar";
     view.rerender(
@@ -1351,7 +1504,7 @@ describe("Sidebar", () => {
       </>,
     );
     expect(document.querySelector(".ant-layout-sider")).toHaveStyle({
-      width: "480px",
+      width: conversationWidth("480px"),
     });
     expect(screen.getByRole("textbox", { name: "Conversation filter" })).toBe(
       filter,
@@ -1741,9 +1894,15 @@ describe("Sidebar", () => {
     renderSidebar();
     const sider = document.querySelector<HTMLElement>(".ant-layout-sider");
 
-    expect(sider).toHaveStyle({ width: "56px", minWidth: "56px" });
+    expect(sider).toHaveStyle({
+      width: conversationWidth("56px"),
+      minWidth: "56px",
+    });
     fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
-    expect(sider).toHaveStyle({ width: "240px", minWidth: "240px" });
+    expect(sider).toHaveStyle({
+      width: conversationWidth("240px"),
+      minWidth: "240px",
+    });
   });
 
   it("opens session history in a popover while collapsed", async () => {
@@ -2139,7 +2298,9 @@ describe("Sidebar", () => {
         ).toBe(true);
         fireEvent.pointerMove(handle, { pointerId: 7, clientX: 360 });
         fireEvent.pointerUp(handle, { pointerId: 7, clientX: 360 });
-        expect(renderedSider()).toHaveStyle({ width: "360px" });
+        expect(renderedSider()).toHaveStyle({
+          width: conversationWidth("360px"),
+        });
         expect(localStorage.getItem("qwenpaw_sidebar_width")).toBe("360");
         expect(screen.getByRole("textbox", { name: "Plugin sider.top" })).toBe(
           plugin,
@@ -2150,10 +2311,14 @@ describe("Sidebar", () => {
         );
         expect(screen.queryByRole("separator")).not.toBeInTheDocument();
         fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
-        expect(renderedSider()).toHaveStyle({ width: "360px" });
+        expect(renderedSider()).toHaveStyle({
+          width: conversationWidth("360px"),
+        });
         view.unmount();
         renderSidebar();
-        expect(renderedSider()).toHaveStyle({ width: "360px" });
+        expect(renderedSider()).toHaveStyle({
+          width: conversationWidth("360px"),
+        });
       } finally {
         vi.unstubAllGlobals();
       }
@@ -2183,12 +2348,16 @@ describe("Sidebar", () => {
             clientX: 360,
           });
           fireEvent.pointerMove(handle, { pointerId: 7, clientX: 200 });
-          expect(renderedSider()).toHaveStyle({ width: "220px" });
+          expect(renderedSider()).toHaveStyle({
+            width: conversationWidth("220px"),
+          });
           expect(localStorage.getItem("qwenpaw_sidebar_collapsed")).toBeNull();
           if (stage === "move")
             fireEvent.pointerMove(handle, { pointerId: 7, clientX: 160 });
           else fireEvent.pointerUp(handle, { pointerId: 7, clientX: 160 });
-          expect(renderedSider()).toHaveStyle({ width: "72px" });
+          expect(renderedSider()).toHaveStyle({
+            width: conversationWidth("72px"),
+          });
           expect(handle.releasePointerCapture).toHaveBeenCalledWith(7);
           expect(localStorage.getItem("qwenpaw_sidebar_width")).toBe("360");
           expect(localStorage.getItem("qwenpaw_sidebar_collapsed")).toBe(
@@ -2196,13 +2365,17 @@ describe("Sidebar", () => {
           );
           view.unmount();
           renderSidebar();
-          expect(renderedSider()).toHaveStyle({ width: "72px" });
+          expect(renderedSider()).toHaveStyle({
+            width: conversationWidth("72px"),
+          });
           const expand = screen.getByRole("button", { name: "Expand sidebar" });
           expect(
             expand.querySelector("svg.lucide-panel-left-open"),
           ).toBeInTheDocument();
           fireEvent.click(expand);
-          expect(renderedSider()).toHaveStyle({ width: "360px" });
+          expect(renderedSider()).toHaveStyle({
+            width: conversationWidth("360px"),
+          });
         } finally {
           vi.unstubAllGlobals();
         }
@@ -2227,7 +2400,9 @@ describe("Sidebar", () => {
         });
         fireEvent.pointerMove(handle, { pointerId: 7, clientX: 200 });
         fireEvent.keyDown(window, { key: "Escape" });
-        expect(renderedSider()).toHaveStyle({ width: "360px" });
+        expect(renderedSider()).toHaveStyle({
+          width: conversationWidth("360px"),
+        });
         expect(localStorage.getItem("qwenpaw_sidebar_width")).toBe("360");
         expect(localStorage.getItem("qwenpaw_sidebar_collapsed")).toBeNull();
       } finally {
@@ -2239,15 +2414,23 @@ describe("Sidebar", () => {
       renderSidebar();
       const handle = screen.getByRole("separator", { name: "Resize sidebar" });
       fireEvent.keyDown(handle, { key: "ArrowRight" });
-      expect(renderedSider()).toHaveStyle({ width: "296px" });
+      expect(renderedSider()).toHaveStyle({
+        width: conversationWidth("296px"),
+      });
       fireEvent.keyDown(handle, { key: "Home" });
       fireEvent.keyDown(handle, { key: "ArrowLeft" });
-      expect(renderedSider()).toHaveStyle({ width: "220px" });
+      expect(renderedSider()).toHaveStyle({
+        width: conversationWidth("220px"),
+      });
       fireEvent.keyDown(handle, { key: "End" });
       fireEvent.keyDown(handle, { key: "ArrowRight" });
-      expect(renderedSider()).toHaveStyle({ width: "480px" });
+      expect(renderedSider()).toHaveStyle({
+        width: conversationWidth("480px"),
+      });
       fireEvent.doubleClick(handle);
-      expect(renderedSider()).toHaveStyle({ width: "280px" });
+      expect(renderedSider()).toHaveStyle({
+        width: conversationWidth("280px"),
+      });
       expect(localStorage.getItem("qwenpaw_sidebar_width")).toBeNull();
     });
 
@@ -2255,13 +2438,17 @@ describe("Sidebar", () => {
       localStorage.setItem("qwenpaw_sidebar_width", "360");
       mockMobileViewport(true);
       renderSidebar();
-      expect(renderedSider()).toHaveStyle({ width: "56px" });
+      expect(renderedSider()).toHaveStyle({ width: conversationWidth("56px") });
       fireEvent.click(screen.getByRole("button", { name: "Expand sidebar" }));
-      expect(renderedSider()).toHaveStyle({ width: "240px" });
+      expect(renderedSider()).toHaveStyle({
+        width: conversationWidth("240px"),
+      });
       expect(screen.queryByRole("separator")).not.toBeInTheDocument();
       resizeViewport(false);
       await waitFor(() =>
-        expect(renderedSider()).toHaveStyle({ width: "360px" }),
+        expect(renderedSider()).toHaveStyle({
+          width: conversationWidth("360px"),
+        }),
       );
       expect(localStorage.getItem("qwenpaw_sidebar_width")).toBe("360");
     });
@@ -2281,7 +2468,10 @@ describe("Sidebar", () => {
 
       // Remount simulates the reload: it must start collapsed (72px).
       renderSidebar();
-      expect(renderedSider()).toHaveStyle({ width: "72px", minWidth: "72px" });
+      expect(renderedSider()).toHaveStyle({
+        width: conversationWidth("72px"),
+        minWidth: "72px",
+      });
       expect(screen.queryByText("Workspace")).toBeNull();
       expect(screen.getByTestId("app-brand")).not.toBeVisible();
     });
@@ -2289,7 +2479,10 @@ describe("Sidebar", () => {
     it("restores the expanded state after a reload", async () => {
       localStorage.setItem("qwenpaw_sidebar_collapsed", "true");
       const view = renderSidebar();
-      expect(renderedSider()).toHaveStyle({ width: "72px", minWidth: "72px" });
+      expect(renderedSider()).toHaveStyle({
+        width: conversationWidth("72px"),
+        minWidth: "72px",
+      });
 
       fireEvent.click(
         await screen.findByRole("button", { name: "Expand sidebar" }),
@@ -2303,7 +2496,7 @@ describe("Sidebar", () => {
       // Remount simulates the reload: it must start expanded (280px).
       renderSidebar();
       expect(renderedSider()).toHaveStyle({
-        width: "280px",
+        width: conversationWidth("280px"),
         minWidth: "280px",
       });
       expect(screen.getByText("Workspace")).toBeTruthy();
@@ -2313,7 +2506,10 @@ describe("Sidebar", () => {
       mockMobileViewport(true);
       renderSidebar();
 
-      expect(renderedSider()).toHaveStyle({ width: "56px", minWidth: "56px" });
+      expect(renderedSider()).toHaveStyle({
+        width: conversationWidth("56px"),
+        minWidth: "56px",
+      });
       // A viewport-driven collapse must not write the user preference.
       expect(localStorage.getItem("qwenpaw_sidebar_collapsed")).toBeNull();
     });
@@ -2323,19 +2519,25 @@ describe("Sidebar", () => {
       mockMobileViewport(true);
       renderSidebar();
 
-      expect(renderedSider()).toHaveStyle({ width: "56px", minWidth: "56px" });
+      expect(renderedSider()).toHaveStyle({
+        width: conversationWidth("56px"),
+        minWidth: "56px",
+      });
       expect(localStorage.getItem("qwenpaw_sidebar_collapsed")).toBe("true");
     });
 
     it("restores the stored collapsed preference when back on desktop", async () => {
       localStorage.setItem("qwenpaw_sidebar_collapsed", "true");
       renderSidebar();
-      expect(renderedSider()).toHaveStyle({ width: "72px", minWidth: "72px" });
+      expect(renderedSider()).toHaveStyle({
+        width: conversationWidth("72px"),
+        minWidth: "72px",
+      });
 
       resizeViewport(true);
       await waitFor(() => {
         expect(renderedSider()).toHaveStyle({
-          width: "56px",
+          width: conversationWidth("56px"),
           minWidth: "56px",
         });
       });
@@ -2343,7 +2545,7 @@ describe("Sidebar", () => {
       resizeViewport(false);
       await waitFor(() => {
         expect(renderedSider()).toHaveStyle({
-          width: "72px",
+          width: conversationWidth("72px"),
           minWidth: "72px",
         });
       });
@@ -2352,14 +2554,14 @@ describe("Sidebar", () => {
     it("re-expands on desktop when no collapsed preference is stored", async () => {
       renderSidebar();
       expect(renderedSider()).toHaveStyle({
-        width: "280px",
+        width: conversationWidth("280px"),
         minWidth: "280px",
       });
 
       resizeViewport(true);
       await waitFor(() => {
         expect(renderedSider()).toHaveStyle({
-          width: "56px",
+          width: conversationWidth("56px"),
           minWidth: "56px",
         });
       });
@@ -2369,7 +2571,7 @@ describe("Sidebar", () => {
       resizeViewport(false);
       await waitFor(() => {
         expect(renderedSider()).toHaveStyle({
-          width: "280px",
+          width: conversationWidth("280px"),
           minWidth: "280px",
         });
       });

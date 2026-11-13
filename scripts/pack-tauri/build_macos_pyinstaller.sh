@@ -85,6 +85,11 @@ if [ -z "${PYINSTALLER_CODESIGN_IDENTITY:-}" ]; then
 fi
 echo ""
 
+echo "Installing macOS packaging dependencies..."
+python -m pip install --disable-pip-version-check \
+    -r "${REPO_ROOT}/scripts/pack-tauri/requirements-macos-dmg.txt"
+echo ""
+
 # Step 1: Build console static assets
 echo "== Step 1: Building Console Static Assets =="
 cd console
@@ -169,7 +174,7 @@ cd ..
 echo "Tauri app built"
 echo ""
 
-# Dynamically find the built .app bundle (product name may differ from "UGSci Desktop")
+# Dynamically find the built UGSci .app bundle.
 APP_PATH=""
 for app in "${BUNDLE_DIR}/macos/"*.app; do
     if [ -d "$app" ]; then
@@ -183,6 +188,7 @@ if [ -z "${APP_PATH}" ] || [ ! -d "${APP_PATH}" ]; then
     exit 1
 fi
 echo "Found app bundle: ${APP_PATH}"
+python scripts/pack/verify_desktop_icons.py --macos-app "${APP_PATH}"
 if [[ "${QWENPAW_LAYERED_DESKTOP:-}" =~ ^(1|true|yes)$ ]]; then
     HELPER_PATH="${APP_PATH}/Contents/Resources/binaries/tools/computer-use/${VERSION}/qwenpaw-computer-use-helper"
     APP_PLUGIN_ROOT="${APP_PATH}/Contents/Resources/binaries/app/backend/${VERSION}/qwenpaw/plugins_bundle"
@@ -266,6 +272,13 @@ python "${REPO_ROOT}/scripts/pack-tauri/verify_frozen_plugins.py" \
 echo "Final macOS ZIP contains valid bundled plugin manifests and entries"
 echo ""
 
+echo "== Step 4b: Building Drag-install DMG =="
+DMG_NAME="${DIST_ROOT}/UGSci-Tauri-${VERSION}-macOS.dmg"
+python "${REPO_ROOT}/scripts/pack-tauri/macos_dmg.py" build \
+    --app "${APP_PATH}" --output "${DMG_NAME}"
+echo "Drag-install DMG verified at ${DMG_NAME}"
+echo ""
+
 UPDATER_NAME="${DIST_ROOT}/UGSci-Tauri-${VERSION}-macOS.app.tar.gz"
 case "$(uname -m)" in
     arm64 | aarch64) UPDATER_TARGET="darwin-aarch64" ;;
@@ -303,7 +316,8 @@ echo "Build Complete!"
 echo "========================================="
 echo "App:          ${APP_PATH}"
 echo "Distribution: ${DIST_DIR}"
-echo "Archive:      ${ZIP_NAME}"
+echo "Installer:    ${DMG_NAME}"
+echo "ZIP:          ${ZIP_NAME}"
 echo "Updater:      ${UPDATER_NAME}"
 echo ""
 echo "Test: open \"${STAGED_APP_PATH}\""

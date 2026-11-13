@@ -60,16 +60,16 @@
   },
   "desktop": {
     "update": {
-      "title": "Perbarui QwenPaw?",
+      "title": "Perbarui UGSci?",
       "otherWindows": "Ada {{count}} jendela lain yang terbuka.",
       "otherWindows_one": "Ada {{count}} jendela lain yang terbuka.",
       "otherWindows_other": "Ada {{count}} jendela lain yang terbuka.",
-      "description": "Pembaruan akan menutup semua jendela QwenPaw dan menghentikan tugas yang sedang berjalan.",
-      "confirm": "Tutup dan perbarui",
+      "description": "Pembaruan akan menutup semua jendela UGSci dan menghentikan tugas yang sedang berjalan.",
+      "confirm": "Tutup dan perbarui UGSci",
       "preparing": "Menutup jendela…"
     },
     "closeWindow": {
-      "title": "Tutup QwenPaw?",
+      "title": "Tutup UGSci?",
       "description": "Tetap berjalan di latar belakang untuk melanjutkan tugas. Keluar sepenuhnya akan mengakhiri tugas yang sedang berjalan.",
       "remember": "Ingat pilihan saya",
       "showWindow": "Tampilkan Jendela",
@@ -78,9 +78,16 @@
       "keepRunning": "Jalankan di latar belakang",
       "quitting": "Keluar…",
       "stopService": "Keluar sepenuhnya",
-      "stopBlocked": "QwenPaw masih digunakan di jendela atau aplikasi lain. Tutup semuanya sebelum keluar sepenuhnya.",
+      "stopBlocked": "UGSci masih digunakan di jendela atau aplikasi lain. Tutup semuanya sebelum keluar sepenuhnya.",
       "preference": "Tutup Jendela",
       "askEveryTime": "Tanya setiap saat"
+    },
+    "window": {
+      "minimize": "Minimalkan jendela",
+      "maximize": "Maksimalkan jendela",
+      "restore": "Pulihkan jendela",
+      "close": "Tutup jendela",
+      "failed": "Tindakan jendela gagal. Coba lagi."
     }
   },
   "chunkError": {
@@ -355,7 +362,7 @@
       "title": "Versi baru tersedia: v{{version}}",
       "viewReleases": "Lihat Rilis",
       "installDesktopUpdate": "Perbarui Sekarang",
-      "desktopInstallHint": "QwenPaw Desktop {{version}} siap dipasang. Aplikasi akan dimulai ulang setelah pembaruan.",
+      "desktopInstallHint": "UGSci {{version}} siap dipasang. Aplikasi akan dimulai ulang setelah pembaruan.",
       "checking": "Memeriksa pembaruan…",
       "checkingHint": "Memeriksa versi terbaru",
       "downloading": "Mengunduh pembaruan",
@@ -372,7 +379,7 @@
       "errors": {
         "network": "Tidak dapat menjangkau server pembaruan. Periksa internet dan coba lagi.",
         "signature": "Tanda tangan file pembaruan tidak valid. Coba unduh lagi.",
-        "appLocation": "QwenPaw berjalan dari lokasi macOS yang hanya-baca. Pindahkan QwenPaw.app ke folder Applications, jalankan dari sana, lalu coba perbarui lagi.",
+        "appLocation": "UGSci berjalan dari lokasi macOS yang hanya-baca. Pindahkan UGSci.app ke folder Applications, jalankan dari sana, lalu coba perbarui lagi.",
         "other": "Pembaruan gagal."
       },
       "updateLater": "Unduh di Latar Belakang",
@@ -396,7 +403,14 @@
     "collapse": "Ciutkan bilah samping",
     "expand": "Luaskan bilah samping",
     "more": "Lainnya",
-    "toggleAgentNavigation": "Buka atau tutup navigasi agen"
+    "toggleAgentNavigation": "Buka atau tutup navigasi agen",
+    "dock": {
+      "left": "Sematkan di kiri",
+      "right": "Sematkan di kanan",
+      "bottom": "Sematkan di bawah",
+      "floating": "Mengambang",
+      "handle": "Seret navigasi atau klik untuk memilih posisi"
+    }
   },
   "settingsCenter": {
     "backToApp": "Kembali ke aplikasi",
@@ -2973,6 +2987,10 @@
     "update": "Perbarui",
     "updateAll": "Perbarui semua",
     "updateSuccess": "Plugin berhasil diperbarui",
+    "confirmDependencyUpdate": "Tinjau dependensi",
+    "coreUpdateRequired": "Pembaruan ini memerlukan UGSci yang lebih baru. Perbarui aplikasi utama dahulu.",
+    "updateRestartRequired": "Pembaruan selesai. Mulai ulang untuk mengaktifkannya.",
+    "ugsciUpgradeQueued": "Pembaruan dijadwalkan dan akan aktif setelah dimulai ulang.",
     "updateAllSuccess": "Semua plugin berhasil diperbarui",
     "updateAllResult": "{{succeeded}} plugin diperbarui; {{failed}} gagal: {{names}}",
     "updateFailed": "Pembaruan plugin gagal",

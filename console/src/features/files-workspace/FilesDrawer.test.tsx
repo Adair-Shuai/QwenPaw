@@ -14,6 +14,10 @@ import { AnswerQuoteComposer } from "../../pages/Chat/components/AnswerQuoteComp
 import { readAnswerQuotes } from "../../pages/Chat/answerQuotes";
 import { OPEN_FILE_PREVIEW_EVENT } from "./openFilePreview";
 import FilesDrawer from "./FilesDrawer";
+// Transform real lazy modules before timing mounted-page interactions.
+import "./FilesWorkspace";
+import "../../components/Workspace/renderers/MarkdownRenderer";
+import "../../components/Workspace/renderers/HtmlRenderer";
 import { notifyProjectDirectoryChanged } from "../project-directory/projectDirectoryChangeEvent";
 import { useWorkbenchTabsStore } from "./workbenchTabsStore";
 import i18n from "../../i18n";
@@ -674,6 +678,7 @@ describe("FilesDrawer", () => {
   });
 
   it("restores per-style file widths without replacing the active editor or its unsaved draft", async () => {
+    localStorage.setItem("qwenpaw-page-style", "classic");
     localStorage.setItem("qwenpaw-files-preview-width", "480");
     localStorage.setItem("qwenpaw-files-preview-width:deepseek", "600");
     function Controls() {
@@ -1242,7 +1247,9 @@ describe("FilesDrawer", () => {
       expect(drawer.className).not.toContain("drawerResizing");
     });
     expect(drawer).toHaveStyle({ width: "600px" });
-    expect(localStorage.getItem("qwenpaw-files-workspace-width")).toBe("600");
+    expect(
+      localStorage.getItem("qwenpaw-files-workspace-width:dual-sidebar"),
+    ).toBe("600");
   });
 
   it("uses left and right arrow keys from the right-side resize edge", async () => {
@@ -1281,8 +1288,8 @@ describe("FilesDrawer", () => {
   });
 
   it("applies persisted widths when the drawer mode changes", () => {
-    localStorage.setItem("qwenpaw-files-preview-width", "480");
-    localStorage.setItem("qwenpaw-files-workspace-width", "720");
+    localStorage.setItem("qwenpaw-files-preview-width:dual-sidebar", "480");
+    localStorage.setItem("qwenpaw-files-workspace-width:dual-sidebar", "720");
     const dispatch = vi.fn();
     const scope = {
       kind: "session" as const,
@@ -2126,6 +2133,13 @@ describe("FilesDrawer", () => {
         )}`,
       }),
     );
+    // The launch consumed the blank tab; closing returns to the native draft.
+    await waitFor(() =>
+      expect(screen.getByTestId("monaco-editor")).toBeVisible(),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.addTab") }),
+    );
     const recent = within(
       screen.getByRole("region", { name: i18n.t("workbench.tabs.newTab") }),
     ).getByRole("region", { name: i18n.t("workbench.empty.recent") });
@@ -2144,6 +2158,245 @@ describe("FilesDrawer", () => {
     expect(
       useCodingTabsStore.getState().tabsByAgent["session:default:interactions"],
     ).toHaveLength(1);
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.addTab") }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.openFile") }),
+    );
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
+    await waitFor(() =>
+      expect(screen.getByTestId("monaco-editor")).toBeVisible(),
+    );
+    expect(screen.getByTestId("monaco-editor")).toHaveValue("starter draft");
+    expect(
+      screen.queryByRole("tab", {
+        name: new RegExp(i18n.t("workbench.tabs.newTab")),
+      }),
+    ).not.toBeInTheDocument();
+  });
+
+  it.each([
+    "review",
+    "interactions",
+    "agents",
+    "genui",
+    "compute",
+    "simulation",
+  ])(
+    "replaces only the originating new tab when launching %s from its start page",
+    async (kind) => {
+      renderWithProviders(
+        <FilesDrawer
+          state={{ kind: "workspace", trigger: null }}
+          dispatch={vi.fn()}
+          scope={interactionScope}
+        />,
+      );
+      await screen.findByTestId("file-navigator");
+      const add = screen.getByRole("button", {
+        name: i18n.t("workbench.tabs.addTab"),
+      });
+      for (let i = 0; i < 3; i++) fireEvent.click(add);
+      const before =
+        useWorkbenchTabsStore.getState().scopes["session:default:interactions"]
+          .tabs;
+      fireEvent.click(screen.getAllByRole("tab")[1]);
+      const page = screen.getByRole("region", {
+        name: i18n.t("workbench.tabs.newTab"),
+      });
+      fireEvent.click(
+        within(page).getByRole("button", {
+          name: i18n.t("workbench.start.openView", {
+            name: i18n.t(`workbench.activity.${kind}`),
+          }),
+        }),
+      );
+      const after =
+        useWorkbenchTabsStore.getState().scopes["session:default:interactions"];
+      expect(after.tabs).toEqual([
+        before[0],
+        expect.objectContaining({ kind }),
+        before[2],
+      ]);
+      expect(after.activeId).toBe(after.tabs[1].id);
+      expect(after.recent).toEqual([]);
+      expect(screen.getAllByRole("tab")).toHaveLength(3);
+      expect(screen.getAllByRole("tab")[1]).toHaveAttribute(
+        "aria-selected",
+        "true",
+      );
+      await waitFor(() =>
+        expect(
+          screen.getByRole("tabpanel", {
+            name: new RegExp(i18n.t(`workbench.activity.${kind}`)),
+          }),
+        ).toBeVisible(),
+      );
+    },
+  );
+
+  it("focuses the current new tab address and preserves its draft when another tool is opened", async () => {
+    renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    await screen.findByTestId("file-navigator");
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.addTab") }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.newBrowser") }),
+    );
+    const address = screen.getByRole("textbox", {
+      name: /浏览器地址|Browser address/,
+    });
+    expect(address).toHaveFocus();
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+    fireEvent.change(address, { target: { value: "unfinished.example/path" } });
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: i18n.t("workbench.start.openView", {
+          name: i18n.t("workbench.activity.compute"),
+        }),
+      }),
+    );
+    expect(screen.getAllByRole("tab")).toHaveLength(2);
+    fireEvent.click(
+      screen.getByRole("tab", {
+        name: new RegExp(i18n.t("workbench.tabs.newTab")),
+      }),
+    );
+    expect(address).toHaveValue("unfinished.example/path");
+  });
+
+  it("reuses an already open tool in the new tab position without duplicating its view", async () => {
+    renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    await screen.findByTestId("file-navigator");
+    const openCompute = () =>
+      fireEvent.click(
+        screen.getByRole("button", {
+          name: i18n.t("workbench.start.openView", {
+            name: i18n.t("workbench.activity.compute"),
+          }),
+        }),
+      );
+    openCompute();
+    const add = screen.getByRole("button", {
+      name: i18n.t("workbench.tabs.addTab"),
+    });
+    fireEvent.click(add);
+    fireEvent.click(add);
+    const before =
+      useWorkbenchTabsStore.getState().scopes["session:default:interactions"]
+        .tabs;
+    openCompute();
+    const after =
+      useWorkbenchTabsStore.getState().scopes["session:default:interactions"];
+    expect(after.tabs).toEqual([before[1], before[0]]);
+    expect(after.activeId).toBe(before[0].id);
+    expect(after.recent).toEqual([]);
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(1);
+  });
+
+  it("launches a tool inside the secondary new tab without replacing the primary pane", async () => {
+    renderWithProviders(
+      <FilesDrawer
+        state={{ kind: "workspace", trigger: null }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    await screen.findByTestId("file-navigator");
+    const add = screen.getByRole("button", {
+      name: i18n.t("workbench.tabs.addTab"),
+    });
+    fireEvent.click(add);
+    const primaryAddress = screen.getByRole("textbox", {
+      name: /浏览器地址|Browser address/,
+    });
+    fireEvent.change(primaryAddress, { target: { value: "primary draft" } });
+    fireEvent.click(add);
+    const before =
+      useWorkbenchTabsStore.getState().scopes["session:default:interactions"]
+        .tabs;
+    fireEvent.contextMenu(screen.getAllByRole("tab")[1]);
+    fireEvent.click(await screen.findByText(i18n.t("workbench.split.right")));
+    const secondary = screen
+      .getAllByRole("tabpanel")
+      .find((panel) => panel.id.endsWith("-secondary"))!;
+    fireEvent.click(
+      within(secondary).getByRole("button", {
+        name: i18n.t("workbench.start.openView", {
+          name: i18n.t("workbench.activity.compute"),
+        }),
+      }),
+    );
+    const after =
+      useWorkbenchTabsStore.getState().scopes["session:default:interactions"];
+    expect(after.tabs).toHaveLength(2);
+    expect(after.activeId).toBe(before[0].id);
+    expect(after.secondaryId).toBe("compute:default");
+    await waitFor(() => expect(primaryAddress).toBeVisible());
+    expect(primaryAddress).toHaveValue("primary draft");
+    expect(screen.getAllByRole("tabpanel")).toHaveLength(2);
+    expect(
+      screen.getByRole("tabpanel", {
+        name: new RegExp(i18n.t("workbench.activity.compute")),
+      }),
+    ).toBeVisible();
+  });
+
+  it("replaces a new tab after a recent native file finishes loading", async () => {
+    renderWithProviders(
+      <FilesDrawer
+        state={{
+          kind: "workspace",
+          target: {
+            source: "workspace",
+            path: "recent.txt",
+            preferredView: "text",
+          },
+          trigger: null,
+        }}
+        dispatch={vi.fn()}
+        scope={interactionScope}
+      />,
+    );
+    await screen.findByTestId("monaco-editor");
+    fireEvent.click(
+      screen.getByRole("button", {
+        name: `${i18n.t("workbench.tabs.close")} recent.txt`,
+      }),
+    );
+    fireEvent.click(
+      screen.getByRole("button", { name: i18n.t("workbench.tabs.addTab") }),
+    );
+    const recent = screen.getByRole("region", {
+      name: i18n.t("workbench.empty.recent"),
+    });
+    fireEvent.click(within(recent).getByRole("button", { name: /recent.txt/ }));
+    await waitFor(() =>
+      expect(screen.getByRole("tab", { name: /recent.txt/ })).toHaveAttribute(
+        "aria-selected",
+        "true",
+      ),
+    );
+    expect(screen.getAllByRole("tab")).toHaveLength(1);
+    expect(await screen.findByText("hello")).toBeVisible();
+    expect(
+      useWorkbenchTabsStore.getState().scopes["session:default:interactions"]
+        .recent,
+    ).toEqual([]);
   });
   it("quotes a selection from the mounted workspace preview and locates its original scoped file lines", async () => {
     const scope = {

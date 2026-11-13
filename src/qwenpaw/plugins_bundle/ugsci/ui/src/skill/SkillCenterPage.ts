@@ -1,3 +1,4 @@
+import { expertDisplayName } from "../core/displayNames";
 /**
  * Skill center page — tabs for agent skills and skill pool.
  */
@@ -75,7 +76,7 @@ export function SkillCenterPage({
 
   const currentAgentName = useMemo(() => {
     const agent = agents.find((a) => a.id === currentAgentId);
-    return agent?.name || currentAgentId;
+    return expertDisplayName(agent?.name || currentAgentId);
   }, [agents, currentAgentId]);
 
   // Keep both skill tabs in sync without reloading the whole skill pool after
@@ -109,7 +110,9 @@ export function SkillCenterPage({
     [currentAgentId, currentAgentName],
   );
 
+  const navigate = host.useNavigate?.();
   const navigateTo = (path: string) => {
+    if (navigate) return navigate(path);
     window.history.pushState({}, "", path);
     window.dispatchEvent(new PopStateEvent("popstate"));
   };

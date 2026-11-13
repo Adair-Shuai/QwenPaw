@@ -99,11 +99,13 @@ $installerPhaseClocks = @{}
 function Start-InstallerPhase([string]$Name) {
   $script:installerPhaseClocks[$Name] = [Diagnostics.Stopwatch]::StartNew()
   Write-Host "[UGSCI-INSTALL] $Name..."
+  Write-Host "[UGSCI-PHASE] $Name|start"
 }
 function Complete-InstallerPhase([string]$Name) {
   $clock = $script:installerPhaseClocks[$Name]
   $clock.Stop()
   Write-Host ("[UGSCI-INSTALL] {0} finished in {1:N1}s" -f $Name, $clock.Elapsed.TotalSeconds)
+  Write-Host "[UGSCI-PHASE] $Name|end"
 }
 
 function Get-NormalizedDirectoryPath([string]$Path) {
@@ -194,7 +196,7 @@ function Invoke-ElevatedInstaller([string]$ResolvedInstallDir) {
     $arguments += "-TransactionFile"
     $arguments += Quote-ProcessArgument $TransactionFile
   }
-  Write-Host "Administrator approval is required to install UGSci Desktop."
+  Write-Host "Administrator approval is required to install UGSci."
   $start = @{
     FilePath = $powershell
     ArgumentList = ($arguments -join " ")
@@ -331,9 +333,9 @@ function Get-UnrelatedInstallEntries {
 
 function Get-UnrecognizedNonEmptyFolderMessage {
   return @"
-The selected folder is not empty and is not a recognized UGSci Desktop installation.
+The selected folder is not empty and is not a recognized UGSci installation.
 
-A recognized install has UGSci.exe (or the legacy name qwenpaw-desktop.exe) plus binaries\state\active.json or a legacy backend; or version.json with product "UGSci Desktop" plus one of those program markers.
+A recognized install has UGSci.exe (or the legacy name qwenpaw-desktop.exe) plus binaries\state\active.json or a legacy backend; or a trusted version.json plus one of those program markers.
 
 Choose an empty folder, or remove extra files and retry. Windows Explorer may have created desktop.ini in this folder, which also counts as extra content.
 "@
@@ -341,7 +343,7 @@ Choose an empty folder, or remove extra files and retry. Windows Explorer may ha
 
 function Get-UnrelatedInstallEntriesMessage([string]$Preview) {
   return @"
-The existing UGSci Desktop folder also contains unrelated files or folders that Setup will not delete: $Preview.
+The existing UGSci folder also contains unrelated files or folders that Setup will not delete: $Preview.
 
 Move or remove those items (including desktop.ini or other files you added), then retry, or choose a different empty folder.
 "@
@@ -349,14 +351,14 @@ Move or remove those items (including desktop.ini or other files you added), the
 
 function Get-AlreadyInstalledElsewhereMessage([string]$ExistingDir) {
   return @"
-UGSci Desktop is already installed at:
+UGSci is already installed at:
 $ExistingDir
 
 Setup cannot install to a second location. Uninstall the existing copy from Windows Settings first, or go back and keep the folder above to upgrade in place.
 "@
 }
 
-$defaultInstallDir = Join-Path $env:ProgramFiles "UGSci Desktop"
+$defaultInstallDir = Join-Path $env:ProgramFiles "UGSci"
 $existingInstallDir = $null
 $legacyUninstallKey = $null
 $legacyUninstallKeyPath = $null
@@ -392,7 +394,7 @@ $installDir = if ($requestedInstallDir) { $requestedInstallDir } elseif ($existi
 $installDir = Get-NormalizedDirectoryPath -Path $installDir
 $installRoot = Get-NormalizedDirectoryPath -Path ([IO.Path]::GetPathRoot($installDir))
 if ($installDir.Equals($installRoot, [StringComparison]::OrdinalIgnoreCase)) {
-  throw "UGSci Desktop cannot be installed directly into a drive root"
+  throw "UGSci cannot be installed directly into a drive root"
 }
 $installParent = Split-Path -Parent $installDir
 if (-not $installParent -or -not [IO.Path]::IsPathRooted($installParent)) {
@@ -474,15 +476,16 @@ try {
   # The previous installer process died; Windows has transferred ownership.
   $mutexAcquired = $true
 }
-if (-not $mutexAcquired) { throw "Another UGSci Desktop installation is already running" }
+if (-not $mutexAcquired) { throw "Another UGSci installation is already running" }
 $previousUserPath = [Environment]::GetEnvironmentVariable("Path", "User")
 $uninstallKey = "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\UGSci Desktop"
 $canonicalUninstallKeyPath = "Software\Microsoft\Windows\CurrentVersion\Uninstall\UGSci Desktop"
 $previousUninstall = if (Test-Path -LiteralPath $uninstallKey) {
   Get-ItemProperty -LiteralPath $uninstallKey -ErrorAction SilentlyContinue
 } else { $null }
-$startMenuShortcutPath = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\UGSci Desktop.lnk"
-$desktopShortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) "UGSci Desktop.lnk"
+$shortcutName = if ($DeferredCommit) { "UGSci Desktop.lnk" } else { "UGSci.lnk" }
+$startMenuShortcutPath = Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\$shortcutName"
+$desktopShortcutPath = Join-Path ([Environment]::GetFolderPath("Desktop")) $shortcutName
 $previousStartMenuShortcut = if (Test-Path -LiteralPath $startMenuShortcutPath -PathType Leaf) {
   [IO.File]::ReadAllBytes($startMenuShortcutPath)
 } else { $null }
@@ -826,9 +829,9 @@ function Install-WebView2Runtime([string]$Installer) {
 
 function Get-WebView2MissingMessage {
   return @"
-Microsoft WebView2 Runtime could not be installed. UGSci Desktop Setup will continue.
+Microsoft WebView2 Runtime could not be installed. UGSci Setup will continue.
 
-The desktop window and visualization stay unavailable until WebView2 is installed. The QwenPaw CLI and backend are still installed and can be used. Install WebView2 from Microsoft, or rerun the bundled installer in the application folder, then start UGSci Desktop again.
+The desktop window and visualization stay unavailable until WebView2 is installed. The QwenPaw CLI and backend are still installed and can be used. Install WebView2 from Microsoft, or rerun the bundled installer in the application folder, then start UGSci again.
 "@
 }
 
@@ -978,7 +981,7 @@ function Move-DirectoryWithRetry {
       if ($attempt -lt $Attempts) { Start-Sleep -Milliseconds $DelayMilliseconds }
     }
   }
-  throw "Cannot move the existing UGSci Desktop installation after $Attempts attempts. A process is still using its files. $lastError"
+  throw "Cannot move the existing UGSci installation after $Attempts attempts. A process is still using its files. $lastError"
 }
 
 function Copy-DirectoryLongPathSafe {
@@ -1054,7 +1057,7 @@ if ((Test-Path -LiteralPath $stagingDir) -or (Test-Path -LiteralPath $backupDir)
 }
 New-Item -ItemType Directory -Path $stagingDir -Force | Out-Null
 Start-InstallerPhase "Copying application files"
-Copy-DirectoryLongPathSafe -Source $payloadRoot -Destination $stagingDir
+[UGSciInstallerIO]::CopyDirectory($payloadRoot, $stagingDir, $false, $payloadBytes) | Out-Null
 Copy-Item -LiteralPath $versionManifest -Destination (Join-Path $stagingDir "version.json") -Force
 Complete-InstallerPhase "Copying application files"
 
@@ -1143,6 +1146,13 @@ try {
   $legacyCliScripts = Join-Path $installDir "binaries\python-runtime\python\Scripts"
   & (Join-Path $installDir "update-qwenpaw-path.ps1") -Action Remove -Path $legacyCliScripts
   $enableCliPath = -not $NoCliPath
+  if ($DeferredCommit -and $existingInstallDir -and -not $NoCliPath) {
+    $previousCliPaths = @($previousUserPath -split ';' | ForEach-Object {
+      [Environment]::ExpandEnvironmentVariables($_.Trim().Trim('"')).TrimEnd('\', '/')
+    })
+    $enableCliPath = ($previousCliPaths -contains $cliScripts) -or
+      ($previousCliPaths -contains $legacyCliScripts)
+  }
   if (-not $Silent -and -not $NoCliPath) {
     $answer = Read-Host "Add the QwenPaw CLI to your user PATH? [Y/n]"
     $enableCliPath = -not ($answer -match "^(n|no)$")
@@ -1157,7 +1167,7 @@ try {
 
   $version = [string]$packageVersion.version
   New-Item -Path $uninstallKey -Force | Out-Null
-  New-ItemProperty -Path $uninstallKey -Name DisplayName -Value "UGSci Desktop" -PropertyType String -Force | Out-Null
+  New-ItemProperty -Path $uninstallKey -Name DisplayName -Value "UGSci" -PropertyType String -Force | Out-Null
   New-ItemProperty -Path $uninstallKey -Name DisplayVersion -Value $version -PropertyType String -Force | Out-Null
   New-ItemProperty -Path $uninstallKey -Name Publisher -Value "UGSci" -PropertyType String -Force | Out-Null
   New-ItemProperty -Path $uninstallKey -Name InstallLocation -Value $installDir -PropertyType String -Force | Out-Null
@@ -1276,7 +1286,22 @@ try {
   $mutex.Dispose()
 }
 
-Write-Host "UGSci Desktop $version installed to $installDir"
+Write-Host "UGSci $version installed to $installDir"
+if (-not $DeferredCommit) {
+  # Remove old aliases only after commit and only when they target this install.
+  foreach ($legacyShortcut in @(
+    (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\UGSci Desktop.lnk"),
+    (Join-Path ([Environment]::GetFolderPath("Desktop")) "UGSci Desktop.lnk")
+  )) {
+    if (Test-Path -LiteralPath $legacyShortcut -PathType Leaf) {
+      try {
+        if ($shell.CreateShortcut($legacyShortcut).TargetPath -eq $appExe) {
+          Remove-Item -LiteralPath $legacyShortcut -Force
+        }
+      } catch { Write-Warning "Could not remove the old application shortcut: $_" }
+    }
+  }
+}
 if (-not $Silent) { Write-Host "You can launch it from the Start menu or desktop shortcut." }
 # Native tools such as robocopy use successful non-zero status codes.  Do not
 # let PowerShell propagate the last native status and make Setup.exe report a
@@ -1302,16 +1327,16 @@ if ($installDir.Equals($installRoot, [StringComparison]::OrdinalIgnoreCase)) {
 }
 $versionPath = Join-Path $installDir "version.json"
 if (-not (Test-Path -LiteralPath $versionPath -PathType Leaf)) {
-  throw "UGSci Desktop version marker is missing"
+  throw "UGSci version marker is missing"
 }
 $installedVersion = Get-Content -LiteralPath $versionPath -Raw -Encoding UTF8 | ConvertFrom-Json
 if ($installedVersion.product -ne "UGSci Desktop") {
-  throw "The selected folder is not a recognized UGSci Desktop installation"
+  throw "The selected folder is not a recognized UGSci installation"
 }
 if (-not (Test-Path -LiteralPath (Join-Path $installDir "UGSci.exe") -PathType Leaf) -and
     -not (Test-Path -LiteralPath (Join-Path $installDir "qwenpaw-desktop.exe") -PathType Leaf) -and
     -not (Test-Path -LiteralPath (Join-Path $installDir "Uninstall.exe") -PathType Leaf)) {
-  throw "UGSci Desktop application markers are missing"
+  throw "UGSci application markers are missing"
 }
 $prefix = $installDir + '\'
 $waitPids = @()
@@ -1336,7 +1361,9 @@ if (Test-Path -LiteralPath $cliPathFile) {
 }
 Remove-Item -LiteralPath "HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall\UGSci Desktop" -Recurse -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\UGSci Desktop.lnk") -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path $env:APPDATA "Microsoft\Windows\Start Menu\Programs\UGSci.lnk") -Force -ErrorAction SilentlyContinue
 Remove-Item -LiteralPath (Join-Path ([Environment]::GetFolderPath("Desktop")) "UGSci Desktop.lnk") -Force -ErrorAction SilentlyContinue
+Remove-Item -LiteralPath (Join-Path ([Environment]::GetFolderPath("Desktop")) "UGSci.lnk") -Force -ErrorAction SilentlyContinue
 & (Join-Path $installDir "update-qwenpaw-path.ps1") -Action Remove -Path (Join-Path $installDir "binaries\python-runtime\python\Scripts")
 $cleanupScript = if ($CleanupScript) { $CleanupScript } else { Join-Path $installDir "uninstall-cleanup.ps1" }
 if (Test-Path -LiteralPath $cleanupScript) {
@@ -1345,9 +1372,9 @@ if (Test-Path -LiteralPath $cleanupScript) {
     "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", "`"$cleanupScript`"",
     "-InstallDir", "`"$installDir`"", "-WaitPids", "`"$waitPidValue`""
   ) -WindowStyle Hidden -PassThru
-  if (-not $cleanupProcess) { throw "UGSci Desktop cleanup process did not start" }
+  if (-not $cleanupProcess) { throw "UGSci cleanup process did not start" }
 } else {
-  throw "UGSci Desktop cleanup script is missing"
+  throw "UGSci cleanup script is missing"
 }
 '@ | Set-Content -LiteralPath $uninstallPs1 -Encoding UTF8
 

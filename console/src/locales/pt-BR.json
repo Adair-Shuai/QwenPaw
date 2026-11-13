@@ -60,15 +60,15 @@
   },
   "desktop": {
     "update": {
-      "title": "Atualizar o QwenPaw?",
+      "title": "Atualizar o UGSci?",
       "otherWindows_one": "Há mais {{count}} janela aberta.",
       "otherWindows_other": "Há mais {{count}} janelas abertas.",
-      "description": "A atualização fechará todas as janelas do QwenPaw e interromperá as tarefas em execução.",
-      "confirm": "Fechar e atualizar",
+      "description": "A atualização fechará todas as janelas do UGSci e interromperá as tarefas em execução.",
+      "confirm": "Fechar e atualizar UGSci",
       "preparing": "Fechando janelas…"
     },
     "closeWindow": {
-      "title": "Fechar o QwenPaw?",
+      "title": "Fechar o UGSci?",
       "description": "Continue em segundo plano para manter suas tarefas. Sair completamente encerra as tarefas em execução.",
       "remember": "Lembrar minha escolha",
       "showWindow": "Mostrar janela",
@@ -77,9 +77,16 @@
       "keepRunning": "Continuar em segundo plano",
       "quitting": "Saindo…",
       "stopService": "Sair completamente",
-      "stopBlocked": "O QwenPaw ainda está em uso em outras janelas ou aplicativos. Feche-os antes de sair completamente.",
+      "stopBlocked": "O UGSci ainda está em uso em outras janelas ou aplicativos. Feche-os antes de sair completamente.",
       "preference": "Fechar Janela",
       "askEveryTime": "Perguntar sempre"
+    },
+    "window": {
+      "minimize": "Minimizar janela",
+      "maximize": "Maximizar janela",
+      "restore": "Restaurar janela",
+      "close": "Fechar janela",
+      "failed": "Falha na ação da janela. Tente novamente."
     }
   },
   "chunkError": {
@@ -3475,7 +3482,7 @@
       "title": "Novo Versao available: v{{version}}",
       "viewReleases": "Visualizar Releases",
       "installDesktopUpdate": "Atualizar agora",
-      "desktopInstallHint": "QwenPaw Desktop {{version}} está pronto para instalar. O aplicativo será reiniciado após a atualização.",
+      "desktopInstallHint": "UGSci {{version}} está pronto para instalar. O aplicativo será reiniciado após a atualização.",
       "checking": "Verificando atualizações…",
       "checkingHint": "Confirmando a versão mais recente",
       "downloading": "Baixando atualização",
@@ -3492,7 +3499,7 @@
       "errors": {
         "network": "Não foi possível alcançar o servidor de atualização. Verifique sua internet e tente novamente.",
         "signature": "Assinatura do arquivo de atualização inválida. Tente baixar novamente.",
-        "appLocation": "O QwenPaw está sendo executado a partir de um local somente leitura do macOS. Mova QwenPaw.app para a pasta Aplicativos, abra-o a partir de lá e tente atualizar novamente.",
+        "appLocation": "O UGSci está sendo executado a partir de um local somente leitura do macOS. Mova UGSci.app para a pasta Aplicativos, abra-o a partir de lá e tente atualizar novamente.",
         "other": "Falha na atualização."
       },
       "updateLater": "Baixar em segundo plano",
@@ -3516,7 +3523,14 @@
     "collapse": "Recolher barra lateral",
     "expand": "Expandir barra lateral",
     "more": "Mais",
-    "toggleAgentNavigation": "Expandir ou recolher a navegação do agente"
+    "toggleAgentNavigation": "Expandir ou recolher a navegação do agente",
+    "dock": {
+      "left": "Fixar à esquerda",
+      "right": "Fixar à direita",
+      "bottom": "Fixar na base",
+      "floating": "Flutuante",
+      "handle": "Arraste a navegação ou clique para escolher a posição"
+    }
   },
   "settingsCenter": {
     "backToApp": "Voltar ao aplicativo",
@@ -4762,6 +4776,10 @@
     "update": "Atualizar",
     "updateAll": "Atualizar todos",
     "updateSuccess": "Plugin atualizado com sucesso",
+    "confirmDependencyUpdate": "Revisar dependências",
+    "coreUpdateRequired": "Esta atualização requer uma versão mais recente do UGSci. Atualize o aplicativo principal.",
+    "updateRestartRequired": "Atualização concluída. Reinicie para ativá-la.",
+    "ugsciUpgradeQueued": "Atualização agendada. Será ativada após reiniciar.",
     "updateAllSuccess": "Todos os plugins foram atualizados com sucesso",
     "updateAllResult": "{{succeeded}} plugins atualizados; {{failed}} falharam: {{names}}",
     "updateFailed": "Falha ao atualizar o plugin",

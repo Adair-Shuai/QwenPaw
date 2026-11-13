@@ -408,4 +408,39 @@ describe("FlowForge actual run inspector", () => {
       "flow-new",
     );
   });
+
+  it.each(["failed", "error", "timeout"])(
+    "starts AI repair from the recorded %s node and hides it on healthy nodes",
+    async (status) => {
+      const onRepair = vi.fn();
+      const record = makeRun({
+        agent_id: "agent-a",
+        status: "failed",
+        node_statuses: { model: status, wait: "pending", branch: "skipped" },
+      });
+      mount(record, { agentId: "agent-a", onRepair });
+      const detail = await screen.findByRole("region", {
+        name: "节点详情 历史模型名称",
+      });
+      fireEvent.click(
+        within(detail).getByRole("button", {
+          name: "AI 修复节点 历史模型名称",
+        }),
+      );
+      expect(onRepair).toHaveBeenCalledWith({
+        flowId: "flow-old",
+        runId: "run-old",
+        nodeId: "model",
+      });
+      fireEvent.click(
+        screen.getByRole("button", { name: "检查节点 待处理节点" }),
+      );
+      const waiting = await screen.findByRole("region", {
+        name: "节点详情 待处理节点",
+      });
+      expect(
+        within(waiting).queryByRole("button", { name: /AI 修复/ }),
+      ).toBeNull();
+    },
+  );
 });

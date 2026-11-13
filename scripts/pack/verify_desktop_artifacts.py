@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import runpy
 from pathlib import Path
 import sys
 import zipfile
@@ -19,6 +20,7 @@ ARTIFACT_PATTERNS_BY_BRAND = {
     "ugsci": {
         "windows": "UGSci-Desktop-Tauri-Windows-*/UGSci-Tauri-*-Windows-portable.zip",
         "macos": "UGSci-Desktop-Tauri-macOS-*/UGSci-Tauri-*-macOS.zip",
+        "macos-dmg": "UGSci-Desktop-Tauri-macOS-*/UGSci-Tauri-*-macOS.dmg",
     },
 }
 
@@ -101,7 +103,10 @@ def verify_checksum(artifact: Path) -> None:
 def verify_artifact(artifact: Path, platform: str) -> None:
     verify_checksum(artifact)
 
-    if platform == "macos":
+    if platform == "macos-dmg":
+        helper = Path(__file__).resolve().parents[1] / "pack-tauri/macos_dmg.py"
+        runpy.run_path(str(helper))["verify_envelope"](artifact)
+    elif platform == "macos":
         try:
             with zipfile.ZipFile(artifact) as archive:
                 corrupt_member = archive.testzip()
@@ -216,7 +221,9 @@ def main() -> int:
     parser.add_argument(
         "--require",
         action="append",
-        choices=("windows", "macos", "windows-updater", "macos-updater"),
+        choices=(
+            "windows", "macos", "macos-dmg", "windows-updater", "macos-updater",
+        ),
         default=[],
         help="Fail unless exactly one artifact for this platform is present",
     )
@@ -225,9 +232,16 @@ def main() -> int:
     updater_specs = UPDATER_SPECS_BY_BRAND[args.brand]
 
     required_platforms = set(args.require)
-    for platform, spec in updater_specs.items():
-        if (args.root / spec["directory"]).is_dir():
-            required_platforms.add(platform)
+    unsupported = required_platforms - set(artifact_patterns) - set(updater_specs)
+    if unsupported:
+        parser.error(
+            f"unsupported artifact kind for {args.brand}: {sorted(unsupported)}"
+        )
+    required_platforms.update(
+        platform
+        for platform, spec in updater_specs.items()
+        if (args.root / spec["directory"]).is_dir()
+    )
 
     failed = False
     found_any = False

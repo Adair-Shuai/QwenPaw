@@ -126,6 +126,62 @@ const base = (overrides: Record<string, unknown> = {}) => ({
 afterEach(cleanup);
 
 describe("FlowForge mounted node inspector", () => {
+  it("navigates property tabs with the keyboard and reveals diagnostic fields without modifying configuration", async () => {
+    const props = base({ node: node({ query: "保留原任务" }) });
+    const view = render(<NodeInspector {...props} />);
+    const inputs = screen.getByRole("tab", { name: "参数" });
+    fireEvent.keyDown(inputs, { key: "End" });
+    expect(screen.getByRole("tab", { name: "基础" })).toHaveFocus();
+    expect(screen.getByRole("textbox", { name: "显示标签" })).toBeVisible();
+    fireEvent.keyDown(screen.getByRole("tab", { name: "基础" }), {
+      key: "ArrowRight",
+    });
+    expect(inputs).toHaveFocus();
+    fireEvent.keyDown(inputs, { key: "ArrowLeft" });
+    fireEvent.keyDown(screen.getByRole("tab", { name: "基础" }), {
+      key: "Home",
+    });
+    expect(inputs).toHaveFocus();
+    view.rerender(<NodeInspector {...props} focusedField="outputs.reply" />);
+    await waitFor(() =>
+      expect(document.getElementById("ff-output-expert-reply")).toHaveFocus(),
+    );
+    expect(screen.getByRole("tab", { name: "输出" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    view.rerender(
+      <NodeInspector {...props} focusedField="control.timeout_sec" />,
+    );
+    await waitFor(() =>
+      expect(
+        screen.getByRole("spinbutton", { name: "节点超时（秒）" }),
+      ).toHaveFocus(),
+    );
+    view.rerender(<NodeInspector {...props} focusedField="inputs.query" />);
+    await waitFor(() =>
+      expect(screen.getByRole("textbox", { name: "任务指令" })).toHaveFocus(),
+    );
+    expect(screen.getByRole("textbox", { name: "任务指令" })).toHaveValue(
+      "保留原任务",
+    );
+    fireEvent.click(screen.getByRole("tab", { name: "基础" }));
+    view.rerender(
+      <NodeInspector
+        {...props}
+        node={{ ...node({ query: "另一节点" }), id: "other" }}
+      />,
+    );
+    expect(screen.getByRole("tab", { name: "参数" })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+    expect(screen.getByRole("textbox", { name: "任务指令" })).toHaveValue(
+      "另一节点",
+    );
+    expect(props.onUpdate).not.toHaveBeenCalled();
+  });
+
   it("focuses structured schema JSON pointer errors in the actual field without losing their detail", async () => {
     const onUpdate = vi.fn();
     render(
@@ -230,6 +286,7 @@ describe("FlowForge mounted node inspector", () => {
     }
     try {
       render(<Harness />);
+      fireEvent.click(screen.getByRole("tab", { name: "输出" }));
       fireEvent.mouseDown(screen.getByRole("combobox", { name: "响应格式" }));
       fireEvent.click(screen.getByText("JSON Schema 校验"));
       expect(changed).toHaveBeenLastCalledWith(
@@ -247,6 +304,16 @@ describe("FlowForge mounted node inspector", () => {
       });
       fireEvent.change(schemaInput, { target: { value: '{"type":' } });
       expect(schemaInput).toHaveValue('{"type":');
+      fireEvent.click(screen.getByRole("tab", { name: "参数" }));
+      expect(screen.getByRole("textbox", { name: "提示词" })).toHaveValue(
+        "中文 English",
+      );
+      expect(schemaInput).not.toBeVisible();
+      fireEvent.click(screen.getByRole("tab", { name: "输出" }));
+      expect(screen.getByRole("textbox", { name: "输出 JSON Schema" })).toBe(
+        schemaInput,
+      );
+      expect(schemaInput).toHaveValue('{"type":');
       fireEvent.click(screen.getByRole("button", { name: "Switch language" }));
       expect(
         screen.getByRole("textbox", { name: "Output JSON Schema" }),
@@ -254,9 +321,11 @@ describe("FlowForge mounted node inspector", () => {
       expect(
         screen.getByRole("combobox", { name: "Response format" }),
       ).toBeEnabled();
+      fireEvent.click(screen.getByRole("tab", { name: "Inputs" }));
       expect(screen.getByRole("textbox", { name: "Prompt" })).toHaveValue(
         "中文 English",
       );
+      fireEvent.click(screen.getByRole("tab", { name: "Outputs" }));
       fireEvent.change(
         screen.getByRole("textbox", { name: "Output JSON Schema" }),
         {
@@ -610,6 +679,7 @@ describe("FlowForge mounted node inspector", () => {
     });
     fireEvent.change(query, { target: { value: "不能覆盖" } });
     expect(props.onUpdate).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("tab", { name: "基础" }));
     fireEvent.change(screen.getByPlaceholderText("节点显示名称"), {
       target: { value: "专家汇总" },
     });
@@ -621,10 +691,12 @@ describe("FlowForge mounted node inspector", () => {
         }),
       }),
     );
+    fireEvent.click(screen.getByRole("tab", { name: "输出" }));
+    expect(screen.getByText("输出变量名")).toBeVisible();
+    fireEvent.click(screen.getByRole("tab", { name: "执行" }));
     for (const label of [
       "重试次数",
       "重试延迟（秒）",
-      "输出变量名",
       "执行模式",
       "节点超时（秒）",
       "完成后继续",

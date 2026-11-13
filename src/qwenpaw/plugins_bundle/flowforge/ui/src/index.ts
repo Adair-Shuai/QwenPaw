@@ -27,6 +27,7 @@ import { SchemaField } from "./SchemaField";
 import { RunInputDialog, RunMonitor, RunHistory } from "./RunPanels";
 import { parseRuntimeInputs } from "./model";
 import type { RunRecord } from "./runRecord";
+import type { RepairSource, RepairRequest } from "./authoringModel";
 import { useWorkflowI18n, translateWorkflow, workflowLocale } from "./i18n";
 import { useWorkflowIdentity } from "./useWorkflowIdentity";
 // @ts-ignore — embedded stylesheet for blob-loaded plugin
@@ -112,7 +113,7 @@ async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
           ? parsed.detail
           : JSON.stringify(parsed.detail || parsed);
     } catch {}
-    throw new Error(
+    const error = new Error(
       resp.status === 409 && !path.includes("/runs/")
         ? `${translateWorkflow(
             "版本已变化，请重新打开最新版本后合并修改。",
@@ -121,6 +122,7 @@ async function apiFetch<T>(path: string, opts?: RequestInit): Promise<T> {
           )}${detail}`
         : detail || `HTTP ${resp.status}`,
     );
+    throw Object.assign(error, { status: resp.status });
   }
   if (resp.status === 204) return null as T;
   return resp.json();
@@ -210,6 +212,7 @@ function LabeledEdge(props: EdgeProps & any) {
     React.Fragment,
     null,
     React.createElement("path", {
+      className: "ff-edge-path",
       id,
       d: edgePath,
       stroke: selected
@@ -625,6 +628,8 @@ function FlowListPage({
 // ─── Flow Editor Page ───────────────────────────────────────────────────────
 
 interface EditorProps {
+  repairRequest?: RepairRequest | null;
+  onRepairConsumed?: (key: string) => void;
   debugRecord?: RunRecord;
   onDebugRun?: (runId: string) => void;
   userId?: string;
@@ -862,6 +867,9 @@ function FlowForgeApp() {
   const agentId = selectedAgent?.id || host.getSelectedAgentId?.() || "default";
   const { identity, error: identityError } = useWorkflowIdentity(apiFetch);
   const [debugRecord, setDebugRecord] = useState<RunRecord | undefined>();
+  const [repairRequest, setRepairRequest] = useState<RepairRequest | null>(
+    null,
+  );
   const initialFlowId = new URLSearchParams(window.location.search).get("flow");
   const initialRunId = new URLSearchParams(window.location.search).get("run");
   const [route, setRoute] = useState<"list" | "editor">(
@@ -911,6 +919,7 @@ function FlowForgeApp() {
       selectRun(null);
       setRunStatuses({});
       setDebugRecord(undefined);
+      setRepairRequest(null);
       setHistoryOpen(false);
       setPendingRun(null);
     }
@@ -923,6 +932,11 @@ function FlowForgeApp() {
       const params = new URLSearchParams(window.location.search);
       const selected = params.get("flow");
       setRunId(params.get("run"));
+      setRepairRequest((source) =>
+        source?.flowId === selected && source.runId === params.get("run")
+          ? source
+          : null,
+      );
       setFlowId(selected);
       setRoute(selected ? "editor" : "list");
       setRunStatuses({});
@@ -937,6 +951,11 @@ function FlowForgeApp() {
     const params = new URLSearchParams(location.search);
     const selected = params.get("flow");
     setRunId(params.get("run"));
+    setRepairRequest((source) =>
+      source?.flowId === selected && source.runId === params.get("run")
+        ? source
+        : null,
+    );
     setFlowId(selected);
     setRoute(selected ? "editor" : "list");
     setRunStatuses({});
@@ -944,6 +963,7 @@ function FlowForgeApp() {
   }, [location?.pathname, location?.search]);
 
   const editFlow = useCallback((id: string) => {
+    setRepairRequest(null);
     ++inputRequest.current;
     setPendingRun(null);
     setFlowId(id);
@@ -957,6 +977,7 @@ function FlowForgeApp() {
     );
   }, []);
   const backToList = useCallback(() => {
+    setRepairRequest(null);
     ++inputRequest.current;
     setPendingRun(null);
     setRoute("list");
@@ -1024,6 +1045,37 @@ function FlowForgeApp() {
     setRunStatuses({});
   }, [selectRun]);
 
+  const repairRunNode = (source: RepairSource) => {
+    const page = activePage.current;
+    const open = () => {
+      if (
+        requestScope.current !== renderScope ||
+        activePage.current !== page ||
+        identity === undefined
+      )
+        return;
+      if (route !== "editor" || flowId !== source.flowId)
+        editFlow(source.flowId);
+      selectRun(source.runId);
+      setRepairRequest({
+        ...source,
+        key: crypto.randomUUID(),
+        agentId,
+        userId: identity,
+      });
+    };
+    if (route === "editor" && flowId !== source.flowId) {
+      const url = `${window.location.pathname}?flow=${encodeURIComponent(
+        source.flowId,
+      )}&run=${encodeURIComponent(source.runId)}`;
+      const navigating = new CustomEvent("qwenpaw:before-navigate", {
+        cancelable: true,
+        detail: { to: url, method: "replace", retry: open },
+      });
+      if (window.dispatchEvent(navigating)) open();
+    } else open();
+  };
+
   if (identityError)
     return React.createElement(host.antd.Alert, {
       type: "error",
@@ -1057,6 +1109,11 @@ function FlowForgeApp() {
             onHistory: () => setHistoryOpen(true),
             runStatuses,
             debugRecord,
+            repairRequest,
+            onRepairConsumed: (key: string) =>
+              setRepairRequest((source) =>
+                source?.key === key ? null : source,
+              ),
             onDebugRun: selectRun,
             userId: identity,
           })
@@ -1072,6 +1129,7 @@ function FlowForgeApp() {
       agentId,
       docked: route === "editor",
       onRecord: setDebugRecord,
+      onRepair: repairRunNode,
       onClose: handleCloseRun,
       onStatusUpdate: handleStatusUpdate,
       onResumed: selectRun,

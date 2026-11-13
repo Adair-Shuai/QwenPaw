@@ -16,6 +16,8 @@ const MARGIN = 12;
 const DOCK_EDGE = 64;
 const spring = { type: "spring" as const, stiffness: 340, damping: 36 };
 interface Props {
+  stationary?: boolean;
+  resizeOffset?: number;
   width: number;
   minWidth?: number;
   mobile: boolean;
@@ -28,6 +30,8 @@ interface Props {
 
 /** One stable subtree: docking only changes its presentation, never its owner. */
 export default function DockableSidebar({
+  stationary = false,
+  resizeOffset = 0,
   width,
   minWidth,
   mobile,
@@ -297,7 +301,17 @@ export default function DockableSidebar({
       ref={anchor}
       className={styles.anchor}
       initial={false}
-      animate={{ width: mobile ? 56 : floating && !landing ? 0 : width }}
+      animate={{
+        width: stationary
+          ? mobile
+            ? 0
+            : width
+          : mobile
+          ? 56
+          : floating && !landing
+          ? 0
+          : width,
+      }}
       transition={reduced || resizing ? { duration: 0 } : spring}
     >
       {mobile && width > 56 && (
@@ -322,6 +336,7 @@ export default function DockableSidebar({
       <motion.div
         ref={frame}
         data-sidebar-placement={floating ? "floating" : "docked"}
+        data-conversation-pane={stationary || undefined}
         data-sidebar-landing={landing || undefined}
         className={`${styles.frame} ${floating ? styles.floating : ""} ${
           dragging ? styles.dragging : ""
@@ -340,13 +355,13 @@ export default function DockableSidebar({
         }}
         transition={reduced ? { duration: 0 } : spring}
         style={{
-          width: mobile ? 56 : width,
+          width: stationary ? width : mobile ? 56 : width,
           height: floating ? height : "100%",
           x: floating ? x : 0,
           y: floating ? y : 0,
         }}
       >
-        {!mobile && (
+        {!mobile && !stationary && (
           <div className={styles.transport}>
             <button
               ref={handle}
@@ -387,8 +402,10 @@ export default function DockableSidebar({
         {children}
         {!mobile && width > 72 && onWidthChange && (
           <SidebarResizeHandle
-            minWidth={minWidth}
-            width={width}
+            minWidth={
+              minWidth === undefined ? undefined : minWidth + resizeOffset
+            }
+            width={width + resizeOffset}
             onChange={onWidthChange}
             onReset={onWidthReset}
             onResizingChange={setResizing}

@@ -2307,9 +2307,13 @@ async def continue_operation(directory, *, preflight=False):
             allow_install=False,
             probe=True,
         )
-        record = await loader.install_plugin_files(
+        from .downloaded_updates import install_confirmed_update
+
+        record = await install_confirmed_update(
+            loader,
             source,
-            force=operation["force"],
+            operation,
+            files_only=True,
         )
         atomic_json(directory / "continuation.json", install_result(record))
     finally:

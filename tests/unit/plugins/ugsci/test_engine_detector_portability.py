@@ -133,9 +133,9 @@ def test_smoke_probe_keeps_file_evidence_and_license_outcomes(
         if case.startswith("no_prt"):
             return SimpleNamespace(
                 returncode=1,
-                stdout="license unavailable"
-                if case == "no_prt_license"
-                else "",
+                stdout=(
+                    "license unavailable" if case == "no_prt_license" else ""
+                ),
                 stderr="",
             )
         content = "ECLIPSE 2026.1 (Build 88.3)\n"
@@ -470,3 +470,457 @@ def test_find_lmutil_honors_explicit_environment_override(
     engine = EngineInfo(id="eclipse", name="Eclipse")
 
     assert _find_lmutil(engine) == str(lmutil)
+
+
+@pytest.mark.parametrize(
+    "layout",
+    [
+        "ecl/2024.1/bin/pc_x86_64/ECLIPSE.EXE",
+        "SLB/ECLIPSE/2024.1.2/bin/pc/e300.exe",
+    ],
+)
+def test_eclipse_discovers_unregistered_install_on_fixed_volume(
+    tmp_path,
+    monkeypatch,
+    layout,
+):
+    executable = tmp_path / layout
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"fixture")
+    monkeypatch.setattr(detector.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(detector, "_windows_fixed_volumes", lambda: [tmp_path])
+    monkeypatch.setattr(
+        detector,
+        "_search_registry_for_schlumberger",
+        lambda _names: None,
+    )
+    monkeypatch.setattr(
+        detector,
+        "_verify_schlumberger_license",
+        lambda _engine: None,
+    )
+    monkeypatch.setenv("PATH", "")
+    for name in (
+        "ECLIPSE_HOME",
+        "ECL_HOME",
+        "SLB_HOME",
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+        "ProgramW6432",
+        "LOCALAPPDATA",
+    ):
+        monkeypatch.delenv(name, raising=False)
+
+    def no_volume_walk(path):
+        if path == tmp_path:
+            raise AssertionError("A fixed volume must never be walked")
+        return original(path)
+
+    original = Path.iterdir
+    monkeypatch.setattr(Path, "iterdir", no_volume_walk)
+    found = detector._strategy_eclipse(
+        EngineInfo(id="eclipse", name="Eclipse"),
+    )
+    assert found.status == "detected"
+    assert found.executable_path == str(executable)
+    assert found.extra_info["detection_source"] == "installation_directory"
+
+
+def test_eclipse_uses_program_root_and_numeric_patch_version_order(
+    tmp_path,
+    monkeypatch,
+):
+    program_root = tmp_path / "custom-apps"
+    for version in ("2024.9", "2024.10.2", "2024"):
+        executable = (
+            program_root
+            / "Schlumberger"
+            / "ECLIPSE"
+            / version
+            / "bin"
+            / "win64"
+            / "e300.exe"
+        )
+        executable.parent.mkdir(parents=True)
+        executable.write_bytes(b"fixture")
+    monkeypatch.setenv("ProgramW6432", str(program_root))
+    monkeypatch.setattr(detector.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(detector, "_windows_fixed_volumes", lambda: [])
+    roots = detector._windows_schlumberger_roots()
+    root = program_root / "Schlumberger" / "ECLIPSE"
+    assert root in roots
+    result = detector._scan_schlumberger_dir(root, {"e300.exe"})
+    assert result[0] == str(root / "2024.10.2" / "bin" / "win64" / "e300.exe")
+    assert result[1] == "2024.10.2"
+
+
+@pytest.mark.parametrize("value_name", ["DisplayIcon", "UninstallString"])
+def test_eclipse_registry_recovers_missing_install_location(
+    tmp_path,
+    monkeypatch,
+    value_name,
+):
+    root = tmp_path / "ECL installation"
+    executable = root / "2023.1" / "bin" / "pc_x86_64" / "eclipse.exe"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"fixture")
+    icon = root / "launcher.exe"
+    icon.write_bytes(b"fixture")
+    values = {
+        "DisplayName": "SLB ECLIPSE",
+        "DisplayVersion": "2023.1",
+        value_name: (
+            f'"{icon}",0'
+            if value_name == "DisplayIcon"
+            else f'"{icon}" /uninstall'
+        ),
+    }
+
+    @contextmanager
+    def open_key(_hive, path):
+        yield path
+
+    registry = SimpleNamespace(
+        OpenKey=open_key,
+        QueryInfoKey=lambda _key: (1, 0, 0),
+        EnumKey=lambda _key, _index: "ECLIPSE",
+        QueryValueEx=lambda _key, name: (values.get(name), 1),
+    )
+    monkeypatch.setattr(detector, "winreg", registry)
+    monkeypatch.setattr(
+        detector,
+        "_REGISTRY_UNINSTALL_KEYS",
+        [(1, "Uninstall")],
+    )
+    result = detector._search_registry_for_schlumberger({"eclipse.exe"})
+    assert result[0] == str(executable)
+    assert result[1] == "2023.1"
+
+
+def test_eclipse_keeps_searching_after_inaccessible_architecture(
+    tmp_path,
+    monkeypatch,
+):
+    executable = tmp_path / "bin" / "win64" / "e300.exe"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"fixture")
+    blocked = tmp_path / "bin" / "pc_x86_64"
+    blocked.mkdir()
+    original = Path.iterdir
+
+    def list_directory(path):
+        if path == blocked:
+            raise PermissionError("denied")
+        return original(path)
+
+    monkeypatch.setattr(Path, "iterdir", list_directory)
+    assert detector._find_exe_in_version_dir(tmp_path, {"e300.exe"}) == (
+        str(executable),
+        "win64",
+    )
+
+
+def test_eclipse_registry_bounds_and_deduplicates_installer_search(
+    tmp_path,
+    monkeypatch,
+):
+    cache = tmp_path / "package-cache"
+    installer = cache / "bundle-id" / "setup.exe"
+    installer.parent.mkdir(parents=True)
+    installer.write_bytes(b"fixture")
+    values = {
+        "DisplayName": "ECLIPSE Setup",
+        "UninstallString": f'"{installer}" /remove',
+    }
+
+    @contextmanager
+    def open_key(_hive, path):
+        yield path
+
+    registry = SimpleNamespace(
+        OpenKey=open_key,
+        QueryInfoKey=lambda _key: (3, 0, 0),
+        EnumKey=lambda _key, index: str(index),
+        QueryValueEx=lambda _key, name: (values.get(name), 1),
+    )
+    monkeypatch.setattr(detector, "winreg", registry)
+    monkeypatch.setattr(
+        detector,
+        "_REGISTRY_UNINSTALL_KEYS",
+        [(1, "Uninstall")],
+    )
+    monkeypatch.setattr(
+        detector,
+        "_get_from_registry_subkeys",
+        lambda *_args: [],
+    )
+    checked = []
+
+    def scan(root, _names):
+        checked.append(root)
+        assert root != cache
+
+    monkeypatch.setattr(detector, "_scan_schlumberger_dir", scan)
+    assert detector._search_registry_for_schlumberger({"e300.exe"}) is None
+    assert checked == [installer.parent]
+
+
+def test_eclipse_refresh_api_discovers_and_persists_unregistered_install(
+    tmp_path,
+    monkeypatch,
+):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from plugins.bundle.ugsci.engine import manager
+    from plugins.bundle.ugsci.engine.api import build_engine_router
+
+    executable = (
+        tmp_path
+        / "fixed-volume"
+        / "ecl"
+        / "2025.1.2"
+        / "bin"
+        / "win64"
+        / "e300.exe"
+    )
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"fixture")
+    monkeypatch.setattr(manager, "ENGINES_DIR", tmp_path / "engine-config")
+    manager._write_engine(EngineInfo(id="eclipse", name="Eclipse"))
+    monkeypatch.setattr(detector.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(
+        detector,
+        "_windows_fixed_volumes",
+        lambda: [tmp_path / "fixed-volume"],
+    )
+    monkeypatch.setattr(
+        detector,
+        "_search_registry_for_schlumberger",
+        lambda _names: None,
+    )
+    monkeypatch.setattr(
+        detector,
+        "_verify_schlumberger_license",
+        lambda _engine: None,
+    )
+    monkeypatch.setenv("PATH", "")
+    for name in (
+        "ECLIPSE_HOME",
+        "ECL_HOME",
+        "SLB_HOME",
+        "ProgramW6432",
+        "ProgramFiles",
+        "ProgramFiles(x86)",
+        "LOCALAPPDATA",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    app = FastAPI()
+    app.include_router(build_engine_router(tmp_path), prefix="/engines")
+    response = TestClient(app).post("/engines/detect/refresh")
+    assert response.status_code == 200
+    found = response.json()["engines"][0]
+    assert found["status"] == "detected"
+    assert found["executable_path"] == str(executable)
+    persisted = manager._read_engine("eclipse")
+    assert persisted.executable_path == str(executable)
+    assert persisted.version == "2025.1.2"
+    assert persisted.extra_info["detection_source"] == "installation_directory"
+
+
+@pytest.mark.parametrize(
+    ("engine_id", "layout"),
+    [
+        ("cmg", "CMG/IMEX/2025.30/Win_x64/EXE/mx202530.exe"),
+        ("cmg", "CMG/2025.30/IMEX/exe/mx202530.exe"),
+        ("comsol", "COMSOL/COMSOL63/Multiphysics/bin/win64/comsolbatch.exe"),
+        (
+            "tnavigator",
+            "Rock Flow Dynamics/tNavigator/2025.1/bin64/tnavigator.exe",
+        ),
+        ("intersect", "SLB/INTERSECT/2025.1/IX/x64_ilmpi/ix.exe"),
+        ("opm_flow", "OPM/bin/flow.exe"),
+    ],
+)
+def test_all_simulator_refresh_routes_find_unregistered_installations(
+    tmp_path,
+    monkeypatch,
+    engine_id,
+    layout,
+):
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    from plugins.bundle.ugsci.engine import manager
+    from plugins.bundle.ugsci.engine.api import build_engine_router
+
+    executable = tmp_path / "fixed-volume" / layout
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"fixture; solver must never execute")
+    monkeypatch.setattr(manager, "ENGINES_DIR", tmp_path / "engine-state")
+    manager._write_engine(EngineInfo(id=engine_id, name=engine_id))
+    monkeypatch.setattr(detector.platform, "system", lambda: "Windows")
+    monkeypatch.setattr(
+        detector,
+        "_windows_fixed_volumes",
+        lambda: [tmp_path / "fixed-volume"],
+    )
+    monkeypatch.setattr(detector, "winreg", None)
+    monkeypatch.setattr(
+        detector,
+        "_verify_schlumberger_license",
+        lambda _: None,
+    )
+    monkeypatch.setattr(detector, "_extract_version_from_exe", lambda _: None)
+    for name in (
+        "CMG_HOME",
+        "CMG_ROOT",
+        "COMSOLROOT",
+        "COMSOL_HOME",
+        "TNAVIGATOR_HOME",
+        "TNAV_HOME",
+        "RFT_HOME",
+        "INTERSECT_HOME",
+        "IX_HOME",
+        "SLB_HOME",
+        "OPM_FLOW_EXECUTABLE",
+        "OPM_HOME",
+        "OPM_ROOT",
+        "ProgramFiles",
+        "ProgramW6432",
+        "ProgramFiles(x86)",
+        "LOCALAPPDATA",
+    ):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setenv("PATH", "")
+    app = FastAPI()
+    app.include_router(build_engine_router(tmp_path), prefix="/engines")
+    response = TestClient(app).post("/engines/detect/refresh")
+    assert response.status_code == 200
+    row = response.json()["engines"][0]
+    assert row["status"] == "detected"
+    assert row["executable_path"] == str(executable)
+    assert row["extra_info"]["detection_source"] == "installation_directory"
+    assert manager._read_engine(engine_id).executable_path == str(executable)
+
+
+@pytest.mark.parametrize(
+    ("engine_id", "display", "layout"),
+    [
+        (
+            "cmg",
+            "Computer Modelling Group IMEX",
+            "IMEX/2025.30/Win_x64/EXE/mx202530.exe",
+        ),
+        (
+            "comsol",
+            "COMSOL Multiphysics 6.3",
+            "COMSOL63/Multiphysics/bin/win64/comsol.exe",
+        ),
+        ("tnavigator", "tNavigator 2025.1", "2025.1/bin64/tnavigator.exe"),
+    ],
+)
+def test_all_vendor_installers_recover_icon_only_registry_records(
+    tmp_path,
+    monkeypatch,
+    engine_id,
+    display,
+    layout,
+):
+    executable = tmp_path / "unusual-location" / layout
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"fixture")
+    values = {"DisplayName": display, "DisplayIcon": f'"{executable}",0'}
+
+    @contextmanager
+    def open_key(_hive, path):
+        yield path
+
+    registry = SimpleNamespace(
+        OpenKey=open_key,
+        QueryInfoKey=lambda _: (1, 0, 0),
+        EnumKey=lambda *_: "product",
+        QueryValueEx=lambda _, name: (values.get(name), 1),
+    )
+    monkeypatch.setattr(detector, "winreg", registry)
+    monkeypatch.setattr(
+        detector,
+        "_REGISTRY_UNINSTALL_KEYS",
+        [(1, "Uninstall")],
+    )
+    monkeypatch.setattr(detector, "_get_from_registry_subkeys", lambda *_: [])
+    monkeypatch.setattr(detector, "_windows_installation_roots", lambda *_: [])
+    monkeypatch.setattr(detector, "_extract_version_from_exe", lambda _: None)
+    engine = detector._detect_installed_software(
+        EngineInfo(id=engine_id, name=engine_id, status="not_found"),
+    )
+    assert engine.status == "detected"
+    assert engine.executable_path == str(executable)
+    assert engine.extra_info["detection_source"] == "registry"
+
+
+def test_cmg_latest_module_keeps_complete_module_metadata(tmp_path):
+    for version in ("2025.9", "2025.10"):
+        for module, prefix in [("IMEX", "mx"), ("GEM", "gm"), ("STARS", "st")]:
+            executable = (
+                tmp_path
+                / module
+                / version
+                / "Win_x64"
+                / "EXE"
+                / f"{prefix}202510.exe"
+            )
+            executable.parent.mkdir(parents=True)
+            executable.write_bytes(b"fixture")
+    modules, paths, version = detector._detect_cmg_from_home(str(tmp_path))
+    assert modules == ["IMEX", "GEM", "STARS"]
+    assert version == "2025.10"
+    assert all("2025.10" in path for path in paths.values())
+
+
+@pytest.mark.parametrize(
+    "owner",
+    ["libopm-simulators-bin", "unrelated-package"],
+)
+def test_opm_path_detection_checks_package_without_executing_solver(
+    tmp_path,
+    monkeypatch,
+    owner,
+):
+    executable = tmp_path / "opm-simulators" / "bin" / "flow"
+    executable.parent.mkdir(parents=True)
+    executable.write_bytes(b"never execute")
+    for name in ("OPM_FLOW_EXECUTABLE", "OPM_HOME", "OPM_ROOT"):
+        monkeypatch.delenv(name, raising=False)
+    monkeypatch.setattr(
+        detector,
+        "_software_installation_candidates",
+        lambda _: iter(()),
+    )
+    monkeypatch.setattr(
+        detector.shutil,
+        "which",
+        lambda name: str(executable)
+        if name == "flow"
+        else str(tmp_path / "dpkg-query")
+        if name == "dpkg-query"
+        else None,
+    )
+    calls = []
+
+    def run(command, **kwargs):
+        calls.append(command)
+        assert command[0] != str(executable)
+        assert kwargs["shell"] is False
+        return SimpleNamespace(
+            returncode=0,
+            stdout=f"{owner}: {executable}\n",
+            stderr="",
+        )
+
+    monkeypatch.setattr(detector.subprocess, "run", run)
+    engine = detector._detect_opm_flow(
+        EngineInfo(id="opm_flow", name="OPM Flow"),
+    )
+    assert engine.status == (
+        "detected" if owner == "libopm-simulators-bin" else "configured"
+    )
+    assert len(calls) == 1

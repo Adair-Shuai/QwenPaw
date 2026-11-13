@@ -89,7 +89,7 @@ beforeEach(() => {
   vi.stubGlobal("PointerEvent", WorkflowPointerEvent);
   vi.stubGlobal("innerHeight", 1000);
   window.history.replaceState({ idx: 3 }, "", "/flowforge");
-  (window as any).QwenPaw = {
+  (window as unknown as { QwenPaw: Record<string, unknown> }).QwenPaw = {
     host: {
       React,
       ReactDOM,
@@ -110,6 +110,9 @@ beforeEach(() => {
   fetchMock = vi.fn(async (url: string) => {
     const path = url.replace(/^\/api/, "");
     if (path === "/auth/status") return Response.json({ enabled: false });
+    // Exercise compatibility with the proposal-only installed backend.
+    if (path.endsWith("/conversations"))
+      return Response.json({ detail: "Not Found" }, { status: 404 });
     if (path === "/flowforge/node-types") return Response.json([spec]);
     if (path === "/flowforge/flows")
       return Response.json([{ ...flow, node_count: 1, updated_at: 1 }]);
@@ -341,7 +344,7 @@ describe("FlowForge real application entry", () => {
     expect(window.location.search).toBe("?flow=app-flow");
     expect(window.history.state.idx).toBe(3);
     expect(screen.getByRole("button", { name: "调试与变量" })).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { name: "← 返回" }));
+    fireEvent.click(screen.getByRole("button", { name: "返回工作流列表" }));
     expect(
       await screen.findByText("中英文 App flow", {}, { timeout: 5000 }),
     ).toBeVisible();
@@ -573,5 +576,330 @@ describe("FlowForge real application entry", () => {
       "app-flow",
     );
     expect(window.history.state.idx).toBe(3);
+  });
+  function measureAuthoringCanvas() {
+    vi.stubGlobal(
+      "DOMMatrixReadOnly",
+      class {
+        m22 = 1;
+      },
+    );
+    vi.spyOn(HTMLElement.prototype, "offsetWidth", "get").mockReturnValue(270);
+    vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(180);
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      top: 0,
+      left: 0,
+      right: 270,
+      bottom: 180,
+      width: 270,
+      height: 180,
+      toJSON: () => ({}),
+    });
+  }
+
+  it("renders AI connection differences through the registered production edge component", async () => {
+    measureAuthoringCanvas();
+    window.history.replaceState({ idx: 3 }, "", "/flowforge?flow=app-flow");
+    const original = {
+      ...structuredClone(flow),
+      metadata: {
+        positions: { echo: { x: 0, y: 0 }, target: { x: 350, y: 0 } },
+      },
+      nodes: {
+        ...structuredClone(flow.nodes),
+        target: {
+          ...structuredClone(flow.nodes.echo),
+          label: "原目标",
+          inputs: { ...flow.nodes.echo.inputs, payload: ["echo", 0] },
+        },
+      },
+      edges: [
+        {
+          id: "old-wire",
+          color: "#9c27b0",
+          source: "echo",
+          target: "target",
+          kind: "data",
+          source_slot: 0,
+          target_handle: "payload",
+        },
+      ],
+    };
+    const candidate = structuredClone(original);
+    candidate.edges = [
+      {
+        ...candidate.edges[0],
+        id: "new-wire",
+        source: "target",
+        target: "echo",
+      },
+    ];
+    const normalFetch = fetchMock.getMockImplementation() as (
+      url: string,
+    ) => Promise<Response>;
+    fetchMock.mockImplementation(async (url: string) => {
+      if (url.endsWith("/flows/app-flow")) return Response.json(original);
+      if (url.endsWith("/authoring/proposals"))
+        return Response.json({
+          proposal_id: "production-diff",
+          flow: candidate,
+          base_revision: 6,
+          validation: { ok: true, errors: [] },
+          changes: [],
+        });
+      return normalFetch(url);
+    });
+    try {
+      const view = renderApp();
+      await screen.findByText(flow.name);
+      await waitFor(() =>
+        expect(
+          view.container.querySelector('path.ff-edge-path[id="old-wire"]'),
+        ).toBeInTheDocument(),
+      );
+      const originalPath = view.container.querySelector(
+        'path.ff-edge-path[id="old-wire"]',
+      )!;
+      expect(originalPath).toHaveAttribute("stroke", "#9c27b0");
+      expect(originalPath).not.toHaveClass("react-flow__edge-path");
+      fireEvent.click(
+        view.container.querySelector('.react-flow__edge[data-id="old-wire"]')!,
+      );
+      await waitFor(() =>
+        expect(originalPath).toHaveAttribute(
+          "stroke",
+          "var(--ant-color-primary, #1677ff)",
+        ),
+      );
+      fireEvent.click(screen.getByRole("button", { name: "AI 编辑" }));
+      fireEvent.change(
+        screen.getByRole("textbox", { name: "业务目标与修改要求" }),
+        { target: { value: "调整连线" } },
+      );
+      fireEvent.click(screen.getByRole("button", { name: "生成变更预览" }));
+      await waitFor(() => {
+        const added = view.container.querySelector(
+          ".ff-ai-edge-added path.ff-edge-path",
+        );
+        const removed = view.container.querySelector(
+          ".ff-ai-edge-removed path.ff-edge-path",
+        );
+        expect(added).toBeInTheDocument();
+        expect(removed).toBeInTheDocument();
+        expect(added).toHaveAttribute("id", "new-wire");
+        expect(removed).toHaveAttribute("id", "ai-removed:old-wire");
+      });
+      expect(view.container.querySelector(".ff-save-status")).toHaveTextContent(
+        "已保存",
+      );
+      expect(
+        fetchMock.mock.calls.some(([url]) => String(url).endsWith("/apply")),
+      ).toBe(false);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  function failedRepairRun(flowId = flow.id) {
+    return {
+      run_id: "run-deep",
+      flow_id: flowId,
+      agent_id: agentId,
+      flow_revision: 5,
+      status: "failed",
+      started_at: 1,
+      duration_ms: 10,
+      node_statuses: { echo: "failed" },
+      node_details: {
+        echo: {
+          id: "echo",
+          label: "中英文节点",
+          class_type: "ScriptNode",
+          status: "failed",
+          inputs_available: true,
+          inputs: { payload: { amount: 0 } },
+          error: "division by zero",
+        },
+      },
+      outputs: {},
+      errors: ["division by zero"],
+      events: [],
+    };
+  }
+
+  it("opens one-click repair from the real run dock and preserves the selected expert and draft", async () => {
+    measureAuthoringCanvas();
+    const normalFetch = fetchMock.getMockImplementation() as (
+      url: string,
+    ) => Promise<Response>;
+    const proposals: Record<string, unknown>[] = [];
+    fetchMock.mockImplementation(async (url: string, options?: RequestInit) => {
+      if (url.endsWith("/runs/run-deep"))
+        return Response.json(failedRepairRun());
+      if (url.endsWith("/authoring/proposals")) {
+        const body = JSON.parse(String(options?.body));
+        proposals.push(body);
+        const candidate = structuredClone(body.flow);
+        candidate.nodes.echo.inputs.source = "result = 0";
+        return Response.json({
+          proposal_id: "dock-repair",
+          flow: candidate,
+          base_revision: 6,
+          validation: { ok: true, errors: [] },
+          changes: [
+            { kind: "modified", node_id: "echo", description: "修复计算" },
+          ],
+          explanation: "零值触发错误，已生成修复方案。",
+        });
+      }
+      return normalFetch(url);
+    });
+    try {
+      const { view, panel } = await renderDock();
+      fireEvent.click(
+        within(panel).getByRole("button", { name: "AI 修复节点 中英文节点" }),
+      );
+      const drawer = within(
+        await screen.findByRole("dialog", { name: "AI 修复失败节点" }),
+      );
+      await drawer.findByRole("button", { name: "查看第 1 轮方案" });
+      expect(proposals).toHaveLength(1);
+      expect(proposals[0]).toMatchObject({
+        agent_id: "expert-a",
+        repair_run_id: "run-deep",
+        repair_node_id: "echo",
+        selected_node_ids: ["echo"],
+        flow: { id: "app-flow", revision: 6 },
+      });
+      expect(
+        view.container.querySelector('.ff-ai-modified[data-id="echo"]'),
+      ).toBeInTheDocument();
+      expect(
+        fetchMock.mock.calls.some(([url]) =>
+          /\/run$|\/debug$|\/apply$/.test(String(url)),
+        ),
+      ).toBe(false);
+      fireEvent.click(drawer.getByRole("button", { name: /取\s*消/ }));
+      fireEvent.click(
+        within(view.container).getByRole("button", { name: "退出预览" }),
+      );
+      await waitFor(() =>
+        expect(
+          view.container.querySelector(".ff-node-repair"),
+        ).toBeInTheDocument(),
+      );
+      fireEvent.click(
+        within(panel).getByRole("button", { name: "关闭调试栏" }),
+      );
+      await waitFor(() =>
+        expect(view.container.querySelector(".ff-node-repair")).toBeNull(),
+      );
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("guards a dirty workflow before opening repair for another recorded workflow", async () => {
+    measureAuthoringCanvas();
+    antd.ConfigProvider.config({
+      holderRender: (children) => (
+        <antd.ConfigProvider theme={{ token: { motion: false } }}>
+          {children}
+        </antd.ConfigProvider>
+      ),
+    });
+    const normalFetch = fetchMock.getMockImplementation() as (
+      url: string,
+    ) => Promise<Response>;
+    const other = {
+      ...structuredClone(flow),
+      id: "other-flow",
+      name: "另一业务流程",
+    };
+    const proposals: Record<string, unknown>[] = [];
+    fetchMock.mockImplementation(async (url: string, options?: RequestInit) => {
+      if (url.endsWith("/runs/run-deep"))
+        return Response.json(failedRepairRun(other.id));
+      if (url.endsWith("/flows/other-flow")) return Response.json(other);
+      if (url.endsWith("/authoring/proposals")) {
+        const body = JSON.parse(String(options?.body));
+        proposals.push(body);
+        return Response.json({
+          proposal_id: "other-repair",
+          flow: body.flow,
+          base_revision: 6,
+          validation: { ok: true, errors: [] },
+          changes: [],
+        });
+      }
+      return normalFetch(url);
+    });
+    try {
+      const { view, panel } = await renderDock();
+      const canvas = within(
+        view.container.querySelector<HTMLElement>(".ff-editor-body")!,
+      );
+      fireEvent.click(canvas.getByText("中英文节点", { selector: "strong" }));
+      fireEvent.change(
+        await screen.findByRole("textbox", { name: "脚本源码" }),
+        { target: { value: "result = '本地修改'" } },
+      );
+      const repair = within(panel).getByRole("button", {
+        name: "AI 修复节点 中英文节点",
+      });
+      fireEvent.click(repair);
+      let guard = within(
+        await screen.findByRole("dialog", { name: "离开前保存修改？" }),
+      );
+      fireEvent.click(guard.getByRole("button", { name: "继续编辑" }));
+      await waitFor(() =>
+        expect(
+          screen.queryByRole("dialog", { name: "离开前保存修改？" }),
+        ).toBeNull(),
+      );
+      expect(proposals).toHaveLength(0);
+      expect(new URLSearchParams(window.location.search).get("flow")).toBe(
+        flow.id,
+      );
+      fireEvent.click(repair);
+      guard = within(
+        await screen.findByRole("dialog", { name: "离开前保存修改？" }),
+      );
+      fireEvent.click(guard.getByRole("button", { name: "保留草稿并离开" }));
+      const drawer = within(
+        await screen.findByRole("dialog", { name: "AI 修复失败节点" }),
+      );
+      await drawer.findByRole("button", { name: "查看第 1 轮方案" });
+      expect(proposals[0]).toMatchObject({
+        flow: { id: other.id },
+        repair_run_id: "run-deep",
+        repair_node_id: "echo",
+      });
+      const drafts = Array.from(
+        { length: localStorage.length },
+        (_, index) => localStorage.key(index)!,
+      )
+        .filter((key) => key.startsWith("flowforge:editor-draft:v1:"))
+        .map((key) => JSON.parse(localStorage.getItem(key)!));
+      expect(
+        drafts.some(
+          (draft) =>
+            draft.document.id === flow.id &&
+            draft.document.nodes.echo.inputs.source === "result = '本地修改'",
+        ),
+      ).toBe(true);
+      expect(
+        fetchMock.mock.calls.some(
+          ([, options]) =>
+            (options as RequestInit | undefined)?.method === "PUT",
+        ),
+      ).toBe(false);
+    } finally {
+      antd.Modal.destroyAll();
+      antd.ConfigProvider.config({ holderRender: undefined });
+      vi.restoreAllMocks();
+    }
   });
 });

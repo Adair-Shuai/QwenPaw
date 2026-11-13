@@ -74,6 +74,8 @@ export default function MenuBar({ hidden = false }: { hidden?: boolean }) {
 
   return (
     <div
+      data-desktop-menubar
+      data-tauri-drag-region
       className={cx(
         styles.menubar,
         hidden ? styles.menubarHidden : styles.menubarShown,

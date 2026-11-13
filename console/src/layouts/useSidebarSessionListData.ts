@@ -11,7 +11,11 @@ import {
   type ContextMenuItem,
 } from "../components/ContextMenu";
 import { getChannelLabel } from "../utils/channel";
-import { syncSessionsGlobal } from "../stores/sessionListStore";
+import {
+  syncSessionsGlobal,
+  useSessionListStore,
+  type ExtendedSession,
+} from "../stores/sessionListStore";
 import { useAgentStore } from "../stores/agentStore";
 import { useAppMessage } from "../hooks/useAppMessage";
 
@@ -23,8 +27,8 @@ export { ContextMenu, useContextMenu, type ContextMenuItem, getChannelLabel };
  * the state update and avoid a full re-render cascade.
  */
 function sessionsEqual(
-  prev: ExtendedChatSession[],
-  next: ExtendedChatSession[],
+  prev: ExtendedSession[],
+  next: ExtendedSession[],
 ): boolean {
   if (prev.length !== next.length) return false;
   for (let i = 0; i < prev.length; i++) {
@@ -174,6 +178,28 @@ export function useSessionListData(
     }
   }, [setSessions]);
 
+  const previousHistory = useRef({
+    agent: selectedAgent,
+    populated: sessions.length > 0,
+  });
+  useEffect(() => {
+    const previous = previousHistory.current;
+    previousHistory.current = {
+      agent: selectedAgent,
+      populated: sessions.length > 0,
+    };
+    // SDK initialization can publish an empty list after the sidebar preload.
+    // Reconcile that reset immediately, including the SDK's registered setter.
+    if (
+      active &&
+      previous.agent === selectedAgent &&
+      previous.populated &&
+      !sessions.length
+    ) {
+      void refreshSessions();
+    }
+  }, [active, selectedAgent, sessions.length, refreshSessions]);
+
   useEffect(() => {
     if (!active) return;
     let cancelled = false;
@@ -186,7 +212,10 @@ export function useSessionListData(
         const list = await sessionApi.getSessionList();
         if (!cancelled && sessionApi.isActiveOwner(owner)) {
           const extended = list as ExtendedChatSession[];
-          if (!sessionsEqual(lastSessionsRef.current, extended)) {
+          if (
+            !sessionsEqual(lastSessionsRef.current, extended) ||
+            !sessionsEqual(useSessionListStore.getState().sessions, extended)
+          ) {
             lastSessionsRef.current = extended;
             setSessions(extended);
             syncSessionsGlobal(extended);
@@ -210,7 +239,10 @@ export function useSessionListData(
         const list = await sessionApi.getSessionList();
         if (!cancelled && sessionApi.isActiveOwner(owner)) {
           const extended = list as ExtendedChatSession[];
-          if (!sessionsEqual(lastSessionsRef.current, extended)) {
+          if (
+            !sessionsEqual(lastSessionsRef.current, extended) ||
+            !sessionsEqual(useSessionListStore.getState().sessions, extended)
+          ) {
             lastSessionsRef.current = extended;
             setSessions(extended);
             syncSessionsGlobal(extended);

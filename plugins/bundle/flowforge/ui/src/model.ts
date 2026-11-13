@@ -319,7 +319,25 @@ export function documentFromCanvas(
       kind: edge.data?.kind || "data",
       label: edge.data?.label || "",
     })),
-    metadata: { ...doc.metadata, positions },
+    metadata: {
+      ...doc.metadata,
+      positions,
+      ...(doc.metadata?.canvas_tools
+        ? {
+            canvas_tools: {
+              ...doc.metadata.canvas_tools,
+              groups: (doc.metadata.canvas_tools.groups || [])
+                .map((group: any) => ({
+                  ...group,
+                  nodeIds: (group.nodeIds || []).filter((id: string) =>
+                    Object.prototype.hasOwnProperty.call(definitions, id),
+                  ),
+                }))
+                .filter((group: any) => group.nodeIds.length > 1),
+            },
+          }
+        : {}),
+    },
   };
 }
 export function fingerprint(doc: FlowDocument): string {

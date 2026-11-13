@@ -1,4 +1,4 @@
-# UGSci Desktop packaging scripts
+# UGSci packaging scripts
 
 > ⚠️ **Legacy (rollback-only).** These conda-pack based packaging scripts have
 > been superseded by the **Tauri** desktop build (see `console/src-tauri/` and
@@ -44,8 +44,8 @@ CREATE_ZIP=1 bash ./scripts/pack/build_macos.sh   # also create .zip
 ./scripts/pack/build_win.ps1
 # Output: dist/UGSci-Setup-<version>.exe
 # Creates two launchers:
-#   - UGSci Desktop.vbs (silent, no console window)
-#   - UGSci Desktop (Debug).bat (shows console for troubleshooting)
+#   - UGSci.vbs (silent, no console window)
+#   - UGSci (Debug).bat (shows console for troubleshooting)
 # Note: Pre-compiles all Python files to .pyc for faster startup
 ```
 

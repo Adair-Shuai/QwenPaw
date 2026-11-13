@@ -1,4 +1,4 @@
-; UGSci Desktop NSIS installer. Run makensis from repo root after
+; UGSci NSIS installer. Run makensis from repo root after
 ; building dist/win-unpacked (see scripts/pack/build_win.ps1).
 ; Usage: makensis /DQWENPAW_VERSION=1.2.3 /DOUTPUT_EXE=dist\UGSci-Setup-1.2.3.exe scripts\pack\desktop.nsi
 
@@ -15,7 +15,7 @@
   !define OUTPUT_EXE "dist\UGSci-Setup-${QWENPAW_VERSION}.exe"
 !endif
 
-Name "UGSci Desktop"
+Name "UGSci"
 OutFile "${OUTPUT_EXE}"
 InstallDir "$LOCALAPPDATA\QwenPaw"
 InstallDirRegKey HKCU "Software\QwenPaw" "InstallPath"
@@ -33,24 +33,27 @@ RequestExecutionLevel user
   !define UNPACKED "dist\win-unpacked"
 !endif
 
-Section "UGSci Desktop" SEC01
+Section "UGSci" SEC01
   SetOutPath "$INSTDIR"
   File /r "${UNPACKED}\*.*"
   WriteRegStr HKCU "Software\QwenPaw" "InstallPath" "$INSTDIR"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
 
   ; Main shortcut - uses VBS to hide console window
-  CreateShortcut "$SMPROGRAMS\UGSci Desktop.lnk" "$INSTDIR\UGSci Desktop.vbs" "" "$INSTDIR\icon.ico" 0
-  CreateShortcut "$DESKTOP\UGSci Desktop.lnk" "$INSTDIR\UGSci Desktop.vbs" "" "$INSTDIR\icon.ico" 0
+  CreateShortcut "$SMPROGRAMS\UGSci.lnk" "$INSTDIR\UGSci.vbs" "" "$INSTDIR\icon.ico" 0
+  CreateShortcut "$DESKTOP\UGSci.lnk" "$INSTDIR\UGSci.vbs" "" "$INSTDIR\icon.ico" 0
   
   ; Debug shortcut - shows console window for troubleshooting
-  CreateShortcut "$SMPROGRAMS\UGSci Desktop (Debug).lnk" "$INSTDIR\UGSci Desktop (Debug).bat" "" "$INSTDIR\icon.ico" 0
+  CreateShortcut "$SMPROGRAMS\UGSci (Debug).lnk" "$INSTDIR\UGSci (Debug).bat" "" "$INSTDIR\icon.ico" 0
 SectionEnd
 
 Section "Uninstall"
   Delete "$SMPROGRAMS\UGSci Desktop.lnk"
   Delete "$SMPROGRAMS\UGSci Desktop (Debug).lnk"
   Delete "$DESKTOP\UGSci Desktop.lnk"
+  Delete "$SMPROGRAMS\UGSci.lnk"
+  Delete "$SMPROGRAMS\UGSci (Debug).lnk"
+  Delete "$DESKTOP\UGSci.lnk"
   RMDir /r "$INSTDIR"
   DeleteRegKey HKCU "Software\QwenPaw"
 SectionEnd

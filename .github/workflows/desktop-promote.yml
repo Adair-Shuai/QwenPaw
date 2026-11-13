@@ -189,6 +189,7 @@ jobs:
             --brand ugsci \
             --require windows \
             --require macos \
+            --require macos-dmg \
             --require windows-updater \
             --require macos-updater
 
@@ -198,6 +199,12 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           mac_zips=(UGSci-Desktop-Tauri-macOS-*/UGSci-Tauri-*-macOS.zip)
+          mac_dmgs=(UGSci-Desktop-Tauri-macOS-*/UGSci-Tauri-*-macOS.dmg)
+          if [ "${#mac_dmgs[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one macOS drag-install DMG"
+            exit 1
+          fi
+          python "$RELEASE_INFRA/scripts/pack-tauri/macos_dmg.py" verify-envelope --dmg "${mac_dmgs[0]}"
           mac_updaters=(tauri-updater-meta-macos/UGSci-Tauri-*-macOS.app.tar.gz)
           if [ "${#mac_zips[@]}" -ne 1 ] || [ "${#mac_updaters[@]}" -ne 1 ]; then
             echo "::error::Expected exactly one macOS ZIP and updater archive; found ${#mac_zips[@]} ZIP(s), ${#mac_updaters[@]} updater archive(s)"
@@ -251,9 +258,11 @@ jobs:
           cat > "$RUNNER_TEMP/desktop-pointer-paths.txt" <<'EOF'
           files/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-updater.exe
           files/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-portable.zip
+          files/apps/desktop/mac-tauri/UGSci-Tauri-latest-macOS.dmg
           files/apps/desktop/mac-tauri/UGSci-Tauri-latest-macOS.zip
           metadata/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-updater.exe.json
           metadata/apps/desktop/win-tauri/UGSci-Tauri-latest-Windows-portable.zip.json
+          metadata/apps/desktop/mac-tauri/UGSci-Tauri-latest-macOS.dmg.json
           metadata/apps/desktop/mac-tauri/UGSci-Tauri-latest-macOS.zip.json
           files/apps/desktop/mac-tauri/UGSci-Tauri-latest-macOS.app.tar.gz
           metadata/apps/desktop/mac-tauri/UGSci-Tauri-latest-macOS.app.tar.gz.json
@@ -337,6 +346,13 @@ jobs:
             "mac-tauri" \
             "UGSci-Tauri-${VERSION}-macOS.zip" \
             "UGSci-Tauri-latest-macOS.zip"
+
+          promote_latest \
+            "UGSci-Desktop-Tauri-macOS-*" \
+            "UGSci-Tauri-*-macOS.dmg" \
+            "mac-tauri" \
+            "UGSci-Tauri-${VERSION}-macOS.dmg" \
+            "UGSci-Tauri-latest-macOS.dmg"
 
 
           promote_latest \
@@ -472,17 +488,19 @@ jobs:
             "UGSci-Desktop-Tauri-Windows-*" \
             "UGSci-Tauri-*-Windows-portable.zip" \
             "win-tauri"
-          merge_tauri_metadata \
-            "mac-tauri-metadata.json" \
-            "UGSci-Desktop-Tauri-macOS-*" \
-            "UGSci-Tauri-*-macOS.zip" \
-            "mac-tauri"
+
 
 
           merge_tauri_metadata \
             "mac-tauri-updater-metadata.json" \
             "tauri-updater-meta-macos" \
             "UGSci-Tauri-*-macOS.app.tar.gz" \
+            "mac-tauri"
+
+          merge_tauri_metadata \
+            "mac-tauri-metadata.json" \
+            "UGSci-Desktop-Tauri-macOS-*" \
+            "UGSci-Tauri-*-macOS.dmg" \
             "mac-tauri"
 
           # Upload updated desktop/index.json

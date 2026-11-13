@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import toolbarStyles from "./PluginListToolbar.module.less";
 import { describe, expect, it, vi } from "vitest";
 import type { PluginInfo } from "@/api/modules/plugin";
 import { InstalledPluginList } from "./InstalledPluginList";
@@ -55,6 +56,51 @@ function expectTags(text: string, color: string, count: number) {
 }
 
 describe("installed plugin status", () => {
+  it("shows update-check progress on the refresh action and clears it when finished", async () => {
+    const onRefresh = vi.fn();
+    const view = render(
+      <InstalledPluginList
+        {...props}
+        plugins={[plugin(true, "active")]}
+        updatesLoading
+        onRefresh={onRefresh}
+      />,
+    );
+    const refresh = screen.getByRole("button", {
+      name: "pluginManager.catalogRefresh",
+    });
+    expect(refresh).toHaveAttribute("aria-busy", "true");
+    expect(refresh).toHaveAttribute(
+      "aria-description",
+      "pluginManager.checkingUpdates",
+    );
+    expect(refresh.querySelector("svg")).toHaveClass(toolbarStyles.refreshing);
+    expect(screen.queryByRole("alert")).toBeNull();
+    fireEvent.mouseEnter(refresh.parentElement!);
+    expect(await screen.findByRole("tooltip")).toHaveTextContent(
+      "pluginManager.checkingUpdates",
+    );
+    fireEvent.click(refresh);
+    expect(onRefresh).toHaveBeenCalledOnce();
+    view.rerender(
+      <InstalledPluginList
+        {...props}
+        plugins={[plugin(true, "active")]}
+        updatesLoading={false}
+        onRefresh={onRefresh}
+      />,
+    );
+    expect(refresh).toHaveAttribute("aria-busy", "false");
+    expect(refresh).not.toHaveAttribute("aria-description");
+    expect(refresh.querySelector("svg")).not.toHaveClass(
+      toolbarStyles.refreshing,
+    );
+    await waitFor(() =>
+      expect(screen.getByRole("tooltip")).toHaveTextContent(
+        "pluginManager.catalogRefresh",
+      ),
+    );
+  });
   it.each([
     [true, "failed", "Error", "error"],
     [false, "failed", "Error", "error"],

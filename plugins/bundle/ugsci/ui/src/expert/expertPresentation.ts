@@ -1,3 +1,4 @@
+import { expertDisplayName } from "../core/displayNames";
 import type { ExpertData, ExpertPresentation } from "../core/types";
 import { apiFetch } from "../core/runtime";
 import { EXPERT_BUNDLES } from "./bundles";
@@ -98,7 +99,7 @@ export function expertPresentation(expert: ExpertData) {
     ),
   ].slice(0, 2);
   return {
-    name: presentation?.display_name || agent.name,
+    name: presentation?.display_name || expertDisplayName(agent.name),
     specialty: agent.managed_by_app
       ? "应用专属专家"
       : presentation?.specialty || bundle?.category || category,

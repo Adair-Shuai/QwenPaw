@@ -917,6 +917,26 @@ class ChannelBackend:
                 "Channel in-place source update is not supported",
             )
 
+    def validate_migration(self, previous, candidate, *, in_place):
+        """Admit legacy Python channels through the replacement transaction."""
+        from .python_backend import PythonBackend
+
+        old = previous.description.manifest
+        if (
+            not isinstance(previous.backend, PythonBackend)
+            or old.plugin_type != PluginType.CHANNEL
+            or old.id != candidate.manifest.id
+            or not old.entry.backend
+        ):
+            raise RuntimeError(
+                "Plugin execution backend switching is not supported",
+            )
+        self.validate_update(
+            previous.description,
+            candidate,
+            in_place=in_place,
+        )
+
     def validate_config_update(self, description, config):
         """Reject unintegrated mutations without probing disabled plugins."""
         del config

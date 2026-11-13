@@ -205,6 +205,7 @@ jobs:
             --brand ugsci \
             --require windows \
             --require macos \
+            --require macos-dmg \
             --require windows-updater \
             --require macos-updater
 
@@ -214,6 +215,12 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           mac_zips=(UGSci-Desktop-Tauri-macOS-*/UGSci-Tauri-*-macOS.zip)
+          mac_dmgs=(UGSci-Desktop-Tauri-macOS-*/UGSci-Tauri-*-macOS.dmg)
+          if [ "${#mac_dmgs[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one macOS drag-install DMG"
+            exit 1
+          fi
+          python "$RELEASE_INFRA/scripts/pack-tauri/macos_dmg.py" verify-envelope --dmg "${mac_dmgs[0]}"
           mac_updaters=(tauri-updater-meta-macos/UGSci-Tauri-*-macOS.app.tar.gz)
           if [ "${#mac_zips[@]}" -ne 1 ] || [ "${#mac_updaters[@]}" -ne 1 ]; then
             echo "::error::Expected exactly one macOS ZIP and updater archive; found ${#mac_zips[@]} ZIP(s), ${#mac_updaters[@]} updater archive(s)"
@@ -232,8 +239,9 @@ jobs:
           mv UGSci-Desktop-Tauri-Windows-*/UGSci-Tauri-*-Windows-portable.zip . 2>/dev/null || true
           mv UGSci-Desktop-Tauri-Windows-*/UGSci-Tauri-*-Windows-updater.exe . 2>/dev/null || true
           mv UGSci-Desktop-Tauri-macOS-*/UGSci-Tauri-*-macOS.zip . 2>/dev/null || true
+          mv UGSci-Desktop-Tauri-macOS-*/UGSci-Tauri-*-macOS.dmg . 2>/dev/null || true
           mv tauri-updater-meta-macos/UGSci-Tauri-*-macOS.app.tar.gz . 2>/dev/null || true
-          files=(UGSci-Tauri-*-Windows-portable.zip UGSci-Tauri-*-Windows-updater.exe UGSci-Tauri-*-macOS.zip UGSci-Tauri-*-macOS.app.tar.gz)
+          files=(UGSci-Tauri-*-Windows-portable.zip UGSci-Tauri-*-Windows-updater.exe UGSci-Tauri-*-macOS.dmg UGSci-Tauri-*-macOS.zip UGSci-Tauri-*-macOS.app.tar.gz)
           if [ ${#files[@]} -eq 0 ]; then
             echo "::error::No desktop installers found to attach to the release"
             exit 1
@@ -373,6 +381,7 @@ jobs:
             --brand ugsci \
             --require windows \
             --require macos \
+            --require macos-dmg \
             --require windows-updater \
             --require macos-updater
 
@@ -382,6 +391,12 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           mac_zips=(UGSci-Desktop-Tauri-macOS-*/UGSci-Tauri-*-macOS.zip)
+          mac_dmgs=(UGSci-Desktop-Tauri-macOS-*/UGSci-Tauri-*-macOS.dmg)
+          if [ "${#mac_dmgs[@]}" -ne 1 ]; then
+            echo "::error::Expected exactly one macOS drag-install DMG"
+            exit 1
+          fi
+          python "$RELEASE_INFRA/scripts/pack-tauri/macos_dmg.py" verify-envelope --dmg "${mac_dmgs[0]}"
           mac_updaters=(tauri-updater-meta-macos/UGSci-Tauri-*-macOS.app.tar.gz)
           if [ "${#mac_zips[@]}" -ne 1 ] || [ "${#mac_updaters[@]}" -ne 1 ]; then
             echo "::error::Expected exactly one macOS ZIP and updater archive; found ${#mac_zips[@]} ZIP(s), ${#mac_updaters[@]} updater archive(s)"
@@ -527,10 +542,17 @@ jobs:
             "UGSci-Tauri-*-macOS.zip" \
             "mac-tauri" \
             "UGSci-Tauri-${VERSION}-macOS.zip" \
+            "mac-tauri-zip-metadata.json"
+
+          upload_versioned \
+            "UGSci-Desktop-Tauri-macOS-*" \
+            "UGSci-Tauri-*-macOS.dmg" \
+            "mac-tauri" \
+            "UGSci-Tauri-${VERSION}-macOS.dmg" \
             "mac-tauri-metadata.json"
 
       - name: Upload Tauri macOS updater archive to OSS
-        # The .zip is for first-install; the auto-updater pulls .app.tar.gz.
+        # First-install uses the DMG; the auto-updater consumes .app.tar.gz.
         if: hashFiles('tauri-updater-meta-macos/*.app.tar.gz') != ''
         run: |
           VERSION="${{ steps.version.outputs.version }}"

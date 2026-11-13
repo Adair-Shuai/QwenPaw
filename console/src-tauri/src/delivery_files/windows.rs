@@ -244,9 +244,13 @@ fn open_in_apartment(
         // Re-enumerate before invocation: arbitrary paths/commands supplied by
         // a webview cannot be used as application ids, and uninstall races fail.
         for handler in handlers(extension)? {
-            let name = unsafe { handler.GetName() }
+            let name = match unsafe { handler.GetName() }
                 .map_err(|err| err.to_string())
-                .and_then(owned_shell_string)?;
+                .and_then(owned_shell_string)
+            {
+                Ok(value) if !value.is_empty() => value,
+                _ => continue,
+            };
             if name == application_id {
                 let item: IShellItem =
                     unsafe { SHCreateItemFromParsingName(&HSTRING::from(path.as_os_str()), None) }
@@ -458,13 +462,13 @@ mod tests {
                 assert!(icon.starts_with("data:image/x-icon;base64,"));
             }
         }
-        assert!(open(
+        let error = open(
             Path::new("C:\\not-used.txt"),
             ".txt",
-            Some("not-a-registered-application")
+            Some("not-a-registered-application"),
         )
-        .unwrap_err()
-        .contains("no longer available"));
+        .unwrap_err();
+        assert!(error.contains("no longer available"), "{error}");
         let unknown = applications(".ugsci-no-association-test-6eec15").unwrap();
         assert!(!unknown.can_open_default);
         assert!(open(
