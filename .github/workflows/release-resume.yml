@@ -106,6 +106,8 @@ jobs:
                 RELEASING.md|RELEASING_zh.md|\
                 scripts/fork_backend_suites.json|\
                 scripts/verify_update_regressions.py|\
+                console/src/plugins/hostSdk/hooks.host.test.ts|\
+                console/src/plugins/flowForgeWorkbench.test.tsx|\
                 scripts/pack/prepare_plugin_versions.py|\
                 scripts/run_unit_tests.py|\
                 scripts/pack-tauri/prepare_component_base.py|\

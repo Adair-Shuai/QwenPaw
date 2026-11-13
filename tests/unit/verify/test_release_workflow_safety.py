@@ -451,6 +451,8 @@ def test_core_artifact_reuse_only_allows_exact_extension_tooling_paths():
         "scripts/pack/prepare_plugin_versions.py",
         "scripts/verify_update_regressions.py",
         "scripts/fork_backend_suites.json",
+        "console/src/plugins/hostSdk/hooks.host.test.ts",
+        "console/src/plugins/flowForgeWorkbench.test.tsx",
     ):
         assert path in allowed
     for path in (
@@ -460,6 +462,9 @@ def test_core_artifact_reuse_only_allows_exact_extension_tooling_paths():
         "plugins/bundle/computer-use/plugin.json",
         "scripts/pack-tauri/build_component_release.py",
         "scripts/pack-tauri/assemble_desktop_layout.py",
+        "console/src/utils/agentDisplayName.ts",
+        "console/src/plugins/hostSdk/hooks.ts",
+        "plugins/bundle/flowforge/ui/src/Editor.tsx",
     ):
         assert not any(fnmatch.fnmatchcase(path, rule) for rule in allowed)
 

@@ -32,7 +32,11 @@ vi.mock("../../contexts/ThemeContext", () => ({
 }));
 
 vi.mock("react-i18next", () => ({
-  useTranslation: () => ({ i18n: localeMock, t: (key: string) => key }),
+  useTranslation: () => ({
+    i18n: localeMock,
+    t: (key: string, options?: { defaultValue?: string }) =>
+      options?.defaultValue ?? key,
+  }),
 }));
 
 vi.mock("../../stores/agentStore", () => {
