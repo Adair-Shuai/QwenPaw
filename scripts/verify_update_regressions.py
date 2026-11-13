@@ -13,6 +13,7 @@ SUITES = (
     "tests/unit/tauri/test_desktop_icons.py",
     "tests/unit/tauri/test_macos_dmg.py",
     "tests/unit/tauri/test_macos_dmg_native.py",
+    "tests/unit/scripts/test_macos_packaging.py",
     "tests/unit/tauri/test_desktop_sqlite_paths.py",
     "tests/unit/app/test_console_static_security.py",
     "tests/unit/tauri/test_update_release_contract.py",
@@ -68,6 +69,10 @@ SUITES = (
     "tests/unit/verify/test_unit_sharding.py",
 )
 REQUIRED_CASES = {
+    "tests/unit/scripts/test_macos_packaging.py": {
+        "test_signing_skips_debug_symbols_and_keeps_native_signatures",
+        "test_launcher_uses_real_top_level_app",
+    },
     "tests/unit/tauri/test_macos_dmg.py": {
         "test_dmg_accepts_existing_tauri_notary_key_locations",
         "test_dmg_artifact_gate_preserves_zip_callers_and_checks_dmg_bytes",
@@ -295,6 +300,7 @@ REQUIRED_CASES = {
         "test_directory_candidate_snapshot_is_isolated",
     },
     "tests/unit/verify/test_release_workflow_safety.py": {
+        "test_resumed_artifacts_must_match_release_commit_and_metadata",
         "test_backend_units_install_only_the_locked_native_icon_renderer",
         "test_desktop_packaging_helpers_install_icon_dependencies",
         "test_application_releases_prepare_versions_without_force_overwrites",

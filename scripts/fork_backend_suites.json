@@ -231,7 +231,8 @@
     ],
     "macos_drag_install": [
       "tests/unit/tauri/test_macos_dmg.py",
-      "tests/unit/tauri/test_macos_dmg_native.py"
+      "tests/unit/tauri/test_macos_dmg_native.py",
+      "tests/unit/scripts/test_macos_packaging.py"
     ],
     "windows_lifecycle": [
       "tests/unit/tauri/test_desktop_sqlite_paths.py",
@@ -1329,7 +1330,8 @@
       "test_main_plugin_publisher_rejects_actual_application_archives",
       "test_main_release_workflows_exclude_every_application",
       "test_desktop_packaging_helpers_install_icon_dependencies",
-      "test_backend_units_install_only_the_locked_native_icon_renderer"
+      "test_backend_units_install_only_the_locked_native_icon_renderer",
+      "test_resumed_artifacts_must_match_release_commit_and_metadata"
     ],
     "tests/unit/plugins/flowforge/test_conversations.py": [
       "test_persistent_chat_apply_receipt_latest_canvas_and_workflow_isolation",

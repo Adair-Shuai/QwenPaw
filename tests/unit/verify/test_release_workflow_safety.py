@@ -69,6 +69,14 @@ def test_backend_units_install_only_the_locked_native_icon_renderer():
     )
     assert "fs.symlinkSync(source, target" in renderer["run"]
     assert steps.index(renderer) < steps.index(unit_tests)
+    dmg = next(
+        step
+        for step in steps
+        if step.get("name") == "Install macOS DMG regression dependencies"
+    )
+    assert dmg["if"] == "runner.os == 'macOS'"
+    assert "requirements-macos-dmg.txt" in dmg["run"]
+    assert steps.index(dmg) < steps.index(unit_tests)
 
 
 def test_windows_release_cleanup_uses_native_owned_pid(tmp_path):
@@ -406,6 +414,17 @@ def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
         "replacement artifacts" in release
     )
     assert "scripts/pack-tauri/assemble_desktop_layout.py" in release
+    native_changes = release.split(
+        "scripts/pack-tauri/assemble_desktop_layout.py|",
+        1,
+    )[1].split(";;", 1)[0]
+    assert "scripts/pack-tauri/windows_portable_bootstrap.cs" in native_changes
+    for variable in (
+        "WINDOWS_ARTIFACTS_RUN_ID",
+        "MACOS_ARTIFACTS_RUN_ID",
+        "COMPONENTS_ARTIFACTS_RUN_ID",
+    ):
+        assert f'[ -z "${variable}" ]' in native_changes
     assert "scripts/pack-tauri/stage_node_runtime.py" in release
     assert "tests/unit/tauri/test_stage_node_runtime.py" in release
     assert release.count('[ -z "$WINDOWS_ARTIFACTS_RUN_ID" ]') >= 1
@@ -453,6 +472,8 @@ def test_core_artifact_reuse_only_allows_exact_extension_tooling_paths():
         "scripts/fork_backend_suites.json",
         "console/src/plugins/hostSdk/hooks.host.test.ts",
         "console/src/plugins/flowForgeWorkbench.test.tsx",
+        "tests/unit/scripts/test_macos_packaging.py",
+        "tests/unit/tauri/test_windows_setup_ui.py",
     ):
         assert path in allowed
     for path in (
@@ -462,6 +483,7 @@ def test_core_artifact_reuse_only_allows_exact_extension_tooling_paths():
         "plugins/bundle/computer-use/plugin.json",
         "scripts/pack-tauri/build_component_release.py",
         "scripts/pack-tauri/assemble_desktop_layout.py",
+        "scripts/pack-tauri/windows_portable_bootstrap.cs",
         "console/src/utils/agentDisplayName.ts",
         "console/src/plugins/hostSdk/hooks.ts",
         "plugins/bundle/flowforge/ui/src/Editor.tsx",

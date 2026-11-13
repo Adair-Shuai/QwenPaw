@@ -108,6 +108,8 @@ jobs:
                 scripts/verify_update_regressions.py|\
                 console/src/plugins/hostSdk/hooks.host.test.ts|\
                 console/src/plugins/flowForgeWorkbench.test.tsx|\
+                tests/unit/scripts/test_macos_packaging.py|\
+                tests/unit/tauri/test_windows_setup_ui.py|\
                 scripts/pack/prepare_plugin_versions.py|\
                 scripts/run_unit_tests.py|\
                 scripts/pack-tauri/prepare_component_base.py|\
@@ -140,6 +142,7 @@ jobs:
                   fi
                   ;;
                 scripts/pack-tauri/assemble_desktop_layout.py|\
+                scripts/pack-tauri/windows_portable_bootstrap.cs|\
                 tests/unit/tauri/test_desktop_layer_layout.py)
                   if [ -z "$WINDOWS_ARTIFACTS_RUN_ID" ] || \
                      [ -z "$MACOS_ARTIFACTS_RUN_ID" ] || \

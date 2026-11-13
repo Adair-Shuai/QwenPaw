@@ -6,6 +6,7 @@ from pathlib import Path
 import plistlib
 import shutil
 import subprocess
+import sys
 import zipfile
 
 import pytest
@@ -35,6 +36,7 @@ def _run(tmp_path, script, *args):
             "GITHUB_ENV": str(tmp_path / "github-env"),
             "COMMAND_LOG": str(tmp_path / "commands.log"),
             "RUNNER_TEMP": str(tmp_path),
+            "REAL_PYTHON": sys.executable,
         },
         capture_output=True,
         text=True,
@@ -86,9 +88,30 @@ def test_launcher_uses_real_top_level_app(tmp_path, missing):
     _command(bin_dir, "uuidgen", "echo 01234567-89ab-cdef-0123-456789abcdef\n")
     for name in ("xattr", "sleep", "ps", "curl"):
         _command(bin_dir, name, "exit 0\n")
-    app = "QwenPaw Desktop.app"
+    # The native DMG suite validates the real mount, copy and signatures.
+    # This shell fixture exercises the verified-app handoff and real launch.
+    _command(
+        bin_dir,
+        "python3",
+        "set -eu\n"
+        'if [ "$1" = "scripts/pack-tauri/macos_dmg.py" ] && '
+        '[ "$2" = "install-for-verification" ]; then\n'
+        '  test "$3" = "--dmg"\n'
+        '  test "$4" = "dist/UGSci-Tauri-test-macOS.dmg"\n'
+        '  test "$5" = "--destination"\n'
+        '  printf "%s\\n" "$@" > "$RUNNER_TEMP/dmg-handoff.log"\n'
+        '  unzip -q dist/UGSci-Tauri-test-macOS.zip -d "$6"\n'
+        '  printf "%s/UGSci.app\\n" "$6"\n'
+        "else\n"
+        '  exec "$REAL_PYTHON" "$@"\n'
+        "fi\n",
+    )
+    app = "UGSci.app"
     dist = tmp_path / "dist"
     dist.mkdir()
+    (dist / "UGSci-Tauri-test-macOS.dmg").write_bytes(
+        b"controlled native mount fixture",
+    )
     with zipfile.ZipFile(
         dist / "UGSci-Tauri-test-macOS.zip",
         "w",
@@ -97,7 +120,12 @@ def test_launcher_uses_real_top_level_app(tmp_path, missing):
         if missing != "app":
             archive.writestr(
                 f"{app}/Contents/Info.plist",
-                plistlib.dumps({"CFBundleExecutable": "qwenpaw-desktop"}),
+                plistlib.dumps(
+                    {
+                        "CFBundleName": "UGSci",
+                        "CFBundleExecutable": "qwenpaw-desktop",
+                    },
+                ),
             )
             if missing != "executable":
                 executable = zipfile.ZipInfo(
@@ -131,6 +159,14 @@ def test_launcher_uses_real_top_level_app(tmp_path, missing):
         )
         verify_root = Path(environment["TAURI_VERIFY_ROOT"])
         assert verify_root.parent == tmp_path
+        assert (tmp_path / "dmg-handoff.log").read_text().splitlines() == [
+            "scripts/pack-tauri/macos_dmg.py",
+            "install-for-verification",
+            "--dmg",
+            "dist/UGSci-Tauri-test-macOS.dmg",
+            "--destination",
+            str(verify_root),
+        ]
         assert log.read_text().splitlines() == [
             str(verify_root / app / "Contents/MacOS/qwenpaw-desktop"),
             "0123456789abcdef0123456789abcdef",

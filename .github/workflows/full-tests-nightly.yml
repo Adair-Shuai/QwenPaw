@@ -216,6 +216,10 @@ jobs:
           fs.symlinkSync(source, target, process.platform === 'win32' ? 'junction' : 'dir');
           JS
 
+      - name: Install macOS DMG regression dependencies
+        if: runner.os == 'macOS'
+        run: python -m pip install -r scripts/pack-tauri/requirements-macos-dmg.txt
+
       - name: Run unit tests
         shell: bash
         env:
