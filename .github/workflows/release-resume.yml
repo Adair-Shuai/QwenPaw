@@ -26,6 +26,11 @@ on:
         required: false
         type: string
         default: ""
+      reverify_web:
+        description: "Rerun wheel and source-install verification when resuming artifacts"
+        required: false
+        type: boolean
+        default: false
       allow_published_resume:
         description: "Allow an artifact-only retry after the GitHub Release was already published"
         required: false
@@ -80,6 +85,7 @@ jobs:
           INPUT_TAG: ${{ inputs.tag }}
           INPUT_RELEASE_ID: ${{ inputs.release_id }}
           ARTIFACTS_RUN_ID: ${{ inputs.artifacts_run_id }}
+          REVERIFY_WEB: ${{ inputs.reverify_web }}
           ALLOW_PUBLISHED_RESUME: ${{ inputs.allow_published_resume }}
           WINDOWS_ARTIFACTS_RUN_ID: ${{ inputs.windows_artifacts_run_id }}
           MACOS_ARTIFACTS_RUN_ID: ${{ inputs.macos_artifacts_run_id }}
@@ -99,6 +105,7 @@ jobs:
               case "$file" in
                 .github/workflows/release-resume.yml|\
                 .github/workflows/full-tests-nightly.yml|\
+                .github/workflows/release-verify.yml|\
                 .github/workflows/apps-release.yml|\
                 .github/workflows/plugins-release.yml|\
                 .github/workflows/desktop-build.yml|\
@@ -304,7 +311,9 @@ jobs:
             }
             require_source_job_success "resolve"
             require_source_job_success "build-wheel"
-            require_source_gate_prefix "verify-web / "
+            if [ "$REVERIFY_WEB" != "true" ]; then
+              require_source_gate_prefix "verify-web / "
+            fi
             if [ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]; then
               require_source_prefix_success "build-components / build-components ("
             fi
@@ -538,12 +547,13 @@ jobs:
 
   verify-web:
     needs: [resolve, build-wheel]
-    if: ${{ inputs.artifacts_run_id == '' }}
+    if: ${{ always() && needs.resolve.result == 'success' && ((inputs.artifacts_run_id == '' && needs.build-wheel.result == 'success') || (inputs.artifacts_run_id != '' && inputs.reverify_web)) }}
     uses: ./.github/workflows/release-verify.yml
     with:
       verify_pip: true
       verify_docker: false
       verify_script_install: true
+      artifacts_run_id: ${{ needs.resolve.outputs.artifacts_run_id }}
       ref: ${{ needs.resolve.outputs.sha }}
     secrets: inherit
 
@@ -657,7 +667,7 @@ jobs:
 
   publish-desktop:
     needs: [resolve, build-wheel, verify-web, build-desktop, build-components, cleanup-draft-immutable-artifacts, full-test-gate]
-    if: ${{ always() && needs.resolve.result == 'success' && needs.full-test-gate.result == 'success' && (needs.cleanup-draft-immutable-artifacts.result == 'success' || (inputs.dry_run && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-components.result == 'success')) }}
+    if: ${{ always() && needs.resolve.result == 'success' && needs.full-test-gate.result == 'success' && (!inputs.reverify_web || needs.verify-web.result == 'success') && (needs.cleanup-draft-immutable-artifacts.result == 'success' || (inputs.dry_run && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-components.result == 'success')) }}
     uses: ./.github/workflows/desktop-publish.yml
     with:
       tag: ${{ needs.resolve.outputs.tag }}
@@ -671,7 +681,7 @@ jobs:
 
   publish-components:
     needs: [resolve, build-wheel, verify-web, build-desktop, build-components, cleanup-draft-immutable-artifacts, full-test-gate]
-    if: ${{ always() && needs.resolve.result == 'success' && needs.full-test-gate.result == 'success' && (needs.cleanup-draft-immutable-artifacts.result == 'success' || (inputs.dry_run && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-components.result == 'success')) }}
+    if: ${{ always() && needs.resolve.result == 'success' && needs.full-test-gate.result == 'success' && (!inputs.reverify_web || needs.verify-web.result == 'success') && (needs.cleanup-draft-immutable-artifacts.result == 'success' || (inputs.dry_run && needs.cleanup-draft-immutable-artifacts.result == 'skipped')) && (inputs.artifacts_run_id != '' || (needs.build-wheel.result == 'success' && needs.verify-web.result == 'success' && needs.build-desktop.result == 'success' && needs.build-components.result == 'success')) }}
     runs-on: ubuntu-latest
     permissions:
       actions: read

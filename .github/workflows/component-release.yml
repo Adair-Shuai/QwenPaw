@@ -210,6 +210,8 @@ jobs:
                 .github/workflows/release.yml|\
                 .github/workflows/release-resume.yml|\
                 .github/workflows/desktop-build.yml|\
+                .github/workflows/release-verify.yml|\
+                .github/workflows/full-tests-nightly.yml|\
                 .github/workflows/component-release.yml|\
                 scripts/pack-tauri/macos_dmg.py|\
                 tests/unit/tauri/test_macos_dmg.py|\

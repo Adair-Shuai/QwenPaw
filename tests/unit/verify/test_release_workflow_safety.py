@@ -463,6 +463,55 @@ def test_macos_packaging_changes_require_rebuilt_macos_artifacts():
     )
 
 
+def test_artifact_resume_can_reverify_installation_before_publication():
+    text = _workflow("release-resume.yml")
+    workflow = yaml.safe_load(text)
+    jobs = workflow["jobs"]
+    verification = jobs["verify-web"]
+    assert "always()" in verification["if"]
+    assert "inputs.artifacts_run_id != '' && inputs.reverify_web" in (
+        verification["if"]
+    )
+    assert verification["with"]["verify_pip"] is True
+    assert verification["with"]["verify_script_install"] is True
+    assert verification["with"]["artifacts_run_id"] == (
+        "${{ needs.resolve.outputs.artifacts_run_id }}"
+    )
+    assert 'if [ "$REVERIFY_WEB" != "true" ]; then\n' in text
+    for name in ("publish-desktop", "publish-components"):
+        assert "verify-web" in jobs[name]["needs"]
+        assert (
+            "(!inputs.reverify_web || needs.verify-web.result == 'success')"
+            in jobs[name]["if"]
+        )
+    wheel_verification = yaml.safe_load(_workflow("release-verify.yml"))
+    downloads = [
+        step["with"]
+        for step in wheel_verification["jobs"]["verify-pip"]["steps"]
+        if step.get("uses") == "actions/download-artifact@v4"
+    ]
+    assert {item["name"] for item in downloads} == {
+        "qwenpaw-dist",
+        "qwenpaw-version",
+    }
+    for item in downloads:
+        assert item["run-id"] == (
+            "${{ inputs.artifacts_run_id || github.run_id }}"
+        )
+        assert item["github-token"] == (
+            "${{ inputs.artifacts_run_id && github.token || '' }}"
+        )
+
+
+def test_macos_release_gates_use_the_supported_desktop_runner():
+    for name in ("release-verify.yml", "full-tests-nightly.yml"):
+        text = _workflow(name)
+        assert "macos-latest" not in text
+        assert "- os: macos-15" in text
+    nightly = _workflow("full-tests-nightly.yml")
+    assert 'macos)   [ "$OS" = "macos-15"' in nightly
+
+
 def test_core_artifact_reuse_only_allows_exact_extension_tooling_paths():
     import fnmatch
     import re

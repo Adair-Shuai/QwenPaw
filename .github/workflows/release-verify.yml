@@ -19,6 +19,10 @@ on:
         description: "Run install-script (install.sh / install.ps1) verification"
         type: boolean
         default: false
+      artifacts_run_id:
+        description: "Run containing the wheel and version artifacts (empty = current run)"
+        type: string
+        default: ""
       docker_node_image:
         description: "Override Dockerfile NODE_IMAGE build-arg for a registry mirror"
         type: string
@@ -45,7 +49,7 @@ jobs:
         python-version: ["3.11", "3.13"]
         os: [ubuntu-latest]
         include:
-          - os: macos-latest
+          - os: macos-15
             python-version: "3.11"
           - os: windows-latest
             python-version: "3.11"
@@ -63,12 +67,16 @@ jobs:
         with:
           name: qwenpaw-dist
           path: dist
+          run-id: ${{ inputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ inputs.artifacts_run_id && github.token || '' }}
 
       - name: Download version file
         uses: actions/download-artifact@v4
         with:
           name: qwenpaw-version
           path: version-meta
+          run-id: ${{ inputs.artifacts_run_id || github.run_id }}
+          github-token: ${{ inputs.artifacts_run_id && github.token || '' }}
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
@@ -339,7 +347,7 @@ jobs:
       matrix:
         include:
           - os: ubuntu-latest
-          - os: macos-latest
+          - os: macos-15
           - os: windows-latest
 
     steps:
