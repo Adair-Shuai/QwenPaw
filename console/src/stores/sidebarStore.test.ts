@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { DEFAULT_FOCUS_ITEM_IDS, useSidebarStore } from "./sidebarStore";
 
@@ -7,6 +7,32 @@ const HIDDEN_PLUGIN_ITEMS_STORAGE_KEY =
   "qwenpaw_sidebar_hidden_plugin_items_v1";
 
 describe("sidebarStore", () => {
+  it.each<[string | null, string[]]>([
+    [null, ["ugsci.tools-skills", "ugsci.visualization"]],
+    ["{", ["ugsci.tools-skills", "ugsci.visualization"]],
+    ["{}", ["ugsci.tools-skills", "ugsci.visualization"]],
+    ["[]", []],
+    [
+      '["core.models","ugsci.tools-skills","core.models",7]',
+      ["core.models", "ugsci.tools-skills"],
+    ],
+    [
+      '["missing.app","ugsci.visualization"]',
+      ["missing.app", "ugsci.visualization"],
+    ],
+  ])(
+    "loads default rail shortcuts while preserving saved choices for %s",
+    async (saved, expected) => {
+      if (saved === null)
+        localStorage.removeItem("qwenpaw_sidebar_rail_items_v1");
+      else localStorage.setItem("qwenpaw_sidebar_rail_items_v1", saved);
+      vi.resetModules();
+      const { useSidebarStore: freshStore, DEFAULT_RAIL_ITEM_IDS } =
+        await import("./sidebarStore");
+      expect(freshStore.getState().railItemIds).toEqual(expected);
+      expect(freshStore.getState().railItemIds).not.toBe(DEFAULT_RAIL_ITEM_IDS);
+    },
+  );
   it("persists custom rail order independently and keeps unavailable app identities", () => {
     const original = useSidebarStore.getState().focusItemIds;
     useSidebarStore

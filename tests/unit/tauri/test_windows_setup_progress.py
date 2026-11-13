@@ -29,6 +29,7 @@ internal static class SetupProbe
 {
     private static int Main(string[] args)
     {
+        Console.OutputEncoding = new System.Text.UTF8Encoding(false);
         Type setup = Assembly.LoadFrom(args[0]).GetType("PortableSetup");
         var stages = new List<string>();
         bool flushedBeforeExit = false;
@@ -43,8 +44,10 @@ internal static class SetupProbe
                         "[UGSCI-INSTALL] " + stage);
         };
         var flags = BindingFlags.NonPublic | BindingFlags.Static;
+        var scriptArguments = new string[args.Length - 3];
+        Array.Copy(args, 3, scriptArguments, 0, scriptArguments.Length);
         object result = setup.GetMethod("RunPowerShell", flags).Invoke(null,
-            new object[] { args[1], args[2], new string[0], false, report });
+            new object[] { args[1], args[2], scriptArguments, false, report });
         Type type = result.GetType();
         string log = (string)type.GetField("LogPath").GetValue(result);
         var parser = setup.GetMethod("InstallerStage", flags);
@@ -54,6 +57,10 @@ internal static class SetupProbe
             new object[] { "[UGSCI-INSTALL]  " });
         string longStage = (string)parser.Invoke(null,
             new object[] { "[UGSCI-INSTALL] " + new string('x', 500) });
+        object transaction = setup.GetMethod("ArgumentValue", flags).Invoke(
+            null, new object[] {
+                new[] { "-transaction-file", "recovery.json" },
+                "--transaction-file" });
         Console.WriteLine(new JavaScriptSerializer().Serialize(new {
             exit_code = type.GetField("ExitCode").GetValue(result),
             stages = stages,
@@ -61,7 +68,8 @@ internal static class SetupProbe
             log = File.ReadAllText(log),
             ordinary = ordinary,
             blank = blank,
-            long_stage_length = longStage.Length
+            long_stage_length = longStage.Length,
+            transaction_alias = transaction
         }));
         return 0;
     }
@@ -69,9 +77,9 @@ internal static class SetupProbe
 """
 
 
-def test_setup_streams_stages_and_failure_log_before_process_exit(
-    tmp_path: Path,
-) -> None:
+@pytest.fixture(scope="module", name="setup_probe")
+def _setup_probe(tmp_path_factory):
+    tmp_path = tmp_path_factory.mktemp("setup-process-compatibility")
     compiler = (
         Path(os.environ["WINDIR"])
         / "Microsoft.NET/Framework64/v4.0.30319/csc.exe"
@@ -105,10 +113,20 @@ def test_setup_streams_stages_and_failure_log_before_process_exit(
             creationflags=subprocess.CREATE_NO_WINDOW,
         )
         assert result.returncode == 0, result.stdout + result.stderr
+    return probe, assembly
+
+
+def test_setup_streams_stages_and_failure_log_before_process_exit(
+    tmp_path: Path,
+    setup_probe,
+) -> None:
+    probe, assembly = setup_probe
     script = tmp_path / "install.ps1"
     script.write_text(
         "[Console]::OutputEncoding = New-Object Text.UTF8Encoding($false)\n"
         "Write-Host '[UGSCI-INSTALL] Copying application files...'\n"
+        "Write-Host '[UGSCI-PHASE] Copying application files|start'\n"
+        "Write-Host '[UGSCI-PROGRESS] copy|5|10'\n"
         "Start-Sleep -Milliseconds 200\n"
         "[Console]::Error.WriteLine('copy failed: diagnostic retained')\n"
         "Write-Host 'ordinary output'\n"
@@ -127,7 +145,11 @@ def test_setup_streams_stages_and_failure_log_before_process_exit(
     assert result.returncode == 0, result.stdout + result.stderr
     report = json.loads(result.stdout)
     assert report["exit_code"] == 7
-    assert report["stages"] == ["Copying application files..."]
+    assert report["stages"] == [
+        "Copying application files...",
+        "[UGSCI-PHASE] Copying application files|start",
+        "[UGSCI-PROGRESS] copy|5|10",
+    ]
     assert report["flushed_before_exit"] is True
     assert "[stderr] copy failed: diagnostic retained" in report["log"]
     assert "[stdout] ordinary output" in report["log"]
@@ -135,3 +157,48 @@ def test_setup_streams_stages_and_failure_log_before_process_exit(
     assert report["ordinary"] is None
     assert report["blank"] is None
     assert report["long_stage_length"] == 240
+
+
+def test_setup_passes_uninstall_directory_and_legacy_transaction_arguments(
+    tmp_path: Path,
+    setup_probe,
+) -> None:
+    probe, assembly = setup_probe
+    script = tmp_path / "arguments.ps1"
+    script.write_text(
+        "param([string]$InstallDir, [string]$CleanupScript)\n"
+        "[Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)\n"
+        "@{directory=$InstallDir; cleanup=$CleanupScript} | "
+        "ConvertTo-Json -Compress | Write-Host\nexit 0\n",
+        encoding="utf-8-sig",
+    )
+    directory = str(tmp_path / "中文 安装目录") + "\\"
+    cleanup = str(tmp_path / "uninstall cleanup.ps1")
+    result = subprocess.run(
+        [
+            str(probe),
+            str(assembly),
+            str(tmp_path),
+            str(script),
+            "-InstallDir",
+            directory,
+            "-CleanupScript",
+            cleanup,
+        ],
+        capture_output=True,
+        encoding="utf-8-sig",
+        timeout=30,
+        check=False,
+        env={**os.environ, "TEMP": str(tmp_path), "TMP": str(tmp_path)},
+        creationflags=subprocess.CREATE_NO_WINDOW,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    report = json.loads(result.stdout)
+    assert report["exit_code"] == 0, report["log"]
+    record = next(
+        line.split("[stdout] ", 1)[1]
+        for line in report["log"].splitlines()
+        if "[stdout] {" in line
+    )
+    assert json.loads(record) == {"directory": directory, "cleanup": cleanup}
+    assert report["transaction_alias"] == "recovery.json"

@@ -4,6 +4,11 @@ export type BuiltinPageId = "tools" | "mcp" | "acp";
 
 export interface QwenPawHost {
   React: typeof ReactTypes;
+  sidebarDensity?: {
+    get: () => "comfortable" | "medium" | "compact";
+    set: (value: "comfortable" | "medium" | "compact") => void;
+    subscribe: (onChange: () => void) => () => void;
+  };
   // Host-owned namespaces are intentionally dynamic across console versions.
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   antd: any;

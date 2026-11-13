@@ -1,7 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import { useEffect, useRef, useState } from "react";
 import { useTranslation } from "react-i18next";
-import { CircleAlert, X } from "lucide-react";
+import { CircleAlert, PanelsTopLeft, RotateCw, X } from "lucide-react";
+import { useTheme } from "../contexts/ThemeContext";
 import type { UpdateConfirmationRequest } from "./desktopUpdate";
 import styles from "./DesktopClient.module.less";
 
@@ -11,6 +12,7 @@ export default function UpdateConfirmation({
   request: UpdateConfirmationRequest;
 }) {
   const { t } = useTranslation();
+  const { isDark } = useTheme();
   const dialog = useRef<HTMLDialogElement>(null);
   const cancel = useRef<HTMLButtonElement>(null);
   const pending = useRef(false);
@@ -42,9 +44,13 @@ export default function UpdateConfirmation({
   return (
     <dialog
       ref={dialog}
-      className={styles.closeDialog}
+      className={`${styles.closeDialog} ${styles.updateDialog}`}
       aria-labelledby="desktop-update-title"
-      aria-describedby="desktop-update-description"
+      aria-describedby={
+        request.otherWindows > 0
+          ? "desktop-update-description desktop-update-windows"
+          : "desktop-update-description"
+      }
       aria-busy={submitting}
       onCancel={(event) => {
         event.preventDefault();
@@ -52,7 +58,15 @@ export default function UpdateConfirmation({
       }}
     >
       <header className={styles.closeHeader}>
-        <h2 id="desktop-update-title">{t("desktop.update.title")}</h2>
+        <img
+          className={styles.updateLogo}
+          src={`${import.meta.env.BASE_URL}ugsci-mono/brand/lockup-${
+            isDark ? "white" : "black"
+          }.svg`}
+          alt="UGSci"
+          width={114}
+          height={32}
+        />
         <button
           className={styles.dismissClose}
           aria-label={t("common.cancel")}
@@ -62,12 +76,16 @@ export default function UpdateConfirmation({
           <X size={18} aria-hidden="true" />
         </button>
       </header>
-      <p id="desktop-update-description">
-        {request.otherWindows > 0 &&
-          t("desktop.update.otherWindows", { count: request.otherWindows }) +
-            " "}
-        {t("desktop.update.description")}
-      </p>
+      <h2 id="desktop-update-title">{t("desktop.update.title")}</h2>
+      <p id="desktop-update-description">{t("desktop.update.description")}</p>
+      {request.otherWindows > 0 && (
+        <p id="desktop-update-windows" className={styles.updateWindows}>
+          <PanelsTopLeft size={18} aria-hidden="true" />
+          <span>
+            {t("desktop.update.otherWindows", { count: request.otherWindows })}
+          </span>
+        </p>
+      )}
       {error && (
         <div className={styles.closeError} role="alert">
           <CircleAlert size={18} aria-hidden="true" />
@@ -85,10 +103,11 @@ export default function UpdateConfirmation({
         </button>
         <button
           data-press
-          className={styles.keepRunning}
+          className={styles.installUpdate}
           disabled={submitting}
           onClick={() => void answer(true)}
         >
+          <RotateCw size={16} aria-hidden="true" />
           {t(
             submitting ? "desktop.update.preparing" : "desktop.update.confirm",
           )}

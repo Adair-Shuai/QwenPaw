@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import asyncio
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 
 from ...components.service import (
     configured_service,
@@ -75,4 +75,30 @@ async def install_component_update(component: str):
         raise HTTPException(
             status_code=502,
             detail=f"Component update queue failed: {exc}",
+        ) from exc
+
+
+@router.post("/{component}/update")
+async def update_plugin_component(component: str, request: Request):
+    """Hot-load compatible plugins, downloading the rest for restart."""
+    from ...components.runtime_updates import update_component
+    from ...plugins.dependency_upgrade import DependencyUpgradeRequired
+
+    try:
+        return await update_component(
+            component, getattr(request.app.state, "plugin_loader", None),
+        )
+    except DependencyUpgradeRequired as exc:
+        return {
+            "component": component,
+            "queued": False,
+            "dependency_operation": exc.operation,
+        }
+    except ComponentUpdateError as exc:
+        raise HTTPException(
+            status_code=409, detail={"reason": exc.reason, "message": str(exc)},
+        ) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=502, detail=f"Plugin update failed: {exc}",
         ) from exc

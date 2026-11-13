@@ -37,6 +37,11 @@ describe("legacy registerRoutes shim", () => {
     expect(typeof window.QwenPaw.slot?.fill).toBe("function");
     expect(typeof window.QwenPaw.audit?.overrides).toBe("function");
     expect(typeof window.QwenPaw.host.loadBuiltinPage).toBe("function");
+    expect(typeof window.QwenPaw.host.sidebarDensity?.get).toBe("function");
+    expect(typeof window.QwenPaw.host.sidebarDensity?.set).toBe("function");
+    expect(typeof window.QwenPaw.host.sidebarDensity?.subscribe).toBe(
+      "function",
+    );
     expect(typeof window.QwenPaw.host.useNavigate).toBe("function");
     expect(typeof window.QwenPaw.host.useLocation).toBe("function");
   });

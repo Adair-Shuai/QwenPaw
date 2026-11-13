@@ -709,7 +709,7 @@ describe.each([
     expect(
       within(introduction).getByText("核验库存资料并整理判断依据。"),
     ).toBeVisible();
-    expect(within(introduction).getByText("computer_use")).toBeVisible();
+    expect(within(introduction).getByText("电脑操作")).toBeVisible();
     expect(within(introduction).queryByRole("tab")).toBeNull();
     expect(within(introduction).queryByRole("textbox")).toBeNull();
     expect(

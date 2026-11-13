@@ -58,8 +58,12 @@ const subscribeRendererRegistry = (listener: () => void) =>
   rendererRegistry.subscribe(listener);
 const getRendererRegistrySnapshot = () => rendererRegistry.getSnapshot();
 
+export type WorkbenchBrowserStartContent =
+  | ReactNode
+  | ((focusAddress: () => void) => ReactNode);
+
 interface WorkbenchBrowserPanelProps {
-  browserStartContent?: ReactNode;
+  browserStartContent?: WorkbenchBrowserStartContent;
   active: boolean;
   scope: Extract<FilesWorkspaceScope, { kind: "session" }>;
   browserFile?: WorkbenchBrowserFile;
@@ -107,6 +111,7 @@ export function WorkbenchBrowserPanel({
   onOpenFiles,
 }: WorkbenchBrowserPanelProps) {
   const { t } = useTranslation();
+  const addressRef = useRef<HTMLInputElement>(null);
   const [input, setInput] = useState(browserSession?.input ?? "");
   const [navigation, setNavigation] = useState<{
     pages: BrowserPage[];
@@ -244,6 +249,7 @@ export function WorkbenchBrowserPanel({
         <label className={styles.browserAddress}>
           <Search size={14} />
           <input
+            ref={addressRef}
             value={input}
             onChange={(event) => setInput(event.target.value)}
             onKeyDown={(event) => {
@@ -348,7 +354,11 @@ export function WorkbenchBrowserPanel({
           </div>
         </div>
       ) : browserStartContent ? (
-        browserStartContent
+        typeof browserStartContent === "function" ? (
+          browserStartContent(() => addressRef.current?.focus())
+        ) : (
+          browserStartContent
+        )
       ) : (
         <div className={styles.workbenchEmptyState}>
           <span className={styles.workbenchEmptyIcon}>

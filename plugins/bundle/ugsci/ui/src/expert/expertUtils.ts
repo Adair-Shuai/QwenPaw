@@ -1,3 +1,4 @@
+import { skillDisplayName } from "../core/displayNames";
 /**
  * Shared expert UI components and constants.
  */
@@ -95,6 +96,7 @@ export function SkillPickerModal({
     return poolSkills.filter(
       (s: PoolSkillSpec) =>
         s.name.toLowerCase().includes(q) ||
+        skillDisplayName(s.name).toLowerCase().includes(q) ||
         s.description?.toLowerCase().includes(q) ||
         s.tags?.some((t: string) => t.toLowerCase().includes(q)),
     );
@@ -303,7 +305,7 @@ export function SkillPickerModal({
                 ),
                 React.createElement(
                   Tooltip,
-                  { title: skill.name },
+                  { title: skillDisplayName(skill.name) },
                   React.createElement(
                     Text,
                     {
@@ -315,7 +317,7 @@ export function SkillPickerModal({
                         whiteSpace: "nowrap",
                       },
                     },
-                    skill.name,
+                    skillDisplayName(skill.name),
                   ),
                 ),
               ),

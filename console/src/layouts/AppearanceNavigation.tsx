@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Popover } from "antd";
-import { Clock3, FolderOpen, Grid2X2, MoreHorizontal } from "lucide-react";
+import { Clock3, FolderOpen, Grid2X2, MoreHorizontal, Pin } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import type { FlatMenuEntry } from "./registry/adapter";
 import styles from "./appearanceNavigation.module.less";
@@ -14,6 +14,7 @@ export default function AppearanceNavigation({
   renderEntry,
   showPrimary = true,
   excludedKeys = [],
+  onPin,
 }: {
   entries: FlatMenuEntry[];
   shortcuts: FlatMenuEntry[];
@@ -23,6 +24,7 @@ export default function AppearanceNavigation({
   renderEntry: (entry: FlatMenuEntry) => ReactNode;
   showPrimary?: boolean;
   excludedKeys?: readonly string[];
+  onPin?: (entry: FlatMenuEntry) => void;
 }) {
   const { t } = useTranslation();
   const [moreOpen, setMoreOpen] = useState(false);
@@ -30,9 +32,7 @@ export default function AppearanceNavigation({
   const panel = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (!moreOpen) return;
-    const frame = requestAnimationFrame(
-      () => panel.current?.querySelector<HTMLButtonElement>("button")?.focus(),
-    );
+    const frame = requestAnimationFrame(() => panel.current?.focus());
     return () => cancelAnimationFrame(frame);
   }, [moreOpen]);
   const extraEntries = shortcuts.filter(
@@ -57,8 +57,15 @@ export default function AppearanceNavigation({
       ),
     },
     {
+      label: t("nav.apps", "Apps"),
+      entries: extraEntries.filter((entry) => entry.key.startsWith("pawapp:")),
+    },
+    {
       label: t("sidebar.moreGroups.extensions", "Extensions"),
-      entries: extraEntries.filter((entry) => !entry.key.startsWith("core.")),
+      entries: extraEntries.filter(
+        (entry) =>
+          !entry.key.startsWith("core.") && !entry.key.startsWith("pawapp:"),
+      ),
     },
   ];
   const apps = entries.find((entry) => entry.key === "core.app-center");
@@ -111,6 +118,7 @@ export default function AppearanceNavigation({
             ref={panel}
             className={styles.morePanel}
             role="dialog"
+            tabIndex={-1}
             aria-label={t("sidebar.moreFeatures", "More")}
             onKeyDown={(event) => {
               if (event.key === "Escape") {
@@ -134,7 +142,31 @@ export default function AppearanceNavigation({
                     className={styles.entryGrid}
                     onClick={() => setMoreOpen(false)}
                   >
-                    {group.entries.map(renderEntry)}
+                    {group.entries.map((entry) => (
+                      <div key={entry.key} className={styles.entry}>
+                        {renderEntry(entry)}
+                        {onPin && (
+                          <button
+                            type="button"
+                            className={styles.pin}
+                            aria-label={`${t(
+                              "sidebar.pinEntry",
+                              "Pin to sidebar",
+                            )} ${entry.label}`}
+                            title={`${t(
+                              "sidebar.pinEntry",
+                              "Pin to sidebar",
+                            )} ${entry.label}`}
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              onPin(entry);
+                            }}
+                          >
+                            <Pin size={14} />
+                          </button>
+                        )}
+                      </div>
+                    ))}
                   </div>
                 </section>
               ))}

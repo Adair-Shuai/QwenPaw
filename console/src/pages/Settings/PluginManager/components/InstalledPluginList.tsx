@@ -2,13 +2,13 @@ import { UGSCI_BUTTON_LOADING } from "@/components/UgsciMotion";
 import { useMemo, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
-  Alert,
   Badge,
   Button,
   Empty,
   Input,
   Spin,
   Table,
+  Tooltip,
   Typography,
 } from "antd";
 import { Package, RefreshCw, Trash2, Upload } from "lucide-react";
@@ -58,6 +58,12 @@ export function InstalledPluginList({
   const [search, setSearch] = useState("");
   const [viewMode, setViewMode] = useState<PluginViewMode>("card");
   const isMobile = useIsMobile();
+  const refreshing = loading || updatesLoading;
+  const refreshHint = t(
+    updatesLoading
+      ? "pluginManager.checkingUpdates"
+      : "pluginManager.catalogRefresh",
+  );
 
   const columns = usePluginColumns({ uninstallingId, onUninstall });
 
@@ -84,7 +90,11 @@ export function InstalledPluginList({
         }
         onClick={() => onUpdate(plugin)}
       >
-        {t("pluginManager.update")}
+        {t(
+          plugin.pending_update?.version === update.version
+            ? "pluginManager.confirmDependencyUpdate"
+            : "pluginManager.update",
+        )}
       </Button>
     );
   };
@@ -112,29 +122,32 @@ export function InstalledPluginList({
               <Badge count={updates.size} style={{ marginLeft: 6 }} />
             </Button>
           )}
-          <Button
-            type="default"
-            className={toolbarStyles.iconButton}
-            icon={<RefreshCw size={14} />}
-            onClick={onRefresh}
-            disabled={loading}
-            aria-label={t("pluginManager.catalogRefresh")}
-            title={t("pluginManager.catalogRefresh")}
-          />
+          <Tooltip title={refreshHint}>
+            <span className={toolbarStyles.refreshControl}>
+              <Button
+                type="default"
+                className={toolbarStyles.iconButton}
+                icon={
+                  <RefreshCw
+                    size={14}
+                    className={
+                      refreshing ? toolbarStyles.refreshing : undefined
+                    }
+                  />
+                }
+                onClick={onRefresh}
+                disabled={loading}
+                aria-label={t("pluginManager.catalogRefresh")}
+                aria-busy={refreshing}
+                aria-description={updatesLoading ? refreshHint : undefined}
+              />
+            </span>
+          </Tooltip>
           {!isMobile && (
             <PluginViewToggle value={viewMode} onChange={setViewMode} />
           )}
         </div>
       </div>
-
-      {updatesLoading && (
-        <Alert
-          type="info"
-          showIcon
-          message={t("pluginManager.checkingUpdates")}
-          style={{ marginBottom: 12 }}
-        />
-      )}
 
       <Spin spinning={loading}>
         {!loading && filteredPlugins.length === 0 ? (

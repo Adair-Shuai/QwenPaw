@@ -1,4 +1,4 @@
-# UGSci Desktop 打包脚本
+# UGSci 打包脚本
 
 > ⚠️ **旧版（仅用于回滚）。** 这套基于 conda-pack 的打包脚本已被 **Tauri**
 > 桌面版构建取代（详见 `console/src-tauri/` 与 `scripts/pack-tauri/`），仅作
@@ -42,8 +42,8 @@ CREATE_ZIP=1 bash ./scripts/pack/build_macos.sh   # 同时生成 .zip
 ./scripts/pack/build_win.ps1
 # 产出: dist/UGSci-Setup-<version>.exe
 # 创建两个启动器：
-#   - UGSci Desktop.vbs (静默启动，无终端窗口)
-#   - UGSci Desktop (Debug).bat (显示终端，便于调试)
+#   - UGSci.vbs (静默启动，无终端窗口)
+#   - UGSci (Debug).bat (显示终端，便于调试)
 ```
 
 ## 从终端启动并查看日志（macOS）

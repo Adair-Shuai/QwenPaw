@@ -8,6 +8,7 @@ import {
   validationDiagnostics,
 } from "../../../src/qwenpaw/plugins_bundle/flowforge/ui/src/graphContracts";
 import { InputBindings } from "../../../src/qwenpaw/plugins_bundle/flowforge/ui/src/InputBindings";
+import { duplicateSubgraph } from "../../../src/qwenpaw/plugins_bundle/flowforge/ui/src/editorTools";
 import {
   canvasFromDocument,
   documentFromCanvas,
@@ -62,6 +63,75 @@ const doc: FlowDocument = {
 };
 
 describe("FlowForge authoring contracts", () => {
+  it("copies subgraphs without stealing control routes or changing literal schema values and rewrites output aliases", () => {
+    const document = structuredClone(doc);
+    document.nodes.a.control = { output: "summary", next: "b" };
+    document.nodes.b = {
+      class_type: "LLMCallNode",
+      inputs: {
+        query: ["a", 0],
+        prompt: "内容 ${vars.summary}",
+        literal: "summary",
+        output_schema: { enum: ["a", 0] },
+      },
+    };
+    document.edges = [
+      {
+        id: "incoming-control",
+        source: "c",
+        target: "a",
+        kind: "control",
+        source_handle: "next",
+      },
+      {
+        id: "incoming-data",
+        source: "c",
+        target: "a",
+        kind: "data",
+        target_handle: "value",
+      },
+      {
+        id: "internal-control",
+        source: "a",
+        target: "b",
+        kind: "control",
+        source_handle: "next",
+      },
+      {
+        id: "internal-data",
+        source: "a",
+        target: "b",
+        kind: "data",
+        target_handle: "query",
+        source_slot: 0,
+      },
+    ];
+    const original = structuredClone(document);
+    const copied = duplicateSubgraph(document, ["a", "b"]);
+    const [source, target] = copied.ids;
+    expect(copied.nodes[source].control.next).toBe(target);
+    const alias = copied.nodes[source].control.output;
+    expect(alias).not.toBe("summary");
+    expect(copied.nodes[target].inputs.prompt).toBe(
+      `内容 \${vars[${JSON.stringify(alias)}]}`,
+    );
+    expect(copied.nodes[target].inputs.query).toEqual([source, 0]);
+    expect(copied.nodes[target].inputs.literal).toBe("summary");
+    expect(copied.nodes[target].inputs.output_schema).toEqual({
+      enum: ["a", 0],
+    });
+    expect(
+      copied.edges.some(
+        (edge) => edge.source === "c" && edge.kind === "control",
+      ),
+    ).toBe(false);
+    expect(copied.edges).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ source: "c", target: source, kind: "data" }),
+      ]),
+    );
+    expect(document).toEqual(original);
+  });
   it("rejects incompatible occupied and cyclic data bindings without coercing runtime types", () => {
     const { nodes } = canvasFromDocument(doc, specs);
     const wire = {

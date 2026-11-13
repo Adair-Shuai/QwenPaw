@@ -1,11 +1,4 @@
-import {
-  ArrowLeft,
-  Expand,
-  Maximize2,
-  Minimize2,
-  MessageSquarePlus,
-  X,
-} from "lucide-react";
+import { ArrowLeft, PanelRight, MessageSquarePlus, X } from "lucide-react";
 import { Tooltip } from "antd";
 import {
   useCallback,
@@ -216,7 +209,7 @@ function SessionFilesDrawer({
           aria-pressed={maximized}
           onClick={() => setMaximized((current) => !current)}
         >
-          {maximized ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          <PanelRight size={16} />
         </button>
       </Tooltip>
       <Tooltip title={t("common.close")}>
@@ -249,7 +242,7 @@ function SessionFilesDrawer({
           className={styles.primaryButton}
           onClick={() => dispatch({ type: "EXPAND_WORKSPACE" })}
         >
-          <Expand size={15} />
+          <PanelRight size={15} />
           {t("files.expandWorkspace")}
         </button>
       )}
@@ -264,6 +257,7 @@ function SessionFilesDrawer({
         maximized ? styles.drawerMaximized : ""
       }`}
       style={drawerStyle}
+      data-workbench-maximized={maximized || undefined}
       layout={isResizing || maximized || prefersReducedMotion ? false : "size"}
       initial={
         prefersReducedMotion ? false : { opacity: 0, x: 18, scale: 0.995 }

@@ -1,5 +1,6 @@
 # -*- coding: utf-8 -*-
 """Execute the real Windows update extractor without opening installer UI."""
+
 from __future__ import annotations
 
 import json
@@ -42,6 +43,30 @@ internal static class ExtractorProbe
         var assembly = Assembly.LoadFrom(args[0]);
         var owner = assembly.GetType("UGSciUpdateAssistant").GetNestedType(
             "UpdateForm", BindingFlags.NonPublic);
+        if (args[1] == "--shortcuts")
+        {
+            var flags = BindingFlags.NonPublic | BindingFlags.Static;
+            var repair = owner.GetMethod("RepairApplicationShortcuts", flags);
+            var create = owner.GetMethod("CreateShortcut", flags);
+            string executable = Path.Combine(args[2], "UGSci.exe");
+            File.WriteAllText(executable, "isolated shortcut fixture");
+            string desktop = Path.Combine(args[2], "Desktop", "UGSci.lnk");
+            string legacy = Path.Combine(args[2], "Desktop",
+                "UGSci Desktop.lnk");
+            string start = Path.Combine(args[2], "AppData", "Microsoft",
+                "Windows", "Start Menu", "Programs", "UGSci.lnk");
+            if (args[3] != "none")
+                create.Invoke(null, new object[] {
+                    args[3] == "current" ? desktop : legacy,
+                    args[3] == "unrelated" ? Path.Combine(args[2], "other.exe")
+                        : executable, args[2] });
+            repair.Invoke(null, new object[] { executable, args[2] });
+            Console.WriteLine(new JavaScriptSerializer().Serialize(new {
+                desktop = File.Exists(desktop), legacy = File.Exists(legacy),
+                start = File.Exists(start)
+            }));
+            return 0;
+        }
         var method = owner.GetMethod("ExtractSafely",
             BindingFlags.NonPublic | BindingFlags.Static);
         var progress = new List<int>();
@@ -136,6 +161,51 @@ def run_extractor(
 @pytest.fixture(scope="module", name="compiled_extractor")
 def _compiled_extractor(tmp_path_factory):
     return compile_extractor(tmp_path_factory.mktemp("update-extractor"))
+
+
+@pytest.mark.parametrize(
+    "previous",
+    ["none", "legacy", "current", "unrelated"],
+)
+def test_updater_shortcut_repair_preserves_desktop_preference(
+    tmp_path,
+    previous,
+):
+    # Redirect only the OS special-folder boundary. Compile and execute the
+    # shipping repair method and real Windows Shell .lnk operations.
+    source = SOURCE.read_text(encoding="utf-8")
+    for folder, name in (
+        ("ApplicationData", "AppData"),
+        ("DesktopDirectory", "Desktop"),
+    ):
+        expression = (
+            f"Environment.GetFolderPath(Environment.SpecialFolder.{folder})"
+        )
+        assert expression in source
+        source = source.replace(
+            expression,
+            "Path.Combine("
+            'Environment.GetEnvironmentVariable("UGSCI_TEST_ROOT"), '
+            f'"{name}")',
+        )
+    isolated = tmp_path / "assistant.cs"
+    isolated.write_text(source, encoding="utf-8")
+    probe, assembly = compile_extractor(tmp_path / "compiled", isolated)
+    result = subprocess.run(
+        [str(probe), str(assembly), "--shortcuts", str(tmp_path), previous],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=30,
+        creationflags=subprocess.CREATE_NO_WINDOW,
+        env={**os.environ, "UGSCI_TEST_ROOT": str(tmp_path)},
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
+    assert json.loads(result.stdout) == {
+        "desktop": previous in {"legacy", "current"},
+        "legacy": previous == "unrelated",
+        "start": True,
+    }
 
 
 def test_extractor_reuses_buffer_and_limits_progress_for_many_files(

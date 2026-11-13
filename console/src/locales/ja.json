@@ -58,16 +58,16 @@
   },
   "desktop": {
     "update": {
-      "title": "QwenPaw を更新しますか？",
+      "title": "UGSci を更新しますか？",
       "otherWindows": "他に {{count}} 個のウィンドウが開いています。",
       "otherWindows_one": "他に {{count}} 個のウィンドウが開いています。",
       "otherWindows_other": "他に {{count}} 個のウィンドウが開いています。",
-      "description": "更新すると、すべての QwenPaw ウィンドウが閉じられ、実行中のタスクが中断されます。",
-      "confirm": "閉じて更新",
+      "description": "更新すると、すべての UGSci ウィンドウが閉じられ、実行中のタスクが中断されます。",
+      "confirm": "UGSci を閉じて更新",
       "preparing": "ウィンドウを閉じています…"
     },
     "closeWindow": {
-      "title": "QwenPaw を閉じますか？",
+      "title": "UGSci を閉じますか？",
       "description": "バックグラウンドではタスクが続行されます。完全に終了すると、実行中のタスクも終了します。",
       "remember": "選択を記憶する",
       "showWindow": "ウィンドウを表示",
@@ -76,9 +76,16 @@
       "keepRunning": "バックグラウンドで続行",
       "quitting": "終了中…",
       "stopService": "完全に終了",
-      "stopBlocked": "QwenPaw は他のウィンドウやアプリで使用中です。完全に終了する前に、それらを閉じてください。",
+      "stopBlocked": "UGSci は他のウィンドウやアプリで使用中です。完全に終了する前に、それらを閉じてください。",
       "preference": "ウィンドウを閉じる",
       "askEveryTime": "毎回確認する"
+    },
+    "window": {
+      "minimize": "ウィンドウを最小化",
+      "maximize": "ウィンドウを最大化",
+      "restore": "ウィンドウを元に戻す",
+      "close": "ウィンドウを閉じる",
+      "failed": "ウィンドウ操作に失敗しました。もう一度お試しください。"
     }
   },
   "chunkError": {
@@ -3221,7 +3228,7 @@
       "title": "新しいバージョンが利用可能です: v{{version}}",
       "viewReleases": "リリースを見る",
       "installDesktopUpdate": "今すぐ更新",
-      "desktopInstallHint": "QwenPaw Desktop {{version}} のインストール準備が整いました。更新後にアプリが再起動します。",
+      "desktopInstallHint": "UGSci {{version}} のインストール準備が整いました。更新後にアプリが再起動します。",
       "checking": "更新を確認中…",
       "checkingHint": "最新バージョンを確認しています",
       "downloading": "更新をダウンロード中",
@@ -3238,7 +3245,7 @@
       "errors": {
         "network": "更新サーバーに接続できませんでした。インターネット接続を確認して再試行してください。",
         "signature": "更新ファイルの署名検証に失敗しました。もう一度ダウンロードしてください。",
-        "appLocation": "QwenPaw は読み取り専用の macOS の場所から実行されています。QwenPaw.app を Applications フォルダーへ移動し、そこから起動してからもう一度更新してください。",
+        "appLocation": "UGSci は読み取り専用の macOS の場所から実行されています。UGSci.app を Applications フォルダーへ移動し、そこから起動してからもう一度更新してください。",
         "other": "更新に失敗しました。"
       },
       "updateLater": "バックグラウンドでダウンロード",
@@ -3262,7 +3269,14 @@
     "collapse": "サイドバーを折りたたむ",
     "expand": "サイドバーを展開する",
     "more": "その他",
-    "toggleAgentNavigation": "エージェントナビゲーションを展開または折りたたむ"
+    "toggleAgentNavigation": "エージェントナビゲーションを展開または折りたたむ",
+    "dock": {
+      "left": "左に配置",
+      "right": "右に配置",
+      "bottom": "下に配置",
+      "floating": "フローティング",
+      "handle": "ナビゲーションをドラッグ、またはクリックして配置を選択"
+    }
   },
   "settingsCenter": {
     "backToApp": "アプリに戻る",
@@ -4710,6 +4724,10 @@
     "update": "更新",
     "updateAll": "すべて更新",
     "updateSuccess": "プラグインを更新しました",
+    "confirmDependencyUpdate": "依存関係を確認",
+    "coreUpdateRequired": "この更新には新しい UGSci が必要です。先に本体を更新してください。",
+    "updateRestartRequired": "更新が完了しました。再起動後に有効になります。",
+    "ugsciUpgradeQueued": "更新を準備しました。再起動後に有効になります。",
     "updateAllSuccess": "すべてのプラグインを更新しました",
     "updateAllResult": "{{succeeded}}件を更新、{{failed}}件が失敗しました：{{names}}",
     "updateFailed": "プラグインの更新に失敗しました",

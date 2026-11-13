@@ -63,6 +63,16 @@
     height: 100% !important;
   }
 }
+.frame[data-conversation-pane="true"] {
+  overflow: clip;
+}
+.frame[data-conversation-pane="true"].rail {
+  border: 0;
+}
+:global([data-window-platform="macos"])
+  .frame:not(:has([data-dual-sidebar-collapsed])) {
+  padding-top: 44px;
+}
 .transport {
   position: absolute;
   inset: auto 12px var(--sidebar-footer-bottom) auto;

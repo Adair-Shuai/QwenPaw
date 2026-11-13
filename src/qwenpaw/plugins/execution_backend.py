@@ -108,6 +108,8 @@ class ExecutionBackend(Protocol):
     installer policy independently of actual consumer audit evidence.
     Optional validate_config_update(description, config) checks eligibility
     without execution before configuration teardown, including disabled rows.
+    Optional validate_migration(previous, candidate, in_place=...) admits
+    explicitly supported transitions from another execution backend.
     """
 
     probe_before_activation: bool
@@ -213,7 +215,7 @@ class BackendBinding:
         )
 
     def validate_update(self, candidate, *, in_place):
-        """Reject backend changes before execution or directory mutation."""
+        """Validate backend transitions before execution or disk mutation."""
         if self.backend is not candidate.backend:
             for binding in (self, candidate):
                 binding.backend.validate_update(
@@ -221,9 +223,13 @@ class BackendBinding:
                     binding.description,
                     in_place=False,
                 )
-            raise RuntimeError(
-                "Plugin execution backend switching is not supported",
-            )
+            migrate = getattr(candidate.backend, "validate_migration", None)
+            if migrate is None:
+                raise RuntimeError(
+                    "Plugin execution backend switching is not supported",
+                )
+            migrate(self, candidate.description, in_place=in_place)
+            return
         self.backend.validate_update(
             self.description,
             candidate.description,

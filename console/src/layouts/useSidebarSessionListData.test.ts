@@ -749,6 +749,81 @@ describe("useSessionListData polling", () => {
     );
   }
 
+  function renderSharedHistory() {
+    const publish = vi.fn((next: ExtendedChatSession[]) =>
+      useSessionListStore.getState().syncSessions(next),
+    );
+    return renderHook(
+      () => {
+        const sessions = useSessionListStore((store) => store.sessions);
+        return useSessionListData(sessions as ExtendedChatSession[], publish, {
+          active: true,
+          currentSessionId: undefined,
+          onSessionClick: vi.fn(),
+        });
+      },
+      { wrapper },
+    );
+  }
+
+  it("restores history immediately after SDK initialization clears the shared list without switching agents", async () => {
+    const list = vi
+      .spyOn(api, "listChats")
+      .mockResolvedValue([makeChat(A_CHAT)]);
+    const hook = renderSharedHistory();
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    expect(hook.result.current.sortedSessions.map((s) => s.id)).toEqual([
+      A_CHAT,
+    ]);
+    const librarySetter = vi.fn();
+    await act(async () => {
+      useSessionListStore.getState().syncFromLibrary([], librarySetter);
+      await vi.advanceTimersByTimeAsync(0);
+    });
+    expect(useAgentStore.getState().selectedAgent).toBe("agent-a");
+    expect(hook.result.current.sortedSessions.map((s) => s.id)).toEqual([
+      A_CHAT,
+    ]);
+    expect(librarySetter).toHaveBeenCalledWith([
+      expect.objectContaining({ id: A_CHAT }),
+    ]);
+    expect(list).toHaveBeenCalledTimes(2);
+  });
+
+  it("repairs an incomplete shared list even when the backend result matches the last poll", async () => {
+    vi.spyOn(api, "listChats").mockResolvedValue([
+      makeChat("one"),
+      makeChat("two"),
+    ]);
+    const hook = renderSharedHistory();
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    act(() =>
+      useSessionListStore
+        .getState()
+        .syncFromLibrary([makeSession("one")], vi.fn()),
+    );
+    await act(() => vi.advanceTimersByTimeAsync(10000));
+    expect(hook.result.current.sortedSessions.map((s) => s.id).sort()).toEqual([
+      "one",
+      "two",
+    ]);
+  });
+
+  it("keeps a genuinely empty backend history empty after recovery without a request loop", async () => {
+    const list = vi
+      .spyOn(api, "listChats")
+      .mockResolvedValue([makeChat(A_CHAT)]);
+    const hook = renderSharedHistory();
+    await act(() => vi.advanceTimersByTimeAsync(0));
+    list.mockResolvedValue([]);
+    await act(() => vi.advanceTimersByTimeAsync(10000));
+    expect(hook.result.current.sortedSessions).toEqual([]);
+    const calls = list.mock.calls.length;
+    await act(() => vi.advanceTimersByTimeAsync(9999));
+    expect(list).toHaveBeenCalledTimes(calls);
+    expect(useSessionListStore.getState().sessions).toEqual([]);
+  });
+
   it("fetches on activation, skips identical updates, applies changed lists", async () => {
     const listSpy = vi
       .spyOn(api, "listChats")

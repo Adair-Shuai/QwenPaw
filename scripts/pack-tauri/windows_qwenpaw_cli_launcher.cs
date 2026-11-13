@@ -27,7 +27,7 @@ internal static class QwenPawCliLauncher
             string activePath = Path.Combine(binaries, "state", "active.json");
             var layout = new JavaScriptSerializer().Deserialize<ActiveLayout>(File.ReadAllText(activePath));
             if (layout == null || layout.schemaVersion != 1 || layout.components == null)
-                throw new InvalidDataException("UGSci Desktop active runtime layout is invalid.");
+                throw new InvalidDataException("UGSci active runtime layout is invalid.");
             string pythonRoot = Resolve(installRoot, layout.components["python-runtime"].path);
             string backend = Resolve(installRoot, layout.components["backend"].path);
             string dependencies = Resolve(installRoot, layout.components["python-packages"].path);

@@ -109,6 +109,9 @@ const suites = {
     "src/pages/Chat/components/ComposerOptions.test.tsx",
     "src/utils/pageStyle.test.tsx",
     "src/layouts/DockableSidebar.test.tsx",
+    "src/layouts/NavigationDock.test.tsx",
+    "src/utils/sidebarDensityPreference.test.ts",
+    "src/notifications/DesktopWindowFrame.test.tsx",
     "src/layouts/sidebarSizing.test.ts",
     "src/contexts/ThemeContext.test.tsx",
     "src/layouts/Sidebar.render.test.tsx",
@@ -160,8 +163,10 @@ const suites = {
     "src/pages/AppCenter/AppCenter.updates.test.tsx",
     "src/pages/AppCenter/AppCard.test.tsx",
     "src/plugins/usePluginLoader.test.ts",
+    "src/plugins/usePluginUpdateSync.test.tsx",
     "src/os/osCleanup.test.ts",
     "src/contexts/DesktopUpdateContext.test.tsx",
+    "src/notifications/UpdateConfirmation.test.tsx",
     "src/layouts/Header.test.tsx",
     "src/layouts/constants.test.ts",
   ],
@@ -193,10 +198,12 @@ const suites = {
     "src/utils/openExternalLink.test.ts",
     "src/utils/openHtmlFile.test.ts",
     "src/layouts/SidebarSessionList.test.tsx",
+    "src/layouts/useSidebarSessionListData.test.ts",
     "src/components/SessionItem/SessionItem.test.tsx",
     "src/pages/Chat/HostBubbles.render.test.tsx",
     "src/plugins/expertSummon.test.tsx",
     "src/plugins/expertPresentation.test.tsx",
+    "src/plugins/expertFilesWorkspace.test.tsx",
     "src/plugins/expertAvatar.test.ts",
     "src/layouts/LocalAvatarPicker.test.tsx",
     "src/stores/localAvatarStore.test.ts",
@@ -749,6 +756,7 @@ const settingsTests = readFileSync(
 );
 for (const title of [
   "opens packaged UGSci settings in Settings Center and persists the GenUI switch",
+  "changes sidebar density from packaged settings without remounting navigation",
   "redirects the old GenUI address into UGSci settings",
   "keeps GenUI settings disabled when the backend is unavailable",
 ]) {
@@ -782,6 +790,9 @@ for (const title of [
     );
 }
 requireCases("src/plugins/capabilitiesWorkspace.test.tsx", [
+  "reads the complete scoped skill definition and uses the desktop window router for management",
+  "preserves the desktop console basename when opening skill management",
+  "opens skill pool management through the desktop window router",
   "localizes configuration agent labels live while preserving custom names and selected IDs",
   "configures a real engine from its compact icon card and preserves advanced values after a failed save",
   "keeps built-in tools separate and embeds the original MCP and runtime managers",
@@ -920,6 +931,7 @@ requireCases("src/layouts/Sidebar.test.tsx", [
   "registers Workflows after Experts against the optional FlowForge route",
 ]);
 requireCases("src/layouts/Sidebar.render.test.tsx", [
+  "focuses the More panel without highlighting the first shortcut in %s",
   "keeps visualization full width through late registration and restores the saved sidebar in $pageStyle with collapse $savedCollapsed",
   "opens visualization from the rail and restores mounted conversation and plugin drafts on return",
   "keeps workspace and app links full width in $pageStyle at $path with saved collapse $savedCollapsed",
@@ -945,7 +957,16 @@ requireCases("src/layouts/Header.test.tsx", [
   "shows background progress on the version and retries a failed download from it",
   "opens a downloaded update from the version and installs it only after confirmation",
 ]);
+requireCases("src/notifications/UpdateConfirmation.test.tsx", [
+  "shows the UGSci update confirmation through the desktop provider in %s",
+  "keeps cancellation available without starting installation",
+  "submits confirmation once and keeps the dialog busy until installation starts",
+  "allows retry after a failed confirmation",
+]);
 requireCases("src/utils/pageStyle.test.tsx", [
+  "starts a fresh installation in the light Yanjing dual-sidebar appearance",
+  "restores an existing classic appearance and dark mode after the default changes",
+  "uses the installed Yanjing defaults when local storage is unavailable",
   "keeps the theme, layout and light-dark mode independent across switches and reloads",
   "synchronizes layout between windows without changing the color theme",
   "restores the retired layout as Simple style and offers only supported choices",
@@ -1112,6 +1133,16 @@ requireCases("src/plugins/expertPresentation.test.tsx", [
   "preserves advanced drafts and unknown running configuration fields when saving",
   "retains failed saves and confirms discarding an unsaved draft",
 ]);
+requireCases("src/plugins/expertFilesWorkspace.test.tsx", [
+  "expands the existing settings dialog and reuses Markdown source split and preview views",
+  "switches file workspace content and dialog geometry in the same commit without remounting styles",
+  "keeps independent drafts across files and saves exact Markdown in the current agent scope",
+  "protects all unsaved file drafts on return and close and resets them on another expert visit",
+  "retries failed reads and ignores the selected file when an earlier read arrives late",
+  "retains failed saves and edits made during an in-flight save without marking them saved",
+  "validates new documents and retains drafts after atomic create and mount failure",
+  "preserves core prompt protection and rolls back failed immediate mount updates",
+]);
 requireCases("src/plugins/expertAvatar.test.ts", [
   "reuses bounded SVG templates and invalidates every rendered recipe input",
   "evicts old templates by count and text budget and bypasses oversized entries",
@@ -1265,6 +1296,24 @@ requireCases("src/pages/Chat/chatInputDraft.sdk.test.tsx", [
   "uses the current stored revision for a replacement without rewriting the input still being edited",
 ]);
 
+requireCases("src/api/modules/plugin.test.ts", [
+  "keeps signed update queuing compatible with older backends",
+  "preserves signed update endpoint errors (%s)",
+  "preserves a signed shared-dependency operation for the existing confirmation flow",
+]);
+requireCases("src/plugins/usePluginUpdateSync.test.tsx", [
+  "loads background app updates through the mounted provider without restarting the page",
+  "keeps the current app during network failure and synchronizes after reconnect",
+  "waits for initial readiness and releases polling on unmount",
+]);
+requireCases(
+  "src/pages/Settings/PluginManager/PluginManager.upgrades.test.tsx",
+  [
+    "shows a restart activation message after a manual hot update requires restart",
+    "keeps signed shared-dependency confirmation on the real page (apply=%s)",
+    "offers cached shared-dependency review when catalog discovery fails",
+  ],
+);
 requireCases("src/plugins/usePluginLoader.test.ts", [
   "cleans partial registrations after evaluation failure without executing fallback",
   "serializes startup and deduplicates concurrent forced reloads",
@@ -1285,6 +1334,13 @@ requireCases("src/pages/AppCenter/AppCard.test.tsx", [
 requireCases("src/os/osCleanup.test.ts", [
   "awaits an in-flight bundle and removes its late route and desktop state",
 ]);
+requireCases(
+  "src/pages/Settings/PluginManager/components/InstalledPluginList.test.tsx",
+  [
+    "shows update-check progress on the refresh action and clears it when finished",
+  ],
+);
+
 requireCases(
   "src/pages/Settings/PluginManager/hooks/usePluginManager.test.ts",
   ["updates disabled apps successfully without activating their UI (%s)"],
@@ -1383,6 +1439,7 @@ requireCases("src/plugins/flowForgeEditor.test.tsx", [
 ]);
 
 requireCases("src/plugins/flowForgeInspector.test.tsx", [
+  "navigates property tabs with the keyboard and reveals diagnostic fields without modifying configuration",
   "focuses structured schema JSON pointer errors in the actual field without losing their detail",
   "edits structured model schemas through the real inspector and preserves bilingual business keys",
   "edits bilingual system instructions while preserving the linked user prompt",
@@ -1419,6 +1476,8 @@ requireCases("src/layouts/MainLayout/NavigationGuard.test.tsx", [
 ]);
 
 requireCases("src/plugins/flowForgeApp.test.tsx", [
+  "refreshes the embedded stylesheet when the plugin is reloaded",
+  "renders AI connection differences through the registered production edge component",
   "resizes the mounted debug dock with mouse and touch while preserving bilingual run content",
   "clamps dragged and keyboard dock heights to the real available workspace",
   "releases dock resize capture on cancellation blur collapse close and unmount",
@@ -1438,6 +1497,7 @@ requireCases("src/plugins/flowForgeRunComparison.test.tsx", [
 ]);
 
 requireCases("src/plugins/flowForgeWorkbench.test.tsx", [
+  "saves edits across all property tabs in the mounted editor with drawer=%s",
   "recovers bilingual drafts after remount and clears only the successfully saved content",
   "isolates local drafts by authenticated account and execution agent",
   "keeps newer edits when an earlier save completes and refreshes the draft revision",
@@ -1567,6 +1627,7 @@ requireCases("src/layouts/Sidebar.render.test.tsx", [
 ]);
 
 requireCases("src/layouts/Sidebar.render.test.tsx", [
+  "renders the default tools and visualization below the divider after plugins register",
   "renders ordered custom apps and modules below More and follows their real routes",
 ]);
 requireCases("src/pages/SettingsCenter/NavigationSettings.test.tsx", [
@@ -1575,6 +1636,7 @@ requireCases("src/pages/SettingsCenter/NavigationSettings.test.tsx", [
   "keeps the existing More menu editor available beside custom rail settings",
 ]);
 requireCases("src/stores/sidebarStore.test.ts", [
+  "loads default rail shortcuts while preserving saved choices for %s",
   "persists custom rail order independently and keeps unavailable app identities",
 ]);
 requireCases("src/layouts/useSidebarAppEntries.test.tsx", [
@@ -1663,6 +1725,15 @@ requireCases("src/features/files-workspace/FilesDrawer.test.tsx", [
 ]);
 requireCases("src/features/files-workspace/workbenchTabsStore.test.ts", [
   "isolates split layouts and promotes or merges panes without stale references on close and rebind",
+  "protects browser drafts, history and inactive tabs from late start-page replacements",
+  "merges duplicate split destinations without leaving stale pane or recent references",
+]);
+requireCases("src/features/files-workspace/FilesDrawer.test.tsx", [
+  "replaces only the originating new tab when launching %s from its start page",
+  "focuses the current new tab address and preserves its draft when another tool is opened",
+  "reuses an already open tool in the new tab position without duplicating its view",
+  "launches a tool inside the secondary new tab without replacing the primary pane",
+  "replaces a new tab after a recent native file finishes loading",
 ]);
 requireCases("src/features/files-workspace/TurnReviewPanel.test.tsx", [
   "reviews the selected real archived turn and requests its exact diff instead of current file contents",
@@ -1678,6 +1749,79 @@ requireCases("src/pages/Chat/answerQuotes.test.ts", [
 
 requireCases("src/features/terminal/TerminalView.test.tsx", [
   "quotes native terminal output with its owning session and never sends the selection as shell input",
+]);
+
+requireCases("src/plugins/flowForgeWorkbench.test.tsx", [
+  "duplicates a selected real subgraph with remapped bindings and supports undo",
+  "persists grouping notes and mute controls through the real save and restores bypass when enabling",
+  "finds real nodes and locks canvas edits while keeping view controls available",
+  "previews JSON import as an undoable draft preserving workflow identity and rejects malformed documents",
+  "pastes real copied nodes and clears the clipboard when the execution agent changes",
+  "edits the real selected subgraph across conversation rounds and applies a chosen checkpoint with undo",
+  "previews added removed and changed nodes and edges on the real canvas without changing the draft",
+  "blocks stale AI proposals after draft edits and ignores late responses across expert visits",
+  "ignores late AI %s responses after leaving and returning to an expert",
+  "retains the current AI round and unsent followup when generation fails and can retry",
+]);
+requireCases("src/plugins/flowForgeGraph.test.tsx", [
+  "copies subgraphs without stealing control routes or changing literal schema values and rewrites output aliases",
+]);
+
+requireCases("src/layouts/useSidebarSessionListData.test.ts", [
+  "restores history immediately after SDK initialization clears the shared list without switching agents",
+  "repairs an incomplete shared list even when the backend result matches the last poll",
+  "keeps a genuinely empty backend history empty after recovery without a request loop",
+]);
+requireCases("src/pages/Chat/sdkSessionLifecycle.integration.test.tsx", [
+  "restores the mounted sidebar history after an empty SDK reload without changing the selected agent",
+]);
+
+requireCases("src/notifications/DesktopWindowFrame.test.tsx", [
+  "recognizes the native macOS invoke bridge when the SDK platform flag is missing",
+  "ships platform frame configuration and only the required native control permissions",
+  "keeps one titlebar across bootstrap nesting and toggles the mounted conversations with one icon",
+  "uses native minimize maximize restore and close with resize synchronization and retry",
+  "reserves macOS traffic lights and exposes browser previews without invoking native commands",
+]);
+requireCases("src/layouts/NavigationDock.test.tsx", [
+  "docks left right bottom and floating with orientation-specific six-dot grips while preserving mounted content",
+  "falls back from saved top placements and keeps top-edge gestures floating",
+  "snaps real pointer gestures on release and cancels escape pointer cancellation and blur without saving",
+]);
+requireCases("src/layouts/Sidebar.render.test.tsx", [
+  "keeps the mounted feature navigation and account stable across docking and titlebar collapse",
+]);
+
+requireCases("src/plugins/flowForgeWorkbench.test.tsx", [
+  "repairs a real failed canvas node through followups preview apply and undo in %s",
+  "retains a failed repair request for retry and ignores late repairs across expert visits",
+]);
+requireCases("src/plugins/flowForgeRunInspector.test.tsx", [
+  "starts AI repair from the recorded %s node and hides it on healthy nodes",
+]);
+requireCases("src/plugins/flowForgeApp.test.tsx", [
+  "opens one-click repair from the real run dock and preserves the selected expert and draft",
+  "guards a dirty workflow before opening repair for another recorded workflow",
+]);
+
+requireCases("src/plugins/flowForgeWorkbench.test.tsx", [
+  "restores messages and unsent text after remount and keeps chatting after apply",
+  "checks each restored proposal against its own canvas and expert",
+  "quotes selected canvas nodes as removable persistent message references in %s",
+  "collapses crowded node references without dropping hidden context in %s",
+  "runs numbered workflow conversations concurrently and restores their independent drafts",
+  "reuses the last empty conversation with its draft and references when starting another chat",
+  "caps open conversations at ten while reusing the final empty tab and guarding history opens",
+  "restores at most ten saved conversation tabs while retaining the active chat and its draft",
+  "keeps background conversation failures and retries on their own numbered tab",
+  "restores a running conversation and polls its result without interrupting another tab",
+]);
+
+requireCases("src/layouts/Sidebar.render.test.tsx", [
+  "pins More entries and installed apps through the existing sidebar preference",
+]);
+requireCases("src/plugins/capabilitiesWorkspace.test.tsx", [
+  "shows Chinese preset names and searches and toggles skills using stable identifiers",
 ]);
 
 if (!process.argv.includes("--check")) {

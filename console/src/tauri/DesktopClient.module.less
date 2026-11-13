@@ -3,7 +3,7 @@
 }
 
 .shell {
-  min-height: 100dvh;
+  min-height: var(--app-viewport-height, 100dvh);
   background: var(--app-bg, #f7f7f5);
   color: var(--app-text, #1f1f1f);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
@@ -236,6 +236,65 @@
   align-items: center;
   justify-content: space-between;
   gap: 16px;
+}
+
+.updateDialog {
+  .closeHeader {
+    margin-bottom: 20px;
+  }
+
+  .updateLogo {
+    display: block;
+    object-fit: contain;
+  }
+
+  > .updateWindows {
+    display: flex;
+    align-items: flex-start;
+    gap: 8px;
+    padding: 12px;
+    border: 1px solid var(--app-border);
+    border-radius: var(--app-radius);
+    background: var(--app-fill-subtle);
+    font-size: var(--app-font-secondary);
+
+    svg {
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+  }
+
+  footer {
+    padding-top: 20px;
+    border-top: 1px solid var(--app-border);
+  }
+
+  .installUpdate {
+    background: var(--app-text);
+    color: var(--app-surface-raised);
+    border-color: transparent;
+
+    &:hover:not(:disabled) {
+      background: color-mix(
+        in srgb,
+        var(--app-text) 90%,
+        var(--app-surface-raised)
+      );
+    }
+
+    svg {
+      flex-shrink: 0;
+    }
+  }
+
+  @media (max-width: 440px) {
+    padding: 20px;
+
+    footer {
+      grid-template-columns: 1fr;
+      gap: 8px;
+    }
+  }
 }
 
 .closeError {

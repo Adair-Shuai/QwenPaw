@@ -240,7 +240,7 @@ describe("Header update entry", () => {
 
   it.each([
     ["zh", "UGSci 桌面端更新", "现在更新", "当前已是最新版本"],
-    ["en", "Updating UGSci Desktop", "Update now", "You're up to date"],
+    ["en", "Updating UGSci", "Update now", "You're up to date"],
     [
       "ru",
       "Обновление UGSci для компьютера",

@@ -3996,7 +3996,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                         from .errors import SDKRestartRequiredError
 
                         raise SDKRestartRequiredError(detail)
-                    raise RuntimeError(detail)
+                    failure = RuntimeError(detail)
+                    failure.needs_restart = report.needs_restart
+                    raise failure
                 record = self._loaded_plugins[plugin_id]
                 record.update_needs_restart = report.needs_restart
                 record.diagnostics.extend(

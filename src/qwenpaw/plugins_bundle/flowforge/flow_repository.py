@@ -4,6 +4,7 @@
 Legacy JSON files are imported once and left untouched. SQLite is the source
 of truth after migration; deleted legacy flows therefore do not reappear.
 """
+
 from __future__ import annotations
 
 import json
@@ -124,14 +125,18 @@ class FlowRepository:
             # None retains the internal, trusted legacy service API. HTTP and
             # authoring always supply a concrete revision (0 means create).
             if expected_revision is not None and expected_revision != actual:
-                raise RevisionConflict(f"工作流已更新（当前版本 {actual}），请重新载入后保存。")
+                raise RevisionConflict(
+                    f"工作流已更新（当前版本 {actual}），请重新载入后保存。"
+                )
             if proposal_id:
                 row = db.execute(
                     "SELECT applied,expires_at FROM proposals WHERE id=?",
                     (proposal_id,),
                 ).fetchone()
                 if not row or row[0] or row[1] <= time.time():
-                    raise RevisionConflict("修改建议已应用或已过期，请重新生成。")
+                    raise RevisionConflict(
+                        "修改建议已应用或已过期，请重新生成。"
+                    )
                 db.execute(
                     "UPDATE proposals SET applied=1 WHERE id=?",
                     (proposal_id,),
@@ -156,6 +161,20 @@ class FlowRepository:
                 "INSERT INTO versions VALUES(?,?,?,?)",
                 (flow_id, latest + 1, encoded, now),
             )
+            if (
+                proposal_id
+                and db.execute(
+                    "SELECT 1 FROM sqlite_master WHERE name='authoring_turns'"
+                ).fetchone()
+            ):
+                db.execute(
+                    (
+                        "UPDATE authoring_turns SET payload=json_set(p"
+                        "ayload,'$.applied',json(?)) WHERE json_extrac"
+                        "t(payload,'$.proposal.proposal_id')=?"
+                    ),
+                    (encoded, proposal_id),
+                )
             return saved
 
     def delete(self, flow_id):

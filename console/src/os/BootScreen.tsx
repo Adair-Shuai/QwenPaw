@@ -60,7 +60,7 @@ export default function BootScreen({
           height={54}
           alt="UGSci"
         />
-        <div className={styles.bootName}>UGSci Desktop</div>
+        <div className={styles.bootName}>UGSci</div>
       </div>
       <div className={styles.bootBar}>
         <div className={styles.bootBarFill} style={{ width: `${progress}%` }} />

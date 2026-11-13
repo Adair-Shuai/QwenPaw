@@ -33,7 +33,7 @@ import {
 } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { useTranslation } from "react-i18next";
-import { useSidebarStore } from "@/stores/sidebarStore";
+import { DEFAULT_RAIL_ITEM_IDS, useSidebarStore } from "@/stores/sidebarStore";
 import { orderSidebarEntries } from "@/layouts/registry/sidebarEntries";
 import type { FlatMenuEntry } from "@/layouts/registry/adapter";
 import { useSidebarEntryGroups } from "./useSidebarEntryGroups";
@@ -383,7 +383,7 @@ function NavigationSettingsEditor({ dualSidebar }: { dualSidebar: boolean }) {
                       icon={<RotateCcw size={16} />}
                       onClick={
                         dualSidebar
-                          ? () => setRailItemIds([])
+                          ? () => setRailItemIds([...DEFAULT_RAIL_ITEM_IDS])
                           : resetFocusItemIds
                       }
                     />

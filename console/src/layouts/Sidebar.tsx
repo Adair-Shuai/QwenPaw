@@ -42,6 +42,11 @@ import {
 } from "lucide-react";
 import SidebarSessionList from "./SidebarSessionList";
 import DockableSidebar from "./DockableSidebar";
+import NavigationDock from "./NavigationDock";
+import {
+  ConversationToggle,
+  useWindowSidebar,
+} from "../tauri/DesktopWindowFrame";
 import {
   clampSidebarWidth,
   readStoredSidebarWidth,
@@ -99,7 +104,6 @@ import { isAgentAvailableInChat } from "../utils/agentVisibility";
 import { PAGE_LAYOUTS } from "../utils/pageStyle";
 import AppearanceNavigation from "./AppearanceNavigation";
 import DualSidebarNavigation, {
-  DUAL_SIDEBAR_PRIMARY_KEYS,
   DUAL_SIDEBAR_FIXED_KEYS,
 } from "./DualSidebarNavigation";
 import { useSidebarAppEntries } from "./useSidebarAppEntries";
@@ -284,6 +288,7 @@ export default function Sidebar({
     focusItemIds,
     hiddenPluginItemIds,
     railItemIds = [],
+    setRailItemIds,
   } = useSidebarStore();
   const { selectedAgent, agents, setSelectedAgent, refreshAgents } =
     useAgentStore();
@@ -869,6 +874,101 @@ export default function Sidebar({
     );
   };
 
+  const toggleConversation = useCallback(() => {
+    if (fullWidthPage && collapsed) {
+      handleSetCollapsed(false);
+      navigate("/chat");
+    } else handleSetCollapsed(!collapsed);
+  }, [collapsed, fullWidthPage, handleSetCollapsed, navigate]);
+  const hasWindowFrame = useWindowSidebar(
+    dualSidebar ? { expanded: !collapsed, toggle: toggleConversation } : null,
+  );
+  const accountControl = (
+    <div
+      className={
+        dualSidebar ? dualStyles.accountDock : styles.collapseToggleContainer
+      }
+    >
+      <Popover
+        open={settingsOpen}
+        onOpenChange={setSettingsOpen}
+        placement={collapsed ? "rightBottom" : "topRight"}
+        trigger="click"
+        classNames={{ root: styles.quickSettingsPopover }}
+        destroyOnHidden
+        content={
+          <div
+            role="dialog"
+            aria-label={t("sidebar.quickMenu.settings", "Settings")}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              event.preventDefault();
+              event.stopPropagation();
+              setSettingsOpen(false);
+              settingsTriggerRef.current?.focus();
+            }}
+          >
+            <SidebarSettingsPanel
+              version={version}
+              onClose={() => setSettingsOpen(false)}
+              onOpenDesktopMode={handleOpenDesktopMode}
+              onOpenSettings={handleOpenSettings}
+              authEnabled={authEnabled}
+              onOpenAccount={handleOpenAccount}
+              onLogout={handleLogout}
+            />
+          </div>
+        }
+      >
+        <button
+          ref={settingsTriggerRef}
+          type="button"
+          data-press
+          title={t("sidebar.quickMenu.settings", "Settings")}
+          aria-label={
+            dualSidebar
+              ? t("sidebar.dualSidebar.account", "Account and appearance")
+              : t("sidebar.quickMenu.settings", "Settings")
+          }
+          aria-haspopup="dialog"
+          aria-expanded={settingsOpen}
+          className={
+            dualSidebar
+              ? dualStyles.account
+              : collapsed
+              ? styles.collapseToggle
+              : skin.identity
+          }
+        >
+          {collapsed && !dualSidebar ? (
+            <Settings size={18} />
+          ) : (
+            <>
+              <span className={skin.avatar}>
+                <img src={localAvatar ?? DEFAULT_AVATAR} alt="UGSci" />
+              </span>
+              <span className={skin.identityText}>
+                <strong title={authUsername || t("sidebar.localWorkspace")}>
+                  {authUsername || t("sidebar.localWorkspace")}
+                </strong>
+                <small>
+                  {hubUsername
+                    ? "QwenPaw Hub"
+                    : authEnabled
+                    ? t("sidebar.consoleAccount")
+                    : dualSidebar
+                    ? ""
+                    : t("sidebar.localMode")}
+                </small>
+              </span>
+              <SlidersHorizontal size={17} />
+            </>
+          )}
+        </button>
+      </Popover>
+    </div>
+  );
+
   const expandedWidth = PAGE_LAYOUTS[pageStyle].sidebarWidth;
   const mobileExpandedWidth = dualSidebar
     ? Math.min(expandedWidth, window.innerWidth - 12)
@@ -883,650 +983,591 @@ export default function Sidebar({
     ? mobileExpandedWidth
     : customWidth ?? expandedWidth;
 
+  const railWidth = isMobile ? 56 : 66;
+  const conversationWidth = dualSidebar
+    ? collapsed
+      ? 0
+      : siderWidth - railWidth
+    : siderWidth;
   return (
-    <DockableSidebar
-      width={siderWidth}
-      minWidth={PAGE_LAYOUTS[pageStyle].sidebarMinWidth}
-      mobile={isMobile}
-      onMobileDismiss={() => handleSetCollapsed(true)}
-      onWidthChange={handleWidthChange}
-      onWidthReset={handleWidthReset}
-      onResizeCollapse={() => handleSetCollapsed(true)}
-    >
-      <Sider
-        width={siderWidth}
-        data-dual-sidebar-collapsed={dualSidebar ? collapsed : undefined}
-        data-page-navigation={redesigned ? pageStyle : undefined}
-        className={`${styles.sider} ${skin.surface} ${
-          dualSidebar ? dualStyles.surface : ""
-        } ${collapsed ? skin.compactRail : ""}${
-          collapsed ? ` ${styles.siderCollapsed}` : ""
-        }${isDark ? ` ${styles.siderDark}` : ""}${
-          !collapsed ? ` ${styles.siderExpanded}` : ""
-        }`}
-      >
-        {dualSidebar && (
-          <DualSidebarNavigation
-            entries={allNavigation.filter(
-              (entry) => !hiddenPluginItemIdSet.has(entry.key),
-            )}
-            selectedKey={settingsActive ? "core.settings-center" : selectedKey}
-            collapsed={collapsed}
-            currentPath={location.pathname}
-            shortcuts={railItemIds.flatMap((id) => {
-              if (DUAL_SIDEBAR_FIXED_KEYS.includes(id)) return [];
-              const entry = [...allNavigation, ...appEntries].find(
-                (item) => item.key === id,
-              );
-              return entry ? [entry] : [];
-            })}
-            onExpand={
-              fullWidthPage ? undefined : () => handleSetCollapsed(false)
-            }
-            onHome={() => {
-              handleNewChat();
-              if (isMobile) handleSetCollapsed(true);
-            }}
-            onNavigate={navigateEntry}
-            onWorkspace={
-              backendCapabilities?.workspace_ui === false
-                ? undefined
-                : openWorkspace
-            }
-            onSettings={handleOpenSettings}
-            inboxIcon={
-              <NotificationBell
-                count={unreadCount}
-                attention={hasPendingApprovals}
-                animate={wobbleEnabled}
-                ring={effectiveShake}
-              />
-            }
-          >
-            <AppearanceNavigation
-              entries={allNavigation}
-              shortcuts={selectedFlatNav}
-              selectedKey={selectedKey}
-              onNavigate={navigateEntry}
-              renderEntry={(entry) => renderNavItem(entry, true)}
-              showPrimary={false}
-              excludedKeys={DUAL_SIDEBAR_PRIMARY_KEYS}
-            />
-          </DualSidebarNavigation>
-        )}
-        <div className={dualStyles.heading} hidden={!dualSidebar || collapsed}>
-          <HardDrive size={16} aria-hidden />
-          <strong>{t("sidebar.localWorkspace", "Local workspace")}</strong>
-          <button
-            type="button"
-            aria-label={t(
-              "sidebar.dualSidebar.collapse",
-              "Collapse conversation pane",
-            )}
-            aria-expanded={!collapsed}
-            aria-controls="ugsci-sidebar-conversations"
-            onClick={() => handleSetCollapsed(true)}
-          >
-            <PanelLeftClose size={18} />
-          </button>
-        </div>
-        <span
-          className={dualStyles.deviceLabel}
-          hidden={!dualSidebar || collapsed}
-        >
-          {t("sidebar.localMode", "This device")}
-        </span>
-        <AppBrand
-          hidden={collapsed}
-          version={version}
-          action={
-            <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
-              <SearchTrigger compact />
-              <Button
-                type="text"
-                icon={<PanelLeftClose size={18} />}
-                onClick={() => handleSetCollapsed(true)}
-                className={styles.brandCollapseToggle}
-                aria-label={t("sidebar.collapse", "Collapse sidebar")}
-              />
-            </div>
-          }
-        />
-
-        {collapsed && !dualSidebar && (
-          <nav className={styles.collapsedNav}>
-            <div className={styles.collapsedNavPinned}>
-              {!fullWidthPage && (
-                <Tooltip
-                  title={t("sidebar.expand", "Expand sidebar")}
-                  placement="right"
-                  mouseEnterDelay={0.5}
-                >
-                  <button
-                    type="button"
-                    className={styles.collapsedNavItem}
-                    aria-label={t("sidebar.expand", "Expand sidebar")}
-                    onClick={() => handleSetCollapsed(false)}
-                  >
-                    <PanelLeftOpen size={18} />
-                  </button>
-                </Tooltip>
+    <>
+      {dualSidebar && !hasWindowFrame && (
+        <ConversationToggle expanded={!collapsed} toggle={toggleConversation} />
+      )}
+      {dualSidebar && (
+        <NavigationDock>
+          {(dragHandle) => (
+            <DualSidebarNavigation
+              entries={allNavigation.filter(
+                (entry) => !hiddenPluginItemIdSet.has(entry.key),
               )}
-              <Popover
-                open={agentPopoverOpen}
-                onOpenChange={(open) => {
-                  setAgentPopoverOpen(open);
-                  if (open && agents.length === 0) {
-                    void refreshAgents().catch(() => {});
-                  }
-                }}
-                placement="rightTop"
-                trigger="click"
-                arrow={false}
-                classNames={{ root: styles.collapsedAgentPopover }}
-                content={
-                  <div className={styles.collapsedAgentPanel}>
-                    <div className={styles.collapsedPanelTitle}>
-                      {t("agent.selectAgent")}
-                    </div>
-                    <div className={styles.collapsedAgentList}>
-                      {availableAgents.map((agent) => (
-                        <button
-                          key={agent.id}
-                          type="button"
-                          className={`${styles.collapsedAgentOption} ${
-                            agent.id === selectedAgent
-                              ? styles.collapsedAgentOptionActive
-                              : ""
-                          }`}
-                          onClick={() => {
-                            setSelectedAgent(agent.id);
-                            setAgentPopoverOpen(false);
-                            message.success(t("agent.switchSuccess"));
-                          }}
-                        >
-                          <AgentStatusIndicator
-                            status={agent.startup_status}
-                            enabled={agent.enabled}
-                          />
-                          <SparkAgentLine size={18} />
-                          <span className={styles.collapsedAgentName}>
-                            {getAgentDisplayName(agent, t)}
-                          </span>
-                          {agent.id === selectedAgent && <Check size={16} />}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-                }
-              >
-                <Tooltip
-                  title={
-                    currentAgent
-                      ? getAgentDisplayName(currentAgent, t)
-                      : t("agent.selectAgent")
-                  }
-                  placement="right"
-                  mouseEnterDelay={0.5}
-                >
-                  <button
-                    type="button"
-                    className={styles.collapsedNavItem}
-                    aria-label={t("agent.selectAgent")}
-                    aria-expanded={agentPopoverOpen}
-                  >
-                    <SparkAgentLine size={18} />
-                  </button>
-                </Tooltip>
-              </Popover>
-              <Tooltip
-                title={t("chat.newTask", "New task")}
-                placement="right"
-                mouseEnterDelay={0.5}
-              >
-                <button
-                  type="button"
-                  className={styles.collapsedNavItem}
-                  aria-label={t("chat.newTask", "New task")}
-                  onClick={handleNewChat}
-                >
-                  <SparkNewChatLine size={18} />
-                </button>
-              </Tooltip>
-              {!fullWidthPage && (
-                <Popover
-                  open={historyPopoverOpen}
-                  onOpenChange={setHistoryPopoverOpen}
-                  placement="rightTop"
-                  trigger="click"
-                  arrow={false}
-                  classNames={{ root: styles.collapsedHistoryPopover }}
-                  content={
-                    <div className={styles.collapsedHistoryPanel}>
-                      <SidebarSessionList
-                        onNewChat={() => {
-                          setHistoryPopoverOpen(false);
-                          handleNewChat();
-                        }}
-                        onSessionClick={(sessionId) => {
-                          setHistoryPopoverOpen(false);
-                          handleSidebarSessionClick(sessionId);
-                        }}
-                      />
-                    </div>
-                  }
-                >
+              selectedKey={
+                settingsActive ? "core.settings-center" : selectedKey
+              }
+              currentPath={location.pathname}
+              shortcuts={railItemIds.flatMap((id) => {
+                if (DUAL_SIDEBAR_FIXED_KEYS.includes(id)) return [];
+                const entry = [...allNavigation, ...appEntries].find(
+                  (item) => item.key === id,
+                );
+                return entry ? [entry] : [];
+              })}
+              onHome={() => {
+                handleNewChat();
+                if (isMobile) handleSetCollapsed(true);
+              }}
+              onNavigate={navigateEntry}
+              onWorkspace={
+                backendCapabilities?.workspace_ui === false
+                  ? undefined
+                  : openWorkspace
+              }
+              onSettings={handleOpenSettings}
+              footer={
+                <>
+                  {dragHandle}
+                  {accountControl}
+                </>
+              }
+              inboxIcon={
+                <NotificationBell
+                  count={unreadCount}
+                  attention={hasPendingApprovals}
+                  animate={wobbleEnabled}
+                  ring={effectiveShake}
+                />
+              }
+            >
+              <AppearanceNavigation
+                entries={allNavigation}
+                shortcuts={[...selectedFlatNav, ...appEntries]}
+                selectedKey={selectedKey}
+                onNavigate={navigateEntry}
+                renderEntry={(entry) => renderNavItem(entry, true)}
+                showPrimary={false}
+                excludedKeys={[...DUAL_SIDEBAR_FIXED_KEYS, ...railItemIds]}
+                onPin={(entry) => setRailItemIds([...railItemIds, entry.key])}
+              />
+            </DualSidebarNavigation>
+          )}
+        </NavigationDock>
+      )}
+      <DockableSidebar
+        width={conversationWidth}
+        stationary={dualSidebar}
+        resizeOffset={dualSidebar ? railWidth : 0}
+        minWidth={
+          PAGE_LAYOUTS[pageStyle].sidebarMinWidth -
+          (dualSidebar ? railWidth : 0)
+        }
+        mobile={isMobile}
+        onMobileDismiss={() => handleSetCollapsed(true)}
+        onWidthChange={handleWidthChange}
+        onWidthReset={handleWidthReset}
+        onResizeCollapse={() => handleSetCollapsed(true)}
+      >
+        <Sider
+          width={conversationWidth}
+          data-dual-sidebar-collapsed={dualSidebar ? collapsed : undefined}
+          data-page-navigation={redesigned ? pageStyle : undefined}
+          className={`${styles.sider} ${skin.surface} ${
+            dualSidebar ? dualStyles.surface : ""
+          } ${collapsed ? skin.compactRail : ""}${
+            collapsed ? ` ${styles.siderCollapsed}` : ""
+          }${isDark ? ` ${styles.siderDark}` : ""}${
+            !collapsed ? ` ${styles.siderExpanded}` : ""
+          }`}
+        >
+          <AppBrand
+            hidden={collapsed}
+            version={version}
+            footerLabel={
+              dualSidebar ? (
+                <>
+                  <HardDrive size={14} aria-hidden />
+                  <span>{t("sidebar.localWorkspace", "Local workspace")}</span>
+                </>
+              ) : undefined
+            }
+            action={
+              <div style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                <SearchTrigger compact />
+                <Button
+                  type="text"
+                  icon={<PanelLeftClose size={18} />}
+                  onClick={() => handleSetCollapsed(true)}
+                  className={styles.brandCollapseToggle}
+                  aria-label={t("sidebar.collapse", "Collapse sidebar")}
+                />
+              </div>
+            }
+          />
+
+          {collapsed && !dualSidebar && (
+            <nav className={styles.collapsedNav}>
+              <div className={styles.collapsedNavPinned}>
+                {!fullWidthPage && (
                   <Tooltip
-                    title={t("chat.chatHistoryTooltip")}
+                    title={t("sidebar.expand", "Expand sidebar")}
                     placement="right"
                     mouseEnterDelay={0.5}
                   >
                     <button
                       type="button"
                       className={styles.collapsedNavItem}
-                      aria-label={t("chat.chatHistoryTooltip")}
-                      aria-expanded={historyPopoverOpen}
+                      aria-label={t("sidebar.expand", "Expand sidebar")}
+                      onClick={() => handleSetCollapsed(false)}
                     >
-                      <History size={18} />
+                      <PanelLeftOpen size={18} />
+                    </button>
+                  </Tooltip>
+                )}
+                <Popover
+                  open={agentPopoverOpen}
+                  onOpenChange={(open) => {
+                    setAgentPopoverOpen(open);
+                    if (open && agents.length === 0) {
+                      void refreshAgents().catch(() => {});
+                    }
+                  }}
+                  placement="rightTop"
+                  trigger="click"
+                  arrow={false}
+                  classNames={{ root: styles.collapsedAgentPopover }}
+                  content={
+                    <div className={styles.collapsedAgentPanel}>
+                      <div className={styles.collapsedPanelTitle}>
+                        {t("agent.selectAgent")}
+                      </div>
+                      <div className={styles.collapsedAgentList}>
+                        {availableAgents.map((agent) => (
+                          <button
+                            key={agent.id}
+                            type="button"
+                            className={`${styles.collapsedAgentOption} ${
+                              agent.id === selectedAgent
+                                ? styles.collapsedAgentOptionActive
+                                : ""
+                            }`}
+                            onClick={() => {
+                              setSelectedAgent(agent.id);
+                              setAgentPopoverOpen(false);
+                              message.success(t("agent.switchSuccess"));
+                            }}
+                          >
+                            <AgentStatusIndicator
+                              status={agent.startup_status}
+                              enabled={agent.enabled}
+                            />
+                            <SparkAgentLine size={18} />
+                            <span className={styles.collapsedAgentName}>
+                              {getAgentDisplayName(agent, t)}
+                            </span>
+                            {agent.id === selectedAgent && <Check size={16} />}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  }
+                >
+                  <Tooltip
+                    title={
+                      currentAgent
+                        ? getAgentDisplayName(currentAgent, t)
+                        : t("agent.selectAgent")
+                    }
+                    placement="right"
+                    mouseEnterDelay={0.5}
+                  >
+                    <button
+                      type="button"
+                      className={styles.collapsedNavItem}
+                      aria-label={t("agent.selectAgent")}
+                      aria-expanded={agentPopoverOpen}
+                    >
+                      <SparkAgentLine size={18} />
                     </button>
                   </Tooltip>
                 </Popover>
-              )}
-            </div>
-            <div className={styles.collapsedNavScroll}>
-              <SearchTrigger compact />
-              {collapsedNavItems.map(renderCollapsedNavItem)}
-            </div>
-          </nav>
-        )}
-        <div
-          id="ugsci-sidebar-conversations"
-          className={styles.expandedSidebarContent}
-          hidden={collapsed}
-        >
-          {!collapsed && (
-            <>
-              <InteractiveCard
-                data-page-agent-selector={redesigned || undefined}
-                as="section"
-                tilt={2}
-                frameClassName={skin.toolFrame}
-                className={`${skin.toolPanel} ${
-                  toolsOpen ? skin.toolPanelOpen : ""
-                }`}
-                aria-label={t("sidebar.tools", "Agent and shortcuts")}
-              >
-                <div className={skin.toolHeader}>
+                <Tooltip
+                  title={t("chat.newTask", "New task")}
+                  placement="right"
+                  mouseEnterDelay={0.5}
+                >
                   <button
                     type="button"
-                    className={skin.toolHeaderHitArea}
-                    data-testid="tool-header-toggle"
-                    aria-hidden="true"
-                    tabIndex={-1}
-                    title={headerToggleLabel}
-                    onClick={toggleToolsFromHeader}
-                  />
-                  <div className={skin.agent}>
-                    <AgentSelector compact />
-                  </div>
-                  <button
-                    type="button"
-                    className={skin.toolButton}
-                    data-press
-                    aria-expanded={toolsOpen}
-                    title={modeLabel}
-                    aria-label={modeLabel}
-                    data-mode={toolsMode}
-                    onClick={cycleTools}
+                    className={styles.collapsedNavItem}
+                    aria-label={t("chat.newTask", "New task")}
+                    onClick={handleNewChat}
                   >
-                    <Grid2X2 size={16} />
+                    <SparkNewChatLine size={18} />
                   </button>
-                </div>
-                <RunningGlow active />
-                <AnimatePresence initial={false}>
-                  {toolsOpen && !redesigned && (
-                    <motion.div
-                      key="tools"
-                      layout="size"
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={
-                        reducedMotion
-                          ? { duration: 0 }
-                          : { type: "spring", stiffness: 420, damping: 40 }
-                      }
-                      style={{ overflow: "hidden" }}
+                </Tooltip>
+                {!fullWidthPage && (
+                  <Popover
+                    open={historyPopoverOpen}
+                    onOpenChange={setHistoryPopoverOpen}
+                    placement="rightTop"
+                    trigger="click"
+                    arrow={false}
+                    classNames={{ root: styles.collapsedHistoryPopover }}
+                    content={
+                      <div className={styles.collapsedHistoryPanel}>
+                        <SidebarSessionList
+                          onNewChat={() => {
+                            setHistoryPopoverOpen(false);
+                            handleNewChat();
+                          }}
+                          onSessionClick={(sessionId) => {
+                            setHistoryPopoverOpen(false);
+                            handleSidebarSessionClick(sessionId);
+                          }}
+                        />
+                      </div>
+                    }
+                  >
+                    <Tooltip
+                      title={t("chat.chatHistoryTooltip")}
+                      placement="right"
+                      mouseEnterDelay={0.5}
                     >
+                      <button
+                        type="button"
+                        className={styles.collapsedNavItem}
+                        aria-label={t("chat.chatHistoryTooltip")}
+                        aria-expanded={historyPopoverOpen}
+                      >
+                        <History size={18} />
+                      </button>
+                    </Tooltip>
+                  </Popover>
+                )}
+              </div>
+              <div className={styles.collapsedNavScroll}>
+                <SearchTrigger compact />
+                {collapsedNavItems.map(renderCollapsedNavItem)}
+              </div>
+            </nav>
+          )}
+          <div
+            id="ugsci-sidebar-conversations"
+            className={styles.expandedSidebarContent}
+            hidden={collapsed}
+          >
+            {!collapsed && (
+              <>
+                <InteractiveCard
+                  data-page-agent-selector={redesigned || undefined}
+                  as="section"
+                  tilt={2}
+                  frameClassName={skin.toolFrame}
+                  className={`${skin.toolPanel} ${
+                    toolsOpen ? skin.toolPanelOpen : ""
+                  }`}
+                  aria-label={t("sidebar.tools", "Agent and shortcuts")}
+                >
+                  <div className={skin.toolHeader}>
+                    <button
+                      type="button"
+                      className={skin.toolHeaderHitArea}
+                      data-testid="tool-header-toggle"
+                      aria-hidden="true"
+                      tabIndex={-1}
+                      title={headerToggleLabel}
+                      onClick={toggleToolsFromHeader}
+                    />
+                    <div className={skin.agent}>
+                      <AgentSelector compact />
+                    </div>
+                    <button
+                      type="button"
+                      className={skin.toolButton}
+                      data-press
+                      aria-expanded={toolsOpen}
+                      title={modeLabel}
+                      aria-label={modeLabel}
+                      data-mode={toolsMode}
+                      onClick={cycleTools}
+                    >
+                      <Grid2X2 size={16} />
+                    </button>
+                  </div>
+                  <RunningGlow active />
+                  <AnimatePresence initial={false}>
+                    {toolsOpen && !redesigned && (
                       <motion.div
-                        layout
+                        key="tools"
+                        layout="size"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
                         transition={
                           reducedMotion
                             ? { duration: 0 }
-                            : {
+                            : { type: "spring", stiffness: 420, damping: 40 }
+                        }
+                        style={{ overflow: "hidden" }}
+                      >
+                        <motion.div
+                          layout
+                          transition={
+                            reducedMotion
+                              ? { duration: 0 }
+                              : {
+                                  type: "spring",
+                                  stiffness: 420,
+                                  damping: 40,
+                                }
+                          }
+                          ref={navScrollRef}
+                          className={`${skin.navGrid} ${
+                            toolsMode === 2 ? skin.navDetailed : ""
+                          }`}
+                        >
+                          {selectedFlatNav.map((entry, index) => (
+                            <motion.div
+                              key={entry.key}
+                              layout="position"
+                              initial={
+                                reducedMotion ? false : { y: 7, opacity: 0 }
+                              }
+                              animate={{ y: 0, opacity: 1 }}
+                              transition={{
                                 type: "spring",
                                 stiffness: 420,
-                                damping: 40,
-                              }
-                        }
-                        ref={navScrollRef}
-                        className={`${skin.navGrid} ${
-                          toolsMode === 2 ? skin.navDetailed : ""
-                        }`}
-                      >
-                        {selectedFlatNav.map((entry, index) => (
-                          <motion.div
-                            key={entry.key}
-                            layout="position"
-                            initial={
-                              reducedMotion ? false : { y: 7, opacity: 0 }
+                                damping: 30,
+                                delay: reducedMotion
+                                  ? 0
+                                  : Math.min(index * 0.025, 0.15),
+                              }}
+                            >
+                              {renderNavItem(entry)}
+                            </motion.div>
+                          ))}
+
+                          <Tooltip
+                            title={
+                              toolsMode === 2
+                                ? null
+                                : t("nav.moreSettings", "More settings")
                             }
-                            animate={{ y: 0, opacity: 1 }}
-                            transition={{
-                              type: "spring",
-                              stiffness: 420,
-                              damping: 30,
-                              delay: reducedMotion
-                                ? 0
-                                : Math.min(index * 0.025, 0.15),
-                            }}
+                            placement="top"
+                            trigger={["hover", "focus"]}
                           >
-                            {renderNavItem(entry)}
-                          </motion.div>
-                        ))}
-
-                        <Tooltip
-                          title={
-                            toolsMode === 2
-                              ? null
-                              : t("nav.moreSettings", "More settings")
-                          }
-                          placement="top"
-                          trigger={["hover", "focus"]}
-                        >
-                          <button
-                            type="button"
-                            className={skin.moreSettings}
-                            data-press
-                            aria-label={t("nav.moreSettings", "More settings")}
-                            onClick={handleOpenSettings}
-                          >
-                            <Settings size={18} />
-                            <span className={skin.navLabel}>
-                              {t("nav.moreSettings", "More settings")}
-                            </span>
-                          </button>
-                        </Tooltip>
+                            <button
+                              type="button"
+                              className={skin.moreSettings}
+                              data-press
+                              aria-label={t(
+                                "nav.moreSettings",
+                                "More settings",
+                              )}
+                              onClick={handleOpenSettings}
+                            >
+                              <Settings size={18} />
+                              <span className={skin.navLabel}>
+                                {t("nav.moreSettings", "More settings")}
+                              </span>
+                            </button>
+                          </Tooltip>
+                        </motion.div>
                       </motion.div>
-                    </motion.div>
-                  )}
-                </AnimatePresence>
-              </InteractiveCard>
-              <div className={dualStyles.createRow}>
-                <button
-                  type="button"
-                  data-press
-                  data-page-new-task={redesigned || undefined}
-                  className={skin.newTask}
-                  onClick={handleNewChat}
-                >
-                  <SparkNewChatLine size={18} />
-                  <span>{t("chat.newTask", "New task")}</span>
-                </button>
-                {dualSidebar && <SearchTrigger compact />}
-              </div>
-              {redesigned && !dualSidebar && (
-                <AppearanceNavigation
-                  entries={allNavigation}
-                  shortcuts={selectedFlatNav}
-                  selectedKey={selectedKey}
-                  onNavigate={(entry) =>
-                    entry.href
-                      ? openExternalLink(entry.href)
-                      : navigate(entry.path)
-                  }
-                  onWorkspace={
-                    backendCapabilities?.workspace_ui === false
-                      ? undefined
-                      : openWorkspace
-                  }
-                  renderEntry={(entry) => renderNavItem(entry, true)}
-                />
-              )}
-            </>
-          )}
-          <div className={skin.pluginSlot} data-sidebar-plugin="top">
-            <Slot name="sider.top" kind="fill" />
-          </div>
-
-          {/* Session list — fills the primary space. */}
-          {(!collapsed || dualSidebar || fullWidthPage) && (
-            <div hidden={collapsed} className={styles.sessionArea}>
-              <SidebarSessionList
-                defaultSearchOpen
-                minimal={redesigned}
-                hideNewTask
-                onNewChat={handleNewChat}
-                onSessionClick={handleSidebarSessionClick}
-              />
-            </div>
-          )}
-          <div className={skin.pluginSlot} data-sidebar-plugin="bottom">
-            <Slot name="sider.bottom" kind="fill" />
-          </div>
-        </div>
-
-        {authEnabled && hubAdmin && !collapsed && (
-          <div className={styles.authActions}>
-            <Button
-              type="text"
-              icon={<ShieldCheck size={16} />}
-              onClick={() => navigate("/hub/admin")}
-              block
-              className={styles.authBtn}
-            >
-              {t("hub.brand.title")}
-            </Button>
-          </div>
-        )}
-
-        <div
-          className={`${styles.collapseToggleContainer} ${
-            dualSidebar ? dualStyles.accountDock : ""
-          }`}
-        >
-          <Popover
-            open={settingsOpen}
-            onOpenChange={setSettingsOpen}
-            placement={collapsed ? "rightBottom" : "topRight"}
-            trigger="click"
-            classNames={{ root: styles.quickSettingsPopover }}
-            destroyOnHidden
-            content={
-              <div
-                role="dialog"
-                aria-label={t("sidebar.quickMenu.settings", "Settings")}
-                onKeyDown={(event) => {
-                  if (event.key !== "Escape") return;
-                  event.preventDefault();
-                  event.stopPropagation();
-                  setSettingsOpen(false);
-                  settingsTriggerRef.current?.focus();
-                }}
-              >
-                <SidebarSettingsPanel
-                  version={version}
-                  onClose={() => setSettingsOpen(false)}
-                  onOpenDesktopMode={handleOpenDesktopMode}
-                  onOpenSettings={handleOpenSettings}
-                  authEnabled={authEnabled}
-                  onOpenAccount={handleOpenAccount}
-                  onLogout={handleLogout}
-                />
-              </div>
-            }
-          >
-            <button
-              ref={settingsTriggerRef}
-              type="button"
-              data-press
-              title={t("sidebar.quickMenu.settings", "Settings")}
-              aria-label={
-                dualSidebar
-                  ? t("sidebar.dualSidebar.account", "Account and appearance")
-                  : t("sidebar.quickMenu.settings", "Settings")
-              }
-              aria-haspopup="dialog"
-              aria-expanded={settingsOpen}
-              className={`${
-                collapsed ? styles.collapseToggle : skin.identity
-              } ${dualSidebar ? dualStyles.account : ""}`}
-            >
-              {collapsed && !dualSidebar ? (
-                <Settings size={18} />
-              ) : (
-                <>
-                  <span className={skin.avatar}>
-                    <img src={localAvatar ?? DEFAULT_AVATAR} alt="UGSci" />
-                  </span>
-                  <span className={skin.identityText}>
-                    <strong title={authUsername || t("sidebar.localWorkspace")}>
-                      {authUsername || t("sidebar.localWorkspace")}
-                    </strong>
-                    <small>
-                      {hubUsername
-                        ? "QwenPaw Hub"
-                        : authEnabled
-                        ? t("sidebar.consoleAccount")
-                        : t("sidebar.localMode")}
-                    </small>
-                  </span>
-                  <SlidersHorizontal size={17} />
-                </>
-              )}
-            </button>
-          </Popover>
-        </div>
-
-        <Modal
-          open={accountModalOpen}
-          onCancel={() => setAccountModalOpen(false)}
-          title={t("account.title")}
-          footer={null}
-          destroyOnHidden
-          centered
-        >
-          <Form
-            form={accountForm}
-            layout="vertical"
-            onFinish={handleUpdateProfile}
-          >
-            {hubMode ? (
-              <div className={styles.accountIdentity}>
-                <span>{t("account.username")}</span>
-                <strong>{hubUsername}</strong>
-              </div>
-            ) : (
-              <>
-                <Form.Item
-                  name="currentPassword"
-                  label={t("account.currentPassword")}
-                  rules={[
-                    {
-                      required: true,
-                      message: t("account.currentPasswordRequired"),
-                    },
-                  ]}
-                >
-                  <Input.Password />
-                </Form.Item>
-                <Form.Item name="newUsername" label={t("account.newUsername")}>
-                  <Input placeholder={t("account.newUsernamePlaceholder")} />
-                </Form.Item>
+                    )}
+                  </AnimatePresence>
+                </InteractiveCard>
+                <div className={dualStyles.createRow}>
+                  <button
+                    type="button"
+                    data-press
+                    data-page-new-task={redesigned || undefined}
+                    className={skin.newTask}
+                    onClick={handleNewChat}
+                  >
+                    <SparkNewChatLine size={18} />
+                    <span>{t("chat.newTask", "New task")}</span>
+                  </button>
+                  {dualSidebar && <SearchTrigger compact />}
+                </div>
+                {redesigned && !dualSidebar && (
+                  <AppearanceNavigation
+                    entries={allNavigation}
+                    shortcuts={selectedFlatNav}
+                    selectedKey={selectedKey}
+                    onNavigate={(entry) =>
+                      entry.href
+                        ? openExternalLink(entry.href)
+                        : navigate(entry.path)
+                    }
+                    onWorkspace={
+                      backendCapabilities?.workspace_ui === false
+                        ? undefined
+                        : openWorkspace
+                    }
+                    renderEntry={(entry) => renderNavItem(entry, true)}
+                  />
+                )}
               </>
             )}
-            <Form.Item
-              name="newPassword"
-              label={t("account.newPassword")}
-              rules={
-                hubMode
-                  ? [
-                      {
-                        required: true,
-                        message: t("account.passwordRequired"),
-                      },
-                      { min: 8, message: t("hub.validation.passwordMin") },
-                    ]
-                  : undefined
-              }
-            >
-              <Input.Password
-                placeholder={t(
-                  hubMode
-                    ? "account.hubPasswordPlaceholder"
-                    : "account.newPasswordPlaceholder",
-                )}
-              />
-            </Form.Item>
-            <Form.Item
-              name="confirmPassword"
-              label={t("account.confirmPassword")}
-              dependencies={["newPassword"]}
-              rules={[
-                ({ getFieldValue }) => ({
-                  validator(_, value) {
-                    if (!value && !getFieldValue("newPassword")) {
-                      return Promise.resolve();
-                    }
-                    if (value === getFieldValue("newPassword")) {
-                      return Promise.resolve();
-                    }
-                    return Promise.reject(
-                      new Error(t("account.passwordMismatch")),
-                    );
-                  },
-                }),
-              ]}
-            >
-              <Input.Password
-                placeholder={t("account.confirmPasswordPlaceholder")}
-              />
-            </Form.Item>
-            <Form.Item>
-              <Button
-                type="primary"
-                htmlType="submit"
-                loading={accountLoading}
-                block
-              >
-                {t("account.save")}
-              </Button>
-            </Form.Item>
-            {hubMode && (
-              <div className={styles.runtimeRecovery}>
-                <Divider />
-                <strong>{t("account.runtimeTitle")}</strong>
-                <p>{t("account.runtimeDescription")}</p>
-                <Popconfirm
-                  title={t("account.runtimeRestartConfirmTitle")}
-                  description={t("account.runtimeRestartConfirmDescription")}
-                  onConfirm={handleRestartRuntime}
-                  okText={t("account.runtimeRestart")}
-                  cancelText={t("common.cancel")}
-                >
-                  <Button
-                    icon={<RotateCw size={16} />}
-                    loading={runtimeRestarting}
-                    block
-                  >
-                    {t("account.runtimeRestart")}
-                  </Button>
-                </Popconfirm>
+            <div className={skin.pluginSlot} data-sidebar-plugin="top">
+              <Slot name="sider.top" kind="fill" />
+            </div>
+
+            {/* Session list — fills the primary space. */}
+            {(!collapsed || dualSidebar || fullWidthPage) && (
+              <div hidden={collapsed} className={styles.sessionArea}>
+                <SidebarSessionList
+                  defaultSearchOpen
+                  minimal={redesigned}
+                  hideNewTask
+                  onNewChat={handleNewChat}
+                  onSessionClick={handleSidebarSessionClick}
+                />
               </div>
             )}
-          </Form>
-        </Modal>
-      </Sider>
-    </DockableSidebar>
+            <div className={skin.pluginSlot} data-sidebar-plugin="bottom">
+              <Slot name="sider.bottom" kind="fill" />
+            </div>
+          </div>
+
+          {authEnabled && hubAdmin && !collapsed && (
+            <div className={styles.authActions}>
+              <Button
+                type="text"
+                icon={<ShieldCheck size={16} />}
+                onClick={() => navigate("/hub/admin")}
+                block
+                className={styles.authBtn}
+              >
+                {t("hub.brand.title")}
+              </Button>
+            </div>
+          )}
+
+          {!dualSidebar && accountControl}
+
+          <Modal
+            open={accountModalOpen}
+            onCancel={() => setAccountModalOpen(false)}
+            title={t("account.title")}
+            footer={null}
+            destroyOnHidden
+            centered
+          >
+            <Form
+              form={accountForm}
+              layout="vertical"
+              onFinish={handleUpdateProfile}
+            >
+              {hubMode ? (
+                <div className={styles.accountIdentity}>
+                  <span>{t("account.username")}</span>
+                  <strong>{hubUsername}</strong>
+                </div>
+              ) : (
+                <>
+                  <Form.Item
+                    name="currentPassword"
+                    label={t("account.currentPassword")}
+                    rules={[
+                      {
+                        required: true,
+                        message: t("account.currentPasswordRequired"),
+                      },
+                    ]}
+                  >
+                    <Input.Password />
+                  </Form.Item>
+                  <Form.Item
+                    name="newUsername"
+                    label={t("account.newUsername")}
+                  >
+                    <Input placeholder={t("account.newUsernamePlaceholder")} />
+                  </Form.Item>
+                </>
+              )}
+              <Form.Item
+                name="newPassword"
+                label={t("account.newPassword")}
+                rules={
+                  hubMode
+                    ? [
+                        {
+                          required: true,
+                          message: t("account.passwordRequired"),
+                        },
+                        { min: 8, message: t("hub.validation.passwordMin") },
+                      ]
+                    : undefined
+                }
+              >
+                <Input.Password
+                  placeholder={t(
+                    hubMode
+                      ? "account.hubPasswordPlaceholder"
+                      : "account.newPasswordPlaceholder",
+                  )}
+                />
+              </Form.Item>
+              <Form.Item
+                name="confirmPassword"
+                label={t("account.confirmPassword")}
+                dependencies={["newPassword"]}
+                rules={[
+                  ({ getFieldValue }) => ({
+                    validator(_, value) {
+                      if (!value && !getFieldValue("newPassword")) {
+                        return Promise.resolve();
+                      }
+                      if (value === getFieldValue("newPassword")) {
+                        return Promise.resolve();
+                      }
+                      return Promise.reject(
+                        new Error(t("account.passwordMismatch")),
+                      );
+                    },
+                  }),
+                ]}
+              >
+                <Input.Password
+                  placeholder={t("account.confirmPasswordPlaceholder")}
+                />
+              </Form.Item>
+              <Form.Item>
+                <Button
+                  type="primary"
+                  htmlType="submit"
+                  loading={accountLoading}
+                  block
+                >
+                  {t("account.save")}
+                </Button>
+              </Form.Item>
+              {hubMode && (
+                <div className={styles.runtimeRecovery}>
+                  <Divider />
+                  <strong>{t("account.runtimeTitle")}</strong>
+                  <p>{t("account.runtimeDescription")}</p>
+                  <Popconfirm
+                    title={t("account.runtimeRestartConfirmTitle")}
+                    description={t("account.runtimeRestartConfirmDescription")}
+                    onConfirm={handleRestartRuntime}
+                    okText={t("account.runtimeRestart")}
+                    cancelText={t("common.cancel")}
+                  >
+                    <Button
+                      icon={<RotateCw size={16} />}
+                      loading={runtimeRestarting}
+                      block
+                    >
+                      {t("account.runtimeRestart")}
+                    </Button>
+                  </Popconfirm>
+                </div>
+              )}
+            </Form>
+          </Modal>
+        </Sider>
+      </DockableSidebar>
+    </>
   );
 }

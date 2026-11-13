@@ -76,7 +76,17 @@ def test_assistant_covers_visible_handoff_and_safe_install_stages() -> None:
         "RestorePreviousShortcuts(value, executable, value.install_dir)"
         in source
     )
-    assert "RepairApplicationShortcuts(executable, location)" in source
+    assert (
+        "RepairApplicationShortcuts(installed, "
+        "Path.GetDirectoryName(installed))" in source
+    )
+    assert (
+        source.index("WaitForStartupHealth(markerBefore")
+        < source.index(
+            "CommitTransaction(transaction)",
+        )
+        < source.index("RepairApplicationShortcuts(installed")
+    )
     assert (
         "RefreshShellIcons(executable, new[] { startMenu, desktop })" in source
     )

@@ -93,7 +93,13 @@ export function useOfficialPlugins({ onInstalled }: UseOfficialPluginsOptions) {
               loaded: result.loaded ?? true,
               message: "",
             });
-            message.success(t("pluginManager.updateSuccess"));
+            message.success(
+              t(
+                result.restart_required
+                  ? "pluginManager.updateRestartRequired"
+                  : "pluginManager.updateSuccess",
+              ),
+            );
           }
           return;
         }

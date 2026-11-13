@@ -1431,10 +1431,9 @@ async def apply_operation(manager, operation_id):
                 fresh,
                 admissions,
             )
-            record = await loader.load_plugin_from_path(
-                source,
-                force=operation["force"],
-            )
+            from .downloaded_updates import install_confirmed_update
+
+            record = await install_confirmed_update(loader, source, operation)
             if record.status not in {"active", "inactive", "registered"}:
                 raise RuntimeError(
                     "DEPENDENCY_CONTINUATION_FAILED: plugin "

@@ -110,7 +110,11 @@ export default function MainLayout({ hubMode = false }: { hubMode?: boolean }) {
 
   return (
     <HubModeContext.Provider value={hubMode}>
-      <Layout className={styles.mainLayout}>
+      <Layout
+        className={styles.mainLayout}
+        data-main-layout
+        data-page-id={selectedKey}
+      >
         <NavigationGuard />
         <SettingsSearchNavigation />
         <GlobalSearch />

@@ -13,6 +13,7 @@ import { Moon, Sun, Power, RotateCw, CircleAlert } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { ThemeProvider, useTheme } from "../contexts/ThemeContext";
 import CloseWindowPrompt from "./CloseWindowPrompt";
+import DesktopWindowFrame from "./DesktopWindowFrame";
 import {
   connectAgentHost,
   initialHostState,
@@ -91,8 +92,10 @@ export default function DesktopClient() {
 
   return (
     <ThemeProvider syncRemote={connected}>
-      <CloseWindowPrompt />
-      <DesktopContent connected={connected} setConnected={setConnected} />
+      <DesktopWindowFrame>
+        <CloseWindowPrompt />
+        <DesktopContent connected={connected} setConnected={setConnected} />
+      </DesktopWindowFrame>
     </ThemeProvider>
   );
 }

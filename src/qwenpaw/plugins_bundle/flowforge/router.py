@@ -111,10 +111,41 @@ class ProposalRequest(BaseModel):
     flow: dict[str, Any] | None = None
     name: str = ""
     agent_id: str = "default"
+    selected_node_ids: list[str] | None = Field(default=None, max_length=200)
+    parent_proposal_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+    )
+    repair_run_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=128,
+    )
+    repair_node_id: str | None = Field(
+        default=None,
+        min_length=1,
+        max_length=1024,
+    )
 
 
 class RevisionRequest(BaseModel):
     expected_revision: int = Field(ge=0, strict=True)
+
+
+class ChatRequest(BaseModel):
+    request_id: str = Field(min_length=1, max_length=128)
+    prompt: str = Field(min_length=1, max_length=20000)
+    flow: dict[str, Any]
+    mode: Literal["auto", "ask"] = "auto"
+    selected_node_ids: list[str] | None = Field(default=None, max_length=200)
+    repair_run_id: str | None = None
+    repair_node_id: str | None = None
+
+
+class ExperienceRequest(BaseModel):
+    summary: str = Field(min_length=1, max_length=4000)
+    status: Literal["observed", "invalidated"] = "observed"
 
 
 def _service_error(exc: Exception) -> HTTPException:
@@ -269,6 +300,108 @@ def _register_authoring_routes(
     router: APIRouter,
     service: WorkflowService,
 ) -> None:
+    from .conversations import owner_id
+
+    @router.get("/flows/{flow_id}/conversations")
+    async def chats(flow_id: str, request: Request):
+        try:
+            return service.conversations.list(flow_id, owner_id(request))
+        except (ValueError, FileNotFoundError) as exc:
+            raise _service_error(exc) from exc
+
+    @router.post("/flows/{flow_id}/conversations")
+    async def new_chat(flow_id: str, request: Request):
+        try:
+            return service.conversations.create(flow_id, owner_id(request))
+        except (ValueError, FileNotFoundError) as exc:
+            raise _service_error(exc) from exc
+
+    @router.get("/authoring/conversations/{chat_id}")
+    async def chat(chat_id: str, request: Request):
+        try:
+            return service.conversations.chat(chat_id, owner_id(request))
+        except (ValueError, FileNotFoundError) as exc:
+            raise _service_error(exc) from exc
+
+    @router.post("/authoring/conversations/{chat_id}/messages")
+    async def send_chat(chat_id: str, request: Request, payload: ChatRequest):
+        try:
+            return await service.conversations.send(
+                chat_id,
+                owner_id(request),
+                _request_agent_id(request) or "default",
+                payload.model_dump(),
+            )
+        except (ValueError, FileNotFoundError, AuthoringUnavailable) as exc:
+            raise _service_error(exc) from exc
+
+    @router.post("/authoring/conversations/{chat_id}/messages/{turn_id}/apply")
+    async def apply_chat(
+        chat_id: str, turn_id: str, request: Request, payload: RevisionRequest
+    ):
+        try:
+            return await service.conversations.apply(
+                chat_id,
+                owner_id(request),
+                _request_agent_id(request) or "default",
+                turn_id,
+                payload.expected_revision,
+            )
+        except (ValueError, FileNotFoundError, AuthoringUnavailable) as exc:
+            raise _service_error(exc) from exc
+
+    @router.post(
+        ("/authoring/conversations/{chat_id}/messages/{" "turn_id}/verify")
+    )
+    async def verify_chat(
+        chat_id: str, turn_id: str, request: Request, payload: RevisionRequest
+    ):
+        from .assistant_verification import verify
+
+        try:
+            return await verify(
+                service.conversations,
+                chat_id,
+                owner_id(request),
+                _request_agent_id(request) or "default",
+                turn_id,
+                payload.expected_revision,
+            )
+        except (
+            ValueError,
+            FileNotFoundError,
+            AuthoringUnavailable,
+            WorkflowValidationError,
+        ) as exc:
+            raise _service_error(exc) from exc
+
+    @router.get("/flows/{flow_id}/experience")
+    async def experience(flow_id: str, request: Request):
+        try:
+            return service.conversations.experiences(
+                flow_id, owner_id(request)
+            )
+        except (ValueError, FileNotFoundError) as exc:
+            raise _service_error(exc) from exc
+
+    @router.put("/flows/{flow_id}/experience/{record_id}")
+    async def edit_experience(
+        flow_id: str,
+        record_id: str,
+        request: Request,
+        payload: ExperienceRequest,
+    ):
+        try:
+            return service.conversations.update_experience(
+                flow_id,
+                owner_id(request),
+                record_id,
+                payload.summary,
+                payload.status,
+            )
+        except (ValueError, FileNotFoundError) as exc:
+            raise _service_error(exc) from exc
+
     @router.post("/generate")
     async def generate_flow(payload: GenerateRequest = Body(...)):
         """Explicit legacy sequential template; AI creation uses proposals."""
@@ -293,8 +426,13 @@ def _register_authoring_routes(
                 name=payload.name,
                 agent_id=payload.agent_id,
                 scope_agent_id=_request_agent_id(request),
+                selected_node_ids=payload.selected_node_ids,
+                parent_proposal_id=payload.parent_proposal_id,
+                repair_run_id=payload.repair_run_id,
+                repair_node_id=payload.repair_node_id,
             )
         except (
+            FileNotFoundError,
             ValueError,
             TypeError,
             AuthoringUnavailable,

@@ -1,3 +1,4 @@
+import { skillDisplayName } from "../core/displayNames";
 /**
  * Expert card, introduction, template modal, and blank expert creation modal.
  */
@@ -250,7 +251,11 @@ export function ExpertDrawer({
                 React.createElement(
                   "details",
                   null,
-                  React.createElement("summary", null, skill.name),
+                  React.createElement(
+                    "summary",
+                    null,
+                    skillDisplayName(skill.name),
+                  ),
                   renderMarkdown(skill.description || "暂无技能说明", React),
                 ),
               ),
@@ -1016,7 +1021,7 @@ export function BlankExpertModal({
                 style: { width: "100%" },
                 options: poolSkills.map((skill) => ({
                   value: skill.name,
-                  label: skill.name,
+                  label: skillDisplayName(skill.name),
                 })),
                 notFoundContent: "暂无可用技能",
               }),
