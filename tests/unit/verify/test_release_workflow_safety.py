@@ -528,6 +528,49 @@ def test_standalone_macos_build_can_select_supported_arm64_images():
     )
 
 
+def test_native_dmg_regression_runs_before_compiling_the_desktop():
+    workflow = yaml.safe_load(_workflow("desktop-build.yml"))
+    steps = workflow["jobs"]["build-tauri-macos"]["steps"]
+    native = next(
+        step
+        for step in steps
+        if step.get("name") == "Test native macOS drag-install packaging"
+    )
+    build = next(
+        step
+        for step in steps
+        if step.get("name") == "Build Tauri macOS package"
+    )
+    assert "requirements-macos-dmg.txt" in native["run"]
+    assert "tests/unit/tauri/test_macos_dmg_native.py" in native["run"]
+    assert steps.index(native) < steps.index(build)
+    assert native.get("continue-on-error", False) is False
+
+
+def test_macos_recovery_upload_verifies_signature_and_package_contents():
+    steps = yaml.safe_load(_workflow("desktop-build.yml"))["jobs"][
+        "build-tauri-macos"
+    ]["steps"]
+    verify = next(
+        step
+        for step in steps
+        if step.get("name") == "Verify signed macOS recovery bundle"
+    )
+    upload = next(
+        step
+        for step in steps
+        if step.get("name") == "Upload verified macOS recovery bundle"
+    )
+    assert verify["if"] == "failure()"
+    assert "generate_update_manifest.py stage" in verify["run"]
+    assert "--pubkey-config console/src-tauri/tauri.version.conf.json" in (
+        verify["run"]
+    )
+    assert 'verify_frozen_plugins.py --archive "$output"' in verify["run"]
+    assert "steps.macos-recovery.outputs.ready == 'true'" in upload["if"]
+    assert steps.index(verify) < steps.index(upload)
+
+
 def test_core_artifact_reuse_only_allows_exact_extension_tooling_paths():
     import fnmatch
     import re

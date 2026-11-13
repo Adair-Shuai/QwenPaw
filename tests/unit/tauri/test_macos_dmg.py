@@ -152,11 +152,34 @@ def test_dmg_notary_credentials_and_failures_do_not_expose_secrets(
     monkeypatch.setattr(
         DMG.subprocess,
         "run",
-        lambda *a, **k: subprocess.CompletedProcess(a, 1, b"", b""),
+        lambda *a, **k: subprocess.CompletedProcess(
+            a,
+            1,
+            b"",
+            secret.encode(),
+        ),
     )
     with pytest.raises(RuntimeError) as failure:
         DMG.run_tool(["xcrun", "notarytool", *args])
     assert secret not in str(failure.value)
+
+
+def test_dmg_codesign_errors_preserve_signature_diagnostics(monkeypatch):
+    detail = b"UGSci.app: a sealed resource is missing or invalid"
+    monkeypatch.setattr(
+        DMG.subprocess,
+        "run",
+        lambda *args, **kwargs: subprocess.CompletedProcess(
+            args,
+            1,
+            b"",
+            detail,
+        ),
+    )
+    with pytest.raises(RuntimeError, match="sealed resource is missing"):
+        DMG.run_tool(
+            ["codesign", "--verify", "--deep", "--strict", "UGSci.app"],
+        )
 
 
 @pytest.mark.parametrize(

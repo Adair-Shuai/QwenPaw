@@ -157,8 +157,12 @@ def run_tool(arguments: list[str]) -> bytes:
         raise RuntimeError(f"{Path(arguments[0]).name} timed out") from None
     if result.returncode:
         # Notary credentials may be command arguments. Keep them out of errors.
+        detail = ""
+        if Path(arguments[0]).name == "codesign":
+            detail = result.stderr.decode("utf-8", errors="replace").strip()
         raise RuntimeError(
-            f"{Path(arguments[0]).name} failed with exit code {result.returncode}",
+            f"{Path(arguments[0]).name} failed with exit code {result.returncode}"
+            + (f"\n{detail}" if detail else ""),
         )
     return result.stdout
 
