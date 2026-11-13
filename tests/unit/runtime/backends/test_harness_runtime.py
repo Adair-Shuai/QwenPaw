@@ -266,6 +266,7 @@ asyncio.run(main())
 def test_native_app_chat_and_history_do_not_touch_vendors(tmp_path):
     env = {
         **os.environ,
+        "PYTHONIOENCODING": "utf-8",
         "HOME": str(tmp_path / "home"),
         "QWENPAW_WORKING_DIR": str(tmp_path / "native"),
         "QWENPAW_SECRET_DIR": str(tmp_path / "secrets"),
