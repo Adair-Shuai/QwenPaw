@@ -46,9 +46,9 @@ on:
         required: false
         default: false
       platform:
-        description: "Desktop platform to build (all, windows, macos)"
+        description: "Desktop platform or standalone DMG regression"
         type: choice
-        options: [all, windows, macos]
+        options: [all, windows, macos, macos-dmg-tests]
         required: false
         default: all
       macos_runner:
@@ -62,6 +62,25 @@ permissions:
   contents: read
 
 jobs:
+  verify-macos-dmg:
+    if: ${{ inputs.platform == 'macos-dmg-tests' }}
+    runs-on: macos-15-intel
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.ref || github.ref }}
+          persist-credentials: false
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Test native macOS drag-install packaging
+        run: |
+          python -m pip install pytest -r scripts/pack-tauri/requirements-macos-dmg.txt
+          python -m pytest --confcutdir=tests/unit/tauri tests/unit/tauri/test_macos_dmg_native.py -q
+
   check-updater-signing:
     runs-on: ubuntu-latest
     steps:

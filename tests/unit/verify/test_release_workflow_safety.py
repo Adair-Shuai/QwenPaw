@@ -571,6 +571,21 @@ def test_macos_recovery_upload_verifies_signature_and_package_contents():
     assert steps.index(verify) < steps.index(upload)
 
 
+def test_dmg_native_diagnostics_can_run_on_a_standard_intel_mac():
+    workflow = yaml.safe_load(_workflow("desktop-build.yml"))
+    diagnostic = workflow["jobs"]["verify-macos-dmg"]
+    assert diagnostic["if"] == "${{ inputs.platform == 'macos-dmg-tests' }}"
+    assert diagnostic["runs-on"] == "macos-15-intel"
+    native = next(
+        step
+        for step in diagnostic["steps"]
+        if step.get("name") == "Test native macOS drag-install packaging"
+    )
+    assert "tests/unit/tauri/test_macos_dmg_native.py" in native["run"]
+    assert "requirements-macos-dmg.txt" in native["run"]
+    assert native.get("continue-on-error", False) is False
+
+
 def test_core_artifact_reuse_only_allows_exact_extension_tooling_paths():
     import fnmatch
     import re
@@ -583,6 +598,7 @@ def test_core_artifact_reuse_only_allows_exact_extension_tooling_paths():
     ]
     assert all(not re.search(r"[?*\[]", value) for value in allowed)
     for path in (
+        ".pre-commit-config.yaml",
         ".github/workflows/apps-release.yml",
         ".github/workflows/plugins-release.yml",
         "scripts/pack/prepare_plugin_versions.py",

@@ -207,6 +207,7 @@ jobs:
             fi
             while IFS= read -r file; do
               case "$file" in
+                .pre-commit-config.yaml|\
                 .github/workflows/release.yml|\
                 .github/workflows/release-resume.yml|\
                 .github/workflows/desktop-build.yml|\
