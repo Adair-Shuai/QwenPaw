@@ -72,9 +72,25 @@ def validate_app_name(app: Path) -> None:
 
 def settings(app: Path) -> dict:
     validate_app_name(app)
+    # HFS+ allocation and catalog metadata exceed logical file sizes for the
+    # many small files in the Python runtime. Reserve space per entry as well
+    # as proportional filesystem headroom before copying the signed bundle.
+    allocation_unit = 16 * 1024
+    allocated_bytes = 0
+    for path in app.rglob("*"):
+        size = path.lstat().st_size
+        blocks = max(1, (size + allocation_unit - 1) // allocation_unit)
+        allocated_bytes += blocks * allocation_unit
+    image_bytes = allocated_bytes + max(
+        256 * 1024 * 1024,
+        allocated_bytes // 4,
+    )
+    mebibyte = 1024 * 1024
+    image_mebibytes = (image_bytes + mebibyte - 1) // mebibyte
     return {
         "format": "UDZO",
         "filesystem": "HFS+",
+        "size": f"{image_mebibytes}m",
         "files": [str(app.resolve())],
         "symlinks": {APPLICATIONS: "/Applications"},
         "icon": str(ASSETS / "icon.icns"),
@@ -376,6 +392,10 @@ def build(app: Path, output: Path) -> None:
     if output == app or app in output.parents or output.suffix != ".dmg":
         raise ValueError("DMG output must be a separate .dmg file")
     options = settings(app)
+    print(
+        f"Creating DMG with {options['size']} of filesystem capacity",
+        flush=True,
+    )
     run_tool(["codesign", "--verify", "--deep", "--strict", str(app)])
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(

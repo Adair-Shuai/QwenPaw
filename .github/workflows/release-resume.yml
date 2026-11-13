@@ -109,6 +109,7 @@ jobs:
                 console/src/plugins/hostSdk/hooks.host.test.ts|\
                 console/src/plugins/flowForgeWorkbench.test.tsx|\
                 tests/unit/scripts/test_macos_packaging.py|\
+                tests/unit/tauri/test_macos_dmg.py|\
                 tests/unit/tauri/test_windows_setup_ui.py|\
                 scripts/pack/prepare_plugin_versions.py|\
                 scripts/run_unit_tests.py|\
@@ -134,6 +135,12 @@ jobs:
                 tests/integration/test_workspace_project_git.py|\
                 tests/integration/conftest.py|\
                 e2e/tests/test_agent_stats.py)
+                  ;;
+                scripts/pack-tauri/macos_dmg.py)
+                  if [ -z "$MACOS_ARTIFACTS_RUN_ID" ]; then
+                    echo "::error::macOS packaging changes require replacement macOS artifacts"
+                    exit 1
+                  fi
                   ;;
                 scripts/pack-tauri/build_component_release.py)
                   if [ -z "$COMPONENTS_ARTIFACTS_RUN_ID" ]; then

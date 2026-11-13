@@ -453,6 +453,16 @@ def test_resumed_artifacts_must_match_release_commit_and_metadata() -> None:
     assert 'expected_job="build-desktop / ${expected_job}"' in components
 
 
+def test_macos_packaging_changes_require_rebuilt_macos_artifacts():
+    release = _workflow("release-resume.yml")
+    rules = release.split("scripts/pack-tauri/macos_dmg.py)", 1)[1]
+    macos_packaging = rules.split(";;", 1)[0]
+    assert '[ -z "$MACOS_ARTIFACTS_RUN_ID" ]' in macos_packaging
+    assert "macOS packaging changes require replacement macOS artifacts" in (
+        macos_packaging
+    )
+
+
 def test_core_artifact_reuse_only_allows_exact_extension_tooling_paths():
     import fnmatch
     import re

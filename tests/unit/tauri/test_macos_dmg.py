@@ -109,6 +109,26 @@ def test_dmg_payload_comparison_detects_missing_changed_and_empty_paths(
     assert DMG.app_inventory(app) != expected
 
 
+def test_dmg_capacity_accounts_for_allocation_and_empty_directories(tmp_path):
+    app = tmp_path / "UGSci.app"
+    contents = app / "Contents"
+    contents.mkdir(parents=True)
+    (contents / "Info.plist").write_bytes(
+        plistlib.dumps({"CFBundleName": "UGSci"}),
+    )
+    initial = int(DMG.settings(app)["size"][:-1])
+    for number in range(512):
+        (contents / f"small-{number}").write_bytes(b"x")
+        (contents / f"empty-{number}").mkdir()
+    with_entries = int(DMG.settings(app)["size"][:-1])
+    assert with_entries >= initial + 16
+    large_file = contents / "runtime.bin"
+    large_file.write_bytes(b"x" * (2 * 1024 * 1024 + 1))
+    with_runtime = int(DMG.settings(app)["size"][:-1])
+    assert with_runtime >= with_entries + 2
+    assert DMG.settings(app)["size"].endswith("m")
+
+
 def test_dmg_notary_credentials_and_failures_do_not_expose_secrets(
     monkeypatch,
 ):
