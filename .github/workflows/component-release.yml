@@ -209,6 +209,7 @@ jobs:
               case "$file" in
                 .github/workflows/release.yml|\
                 .github/workflows/release-resume.yml|\
+                .github/workflows/desktop-build.yml|\
                 .github/workflows/component-release.yml|\
                 scripts/pack-tauri/build_component_release.py|\
                 tests/unit/tauri/test_component_release.py|\

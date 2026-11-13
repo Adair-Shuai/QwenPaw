@@ -800,6 +800,69 @@ def test_windows_release_avoids_legacy_long_path_archive_commands() -> None:
     assert "copy_windows_tree.py" in launcher
 
 
+@pytest.mark.parametrize("legacy_copy", [False, True])
+def test_windows_release_validates_current_embedded_native_copier(
+    tmp_path,
+    legacy_copy,
+):
+    import shutil
+
+    shell = shutil.which("pwsh") or shutil.which("powershell")
+    if not shell:
+        pytest.skip("PowerShell is required for Windows package validation")
+    steps = yaml.safe_load(_workflow("desktop-build.yml"))["jobs"][
+        "build-tauri-windows"
+    ]["steps"]
+    validation = next(
+        step["run"]
+        for step in steps
+        if "stale or unsafe" in step.get("run", "")
+    )
+    # YAML removes block indentation, so extract the shipping condition itself.
+    check = (
+        "if ($installScript"
+        + validation.split(
+            "if ($installScript",
+            1,
+        )[1].split(
+            "\n}",
+            1,
+        )[0]
+        + "\n}\n"
+    )
+    builder = (
+        REPO_ROOT / "scripts/pack-tauri/create_windows_portable_installer.ps1"
+    ).read_text(encoding="utf-8")
+    template = builder.split("$installerTemplate = @'\n", 1)[1].split(
+        "\n'@\n$installerIoSource",
+        1,
+    )[0]
+    if legacy_copy:
+        template = template.replace(
+            "[UGSciInstallerIO]::CopyDirectory($payloadRoot, $stagingDir, "
+            "$false, $payloadBytes)",
+            "Copy-Item -Destination $stagingDir -Recurse -Force",
+        )
+    installer = tmp_path / "install.ps1"
+    installer.write_text(template, encoding="utf-8")
+    probe = tmp_path / "validate.ps1"
+    probe.write_text(
+        "$ErrorActionPreference = 'Stop'\n"
+        f"$installScript = Get-Content -LiteralPath '{installer}' -Raw\n"
+        + check,
+        encoding="utf-8-sig",
+    )
+    result = subprocess.run(
+        [shell, "-NoProfile", "-NonInteractive", "-File", str(probe)],
+        check=False,
+        capture_output=True,
+        text=True,
+        errors="replace",
+        timeout=30,
+    )
+    assert (result.returncode != 0) == legacy_copy, result.stderr
+
+
 def test_macos_updater_metadata_latest_and_prerelease_hardening() -> None:
     publish = _workflow("desktop-publish.yml")
     promote = _workflow("desktop-promote.yml")

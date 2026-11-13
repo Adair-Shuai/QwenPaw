@@ -192,7 +192,8 @@ jobs:
           }
           $installScript = Get-Content -LiteralPath (Join-Path $inspectRoot 'install.ps1') -Raw -Encoding UTF8
           if ($installScript -notmatch 'function Copy-DirectoryLongPathSafe' -or
-              $installScript -notmatch 'Copy-DirectoryLongPathSafe -Source \$payloadRoot' -or
+              $installScript -notmatch '\[UGSciInstallerIO\]::CopyDirectory\(\$payloadRoot,\s*\$stagingDir,\s*\$false,\s*\$payloadBytes\)' -or
+              $installScript -notmatch 'Add-Type -TypeDefinition' -or
               $installScript -match 'Copy-Item -Destination \$stagingDir -Recurse -Force') {
             throw 'Portable Windows installer contains a stale or unsafe install.ps1; long-path-safe copier is required'
           }
