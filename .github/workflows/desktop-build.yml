@@ -28,6 +28,11 @@ on:
         type: string
         required: false
         default: "all"
+      macos_runner:
+        description: "Standard ARM64 macOS build image"
+        type: string
+        required: false
+        default: macos-15
   workflow_dispatch:
     inputs:
       ref:
@@ -46,6 +51,12 @@ on:
         options: [all, windows, macos]
         required: false
         default: all
+      macos_runner:
+        description: "Standard ARM64 macOS build image"
+        type: choice
+        options: [macos-15, macos-26]
+        required: false
+        default: macos-15
 
 permissions:
   contents: read
@@ -392,7 +403,7 @@ jobs:
       QWENPAW_JAVA_RELEASE: ${{ vars.QWENPAW_JAVA_RELEASE_MACOS || vars.QWENPAW_JAVA_RELEASE }}
       QWENPAW_PYTHON_BUILD_STANDALONE_RELEASE: "20261021"
       QWENPAW_PYTHON_RUNTIME_SHA256: "b5199d66966141fb6d5447512d2b2fe0398d417da37b1949f58db3792d314eac"
-    runs-on: macos-15
+    runs-on: ${{ inputs.macos_runner || 'macos-15' }}
     timeout-minutes: 120
     steps:
       - name: Checkout

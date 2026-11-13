@@ -512,6 +512,22 @@ def test_macos_release_gates_use_the_supported_desktop_runner():
     assert 'macos)   [ "$OS" = "macos-15"' in nightly
 
 
+def test_standalone_macos_build_can_select_supported_arm64_images():
+    workflow = yaml.load(
+        _workflow("desktop-build.yml"),
+        Loader=yaml.BaseLoader,
+    )
+    for trigger in ("workflow_call", "workflow_dispatch"):
+        runner = workflow["on"][trigger]["inputs"]["macos_runner"]
+        assert runner["default"] == "macos-15"
+    standalone = workflow["on"]["workflow_dispatch"]["inputs"]["macos_runner"]
+    assert standalone["type"] == "choice"
+    assert standalone["options"] == ["macos-15", "macos-26"]
+    assert workflow["jobs"]["build-tauri-macos"]["runs-on"] == (
+        "${{ inputs.macos_runner || 'macos-15' }}"
+    )
+
+
 def test_core_artifact_reuse_only_allows_exact_extension_tooling_paths():
     import fnmatch
     import re
