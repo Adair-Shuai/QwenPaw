@@ -22,6 +22,55 @@ def _workflow(name: str) -> str:
     )
 
 
+@pytest.mark.parametrize(
+    "job_name,build_script",
+    [
+        ("build-tauri-windows", "build_win_pyinstaller.ps1"),
+        ("build-tauri-macos", "build_macos_pyinstaller.sh"),
+    ],
+)
+def test_desktop_packaging_helpers_install_icon_dependencies(
+    job_name,
+    build_script,
+):
+    """Native icon validation uses the packaging helper interpreter."""
+    steps = yaml.safe_load(_workflow("desktop-build.yml"))["jobs"][job_name][
+        "steps"
+    ]
+    helper = next(
+        step
+        for step in steps
+        if step.get("name") == "Install packaging helper dependencies"
+    )
+    build = next(step for step in steps if build_script in step.get("run", ""))
+    assert 'python -m pip install packaging "Pillow>=10.0.0"' in helper["run"]
+    assert steps.index(helper) < steps.index(build)
+
+
+def test_backend_units_install_only_the_locked_native_icon_renderer():
+    steps = yaml.safe_load(_workflow("full-tests-nightly.yml"))["jobs"][
+        "unit-tests"
+    ]["steps"]
+    renderer = next(
+        step
+        for step in steps
+        if step.get("name") == "Install locked native icon renderer"
+    )
+    unit_tests = next(
+        step for step in steps if step.get("name") == "Run unit tests"
+    )
+    assert (
+        "packages['node_modules/@tauri-apps/cli'].version" in renderer["run"]
+    )
+    assert 'npm install --prefix "$renderer_root"' in renderer["run"]
+    assert (
+        '--no-save --ignore-scripts "@tauri-apps/cli@$renderer_version"'
+        in renderer["run"]
+    )
+    assert "fs.symlinkSync(source, target" in renderer["run"]
+    assert steps.index(renderer) < steps.index(unit_tests)
+
+
 def test_windows_release_cleanup_uses_native_owned_pid(tmp_path):
     import os
     import shutil

@@ -295,6 +295,8 @@ REQUIRED_CASES = {
         "test_directory_candidate_snapshot_is_isolated",
     },
     "tests/unit/verify/test_release_workflow_safety.py": {
+        "test_backend_units_install_only_the_locked_native_icon_renderer",
+        "test_desktop_packaging_helpers_install_icon_dependencies",
         "test_application_releases_prepare_versions_without_force_overwrites",
         "test_application_version_preparation_commits_and_repacks_real_artifact",
         "test_clean_release_and_frontend_checks_build_openui_runtime",

@@ -1327,7 +1327,9 @@
       "test_core_release_allocates_monotonic_independent_versions",
       "test_application_version_preparation_commits_and_repacks_real_artifact",
       "test_main_plugin_publisher_rejects_actual_application_archives",
-      "test_main_release_workflows_exclude_every_application"
+      "test_main_release_workflows_exclude_every_application",
+      "test_desktop_packaging_helpers_install_icon_dependencies",
+      "test_backend_units_install_only_the_locked_native_icon_renderer"
     ],
     "tests/unit/plugins/flowforge/test_conversations.py": [
       "test_persistent_chat_apply_receipt_latest_canvas_and_workflow_isolation",

@@ -201,6 +201,21 @@ jobs:
           # (reproduced with pip 26.2.1; see CI run 31571533395).
           pip install -e ".[dev,test,full]" "setuptools<82"
 
+      - name: Install locked native icon renderer
+        shell: bash
+        run: |
+          renderer_version="$(node -p "require('./console/package-lock.json').packages['node_modules/@tauri-apps/cli'].version")"
+          renderer_root="${RUNNER_TEMP}/ugsci-icon-renderer"
+          npm install --prefix "$renderer_root" --no-save --ignore-scripts "@tauri-apps/cli@$renderer_version"
+          node - "$renderer_root" <<'JS'
+          const fs = require('node:fs');
+          const path = require('node:path');
+          const source = path.join(process.argv[2], 'node_modules/@tauri-apps/cli');
+          const target = path.resolve('console/node_modules/@tauri-apps/cli');
+          fs.mkdirSync(path.dirname(target), { recursive: true });
+          fs.symlinkSync(source, target, process.platform === 'win32' ? 'junction' : 'dir');
+          JS
+
       - name: Run unit tests
         shell: bash
         env:
