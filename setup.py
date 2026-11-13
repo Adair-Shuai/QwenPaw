@@ -10,6 +10,8 @@ from setuptools.command.build_py import build_py
 from setuptools.command.sdist import sdist
 
 
+
+
 def bundle(destination, version):
     root = Path(__file__).resolve().parent
     builder = runpy.run_path(
@@ -96,6 +98,8 @@ class SDist(sdist):
 packages = find_namespace_packages(
     "src",
     exclude=(
+        "qwenpaw.harnesses",
+        "qwenpaw.harnesses.*",
         "*.node_modules",
         "*.node_modules.*",
         "*.__pycache__",

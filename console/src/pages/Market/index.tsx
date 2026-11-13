@@ -2,6 +2,7 @@ import { useSearchParams } from "react-router-dom";
 import { useSyncExternalStore } from "react";
 import { MarketplaceHeader } from "./components/MarketplaceHeader";
 import { marketplaceExtensionRegistry } from "./marketplaceRegistry";
+import CommunityPage from "./Community";
 import AppCenterPage from "../AppCenter";
 import PluginManagerPage from "../Settings/PluginManager";
 import { InstallQueuePanel, MarketPanel } from "../Settings/Market/MarketPanel";
@@ -45,7 +46,9 @@ export default function MarketplacePage() {
   const extension = extensions.find((item) => item.id === tab);
 
   let content = <AppCenterPage />;
-  if (tab === "plugins") {
+  if (tab === "community") {
+    content = <CommunityPage />;
+  } else if (tab === "plugins") {
     content = <PluginManagerPage />;
   } else if (tab === "skills") {
     content = (

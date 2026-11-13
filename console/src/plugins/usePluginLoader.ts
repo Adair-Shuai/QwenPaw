@@ -11,6 +11,8 @@
 
 import { getApiToken, getApiUrl } from "../api/config";
 import { removePluginRuntime } from "./pluginRuntimeCleanup";
+import { harnessRegistry, refreshHarnessCatalog } from "./harnesses";
+import { subscribeToPluginChanges } from "../utils/pluginChangeEvents";
 import { routeRegistry } from "./registry/store";
 
 export interface PluginLoadSummary {
@@ -26,6 +28,8 @@ interface FrontendPluginInfo {
   frontend_entry?: string;
   version?: string;
   frontend_revision?: string;
+  status?: string;
+  harnesses?: string[];
 }
 
 // Plugin bundles register capabilities through global host APIs as a side
@@ -42,6 +46,61 @@ const pendingRequests = new Map<
 let manifestRequest = 0;
 let intentSequence = 0;
 const pluginIntents = new Map<string, number>();
+
+let revision = 0;
+let stopChanges: (() => void) | undefined;
+
+function watchChanges(): void {
+  if (stopChanges) return;
+  const reconcile = () => {
+    harnessRegistry.invalidateCatalog();
+    void refreshHarnessCatalog()
+      .then(async () => {
+        const pending = new Set<string>();
+        for (const row of harnessRegistry.getSnapshot()) {
+          if (!row.plugin_id) continue;
+          if (row.status !== "available") removePluginRuntime(row.plugin_id);
+          else if (!harnessRegistry.getSettings(row.id))
+            pending.add(row.plugin_id);
+        }
+        await Promise.allSettled([...pending].map(reloadFrontendPlugin));
+      })
+      .catch((error) =>
+        console.warn("[PluginLoader] catalog refresh failed:", error),
+      );
+  };
+  const stopPlugins = subscribeToPluginChanges(() => {
+    revision += 1;
+    reconcile();
+  });
+  window.addEventListener("qwenpaw:auth-changed", reconcile);
+  stopChanges = () => {
+    stopPlugins();
+    window.removeEventListener("qwenpaw:auth-changed", reconcile);
+  };
+}
+
+function canExecute(plugin: FrontendPluginInfo): boolean {
+  if (
+    !plugin.frontend_entry ||
+    plugin.enabled === false ||
+    (plugin.status !== undefined && plugin.status !== "active")
+  )
+    return false;
+  const catalog = harnessRegistry.getSnapshot();
+  const declared =
+    plugin.harnesses ??
+    catalog.filter((row) => row.plugin_id === plugin.id).map((row) => row.id);
+  return declared.every((id) =>
+    catalog.some(
+      (row) =>
+        row.id === id &&
+        row.plugin_id === plugin.id &&
+        row.status === "available",
+    ),
+  );
+}
+
 
 function clearRuntime(pluginId: string): void {
   removePluginRuntime(pluginId);
@@ -90,6 +149,7 @@ async function executePluginScript(
   entryUrl: string,
   version?: string,
   prefetchedResponse?: Promise<Response | undefined>,
+  assertExecutable?: () => void,
 ): Promise<void> {
   // Versioned URLs re-use the WebView disk cache between launches while still
   // invalidating immediately after a plugin upgrade.
@@ -111,6 +171,7 @@ async function executePluginScript(
 
   if (response) {
     const jsText = await response.text();
+    assertExecutable?.();
     const blobUrl = URL.createObjectURL(
       new Blob([jsText], { type: "text/javascript" }),
     );
@@ -125,6 +186,7 @@ async function executePluginScript(
   // Strategy 2: Direct same-origin dynamic import (fallback).
   // In some environments (e.g. web dev mode), this may work when the
   // Blob URL approach doesn't.
+  assertExecutable?.();
   await import(/* @vite-ignore */ versionedUrl);
 }
 
@@ -165,14 +227,21 @@ async function executeFrontendPlugin(
   options: LoadPluginOptions = {},
   prefetchedResponse?: Promise<Response | undefined>,
 ): Promise<void> {
-  const revision = plugin.frontend_revision || plugin.version || "0";
+  const version = plugin.frontend_revision || plugin.version || "0";
+  const started = revision;
+  const assertExecutable = () => {
+    if (started !== revision || !canExecute(plugin))
+      throw new Error(`Plugin became unavailable before execution: ${plugin.id}`);
+  };
   try {
-    if (options.force || loadedPluginRevisions.get(plugin.id) !== revision) {
+    assertExecutable();
+    if (options.force || loadedPluginRevisions.get(plugin.id) !== version) {
       clearRuntime(plugin.id);
       await executePluginScript(
         resolveUrl(plugin.id, plugin.frontend_entry!),
-        revision,
+        version,
         prefetchedResponse,
+        assertExecutable,
       );
     }
     if (
@@ -181,7 +250,7 @@ async function executeFrontendPlugin(
     ) {
       throw new Error(`PawApp ${plugin.id} did not register its app route`);
     }
-    loadedPluginRevisions.set(plugin.id, revision);
+    loadedPluginRevisions.set(plugin.id, version);
   } catch (error) {
     clearRuntime(plugin.id);
     throw error;
@@ -192,6 +261,7 @@ async function executeFrontendPlugin(
 export async function loadAllPlugins(
   beforeExecute?: Promise<unknown>,
 ): Promise<PluginLoadSummary> {
+  watchChanges();
   const request = ++intentSequence;
   manifestRequest = request;
   let plugins: FrontendPluginInfo[];
@@ -201,11 +271,10 @@ export async function loadAllPlugins(
     console.warn("[PluginLoader] failed to fetch plugin list:", error);
     return { loaded: 0, failed: [] };
   }
+  await refreshHarnessCatalog().catch(() => {});
   // A slow earlier manifest must not restore plugins removed by a newer one.
   if (request !== manifestRequest) return { loaded: 0, failed: [] };
-  const loadable = plugins.filter(
-    (p) => p.frontend_entry && p.enabled !== false,
-  );
+  const loadable = plugins.filter(canExecute);
   const loadableIds = new Set(loadable.map((plugin) => plugin.id));
   const removals = [
     ...new Set([...loadedPluginRevisions.keys(), ...loadingPlugins.keys()]),
@@ -254,6 +323,7 @@ function loadFrontendPlugin(
   pluginId: string,
   options: LoadPluginOptions = {},
 ): Promise<void> {
+  watchChanges();
   const key = `${pluginId}:${!!options.force}:${options.expectedType || ""}:${
     options.entryPage || ""
   }`;
@@ -265,7 +335,8 @@ function loadFrontendPlugin(
   const promise = enqueue(pluginId, async () => {
     const plugins = await fetchFrontendPlugins();
     const plugin = plugins.find((item) => item.id === pluginId);
-    if (!plugin?.frontend_entry || plugin.enabled === false) {
+    await refreshHarnessCatalog().catch(() => {});
+    if (!plugin || !canExecute(plugin)) {
       clearRuntime(pluginId);
       if (options.expectedType === "app") {
         throw new Error(`PawApp frontend plugin not found: ${pluginId}`);
@@ -330,6 +401,9 @@ export function unloadFrontendPlugin(
 /** Reset pending loads between unit tests. */
 export function resetPawAppLoaderForTests(): void {
   loadingPlugins.clear();
+  stopChanges?.();
+  stopChanges = undefined;
+  revision = 0;
   pendingRequests.clear();
   loadedPluginRevisions.clear();
   manifestRequest = 0;

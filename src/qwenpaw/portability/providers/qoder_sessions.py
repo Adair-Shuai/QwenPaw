@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Iterator, Mapping
 from urllib.parse import quote, unquote, urlparse
 
-from ...harnesses.events import (
+from ...plugins.harnesses import (
     HarnessHistoryItem,
     HarnessHistoryKind,
 )

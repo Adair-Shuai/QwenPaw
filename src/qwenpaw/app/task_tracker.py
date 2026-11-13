@@ -39,6 +39,25 @@ _create_task = asyncio.create_task
 REPLAY_END_SSE = f"data: {json.dumps({'type': 'replay_end'})}\n\n"
 
 
+def _has_successful_response(events: list[str]) -> bool:
+    """Require a successful response terminal, not just message completion."""
+    for sse in reversed(events):
+        for line in reversed(sse.splitlines()):
+            if not line.startswith(f"data:"):
+                continue
+            try:
+                event = json.loads(line.removeprefix(f"data:"))
+            except json.JSONDecodeError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            if event.get(f"error"):
+                return False
+            if event.get(f"object") == f"response":
+                return event.get(f"status") == f"completed"
+    return False
+
+
 @dataclass
 class _RunState:
     """Per-run state (task, queues, buffer), guarded by tracker lock."""
@@ -359,6 +378,8 @@ class TaskTracker:
         """Attach to an existing run or start a new one.
 
         Returns ``(queue, is_new_run)``.
+        ``on_finished`` runs only after a successful response terminal and
+        normal producer exhaustion; cleanup runs for every outcome.
         """
         async with self._lock:
             state = self._runs.get(run_key)
@@ -389,6 +410,7 @@ class TaskTracker:
                 from .steering import CURRENT_STEERING
 
                 steering_token = CURRENT_STEERING.set(steering)
+                successful = False
 
                 try:
                     tracker = tracker_ref()
@@ -398,9 +420,9 @@ class TaskTracker:
                             # pylint: disable=protected-access
                             tracker._global_last_run_at = start_time
                     await _broadcast_stream(
-                        tracker_ref,
-                        run,
-                        stream_fn(payload),
+                        tracker_ref, run, stream_fn(payload),
+                    )
+                    successful = (on_finished is not None and _has_successful_response(run.buffer)
                     )
                 except asyncio.CancelledError:
                     logger.debug("run cancelled run_key=%s", run_key)
@@ -435,7 +457,7 @@ class TaskTracker:
                     # host persistence may continue after that invocation ends.
                     run.stream_done.set()
                     finish_time = datetime.now(timezone.utc)
-                    if on_finished is not None:
+                    if successful and on_finished is not None:
                         try:
                             await on_finished(run_key, finish_time)
                         except Exception:  # pylint: disable=broad-except

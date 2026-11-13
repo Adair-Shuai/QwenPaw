@@ -469,6 +469,9 @@ jobs:
         run: |
           npm --prefix plugins/bundle/qwenpaw-run-center/ui ci
           npm --prefix plugins/bundle/qwenpaw-run-center/ui run build
+      - name: Build Harness plugin frontends with public SDK
+        run: bash scripts/pack/build_harness_frontends.sh
+
       - name: Install channel contract preflight dependencies
         run: python -m pip install -r scripts/pack/channel-contract-requirements.txt
 

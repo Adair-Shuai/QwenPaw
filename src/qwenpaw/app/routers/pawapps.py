@@ -15,6 +15,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import FileResponse
 
 from ...plugins.browser_access import browser_prefixes
+from ...installation_origin import read_plugin_origin
+from ...utils.io_utils import run_sync_io
 from ...plugins.registry import MemoryBackendInUseError
 
 logger = logging.getLogger(__name__)
@@ -56,6 +58,10 @@ def _build_app_info(
         "id": manifest.get("id", fallback_id),
         "name": manifest.get("name", fallback_id),
         "version": manifest.get("version", "0.0.0"),
+        "installation_origin": read_plugin_origin(
+            _get_apps_dir(),
+            str(manifest.get("id", fallback_id)),
+        ),
         "description": manifest.get("description", ""),
         "description_i18n": manifest.get("description_i18n", {}) or {},
         "author": manifest.get("author", ""),

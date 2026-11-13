@@ -12,6 +12,7 @@ export const PLATFORM_ICONS: Record<string, LucideIcon> = {
 
 export const KNOWN_PLUGIN_PLATFORM_KINDS = [
   "bundle",
+  "harness",
   "tool",
   "apps",
   "app",

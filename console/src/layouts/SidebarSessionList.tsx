@@ -410,7 +410,6 @@ export default function SidebarSessionList({
     handleEditCancel,
     refreshSessions,
   } = useSessionListData(storeSessions, setSessions, {
-    active: true,
     currentSessionId,
     onSessionClick,
   });

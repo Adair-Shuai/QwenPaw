@@ -228,6 +228,7 @@ export default function MessageQueuePanel({
               <IconButton
                 bordered={false}
                 size="small"
+                iconSize={14}
                 icon={
                   isPausedOrError ? (
                     <SparkPlayFill
@@ -252,6 +253,7 @@ export default function MessageQueuePanel({
                 <IconButton
                   bordered={false}
                   size="small"
+                  iconSize={14}
                   icon={
                     <SparkClearLine
                       size="1em"
@@ -544,6 +546,7 @@ export default function MessageQueuePanel({
                       <IconButton
                         bordered={false}
                         size="small"
+                        iconSize={13}
                         icon={
                           <SparkEditLine size="1em" style={{ fontSize: 13 }} />
                         }
@@ -562,6 +565,7 @@ export default function MessageQueuePanel({
                           <IconButton
                             bordered={false}
                             size="small"
+                        iconSize={13}
                             icon={
                               <SparkRefreshLine
                                 size="1em"
@@ -582,6 +586,7 @@ export default function MessageQueuePanel({
                           <IconButton
                             bordered={false}
                             size="small"
+                        iconSize={13}
                             icon={
                               <SparkNextSentenceLine
                                 size="1em"
@@ -606,6 +611,7 @@ export default function MessageQueuePanel({
                       <IconButton
                         bordered={false}
                         size="small"
+                        iconSize={13}
                         icon={
                           <SparkSendLine size="1em" style={{ fontSize: 13 }} />
                         }
@@ -622,6 +628,7 @@ export default function MessageQueuePanel({
                       <IconButton
                         bordered={false}
                         size="small"
+                        iconSize={13}
                         icon={
                           <SparkDeleteLine
                             size="1em"

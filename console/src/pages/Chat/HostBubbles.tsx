@@ -112,6 +112,10 @@ const HostMessage = React.memo(function HostMessage({
                 key={index}
                 data-global-search-message={data.id}
                 data-answer-quote-source={`${data.id}:${index}`}
+                className={styles.quoteResponse}
+                data-quote-response={
+                  data.role === "assistant" ? "true" : undefined
+                }
               >
                 <AssistantMarkdown
                   messageId={`${data.id}:${index}`}
@@ -195,7 +199,11 @@ function renderResponseMessage(item: IAgentScopeRuntimeMessage) {
     case AgentScopeRuntimeMessageType.MCP_APPROVAL_REQUEST:
       return <ResponseTool key={item.id} data={item} isApproval />;
     case AgentScopeRuntimeMessageType.REASONING:
-      return <ResponseReasoning key={item.id} data={item} />;
+      return (
+        <div key={item.id} className={styles.reasoningStep}>
+          <ResponseReasoning data={item} />
+        </div>
+      );
     case AgentScopeRuntimeMessageType.ERROR:
       return <ResponseError key={item.id} data={item} />;
     case AgentScopeRuntimeMessageType.HEARTBEAT:

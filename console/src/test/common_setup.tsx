@@ -3,6 +3,7 @@ import { MemoryRouter, type MemoryRouterProps } from "react-router-dom";
 import { type ReactNode, createContext, useState } from "react";
 import { App } from "antd";
 import type { PendingApproval } from "../api/modules/console";
+import { AuthStatusProvider } from "@/contexts/AuthStatusContext";
 
 const ApprovalContext = createContext<{
   approvals: PendingApproval[];
@@ -26,9 +27,11 @@ function AllProviders({
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   return (
     <ApprovalContext.Provider value={{ approvals, setApprovals }}>
-      <App>
-        <MemoryRouter {...routerProps}>{children}</MemoryRouter>
-      </App>
+      <AuthStatusProvider value={{ enabled: false, has_users: false }}>
+        <App>
+          <MemoryRouter {...routerProps}>{children}</MemoryRouter>
+        </App>
+      </AuthStatusProvider>
     </ApprovalContext.Provider>
   );
 }

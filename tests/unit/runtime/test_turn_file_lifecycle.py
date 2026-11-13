@@ -13,6 +13,46 @@ from qwenpaw.runtime.runtime import Runtime
 from qwenpaw.turn_files.store import get_store
 
 
+
+@pytest.fixture(name="harness_host")
+async def make_harness_host(tmp_path):
+    """Run capture checks through a real installed SDK Harness owner."""
+    import json
+    from qwenpaw.plugins.testing import PluginTestHost
+
+    source = tmp_path / "capture-plugin"
+    source.mkdir()
+    (source / "plugin.json").write_text(json.dumps({
+        "id": "capture-harness", "version": "1.0.0",
+        "entry": {"backend": "main.py"},
+        "sdk": {"version": "1.1.0", "capabilities": ["harnesses", "storage", "resources"]},
+        "meta": {"harnesses": [{"id": "codex", "label": "Capture"}]},
+    }), encoding="utf-8")
+    (source / "main.py").write_text("""
+from qwenpaw.plugins.harnesses import HarnessSpec, HarnessCapabilities
+class Backend:
+    def __init__(self, plugin):
+        self.plugin = plugin
+    async def run_turn(self, context, request):
+        stream = self.plugin.handler()
+        try:
+            async for event in stream:
+                yield event
+        finally:
+            await stream.aclose()
+    async def close(self):
+        pass
+class Plugin:
+    def register(self, context):
+        self.handler = None
+        context.register_harness(HarnessSpec("codex", "Capture", lambda context, settings: Backend(self), HarnessCapabilities()))
+plugin = Plugin()
+""", encoding="utf-8")
+    async with PluginTestHost(tmp_path / "plugin-host") as host:
+        assert (await host.install(source)).ok
+        yield host
+
+
 def request():
     return SimpleNamespace(
         session_id="session",
@@ -231,18 +271,18 @@ async def test_repeated_cancellation_keeps_archive_task_alive(
 async def test_third_party_turn_has_same_durable_file_contract(
     tmp_path,
     outcome,
+    harness_host,
 ):
     # Exercise real internals and verify lifecycle state in this test.
     # pylint: disable=protected-access
-    from qwenpaw.harnesses.runtime import HarnessRuntime
-    from qwenpaw.harnesses.events import HarnessEvent, HarnessEventKind
+    from qwenpaw.runtime.backends.execution import BackendExecution
+    from qwenpaw.plugins.harnesses import HarnessEvent, HarnessEventKind
     from qwenpaw.schemas import AgentRequest, Message, TextContent
 
     workspace = tmp_path / "agent"
     project = tmp_path / "project"
     project.mkdir()
-    runtime = HarnessRuntime(workspace, agent_id="agent")
-    runtime._capability_resolver.resolve = AsyncMock(return_value={})
+    runtime = BackendExecution(workspace, agent_id="agent", registry=harness_host._loader.registry.backend_registry)
 
     async def run_turn(**_kwargs):
         try:
@@ -271,7 +311,7 @@ async def test_third_party_turn_has_same_durable_file_contract(
                 encoding="utf-8",
             )
 
-    runtime._adapters["codex"] = SimpleNamespace(run_turn=run_turn)
+    harness_host._loader.get_loaded_plugin("capture-harness").instance.handler = run_turn
     req = AgentRequest(
         session_id="session",
         user_id="user",
@@ -284,7 +324,7 @@ async def test_third_party_turn_has_same_durable_file_contract(
             ),
         ],
     )
-    stream = runtime.stream(backend="codex", request=req, cwd=project)
+    stream = runtime.stream("codex", req, cwd=project)
     if outcome == "closed":
         async for _ in stream:
             if (project / "external-result.txt").exists():
@@ -329,7 +369,7 @@ async def test_harness_captures_bound_additional_project_roots(
 ):
     # Exercise real internals and verify lifecycle state in this test.
     # pylint: disable=protected-access
-    from qwenpaw.harnesses.runtime import HarnessRuntime
+    from qwenpaw.runtime.backends.execution import BackendExecution
     from qwenpaw.config import config
 
     workspace_dir = tmp_path / "agent"
@@ -353,7 +393,7 @@ async def test_harness_captures_bound_additional_project_roots(
         "load_agent_config",
         lambda _id: SimpleNamespace(project_dirs=[], project_dir=None),
     )
-    runtime = HarnessRuntime(
+    runtime = BackendExecution(
         workspace_dir,
         workspace=SimpleNamespace(chat_manager=manager),
     )
@@ -477,30 +517,30 @@ async def test_actual_native_tool_funnel_marks_capture_before_filesystem_effects
 @pytest.mark.asyncio
 async def test_third_party_text_only_turn_does_not_claim_external_writes(
     tmp_path,
+    harness_host,
 ):
     # pylint: disable=protected-access
-    from qwenpaw.harnesses.runtime import HarnessRuntime
-    from qwenpaw.harnesses.events import HarnessEvent, HarnessEventKind
+    from qwenpaw.runtime.backends.execution import BackendExecution
+    from qwenpaw.plugins.harnesses import HarnessEvent, HarnessEventKind
     from qwenpaw.schemas import AgentRequest, Message, TextContent
 
     workspace, project = tmp_path / "agent", tmp_path / "project"
     project.mkdir()
-    runtime = HarnessRuntime(workspace, agent_id="agent")
-    runtime._capability_resolver.resolve = AsyncMock(return_value={})
+    runtime = BackendExecution(workspace, agent_id="agent", registry=harness_host._loader.registry.backend_registry)
 
     async def run_turn(**_kwargs):
         (project / "unrelated.txt").write_bytes(b"external process")
         yield HarnessEvent(kind=HarnessEventKind.TEXT_DELTA, text="Hello")
         yield HarnessEvent(kind=HarnessEventKind.COMPLETED)
 
-    runtime._adapters["codex"] = SimpleNamespace(run_turn=run_turn)
+    harness_host._loader.get_loaded_plugin("capture-harness").instance.handler = run_turn
     req = AgentRequest(
         session_id="text-only",
         user_id="user",
         channel="console",
         input=[Message(role="user", content=[TextContent(text="Hello")])],
     )
-    async for _ in runtime.stream(backend="codex", request=req, cwd=project):
+    async for _ in runtime.stream("codex", req, cwd=project):
         pass
     turn = get_store(workspace).list_turns(session_id="text-only")[0]
     assert turn["tool_activity"] is False

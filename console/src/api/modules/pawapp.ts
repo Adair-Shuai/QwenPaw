@@ -1,10 +1,12 @@
 import { getApiUrl } from "../config";
 import { buildAuthHeaders } from "../authHeaders";
+import type { InstallationOrigin } from "../types/community";
 import { responseErrorMessage } from "../error";
 import { requestWithPluginBusyConfirmation } from "../pluginBusy";
 import { notifyPluginChange } from "../../utils/pluginChangeEvents";
 
 export interface PawAppInfo {
+  installation_origin?: InstallationOrigin | null;
   id: string;
   name: string;
   version: string;

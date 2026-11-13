@@ -7,9 +7,10 @@ import { PageHeader } from "@/components/PageHeader";
 import { marketplaceExtensionRegistry } from "../../marketplaceRegistry";
 import styles from "./index.module.less";
 
-export type MarketplaceSection = "apps" | "plugins" | "skills" | string;
+export type MarketplaceSection = string;
 
-const SECTION_PATHS: Record<"apps" | "plugins" | "skills", string> = {
+const SECTION_PATHS: Record<string, string> = {
+  community: "/market?tab=community",
   apps: "/market",
   plugins: "/market?tab=plugins",
   skills: "/market?tab=skills",
@@ -41,6 +42,7 @@ export function MarketplaceHeader({
       key: extension.id,
       label: extension.label,
     })),
+    { key: "community", label: t("communityCompose.nav", "Community") },
   ];
 
   const handleChange = (section: string) => {
@@ -63,13 +65,15 @@ export function MarketplaceHeader({
     <PageHeader
       current={t("nav.marketplace", "Extension")}
       center={
-        <Tabs
-          className={styles.sectionSwitch}
-          activeKey={activeSection}
-          items={items}
-          onChange={handleChange}
-          type="segmented"
-        />
+        <div className={styles.navigation}>
+          <Tabs
+            className={styles.sectionSwitch}
+            activeKey={activeSection}
+            items={items}
+            onChange={handleChange}
+            type="segmented"
+          />
+        </div>
       }
       extra={extra}
     />

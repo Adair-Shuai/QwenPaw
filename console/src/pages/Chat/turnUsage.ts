@@ -332,6 +332,18 @@ function snapshotFromSsePayload(raw: string): TurnUsageSnapshot | null {
 }
 
 // ── Streaming Token Counter ──────────────────────────────────────────────────
+function isSuccessfulResponseTerminal(raw: string): boolean {
+  try {
+    const payload = JSON.parse(raw) as Record<string, unknown>;
+    return (
+      payload.object === "response" &&
+      payload.status === "completed" &&
+      !payload.error
+    );
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Lightweight pub/sub store for real-time streaming token estimation.
@@ -443,12 +455,14 @@ export function wrapChatResponseUsageStream(
   response: Response,
   chatRef: React.RefObject<IAgentScopeRuntimeWebUIRef | null>,
   turn?: TurnUsageToken,
+  onSuccessfulCompletion?: () => void,
 ): Response {
   if (!response.body) return response;
 
   const decoder = new TextDecoder();
   let buffer = "";
   let streamingTokenCount = 0;
+  let completedSuccessfully = false;
   const sessionBase = useTurnUsageStore.getState().snapshot?.usage;
 
   const publishUsage = (snapshot: TurnUsageSnapshot) => {
@@ -497,7 +511,7 @@ export function wrapChatResponseUsageStream(
         const parsed = parseSseDataLines(buffer);
         buffer = parsed.rest;
         for (const raw of parsed.events) {
-          // Check for turn_usage SSE
+          completedSuccessfully ||= isSuccessfulResponseTerminal(raw);
           const snap = snapshotFromSsePayload(raw);
           if (snap) {
             publishUsage(snap);
@@ -524,6 +538,7 @@ export function wrapChatResponseUsageStream(
         buffer += decoder.decode();
         const parsed = parseSseDataLines(`${buffer}\n\n`);
         for (const raw of parsed.events) {
+          completedSuccessfully ||= isSuccessfulResponseTerminal(raw);
           const snap = snapshotFromSsePayload(raw);
           if (snap) {
             publishUsage(snap);
@@ -546,11 +561,50 @@ export function wrapChatResponseUsageStream(
           isStreaming: false,
         };
         _notify();
+        if (completedSuccessfully) onSuccessfulCompletion?.();
       },
     }),
   );
 
-  return new Response(transformed, {
+  const reader = transformed.getReader();
+  let cancelled = false;
+  const body = new ReadableStream<Uint8Array>({
+    async pull(controller) {
+      try {
+        const result = await reader.read();
+        if (cancelled) return;
+        if (result.done) {
+          controller.close();
+          reader.releaseLock();
+        } else {
+          controller.enqueue(result.value);
+        }
+      } catch (error) {
+        if (!cancelled) {
+          controller.error(error);
+          reader.releaseLock();
+        }
+      }
+    },
+    async cancel(reason) {
+      cancelled = true;
+      try {
+        if (completedSuccessfully) {
+          // The SDK cancels at the terminal before the backend persists
+          // completion metadata. Keep observing until the source closes.
+          while (!(await reader.read()).done) {
+            // The upstream transform consumes usage and notifies on EOF.
+          }
+        } else {
+          await reader.cancel(reason);
+        }
+      } finally {
+        reader.releaseLock();
+      }
+    },
+  });
+
+  return new Response(body, {
     status: response.status,
     statusText: response.statusText,
     headers: response.headers,

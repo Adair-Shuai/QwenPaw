@@ -11,11 +11,14 @@ import { useEffect, useState } from "react";
 import { buildAuthHeaders } from "../../api/authHeaders";
 import { getApiUrl } from "../../api/config";
 import { useTranslation } from "react-i18next";
+import type { InstallationOrigin } from "@/api/types/community";
+import { CommunityFeedback } from "@/components/CommunityFeedback";
 import styles from "./index.module.less";
 
 const { Text, Paragraph } = Typography;
 
 export interface AppCardData {
+  installation_origin?: InstallationOrigin | null;
   id: string;
   name: string;
   author?: string;
@@ -111,20 +114,15 @@ export const AppCard: FC<AppCardProps> = ({ app, onClick, onUninstall }) => {
 
   return (
     <InteractiveCard tilt={3} style={{ width: "100%" }}>
-      <Card
-        data-themed-card="true"
-        className={`${styles.appCard} ${styles.appCardClickable}`}
-      >
-        <div
-          className={styles.cardOpenButton}
-          onClick={open}
-          onKeyDown={handleKeyDown}
-          role="button"
-          tabIndex={available ? 0 : -1}
-          aria-disabled={!available}
-          aria-label={app.name}
-        >
-          <div className={styles.cardIcon}>
+      <Card data-themed-card="true" className={`${styles.appCard} ${styles.appCardClickable}`}>
+        <div className={styles.cardTopRow}>
+          <button
+            type="button"
+            disabled={!available}
+            className={`${styles.cardIcon} ${styles.cardIconButton}`}
+            onClick={open}
+            aria-label={`${t("appCenter.openApp")} ${app.name}`}
+          >
             {ugsciAppIconUrls.has(app.id) ? (
               <UgsciAppIcon appId={app.id} size={32} />
             ) : isImageIcon ? (
@@ -137,7 +135,24 @@ export const AppCard: FC<AppCardProps> = ({ app, onClick, onUninstall }) => {
             ) : (
               <AppWindow size={32} strokeWidth={1.75} />
             )}
-          </div>
+          </button>
+          <CommunityFeedback
+            origin={app.installation_origin}
+            installedPluginId={app.id}
+            installedVersion={app.version}
+            resourceName={app.name}
+            variant="inline"
+          />
+        </div>
+        <div
+          className={styles.cardOpenButton}
+          onClick={open}
+          onKeyDown={handleKeyDown}
+          role="button"
+          tabIndex={available ? 0 : -1}
+          aria-disabled={!available}
+          aria-label={app.name}
+        >
           <div className={styles.cardBody}>
             <div className={styles.cardHeader}>
               <Text strong className={styles.cardTitle} ellipsis>

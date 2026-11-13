@@ -150,6 +150,7 @@ export default function AppCenterPage() {
           enabled: app.enabled,
           loaded: app.loaded,
           diagnostics: app.diagnostics,
+          installation_origin: app.installation_origin,
         })),
       );
     } catch (err) {

@@ -203,3 +203,5 @@ tmp/
 # examples are retained; newly generated datasets must stay local.
 /plugins/bundle/ugsci/visualization/data/
 /src/qwenpaw/plugins_bundle/ugsci/visualization/data/
+# Local Harness acceptance reports and raw measurements
+/docs/research/harness-*

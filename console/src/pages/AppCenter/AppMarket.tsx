@@ -49,6 +49,8 @@ import { isMarketPluginCompatible } from "@/utils/pluginCompatibility";
 import { getMarketAppState } from "@/utils/marketAppState";
 import { subscribeToPluginChanges } from "@/utils/pluginChangeEvents";
 import type { InstalledPluginIdentity } from "@/utils/marketPluginIdentity";
+import { CommunityFeedback } from "@/components/CommunityFeedback";
+import { pluginMarketResource } from "@/utils/communityResources";
 import styles from "./index.module.less";
 import { InteractiveCard } from "@/components/interaction/InteractiveCard";
 import { SettingsDrawer } from "@/components/interaction/SettingsDrawer";
@@ -770,6 +772,7 @@ export function AppMarket({
                           : styles.appCard
                       }
                     >
+                      <div className={styles.cardTopRow}>
                       <div className={styles.cardIcon}>
                         {ugsciAppIconUrls.has(entry.plugin_id || entry.id) ? (
                           <UgsciAppIcon appId={entry.plugin_id || entry.id} />
@@ -786,6 +789,12 @@ export function AppMarket({
                         ) : (
                           <AppWindow size={24} strokeWidth={1.75} />
                         )}
+                      </div>
+                        <CommunityFeedback
+                          origin={pluginMarketResource(entry)?.origin}
+                          resourceName={entry.display_name}
+                          variant="inline"
+                        />
                       </div>
                       <div className={styles.cardBody}>
                         <div className={styles.cardHeader}>

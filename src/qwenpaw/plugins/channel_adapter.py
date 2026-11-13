@@ -512,7 +512,11 @@ class ChannelBackend:
             after = await run_sync_io(witness)
             if before_roots != after:
                 raise RuntimeError("DEPENDENCY_ENVIRONMENT_IDENTITY_CHANGED")
-            from .dependency_gate import GateDecision, SharedDependencyError
+            from .dependency_gate import (
+                GateDecision,
+                SharedDependencyError,
+                _canonical_dependency_roots,
+            )
             from .execution.dependencies import (
                 DependencyReadEvidence,
                 read_dependency_inventory,
@@ -561,7 +565,7 @@ class ChannelBackend:
             if (
                 metadata_before != metadata_after
                 or versions != snapshot.versions
-                or view.warnings != snapshot.warnings
+                or set(view.warnings) != set(snapshot.warnings)
             ):
                 raise RuntimeError("DEPENDENCY_ENVIRONMENT_IDENTITY_CHANGED")
             if await run_sync_io(

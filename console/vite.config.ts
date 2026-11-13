@@ -129,6 +129,26 @@ export default defineConfig(({ command, mode }) => {
             "../src/qwenpaw/plugins_bundle/ugsci/ui/src/genui",
           )}/`,
         },
+        // Shared optional-plugin sources resolve dependencies from this test
+        // installation, even when neither plugin has its own node_modules.
+        {
+          find: /^react$/,
+          replacement: path.resolve(__dirname, "node_modules/react/index.js"),
+        },
+        {
+          find: /^lucide-react$/,
+          replacement: path.resolve(
+            __dirname,
+            "node_modules/lucide-react/dist/esm/lucide-react.js",
+          ),
+        },
+        {
+          find: /^@qwenpaw\/plugin-sdk$/,
+          replacement: path.resolve(
+            __dirname,
+            "../src/qwenpaw/plugins/frontend/index.js",
+          ),
+        },
         // Resolve the beta's real ESM entry for Vitest, without masking SDK subpaths.
         {
           find: /^@agentscope-ai\/chat$/,

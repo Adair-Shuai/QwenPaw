@@ -4,6 +4,7 @@ import { buildAuthHeaders } from "../authHeaders";
 import { isUGSciCatalogPlugin, UPSTREAM_PLUGIN_CDN } from "../../distribution";
 import { ApiError } from "../request";
 import { componentsApi } from "./components";
+import type { InstallationOrigin } from "../types/community";
 import { formatApiError, responseErrorMessage } from "../error";
 import { requestWithPluginBusyConfirmation } from "../pluginBusy";
 
@@ -24,6 +25,7 @@ export type PluginType =
  * A single plugin record returned by `GET /api/plugins`.
  */
 export interface PluginInfo {
+  installation_origin?: InstallationOrigin | null;
   id: string;
   name: string;
   version: string;
@@ -169,6 +171,9 @@ export const cancelDependencyUpgrade = (id: string) =>
   requestDependencyUpgrade(id, "DELETE");
 
 export interface PluginStatus {
+  clean?: boolean;
+  needs_restart?: boolean;
+  errors?: string[];
   id: string;
   loaded: boolean;
   status?: string;
@@ -337,6 +342,35 @@ export async function fetchPlugins(): Promise<PluginInfo[]> {
   }
 
   return response.json();
+}
+
+/** Persist enabled state through the host's existing lifecycle endpoint. */
+export async function setPluginEnabled(
+  pluginId: string,
+  enabled: boolean,
+): Promise<PluginStatus> {
+  const response = await requestWithPluginBusyConfirmation(
+    (interruptTasks) =>
+      fetch(getApiUrl(`/plugins/${encodeURIComponent(pluginId)}/enabled`), {
+        method: "POST",
+        headers: { ...buildAuthHeaders(), "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled,
+          ...(interruptTasks ? { interrupt_tasks: true } : {}),
+        }),
+      }),
+    enabled ? "update" : "disable",
+  );
+  if (!response.ok)
+    throw new Error(
+      await responseErrorMessage(
+        response,
+        `Activation failed (${response.status})`,
+      ),
+    );
+  const result = await response.json();
+  notifyPluginChange();
+  return result;
 }
 
 /**
@@ -679,7 +713,9 @@ export async function uploadPlugin(file: File): Promise<InstallPluginResult> {
     (interruptTasks) =>
       fetch(
         getApiUrl(
-          `/plugins/upload${interruptTasks ? "?interrupt_tasks=true" : ""}`,
+          `/plugins/upload?force=true${
+            interruptTasks ? "&interrupt_tasks=true" : ""
+          }`,
         ),
         {
           method: "POST",
@@ -715,7 +751,9 @@ export async function repairPluginDependencies(
       `Dependency repair failed (${response.status})`,
     );
   }
-  return response.json();
+  const result = await response.json();
+  notifyPluginChange();
+  return result;
 }
 
 /**
