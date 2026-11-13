@@ -4,13 +4,14 @@
 from __future__ import annotations
 
 import json
-import os
 import shutil
 import tempfile
 from pathlib import Path
 from typing import Any
 
 from qwenpaw.plugins.harnesses import HarnessRuntimeCapabilities
+
+from .io_helpers import replace_directory
 
 _PLUGIN_NAME = "qwenpaw-runtime"
 
@@ -58,7 +59,7 @@ def materialize_skill_plugin(
                 skill_root / skill.name,
             )
         try:
-            os.replace(temporary, target)
+            replace_directory(temporary, target)
         except OSError:
             if not target.is_dir():
                 raise

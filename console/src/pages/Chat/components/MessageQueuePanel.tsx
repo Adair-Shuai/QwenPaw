@@ -565,7 +565,7 @@ export default function MessageQueuePanel({
                           <IconButton
                             bordered={false}
                             size="small"
-                        iconSize={13}
+                            iconSize={13}
                             icon={
                               <SparkRefreshLine
                                 size="1em"
@@ -586,7 +586,7 @@ export default function MessageQueuePanel({
                           <IconButton
                             bordered={false}
                             size="small"
-                        iconSize={13}
+                            iconSize={13}
                             icon={
                               <SparkNextSentenceLine
                                 size="1em"

@@ -87,14 +87,14 @@ describe("RouteDocumentTitle", () => {
       });
     });
     await act(() => vi.advanceTimersByTimeAsync(30800));
-    expect(document.title).toBe("Project plan · QwenPaw");
+    expect(document.title).toBe("Project plan · UGSci");
 
     vi.spyOn(document, "hidden", "get").mockReturnValue(false);
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
     act(() => document.dispatchEvent(new Event("visibilitychange")));
-    expect(document.title).toBe("Project plan · QwenPaw");
+    expect(document.title).toBe("Project plan · UGSci");
     await act(() => vi.advanceTimersByTimeAsync(1600));
-    expect(document.title).toBe("Project plan · QwenPaw");
+    expect(document.title).toBe("Project plan · UGSci");
   });
 
   it("keeps completion in the favicon until the current tab becomes visible", () => {
@@ -115,7 +115,7 @@ describe("RouteDocumentTitle", () => {
         sessions: [{ ...initial, lastFinishedAt: "2026-11-09T10:00:00Z" }],
       });
     });
-    expect(document.title).toBe("Project plan · QwenPaw");
+    expect(document.title).toBe("Project plan · UGSci");
     expect(
       decodeURIComponent(
         document.querySelector<HTMLLinkElement>('link[rel="icon"]')!.href,
@@ -124,7 +124,7 @@ describe("RouteDocumentTitle", () => {
 
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
     act(() => document.dispatchEvent(new Event("visibilitychange")));
-    expect(document.title).toBe("Project plan · QwenPaw");
+    expect(document.title).toBe("Project plan · UGSci");
     const agentId = useAgentStore.getState().selectedAgent;
     expect(
       useSessionAttentionStore.getState().seenFinishedAt[`${agentId}:chat-a`],
@@ -132,7 +132,7 @@ describe("RouteDocumentTitle", () => {
 
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
     act(() => document.dispatchEvent(new Event("visibilitychange")));
-    expect(document.title).toBe("Project plan · QwenPaw");
+    expect(document.title).toBe("Project plan · UGSci");
   });
 
   it("refreshes a hidden current chat after successful completion", async () => {
@@ -163,7 +163,7 @@ describe("RouteDocumentTitle", () => {
     await waitFor(() =>
       expect(sessionListMocks.getSessionList).toHaveBeenCalledOnce(),
     );
-    expect(document.title).toBe("Project plan · QwenPaw");
+    expect(document.title).toBe("Project plan · UGSci");
 
     currentSessions = [completed];
     await act(async () => {
@@ -181,7 +181,7 @@ describe("RouteDocumentTitle", () => {
     vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
     vi.spyOn(document, "hidden", "get").mockReturnValue(false);
     act(() => document.dispatchEvent(new Event("visibilitychange")));
-    expect(document.title).toBe("Project plan · QwenPaw");
+    expect(document.title).toBe("Project plan · UGSci");
   });
 
   it.each(["idle", "running"])(
@@ -199,7 +199,7 @@ describe("RouteDocumentTitle", () => {
       act(() => {
         useSessionListStore.setState({ sessions: [{ ...initial, status }] });
       });
-      expect(document.title).toBe("Project plan · QwenPaw");
+      expect(document.title).toBe("Project plan · UGSci");
     },
   );
 
@@ -228,7 +228,7 @@ describe("RouteDocumentTitle", () => {
 
       render(<RouteDocumentTitle title="Chat" sessionId={sessionId} />);
 
-      expect(document.title).toBe("Project plan · QwenPaw");
+      expect(document.title).toBe("Project plan · UGSci");
     },
   );
 
@@ -250,7 +250,7 @@ describe("RouteDocumentTitle", () => {
 
       render(<RouteDocumentTitle title="Chat" sessionId="chat-b" />);
 
-      expect(document.title).toBe("Conversation B · QwenPaw");
+      expect(document.title).toBe("Conversation B · UGSci");
     },
   );
 
@@ -274,7 +274,7 @@ describe("RouteDocumentTitle", () => {
 
     render(<RouteDocumentTitle title="Chat" sessionId="local-b" />);
 
-    expect(document.title).toBe("Conversation B · QwenPaw");
+    expect(document.title).toBe("Conversation B · UGSci");
   });
 
   it("uses the route title for an ambiguous runtime alias", () => {
@@ -287,7 +287,7 @@ describe("RouteDocumentTitle", () => {
 
     render(<RouteDocumentTitle title="Chat" sessionId="shared" />);
 
-    expect(document.title).toBe("Chat · QwenPaw");
+    expect(document.title).toBe("Chat · UGSci");
   });
 
   it("updates the title when switching sessions or leaving chat", () => {
@@ -300,42 +300,42 @@ describe("RouteDocumentTitle", () => {
     const { rerender } = render(
       <RouteDocumentTitle title="Chat" sessionId="chat-a" />,
     );
-    expect(document.title).toBe("Project plan · QwenPaw");
+    expect(document.title).toBe("Project plan · UGSci");
 
     rerender(<RouteDocumentTitle title="Chat" sessionId="chat-b" />);
-    expect(document.title).toBe("Release notes · QwenPaw");
+    expect(document.title).toBe("Release notes · UGSci");
 
     rerender(<RouteDocumentTitle title="Models" />);
-    expect(document.title).toBe("Models · QwenPaw");
+    expect(document.title).toBe("Models · UGSci");
 
     act(() => {
       useSessionListStore.setState({
         sessions: [{ id: "chat-b", name: "Renamed chat", messages: [] }],
       });
     });
-    expect(document.title).toBe("Models · QwenPaw");
+    expect(document.title).toBe("Models · UGSci");
   });
 
   it("tracks session loading, renaming, and removal through the shared store", () => {
     render(<RouteDocumentTitle title="Chat" sessionId="chat-a" />);
-    expect(document.title).toBe("Chat · QwenPaw");
+    expect(document.title).toBe("Chat · UGSci");
 
     act(() => {
       useSessionListStore.setState({
         sessions: [{ id: "chat-a", name: "Project plan", messages: [] }],
       });
     });
-    expect(document.title).toBe("Project plan · QwenPaw");
+    expect(document.title).toBe("Project plan · UGSci");
 
     act(() => {
       useSessionListStore.setState({
         sessions: [{ id: "chat-a", name: "Release notes", messages: [] }],
       });
     });
-    expect(document.title).toBe("Release notes · QwenPaw");
+    expect(document.title).toBe("Release notes · UGSci");
 
     act(() => useSessionListStore.setState({ sessions: [] }));
-    expect(document.title).toBe("Chat · QwenPaw");
+    expect(document.title).toBe("Chat · UGSci");
   });
 
   it.each(["", "   "])(
@@ -347,7 +347,7 @@ describe("RouteDocumentTitle", () => {
 
       render(<RouteDocumentTitle title="聊天" sessionId="chat-a" />);
 
-      expect(document.title).toBe("聊天 · QwenPaw");
+      expect(document.title).toBe("聊天 · UGSci");
     },
   );
 
@@ -363,7 +363,7 @@ describe("RouteDocumentTitle", () => {
 
       render(<RouteDocumentTitle title="Chat" sessionId={sessionId} />);
 
-      expect(document.title).toBe("Chat · QwenPaw");
+      expect(document.title).toBe("Chat · UGSci");
     },
   );
 
@@ -378,7 +378,7 @@ describe("RouteDocumentTitle", () => {
       render(<RouteDocumentTitle title="Chat" sessionId="chat-a" />);
 
       expect(onTitleChange).toHaveBeenLastCalledWith(
-        expect.objectContaining({ detail: "Project plan · QwenPaw" }),
+        expect.objectContaining({ detail: "Project plan · UGSci" }),
       );
 
       act(() => {
@@ -387,7 +387,7 @@ describe("RouteDocumentTitle", () => {
         });
       });
       expect(onTitleChange).toHaveBeenLastCalledWith(
-        expect.objectContaining({ detail: "Release notes · QwenPaw" }),
+        expect.objectContaining({ detail: "Release notes · UGSci" }),
       );
     } finally {
       document.removeEventListener(
@@ -399,7 +399,7 @@ describe("RouteDocumentTitle", () => {
 
   it("keeps the brand title unchanged when no route is selected", () => {
     render(<RouteDocumentTitle title="QwenPaw" />);
-    expect(document.title).toBe("QwenPaw");
+    expect(document.title).toBe("UGSci");
   });
 });
 

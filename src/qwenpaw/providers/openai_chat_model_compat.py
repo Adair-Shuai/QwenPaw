@@ -282,6 +282,7 @@ _MAP_SCHEMA_KEYWORDS = frozenset(
 )
 
 
+# pylint: disable-next=R0912
 def _walk_schema(
     schema: dict[str, Any],
     transform: Callable[[Any], Any],

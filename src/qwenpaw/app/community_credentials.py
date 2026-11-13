@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Private encrypted community credentials, never process environment values."""
+"""
+Private encrypted community credentials, never process environment values.
+"""
 
 import json
 import os
@@ -64,7 +66,9 @@ def _load() -> dict:
 
 
 def load() -> dict:
-    """Internal only: no caller may serialize this dict into an API response."""
+    """
+    Internal only: no caller may serialize this dict into an API response.
+    """
     with get_sync_path_lock(_CREDENTIAL_PATH):
         try:
             return _load()

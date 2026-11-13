@@ -92,7 +92,7 @@ export function useImportJob() {
       const parsed = parseErrorDetail(reason);
       const requirement =
         parsed?.code === "harness_plugin_required"
-          ? (parsed as HarnessPluginRequirement)
+          ? (parsed as unknown as HarnessPluginRequirement)
           : undefined;
       const errorMessage = requirement
         ? t("portabilityImport.harnessRequired", {

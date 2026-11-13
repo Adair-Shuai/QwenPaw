@@ -381,7 +381,8 @@ def desktop_cmd(
         # Using a flag is more reliable than checking specific exit codes
         if proc and proc.returncode != 0 and not manually_terminated:
             logger.error(
-                f"Backend process exited unexpectedly with code {proc.returncode}",
+                "Backend process exited unexpectedly with code "
+                f"{proc.returncode}",
             )
             # Follow POSIX convention for exit codes:
             # - Negative (signal): 128 + signal_number

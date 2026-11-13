@@ -364,7 +364,7 @@ class CronExecutor:
                 None,
                 _tracked_stream,
                 owner=self._workspace,
-                on_finished=chat_manager.mark_chat_finished,
+                on_succeeded=chat_manager.mark_chat_finished,
                 channel_id=target_channel,
             )
             if not is_new_run:

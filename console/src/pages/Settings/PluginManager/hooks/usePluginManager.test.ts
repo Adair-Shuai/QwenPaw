@@ -79,12 +79,8 @@ vi.mock("antd", () => ({
 
 import { usePluginManager } from "./usePluginManager";
 
-const {
-  messageMock,
-  modalConfirmMock,
-  refreshMock,
-  uninstallPluginMock,
-} = hoisted;
+const { messageMock, modalConfirmMock, refreshMock, uninstallPluginMock } =
+  hoisted;
 
 function makePlugin(): PluginInfo {
   return {

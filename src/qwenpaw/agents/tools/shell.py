@@ -1477,6 +1477,7 @@ async def execute_shell_command(
             return code will be -1 and stderr will contain timeout information.
     """
 
+    del title
     shell_executable = (
         get_current_shell_command_executable()
         or os.environ.get("SHELL")

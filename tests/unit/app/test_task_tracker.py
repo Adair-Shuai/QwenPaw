@@ -186,7 +186,7 @@ async def test_completion_callback_requires_successful_response(
         f"completion-test",
         payload=None,
         stream_fn=_make_stream([f"data: {json.dumps(event)}\n\n"]),
-        on_finished=callback,
+        on_succeeded=callback,
     )
     async for _ in tracker.stream_from_queue(queue, f"completion-test"):
         pass
@@ -212,7 +212,7 @@ async def test_failed_or_canceled_producer_does_not_mark_completion(cancel):
         f"interrupted-test",
         payload=None,
         stream_fn=stream,
-        on_finished=callback,
+        on_succeeded=callback,
     )
     async for _ in tracker.stream_from_queue(queue, f"interrupted-test"):
         pass
@@ -239,7 +239,7 @@ async def test_client_disconnect_waits_for_actual_background_completion():
         f"detached-completion",
         payload=None,
         stream_fn=stream,
-        on_finished=callback,
+        on_succeeded=callback,
     )
     await asyncio.wait_for(started.wait(), timeout=1)
     await tracker.detach_subscriber(f"detached-completion", queue)

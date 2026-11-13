@@ -137,7 +137,7 @@ class HarnessSessionBridge:
         proxy = StateProxy()
         agent_data["state"] = state
         proxy.data = agent_data
-        from ..runtime.console_turn_state import stamp_console_turn
+        from ..console_turn_state import stamp_console_turn
 
         stamp_console_turn(
             proxy.data,

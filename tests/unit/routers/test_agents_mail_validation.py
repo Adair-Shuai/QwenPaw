@@ -426,6 +426,7 @@ def test_update_agent_rejects_mail_when_existing_backend_third_party():
 def test_update_agent_rejects_mail_with_explicit_third_party_backend(
     installed_router_harnesses,
 ):
+    del installed_router_harnesses
     body = AgentProfileConfig(
         id="a1",
         name="bot",
@@ -699,6 +700,7 @@ def test_update_qwenpaw_to_third_party_revokes_driver_card(
     tmp_path,
     installed_router_harnesses,
 ):
+    del installed_router_harnesses
     updated = _run_mail_revocation_update(
         tmp_path,
         AgentProfileConfig(

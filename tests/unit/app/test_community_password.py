@@ -379,7 +379,8 @@ async def test_saved_credentials_are_not_inherited_by_tool_processes(tmp_path):
     result = await NoneSandbox(
         SandboxConfig(mode=SandboxMode.NONE, workspace_dir=str(tmp_path)),
     ).execute(
-        "python -c \"import os; print('LEAK' if 'QWENPAW_COMMUNITY_PASSWORD' in os.environ else 'CLEAN')\"",
+        "python -c \"import os; print('LEAK' if 'QWENPAW_"
+        "COMMUNITY_PASSWORD' in os.environ else 'CLEAN')\"",
     )
     assert result.exit_code == 0
     assert result.stdout.strip() == "CLEAN"

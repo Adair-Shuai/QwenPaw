@@ -139,17 +139,17 @@ describe("chat route ownership resolution", () => {
     });
     vi.spyOn(api, "listChats").mockResolvedValue([]);
     render(<RouteDocumentTitle title="Chat" sessionId={TARGET} />);
-    expect(document.title).toBe("Chat · QwenPaw");
+    expect(document.title).toBe("Chat · UGSci");
 
     const { result, unmount } = mount(TARGET);
     await waitFor(() => expect(result.current.blocked).toBe(false));
-    expect(document.title).toBe("Target conversation · QwenPaw");
+    expect(document.title).toBe("Target conversation · UGSci");
 
     await act(async () => {
       syncSessionsGlobal(await sessionApi.getSessionList());
     });
     expect(useSessionListStore.getState().sessions).toEqual([]);
-    expect(document.title).toBe("Target conversation · QwenPaw");
+    expect(document.title).toBe("Target conversation · UGSci");
 
     act(() => {
       sessionApi.registerResolvedChat(
@@ -157,16 +157,16 @@ describe("chat route ownership resolution", () => {
         sessionApi.getActiveOwner(),
       );
     });
-    expect(document.title).toBe("Renamed archived Chat · QwenPaw");
+    expect(document.title).toBe("Renamed archived Chat · UGSci");
 
     const previousOwner = sessionApi.getActiveOwner();
     unmount();
     act(() => useAgentStore.setState({ selectedAgent: "b" }));
-    expect(document.title).toBe("Chat · QwenPaw");
+    expect(document.title).toBe("Chat · UGSci");
 
     act(() => sessionApi.registerResolvedChat(chat(), previousOwner));
     expect(useSessionListStore.getState().resolvedRouteSession).toBeNull();
-    expect(document.title).toBe("Chat · QwenPaw");
+    expect(document.title).toBe("Chat · UGSci");
   });
 
   it.each([undefined, "new"])(

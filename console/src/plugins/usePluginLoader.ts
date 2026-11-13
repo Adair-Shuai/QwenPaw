@@ -80,6 +80,13 @@ function watchChanges(): void {
   };
 }
 
+function isHarnessFrontend(plugin: FrontendPluginInfo): boolean {
+  return (
+    Boolean(plugin.harnesses?.length) ||
+    harnessRegistry.getSnapshot().some((row) => row.plugin_id === plugin.id)
+  );
+}
+
 function canExecute(plugin: FrontendPluginInfo): boolean {
   if (
     !plugin.frontend_entry ||
@@ -100,7 +107,6 @@ function canExecute(plugin: FrontendPluginInfo): boolean {
     ),
   );
 }
-
 
 function clearRuntime(pluginId: string): void {
   removePluginRuntime(pluginId);
@@ -231,7 +237,9 @@ async function executeFrontendPlugin(
   const started = revision;
   const assertExecutable = () => {
     if (started !== revision || !canExecute(plugin))
-      throw new Error(`Plugin became unavailable before execution: ${plugin.id}`);
+      throw new Error(
+        `Plugin became unavailable before execution: ${plugin.id}`,
+      );
   };
   try {
     assertExecutable();
@@ -271,7 +279,8 @@ export async function loadAllPlugins(
     console.warn("[PluginLoader] failed to fetch plugin list:", error);
     return { loaded: 0, failed: [] };
   }
-  await refreshHarnessCatalog().catch(() => {});
+  if (plugins.some(isHarnessFrontend))
+    await refreshHarnessCatalog().catch(() => {});
   // A slow earlier manifest must not restore plugins removed by a newer one.
   if (request !== manifestRequest) return { loaded: 0, failed: [] };
   const loadable = plugins.filter(canExecute);
@@ -335,7 +344,8 @@ function loadFrontendPlugin(
   const promise = enqueue(pluginId, async () => {
     const plugins = await fetchFrontendPlugins();
     const plugin = plugins.find((item) => item.id === pluginId);
-    await refreshHarnessCatalog().catch(() => {});
+    if (plugin && isHarnessFrontend(plugin))
+      await refreshHarnessCatalog().catch(() => {});
     if (!plugin || !canExecute(plugin)) {
       clearRuntime(pluginId);
       if (options.expectedType === "app") {

@@ -11,7 +11,6 @@ from __future__ import annotations
 import json
 import runpy
 from pathlib import Path
-from urllib.parse import quote
 import sqlite3
 import shutil
 import subprocess

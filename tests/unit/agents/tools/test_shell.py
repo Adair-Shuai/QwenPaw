@@ -1288,6 +1288,7 @@ class TestExecuteShellCommand:
                 AsyncMock(return_value=(0, "hello\n", "")),
             ),
         ):
+            # pylint: disable-next=W0404,W0621
             from qwenpaw.agents.tools.shell import (
                 execute_shell_command,
             )
@@ -1319,6 +1320,7 @@ class TestExecuteShellCommand:
                 AsyncMock(return_value=(0, "A\nB", "")),
             ) as execute_posix,
         ):
+            # pylint: disable-next=W0404,W0621
             from qwenpaw.agents.tools.shell import execute_shell_command
 
             result = await execute_shell_command(command)
@@ -1350,6 +1352,7 @@ class TestExecuteShellCommand:
                 AsyncMock(return_value=(1, "", "error msg\n")),
             ),
         ):
+            # pylint: disable-next=W0404,W0621
             from qwenpaw.agents.tools.shell import (
                 execute_shell_command,
             )
@@ -1382,6 +1385,7 @@ class TestExecuteShellCommand:
                 AsyncMock(return_value=(0, "", "")),
             ),
         ):
+            # pylint: disable-next=W0404,W0621
             from qwenpaw.agents.tools.shell import (
                 execute_shell_command,
             )
@@ -1414,6 +1418,7 @@ class TestExecuteShellCommand:
                 AsyncMock(return_value=(0, "ok", "")),
             ),
         ):
+            # pylint: disable-next=W0404,W0621
             from qwenpaw.agents.tools.shell import (
                 execute_shell_command,
             )
@@ -1446,6 +1451,7 @@ class TestExecuteShellCommand:
                 AsyncMock(return_value=(0, "ok", "")),
             ),
         ):
+            # pylint: disable-next=W0404,W0621
             from qwenpaw.agents.tools.shell import (
                 execute_shell_command,
             )
@@ -1467,6 +1473,7 @@ class TestExecuteShellCommand:
         monkeypatch,
         tmp_path,
     ):
+        # pylint: disable-next=W0404,W0621
         from qwenpaw.agents.tools.shell import execute_shell_command
 
         system_bin = tmp_path / "system-bin"
@@ -2067,6 +2074,7 @@ async def test_unix_shell_cancellederror_uses_timeout_stderr():
     """kill_deadline CancelledError must surface TimeoutError text on Unix."""
     import asyncio
 
+    # pylint: disable-next=W0404,W0621
     from qwenpaw.agents.tools.shell import execute_shell_command
     from qwenpaw.tool_calls import reset_call_context, set_call_context
     from qwenpaw.tool_calls._context import CancelReason, ToolCallContext
@@ -2141,6 +2149,7 @@ async def test_unix_shell_cancellederror_uses_timeout_stderr():
 async def test_unix_shell_cancellederror_uses_user_cancel_stderr():
     import asyncio
 
+    # pylint: disable-next=W0404,W0621
     from qwenpaw.agents.tools.shell import execute_shell_command
     from qwenpaw.tool_calls import reset_call_context, set_call_context
     from qwenpaw.tool_calls._context import CancelReason, ToolCallContext
@@ -2708,6 +2717,7 @@ async def test_windows_host_task_cancel_still_sets_stop_event():
 @pytest.mark.asyncio
 async def test_execute_shell_command_win32_uses_windows_host():
     """Host shell on win32 must go through the dual-deadline helper."""
+    # pylint: disable-next=W0404,W0621
     from qwenpaw.agents.tools.shell import execute_shell_command
 
     with (
@@ -2762,6 +2772,7 @@ async def test_non_dataclass_sandbox_config_ignored(
     """
     import logging
 
+    # pylint: disable-next=W0404,W0621
     from qwenpaw.agents.tools.shell import execute_shell_command
 
     monkeypatch.setenv("SHELL", "/bin/sh")

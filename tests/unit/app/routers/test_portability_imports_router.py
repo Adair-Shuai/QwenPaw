@@ -66,6 +66,7 @@ class _Jobs:
 
 @pytest.fixture(name="api")
 def _api(monkeypatch, installed_router_harnesses):
+    del installed_router_harnesses
     workspace = SimpleNamespace(agent_id="paw")
     jobs = _Jobs()
 
@@ -86,6 +87,8 @@ async def test_sources_probe_only_returns_detection(
     monkeypatch,
     installed_router_harnesses,
 ):
+    del installed_router_harnesses
+
     def locate(source):
         return SourceLocation(
             provider_id=source,

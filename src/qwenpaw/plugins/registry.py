@@ -524,6 +524,7 @@ class PluginRegistry:  # pylint:disable=too-many-public-methods
                 len(stale),
                 plugin_id,
             )
+
     @property
     def backend_registry_initialized(self):
         """Check declaration presence without importing backend machinery."""

@@ -28,10 +28,9 @@ export function useTerminalEnabled(agentId = "default") {
     if (!authEnabled) return;
 
     const controller = new AbortController();
-    let confirmed = false;
     let requesting = false;
     const refresh = async () => {
-      if (confirmed || requesting) return;
+      if (requesting) return;
       requesting = true;
       try {
         const status = await request<{ enabled: boolean; reason?: string }>(
@@ -39,12 +38,14 @@ export function useTerminalEnabled(agentId = "default") {
           { signal: controller.signal, headers: { "X-Agent-Id": agentId } },
         );
         if (!controller.signal.aborted) {
-          confirmed = true;
-          setStates((current) => ({ ...current, [agentId]: {
-            enabled: status.enabled === true,
-            reason: status.reason ?? "",
-            confirmed: true,
-          }}));
+          setStates((current) => ({
+            ...current,
+            [agentId]: {
+              enabled: status.enabled === true,
+              reason: status.reason ?? "",
+              confirmed: true,
+            },
+          }));
         }
       } catch {
         // Retry an unconfirmed transient failure when the window regains focus.

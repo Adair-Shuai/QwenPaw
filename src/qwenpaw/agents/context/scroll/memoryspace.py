@@ -22,7 +22,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from pathlib import Path
-from urllib.parse import quote
 
 if __package__:
     from ....utils.sqlite_uri import sqlite_uri

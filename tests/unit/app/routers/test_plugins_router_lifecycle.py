@@ -384,6 +384,7 @@ class TestListPluginsRoute:
                 "plugin_type": "general",
                 "frontend_entry": None,
                 "frontend_revision": "9.9",
+                "sdk_harnesses": False,
                 "market_id": None,
                 "installation_origin": None,
             },

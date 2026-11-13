@@ -61,15 +61,14 @@ describe("frontend plugin loader", () => {
           plugin("notes", "app"),
         ]),
       )
-      .mockResolvedValueOnce(jsonResponse({ backends: [] }))
       .mockImplementation(async () => new Response("export default true"));
 
     await expect(loadAllPlugins()).resolves.toEqual({
       loaded: 2,
       failed: [],
     });
-    expect(fetchMock).toHaveBeenCalledTimes(4);
-    expect(fetchMock.mock.calls[1][0]).toContain("/agents/backends");
+    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock.mock.calls[1][0]).toContain("/files/");
   });
 
   it("loads an enabled Harness and skips a disabled Harness", async () => {
@@ -192,7 +191,6 @@ describe("frontend plugin loader", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     fetchMock
       .mockResolvedValueOnce(jsonResponse([plugin("notes", "app")]))
-      .mockResolvedValueOnce(jsonResponse({ backends: [] }))
       .mockResolvedValueOnce(new Response("globalThis.__registerNotes()"));
 
     await expect(loadPawApp("notes")).resolves.toBeUndefined();
@@ -205,7 +203,6 @@ describe("frontend plugin loader", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     fetchMock
       .mockResolvedValueOnce(jsonResponse([plugin("notes", "app")]))
-      .mockResolvedValueOnce(jsonResponse({ backends: [] }))
       .mockResolvedValueOnce(new Response("missing", { status: 503 }));
 
     const first = loadPawApp("notes");
@@ -214,7 +211,6 @@ describe("frontend plugin loader", () => {
 
     fetchMock
       .mockResolvedValueOnce(jsonResponse([plugin("notes", "app")]))
-      .mockResolvedValueOnce(jsonResponse({ backends: [] }))
       .mockImplementationOnce(async () => {
         routeRegistry.add("notes", {
           id: "notes.page",
@@ -254,11 +250,10 @@ describe("frontend plugin loader", () => {
     const fetchMock = vi.spyOn(globalThis, "fetch");
     fetchMock
       .mockResolvedValueOnce(jsonResponse([plugin("notes", "app")]))
-      .mockResolvedValueOnce(jsonResponse({ backends: [] }))
       .mockResolvedValueOnce(new Response("updated"));
 
     await expect(reloadPawApp("notes")).resolves.toBeUndefined();
-    expect(fetchMock).toHaveBeenCalledTimes(3);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(routeRegistry.snapshot()[0].Component).toBe(newComponent);
     expect(routeRegistry.snapshot()[0].Component).not.toBe(oldComponent);
   });

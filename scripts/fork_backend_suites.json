@@ -1,6 +1,8 @@
 {
   "groups": {
-    "answerFileReferences": ["tests/unit/runtime/test_prompt_contributors.py"],
+    "answerFileReferences": [
+      "tests/unit/runtime/test_prompt_contributors.py"
+    ],
     "ugsci": [
       "tests/unit/plugins/ugsci/test_bundle_sync.py",
       "tests/unit/plugins/ugsci/test_derivation_workbench_frontend.py",
@@ -123,12 +125,16 @@
       "tests/unit/plugins/test_openui.py",
       "tests/unit/plugins/test_openui_interactions.py"
     ],
-    "avatars": ["tests/unit/app/routers/test_avatars_router.py"],
+    "avatars": [
+      "tests/unit/app/routers/test_avatars_router.py"
+    ],
     "document_forms": [
       "plugins/apps/document-forms/tests/test_document_forms.py",
       "plugins/apps/document-forms/tests/test_publication.py"
     ],
-    "uideas": ["tests/unit/plugins/test_uideas_workbench.py"],
+    "uideas": [
+      "tests/unit/plugins/test_uideas_workbench.py"
+    ],
     "inventory": [
       "tests/unit/verify/test_fork_regression_inventory.py",
       "tests/unit/verify/test_pylint_namespace.py",
@@ -175,8 +181,12 @@
       "tests/unit/plugins/run_center/test_research_router_contract.py",
       "tests/unit/plugins/run_center/test_research.py"
     ],
-    "research_mode": ["tests/unit/plugins/test_research_mode_registration.py"],
-    "uproject": ["tests/unit/plugins/test_uproject_app.py"],
+    "research_mode": [
+      "tests/unit/plugins/test_research_mode_registration.py"
+    ],
+    "uproject": [
+      "tests/unit/plugins/test_uproject_app.py"
+    ],
     "turnFileDelivery": [
       "tests/unit/test_turn_files.py",
       "tests/unit/runtime/test_turn_file_lifecycle.py"
@@ -193,7 +203,9 @@
       "tests/unit/plugins/test_official_channel_bundle.py",
       "tests/unit/tauri/test_ugsci_release_data.py"
     ],
-    "ulit": ["tests/unit/plugins/test_ulit_database.py"],
+    "ulit": [
+      "tests/unit/plugins/test_ulit_database.py"
+    ],
     "steering": [
       "tests/unit/app/test_steering.py",
       "tests/unit/runtime/test_console_turn_state.py",
@@ -229,13 +241,67 @@
       "tests/unit/runtime/test_tool_discovery_accuracy.py",
       "tests/unit/drivers/handlers/test_mcp_catalog_refresh.py"
     ],
-    "contextInspection": ["tests/unit/app/chats/test_context_inspection.py"],
+    "contextInspection": [
+      "tests/unit/app/chats/test_context_inspection.py"
+    ],
     "workspaceTerminals": [
       "tests/unit/routers/test_terminal_router.py",
       "tests/unit/services/test_terminal.py",
       "tests/unit/services/test_terminal_windows.py",
       "tests/unit/services/test_terminal_windows_control.py",
       "tests/unit/services/test_terminal_availability.py"
+    ],
+    "upstream_week_2026_11_09": [
+      "plugins/harness/codex/tests/test_codex_harness.py",
+      "plugins/harness/qoder/tests/test_qoder_harness.py",
+      "tests/unit/agents/context/test_history_sqlite_paths.py",
+      "tests/unit/agents/context/test_history_store.py",
+      "tests/unit/app/chats/test_api_project_dirs_and_crud.py",
+      "tests/unit/app/chats/test_attachment_history.py",
+      "tests/unit/app/crons/test_executor.py",
+      "tests/unit/app/routers/test_agents_router.py",
+      "tests/unit/app/routers/test_console_chat_task.py",
+      "tests/unit/app/routers/test_console_chat_task_timeout.py",
+      "tests/unit/app/routers/test_portability_imports_router.py",
+      "tests/unit/app/routers/test_skills_router_pool_ops.py",
+      "tests/unit/app/routers/test_workspace_router_agent_surface.py",
+      "tests/unit/app/test_agents_ordering.py",
+      "tests/unit/app/test_community_browse.py",
+      "tests/unit/app/test_community_feedback.py",
+      "tests/unit/app/test_community_inbox_isolation.py",
+      "tests/unit/app/test_community_password.py",
+      "tests/unit/app/test_community_report.py",
+      "tests/unit/app/test_community_store.py",
+      "tests/unit/app/test_cron_reload.py",
+      "tests/unit/cli/test_desktop_cmd.py",
+      "tests/unit/cli/test_plugin_commands.py",
+      "tests/unit/governance/test_policy.py",
+      "tests/unit/harnesses/test_agent_backend_config.py",
+      "tests/unit/harnesses/test_workspace_routing.py",
+      "tests/unit/hub/test_control_app.py",
+      "tests/unit/plugins/test_download_catalog.py",
+      "tests/unit/plugins/test_generate_plugin_metadata.py",
+      "tests/unit/plugins/test_loader_dep_probing.py",
+      "tests/unit/plugins/test_loader_helpers.py",
+      "tests/unit/plugins/test_plugin_failure_recovery.py",
+      "tests/unit/plugins/test_plugin_install_target_safety.py",
+      "tests/unit/plugins/test_plugin_process.py",
+      "tests/unit/plugins/test_sdk_harness.py",
+      "tests/unit/portability/test_import_conversations.py",
+      "tests/unit/portability/test_import_jobs.py",
+      "tests/unit/portability/test_importer.py",
+      "tests/unit/portability/test_migration_providers.py",
+      "tests/unit/providers/test_openai_tool_schema_compat.py",
+      "tests/unit/routers/test_agents_mail_validation.py",
+      "tests/unit/runtime/backends/test_harness_runtime.py",
+      "tests/unit/sandbox/test_config_volume_root.py",
+      "tests/unit/sandbox/test_windows_elevated_sandbox.py",
+      "tests/unit/sandbox/test_windows_unelevated_sandbox.py",
+      "tests/unit/security/tool_guard/guardians/test_office_com_rule.py",
+      "tests/unit/tauri/test_pyinstaller_spec.py",
+      "tests/unit/test_community_connection.py",
+      "tests/unit/test_installation_origin.py",
+      "tests/unit/app/routers/test_plugins_router_helpers.py"
     ]
   },
   "required_cases": {
@@ -380,7 +446,8 @@
     "tests/unit/tauri/test_ugsci_release_data.py": [
       "test_runtime_bundle_install_excludes_samples_and_keeps_user_imports",
       "test_runtime_hash_matches_legacy_without_entering_excluded_trees",
-      "test_runtime_copy_uses_manifest_identity_and_ignores_pack_exclude"
+      "test_runtime_copy_uses_manifest_identity_and_ignores_pack_exclude",
+      "test_runtime_bundle_retries_windows_sharing_and_preserves_user_data"
     ],
     "tests/unit/plugins/test_module_isolation_paths.py": [
       "test_existing_module_path_needs_one_native_resolution",
@@ -947,7 +1014,8 @@
       "test_third_party_turn_has_same_durable_file_contract",
       "test_no_tool_turn_does_not_claim_ambient_shared_workspace_writes",
       "test_actual_native_tool_funnel_marks_capture_before_filesystem_effects",
-      "test_third_party_text_only_turn_does_not_claim_external_writes"
+      "test_third_party_text_only_turn_does_not_claim_external_writes",
+      "test_harness_captures_bound_additional_project_roots"
     ],
     "tests/unit/plugins/test_manifest_dependencies.py": [
       "test_wheel_identity_and_header_validation",
@@ -1224,6 +1292,22 @@
       "test_plugin_preflight_reads_actual_objects_without_uploading",
       "test_release_expensive_jobs_require_immutable_plugin_preflight",
       "test_console_checkout_preserves_formatter_line_endings"
+    ],
+    "tests/unit/app/routers/test_plugins_router_helpers.py": [
+      "test_versioned_entry_gets_immutable_cache_without_request_in_worker"
+    ],
+    "tests/unit/test_installation_origin.py": [
+      "test_origin_write_failure_keeps_committed_plugin",
+      "test_dependency_plan_binds_source_and_accepts_legacy_plans",
+      "test_first_plugin_install_retries_windows_sharing"
+    ],
+    "plugins/harness/qoder/tests/test_qoder_harness.py": [
+      "test_skill_projection_retries_windows_sharing",
+      "test_directory_publication_preserves_permanent_errors"
+    ],
+    "tests/unit/plugins/test_sdk_harness.py": [
+      "test_boot_discovery_preserves_failed_harness_across_load_phases",
+      "test_offline_migration_prepares_saved_harness_without_execution"
     ]
   }
 }

@@ -601,7 +601,7 @@ class BaseChannel(ABC):
             self._stream_with_tracker,
             owner=self._workspace,
             channel_id=self.channel,
-            on_finished=self._workspace.chat_manager.mark_chat_finished,
+            on_succeeded=self._workspace.chat_manager.mark_chat_finished,
         )
 
         if is_new:

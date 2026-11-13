@@ -5,7 +5,9 @@ Covers the static helpers that decide whether a requirement is already
 satisfied (metadata probe + import probe) and enforce installer security.
 """
 
-# pylint: disable=protected-access,redefined-outer-name,unused-argument,use-implicit-booleaness-not-comparison  # noqa: E501
+# pylint: disable=protected-access,redefined-outer-name,unused-argument
+# Exact collection shapes are part of these contracts.
+# pylint: disable=use-implicit-booleaness-not-comparison
 from __future__ import annotations
 
 from functools import partial
@@ -22,6 +24,12 @@ from qwenpaw.plugins.architecture import PluginManifest
 from qwenpaw.plugins.loader import PluginLoader
 from qwenpaw.plugins.execution.dependencies import canonical_environment_path
 from tests.fs_alias_support import directory_alias
+
+# Keep registry isolation explicit during mixed app/host suite collection.
+from . import conftest as plugin_fixtures
+
+fresh_registry = plugin_fixtures.fresh_registry
+bounded_dependency_environment = plugin_fixtures.bounded_dependency_environment
 
 
 @pytest.mark.asyncio
@@ -43,6 +51,7 @@ from tests.fs_alias_support import directory_alias
         "legacy",
     ],
 )
+# pylint: disable-next=R0912,R0915
 async def test_interrupted_additions_require_verified_recovery(
     tmp_path,
     monkeypatch,
@@ -86,10 +95,12 @@ async def test_interrupted_additions_require_verified_recovery(
         package = support / "qwenpaw/plugins"
         package.mkdir(parents=True)
         (package.parent / "__init__.py").write_text(
-            "raise AssertionError('Recovery must not restart host bootstrap')\n",
+            "raise AssertionError('Recovery m"
+            "ust not restart host bootstrap')\n",
         )
+        original_package = Path(context["support_root"]) / "qwenpaw/plugins"
         (package / "__init__.py").write_text(
-            f"__path__ = {[str(Path(context['support_root']) / 'qwenpaw/plugins')]!r}\n",
+            f"__path__ = {[str(original_package)]!r}\n",
         )
         context["support_root"] = str(support)
 
@@ -2440,7 +2451,12 @@ sys.stdout.buffer.flush()
         )
         assert writer.returncode == 0, error
         assert output == b"COMPLETED\n"
-        records = await asyncio.wait_for(loading, WAIT_TIMEOUT)
+        # Activation after publication may include cold Windows imports.
+        # The contention and not-done assertions above retain their deadlines.
+        records = await asyncio.wait_for(
+            loading,
+            60 if os.name == "nt" else WAIT_TIMEOUT,
+        )
     finally:
         if writer.returncode is None:
             writer.kill()

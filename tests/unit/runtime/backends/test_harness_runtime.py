@@ -251,7 +251,7 @@ async def main():
                 Path(sys.argv[1])
                 / "workspaces/test/sessions/console/test.json"
             )
-            saved = json.loads(history.read_text())
+            saved = json.loads(history.read_text(encoding="utf-8"))
             assert any(block.get("text") == "native-answer"
                        for message in saved["agent"]["state"]["context"]
                        for block in message["content"])
@@ -275,6 +275,7 @@ def test_native_app_chat_and_history_do_not_touch_vendors(tmp_path):
         env=env,
         capture_output=True,
         text=True,
+        encoding="utf-8",
         timeout=30,
         check=False,
     )

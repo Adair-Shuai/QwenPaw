@@ -266,6 +266,17 @@ class TestServePluginUiFile:
         assert response.status_code == 200
         assert "immutable" in response.headers["cache-control"]
 
+    def test_versioned_entry_gets_immutable_cache_without_request_in_worker(
+        self,
+        ui_client,
+    ):
+        response = ui_client.get(
+            "/api/plugins/ui-plugin/files/ui/app.js?v=revision-2",
+        )
+        assert response.status_code == 200
+        assert response.text == "console.log(1)"
+        assert "immutable" in response.headers["cache-control"]
+
     def test_serves_css(self, ui_client):
         response = ui_client.get(
             "/api/plugins/ui-plugin/files/ui/style.css",

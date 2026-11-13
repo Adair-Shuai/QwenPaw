@@ -294,6 +294,7 @@ async def test_tracked_agent_run_preserves_execution_error(monkeypatch):
     class FailingWorkspace(_Workspace):
         async def stream_query(self, request):
             raise RuntimeError("agent failed")
+            # pylint: disable-next=W0101
             yield
 
     workspace = FailingWorkspace()

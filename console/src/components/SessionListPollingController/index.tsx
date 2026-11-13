@@ -33,7 +33,11 @@ export function SessionListPollingController() {
         const list = (await sessionApi.getSessionList()) as ExtendedSession[];
         if (!cancelled && sessionApi.isActiveOwner(owner)) {
           // SessionApi preserves this reference when metadata is unchanged.
-          if (list !== lastSessions) {
+          if (
+            list !== lastSessions ||
+            JSON.stringify(useSessionListStore.getState().sessions) !==
+              JSON.stringify(list)
+          ) {
             lastSessions = list;
             syncSessionsGlobal(list);
           }
@@ -70,6 +74,15 @@ export function SessionListPollingController() {
       if (refreshAfterFlight) void fetchSessions();
     };
 
+    const stopStore = useSessionListStore.subscribe((state, previous) => {
+      if (
+        !inFlight &&
+        previous.sessions.length > 0 &&
+        state.sessions.length === 0
+      ) {
+        onSessionListRefresh();
+      }
+    });
     void fetchSessions(true);
     const timer = setInterval(() => {
       if (
@@ -89,6 +102,7 @@ export function SessionListPollingController() {
 
     return () => {
       cancelled = true;
+      stopStore();
       clearInterval(timer);
       document.removeEventListener("visibilitychange", onVisibility);
       document.removeEventListener(

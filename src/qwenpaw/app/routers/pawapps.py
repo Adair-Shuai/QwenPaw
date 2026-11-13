@@ -16,7 +16,6 @@ from fastapi.responses import FileResponse
 
 from ...plugins.browser_access import browser_prefixes
 from ...installation_origin import read_plugin_origin
-from ...utils.io_utils import run_sync_io
 from ...plugins.registry import MemoryBackendInUseError
 
 logger = logging.getLogger(__name__)

@@ -234,6 +234,7 @@ def _verify_files(site, plan, *, allow_missing=False):
             continue
         info = path.stat()
         if (
+            # pylint: disable-next=R0916
             not stat.S_ISREG(info.st_mode)
             or info.st_size != expected["size"]
             or hashlib.sha256(path.read_bytes()).hexdigest()
@@ -309,8 +310,11 @@ def _verify_dependencies(directory, plan, maintenance):
         _refuse("dependency verification failed: " + result.stderr[-2000:])
 
 
+# pylint: disable-next=R0912
 def recover_additions(sites, *, rollback=False, timeout=5):
-    """Verify completed additions; explicit offline rollback never overwrites."""
+    """
+    Verify completed additions; explicit offline rollback never overwrites.
+    """
     maintenance = _maintenance()
     for raw in sites:
         if not raw:
@@ -323,12 +327,14 @@ def recover_additions(sites, *, rollback=False, timeout=5):
             with ExitStack() as locks:
                 locks.enter_context(
                     maintenance.file_lock(
+                        # pylint: disable-next=W0212
                         maintenance._gate(site),
                         timeout=timeout,
                     ),
                 )
                 locks.enter_context(
                     maintenance.file_lock(
+                        # pylint: disable-next=W0212
                         maintenance._admission_gate(site),
                         timeout=timeout,
                     ),
@@ -364,7 +370,8 @@ def recover_additions(sites, *, rollback=False, timeout=5):
                 record_phase(record, "rolled_back" if rollback else "verified")
                 marker.unlink()
                 logging.getLogger(__name__).info(
-                    "Recovered additive dependency publication: plugin=%s phase=%s",
+                    "Recovered additive dependency "
+                    "publication: plugin=%s phase=%s",
                     plan["plugin_id"],
                     operation["phase"],
                 )

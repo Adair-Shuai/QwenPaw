@@ -22,6 +22,7 @@ _PLAN_FIELDS = (
     "id",
     "plugin_id",
     "force",
+    "installation_source",
     "source_revision",
     "environment",
     "environment_fingerprint",
@@ -72,6 +73,7 @@ def authenticate_plan(directory, operation, *, seal=False):
             if key in operation
             or key
             not in {
+                "installation_source",
                 "dependency_context",
                 "continuation_command",
                 "host_bundle_identity",
@@ -866,6 +868,8 @@ def _sync_source_file(path):
     finally:
         if read_only:
             os.chmod(path, mode)
+
+
 def _copy_source_file(source, target):
     if os.name != "nt":
         return shutil.copy2(source, target)
@@ -878,9 +882,6 @@ def _copy_source_file(source, target):
 
 
 def _sync_source(root):
-    if os.name == "nt":
-        # Each copy was already synced through its writable file handle.
-        return
     for path in root.rglob("*"):
         if path.is_file():
             _sync_source_file(path)

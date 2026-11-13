@@ -114,7 +114,10 @@ export const AppCard: FC<AppCardProps> = ({ app, onClick, onUninstall }) => {
 
   return (
     <InteractiveCard tilt={3} style={{ width: "100%" }}>
-      <Card data-themed-card="true" className={`${styles.appCard} ${styles.appCardClickable}`}>
+      <Card
+        data-themed-card="true"
+        className={`${styles.appCard} ${styles.appCardClickable}`}
+      >
         <div className={styles.cardTopRow}>
           <button
             type="button"

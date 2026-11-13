@@ -69,8 +69,10 @@ describe("terminal authentication capability", () => {
     expect(result.current.enabled).toBe(false);
     expect(result.current.confirmed).toBe(true);
   });
-  it("does not refresh a confirmed status on focus", async () => {
-    vi.mocked(request).mockResolvedValue({ enabled: true });
+  it("keeps a confirmed status when a focus refresh fails", async () => {
+    vi.mocked(request)
+      .mockResolvedValueOnce({ enabled: true })
+      .mockRejectedValueOnce(new Error("unavailable"));
     const { result } = renderHook(() => useTerminalEnabled(), {
       wrapper: authWrapper(true),
     });
@@ -78,7 +80,7 @@ describe("terminal authentication capability", () => {
 
     act(() => window.dispatchEvent(new Event("focus")));
 
-    expect(request).toHaveBeenCalledTimes(1);
+    await waitFor(() => expect(request).toHaveBeenCalledTimes(2));
     expect(result.current).toEqual({
       enabled: true,
       reason: "",
@@ -99,5 +101,25 @@ describe("terminal authentication capability", () => {
 
     await waitFor(() => expect(result.current.enabled).toBe(true));
     expect(request).toHaveBeenCalledTimes(2);
+  });
+  it("restores the cached status when switching back to an agent", async () => {
+    vi.mocked(request)
+      .mockResolvedValueOnce({ enabled: true })
+      .mockImplementationOnce(() => new Promise(() => undefined));
+    const { result, rerender } = renderHook(
+      ({ agentId }) => useTerminalEnabled(agentId),
+      { initialProps: { agentId: "agent-a" }, wrapper: authWrapper(true) },
+    );
+    await waitFor(() => expect(result.current.enabled).toBe(true));
+
+    rerender({ agentId: "agent-b" });
+    expect(result.current.confirmed).toBe(false);
+    rerender({ agentId: "agent-a" });
+
+    expect(result.current).toEqual({
+      enabled: true,
+      reason: "",
+      confirmed: true,
+    });
   });
 });

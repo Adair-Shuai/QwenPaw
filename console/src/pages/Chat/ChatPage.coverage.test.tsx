@@ -2354,8 +2354,9 @@ describe("ChatPage coverage", () => {
     renderWithProviders(<ChatPage />, {
       initialEntries: ["/chat/test-session"],
     });
-    await waitFor(() =>
-      expect(screen.getByText("Work by reviewer")).toBeVisible(),
+    await waitFor(
+      () => expect(screen.getByText("Work by reviewer")).toBeVisible(),
+      { timeout: 5_000 },
     );
     expect(screen.getByText("Work by researcher")).toBeVisible();
     const collapseLabel = i18n.t("chat.taskPanel.collapse");

@@ -97,6 +97,7 @@ def _normalize_inline(nodes: list) -> list:
     return out
 
 
+# pylint: disable-next=R0912
 def _inline_nodes(
     children: list,
     start: int = 0,

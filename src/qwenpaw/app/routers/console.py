@@ -603,7 +603,7 @@ async def post_console_chat(
             native_payload,
             console_channel.stream_one,
             owner=workspace,
-            on_finished=workspace.chat_manager.mark_chat_finished,
+            on_succeeded=workspace.chat_manager.mark_chat_finished,
             steering=steering,
         )
         if not is_new_run:
@@ -1261,7 +1261,7 @@ async def post_console_chat_task(
         native_payload,
         _tracked_stream,
         owner=workspace,
-        on_finished=workspace.chat_manager.mark_chat_finished,
+        on_succeeded=workspace.chat_manager.mark_chat_finished,
     )
     if not is_new_run:
         await tracker.detach_subscriber(chat.id, queue)

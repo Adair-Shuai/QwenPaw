@@ -15,19 +15,24 @@ const ApprovalContext = createContext<{
 
 interface RenderWithProvidersOptions extends Omit<RenderOptions, "wrapper"> {
   initialEntries?: MemoryRouterProps["initialEntries"];
+  authEnabled?: boolean;
 }
 
 function AllProviders({
   children,
   routerProps,
+  authEnabled = false,
 }: {
   children: ReactNode;
   routerProps?: MemoryRouterProps;
+  authEnabled?: boolean;
 }) {
   const [approvals, setApprovals] = useState<PendingApproval[]>([]);
   return (
     <ApprovalContext.Provider value={{ approvals, setApprovals }}>
-      <AuthStatusProvider value={{ enabled: false, has_users: false }}>
+      <AuthStatusProvider
+        value={{ enabled: authEnabled, has_users: authEnabled }}
+      >
         <App>
           <MemoryRouter {...routerProps}>{children}</MemoryRouter>
         </App>
@@ -40,12 +45,15 @@ export function renderWithProviders(
   ui: React.ReactElement,
   {
     initialEntries = ["/chat"],
+    authEnabled = false,
     ...renderOptions
   }: RenderWithProvidersOptions = {},
 ) {
   function Wrapper({ children }: { children: ReactNode }) {
     return (
-      <AllProviders routerProps={{ initialEntries }}>{children}</AllProviders>
+      <AllProviders routerProps={{ initialEntries }} authEnabled={authEnabled}>
+        {children}
+      </AllProviders>
     );
   }
   return render(ui, { wrapper: Wrapper, ...renderOptions });

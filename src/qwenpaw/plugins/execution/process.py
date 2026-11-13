@@ -652,6 +652,7 @@ class PluginProcess:
                 raise
             raise self.error_type(self._last_error) from None
 
+    # pylint: disable-next=R0915
     async def _open(self, spec: PluginLaunchSpec) -> None:
         # Keep transport admission, handoff and owned-process cleanup in order.
         # pylint: disable=R0912

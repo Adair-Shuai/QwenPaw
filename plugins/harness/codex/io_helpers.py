@@ -5,6 +5,23 @@
 """Bounded plugin I/O that completes before its owner releases a lock."""
 
 import asyncio
+import os
+import time
+
+
+def replace_directory(source, target):
+    """Atomically publish a directory despite transient Windows locks."""
+    for attempt in range(6):
+        try:
+            os.replace(source, target)
+            return
+        except OSError as exc:
+            if (
+                getattr(exc, "winerror", None) not in {5, 32, 33}
+                or attempt == 5
+            ):
+                raise
+            time.sleep(0.1 * 2**attempt)
 
 
 async def finish(operation):

@@ -151,7 +151,12 @@ async def serve_frontend_plugin_file(
     loader = getattr(request.app.state, "plugin_loader", None)
     if loader is None:
         source = await run_sync_io(_disk_frontend_source, plugin_id)
-        return await run_sync_io(_plugin_file_response, source, file_path)
+        return await run_sync_io(
+            _plugin_file_response,
+            source,
+            file_path,
+            versioned_entry=bool(request.query_params.get("v")),
+        )
     record = loader.get_loaded_plugin(plugin_id)
     if record is None or not _executable(loader, record):
         raise HTTPException(404, "Plugin frontend is unavailable")

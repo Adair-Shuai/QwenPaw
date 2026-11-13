@@ -293,6 +293,7 @@ async def test_related_channel_passes_cloud_ids_through(monkeypatch):
             router.RelatedRef(type="plugin", id="demo-slug"),
         ],
     )
+    # pylint: disable-next=W0212
     payload = await router._community_post_payload(body)
     assert payload["related_plugin_ids"] == ["demo-slug"]
     assert payload["related_skill_ids"] == ["01a0156d-88e5"]
@@ -333,6 +334,7 @@ async def test_related_cap_merges_with_verified_origins(monkeypatch):
         ],
     )
     with pytest.raises(HTTPException) as exc:
+        # pylint: disable-next=W0212
         await router._community_post_payload(body)
     assert exc.value.detail == "too_many_related_resources"
 
@@ -342,6 +344,7 @@ def test_draft_view_reports_cloud_id_not_fake_origin():
     from importlib import import_module
 
     router = import_module("qwenpaw.app.routers.community")
+    # pylint: disable-next=W0212
     view = router._draft_view(
         {
             "id": "d1",

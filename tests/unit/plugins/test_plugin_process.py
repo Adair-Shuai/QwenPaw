@@ -167,10 +167,12 @@ async def test_startup_failure_preserves_redacted_cause_after_log_flood(
         "        for _ in range(100): print('sdk noise', file=sys.stderr)\n"
         "        try:\n"
         "            raise ValueError(\n"
-        "                'https://user:url-secret@example.test/ws?ticket=query-secret '\n"
+        "                'https://user:url-secre"
+        "t@example.test/ws?ticket=query-secret '\n"
         "                + config['app_secret'])\n"
         "        except ValueError as cause:\n"
-        "            raise RuntimeError('component startup failed') from cause\n"
+        "            raise RuntimeError('com"
+        "ponent startup failed') from cause\n"
         "    async def stop(self): pass\n",
     )
     spec = replace(
@@ -229,6 +231,7 @@ for root in ("C:\\sdk", "\\\\?\\C:\\sdk", "\\\\?\\UNC\\server\\share",
         capture_output=True,
         text=True,
         timeout=15,
+        check=False,
     )
     assert result.returncode == 0, result.stderr
 
@@ -254,8 +257,10 @@ async def test_windows_worker_imports_crypto_from_extended_path(
             "    async def start(self, config):\n"
             "        from Crypto.Cipher import AES\n"
             "        key = bytes.fromhex('000102030405060708090a0b0c0d0e0f')\n"
-            "        plain = bytes.fromhex('00112233445566778899aabbccddeeff')\n"
-            "        assert AES.new(key, AES.MODE_ECB).encrypt(plain).hex() == "
+            "        plain = bytes.fromhex('00"
+            "112233445566778899aabbccddeeff')\n"
+            "        assert AES.new(key, AES.M"
+            "ODE_ECB).encrypt(plain).hex() == "
             "'69c4e0d86a7b0430d8cdb78070b4c55a'\n",
         ),
     )
@@ -271,6 +276,7 @@ async def test_windows_worker_imports_crypto_from_extended_path(
 
 
 @pytest.mark.asyncio
+# pylint: disable-next=R0915
 async def test_log_flood_is_bounded_redacted_and_keeps_ipc_responsive(
     tmp_path,
     process,
@@ -442,7 +448,11 @@ async def test_blocked_sdk_start_keeps_parent_loop_responsive(
         == "responsive"
     )
     assert worker_belongs_to(health["pid"], int(marker.read_text()))
-    await eventually(lambda: '"event": "startup_slow"' in worker_logs.text)
+    await eventually(
+        lambda: '"event": "startup_slow"' in worker_logs.text,
+        # The diagnostic fires at 80% of the configured startup budget.
+        timeout=spec.startup_timeout + 5,
+    )
     assert (
         sum('"await_frames"' in row.message for row in worker_logs.records)
         == 1

@@ -586,7 +586,7 @@ describe("ConsolePollService", () => {
     render(<ConsolePollService />);
     await poll(0);
     act(() => {
-      document.title = "• Project plan · QwenPaw";
+      document.title = "• Project plan · UGSci";
       document.dispatchEvent(
         new CustomEvent("qwenpaw:document-title-change", {
           detail: document.title,
@@ -595,11 +595,11 @@ describe("ConsolePollService", () => {
     });
 
     await poll(800);
-    expect(document.title).toBe("• Project plan · QwenPaw");
+    expect(document.title).toBe("• Project plan · UGSci");
     await poll(800);
-    expect(document.title).toBe("• Project plan · QwenPaw");
+    expect(document.title).toBe("• Project plan · UGSci");
     await poll(AUTO_DISMISS_MS);
-    expect(document.title).toBe("• Project plan · QwenPaw");
+    expect(document.title).toBe("• Project plan · UGSci");
   });
 
   it("does not blink the title while the tab is visible", async () => {
@@ -726,7 +726,7 @@ describe("ConsolePollService", () => {
     expect(document.title).toBe(`${TITLE_BLINK_PREFIX}Original Page`);
   });
 
-  it.each(["Models · QwenPaw", "Project plan · QwenPaw"])(
+  it.each(["Models · UGSci", "Project plan · UGSci"])(
     "blinks the latest page or session title (%s)",
     async (title) => {
       mocks.getPushMessages.mockResolvedValue(respond([]));
@@ -755,7 +755,7 @@ describe("ConsolePollService", () => {
     },
   );
 
-  it.each(["Models · QwenPaw", "Renamed conversation · QwenPaw"])(
+  it.each(["Models · UGSci", "Renamed conversation · UGSci"])(
     "adopts the latest title while blinking is active (%s)",
     async (title) => {
       setHidden(true);

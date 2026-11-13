@@ -19,6 +19,8 @@ from qwenpaw.installation_origin import (
 @pytest.mark.parametrize(
     "url",
     [
+        "https://platform.agentscope.io",
+        "https://platform.agentscope.io/",
         "http://platform.agentscope.io/plugins/owner/demo",
         "https://platform.agentscope.io.evil.test/plugins/owner/demo",
         "https://platform.agentscope.io@evil.test/plugins/owner/demo",
@@ -56,6 +58,48 @@ def test_origin_identity_is_owner_scoped_and_type_scoped():
     assert validated_origin({**one, "resource_id": "@bob/demo"}) is None
     assert validated_origin({"provider": "qwenpaw", "name": "demo"}) is None
     assert validated_origin({**one, "source_url": "https://[broken"}) is None
+
+
+def test_dependency_plan_binds_source_and_accepts_legacy_plans(tmp_path):
+    from qwenpaw.plugins.dependency_transaction import authenticate_plan
+
+    directory = tmp_path / ("a" * 32)
+    directory.mkdir()
+    required = (
+        "plugin_id",
+        "force",
+        "source_revision",
+        "environment",
+        "environment_fingerprint",
+        "consumers",
+        "reviewed_usage",
+        "requires_restart",
+        "proposed",
+        "payload",
+        "capability",
+        "plugin_dirs",
+        "runtime",
+        "changes",
+        "continuation_python",
+        "worker_python",
+        "support_root",
+    )
+    operation = {name: None for name in required}
+    operation["id"] = directory.name
+    authenticate_plan(directory, operation, seal=True)
+    authenticate_plan(directory, operation)
+    source = "https://platform.agentscope.io/plugins/alice/demo"
+    operation["installation_source"] = source
+    with pytest.raises(RuntimeError, match="changed after review"):
+        authenticate_plan(directory, operation)
+    operation.pop("installation_source")
+    authenticate_plan(directory, operation)
+    operation["installation_source"] = source
+    authenticate_plan(directory, operation, seal=True)
+    authenticate_plan(directory, operation)
+    operation["installation_source"] = source.replace("alice", "another")
+    with pytest.raises(RuntimeError, match="changed after review"):
+        authenticate_plan(directory, operation)
 
 
 def test_plugin_origin_records_reject_corruption_and_wrong_local_id(tmp_path):
@@ -134,6 +178,55 @@ async def test_failed_runtime_load_does_not_record_platform_origin(
             ),
         )
     assert read_plugin_origin(plugins_dir, "demo") is None
+
+
+@pytest.mark.asyncio
+async def test_origin_write_failure_keeps_committed_plugin(
+    tmp_path,
+    monkeypatch,
+):
+    from qwenpaw import installation_origin
+    from qwenpaw.plugins.loader import PluginLoader
+
+    source = tmp_path / "package"
+    source.mkdir()
+    (source / "plugin.json").write_text(
+        json.dumps(
+            {
+                "id": "origin-warning",
+                "version": "1.0.0",
+                "type": "frontend",
+                "entry": {"frontend": "index.js"},
+            },
+        ),
+    )
+    (source / "index.js").write_text("export default {};\n")
+    plugins_dir = tmp_path / "plugins"
+    loader = PluginLoader(plugin_dirs=[plugins_dir])
+
+    def fail_origin(*_args):
+        raise OSError("origin metadata locked")
+
+    monkeypatch.setattr(
+        installation_origin,
+        "write_plugin_origin",
+        fail_origin,
+    )
+    record = await loader.load_plugin_from_path(
+        source,
+        installation_source=(
+            "https://platform.agentscope.io/plugins/alice/demo"
+        ),
+    )
+    assert record.manifest.version == "1.0.0"
+    assert record.enabled
+    assert record.status != "failed"
+    assert record.update_needs_restart
+    assert any("origin metadata locked" in row for row in record.diagnostics)
+    assert (plugins_dir / "origin-warning/index.js").read_text() == (
+        "export default {};\n"
+    )
+    assert loader.get_loaded_plugin("origin-warning") is record
 
 
 @pytest.mark.asyncio
@@ -625,3 +718,57 @@ async def test_native_installer_preserves_source_and_recovery_options(
     assert kwargs["force"] is True
     assert kwargs["pawport_owner"] == owner
     assert kwargs["recover_incomplete"] is True
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("winerror", [5, 32, 33])
+async def test_first_plugin_install_retries_windows_sharing(
+    tmp_path,
+    monkeypatch,
+    winerror,
+):
+    import os
+    from pathlib import Path
+    from qwenpaw.plugins.loader import PluginLoader
+    from qwenpaw.plugins.registry import PluginRegistry
+
+    monkeypatch.setattr(PluginRegistry, "_instance", None)
+    monkeypatch.setattr("qwenpaw.constant.WORKING_DIR", tmp_path / "work")
+    source = tmp_path / "source"
+    source.mkdir()
+    (source / "plugin.json").write_text(
+        json.dumps(
+            {
+                "id": "first-retry",
+                "version": "1.0.0",
+                "type": "general",
+                "entry": {"frontend": "index.js"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    contents = b"export default {};\n"
+    (source / "index.js").write_bytes(contents)
+    plugins = tmp_path / "plugins"
+    installed = plugins / "first-retry"
+    original_rename = os.rename
+    attempts = []
+
+    def temporarily_locked(path, target):
+        if Path(target) == installed:
+            attempts.append(path)
+            if len(attempts) < 3:
+                error = PermissionError("controlled Windows sharing violation")
+                error.winerror = winerror
+                raise error
+        return original_rename(path, target)
+
+    monkeypatch.setattr(os, "rename", temporarily_locked)
+    loader = PluginLoader([plugins])
+    record = await loader.load_plugin_from_path(source, install_dir=plugins)
+    assert 3 <= len(attempts) <= 6
+    assert record.enabled and record.status == "active"
+    assert record.manifest.version == "1.0.0"
+    assert (installed / "index.js").read_bytes() == contents
+    assert (source / "index.js").read_bytes() == contents
+    assert not list(plugins.glob(".first-retry.install-*"))

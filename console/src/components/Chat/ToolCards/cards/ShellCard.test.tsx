@@ -14,6 +14,7 @@ import { describe, expect, it, vi } from "vitest";
 import type { ToolCallContent } from "../shared/types";
 
 vi.mock("react-i18next", () => ({
+  initReactI18next: { type: "3rdParty", init: vi.fn() },
   useTranslation: () => ({
     t: (key: string, options?: Record<string, unknown>) =>
       options ? `${key}[${JSON.stringify(options)}]` : key,

@@ -1454,7 +1454,6 @@ async def replace_installed_plugin(
             source_path = bundled_source
 
         from packaging.version import Version
-        from ...utils.io_utils import run_sync_io
 
         # Backup and replacement share one reentrant lifecycle lock.
         async with loader.plugin_lifecycle(plugin_id):
@@ -1504,6 +1503,7 @@ async def replace_installed_plugin(
                 source_path,
                 force=True,
                 **_interrupt_options(body.interrupt_tasks),
+                installation_source=body.source,
             )
     except HTTPException:
         raise
@@ -2097,12 +2097,20 @@ async def serve_plugin_ui_file(
             )
         source_path = candidate
 
-    from ...utils.io_utils import run_sync_io
+    return await run_sync_io(
+        _plugin_file_response,
+        source_path,
+        file_path,
+        versioned_entry=bool(getattr(request, "query_params", {}).get("v")),
+    )
 
-    return await run_sync_io(_plugin_file_response, source_path, file_path)
 
-
-def _plugin_file_response(source_path: Path, file_path: str):
+def _plugin_file_response(
+    source_path: Path,
+    file_path: str,
+    *,
+    versioned_entry: bool = False,
+):
     """Resolve/stat one static file without touching loader state."""
     full_path = (source_path / file_path).resolve()
 
@@ -2123,7 +2131,6 @@ def _plugin_file_response(source_path: Path, file_path: str):
     # revalidate on every request or browsers keep serving stale bundles
     # after a plugin hot update.
     hashed_asset = re.search(r"-[A-Za-z0-9_]{8,}\.[a-z0-9]+$", full_path.name)
-    versioned_entry = bool(request.query_params.get("v"))
     cache_control = (
         "public, max-age=31536000, immutable"
         if hashed_asset or versioned_entry

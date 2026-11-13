@@ -64,6 +64,7 @@ async def test_connection_exposes_account_avatar_url():
     avatar = "https://oss.example.com/avatar/alice.png"
 
     def handler(request):
+        del request
         return httpx.Response(
             200,
             json={
@@ -95,6 +96,7 @@ async def test_connection_exposes_account_avatar_url():
 )
 async def test_connection_rejects_unsafe_avatar_url(avatar):
     def handler(request):
+        del request
         return httpx.Response(
             200,
             json={

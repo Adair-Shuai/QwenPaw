@@ -250,7 +250,9 @@ def bundle_runtime_identity(runtime=None) -> str:
 
 
 def plugin_runtime_site(runtime_root: Path, runtime=None) -> Path:
-    """Reuse the user dependency site across bundle updates for the same ABI."""
+    """
+    Reuse the user dependency site across bundle updates for the same ABI.
+    """
     if runtime is None and getattr(sys, "frozen", False):
         runtime = runtime_manifest()
     identity = (

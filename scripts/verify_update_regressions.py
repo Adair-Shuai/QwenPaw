@@ -275,6 +275,7 @@ REQUIRED_CASES = {
         "test_packaged_visualization_imports_user_data_without_shipped_examples",
         "test_updates_preserve_user_imports_without_shipping_visualization_data",
         "test_runtime_bundle_install_excludes_samples_and_keeps_user_imports",
+        "test_runtime_bundle_retries_windows_sharing_and_preserves_user_data",
         "test_runtime_hash_matches_legacy_without_entering_excluded_trees",
         "test_runtime_copy_uses_manifest_identity_and_ignores_pack_exclude",
     },

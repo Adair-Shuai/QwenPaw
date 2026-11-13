@@ -4,6 +4,7 @@
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    # pylint: disable-next=C0414
     from .runtime import Runtime as Runtime
 
 __all__ = ["Runtime"]

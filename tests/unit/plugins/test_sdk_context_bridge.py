@@ -5,6 +5,7 @@
 # pylint: disable=protected-access
 
 import json
+import os
 import socket
 import threading
 from contextlib import contextmanager
@@ -17,6 +18,13 @@ import pytest
 from .test_sdk_context_services import package
 
 from .timing import WAIT_TIMEOUT
+
+
+@pytest.fixture(autouse=True)
+def loopback_proxy_bypass(monkeypatch):
+    """Keep real loopback transports local under a developer's proxy env."""
+    excluded = os.environ.get("NO_PROXY", "")
+    monkeypatch.setenv("NO_PROXY", f"{excluded},127.0.0.1,localhost,::1")
 
 
 @contextmanager
@@ -1202,19 +1210,37 @@ async def test_runtime_owner_retries_failed_provider_scope_via_public_reload(
     from qwenpaw.plugins.messages import ContentBlock
     from .test_sdk_context_lifecycle import until
     from qwenpaw.app.chats.manager import ChatManager
+    from qwenpaw.app.task_tracker import TaskTracker
 
     host_finish = asyncio.Event()
     completion_started = asyncio.Event()
     original_finish = ChatManager.mark_chat_finished
+    original_attach = TaskTracker.attach_or_start
+    successful_finishes = []
 
     async def finish_chat(manager, *args, **kwargs):
+        successful_finishes.append(args)
         await original_finish(manager, *args, **kwargs)
+
+    async def hold_terminal_persistence(*_args):
         completion_started.set()
         await host_finish.wait()
+
+    async def attach_with_terminal_persistence(tracker, *args, **kwargs):
+        # Exercise delayed host persistence even for cancellation. Success
+        # timestamps now use the separate on_succeeded callback.
+        kwargs["on_finished"] = hold_terminal_persistence
+        return await original_attach(tracker, *args, **kwargs)
 
     # Host persistence may outlive all plugin callbacks. Keep it pending
     # deterministically rather than depending on a fast CI filesystem.
     monkeypatch.setattr(ChatManager, "mark_chat_finished", finish_chat)
+    if entry == "channel":
+        monkeypatch.setattr(
+            TaskTracker,
+            "attach_or_start",
+            attach_with_terminal_persistence,
+        )
 
     source = """
 from qwenpaw.plugins.apps import PawApp
@@ -1344,6 +1370,7 @@ plugin = Plugin()
             if entry == "channel":
                 assert completion_started.is_set()
                 assert not host_finish.is_set()
+                assert not successful_finishes
         finally:
             host_finish.set()
             host.context("runtime-cleanup-provider").storage.write_json(

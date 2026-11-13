@@ -2687,6 +2687,18 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
 
         await self._recover_startup_transactions()
         discovered = await run_sync_io(self.discover_plugins)
+        # Excluded phases still advertise optional Harnesses without loading
+        # their code. Retain failed records across repeated boot scans.
+        if types is not None:
+            for manifest, _plugin_dir in discovered:
+                if manifest.plugin_type in types:
+                    continue
+                async with self.plugin_lifecycle(manifest.id):
+                    if manifest.id not in self._loaded_plugins:
+                        self.registry.remember_harness_manifest(
+                            manifest.id,
+                            _manifest_as_dict(manifest),
+                        )
         # Boot discovers channels first, then other plugins. Only rank this
         # phase's candidates; already registered/failed records are skipped
         # again under their lifecycle lock below.
@@ -3968,12 +3980,18 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
             else "plugin",
             manifest.version,
         )
-        await run_sync_io(
-            write_plugin_origin,
-            record.source_path.parent,
-            manifest.id,
-            origin,
-        )
+        try:
+            await run_sync_io(
+                write_plugin_origin,
+                record.source_path.parent,
+                manifest.id,
+                origin,
+            )
+        except OSError as exc:
+            record.update_needs_restart = True
+            diagnostic = f"post-commit cleanup: installation origin: {exc}"
+            record.diagnostics.append(diagnostic)
+            logger.warning("Plugin %s %s", manifest.id, diagnostic)
 
     async def load_plugin_from_path(
         self,
@@ -4081,9 +4099,12 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                     )
                 from .settings import clear_channel_tombstone
 
-                await self._run_committed_cleanup(record, clear_channel_tombstone, plugin_id)
+                await self._run_committed_cleanup(
+                    record, clear_channel_tombstone, plugin_id
+                )
                 await self._write_installation_origin(
-                    record, installation_source,
+                    record,
+                    installation_source,
                 )
                 return record
             record = None
@@ -4278,6 +4299,8 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                     )
 
             def _first_install(stage_root: Path) -> None:
+                from ..utils.windows_paths import retry_windows_io
+
                 stage_dir = stage_root / plugin_id
                 try:
                     copy_tree(source_path, stage_dir)
@@ -4289,7 +4312,9 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                             ),
                             encoding="utf-8",
                         )
-                    os.rename(stage_dir, target_dir)
+                    retry_windows_io(
+                        lambda: os.rename(stage_dir, target_dir),
+                    )
                 finally:
                     if stage_root.exists():
                         safe_remove(
@@ -4430,6 +4455,10 @@ class PluginLoader:  # pylint: disable=too-many-public-methods
                 clear_uninstalled_marker,
                 plugin_id,
                 plugins_dir=install_base,
+            )
+            await self._write_installation_origin(
+                record,
+                installation_source,
             )
             return record
         except BaseException:

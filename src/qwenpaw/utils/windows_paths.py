@@ -6,8 +6,27 @@ from __future__ import annotations
 import os
 import shutil
 import stat
+import time
 import zipfile
 from pathlib import Path, PurePosixPath
+from typing import Callable, TypeVar
+
+_T = TypeVar("_T")
+
+
+def retry_windows_io(operation: Callable[[], _T]) -> _T:
+    """Bound retries to transient Windows sharing/access errors only."""
+    for attempt in range(6):
+        try:
+            return operation()
+        except OSError as exc:
+            if (
+                getattr(exc, "winerror", None) not in {5, 32, 33}
+                or attempt == 5
+            ):
+                raise
+            time.sleep(0.1 * 2**attempt)
+    raise AssertionError("unreachable Windows IO retry state")
 
 
 def io_path(path: Path | str) -> str:

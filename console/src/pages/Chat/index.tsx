@@ -4863,7 +4863,10 @@ export default function ChatPage() {
                   />
                 )
               ) : backendCapabilities?.model_selection ? (
-                <BackendModelSelector backendId={selectedAgentBackend} capabilities={backendCapabilities} />
+                <BackendModelSelector
+                  backendId={selectedAgentBackend}
+                  capabilities={backendCapabilities}
+                />
               ) : null}
             </span>
             {pluginSenderPrefix}

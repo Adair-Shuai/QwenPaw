@@ -620,7 +620,9 @@ def test_put_api_workspace_transcription_provider_27(app_server) -> None:
 @pytest.mark.integration
 @pytest.mark.p1
 def test_get_api_workspace_transcription_model(app_server) -> None:
-    """Contract: GET /api/workspace/transcription-model returns a model name."""
+    """
+    Contract: GET /api/workspace/transcription-model returns a model name.
+    """
     resp = _req(app_server, "GET", "/api/workspace/transcription-model")
     assert resp.status_code == 200, app_server.logs_tail()
     payload = resp.json()

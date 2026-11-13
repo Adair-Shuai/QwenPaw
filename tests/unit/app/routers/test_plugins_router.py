@@ -29,6 +29,8 @@ def _loaded_record(plugin_id: str):
         description="loaded",
         author="UGSci",
         plugin_type="general",
+        sdk=None,
+        meta={},
         entry=SimpleNamespace(frontend="dist/index.js"),
     )
     return SimpleNamespace(manifest=manifest, enabled=True)
@@ -170,9 +172,13 @@ def test_replace_installed_plugin_uses_backend_lifecycle(
         *,
         force,
         interrupt_tasks=False,
+        installation_source="",
     ):
         from qwenpaw.plugins.activity import PluginBusyError
 
+        assert installation_source == (
+            "https://download.qwenpaw.agentscope.io/external-plugin.zip"
+        )
         calls.append((loader, request, source_path, force, interrupt_tasks))
         if busy and not interrupt_tasks:
             raise PluginBusyError("external-plugin", 1, can_interrupt=True)

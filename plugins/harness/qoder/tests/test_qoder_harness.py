@@ -37,6 +37,57 @@ from plugins.harness.qoder.discovery import (
     bundled_cli_candidate,
     resolve_qoder_binary_info,
 )
+from plugins.harness.qoder.projection import materialize_skill_plugin
+
+
+@pytest.mark.parametrize("winerror", [5, 32, 33])
+def test_skill_projection_retries_windows_sharing(
+    tmp_path,
+    monkeypatch,
+    winerror,
+):
+    import os
+
+    from plugins.harness.qoder import io_helpers
+
+    skill = tmp_path / "review"
+    skill.mkdir()
+    (skill / "SKILL.md").write_text("Exact skill content", encoding="utf-8")
+    capabilities = HarnessRuntimeCapabilities(
+        skills=(HarnessSkillDefinition("review", skill),),
+    )
+    original = os.replace
+    calls = []
+
+    def occupied_then_replace(source, target):
+        calls.append((source, target))
+        if len(calls) < 3:
+            error = PermissionError("temporary Windows sharing violation")
+            error.winerror = winerror
+            raise error
+        return original(source, target)
+
+    monkeypatch.setattr(io_helpers.os, "replace", occupied_then_replace)
+    target = materialize_skill_plugin(tmp_path / "state", capabilities)
+    assert len(calls) == 3
+    assert (target / "skills/review/SKILL.md").read_text(
+        encoding="utf-8",
+    ) == "Exact skill content"
+    assert (
+        json.loads((target / ".qoder-plugin/plugin.json").read_text())["name"]
+        == "qwenpaw-runtime"
+    )
+    assert list(target.parent.iterdir()) == [target]
+    assert materialize_skill_plugin(tmp_path / "state", capabilities) == target
+    assert len(calls) == 3
+
+
+def test_directory_publication_preserves_permanent_errors(tmp_path):
+    from plugins.harness.qoder.io_helpers import replace_directory
+
+    source = tmp_path / "missing"
+    with pytest.raises(FileNotFoundError):
+        replace_directory(source, tmp_path / "target")
 
 
 class QoderTransport(Transport):

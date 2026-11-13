@@ -105,7 +105,7 @@ class Host:
                 support_root=ROOT / "src",
                 qwenpaw_version=__version__,
                 selected_channels=frozenset({KEY}),
-                startup_timeout=5,
+                startup_timeout=30 if os.name == "nt" else 5,
                 # Keep the default shutdown budget for checkpoint writes.
                 admission_timeout=2,
                 dependency_paths=(self.site,),

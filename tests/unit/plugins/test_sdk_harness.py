@@ -101,6 +101,7 @@ def test_public_requests_contexts_and_credentials():
             dataclasses.is_dataclass(cls) and cls.__dataclass_params__.frozen
         )
     request = HarnessRunRequest("hello")
+    # pylint: disable-next=C1803
     assert request.attachments == ()
     with pytest.raises(dataclasses.FrozenInstanceError):
         request.prompt = "changed"
@@ -198,16 +199,21 @@ async def test_boot_discovery_preserves_failed_harness_across_load_phases(
             encoding="utf-8",
         )
 
+        # pylint: disable-next=W0212
         await host._loader.load_all_plugins(types=["channel"])
         assert host.list_harnesses()[0]["status"] == "disabled"
         assert not marker.exists()
 
+        # pylint: disable-next=W0212
         await host._loader.load_all_plugins()
+        # pylint: disable-next=W0212
         record = host._loader.get_loaded_plugin("author-owner")
         assert record.status == "failed"
         for types in (["channel"], None):
+            # pylint: disable-next=W0212
             await host._loader.load_all_plugins(types=types)
             assert host.list_harnesses()[0]["status"] == "failed"
+            # pylint: disable-next=W0212
             assert host._loader.get_loaded_plugin("author-owner") is record
         assert marker.read_text() == "x"
 
@@ -221,14 +227,16 @@ async def test_offline_migration_prepares_saved_harness_without_execution(
     from qwenpaw.plugins.harness_migration import migrate_legacy_harnesses
 
     async with PluginTestHost(tmp_path / "host") as host:
+        # pylint: disable-next=W0212
         await host._workspace("default")
+        # pylint: disable-next=W0212
         workspace = await host._workspace("legacy")
         agent_path = workspace.workspace_dir / "agent.json"
-        agent = json.loads(agent_path.read_text())
+        agent = json.loads(agent_path.read_text(encoding="utf-8"))
         agent.update(backend="codex", backend_settings={"model": "saved"})
         agent_path.write_text(json.dumps(agent), encoding="utf-8")
         config_path = host.root / "config.json"
-        config = json.loads(config_path.read_text())
+        config = json.loads(config_path.read_text(encoding="utf-8"))
         config.setdefault("plugins", {})["qwenpaw-harness-codex"] = {
             "enabled": False,
         }
@@ -279,6 +287,7 @@ async def test_offline_migration_prepares_saved_harness_without_execution(
                     root / name
                 ).read_bytes()
         assert (config_path.read_bytes(), agent_path.read_bytes()) == before
+        # pylint: disable-next=W0212
         assert host._loader.get_loaded_plugin("qwenpaw-harness-codex") is None
 
 

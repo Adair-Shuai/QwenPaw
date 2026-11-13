@@ -15,7 +15,6 @@ from collections.abc import Callable, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from urllib.parse import quote
 from typing import Any
 
 from ..types import LogEntry

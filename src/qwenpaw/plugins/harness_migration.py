@@ -141,6 +141,7 @@ async def migrate_legacy_harnesses(
 ) -> dict:
     """Prepare using initialized working-dir constants; never activate code."""
     loader = PluginLoader([PLUGINS_DIR])
+    # pylint: disable-next=W0212
     await loader._publish_dependency_site(None)
     cleanup = ExitStack()
     try:
@@ -163,6 +164,7 @@ async def migrate_legacy_harnesses(
             plugin_id = row["plugin_id"]
             if plugin_id not in dependency_sources:
                 continue
+            # pylint: disable-next=W0212
             decision = await loader._ensure_dependencies_installed(
                 dependency_sources[plugin_id],
                 plugin_id,

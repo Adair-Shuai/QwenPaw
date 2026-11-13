@@ -238,7 +238,7 @@ describe("browser document titles", () => {
     list.mockResolvedValue([initial]);
     renderLayout("/chat/chat-a");
     await act(() => vi.advanceTimersByTimeAsync(0));
-    expect(document.title).toBe("Project plan · QwenPaw");
+    expect(document.title).toBe("Project plan · UGSci");
 
     hidden.mockReturnValue(true);
     visibility.mockReturnValue("hidden");
@@ -249,7 +249,7 @@ describe("browser document titles", () => {
     };
     list.mockResolvedValue([completed]);
     await act(() => vi.advanceTimersByTimeAsync(30000));
-    expect(document.title).toBe("Project plan · QwenPaw");
+    expect(document.title).toBe("Project plan · UGSci");
     expect(
       decodeURIComponent(
         document.querySelector<HTMLLinkElement>('link[rel="icon"]')!.href,
@@ -262,7 +262,7 @@ describe("browser document titles", () => {
     await act(async () => {
       document.dispatchEvent(new Event("visibilitychange"));
     });
-    expect(document.title).toBe("Project plan · QwenPaw");
+    expect(document.title).toBe("Project plan · UGSci");
     expect(list).toHaveBeenCalledTimes(3);
   });
 
@@ -271,7 +271,7 @@ describe("browser document titles", () => {
       sessions: [{ id: "chat a", name: "Project plan", messages: [] }],
     });
     renderLayout("/chat/chat%20a");
-    expect(document.title).toBe("Project plan · QwenPaw");
+    expect(document.title).toBe("Project plan · UGSci");
     await act(async () => {});
 
     act(() => {
@@ -279,15 +279,15 @@ describe("browser document titles", () => {
         sessions: [{ id: "chat a", name: "Release notes", messages: [] }],
       });
     });
-    expect(document.title).toBe("Release notes · QwenPaw");
+    expect(document.title).toBe("Release notes · UGSci");
 
     await userEvent.click(
       screen.getByRole("button", { name: "Open settings" }),
     );
-    expect(document.title).toBe("Settings · QwenPaw");
+    expect(document.title).toBe("Settings · UGSci");
 
     await userEvent.click(screen.getByRole("button", { name: "History back" }));
-    expect(document.title).toBe("Release notes · QwenPaw");
+    expect(document.title).toBe("Release notes · UGSci");
   });
 
   it.each(["/chat", "/chat/new", "/chat/missing"])(
@@ -297,7 +297,7 @@ describe("browser document titles", () => {
         sessions: [{ id: "chat-a", name: "Previous chat", messages: [] }],
       });
       renderLayout(path);
-      expect(document.title).toBe("Chat · QwenPaw");
+      expect(document.title).toBe("Chat · UGSci");
     },
   );
 });

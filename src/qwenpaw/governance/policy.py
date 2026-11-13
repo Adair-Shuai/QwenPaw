@@ -771,7 +771,8 @@ class GovernancePolicy:
         # below is first-match-wins, so a broad rule such as ``Bash(gh *)``
         # would otherwise swallow the finding collected in Phase 1 for a
         # compound command like
-        # ``gh --version && powershell -c New-Object -ComObject Excel.Application``
+        # ``gh --version && powershell -c New-Object -ComObject
+        # Excel.Application``
         # and run it without any approval. Sensitive-path findings already
         # had this protection; the same reasoning applies to any CRITICAL
         # detection, including the bundled Office COM rule.

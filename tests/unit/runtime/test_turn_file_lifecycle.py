@@ -13,7 +13,6 @@ from qwenpaw.runtime.runtime import Runtime
 from qwenpaw.turn_files.store import get_store
 
 
-
 @pytest.fixture(name="harness_host")
 async def make_harness_host(tmp_path):
     """Run capture checks through a real installed SDK Harness owner."""
@@ -22,13 +21,23 @@ async def make_harness_host(tmp_path):
 
     source = tmp_path / "capture-plugin"
     source.mkdir()
-    (source / "plugin.json").write_text(json.dumps({
-        "id": "capture-harness", "version": "1.0.0",
-        "entry": {"backend": "main.py"},
-        "sdk": {"version": "1.1.0", "capabilities": ["harnesses", "storage", "resources"]},
-        "meta": {"harnesses": [{"id": "codex", "label": "Capture"}]},
-    }), encoding="utf-8")
-    (source / "main.py").write_text("""
+    (source / "plugin.json").write_text(
+        json.dumps(
+            {
+                "id": "capture-harness",
+                "version": "1.0.0",
+                "entry": {"backend": "main.py"},
+                "sdk": {
+                    "version": "1.1.0",
+                    "capabilities": ["harnesses", "storage", "resources"],
+                },
+                "meta": {"harnesses": [{"id": "codex", "label": "Capture"}]},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (source / "main.py").write_text(
+        """
 from qwenpaw.plugins.harnesses import HarnessSpec, HarnessCapabilities
 class Backend:
     def __init__(self, plugin):
@@ -45,9 +54,14 @@ class Backend:
 class Plugin:
     def register(self, context):
         self.handler = None
-        context.register_harness(HarnessSpec("codex", "Capture", lambda context, settings: Backend(self), HarnessCapabilities()))
+        context.register_harness(HarnessSpec(
+            "codex", "Capture", lambda context, settings: Backend(self),
+            HarnessCapabilities(),
+        ))
 plugin = Plugin()
-""", encoding="utf-8")
+""",
+        encoding="utf-8",
+    )
     async with PluginTestHost(tmp_path / "plugin-host") as host:
         assert (await host.install(source)).ok
         yield host
@@ -282,7 +296,11 @@ async def test_third_party_turn_has_same_durable_file_contract(
     workspace = tmp_path / "agent"
     project = tmp_path / "project"
     project.mkdir()
-    runtime = BackendExecution(workspace, agent_id="agent", registry=harness_host._loader.registry.backend_registry)
+    runtime = BackendExecution(
+        workspace,
+        agent_id="agent",
+        registry=harness_host._loader.registry.backend_registry,
+    )
 
     async def run_turn(**_kwargs):
         try:
@@ -311,7 +329,9 @@ async def test_third_party_turn_has_same_durable_file_contract(
                 encoding="utf-8",
             )
 
-    harness_host._loader.get_loaded_plugin("capture-harness").instance.handler = run_turn
+    harness_host._loader.get_loaded_plugin(
+        "capture-harness"
+    ).instance.handler = run_turn
     req = AgentRequest(
         session_id="session",
         user_id="user",
@@ -526,14 +546,20 @@ async def test_third_party_text_only_turn_does_not_claim_external_writes(
 
     workspace, project = tmp_path / "agent", tmp_path / "project"
     project.mkdir()
-    runtime = BackendExecution(workspace, agent_id="agent", registry=harness_host._loader.registry.backend_registry)
+    runtime = BackendExecution(
+        workspace,
+        agent_id="agent",
+        registry=harness_host._loader.registry.backend_registry,
+    )
 
     async def run_turn(**_kwargs):
         (project / "unrelated.txt").write_bytes(b"external process")
         yield HarnessEvent(kind=HarnessEventKind.TEXT_DELTA, text="Hello")
         yield HarnessEvent(kind=HarnessEventKind.COMPLETED)
 
-    harness_host._loader.get_loaded_plugin("capture-harness").instance.handler = run_turn
+    harness_host._loader.get_loaded_plugin(
+        "capture-harness"
+    ).instance.handler = run_turn
     req = AgentRequest(
         session_id="text-only",
         user_id="user",

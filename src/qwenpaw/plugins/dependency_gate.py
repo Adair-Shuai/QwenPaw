@@ -1006,6 +1006,7 @@ async def prepare_shared_dependencies(
 # pylint: enable=R0915
 
 
+# pylint: disable-next=R0915
 async def _publish_additions(audit, evaluate, target, files, *, recovery=None):
     """Keep exclusion through exact-byte publication and child verification."""
     import asyncio

@@ -44,7 +44,7 @@ from pathlib import Path, PurePosixPath, PureWindowsPath
 from typing import Any
 
 from ..update_policy import DEFAULT_PRESERVE_PATHS
-from ..utils.windows_paths import io_path, remove_tree
+from ..utils.windows_paths import io_path, remove_tree, retry_windows_io
 
 logger = logging.getLogger(__name__)
 
@@ -589,6 +589,11 @@ def recover_interrupted_bundled_activation(
     return True
 
 
+def _replace_bundle_path(source: Path, target: Path) -> None:
+    """Retry transient Windows handles without losing the rollback tree."""
+    retry_windows_io(lambda: source.replace(target))
+
+
 def _stage_and_replace_bundle(
     source: Path,
     target: Path,
@@ -646,13 +651,13 @@ def _stage_and_replace_bundle(
         _write_bundle_complete(staged, source)
 
         if target.exists():
-            target.replace(previous)
+            _replace_bundle_path(target, previous)
         try:
-            staged.replace(target)
+            _replace_bundle_path(staged, target)
         except Exception:
             if previous.exists() and not target.exists():
                 try:
-                    previous.replace(target)
+                    _replace_bundle_path(previous, target)
                 except Exception as rollback_exc:
                     logger.exception(
                         "Failed to restore previous bundled plugin at %s; "
@@ -676,9 +681,9 @@ def _stage_and_replace_bundle(
                 failed = target.parent / f".{target.name}.bundled-failed"
                 _remove_plugin_tree(failed)
                 if target.exists():
-                    target.replace(failed)
+                    _replace_bundle_path(target, failed)
                 if previous.exists() and not target.exists():
-                    previous.replace(target)
+                    _replace_bundle_path(previous, target)
                 _remove_plugin_tree(failed)
                 raise
         elif previous.exists():

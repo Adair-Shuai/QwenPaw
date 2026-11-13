@@ -783,7 +783,10 @@ class CommunityConnectionService:
         return connection
 
     async def connect_password(self, account: str, password: str) -> dict:
-        """Validate first; a rejected replacement leaves the old login intact."""
+        """
+        Validate first; a rejected replacement leaves the old login
+        intact.
+        """
         if not self.config.configured:
             raise CommunityConnectionError("not_configured", 409)
         account = account.strip()

@@ -34,7 +34,9 @@ export function RouteDocumentTitle({
   useLayoutEffect(() => {
     const nextTitle = sessionName
       ? `${sessionName} · UGSci`
-      : title === "QwenPaw" || title === "UGSci" ? "UGSci" : `${title} · UGSci`;
+      : title === "QwenPaw" || title === "UGSci"
+      ? "UGSci"
+      : `${title} · UGSci`;
     document.title = nextTitle;
     document.dispatchEvent(
       new CustomEvent("qwenpaw:document-title-change", {

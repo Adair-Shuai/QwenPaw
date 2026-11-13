@@ -15,14 +15,17 @@ import types
 
 _URL = re.compile(r"(?:https?|wss?)://[^\s\"'<>]+", re.I)
 _SECRET = re.compile(
-    r"secret|token|password|passwd|api[_-]?key|credential|authorization|cookie|encrypt|private_key",
+    "secret|token|password|passwd|api[_-]?key|crede"
+    "ntial|authorization|cookie|encrypt|private_key",
     re.I,
 )
 ERROR_PREFIX = "startup_diagnostic_error "
 
 
 class StartupDiagnostics:
-    """One launch's safe context, first errors and optional slow-start sample."""
+    """
+    One launch's safe context, first errors and optional slow-start sample.
+    """
 
     def __init__(self, packet, *, write=None, clean=None):
         if clean is None:
@@ -76,7 +79,10 @@ class StartupDiagnostics:
 
     @contextmanager
     def background_errors(self, loop):
-        """Observe SDK logging and unhandled tasks/threads; retain their handlers."""
+        """
+        Observe SDK logging and unhandled tasks/threads; retain their
+        handlers.
+        """
         previous = loop.get_exception_handler()
         thread_hook = threading.excepthook
         factory = logging.getLogRecordFactory()
@@ -190,13 +196,13 @@ class StartupDiagnostics:
             errors.append(error)
             error = error.__cause__ or error.__context__
         # Root first: a long outer chain must not hide the actionable cause.
-        for index, error in enumerate(reversed(errors[-4:])):
-            frames, trace = [], error.__traceback__
+        for index, cause in enumerate(reversed(errors[-4:])):
+            frames, trace = [], cause.__traceback__
             while trace is not None:
                 frames.append(self._frame(trace.tb_frame, trace.tb_lineno))
                 trace = trace.tb_next
             try:
-                message = str(error)
+                message = str(cause)
             except Exception:
                 message = "<unprintable exception>"
             self.emit(
@@ -205,7 +211,7 @@ class StartupDiagnostics:
                 **fields,
                 cause_index=index,
                 chain_length=len(errors),
-                exception_type=type(error).__name__,
+                exception_type=type(cause).__name__,
                 message=message,
                 frames=frames[-6:],
             )
@@ -251,6 +257,7 @@ class StartupDiagnostics:
                     None,
                 )
             self.emit("startup_slow", critical=True, await_frames=frames[-8:])
+            # pylint: disable-next=W0212
             current = sys._current_frames()
             for thread in threading.enumerate()[:8]:
                 if thread.ident == threading.get_ident():

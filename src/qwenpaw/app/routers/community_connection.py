@@ -1,5 +1,7 @@
 # -*- coding: utf-8 -*-
-"""Community connection via local PKCE or deployment-protected password login."""
+"""
+Community connection via local PKCE or deployment-protected password login.
+"""
 
 from __future__ import annotations
 

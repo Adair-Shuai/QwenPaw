@@ -284,10 +284,18 @@ async def install_with_upgrade(loader, source_path, **kwargs):
             source_path,
             exc,
             force=kwargs.get("force", False),
+            installation_source=kwargs.get("installation_source", ""),
         )
 
 
-async def stage_dependency_refusal(loader, source_path, error, *, force=False):
+async def stage_dependency_refusal(
+    loader,
+    source_path,
+    error,
+    *,
+    force=False,
+    installation_source="",
+):
     """Install and repair share source retention and replacement decisions."""
     code = getattr(error, "reason_code", "") or getattr(
         getattr(error, "decision", None),
@@ -302,9 +310,18 @@ async def stage_dependency_refusal(loader, source_path, error, *, force=False):
         for value in ("DEPENDENCY_RESTART_REQUIRED", "DEPENDENCY_UNSATISFIED")
     ):
         raise error
+    from ..installation_origin import origin_from_platform_url
+
+    if not origin_from_platform_url(installation_source, "plugin"):
+        installation_source = ""
     operation = await dependency_upgrades(loader).stage(
         source_path,
         force=force,
+        **(
+            {"installation_source": installation_source}
+            if installation_source
+            else {}
+        ),
     )
     raise DependencyUpgradeRequired(operation) from error
 
@@ -1703,7 +1720,14 @@ class DependencyUpgradeManager:
 
     # Keep the transaction or callback contract intact.
     # pylint: disable=R0912,R0915,R0916,W0212
-    async def stage(self, source_path, force=False, *, prepared=None):
+    async def stage(
+        self,
+        source_path,
+        force=False,
+        *,
+        prepared=None,
+        installation_source="",
+    ):
         operation_id = uuid4().hex
         directory = self.root / operation_id
         try:
@@ -1967,6 +1991,7 @@ class DependencyUpgradeManager:
                 "retryable": True,
                 "instructions": warnings,
                 "force": bool(force),
+                "installation_source": installation_source,
                 "source_revision": revision,
                 "environment": snapshot.to_mapping(),
                 "environment_fingerprint": fingerprint,
@@ -2310,6 +2335,7 @@ async def continue_operation(directory, *, preflight=False):
         record = await loader.install_plugin_files(
             source,
             force=operation["force"],
+            installation_source=operation.get("installation_source", ""),
         )
         atomic_json(directory / "continuation.json", install_result(record))
     finally:

@@ -371,6 +371,7 @@ class TaskTracker:
         on_finished: Callable[[str, datetime], Awaitable[Any]] | None = None,
         channel_id: str | None = None,
         steering: Any = None,
+        on_succeeded: Callable[[str, datetime], Awaitable[Any]] | None = None,
     ) -> tuple[asyncio.Queue, bool]:
         # Keep producer ownership, admission and cancellation cleanup in one
         # lifecycle.
@@ -378,8 +379,8 @@ class TaskTracker:
         """Attach to an existing run or start a new one.
 
         Returns ``(queue, is_new_run)``.
-        ``on_finished`` runs only after a successful response terminal and
-        normal producer exhaustion; cleanup runs for every outcome.
+        ``on_finished`` runs for every terminal outcome after stream cleanup.
+        ``on_succeeded`` requires a successful response and normal exhaustion.
         """
         async with self._lock:
             state = self._runs.get(run_key)
@@ -420,9 +421,13 @@ class TaskTracker:
                             # pylint: disable=protected-access
                             tracker._global_last_run_at = start_time
                     await _broadcast_stream(
-                        tracker_ref, run, stream_fn(payload),
+                        tracker_ref,
+                        run,
+                        stream_fn(payload),
                     )
-                    successful = (on_finished is not None and _has_successful_response(run.buffer)
+                    successful = (
+                        on_succeeded is not None
+                        and _has_successful_response(run.buffer)
                     )
                 except asyncio.CancelledError:
                     logger.debug("run cancelled run_key=%s", run_key)
@@ -457,9 +462,14 @@ class TaskTracker:
                     # host persistence may continue after that invocation ends.
                     run.stream_done.set()
                     finish_time = datetime.now(timezone.utc)
-                    if successful and on_finished is not None:
+                    for callback in (
+                        on_finished,
+                        on_succeeded if successful else None,
+                    ):
+                        if callback is None:
+                            continue
                         try:
-                            await on_finished(run_key, finish_time)
+                            await callback(run_key, finish_time)
                         except Exception:  # pylint: disable=broad-except
                             logger.exception(
                                 "run completion callback failed run_key=%s",

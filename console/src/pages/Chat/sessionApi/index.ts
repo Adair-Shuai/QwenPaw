@@ -20,7 +20,11 @@ import { useTurnUsageStore } from "../turnUsageStore";
 import { extractClientMessageId } from "../../../utils/clientMessageId";
 import { useMessageQueueStore } from "../../../stores/messageQueueStore";
 import i18n from "../../../i18n";
-import { findSessionByReference, syncSessionsGlobal, useSessionListStore } from "../../../stores/sessionListStore";
+import {
+  findSessionByReference,
+  syncSessionsGlobal,
+  useSessionListStore,
+} from "../../../stores/sessionListStore";
 
 // ---------------------------------------------------------------------------
 // Constants

@@ -10,7 +10,10 @@ vi.mock("@/api/modules/chat", () => ({
 }));
 vi.mock("react-i18next", () => {
   const t = (key: string) => key;
-  return { useTranslation: () => ({ t }) };
+  return {
+    initReactI18next: { type: "3rdParty", init: vi.fn() },
+    useTranslation: () => ({ t }),
+  };
 });
 it("restores the conversation and log context without clearing them on mount", async () => {
   const snapshot: AssistantSession = {

@@ -207,6 +207,7 @@ def test_standalone_recall_and_backup_need_only_stdlib(tmp_path):
         target = package / relative
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(source_root / relative, target)
+    snapshot_script = package / "backup/_ops/sqlite_snapshot.py"
     script = (
         "import runpy, sys\n"
         "from pathlib import Path\n"
@@ -216,7 +217,7 @@ def test_standalone_recall_and_backup_need_only_stdlib(tmp_path):
         "assert space.sql_query('SELECT content FROM "
         "hist.conversation_history')[0]['content'] == 'hello'\n"
         "space.close()\n"
-        f"worker = runpy.run_path({str(package / 'backup/_ops/sqlite_snapshot.py')!r})\n"
+        f"worker = runpy.run_path({str(snapshot_script)!r})\n"
         f"worker['_snapshot'](Path({str(source)!r}), "
         f"Path({str(tmp_path / 'snapshot.db')!r}))\n"
         "assert 'qwenpaw' not in sys.modules\n"

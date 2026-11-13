@@ -5,6 +5,7 @@ import { request } from "@/api/request";
 import { CommunityRelatedResources } from "./CommunityRelatedResources";
 vi.mock("@/api/request", () => ({ request: vi.fn() }));
 vi.mock("react-i18next", () => ({
+  initReactI18next: { type: "3rdParty", init: vi.fn() },
   useTranslation: () => ({ t: (key: string) => key }),
 }));
 const detail = {

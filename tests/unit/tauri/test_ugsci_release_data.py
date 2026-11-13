@@ -21,6 +21,64 @@ import pytest
 
 ROOT = Path(__file__).resolve().parents[3]
 TOOLS = ROOT / "scripts" / "pack-tauri"
+
+
+@pytest.mark.parametrize("winerror", [5, 32, 33])
+def test_runtime_bundle_retries_windows_sharing_and_preserves_user_data(
+    tmp_path,
+    monkeypatch,
+    winerror,
+):
+    from qwenpaw.plugins import bundled
+
+    source = tmp_path / "renamed-source"
+    manifest = _plugin(source)
+    sample = source / "visualization/data/gullfaks.json"
+    original_sample = sample.read_bytes()
+    installed = tmp_path / "installed/ugsci"
+    monkeypatch.setattr(bundled, "_is_development_environment", lambda: False)
+    assert bundled._install_or_update_plugin(
+        source,
+        installed,
+        "ugsci",
+        manifest,
+    )
+    user_data = _write(
+        installed,
+        "visualization/data/imports/user.bin",
+        b"user-owned",
+    )
+    manifest["version"] = "0.7.7"
+    (source / "plugin.json").write_text(json.dumps(manifest), encoding="utf-8")
+    real_replace = Path.replace
+    attempts = []
+
+    def temporarily_locked(path, target):
+        if path.name == "plugin" and Path(target) == installed:
+            attempts.append(path)
+            if len(attempts) < 3:
+                error = PermissionError("controlled Windows sharing violation")
+                error.winerror = winerror
+                raise error
+        return real_replace(path, target)
+
+    monkeypatch.setattr(Path, "replace", temporarily_locked)
+    assert bundled._install_or_update_plugin(
+        source,
+        installed,
+        "ugsci",
+        manifest,
+    )
+    assert len(attempts) == 3
+    assert json.loads((installed / "plugin.json").read_text())["version"] == (
+        "0.7.7"
+    )
+    assert user_data.read_bytes() == b"user-owned"
+    assert not (installed / "visualization/data/gullfaks.json").exists()
+    assert sample.read_bytes() == original_sample
+    assert bundled._has_bundle_complete_marker(installed)
+
+
 sys.path.insert(0, str(TOOLS))
 
 

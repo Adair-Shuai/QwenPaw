@@ -359,6 +359,8 @@ def test_duplicate_plugin_id_version_fails_closed(tmp_path: Path) -> None:
 
     with pytest.raises(ValueError, match="duplicate published plugin"):
         discover_and_pack(plugins_root, tmp_path / "dist", "/files/plugins")
+
+
 def _copy_harness_plugins(root: Path) -> Path:
     plugins_root = root / "plugins"
     for vendor in ("codex", "qoder"):

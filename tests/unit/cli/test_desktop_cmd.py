@@ -225,6 +225,7 @@ def test_open_workspace_html_opens_the_decoded_local_path(
     monkeypatch.setattr(desktop_cmd.webbrowser, "open", fake_browser_open)
 
     def fake_urlopen(request: urllib.request.Request) -> _Response:
+        del request
         return _Response(json.dumps({"uri": encoded_uri}).encode("utf-8"))
 
     monkeypatch.setattr(desktop_cmd, "urlopen", fake_urlopen)
@@ -256,6 +257,7 @@ def test_open_workspace_html_keeps_the_file_uri_off_windows(
     monkeypatch.setattr(desktop_cmd.webbrowser, "open", fake_browser_open)
 
     def fake_urlopen(request: urllib.request.Request) -> _Response:
+        del request
         uri = "file:///tmp/report.html"
         return _Response(json.dumps({"uri": uri}).encode("utf-8"))
 
@@ -291,6 +293,7 @@ def test_open_workspace_html_decodes_unc_uri_with_host(monkeypatch) -> None:
     monkeypatch.setattr(desktop_cmd.webbrowser, "open", fake_browser_open)
 
     def fake_urlopen(request: urllib.request.Request) -> _Response:
+        del request
         uri = "file://server/share/report.html"
         return _Response(json.dumps({"uri": uri}).encode("utf-8"))
 
