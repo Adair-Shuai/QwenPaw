@@ -108,7 +108,8 @@ def settings(app: Path) -> dict:
         "show_pathbar": False,
         "show_tab_view": False,
         "show_icon_preview": False,
-        "hide_extensions": [APP_NAME],
+        # SetFile extension flags add forbidden FinderInfo to a signed bundle.
+        "hide_extensions": [],
     }
 
 

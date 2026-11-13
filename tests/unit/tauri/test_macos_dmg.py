@@ -67,7 +67,7 @@ def test_dmg_settings_keep_live_icons_and_retina_instruction_artwork(tmp_path):
     }
     assert settings["window_rect"] == ((200, 120), (640, 400))
     assert settings["files"] == [str(app.resolve())]
-    assert settings["hide_extensions"] == ["UGSci.app"]
+    assert settings["hide_extensions"] == []
     for name, size in (
         ("dmg-background.png", (640, 400)),
         ("dmg-background@2x.png", (1280, 800)),
