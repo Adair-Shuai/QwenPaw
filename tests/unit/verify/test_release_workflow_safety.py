@@ -608,6 +608,7 @@ def test_core_artifact_reuse_only_allows_exact_extension_tooling_paths():
         "console/src/plugins/flowForgeWorkbench.test.tsx",
         "tests/unit/scripts/test_macos_packaging.py",
         "tests/unit/tauri/test_windows_setup_ui.py",
+        "tests/unit/tauri/test_macos_dmg_native.py",
     ):
         assert path in allowed
     for path in (

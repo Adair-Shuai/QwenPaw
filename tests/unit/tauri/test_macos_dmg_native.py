@@ -35,7 +35,10 @@ def test_real_dmg_preserves_signed_payload_layout_and_drag_copy(
     resources.mkdir(parents=True)
     executable = app / "Contents/MacOS/UGSci"
     executable.parent.mkdir()
-    shutil.copy2("/usr/bin/true", executable)
+    # System binaries carry SIP-only flags. Use their real Mach-O bytes
+    # with the executable permissions of a user-owned application fixture.
+    shutil.copyfile("/usr/bin/true", executable)
+    executable.chmod(0o755)
     shutil.copy2(DMG.ASSETS / "icon.icns", resources / "icon.icns")
     (resources / "用户数据.txt").write_text(
         "preserve payload",

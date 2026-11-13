@@ -216,6 +216,7 @@ jobs:
                 .github/workflows/component-release.yml|\
                 scripts/pack-tauri/macos_dmg.py|\
                 tests/unit/tauri/test_macos_dmg.py|\
+                tests/unit/tauri/test_macos_dmg_native.py|\
                 scripts/pack-tauri/build_component_release.py|\
                 tests/unit/tauri/test_component_release.py|\
                 scripts/pack-tauri/build_python_layers.py|\
