@@ -123,7 +123,9 @@ jobs:
             --attempts 2 \
             --brand ugsci \
             --run-id "${{ inputs.artifacts_run_id || github.event.inputs.artifacts_run_id || github.run_id }}" \
-            --include-updater-metadata
+            --include-updater-metadata \
+            ${{ inputs.windows_artifacts_run_id != '' && '--exclude-windows' || '' }} \
+            ${{ inputs.macos_artifacts_run_id != '' && '--exclude-macos' || '' }}
 
       - name: Download desktop updater metadata
         run: echo "Updater metadata was downloaded and checksum-verified with the application artifacts."

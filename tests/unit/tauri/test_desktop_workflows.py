@@ -504,11 +504,16 @@ def test_shared_daemon_keeps_channel_runtime_environment() -> None:
     [("ugsci", "UGSci"), ("qwenpaw", "QwenPaw")],
 )
 @pytest.mark.parametrize("include_metadata", [False, True])
+@pytest.mark.parametrize(
+    "excluded",
+    [(), ("windows",), ("macos",), ("windows", "macos")],
+)
 def test_artifact_selection_retains_fork_brand_and_newest_id(
     monkeypatch,
     brand,
     prefix,
     include_metadata,
+    excluded,
 ):
     """Execute the shipped resolver with duplicate, cross-brand artifacts."""
     script = (
@@ -516,11 +521,17 @@ def test_artifact_selection_retains_fork_brand_and_newest_id(
     ).read_text(encoding="utf-8")
     resolver = script.split("python3 -c '\n", 1)[1].split("\n'\n}", 1)[0]
     monkeypatch.setenv("DESKTOP_ARTIFACT_BRAND", brand)
+    for platform in ("windows", "macos"):
+        monkeypatch.setenv(
+            "EXCLUDE_" + platform.upper(),
+            str(platform in excluded).lower(),
+        )
     monkeypatch.setenv(
         "INCLUDE_UPDATER_METADATA",
         str(include_metadata).lower(),
     )
     name = f"{prefix}-Desktop-Tauri-Windows-x64"
+    mac_name = f"{prefix}-Desktop-Tauri-macOS-arm64"
     other = "QwenPaw" if prefix == "UGSci" else "UGSci"
     rows = [
         f"10\t2026-11-01T00:00:00Z\t{name}",
@@ -528,6 +539,8 @@ def test_artifact_selection_retains_fork_brand_and_newest_id(
         f"12\t2026-11-02T00:00:00Z\t{name}",
         f"99\t2026-11-03T00:00:00Z\t{other}-Desktop-Tauri-Windows-x64",
         "20\t2026-11-02T00:00:00Z\ttauri-updater-meta-windows",
+        f"21\t2026-11-02T00:00:00Z\t{mac_name}",
+        "22\t2026-11-02T00:00:00Z\ttauri-updater-meta-macos",
         f"invalid\t2026-11-03T00:00:00Z\t{name}",
         "30\t2026-11-02T00:00:00Z\tunrelated-artifact",
     ]
@@ -538,12 +551,131 @@ def test_artifact_selection_retains_fork_brand_and_newest_id(
         capture_output=True,
         check=True,
     )
-    expected = [f"{name}\t12"]
-    if include_metadata:
-        expected.append("tauri-updater-meta-windows\t20")
-    assert result.stdout.splitlines() == expected
-    assert "using newest id 12" in result.stderr
-    assert "ignoring older 10, 11" in result.stderr
+    expected = []
+    if "windows" not in excluded:
+        expected.append(f"{name}\t12")
+        if include_metadata:
+            expected.append("tauri-updater-meta-windows\t20")
+        assert "using newest id 12" in result.stderr
+        assert "ignoring older 10, 11" in result.stderr
+    if "macos" not in excluded:
+        expected.append(f"{mac_name}\t21")
+        if include_metadata:
+            expected.append("tauri-updater-meta-macos\t22")
+    assert result.stdout.splitlines() == sorted(expected)
+
+
+@pytest.mark.parametrize(
+    "excluded,corrupt,success",
+    [
+        ((), False, True),
+        (("windows",), False, True),
+        (("macos",), False, True),
+        (("windows", "macos"), False, True),
+        (("windows",), True, False),
+        (("macos",), True, False),
+    ],
+)
+def test_download_base_artifacts_verifies_only_unreplaced_platforms(
+    tmp_path,
+    excluded,
+    corrupt,
+    success,
+):
+    """Execute the download helper and real checksum/ZIP verifier."""
+    import hashlib
+    import io
+    import shutil
+    import zipfile
+
+    fixtures = tmp_path / "fixtures"
+    fixtures.mkdir()
+    rows = []
+    for artifact_id, platform, label, suffix in (
+        (7, "windows", "Windows", "Windows-portable.zip"),
+        (8, "macos", "macOS", "macOS.zip"),
+    ):
+        if platform in excluded:
+            continue
+        name = f"UGSci-Desktop-Tauri-{label}-2.3.0b6"
+        filename = f"UGSci-Tauri-2.3.0b6-{suffix}"
+        payload = io.BytesIO()
+        with zipfile.ZipFile(payload, "w") as archive:
+            archive.writestr("payload.txt", "checked desktop payload")
+        content = payload.getvalue()
+        digest = "0" * 64 if corrupt else hashlib.sha256(content).hexdigest()
+        with zipfile.ZipFile(fixtures / f"{artifact_id}.zip", "w") as archive:
+            archive.writestr(filename, content)
+            archive.writestr(f"{filename}.sha256", f"{digest}  {filename}\n")
+        rows.append(f"{artifact_id}\t2026-11-14T00:00:00Z\t{name}")
+    (fixtures / "artifacts.tsv").write_text("\n".join(rows), encoding="utf-8")
+    fake_gh = tmp_path / "gh.py"
+    fake_gh.write_text(
+        "import os, pathlib, sys\n"
+        "root = pathlib.Path(os.environ['DESKTOP_HELPER_FIXTURES'])\n"
+        "with (root / 'requests.log').open('a') as log:\n"
+        "    log.write(repr(sys.argv[1:]) + '\\n')\n"
+        "endpoint = next(arg for arg in sys.argv\n"
+        "                if arg.startswith('repos/'))\n"
+        "if endpoint.endswith('/zip'):\n"
+        "    artifact = root / (endpoint.split('/')[-2] + '.zip')\n"
+        "    sys.stdout.buffer.write(artifact.read_bytes())\n"
+        "else:\n"
+        "    table = (root / 'artifacts.tsv').read_bytes()\n"
+        "    sys.stdout.buffer.write(table + b'\\n')\n",
+        encoding="utf-8",
+    )
+    bash_env = tmp_path / "bash-env.sh"
+    bash_env.write_text(
+        'python3() { "$DESKTOP_HELPER_PYTHON" "$@" | tr -d "\\r"; '
+        'return "${PIPESTATUS[0]}"; }\n'
+        'gh() { "$DESKTOP_HELPER_PYTHON" "$DESKTOP_HELPER_GH" "$@"; }\n',
+        encoding="utf-8",
+    )
+    bash = (
+        runpy.run_path(
+            str(
+                REPO_ROOT
+                / "scripts/pack-tauri/prepare_data_context_console.py",
+            ),
+        )["git_bash"]()
+        if os.name == "nt"
+        else Path(shutil.which("bash") or "")
+    )
+    assert bash.is_file(), "Bash is required to verify desktop downloads"
+    result = subprocess.run(
+        [
+            str(bash),
+            str(REPO_ROOT / "scripts/pack/download_desktop_artifacts.sh"),
+            "--brand",
+            "ugsci",
+            "--attempts",
+            "1",
+            *[f"--exclude-{platform}" for platform in excluded],
+        ],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "GITHUB_REPOSITORY": "test/desktop",
+            "GITHUB_RUN_ID": "100",
+            "GH_TOKEN": "local-test",
+            "BASH_ENV": bash_env.as_posix(),
+            "DESKTOP_HELPER_PYTHON": Path(sys.executable).as_posix(),
+            "DESKTOP_HELPER_GH": fake_gh.as_posix(),
+            "DESKTOP_HELPER_FIXTURES": str(fixtures),
+        },
+        capture_output=True,
+        text=True,
+        timeout=30,
+        check=False,
+    )
+    assert (result.returncode == 0) is success, result.stdout + result.stderr
+    if corrupt:
+        assert "SHA-256 mismatch" in result.stderr
+    elif len(excluded) == 2:
+        assert not (fixtures / "requests.log").exists()
+    else:
+        assert "Desktop artifacts downloaded and verified" in result.stdout
 
 
 @pytest.mark.parametrize(

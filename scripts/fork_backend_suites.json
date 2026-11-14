@@ -1224,6 +1224,7 @@
       "test_native_icons_remain_part_of_host_identity_and_packaging_gates"
     ],
     "tests/unit/tauri/test_desktop_workflows.py": [
+      "test_download_base_artifacts_verifies_only_unreplaced_platforms",
       "test_windows_build_creates_portable_package_once_and_keeps_signing"
     ],
     "tests/unit/runtime/test_console_edit_resend.py": [
@@ -1316,6 +1317,7 @@
       "test_app_starts_without_winpty"
     ],
     "tests/unit/verify/test_release_workflow_safety.py": [
+      "test_replaced_platforms_are_excluded_from_base_downloads",
       "test_plugin_preflight_reads_actual_objects_without_uploading",
       "test_release_expensive_jobs_require_immutable_plugin_preflight",
       "test_console_checkout_preserves_formatter_line_endings",

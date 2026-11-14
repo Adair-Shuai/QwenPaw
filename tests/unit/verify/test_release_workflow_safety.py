@@ -601,6 +601,10 @@ def test_core_artifact_reuse_only_allows_exact_extension_tooling_paths():
         ".pre-commit-config.yaml",
         ".github/workflows/apps-release.yml",
         ".github/workflows/plugins-release.yml",
+        ".github/workflows/desktop-publish.yml",
+        ".github/workflows/desktop-promote.yml",
+        "scripts/pack/download_desktop_artifacts.sh",
+        "tests/unit/tauri/test_desktop_workflows.py",
         "scripts/pack/prepare_plugin_versions.py",
         "scripts/verify_update_regressions.py",
         "scripts/fork_backend_suites.json",
@@ -749,6 +753,47 @@ def test_replacement_desktop_runs_overlay_pair() -> None:
     assert "Overlay replacement macOS updater metadata" in promote
     assert "cp -a replacement-windows/tauri-updater-meta-windows ." in promote
     assert "cp -a replacement-macos/tauri-updater-meta-macos ." in promote
+
+
+@pytest.mark.parametrize(
+    "workflow_name,job_name",
+    [
+        ("desktop-publish.yml", "upload-release"),
+        ("desktop-publish.yml", "upload-oss"),
+        ("desktop-promote.yml", "promote-oss"),
+    ],
+)
+def test_replaced_platforms_are_excluded_from_base_downloads(
+    workflow_name,
+    job_name,
+):
+    steps = yaml.safe_load(_workflow(workflow_name))["jobs"][job_name]["steps"]
+    download = next(
+        step
+        for step in steps
+        if "download_desktop_artifacts.sh" in step.get("run", "")
+    )
+    for platform in ("windows", "macos"):
+        assert (
+            "${{ inputs." + platform + "_artifacts_run_id != '' && "
+            "'--exclude-" + platform + "' || '' }}"
+        ) in download["run"]
+    final = next(
+        step
+        for step in steps
+        if step.get("name")
+        == "Verify final desktop checksums after replacement overlays"
+    )
+    assert steps.index(final) > steps.index(download)
+    for platform in (
+        "windows",
+        "macos",
+        "macos-dmg",
+        "windows-updater",
+        "macos-updater",
+    ):
+        assert f"--require {platform}" in final["run"]
+    assert final.get("continue-on-error", False) is False
 
 
 def test_final_macos_archives_are_reverified_before_publish_and_promote() -> (

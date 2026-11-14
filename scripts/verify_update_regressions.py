@@ -280,6 +280,7 @@ REQUIRED_CASES = {
     },
     "tests/unit/tauri/test_desktop_workflows.py": {
         "test_artifact_selection_retains_fork_brand_and_newest_id",
+        "test_download_base_artifacts_verifies_only_unreplaced_platforms",
         "test_desktop_update_commands_are_allowed_by_main_window_acl",
         "test_fork_beta_promotion_retains_checked_desktop_manifest",
         "test_windows_build_creates_portable_package_once_and_keeps_signing",
@@ -300,6 +301,7 @@ REQUIRED_CASES = {
         "test_directory_candidate_snapshot_is_isolated",
     },
     "tests/unit/verify/test_release_workflow_safety.py": {
+        "test_replaced_platforms_are_excluded_from_base_downloads",
         "test_resumed_artifacts_must_match_release_commit_and_metadata",
         "test_backend_units_install_only_the_locked_native_icon_renderer",
         "test_desktop_packaging_helpers_install_icon_dependencies",

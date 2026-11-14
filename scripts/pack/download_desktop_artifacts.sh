@@ -17,6 +17,8 @@ set -euo pipefail
 script_dir=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)
 attempts=2
 include_updater_metadata=false
+exclude_windows=false
+exclude_macos=false
 brand=qwenpaw
 run_id=${GITHUB_RUN_ID:-}
 
@@ -32,6 +34,14 @@ while [ $# -gt 0 ]; do
       ;;
     --include-updater-metadata)
       include_updater_metadata=true
+      shift
+      ;;
+    --exclude-windows)
+      exclude_windows=true
+      shift
+      ;;
+    --exclude-macos)
+      exclude_macos=true
       shift
       ;;
     --brand)
@@ -62,6 +72,16 @@ if [[ "$brand" != "qwenpaw" && "$brand" != "ugsci" ]]; then
 fi
 : "${run_id:?--run-id or GITHUB_RUN_ID is required}"
 
+# Replacement runs supply their own application and updater pair. The caller
+# verifies the complete platform set after all replacement overlays are merged.
+required_platforms=()
+$exclude_windows || required_platforms+=(--require windows)
+$exclude_macos || required_platforms+=(--require macos)
+if [ ${#required_platforms[@]} -eq 0 ]; then
+  echo "Both desktop platforms are supplied by replacement runs"
+  exit 0
+fi
+
 # Parallel arrays: selected_names[i] is downloaded by artifact id
 # selected_ids[i]. Both stay the same length by construction.
 selected_names=()
@@ -84,16 +104,27 @@ cleanup_downloads() {
 # breaks exact ties), and reports what it dropped so a surprise duplicate is
 # visible in the job log instead of failing two steps later.
 resolve_selection() {
-  DESKTOP_ARTIFACT_BRAND="$brand" INCLUDE_UPDATER_METADATA="$include_updater_metadata" python3 -c '
+  DESKTOP_ARTIFACT_BRAND="$brand" INCLUDE_UPDATER_METADATA="$include_updater_metadata" EXCLUDE_WINDOWS="$exclude_windows" EXCLUDE_MACOS="$exclude_macos" python3 -c '
 import os
 import re
 import sys
 
 include_meta = os.environ.get("INCLUDE_UPDATER_METADATA") == "true"
 prefix = "UGSci" if os.environ.get("DESKTOP_ARTIFACT_BRAND") == "ugsci" else "QwenPaw"
-patterns = [re.compile(r"^" + prefix + r"-Desktop-Tauri-(Windows|macOS)-")]
+platforms = [
+    (platform, label)
+    for platform, label in (("windows", "Windows"), ("macos", "macOS"))
+    if os.environ.get("EXCLUDE_" + platform.upper()) != "true"
+]
+patterns = [
+    re.compile(r"^" + prefix + "-Desktop-Tauri-" + label + "-")
+    for _, label in platforms
+]
 if include_meta:
-    patterns.append(re.compile(r"^tauri-updater-meta-(windows|macos)$"))
+    patterns.extend(
+        re.compile(r"^tauri-updater-meta-" + platform + "$")
+        for platform, _ in platforms
+    )
 
 copies = {}
 for raw in sys.stdin:
@@ -211,8 +242,7 @@ for ((attempt = 1; attempt <= attempts; attempt++)); do
 
   if $download_ok && python3 "$script_dir/verify_desktop_artifacts.py" \
     --brand "$brand" \
-    --require windows \
-    --require macos; then
+    "${required_platforms[@]}"; then
     echo "Desktop artifacts downloaded and verified"
     exit 0
   fi

@@ -110,6 +110,8 @@ jobs:
                 .github/workflows/apps-release.yml|\
                 .github/workflows/plugins-release.yml|\
                 .github/workflows/desktop-build.yml|\
+                .github/workflows/desktop-publish.yml|\
+                .github/workflows/desktop-promote.yml|\
                 .github/workflows/component-release.yml|\
                 RELEASING.md|RELEASING_zh.md|\
                 scripts/fork_backend_suites.json|\
@@ -121,6 +123,8 @@ jobs:
                 tests/unit/tauri/test_macos_dmg_native.py|\
                 tests/unit/tauri/test_windows_setup_ui.py|\
                 scripts/pack/prepare_plugin_versions.py|\
+                scripts/pack/download_desktop_artifacts.sh|\
+                tests/unit/tauri/test_desktop_workflows.py|\
                 scripts/run_unit_tests.py|\
                 scripts/pack-tauri/prepare_component_base.py|\
                 tests/unit/verify/test_unit_sharding.py|\

@@ -211,10 +211,16 @@ jobs:
                 .github/workflows/release.yml|\
                 .github/workflows/release-resume.yml|\
                 .github/workflows/desktop-build.yml|\
+                .github/workflows/desktop-publish.yml|\
+                .github/workflows/desktop-promote.yml|\
                 .github/workflows/release-verify.yml|\
                 .github/workflows/full-tests-nightly.yml|\
                 .github/workflows/component-release.yml|\
                 scripts/pack-tauri/macos_dmg.py|\
+                scripts/pack/download_desktop_artifacts.sh|\
+                scripts/verify_update_regressions.py|\
+                scripts/fork_backend_suites.json|\
+                tests/unit/tauri/test_desktop_workflows.py|\
                 tests/unit/tauri/test_macos_dmg.py|\
                 tests/unit/tauri/test_macos_dmg_native.py|\
                 scripts/pack-tauri/build_component_release.py|\
