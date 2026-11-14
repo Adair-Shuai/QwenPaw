@@ -4084,6 +4084,78 @@ describe("ChatPage coverage", () => {
     usageStore.setState({ snapshot: null, activeMaxInputLength: null });
   });
 
+  it("UGSci fork feature: mounted answer quote shortcut preserves code and reaches normal admission", async () => {
+    const chatId = "12222222-2222-4222-8222-222222222222";
+    const scope = getDraftStorageKey("default", chatId);
+    const code = "  @Other /new\n    return 42;\n";
+    mockRenderSender.mockReturnValue(true);
+    renderWithProviders(<ChatPage />, { initialEntries: [`/chat/${chatId}`] });
+    await screen.findByTestId("mention-sender");
+    await act(async () => {});
+    const sender = screen.getByTestId("mention-sender");
+    fireEvent.change(sender, { target: { value: "explain selected code" } });
+    const source = document.createElement("section");
+    source.dataset.answerQuoteSource = "assistant-reply:0";
+    const pre = document.createElement("pre");
+    pre.textContent = code;
+    source.append(pre);
+    screen.getByTestId("chat-ui").append(source);
+    const range = document.createRange();
+    range.selectNodeContents(pre);
+    Object.defineProperty(range, "getBoundingClientRect", {
+      value: () => new DOMRect(40, 80, 120, 20),
+    });
+    act(() => {
+      window.getSelection()!.removeAllRanges();
+      window.getSelection()!.addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    fireEvent.keyDown(document, {
+      key: "Œ",
+      code: "KeyQ",
+      altKey: true,
+      shiftKey: true,
+    });
+    expect(readAnswerQuotes(scope).map((quote) => quote.text)).toEqual([code]);
+    expect(sender).toHaveValue("explain selected code");
+    expect(screen.getByLabelText("Selected quotes")).toHaveTextContent(
+      "return 42;",
+    );
+    const admitted = await capturedOptions!.sender.beforeSubmit({
+      query: "explain selected code",
+    });
+    expect(admitted).toMatchObject({
+      proceed: true,
+      query: "explain selected code",
+      context: { qwenpaw_answer_quotes: [{ text: code }] },
+    });
+    expect(readAnswerQuotes(scope)).toEqual([]);
+    global.fetch = vi
+      .fn()
+      .mockResolvedValue({ ok: true, status: 200, body: null });
+    await act(async () => {
+      if (typeof admitted !== "object") throw new Error("Expected admission");
+      await capturedOptions!.api.fetch({
+        ...admitted,
+        input: [
+          { role: "user", content: [{ type: "text", text: admitted.query }] },
+        ],
+      });
+    });
+    const call = vi
+      .mocked(fetch)
+      .mock.calls.find(
+        ([url, init]) =>
+          String(url).includes("/console/chat") && init?.method === "POST",
+      )!;
+    const body = JSON.parse(call[1]!.body as string);
+    expect(body.input[0].content[1].text).toContain(
+      ">   @Other /new\n>     return 42;",
+    );
+    expect(body.target_agent_id).toBeUndefined();
+    window.getSelection()?.removeAllRanges();
+  });
+
   it("UGSci fork feature: answer quote admission freezes multiple passages and keeps newer selections", async () => {
     const chatId = "13222222-2222-4222-8222-222222222222";
     const scope = getDraftStorageKey("default", chatId);

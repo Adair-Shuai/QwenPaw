@@ -18,6 +18,9 @@ from qoder_agent_sdk import (
     Transport,
 )
 from qoder_agent_sdk._internal.sessions import _get_project_dir
+from qoder_agent_sdk._internal.transport.subprocess_cli import (
+    SubprocessCLITransport as InstalledCLITransport,
+)
 from qwenpaw.plugins.harnesses import (
     HarnessAttachment,
     HarnessAttachmentKind,
@@ -532,8 +535,12 @@ async def test_actual_zip_manifest_registration_and_host_call(
     tmp_path,
 ):
     plugin_id = "qwenpaw-harness-qoder"
+    plugin_source = Path(__file__).resolve().parents[1]
+    version = json.loads((plugin_source / "plugin.json").read_text("utf-8"))[
+        "version"
+    ]
     archive = Path(__file__).resolve().parents[4] / (
-        f"dist/plugins/harness/{plugin_id}/{plugin_id}-1.0.0.zip"
+        f"dist/plugins/harness/{plugin_id}/{plugin_id}-{version}.zip"
     )
     assert (
         archive.is_file()
@@ -544,8 +551,12 @@ async def test_actual_zip_manifest_registration_and_host_call(
     manifest = json.loads((source / "plugin.json").read_text())
     assert (
         manifest["id"] == plugin_id
+        and manifest["version"] == version
         and manifest["entry"]["backend"] == "main.py"
     )
+    assert (source / "projection.py").read_bytes() == (
+        plugin_source / "projection.py"
+    ).read_bytes()
     assert (source / manifest["entry"]["frontend"]).is_file()
     async with PluginTestHost(tmp_path / "host") as host:
         assert (await host.install(source)).ok
@@ -569,3 +580,85 @@ async def test_actual_zip_manifest_registration_and_host_call(
         assert (
             runtime.transports[-1].inputs[0]["message"]["content"] == "Review"
         )
+
+
+@pytest.mark.parametrize("permission_mode", ["default", "bypassPermissions"])
+@pytest.mark.parametrize(
+    "tools,default_policy,policies,included,excluded",
+    [
+        (None, "allow", {}, None, []),
+        ((), "allow", {}, [], []),
+        (
+            ("search", "delete"),
+            "ask",
+            {"search": "ask", "delete": "deny"},
+            ["search"],
+            ["delete"],
+        ),
+        (("search",), "deny", {}, [], []),
+        (("search",), "deny", {"search": "allow"}, ["search"], []),
+        (None, "deny", {}, [], []),
+        (None, "ask", {"delete": "deny", "read": "allow"}, None, ["delete"]),
+    ],
+)
+async def test_mcp_tool_scope_reaches_real_cli_configuration(
+    runtime,
+    permission_mode,
+    tools,
+    default_policy,
+    policies,
+    included,
+    excluded,
+):
+    """Tool visibility survives real SDK serialization in both modes."""
+    # Inspect the installed SDK serializer in this protocol regression.
+    # pylint: disable=protected-access
+    backend, call = runtime.backend(), runtime.call()
+    capabilities = HarnessRuntimeCapabilities(
+        mcp_servers=(
+            HarnessMCPServerDefinition(
+                "docs",
+                "Docs",
+                "streamable_http",
+                url="https://mcp.example.test",
+                tools=tools,
+                default_policy=default_policy,
+                tool_policies=policies,
+            ),
+        ),
+    )
+    await collect(
+        backend,
+        replace(
+            call,
+            settings={"permission_mode": permission_mode},
+            runtime_capabilities=capabilities,
+        ),
+    )
+    options = runtime.transports[-1].options
+    command = InstalledCLITransport(
+        prompt="Review",
+        options=options,
+    )._build_command()
+    assert "--strict-mcp-config" in command
+    if included == []:
+        assert options.mcp_servers == {}
+        assert options.allowed_mcp_server_names == []
+        assert "--mcp-config" not in command
+        return
+    payload = json.loads(command[command.index("--mcp-config") + 1])
+    config = payload["mcpServers"]["docs"]
+    assert options.allowed_mcp_server_names == ["docs"]
+    assert config["url"] == "https://mcp.example.test"
+    if included is None:
+        assert "includeTools" not in config
+    else:
+        assert config["includeTools"] == included
+    if excluded:
+        assert config["excludeTools"] == excluded
+    else:
+        assert "excludeTools" not in config
+    if policies:
+        settings = json.loads(command[command.index("--settings") + 1])
+        for name, effect in policies.items():
+            assert f"mcp__docs__{name}" in settings["permissions"][effect]

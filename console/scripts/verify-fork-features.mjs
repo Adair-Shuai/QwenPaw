@@ -1743,6 +1743,18 @@ requireCases("src/features/terminal/TerminalView.test.tsx", [
   "quotes native terminal output with its owning session and never sends the selection as shell input",
 ]);
 
+requireCases("src/pages/Chat/QuoteSelection.integration.test.tsx", [
+  "keeps upstream keyboard quoting and exact code whitespace in structured drafts",
+  "quotes prose across real code toolbars without admitting interactive plugin controls",
+  "excludes rendered system messages and code toolbar labels from answer quotes",
+]);
+requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
+  "UGSci fork feature: mounted answer quote shortcut preserves code and reaches normal admission",
+]);
+requireCases("src/pages/Chat/components/AnswerQuoteComposer.test.tsx", [
+  "keeps keyboard quoting bound to the active scope and focused action",
+]);
+
 if (!process.argv.includes("--check")) {
   const result = spawnSync(
     process.execPath,

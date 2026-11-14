@@ -57,6 +57,8 @@ SUITES = (
     "tests/unit/tauri/test_desktop_scientific_pruning.py",
     "tests/unit/tauri/test_stage_python_runtime.py",
     "tests/unit/plugins/test_dependency_source_sync.py",
+    "tests/unit/harnesses/test_harness_dependency_profiles.py",
+    "tests/unit/plugins/test_install_lock.py",
 )
 REQUIRED_CASES = {
     "tests/unit/tauri/test_desktop_sqlite_paths.py": {
@@ -284,6 +286,14 @@ REQUIRED_CASES = {
         "test_actual_app_archive_rejects_private_extra_files_and_modified_bytes",
         "test_promotion_restores_prior_objects_on_partial_write_failure",
         "test_signed_application_release_preserves_other_components_and_host_policy",
+    },
+    "tests/unit/harnesses/test_harness_dependency_profiles.py": {
+        "test_desktop_profile_excludes_vendor_runtimes_and_keeps_scientific_tools",
+        "test_core_profiles_keep_vendor_sdks_in_optional_harnesses",
+        "test_harness_workflow_verifies_isolated_vendors_on_fork_branch",
+    },
+    "tests/unit/plugins/test_install_lock.py": {
+        "test_long_scoped_reader_blocks_maintenance_until_process_exit",
     },
 }
 

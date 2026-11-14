@@ -180,7 +180,7 @@ function SourceOnlyBlock({
       className={`${styles.block} qwenpaw-code-block`}
       data-language={language || "text"}
     >
-      <header className={styles.sourceHeader}>
+      <header className={styles.sourceHeader} data-answer-quote-ignore="true">
         <span className={styles.language}>{language || "text"}</span>
         <BlockActions language={language || "text"} source={source} />
       </header>
@@ -278,7 +278,7 @@ function RenderableBlock({
       className={`${styles.block} qwenpaw-code-block`}
       data-language={language}
     >
-      <header className={styles.header}>
+      <header className={styles.header} data-answer-quote-ignore="true">
         <span className={styles.language}>{language}</span>
         <div className={styles.tabs} role="tablist" aria-label="Block view">
           <button

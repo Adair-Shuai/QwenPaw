@@ -111,7 +111,9 @@ const HostMessage = React.memo(function HostMessage({
               <div
                 key={index}
                 data-global-search-message={data.id}
-                data-answer-quote-source={`${data.id}:${index}`}
+                data-answer-quote-source={
+                  data.role === "assistant" ? `${data.id}:${index}` : undefined
+                }
                 className={styles.quoteResponse}
                 data-quote-response={
                   data.role === "assistant" ? "true" : undefined

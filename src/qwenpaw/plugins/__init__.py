@@ -11,46 +11,47 @@ from importlib import import_module
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    # Resolve every public lazy export for static analysis only.
+    # Explicit re-exports preserve strict author typing with lazy imports.
+    # pylint: disable=useless-import-alias
     from .sdk import (
-        Plugin,
-        PluginContext,
+        Plugin as Plugin,
+        PluginContext as PluginContext,
     )
     from .sdk_version import (
-        SDK_VERSION,
-        SDK_CAPABILITIES,
+        SDK_VERSION as SDK_VERSION,
+        SDK_CAPABILITIES as SDK_CAPABILITIES,
     )
     from .errors import (
-        SDKError,
-        SDKAccessError,
-        SDKCompatibilityError,
-        SDKRestartRequiredError,
-        StaleContextError,
-        ResourceError,
-        ToolInputError,
+        SDKError as SDKError,
+        SDKAccessError as SDKAccessError,
+        SDKCompatibilityError as SDKCompatibilityError,
+        SDKRestartRequiredError as SDKRestartRequiredError,
+        StaleContextError as StaleContextError,
+        ResourceError as ResourceError,
+        ToolInputError as ToolInputError,
     )
     from .activity import (
-        PluginBusyError,
+        PluginBusyError as PluginBusyError,
     )
     from .loader import (
-        PluginLoader,
+        PluginLoader as PluginLoader,
     )
     from .registry import (
-        PluginRegistry,
+        PluginRegistry as PluginRegistry,
     )
     from .api import (
-        PluginApi,
-        get_tool_config,
+        PluginApi as PluginApi,
+        get_tool_config as get_tool_config,
     )
     from .architecture import (
-        PluginManifest,
-        PluginRecord,
+        PluginManifest as PluginManifest,
+        PluginRecord as PluginRecord,
     )
     from .lifecycle import (
-        PluginLifecycle,
-        ConfigUpdateReport,
-        ReloadReport,
-        UnloadMode,
+        PluginLifecycle as PluginLifecycle,
+        ConfigUpdateReport as ConfigUpdateReport,
+        ReloadReport as ReloadReport,
+        UnloadMode as UnloadMode,
     )
 
 _EXPORTS = {

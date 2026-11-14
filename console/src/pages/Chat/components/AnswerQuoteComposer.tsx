@@ -1,5 +1,7 @@
 import {
   useEffect,
+  useCallback,
+  useRef,
   useState,
   useSyncExternalStore,
   type RefObject,
@@ -24,7 +26,8 @@ import styles from "./AnswerQuoteComposer.module.less";
 
 const SOURCE = "[data-answer-quote-source]";
 const EXCLUDED =
-  'button,input,textarea,select,[contenteditable="true"],[role="button"],[aria-hidden="true"]';
+  'button,input,textarea,select,iframe,header,[contenteditable]:not([contenteditable="false"]),[role="button"],[aria-hidden="true"]';
+const CODE_TOOLBAR = 'header[data-answer-quote-ignore="true"]';
 
 export function getAnswerSelection(
   root: HTMLElement,
@@ -45,15 +48,16 @@ export function getAnswerSelection(
   )
     return null;
   const range = selection.getRangeAt(0);
-  // Exclude spans that also sweep across plugin controls or editable fields.
+  // Host code toolbars use user-select:none. Other interactive content
+  // inside a selected range continues to invalidate the selection.
   if (
-    Array.from(source.querySelectorAll(EXCLUDED)).some((node) =>
-      range.intersectsNode(node),
+    Array.from(source.querySelectorAll(EXCLUDED)).some(
+      (node) => range.intersectsNode(node) && !node.closest(CODE_TOOLBAR),
     )
   )
     return null;
-  const text = selection.toString().trim();
-  if (!text) return null;
+  const text = selection.toString().replace(/\r\n?/g, "\n");
+  if (!text.trim()) return null;
   return { messageId: source.dataset.answerQuoteSource || "", text, range };
 }
 
@@ -69,6 +73,7 @@ export function AnswerQuoteComposer({
   const { t } = useTranslation();
   const workspace = useWorkspaceQuotes();
   const { message } = useAppMessage();
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const quotes = useSyncExternalStore(subscribeAnswerQuotes, () =>
     readAnswerQuotes(scope),
   );
@@ -77,11 +82,42 @@ export function AnswerQuoteComposer({
     text: string;
     x: number;
     y: number;
+    scope: string;
   }>(null);
+  const current = enabled && selection?.scope === scope ? selection : null;
+  const quoteSelection = useCallback(() => {
+    if (!current) return;
+    if (!addAnswerQuote(scope, current)) {
+      message.warning(t("chat.answerQuote.limit"));
+      return;
+    }
+    setSelection(null);
+    window.getSelection()?.removeAllRanges();
+    getActiveSenderTextarea()?.focus();
+  }, [current, message, scope, t]);
+  useEffect(() => {
+    if (!current) return;
+    const keydown = (event: KeyboardEvent) => {
+      if (
+        !event.isComposing &&
+        event.altKey &&
+        event.shiftKey &&
+        !event.ctrlKey &&
+        !event.metaKey &&
+        (event.code === "KeyQ" || event.key.toLowerCase() === "q")
+      ) {
+        event.preventDefault();
+        quoteSelection();
+      }
+    };
+    document.addEventListener("keydown", keydown);
+    return () => document.removeEventListener("keydown", keydown);
+  }, [current, quoteSelection]);
   useEffect(() => {
     setSelection(null);
     if (!enabled) return;
     const update = () => {
+      if (document.activeElement === buttonRef.current) return;
       const root = rootRef.current;
       const selected = root && getAnswerSelection(root, window.getSelection());
       if (!selected) {
@@ -91,7 +127,8 @@ export function AnswerQuoteComposer({
       const rect = selected.range.getBoundingClientRect();
       setSelection({
         ...selected,
-        x: Math.max(8, Math.min(rect.left, window.innerWidth - 100)),
+        scope,
+        x: Math.max(8, Math.min(rect.left, window.innerWidth - 210)),
         y: Math.max(
           8,
           rect.top > 46
@@ -168,22 +205,16 @@ export function AnswerQuoteComposer({
           ))}
         </div>
       )}
-      {selection &&
+      {current &&
         createPortal(
           <button
+            ref={buttonRef}
             type="button"
             className={styles.selection}
-            style={{ left: selection.x, top: selection.y }}
+            aria-keyshortcuts="Alt+Shift+Q"
+            style={{ left: current.x, top: current.y }}
             onPointerDown={(event) => event.preventDefault()}
-            onClick={() => {
-              if (!addAnswerQuote(scope, selection)) {
-                message.warning(t("chat.answerQuote.limit"));
-                return;
-              }
-              setSelection(null);
-              window.getSelection()?.removeAllRanges();
-              getActiveSenderTextarea()?.focus();
-            }}
+            onClick={quoteSelection}
           >
             <Quote size={14} />
             {t("chat.answerQuote.action")}

@@ -1,7 +1,7 @@
 {
   "id": "qwenpaw-harness-qoder",
   "name": "Qoder Harness",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Optional Qoder SDK backend",
   "author": "QwenPaw Team",
   "type": "general",

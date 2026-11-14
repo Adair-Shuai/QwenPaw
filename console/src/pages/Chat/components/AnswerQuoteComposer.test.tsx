@@ -92,6 +92,28 @@ function select(node: Node, end = node) {
   });
 }
 describe("compact answer quote composer", () => {
+  it("keeps keyboard quoting bound to the active scope and focused action", () => {
+    const scope = crypto.randomUUID();
+    const view = render(tree(scope));
+    select(screen.getByText("First answer passage"));
+    const action = screen.getByRole("button", { name: "Quote" });
+    expect(action).toHaveAttribute("aria-keyshortcuts", "Alt+Shift+Q");
+    action.focus();
+    act(() => document.dispatchEvent(new Event("selectionchange")));
+    expect(action).toBeInTheDocument();
+    fireEvent.keyDown(document, { key: "q", altKey: true, shiftKey: true });
+    expect(readAnswerQuotes(scope)).toHaveLength(1);
+    select(screen.getByText("print(42)"));
+    view.rerender(tree(scope + "-other"));
+    fireEvent.keyDown(document, { key: "q", altKey: true, shiftKey: true });
+    expect(readAnswerQuotes(scope)).toHaveLength(1);
+    expect(readAnswerQuotes(scope + "-other")).toEqual([]);
+    view.rerender(tree(scope, false));
+    select(screen.getByText("print(42)"));
+    fireEvent.keyDown(document, { key: "q", altKey: true, shiftKey: true });
+    expect(readAnswerQuotes(scope)).toHaveLength(1);
+  });
+
   it("quotes rendered text and code independently while preserving draft and plugin inputs", async () => {
     const scope = crypto.randomUUID();
     const view = render(tree(scope));

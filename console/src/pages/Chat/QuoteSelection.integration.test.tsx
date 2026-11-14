@@ -15,6 +15,8 @@ import SdkInput from "@agentscope-ai/chat/lib/AgentScopeRuntimeWebUI/core/Chat/I
 import { HostResponseCard } from "./HostBubbles";
 import { LongTextPasteInput } from "./LongTextPaste";
 import { QuoteSelection } from "./QuoteSelection";
+import { AnswerQuoteComposer } from "./components/AnswerQuoteComposer";
+import { readAnswerQuotes } from "./answerQuotes";
 import { useChatInputDraft } from "./chatInputDraft";
 import defaultConfig from "./OptionsPanel/defaultConfig";
 import i18n from "../../i18n";
@@ -58,10 +60,12 @@ function Chat({
   scopeKey = "agent-a:chat-a",
   submit = emptyResponse,
   enabled = true,
+  hostQuotes = false,
 }: {
   scopeKey?: string;
   submit?: NonNullable<IAgentScopeRuntimeWebUIOptions["api"]>["fetch"];
   enabled?: boolean;
+  hostQuotes?: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
   const [agent, session] = scopeKey.split(":");
@@ -113,11 +117,19 @@ function Chat({
           />
           <Composer />
         </ComposedProvider>
-        <QuoteSelection
-          containerRef={containerRef}
-          scopeKey={scopeKey}
-          enabled={enabled}
-        />
+        {hostQuotes ? (
+          <AnswerQuoteComposer
+            rootRef={containerRef}
+            scope={scopeKey}
+            enabled={enabled}
+          />
+        ) : (
+          <QuoteSelection
+            containerRef={containerRef}
+            scopeKey={scopeKey}
+            enabled={enabled}
+          />
+        )}
       </div>
     </ConfigProvider>
   );
@@ -140,6 +152,93 @@ beforeEach(async () => {
   window.getSelection()?.removeAllRanges();
   // jsdom has no layout engine; selection and SDK rendering are real.
   Range.prototype.getBoundingClientRect = () => new DOMRect(40, 100, 120, 20);
+});
+
+describe("host quote composer with the real SDK response", () => {
+  it("keeps upstream keyboard quoting and exact code whitespace in structured drafts", async () => {
+    const scopeKey = crypto.randomUUID();
+    const { container } = render(<Chat hostQuotes scopeKey={scopeKey} />);
+    await waitFor(() =>
+      expect(container.querySelector("pre code")).not.toBeNull(),
+    );
+    const code = container.querySelector("pre code")!;
+    code.textContent = "  if ready:\n    run()\n";
+    await select(code);
+    for (const modifier of ["ctrlKey", "metaKey"]) {
+      fireEvent.keyDown(document, {
+        key: "q",
+        code: "KeyQ",
+        altKey: true,
+        shiftKey: true,
+        [modifier]: true,
+      });
+      expect(readAnswerQuotes(scopeKey)).toEqual([]);
+    }
+    fireEvent.keyDown(document, {
+      key: "Œ",
+      code: "KeyQ",
+      altKey: true,
+      shiftKey: true,
+    });
+    expect(readAnswerQuotes(scopeKey).map((q) => q.text)).toEqual([
+      "  if ready:\n    run()\n",
+    ]);
+    expect(screen.getByRole("textbox")).toHaveValue("");
+    expect(
+      screen.queryByRole("button", { name: "Quote" }),
+    ).not.toBeInTheDocument();
+  });
+
+  it("quotes prose across real code toolbars without admitting interactive plugin controls", async () => {
+    const scopeKey = crypto.randomUUID();
+    const { container } = render(<Chat hostQuotes scopeKey={scopeKey} />);
+    await screen.findByText("Next example.");
+    const expected =
+      "First answer paragraph.\n\nSecond paragraph.\n\nif ready:\n    run()\nNext example.\n\nconst ready = true;";
+    await act(async () => {
+      const range = document.createRange();
+      range.setStartBefore(screen.getByText("answer").closest("p")!);
+      range.setEndAfter(container.querySelectorAll("pre code")[1]);
+      const selection = window.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+      // Native browsers exclude the host toolbar through user-select:none.
+      // jsdom provides the real DOM range but has no layout/selection styling.
+      vi.spyOn(selection, "toString").mockReturnValue(expected);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    fireEvent.click(await screen.findByRole("button", { name: "Quote" }));
+    expect(readAnswerQuotes(scopeKey).map((q) => q.text)).toEqual([expected]);
+    const answer = screen
+      .getByText("answer")
+      .closest("[data-answer-quote-source]")!;
+    const input = document.createElement("input");
+    answer.append(input);
+    await act(async () => {
+      const range = document.createRange();
+      range.selectNodeContents(answer);
+      window.getSelection()!.removeAllRanges();
+      window.getSelection()!.addRange(range);
+      document.dispatchEvent(new Event("selectionchange"));
+    });
+    expect(
+      screen.queryByRole("button", { name: "Quote" }),
+    ).not.toBeInTheDocument();
+    expect(readAnswerQuotes(scopeKey)).toHaveLength(1);
+  });
+
+  it("excludes rendered system messages and code toolbar labels from answer quotes", async () => {
+    render(<Chat hostQuotes scopeKey={crypto.randomUUID()} />);
+    await select(await screen.findByText("System notice"));
+    expect(
+      screen.queryByRole("button", { name: "Quote" }),
+    ).not.toBeInTheDocument();
+    const header = document.querySelector("header")!;
+    await select(header);
+    expect(
+      screen.queryByRole("button", { name: "Quote" }),
+    ).not.toBeInTheDocument();
+  });
 });
 
 describe("quote selection with the installed SDK renderer and sender", () => {

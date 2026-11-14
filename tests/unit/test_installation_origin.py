@@ -743,7 +743,7 @@ async def test_first_plugin_install_retries_windows_sharing(
                 "version": "1.0.0",
                 "type": "general",
                 "entry": {"frontend": "index.js"},
-            }
+            },
         ),
         encoding="utf-8",
     )

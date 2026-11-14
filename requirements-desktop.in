@@ -1,4 +1,4 @@
-.[local,qoder]
+.[local]
 
 # Required readers used by the default bundled UGSci plugin.
 -r plugins/bundle/ugsci/requirements.txt

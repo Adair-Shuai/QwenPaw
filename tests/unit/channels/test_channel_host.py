@@ -15,6 +15,7 @@ from types import SimpleNamespace
 
 import pytest
 import pytest_asyncio
+import psutil
 
 from tests.fs_alias_support import directory_alias
 
@@ -1064,13 +1065,16 @@ async def test_config_read_save_restart_preserves_fields_and_exits_old_worker(
     ws = await host.workspace("configured")
     await host.loader.load_plugin_from_path(host.artifact())
     old, before = await host.identity(ws)
+    old_worker = psutil.Process(before["pid"])
     read = load_agent_config(ws.agent_id)
     read.channels.feishu.app_id = "new-app"
     save_agent_config(ws.agent_id, read)
     ws._config = load_agent_config(ws.agent_id)
     await ws.channel_manager.replace_channel(KEY, ws._config)
     fresh, after = await host.identity(ws)
-    assert not alive(before["pid"]) and after["pid"] != before["pid"]
+    new_worker = psutil.Process(after["pid"])
+    assert not old_worker.is_running()
+    assert new_worker.is_running() and new_worker != old_worker
     assert fresh._launch_spec.generation > old._launch_spec.generation
     assert after["config"]["app_id"] == "new-app"
     assert after["config"]["app_secret"] == "local-only"

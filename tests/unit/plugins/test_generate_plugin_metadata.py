@@ -393,12 +393,25 @@ def test_real_harness_archives_contain_own_entries_and_frontends(
 
     assert not failed
     expected = {"codex", "qoder"}
+    versions = {
+        vendor: json.loads(
+            (plugins_root / "harness" / vendor / "plugin.json").read_text(
+                "utf-8",
+            ),
+        )["version"]
+        for vendor in expected
+    }
     assert set(index["platforms"]["harness"]["versions"]) == {
-        f"qwenpaw-harness-{vendor}-1.0.0" for vendor in expected
+        f"qwenpaw-harness-{vendor}-{versions[vendor]}" for vendor in expected
     }
     for vendor in expected:
         plugin_id = f"qwenpaw-harness-{vendor}"
-        archive_path = dist / "harness" / plugin_id / f"{plugin_id}-1.0.0.zip"
+        archive_path = (
+            dist
+            / "harness"
+            / plugin_id
+            / f"{plugin_id}-{versions[vendor]}.zip"
+        )
         with zipfile.ZipFile(archive_path) as archive:
             names = set(archive.namelist())
             requirements = archive.read(
@@ -422,7 +435,10 @@ def test_real_harness_archives_contain_own_entries_and_frontends(
         other = (expected - {vendor}).pop()
         assert not any(other in name for name in names)
         assert other not in requirements
-        assert index["files"][f"{plugin_id}-1.0.0"]["platform"] == "harness"
+        assert (
+            index["files"][f"{plugin_id}-{versions[vendor]}"]["platform"]
+            == "harness"
+        )
 
 
 def test_private_channel_zip_preserves_runtime_and_source_manifest(tmp_path):

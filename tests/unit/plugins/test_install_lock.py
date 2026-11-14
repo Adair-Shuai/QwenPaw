@@ -27,6 +27,68 @@ _POSIX_FLOCK = pytest.mark.skipif(
 )
 
 
+def test_long_scoped_reader_blocks_maintenance_until_process_exit(
+    tmp_path,
+    monkeypatch,
+):
+    """A real scoped reader remains visible beyond Windows MAX_PATH."""
+    import subprocess
+    import sys
+
+    from qwenpaw.plugins import dependency_maintenance as maintenance
+    from qwenpaw.utils.windows_paths import io_path
+
+    site = tmp_path / "site"
+    site.mkdir()
+    state = tmp_path / ("state-" + "x" * 40)
+    scope = "a" * 64
+    monkeypatch.setattr(maintenance, "_STATE_ROOT", state)
+    monkeypatch.setattr(maintenance, "_READER_SCOPE", "")
+    directory = maintenance.prepare_reader_scope([site], scope)[0]
+    script = """
+import importlib.util, os, sys
+from pathlib import Path
+spec = importlib.util.spec_from_file_location('maintenance', sys.argv[1])
+m = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(m)
+m.lease_environment([Path(sys.argv[2])])
+print(os.getpid(), flush=True)
+sys.stdin.readline()
+"""
+    env = dict(
+        os.environ,
+        QWENPAW_DEPENDENCY_STATE_DIR=str(state),
+        QWENPAW_DEPENDENCY_READER_SCOPE=scope,
+    )
+    with subprocess.Popen(
+        [sys.executable, "-I", "-c", script, maintenance.__file__, str(site)],
+        env=env,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+    ) as peer:
+        try:
+            announced = peer.stdout.readline().strip()
+            assert announced, peer.stderr.read()
+            worker_pid = int(announced)
+            assert len(str(directory / f"{worker_pid}-{'a' * 32}.lease")) > 260
+            assert maintenance.live_readers([site]) == [
+                {"pid": worker_pid, "site": str(site)},
+            ]
+            with pytest.raises(RuntimeError, match="BUSY"):
+                with maintenance.maintenance([site], "long-reader", "token"):
+                    pytest.fail("live scoped reader admitted maintenance")
+        finally:
+            _, stderr = peer.communicate("release\n", timeout=15)
+        assert peer.returncode == 0, stderr
+    assert not maintenance.live_readers([site])
+    assert not list(Path(io_path(directory)).glob("*.lease"))
+    with maintenance.maintenance([site], "long-reader", "token"):
+        pass
+    maintenance.clear_maintenance([site], "long-reader")
+
+
 @pytest.fixture()
 def lock_path(tmp_path):
     return tmp_path / "locks" / "plugin-install.lock"

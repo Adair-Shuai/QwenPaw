@@ -404,10 +404,8 @@ def _try_lock(descriptor):
         raise
 
 
-def _open_lock(path):
-    path.parent.mkdir(parents=True, exist_ok=True)
-    # Reader leases include the environment digest and a unique process token.
-    # Keep bootstrap stdlib-only and support Windows' legacy MAX_PATH hosts.
+def _lock_filename(path):
+    """Keep standalone bootstrap lock IO valid beyond Windows MAX_PATH."""
     filename = os.path.abspath(path)
     if os.name == "nt" and not filename.startswith("\\\\?\\"):
         filename = (
@@ -415,7 +413,12 @@ def _open_lock(path):
             if filename.startswith("\\\\")
             else "\\\\?\\" + filename
         )
-    return os.open(filename, os.O_CREAT | os.O_RDWR, 0o600)
+    return filename
+
+
+def _open_lock(path):
+    Path(_lock_filename(path.parent)).mkdir(parents=True, exist_ok=True)
+    return os.open(_lock_filename(path), os.O_CREAT | os.O_RDWR, 0o600)
 
 
 def open_coordination_lock(path):
@@ -482,7 +485,7 @@ def prepare_reader_scope(sites, scope):
             descriptor = _open_lock(gate)
             os.close(descriptor)
         directory = _readers_dir(site) / scope
-        directory.mkdir(parents=True, exist_ok=True)
+        Path(_lock_filename(directory)).mkdir(parents=True, exist_ok=True)
         directories.append(directory)
     return directories
 
@@ -551,7 +554,7 @@ def _publish_reader(root):
         return descriptor, path
     except BaseException:
         os.close(descriptor)
-        path.unlink(missing_ok=True)
+        Path(_lock_filename(path)).unlink(missing_ok=True)
         raise
 
 
@@ -580,7 +583,7 @@ def observation_readers(sites):
 
 def _unlink_observation_reader(path):
     try:
-        path.unlink(missing_ok=True)
+        Path(_lock_filename(path)).unlink(missing_ok=True)
     except OSError as exc:
         if getattr(exc, "winerror", None) not in {32, 33}:
             raise
@@ -600,7 +603,7 @@ def host_sites():
 def live_readers(sites, ignore_pid=None):
     readers = []
     for root in sites:
-        directory = _readers_dir(root)
+        directory = Path(_lock_filename(_readers_dir(root)))
         if not directory.is_dir():
             continue
         paths = list(directory.glob("*.lease"))
@@ -721,7 +724,7 @@ def clear_maintenance(sites, operation_id):
 def _close_readers():
     for descriptor, path in _READERS.values():
         os.close(descriptor)
-        path.unlink(missing_ok=True)
+        Path(_lock_filename(path)).unlink(missing_ok=True)
     _READERS.clear()
 
 

@@ -88,6 +88,13 @@ def _append_tool_policy(
     prefix: str,
     server,
 ) -> None:
+    denied = sorted(
+        name
+        for name, effect in server.tool_policies.items()
+        if effect == "deny"
+    )
+    if denied:
+        overrides.append(_override(prefix, "disabled_tools", denied))
     if server.tools is not None:
         enabled = [
             name

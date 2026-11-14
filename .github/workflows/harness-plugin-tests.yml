@@ -2,7 +2,7 @@ name: Optional Harness Plugins
 
 on:
   push:
-    branches: [main, master, dev, develop, "dev/**"]
+    branches: [main, master, dev, develop, lobehub-style, "dev/**"]
     paths:
       - "plugins/harness/**"
       - "src/qwenpaw/plugins/**"

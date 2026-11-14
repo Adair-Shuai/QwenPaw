@@ -212,7 +212,6 @@ anyio==4.12.1 \
     #   mcp
     #   openai
     #   py-key-value-aio
-    #   qoder-agent-sdk
     #   qwenpaw
     #   sse-starlette
     #   starlette
@@ -1996,6 +1995,7 @@ markdown-it-py==4.2.0 \
     --hash=sha256:9f7ebbcd14fe59494226453aed97c1070d83f8d24b6fc3a3bcf9a38092641c4a
     # via
     #   mdit-py-plugins
+    #   qwenpaw
     #   rich
     #   textual
 markupsafe==3.0.3 \
@@ -2149,7 +2149,6 @@ mcp==1.29.0 \
     # via
     #   agentscope
     #   fastmcp-slim
-    #   qoder-agent-sdk
     #   qwenpaw
 mdit-py-plugins==0.6.1 \
     --hash=sha256:214c82fb2ac524472ab6a5bcab1de80f73b50443e187f401bfd77efbc7c6481d \
@@ -3472,16 +3471,6 @@ pyyaml==6.0.3 \
     #   qwenpaw
     #   reme-ai
     #   xtgeoviz
-qoder-agent-sdk==1.0.9 \
-    --hash=sha256:1239d42e2c82cb4d67f4abc451e7baae696e8b803a1d42a7eb6ee9d2811493ee \
-    --hash=sha256:360f25389bd795146bd6a7bcae4abac7ada2ffe115448e1b6e8b95d65005d4b3 \
-    --hash=sha256:55e6df3679cef9e78476646309cf3ccbe2763a24b2c2090b6396681bb8f7a861 \
-    --hash=sha256:6f3cbff5cc0687a0768cd554477b47be381b4490258ce8d903eb769e633c01a3 \
-    --hash=sha256:888a46133abe1524823c18f1874cd84aad36c3e3ba708884c8d91498efd34c43 \
-    --hash=sha256:a6319a2dd209ee56b177d60a8fb0e1fd536785030096e49f51b17f1f7c789e2d \
-    --hash=sha256:c127d606046263a6acc545d8c1271d9885708e6fab5b5428bd893567af12b296 \
-    --hash=sha256:e4c85e882022e73f9327dd892b0c42b8ffc11ce5d55a3c06a192b07eafd31dd6
-    # via qwenpaw
 qtpy==2.4.3 ; sys_platform == 'openbsd6' \
     --hash=sha256:72095afe13673e017946cc258b8d5da43314197b741ed2890e563cf384b51aa1 \
     --hash=sha256:db744f7832e6d3da90568ba6ccbca3ee2b3b4a890c3d6fbbc63142f6e4cdf5bb

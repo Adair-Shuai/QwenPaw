@@ -32,7 +32,7 @@ async def make_harness_host(tmp_path):
                     "capabilities": ["harnesses", "storage", "resources"],
                 },
                 "meta": {"harnesses": [{"id": "codex", "label": "Capture"}]},
-            }
+            },
         ),
         encoding="utf-8",
     )
@@ -330,7 +330,7 @@ async def test_third_party_turn_has_same_durable_file_contract(
             )
 
     harness_host._loader.get_loaded_plugin(
-        "capture-harness"
+        "capture-harness",
     ).instance.handler = run_turn
     req = AgentRequest(
         session_id="session",
@@ -558,7 +558,7 @@ async def test_third_party_text_only_turn_does_not_claim_external_writes(
         yield HarnessEvent(kind=HarnessEventKind.COMPLETED)
 
     harness_host._loader.get_loaded_plugin(
-        "capture-harness"
+        "capture-harness",
     ).instance.handler = run_turn
     req = AgentRequest(
         session_id="text-only",

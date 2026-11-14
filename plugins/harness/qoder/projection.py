@@ -82,7 +82,19 @@ def mcp_servers(
     """Convert resolved MCP servers to Qoder SDK dictionaries."""
     result: dict[str, Any] = {}
     for server in capabilities.mcp_servers:
-        if server.tools is None and server.default_policy == "deny":
+        enabled = (
+            None
+            if server.tools is None
+            else [
+                name
+                for name in server.tools
+                if server.tool_policies.get(name, server.default_policy)
+                != "deny"
+            ]
+        )
+        if enabled == [] or (
+            enabled is None and server.default_policy == "deny"
+        ):
             continue
         tool_policies = [
             {
@@ -108,6 +120,15 @@ def mcp_servers(
             }
         if tool_policies:
             config["tools"] = tool_policies
+        if enabled is not None:
+            config["includeTools"] = enabled
+        denied = sorted(
+            name
+            for name, effect in server.tool_policies.items()
+            if effect == "deny"
+        )
+        if denied:
+            config["excludeTools"] = denied
         result[server.name] = config
     return result
 

@@ -363,6 +363,81 @@ async def test_scoped_skills_and_mcp_projection(runtime):
     )
 
 
+@pytest.mark.parametrize(
+    "settings",
+    [
+        {"approval_policy": "on-request", "sandbox_mode": "workspace-write"},
+        {"approval_policy": "never", "sandbox_mode": "danger-full-access"},
+    ],
+)
+@pytest.mark.parametrize(
+    "tools,default_policy,policies,enabled,disabled",
+    [
+        (
+            None,
+            "allow",
+            {"write": "deny", "delete": "deny"},
+            None,
+            ["delete", "write"],
+        ),
+        (
+            ("read", "write"),
+            "ask",
+            {"read": "ask", "write": "deny"},
+            ["read"],
+            ["write"],
+        ),
+        ((), "allow", {}, [], []),
+        (None, "deny", {}, [], []),
+    ],
+)
+async def test_mcp_denials_reach_app_server_without_allowlist(
+    runtime,
+    settings,
+    tools,
+    default_policy,
+    policies,
+    enabled,
+    disabled,
+):
+    """Native MCP deny configuration survives normal and full-access modes."""
+    backend, call = runtime.backend(), runtime.call()
+    capabilities = HarnessRuntimeCapabilities(
+        mcp_servers=(
+            HarnessMCPServerDefinition(
+                "docs",
+                "Docs",
+                "streamable_http",
+                url="https://mcp.example.test",
+                tools=tools,
+                tool_policies=policies,
+                default_policy=default_policy,
+            ),
+        ),
+    )
+    await collect(
+        backend,
+        replace(call, settings=settings, runtime_capabilities=capabilities),
+    )
+    args = runtime.processes[-1].args
+
+    def override(name, values):
+        return f"mcp_servers.docs.{name}=" + json.dumps(values)
+
+    if enabled is None:
+        assert not any(
+            "mcp_servers.docs.enabled_tools=" in arg for arg in args
+        )
+    else:
+        assert override("enabled_tools", enabled) in args
+    if disabled:
+        assert override("disabled_tools", disabled) in args
+    else:
+        assert not any(
+            "mcp_servers.docs.disabled_tools=" in arg for arg in args
+        )
+
+
 async def test_legacy_session_reopens_with_same_identity_and_clears(runtime):
     old = runtime.context.workspace_dir / "harnesses" / "codex_sessions.json"
     old.parent.mkdir()
@@ -466,8 +541,12 @@ async def test_actual_zip_manifest_registration_and_host_call(
     tmp_path,
 ):
     plugin_id = "qwenpaw-harness-codex"
+    plugin_source = Path(__file__).resolve().parents[1]
+    version = json.loads((plugin_source / "plugin.json").read_text("utf-8"))[
+        "version"
+    ]
     archive = Path(__file__).resolve().parents[4] / (
-        f"dist/plugins/harness/{plugin_id}/{plugin_id}-1.0.0.zip"
+        f"dist/plugins/harness/{plugin_id}/{plugin_id}-{version}.zip"
     )
     assert (
         archive.is_file()
@@ -478,8 +557,12 @@ async def test_actual_zip_manifest_registration_and_host_call(
     manifest = json.loads((source / "plugin.json").read_text())
     assert (
         manifest["id"] == plugin_id
+        and manifest["version"] == version
         and manifest["entry"]["backend"] == "main.py"
     )
+    assert (source / "projection.py").read_bytes() == (
+        plugin_source / "projection.py"
+    ).read_bytes()
     assert (source / manifest["entry"]["frontend"]).is_file()
     async with PluginTestHost(tmp_path / "host") as host:
         assert (await host.install(source)).ok

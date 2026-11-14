@@ -301,7 +301,9 @@
       "tests/unit/tauri/test_pyinstaller_spec.py",
       "tests/unit/test_community_connection.py",
       "tests/unit/test_installation_origin.py",
-      "tests/unit/app/routers/test_plugins_router_helpers.py"
+      "tests/unit/app/routers/test_plugins_router_helpers.py",
+      "tests/unit/harnesses/test_harness_dependency_profiles.py",
+      "tests/unit/plugins/test_install_lock.py"
     ]
   },
   "required_cases": {
@@ -1303,11 +1305,28 @@
     ],
     "plugins/harness/qoder/tests/test_qoder_harness.py": [
       "test_skill_projection_retries_windows_sharing",
-      "test_directory_publication_preserves_permanent_errors"
+      "test_directory_publication_preserves_permanent_errors",
+      "test_mcp_tool_scope_reaches_real_cli_configuration",
+      "test_actual_zip_manifest_registration_and_host_call"
     ],
     "tests/unit/plugins/test_sdk_harness.py": [
       "test_boot_discovery_preserves_failed_harness_across_load_phases",
       "test_offline_migration_prepares_saved_harness_without_execution"
+    ],
+    "tests/unit/harnesses/test_harness_dependency_profiles.py": [
+      "test_desktop_profile_excludes_vendor_runtimes_and_keeps_scientific_tools",
+      "test_core_profiles_keep_vendor_sdks_in_optional_harnesses",
+      "test_harness_workflow_verifies_isolated_vendors_on_fork_branch"
+    ],
+    "tests/unit/plugins/test_install_lock.py": [
+      "test_long_scoped_reader_blocks_maintenance_until_process_exit"
+    ],
+    "plugins/harness/codex/tests/test_codex_harness.py": [
+      "test_mcp_denials_reach_app_server_without_allowlist",
+      "test_actual_zip_manifest_registration_and_host_call"
+    ],
+    "tests/unit/plugins/test_generate_plugin_metadata.py": [
+      "test_real_harness_archives_contain_own_entries_and_frontends"
     ]
   }
 }
