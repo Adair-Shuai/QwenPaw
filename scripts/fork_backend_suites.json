@@ -1225,6 +1225,7 @@
     ],
     "tests/unit/tauri/test_desktop_workflows.py": [
       "test_download_base_artifacts_verifies_only_unreplaced_platforms",
+      "test_latest_promotion_binds_each_metadata_to_its_actual_artifact",
       "test_windows_build_creates_portable_package_once_and_keeps_signing"
     ],
     "tests/unit/runtime/test_console_edit_resend.py": [

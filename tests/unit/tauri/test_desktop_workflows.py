@@ -251,6 +251,156 @@ def test_download_helper_resolves_verifier_from_its_own_checkout() -> None:
     assert "run_id=${GITHUB_RUN_ID:-}" in script
 
 
+@pytest.mark.parametrize("corrupt_metadata", [False, True])
+def test_latest_promotion_binds_each_metadata_to_its_actual_artifact(
+    tmp_path,
+    corrupt_metadata,
+):
+    """Execute all five aliases with OSS's default no-overwrite behavior."""
+    import hashlib
+    import shutil
+
+    steps = _load_workflow("desktop-promote.yml")["jobs"]["promote-oss"][
+        "steps"
+    ]
+    step = next(
+        item
+        for item in steps
+        if item.get("name") == "Promote versioned files to latest"
+    )
+    script = step["run"].replace(
+        "${{ steps.version.outputs.version }}",
+        "2.3.0b6",
+    )
+    store = tmp_path / "store"
+    expected = []
+    for index, (platform, directory, suffix) in enumerate(
+        [
+            (
+                "win-tauri",
+                "UGSci-Desktop-Tauri-Windows-2.3.0b6",
+                "Windows-updater.exe",
+            ),
+            (
+                "win-tauri",
+                "UGSci-Desktop-Tauri-Windows-2.3.0b6",
+                "Windows-portable.zip",
+            ),
+            ("mac-tauri", "UGSci-Desktop-Tauri-macOS-2.3.0b6", "macOS.zip"),
+            ("mac-tauri", "UGSci-Desktop-Tauri-macOS-2.3.0b6", "macOS.dmg"),
+            ("mac-tauri", "tauri-updater-meta-macos", "macOS.app.tar.gz"),
+        ],
+    ):
+        versioned = f"UGSci-Tauri-2.3.0b6-{suffix}"
+        latest = f"UGSci-Tauri-latest-{suffix}"
+        content = f"unique artifact {index}".encode() + b"." * index
+        artifact = tmp_path / directory / versioned
+        artifact.parent.mkdir(exist_ok=True)
+        artifact.write_bytes(content)
+        remote = store / "files/apps/desktop" / platform / versioned
+        remote.parent.mkdir(parents=True, exist_ok=True)
+        remote.write_bytes(content)
+        metadata = {
+            "filename": versioned,
+            "product": "desktop",
+            "platform": platform,
+            "url": f"/files/apps/desktop/{platform}/{versioned}",
+            "version": "2.3.0b6",
+            "size_bytes": len(content),
+            "sha256": hashlib.sha256(content).hexdigest(),
+            "preserved_field": f"metadata {index}",
+        }
+        if corrupt_metadata and index == 0:
+            metadata["sha256"] = "0" * 64
+        path = store / "metadata/apps/desktop" / platform / f"{versioned}.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(metadata), encoding="utf-8")
+        expected.append((platform, latest, content, metadata))
+    runner = tmp_path / "runner"
+    runner.mkdir()
+    fake_oss = tmp_path / "oss.py"
+    fake_oss.write_text(
+        "import os, pathlib, shutil, sys\n"
+        "root = pathlib.Path(os.environ['PROMOTION_TEST_STORE'])\n"
+        "def resolve(value):\n"
+        "    prefix = 'oss://test-bucket/'\n"
+        "    if value.startswith(prefix):\n"
+        "        return root / value[len(prefix):]\n"
+        "    return pathlib.Path(value)\n"
+        "operation = sys.argv[1]\n"
+        "source = resolve(sys.argv[2])\n"
+        "if operation == 'cp':\n"
+        "    destination = resolve(sys.argv[3])\n"
+        "    if destination.exists() and '--force' not in sys.argv:\n"
+        "        print('Skip existing destination')\n"
+        "        sys.exit(0)\n"
+        "    destination.parent.mkdir(parents=True, exist_ok=True)\n"
+        "    shutil.copyfile(source, destination)\n"
+        "elif operation == 'ls':\n"
+        "    sys.exit(0 if source.exists() else 1)\n"
+        "elif operation == 'rm':\n"
+        "    source.unlink(missing_ok=True)\n"
+        "else:\n"
+        "    sys.exit(2)\n",
+        encoding="utf-8",
+    )
+    bash_env = tmp_path / "bash-env.sh"
+    bash_env.write_text(
+        'python() { "$PROMOTION_TEST_PYTHON" "$@"; }\n'
+        'ossutil() { "$PROMOTION_TEST_PYTHON" "$PROMOTION_TEST_OSS" "$@"; }\n',
+        encoding="utf-8",
+    )
+    bash = (
+        runpy.run_path(
+            str(
+                REPO_ROOT
+                / "scripts/pack-tauri/prepare_data_context_console.py",
+            ),
+        )["git_bash"]()
+        if os.name == "nt"
+        else Path(shutil.which("bash") or "")
+    )
+    assert bash.is_file(), "Bash is required to verify desktop promotion"
+    result = subprocess.run(
+        [str(bash), "-e", "-o", "pipefail", "-c", script],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "RUNNER_TEMP": runner.as_posix(),
+            "GITHUB_RUN_ID": "100",
+            "GITHUB_RUN_ATTEMPT": "1",
+            "OSS_BUCKET": "test-bucket",
+            "BASH_ENV": bash_env.as_posix(),
+            "PROMOTION_TEST_PYTHON": Path(sys.executable).as_posix(),
+            "PROMOTION_TEST_OSS": fake_oss.as_posix(),
+            "PROMOTION_TEST_STORE": str(store),
+        },
+        capture_output=True,
+        text=True,
+        timeout=45,
+        check=False,
+    )
+    if corrupt_metadata:
+        assert result.returncode != 0, result.stdout
+        assert "metadata does not match" in result.stderr
+        assert not list(store.glob("metadata/**/UGSci-Tauri-latest-*.json"))
+        return
+    assert result.returncode == 0, result.stdout + result.stderr
+    for platform, latest, content, original in expected:
+        published = (
+            store / "metadata/apps/desktop" / platform / f"{latest}.json"
+        )
+        metadata = json.loads(published.read_text(encoding="utf-8"))
+        assert metadata == {
+            **original,
+            "filename": latest,
+            "url": f"/files/apps/desktop/{platform}/{latest}",
+        }
+        assert (
+            store / "files/apps/desktop" / platform / latest
+        ).read_bytes() == content
+
+
 @pytest.mark.skipif(
     sys.platform == "win32",
     reason="Desktop manifest upload steps run in Bash on Ubuntu",

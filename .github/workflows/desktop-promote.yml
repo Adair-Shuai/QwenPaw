@@ -308,13 +308,38 @@ jobs:
             # The versioned metadata points at the immutable versioned object.
             # Rewrite the alias metadata so consumers following `url` download
             # the same latest object that was just promoted.
-            versioned_metadata="${RUNNER_TEMP}/${platform}-versioned-metadata.json"
-            latest_metadata="${RUNNER_TEMP}/${platform}-latest-metadata.json"
+            local versioned_metadata="${RUNNER_TEMP}/${versioned_name}.metadata.json"
+            local latest_metadata="${RUNNER_TEMP}/${latest_name}.metadata.json"
             ossutil cp \
               "oss://${OSS_BUCKET}/metadata/apps/desktop/${platform}/${versioned_name}.json" \
-              "$versioned_metadata"
-            python -c 'import json,sys; from pathlib import Path; source,destination,latest_name,platform=sys.argv[1:]; doc=json.loads(Path(source).read_text(encoding="utf-8")); doc["filename"]=latest_name; doc["url"]=f"/files/apps/desktop/{platform}/{latest_name}"; Path(destination).write_text(json.dumps(doc, ensure_ascii=False, indent=2)+"\n", encoding="utf-8")' \
-              "$versioned_metadata" "$latest_metadata" "$latest_name" "$platform"
+              "$versioned_metadata" --force
+            python - "$versioned_metadata" "$latest_metadata" "$artifact" "$latest_name" "$platform" "$VERSION" <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+          import sys
+
+          source, destination, artifact, latest_name, platform, version = sys.argv[1:]
+          artifact = Path(artifact)
+          document = json.loads(Path(source).read_text(encoding="utf-8"))
+          with artifact.open("rb") as stream:
+              digest = hashlib.file_digest(stream, "sha256").hexdigest()
+          if (
+              document.get("filename") != artifact.name
+              or document.get("version") != version
+              or document.get("product") != "desktop"
+              or document.get("platform") != platform
+              or document.get("size_bytes") != artifact.stat().st_size
+              or document.get("sha256") != digest
+          ):
+              raise ValueError(f"versioned metadata does not match {artifact.name}")
+          document["filename"] = latest_name
+          document["url"] = f"/files/apps/desktop/{platform}/{latest_name}"
+          Path(destination).write_text(
+              json.dumps(document, ensure_ascii=False, indent=2) + "\n",
+              encoding="utf-8",
+          )
+          PY
             ossutil cp \
               "oss://${OSS_BUCKET}/files/apps/desktop/${platform}/${versioned_name}" \
               "$latest_tmp" \

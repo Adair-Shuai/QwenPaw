@@ -281,6 +281,7 @@ REQUIRED_CASES = {
     "tests/unit/tauri/test_desktop_workflows.py": {
         "test_artifact_selection_retains_fork_brand_and_newest_id",
         "test_download_base_artifacts_verifies_only_unreplaced_platforms",
+        "test_latest_promotion_binds_each_metadata_to_its_actual_artifact",
         "test_desktop_update_commands_are_allowed_by_main_window_acl",
         "test_fork_beta_promotion_retains_checked_desktop_manifest",
         "test_windows_build_creates_portable_package_once_and_keeps_signing",
