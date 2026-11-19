@@ -112,11 +112,13 @@ def _add_site_dir(site_dir: Path) -> None:
             os.environ["PYTHONPATH"] = os.pathsep.join(entries)
 
 
-def activate_installed_components() -> None:
+def activate_installed_components(
+    names: tuple[str, ...] | None = None,
+) -> None:
     """Expose completed component sites to this process and child Python."""
     from qwenpaw.tauri.execution_runtime import execution_mode
 
-    for name in _COMPONENTS:
+    for name in _COMPONENTS if names is None else names:
         if name == "science" and execution_mode() == "external":
             continue
         component_dir = _component_dir(name)

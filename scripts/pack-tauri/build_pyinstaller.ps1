@@ -251,6 +251,8 @@ $MAX_BACKEND_MB = if ($env:QWENPAW_MAX_BACKEND_MB) { $env:QWENPAW_MAX_BACKEND_MB
     $BACKEND_DIR `
     --max-size-mb $MAX_BACKEND_MB
 Assert-LastExit "Failed to prune or validate backend bundle"
+& $PYTHON_BIN (Join-Path $PSScriptRoot "verify_optional_audio.py") $BACKEND_DIR
+Assert-LastExit "Optional audio dependency verification failed"
 
 Write-Host "Backend bundle created: $BACKEND_DIR" -ForegroundColor Green
 

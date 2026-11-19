@@ -5838,10 +5838,36 @@
     "noProvidersWarning": "未找到支持转写的提供商。请配置一个 OpenAI 提供商以启用语音转写。",
     "transcriptionInfoTitle": "转写工作原理",
     "transcriptionInfoDesc": "Whisper API 转写使用 OpenAI 兼容的 /v1/audio/transcriptions 端点。需要配置一个支持 Whisper 端点的提供商（如 OpenAI）。请在上方选择具体的提供商以启用转写。",
-    "transcriptionInfoDescLocal": "本地 Whisper 转写直接在您的设备上运行 openai-whisper 库。需要同时安装 ffmpeg（用于音频解码）和 openai-whisper Python 包。无需 API Key 或网络连接。安装命令：uv pip install 'qwenpaw[whisper]'。",
+    "transcriptionInfoDescLocal": "本地 Whisper 在此设备上运行。点击“安装插件”准备插件和 Python 依赖；已禁用时点击“启用插件”。ffmpeg 需单独安装。首次转写时按需下载 base 模型，后续复用缓存。无需 API Key。",
     "modelLabel": "转写模型",
     "modelDescription": "发送给 Whisper API 接口的模型名。请填写你所选服务商支持的模型 ID，例如 SiliconFlow 的 \"FunAudioLLM/SenseVoiceSmall\"。留空则使用默认值 \"whisper-1\"。",
-    "modelPlaceholder": "例如 whisper-1"
+    "modelPlaceholder": "例如 whisper-1",
+    "localWhisperInstall": "安装插件",
+    "localWhisperReview": "查看依赖变更",
+    "localWhisperState_needs_confirmation": "本地 Whisper · 等待确认依赖变更",
+    "localWhisperEnable": "启用插件",
+    "localWhisperManage": "管理插件",
+    "localWhisperPlugin": "插件",
+    "localWhisperFfmpegHelp": "查看 ffmpeg 安装说明",
+    "localWhisperModelHint": "模型将在首次转写时加载。",
+    "localWhisperDependenciesKept": "Python 依赖已保留，安装插件后即可使用本地转写。",
+    "localWhisperInstallFailed": "本地 Whisper 安装未完成",
+    "localWhisperState_missing": "本地 Whisper · 未安装",
+    "localWhisperState_disabled": "本地 Whisper · 已禁用",
+    "localWhisperState_installing": "正在准备本地 Whisper，首次安装可能需要下载较大的 Python 依赖。",
+    "localWhisperState_ready": "本地 Whisper · 插件和依赖已准备",
+    "localWhisperImportFailed": "本地 Whisper · 上次依赖加载失败",
+    "localWhisperState_inactive": "本地 Whisper · 未激活",
+    "localWhisperState_missing_dependencies": "本地 Whisper · 缺少依赖",
+    "localWhisperState_failed": "本地 Whisper · 暂不可用",
+    "localWhisperPlugin_missing": "未安装",
+    "localWhisperPlugin_disabled": "已禁用",
+    "localWhisperPlugin_active": "已启用",
+    "localWhisperPlugin_registered": "正在加载",
+    "localWhisperPlugin_inactive": "未激活",
+    "localWhisperPlugin_failed": "加载失败",
+    "localWhisperDependency_installed": "已安装",
+    "localWhisperDependency_missing": "未找到"
   },
   "backup": {
     "title": "备份",
@@ -6130,7 +6156,12 @@
     "enableSuccess": "插件已激活。",
     "enableFailed": "插件激活失败。请检查依赖与应用日志后重试。",
     "disableSuccess": "插件已停用",
-    "disableFailed": "无法完成插件停用，请查看诊断信息"
+    "disableFailed": "无法完成插件停用，请查看诊断信息",
+    "dependencyErrors": {
+      "ambiguous": "无法确定依赖的唯一来源。请查看应用日志中的依赖名称，修复依赖环境后重试。",
+      "invalidMetadata": "依赖安装信息不完整或无效。请查看应用日志，修复依赖环境后重试。",
+      "failed": "依赖准备未完成。请查看应用日志，处理依赖问题后重试。"
+    }
   },
   "codingMode": {
     "toolPresentationHelp": "开启后，智能体只使用一个代码工具。搜索、文件处理等操作，统一通过编写并执行 Python 代码完成。",

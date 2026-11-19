@@ -116,6 +116,9 @@ load_envs_into_environ()
 async def _shutdown_plugins(app: FastAPI) -> None:
     """Tear down plugin runtime resources before other services stop."""
     plugin_loader = getattr(app.state, "plugin_loader", None)
+    whisper_install = getattr(app.state, "local_whisper_install", None)
+    if whisper_install is not None:
+        await whisper_install.close()
     if plugin_loader is not None:
         logger.info("Executing plugin shutdown (mode=shutdown)...")
         from ..plugins.lifecycle import UnloadMode
@@ -194,10 +197,9 @@ async def _stop_workspaces_after_dependents(
             os._exit(1)  # pylint: disable=protected-access
 
     threading.Thread(target=enforce_deadline, daemon=True).start()
-    try:
-        await _stop_workspaces_after_dependents_impl(app, import_jobs)
-    finally:
-        completed.set()
+    await _stop_workspaces_after_dependents_impl(app, import_jobs)
+    # A failed stop can leave live dependents; retain the exit deadline.
+    completed.set()
 
 
 async def _stop_workspaces_after_dependents_impl(
@@ -647,6 +649,17 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             except (OSError, ValueError, KeyError, TypeError, RuntimeError):
                 logger.exception("Official channel runtime unavailable")
                 channel_runtime = None
+            if os.environ.get("QWENPAW_TAURI_RESOURCE_DIR"):
+                # Make the existing desktop runtime visible before discovery
+                # snapshots the host dependencies, including after restart.
+                from ..tauri.optional_components import (
+                    activate_installed_components,
+                )
+
+                await asyncio.to_thread(
+                    activate_installed_components,
+                    ("whisper",),
+                )
             plugin_loader = await PluginLoader.create(
                 plugin_dirs,
                 channel_runtime=channel_runtime,
@@ -736,6 +749,27 @@ async def lifespan(  # pylint: disable=too-many-statements,too-many-branches
             }
             startup_state.update("resources", "正在准备扩展资源…", 50)
             await plugin_loader.activate_all_loaded()
+            from ..plugins.local_whisper import (
+                LocalWhisperInstallService,
+                dependency_status,
+            )
+
+            app.state.local_whisper_install = LocalWhisperInstallService(
+                plugin_loader,
+                WORKING_DIR
+                / "plugin_runtime"
+                / "migrations"
+                / "local-whisper.json",
+            )
+            await app.state.local_whisper_install.start()
+            migration = app.state.local_whisper_install.task
+            if (
+                migration
+                and (await asyncio.to_thread(dependency_status))["available"]
+            ):
+                # Previously working offline users can transcribe as soon as
+                # workspaces start. Missing dependencies install in background.
+                await migration
             from functools import partial
             from .plugin_activation import reconcile_plugin_activation
 
