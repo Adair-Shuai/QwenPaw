@@ -12,6 +12,8 @@
 
 ## 固定检查入口
 
+- 依赖恢复标记的原子写入使用同目录短 UUID 临时名，避免 Windows 深层状态目录叠加环境摘要及标记名后超限。保留签名、独占创建、落盘及原子替换。真实离线依赖修复用例应在触发原失败的长路径下复验。
+
 ```text
 python scripts/verify_update_regressions.py
 ```
