@@ -118,6 +118,7 @@ jobs:
                 scripts/verify_update_regressions.py|\
                 console/src/plugins/hostSdk/hooks.host.test.ts|\
                 console/src/plugins/flowForgeWorkbench.test.tsx|\
+                console/src/plugins/marketLoading.test.tsx|\
                 console/src/features/files-workspace/FilesDrawer.test.tsx|\
                 console/src/features/files-workspace/ResponseArtifactList.test.tsx|\
                 console/src/pages/Settings/PluginManager/components/InstalledPluginList.coverage.test.tsx|\
