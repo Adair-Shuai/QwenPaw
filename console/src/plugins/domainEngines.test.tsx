@@ -681,8 +681,10 @@ describe.each([
       within(card).getByRole("button", { name: "安装 NeqSim 运行环境" }),
     );
     let dialog = await screen.findByRole("dialog", { name: /运行环境/ });
-    expect(await within(dialog).findByText("Java 21")).toBeVisible();
-    expect(within(dialog).getByText("NeqSim 3.17.0")).toBeVisible();
+    await waitFor(() => {
+      expect(within(dialog).getByText("Java 21")).toBeVisible();
+      expect(within(dialog).getByText("NeqSim 3.17.0")).toBeVisible();
+    });
     expect(starts).toBe(0);
     await userEvent.click(
       within(dialog).getByRole("button", { name: /^开始安装/ }),

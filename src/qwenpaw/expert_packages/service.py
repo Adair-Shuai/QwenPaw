@@ -275,22 +275,39 @@ class ExpertInstallService:
             write_json_atomic(self.path(job_id) / "cancel.json", True)
         return state
 
-    def _remove_incomplete(self, target: Path):
-        # This only touches unpublished installer-owned environments/staging.
+    def _remove_incomplete(
+        self,
+        target: Path,
+        *,
+        python_environment: bool = False,
+    ):
+        # This only touches installer-owned environments and staging.
         if (
             self.root.resolve() not in target.resolve().parents
             or _is_link_like(target)
         ):
             raise ValueError("Unsafe installation directory")
-        if target.exists():
-            if any(_is_link_like(p) for p in target.rglob("*")):
-                # venv uses links on Unix. They are removed by rmtree without
-                # following their targets; directory links are never accepted.
-                if any(
-                    p.is_dir() and _is_link_like(p) for p in target.rglob("*")
-                ):
-                    raise ValueError("Linked installation directory")
-            shutil.rmtree(target)
+        if not target.exists():
+            return
+        # On 64-bit Linux, venv creates a relative lib64 -> lib alias.
+        # rmtree unlinks it without traversing its target.
+        lib64 = (
+            target / "lib64"
+            if python_environment and os.name != "nt"
+            else None
+        )
+        for path in target.rglob("*"):
+            if not _is_link_like(path) or not path.is_dir():
+                continue
+            if (
+                path == lib64
+                and path.is_symlink()
+                and path.readlink() == Path("lib")
+                and not _is_link_like(target / "lib")
+            ):
+                continue
+            raise ValueError("Linked installation directory")
+        shutil.rmtree(target)
 
     # The job lock spans preparation, activation and cancellation cleanup.
     # pylint: disable-next=too-many-branches,too-many-statements
@@ -433,7 +450,7 @@ class ExpertInstallService:
                 or not runtime.python_path(environment).is_file()
                 or not self.environment_current(folder)
             ):
-                self._remove_incomplete(environment)
+                self._remove_incomplete(environment, python_environment=True)
                 await runtime.prepare_environment(
                     package,
                     environment,
