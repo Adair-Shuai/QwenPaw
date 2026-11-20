@@ -2456,9 +2456,18 @@ export default function ChatPage() {
         queueSessionId,
         controller.signal,
       );
+      if (!session || controller.signal.aborted) return false;
+
+      // A run can start while the history request is in flight. Recheck the
+      // SDK before replacing its messages, even before React sees loading.
+      const activeRun = await chatRef.current?.execution.getActiveRun(
+        queueSessionId,
+      );
       if (
-        !session ||
-        (requireIdle && (session.generating || chatLoadingRef.current)) ||
+        (activeRun && activeRun.getState() !== "disconnected") ||
+        (requireIdle
+          ? session.generating || chatLoadingRef.current
+          : syncState.resumeAttempted) ||
         controller.signal.aborted ||
         queueSessionIdRef.current !== queueSessionId ||
         !isChatActiveRef.current

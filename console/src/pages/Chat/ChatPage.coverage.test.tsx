@@ -1189,7 +1189,7 @@ describe("ChatPage coverage", () => {
     });
     act(() => poll?.());
     await waitFor(() => {
-      expect(mockRuntimeGetActiveRun).toHaveBeenCalledTimes(2);
+      expect(mockRuntimeGetActiveRun).toHaveBeenCalledTimes(3);
     });
     expect(mockRuntimeResume).toHaveBeenCalledTimes(1);
     expect(sessionApi.refreshSession).toHaveBeenCalledTimes(1);
@@ -1199,7 +1199,7 @@ describe("ChatPage coverage", () => {
     });
     act(() => poll?.());
     await waitFor(() => {
-      expect(mockRuntimeGetActiveRun).toHaveBeenCalledTimes(3);
+      expect(mockRuntimeGetActiveRun).toHaveBeenCalledTimes(4);
     });
     expect(mockRuntimeResume).toHaveBeenCalledTimes(1);
 
@@ -1208,7 +1208,7 @@ describe("ChatPage coverage", () => {
     });
     act(() => poll?.());
     await waitFor(() => {
-      expect(mockRuntimeGetActiveRun).toHaveBeenCalledTimes(4);
+      expect(mockRuntimeGetActiveRun).toHaveBeenCalledTimes(5);
     });
     expect(mockRuntimeResume).toHaveBeenCalledTimes(2);
 
@@ -1239,6 +1239,47 @@ describe("ChatPage coverage", () => {
     });
     expect(mockSetSessionMessages).toHaveBeenCalledTimes(2);
     expect(mockRuntimeMount).toHaveBeenCalledTimes(1);
+    setIntervalSpy.mockRestore();
+  });
+
+  it("keeps a run that starts while external-run history is loading", async () => {
+    const setIntervalSpy = vi.spyOn(window, "setInterval");
+    mockGetChatStatus.mockResolvedValue({ status: "running" });
+
+    let resolveHistory!: (
+      value: Awaited<ReturnType<typeof sessionApi.refreshSession>>,
+    ) => void;
+    vi.mocked(sessionApi.refreshSession).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveHistory = resolve;
+      }),
+    );
+    renderWithProviders(<ChatPage />, {
+      initialEntries: ["/chat/test-session"],
+    });
+    await screen.findByTestId("chat-ui");
+
+    const poll = setIntervalSpy.mock.calls.find(
+      ([, delay]) => delay === 5000,
+    )?.[0] as (() => void) | undefined;
+    expect(poll).toBeTypeOf("function");
+    act(() => poll?.());
+    await waitFor(() => expect(sessionApi.refreshSession).toHaveBeenCalled());
+
+    mockRuntimeGetActiveRun.mockResolvedValue({
+      getState: () => "streaming",
+    });
+    await act(async () => {
+      resolveHistory({
+        id: "test-session",
+        name: "Stale run history",
+        messages: [{ id: "external-user", role: "user", cards: [] }],
+        generating: true,
+      });
+    });
+
+    expect(mockSetSessionMessages).not.toHaveBeenCalled();
+    expect(mockRuntimeResume).not.toHaveBeenCalled();
     setIntervalSpy.mockRestore();
   });
 

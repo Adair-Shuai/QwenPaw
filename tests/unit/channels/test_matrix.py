@@ -790,7 +790,7 @@ def test_matrix_market_manifest_requires_native_channel_host(
         (root / "plugins/channel/matrix/plugin.json").read_text("utf-8"),
     )
     assert raw["id"] == "matrix" and raw["publish"] is True
-    assert raw["version"] == "0.1.0.dev2"
+    assert raw["version"] == "0.1.1"
     assert raw["qwenpaw_version"]["min"] == "2.3.0b3"
     monkeypatch.setattr("qwenpaw.__version__.__version__", host)
     assert (

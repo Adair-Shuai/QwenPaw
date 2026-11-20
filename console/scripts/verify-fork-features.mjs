@@ -1754,6 +1754,7 @@ requireCases("src/pages/Chat/ChatPage.coverage.test.tsx", [
   "UGSci fork feature: mounted answer quote shortcut preserves code and reaches normal admission",
   "attaches an externally started run without remounting the chat",
   "keeps the new session guard after an old reconnect fails",
+  "keeps a run that starts while external-run history is loading",
 ]);
 requireCases("src/pages/Chat/components/AnswerQuoteComposer.test.tsx", [
   "keeps keyboard quoting bound to the active scope and focused action",
