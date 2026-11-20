@@ -15,6 +15,7 @@ from qwenpaw.tauri.env import DESKTOP_CORS_ORIGINS_ENV
 
 
 def test_install_desktop_runtime_preserves_existing_cors_values(monkeypatch):
+    monkeypatch.setattr(os, "environ", os.environ.copy())
     monkeypatch.delitem(sys.modules, "qwenpaw.app._app", raising=False)
     monkeypatch.setenv(
         DESKTOP_CORS_ORIGINS_ENV,
