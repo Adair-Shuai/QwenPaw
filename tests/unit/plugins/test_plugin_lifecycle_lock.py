@@ -164,6 +164,7 @@ async def test_url_install_rolls_back_when_adoption_write_fails(
     extracted = tmp_path / "extracted"
     extracted.mkdir()
     record = MagicMock()
+    record.source_path = tmp_path / "plugins" / "demo"
     record.manifest.id = "demo"
     record.manifest.name = "Demo"
     record.manifest.version = "1.0.0"

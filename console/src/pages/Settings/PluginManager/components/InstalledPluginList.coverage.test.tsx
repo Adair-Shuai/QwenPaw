@@ -50,11 +50,11 @@ const env = vi.hoisted(() => ({
   columns: [] as unknown[],
 }));
 
-vi.mock(import("react-i18next"), async (importOriginal) => {
+vi.mock("react-i18next", async (importOriginal) => {
   const t = (key: string, opts?: Record<string, unknown>) =>
     opts ? `${key}:${JSON.stringify(opts)}` : key;
   return {
-    ...(await importOriginal()),
+    ...(await importOriginal<typeof import("react-i18next")>()),
     useTranslation: () => ({
       t,
       i18n: { resolvedLanguage: "en", changeLanguage: vi.fn(), language: "en" },

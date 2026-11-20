@@ -90,6 +90,9 @@ def runtime_layout(directory, monkeypatch):
     """Simulate a trusted frozen layout without rebuilding releases."""
     from packaging.tags import sys_tags
     from qwenpaw.__version__ import __version__
+    from scripts.pack.generate_plugin_metadata import (
+        build_official_channel_bundle,
+    )
 
     root = directory / "Resources"
     support = root / "support"
@@ -116,7 +119,11 @@ def runtime_layout(directory, monkeypatch):
         sysconfig.get_path("purelib") + "\n",
     )
     site = dependency_site(root / "dependencies")
-    index = support / "qwenpaw/official_channels/index.json"
+    index = build_official_channel_bundle(
+        ROOT,
+        support / "qwenpaw/official_channels",
+        host_version=__version__,
+    )
     identity = {
         "version": list(sys.version_info[:2]),
         "implementation": sys.implementation.name,
